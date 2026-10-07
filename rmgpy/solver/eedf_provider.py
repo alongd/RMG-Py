@@ -30,9 +30,15 @@
 """Reactor-level ownership and caching for fingerprinted EEDF tables."""
 
 import copy
+from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
+import json
+import os
+from pathlib import Path
+import re
 import threading
+import time
 from types import MappingProxyType
 import weakref
 
@@ -47,10 +53,16 @@ from rmgpy.solver.eedf import (
     IllConditionedCoordinate,
     OutOfDomain,
 )
+from rmgpy.tools.eedf.schema import (
+    canonical_json,
+    content_hash,
+    qualification_rule_for_quantity,
+)
 
 
 DEVELOPMENT_UNQUALIFIED_STATUS = (
     'DEVELOPMENT ONLY \u2014 TABLE QUALIFICATION FAILED')
+DEVELOPMENT_DIAGNOSTIC_STATUS = 'DEVELOPMENT \u2014 not a qualification'
 _development_unqualified_route = ContextVar(
     'eedf_development_unqualified_route', default=False)
 
@@ -149,6 +161,9 @@ class EEDFProvider:
         self._cached_row = None
         self._issued_rows = weakref.WeakValueDictionary()
         self._cache_lock = threading.RLock()
+        self._qualification_status = None
+        self._qualification_record = None
+        self._qualification_state_resolver = None
 
     def _validate_reaction_map(self, reaction_map):
         if not isinstance(reaction_map, dict):
@@ -220,6 +235,665 @@ class EEDFProvider:
                 '{0} refuses {1}: {2}'.format(
                     DEVELOPMENT_UNQUALIFIED_STATUS, operation,
                     '; '.join(self._development_blockers)))
+        if self._qualification_status != 'PASS':
+            status = self._qualification_status or 'NOT QUALIFIED'
+            raise EEDFError('EEDF qualification {0} refuses {1}'.format(status, operation))
+
+    def bind_qualification_state(self, resolver):
+        """Bind the reactor callback that describes an accepted terminal state."""
+        if not callable(resolver):
+            raise TypeError('qualification state resolver must be callable')
+        self._qualification_state_resolver = resolver
+
+    @staticmethod
+    def _json_value(value):
+        if isinstance(value, MappingProxyType):
+            value = dict(value)
+        if isinstance(value, dict):
+            return {str(key): EEDFProvider._json_value(item)
+                    for key, item in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [EEDFProvider._json_value(item) for item in value]
+        if isinstance(value, np.ndarray):
+            return EEDFProvider._json_value(value.tolist())
+        if isinstance(value, np.generic):
+            return EEDFProvider._json_value(value.item())
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, float) and not np.isfinite(value):
+            if np.isnan(value):
+                return 'NaN'
+            return 'Infinity' if value > 0. else '-Infinity'
+        return value
+
+    def _qualification_state(self, y, t):
+        if isinstance(y, dict):
+            state = copy.deepcopy(y)
+        elif self._qualification_state_resolver is not None:
+            state = self._qualification_state_resolver(y, t)
+        else:
+            raise EEDFError('terminal qualification state is unavailable')
+        for name in ('u', 'composition'):
+            if name not in state:
+                raise EEDFError('terminal qualification state has no ' + name)
+        state['t'] = float(t)
+        state['u'] = float(state['u'])
+        state['composition'] = {str(key): float(value)
+                                for key, value in state['composition'].items()}
+        return state
+
+    def _write_qualification(self, record, state):
+        path = Path(state.get('record_path', 'eedf_qualification.json'))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._qualification_record = record
+        path.write_text(json.dumps(self._json_value(record), indent=2,
+                                   sort_keys=True, allow_nan=False) + '\n')
+        return path
+
+    @staticmethod
+    def _tolerance_check(checks, rule, quantity, actual, reference, tolerance,
+                         labels=None, relative_scale=None):
+        actual = np.asarray(actual, dtype=float)
+        reference = np.asarray(reference, dtype=float)
+        if actual.shape != reference.shape:
+            raise EEDFError('{0} shape mismatch for {1}'.format(rule, quantity))
+        error = np.abs(actual - reference)
+        scale = np.abs(reference) if relative_scale is None else np.asarray(
+            relative_scale, dtype=float)
+        allowed = (np.asarray(tolerance['atol'], dtype=float) +
+                   float(tolerance['rtol']) * scale)
+        allowed = np.broadcast_to(allowed, error.shape)
+        passed = np.isfinite(error) & (error <= allowed)
+        if error.shape:
+            scores = np.full(error.shape, np.inf, dtype=float)
+            finite = np.isfinite(error) & np.isfinite(allowed)
+            scores[finite] = error[finite] - allowed[finite]
+            flat = int(np.argmax(scores))
+            index = list(np.unravel_index(flat, error.shape))
+            label = labels[flat] if labels is not None and flat < len(labels) else index
+            absolute_error = float(error.flat[flat])
+            allowed_error = float(allowed.flat[flat])
+            relative_denominator = float(np.broadcast_to(scale, error.shape).flat[flat])
+        else:
+            index = []
+            label = labels[0] if labels else quantity
+            absolute_error = float(error)
+            allowed_error = float(allowed)
+            relative_denominator = float(scale)
+        checks.append({
+            'rule': rule,
+            'quantity': quantity,
+            'argmax': label,
+            'index': index,
+            'absolute_error': absolute_error,
+            'relative_error': (absolute_error / abs(relative_denominator)
+                               if relative_denominator and
+                               np.isfinite(absolute_error) and
+                               np.isfinite(relative_denominator) else None),
+            'allowed_error': allowed_error,
+            'passed': bool(np.all(passed)),
+        })
+
+    @staticmethod
+    def _quantity_drift(quantity, actual, reference, labels=None):
+        actual = np.asarray(actual, dtype=float)
+        reference = np.asarray(reference, dtype=float)
+        if actual.shape != reference.shape:
+            return {'quantity': quantity, 'shape_mismatch': [list(actual.shape),
+                                                              list(reference.shape)]}
+        error = np.abs(actual - reference)
+        if error.shape:
+            flat = int(np.argmax(error))
+            index = list(np.unravel_index(flat, error.shape))
+            argmax = labels[flat] if labels is not None and flat < len(labels) else index
+            absolute = float(error.flat[flat])
+            ref = float(reference.flat[flat])
+        else:
+            index, argmax = [], quantity
+            absolute, ref = float(error), float(reference)
+        return {'quantity': quantity, 'argmax': argmax, 'index': index,
+                'absolute_error': absolute,
+                'relative_error': (absolute / abs(ref)
+                                   if ref and np.isfinite(absolute) and
+                                   np.isfinite(ref) else None)}
+
+    def _all_quantity_drifts(self, predicted, direct):
+        channels = [entry.get('description', str(i))
+                    for i, entry in enumerate(self._runtime_metadata['channel_map'])]
+        drifts = [self._quantity_drift('EN_Td', predicted['EN_Td'], direct['EN_Td'])]
+        for name in sorted(set(predicted['swarm']) | set(direct['swarm'])):
+            if name in predicted['swarm'] and name in direct['swarm']:
+                drifts.append(self._quantity_drift(
+                    'swarm.' + name, predicted['swarm'][name], direct['swarm'][name]))
+        for name in ('k_ine', 'k_sup', 'channel_power', 'attachment_energy_eV',
+                     'target_fractions', 'product_fractions'):
+            if name in predicted and name in direct:
+                drifts.append(self._quantity_drift(name, predicted[name], direct[name], channels))
+        for name in sorted(set(predicted['power_groups']) | set(direct['power_groups'])):
+            if name in predicted['power_groups'] and name in direct['power_groups']:
+                drifts.append(self._quantity_drift(
+                    'power.' + name, predicted['power_groups'][name],
+                    direct['power_groups'][name]))
+        if 'f0' in predicted and 'f0' in direct:
+            drifts.append(self._quantity_drift('f0', predicted['f0'], direct['f0']))
+        return drifts
+
+    def _verify_generation_spec(self, spec, coordinates=None, fields_Td=None):
+        """Verify that a saved direct-solver request owns this fingerprint."""
+        from rmgpy.tools.eedf.loki import qualification_setup_sha256
+
+        manifest = self._json_value(self._runtime_metadata)
+        row_inputs = manifest['row_inputs']
+        if content_hash(row_inputs) != manifest['fingerprint']:
+            raise EEDFError('generation spec mismatch: manifest fingerprint')
+        stored_setup = row_inputs.get('qualification_setup_sha256')
+        if not stored_setup:
+            raise EEDFError(
+                'generation spec mismatch: artifact has no physical setup fingerprint')
+        if manifest.get('qualification_setup_sha256') != stored_setup:
+            raise EEDFError(
+                'generation spec mismatch: physical setup fingerprint record')
+        solver = manifest.get('solver')
+        if not isinstance(solver, dict):
+            raise EEDFError('generation spec mismatch: solver identity')
+
+        def require_equal(label, actual, expected):
+            if canonical_json(actual) != canonical_json(expected):
+                raise EEDFError('generation spec mismatch: ' + label)
+
+        require_equal('solver commit', spec.get('loki_commit'),
+                      solver.get('commit'))
+        require_equal('binary', spec.get('binary', {}).get('sha256'),
+                      solver.get('binary_sha256'))
+        require_equal('compiler', spec.get('compiler'), solver.get('compiler'))
+        require_equal('cmake cache', spec.get('cmake_cache', {}).get('sha256'),
+                      solver.get('cmake_cache_sha256'))
+        spec_options = spec.get('solver_options')
+        saved_options = solver.get('options')
+        if (isinstance(spec_options, dict) and isinstance(saved_options, dict) and
+                spec_options.get('ionizationOperatorType') !=
+                saved_options.get('ionizationOperatorType')):
+            raise EEDFError('generation spec mismatch: operator')
+        require_equal('solver options', spec_options, saved_options)
+        require_equal('working conditions', spec.get('working_conditions'),
+                      solver.get('working_conditions'))
+        spec_inputs = {
+            name: {'sha256': item.get('sha256'), 'kind': item.get('kind')}
+            for name, item in spec.get('input_files', {}).items()
+        }
+        require_equal('input SHAs', spec_inputs, solver.get('input_files'))
+
+        cross_sections = {name: item['sha256']
+                          for name, item in spec_inputs.items()
+                          if item['kind'] == 'cross_section'}
+        auxiliary = {name: item['sha256']
+                     for name, item in spec_inputs.items()
+                     if item['kind'] != 'cross_section'}
+        for label, key, value in (
+                ('solver commit', 'loki_commit', spec.get('loki_commit')),
+                ('binary', 'binary_sha256',
+                 spec.get('binary', {}).get('sha256')),
+                ('solver options', 'solver_options', spec_options),
+                ('working conditions', 'working_conditions',
+                 spec.get('working_conditions')),
+                ('qualification quantity rules', 'qualification_quantity_rules',
+                 spec.get('qualification_quantity_rules')),
+                ('input SHAs', 'cross_sections', cross_sections),
+                ('input SHAs', 'auxiliary_inputs', auxiliary)):
+            if key not in row_inputs:
+                raise EEDFError(
+                    'generation spec mismatch: fingerprint has no ' + key)
+            require_equal(label, value, row_inputs[key])
+        if qualification_setup_sha256(spec, coordinates, fields_Td) != stored_setup:
+            raise EEDFError(
+                'generation spec mismatch: physical setup fingerprint')
+
+    @staticmethod
+    def _declared_values(declarations, label):
+        """Parse setup declarations numerically while retaining their names."""
+        if not isinstance(declarations, list):
+            raise EEDFError(label + ' declarations are invalid')
+        values = {}
+        pattern = re.compile(
+            r'^\s*(.+?)\s*=\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?)\s*$')
+        for declaration in declarations:
+            match = pattern.fullmatch(str(declaration))
+            if match is None:
+                raise EEDFError(label + ' declaration is invalid')
+            name, value = match.groups()
+            value = float(value)
+            if name in values or not np.isfinite(value):
+                raise EEDFError(label + ' declaration is invalid')
+            values[name] = value
+        return values
+
+    @staticmethod
+    def _terminal_values(state, key, expected):
+        values = state.get(key)
+        if not isinstance(values, Mapping) or set(values) != set(expected):
+            raise EEDFError('terminal ' + key.replace('_', ' ') + ' are incomplete')
+        result = {str(name): float(value) for name, value in values.items()}
+        if not all(np.isfinite(value) for value in result.values()):
+            raise EEDFError('terminal ' + key.replace('_', ' ') + ' are incomplete')
+        return result
+
+    @staticmethod
+    def _validate_qualification_row(row, label):
+        """Reject an incomplete, non-finite, or non-converged solver row."""
+        required = {
+            'u', 'EN_Td', 'composition', 'swarm', 'gas_fractions',
+            'state_populations', 'k_ine', 'k_sup', 'channel_power',
+            'power_groups', 'attachment_energy_eV', 'target_fractions',
+            'product_fractions', 'rate_floors', 'below_floor', 'f0',
+            'energy_eV', 'energy_edges_eV', 'converged', 'iteration_count',
+        }
+        if not isinstance(row, Mapping):
+            raise EEDFError('invalid ' + label + ' row: not a mapping')
+        missing = sorted(required - set(row))
+        if missing:
+            raise EEDFError(
+                'invalid ' + label + ' row: missing ' + ', '.join(missing))
+        if row['converged'] is not True:
+            raise EEDFError('invalid ' + label + ' row: converged')
+        mappings = ('composition', 'swarm', 'gas_fractions',
+                    'state_populations', 'power_groups')
+        for name in mappings:
+            values = row[name]
+            if not isinstance(values, Mapping) or not values:
+                if name == 'composition' and isinstance(values, Mapping):
+                    continue
+                raise EEDFError('invalid ' + label + ' row: ' + name)
+            try:
+                finite = all(np.all(np.isfinite(np.asarray(value, dtype=float)))
+                             for value in values.values())
+            except (TypeError, ValueError):
+                finite = False
+            if not finite:
+                raise EEDFError('invalid ' + label + ' row: ' + name)
+        numeric = required - set(mappings) - {'converged'}
+        for name in numeric:
+            try:
+                finite = np.all(np.isfinite(np.asarray(row[name], dtype=float)))
+            except (TypeError, ValueError):
+                finite = False
+            if not finite:
+                raise EEDFError('invalid ' + label + ' row: ' + name)
+
+    def _check_all_recorded_quantities(self, checks, predicted, direct, tolerances):
+        """Apply only a-posteriori A budgets to every supplementary row value."""
+        channels = [entry.get('description', str(i))
+                    for i, entry in enumerate(self._runtime_metadata['channel_map'])]
+        rules = self._runtime_metadata['row_inputs'].get(
+            'qualification_quantity_rules')
+        if not isinstance(rules, Mapping):
+            raise EEDFError('artifact has no qualification quantity rules')
+
+        def check(quantity, actual, reference, labels=None):
+            rule = rules.get(quantity)
+            allowed = qualification_rule_for_quantity(quantity)
+            if rule != allowed:
+                if rule is not None and allowed is not None:
+                    raise EEDFError(
+                        'invalid qualification rule for ' + quantity +
+                        ': expected ' + allowed + ', got ' + str(rule))
+                raise EEDFError(
+                    'artifact has no qualification rule for ' + quantity)
+            self._tolerance_check(checks, rule, quantity, actual, reference,
+                                  tolerances[rule], labels)
+
+        check('EN_Td', predicted['EN_Td'], direct['EN_Td'])
+        predicted_names = set(predicted['swarm'])
+        direct_names = set(direct['swarm'])
+        if predicted_names != direct_names:
+            missing = sorted(predicted_names ^ direct_names)
+            raise EEDFError(
+                'A2 quantity set mismatch for swarm: ' + ', '.join(missing))
+        for name in sorted(predicted_names - {
+                'mean_energy_eV', 'mobility_N', 'diffusion_N'}):
+            check('swarm.' + name, predicted['swarm'][name],
+                  direct['swarm'][name])
+        predicted_names = set(predicted['power_groups'])
+        direct_names = set(direct['power_groups'])
+        if predicted_names != direct_names:
+            missing = sorted(predicted_names ^ direct_names)
+            raise EEDFError(
+                'A4 quantity set mismatch for power_groups: ' + ', '.join(missing))
+        for name in sorted(predicted_names):
+            check('power.' + name, predicted['power_groups'][name],
+                  direct['power_groups'][name])
+        if 'channel_power' not in predicted or 'channel_power' not in direct:
+            raise EEDFError('A5 quantity set mismatch: channel_power')
+        predicted_field = abs(float(predicted['power_groups']['field']))
+        direct_field = abs(float(direct['power_groups']['field']))
+        if not predicted_field or not direct_field:
+            raise EEDFError('A5 cannot scale zero field power')
+        check('channel_power_fraction',
+              np.asarray(predicted['channel_power']) / predicted_field,
+              np.asarray(direct['channel_power']) / direct_field, channels)
+        for name in ('attachment_energy_eV', 'target_fractions',
+                     'product_fractions'):
+            if name not in predicted or name not in direct:
+                raise EEDFError('qualification quantity set mismatch: ' + name)
+            check(name, predicted[name], direct[name], channels)
+        if any(name not in predicted or name not in direct
+               for name in ('f0', 'energy_eV', 'energy_edges_eV')):
+            raise EEDFError('A1 quantity set mismatch: f0')
+        if (not np.array_equal(predicted['energy_eV'], direct['energy_eV']) or
+                not np.array_equal(predicted['energy_edges_eV'],
+                                   direct['energy_edges_eV'])):
+            raise EEDFError('A5 f0 energy grid mismatch')
+        weights = (np.sqrt(np.asarray(direct['energy_eV'], dtype=float)) *
+                   np.diff(np.asarray(direct['energy_edges_eV'], dtype=float)))
+        distance = np.sum(
+            np.abs(np.asarray(predicted['f0'], dtype=float) -
+                   np.asarray(direct['f0'], dtype=float)) * weights)
+        check('f0.weighted_L1', distance, 0.)
+
+    def _compare_qualification_rows(self, predicted, direct, state, tolerances):
+        required = tuple('A' + str(i) for i in range(1, 7))
+        missing = [name for name in required if name not in tolerances]
+        if missing:
+            raise EEDFError('artifact has no runtime tolerance ' + ', '.join(missing))
+        checks = []
+        self._check_all_recorded_quantities(
+            checks, predicted, direct, tolerances)
+        channels = [entry.get('description', str(i))
+                    for i, entry in enumerate(self._runtime_metadata['channel_map'])]
+        self._tolerance_check(checks, 'A1', 'mean_energy_eV',
+                              predicted['swarm']['mean_energy_eV'],
+                              direct['swarm']['mean_energy_eV'], tolerances['A1'])
+        swarm_names = ('mobility_N', 'diffusion_N')
+        for name in swarm_names:
+            if name not in predicted['swarm'] or name not in direct['swarm']:
+                raise EEDFError('A2 quantity set mismatch: ' + name)
+            self._tolerance_check(checks, 'A2', 'swarm.' + name,
+                                  predicted['swarm'][name], direct['swarm'][name],
+                                  tolerances['A2'])
+        for name in ('k_ine', 'k_sup'):
+            identities = []
+            for index, channel in enumerate(self._runtime_metadata['channel_map']):
+                match = re.fullmatch(
+                    r'e \+ (.+?) (?:<->|->) e \+ (.+), [A-Za-z]+',
+                    channel['description'])
+                if match:
+                    source, product = match.groups()
+                else:
+                    source = product = channel.get(
+                        'flux_group', channel['description'])
+                if name == 'k_sup':
+                    source, product = product, source
+                identities.append((source, product))
+            floors = self._runtime_metadata['floors']
+
+            def materiality(row):
+                fractions = np.asarray(
+                    row['target_fractions'] if name == 'k_ine'
+                    else row['product_fractions'], dtype=float)
+                rates = np.asarray(row[name], dtype=float)
+                fluxes = np.abs(fractions * rates)
+                losses = {}
+                productions = {}
+                for index, (source, product) in enumerate(identities):
+                    losses[source] = losses.get(source, 0.) + fluxes[index]
+                    productions[product] = (
+                        productions.get(product, 0.) + fluxes[index])
+                dynamic = float(floors.get('eedf_dynamic_range', 0.))
+                sigma_max = np.maximum(
+                    np.abs(np.asarray(row['k_ine'], dtype=float)),
+                    np.abs(np.asarray(row['k_sup'], dtype=float)))
+                rate_floors = np.maximum(
+                    float(floors['rate_absolute']), dynamic * sigma_max)
+                result = []
+                for index, (source, product) in enumerate(identities):
+                    totals = [value for value in
+                              (losses[source], productions[product]) if value > 0.]
+                    scale = min(totals, default=0.)
+                    flux_floor = (
+                        float(floors['absolute_flux_fraction']) * scale /
+                        abs(fractions[index]) if fractions[index] else 0.)
+                    load_bearing = (
+                        scale > 0. and
+                        fluxes[index] >=
+                        float(floors['rate_flux_fraction']) * scale and
+                        abs(rates[index]) >= rate_floors[index])
+                    result.append((load_bearing, rate_floors[index], flux_floor))
+                return result
+
+            predicted_materiality = materiality(predicted)
+            direct_materiality = materiality(direct)
+            for index, channel in enumerate(self._runtime_metadata['channel_map']):
+                classification = channel.get('classification')
+                predicted_load = predicted_materiality[index][0]
+                direct_load = direct_materiality[index][0]
+                if classification != 'A' and not (
+                        classification == 'B' and
+                        (predicted_load or direct_load)):
+                    continue
+                tolerance = dict(tolerances['A3'])
+                tolerance['atol'] = max(
+                    float(tolerance['atol']),
+                    float(predicted_materiality[index][1]),
+                    float(direct_materiality[index][1]),
+                    float(predicted_materiality[index][2]),
+                    float(direct_materiality[index][2]))
+                if not predicted_load and not direct_load:
+                    tolerance['rtol'] = 0.
+                self._tolerance_check(
+                    checks, 'A3', name + ':' + str(index),
+                    predicted[name][index], direct[name][index], tolerance,
+                    [channels[index]])
+        loss_names = ('elastic_gain', 'elastic_loss', 'car_gain', 'car_loss',
+                      'excitation_loss', 'excitation_gain', 'vibrational_loss',
+                      'vibrational_gain', 'rotational_loss', 'rotational_gain',
+                      'ionization', 'attachment')
+        self._tolerance_check(
+            checks, 'A4', 'power.total_loss',
+            -sum(float(predicted['power_groups'].get(name, 0.)) for name in loss_names),
+            -sum(float(direct['power_groups'].get(name, 0.)) for name in loss_names),
+            tolerances['A4'])
+        field = abs(float(direct['power_groups']['field']))
+        a5 = tolerances['A5']
+        significant = [i for i, value in enumerate(direct['channel_power'])
+                       if abs(value) >= float(a5.get('share_min', 0.)) * field]
+        for index in significant:
+            predicted_fraction = (float(predicted['channel_power'][index]) /
+                                  abs(float(predicted['power_groups']['field'])))
+            direct_fraction = float(direct['channel_power'][index]) / field
+            self._tolerance_check(checks, 'A5', 'channel_power_fraction:' + str(index),
+                                  predicted_fraction, direct_fraction, a5,
+                                  [channels[index]])
+        budget = state.get('energy_budget', {})
+        if budget:
+            predicted_field = float(predicted['power_groups']['field'])
+            if predicted_field == 0.:
+                raise EEDFError('A6 cannot scale a zero interpolated field power')
+            scale = float(budget['joule_power']) / predicted_field
+            direct_joule = scale * float(direct['power_groups']['field'])
+            engine_target = (float(budget['P_abs']) -
+                             float(budget.get('Q_wall_electron', 0.)) -
+                             float(budget.get('Q_wall_ion', 0.)) -
+                             float(budget.get('Q_flow', 0.)) +
+                             scale * float(direct['power_groups'].get('growth', 0.)))
+            self._tolerance_check(checks, 'A6', 'joule_power',
+                                  direct_joule, engine_target,
+                                  tolerances['A6'],
+                                  relative_scale=abs(float(budget['P_abs'])))
+        else:
+            raise EEDFError('terminal qualification state has no energy_budget')
+        return checks
+
+    def _run_qualification(self, y, t, runner, development):
+        from rmgpy.exceptions import PlasmaStateError
+        from rmgpy.tools.eedf.loki import LoKIDriver, enrich_row
+
+        start = time.monotonic()
+        state = {}
+        if isinstance(y, dict) and 'record_path' in y:
+            state['record_path'] = y['record_path']
+        record = {
+            'status': DEVELOPMENT_DIAGNOSTIC_STATUS if development else 'FAIL',
+            'comparison_passed': False,
+            'terminal_state': state,
+            'artifact_sha256': self._runtime_metadata['artifact_sha256'],
+            'generation_spec': str(self._table.path / 'generation_spec.json'),
+            'branch': self._branch,
+        }
+        try:
+            state['t'] = float(t)
+            state = self._qualification_state(y, t)
+            predicted = self.row(state['u'], state['composition']).as_dict()
+            self._validate_qualification_row(predicted, 'interpolated')
+            record['terminal_state'] = state
+            record['interpolated_row'] = predicted
+            spec_path = self._table.path / 'generation_spec.json'
+            spec = json.loads(spec_path.read_text())
+            self._verify_generation_spec(spec)
+            if 'scratch_root' in state:
+                spec['scratch_root'] = str(state['scratch_root'])
+            for key, target in (('gas_fractions', 'gas_properties'),
+                                ('state_populations', 'state_properties')):
+                field = 'fraction' if key == 'gas_fractions' else 'population'
+                saved = self._declared_values(spec[target].get(field), key)
+                terminal = self._terminal_values(state, key, saved)
+                spec[target][field] = [
+                    '{0} = {1:.17g}'.format(name, terminal[name])
+                    for name in sorted(terminal)]
+            saved_weights = self._declared_values(
+                spec['state_properties'].get('statisticalWeight'),
+                'state statistical weights')
+            terminal_weights = self._terminal_values(
+                state, 'state_statistical_weights', saved_weights)
+            if any(terminal_weights[name] != saved_weights[name]
+                   for name in saved_weights):
+                raise EEDFError(
+                    'generation spec mismatch: physical setup fingerprint '
+                    '(terminal statistical weights)')
+            # Fractions, populations and E/N are the only legitimate terminal
+            # substitutions.  Recheck the digest against the setup that will
+            # actually be rendered so a changed weight or other template value
+            # cannot enter between provenance verification and execution.
+            terminal_fields = [float(np.exp(state['u']))]
+            self._verify_generation_spec(
+                spec, state['composition'], terminal_fields)
+            if runner is None:
+                binary = spec.get('binary', {}).get('path')
+                if not binary or not Path(binary).is_file() or not os.access(binary, os.X_OK):
+                    raise EEDFError('missing or unexecutable LoKI-B binary')
+                driver = LoKIDriver(spec)
+                raw = driver.run(state['composition'], terminal_fields,
+                                 'qualification-{0}'.format(time.time_ns()))[0]
+                channel_map = self._json_value(self._runtime_metadata['channel_map'])
+                direct = enrich_row(raw, channel_map, spec)
+            else:
+                direct = runner(spec, state['composition'],
+                                terminal_fields, 'qualification')[0]
+            record['solver_row'] = direct
+            self._validate_qualification_row(direct, 'direct')
+            tolerances = self._runtime_metadata['tolerances']
+            if development and not all('A' + str(i) in tolerances for i in range(1, 7)):
+                # Historical development artifacts predate A1--A6. Reuse their
+                # explicit held-out budgets for measurement only; this route can
+                # never confer qualification.
+                tolerances = dict(tolerances)
+                for target, source in (('A1', 'H1'), ('A2', 'H2'), ('A3', 'H3'),
+                                       ('A4', 'H4'), ('A5', 'H4')):
+                    if target not in tolerances and source in tolerances:
+                        tolerances[target] = dict(tolerances[source])
+                if 'A5' in tolerances:
+                    tolerances['A5'].setdefault(
+                        'share_min', self._runtime_metadata.get('floors', {}).get(
+                            'relative_power_share', 0.))
+                if 'A6' not in tolerances and 'energy_budget' in state:
+                    budget = state['energy_budget']
+                    tolerances['A6'] = {'rtol': float(budget['A6b_tolerance']), 'atol': 0.}
+                record['tolerance_source'] = 'development artifact held-out budgets'
+            checks = self._compare_qualification_rows(predicted, direct, state, tolerances)
+            record.update(checks=checks,
+                          quantity_drifts=self._all_quantity_drifts(predicted, direct),
+                          drift_maxima={rule: max(
+                              (item for item in checks if item['rule'] == rule),
+                              key=lambda item: (item['absolute_error']
+                                                if np.isfinite(item['absolute_error'])
+                                                else float('inf')),
+                              default=None)
+                              for rule in sorted({item['rule'] for item in checks})})
+            budget = state.get('energy_budget', {})
+            if 'A6b_relative' in budget:
+                record['engine_A6b'] = {
+                    'relative_error': float(budget['A6b_relative']),
+                    'tolerance': float(budget['A6b_tolerance']),
+                    'passed': bool(float(budget['A6b_relative']) <=
+                                   float(budget['A6b_tolerance'])),
+                }
+            record['comparison_passed'] = all(item['passed'] for item in checks)
+            record['wall_time_s'] = time.monotonic() - start
+            if development:
+                self.annotate_development_diagnostic(record)
+                self._write_qualification(record, state)
+                return record
+            failed = next((item for item in checks if not item['passed']), None)
+            if failed is not None:
+                raise PlasmaStateError('EEDF qualification failed: ' + failed['rule'])
+            record['status'] = 'PASS'
+            self._qualification_status = 'PASS'
+            self._write_qualification(record, state)
+            return record
+        except Exception as error:
+            record['wall_time_s'] = time.monotonic() - start
+            record['error'] = str(error)
+            if development:
+                self.annotate_development_diagnostic(record)
+                self._write_qualification(record, state)
+                return record
+            self._qualification_status = 'FAILED'
+            self._write_qualification(record, state)
+            if isinstance(error, PlasmaStateError):
+                raise
+            raise PlasmaStateError('EEDF qualification failed: ' + str(error)) from error
+
+    def record_terminal_failure(self, y, t, error):
+        """Replace any prior PASS with one recorded, terminal FAILED latch."""
+        if self._qualification_status == 'FAILED' and self._qualification_record:
+            return self._qualification_record
+        state = {}
+        if isinstance(y, dict) and 'record_path' in y:
+            state['record_path'] = y['record_path']
+        try:
+            state = self._qualification_state(y, t)
+        except Exception:
+            try:
+                state['t'] = float(t)
+            except Exception:
+                pass
+        record = {
+            'status': 'FAIL',
+            'comparison_passed': False,
+            'terminal_state': state,
+            'artifact_sha256': self._runtime_metadata['artifact_sha256'],
+            'generation_spec': str(self._table.path / 'generation_spec.json'),
+            'branch': self._branch,
+            'error': str(error),
+        }
+        self._qualification_status = 'FAILED'
+        self._write_qualification(record, state)
+        return record
+
+    def qualify(self, y, t, *, runner=None):
+        """Qualify one accepted terminal state with an independent direct solve."""
+        from rmgpy.exceptions import PlasmaStateError
+
+        if self._development_blockers:
+            raise EEDFError(DEVELOPMENT_UNQUALIFIED_STATUS + ' refuses qualification')
+        if self._qualification_status == 'FAILED':
+            raise PlasmaStateError(
+                'EEDF qualification failed: provider is latched FAILED')
+        return self._run_qualification(y, t, runner, development=False)
+
+    def development_diagnostic(self, y, t, *, runner=None):
+        """Measure direct/interpolated drift without changing development status."""
+        if not self._development_blockers:
+            raise EEDFError('development diagnostic requires a development provider')
+        return self._run_qualification(y, t, runner, development=True)
 
     def annotate_development_diagnostic(self, diagnostic):
         """Add the mandatory development warning to one diagnostic mapping."""

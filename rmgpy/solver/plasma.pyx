@@ -2971,6 +2971,94 @@ cdef class PlasmaReactor(ReactionSystem):
                     "EEDF envelope quantity 'Ar4s_total' cannot resolve any neutral "
                     'argon 4s electronic-state species from molecular identity')
             self.eedf_envelope_species['Ar4s_total'] = tuple(indices)
+        self.eedf_provider.bind_qualification_state(self._eedf_qualification_state)
+
+    def _eedf_qualification_state(self, y, t, record_path=None,
+                                  engine_state_map=None):
+        """Describe one accepted state without evaluating a solver trial."""
+        y = np.asarray(y, dtype=float)
+        coordinates = self._eedf_coordinates(y)
+        neutral = sum(max(float(y[j]), 0.) for j in range(self.num_core_species)
+                      if self.neutral_heavy_mask[j])
+        if not neutral > 0.:
+            raise PlasmaStateError('EEDF qualification requires a positive neutral population')
+        gas_amounts = {}
+        state_amounts = {}
+        state_weights = {}
+        formula_amounts = {}
+        state_map = engine_state_map
+        if state_map is None:
+            state_map = self.eedf_provider.runtime_metadata['row_inputs'].get(
+                'engine_state_map')
+        if not state_map:
+            raise PlasmaStateError(
+                'EEDF qualification requires artifact-owned engine_state_map')
+        for spc in self._en_core_species:
+            j = self.species_index[spc]
+            if j >= self.num_core_species or not self.neutral_heavy_mask[j] or not spc.molecule:
+                continue
+            amount = max(float(y[j]), 0.)
+            molecule = spc.molecule[0]
+            formula = molecule.get_formula()
+            formula_amounts[formula] = formula_amounts.get(formula, 0.) + amount
+            matches = [entry for entry in state_map
+                       if entry['formula'] == formula and
+                       entry['electronic_state'] == str(molecule.electronic_state or '') and
+                       entry['vibrational_level'] == molecule.vibrational_level and
+                       entry['multiplicity'] == molecule.multiplicity]
+            if len(matches) != 1:
+                raise PlasmaStateError(
+                    'engine_state_map must resolve exactly one LoKI state for {0!r}'.format(
+                        spc.label))
+            state_name = matches[0]['loki_state']
+            state_amounts[state_name] = state_amounts.get(state_name, 0.) + amount
+            weight = float(matches[0]['statistical_weight'])
+            if state_name in state_weights and state_weights[state_name] != weight:
+                raise PlasmaStateError('inconsistent statistical weight for ' + state_name)
+            state_weights[state_name] = weight
+        gas_fractions = {name: amount / neutral for name, amount in formula_amounts.items()}
+        populations = {}
+        for name, amount in state_amounts.items():
+            formula = name.split('(', 1)[0]
+            formula_amount = formula_amounts[formula]
+            populations[name] = (amount / formula_amount
+                                 if formula_amount > 0. else 0.)
+        electron_amount = float(y[self.electron_index])
+        if not electron_amount > 0.:
+            raise PlasmaStateError('EEDF qualification requires positive electrons')
+        headline_observables = {
+            'electronegativity_alpha': (
+                sum(max(float(y[j]), 0.) for j in self._en_anions) / electron_amount),
+        }
+        budget = copy.deepcopy(self.energy_budget)
+        result = {
+            'u': float(y[self.te_index]),
+            'composition': coordinates,
+            'gas_fractions': gas_fractions,
+            'state_populations': populations,
+            'state_statistical_weights': state_weights,
+            'energy_budget': budget,
+            'observables': {
+                'mean_energy_eV': float(self.eedf_provider.mean_energy_eV(self.eedf_row)),
+                'electron_density': float(budget.get('n_e', float('nan'))),
+            },
+            'headline_observables': headline_observables,
+            'y': [float(value) for value in y],
+        }
+        if record_path is not None:
+            result['record_path'] = str(record_path)
+        return result
+
+    def development_eedf_diagnostic(self, record_path=None, runner=None,
+                                    engine_state_map=None):
+        """Run the non-qualifying direct-solver diagnostic at the accepted state."""
+        if not self.eedf_mode or self.eedf_provider is None:
+            raise PlasmaStateError('development EEDF diagnostic requires EEDF mode')
+        if self.eedf_provider.development_notice is None:
+            raise PlasmaStateError('development EEDF diagnostic refuses a production provider')
+        state = self._eedf_qualification_state(
+            self.y, self.t, record_path, engine_state_map)
+        return self.eedf_provider.development_diagnostic(state, self.t, runner=runner)
 
     def _check_eedf_wall_worst_case(self):
         """Check the wall's worst neutral-density expression at row epsilon_k."""
@@ -4621,7 +4709,6 @@ cdef class PlasmaReactor(ReactionSystem):
                                            self.extinction_persistence_time(y))
         tau = self.energy_extinct_required
         if t - self.energy_extinct_since >= tau:
-            self._check_eedf_power_gates()
             self.energy_terminal = {
                 'termination': 'extinct', 't': t, 'since': self.energy_extinct_since,
                 'duration': t - self.energy_extinct_since, 'persistence_time': tau,
@@ -4694,7 +4781,40 @@ cdef class PlasmaReactor(ReactionSystem):
 
     def validate_terminal_state(self):
         """Apply EEDF power gates before any accepted termination path."""
-        self._check_eedf_power_gates(steady=self.steady_state_reached)
+        production_eedf = (self.eedf_mode and self.eedf_provider is not None and
+                           self.eedf_provider.development_notice is None)
+        try:
+            self._check_eedf_power_gates(steady=self.steady_state_reached)
+            if not production_eedf:
+                return
+            if self.energy_terminal is not None:
+                qualification = self.energy_terminal.get('qualification')
+                if qualification == 'PASS':
+                    return
+                if qualification == 'FAILED':
+                    raise PlasmaStateError(
+                        'EEDF qualification failed: terminal state is latched FAILED')
+            if self.energy_terminal is None:
+                self.energy_terminal = {
+                    'termination': ('steady-state' if self.steady_state_reached else 'accepted'),
+                    't': float(self.t), 'y': [float(value) for value in self.y]}
+            record = self.eedf_provider.qualify(self.y, self.t)
+            self.energy_terminal['qualification'] = record['status']
+            self.energy_terminal['qualification_record'] = record
+        except PlasmaStateError as error:
+            if production_eedf:
+                if self.energy_terminal is None:
+                    self.energy_terminal = {
+                        'termination': ('steady-state' if self.steady_state_reached
+                                        else 'accepted'),
+                        't': float(self.t),
+                        'y': [float(value) for value in self.y],
+                    }
+                record = self.eedf_provider.record_terminal_failure(
+                    self.y, self.t, error)
+                self.energy_terminal['qualification'] = 'FAILED'
+                self.energy_terminal['qualification_record'] = record
+            raise
 
     cpdef object terminal_state(self):
         """'extinct' once the extinction criterion has held (energy balance only), else None."""

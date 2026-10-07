@@ -57,3 +57,29 @@ def test_json_spec_preserves_exponential_numeric_tolerances(tmp_path):
     path.write_text(json.dumps(spec))
     with pytest.raises(SpecError, match='numeric'):
         load_spec(path)
+
+
+def test_spec_accepts_complete_runtime_qualification_policy_and_version(tmp_path):
+    from rmgpy.tools.eedf.schema import load_spec, SpecError
+    import json
+    import os
+    path = tmp_path / 'spec.json'
+    spec = json.loads(Path(os.environ['EEDF_REAL_SPEC']).read_text())
+    spec['fixed_point_version'] = 1
+    spec['engine_state_map'] = [{
+        'formula': 'Ar', 'electronic_state': '', 'vibrational_level': None,
+        'multiplicity': 1, 'loki_state': 'Ar(1S0)', 'statistical_weight': 1.,
+    }]
+    for key in ('A1', 'A2', 'A3', 'A4', 'A6'):
+        spec['tolerances'][key] = {'rtol': 1.e-3, 'atol': 0.}
+    spec['tolerances']['A5'] = {'rtol': 1.e-2, 'atol': 1.e-3,
+                                'share_min': 1.e-2}
+    spec['qualification_quantity_rules'] = {'EN_Td': 'A2'}
+    path.write_text(json.dumps(spec))
+    assert load_spec(path)['fixed_point_version'] == 1
+    assert load_spec(path)['engine_state_map'][0]['loki_state'] == 'Ar(1S0)'
+
+    del spec['tolerances']['A6']
+    path.write_text(json.dumps(spec))
+    with pytest.raises(SpecError, match='tolerances fields'):
+        load_spec(path)

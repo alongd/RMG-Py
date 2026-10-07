@@ -5473,6 +5473,30 @@
         "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py"
       ]
     },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._write_qualification": {
+      "file": "rmgpy/solver/eedf_provider.py",
+      "function": "EEDFProvider._write_qualification",
+      "line": 272,
+      "signature": "8c31632b272753ecbe6d08e17ded7ad199088882f55d9c71f17ca2f43775392a",
+      "verdict": "E",
+      "reason": "Export-search exclusion: writes a numerical EEDF qualification record with exact solver/table quantities and state labels; it emits no mechanism, species dictionary, or reloadable molecular representation.",
+      "evidence": [
+        "rmgpy/solver/eedf_provider.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ]
+    },
+    "rmgpy/tools/eedf/fixed_point.py:refine_until_converged": {
+      "file": "rmgpy/tools/eedf/fixed_point.py",
+      "function": "refine_until_converged",
+      "line": 133,
+      "signature": "1860cda6b4851d25fab7cd7a56d02d0b3c0b336f5ac7a5dfd40eed30c9d4b6e2",
+      "verdict": "E",
+      "reason": "Export-search exclusion: writes numerical fixed-point iteration/refusal evidence and artifact paths; it emits no molecular identifier, mechanism, species dictionary, or reloadable molecular representation.",
+      "evidence": [
+        "rmgpy/tools/eedf/fixed_point.py",
+        "test/rmgpy/tools/eedf/fixedPointTest.py"
+      ]
+    },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._emit_development_progress": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._emit_development_progress",

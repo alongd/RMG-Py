@@ -40,10 +40,17 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+import yaml
 from scipy.constants import elementary_charge, electron_mass
 
 from rmgpy.tools.eedf.channels import validate_physical_map
-from rmgpy.tools.eedf.schema import EEDFError, FingerprintMismatch, file_hash
+from rmgpy.tools.eedf.schema import (
+    EEDFError,
+    FingerprintMismatch,
+    content_hash,
+    file_hash,
+    qualification_setup_identity,
+)
 from rmgpy.tools.eedf.integrity import check_solver, physical_properties, solver_environment, resolved_properties, channel_fractions
 
 
@@ -219,6 +226,47 @@ def setup_text(spec, coordinates, fields_Td, folder):
                 lines.append(indent + name + ': ' + text)
     emit(data)
     return '\n'.join(lines) + '\n'
+
+
+def qualification_setup_sha256(spec, coordinates=None, fields_Td=None):
+    """Hash policy and the canonical setup rendered for the requested state."""
+    if coordinates is None:
+        coordinates = {
+            name: values[0] for name, values in spec.get('axes', {}).items()
+            if name != 'u'
+        }
+    fields_Td = [1.] if fields_Td is None else fields_Td
+    rendered = yaml.safe_load(
+        setup_text(spec, coordinates, fields_Td, 'qualification'))
+    kinetics = rendered['electronKinetics']
+
+    def parsed_declarations(properties, field):
+        declarations = kinetics[properties][field]
+        values = []
+        for declaration in declarations:
+            match = re.fullmatch(r'\s*(.+?)\s*=\s*([-+0-9.eE]+)\s*',
+                                 str(declaration))
+            if match is None or not np.isfinite(float(match.group(2))):
+                raise LoKIError('invalid terminal setup declaration')
+            values.append((match.group(1), float(match.group(2))))
+        return values
+
+    for properties, field in (('gasProperties', 'fraction'),
+                              ('stateProperties', 'population')):
+        values = parsed_declarations(properties, field)
+        kinetics[properties][field] = [
+            {'name': name, 'value': '<terminal>'}
+            for name, value in sorted(values)]
+    if 'statisticalWeight' in kinetics['stateProperties']:
+        weights = parsed_declarations('stateProperties', 'statisticalWeight')
+        kinetics['stateProperties']['statisticalWeight'] = [
+            '{0} = {1:.17g}'.format(name, value) for name, value in weights]
+    rendered['workingConditions']['reducedField'] = '<terminal>'
+    rendered['output']['folder'] = '<run folder>'
+    return content_hash({
+        'physical_spec': qualification_setup_identity(spec),
+        'rendered_setup': rendered,
+    })
 
 
 class LoKIDriver:
