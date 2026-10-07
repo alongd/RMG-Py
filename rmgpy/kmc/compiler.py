@@ -34,6 +34,11 @@ from rmgpy.kmc.reference_thermo import (
     SharedThermoAssignment,
     ThermoUnavailable,
 )
+from rmgpy.kmc.database_provenance import database_provenance
+from rmgpy.kmc.database_provenance import (
+    check_database_identity,
+    reject_external_library_paths,
+)
 from rmgpy.kinetics.arrhenius import ArrheniusBM, ArrheniusEP
 from rmgpy.kinetics.model import get_rate_coefficient_units_from_reaction_order
 from rmgpy.exceptions import ActionError
@@ -124,6 +129,7 @@ _LOADED_SOURCE_HASH = hashlib.sha256(
             "event_record.py",
             "atom_map.py",
             "kinetics_library.py",
+            "database_provenance.py",
         )
     )
 ).hexdigest()
@@ -2394,14 +2400,32 @@ class EventSetCompiler:
             kinetics_database, thermo_database,
             kinetics_depositories=tuple(kinetics_depositories), verbose=True,
         )
-        database_commit = rmg_database_sha or _git_sha(self.database_path)
-        self.thermo_assignment = getattr(
-            reference_thermo_provider, "assignment", None
-        ) or SharedThermoAssignment(thermo_database, database_commit)
+        self.database_provenance = database_provenance(
+            self.database_path, rmg_database_sha
+        )
+        reject_external_library_paths(
+            self.database_path, kinetics_database, thermo_database
+        )
+        database_commit = self.database_provenance["rmg_database_sha"]
+        injected_assignment = getattr(reference_thermo_provider, "assignment", None)
+        if injected_assignment is not None:
+            check_database_identity(
+                injected_assignment.provenance, self.database_provenance
+            )
+        if reference_thermo_provider is not None and self.database_path is not None:
+            check_database_identity(
+                getattr(reference_thermo_provider, "provenance", {}),
+                self.database_provenance,
+            )
+        self.thermo_assignment = injected_assignment or SharedThermoAssignment(
+            thermo_database, database_commit,
+            database_provenance_data=self.database_provenance,
+        )
         self.reference_thermo_provider = reference_thermo_provider or (
             GasPhaseRMGReferenceThermo(
                 thermo_database,
                 database_commit,
+                database_provenance_data=self.database_provenance,
                 assignment=self.thermo_assignment,
             )
         )
@@ -3317,7 +3341,7 @@ class EventSetCompiler:
             "family_list_sha256": sha256_json(self.families),
             "family_filter_sha256": sha256_json(self.family_candidates),
             "rmgpy_sha": self.rmgpy_sha or _git_sha(self.rmgpy_path),
-            "rmg_database_sha": self.rmg_database_sha or _git_sha(self.database_path),
+            **self.database_provenance,
             "proxy_set_sha256": sha256_json(proxy_inputs),
             "kinetics_libraries": {
                 "styrene_plpsec": {
@@ -3329,7 +3353,7 @@ class EventSetCompiler:
             },
             "rate_rule_preparation": {
                 **self.rate_rule_preparation,
-                "database_sha": self.rmg_database_sha or _git_sha(self.database_path),
+                "database_sha": self.database_provenance["rmg_database_sha"],
             },
             "applicability_policy_version": PERSISTENT_CARBENE_POLICY_VERSION,
         }

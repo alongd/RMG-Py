@@ -254,12 +254,14 @@ class KineticsDatabase(object):
                     logging.info(f'Loading kinetics library {short_library_name} from {library_name}...')
                     library = KineticsLibrary(label=short_library_name)
                     library.load(library_file, self.local_context, self.global_context)
+                    library.source_path = os.path.abspath(library_file)
                     self.libraries[library.label] = library
                     self.external_library_labels[library_name] = library.label
                 elif os.path.exists(library_file):
                     logging.info(f'Loading kinetics library {library_name} from {library_file}...')
                     library = KineticsLibrary(label=library_name)
                     library.load(library_file, self.local_context, self.global_context)
+                    library.source_path = os.path.abspath(library_file)
                     self.libraries[library.label] = library
                 else:
                     raise IOError(f"Couldn't find kinetics library {library_file}")
@@ -290,6 +292,7 @@ class KineticsDatabase(object):
                             logging.error("Problem loading reaction library {0!r}".format(library_file))
                             raise
                         self.libraries[library.label] = library
+                        library.source_path = os.path.abspath(library_file)
                         self.library_order.append((library.label, 'Reaction Library'))
 
     def save(self, path):

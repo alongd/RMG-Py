@@ -16,6 +16,10 @@ import networkx as nx
 import pytest
 
 from rmgpy.kmc.compiler import apply_record, validate_artifact
+from rmgpy.kmc.database_provenance import (
+    provenance_matches_database,
+    resolve_database_declaration,
+)
 from rmgpy.kmc.event_record import EventRecord
 from rmgpy.kmc.state import (
     ArityError,
@@ -54,9 +58,7 @@ def ps_artifact():
     head = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
-    database_head = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=DATABASE, text=True
-    ).strip()
+    database_declared = resolve_database_declaration()
     CACHE.mkdir(parents=True, exist_ok=True)
     artifact_path = None
     for candidate in CACHE.glob("*.json"):
@@ -64,7 +66,7 @@ def ps_artifact():
         provenance = artifact.get("provenance", {})
         if (
             provenance.get("rmgpy_sha") == head
-            and provenance.get("rmg_database_sha") == database_head
+            and provenance_matches_database(provenance, DATABASE, database_declared)
             and provenance.get("compiler_sources_sha256") == source_hash
         ):
             artifact_path = candidate
@@ -90,10 +92,11 @@ def ps_artifact():
             if (
                 json.loads(path.read_bytes()).get("provenance", {}).get("rmgpy_sha")
                 == head
-                and json.loads(path.read_bytes())
-                .get("provenance", {})
-                .get("rmg_database_sha")
-                == database_head
+                and provenance_matches_database(
+                    json.loads(path.read_bytes()).get("provenance", {}),
+                    DATABASE,
+                    database_declared,
+                )
                 and json.loads(path.read_bytes())
                 .get("provenance", {})
                 .get("compiler_sources_sha256")

@@ -9,6 +9,10 @@ import math
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
+from rmgpy.kmc.database_provenance import (
+    check_database_identity,
+    legacy_identity_provenance,
+)
 
 ASSIGNMENT_VERSION = "kmc_shared_thermo/1"
 FROZEN_THERMO_PROPERTY = "kmc_frozen_thermo"
@@ -62,9 +66,17 @@ class ThermoUnavailable(ValueError):
 class SharedThermoAssignment:
     """Assign one pinned, resonance-aware thermo view without touching graphs."""
 
-    def __init__(self, thermo_database, database_commit: str | None):
+    def __init__(
+        self,
+        thermo_database,
+        database_commit: str | None,
+        *,
+        database_provenance_data: dict | None = None,
+    ):
         self.thermo_database = thermo_database
         self.database_commit = database_commit
+        self.database_provenance_data = database_provenance_data or \
+            legacy_identity_provenance(database_commit)
         self._cache = {}
 
     @property
@@ -81,7 +93,7 @@ class SharedThermoAssignment:
                 if provider is not None
                 else None
             ),
-            "rmg_database_sha": self.database_commit,
+            **self.database_provenance_data,
             "thermo_library_order": self.library_order,
         }
 
@@ -254,20 +266,35 @@ class GasPhaseRMGReferenceThermo:
         thermo_database,
         database_commit: str | None,
         assignment: SharedThermoAssignment | None = None,
+        *,
+        database_provenance_data: dict | None = None,
     ):
         self.thermo_database = thermo_database
         self.database_commit = database_commit
-        self.assignment = assignment or SharedThermoAssignment(
-            thermo_database, database_commit
-        )
+        self.database_provenance_data = database_provenance_data or \
+            legacy_identity_provenance(database_commit)
+        if assignment is not None:
+            check_database_identity(
+                assignment.provenance, self.database_provenance_data
+            )
+            self.assignment = assignment
+        else:
+            self.assignment = SharedThermoAssignment(
+                thermo_database, database_commit,
+                database_provenance_data=self.database_provenance_data,
+            )
 
     @property
     def provenance(self) -> dict:
         return {
             "reference_thermo": "RMG gas-phase Kc",
-            "rmg_database_sha": self.database_commit,
+            **self.database_provenance_data,
             "condensed_phase_constraint": "UNKNOWN",
-            **self.assignment.provenance,
+            **{
+                key: value
+                for key, value in self.assignment.provenance.items()
+                if key not in self.database_provenance_data
+            },
         }
 
     def evaluate(

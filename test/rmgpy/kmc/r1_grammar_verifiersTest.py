@@ -16,6 +16,10 @@ from rmgpy.kmc.compiler import (
     apply_record,
     validate_artifact,
 )
+from rmgpy.kmc.database_provenance import (
+    provenance_matches_database,
+    resolve_database_declaration,
+)
 from rmgpy.kmc.event_record import EventRecord
 from rmgpy.kmc.met import ARCHIVED_CHANNEL_RATES, RATE_GRID, RateTable, _channel_id
 from rmgpy.kmc.state import (
@@ -231,12 +235,6 @@ def _literal_block_sha256():
     return hashlib.sha256(source[start:end]).hexdigest()
 
 
-def _database_sha():
-    return subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=DATABASE, text=True
-    ).strip()
-
-
 @pytest.fixture(scope="module")
 def compiled_artifact():
     """Load one real content-addressed artifact, compiling it when absent."""
@@ -249,14 +247,16 @@ def compiled_artifact():
     compiler_sha = hashlib.sha256(
         (ROOT / "rmgpy/kmc/compiler.py").read_bytes()
     ).hexdigest()
-    database_sha = _database_sha()
+    database_declared = resolve_database_declaration()
     artifact_path = None
     for candidate in sorted(CACHE.glob("*.json")):
         artifact = json.loads(candidate.read_bytes())
         provenance = artifact.get("provenance", {})
         if (
             provenance.get("compiler_sha256") == compiler_sha
-            and provenance.get("rmg_database_sha") == database_sha
+            and provenance_matches_database(
+                provenance, DATABASE, database_declared
+            )
         ):
             artifact_path = candidate
             break
@@ -286,7 +286,9 @@ def compiled_artifact():
             provenance = artifact.get("provenance", {})
             if (
                 provenance.get("compiler_sha256") == compiler_sha
-                and provenance.get("rmg_database_sha") == database_sha
+                and provenance_matches_database(
+                    provenance, DATABASE, database_declared
+                )
             ):
                 candidates.append(candidate)
         assert len(candidates) == 1
