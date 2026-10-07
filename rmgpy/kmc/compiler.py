@@ -1821,6 +1821,57 @@ def apply_record(
     )
 
 
+def _record_structure_error(
+    data: dict[str, Any], reactants
+) -> tuple[str | None, bool]:
+    """Return a demonstrated structural inconsistency and rewrite status."""
+    from rmgpy.molecule.molecule import Molecule
+
+    try:
+        rewritten = apply_record(data, reactants)
+    except ValueError as error:
+        return f"stored rewrite is invalid: {error}", False
+    expected_products = data.get("product_graphs", [])
+    rewritten_graphs = [
+        molecule.to_adjacency_list(remove_h=False) for molecule in rewritten
+    ]
+    if not _graph_lists_isomorphic(rewritten_graphs, expected_products):
+        return "stored rewrite does not reproduce the stored products", False
+
+    heavy_before = [
+        atom
+        for molecule in reactants
+        for atom in molecule.atoms
+        if atom.element.number != 1
+    ]
+    product_molecules = [
+        Molecule().from_adjacency_list(graph) for graph in expected_products
+    ]
+    heavy_after = [
+        atom
+        for molecule in product_molecules
+        for atom in molecule.atoms
+        if atom.element.number != 1
+    ]
+    atom_map = {
+        int(key): int(value) for key, value in data.get("atom_map", {}).items()
+    }
+    expected_indices = set(range(len(heavy_before)))
+    if (
+        len(heavy_before) != len(heavy_after)
+        or set(atom_map) != expected_indices
+        or set(atom_map.values()) != expected_indices
+    ):
+        return "stored atom map is not a complete heavy-atom bijection", True
+    if any(
+        heavy_before[before].element.number
+        != heavy_after[after].element.number
+        for before, after in atom_map.items()
+    ):
+        return "stored atom map changes a mapped atom element", True
+    return None, True
+
+
 def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
     """Bind an applicability root to the stored rewrite and its resonance set."""
     from rmgpy.molecule.molecule import Molecule
@@ -1831,6 +1882,17 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
         Molecule().from_adjacency_list(graph)
         for graph in data.get("reactant_graphs", [])
     ]
+    structure_error, rewrite_verified = _record_structure_error(data, reactants)
+    if structure_error is not None:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": structure_error,
+            "structural_inconsistency": True,
+            "product_rewrite_verified": rewrite_verified,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
     root_index = int(mapped_root["reactant_atom_index"])
     reactant_atoms = [atom for molecule in reactants for atom in molecule.atoms]
     if root_index < 0 or root_index >= len(reactant_atoms):

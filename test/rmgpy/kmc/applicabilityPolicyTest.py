@@ -538,6 +538,26 @@ def test_ambiguous_or_unbound_family_root_becomes_unresolved_evidence(
     assert decision["disposition"] == "retained-unresolved-applicability"
 
 
+def test_unbound_family_root_does_not_hide_an_invalid_stored_rewrite():
+    record = _pair()[0]
+    for operation in record["bond_ops"]:
+        if operation["action"] == "set_radical":
+            operation["value"] = 2 - operation["value"]
+    decision = classify_persistent_carbene(
+        record,
+        {
+            **_root(),
+            "reactant_atom_index": -1,
+            "mapping_verified": False,
+            "mapping_error": "family root is unbound",
+        },
+        _source(),
+    )
+    assert decision["disposition"] == "refused-structural-inconsistency"
+    assert decision["reason"].startswith("structural-inconsistency:")
+    assert "stored rewrite" in decision["reason"]
+
+
 @pytest.mark.parametrize(
     "root_index, label, role",
     [(0, "*1", "product"), (4, "*2", "reactant")],
