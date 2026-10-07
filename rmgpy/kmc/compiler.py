@@ -249,7 +249,6 @@ def _persistent_labeled_u2(molecule, atom) -> tuple[bool, int]:
         atom.element.number == 6
         and atom.charge == 0
         and atom.radical_electrons == 2
-        and molecule.multiplicity == 3
         and math.isclose(sum(bond.order for bond in atom.edges.values()), 2.0)
     ):
         return False, 0
@@ -292,9 +291,10 @@ def _mapped_reaction_u2_roots(
     family, reaction, record: EventRecord | dict[str, Any] | None = None
 ) -> list[dict[str, Any]]:
     """Map recipe-labelled u2 centres without replacing the fired resonance form."""
+    mapping_reaction = _reaction_from_record(record) if record is not None else reaction
     if not any(
         atom.element.number == 6 and atom.radical_electrons == 2
-        for participant in reaction.reactants + reaction.products
+        for participant in mapping_reaction.reactants + mapping_reaction.products
         for atom in _molecule(participant).atoms
     ):
         return []
@@ -304,9 +304,9 @@ def _mapped_reaction_u2_roots(
             if hasattr(participant, "molecule")
             else participant
         ).copy(deep=True)
-        for participant in reaction.reactants
+        for participant in mapping_reaction.reactants
     ]
-    labeled = copy.deepcopy(reaction)
+    labeled = copy.deepcopy(mapping_reaction)
     family.add_atom_labels_for_reaction(
         labeled, output_with_resonance=False, save_order=True
     )
@@ -376,12 +376,17 @@ def _mapped_reaction_u2_roots(
             if item[1].element.number == 6 and item[1].radical_electrons == 2:
                 selected.append((side, persistent, resonance_count))
         for side, persistent, resonance_count in selected:
-            candidates = reactant_root_candidates[label]
+            family_candidates = reactant_root_candidates[label]
+            candidates = family_candidates
             preferred = preferred_by_side[side]
-            if len(preferred) == 1:
-                candidates = preferred
-            elif candidates & preferred:
+            if preferred:
                 candidates = candidates & preferred
+            mapping_error = None
+            if not candidates and len(family_candidates) == 1:
+                candidates = family_candidates
+                mapping_error = (
+                    "stored rewrite does not touch the family-derived recipe root"
+                )
             if len(candidates) != 1:
                 raise ValueError(
                     f"mapped recipe root {label} is ambiguous in the stored reaction"
@@ -394,6 +399,14 @@ def _mapped_reaction_u2_roots(
                     "family_forward_role": side,
                     "persistent_neutral_divalent_carbon": persistent,
                     "resonance_form_count": resonance_count,
+                    **(
+                        {
+                            "mapping_verified": False,
+                            "mapping_error": mapping_error,
+                        }
+                        if mapping_error is not None
+                        else {}
+                    ),
                 }
             )
     return roots
@@ -416,17 +429,16 @@ def _training_source_domain(family, reaction, cache) -> list[dict[str, Any]] | N
         rule_entries = details.get("rules", [])
     domain = []
     for entry, weight, reverse, rule in entries:
-        key = (family.label, entry.index)
+        key = (family.label, entry.index, bool(reverse))
         if key not in cache:
-            cache[key] = _mapped_reaction_u2_roots(family, entry.item)
-        mapped_roots = copy.deepcopy(cache[key])
-        if reverse:
-            for root in mapped_roots:
-                root["family_forward_role"] = (
-                    "product"
-                    if root["family_forward_role"] == "reactant"
-                    else "reactant"
+            source_reaction = copy.deepcopy(entry.item)
+            if reverse:
+                source_reaction.reactants, source_reaction.products = (
+                    source_reaction.products,
+                    source_reaction.reactants,
                 )
+            cache[key] = _mapped_reaction_u2_roots(family, source_reaction)
+        mapped_roots = copy.deepcopy(cache[key])
         domain.append(
             {
                 "source": {
@@ -455,7 +467,7 @@ def _training_source_domain(family, reaction, cache) -> list[dict[str, Any]] | N
     return domain or None
 
 
-def _reaction_from_record(record: EventRecord):
+def _reaction_from_record(record: EventRecord | dict[str, Any]):
     """Reconstruct the exact stored direction for family root labeling."""
     from rmgpy.molecule.molecule import Molecule
     from rmgpy.reaction import Reaction
@@ -466,9 +478,10 @@ def _reaction_from_record(record: EventRecord):
             Species(molecule=[Molecule().from_adjacency_list(graph)])
             for graph in graphs
         ]
+    data = record.to_dict() if isinstance(record, EventRecord) else record
     return Reaction(
-        reactants=make_side(record.reactant_graphs),
-        products=make_side(record.product_graphs),
+        reactants=make_side(data["reactant_graphs"]),
+        products=make_side(data["product_graphs"]),
     )
 
 
@@ -1806,32 +1819,84 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
     """Bind an applicability root to the stored rewrite and its resonance set."""
     from rmgpy.molecule.molecule import Molecule
 
+    if mapped_root.get("mapping_verified") is False:
+        return {
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+            **mapped_root,
+        }
     data = record.to_dict() if isinstance(record, EventRecord) else record
     reactants = [
         Molecule().from_adjacency_list(graph)
         for graph in data.get("reactant_graphs", [])
     ]
-    expected_products = data.get("product_graphs", [])
-    rewritten = apply_record(data, reactants)
-    rewritten_graphs = [
-        molecule.to_adjacency_list(remove_h=False) for molecule in rewritten
-    ]
-    rewrite_verified = _graph_lists_isomorphic(
-        rewritten_graphs, expected_products
-    )
-    if not rewrite_verified:
-        raise ValueError("applicability root does not reproduce the stored products")
-
     root_index = int(mapped_root["reactant_atom_index"])
     reactant_atoms = [atom for molecule in reactants for atom in molecule.atoms]
     if root_index < 0 or root_index >= len(reactant_atoms):
-        raise ValueError("mapped applicability root is outside the reactant atom map")
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "mapped applicability root is outside the reactant atom map",
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
     root_before = reactant_atoms[root_index]
     root_side = mapped_root.get(
         "record_role", mapped_root["family_forward_role"]
     )
     if root_side not in {"reactant", "product"}:
-        raise ValueError("mapped applicability root role must be reactant or product")
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "mapped applicability root role must be reactant or product",
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+
+    touched_indices = _touched_atom_indices(data.get("bond_ops", []))
+    if root_index not in touched_indices:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "mapped recipe root is not touched by the stored rewrite",
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+
+    marker = "*kmc_stored_rewrite_root"
+    original_label = root_before.label
+    root_before.label = marker
+    expected_products = data.get("product_graphs", [])
+    rewritten = apply_record(data, reactants)
+    rewritten_roots = [
+        atom
+        for molecule in rewritten
+        for atom in molecule.atoms
+        if atom.label == marker
+    ]
+    if len(rewritten_roots) != 1:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "stored rewrite did not preserve the mapped root identity",
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+    rewritten_root = rewritten_roots[0]
+    rewritten_root.label = original_label
+    rewritten_graphs = [
+        molecule.to_adjacency_list(remove_h=False) for molecule in rewritten
+    ]
+    rewrite_verified = _graph_lists_isomorphic(rewritten_graphs, expected_products)
+    if not rewrite_verified:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "mapped applicability root does not reproduce the stored products",
+            "product_rewrite_verified": False,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
 
     selected_atom = root_before
     selected_molecule = next(
@@ -1839,7 +1904,14 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
     )
     if root_side == "product":
         if root_before.element.number == 1:
-            raise ValueError("persistent-carbene roots must be heavy atoms")
+            return {
+                **mapped_root,
+                "mapping_verified": False,
+                "mapping_error": "persistent-carbene roots must be heavy atoms",
+                "product_rewrite_verified": True,
+                "persistent_neutral_divalent_carbon": False,
+                "resonance_form_count": 0,
+            }
         heavy_before = [
             atom for molecule in reactants for atom in molecule.atoms
             if atom.element.number != 1
@@ -1848,7 +1920,7 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
         atom_map = {
             int(key): int(value) for key, value in data.get("atom_map", {}).items()
         }
-        product_heavy_index = atom_map[reactant_heavy_index]
+        product_heavy_index = atom_map.get(reactant_heavy_index)
         product_molecules = [
             Molecule().from_adjacency_list(graph) for graph in expected_products
         ]
@@ -1856,13 +1928,41 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
             atom for molecule in product_molecules for atom in molecule.atoms
             if atom.element.number != 1
         ]
+        if product_heavy_index is None or not 0 <= product_heavy_index < len(heavy_after):
+            return {
+                **mapped_root,
+                "mapping_verified": False,
+                "mapping_error": "stored atom map does not contain the mapped root",
+                "product_rewrite_verified": True,
+                "persistent_neutral_divalent_carbon": False,
+                "resonance_form_count": 0,
+            }
         selected_atom = heavy_after[product_heavy_index]
         selected_molecule = next(
             molecule for molecule in product_molecules
             if selected_atom in molecule.atoms
         )
+        rewritten_molecule = next(
+            molecule for molecule in rewritten if rewritten_root in molecule.atoms
+        )
+        correspondence_verified = any(
+            mapping.get(rewritten_root) is selected_atom
+            for mapping in rewritten_molecule.find_isomorphism(
+                selected_molecule, save_order=True
+            )
+        )
+        if not correspondence_verified:
+            return {
+                **mapped_root,
+                "mapping_verified": False,
+                "mapping_error": (
+                    "stored atom map disagrees with the recipe-labelled rewrite root"
+                ),
+                "product_rewrite_verified": True,
+                "persistent_neutral_divalent_carbon": False,
+                "resonance_form_count": 0,
+            }
 
-    touched_indices = _touched_atom_indices(data.get("bond_ops", []))
     persistent, resonance_form_count = False, 0
     if root_index in touched_indices:
         persistent, resonance_form_count = _persistent_labeled_u2(
@@ -1871,6 +1971,7 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
 
     return {
         **mapped_root,
+        "mapping_verified": True,
         "product_rewrite_verified": rewrite_verified,
         "resonance_form_count": resonance_form_count,
         "persistent_neutral_divalent_carbon": persistent,
@@ -1889,40 +1990,60 @@ def classify_persistent_carbene(
         "mapped_root": root,
         "rate_source": copy.deepcopy(rate_source_domain),
     }
+    if not root.get("mapping_verified", True):
+        return {
+            **result,
+            "disposition": "retained-unresolved-applicability",
+            "reason": root["mapping_error"],
+        }
     if not root["persistent_neutral_divalent_carbon"]:
         return {**result, "disposition": "not-applicable"}
+    if root.get("mapping_caveat"):
+        return {
+            **result,
+            "disposition": "retained-unresolved-applicability",
+            "reason": root["mapping_caveat"],
+        }
     if rate_source_domain is None:
         return {
             **result,
             "disposition": "retained-unresolved-applicability",
             "reason": "selected rate has no serialized calibrated contributor domain",
         }
-    matches = []
-    for contributor in rate_source_domain:
-        for source_root in contributor.get("mapped_roots") or []:
-            if (
-                source_root.get("recipe_label") == root["recipe_label"]
-                and source_root.get("family_forward_role")
-                == root["family_forward_role"]
-                and source_root.get("persistent_neutral_divalent_carbon") is True
-            ):
-                matches.append(copy.deepcopy(contributor))
-                break
-    if matches:
+    contributors = [
+        contributor
+        for contributor in rate_source_domain
+        if float(
+            contributor.get("source", {}).get("weight", 1.0)
+            if isinstance(contributor.get("source"), dict)
+            else 1.0
+        ) > 0.0
+    ]
+    matches = [
+        contributor
+        for contributor in contributors
+        if any(
+            source_root.get("recipe_label") == root["recipe_label"]
+            and source_root.get("family_forward_role")
+            == root["family_forward_role"]
+            and source_root.get("persistent_neutral_divalent_carbon") is True
+            for source_root in contributor.get("mapped_roots") or []
+        )
+    ]
+    if contributors and len(matches) == len(contributors):
         return {
             **result,
             "disposition": "retained-supported-transfer",
-            "supporting_contributors": matches,
+            "supporting_contributors": copy.deepcopy(matches),
             "caveat": "same reacting role; donor/acceptor environment may differ",
         }
-    if any(
-        contributor.get("mapped_roots") is None
-        for contributor in rate_source_domain
+    if matches or any(
+        contributor.get("mapped_roots") is None for contributor in contributors
     ):
         return {
             **result,
             "disposition": "retained-unresolved-applicability",
-            "reason": "a selected rule contributor has no serialized calibrated domain",
+            "reason": "the whole selected contributor domain is not approved",
         }
     return {
         **result,
@@ -2102,7 +2223,9 @@ class EventSetCompiler:
         )
         self.reaction_cache = dict(reaction_cache or {})
         self.family_candidates = tuple(sorted(set(family_candidates)))
-        self._applicability_source_cache: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        self._applicability_source_cache: dict[
+            tuple[str, int, bool], list[dict[str, Any]]
+        ] = {}
         self._applicability_refusals: list[dict[str, Any]] = []
         self._compiled_artifact: dict[str, Any] | None = None
 
