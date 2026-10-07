@@ -33173,6 +33173,126 @@
         "test/rmgpy/solver/plasmaEEDFCoreTest.py"
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7"
+    },
+    "rmgpy/tools/eedf/report.py:PowerReport.as_dict": {
+      "verdict": "excluded",
+      "reason": "Serializes the report's explicit latched budget and declared channel powers; it acquires no thermo, transport, or reaction data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "3dd182462852254f52ab31aeb4e8037dca197013a474f14698eeed81ae37aaae"
+    },
+    "rmgpy/tools/eedf/report.py:_main": {
+      "verdict": "excluded",
+      "reason": "Reads a persisted report input and renders it; it performs no scientific-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "a05ce55918c2e118ac1fe1088fc9d93a087f128211a6680eaf5d4bd93c6c9d34"
+    },
+    "rmgpy/tools/eedf/report.py:_number": {
+      "verdict": "excluded",
+      "reason": "Normalizes already-persisted numeric budget values; it acquires no scientific data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "d97cbacfd4ab4ac9a3558311765bb4ac1cb44fcf7bee87bb6c7bc025277c3173"
+    },
+    "rmgpy/tools/eedf/report.py:_single_line": {
+      "verdict": "excluded",
+      "reason": "Validates already-declared report text without acquiring scientific data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "49a8d58239adeac84ac5fb0338fd7bce441a8b35423f71939b6bd8408f2fab77"
+    },
+    "rmgpy/tools/eedf/report.py:_vector": {
+      "verdict": "excluded",
+      "reason": "Validates an explicit persisted vector without acquiring scientific data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "45b9ce4c6ad1fc39c907bd3829e7b193c520764cf4d7208aa0541e37a3d16b46"
+    },
+    "rmgpy/tools/eedf/report.py:_stoichiometric_side": {
+      "verdict": "excluded",
+      "reason": "Parses explicit declared collision stoichiometry for reporting without acquiring reaction data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "564f65113c69faf274c540aaed3ed6019c488ceec39f6f44e14bfe235f52d3a3"
+    },
+    "rmgpy/tools/eedf/report.py:_reaction_class": {
+      "verdict": "excluded",
+      "reason": "Classifies the declared mapped reaction identity for reporting; it does not acquire or infer reaction data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "b08ba12fafd640e01b4e8205d07d4ddf257d64ec2109beaff30134d220dc5e12"
+    },
+    "rmgpy/tools/eedf/report.py:_reaction_id": {
+      "verdict": "excluded",
+      "reason": "Extracts an identifier already declared in the channel mapping; it acquires no scientific data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "d60edc7a1b10aeb1bea38a223e7fca14eae9e0077ebb32338c70c14586d06381"
+    },
+    "rmgpy/tools/eedf/report.py:power_table": {
+      "verdict": "excluded",
+      "reason": "Aggregates explicit persisted EEDF powers and declared channel metadata; it performs no scientific-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "573fa2b0c52f50e281cf32087a15a46bbc119b129d80233556c0cccd10e4e546"
+    },
+    "rmgpy/tools/eedf/report.py:render_markdown": {
+      "verdict": "excluded",
+      "reason": "Renders explicit report rows as Markdown; it performs no scientific-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "e199e4cac9e14535e5a70b4647c36838d29240a3982ac4afddb3021ab97bfda8"
+    },
+    "rmgpy/tools/eedf/report.py:_is_electron_species": {
+      "verdict": "excluded",
+      "reason": "Reads declared EEDF report metadata without acquiring scientific data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "78341dc3662c44f9db5beb6e3b5417ba294ce21903d9ff07e9b3dc6ab739cc41"
+    },
+    "rmgpy/tools/eedf/report.py:_row_for_channel": {
+      "verdict": "excluded",
+      "reason": "Reads declared EEDF report metadata without acquiring scientific data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "19816233741b620c54ff1657e158747449193ccb860b164f058345a59a9ee3fc"
+    },
+    "rmgpy/tools/eedf/report.py:_declared_process": {
+      "verdict": "excluded",
+      "reason": "Reads declared report metadata and performs no scientific-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "1f7054a064aeba549366bdae0486dfe6272e5b61b5b262ec83f88a8140eb069e"
+    },
+    "rmgpy/tools/eedf/report.py:_core_reaction_position": {
+      "verdict": "excluded",
+      "reason": "Reads declared report metadata and performs no scientific-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "3e7aeb1ea1c9cd895dd9d7e96565b7d768134777becd0a1180d010e1c4a6eb0e"
+    },
+    "rmgpy/tools/eedf/report.py:_qualification_text": {
+      "verdict": "excluded",
+      "reason": "Reads declared report metadata and performs no scientific-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "304406661799342361e5940b6603b07500be188dfa1c150c5bdc8775a91f48d3"
     }
   }
 }

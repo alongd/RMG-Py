@@ -7262,6 +7262,17 @@
     ]
   },
   {
+    "site": "rmgpy/tools/eedf/report.py::PowerReport.as_dict::reaction-io",
+    "kind": "reader-exporter",
+    "line": 35,
+    "source": "def as_dict(self):",
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Serializes the explicit power-table mapping and does not serialize or reverse Reaction kinetics.",
+    "tests": [
+      "test/rmgpy/tools/eedf/reportTest.py::test_as_dict_serializes_report"
+    ]
+  },
+  {
     "site": "rmgpy/tools/fluxdiagram.py::load_chemkin_output::reaction-io",
     "kind": "reader-exporter",
     "line": 469,
