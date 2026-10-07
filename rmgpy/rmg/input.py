@@ -156,7 +156,9 @@ def database(
     if kineticsDepositories == 'default':
         rmg.kinetics_depositories = ['training']
     elif kineticsDepositories == 'all':
-        rmg.kinetics_depositories = None
+        # None is the legacy spelling for the training-only default.  Preserve
+        # the public 'all' directive through to KineticsFamily.load instead.
+        rmg.kinetics_depositories = 'all'
     else:
         if not isinstance(kineticsDepositories, list):
             raise InputError("kinetics_depositories should be either 'default', 'all', or a list of names eg. "
@@ -3416,12 +3418,10 @@ def save_input_file(path, rmg):
     f.write('    thermoLibraries = {0!r},\n'.format(rmg.thermo_libraries))
     f.write('    reactionLibraries = {0!r},\n'.format(rmg.reaction_libraries))
     f.write('    seedMechanisms = {0!r},\n'.format(rmg.seed_mechanisms))
-    # database() takes kineticsDepositories (camelCase); the snake_case spelling raised
-    # TypeError on re-read (pre-existing bug, latent -- no in-repo caller). The reader
-    # also maps the string sentinel 'all' to rmg.kinetics_depositories = None and then
-    # rejects None on re-read (it is neither 'default', 'all', nor a list); serialize the
-    # sentinel back to 'all' so a kineticsDepositories='all' input round-trips.
-    kinetics_depositories = 'all' if rmg.kinetics_depositories is None else rmg.kinetics_depositories
+    # database() takes kineticsDepositories (camelCase).  None is the legacy internal
+    # spelling for the training-only default; writing it as 'all' would broaden the
+    # scientific inputs when the saved deck is reloaded.
+    kinetics_depositories = 'default' if rmg.kinetics_depositories is None else rmg.kinetics_depositories
     f.write('    kineticsDepositories = {0!r},\n'.format(kinetics_depositories))
     f.write('    kineticsFamilies = {0!r},\n'.format(rmg.kinetics_families))
     f.write('    kineticsEstimator = {0!r},\n'.format(rmg.kinetics_estimator))

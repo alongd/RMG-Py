@@ -2375,7 +2375,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "88793e77e475ab9239ebe4ac88186b66209a5d11d076e09d81e78afc94b64713"
+      "source_sha256": "2d51ebc3ddedba33a75bb28c646565ea553ad512822129f69d9b299d2de1321e"
     },
     "arkane/input.py:explorer": {
       "verdict": "carried",
@@ -5162,7 +5162,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/kineticsTest.py"
       ],
-      "source_sha256": "3c89600ecb2831cd29313fbd4d7f449bde1d1e11f97567f89249a3f193e5eef7"
+      "source_sha256": "88596ae974614f911144945c03c68e31ef892a0f5111da04dfca3c29c4b8794b"
     },
     "rmgpy/data/kinetics/depository.py:KineticsDepository.save": {
       "verdict": "carried",
@@ -5306,7 +5306,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/groupStateReworkTest.py"
       ],
-      "source_sha256": "2b9d27e5ec34d43c051c92bd00a3dc9aeab999a71794204a45e150b7df0d43e6"
+      "source_sha256": "893374f2ab4bd0c7584b0c0f70ab81a04d229819520376d9a10743ccf5133a6b"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily._select_best_kinetics.<lambda1>": {
       "verdict": "carried",
@@ -5477,12 +5477,13 @@
       "source_sha256": "79eca8eddba8d32525945a8c0d6ad3c796771169fb69cc76caf720124fcbce4d"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.extract_source_from_comments": {
-      "verdict": "carried",
-      "reason": "Diagnostic source metadata/Entry references are returned without independently estimating a species rate; resolved reconstruction refuses at KineticsDatabase.reconstruct_kinetics_from_source.",
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Depository conflict discovery, selection, diagnostics, and provenance parsing operate on already supplied reaction/kinetics records; they do not acquire resolved-state thermo or transport data.",
       "evidence": [
-        "test/rmgpy/data/stateRouteReworkTest.py"
+        "test/rmgpy/data/kinetics/depositoryConflictTest.py",
+        "test/rmgpy/data/kinetics/depositoryOrderTest.py"
       ],
-      "source_sha256": "90875dc795e5faebf2095abc43d8135c9dcecb3fbe311bda7475bba2afa0f831"
+      "source_sha256": "f03a36ae486d36c406ffc98c6923c9647785719e369bb21856bbe5483dd5ccc9"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.fill_rules_by_averaging_up": {
       "verdict": "carried",
@@ -5554,7 +5555,7 @@
       "evidence": [
         "test/rmgpy/data/stateProvenanceTest.py"
       ],
-      "source_sha256": "0f6373da1939f5ae6decab5f020681d5320ea4d5a589f8161222e5ea862f49d8"
+      "source_sha256": "bcfaba590ffd1f0b73f700310b93a493c5290e25e6205a3f03a545806e0e1ab2"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_kinetics_for_template": {
       "verdict": "excluded",
@@ -5733,12 +5734,13 @@
       "source_sha256": "4314d559911c7383b11ad8c4922c5186c097a385f502dd429d237675f68758f3"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.load": {
-      "verdict": "carried",
-      "reason": "Storage/format administration of Entry/item/data, without a resolved species query. Modern molecular/group serialization carries state; derived state-bearing group text output is checked by Database._check_data_serialization.",
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Depository conflict discovery, selection, diagnostics, and provenance parsing operate on already supplied reaction/kinetics records; they do not acquire resolved-state thermo or transport data.",
       "evidence": [
-        "test/rmgpy/data/kinetics/groupStateReworkTest.py"
+        "test/rmgpy/data/kinetics/depositoryConflictTest.py",
+        "test/rmgpy/data/kinetics/depositoryOrderTest.py"
       ],
-      "source_sha256": "d92a57c2e22688df2b951b73ed86d5c9007cd9f411b00f664e9d34bc1537b847"
+      "source_sha256": "bc1974db32b0758c8db116a4b4d60d453652bf0f593c0df4879f1980c7e1d29a"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.load_forbidden": {
       "verdict": "carried",
@@ -22352,7 +22354,7 @@
       "evidence": [
         "test/rmgpy/rmg/inputTest.py"
       ],
-      "source_sha256": "2dfb3a11b18d621053bac4947db1cc8c4685d6af1e0346963e69529b0c3bd7ab"
+      "source_sha256": "991e6ab7d2de2519ea82f36515ff05d1e2f9228982c7b7e6799d4d86b99814ab"
     },
     "rmgpy/rmg/input.py:forbidden": {
       "verdict": "carried",
@@ -22517,7 +22519,7 @@
       "source_sha256": "2dc96bde4e914e19e62a59794054a21b03cbe5106311f347db0542a0041e1d1f"
     },
     "rmgpy/rmg/input.py:save_input_file": {
-      "source_sha256": "2f9abff14a8736fbf43b0574647a0884706a3eca37bef3db4faa61caf534748d",
+      "source_sha256": "d23454d3c37424f1771f7ce3c5d5fbbca97e53d80a2b4232ec801f3f2d039c13",
       "verdict": "carried",
       "reason": "The existing supported header-free declaration keeps its original graph and vibrationalManifold DSL line by stripping the marker only from the serialization copy; explicit resolved input remains refused.",
       "evidence": [
@@ -33173,6 +33175,69 @@
         "test/rmgpy/solver/plasmaEEDFCoreTest.py"
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7"
+    },
+    "rmgpy/data/kinetics/family.py:_renderable": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Depository conflict discovery, selection, diagnostics, and provenance parsing operate on already supplied reaction/kinetics records; they do not acquire resolved-state thermo or transport data.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/depositoryConflictTest.py",
+        "test/rmgpy/data/kinetics/depositoryOrderTest.py"
+      ],
+      "source_sha256": "0ee5a2eda6a93ac77a613bd9e9340588bbf403e2c7374d5021602fd81c94090f"
+    },
+    "rmgpy/data/kinetics/family.py:order_depository_names": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Depository conflict discovery, selection, diagnostics, and provenance parsing operate on already supplied reaction/kinetics records; they do not acquire resolved-state thermo or transport data.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/depositoryConflictTest.py",
+        "test/rmgpy/data/kinetics/depositoryOrderTest.py"
+      ],
+      "source_sha256": "cfb1a7273eef08432b40c9e43f5372bf18b4502d4489f4f297a780458c4b77f5"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily._supplies_queried_orientation": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Depository conflict discovery, selection, diagnostics, and provenance parsing operate on already supplied reaction/kinetics records; they do not acquire resolved-state thermo or transport data.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/depositoryConflictTest.py",
+        "test/rmgpy/data/kinetics/depositoryOrderTest.py"
+      ],
+      "source_sha256": "873d7054a60f4e0507f6cb5b06b4306961639373b4d0decfbc3e527bfb6106a2"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily._describe_validity": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Depository conflict discovery, selection, diagnostics, and provenance parsing operate on already supplied reaction/kinetics records; they do not acquire resolved-state thermo or transport data.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/depositoryConflictTest.py",
+        "test/rmgpy/data/kinetics/depositoryOrderTest.py"
+      ],
+      "source_sha256": "43f8a602c15b39635df402180805e2ad65388fb5232df1adaf5bf4a5b26797ec"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily._describe_depository_conflict": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Depository conflict discovery, selection, diagnostics, and provenance parsing operate on already supplied reaction/kinetics records; they do not acquire resolved-state thermo or transport data.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/depositoryConflictTest.py",
+        "test/rmgpy/data/kinetics/depositoryOrderTest.py"
+      ],
+      "source_sha256": "9da50825469a7fd92dbeac509ea1685902df797b35a7cf1c4de829370a786dc1"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily._describe_depository_conflict.<lambda1>": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Depository conflict discovery, selection, diagnostics, and provenance parsing operate on already supplied reaction/kinetics records; they do not acquire resolved-state thermo or transport data.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/depositoryConflictTest.py",
+        "test/rmgpy/data/kinetics/depositoryOrderTest.py"
+      ],
+      "source_sha256": "424af26965f10afcf701e8fde01915a125c94de89bd21027c24028b069c053c3"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily._resolve_depository_candidates": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Depository conflict discovery, selection, diagnostics, and provenance parsing operate on already supplied reaction/kinetics records; they do not acquire resolved-state thermo or transport data.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/depositoryConflictTest.py",
+        "test/rmgpy/data/kinetics/depositoryOrderTest.py"
+      ],
+      "source_sha256": "689550ad9ba37e3e951cdfa26d680f2ca60db8e804eec900c89fa30b8ac6df27"
     }
   }
 }
