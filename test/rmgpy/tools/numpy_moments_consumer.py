@@ -23,6 +23,8 @@ Keq for reversible entries is computed from caller-supplied NASA7 data via
 the documented recipe.
 """
 
+import math
+
 import numpy as np
 
 # MUST equal the oracle's rmgpy.constants.R (CODATA-2006), NOT the 2018-SI
@@ -310,6 +312,90 @@ def safe_mu3(mu0, mu1, mu2):
     if ln_mu3 > LN_EXP_OVERFLOW_GUARD:
         return float("inf")
     return float(np.exp(ln_mu3))
+
+
+def _regularized_gamma_p(a, x):
+    """Regularized lower incomplete gamma P(a, x), stdlib-only.
+
+    This is the standard convergent series / continued-fraction pair used
+    solely to mirror the solver's scipy.special.gammainc call while keeping
+    this independent consumer numpy + stdlib only.
+    """
+    if a <= 0.0 or x <= 0.0:
+        return 0.0
+    gln = math.lgamma(a)
+    eps = 1.0e-15
+    if x < a + 1.0:
+        ap = a
+        term = total = 1.0 / a
+        for _ in range(1000):
+            ap += 1.0
+            term *= x / ap
+            total += term
+            if abs(term) <= abs(total) * eps:
+                break
+        return total * math.exp(-x + a * math.log(x) - gln)
+
+    tiny = 1.0e-300
+    b = x + 1.0 - a
+    c = 1.0 / tiny
+    d = 1.0 / max(abs(b), tiny)
+    if b < 0.0:
+        d = -d
+    h = d
+    for i in range(1, 1001):
+        an = -float(i) * (float(i) - a)
+        b += 2.0
+        d = an * d + b
+        if abs(d) < tiny:
+            d = tiny
+        c = b + an / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) <= eps:
+            break
+    q = math.exp(-x + a * math.log(x) - gln) * h
+    return min(1.0, max(0.0, 1.0 - q))
+
+
+def _deprop_dp1_fraction(mu0, mu1, mu2):
+    """Mirror the solver's DP=1 chain-fraction closure for unzip."""
+    if mu0 <= SMALL_EPS:
+        return 0.0
+    mean = mu1 / mu0
+    t = mean - 1.0
+    if t <= 0.0:
+        p_floor = 1.0
+    elif t >= 1.0:
+        p_floor = 0.0
+    else:
+        p_floor = 1.0 - (3.0 * t * t - 2.0 * t * t * t)
+
+    p_gamma = 0.0
+    if mu1 > SMALL_EPS and mu2 > SMALL_EPS and mean > SMALL_EPS:
+        pdi = mu2 * mu0 / (mu1 * mu1)
+        if np.isfinite(pdi) and pdi > 1.0 + 1.0e-6:
+            shape = 1.0 / (pdi - 1.0)
+            theta = mean / shape
+            cut = _regularized_gamma_p(shape, 0.5 / theta)
+            tail = max(0.0, 1.0 - cut)
+            if tail > 1.0e-12:
+                upper = _regularized_gamma_p(shape, 1.5 / theta)
+                p_gamma = max(0.0, upper - cut) / tail
+    return min(1.0, max(p_floor, p_gamma))
+
+
+def _release_units_gate(mu0, mu1):
+    """C2 availability gate for one-unit chain-end release events."""
+    if mu0 <= 0.0 or mu1 <= 0.0:
+        return 0.0
+    if mu1 >= mu0:
+        return 1.0
+    t = mu1 / mu0
+    return t * t * t * (10.0 + t * (6.0 * t - 15.0))
 
 
 def nasa_g_over_rt(coeffs, T):
@@ -1027,10 +1113,13 @@ class ArtifactConsumer:
                     dmu2 += pool["k_s"] * (mu1 - mu3) / 3.0
             if pool["k_u"] > 0.0:
                 r_ev = pool["k_u"] * mu0
-                dmu1 -= r_ev
-                dmu2 -= pool["k_u"] * (2.0 * mu1 - mu0)
+                gate = _release_units_gate(mu0, mu1)
+                r_release = r_ev * gate
+                dmu0 -= r_ev * _deprop_dp1_fraction(mu0, mu1, mu2)
+                dmu1 -= r_release
+                dmu2 -= pool["k_u"] * (2.0 * mu1 - mu0) * gate
                 if pool["routing"] is not None:
-                    dn[pool["routing"]] += r_ev * Vp
+                    dn[pool["routing"]] += r_release * Vp
             dn[i0] += dmu0 * Vp
             dn[i1] += dmu1 * Vp
             dn[i2] += dmu2 * Vp

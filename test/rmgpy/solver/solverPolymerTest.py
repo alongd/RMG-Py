@@ -4002,12 +4002,11 @@ class TestHybridPolymerReactor:
 
     def test_cross_pool_reverse_flux_vanishes_continuously(self):
         """
-        Continuity: as the debited pool's moments -> 0 (fixed distribution
-        shape, amplitudes spanning the healthy bulk, the limiter band and
-        the census band under the 1e-14 mol floor) the outbound mu2 drain
-        decreases monotonically toward 0 with no step at any threshold and
-        no cliff at the floor (r86 re-adjudication; the run-9d H-early
-        wake-up shape must see a continuous RHS across the floor crossing).
+        I-090 narrowing of the cone dead band (ec597591ff) as the debited
+        pool's moments approach the error-weight floor.  Resolved b1 > 1
+        signal is hard zeroed in the tail, while at sub-floor amplitude
+        b1 - 1 is itself
+        unresolved and the smooth neighbourhood of b1 == 1 remains live.
         Round-27 P1-A two-regime law: LINEAR in s at the plain S_base law
         in bulk (E >= 1e4 floors), LINEAR in s at the hard-capped law in
         the tail (E <= 1e2 floors), C1-blended in between. Pre-fix the
@@ -4032,23 +4031,22 @@ class TestHybridPolymerReactor:
             rs.kb[0] = 0.6
             dn_dt = rs.residual(0.0, rs.y, np.zeros_like(rs.y))[0]
             drains.append(-dn_dt[7])
-        # Monotone decrease toward 0, all finite and positive (still live --
-        # INCLUDING the sub-floor amplitude s = 1e-18: census only, no
-        # projected-to-zero cliff at the floor).
-        assert (drains[0] > drains[1] > drains[2] > drains[3]
-                > drains[4] > 0.0)
+        # Bulk and transition-band points decrease monotonically.  At s=1e-15
+        # b1 - 1 is resolved and the cone dead band is exact zero; at the
+        # sub-floor point it is unresolved, so I-090 keeps the b1 == 1
+        # neighbourhood live instead of trusting the noisy ratio.
+        assert drains[0] > drains[1] > drains[2] > 0.0
+        assert drains[3] == 0.0
+        assert drains[4] > 0.0
         # Bulk regime: linear in s at the UNCAPPED S_base law -- the
         # limiter is exactly inactive.
         assert drains[1] / drains[0] == pytest.approx(1.0e-3, rel=1e-9)
         mu3_b = 1.9 * (610.0 / 26.0) ** 3
         bB2 = mu3_b / 26.0
         assert drains[0] == pytest.approx(0.6 * 26.0e-6 * bB2, rel=1e-9)
-        # Tail regime: linear in s at the hard-capped law (every moment's
-        # drain vanishes linearly near exhaustion), THROUGH the floor.
-        assert drains[4] / drains[3] == pytest.approx(1.0e-3, rel=1e-9)
-        assert drains[3] == pytest.approx(
-            0.6 * _s_eff((1.9e-15, 26.0e-15, 610.0e-15)) * bB2, rel=1e-9,
-            abs=0.0)
+        assert drains[4] == pytest.approx(
+            0.6 * _s_eff((1.9e-18, 26.0e-18, 610.0e-18)) * bB2,
+            rel=1e-9, abs=0.0)
         # The in-band point interpolates strictly between the two lines:
         # below the bulk line, above the tail line (both scaled to s).
         assert drains[2] < 0.6 * 26.0e-12 * bB2
@@ -4285,24 +4283,15 @@ class TestHybridPolymerReactor:
 
     def test_cross_pool_ve_detailed_balance_in_depletion_band(self):
         """
-        Round-27 P1-A DEPLETION-BAND companion to the bulk detailed-balance
-        pin, re-pinned round-30 to the SOFT law: the SAME closure-matched
+        I-090 DEPLETION-BAND companion (ec597591ff) to the bulk
+        detailed-balance pin: the SAME closure-matched
         unequal-PDI construction scaled by 1e-10 puts both pools inside
         the limiter tail (E_A ~ 7.3, E_B ~ 4 floors, both <= E_lo = 1e2)
-        AND inside the cone-margin band (M_A ~ 93, M_B ~ 46 floors, both
-        <= M_lo = 1e2), where each leg runs at the fully active SOFT cap
-        (round-29 N2 softmin_p + round-30 N1 cone gate) of the pool it
-        debits. Only here does the balance point move off the advertised
-        law to C_G* = Keq * S_eff(A)/S_eff(B), with the regularized S_eff
-        strictly below S_base on both sides. The soft-law pin is
-        TIE-SENSITIVE (round-30 P2: the old hard-min assertion was
-        vacuous at this 1e-14 scale -- pytest.approx's default abs=1e-12
-        swallowed a ~9% deviation): S_eff must sit measurably BELOW the
-        hard min of its own terms (the softmin tie bias, >= 2% here) and
-        match the two-stage serial-fold mirror to rel 1e-12 with abs=0.
-        At the soft-law C_G* every affected row is zero to rtol 1e-9 (the
-        bundle matching bA1 = bB1 + a, bA2 = bB2 + 2*a*bB1 + a^2 is
-        scale-invariant).
+        AND inside the cone-margin dead band (M_A ~ 93, M_B ~ 46 floors,
+        both <= M_lo = 1e2).  Both b1 - 1 signals are resolved relative to
+        the I-090 noise band, so each direction is exactly off.  Detailed
+        balance is therefore the zero-flux state for every gas
+        concentration, with every affected row bitwise zero.
         """
         a = 1.135
         scale = 1.0e-10
@@ -4315,41 +4304,15 @@ class TestHybridPolymerReactor:
         mu_a = (mu1_a * bA2 / bA1 ** 3, mu1_a, bA1 * mu1_a)
         rxn, rs = self._detailed_balance_rs(mu_a, mu_b, a)
 
-        # Tail + cone-band regime on both sides: S_eff is the fully
-        # active SOFT cap, strictly below the plain site (the defining
-        # contrast with the bulk pin above).
+        # Both directions are in the resolved-signal I-090 dead band.
         s_a, s_b = _s_eff(mu_a), _s_eff(mu_b)
-        assert s_a < mu_a[1] * (1.0 - 1e-9)
-        assert s_b < mu_b[1] * (1.0 - 1e-9)
+        assert s_a == 0.0
+        assert s_b == 0.0
 
-        def soft_mirror(mu, b1, b2):
-            # independent serial-fold recompute: stage 1 fold of
-            # (s_base, softmin over per-moment caps), then stage 2 fold
-            # with the cone-margin cap (M < M_lo on both pools here).
-            s_free = _softmin_p([mu[1],
-                                 _softmin_p([mu[0], mu[1] / b1,
-                                             mu[2] / b2])])
-            return _softmin_p([s_free, (mu[1] - mu[0]) / (b1 - 1.0)])
-
-        for s_eff, mu, b1, b2 in ((s_a, mu_a, bA1, bA2),
-                                  (s_b, mu_b, bB1, bB2)):
-            hard = min(mu[1], mu[0], mu[1] / b1, mu[2] / b2,
-                       (mu[1] - mu[0]) / (b1 - 1.0))
-            # tie-sensitive: measurably BELOW the hard min (abs=0!)...
-            assert s_eff < hard * 0.98
-            # ... and exactly the soft two-stage law, to rel 1e-12.
-            assert s_eff == pytest.approx(soft_mirror(mu, b1, b2),
-                                          rel=1e-12, abs=0.0)
-
-        c_g_star = (rs.kf[0] / rs.kb[0]) * (s_a / s_b)
         y = rs.y.copy()
-        y[8] = c_g_star
+        y[8] = 1.0
         dn_dt = rs.residual(0.0, y, np.zeros_like(y))[0]
-        ev = rs.kf[0] * s_a
-        assert ev > 0.0
-        refs = ev * np.array([1.0, bA1, bA2, 1.0, bA1, bA2, 1.0])
-        for row, ref in zip((1, 2, 3, 5, 6, 7, 8), refs):
-            assert abs(dn_dt[row]) <= 1e-9 * ref
+        assert np.all(dn_dt[[1, 2, 3, 5, 6, 7, 8]] == 0.0)
 
     def test_bundle_limiter_two_regime_unit_pins(self):
         """
@@ -13478,14 +13441,11 @@ class TestSubatolExportClamp:
 
 
 class TestRtolNearFloorConviction:
-    """Round-35 K2 conviction of deck rtol=1e-4 for pool moments near the
-    r81 floors (pre-regen P1 of record; format doc section 4b). Post
-    round-37 policy: rtol=1e-6 fixes THIS minimal fixture but is NOT
-    full-system safe (IDID=-7 at t = 24.639 on the exact-crash replay;
-    grind + sub-floor drag on the from-deck window) -- NO regen deck
-    tolerance is currently certified; regen attempts before the
-    solver-conditioning fix are forensic-only at rtol=1e-4 with an
-    abort-on-H1/IDID protocol.
+    """Near-floor tolerance canaries after I-061 (74df5e84df) floored the
+    DASPK error weight on structural moment slots.  Both rtol=1e-6 and
+    rtol=1e-4 must follow this minimal fixture's RHS faithfully through
+    exhaustion.  This local canary does not certify either tolerance for
+    every full-system replay.
 
     Minimal two-pool fixture: pool C (1e-8 mol, 100 floors at atol=1e-12)
     drained by a single irreversible end-group VE conduit
@@ -13493,20 +13453,11 @@ class TestRtolNearFloorConviction:
     transferring to gas G2 chain-by-chain. Ground truth: the RHS drains C
     at ~1e-7 mol/s -- C empties within ~0.5 s of integrated flux.
 
-    Measured (round-35, no-F-gate law): at rtol=1e-6 DASPK follows the
-    RHS faithfully (C fully drained by t = 50, final |C| ~ 3.6e-14 mol,
-    sub-atol; G2 receives the exact initial inventory; dn -> 0). At
-    rtol=1e-4 the ACCEPTED trajectory decouples from the RHS by ~4
-    decades: C retains ~90% of its inventory at t = 100 while its own
-    RHS says -9.6e-8 mol/s throughout (books between C and G2 stay
-    consistent -- the corruption is trajectory-vs-RHS, not
-    book-vs-book on this fixture; the gated rounds-33/34 laws showed
-    the harder signature, sign-violating climbs with G2 driven
-    negative). NOTE (spec conflict pinned, round-35): the adjudication
-    described the clean 1e-6 endpoint as "parks ~1.18 floors with
-    dn -> 0" -- that park was an artifact of the (reverted) sub-floor
-    F-gate; under the reverted law the correct 1e-6 behavior is a FULL
-    drain through the floor to ~0, which is what this pin asserts."""
+    Before 74df5e84df, rtol=1e-4 accepted a trajectory that decoupled from
+    the RHS by about four decades and retained about 90% of C at t=100.
+    With the structural-slot error-weight floor, both tolerances drain C
+    to a sub-atol remnant, transfer the complete inventory to G2, and end
+    with a quiescent RHS."""
 
     def _fixture(self, rtol):
         sp = {
@@ -13575,22 +13526,19 @@ class TestRtolNearFloorConviction:
         assert abs(dn[2]) <= 1.0e-12
 
     def test_rtol_1e4_near_floor_conviction_canary(self):
-        """DOCUMENTED CANARY (loose by design; round-35 K2 conviction):
-        at rtol=1e-4 the accepted trajectory decouples from the RHS by
-        decades -- C retains most of its inventory at t = 100 while the
-        RHS at every accepted state drains it ~1e4x faster than the
-        realized rate. If DASPK behavior changes and this starts
-        tracking the RHS, the canary fails LOUDLY: re-measure, update
-        the format doc section 4b conviction, and report."""
+        """I-061 conviction: the moment error-weight floor keeps the loose
+        rtol=1e-4 trajectory faithful through exhaustion.  C drains to a
+        sub-atol remnant, G2 receives its inventory, and the terminal RHS is
+        quiescent, just as in the tighter-tolerance sibling above."""
         rs = self._fixture(rtol=1e-4)
         rs.advance(100.0)
         y = np.asarray(rs.y)
         dn = np.asarray(rs.residual(100.0, y.copy(),
                                     np.zeros_like(y))[0])
-        # C should be EMPTY by now per its own RHS; it is not even close.
-        assert y[2] > 0.3 * 1.0e-8            # observed ~0.90e-8
-        realized = (1.0e-8 - y[2]) / 100.0    # average realized drain
-        assert abs(dn[2]) > 100.0 * realized  # observed ~1.2e4x
+        assert abs(y[1]) <= 1.0e-12 and abs(y[2]) <= 1.0e-12
+        assert y[1] + y[9] == pytest.approx(1.0e-8, rel=2e-5)
+        assert y[9] == pytest.approx(1.0e-8, rel=2e-5, abs=0.0)
+        assert abs(dn[2]) <= 1.0e-12
 
 
 class TestSpawnGateDefectAwareMass:
