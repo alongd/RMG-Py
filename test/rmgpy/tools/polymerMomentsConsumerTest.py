@@ -1226,8 +1226,9 @@ class TestConeMarginBandParity:
       (rmgpy/solver/polymer.pyx, "N5b cone-gate dead-band fix", commit
       d86201ec2) the solver returns the exact hard zero there; the oracle
       returned softmin_p(S_free, S_cone) -- a nonzero, noise-scale number --
-      until this test was written. The blend and bulk cases already agreed
-      bitwise; they are here to prove the pin brackets the band rather than
+      until this test was written. The blend carries that same narrowed
+      completion continuously from M_lo and the bulk remains an exact
+      passthrough; both regions prove the pin brackets the band rather than
       merely asserting zero everywhere.
     """
 
@@ -1310,8 +1311,8 @@ class TestConeMarginBandParity:
         solver_val = rs._bundle_limited_site(0, y, V_POLY, False, s_base)
         oracle_val = consumer._bundle_limited_site("poly", y, False, s_base)
 
-        # ONE law: bitwise, not within a tolerance. Above M_lo the two
-        # evaluate the identical soft-min in the identical order, so anything
+        # ONE law: bitwise, not within a tolerance. Both copies evaluate the
+        # narrowed completion and blend in the identical order, so anything
         # short of equality is a divergence, not rounding.
         assert oracle_val == solver_val
 

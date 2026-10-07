@@ -53,7 +53,7 @@ BUNDLE_LIMITER_SOFTMIN_P = 8.0
 # E; M >= M_HI returns S_free exactly; M <= M_LO runs the NARROWED dead
 # band (I-090 -- see the MIRRORED SOLVER LAW block in
 # _bundle_limited_site, the one place that law lives here); between: C1
-# smoothstep blend of S_free and softmin_p(S_free, S_cone),
+# smoothstep blend of S_free and the same narrowed completion, based on
 # S_cone = Q10/(V_poly*(b1 - 1)).
 CONE_MARGIN_M_LO = 1.0e2
 CONE_MARGIN_M_HI = 1.0e4
@@ -788,36 +788,34 @@ class ArtifactConsumer:
         # Pinned against the solver across the M axis, through the b1
         # surface, and at sub-floor E by TestConeMarginBandParity in
         # polymerMomentsConsumerTest.py.  Do NOT re-derive it here.
-        if m_dist <= CONE_MARGIN_M_LO:
-            b1_band = ((self.cone_b1_rtol * (y1c + y2c)
-                        + self.mu_floor + self.mu_floor) / y1c)
-            # I-067: at sub-floor bundle amplitude, condition I-090's
-            # absolute-error band by the scale-free cone reserve of the
-            # complete three-moment bundle. The smoothstep equals one with
-            # zero slope at E_lo, so the blend meets the old law smoothly.
-            # The later hard floor can still introduce a derivative kink;
-            # the complete floored law is continuous, not generally C1.
-            if e_dist < BUNDLE_LIMITER_E_LO:
-                e_n = e_dist / BUNDLE_LIMITER_E_LO
-                w = e_n * e_n * (3.0 - 2.0 * e_n)
-                cone_band = softmin_p(
-                    [b1_band, q10 / (y0c + y1c + y2c)])
-                b1_band = w * b1_band + (1.0 - w) * cone_band
-            if b1_band < CONE_B1_NOISE_REL_FLOOR:
-                b1_band = CONE_B1_NOISE_REL_FLOOR
-            b1_n = (b1c - 1.0) / b1_band
-            if b1_n >= 1.0:
-                return 0.0
+        b1_band = ((self.cone_b1_rtol * (y1c + y2c)
+                    + self.mu_floor + self.mu_floor) / y1c)
+        # I-067: at sub-floor bundle amplitude, condition I-090's
+        # absolute-error band by the scale-free cone reserve of the
+        # complete three-moment bundle. The smoothstep equals one with
+        # zero slope at E_lo, so the blend meets the old law smoothly.
+        # The later hard floor can still introduce a derivative kink;
+        # the complete floored law is continuous, not generally C1.
+        if e_dist < BUNDLE_LIMITER_E_LO:
+            e_n = e_dist / BUNDLE_LIMITER_E_LO
+            w = e_n * e_n * (3.0 - 2.0 * e_n)
+            cone_band = softmin_p(
+                [b1_band, q10 / (y0c + y1c + y2c)])
+            b1_band = w * b1_band + (1.0 - w) * cone_band
+        if b1_band < CONE_B1_NOISE_REL_FLOOR:
+            b1_band = CONE_B1_NOISE_REL_FLOOR
+        b1_n = (b1c - 1.0) / b1_band
+        if b1_n >= 1.0:
+            cap = 0.0
+        else:
             s_cone = q10 / (self.V_poly * (b1c - 1.0))
             if s_free <= 0.0:
                 return s_free
             cap = softmin_p([s_free, s_cone])
             u = 1.0 - b1_n * b1_n * (3.0 - 2.0 * b1_n)
-            return u * cap
-        s_cone = q10 / (self.V_poly * (b1c - 1.0))
-        if s_free <= 0.0:
-            return s_free
-        cap = softmin_p([s_free, s_cone])
+            cap = u * cap
+        if m_dist <= CONE_MARGIN_M_LO:
+            return cap
         v_n = ((m_dist - CONE_MARGIN_M_LO)
                / (CONE_MARGIN_M_HI - CONE_MARGIN_M_LO))
         v = v_n * v_n * (3.0 - 2.0 * v_n)

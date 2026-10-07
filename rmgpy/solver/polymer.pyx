@@ -5906,8 +5906,8 @@ class HybridPolymerSystem(ReactionSystem):
             S_cone = Q10 / (V_poly*(b1 - b0))
             M <= M_lo           -> S_eff = 0 EXACTLY (N5b dead band, see
                                  below; was softmin_p(S_free, S_cone))
-            between             -> v-smoothstep blend of S_free and
-                                 softmin_p(S_free, S_cone)
+            between             -> v-smoothstep blend of S_free and the
+                                 same narrowed completion used below M_lo
         Non-cone-shrinking debits (b1 <= b0) pass S_free through
         untouched, as do empty pools (stage 1 already throttled those).
         EXCEPTION, end-group rows (round-62 N5b adjudicated fix): the
@@ -5941,12 +5941,10 @@ class HybridPolymerSystem(ReactionSystem):
         magnitude down there: below M_lo, Q10 is itself sub-floor-scale
         cancellation noise (~1e-17 mol/s-scale rows, ~15 orders below any
         deck observable -- inside the model's own error budget, the same
-        adjudicated logic as the r81 floors). This moves the law's one
-        accepted discontinuity from the unresolvable Q10 == 0 noise scale
-        up to the resolvable M == M_lo band edge (a jump of bounded size,
-        from 0 to softmin_p(S_free, S_cone) at that edge), so DASSL's
-        corrector sees a step it can actually converge across instead of
-        an amplified noise sign-flip. s_base is
+        adjudicated logic as the r81 floors). The narrowed completion is
+        carried into the M blend instead of being dropped at M_lo, so the
+        handoff is C1: both sides meet at the completed cap and the blend
+        weight has zero endpoint slope. s_base is
         the direction's adjudicated site law (mu1/V_poly or mu0/V_poly
         per row scaling, including the pre-existing a>0/a<0 VE
         min(mu0, mu1/|a|) throttle), computed by the caller from the pool
@@ -6057,9 +6055,9 @@ class HybridPolymerSystem(ReactionSystem):
         #     N5b hard zero continuously, and BIT-FOR-BIT 0.0 beyond it --
         #     not merely small. Everything at O(1) b1c - 1 (all bulk
         #     cone-shrinking debits) is unchanged from round-62.
-        #   * across the M_LO band edge the law is no worse and near the
-        #     surface strictly better: the pre-existing edge jump is scaled
-        #     by (1 - u), so it vanishes exactly where u -> 1.
+        # The same completed cap is carried through the M blend.  This removes
+        # the pre-existing (1-u)*cap jump at M_LO; the v-smoothstep has zero
+        # slope there, so value and first derivative both match (C1).
         # The neighbourhood half-width is derived, not fitted.  I-090 used
         # only the propagated error weight of the two moments b1c is built
         # from.  Its absolute floor terms divided by y1c, however, diverge as
@@ -6085,23 +6083,23 @@ class HybridPolymerSystem(ReactionSystem):
         # slopes at both of its existing handoffs.  See the I-090 width
         # derivation near CONE_B1_NOISE_REL_FLOOR.  This law is mirrored in
         # the numpy consumer and _s_eff; keep all three in sync.
-        if m_dist <= CONE_MARGIN_M_LO:
-            b1_band = ((self._cone_b1_rtol * (y1c + y2c)
-                        + floors[pool_idx, 1] + floors[pool_idx, 2]) / y1c)
-            if e_dist < BUNDLE_LIMITER_E_LO:
-                e_n = e_dist / BUNDLE_LIMITER_E_LO
-                w = e_n * e_n * (3.0 - 2.0 * e_n)
-                cap = q10 / (y0c + y1c + y2c)
-                m = cap if cap < b1_band else b1_band
-                p = BUNDLE_LIMITER_SOFTMIN_P
-                acc = (m / b1_band) ** p + (m / cap) ** p
-                cap = m * acc ** (-1.0 / p)
-                b1_band = w * b1_band + (1.0 - w) * cap
-            if b1_band < CONE_B1_NOISE_REL_FLOOR:
-                b1_band = CONE_B1_NOISE_REL_FLOOR
-            b1_n = (b1c - 1.0) / b1_band
-            if b1_n >= 1.0:
-                return 0.0
+        b1_band = ((self._cone_b1_rtol * (y1c + y2c)
+                    + floors[pool_idx, 1] + floors[pool_idx, 2]) / y1c)
+        if e_dist < BUNDLE_LIMITER_E_LO:
+            e_n = e_dist / BUNDLE_LIMITER_E_LO
+            w = e_n * e_n * (3.0 - 2.0 * e_n)
+            cap = q10 / (y0c + y1c + y2c)
+            m = cap if cap < b1_band else b1_band
+            p = BUNDLE_LIMITER_SOFTMIN_P
+            acc = (m / b1_band) ** p + (m / cap) ** p
+            cap = m * acc ** (-1.0 / p)
+            b1_band = w * b1_band + (1.0 - w) * cap
+        if b1_band < CONE_B1_NOISE_REL_FLOOR:
+            b1_band = CONE_B1_NOISE_REL_FLOOR
+        b1_n = (b1c - 1.0) / b1_band
+        if b1_n >= 1.0:
+            cap = 0.0
+        else:
             s_cone = q10 / (V_poly * (b1c - 1.0))
             if s_free <= 0.0:
                 return s_free
@@ -6110,14 +6108,9 @@ class HybridPolymerSystem(ReactionSystem):
             acc = (m / s_free) ** p + (m / s_cone) ** p
             cap = m * acc ** (-1.0 / p)
             u = 1.0 - b1_n * b1_n * (3.0 - 2.0 * b1_n)
-            return u * cap
-        s_cone = q10 / (V_poly * (b1c - 1.0))
-        if s_free <= 0.0:
-            return s_free
-        m = s_cone if s_cone < s_free else s_free
-        p = BUNDLE_LIMITER_SOFTMIN_P
-        acc = (m / s_free) ** p + (m / s_cone) ** p
-        cap = m * acc ** (-1.0 / p)
+            cap = u * cap
+        if m_dist <= CONE_MARGIN_M_LO:
+            return cap
         v_n = ((m_dist - CONE_MARGIN_M_LO)
                / (CONE_MARGIN_M_HI - CONE_MARGIN_M_LO))
         v = v_n * v_n * (3.0 - 2.0 * v_n)

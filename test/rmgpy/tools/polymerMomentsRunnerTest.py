@@ -3621,7 +3621,7 @@ _POLY102_RUN = "/home/alon/runs/RMG/poly_102_conduit3"
 
 
 def _run_prestress_fromdeck_rtol_1e6(result):
-    """Run the known grinding replay out of process for a bounded xfail."""
+    """Run the formerly grinding replay out of process with wall budgets."""
     try:
         with open(os.path.join(
                 _POLY102_RUN, "chemkin/polymer_pools.json")) as fh:
@@ -3644,10 +3644,17 @@ def _run_prestress_fromdeck_rtol_1e6(result):
             rs._assert_pool_moments_accepted()
             result.put(("progress", target))
         assert rs.t >= 14.5 - 1e-9
+        pool_moments = {
+            pool.label: tuple(float(y[i]) for i in pool.mu_indices)
+            for pool in rs.polymer_pools
+        }
     except BaseException as exc:
         result.put(("error", repr(exc)))
     else:
-        result.put(("finished", None))
+        result.put(("finished", {
+            "t": float(rs.t),
+            "pool_moments": pool_moments,
+        }))
 
 
 @pytest.mark.functional
@@ -3807,33 +3814,15 @@ class TestRegen3SavedCoreReplay:
         # a grind-class regression blows this loudly)
         assert time.monotonic() - wall < 300.0
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="round-35 pre-regen stress gate 5b, RED (round-36 "
-               "finding): the from-deck 79/82 window at rtol=1e-6 "
-               "(atol=1e-12; NO regen tolerance is certified -- "
-               "round-37 policy) GRINDS worse "
-               "than at the convicted rtol=1e-4 -- 0 -> 13 s took "
-               "202.3 s wall (1e-4: 16.5 s) and 13 -> 14 took 1765.8 s "
-               "(29.4 min per sim-second; 1e-4 pre-gate law: ~16 min "
-               "then IDID=-7 at t = 14.2445). Worse, mod_5 is STILL "
-               "dragged sub-floor at 1e-6 (accepted 1.82e-11 mol at "
-               "t = 14 vs the 1e-10 floor -- the H1 signature the "
-               "tolerance conviction was expected to remove). "
-               "Tightening rtol does NOT resolve the multi-daughter "
-               "near-floor regime on the full system; combined with the "
-               "crash-state replay's 1e-6 death at t = 24.639 (see the "
-               "prestress canary), the tolerance interaction is a "
-               "round-36 P1. This xfail enforces the 120 s budget at the "
-               "t = 13 checkpoint in a killable child, not after the full "
-               "grind; a law/tolerance combination that traverses the "
-               "window flips it loudly.")
     def test_prestress_fromdeck_window_rtol_1e6(self):
-        # The old wall assertion ran only after rs.advance returned, so a
-        # grinding integrator could hang pytest forever.  Keep the strict
-        # xfail's intended "flip loudly when fixed" semantics, but isolate
-        # the known grind in a process the parent can terminate at the
-        # first documented 120 s budget.
+        """The continuous M_LO handoff traverses the full from-deck window.
+
+        The pre-fix strict xfail timed out before t=13 and left mod_5 below
+        its 1e-10 mol floor.  Direct post-fix replay reached t=14.5 in 26.71 s
+        with finite accepted moments; mod_5 ended at
+        (1.2875023e-5, 1.2885599e-5, 1.2942929e-5) mol.  Keep the child and
+        historical budgets so a returned grind remains killable.
+        """
         import multiprocessing
         import queue
 
@@ -3857,6 +3846,10 @@ class TestRegen3SavedCoreReplay:
                 assert detail == target
             status, detail = result.get(timeout=10.0)
             assert status == "finished", detail
+            assert detail["t"] >= 14.5 - 1e-9
+            assert detail["pool_moments"]["phenol_formaldehyde_mod_5"] == (
+                pytest.approx((1.2875023e-5, 1.2885599e-5, 1.2942929e-5),
+                              rel=1e-6, abs=0.0))
             process.join(timeout=10.0)
             assert not process.is_alive(), "replay child did not exit"
             assert process.exitcode == 0, process.exitcode
