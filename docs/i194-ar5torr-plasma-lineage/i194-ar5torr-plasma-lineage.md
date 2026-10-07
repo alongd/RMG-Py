@@ -1,5 +1,11 @@
 # I-194 — the argon deck re-run on a runtime cut from the source of truth
 
+> **Historical-deck repair (2026-10-07).** Replaced the removed `PlasmaCationThermo` library
+> with `PlasmaThermo`, which now carries the same `[Arp]` NIST-JANAF Ar-002 entry under the
+> database's ion convention. The deck remains historical: today's `PlasmaArgon` also requests
+> metastable `Ars`, for which this unchanged deck has no thermo library, so the end-to-end run
+> still stops during model enlargement.
+
 > **Read this first — added by the campaign manager when this record was merged, 2026-08-31.**
 > Everything below was measured at `plasma` tip `3b479a638`, **before** the reverse-rate fix. At
 > that commit the deck finished model generation and then died in final validation, exit 1, because

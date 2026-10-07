@@ -91,8 +91,9 @@ database(
     thermoLibraries=[
         # neutral Ar ('1 Ar u0 p4 c0')
         'primaryThermoLibrary',
-        # Ar+ as a free monatomic cation ('[Arp]', '1 Ar u1 p3 c+1'), NIST-JANAF Ar-002
-        'PlasmaCationThermo',
+        # Ar+ as a free monatomic cation ('[Arp]', '1 Ar u1 p3 c+1'), NIST-JANAF Ar-002;
+        # the entry moved from PlasmaCationThermo to PlasmaThermo, which uses the ion convention.
+        'PlasmaThermo',
         # the electron thermo entry ('1 e u0 p0 c-1', H298 = 0). Without it the electron
         # misses every library and the reactor stops at the thermo wall.
         'electrocatThermo',
