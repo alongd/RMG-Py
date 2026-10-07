@@ -429,10 +429,21 @@ def test_wrong_recipe_root_is_retained_only_as_unresolved():
     assert "not touched" in decision["reason"]
 
 
-def test_corrupt_atom_map_is_retained_only_as_unresolved():
+@pytest.mark.parametrize(
+    "root_index, label, role",
+    [(0, "*1", "product"), (4, "*2", "reactant")],
+)
+def test_corrupt_atom_map_is_retained_only_as_unresolved(root_index, label, role):
     record = _pair()[0]
     record["atom_map"] = {0: 1, 1: 0}
-    decision = classify_persistent_carbene(record, _root(), _source())
+    root = {
+        "reactant_atom_index": root_index,
+        "recipe_label": label,
+        "family_forward_role": role,
+    }
+    decision = classify_persistent_carbene(
+        record, root, _source(label=label, role=role)
+    )
     assert decision["disposition"] == "retained-unresolved-applicability"
     assert decision["mapped_root"]["mapping_verified"] is False
     assert "atom map disagrees" in decision["reason"]

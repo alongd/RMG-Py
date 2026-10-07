@@ -1902,66 +1902,73 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
     selected_molecule = next(
         molecule for molecule in reactants if root_before in molecule.atoms
     )
-    if root_side == "product":
-        if root_before.element.number == 1:
-            return {
-                **mapped_root,
-                "mapping_verified": False,
-                "mapping_error": "persistent-carbene roots must be heavy atoms",
-                "product_rewrite_verified": True,
-                "persistent_neutral_divalent_carbon": False,
-                "resonance_form_count": 0,
-            }
-        heavy_before = [
-            atom for molecule in reactants for atom in molecule.atoms
-            if atom.element.number != 1
-        ]
-        reactant_heavy_index = heavy_before.index(root_before)
-        atom_map = {
-            int(key): int(value) for key, value in data.get("atom_map", {}).items()
+    if root_before.element.number == 1:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "persistent-carbene roots must be heavy atoms",
+            "product_rewrite_verified": True,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
         }
-        product_heavy_index = atom_map.get(reactant_heavy_index)
-        product_molecules = [
-            Molecule().from_adjacency_list(graph) for graph in expected_products
-        ]
-        heavy_after = [
-            atom for molecule in product_molecules for atom in molecule.atoms
-            if atom.element.number != 1
-        ]
-        if product_heavy_index is None or not 0 <= product_heavy_index < len(heavy_after):
-            return {
-                **mapped_root,
-                "mapping_verified": False,
-                "mapping_error": "stored atom map does not contain the mapped root",
-                "product_rewrite_verified": True,
-                "persistent_neutral_divalent_carbon": False,
-                "resonance_form_count": 0,
-            }
-        selected_atom = heavy_after[product_heavy_index]
-        selected_molecule = next(
-            molecule for molecule in product_molecules
-            if selected_atom in molecule.atoms
+    heavy_before = [
+        atom
+        for molecule in reactants
+        for atom in molecule.atoms
+        if atom.element.number != 1
+    ]
+    reactant_heavy_index = heavy_before.index(root_before)
+    atom_map = {
+        int(key): int(value) for key, value in data.get("atom_map", {}).items()
+    }
+    product_heavy_index = atom_map.get(reactant_heavy_index)
+    product_molecules = [
+        Molecule().from_adjacency_list(graph) for graph in expected_products
+    ]
+    heavy_after = [
+        atom
+        for molecule in product_molecules
+        for atom in molecule.atoms
+        if atom.element.number != 1
+    ]
+    if product_heavy_index is None or not 0 <= product_heavy_index < len(heavy_after):
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "stored atom map does not contain the mapped root",
+            "product_rewrite_verified": True,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+    mapped_product_atom = heavy_after[product_heavy_index]
+    mapped_product_molecule = next(
+        molecule
+        for molecule in product_molecules
+        if mapped_product_atom in molecule.atoms
+    )
+    rewritten_molecule = next(
+        molecule for molecule in rewritten if rewritten_root in molecule.atoms
+    )
+    correspondence_verified = any(
+        mapping.get(rewritten_root) is mapped_product_atom
+        for mapping in rewritten_molecule.find_isomorphism(
+            mapped_product_molecule, save_order=True
         )
-        rewritten_molecule = next(
-            molecule for molecule in rewritten if rewritten_root in molecule.atoms
-        )
-        correspondence_verified = any(
-            mapping.get(rewritten_root) is selected_atom
-            for mapping in rewritten_molecule.find_isomorphism(
-                selected_molecule, save_order=True
-            )
-        )
-        if not correspondence_verified:
-            return {
-                **mapped_root,
-                "mapping_verified": False,
-                "mapping_error": (
-                    "stored atom map disagrees with the recipe-labelled rewrite root"
-                ),
-                "product_rewrite_verified": True,
-                "persistent_neutral_divalent_carbon": False,
-                "resonance_form_count": 0,
-            }
+    )
+    if not correspondence_verified:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": (
+                "stored atom map disagrees with the recipe-labelled rewrite root"
+            ),
+            "product_rewrite_verified": True,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+    if root_side == "product":
+        selected_atom = mapped_product_atom
+        selected_molecule = mapped_product_molecule
 
     persistent, resonance_form_count = False, 0
     if root_index in touched_indices:
