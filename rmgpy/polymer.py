@@ -3643,6 +3643,11 @@ def stamp_gas_association_refusal(forward, pool_registry=None) -> None:
     * gas radical(s) -> condensed proxy (association orientation, the run-5
       generated direction) and condensed proxy -> gas radicals (homolysis,
       the reverse generated orientation) are refused;
+    * a gas-side singlet carbene insertion bridge is refused in either
+      orientation too.  Featureless PE exposes this as singlet methylene +
+      pentane <=> the condensed stitched PE proxy: the saturated co-reactant
+      means it is not an all-radical side, but it has the same unpaired
+      gas/condensed reference state and no moment-credit conduit;
     * gas+gas->gas R_Recombination termination has no condensed side and is
       untouched (whitelisted chemistry);
     * H-abstraction / routing shapes carry the proxy on the mixed side --
@@ -3860,8 +3865,26 @@ def stamp_gas_association_refusal(forward, pool_registry=None) -> None:
                 return False
         return True
 
-    if ((p_condensed and _all_gas_radicals(reactants))
-            or (r_condensed and _all_gas_radicals(products))):
+    def _all_gas_with_singlet_carbene(side):
+        if not side:
+            return False
+        found_carbene = False
+        for s in side:
+            if isinstance(s, Polymer):
+                return False
+            mol_list = getattr(s, "molecule", None)
+            mol = mol_list[0] if mol_list else (
+                s if isinstance(s, Molecule) else None)
+            if mol is None:
+                return False
+            found_carbene = (
+                found_carbene or mol.get_singlet_carbene_count() > 0)
+        return found_carbene
+
+    if ((p_condensed and (_all_gas_radicals(reactants)
+                          or _all_gas_with_singlet_carbene(reactants)))
+            or (r_condensed and (_all_gas_radicals(products)
+                                 or _all_gas_with_singlet_carbene(products)))):
         forward.polymer_refused = True
         forward.polymer_refused_accumulating = False  # -> "conduit-deferred"
         return

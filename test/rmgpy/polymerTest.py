@@ -4829,6 +4829,41 @@ def test_gas_radical_association_into_condensed_proxy_refused_conduit_deferred()
     assert rxn_rev.polymer_refused_accumulating is False
 
 
+def test_gas_carbene_insertion_into_pe_proxy_refused_conduit_deferred():
+    """A featureless PE proxy exposes the same reference-state bridge through
+    1,2_Insertion_carbene: singlet methylene + pentane folds exactly onto the
+    condensed stitched proxy.  Both written orientations must be refused
+    conduit-deferred instead of reaching the solver as unstamped proxy rows.
+    """
+    from rmgpy.polymer import Polymer, stamp_gas_association_refusal
+    from rmgpy.species import Species
+    from rmgpy.molecule import Molecule
+    from rmgpy.reaction import Reaction
+
+    pe = Polymer(label="PE", monomer="[CH2][CH2]",
+                 end_groups=["[H]", "[H]"],
+                 Mn=5000.0, Mw=6000.0, initial_mass=0.05)
+    methylene = Species(molecule=[Molecule().from_adjacency_list("""
+1 C u0 p1 c0 {2,S} {3,S}
+2 H u0 p0 c0 {1,S}
+3 H u0 p0 c0 {1,S}
+""")])
+    pentane = Species(molecule=[Molecule().from_smiles("CCCCC")])
+    assert methylene.molecule[0].get_singlet_carbene_count() == 1
+
+    association = Reaction(reactants=[methylene, pentane], products=[pe],
+                           reversible=True)
+    stamp_gas_association_refusal(association)
+    assert association.polymer_refused is True
+    assert association.polymer_refused_accumulating is False
+
+    dissociation = Reaction(reactants=[pe], products=[methylene, pentane],
+                            reversible=True)
+    stamp_gas_association_refusal(dissociation)
+    assert dissociation.polymer_refused is True
+    assert dissociation.polymer_refused_accumulating is False
+
+
 def test_gas_gas_gas_recombination_termination_not_refused():
     """Negative control (design constraint 1): the refusal is SHAPE-specific,
     not family-specific. Ordinary gas+gas->gas R_Recombination termination
