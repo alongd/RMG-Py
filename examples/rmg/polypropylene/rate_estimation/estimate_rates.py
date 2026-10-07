@@ -45,13 +45,18 @@ def parse_arguments():
         "--output-dir",
         type=Path,
         default=Path(__file__).resolve().parent,
-        help="directory for generated CSV, JSON, and Markdown (default: script directory)",
+        help=(
+            "directory for generated CSV, JSON, and Markdown "
+            "(default: script directory)"
+        ),
     )
     return parser.parse_args()
 
 
 args = parse_arguments()
-DATABASE = (args.database or Path(settings["database.directory"])).expanduser().resolve()
+DATABASE = (
+    args.database or Path(settings["database.directory"])
+).expanduser().resolve()
 OUT = args.output_dir.expanduser().resolve()
 if not (DATABASE / "thermo").is_dir() or not (DATABASE / "kinetics").is_dir():
     raise SystemExit(f"Not an RMG-database input directory: {DATABASE}")
@@ -79,7 +84,8 @@ def select_model_generation_kinetics(reaction):
         return_all_kinetics=False,
     )
     assert is_forward, (
-        f"selected kinetics for {reaction} are defined in the reverse direction"
+        f"selected kinetics for {reaction} are defined in the reverse "
+        "direction"
     )
     original_type = type(kinetics).__name__
     dHrxn298 = reaction.get_enthalpy_of_reaction(298.0)
@@ -99,13 +105,16 @@ def select_model_generation_kinetics(reaction):
     return reaction
 
 
-def generated(reactants, family, products=None):
+def generate_with_model_kinetics(reactants, family, products=None):
     reactions = db.kinetics.generate_reactions_from_families(
         [mol(item) for item in reactants],
         None if products is None else [mol(item) for item in products],
         only_families=[family],
     )
-    return [select_model_generation_kinetics(reaction) for reaction in reactions]
+    return [
+        select_model_generation_kinetics(reaction)
+        for reaction in reactions
+    ]
 
 
 def reverse_rates(reaction):
@@ -152,7 +161,9 @@ def fit(name, rates, units, provenance, require_nonnegative_ea=False):
         "temperature_range_K": [300.0, 1000.0],
         "temperature_step_K": 50.0,
         "max_relative_fit_error": float(rel.max()),
-        "rms_log_error": float(np.sqrt(np.mean(np.log(fit_rates / rates) ** 2))),
+        "rms_log_error": float(
+            np.sqrt(np.mean(np.log(fit_rates / rates) ** 2))
+        ),
         "fit_constraint": (
             "Ea fixed at 0 J/mol because the unconstrained fit was negative "
             f"({unconstrained_ea:.12g} J/mol) and the solver requires Ea >= 0"
@@ -195,7 +206,7 @@ for family in db.kinetics.families.values():
 # R_Recombination estimate with RMG thermo to obtain a per-bond homolysis
 # frequency. The solver's moment convention contributes two PP backbone
 # bonds per propylene repeat.
-initiation_rxn, = generated(
+initiation_rxn, = generate_with_model_kinetics(
     ["[CH2]C(C)C", "C[CH]C"],
     "R_Recombination",
     ["CC(C)CC(C)C"],
@@ -218,8 +229,8 @@ initiation = fit(
         },
         "normalization": (
             "one secondary--tertiary bond homolysis rate multiplied by two "
-            "PP backbone C--C bonds per propylene repeat, because the solver applies "
-            "initiation to mu1-mu0 repeat-bond units"
+            "PP backbone C--C bonds per propylene repeat, because the "
+            "solver applies initiation to mu1-mu0 repeat-bond units"
         ),
         "per_bond_rates_s^-1": [float(value) for value in initiation_per_bond],
         "backbone_bonds_per_repeat": 2.0,
@@ -229,7 +240,7 @@ initiation = fit(
 # Chain-end beta-scission: reverse isopropyl addition to propylene at the
 # terminal CH2. This is the head-to-tail route that produces a secondary PP
 # chain-end radical and releases propylene in reverse.
-deprop_rxn, = generated(
+deprop_rxn, = generate_with_model_kinetics(
     ["C[CH]C", "C=CC"],
     "R_Addition_MultipleBond",
     ["C[CH]CC(C)C"],
@@ -248,17 +259,19 @@ depropagation = fit(
             species.molecule[0].to_smiles(): species.thermo.comment
             for species in deprop_rxn.reactants + deprop_rxn.products
         },
-        "normalization": "one secondary radical chain end; one propylene per event",
+        "normalization": (
+            "one secondary radical chain end; one propylene per event"
+        ),
     },
 )
 
 # Chain-end termination: parallel recombination and both distinct
 # disproportionation products of two secondary 4-methyl-2-pentyl radicals.
 # The QSSA solver accepts their summed kt.
-recomb_rxn, = generated(
+recomb_rxn, = generate_with_model_kinetics(
     ["C[CH]CC(C)C", "C[CH]CC(C)C"], "R_Recombination"
 )
-disp_rxns = generated(
+disp_rxns = generate_with_model_kinetics(
     ["C[CH]CC(C)C", "C[CH]CC(C)C"], "Disproportionation"
 )
 assert len(disp_rxns) == 2
@@ -272,7 +285,7 @@ termination = fit(
         "surrogates": [
             "2 4-methyl-2-pentyl radicals -> recombination product",
             (
-                "2 4-methyl-2-pentyl radicals -> 2-methylhexane + "
+                "2 4-methyl-2-pentyl radicals -> 2-methylpentane + "
                 "the two distinct hexene products"
             ),
         ],
@@ -291,7 +304,7 @@ termination = fit(
 # Intermolecular transfer: retain only tertiary C--H abstraction from the
 # three PP-like tertiary sites in 2,4,6-trimethylheptane. Convert the summed
 # bimolecular coefficient to the solver's pseudo-first-order convention.
-inter_rxns_all = generated(
+inter_rxns_all = generate_with_model_kinetics(
     ["C[CH]CC(C)C", "CC(C)CC(C)CC(C)C"], "H_Abstraction"
 )
 
@@ -310,9 +323,7 @@ def is_tertiary_c10_radical(reaction):
     return False
 
 
-inter_rxns = [
-    reaction for reaction in inter_rxns_all if is_tertiary_c10_radical(reaction)
-]
+inter_rxns = list(filter(is_tertiary_c10_radical, inter_rxns_all))
 assert len(inter_rxns) == 2
 assert sum(reaction.degeneracy for reaction in inter_rxns) == 3.0
 inter_bimolecular = sum((forward_rates(reaction) for reaction in inter_rxns))
@@ -320,22 +331,22 @@ inter_pseudo_first = inter_bimolecular / 3.0 * REPEAT_CONCENTRATION_MOL_M3
 
 # Intramolecular transfer: retain the tertiary-C--H 1,5-shift (backbiting)
 # from a PP-trimer-length secondary chain-end radical.
-intra_rxns_all = generated(
+intra_rxns_all = generate_with_model_kinetics(
     ["C[CH]CC(C)CC(C)C"], "intra_H_migration"
 )
-intra_rxns = [
-    reaction
-    for reaction in intra_rxns_all
-    if getattr(reaction.template[0], "label", str(reaction.template[0])).startswith(
-        "R5H"
-    )
-    and any(
+def is_tertiary_r5h_migration(reaction):
+    template = reaction.template[0]
+    template_label = getattr(template, "label", str(template))
+    has_tertiary_product = any(
         atom.radical_electrons == 1
         and sum(neighbor.element.symbol == "C" for neighbor in atom.edges) == 3
         for species in reaction.products
         for atom in species.molecule[0].atoms
     )
-]
+    return template_label.startswith("R5H") and has_tertiary_product
+
+
+intra_rxns = list(filter(is_tertiary_r5h_migration, intra_rxns_all))
 assert len(intra_rxns) == 1
 intra_first = sum((forward_rates(reaction) for reaction in intra_rxns))
 transfer = fit(
@@ -347,7 +358,7 @@ transfer = fit(
         "surrogates": [
             (
                 "4-methyl-2-pentyl + 2,4,6-trimethylheptane -> "
-                "2-methylhexane + tertiary PP-like radical"
+                "2-methylpentane + tertiary PP-like radical"
             ),
             (
                 "PP-trimer-length secondary chain-end radical -> tertiary "
@@ -358,14 +369,17 @@ transfer = fit(
             reaction.selected_kinetics for reaction in inter_rxns + intra_rxns
         ],
         "normalization": (
-            "tertiary-C--H intermolecular sum / 3 propylene-repeat equivalents * "
-            f"{REPEAT_CONCENTRATION_MOL_M3:.12g} mol/m^3 repeat concentration; "
+            "tertiary-C--H intermolecular sum / 3 propylene-repeat "
+            f"equivalents * {REPEAT_CONCENTRATION_MOL_M3:.12g} mol/m^3 "
+            "repeat concentration; "
             "then add the unimolecular tertiary 1,5 intra_H_migration row"
         ),
         "repeat_concentration_mol_m3": REPEAT_CONCENTRATION_MOL_M3,
         "density_kg_m3": PP_DENSITY_KG_M3,
         "repeat_mw_kg_mol": REPEAT_MW_KG_MOL,
-        "intermolecular_rates_s^-1": [float(value) for value in inter_pseudo_first],
+        "intermolecular_rates_s^-1": [
+            float(value) for value in inter_pseudo_first
+        ],
         "intramolecular_rates_s^-1": [float(value) for value in intra_first],
     },
 )
@@ -396,7 +410,10 @@ with (OUT / "rate_points.csv").open("w", newline="") as handle:
             )
 
 lines = [
-    "| Channel | Family / surrogate | A (SI) | n | Ea (J/mol) | max fit error |",
+    (
+        "| Channel | Family / surrogate | A (SI) | n | Ea (J/mol) | "
+        "max fit error |"
+    ),
     "|---|---|---:|---:|---:|---:|",
 ]
 for channel in channels:

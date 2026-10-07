@@ -103,10 +103,14 @@ configured for RMG-database `cd86d4e1c`.
   error is -2.15105711021124e-15 g.
 
 The only styrene-specific text encountered in the generic input path is an
-illustrative `monomer_product` example in `rmgpy/rmg/input.py`; it is not a
-conditional branch. The generic PP declaration probe and completed deck found
-no PE-, PS-, or PP-specific solver branch, so no generic code change was
-needed.
+illustrative `monomer_product` example in `rmgpy/rmg/input.py:299-300`, repeated
+in its validation messages at `rmgpy/rmg/input.py:421-422` and
+`rmgpy/rmg/input.py:446-448`; none is a conditional branch. The generic PP
+declaration probe and completed deck found no PE-, PS-, or PP-specific solver
+branch, so no generic code change was needed.
+
+The prescribed polymer regression selection completed with 1519 passes and 1
+expected failure.
 
 ## What the solver does not express
 
