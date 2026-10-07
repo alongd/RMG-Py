@@ -3,16 +3,20 @@
 import copy
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 import rmgpy.kmc.compiler as compiler_module
 from rmgpy.kmc.compiler import (
+    EventSetCompiler,
     PERSISTENT_CARBENE_POLICY_VERSION,
+    SiteProxy,
     apply_persistent_carbene_policy,
     classify_persistent_carbene,
     duplicate_transition_groups,
 )
+from rmgpy.kmc.event_record import EventRecord
 
 
 FIXTURES = Path(__file__).with_name("fixtures")
@@ -104,6 +108,64 @@ def test_unsupported_persistent_carbene_refuses_both_directions():
     assert refusal["rate_source"] == _source(persistent=False)
 
 
+def test_prepublication_pair_is_refused_atomically_before_links_exist():
+    pair = _pair()
+    for record in pair:
+        record["reverse_of"] = None
+    published, refusal = apply_persistent_carbene_policy(
+        pair, _root(), _source(persistent=False)
+    )
+    assert published == []
+    assert refusal["record_ids"] == ["evt_forward", "evt_reverse"]
+
+
+def test_compiler_applies_prepublication_refusal_before_rate_evaluation(
+    monkeypatch,
+):
+    pair = _pair()
+    structural = [
+        EventRecord(
+            reactant_graphs=record["reactant_graphs"],
+            product_graphs=record["product_graphs"],
+            atom_map=record["atom_map"],
+            bond_ops=record["bond_ops"],
+            rate_source={"available": True},
+        )
+        for record in pair
+    ]
+    family = SimpleNamespace(auto_generated=False)
+    compiler = object.__new__(EventSetCompiler)
+    compiler.kinetics_database = SimpleNamespace(families={"H_Abstraction": family})
+    compiler._applicability_source_cache = {}
+    compiler._applicability_refusals = []
+    compiler._direction_proxy = lambda proxy, reaction: proxy
+    compiler._record = lambda *args, **kwargs: structural.pop(0)
+    compiler._rate_table = lambda reaction: pytest.fail(
+        "rate evaluation ran before applicability refusal"
+    )
+    monkeypatch.setattr(compiler_module, "_reverse_view", lambda reaction: reaction)
+    monkeypatch.setattr(
+        compiler_module, "_mapped_reaction_u2_roots",
+        lambda family, reaction, record: [_root()],
+    )
+    monkeypatch.setattr(
+        compiler_module, "_training_source_domain",
+        lambda family, reaction, cache: _source(persistent=False),
+    )
+    reaction = SimpleNamespace(
+        family="H_Abstraction",
+        kinetics=object(),
+        template=["Root"],
+    )
+    published, refused = compiler._build_linked_family_pair(
+        SiteProxy("synthetic", []), reaction, {}
+    )
+    assert published == []
+    assert refused is None
+    assert len(compiler._applicability_refusals) == 1
+    assert compiler._applicability_refusals[0]["record_ids"]
+
+
 def test_supported_same_role_is_retained_with_transfer_caveat():
     published, refusal = apply_persistent_carbene_policy(
         _pair(), _root(), _source()
@@ -165,6 +227,48 @@ def test_reverse_stored_training_source_flips_to_family_forward_role(monkeypatch
     domain = compiler_module._training_source_domain(Family(), object(), {})
     assert domain[0]["source"]["stored_reverse"] is True
     assert domain[0]["mapped_roots"][0]["family_forward_role"] == "reactant"
+
+
+def test_mixed_rule_training_source_preserves_known_support_and_unknown_rule(
+    monkeypatch,
+):
+    class Entry:
+        index = 629
+        label = "training"
+        item = object()
+
+    class Rule:
+        index = 12
+        label = "averaged rule"
+
+    class Family:
+        auto_generated = False
+        label = "H_Abstraction"
+
+        @staticmethod
+        def extract_source_from_comments(reaction):
+            return False, ("Rate Rules", {
+                "training": [(Rule(), Entry(), 0.75)],
+                "rules": [(Rule(), 0.25)],
+            })
+
+    monkeypatch.setattr(
+        compiler_module,
+        "_mapped_reaction_u2_roots",
+        lambda family, reaction: [{
+            "recipe_label": "*1",
+            "family_forward_role": "product",
+            "persistent_neutral_divalent_carbon": True,
+        }],
+    )
+    domain = compiler_module._training_source_domain(Family(), object(), {})
+    assert [item["source"]["kind"] for item in domain] == ["training", "rule"]
+    assert domain[1]["mapped_roots"] is None
+    published, refusal = apply_persistent_carbene_policy(_pair(), _root(), domain)
+    assert refusal is None
+    assert published[0]["rate_source"]["applicability"]["disposition"] == (
+        "retained-supported-transfer"
+    )
 
 
 def test_nine_form_delocalised_witness_stays_enabled_and_identity_bound():

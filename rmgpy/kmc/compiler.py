@@ -276,6 +276,18 @@ def _persistent_labeled_u2(molecule, atom) -> tuple[bool, int]:
     )
 
 
+def _touched_atom_indices(operations) -> set[int]:
+    """Return every stored atom index named by rewrite operations."""
+    return {
+        index
+        for operation in operations
+        for index in (
+            operation.get("atoms", [])
+            + ([operation["atom"]] if "atom" in operation else [])
+        )
+    }
+
+
 def _mapped_reaction_u2_roots(
     family, reaction, record: EventRecord | dict[str, Any] | None = None
 ) -> list[dict[str, Any]]:
@@ -330,14 +342,7 @@ def _mapped_reaction_u2_roots(
     preferred_by_side = {"reactant": set(), "product": set()}
     if record is not None:
         data = record.to_dict() if isinstance(record, EventRecord) else record
-        touched_indices = {
-            index
-            for operation in data.get("bond_ops", [])
-            for index in (
-                operation.get("atoms", [])
-                + ([operation["atom"]] if "atom" in operation else [])
-            )
-        }
+        touched_indices = _touched_atom_indices(data.get("bond_ops", []))
         preferred_by_side["product"] = {
             operation["atom"]
             for operation in data.get("bond_ops", [])
@@ -399,6 +404,7 @@ def _training_source_domain(family, reaction, cache) -> list[dict[str, Any]] | N
     if getattr(family, "auto_generated", True):
         return None
     training, source = family.extract_source_from_comments(reaction)
+    rule_entries = []
     if training:
         entries = [(source[1], 1.0, source[2], None)]
     else:
@@ -407,8 +413,7 @@ def _training_source_domain(family, reaction, cache) -> list[dict[str, Any]] | N
             (entry, float(weight), False, rule)
             for rule, entry, weight in details.get("training", [])
         ]
-        if details.get("rules"):
-            return None
+        rule_entries = details.get("rules", [])
     domain = []
     for entry, weight, reverse, rule in entries:
         key = (family.label, entry.index)
@@ -435,7 +440,19 @@ def _training_source_domain(family, reaction, cache) -> list[dict[str, Any]] | N
                 "mapped_roots": mapped_roots,
             }
         )
-    return domain
+    domain.extend(
+        {
+            "source": {
+                "kind": "rule",
+                "entry_index": entry.index,
+                "entry_label": entry.label,
+                "weight": float(weight),
+            },
+            "mapped_roots": None,
+        }
+        for entry, weight in rule_entries
+    )
+    return domain or None
 
 
 def _reaction_from_record(record: EventRecord):
@@ -465,14 +482,7 @@ def _stored_u2_root_fallback(record: EventRecord | dict[str, Any]) -> list[dict[
         for graph in data.get("reactant_graphs", [])
         for atom in Molecule().from_adjacency_list(graph).atoms
     ]
-    touched = {
-        index
-        for operation in data.get("bond_ops", [])
-        for index in (
-            operation.get("atoms", [])
-            + ([operation["atom"]] if "atom" in operation else [])
-        )
-    }
+    touched = _touched_atom_indices(data.get("bond_ops", []))
     roots = []
     reactant_u2 = {
         index
@@ -1852,11 +1862,7 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
             if selected_atom in molecule.atoms
         )
 
-    touched_indices = set()
-    for operation in data.get("bond_ops", []):
-        touched_indices.update(operation.get("atoms", []))
-        if "atom" in operation:
-            touched_indices.add(operation["atom"])
+    touched_indices = _touched_atom_indices(data.get("bond_ops", []))
     persistent, resonance_form_count = False, 0
     if root_index in touched_indices:
         persistent, resonance_form_count = _persistent_labeled_u2(
@@ -1893,7 +1899,7 @@ def classify_persistent_carbene(
         }
     matches = []
     for contributor in rate_source_domain:
-        for source_root in contributor.get("mapped_roots", []):
+        for source_root in contributor.get("mapped_roots") or []:
             if (
                 source_root.get("recipe_label") == root["recipe_label"]
                 and source_root.get("family_forward_role")
@@ -1909,6 +1915,15 @@ def classify_persistent_carbene(
             "supporting_contributors": matches,
             "caveat": "same reacting role; donor/acceptor environment may differ",
         }
+    if any(
+        contributor.get("mapped_roots") is None
+        for contributor in rate_source_domain
+    ):
+        return {
+            **result,
+            "disposition": "retained-unresolved-applicability",
+            "reason": "a selected rule contributor has no serialized calibrated domain",
+        }
     return {
         **result,
         "disposition": "refused-unsupported-transfer",
@@ -1921,7 +1936,7 @@ def apply_persistent_carbene_policy(
     mapped_root: dict[str, Any],
     rate_source_domain: list[dict[str, Any]] | None,
 ) -> tuple[list[Any], dict[str, Any] | None]:
-    """Apply one decision atomically to a linked forward/reverse record pair."""
+    """Apply one decision atomically before or after reciprocal pair linking."""
     if len(pair) != 2:
         raise ValueError("applicability policy requires exactly one reciprocal pair")
     records = [
@@ -1929,11 +1944,13 @@ def apply_persistent_carbene_policy(
         for record in pair
     ]
     by_id = {record["event_id"]: record for record in records}
-    if len(by_id) != 2 or any(
-        record.get("reverse_of") not in by_id
-        or by_id[record["reverse_of"]].get("reverse_of") != record["event_id"]
+    prepublication = all(record.get("reverse_of") is None for record in records)
+    linked = all(
+        record.get("reverse_of") in by_id
+        and by_id[record["reverse_of"]].get("reverse_of") == record["event_id"]
         for record in records
-    ):
+    )
+    if len(by_id) != 2 or not (prepublication or linked):
         raise ValueError("applicability policy requires reciprocal reverse links")
     decision = classify_persistent_carbene(
         records[0], mapped_root, rate_source_domain
