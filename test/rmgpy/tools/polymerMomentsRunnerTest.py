@@ -3620,6 +3620,36 @@ class TestAtolReplayParity:
 _POLY102_RUN = "/home/alon/runs/RMG/poly_102_conduit3"
 
 
+def _run_prestress_fromdeck_rtol_1e6(result):
+    """Run the known grinding replay out of process for a bounded xfail."""
+    try:
+        with open(os.path.join(
+                _POLY102_RUN, "chemkin/polymer_pools.json")) as fh:
+            artifact = json.load(fh)
+        species, reactions = load_chem_yaml(
+            os.path.join(_POLY102_RUN, "cantera/chem0079.yaml"))
+        rs, core, _ = build_system_from_artifact(
+            artifact, species, reactions,
+            T0=1100.0, P=1.0e5, V_poly=1.0 / 1050.0,
+            initial_moles={"N2": 0.90, "H(1)": 0.001},
+            mass_transfer_spec=[], initial_moments=None,
+            allow_stale=True, atol=1e-12, rtol=1e-6)
+        y0 = np.array(rs.y, dtype=float).copy()
+        dn0 = rs.residual(0.0, y0, np.zeros_like(y0))[0]
+        rs.initialize(0.0, y0.copy(), dn0, atol=1e-12, rtol=1e-6)
+        for target in (13.0, 14.0, 14.5):
+            rs.advance(target)
+            y = np.asarray(rs.y)
+            assert np.all(np.isfinite(y)), target
+            rs._assert_pool_moments_accepted()
+            result.put(("progress", target))
+        assert rs.t >= 14.5 - 1e-9
+    except BaseException as exc:
+        result.put(("error", repr(exc)))
+    else:
+        result.put(("finished", None))
+
+
 @pytest.mark.functional
 @pytest.mark.skipif(not os.path.isdir(_POLY102_RUN),
                     reason="poly_102_conduit3 forensic run dir not present")
@@ -3794,34 +3824,51 @@ class TestRegen3SavedCoreReplay:
                "near-floor regime on the full system; combined with the "
                "crash-state replay's 1e-6 death at t = 24.639 (see the "
                "prestress canary), the tolerance interaction is a "
-               "round-36 P1. This xfail asserts a 120 s budget at the "
-               "t = 13 checkpoint so it burns ~3.5 min, not the full "
+               "round-36 P1. This xfail enforces the 120 s budget at the "
+               "t = 13 checkpoint in a killable child, not after the full "
                "grind; a law/tolerance combination that traverses the "
                "window flips it loudly.")
     def test_prestress_fromdeck_window_rtol_1e6(self):
-        with open(os.path.join(_POLY102_RUN,
-                               "chemkin/polymer_pools.json")) as fh:
-            artifact = json.load(fh)
-        species, reactions = load_chem_yaml(
-            os.path.join(_POLY102_RUN, "cantera/chem0079.yaml"))
-        rs, core, _ = build_system_from_artifact(
-            artifact, species, reactions,
-            T0=1100.0, P=1.0e5, V_poly=1.0 / 1050.0,
-            initial_moles={"N2": 0.90, "H(1)": 0.001},
-            mass_transfer_spec=[], initial_moments=None,
-            allow_stale=True, atol=1e-12, rtol=1e-6)
-        y0 = np.array(rs.y, dtype=float).copy()
-        dn0 = rs.residual(0.0, y0, np.zeros_like(y0))[0]
-        rs.initialize(0.0, y0.copy(), dn0, atol=1e-12, rtol=1e-6)
-        wall = time.monotonic()
-        budgets = {13.0: 120.0, 14.0: 400.0, 14.5: 500.0}
-        for t, budget in budgets.items():
-            rs.advance(t)
-            assert time.monotonic() - wall < budget, (t, "wall budget")
-            y = np.asarray(rs.y)
-            assert np.all(np.isfinite(y)), t
-            rs._assert_pool_moments_accepted()
-        assert rs.t >= 14.5 - 1e-9    # crossed the old death locus
+        # The old wall assertion ran only after rs.advance returned, so a
+        # grinding integrator could hang pytest forever.  Keep the strict
+        # xfail's intended "flip loudly when fixed" semantics, but isolate
+        # the known grind in a process the parent can terminate at the
+        # first documented 120 s budget.
+        import multiprocessing
+        import queue
+
+        context = multiprocessing.get_context()
+        result = context.Queue()
+        process = context.Process(
+            target=_run_prestress_fromdeck_rtol_1e6, args=(result,))
+        started = time.monotonic()
+        process.start()
+        try:
+            for target, budget in ((13.0, 120.0), (14.0, 400.0),
+                                   (14.5, 500.0)):
+                remaining = max(0.0, budget - (time.monotonic() - started))
+                try:
+                    status, detail = result.get(timeout=remaining)
+                except queue.Empty:
+                    pytest.fail(
+                        f"from-deck rtol=1e-6 replay exceeded {budget:g} s "
+                        f"before t={target:g}")
+                assert status == "progress", detail
+                assert detail == target
+            status, detail = result.get(timeout=10.0)
+            assert status == "finished", detail
+            process.join(timeout=10.0)
+            assert not process.is_alive(), "replay child did not exit"
+            assert process.exitcode == 0, process.exitcode
+        finally:
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=10.0)
+                if process.is_alive():
+                    process.kill()
+                    process.join()
+            result.close()
+            result.join_thread()
 
     def test_death_configuration_replay_through_crash_window(self):
         rs, core = self._reconstruct()
