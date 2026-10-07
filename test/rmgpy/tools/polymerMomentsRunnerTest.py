@@ -3809,31 +3809,14 @@ class TestRegen3SavedCoreReplay:
 
     @pytest.mark.xfail(
         strict=True,
-        reason="round-35 pre-regen stress gate 5b, RED (round-36 "
-               "finding): the from-deck 79/82 window at rtol=1e-6 "
-               "(atol=1e-12; NO regen tolerance is certified -- "
-               "round-37 policy) GRINDS worse "
-               "than at the convicted rtol=1e-4 -- 0 -> 13 s took "
-               "202.3 s wall (1e-4: 16.5 s) and 13 -> 14 took 1765.8 s "
-               "(29.4 min per sim-second; 1e-4 pre-gate law: ~16 min "
-               "then IDID=-7 at t = 14.2445). Worse, mod_5 is STILL "
-               "dragged sub-floor at 1e-6 (accepted 1.82e-11 mol at "
-               "t = 14 vs the 1e-10 floor -- the H1 signature the "
-               "tolerance conviction was expected to remove). "
-               "Tightening rtol does NOT resolve the multi-daughter "
-               "near-floor regime on the full system; combined with the "
-               "crash-state replay's 1e-6 death at t = 24.639 (see the "
-               "prestress canary), the tolerance interaction is a "
-               "round-36 P1. This xfail enforces the 120 s budget at the "
-               "t = 13 checkpoint in a killable child, not after the full "
-               "grind; a law/tolerance combination that traverses the "
-               "window flips it loudly.")
+        reason="I-069 rework-1: the narrowed below-M_LO-only continuity "
+               "ramp preserves the original deck-scale kinetics but the "
+               "from-deck 79/82 replay still exceeds the historical 120 s "
+               "budget before t=13 (reproduced 2026-10-07). Keep this "
+               "killable strict xfail until a separately justified law or "
+               "tolerance change traverses the window.")
     def test_prestress_fromdeck_window_rtol_1e6(self):
-        # The old wall assertion ran only after rs.advance returned, so a
-        # grinding integrator could hang pytest forever.  Keep the strict
-        # xfail's intended "flip loudly when fixed" semantics, but isolate
-        # the known grind in a process the parent can terminate at the
-        # first documented 120 s budget.
+        """Bound the known from-deck rtol=1e-6 grind in a child process."""
         import multiprocessing
         import queue
 

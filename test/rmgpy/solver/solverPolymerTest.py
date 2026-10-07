@@ -56,6 +56,7 @@ from rmgpy.solver.polymer import (
     BUNDLE_LIMITER_SOFTMIN_P,
     CONE_B1_NOISE_REL_FLOOR,
     CONE_MARGIN_M_HI,
+    CONE_MARGIN_M_INNER,
     CONE_MARGIN_M_LO,
     EXHAUSTION_FLOOR_K,
     SMALL_EPS,
@@ -146,7 +147,7 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
     non-end-group, length-biased cone-shrinking debits b1 > b0 = 1):
         Q10 = mu1 - mu0 <= 0        -> 0 REGARDLESS of E
         M = Q10[mol]/floor >= M_hi  -> S_free EXACTLY (margin safely bulk)
-        M <= M_lo                   -> NARROWED dead band (I-090), on the
+        M <= M_inner                -> NARROWED dead band (I-090), on the
                                        b1 axis: 0 EXACTLY once b1 - 1 has
                                        left the RELATIVE width the state
                                        cannot resolve,
@@ -156,8 +157,12 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
                                        C1 smoothstep to softmin_p(S_free,
                                        S_cone) as b1 -> 1+, where S_cone
                                        DIVERGES and so bounds nothing
-        between                     -> C1 v-smoothstep blend of S_free and
-                                       softmin_p(S_free, S_cone)
+        M_inner < M < M_lo          -> one-floor C1 ramp from the narrowed
+                                       completion to softmin_p(S_free, S_cone)
+        M = M_lo                    -> continuous soft-min edge cap
+        M_lo < M < M_hi             -> original C1 v-smoothstep blend of the
+                                       soft-min cap into S_free, bit-identical
+                                       to 039153297
     End-group rows (round-62 N5b adjudicated fix) SKIP stage 2 entirely
     and return S_free unconditionally after stage 1: the end-group
     uniform-pick debit (dmu0, dmu1) = (1, mu1/mu0)*rate makes Q10 =
@@ -247,28 +252,31 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
     # zero endpoint slopes at its b1 handoffs. Moments here are per-volume
     # while `floor` is in moles, so the band is formed on the MOLE basis (b1
     # is basis-invariant). Derivation in the solver's I-090 block comment.
-    if m_dist <= CONE_MARGIN_M_LO:
-        b1_band = ((rtol * (mu1 + mu2) * v_poly + floor + floor)
-                   / (mu1 * v_poly))
-        if e_dist < BUNDLE_LIMITER_E_LO:
-            e_n = e_dist / BUNDLE_LIMITER_E_LO
-            w = e_n * e_n * (3.0 - 2.0 * e_n)
-            cone_band = _softmin_p([b1_band, q10 / (mu0 + mu1 + mu2)])
-            b1_band = w * b1_band + (1.0 - w) * cone_band
-        b1_band = max(b1_band, CONE_B1_NOISE_REL_FLOOR)
-        b1_n = (b1c - 1.0) / b1_band
-        if b1_n >= 1.0:
-            return 0.0
-        s_cone = q10 / (b1c - 1.0)
-        if s_free <= 0.0:
-            return s_free
-        cap = _softmin_p([s_free, s_cone])
-        u = 1.0 - b1_n * b1_n * (3.0 - 2.0 * b1_n)
-        return u * cap
+    b1_band = ((rtol * (mu1 + mu2) * v_poly + floor + floor)
+               / (mu1 * v_poly))
+    if e_dist < BUNDLE_LIMITER_E_LO:
+        e_n = e_dist / BUNDLE_LIMITER_E_LO
+        w = e_n * e_n * (3.0 - 2.0 * e_n)
+        cone_band = _softmin_p([b1_band, q10 / (mu0 + mu1 + mu2)])
+        b1_band = w * b1_band + (1.0 - w) * cone_band
+    b1_band = max(b1_band, CONE_B1_NOISE_REL_FLOOR)
+    b1_n = (b1c - 1.0) / b1_band
     s_cone = q10 / (b1c - 1.0)
     if s_free <= 0.0:
         return s_free
     cap = _softmin_p([s_free, s_cone])
+    if b1_n >= 1.0:
+        narrowed = 0.0
+    else:
+        u = 1.0 - b1_n * b1_n * (3.0 - 2.0 * b1_n)
+        narrowed = u * cap
+    if m_dist <= CONE_MARGIN_M_INNER:
+        return narrowed
+    if m_dist < CONE_MARGIN_M_LO:
+        z_n = ((m_dist - CONE_MARGIN_M_INNER)
+               / (CONE_MARGIN_M_LO - CONE_MARGIN_M_INNER))
+        z = z_n * z_n * (3.0 - 2.0 * z_n)
+        return z * cap + (1.0 - z) * narrowed
     v_n = ((m_dist - CONE_MARGIN_M_LO)
            / (CONE_MARGIN_M_HI - CONE_MARGIN_M_LO))
     v = v_n * v_n * (3.0 - 2.0 * v_n)
@@ -4415,8 +4423,9 @@ class TestHybridPolymerReactor:
         assert fold(s_base, cap) < s_eff < s_base
 
         # DUAL-BAND (s = 1e-12: E = 190, M = 2410, both mid-band): the
-        # full serial law -- stage 1 blend, then stage 2 v-blend against
-        # fold(s_free, s_cone).
+        # full serial law -- stage 1 blend, then the original stage 2
+        # v-blend against fold(s_free, s_cone). I-069 rework restores this
+        # pin because every M > M_LO value is bit-identical to 039153297.
         s_base, s_eff = solver_s_eff(1.0e-12)
         cap = rs._bundle_availability_cap(1, y, 1.0, False)
         s_free = stage1(s_base, cap)
@@ -4574,12 +4583,9 @@ class TestHybridPolymerReactor:
         Round-62 N5b DASSL-hang fix, requirement (d): sweeping q10 (via
         mu1, holding mu0 fixed and bulk) across BOTH the M_lo and M_hi
         cone-margin band edges must show exactly ONE admissible
-        discontinuity -- the accepted jump from 0 (sub-M_lo dead band) up
-        to softmin_p(s_free, s_cone) AT the M_lo edge (documented in
-        _bundle_limited_site's N5b comment) -- with NO sign-dependent
-        toggling (no zero samples above the jump, no repeated
-        zero/nonzero alternation) and non-decreasing values from the edge
-        onward through the v-blend into the M_hi bulk region.
+        transition from the sub-M_inner dead band through the one-floor inner
+        ramp and original M blend, with NO sign-dependent toggling and
+        non-decreasing values onward into the M_hi bulk region.
         """
         sp, core, mask = _two_pool_species()
         rxn = Reaction(reactants=[sp["A"]], products=[sp["B"]], **_KIN)
@@ -4602,17 +4608,117 @@ class TestHybridPolymerReactor:
         vals = np.array(vals)
         m_dist_grid = q10_grid / floor
 
-        below = vals[m_dist_grid <= 1.0e2]
-        above = vals[m_dist_grid > 1.0e2]
-        assert np.all(below == 0.0)
-        assert np.all(above > 0.0)  # no toggling back to zero past the edge
+        dead = vals[m_dist_grid <= CONE_MARGIN_M_INNER]
+        above = vals[m_dist_grid > CONE_MARGIN_M_INNER]
+        assert np.all(dead == 0.0)
+        assert np.all(above > 0.0)  # no toggling back to zero past inner edge
         assert np.all(np.diff(above) >= -1e-12 * np.max(above))  # monotone
-        # Exactly one contiguous zero -> nonzero transition (single jump).
+        # Exactly one contiguous zero -> nonzero transition.
         nonzero_mask = vals > 0.0
         assert np.sum(np.diff(nonzero_mask.astype(int)) == 1) == 1
         # Above M_hi: bulk s_free (== s_base) exactly.
         bulk = vals[m_dist_grid >= 1.0e4]
         assert np.all(bulk == mu0 + q10_grid[m_dist_grid >= 1.0e4])
+
+    @pytest.mark.parametrize("b1_n", [0.2, 0.5, 0.8])
+    def test_bundle_limiter_m_lo_handoff_is_continuous(self, b1_n):
+        """The below-floor ramp must meet the original M-band cap at M_LO."""
+        sp, core, mask = _two_pool_species()
+        rxn = Reaction(reactants=[sp["A"]], products=[sp["B"]], **_KIN)
+        rxn.polymer_flux_archetype = 6
+        rxn.polymer_eject_units = 1.135
+        rs = _two_pool_rs(rxn, core, mask, (1.0, 5.0, 30.0),
+                          (1.0, 5.0, 30.0))
+        y = rs.y.copy()
+        floor = 1.0e-14
+        mu0 = 1.0e6 * floor
+
+        def site_at(m_dist):
+            mu1 = mu0 + m_dist * floor
+            # Solve b1_n = (b1c - 1) / b1_band for b1c, using the
+            # bulk-E band law b1_band = rtol*(1 + b1c) + 2*floor/mu1.
+            delta = (b1_n * (2.0 * rs._cone_b1_rtol + 2.0 * floor / mu1)
+                     / (1.0 - b1_n * rs._cone_b1_rtol))
+            mu2 = mu1 * (1.0 + delta)
+            y[5], y[6], y[7] = mu0, mu1, mu2
+            actual_m = (y[6] - y[5]) / floor
+            actual_band = (rs._cone_b1_rtol * (y[6] + y[7])
+                           + 2.0 * floor) / y[6]
+            actual_b1_n = (y[7] / y[6] - 1.0) / actual_band
+            assert actual_b1_n == pytest.approx(b1_n, rel=1e-8)
+            s_cone = (mu1 - mu0) / (mu2 / mu1 - 1.0)
+            edge_value = _softmin_p([mu1, s_cone])
+            return (actual_m,
+                    rs._bundle_limited_site(1, y, 1.0, False, mu1),
+                    edge_value)
+
+        left_m, left, left_edge = site_at(
+            CONE_MARGIN_M_LO * (1.0 - 1.0e-6))
+        right_m, right, right_edge = site_at(
+            CONE_MARGIN_M_LO * (1.0 + 1.0e-6))
+        assert left_m < CONE_MARGIN_M_LO < right_m
+        assert left > 0.0
+        assert left == pytest.approx(right, rel=5.0e-6)
+        assert left == pytest.approx(left_edge, rel=5.0e-6)
+        assert right == pytest.approx(right_edge, rel=5.0e-6)
+
+    @pytest.mark.parametrize(
+        "moments, expected",
+        [
+            ((0.001, 0.0010005, 0.0010015),
+             float.fromhex("0x1.875c62dc5ecccp-11")),
+            ((0.001, 0.00100002, 0.00100052001),
+             float.fromhex("0x1.51fe247717a35p-15")),
+            ((0.001, 0.0010009, 0.00100100009),
+             float.fromhex("0x1.0661431098b06p-10")),
+            ((0.001, 0.0010004, 0.001000410004),
+             float.fromhex("0x1.063fb521b558ep-10")),
+        ],
+    )
+    def test_bundle_limiter_preserves_original_law_above_m_lo(
+            self, moments, expected):
+        """M-band values above M_LO stay bit-identical to 039153297."""
+        sp, core, mask = _two_pool_species()
+        rxn = Reaction(reactants=[sp["A"]], products=[sp["B"]], **_KIN)
+        rxn.polymer_flux_archetype = 6
+        rxn.polymer_eject_units = 1.135
+        rs = _two_pool_rs(rxn, core, mask, (1.0, 5.0, 30.0), moments)
+        rs.initialize_model(core, [rxn], [], [], atol=1e-12, rtol=1e-4)
+        y = rs.y.copy()
+        m_dist = (y[6] - y[5]) / 1.0e-10
+        assert CONE_MARGIN_M_LO < m_dist < CONE_MARGIN_M_HI
+        actual = rs._bundle_limited_site(1, y, 1.0, False, y[6])
+        assert actual == expected
+
+    def test_bundle_limiter_inner_edge_is_c1(self):
+        """The hard zero hands into the one-floor M ramp continuously."""
+        sp, core, mask = _two_pool_species()
+        rxn = Reaction(reactants=[sp["A"]], products=[sp["B"]], **_KIN)
+        rxn.polymer_flux_archetype = 6
+        rxn.polymer_eject_units = 1.135
+        rs = _two_pool_rs(rxn, core, mask, (1.0, 5.0, 30.0),
+                          (1.0, 5.0, 30.0))
+        y = rs.y.copy()
+        floor = 1.0e-14
+        mu0 = 1.0e6 * floor
+
+        def site_at(m_dist):
+            mu1 = mu0 + m_dist * floor
+            # A resolved b1 shape lies outside the I-090 completion band,
+            # so the deep endpoint is exactly zero.
+            mu2 = 2.0 * mu1
+            y[5], y[6], y[7] = mu0, mu1, mu2
+            return rs._bundle_limited_site(1, y, 1.0, False, mu1)
+
+        inner = CONE_MARGIN_M_INNER
+        eps = 1.0e-3
+        below = site_at(inner - eps)
+        edge = site_at(inner)
+        above = site_at(inner + eps)
+        assert below == edge == 0.0
+        assert above > 0.0
+        # The smoothstep leaves the inner edge with zero derivative.
+        assert above < 1.0e-5 * site_at(inner + 0.5)
 
     def test_regen2_born_empty_daughter_conduit_integration_repro(self):
         """
@@ -4757,9 +4863,9 @@ class TestHybridPolymerReactor:
           state (E >= E_hi, where the round-29 folded form slipped
           through the early return and the in-band form kept w*s_base
           alive: BOTH rejected round-30);
-        * Q10 > 0 with M = Q10/max(f0, f1) mid-band: the v-smoothstep
-          blend toward fold(S_free, S_cone), strictly below S_free,
-          pinned against a hand mirror;
+        * Q10 > 0 with M = Q10/max(f0, f1) mid-band: the original
+          v-smoothstep blend toward softmin(S_free, S_cone), strictly below
+          S_free, pinned against a hand mirror;
         * Q10 > 0 with M >= M_hi: S_eff == s_base bitwise (margin safely
           bulk, both gates exactly inactive).
         """
@@ -4795,8 +4901,9 @@ class TestHybridPolymerReactor:
         # independent cone gate zeroes it.
         assert rs._bundle_availability_cap(1, y, 1.0, False) > 0.0
 
-        # (c) Q10 > 0, M mid-band, E bulk: v-blend toward
-        # fold(S_free = s_base, S_cone), strictly below s_base.
+        # (c) Q10 > 0, M mid-band, E bulk: the original v-blend toward the
+        # soft cone cap. I-069 rework restores this pin because the narrower
+        # fix changes only the one-floor interval immediately below M_LO.
         q10 = 5.0e-7                        # M = 5e3, mid-band
         y[5], y[6], y[7] = 1.0e-3, 1.0e-3 + q10, 1.8e-3
         assert rs._pool_floor_distance(1, y) >= 1.0e4   # E bulk
@@ -4807,11 +4914,12 @@ class TestHybridPolymerReactor:
         q10y = y[6] - y[5]
         m_dist = q10y / floor
         assert 1.0e2 < m_dist < 1.0e4
-        s_cone = q10y / (b1c - 1.0)
         v_n = (m_dist - 1.0e2) / (1.0e4 - 1.0e2)
         v = v_n * v_n * (3.0 - 2.0 * v_n)
+        s_cone = q10y / (b1c - 1.0)
         m = min(s_base, s_cone)
-        fold2 = m * ((m / s_base) ** 8.0 + (m / s_cone) ** 8.0) ** (-1.0 / 8.0)
+        fold2 = m * ((m / s_base) ** 8.0
+                     + (m / s_cone) ** 8.0) ** (-1.0 / 8.0)
         assert s_eff == pytest.approx(v * s_base + (1.0 - v) * fold2,
                                       rel=1e-12, abs=0.0)
         assert 0.0 < s_eff < s_base

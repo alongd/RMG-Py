@@ -1156,7 +1156,7 @@ class TestConduitBundleConsumer:
 # Everything above compares the two implementations through a TRAJECTORY,
 # which only ever visits bulk-scale margins -- and the compiled solver's
 # stage-2 cone-margin drain gate takes its M >= M_hi early return there, so a
-# trajectory comparison cannot see the gate's law at all. The band below M_lo
+# trajectory comparison cannot see the gate's law at all. The gate below M_lo
 # is exactly where the two drifted apart (the solver's round-62 N5b dead band
 # vs the oracle's pre-round-62 softmin cap), and it went unnoticed for months
 # because nothing drove BOTH sides inside it. This section does.
@@ -1202,7 +1202,7 @@ def _cone_band_pair():
 _M_BAND_CASES = [
     (1.0e-2, "dead"),                    # deep inside the dead band
     (4.0e1, "dead"),                     # inside the dead band
-    (1.0e2 * (1.0 - 1.0e-6), "dead"),    # just INSIDE the M_lo edge
+    (1.0e2 * (1.0 - 1.0e-6), "inner"),   # inner C1 ramp below M_lo
     (1.0e2 * (1.0 + 1.0e-6), "blend"),   # just OUTSIDE the M_lo edge
     (1.0e3, "blend"),                    # mid-band v-smoothstep
     (1.0e4 * (1.0 - 1.0e-6), "blend"),   # just INSIDE the M_hi edge
@@ -1214,7 +1214,7 @@ _M_BAND_CASES = [
 class TestConeMarginBandParity:
     """The oracle and the compiled solver must implement ONE law for
     _bundle_limited_site's stage-2 cone-margin drain gate at EVERY point of
-    the M axis -- the m_dist <= CONE_MARGIN_M_LO dead band included.
+    the M axis -- the narrowed dead band and inner ramp included.
 
     Scope and shape of the pin:
 
@@ -1222,13 +1222,14 @@ class TestConeMarginBandParity:
       what is compared is stage 2 alone rather than a stage-1 fold.
     * Non-end-group rows only (b1 = mu2/mu1 = 50 > 1, q10 = mu1 - mu0 > 0), so
       every case reaches the M-band decision instead of an early return.
-    * The DEAD-BAND cases are the discriminating ones. Since round-62
+    * The DEAD-BAND and INNER cases are the discriminating ones. Since round-62
       (rmgpy/solver/polymer.pyx, "N5b cone-gate dead-band fix", commit
       d86201ec2) the solver returns the exact hard zero there; the oracle
       returned softmin_p(S_free, S_cone) -- a nonzero, noise-scale number --
-      until this test was written. The blend and bulk cases already agreed
-      bitwise; they are here to prove the pin brackets the band rather than
-      merely asserting zero everywhere.
+      until this test was written. I-069's one-floor inner ramp joins that
+      zero to the original cap at M_lo, and the bulk remains an exact
+      passthrough; the regions prove the pin brackets both handoffs rather
+      than merely asserting zero everywhere.
     """
 
     def test_band_constants_agree(self):
@@ -1236,6 +1237,8 @@ class TestConeMarginBandParity:
         them: if the solver moves an edge, this fails before any law test
         gets the chance to compare across the wrong boundary."""
         assert consumer_mod.CONE_MARGIN_M_LO == solver_mod.CONE_MARGIN_M_LO
+        assert (consumer_mod.CONE_MARGIN_M_INNER
+                == solver_mod.CONE_MARGIN_M_INNER)
         assert consumer_mod.CONE_MARGIN_M_HI == solver_mod.CONE_MARGIN_M_HI
         assert (consumer_mod.BUNDLE_LIMITER_E_LO
                 == solver_mod.BUNDLE_LIMITER_E_LO)
@@ -1243,6 +1246,62 @@ class TestConeMarginBandParity:
                 == solver_mod.BUNDLE_LIMITER_E_HI)
         assert (consumer_mod.BUNDLE_LIMITER_SOFTMIN_P
                 == solver_mod.BUNDLE_LIMITER_SOFTMIN_P)
+
+    @pytest.mark.parametrize("implementation", ["solver", "numpy"])
+    @pytest.mark.parametrize("b1_n", [None, 0.5],
+                             ids=["resolved", "unresolved-b1"])
+    @pytest.mark.parametrize(
+        "edge",
+        [consumer_mod.CONE_MARGIN_M_INNER, consumer_mod.CONE_MARGIN_M_LO],
+        ids=["M-inner", "M-lo"],
+    )
+    def test_one_sided_m_derivatives_agree(self, implementation, b1_n,
+                                           edge):
+        """Both M handoffs have matching one-sided dS/dM in both laws."""
+        rs, consumer = _cone_band_pair()
+        floor = consumer.mu_floor
+        i0, i1, i2 = consumer.pools["poly"]["mu"]
+        y = np.asarray(rs.y, dtype=np.float64).copy()
+        mu0 = 1.0e6 * floor
+        cone_rtol = (rs._cone_b1_rtol if implementation == "solver"
+                     else consumer.cone_b1_rtol)
+
+        def value_at(m_dist):
+            mu1 = mu0 + m_dist * floor
+            if b1_n is None:
+                mu2 = 2.0 * mu1
+            else:
+                # Hold the normalized I-090 b1 coordinate fixed while M
+                # crosses the handoff, matching the production continuity
+                # probe rather than drifting between completion branches.
+                delta = (b1_n * (2.0 * cone_rtol + 2.0 * floor / mu1)
+                         / (1.0 - b1_n * cone_rtol))
+                mu2 = mu1 * (1.0 + delta)
+            y[i0], y[i1], y[i2] = mu0, mu1, mu2
+            if implementation == "solver":
+                return rs._bundle_limited_site(
+                    0, y, V_POLY, False, mu1)
+            return consumer._bundle_limited_site(
+                "poly", y, False, mu1)
+
+        def one_sided(step):
+            center = value_at(edge)
+            left = (3.0 * center - 4.0 * value_at(edge - step)
+                    + value_at(edge - 2.0 * step)) / (2.0 * step)
+            right = (-3.0 * center + 4.0 * value_at(edge + step)
+                     - value_at(edge + 2.0 * step)) / (2.0 * step)
+            return left, right
+
+        # Richardson-extrapolate the second-order one-sided differences.
+        # A comfortably large base step avoids subtraction noise at the
+        # unresolved-b1 endpoint; extrapolation removes its O(h^2) curvature.
+        coarse_left, coarse_right = one_sided(1.0e-1)
+        fine_left, fine_right = one_sided(5.0e-2)
+        left = (4.0 * fine_left - coarse_left) / 3.0
+        right = (4.0 * fine_right - coarse_right) / 3.0
+        assert np.isfinite(left)
+        assert np.isfinite(right)
+        assert left == pytest.approx(right, rel=5.0e-3, abs=1.0e-16)
 
     @pytest.mark.parametrize(
         "moments,expect_live",
@@ -1300,7 +1359,10 @@ class TestConeMarginBandParity:
         q10 = mu1 - mu0
         m_dist = q10 / floor
         if region == "dead":
-            assert m_dist <= consumer_mod.CONE_MARGIN_M_LO
+            assert m_dist <= consumer_mod.CONE_MARGIN_M_INNER
+        elif region == "inner":
+            assert (consumer_mod.CONE_MARGIN_M_INNER < m_dist
+                    < consumer_mod.CONE_MARGIN_M_LO)
         elif region == "blend":
             assert (consumer_mod.CONE_MARGIN_M_LO < m_dist
                     < consumer_mod.CONE_MARGIN_M_HI)
@@ -1310,8 +1372,8 @@ class TestConeMarginBandParity:
         solver_val = rs._bundle_limited_site(0, y, V_POLY, False, s_base)
         oracle_val = consumer._bundle_limited_site("poly", y, False, s_base)
 
-        # ONE law: bitwise, not within a tolerance. Above M_lo the two
-        # evaluate the identical soft-min in the identical order, so anything
+        # ONE law: bitwise, not within a tolerance. Both copies evaluate the
+        # narrowed completion and both blends in the identical order, so anything
         # short of equality is a divergence, not rounding.
         assert oracle_val == solver_val
 
