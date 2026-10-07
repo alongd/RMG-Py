@@ -267,13 +267,19 @@ BUNDLE_LIMITER_E_HI = 1.0e4
 # bands may diverge under future adjudication. (Mirrored in the numpy
 # oracle consumer -- keep in sync.)
 CONE_MARGIN_M_LO = 1.0e2
-# I-072 widened I-069's one-floor M=99..100 handoff. Saved-deck
-# instrumentation found a daughter parked at M=99.02, where that compressed
-# smoothstep drove 173 convergence failures and first-order 1.8e-5 s steps.
-# Widths 1 and 10 floors still missed the replay budget; 50 floors completed
-# it while preserving the prestress accepted-state floor check. The 50-floor
-# dead band retains half of the already-declared M < M_LO cancellation-noise
-# domain; M >= M_LO remains bit-for-bit unchanged.
+# I-072 numerical regularization widens I-069's smoothstep from W=1
+# (M=99..100) to W=50 accepted-state floors (M=50..100). These are distances
+# measured IN floor units, not sub-floor noise. A cubic smoothstep's maximum
+# normalized slope is 1.5/W and curvature is 6/W^2, so W=50 is 50x gentler
+# in slope and 2500x gentler in curvature than W=1. Instrumentation found a
+# daughter parked at M=99.02: W=1 accumulated 173 convergence failures and
+# first-order 1.8e-5 s steps; widths 1 and 10 missed the replay budget, while
+# W=50 completed it. PE/PS final moments stayed bit-identical. The depletion-
+# handoff reversible pin near solverPolymerTest.py's directional-gate test
+# deliberately changes from both directions off to its M=93 side live and
+# M=46 side off. W=100 (M_inner=0) also completed, but removes the retained
+# exact-zero dead band entirely, so it is not interchangeable with W=50.
+# M >= M_LO remains bit-for-bit unchanged.
 CONE_MARGIN_M_INNER = 5.0e1
 CONE_MARGIN_M_HI = 1.0e4
 # Soft-min sharpness p (round-29 N2), moderate by design. Chosen by the
@@ -5950,15 +5956,15 @@ class HybridPolymerSystem(ReactionSystem):
         Healthy IN-CONE bulk pools take both early returns: s_base comes
         back bitwise, so byte-pins and bulk reversible-row detailed
         balance (C_G* = Keq*S_base(A)/S_base(B)) are untouched. N5b
-        (round-62 DASSL-hang root cause) floors resolved b1 shapes in the
-        M <= M_inner branch to exact zero rather than trusting S_cone's
-        noise-scale magnitude there: below M_lo, Q10 is sub-floor-scale
-        cancellation noise (~1e-17 mol/s-scale rows, ~15 orders below any
-        deck observable -- inside the model's own error budget, the same
-        adjudicated logic as the r81 floors). A 50-floor inner ramp reaches
-        the original band cap at M_lo with zero
-        endpoint slopes. The law for M > M_lo is bit-for-bit unchanged;
-        equality necessarily takes the continuous edge value.
+        (round-62 DASSL-hang root cause) keeps resolved b1 shapes at exact
+        zero through M_inner=50 accepted-state floors. I-072's M=50..100
+        interval is numerical regularization, not a claim that those states
+        are sub-floor noise: widening the cubic handoff reduces its maximum
+        blend slope and curvature by 50x and 2500x versus W=1. It reaches the
+        original band cap at M_lo with zero endpoint slopes. The law for
+        M > M_lo is bit-for-bit unchanged; equality necessarily takes the
+        continuous edge value. See the constant block for measured replay,
+        deck, reversible-pair, and W=100 counterfactual effects.
         s_base is
         the direction's adjudicated site law (mu1/V_poly or mu0/V_poly
         per row scaling, including the pre-existing a>0/a<0 VE

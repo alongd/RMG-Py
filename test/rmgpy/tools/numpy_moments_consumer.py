@@ -54,6 +54,13 @@ BUNDLE_LIMITER_SOFTMIN_P = 8.0
 # dead band. A C1 ramp reaches softmin_p(S_free, S_cone) at M_LO; for M >
 # M_LO the original M band blends that cap into S_free bit-for-bit.
 CONE_MARGIN_M_LO = 1.0e2
+# I-072 numerical regularization: W=50 spans 50..100 ACCEPTED-STATE floors,
+# not sub-floor noise. For cubic smoothstep, max slope 1.5/W and curvature
+# 6/W^2 are 50x/2500x gentler than W=1. The saved replay completes and PE/PS
+# final moments are bit-identical; the M=93/M=46 reversible pair changes from
+# both-off to one-live. W=100 would set M_inner=0 and remove the retained
+# exact-zero dead band, so it is not interchangeable with W=50. Mirror the
+# generating solver's adjudication block exactly.
 CONE_MARGIN_M_INNER = 5.0e1
 CONE_MARGIN_M_HI = 1.0e4
 # I-090 dead-band narrowing: inside M <= M_INNER the completion is kept on the

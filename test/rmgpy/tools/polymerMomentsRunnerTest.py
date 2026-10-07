@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 import yaml
 
+from rmgpy import constants
 from rmgpy.cantera import generate_cantera_data
 from rmgpy.kinetics import Arrhenius
 from rmgpy.molecule import Molecule
@@ -42,6 +43,19 @@ def _spc(smiles, label, index=-1, thermo=True):
                 for tmin, tmax in ((200.0, 1000.0), (1000.0, 6000.0))]
         s.thermo = NASA(polynomials=rows, Tmin=(200.0, "K"), Tmax=(6000.0, "K"))
     return s
+
+
+def _species_mw_g_mol(species):
+    """Convert the Species Mass quantity's kg/molecule SI value to g/mol."""
+    return float(species.molecular_weight.value_si) * constants.Na * 1000.0
+
+
+def _closed_inventory_g(rs, core, y):
+    """Gas molecular mass plus defect-adjusted condensed mass, in grams."""
+    gas = np.flatnonzero(np.asarray(rs.gas_species_mask, dtype=bool))
+    mw_g_mol = np.asarray([_species_mw_g_mol(species) for species in core])
+    gas_g = float(np.dot(np.asarray(y)[gas], mw_g_mol[gas]))
+    return gas_g + float(rs.get_total_polymer_condensed_mass_g(y))
 
 
 def _mu(label):
@@ -3216,6 +3230,35 @@ def _build_deprop(deck, artifact=None, initial_moles=None):
 class TestEndRadicalDepropagationConsumer:
     """Schema 2.8 end_radical_depropagation contract, consumer side."""
 
+    def test_closed_inventory_oracle_one_mole_ethylene(self):
+        """Species.value_si is kg/molecule; the oracle must report g/mol."""
+        ethylene = _spc("C=C", "ethylene")
+        assert _species_mw_g_mol(ethylene) == pytest.approx(
+            28.05, abs=0.01)
+
+    def test_closed_inventory_oracle_one_depropagation_step(
+            self, deprop_deck):
+        """One live polymer-to-gas Euler step preserves closed mass."""
+        rs, core, _ = _build_deprop(deprop_deck)
+        # Isolate one end-radical carrier: disable its parent's homolysis
+        # feed, then seed a realizable live carrier for one deprop step.
+        rs.khom_enabled[0] = 0
+        carrier = rs.polymer_pools[1]
+        y0 = np.asarray(rs.y).copy()
+        y0[list(carrier.mu_indices)] = (0.1, 1.0, 20.0)
+        dn = rs.residual(0.0, y0, np.zeros_like(y0))[0]
+        gas = np.flatnonzero(np.asarray(rs.gas_species_mask, dtype=bool))
+        gas_mass_rate = sum(
+            dn[i] * _species_mw_g_mol(core[i]) for i in gas)
+        assert gas_mass_rate > 0.0, "depropagation must transfer mass to gas"
+
+        dt = 1.0e-12
+        before = _closed_inventory_g(rs, core, y0)
+        after = _closed_inventory_g(rs, core, y0 + dt * dn)
+        transferred_g = dt * gas_mass_rate
+        assert after - before == pytest.approx(
+            0.0, abs=transferred_g * 1.0e-7)
+
     def test_round_trip_kernel_flattened_on_daughters(self, deprop_deck):
         """RED pin (full round trip, truthful 2.8 acceptance): a real
         kernel-enabled deck serialized by the emitter loads GREEN, wires
@@ -3642,16 +3685,33 @@ def _run_prestress_fromdeck_rtol_1e6(result):
         # the solver's defect-adjusted condensed-polymer mass plus the gas
         # species' molecular mass. A local-error solver controls each step,
         # not accumulated global error, so the whole-trajectory conservation
-        # bar is 20 declared relative tolerances (measured fixed-law maximum:
-        # 1.02e-5 over 1,150 accepted steps). No chemistry tolerance or floor
-        # is changed by this diagnostic assertion.
+        # bar is 20 declared relative tolerances. With gas Mass quantities
+        # correctly converted from kg/molecule to g/mol, the measured
+        # fixed-law maximum is 6.76e-13 over 1,314 accepted steps -- more
+        # than seven orders of magnitude inside the existing bar. No
+        # chemistry tolerance or floor is changed by this assertion.
         gas = np.flatnonzero(np.asarray(rs.gas_species_mask, dtype=bool))
         mw_g_mol = np.asarray(
-            [spc.molecular_weight.value_si * 1000.0 for spc in core])
+            [_species_mw_g_mol(spc) for spc in core])
 
         def closed_inventory_g(y):
             gas_g = float(np.dot(y[gas], mw_g_mol[gas]))
             return gas_g + float(rs.get_total_polymer_condensed_mass_g(y))
+
+        def relative_rhs_mass_balance(y):
+            """Mass-weight the independent gas and pool RHS contributions."""
+            assert not any(pool.explicit_dp_to_species_index
+                           for pool in rs.polymer_pools)
+            assert not any(np.asarray(rs.sgh_enabled, dtype=bool))
+            dn = rs.residual(rs.t, y, np.zeros_like(y))[0]
+            terms = [float(np.dot(dn[gas], mw_g_mol[gas]))]
+            for pool in rs.polymer_pools:
+                i0, i1, _i2 = pool.mu_indices
+                terms.append(
+                    dn[i1] * pool.monomer_mw_g_mol
+                    - dn[i0] * pool.chain_mass_defect_g_mol)
+            gross = sum(abs(term) for term in terms)
+            return abs(sum(terms)) / gross if gross else 0.0
 
         def assert_accepted_pool_state(y):
             # The production hook hard-fails beyond-floor negatives but keeps
@@ -3674,9 +3734,13 @@ def _run_prestress_fromdeck_rtol_1e6(result):
                     variance_tol)
 
         inventory0 = closed_inventory_g(np.asarray(rs.y))
+        max_rel_inventory_drift = 0.0
+        max_rel_rhs_mass_balance = 0.0
+        accepted = 0
         for target in (13.0, 14.0, 14.5):
             while rs.t < target:
                 rs.step(target)
+                accepted += 1
                 y = np.asarray(rs.y)
                 assert np.all(np.isfinite(y)), rs.t
                 # Pins every accepted state against the existing per-slot
@@ -3685,14 +3749,29 @@ def _run_prestress_fromdeck_rtol_1e6(result):
                 assert_accepted_pool_state(y)
                 rel_inventory_drift = (
                     abs(closed_inventory_g(y) - inventory0) / inventory0)
+                max_rel_inventory_drift = max(
+                    max_rel_inventory_drift, rel_inventory_drift)
                 assert rel_inventory_drift <= 20.0e-6, (
                     rs.t, rel_inventory_drift)
+                if accepted == 1 or accepted % 100 == 0 or rs.t >= target:
+                    rel_rhs_balance = relative_rhs_mass_balance(y)
+                    max_rel_rhs_mass_balance = max(
+                        max_rel_rhs_mass_balance, rel_rhs_balance)
+                    # Independent instantaneous evidence: mass-weighted RHS
+                    # cancellation is eleven-digit relative in the measured
+                    # replay; 1e-9 retains ample floating-point margin.
+                    assert rel_rhs_balance <= 1.0e-9, (
+                        rs.t, rel_rhs_balance)
             result.put(("progress", target))
         assert rs.t >= 14.5 - 1e-9
     except BaseException as exc:
         result.put(("error", repr(exc)))
     else:
-        result.put(("finished", None))
+        result.put(("finished", {
+            "accepted": accepted,
+            "max_rel_inventory_drift": max_rel_inventory_drift,
+            "max_rel_rhs_mass_balance": max_rel_rhs_mass_balance,
+        }))
 
 
 @pytest.mark.functional
@@ -3877,6 +3956,9 @@ class TestRegen3SavedCoreReplay:
                 assert detail == target
             status, detail = result.get(timeout=10.0)
             assert status == "finished", detail
+            assert detail["accepted"] > 0
+            assert detail["max_rel_inventory_drift"] <= 20.0e-6
+            assert detail["max_rel_rhs_mass_balance"] <= 1.0e-9
             process.join(timeout=10.0)
             assert not process.is_alive(), "replay child did not exit"
             assert process.exitcode == 0, process.exitcode
