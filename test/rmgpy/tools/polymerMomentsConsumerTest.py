@@ -1201,7 +1201,7 @@ def _cone_band_pair():
 # (m_dist target in floor units, region of the M axis it must land in)
 _M_BAND_CASES = [
     (1.0e-2, "dead"),                    # deep inside the dead band
-    (4.0e1, "dead"),                     # inside the dead band
+    (4.0e1, "dead"),                     # inside the retained dead band
     (1.0e2 * (1.0 - 1.0e-6), "inner"),   # inner C1 ramp below M_lo
     (1.0e2 * (1.0 + 1.0e-6), "blend"),   # just OUTSIDE the M_lo edge
     (1.0e3, "blend"),                    # mid-band v-smoothstep
@@ -1222,13 +1222,9 @@ class TestConeMarginBandParity:
       what is compared is stage 2 alone rather than a stage-1 fold.
     * Non-end-group rows only (b1 = mu2/mu1 = 50 > 1, q10 = mu1 - mu0 > 0), so
       every case reaches the M-band decision instead of an early return.
-    * The DEAD-BAND and INNER cases are the discriminating ones. Since round-62
-      (rmgpy/solver/polymer.pyx, "N5b cone-gate dead-band fix", commit
-      d86201ec2) the solver returns the exact hard zero there; the oracle
-      returned softmin_p(S_free, S_cone) -- a nonzero, noise-scale number --
-      until this test was written. I-069's one-floor inner ramp joins that
-      zero to the original cap at M_lo, and the bulk remains an exact
-      passthrough; the regions prove the pin brackets both handoffs rather
+    * The DEAD-BAND and INNER cases are discriminating. I-072 retains exact
+      hard zero through M=50 and widens the C1 handoff to M=50..100; the bulk
+      remains an exact passthrough. The regions bracket both handoffs rather
       than merely asserting zero everywhere.
     """
 
@@ -1333,7 +1329,10 @@ class TestConeMarginBandParity:
         oracle_val = consumer._bundle_limited_site(
             "poly", y, end_group, moments[1])
         assert oracle_val == solver_val
-        assert bool(solver_val > 0.0) is (end_group or expect_live)
+        if end_group or expect_live:
+            assert solver_val > 0.0
+        else:
+            assert solver_val == 0.0
 
     @pytest.mark.parametrize("m_target,region", _M_BAND_CASES,
                              ids=[f"m={c[0]:g}_{c[1]}" for c in _M_BAND_CASES])
@@ -1379,10 +1378,7 @@ class TestConeMarginBandParity:
 
         if region == "dead":
             assert solver_val == 0.0
-            # ...and the zero is a CHOICE, not a degenerate state: the
-            # pre-round-62 law the oracle used to run here is strictly
-            # positive at this very point, so a test that passed both ways
-            # would be vacuous.
+            # ...and the zero is a choice, not a degenerate state.
             s_cone = q10 / (V_POLY * (mu2 / mu1 - 1.0))
             assert softmin_p([s_base, s_cone]) > 0.0
         elif region == "bulk":

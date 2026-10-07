@@ -157,7 +157,7 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
                                        C1 smoothstep to softmin_p(S_free,
                                        S_cone) as b1 -> 1+, where S_cone
                                        DIVERGES and so bounds nothing
-        M_inner < M < M_lo          -> one-floor C1 ramp from the narrowed
+        M_inner < M < M_lo          -> C1 ramp from the narrowed completion
                                        completion to softmin_p(S_free, S_cone)
         M = M_lo                    -> continuous soft-min edge cap
         M_lo < M < M_hi             -> original C1 v-smoothstep blend of the
@@ -4297,17 +4297,18 @@ class TestHybridPolymerReactor:
         # mu1 residue is a pure A<->B transfer (conserved); mu2 is not.
         assert dn_dt[2] + dn_dt[6] == pytest.approx(0.0, abs=1e-12)
 
-    def test_cross_pool_ve_detailed_balance_in_depletion_band(self):
+    def test_cross_pool_ve_directional_gate_in_depletion_handoff(self):
         """
-        I-090 DEPLETION-BAND companion (ec597591ff) to the bulk
-        detailed-balance pin: the SAME closure-matched
+        I-072 DEPLETION-HANDOFF companion to the bulk detailed-balance pin:
+        the SAME closure-matched
         unequal-PDI construction scaled by 1e-10 puts both pools inside
         the limiter tail (E_A ~ 7.3, E_B ~ 4 floors, both <= E_lo = 1e2)
-        AND inside the cone-margin dead band (M_A ~ 93, M_B ~ 46 floors,
-        both <= M_lo = 1e2).  Both b1 - 1 signals are resolved relative to
-        the I-090 noise band, so each direction is exactly off.  Detailed
-        balance is therefore the zero-flux state for every gas
-        concentration, with every affected row bitwise zero.
+        with M_A ~ 93 in the widened handoff and M_B ~ 46 in the retained
+        dead band. Both b1 - 1 signals are resolved relative to the I-090
+        noise band, so the A debit is live and the B debit stays exactly off.
+        The pin checks that this direction-aware boundary changes only the
+        intended one-way event rate, at magnitudes already below the accepted
+        moment floors.
         """
         a = 1.135
         scale = 1.0e-10
@@ -4320,15 +4321,19 @@ class TestHybridPolymerReactor:
         mu_a = (mu1_a * bA2 / bA1 ** 3, mu1_a, bA1 * mu1_a)
         rxn, rs = self._detailed_balance_rs(mu_a, mu_b, a)
 
-        # Both directions are in the resolved-signal I-090 dead band.
+        # I-072 keeps M <= 50 in the dead band and ramps M=50..100.
         s_a, s_b = _s_eff(mu_a), _s_eff(mu_b)
-        assert s_a == 0.0
+        assert s_a > 0.0
         assert s_b == 0.0
 
         y = rs.y.copy()
         y[8] = 1.0
         dn_dt = rs.residual(0.0, y, np.zeros_like(y))[0]
-        assert np.all(dn_dt[[1, 2, 3, 5, 6, 7, 8]] == 0.0)
+        ev = rs.kf[0] * s_a
+        expected = ev * np.array(
+            [-1.0, -bA1, -bA2, 1.0, bB1, bB2, 1.0])
+        assert dn_dt[[1, 2, 3, 5, 6, 7, 8]] == pytest.approx(
+            expected, rel=1e-12, abs=0.0)
 
     def test_bundle_limiter_two_regime_unit_pins(self):
         """
@@ -4340,8 +4345,8 @@ class TestHybridPolymerReactor:
         * BULK (E >= E_hi AND M >= M_hi): returns s_base EXACTLY (bitwise
           ==, not approx) -- healthy pools never feel the limiter, even
           when the bundle cap sits far below s_base (PDI > 1 shape).
-        * TAIL (E <= E_lo AND M <= M_lo): stage 1's soft cap is fully
-          active (fold(s_base, cap)), but stage 2's M <= M_lo dead band
+        * TAIL (E <= E_lo AND M <= M_inner): stage 1's soft cap is fully
+          active (fold(s_base, cap)), but stage 2's M <= M_inner dead band
           (round-62 N5b DASSL-hang fix) returns the EXACT hard zero
           instead of trusting cap/s_cone's noise-scale magnitude down
           there -- q10 itself is sub-floor-scale cancellation noise in
@@ -4389,7 +4394,7 @@ class TestHybridPolymerReactor:
         assert rs._bundle_availability_cap(1, y, 1.0, False) < 0.05 * s_base
 
         # TAIL: E = 0.19, M = 2.41 floors -> stage 1's soft cap is fully
-        # active, but M <= M_lo (round-62 N5b dead band) hard-zeroes the
+        # active, but M <= M_inner (round-62 N5b dead band) hard-zeroes the
         # row EXACTLY rather than folding in cap/s_cone's noise-scale
         # magnitude.
         s_base, s_eff = solver_s_eff(1.0e-15)
@@ -4583,8 +4588,8 @@ class TestHybridPolymerReactor:
         Round-62 N5b DASSL-hang fix, requirement (d): sweeping q10 (via
         mu1, holding mu0 fixed and bulk) across BOTH the M_lo and M_hi
         cone-margin band edges must show exactly ONE admissible
-        transition from the sub-M_inner dead band through the one-floor inner
-        ramp and original M blend, with NO sign-dependent toggling and
+        transition from the M <= M_inner dead band through the widened ramp
+        and original M blend, with NO sign-dependent toggling and
         non-decreasing values onward into the M_hi bulk region.
         """
         sp, core, mask = _two_pool_species()
@@ -4622,7 +4627,7 @@ class TestHybridPolymerReactor:
 
     @pytest.mark.parametrize("b1_n", [0.2, 0.5, 0.8])
     def test_bundle_limiter_m_lo_handoff_is_continuous(self, b1_n):
-        """The below-floor ramp must meet the original M-band cap at M_LO."""
+        """The widened inner ramp must meet the original M-band cap at M_LO."""
         sp, core, mask = _two_pool_species()
         rxn = Reaction(reactants=[sp["A"]], products=[sp["B"]], **_KIN)
         rxn.polymer_flux_archetype = 6
@@ -4691,7 +4696,7 @@ class TestHybridPolymerReactor:
         assert actual == expected
 
     def test_bundle_limiter_inner_edge_is_c1(self):
-        """The hard zero hands into the one-floor M ramp continuously."""
+        """The hard-zero dead band hands into the M ramp continuously."""
         sp, core, mask = _two_pool_species()
         rxn = Reaction(reactants=[sp["A"]], products=[sp["B"]], **_KIN)
         rxn.polymer_flux_archetype = 6
@@ -4704,6 +4709,11 @@ class TestHybridPolymerReactor:
 
         def site_at(m_dist):
             mu1 = mu0 + m_dist * floor
+            # Decimal floor counts need not survive the subtraction exactly.
+            # Keep the nominal inner-edge sample on the dead-band side.
+            if m_dist == CONE_MARGIN_M_INNER:
+                while (mu1 - mu0) / floor > m_dist:
+                    mu1 = np.nextafter(mu1, mu0)
             # A resolved b1 shape lies outside the I-090 completion band,
             # so the deep endpoint is exactly zero.
             mu2 = 2.0 * mu1
@@ -4903,7 +4913,7 @@ class TestHybridPolymerReactor:
 
         # (c) Q10 > 0, M mid-band, E bulk: the original v-blend toward the
         # soft cone cap. I-069 rework restores this pin because the narrower
-        # fix changes only the one-floor interval immediately below M_LO.
+        # fix changes only the M=50..100 interval immediately below M_LO.
         q10 = 5.0e-7                        # M = 5e3, mid-band
         y[5], y[6], y[7] = 1.0e-3, 1.0e-3 + q10, 1.8e-3
         assert rs._pool_floor_distance(1, y) >= 1.0e4   # E bulk

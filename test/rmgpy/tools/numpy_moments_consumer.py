@@ -50,17 +50,15 @@ BUNDLE_LIMITER_SOFTMIN_P = 8.0
 # generating solver's CONE_MARGIN_M_LO/_M_HI): dimensionless margin
 # distance M = Q10/f with Q10 = mu1 - mu0 and f the r81 floor. For
 # cone-shrinking debits (b1 > b0 = 1): Q10 <= 0 returns 0 REGARDLESS of
-# E; M >= M_HI returns S_free exactly; M <= M_INNER runs the NARROWED dead
-# band (I-090 -- see the MIRRORED SOLVER LAW block in
-# _bundle_limited_site, the one place that law lives here). A one-floor C1
-# ramp reaches softmin_p(S_free, S_cone) at M_LO; for M > M_LO the original
-# M band blends that cap into S_free bit-for-bit.
+# E; M >= M_HI returns S_free exactly; M <= M_INNER runs the NARROWED I-090
+# dead band. A C1 ramp reaches softmin_p(S_free, S_cone) at M_LO; for M >
+# M_LO the original M band blends that cap into S_free bit-for-bit.
 CONE_MARGIN_M_LO = 1.0e2
-CONE_MARGIN_M_INNER = CONE_MARGIN_M_LO - 1.0
+CONE_MARGIN_M_INNER = 5.0e1
 CONE_MARGIN_M_HI = 1.0e4
-# I-090 dead-band narrowing: inside the M <= M_INNER dead band the completion
-# is kept on the neighbourhood of b1 == 1 that the accepted state cannot
-# resolve, of RELATIVE width (ewt(mu1) + ewt(mu2))/mu1 with the integrator's
+# I-090 dead-band narrowing: inside M <= M_INNER the completion is kept on the
+# neighbourhood of b1 == 1 that the accepted state cannot resolve, of RELATIVE
+# width (ewt(mu1) + ewt(mu2))/mu1 with the integrator's
 # own error weight ewt(mu_k) = rtol*mu_k + f_k, floored at
 # CONE_B1_NOISE_REL_FLOOR = sqrt(machine eps). Keep in sync with the
 # generating solver, whose I-090 block comment carries the reasoning
@@ -742,10 +740,10 @@ class ArtifactConsumer:
         M = Q10/floor >= M_hi -> S_free exactly. Below M_hi, form the
         narrowed completion C = u*softmin_p(S_free, S_cone), with u the
         reverse smoothstep on I-090's unresolved b1 neighbourhood and zero
-        outside it. M <= M_inner returns C; a one-floor C1 ramp below M_lo
-        reaches the original soft-min cap; for M > M_lo the original M band
-        then blends that cap into S_free bit-for-bit. The value exactly at
-        M_lo is necessarily the continuous edge cap.
+        outside it. M <= M_inner returns C; a C1 ramp reaches the original
+        soft-min cap at M_lo; for M > M_lo the original M band then blends
+        that cap into S_free bit-for-bit. The value exactly at M_lo is
+        necessarily the continuous edge cap.
         S_cone = Q10/(V_poly*(b1 - 1))."""
         # stage 1: exhaustion tail limiter
         e_dist = self._floor_distance(pool, y)

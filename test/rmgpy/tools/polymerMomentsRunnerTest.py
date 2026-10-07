@@ -3621,7 +3621,7 @@ _POLY102_RUN = "/home/alon/runs/RMG/poly_102_conduit3"
 
 
 def _run_prestress_fromdeck_rtol_1e6(result):
-    """Run the known grinding replay out of process for a bounded xfail."""
+    """Run the saved-deck replay and check every accepted solver state."""
     try:
         with open(os.path.join(
                 _POLY102_RUN, "chemkin/polymer_pools.json")) as fh:
@@ -3637,11 +3637,56 @@ def _run_prestress_fromdeck_rtol_1e6(result):
         y0 = np.array(rs.y, dtype=float).copy()
         dn0 = rs.residual(0.0, y0, np.zeros_like(y0))[0]
         rs.initialize(0.0, y0.copy(), dn0, atol=1e-12, rtol=1e-6)
-        for target in (13.0, 14.0, 14.5):
-            rs.advance(target)
-            y = np.asarray(rs.y)
-            assert np.all(np.isfinite(y)), target
+
+        # This is a closed, adiabatic-free replay: its material inventory is
+        # the solver's defect-adjusted condensed-polymer mass plus the gas
+        # species' molecular mass. A local-error solver controls each step,
+        # not accumulated global error, so the whole-trajectory conservation
+        # bar is 20 declared relative tolerances (measured fixed-law maximum:
+        # 1.02e-5 over 1,150 accepted steps). No chemistry tolerance or floor
+        # is changed by this diagnostic assertion.
+        gas = np.flatnonzero(np.asarray(rs.gas_species_mask, dtype=bool))
+        mw_g_mol = np.asarray(
+            [spc.molecular_weight.value_si * 1000.0 for spc in core])
+
+        def closed_inventory_g(y):
+            gas_g = float(np.dot(y[gas], mw_g_mol[gas]))
+            return gas_g + float(rs.get_total_polymer_condensed_mass_g(y))
+
+        def assert_accepted_pool_state(y):
+            # The production hook hard-fails beyond-floor negatives but keeps
+            # realizability as a warn-only census. This regression promotes
+            # both realizability inequalities to trajectory assertions using
+            # exactly the hook's first-order floor propagation.
             rs._assert_pool_moments_accepted()
+            floors = np.asarray(rs._pool_mu_floors)
+            for p, pool in enumerate(rs.polymer_pools):
+                i0, i1, i2 = pool.mu_indices
+                mu0, mu1, mu2 = y[i0], y[i1], y[i2]
+                f0, f1, f2 = floors[p]
+                assert mu1 >= mu0 - (f0 + f1), (
+                    rs.t, pool.label, "cone", mu0, mu1, f0 + f1)
+                variance_tol = (
+                    f0 * abs(mu2) + f2 * abs(mu0)
+                    + 2.0 * f1 * abs(mu1) + f0 * f2 + f1 * f1)
+                assert mu0 * mu2 >= mu1 * mu1 - variance_tol, (
+                    rs.t, pool.label, "variance", mu0, mu1, mu2,
+                    variance_tol)
+
+        inventory0 = closed_inventory_g(np.asarray(rs.y))
+        for target in (13.0, 14.0, 14.5):
+            while rs.t < target:
+                rs.step(target)
+                y = np.asarray(rs.y)
+                assert np.all(np.isfinite(y)), rs.t
+                # Pins every accepted state against the existing per-slot
+                # floors and the complete realizability cone, not just the
+                # three reporting checkpoints.
+                assert_accepted_pool_state(y)
+                rel_inventory_drift = (
+                    abs(closed_inventory_g(y) - inventory0) / inventory0)
+                assert rel_inventory_drift <= 20.0e-6, (
+                    rs.t, rel_inventory_drift)
             result.put(("progress", target))
         assert rs.t >= 14.5 - 1e-9
     except BaseException as exc:
@@ -3807,16 +3852,8 @@ class TestRegen3SavedCoreReplay:
         # a grind-class regression blows this loudly)
         assert time.monotonic() - wall < 300.0
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="I-069 rework-1: the narrowed below-M_LO-only continuity "
-               "ramp preserves the original deck-scale kinetics but the "
-               "from-deck 79/82 replay still exceeds the historical 120 s "
-               "budget before t=13 (reproduced 2026-10-07). Keep this "
-               "killable strict xfail until a separately justified law or "
-               "tolerance change traverses the window.")
     def test_prestress_fromdeck_window_rtol_1e6(self):
-        """Bound the known from-deck rtol=1e-6 grind in a child process."""
+        """The from-deck rtol=1e-6 replay crosses its full stress window."""
         import multiprocessing
         import queue
 
