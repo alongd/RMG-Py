@@ -1019,7 +1019,7 @@ def test_same_length_library_entry_replacement_changes_next_verdict(thermo_datab
 
 @pytest.mark.parametrize(
     "label,smiles",
-    [("N2+", "[N+]#N"), ("NO+", "[N+]=O"), ("O2-", "[O-][O]")],
+    [("N2+", "[N+]#N"), ("NO+", "[N+]=O"), ("OH-", "[OH-]")],
 )
 def test_gav_ions_are_refused_in_core(thermo_database, label, smiles):
     ion = Species(label=label).from_smiles(smiles)
@@ -1027,6 +1027,13 @@ def test_gav_ions_are_refused_in_core(thermo_database, label, smiles):
     assert "group additivity" in ion.thermo.comment
     with pytest.raises(PlasmaStateError, match=re.escape(label)):
         _initialize(ion)
+
+
+def test_o2m_library_thermo_is_accepted_in_core(thermo_database):
+    ion = Species(label="O2-").from_smiles("[O-][O]")
+    ion.thermo = thermo_database.get_thermo_data(ion)
+    assert ion.thermo.comment.startswith("Thermo library: PlasmaThermo")
+    _initialize(ion)
 
 
 def test_electron_is_exempt_without_thermo(thermo_database):
