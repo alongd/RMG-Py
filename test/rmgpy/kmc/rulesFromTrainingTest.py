@@ -108,6 +108,7 @@ def test_tree_invariance_allows_added_channels_and_corrected_site_labels():
         for family in probe.TREE_FAMILIES
     ]}
     new = copy.deepcopy(old)
+    new["provenance"] = {"rmg_database_sha": "pinned"}
     for record in new["records"]:
         record["site_type"] = "benzylic_context"
         record["participant_site_types"] = ["interior_radical"]
@@ -116,6 +117,42 @@ def test_tree_invariance_allows_added_channels_and_corrected_site_labels():
     assert probe.verify_tree_invariance(old, new) == {family: 1 for family in probe.TREE_FAMILIES}
     new["records"][0]["k_table"]["k"] = [3]
     with pytest.raises(AssertionError):
+        probe.verify_tree_invariance(old, new)
+
+
+def test_tree_invariance_rejects_rate_and_non_provenance_source_mutations():
+    probe = load_probe()
+    old = {"records": [
+        {"family": family, "k_table": {"T": [600.0], "k": [1.0]},
+         "rate_source": {"kind": "RMG family estimate",
+                          "reference_thermo": {"rmg_database_sha": "pinned"}}}
+        for family in probe.TREE_FAMILIES
+    ]}
+    new = copy.deepcopy(old)
+    new["provenance"] = {"rmg_database_sha": "pinned"}
+
+    new["records"][0]["k_table"]["k"][0] *= 1.0 + 1.0e-9
+    with pytest.raises(AssertionError):
+        probe.verify_tree_invariance(old, new)
+
+    new = copy.deepcopy(old)
+    new["provenance"] = {"rmg_database_sha": "pinned"}
+    new["records"][0]["rate_source"]["kind"] = "mutated"
+    with pytest.raises(AssertionError):
+        probe.verify_tree_invariance(old, new)
+
+
+def test_tree_invariance_requires_database_provenance_pin():
+    probe = load_probe()
+    old = {"records": [
+        {"family": family, "k_table": {"T": [600.0], "k": [1.0]},
+         "rate_source": {"kind": "RMG family estimate"}}
+        for family in probe.TREE_FAMILIES
+    ]}
+    new = copy.deepcopy(old)
+    new["provenance"] = {}
+
+    with pytest.raises(AssertionError, match="provenance.rmg_database_sha"):
         probe.verify_tree_invariance(old, new)
 
 
