@@ -1252,8 +1252,11 @@ class TestConeMarginBandParity:
         ],
         ids=["resolved-shape-off", "b1-surface-live"],
     )
+    @pytest.mark.parametrize("end_group", [False, True],
+                             ids=["internal-unit", "end-group"])
     def test_solver_and_oracle_agree_below_the_E_floor(self, moments,
-                                                       expect_live):
+                                                       expect_live,
+                                                       end_group):
         """I-067's new E < E_lo branch is mirrored bitwise by the oracle."""
         rs, consumer = _cone_band_pair()
         floor = 1.0e-14
@@ -1266,11 +1269,12 @@ class TestConeMarginBandParity:
         assert e_dist < consumer_mod.BUNDLE_LIMITER_E_LO
         assert m_dist < consumer_mod.CONE_MARGIN_M_LO
 
-        solver_val = rs._bundle_limited_site(0, y, V_POLY, False, moments[1])
+        solver_val = rs._bundle_limited_site(
+            0, y, V_POLY, end_group, moments[1])
         oracle_val = consumer._bundle_limited_site(
-            "poly", y, False, moments[1])
+            "poly", y, end_group, moments[1])
         assert oracle_val == solver_val
-        assert bool(solver_val > 0.0) is expect_live
+        assert bool(solver_val > 0.0) is (end_group or expect_live)
 
     @pytest.mark.parametrize("m_target,region", _M_BAND_CASES,
                              ids=[f"m={c[0]:g}_{c[1]}" for c in _M_BAND_CASES])

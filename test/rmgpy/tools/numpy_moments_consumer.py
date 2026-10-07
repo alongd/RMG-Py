@@ -734,8 +734,10 @@ class ArtifactConsumer:
             S_free = w*S_base + (1-w)*softmin_p(S_base, S_cap),
             w = 3e^2 - 2e^3 on e = clamp((E - E_lo)/(E_hi - E_lo), 0, 1);
             E >= E_hi returns s_base EXACTLY (bulk law untouched).
-        Stage 2 (M band, INDEPENDENT of E; only cone-shrinking debits,
-        b1 > b0 = 1): Q10 = mu1 - mu0 <= 0 -> 0 regardless of E;
+        End-group rows return S_free after stage 1, matching production:
+        their cone cap cannot bind. Stage 2 (M band, INDEPENDENT of E;
+        only non-end-group cone-shrinking debits, b1 > b0 = 1):
+        Q10 = mu1 - mu0 <= 0 -> 0 regardless of E;
         M = Q10/floor >= M_hi -> S_free exactly; M <= M_lo -> 0 EXACTLY
         (round-62 N5b dead band, was softmin_p(S_free, S_cone)); between:
         C1 v-smoothstep blend of S_free and softmin_p(S_free, S_cone) with
@@ -757,19 +759,18 @@ class ArtifactConsumer:
                        / (BUNDLE_LIMITER_E_HI - BUNDLE_LIMITER_E_LO))
                 w = e_n * e_n * (3.0 - 2.0 * e_n)
                 s_free = w * s_base + (1.0 - w) * cap
+        # End-group uniform-pick drains preserve Q10 multiplicatively, so
+        # production's stage-2 cone cap cannot bind for these rows.
+        if end_group:
+            return s_free
         # stage 2: cone-margin drain gate (independent of E)
         i0, i1, i2 = self.pools[pool]["mu"]
         y0c = max(0.0, y[i0])
         y1c = max(0.0, y[i1])
         y2c = max(0.0, y[i2])
-        if end_group:
-            if y0c / self.V_poly <= SMALL_EPS:
-                return s_free       # empty pool: stage 1 owns it
-            b1c = y1c / y0c
-        else:
-            if y1c / self.V_poly <= SMALL_EPS:
-                return s_free
-            b1c = y2c / y1c
+        if y1c / self.V_poly <= SMALL_EPS:
+            return s_free
+        b1c = y2c / y1c
         if b1c <= 1.0:              # b0 = 1: debit does not shrink Q10
             return s_free
         q10 = y1c - y0c
