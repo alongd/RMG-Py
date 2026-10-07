@@ -6057,23 +6057,51 @@ class HybridPolymerSystem(ReactionSystem):
         #     N5b hard zero continuously, and BIT-FOR-BIT 0.0 beyond it --
         #     not merely small. Everything at O(1) b1c - 1 (all bulk
         #     cone-shrinking debits) is unchanged from round-62.
-        #   * across the M_LO band edge the law is now no WORSE and near
-        #     the surface strictly better: the pre-existing edge jump is
-        #     scaled by (1 - u), so it vanishes exactly where u -> 1.
-        # The neighbourhood half-width is derived, not fitted: it is the
-        # propagated error weight of the two moments b1c is built from, and
-        # it must be RELATIVE rather than absolute -- see the I-090 block
-        # comment near CONE_B1_NOISE_REL_FLOOR. (mirrored in the numpy
-        # oracle consumer's MIRRORED SOLVER LAW block and in _s_eff in
-        # solverPolymerTest.py -- keep all three in sync)
+        #   * across the M_LO band edge the law is no worse and near the
+        #     surface strictly better: the pre-existing edge jump is scaled
+        #     by (1 - u), so it vanishes exactly where u -> 1.
+        # The neighbourhood half-width is derived, not fitted.  I-090 used
+        # only the propagated error weight of the two moments b1c is built
+        # from.  Its absolute floor terms divided by y1c, however, diverge as
+        # an entire bundle becomes sub-floor: a fixed, resolved distribution
+        # shape is then misclassified as arbitrarily uncertain and its drain
+        # reopens.  I-067 conditions that band with the scale-free fraction
+        # of the complete three-moment inventory carried by the cone margin:
+        #
+        #   B_err = (rtol*(y1+y2) + f1+f2) / y1
+        #   B_Q   = softmin_p(B_err, Q10/(y0+y1+y2))
+        #   h     = smoothstep(E/E_lo)
+        #   B     = h*B_err + (1-h)*B_Q              (E < E_lo)
+        #
+        # Q10/(y0+y1+y2) is dimensionless, scale invariant at fixed shape,
+        # and contains no fitted constant.  Thus a resolved shape remains
+        # resolved below the inventory floor, and the band follows the
+        # remaining cone reserve when the absolute error term loses meaning.
+        # h and h' meet (1, 0) at E_lo, so the E-axis blend is continuous,
+        # joins the old law there with matching slope, and is exactly the old
+        # law throughout the bulk.  The hard floor applied to B below can
+        # still introduce a derivative kink, so the complete floored law is
+        # not generally C1.  The b1 completion itself has zero endpoint
+        # slopes at both of its existing handoffs.  See the I-090 width
+        # derivation near CONE_B1_NOISE_REL_FLOOR.  This law is mirrored in
+        # the numpy consumer and _s_eff; keep all three in sync.
         if m_dist <= CONE_MARGIN_M_LO:
             b1_band = ((self._cone_b1_rtol * (y1c + y2c)
                         + floors[pool_idx, 1] + floors[pool_idx, 2]) / y1c)
+            if e_dist < BUNDLE_LIMITER_E_LO:
+                e_n = e_dist / BUNDLE_LIMITER_E_LO
+                w = e_n * e_n * (3.0 - 2.0 * e_n)
+                cap = q10 / (y0c + y1c + y2c)
+                m = cap if cap < b1_band else b1_band
+                p = BUNDLE_LIMITER_SOFTMIN_P
+                acc = (m / b1_band) ** p + (m / cap) ** p
+                cap = m * acc ** (-1.0 / p)
+                b1_band = w * b1_band + (1.0 - w) * cap
             if b1_band < CONE_B1_NOISE_REL_FLOOR:
                 b1_band = CONE_B1_NOISE_REL_FLOOR
             b1_n = (b1c - 1.0) / b1_band
             if b1_n >= 1.0:
-                return 0.0      # b1c - 1 is resolved signal: the N5b regime
+                return 0.0
             s_cone = q10 / (V_poly * (b1c - 1.0))
             if s_free <= 0.0:
                 return s_free
@@ -6102,6 +6130,20 @@ class HybridPolymerSystem(ReactionSystem):
     # path is purely ADDITIVE: no residual law, softclamp, r81 floor, or
     # §4 dispatch semantics change anywhere.
     # ------------------------------------------------------------------
+    def advance(self, tout):
+        """Advance and leave scoped-Jacobian diagnostics at the accepted state.
+
+        DASPK normally evaluates a full residual after a user Jacobian, but
+        may return at ``tout`` immediately after the Jacobian sweep. Refresh
+        only in that exceptional ordering; the discarded residual restores
+        rate/census diagnostics without changing the accepted state.
+        """
+        result = super().advance(tout)
+        if self._scoped_jac_diag_stale:
+            self.residual(self.t, np.array(self.y, copy=True),
+                          np.array(self.dydt, copy=True))
+        return result
+
     def request_scoped_jacobian(self, enable=True):
         """Toggle the scoped-Jacobian request on an already-constructed
         system and re-run the arming validation immediately (the caller

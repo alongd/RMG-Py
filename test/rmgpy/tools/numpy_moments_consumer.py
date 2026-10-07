@@ -734,8 +734,10 @@ class ArtifactConsumer:
             S_free = w*S_base + (1-w)*softmin_p(S_base, S_cap),
             w = 3e^2 - 2e^3 on e = clamp((E - E_lo)/(E_hi - E_lo), 0, 1);
             E >= E_hi returns s_base EXACTLY (bulk law untouched).
-        Stage 2 (M band, INDEPENDENT of E; only cone-shrinking debits,
-        b1 > b0 = 1): Q10 = mu1 - mu0 <= 0 -> 0 regardless of E;
+        End-group rows return S_free after stage 1, matching production:
+        their cone cap cannot bind. Stage 2 (M band, INDEPENDENT of E;
+        only non-end-group cone-shrinking debits, b1 > b0 = 1):
+        Q10 = mu1 - mu0 <= 0 -> 0 regardless of E;
         M = Q10/floor >= M_hi -> S_free exactly; M <= M_lo -> 0 EXACTLY
         (round-62 N5b dead band, was softmin_p(S_free, S_cone)); between:
         C1 v-smoothstep blend of S_free and softmin_p(S_free, S_cone) with
@@ -757,19 +759,18 @@ class ArtifactConsumer:
                        / (BUNDLE_LIMITER_E_HI - BUNDLE_LIMITER_E_LO))
                 w = e_n * e_n * (3.0 - 2.0 * e_n)
                 s_free = w * s_base + (1.0 - w) * cap
+        # End-group uniform-pick drains preserve Q10 multiplicatively, so
+        # production's stage-2 cone cap cannot bind for these rows.
+        if end_group:
+            return s_free
         # stage 2: cone-margin drain gate (independent of E)
         i0, i1, i2 = self.pools[pool]["mu"]
         y0c = max(0.0, y[i0])
         y1c = max(0.0, y[i1])
         y2c = max(0.0, y[i2])
-        if end_group:
-            if y0c / self.V_poly <= SMALL_EPS:
-                return s_free       # empty pool: stage 1 owns it
-            b1c = y1c / y0c
-        else:
-            if y1c / self.V_poly <= SMALL_EPS:
-                return s_free
-            b1c = y2c / y1c
+        if y1c / self.V_poly <= SMALL_EPS:
+            return s_free
+        b1c = y2c / y1c
         if b1c <= 1.0:              # b0 = 1: debit does not shrink Q10
             return s_free
         q10 = y1c - y0c
@@ -778,43 +779,35 @@ class ArtifactConsumer:
         m_dist = q10 / self.mu_floor
         if m_dist >= CONE_MARGIN_M_HI:
             return s_free           # margin safely bulk: gate inactive
+        # -- MIRRORED SOLVER LAW ----------------------------------------
+        # rmgpy/solver/polymer.pyx, _bundle_limited_site, stage-2
+        # cone-margin drain gate, revision I-090 ("cone-margin dead-band
+        # narrowing") plus I-067's continuous sub-floor conditioning. THE
+        # ONE PLACE this branch's law lives here.
+        #
+        # Pinned against the solver across the M axis, through the b1
+        # surface, and at sub-floor E by TestConeMarginBandParity in
+        # polymerMomentsConsumerTest.py.  Do NOT re-derive it here.
         if m_dist <= CONE_MARGIN_M_LO:
-            # -- MIRRORED SOLVER LAW ------------------------------------
-            # rmgpy/solver/polymer.pyx, _bundle_limited_site, stage-2
-            # cone-margin drain gate, revision I-090 ("cone-margin
-            # dead-band narrowing"), which supersedes the round-62 N5b
-            # revision's unconditional hard zero. THE ONE PLACE this
-            # branch's law lives here.
-            #
-            # Round-62 returned the exact hard zero for EVERY b1 below
-            # M_LO, because q10 = mu1 - mu0 is sub-floor-scale
-            # cancellation noise down there and softmin_p(S_free, S_cone)
-            # trusts that noise's magnitude AND its sign. That argument is
-            # sound wherever S_cone is a real bound -- and void right at
-            # b1 == 1, where S_cone = q10/(V*(b1 - 1)) DIVERGES and so
-            # bounds nothing: there the hard zero discards a live rate and
-            # does it with a jump (S_free on the b1 <= 1 side, 0.0 on the
-            # other) that the generating solver's corrector cannot step
-            # across. I-090 therefore keeps the completion on a noise-scale
-            # neighbourhood of b1 == 1 only, and hands back to the SAME
-            # exact hard zero outside it through a C1 smoothstep, so no new
-            # discontinuity is introduced on either side. The neighbourhood
-            # is the RELATIVE width the accepted state cannot resolve,
-            # (ewt(mu1) + ewt(mu2))/mu1 with ewt(mu_k) = rtol*mu_k + f_k --
-            # derived, not tuned; see the solver's I-090 block comment.
-            #
-            # Pinned against the solver at every point of the M axis, and
-            # on the b1 axis through the surface, by TestConeMarginBandParity
-            # in polymerMomentsConsumerTest.py; if the solver's law here
-            # changes again, that test fails and this block is its
-            # counterpart. Do NOT re-derive the value, mirror it.
             b1_band = ((self.cone_b1_rtol * (y1c + y2c)
                         + self.mu_floor + self.mu_floor) / y1c)
+            # I-067: at sub-floor bundle amplitude, condition I-090's
+            # absolute-error band by the scale-free cone reserve of the
+            # complete three-moment bundle. The smoothstep equals one with
+            # zero slope at E_lo, so the blend meets the old law smoothly.
+            # The later hard floor can still introduce a derivative kink;
+            # the complete floored law is continuous, not generally C1.
+            if e_dist < BUNDLE_LIMITER_E_LO:
+                e_n = e_dist / BUNDLE_LIMITER_E_LO
+                w = e_n * e_n * (3.0 - 2.0 * e_n)
+                cone_band = softmin_p(
+                    [b1_band, q10 / (y0c + y1c + y2c)])
+                b1_band = w * b1_band + (1.0 - w) * cone_band
             if b1_band < CONE_B1_NOISE_REL_FLOOR:
                 b1_band = CONE_B1_NOISE_REL_FLOOR
             b1_n = (b1c - 1.0) / b1_band
             if b1_n >= 1.0:
-                return 0.0      # b1 - 1 is resolved signal: the N5b regime
+                return 0.0
             s_cone = q10 / (self.V_poly * (b1c - 1.0))
             if s_free <= 0.0:
                 return s_free

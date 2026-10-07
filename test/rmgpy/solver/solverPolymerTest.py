@@ -223,7 +223,8 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
     m_dist = q10 * v_poly / floor     # margin in MOLES vs the mol floor
     if m_dist >= CONE_MARGIN_M_HI:
         return s_free
-    # N5b round-62 DASSL-hang dead band, as NARROWED by I-090 (keep in sync
+    # N5b round-62 DASSL-hang dead band, as narrowed by I-090 and conditioned
+    # at sub-floor bundle amplitude by I-067 (keep in sync
     # with HybridPolymerSystem._bundle_limited_site and the numpy oracle
     # consumer -- three copies, one law). Below M_lo q10 is itself
     # sub-floor-scale cancellation noise, so the exact hard zero beats
@@ -235,12 +236,25 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
     # the same exact zero, C1 at both ends. The neighbourhood is the RELATIVE
     # width the accepted state cannot resolve, (ewt(mu1) + ewt(mu2))/mu1 with
     # the integrator's own error weight ewt(mu_k) = rtol*mu_k + floor,
-    # floored at sqrt(machine eps). Moments here are per-volume while `floor`
-    # is in moles, so the band is formed on the MOLE basis (b1 is
-    # basis-invariant). Derivation in the solver's I-090 block comment.
+    # floored at sqrt(machine eps).  Below E_lo, I-067 continuously blends
+    # that band toward softmin(band, Q10/(mu0+mu1+mu2)); the second term is the
+    # scale-free fraction of the complete moment bundle held in the cone
+    # reserve, so absolute floors cannot reopen a resolved fixed-shape drain
+    # merely because the whole bundle is sub-floor.  The E weight meets the
+    # old law with matching value and slope at E_lo, while the later hard
+    # floor can introduce a derivative kink; the complete floored law is
+    # therefore continuous, not generally C1.  The u completion itself has
+    # zero endpoint slopes at its b1 handoffs. Moments here are per-volume
+    # while `floor` is in moles, so the band is formed on the MOLE basis (b1
+    # is basis-invariant). Derivation in the solver's I-090 block comment.
     if m_dist <= CONE_MARGIN_M_LO:
         b1_band = ((rtol * (mu1 + mu2) * v_poly + floor + floor)
                    / (mu1 * v_poly))
+        if e_dist < BUNDLE_LIMITER_E_LO:
+            e_n = e_dist / BUNDLE_LIMITER_E_LO
+            w = e_n * e_n * (3.0 - 2.0 * e_n)
+            cone_band = _softmin_p([b1_band, q10 / (mu0 + mu1 + mu2)])
+            b1_band = w * b1_band + (1.0 - w) * cone_band
         b1_band = max(b1_band, CONE_B1_NOISE_REL_FLOOR)
         b1_n = (b1c - 1.0) / b1_band
         if b1_n >= 1.0:
@@ -4002,11 +4016,11 @@ class TestHybridPolymerReactor:
 
     def test_cross_pool_reverse_flux_vanishes_continuously(self):
         """
-        I-090 narrowing of the cone dead band (ec597591ff) as the debited
-        pool's moments approach the error-weight floor.  Resolved b1 > 1
-        signal is hard zeroed in the tail, while at sub-floor amplitude
-        b1 - 1 is itself
-        unresolved and the smooth neighbourhood of b1 == 1 remains live.
+        Sub-floor correction to the I-090 cone dead band (ec597591ff) as
+        the debited pool's moments approach the error-weight floor.
+        Resolved b1 > 1 signal is hard zeroed in the tail at every
+        amplitude; an absolute error-weight must not make every ratio
+        unresolved merely because the inventory itself is sub-floor.
         Round-27 P1-A two-regime law: LINEAR in s at the plain S_base law
         in bulk (E >= 1e4 floors), LINEAR in s at the hard-capped law in
         the tail (E <= 1e2 floors), C1-blended in between. Pre-fix the
@@ -4032,26 +4046,20 @@ class TestHybridPolymerReactor:
             dn_dt = rs.residual(0.0, rs.y, np.zeros_like(rs.y))[0]
             drains.append(-dn_dt[7])
         # Bulk and transition-band points decrease monotonically.  At s=1e-15
-        # b1 - 1 is resolved and the cone dead band is exact zero; at the
-        # sub-floor point it is unresolved, so I-090 keeps the b1 == 1
-        # neighbourhood live instead of trusting the noisy ratio.
+        # b1 - 1 is resolved at both tail amplitudes, so the cone dead band
+        # is exact zero.  The sub-floor amplitude must not reopen the drain.
         assert drains[0] > drains[1] > drains[2] > 0.0
         assert drains[3] == 0.0
-        assert drains[4] > 0.0
+        assert drains[4] == 0.0
         # Bulk regime: linear in s at the UNCAPPED S_base law -- the
         # limiter is exactly inactive.
         assert drains[1] / drains[0] == pytest.approx(1.0e-3, rel=1e-9)
         mu3_b = 1.9 * (610.0 / 26.0) ** 3
         bB2 = mu3_b / 26.0
         assert drains[0] == pytest.approx(0.6 * 26.0e-6 * bB2, rel=1e-9)
-        assert drains[4] == pytest.approx(
-            0.6 * _s_eff((1.9e-18, 26.0e-18, 610.0e-18)) * bB2,
-            rel=1e-9, abs=0.0)
         # The in-band point interpolates strictly between the two lines:
         # below the bulk line, above the tail line (both scaled to s).
         assert drains[2] < 0.6 * 26.0e-12 * bB2
-        assert drains[2] > 0.6 * _s_eff((1.9e-18, 26.0e-18, 610.0e-18)) \
-            * bB2 * 1.0e6
         # And matches the two-regime law mirror exactly.
         assert drains[2] == pytest.approx(
             0.6 * _s_eff((1.9e-12, 26.0e-12, 610.0e-12)) * bB2, rel=1e-9,
