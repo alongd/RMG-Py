@@ -1,8 +1,10 @@
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import numpy as np
 
 from rmgpy.kinetics import Arrhenius
+from rmgpy.data import rmg as rmg_data
 from rmgpy.molecule import Molecule
 from rmgpy.species import Species
 
@@ -19,6 +21,15 @@ from examples.rmg.polymer_rate_estimation import (
 
 def make_species(smiles):
     return Species(molecule=[Molecule().from_smiles(smiles)])
+
+
+@contextmanager
+def restored_rmg_database():
+    previous_database = rmg_data.database
+    try:
+        yield
+    finally:
+        rmg_data.database = previous_database
 
 
 def test_requested_orientation_matches_unordered_sides():
@@ -106,10 +117,11 @@ def test_real_pe_own_reverse_intra_h_migration_fixture():
     catches changes in production selection or barrier processing while
     allowing floating-point noise.
     """
-    estimator = ProductionRateEstimator(
-        "/home/alon/runs/phase2b/database/input", ["intra_H_migration"]
-    )
-    reactions = estimator.generate(["[CH2]CCCCCCC"], "intra_H_migration")
+    with restored_rmg_database():
+        estimator = ProductionRateEstimator(
+            "/home/alon/runs/phase2b/database/input", ["intra_H_migration"]
+        )
+        reactions = estimator.generate(["[CH2]CCCCCCC"], "intra_H_migration")
     own_reverse = [
         reaction for reaction in reactions if not reaction.requested_forward_in_final
     ]
