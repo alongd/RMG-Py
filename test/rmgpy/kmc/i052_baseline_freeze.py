@@ -50,8 +50,14 @@ DESIGN = Path("/home/alon/runs/i058-generic-design/generic_linear_kmc_design.md"
 FIXTURE = Path(__file__).with_name("fixtures") / "i052_legacy_baseline.json"
 MANIFEST = Path(__file__).with_name("fixtures") / "i052_legacy_baseline_manifest.json"
 RMG_PY_PIN = "23893012393d946efc8d70529bfc58780b8cdf86"
+STEP1_FREEZE_COMMIT = "d1459e1b9cd1f9d877ac820b0152ee931673b7c7"
 RMG_DATABASE_PIN = "cd86d4e1c187a132109e16cd86f624ed9fb217df"
 MOM_PIN = "c220aa83c3e6f3016c9998e5efa69a10c4de6bb5"
+STEP1_FREEZE_ONLY_FILES = frozenset({
+    "test/rmgpy/kmc/fixtures/i052_legacy_baseline.json",
+    "test/rmgpy/kmc/i052BaselineFreezeTest.py",
+    "test/rmgpy/kmc/i052_baseline_freeze.py",
+})
 TEMPERATURE = 700.0
 VOLUME = 1.0e-24
 
@@ -64,10 +70,36 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
 def _git(root: Path, *arguments: str) -> str:
     return subprocess.check_output(
         ["git", "-C", str(root), *arguments], text=True
     ).strip()
+
+
+def _require_git_commit(root: Path, commit: str) -> None:
+    """Fail loudly when git or an immutable baseline commit is unavailable."""
+    subprocess.check_call(
+        ["git", "-C", str(root), "cat-file", "-e", f"{commit}^{{commit}}"]
+    )
+
+
+def _git_blob(root: Path, commit: str, relative: str) -> bytes:
+    """Read an exact committed blob; missing git, commit, or path is fatal."""
+    return subprocess.check_output(
+        ["git", "-C", str(root), "cat-file", "blob", f"{commit}:{relative}"]
+    )
+
+
+def _verify_frozen_json_bytes() -> None:
+    """The record files themselves remain exactly as committed by Step 1."""
+    for path in (MANIFEST, FIXTURE):
+        relative = str(path.relative_to(ROOT))
+        expected = _git_blob(ROOT, STEP1_FREEZE_COMMIT, relative)
+        assert path.read_bytes() == expected, relative
 
 
 def _state_oracle():
@@ -1304,6 +1336,9 @@ def environment_pins():
 
 
 def verify_manifest(manifest: Mapping[str, Any]) -> None:
+    _require_git_commit(ROOT, RMG_PY_PIN)
+    _require_git_commit(ROOT, STEP1_FREEZE_COMMIT)
+    _verify_frozen_json_bytes()
     assert manifest["pins"] == {
         "rmgpy_commit": RMG_PY_PIN,
         "rmg_database_commit": RMG_DATABASE_PIN,
@@ -1318,7 +1353,16 @@ def verify_manifest(manifest: Mapping[str, Any]) -> None:
     assert artifact_provenance["rmgpy_sha"] == RMG_PY_PIN
     assert manifest["environment"] == environment_pins()
     for relative, expected in manifest["repository_files"].items():
-        assert _sha256(ROOT / relative) == expected, relative
+        # The freeze commit adds exactly three Step-1 record/harness files to
+        # the pinned source tree. Preserve their recorded hashes from that
+        # immutable overlay; every pre-existing input comes directly from the
+        # RMG-Py pin rather than the evolving checkout.
+        source_commit = (
+            STEP1_FREEZE_COMMIT
+            if relative in STEP1_FREEZE_ONLY_FILES
+            else RMG_PY_PIN
+        )
+        assert _sha256_bytes(_git_blob(ROOT, source_commit, relative)) == expected, relative
     for relative, expected in manifest["database_files"].items():
         assert _sha256(DATABASE / relative) == expected, relative
 
