@@ -22,6 +22,27 @@ class ReferenceThermoResult:
     reaction_enthalpy_298_J_per_mol: float
     species_thermo_assignments: tuple[dict, ...]
 
+    def reversed_direction(self) -> "ReferenceThermoResult":
+        """Return the same thermo evidence expressed in the reverse direction."""
+        reversed_roles = {"reactant": "product", "product": "reactant"}
+        return ReferenceThermoResult(
+            equilibrium_constants=tuple(
+                1.0 / constant for constant in self.equilibrium_constants
+            ),
+            reaction_enthalpy_298_J_per_mol=(
+                -self.reaction_enthalpy_298_J_per_mol
+            ),
+            species_thermo_assignments=tuple(
+                {
+                    **assignment,
+                    "role": reversed_roles.get(
+                        assignment.get("role"), assignment.get("role")
+                    ),
+                }
+                for assignment in self.species_thermo_assignments
+            ),
+        )
+
 
 class ReferenceThermoProvider(Protocol):
     """A provider returns Kc in the displayed reaction's concentration units."""

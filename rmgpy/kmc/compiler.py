@@ -2038,7 +2038,11 @@ class EventSetCompiler:
             # physical propagation before installing the library coefficient.
             if not matches_head_to_tail(forward):
                 forward, reverse = reverse, forward
-                constants = [1.0 / constant for constant in constants]
+                if reference_result is not None:
+                    reference_result = reference_result.reversed_direction()
+                    constants = list(reference_result.equilibrium_constants)
+                else:
+                    constants = [1.0 / constant for constant in constants]
                 replaced_table["k"] = [
                     rate * constant for rate, constant in zip(forward_table["k"], constants)
                 ]
