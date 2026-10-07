@@ -70,7 +70,9 @@ def test_reference_assignment_distinguishes_spin_and_preserves_source_graphs():
 
         def get_thermo_data(self, species):
             multiplicity = species.molecule[0].multiplicity
-            self.calls.append(multiplicity)
+            self.calls.append(
+                [molecule.multiplicity for molecule in species.molecule]
+            )
             return ThermoData(
                 Tdata=([300, 400, 600, 800, 1000], "K"),
                 Cpdata=([30, 30, 30, 30, 30], "J/(mol*K)"),
@@ -79,20 +81,22 @@ def test_reference_assignment_distinguishes_spin_and_preserves_source_graphs():
                 comment="Thermo library: primaryThermoLibrary",
             )
 
-    def methylene(multiplicity):
-        electron_state = "u0 p1" if multiplicity == 1 else "u2 p0"
+    def ethane_diradical(multiplicity):
         return Molecule().from_adjacency_list(
             f"multiplicity {multiplicity}\n"
-            f"1 *1 C {electron_state} c0 {{2,S}} {{3,S}}\n"
-            "2 H u0 p0 c0 {1,S}\n"
-            "3 H u0 p0 c0 {1,S}"
+            "1 C u1 p0 c0 {2,S} {3,S} {4,S}\n"
+            "2 C u1 p0 c0 {1,S} {5,S} {6,S}\n"
+            "3 H u0 p0 c0 {1,S}\n"
+            "4 H u0 p0 c0 {1,S}\n"
+            "5 H u0 p0 c0 {2,S}\n"
+            "6 H u0 p0 c0 {2,S}"
         )
 
     database = Database()
     provider = GasPhaseRMGReferenceThermo(database, "test-only-database-commit")
     snapshots = []
     for multiplicity in (1, 3):
-        molecule = methylene(multiplicity)
+        molecule = ethane_diradical(multiplicity)
         reaction = Reaction(
             reactants=[Species(molecule=[molecule])],
             products=[Species(molecule=[molecule.copy(deep=True)])],
@@ -112,19 +116,45 @@ def test_reference_assignment_distinguishes_spin_and_preserves_source_graphs():
             species.molecule[0].to_adjacency_list(remove_h=False)
             for species in reaction.reactants + reaction.products
         ]
+        assert {
+            item["multiplicity"] for item in result.species_thermo_assignments
+        } == {multiplicity}
 
-    assert database.calls == [1, 3]
+    assert len(database.calls) == 2
+    assert [set(call) for call in database.calls] == [{1}, {3}]
     assert provider.provenance["assignment_version"] == "kmc_shared_thermo/1"
     assert provider.provenance["thermo_library_order"] == [
         "primaryThermoLibrary"
     ]
     assert {
-        item["multiplicity"] for item in result.species_thermo_assignments
-    } == {3}
-    assert {
         item["thermo_source"]["library"]
         for item in result.species_thermo_assignments
     } == {"primaryThermoLibrary"}
+
+    class SpinMutatingDatabase(Database):
+        def get_thermo_data(self, species):
+            thermo = super().get_thermo_data(species)
+            species.molecule[-1].multiplicity = 3
+            return thermo
+
+    singlet = ethane_diradical(1)
+    mutating_provider = GasPhaseRMGReferenceThermo(
+        SpinMutatingDatabase(), "test-only-database-commit"
+    )
+    with pytest.raises(
+        ThermoUnavailable,
+        match=(
+            r"declared multiplicity 1 was not preserved across resonance "
+            r"structures \[3\]"
+        ),
+    ):
+        mutating_provider.evaluate(
+            Reaction(
+                reactants=[Species(molecule=[singlet])],
+                products=[Species(molecule=[singlet.copy(deep=True)])],
+            ),
+            (600.0,),
+        )
 
 
 def test_missing_reference_thermo_names_the_unavailable_species():

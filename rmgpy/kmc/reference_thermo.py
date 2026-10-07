@@ -93,25 +93,42 @@ class SharedThermoAssignment:
         value = getattr(thermo, name, None)
         return float(value.value_si) if value is not None else None
 
-    def _isolated_reference(self, species):
+    @staticmethod
+    def _validate_multiplicity(reference, declared_multiplicity: int) -> None:
+        multiplicities = [
+            int(getattr(molecule, "multiplicity", 1))
+            for molecule in reference.molecule
+        ]
+        if any(value != declared_multiplicity for value in multiplicities):
+            raise ValueError(
+                f"declared multiplicity {declared_multiplicity} was not preserved "
+                f"across resonance structures {multiplicities}"
+            )
+
+    def _isolated_reference(self, species, declared_multiplicity: int):
         from rmgpy.molecule.molecule import Molecule
         from rmgpy.species import Species
 
         molecule = species.molecule[0]
         if not molecule.__class__.__module__.startswith("rmgpy."):
-            return copy.deepcopy(species)
-        reference = Species(
-            label=getattr(species, "label", ""),
-            molecule=[
-                Molecule().from_adjacency_list(
-                    molecule.to_adjacency_list(remove_h=False)
-                )
-            ],
-        )
-        reference.generate_resonance_structures()
+            reference = copy.deepcopy(species)
+        else:
+            reference = Species(
+                label=getattr(species, "label", ""),
+                molecule=[
+                    Molecule().from_adjacency_list(
+                        molecule.to_adjacency_list(remove_h=False)
+                    )
+                ],
+            )
+            reference.generate_resonance_structures()
+        for resonance_molecule in reference.molecule:
+            resonance_molecule.multiplicity = declared_multiplicity
         return reference
 
-    def _identity(self, reference) -> tuple[dict, str]:
+    def _identity(
+        self, reference, declared_multiplicity: int
+    ) -> tuple[dict, str]:
         resonance_smiles = sorted(
             {
                 (
@@ -122,10 +139,9 @@ class SharedThermoAssignment:
                 for molecule in reference.molecule
             }
         )
-        multiplicity = int(getattr(reference.molecule[0], "multiplicity", 1))
         chemical_identity = {
             "resonance_smiles": resonance_smiles,
-            "multiplicity": multiplicity,
+            "multiplicity": declared_multiplicity,
         }
         key_payload = {
             **self.provenance,
@@ -151,6 +167,7 @@ class SharedThermoAssignment:
         )
         for role, index, species in participants:
             molecule = species.molecule[0]
+            declared_multiplicity = int(getattr(molecule, "multiplicity", 1))
             name = self._name(molecule)
             if self.thermo_database is None:
                 raise ThermoUnavailable(
@@ -158,8 +175,13 @@ class SharedThermoAssignment:
                 )
             source_graph = molecule.to_adjacency_list(remove_h=False)
             try:
-                reference = self._isolated_reference(species)
-                chemical_identity, key = self._identity(reference)
+                reference = self._isolated_reference(
+                    species, declared_multiplicity
+                )
+                self._validate_multiplicity(reference, declared_multiplicity)
+                chemical_identity, key = self._identity(
+                    reference, declared_multiplicity
+                )
                 frozen = bool(
                     getattr(species, "props", {}).get(FROZEN_THERMO_PROPERTY, False)
                 )
@@ -167,9 +189,14 @@ class SharedThermoAssignment:
                     thermo = getattr(species, "thermo", None)
                 else:
                     if key not in self._cache:
-                        self._cache[key] = self.thermo_database.get_thermo_data(
-                            reference
+                        self._validate_multiplicity(
+                            reference, declared_multiplicity
                         )
+                        thermo = self.thermo_database.get_thermo_data(reference)
+                        self._validate_multiplicity(
+                            reference, declared_multiplicity
+                        )
+                        self._cache[key] = thermo
                     thermo = self._cache[key]
                     species.thermo = thermo
                 if thermo is None:
