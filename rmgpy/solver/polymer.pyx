@@ -6077,11 +6077,14 @@ class HybridPolymerSystem(ReactionSystem):
         # and contains no fitted constant.  Thus a resolved shape remains
         # resolved below the inventory floor, and the band follows the
         # remaining cone reserve when the absolute error term loses meaning.
-        # h and h' meet (1, 0) at E_lo, so the new sub-floor conditioning is
-        # C1 and exactly the old law throughout the bulk.  The final
-        # b1 completion remains C1 at both of its existing handoffs.  See the
-        # I-090 width derivation near CONE_B1_NOISE_REL_FLOOR.  This law is
-        # mirrored in the numpy consumer and _s_eff; keep all three in sync.
+        # h and h' meet (1, 0) at E_lo, so the E-axis blend is continuous,
+        # joins the old law there with matching slope, and is exactly the old
+        # law throughout the bulk.  The hard floor applied to B below can
+        # still introduce a derivative kink, so the complete floored law is
+        # not generally C1.  The b1 completion itself has zero endpoint
+        # slopes at both of its existing handoffs.  See the I-090 width
+        # derivation near CONE_B1_NOISE_REL_FLOOR.  This law is mirrored in
+        # the numpy consumer and _s_eff; keep all three in sync.
         if m_dist <= CONE_MARGIN_M_LO:
             b1_band = ((self._cone_b1_rtol * (y1c + y2c)
                         + floors[pool_idx, 1] + floors[pool_idx, 2]) / y1c)

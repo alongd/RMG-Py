@@ -236,14 +236,17 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
     # the same exact zero, C1 at both ends. The neighbourhood is the RELATIVE
     # width the accepted state cannot resolve, (ewt(mu1) + ewt(mu2))/mu1 with
     # the integrator's own error weight ewt(mu_k) = rtol*mu_k + floor,
-    # floored at sqrt(machine eps).  Below E_lo, I-067 C1-blends that band
-    # toward softmin(band, Q10/(mu0+mu1+mu2)); the second term is the
+    # floored at sqrt(machine eps).  Below E_lo, I-067 continuously blends
+    # that band toward softmin(band, Q10/(mu0+mu1+mu2)); the second term is the
     # scale-free fraction of the complete moment bundle held in the cone
     # reserve, so absolute floors cannot reopen a resolved fixed-shape drain
-    # merely because the whole bundle is sub-floor.  The same u*completion
-    # remains C1 at its b1 handoffs. Moments here are per-volume while
-    # `floor` is in moles, so the band is formed on the MOLE basis (b1 is
-    # basis-invariant). Derivation in the solver's I-090 block comment.
+    # merely because the whole bundle is sub-floor.  The E weight meets the
+    # old law with matching value and slope at E_lo, while the later hard
+    # floor can introduce a derivative kink; the complete floored law is
+    # therefore continuous, not generally C1.  The u completion itself has
+    # zero endpoint slopes at its b1 handoffs. Moments here are per-volume
+    # while `floor` is in moles, so the band is formed on the MOLE basis (b1
+    # is basis-invariant). Derivation in the solver's I-090 block comment.
     if m_dist <= CONE_MARGIN_M_LO:
         b1_band = ((rtol * (mu1 + mu2) * v_poly + floor + floor)
                    / (mu1 * v_poly))

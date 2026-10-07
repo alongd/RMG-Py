@@ -782,8 +782,8 @@ class ArtifactConsumer:
         # -- MIRRORED SOLVER LAW ----------------------------------------
         # rmgpy/solver/polymer.pyx, _bundle_limited_site, stage-2
         # cone-margin drain gate, revision I-090 ("cone-margin dead-band
-        # narrowing") plus I-067's C1 sub-floor conditioning. THE ONE PLACE
-        # this branch's law lives here.
+        # narrowing") plus I-067's continuous sub-floor conditioning. THE
+        # ONE PLACE this branch's law lives here.
         #
         # Pinned against the solver across the M axis, through the b1
         # surface, and at sub-floor E by TestConeMarginBandParity in
@@ -793,8 +793,10 @@ class ArtifactConsumer:
                         + self.mu_floor + self.mu_floor) / y1c)
             # I-067: at sub-floor bundle amplitude, condition I-090's
             # absolute-error band by the scale-free cone reserve of the
-            # complete three-moment bundle. The smoothstep is C1 and equals
-            # one at E_lo, leaving the old law exact outside the tail.
+            # complete three-moment bundle. The smoothstep equals one with
+            # zero slope at E_lo, so the blend meets the old law smoothly.
+            # The later hard floor can still introduce a derivative kink;
+            # the complete floored law is continuous, not generally C1.
             if e_dist < BUNDLE_LIMITER_E_LO:
                 e_n = e_dist / BUNDLE_LIMITER_E_LO
                 w = e_n * e_n * (3.0 - 2.0 * e_n)
