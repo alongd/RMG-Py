@@ -32,6 +32,7 @@ from rmgpy.kmc.reference_thermo import (
     ReferenceThermoProvider,
     ThermoUnavailable,
 )
+from rmgpy.kinetics.arrhenius import ArrheniusBM, ArrheniusEP
 from rmgpy.kinetics.model import get_rate_coefficient_units_from_reaction_order
 
 
@@ -1601,6 +1602,19 @@ class EventSetCompiler:
             )
         return reactions
 
+    def _assign_gas_phase_thermo(self, reaction) -> None:
+        if self.thermo_database is None:
+            raise ThermoUnavailable("gas-phase thermochemistry is unavailable")
+        for species in list(reaction.reactants) + list(reaction.products):
+            if getattr(species, "thermo", None) is not None:
+                continue
+            key = _molecule(species).to_adjacency_list(remove_h=False)
+            if key not in self._thermo_cache:
+                self._thermo_cache[key] = self.thermo_database.get_thermo_data(species)
+            species.thermo = self._thermo_cache[key]
+            if species.thermo is None:
+                raise ThermoUnavailable("RMG returned no gas-phase thermochemistry")
+
     def _rate_table(self, reaction) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         source_reaction = getattr(reaction, "source_reaction", reaction)
         kinetics = getattr(source_reaction, "kinetics", None)
@@ -1625,8 +1639,37 @@ class EventSetCompiler:
                 }
         if kinetics is None:
             return None, {"kind": "RMG family estimate", "available": False}
+        evaluated_kinetics = kinetics
+        kinetics_conversion = None
+        if isinstance(kinetics, (ArrheniusBM, ArrheniusEP)):
+            try:
+                self._assign_gas_phase_thermo(source_reaction)
+                reaction_enthalpy = float(
+                    source_reaction.get_enthalpy_of_reaction(298)
+                )
+                model_generation_reaction = copy.deepcopy(source_reaction)
+                model_generation_reaction.kinetics = copy.deepcopy(kinetics)
+                model_generation_reaction.fix_barrier_height()
+                evaluated_kinetics = model_generation_reaction.kinetics
+                kinetics_conversion = {
+                    "input_model": type(kinetics).__name__,
+                    "method": "to_arrhenius(reaction.get_enthalpy_of_reaction(298))",
+                    "post_conversion": "reaction.fix_barrier_height()",
+                    "output_model": type(evaluated_kinetics).__name__,
+                    "reaction_enthalpy_J_per_mol": reaction_enthalpy,
+                    "activation_energy_J_per_mol": float(
+                        evaluated_kinetics.Ea.value_si
+                    ),
+                }
+            except Exception as error:
+                return None, {
+                    "kind": "RMG family estimate",
+                    "available": False,
+                    "error": f"enthalpy-dependent kinetics conversion failed: {error}",
+                }
         values = [
-            float(kinetics.get_rate_coefficient(t)) for t in self.temperature_grid
+            float(evaluated_kinetics.get_rate_coefficient(t))
+            for t in self.temperature_grid
         ]
         reference = "forward RMG family estimate"
         equilibrium_constants = None
@@ -1638,16 +1681,7 @@ class EventSetCompiler:
                     "error": "reverse rate requires gas-phase thermochemistry",
                 }
             try:
-                for species in list(source_reaction.reactants) + list(
-                    source_reaction.products
-                ):
-                    if getattr(species, "thermo", None) is None:
-                        key = _molecule(species).to_adjacency_list(remove_h=False)
-                        if key not in self._thermo_cache:
-                            self._thermo_cache[key] = (
-                                self.thermo_database.get_thermo_data(species)
-                            )
-                        species.thermo = self._thermo_cache[key]
+                self._assign_gas_phase_thermo(source_reaction)
                 equilibrium_constants = [
                     float(
                         source_reaction.get_equilibrium_constant(temperature, type="Kc")
@@ -1690,6 +1724,11 @@ class EventSetCompiler:
                 "entry": str(entry) if entry else None,
                 "rank": getattr(entry, "rank", None),
                 "uncertainty": str(getattr(kinetics, "uncertainty", None) or "UNKNOWN"),
+                **(
+                    {"kinetics_conversion": kinetics_conversion}
+                    if kinetics_conversion is not None
+                    else {}
+                ),
                 "source_temperature_range_K": [
                     getattr(getattr(kinetics, bound, None), "value_si", None)
                     for bound in ("Tmin", "Tmax")
@@ -2043,6 +2082,11 @@ class EventSetCompiler:
                 "reference": ("k_library / Kc" if rate_source["kind"] == "kMC kinetics library"
                               else "k_family / Kc"),
                 **self.reference_thermo_provider.provenance,
+                **(
+                    {"forward_kinetics_conversion": rate_source["kinetics_conversion"]}
+                    if "kinetics_conversion" in rate_source
+                    else {}
+                ),
                 **({"forward_rate_source": rate_source}
                    if "comment" in rate_source or rate_source["kind"] == "kMC kinetics library" else {}),
             },

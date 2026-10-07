@@ -143,8 +143,28 @@ def test_compiled_representative_selects_training_derived_rules(cached_artifacts
     assert source["template"] == record["template"]
 
 
-def test_tree_family_rate_tables_and_sources_are_bit_identical(cached_artifacts):
+def test_tree_family_structures_and_source_nodes_survive_rate_correction(
+    cached_artifacts,
+):
     probe, old, new = cached_artifacts
-    assert probe.verify_tree_invariance(old, new) == {
-        "Disproportionation": 12680, "R_Recombination": 594,
-    }
+    before, after = probe.index(old), probe.index(new)
+    counts = {}
+    for family in probe.TREE_FAMILIES:
+        old_keys = {
+            key for key, record in before.items() if record["family"] == family
+        }
+        new_keys = {
+            key for key, record in after.items() if record["family"] == family
+        }
+        assert old_keys <= new_keys, (family, "missing baseline channels")
+        for key in old_keys:
+            old_source = before[key]["rate_source"]
+            new_source = after[key]["rate_source"]
+            for field in ("kind", "source", "entry", "rank"):
+                assert old_source.get(field) == new_source.get(field), (family, field)
+        counts[family] = len(old_keys)
+
+    # I-070: the former bit-identical k_table pin preserved the erroneous
+    # ArrheniusBM dHrxn=0 evaluation. Rates and conversion provenance must now
+    # change, while chemical rewrites and selected source nodes remain exact.
+    assert counts == {"Disproportionation": 12680, "R_Recombination": 594}
