@@ -2018,6 +2018,57 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _reciprocal_mapping_root(
+    record, mapped_root: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Carry a mapped reactant root into the reciprocal reactant ordering."""
+    from rmgpy.molecule.molecule import Molecule
+
+    data = record.to_dict() if isinstance(record, EventRecord) else record
+    reactants = [
+        Molecule().from_adjacency_list(graph)
+        for graph in data.get("reactant_graphs", [])
+    ]
+    reactant_atoms = [atom for molecule in reactants for atom in molecule.atoms]
+    root_index = int(mapped_root["reactant_atom_index"])
+    if root_index < 0 or root_index >= len(reactant_atoms):
+        return None
+    root_before = reactant_atoms[root_index]
+    if root_before.element.number == 1:
+        return None
+    heavy_before = [
+        atom for atom in reactant_atoms if atom.element.number != 1
+    ]
+    atom_map = {
+        int(key): int(value) for key, value in data.get("atom_map", {}).items()
+    }
+    product_heavy_index = atom_map.get(heavy_before.index(root_before))
+    product_molecules = [
+        Molecule().from_adjacency_list(graph)
+        for graph in data.get("product_graphs", [])
+    ]
+    product_atoms = [
+        atom for molecule in product_molecules for atom in molecule.atoms
+    ]
+    heavy_after = [
+        atom for atom in product_atoms if atom.element.number != 1
+    ]
+    if product_heavy_index is None or not 0 <= product_heavy_index < len(heavy_after):
+        return None
+    record_role = mapped_root.get(
+        "record_role", mapped_root["family_forward_role"]
+    )
+    reciprocal_role = {
+        "reactant": "product",
+        "product": "reactant",
+    }.get(record_role, record_role)
+    return {
+        **mapped_root,
+        "reactant_atom_index": product_atoms.index(heavy_after[product_heavy_index]),
+        "record_role": reciprocal_role,
+    }
+
+
 def classify_persistent_carbene(
     record,
     mapped_root: dict[str, Any],
@@ -2122,6 +2173,17 @@ def apply_persistent_carbene_policy(
     decision = classify_persistent_carbene(
         records[0], mapped_root, rate_source_domain
     )
+    if decision["disposition"] != "refused-structural-inconsistency":
+        reciprocal_root = _reciprocal_mapping_root(records[0], mapped_root)
+        if reciprocal_root is not None:
+            reciprocal_decision = classify_persistent_carbene(
+                records[1], reciprocal_root, rate_source_domain
+            )
+            if (
+                reciprocal_decision["disposition"]
+                == "refused-structural-inconsistency"
+            ):
+                decision = reciprocal_decision
     if decision["disposition"] == "not-applicable":
         return records, None
     if decision["disposition"] in {

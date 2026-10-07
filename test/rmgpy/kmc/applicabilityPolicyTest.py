@@ -83,6 +83,12 @@ def _pair():
         reverse_of="evt_forward",
         reactant_graphs=copy.deepcopy(forward["product_graphs"]),
         product_graphs=copy.deepcopy(forward["reactant_graphs"]),
+        bond_ops=[
+            {"action": "break", "atoms": [3, 6], "order": "1.0"},
+            {"action": "form", "atoms": [0, 6], "order": "1.0"},
+            {"action": "set_radical", "atom": 0, "value": 1},
+            {"action": "set_radical", "atom": 3, "value": 1},
+        ],
     )
     return [forward, reverse]
 
@@ -176,11 +182,12 @@ def test_compiler_applies_prepublication_refusal_before_rate_evaluation(
     assert compiler._applicability_refusals[0]["record_ids"]
 
 
+@pytest.mark.parametrize("corrupt_direction", [0, 1])
 def test_compiler_refuses_structurally_corrupt_pair_before_publication(
-    monkeypatch,
+    monkeypatch, corrupt_direction
 ):
     pair = _pair()
-    pair[0]["atom_map"] = {0: 1, 1: 0}
+    pair[corrupt_direction]["atom_map"] = {0: 1, 1: 0}
     structural = [
         EventRecord(
             reactant_graphs=record["reactant_graphs"],
