@@ -34,12 +34,31 @@ RMG-database polymer revision `cd86d4e1c`; thermodynamic reverses use thermo
 from the libraries named in `input.py`. No experimental product, mass-loss,
 TGA, or molecular-weight-distribution data were used.
 
+Each contributing reaction uses the same source priority as model generation:
+matching training/depository kinetics before a rate-rule estimate. Every
+ArrheniusEP or ArrheniusBM expression is converted with that reaction's 298 K
+enthalpy before rates are evaluated and fitted.
+
 | Channel | RMG family and small-molecule surrogate | A (SI) | n | Ea (J/mol) | Maximum pointwise fit error |
 |---|---|---:|---:|---:|---:|
-| Backbone homolysis / initiation | Thermodynamic reverse of `R_Recombination`: n-hexane central bond -> 2 n-propyl; one central bond maps to one breakable PE backbone bond | 5.425091046e26 s^-1 | -2.97626501 | 390905.266 | 1.775% |
-| Chain-end beta-scission / depropagation | Thermodynamic reverse of `R_Addition_MultipleBond`: 1-hexyl -> ethylene + 1-butyl; exact rule from training reaction 2903 | 4.087800877e9 s^-1 | 1.09830553 | 126440.197 | 1.131% |
-| Radical termination | Sum of `R_Recombination` (2 1-hexyl -> n-dodecane) and `Disproportionation` (2 1-hexyl -> n-hexane + 1-hexene) | 1.340078977e10 m3 mol^-1 s^-1 | -1.15292140 | 17212.164 | 0.182% |
-| H transfer | `H_Abstraction` from n-octane interior sites plus all six `intra_H_migration` paths of 1-octyl; converted to the solver's pseudo-first-order convention | 2.347940229e2 s^-1 | 2.61167734 | 40786.396 | 1.026% |
+| Backbone homolysis / initiation | Thermodynamic reverse of `R_Recombination`: n-hexane central bond -> 2 n-propyl; per-bond rate multiplied by 2 PE backbone C-C bonds per repeat | 1.085018209e27 s^-1 | -2.97626501 | 373605.266 | 1.775% |
+| Chain-end beta-scission / depropagation | Thermodynamic reverse of `R_Addition_MultipleBond`: 1-hexyl -> ethylene + 1-butyl; training reaction 2905 | 3.051203080e9 s^-1 | 1.09630553 | 124921.405 | 1.131% |
+| Radical termination | `R_Recombination` training reaction 156 (2 1-hexyl -> n-dodecane) plus enthalpy-converted `Disproportionation` (2 1-hexyl -> n-hexane + 1-hexene) | 3.615275991e6 m3 mol^-1 s^-1 | 0.14991913 | 0.000 | 0.070% |
+| H transfer | Enthalpy-converted `H_Abstraction` from n-octane interior sites plus all six `intra_H_migration` paths of 1-octyl; converted to the solver's pseudo-first-order convention | 1.312764315e-3 s^-1 | 4.11498243 | 33194.258 | 2.829% |
+
+The initiation fit first derives a per-backbone-bond coefficient from the
+n-hexane central bond. The solver multiplies initiation by `mu1 - mu0`, which
+counts repeat-to-repeat links, while a capped PE chain of degree `d` has
+`2d - 1` backbone C-C bonds. The deck therefore uses two bonds per ethylene
+repeat (the large-chain conversion gives `2d - 2`, leaving one backbone bond
+per chain unrepresented by this moment closure). A styrene repeat also
+contributes two backbone C-C bonds, so the same factor applies to the PS
+approximation; the existing PS deck is intentionally unchanged in this task.
+
+The unconstrained termination fit returned `Ea = -24.884 J/mol`. Because the
+QSSA input contract requires nonnegative activation energies, its reported row
+is the least-squares boundary fit with `Ea` fixed at zero; the maximum rate-point
+error remains 0.070%.
 
 For the intermolecular part of transfer, the three secondary-octyl product
 isomers cover six interior CH2 sites, or three ethylene-repeat equivalents.
@@ -56,28 +75,33 @@ reproduction script for this example run are in
 
 ## Reproduced run
 
-The deck was reproduced from RMG-Py `0693d2c3a` with the generic singlet-
-carbene proxy-bridge fix in this branch and RMG-database `cd86d4e1c`. The
-tee-captured clean-worktree run is in `/home/alon/runs/i057-mom-pe/run5/`.
+The corrected deck was reproduced from the `i057-mom-pe` branch (based on
+RMG-Py `0693d2c3a`) with RMG-database `cd86d4e1c`. The split-stream,
+tee-captured run is in
+`/home/alon/runs/i057-mom-pe/rework-1/pe-run2/`.
 
 - completion marker: `MODEL GENERATION COMPLETED` (exit 0)
-- wall time and peak RSS: 40.70 s and 855688 kB
+- wall time and peak RSS: 36.15 s and 854580 kB
 - final model: 8 core species / 0 core reactions; 22 edge species / 22 edge
   reactions
-- ethylene: core species index 7; final amount 1.94100127334012e-5 mol
+- requested termination time: 0.1 s; actual final solver time after crossing:
+  0.15338938826752 s
+- ethylene: core species index 7; final amount 6.95528733240413e-4 mol
 - initial moments `(mu0, mu1, mu2)`: `(0.01, 1.78233008978049,
   381.204065872431)`
-- final moments `(mu0, mu1, mu2)`: `(0.00999999999997937,
-  1.7823105812549, 381.197131292584)`
-- `mu1` loss: 1.95085255840777e-5 mol of repeat units
-- condensed PE mass: 50.0 g initially and 49.9994527241139 g finally;
-  released ethylene mass is 5.44512288848575e-4 g, leaving a numerical
-  closure residual of -2.76359725035532e-6 g (5.53e-8 of the initial PE
+- final moments `(mu0, mu1, mu2)`: `(0.00999999999925401,
+  1.78163052862199, 380.955444591674)`
+- `mu1` loss at 0.15338938826752 s: 6.99561158501671e-4 mol of
+  repeat units
+- condensed PE mass: 50.0 g initially and 49.9803750954295 g finally;
+  released ethylene mass is 0.0195117788381906 g, leaving a numerical
+  closure residual of -1.13122290997580e-4 g (2.26e-6 of the initial PE
   charge)
 
-The polymer test selection on this base produced 1510 passes, 1 expected
-failure, and the three pre-existing failures identified by the I-057 manager;
-there were no failures attributable to this example or its generic fix.
+The polymer test selection on this base produced 1511 passes, 1 expected
+failure, and exactly the three pre-existing failures identified by the I-057
+manager; there were no additional failures attributable to this example or
+its generic fix.
 
 ## What the solver does not express
 

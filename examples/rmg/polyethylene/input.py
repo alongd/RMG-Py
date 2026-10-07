@@ -35,23 +35,28 @@ polymer(
     # [s^-1] except termination [m^3 mol^-1 s^-1], and Ea is [J/mol]. No
     # product, mass-loss, MWD, or other pyrolysis data enter these fits.
     radical_qssa_unzip={
-        # Backbone C--C homolysis, per breakable bond: thermodynamic reverse
+        # Backbone C--C homolysis: thermodynamic reverse
         # of family R_Recombination for n-C3H7 + n-C3H7 -> n-hexane (the
-        # central n-hexane bond). Source: rate-rule node
+        # central n-hexane bond). The single-bond rate is multiplied by two:
+        # a PE ethylene repeat contributes two backbone C--C bonds, whereas
+        # the solver applies initiation to mu1-mu0 repeat-bond units. Source:
+        # ArrheniusBM rate-rule node, converted with the reaction dH(298),
         # Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_
         # Ext-3R!H-R_N-Sp-3R!H=2R plus RMG thermo. Max fit error 1.775%.
-        'initiation': {'A': 5.425091045727e26, 'n': -2.97626501263, 'Ea': 390905.265711},
+        'initiation': {'A': 1.085018209146e27, 'n': -2.97626501263, 'Ea': 373605.265711},
         # Chain-end beta-scission: 1-hexyl -> ethylene + 1-butyl, the
         # thermodynamic reverse of family R_Addition_MultipleBond. Source:
-        # training reaction 2903, exact rule [Cds-HH_Cds-HH;CsJ-CsHH], plus
+        # training reaction 2905, exact rule [Cds-HH_Cds-HH;CsJ-CsHH], plus
         # RMG thermo. One ethylene is released per event. Max fit error 1.131%.
-        'depropagation': {'A': 4.087800877233e9, 'n': 1.09830553255, 'Ea': 126440.196911},
+        'depropagation': {'A': 3.051203080361e9, 'n': 1.09630553255, 'Ea': 124921.404911},
         # Primary chain-end termination is the sum of (1) R_Recombination,
-        # 2 1-hexyl -> n-dodecane, from the initiation rate-rule node above,
+        # 2 1-hexyl -> n-dodecane, from exact training reaction 156,
         # and (2) Disproportionation, 2 1-hexyl -> n-hexane + 1-hexene, from
-        # the database's matching Root_Ext-1R!H...Ext-6C-R tree node. The
-        # summed bimolecular fit has max error 0.182%.
-        'termination': {'A': 1.340078977313e10, 'n': -1.15292139952, 'Ea': 17212.1642658},
+        # the database's matching ArrheniusBM Root_Ext-1R!H...Ext-6C-R tree
+        # node converted with reaction dH(298). The solver requires Ea >= 0,
+        # so the negligible -24.9 J/mol unconstrained result is refitted at
+        # the Ea=0 boundary. The summed fit has max error 0.070%.
+        'termination': {'A': 3.615275990927e6, 'n': 0.149919133130, 'Ea': 0.0},
         # The solver has one pseudo-first-order transfer sink, so this fit
         # sums both RMG-supported routes: (a) family H_Abstraction for 1-hexyl
         # + n-octane -> n-hexane + secondary 2/3/4-octyl, average rate rule
@@ -59,9 +64,11 @@ polymer(
         # equivalents and multiplied by 33864.2776785 mol/m^3 PE repeat units;
         # and (b) all six family intra_H_migration paths from 1-octyl to
         # secondary octyl, sourced by training reactions 106, 108, 110, 112,
-        # 114, and 116. Density 950 kg/m^3 and repeat MW 28.05316 g/mol set
-        # the concentration conversion. Max combined-fit error 1.026%.
-        'transfer': {'A': 2.347940229388e2, 'n': 2.61167733887, 'Ea': 40786.3963584},
+        # 114, and 116, with model-generation source priority and every
+        # ArrheniusEP/BM term converted using its reaction dH(298). Density
+        # 950 kg/m^3 and repeat MW 28.05316 g/mol set the concentration
+        # conversion. Max combined-fit error 2.829%.
+        'transfer': {'A': 1.312764315150e-3, 'n': 4.11498243112, 'Ea': 33194.2576083},
         'efficiency': 1.0,
         'monomer_yield': 1.0,
         'basis': 'backbone_bonds_mu1_minus_mu0',
