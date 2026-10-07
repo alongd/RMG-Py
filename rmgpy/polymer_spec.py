@@ -281,6 +281,7 @@ class GraphDeclaration:
     atoms: Tuple[AtomDeclaration, ...]
     bonds: Tuple[BondDeclaration, ...]
     ports: Tuple[Tuple[str, PortDeclaration], ...] = ()
+    multiplicity: int = 1
 
     @classmethod
     def from_mapping(
@@ -291,11 +292,21 @@ class GraphDeclaration:
     ) -> "GraphDeclaration":
         if not isinstance(value, Mapping):
             raise ValueError("graph declarations must be mappings")
-        if set(value) - {"atoms", "bonds", "ports"}:
-            raise ValueError(f"unknown graph fields: {sorted(set(value) - {'atoms', 'bonds', 'ports'})}")
+        allowed = {"atoms", "bonds", "ports", "electronic_state"}
+        if set(value) - allowed:
+            raise ValueError(f"unknown graph fields: {sorted(set(value) - allowed)}")
         atoms_value = value.get("atoms")
         bonds_value = value.get("bonds", [])
         ports_value = value.get("ports", {})
+        electronic_state = value.get("electronic_state")
+        if not isinstance(electronic_state, Mapping) \
+                or set(electronic_state) != {"multiplicity"}:
+            raise ValueError(
+                "graph electronic_state must declare exactly multiplicity"
+            )
+        multiplicity = _integer(
+            electronic_state["multiplicity"], "graph multiplicity", 1
+        )
         if not isinstance(atoms_value, Sequence) or isinstance(atoms_value, str) or not atoms_value:
             raise ValueError("a physical graph needs a non-empty atom list")
         if not isinstance(bonds_value, Sequence) or isinstance(bonds_value, str):
@@ -329,7 +340,7 @@ class GraphDeclaration:
             raise ValueError(f"graph requires exactly ports {sorted(required_ports)}")
         if single_connection_port and len(ports) != 1:
             raise ValueError("an end-group graph requires exactly one connection port")
-        graph = cls(atoms, bonds, ports)
+        graph = cls(atoms, bonds, ports, multiplicity)
         graph._validate_connected()
         graph._validate_valence()
         return graph
@@ -346,6 +357,7 @@ class GraphDeclaration:
             "atoms": [atom.as_mapping() for atom in self.atoms],
             "bonds": [bond.as_mapping() for bond in self.bonds],
             "ports": {name: port.as_mapping() for name, port in ports},
+            "electronic_state": {"multiplicity": self.multiplicity},
         }
 
     def _validate_connected(self):
@@ -676,12 +688,17 @@ class LinearHomopolymerSpec:
             heavy_degree = {
                 atom.key: 0 for atom in graph.atoms if atom.element != "H"
             }
+            explicit_hydrogens = {key: 0 for key in heavy_degree}
             for bond in graph.bonds:
                 left, right = bond.atoms
                 if left in heavy_degree and atom_by_key[right].element != "H":
                     heavy_degree[left] += 1
                 if right in heavy_degree and atom_by_key[left].element != "H":
                     heavy_degree[right] += 1
+                if left in heavy_degree and atom_by_key[right].element == "H":
+                    explicit_hydrogens[left] += 1
+                if right in heavy_degree and atom_by_key[left].element == "H":
+                    explicit_hydrogens[right] += 1
                 if bond.order not in bounds["bond_orders"]:
                     raise ValueError(
                         f"locality bond_orders exclude {bond.order:g} used by {name}"
@@ -710,6 +727,7 @@ class LinearHomopolymerSpec:
                             f"locality {field} exclude {value} used by {name}"
                         )
                 if (atom.element != "H" and atom.hydrogens
+                        + explicit_hydrogens[atom.key]
                         > bounds["maximum_explicit_hydrogens_per_heavy_atom"]):
                     raise ValueError(
                         "locality maximum_explicit_hydrogens_per_heavy_atom "
@@ -724,12 +742,10 @@ class LinearHomopolymerSpec:
             # coverage therefore follows only the declared physical radical
             # electrons; the capped-dimer consistency check owns the joined
             # molecule separately.
-            multiplicity = sum(
-                atom.radical_electrons for atom in graph.atoms
-            ) + 1
-            if multiplicity not in bounds["spin_multiplicities"]:
+            if graph.multiplicity not in bounds["spin_multiplicities"]:
                 raise ValueError(
-                    f"locality spin_multiplicities exclude {multiplicity} used by {name}"
+                    "locality spin_multiplicities exclude "
+                    f"{graph.multiplicity} used by {name}"
                 )
 
             if free_small:
@@ -751,6 +767,28 @@ class LinearHomopolymerSpec:
 
     def _validate_physical_electronic_states(self):
         """Apply RMG's valence/electron rules to a physical capped dimer."""
+        portless = []
+        if self.monomer_product is not None:
+            portless.append(("monomer_product", self.monomer_product))
+        portless.extend(
+            (f"small_species[{name}]", graph)
+            for name, graph, _disposition in self.small_species
+        )
+        for name, graph in portless:
+            molecule = graph.to_legacy_molecule({})
+            molecule.multiplicity = graph.multiplicity
+            try:
+                for atom in molecule.atoms:
+                    ConsistencyChecker.check_partial_charge(atom)
+                    ConsistencyChecker.check_hund_rule(atom, molecule.multiplicity)
+                ConsistencyChecker.check_multiplicity(
+                    molecule.get_radical_count(), molecule.multiplicity
+                )
+            except Exception as exc:
+                raise ValueError(
+                    f"declared electronic state is inconsistent in {name}"
+                ) from exc
+
         fragments = (self.head_end_group, self.repeat_unit,
                      self.repeat_unit, self.tail_end_group)
         atom_maps = []

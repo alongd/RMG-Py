@@ -1219,6 +1219,7 @@ class Polymer(Species):
                 cutoff=self.cutoff,
                 initial_mass=0.0,
                 end_radical_site=site,
+                linear_homopolymer_spec=self.linear_homopolymer_spec,
                 **dist_kwargs,
             )
             daughter.parent_pool_label = self.label
@@ -2168,6 +2169,7 @@ class Polymer(Species):
             Mw=self.Mw,
             moments=None,
             initial_mass=0.0,
+            linear_homopolymer_spec=self.linear_homopolymer_spec,
         )
         daughter.parent_pool_label = self.label
         daughter.spawn_metadata = {"source": CONCERTED_LOSS_SPAWN_SOURCE,

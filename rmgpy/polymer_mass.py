@@ -416,8 +416,11 @@ def _validate_moments(values: Sequence[float]) -> Tuple[float, float, float]:
         raise ValueError("a positive-DP distribution requires mu1 >= mu0")
     if mu2 < mu1:
         raise ValueError("a positive-DP distribution requires mu2 >= mu1")
-    lhs = mu0 * mu2
-    rhs = mu1 * mu1
+    # Compare on a common scale. Multiplying raw moments first makes a
+    # non-realizable distribution appear valid when both products underflow.
+    scale = max(mu0, mu1, mu2)
+    lhs = (mu0 / scale) * (mu2 / scale)
+    rhs = (mu1 / scale) ** 2
     if lhs + 1.0e-12 * max(abs(lhs), abs(rhs)) < rhs:
         raise ValueError("moments violate mu0*mu2 >= mu1^2")
     return mu0, mu1, mu2

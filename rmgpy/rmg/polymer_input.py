@@ -43,7 +43,8 @@ from rmgpy.solver.polymer import (HybridPolymerSystem, MassTransferConfig, Polym
                                   validate_radical_qssa_unzip,
                                   validate_side_group_homolysis)
 from rmgpy.polymer import strip_rmg_index_suffix
-from rmgpy.polymer_mass import observables_from_moments, subtract_explicit_moments
+from rmgpy.polymer_mass import (Composition, observables_from_moments,
+                                subtract_explicit_moments)
 from rmgpy.species import Species
 
 
@@ -656,9 +657,25 @@ class PolymerPhase(object):
         total_mass_kg = 0.0
 
         # 1. Add Mass of Explicit Species (Directly)
+        shared_explicit = {
+            species
+            for pool in self.pools
+            if getattr(pool.proxy_species, "linear_homopolymer_spec", None)
+            is not None
+            for species in pool.explicit_map.values()
+        }
         for species, moles in self.initial_explicit.items():
-            # species.molecular_weight.value_si is in kg/molecule
-            total_mass_kg += float(moles) * species.molecular_weight.value_si * constants.Na
+            if species in shared_explicit:
+                # Shared-spec explicit inventory is graph-authoritative.
+                total_mass_kg += (
+                    float(moles) * species.molecule[0].get_molecular_weight()
+                )
+            else:
+                # Exact legacy arithmetic for every no-spec phase.
+                total_mass_kg += (
+                    float(moles) * species.molecular_weight.value_si
+                    * constants.Na
+                )
 
         # 2. Add Mass of Tails
         for pool in self.pools:
@@ -1454,6 +1471,8 @@ class PolymerPool(object):
         # 1. Resolve Explicit Map Indices
         explicit_indices = dict()
         explicit_mw_g_mol = dict()
+        explicit_dp_pristine = dict()
+        shared_spec = getattr(self.proxy_species, "linear_homopolymer_spec", None)
         if self.explicit_map:
             for dp, spc in self.explicit_map.items():
                 if dp > self.xs:
@@ -1462,8 +1481,20 @@ class PolymerPool(object):
                 if spc in spc_map:
                     explicit_indices[dp] = spc_map[spc]
                     explicit_mw_g_mol[dp] = (
-                        spc.molecular_weight.value_si * constants.Na * 1000.0
+                        spc.molecule[0].get_molecular_weight() * 1000.0
                     )
+                    if shared_spec is not None:
+                        actual = Composition.from_atoms([
+                            {
+                                "element": atom.element.symbol,
+                                "isotope": atom.element.isotope,
+                            }
+                            for atom in spc.molecule[0].atoms
+                        ])
+                        pristine = shared_spec.repeat_unit.composition.scaled(
+                            dp
+                        ).plus(shared_spec.end_composition)
+                        explicit_dp_pristine[dp] = actual == pristine
                 else:
                     raise ValueError(f"Pool {self.label}: Explicit species for DP={dp} ({spc}) not in core species.")
 
@@ -1682,14 +1713,19 @@ class PolymerPool(object):
             xs=self.xs,
             explicit_dp_to_species_index=explicit_indices,
             explicit_dp_mw_g_mol=explicit_mw_g_mol,
+            explicit_dp_pristine=explicit_dp_pristine,
             mu_indices=mu_idxs,
             monomer_poly_index=monomer_idx,
             monomer_mw_g_mol=monomer_mw_g_mol,
             end_group_mw_g_mol=float(
                 getattr(self.proxy_species, "end_group_mw_g_mol", 0.0) or 0.0),
             shared_mass_accounting=(
-                getattr(self.proxy_species, "linear_homopolymer_spec", None)
-                is not None
+                shared_spec is not None
+            ),
+            shared_end_groups_symmetric=(
+                shared_spec is None
+                or shared_spec.head_end_group.composition
+                == shared_spec.tail_end_group.composition
             ),
             monomer_heavy_atoms=monomer_heavy_atoms,
             k_scission=self.k_scission,
@@ -1890,6 +1926,11 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
                 getattr(spc, "end_group_mw_g_mol", 0.0) or 0.0),
             shared_mass_accounting=(
                 getattr(spc, "linear_homopolymer_spec", None) is not None
+            ),
+            shared_end_groups_symmetric=(
+                getattr(spc, "linear_homopolymer_spec", None) is None
+                or spc.linear_homopolymer_spec.head_end_group.composition
+                == spc.linear_homopolymer_spec.tail_end_group.composition
             ),
             # r89 dual-axis heavy denominator: a spawned daughter Polymer
             # carries the parent's monomer structure (intact-chain transfer),
