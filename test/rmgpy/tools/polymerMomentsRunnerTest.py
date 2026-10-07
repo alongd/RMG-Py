@@ -3661,6 +3661,10 @@ class TestAtolReplayParity:
 # Requires the READ-ONLY forensic run dir; skipped wherever it is absent.
 # ---------------------------------------------------------------------------
 _POLY102_RUN = "/home/alon/runs/RMG/poly_102_conduit3"
+# Closed-inventory regression ceiling for the saved replay. This is about
+# 1,500 times its measured 6.76e-13 maximum drift, tight enough to reject the
+# old apparent 2e-5 leak while remaining independent of solver tolerances.
+CLOSED_REPLAY_REL_INVENTORY_CEILING = 1.0e-9
 
 
 def _run_prestress_fromdeck_rtol_1e6(result):
@@ -3683,13 +3687,11 @@ def _run_prestress_fromdeck_rtol_1e6(result):
 
         # This is a closed, adiabatic-free replay: its material inventory is
         # the solver's defect-adjusted condensed-polymer mass plus the gas
-        # species' molecular mass. A local-error solver controls each step,
-        # not accumulated global error, so the whole-trajectory conservation
-        # bar is 20 declared relative tolerances. With gas Mass quantities
-        # correctly converted from kg/molecule to g/mol, the measured
-        # fixed-law maximum is 6.76e-13 over 1,314 accepted steps -- more
-        # than seven orders of magnitude inside the existing bar. No
-        # chemistry tolerance or floor is changed by this assertion.
+        # species' molecular mass. With gas Mass quantities correctly
+        # converted from kg/molecule to g/mol, the measured fixed-law maximum
+        # is 6.76e-13 over 1,314 accepted steps. This closed-replay regression
+        # uses its own named conservation ceiling, independent of solver
+        # tolerances; no chemistry tolerance or floor changes here.
         gas = np.flatnonzero(np.asarray(rs.gas_species_mask, dtype=bool))
         mw_g_mol = np.asarray(
             [_species_mw_g_mol(spc) for spc in core])
@@ -3751,8 +3753,9 @@ def _run_prestress_fromdeck_rtol_1e6(result):
                     abs(closed_inventory_g(y) - inventory0) / inventory0)
                 max_rel_inventory_drift = max(
                     max_rel_inventory_drift, rel_inventory_drift)
-                assert rel_inventory_drift <= 20.0e-6, (
-                    rs.t, rel_inventory_drift)
+                assert rel_inventory_drift <= (
+                    CLOSED_REPLAY_REL_INVENTORY_CEILING
+                ), (rs.t, rel_inventory_drift)
                 if accepted == 1 or accepted % 100 == 0 or rs.t >= target:
                     rel_rhs_balance = relative_rhs_mass_balance(y)
                     max_rel_rhs_mass_balance = max(
@@ -3957,7 +3960,8 @@ class TestRegen3SavedCoreReplay:
             status, detail = result.get(timeout=10.0)
             assert status == "finished", detail
             assert detail["accepted"] > 0
-            assert detail["max_rel_inventory_drift"] <= 20.0e-6
+            assert detail["max_rel_inventory_drift"] <= (
+                CLOSED_REPLAY_REL_INVENTORY_CEILING)
             assert detail["max_rel_rhs_mass_balance"] <= 1.0e-9
             process.join(timeout=10.0)
             assert not process.is_alive(), "replay child did not exit"
