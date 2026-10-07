@@ -5260,6 +5260,14 @@
       "line": 136,
       "signature": "8853a50caade1881bd4774f17b83d6a2fad8d629461db3a12c36a5ab942d32c6"
     },
+    "rmgpy/tools/eedf/corroborate.py:_run_reference": {
+      "verdict": "E",
+      "reason": "Writes a temporary JSON request containing numerical EEDF solver configuration and explicit collision data; no Species/Molecule identity or inferred molecular name.",
+      "file": "rmgpy/tools/eedf/corroborate.py",
+      "function": "_run_reference",
+      "line": 457,
+      "signature": "3c40c71ff454c6ad1926e9981a47f82f6ca851ec89f60a344aa064b1e7af4b33"
+    },
     "rmgpy/tools/eedf/loki.py:LoKIDriver.run": {
       "verdict": "E",
       "reason": "Writes explicit LoKI solver setup text and numeric electron-energy parameters; no Species/Molecule identity export.",
