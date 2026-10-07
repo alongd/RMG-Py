@@ -5907,8 +5907,9 @@ class HybridPolymerSystem(ReactionSystem):
             M      = Q10 / max(f0, f1)    (margin distance, floor units)
             M >= M_hi           -> S_eff = S_free EXACTLY (early return)
             S_cone = Q10 / (V_poly*(b1 - b0))
-            M <= M_lo           -> S_eff = 0 EXACTLY (N5b dead band, see
-                                 below; was softmin_p(S_free, S_cone))
+            M <= M_lo           -> narrowed completion: 0 EXACTLY for a
+                                 resolved b1-1, u*softmin_p(S_free, S_cone)
+                                 inside I-090's unresolved b1 neighbourhood
             between             -> v-smoothstep blend of S_free and the
                                  same narrowed completion used below M_lo
         Non-cone-shrinking debits (b1 <= b0) pass S_free through
@@ -5939,9 +5940,9 @@ class HybridPolymerSystem(ReactionSystem):
         Healthy IN-CONE bulk pools take both early returns: s_base comes
         back bitwise, so byte-pins and bulk reversible-row detailed
         balance (C_G* = Keq*S_base(A)/S_base(B)) are untouched. N5b
-        (round-62 DASSL-hang root cause) floors the M <= M_lo branch to
-        the exact hard zero rather than trusting S_cone's noise-scale
-        magnitude down there: below M_lo, Q10 is itself sub-floor-scale
+        (round-62 DASSL-hang root cause) floors resolved b1 shapes in the
+        M <= M_lo branch to exact zero rather than trusting S_cone's
+        noise-scale magnitude down there: below M_lo, Q10 is sub-floor-scale
         cancellation noise (~1e-17 mol/s-scale rows, ~15 orders below any
         deck observable -- inside the model's own error budget, the same
         adjudicated logic as the r81 floors). The narrowed completion is
