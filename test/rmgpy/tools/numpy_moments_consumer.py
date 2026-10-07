@@ -53,8 +53,8 @@ BUNDLE_LIMITER_SOFTMIN_P = 8.0
 # E; M >= M_HI returns S_free exactly; M <= M_INNER runs the NARROWED dead
 # band (I-090 -- see the MIRRORED SOLVER LAW block in
 # _bundle_limited_site, the one place that law lives here). A one-floor C1
-# ramp reaches softmin_p(S_free, S_cone) at M_LO; the original M band above
-# M_LO then blends that cap into S_free.
+# ramp reaches softmin_p(S_free, S_cone) at M_LO; for M > M_LO the original
+# M band blends that cap into S_free bit-for-bit.
 CONE_MARGIN_M_LO = 1.0e2
 CONE_MARGIN_M_INNER = CONE_MARGIN_M_LO - 1.0
 CONE_MARGIN_M_HI = 1.0e4
@@ -743,8 +743,10 @@ class ArtifactConsumer:
         narrowed completion C = u*softmin_p(S_free, S_cone), with u the
         reverse smoothstep on I-090's unresolved b1 neighbourhood and zero
         outside it. M <= M_inner returns C; a one-floor C1 ramp below M_lo
-        reaches the original soft-min cap, and the original M band then blends
-        that cap into S_free. S_cone = Q10/(V_poly*(b1 - 1))."""
+        reaches the original soft-min cap; for M > M_lo the original M band
+        then blends that cap into S_free bit-for-bit. The value exactly at
+        M_lo is necessarily the continuous edge cap.
+        S_cone = Q10/(V_poly*(b1 - 1))."""
         # stage 1: exhaustion tail limiter
         e_dist = self._floor_distance(pool, y)
         if e_dist >= BUNDLE_LIMITER_E_HI:

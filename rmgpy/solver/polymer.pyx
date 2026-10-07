@@ -5950,7 +5950,8 @@ class HybridPolymerSystem(ReactionSystem):
         deck observable -- inside the model's own error budget, the same
         adjudicated logic as the r81 floors). A one-floor inner ramp from the
         narrowed completion reaches the original band cap at M_lo with zero
-        endpoint slopes. The law for M >= M_lo is bit-for-bit unchanged.
+        endpoint slopes. The law for M > M_lo is bit-for-bit unchanged;
+        equality necessarily takes the continuous edge value.
         s_base is
         the direction's adjudicated site law (mu1/V_poly or mu0/V_poly
         per row scaling, including the pre-existing a>0/a<0 VE
@@ -6034,11 +6035,8 @@ class HybridPolymerSystem(ReactionSystem):
         # orders of magnitude below any deck-observable rate, squarely
         # inside the model's own error budget (the same adjudicated
         # "below-floor is noise, not signal" logic as the r81 floors).
-        # Returning cap here trusted that noise's magnitude AND sign;
-        # returning the exact hard zero instead moves the law's one
-        # remaining discontinuity from an unresolvable noise scale
-        # (Q10 == 0) up to the resolvable M_LO band edge, where DASSL's
-        # corrector can actually take a step across it.
+        # Returning cap here trusted that noise's magnitude AND sign, so the
+        # deep dead band returns the exact hard zero instead.
         #
         # I-090 NARROWING. That argument has a domain: it holds wherever
         # S_cone = q10/(V_poly*(b1c - 1)) is a bound at all. It is VOID on
@@ -6065,7 +6063,8 @@ class HybridPolymerSystem(ReactionSystem):
         #     bit-for-bit unchanged through M_INNER; only the one-floor
         #     interval immediately below M_LO ramps to the original band cap.
         # That inner smoothstep has zero slope at both ends, removing the
-        # pre-existing M_LO jump without changing any value at or above M_LO.
+        # pre-existing M_LO jump without changing any value above M_LO. The
+        # value exactly at M_LO necessarily becomes the continuous edge cap.
         # The neighbourhood half-width is derived, not fitted.  I-090 used
         # only the propagated error weight of the two moments b1c is built
         # from.  Its absolute floor terms divided by y1c, however, diverge as

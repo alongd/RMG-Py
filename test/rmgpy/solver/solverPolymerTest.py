@@ -159,8 +159,10 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
                                        DIVERGES and so bounds nothing
         M_inner < M < M_lo          -> one-floor C1 ramp from the narrowed
                                        completion to softmin_p(S_free, S_cone)
-        M_lo <= M < M_hi            -> original C1 v-smoothstep blend of the
-                                       soft-min cap into S_free
+        M = M_lo                    -> continuous soft-min edge cap
+        M_lo < M < M_hi             -> original C1 v-smoothstep blend of the
+                                       soft-min cap into S_free, bit-identical
+                                       to 039153297
     End-group rows (round-62 N5b adjudicated fix) SKIP stage 2 entirely
     and return S_free unconditionally after stage 1: the end-group
     uniform-pick debit (dmu0, dmu1) = (1, mu1/mu0)*rate makes Q10 =

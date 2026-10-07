@@ -1247,6 +1247,62 @@ class TestConeMarginBandParity:
         assert (consumer_mod.BUNDLE_LIMITER_SOFTMIN_P
                 == solver_mod.BUNDLE_LIMITER_SOFTMIN_P)
 
+    @pytest.mark.parametrize("implementation", ["solver", "numpy"])
+    @pytest.mark.parametrize("b1_n", [None, 0.5],
+                             ids=["resolved", "unresolved-b1"])
+    @pytest.mark.parametrize(
+        "edge",
+        [consumer_mod.CONE_MARGIN_M_INNER, consumer_mod.CONE_MARGIN_M_LO],
+        ids=["M-inner", "M-lo"],
+    )
+    def test_one_sided_m_derivatives_agree(self, implementation, b1_n,
+                                           edge):
+        """Both M handoffs have matching one-sided dS/dM in both laws."""
+        rs, consumer = _cone_band_pair()
+        floor = consumer.mu_floor
+        i0, i1, i2 = consumer.pools["poly"]["mu"]
+        y = np.asarray(rs.y, dtype=np.float64).copy()
+        mu0 = 1.0e6 * floor
+        cone_rtol = (rs._cone_b1_rtol if implementation == "solver"
+                     else consumer.cone_b1_rtol)
+
+        def value_at(m_dist):
+            mu1 = mu0 + m_dist * floor
+            if b1_n is None:
+                mu2 = 2.0 * mu1
+            else:
+                # Hold the normalized I-090 b1 coordinate fixed while M
+                # crosses the handoff, matching the production continuity
+                # probe rather than drifting between completion branches.
+                delta = (b1_n * (2.0 * cone_rtol + 2.0 * floor / mu1)
+                         / (1.0 - b1_n * cone_rtol))
+                mu2 = mu1 * (1.0 + delta)
+            y[i0], y[i1], y[i2] = mu0, mu1, mu2
+            if implementation == "solver":
+                return rs._bundle_limited_site(
+                    0, y, V_POLY, False, mu1)
+            return consumer._bundle_limited_site(
+                "poly", y, False, mu1)
+
+        def one_sided(step):
+            center = value_at(edge)
+            left = (3.0 * center - 4.0 * value_at(edge - step)
+                    + value_at(edge - 2.0 * step)) / (2.0 * step)
+            right = (-3.0 * center + 4.0 * value_at(edge + step)
+                     - value_at(edge + 2.0 * step)) / (2.0 * step)
+            return left, right
+
+        # Richardson-extrapolate the second-order one-sided differences.
+        # A comfortably large base step avoids subtraction noise at the
+        # unresolved-b1 endpoint; extrapolation removes its O(h^2) curvature.
+        coarse_left, coarse_right = one_sided(1.0e-1)
+        fine_left, fine_right = one_sided(5.0e-2)
+        left = (4.0 * fine_left - coarse_left) / 3.0
+        right = (4.0 * fine_right - coarse_right) / 3.0
+        assert np.isfinite(left)
+        assert np.isfinite(right)
+        assert left == pytest.approx(right, rel=5.0e-3, abs=1.0e-16)
+
     @pytest.mark.parametrize(
         "moments,expect_live",
         [
