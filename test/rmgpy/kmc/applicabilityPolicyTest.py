@@ -538,13 +538,19 @@ def test_ambiguous_or_unbound_family_root_becomes_unresolved_evidence(
     assert decision["disposition"] == "retained-unresolved-applicability"
 
 
-def test_unbound_family_root_does_not_hide_an_invalid_stored_rewrite():
-    record = _pair()[0]
-    for operation in record["bond_ops"]:
-        if operation["action"] == "set_radical":
-            operation["value"] = 2 - operation["value"]
-    decision = classify_persistent_carbene(
-        record,
+@pytest.mark.parametrize("corrupt_direction", [0, 1])
+def test_unbound_family_root_does_not_hide_an_invalid_stored_rewrite(
+    corrupt_direction,
+):
+    pair = _pair()
+    radical_operation = next(
+        operation
+        for operation in pair[corrupt_direction]["bond_ops"]
+        if operation["action"] == "set_radical"
+    )
+    radical_operation["value"] += 1
+    published, decision = apply_persistent_carbene_policy(
+        pair,
         {
             **_root(),
             "reactant_atom_index": -1,
@@ -553,7 +559,9 @@ def test_unbound_family_root_does_not_hide_an_invalid_stored_rewrite():
         },
         _source(),
     )
+    assert published == []
     assert decision["disposition"] == "refused-structural-inconsistency"
+    assert decision["record_ids"] == ["evt_forward", "evt_reverse"]
     assert decision["reason"].startswith("structural-inconsistency:")
     assert "stored rewrite" in decision["reason"]
 

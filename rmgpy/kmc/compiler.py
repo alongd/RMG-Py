@@ -2232,6 +2232,37 @@ def apply_persistent_carbene_policy(
     )
     if len(by_id) != 2 or not (prepublication or linked):
         raise ValueError("applicability policy requires reciprocal reverse links")
+    from rmgpy.molecule.molecule import Molecule
+
+    for record in records:
+        reactants = [
+            Molecule().from_adjacency_list(graph)
+            for graph in record.get("reactant_graphs", [])
+        ]
+        structure_error, rewrite_verified = _record_structure_error(
+            record, reactants
+        )
+        if structure_error is not None:
+            decision = {
+                "policy_version": PERSISTENT_CARBENE_POLICY_VERSION,
+                "mapped_root": {
+                    **mapped_root,
+                    "mapping_verified": False,
+                    "mapping_error": structure_error,
+                    "structural_inconsistency": True,
+                    "product_rewrite_verified": rewrite_verified,
+                    "persistent_neutral_divalent_carbon": False,
+                    "resonance_form_count": 0,
+                },
+                "rate_source": copy.deepcopy(rate_source_domain),
+                "disposition": "refused-structural-inconsistency",
+                "reason": f"structural-inconsistency: {structure_error}",
+                "structural_record_id": record["event_id"],
+            }
+            return [], {
+                **decision,
+                "record_ids": [item["event_id"] for item in records],
+            }
     decision = classify_persistent_carbene(
         records[0], mapped_root, rate_source_domain
     )
