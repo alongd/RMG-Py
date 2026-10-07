@@ -31,9 +31,11 @@ routed by the chain-end depropagation channel.
 ## RMG-derived channel map
 
 The parameters below are modified-Arrhenius fits to 15 rate coefficients at
-50 K intervals from 300 through 1000 K. The source is the read-only public
-RMG-database polymer revision `cd86d4e1c`; the snapshot contains no `.git`
-metadata with which to verify that declaration in place. Thermodynamic
+50 K intervals from 300 through 1000 K. The caller declares the read-only
+public RMG-database polymer revision as `cd86d4e1c`; the supplied snapshot
+contains no `.git` metadata, so generated provenance records a SHA-256 digest
+of the kinetics and thermo inputs instead of claiming that revision was
+verified. Thermodynamic
 reverses use thermo from the libraries named in `input.py`. No experimental product, mass-loss,
 TGA, or molecular-weight-distribution data were used.
 
@@ -65,8 +67,12 @@ Ea in the units above):
 The transfer change is not a concentration effect: the corrected initial
 concentration differs by only 1.8e-7 relative. Production selection finalizes
 one of the six own-reverse `intra_H_migration` rows in the reverse orientation
-(final degeneracy 3 rather than the requested-direction degeneracy 2); the
-helper uses `Kc` to evaluate that row back in the requested 1-octyl direction.
+(final degeneracy 3 rather than the requested-direction degeneracy 2). Thus
+the independent rerun's statement that all six requested paths have
+degeneracy 2 is also correct at the requested physical-direction boundary;
+the production reaction itself retains final degeneracy 3 for this canonical
+reverse row. The helper uses `Kc` to evaluate that row back in the requested
+1-octyl direction.
 The remaining production barrier processing is then applied before fitting.
 
 The initiation fit first derives a per-backbone-bond coefficient from the

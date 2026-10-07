@@ -176,5 +176,5 @@ transfer = fit_channel(
 )
 
 channels = [initiation, depropagation, termination, transfer]
-write_artifacts(OUT, DATABASE, channels)
+write_artifacts(OUT, DATABASE, channels, declared_database_revision="cd86d4e1c")
 print_summary(DATABASE, OUT, REPEAT_CONCENTRATION_MOL_M3, channels)

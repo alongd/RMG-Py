@@ -1,8 +1,10 @@
 """Shared production-path helpers for polymer MOM example rate fits."""
 
 import csv
+import hashlib
 import json
 import math
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -338,15 +340,52 @@ def reaction_thermo_sources(production_reaction):
     }
 
 
-def write_artifacts(output_directory, database_path, channels):
+def _database_provenance(database_path):
+    """Return verified revision metadata for the inputs used by this helper."""
+    database_path = Path(database_path).expanduser().resolve()
+    if (database_path / ".git").exists():
+        try:
+            revision = subprocess.run(
+                ["git", "-C", str(database_path), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            revision = None
+        if revision:
+            return {"method": "git", "revision": revision}
+
+    digest = hashlib.sha256()
+    inputs = []
+    for input_name in ("kinetics", "thermo"):
+        input_directory = database_path / input_name
+        if not input_directory.is_dir():
+            continue
+        inputs.append(input_name)
+        for path in sorted(item for item in input_directory.rglob("*") if item.is_file()):
+            digest.update(path.relative_to(database_path).as_posix().encode() + b"\0")
+            with path.open("rb") as handle:
+                for block in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(block)
+    if inputs:
+        return {"method": "sha256", "digest": digest.hexdigest(), "inputs": inputs}
+    return {"method": "unavailable", "inputs": []}
+
+
+def write_artifacts(
+    output_directory,
+    database_path,
+    channels,
+    declared_database_revision="cd86d4e1c",
+):
     """Write the common JSON, CSV, and Markdown fit artifacts."""
     output_directory = Path(output_directory).expanduser().resolve()
     output_directory.mkdir(parents=True, exist_ok=True)
     payload = {
         "database": str(Path(database_path).expanduser().resolve()),
-        "database_revision": (
-            "declared cd86d4e1c; unavailable from snapshot (no .git metadata)"
-        ),
+        "database_declared_revision": declared_database_revision,
+        "database_provenance": _database_provenance(database_path),
         "kinetics_path": "CoreEdgeReactionModel.make_new_reaction",
         "temperatures_K": [float(value) for value in TEMPERATURES],
         "channels": channels,

@@ -7,6 +7,7 @@ from rmgpy.molecule import Molecule
 from rmgpy.species import Species
 
 from examples.rmg.polymer_rate_estimation import (
+    ProductionRateEstimator,
     ProductionReaction,
     TEMPERATURES,
     _requested_orientation,
@@ -95,6 +96,45 @@ def test_production_reaction_preserves_requested_physical_direction():
     assert np.array_equal(reverse.requested_forward_rates([500.0]), [2.0])
     assert np.array_equal(reverse.requested_reverse_rates([500.0]), [8.0])
     assert reverse.requested_degeneracy == 2.0
+
+
+def test_real_pe_own_reverse_intra_h_migration_fixture():
+    """Pin the production-path own-reverse PE transfer row.
+
+    Expected values were derived from the rmg_env production run against
+    /home/alon/runs/phase2b/database/input on 2026-10-07. The tight tolerance
+    catches changes in production selection or barrier processing while
+    allowing floating-point noise.
+    """
+    estimator = ProductionRateEstimator(
+        "/home/alon/runs/phase2b/database/input", ["intra_H_migration"]
+    )
+    reactions = estimator.generate(["[CH2]CCCCCCC"], "intra_H_migration")
+    own_reverse = [
+        reaction for reaction in reactions if not reaction.requested_forward_in_final
+    ]
+
+    assert len(reactions) == 6
+    assert len(own_reverse) == 1
+    reaction = own_reverse[0]
+    assert reaction.requested_degeneracy == 2.0
+    assert reaction.reaction.degeneracy == 3.0
+    assert reaction.selected_kinetics["requested_template_labels"] == [
+        "R6H_SSSSS",
+        "C_rad_out_2H",
+        "Cs_H_out_H/(NonDeC/Cs)",
+    ]
+    assert reaction.selected_kinetics["final_template_labels"] == [
+        "R3H_SS_Cs",
+        "C_rad_out_H/NonDeC",
+        "Cs_H_out_2H",
+    ]
+    np.testing.assert_allclose(
+        reaction.requested_forward_rates([300.0, 600.0, 1000.0]),
+        [9.076264062166428e-15, 0.24188767379152315, 62944.04667768389],
+        rtol=1e-8,
+        atol=0.0,
+    )
 
 
 def test_fit_and_artifacts_report_rmg_and_solver_laws(tmp_path):
