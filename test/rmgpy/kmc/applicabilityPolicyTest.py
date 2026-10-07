@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import rmgpy.kmc.compiler as compiler_module
 from rmgpy.kmc.compiler import (
     PERSISTENT_CARBENE_POLICY_VERSION,
     apply_persistent_carbene_policy,
@@ -138,6 +139,34 @@ def test_u2_contributor_in_wrong_recipe_role_does_not_authorize_transfer():
     assert refusal["disposition"] == "refused-unsupported-transfer"
 
 
+def test_reverse_stored_training_source_flips_to_family_forward_role(monkeypatch):
+    class Entry:
+        index = 629
+        label = "reverse training"
+        item = object()
+
+    class Family:
+        auto_generated = False
+        label = "H_Abstraction"
+
+        @staticmethod
+        def extract_source_from_comments(reaction):
+            return True, ("Training", Entry(), True)
+
+    monkeypatch.setattr(
+        compiler_module,
+        "_mapped_reaction_u2_roots",
+        lambda family, reaction: [{
+            "recipe_label": "*1",
+            "family_forward_role": "product",
+            "persistent_neutral_divalent_carbon": True,
+        }],
+    )
+    domain = compiler_module._training_source_domain(Family(), object(), {})
+    assert domain[0]["source"]["stored_reverse"] is True
+    assert domain[0]["mapped_roots"][0]["family_forward_role"] == "reactant"
+
+
 def test_nine_form_delocalised_witness_stays_enabled_and_identity_bound():
     witness = json.loads(
         (FIXTURES / "i078_resonance_witness.json").read_text()
@@ -209,7 +238,9 @@ def test_s6_s7_split_rates_and_reverse_histories_are_not_duplicates():
 
 
 def test_synthetic_duplicated_reciprocal_pair_is_detected():
-    records = _transition_pair("first") + _transition_pair("duplicate")
+    records = _transition_pair("first", rate=1.0) + _transition_pair(
+        "duplicate", rate=2.0
+    )
     assert duplicate_transition_groups(records) == [
         [("duplicate_f", "duplicate_r"), ("first_f", "first_r")]
     ]

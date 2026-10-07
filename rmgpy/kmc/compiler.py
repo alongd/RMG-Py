@@ -414,6 +414,14 @@ def _training_source_domain(family, reaction, cache) -> list[dict[str, Any]] | N
         key = (family.label, entry.index)
         if key not in cache:
             cache[key] = _mapped_reaction_u2_roots(family, entry.item)
+        mapped_roots = copy.deepcopy(cache[key])
+        if reverse:
+            for root in mapped_roots:
+                root["family_forward_role"] = (
+                    "product"
+                    if root["family_forward_role"] == "reactant"
+                    else "reactant"
+                )
         domain.append(
             {
                 "source": {
@@ -424,7 +432,7 @@ def _training_source_domain(family, reaction, cache) -> list[dict[str, Any]] | N
                     "weight": weight,
                     "stored_reverse": bool(reverse),
                 },
-                "mapped_roots": copy.deepcopy(cache[key]),
+                "mapped_roots": mapped_roots,
             }
         )
     return domain
@@ -1787,7 +1795,6 @@ def apply_record(
 def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
     """Bind an applicability root to the stored rewrite and its resonance set."""
     from rmgpy.molecule.molecule import Molecule
-    from rmgpy.species import Species
 
     data = record.to_dict() if isinstance(record, EventRecord) else record
     reactants = [
@@ -1850,37 +1857,10 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
         touched_indices.update(operation.get("atoms", []))
         if "atom" in operation:
             touched_indices.add(operation["atom"])
-    selected_is_u2 = (
-        selected_atom.element.number == 6
-        and selected_atom.charge == 0
-        and selected_atom.radical_electrons == 2
-        and math.isclose(sum(bond.order for bond in selected_atom.edges.values()), 2.0)
-        and selected_molecule.multiplicity == 3
-        and root_index in touched_indices
-    )
-
-    resonance_form_count = 0
-    persistent = False
-    if selected_is_u2:
-        molecule = selected_molecule.copy(deep=True)
-        selected_index = selected_molecule.atoms.index(selected_atom)
-        marker = "*kmc_applicability_root"
-        molecule.atoms[selected_index].label = marker
-        species = Species(molecule=[molecule])
-        species.generate_resonance_structures()
-        resonance_form_count = len(species.molecule)
-        root_atoms = []
-        for form in species.molecule:
-            matches = [atom for atom in form.atoms if atom.label == marker]
-            if len(matches) != 1:
-                raise ValueError("resonance generation did not preserve mapped root identity")
-            root_atoms.append(matches[0])
-        persistent = all(
-            atom.element.number == 6
-            and atom.charge == 0
-            and atom.radical_electrons == 2
-            and math.isclose(sum(bond.order for bond in atom.edges.values()), 2.0)
-            for atom in root_atoms
+    persistent, resonance_form_count = False, 0
+    if root_index in touched_indices:
+        persistent, resonance_form_count = _persistent_labeled_u2(
+            selected_molecule, selected_atom
         )
 
     return {
@@ -1988,23 +1968,9 @@ def _pair_relative_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 _TRANSITION_SHAPE_FIELDS = {
-    "family",
-    "template",
-    "arity",
-    "participant_site_types",
-    "reactant_multiplicities",
-    "rate_order",
-    "atom_map",
-    "bond_ops",
-    "orientation",
-    "site_type",
-    "coproducts",
-    "inventory_class",
     "reactant_graphs",
-    "product_graphs",
-    "cut_offset",
-    "feature_ops",
-    "inheritance",
+    "bond_ops",
+    "inventory_class",
     "junction_ops",
 }
 
@@ -2022,7 +1988,7 @@ def duplicate_transition_groups(records: Sequence[dict[str, Any]]) -> list[list[
     """Return duplicate reciprocal transitions using pair-relative identities."""
     by_id = {record["event_id"]: record for record in records}
     seen = set()
-    shape_groups: dict[str, list[tuple[str, str]]] = {}
+    groups: dict[str, list[tuple[str, str]]] = {}
     for event_id in sorted(by_id):
         if event_id in seen:
             continue
@@ -2037,20 +2003,7 @@ def duplicate_transition_groups(records: Sequence[dict[str, Any]]) -> list[list[
             canonical_json_bytes(_transition_shape_record(item)).decode("ascii")
             for item in (record, partner)
         )
-        shape_groups.setdefault(sha256_json(shape_views), []).append(pair_ids)
-
-    groups: dict[str, list[tuple[str, str]]] = {}
-    for candidates in shape_groups.values():
-        if len(candidates) < 2:
-            continue
-        for pair_ids in candidates:
-            views = sorted(
-                canonical_json_bytes(_pair_relative_record(by_id[event_id])).decode(
-                    "ascii"
-                )
-                for event_id in pair_ids
-            )
-            groups.setdefault(sha256_json(views), []).append(pair_ids)
+        groups.setdefault(sha256_json(shape_views), []).append(pair_ids)
     return sorted(
         [sorted(group) for group in groups.values() if len(group) > 1]
     )
@@ -2525,16 +2478,16 @@ class EventSetCompiler:
                 rate_source_domain = _training_source_domain(
                     family, estimate, self._applicability_source_cache
                 )
-                decisions = [
-                    classify_persistent_carbene(
-                        forward, mapped_root, rate_source_domain
+                policy_results = [
+                    apply_persistent_carbene_policy(
+                        (forward, reverse), mapped_root, rate_source_domain
                     )
                     for mapped_root in mapped_roots
                 ]
                 refused = next(
                     (
-                        decision for decision in decisions
-                        if decision["disposition"] == "refused-unsupported-transfer"
+                        refusal for _, refusal in policy_results
+                        if refusal is not None
                     ),
                     None,
                 )
@@ -2543,17 +2496,15 @@ class EventSetCompiler:
                         **refused,
                         "family": estimate.family,
                         "template": _template(estimate),
-                        "candidate_record_ids": [
-                            forward.event_id, reverse.event_id
-                        ],
                     }
                     self._applicability_refusals.append(refusal)
                     return [], None
                 applicability = next(
                     (
-                        decision for decision in decisions
-                        if decision["disposition"]
-                        != "not-applicable"
+                        published[0]["rate_source"].get("applicability")
+                        for published, _ in policy_results
+                        if published[0]["rate_source"].get("applicability")
+                        is not None
                     ),
                     None,
                 )
