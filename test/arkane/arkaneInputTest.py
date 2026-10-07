@@ -50,6 +50,26 @@ ADMONITION = (
 )
 
 
+def test_database_all_forwards_all_kinetics_depositories(monkeypatch):
+    """Arkane's public input function must preserve the meaning of ``'all'``."""
+    class EmptyKinetics:
+        families = {}
+
+    class RecordingDatabase:
+        kinetics = EmptyKinetics()
+        load_kwargs = None
+
+        def load(self, **kwargs):
+            self.load_kwargs = kwargs
+
+    database = RecordingDatabase()
+    monkeypatch.setattr(input, 'get_db', lambda: database)
+
+    input.database(kineticsDepositories='all')
+
+    assert database.load_kwargs['kinetics_depositories'] == 'all'
+
+
 @pytest.mark.skip(reason=ADMONITION)
 class TestArkaneInput:
     """

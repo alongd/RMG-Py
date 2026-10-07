@@ -312,8 +312,14 @@ class KineticsDepository(Database):
         Note that these argument names are retained for backward compatibility.
         """
 
-        reaction = Reaction(reactants=[], products=[], specific_collider=specificCollider,
-                            degeneracy=degeneracy, duplicate=duplicate, reversible=reversible)
+        # Family attribution is part of electron-placement identity.  Depository
+        # records therefore use the same attributed reaction representation as
+        # generated family reactions instead of an ownerless plain Reaction.
+        from rmgpy.data.kinetics.family import TemplateReaction
+        family = self.label.rsplit('/', 1)[0] if '/' in self.label else None
+        reaction = TemplateReaction(reactants=[], products=[], specific_collider=specificCollider,
+                                    degeneracy=degeneracy, duplicate=duplicate,
+                                    reversible=reversible, family=family)
 
         entry = Entry(
             index=index,

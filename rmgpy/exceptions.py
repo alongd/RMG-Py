@@ -181,6 +181,11 @@ class KineticsError(Exception):
     pass
 
 
+class KineticsDepositoryConflictError(KineticsError):
+    """More than one independently sourced depository rate matches a reaction."""
+    pass
+
+
 class QuarantinedKineticsError(KineticsError):
     """
     Raised when a reaction whose kinetics come from quarantined database data is
