@@ -114,6 +114,8 @@ from rmgpy.molecule.atomtype import ATOMTYPES
 from rmgpy.molecule.fragment import Fragment
 from rmgpy.molecule.group import Group, GroupAtom, GroupBond
 from rmgpy.molecule.resonance import generate_resonance_structures
+from rmgpy.polymer_mass import moments_from_observables, observables_from_moments
+from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
 from rmgpy.species import Species
 from rmgpy.thermo import Wilhoit, NASA, ThermoData
 
@@ -251,6 +253,7 @@ class Polymer(Species):
                  end_radical_site: Optional[str] = None,
                  side_group_homolysis: Optional[list] = None,
                  side_loss_channel: Optional[str] = None,
+                 linear_homopolymer_spec=None,
                  **kwargs,
                  ):
         # k_unzip/k_scission/radical_qssa_unzip/k_homolysis/end_radical_site
@@ -258,6 +261,10 @@ class Polymer(Species):
         # appear in kwargs; assign them directly. discrete_dp_threshold (below) is
         # popped from kwargs before Species.__init__, which does not accept it and
         # would raise TypeError.
+        self.linear_homopolymer_spec = (
+            normalized_linear_homopolymer_spec(linear_homopolymer_spec)
+            if linear_homopolymer_spec is not None else None
+        )
         self.k_unzip = k_unzip
         self.k_scission = k_scission
         self.radical_qssa_unzip = radical_qssa_unzip
@@ -378,7 +385,16 @@ class Polymer(Species):
         self.Mn, self.Mw, self.moments = None, None, None
 
         self.initial_mass_g = initial_mass * 1000.0  # convert to grams
-        self.monomer_mw_g_mol = self.monomer.get_molecular_weight() * 1000.0
+        if self.linear_homopolymer_spec is None:
+            self.monomer_mw_g_mol = self.monomer.get_molecular_weight() * 1000.0
+            self.end_group_mw_g_mol = 0.0
+        else:
+            self.monomer_mw_g_mol = (
+                self.linear_homopolymer_spec.repeat_unit.composition.molar_mass_g_mol()
+            )
+            self.end_group_mw_g_mol = (
+                self.linear_homopolymer_spec.end_composition.molar_mass_g_mol()
+            )
 
         self._baseline_proxy = None
         self._feature_proxy = None
@@ -683,6 +699,8 @@ class Polymer(Species):
         other.moments = self.moments
         other.initial_mass_g = self.initial_mass_g
         other.monomer_mw_g_mol = self.monomer_mw_g_mol
+        other.end_group_mw_g_mol = getattr(self, 'end_group_mw_g_mol', 0.0)
+        other.linear_homopolymer_spec = getattr(self, 'linear_homopolymer_spec', None)
         other._baseline_proxy = self._baseline_proxy.copy(deep=True) if self._baseline_proxy else None
         other._feature_proxy = self._feature_proxy.copy(deep=True) if self._feature_proxy else None
         other._end_radical_proxy = (self._end_radical_proxy.copy(deep=True)
@@ -869,6 +887,14 @@ class Polymer(Species):
         nonzero defect. Inverting the defect-aware formula would need mu0,
         which mass alone cannot determine.
         """
+        if self.linear_homopolymer_spec is not None:
+            return np.array(moments_from_observables(
+                self.initial_mass_g,
+                self.Mn,
+                self.Mw,
+                self.monomer_mw_g_mol,
+                self.end_group_mw_g_mol,
+            ))
         DPn = self.Mn / self.monomer_mw_g_mol
         DPw = self.Mw / self.monomer_mw_g_mol
         mu1 = self.initial_mass_g / self.monomer_mw_g_mol
@@ -933,6 +959,13 @@ class Polymer(Species):
         mu0, mu1, mu2 = self.moments
         if mu0 == 0 or mu1 == 0:
             return 0.0, 0.0
+        if self.linear_homopolymer_spec is not None:
+            observables = observables_from_moments(
+                (mu0, mu1, mu2),
+                self.monomer_mw_g_mol,
+                self.end_group_mw_g_mol,
+            )
+            return observables.mn_g_mol, observables.mw_g_mol
         DPn = mu1 / mu0
         DPw = mu2 / mu1
         Mn = DPn * self.monomer_mw_g_mol

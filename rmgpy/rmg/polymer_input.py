@@ -43,6 +43,7 @@ from rmgpy.solver.polymer import (HybridPolymerSystem, MassTransferConfig, Polym
                                   validate_radical_qssa_unzip,
                                   validate_side_group_homolysis)
 from rmgpy.polymer import strip_rmg_index_suffix
+from rmgpy.polymer_mass import observables_from_moments, subtract_explicit_moments
 from rmgpy.species import Species
 
 
@@ -672,6 +673,28 @@ class PolymerPhase(object):
 
             mu0, mu1 = moments[0], moments[1]
 
+            shared_spec = getattr(
+                getattr(pool, "proxy_species", None),
+                "linear_homopolymer_spec",
+                None,
+            )
+            if shared_spec is not None:
+                explicit_dp_moles = {
+                    int(dp): float(self.initial_explicit[species])
+                    for dp, species in (pool.explicit_map or {}).items()
+                    if species in self.initial_explicit
+                }
+                tail_moments = subtract_explicit_moments(
+                    moments[:3], explicit_dp_moles
+                )
+                tail = observables_from_moments(
+                    tail_moments,
+                    shared_spec.repeat_unit.composition.molar_mass_g_mol(),
+                    shared_spec.end_composition.molar_mass_g_mol(),
+                )
+                total_mass_kg += tail.mass_g / 1000.0
+                continue
+
             if not pool.monomer:
                 if mu1 > 1e-9:
                     raise ValueError(f"Pool '{label}' has moments but no monomer defined.")
@@ -1031,14 +1054,22 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
                     species_dict[m_spc.label] = m_spc
 
             mu0 = moles
-            mn_kg = spc.Mn / 1000.0
-            mw_kg = spc.Mw / 1000.0
+            shared_spec = getattr(spc, 'linear_homopolymer_spec', None)
+            if shared_spec is not None:
+                fractions = shared_spec.initial_ensemble.fractions
+                mean_dp = sum(float(fraction) * dp for dp, fraction in fractions)
+                mean_dp2 = sum(float(fraction) * dp * dp for dp, fraction in fractions)
+                mu1 = mu0 * mean_dp
+                mu2 = mu0 * mean_dp2
+            else:
+                mn_kg = spc.Mn / 1000.0
+                mw_kg = spc.Mw / 1000.0
 
-            dp_n = mn_kg / monomer_mw
-            dp_w = mw_kg / monomer_mw
+                dp_n = mn_kg / monomer_mw
+                dp_w = mw_kg / monomer_mw
 
-            mu1 = mu0 * dp_n
-            mu2 = mu1 * dp_w
+                mu1 = mu0 * dp_n
+                mu2 = mu1 * dp_w
 
             initial_moments[spc.label] = (mu0, mu1, mu2)
 

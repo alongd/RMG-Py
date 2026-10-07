@@ -49,6 +49,7 @@ from rmgpy.molecule.fragment import Fragment
 from rmgpy.molecule.group import Group
 from rmgpy.quantity import Energy, Quantity, RateCoefficient, SurfaceConcentration, Concentration
 from rmgpy.polymer import Polymer, validate_thermal_analysis_inputs
+from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
 from rmgpy.rmg.model import CoreEdgeReactionModel
 from rmgpy.rmg.polymer_input import (
     HybridPolymerReactor,
@@ -252,8 +253,8 @@ def species(label, structure, reactive=True, cut=False, size_threshold=None):
 
 
 def polymer(label: str,
-            monomer: Union[Molecule, str],
-            end_groups: Optional[List[Union[str, Molecule]]],
+            monomer: Optional[Union[Molecule, str]] = None,
+            end_groups: Optional[List[Union[str, Molecule]]] = None,
             cutoff: int = 4,
             Mn: Optional[float] = None,
             Mw: Optional[float] = None,
@@ -269,6 +270,7 @@ def polymer(label: str,
             k_depropagation: Optional[dict] = None,
             side_group_homolysis: Optional[list] = None,
             thermal_analysis_inputs: Optional[dict] = None,
+            linear_homopolymer_spec=None,
             ):
     """
     Helper function exposed in the input file to define a Polymer Pool.
@@ -387,6 +389,31 @@ def polymer(label: str,
             k_scission (mu1-preserving backbone scission).
             Default None (kernel absent).
     """
+    shared_spec = None
+    if linear_homopolymer_spec is not None:
+        shared_spec = normalized_linear_homopolymer_spec(linear_homopolymer_spec)
+        if label != shared_spec.label:
+            raise InputError(
+                f"Polymer label {label!r} differs from shared declaration label "
+                f"{shared_spec.label!r}; the shared declaration is the single input source.")
+        if monomer is not None or end_groups is not None:
+            raise InputError(
+                "linear_homopolymer_spec cannot be combined with legacy monomer/end_groups; "
+                "declare the chemistry once in the shared specification.")
+        if moments is not None or Mn is not None or Mw is not None:
+            raise InputError(
+                "linear_homopolymer_spec cannot be combined with legacy moments/Mn/Mw; "
+                "the finite ensemble is the shared distribution source.")
+        if monomer_product is not None:
+            raise InputError(
+                "linear_homopolymer_spec cannot be combined with a legacy monomer_product; "
+                "declare the physical released species in the shared specification.")
+        monomer, end_groups = shared_spec.legacy_molecules()
+        moments = list(shared_spec.macroscopic_moments_mol)
+        initial_mass = shared_spec.initial_mass_kg
+        if shared_spec.monomer_product is not None:
+            monomer_product = shared_spec.monomer_product.to_legacy_molecule({})
+
     # HARD ERROR at deck-read time: a non-finite k_unzip/k_scission is not a
     # valid rate constant. NaN passes BOTH the `< 0` and `> 0` gates as
     # False, so it would make the channel SILENTLY INERT (a laundered
@@ -657,6 +684,7 @@ def polymer(label: str,
         side_group_homolysis=side_group_homolysis,
         discrete_dp_threshold=discrete_dp_threshold,
         thermal_analysis_inputs=thermal_analysis_inputs,
+        linear_homopolymer_spec=shared_spec,
     )
 
     # 1b. Round-72 P1 STRUCTURAL layer of the side-group channel law,
