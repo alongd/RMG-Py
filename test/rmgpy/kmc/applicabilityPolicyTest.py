@@ -176,6 +176,59 @@ def test_compiler_applies_prepublication_refusal_before_rate_evaluation(
     assert compiler._applicability_refusals[0]["record_ids"]
 
 
+def test_compiler_refuses_structurally_corrupt_pair_before_publication(
+    monkeypatch,
+):
+    pair = _pair()
+    pair[0]["atom_map"] = {0: 1, 1: 0}
+    structural = [
+        EventRecord(
+            reactant_graphs=record["reactant_graphs"],
+            product_graphs=record["product_graphs"],
+            atom_map=record["atom_map"],
+            bond_ops=record["bond_ops"],
+            rate_source={"available": True},
+        )
+        for record in pair
+    ]
+    family = SimpleNamespace(auto_generated=False)
+    compiler = object.__new__(EventSetCompiler)
+    compiler.kinetics_database = SimpleNamespace(families={"H_Abstraction": family})
+    compiler._applicability_source_cache = {}
+    compiler._applicability_refusals = []
+    compiler._direction_proxy = lambda proxy, reaction: proxy
+    compiler._record = lambda *args, **kwargs: structural.pop(0)
+    compiler._rate_table = lambda reaction: pytest.fail(
+        "rate evaluation ran for a structurally corrupt pair"
+    )
+    monkeypatch.setattr(compiler_module, "_reverse_view", lambda reaction: reaction)
+    monkeypatch.setattr(
+        compiler_module, "_mapped_reaction_u2_roots",
+        lambda family, reaction, record: [_root()],
+    )
+    monkeypatch.setattr(
+        compiler_module, "_training_source_domain",
+        lambda family, reaction, cache: _source(),
+    )
+    reaction = SimpleNamespace(
+        family="H_Abstraction",
+        kinetics=object(),
+        template=["Root"],
+    )
+
+    published, refused = compiler._build_linked_family_pair(
+        SiteProxy("synthetic", []), reaction, {}
+    )
+
+    assert published == []
+    assert refused is None
+    assert len(compiler._applicability_refusals) == 1
+    refusal = compiler._applicability_refusals[0]
+    assert refusal["disposition"] == "refused-structural-inconsistency"
+    assert refusal["reason"].startswith("structural-inconsistency:")
+    assert len(refusal["record_ids"]) == 2
+
+
 def test_supported_same_role_is_retained_with_transfer_caveat():
     published, refusal = apply_persistent_carbene_policy(
         _pair(), _root(), _source()
@@ -343,15 +396,30 @@ def test_real_training_629_forward_and_reverse_bind_the_same_supported_source():
                 family, reaction, wrong_rewrite
             )
             assert len(wrong_roots) == 1
-            wrong_decision = classify_persistent_carbene(
-                wrong_rewrite,
+            wrong_rewrite.update(
+                event_id="evt_corrupt_forward",
+                reverse_of="evt_corrupt_reverse",
+            )
+            wrong_reverse = copy.deepcopy(wrong_rewrite)
+            wrong_reverse.update(
+                event_id="evt_corrupt_reverse",
+                reverse_of="evt_corrupt_forward",
+            )
+            wrong_published, wrong_decision = apply_persistent_carbene_policy(
+                (wrong_rewrite, wrong_reverse),
                 wrong_roots[0],
                 compiler_module._training_source_domain(family, reaction, {}),
             )
+            assert wrong_published == []
             assert wrong_decision["disposition"] == (
-                "retained-unresolved-applicability"
+                "refused-structural-inconsistency"
             )
+            assert wrong_decision["record_ids"] == [
+                "evt_corrupt_forward",
+                "evt_corrupt_reverse",
+            ]
             assert wrong_decision["mapped_root"]["mapping_verified"] is False
+            assert wrong_decision["reason"].startswith("structural-inconsistency:")
 
     assert dispositions == [
         "retained-supported-transfer",
@@ -467,7 +535,7 @@ def test_ambiguous_or_unbound_family_root_becomes_unresolved_evidence(
     "root_index, label, role",
     [(0, "*1", "product"), (4, "*2", "reactant")],
 )
-def test_corrupt_atom_map_is_retained_only_as_unresolved(root_index, label, role):
+def test_corrupt_atom_map_refuses_both_directions(root_index, label, role):
     record = _pair()[0]
     record["atom_map"] = {0: 1, 1: 0}
     root = {
@@ -475,12 +543,17 @@ def test_corrupt_atom_map_is_retained_only_as_unresolved(root_index, label, role
         "recipe_label": label,
         "family_forward_role": role,
     }
-    decision = classify_persistent_carbene(
-        record, root, _source(label=label, role=role)
+    pair = _pair()
+    pair[0] = record
+    published, refusal = apply_persistent_carbene_policy(
+        pair, root, _source(label=label, role=role)
     )
-    assert decision["disposition"] == "retained-unresolved-applicability"
-    assert decision["mapped_root"]["mapping_verified"] is False
-    assert "atom map disagrees" in decision["reason"]
+    assert published == []
+    assert refusal["disposition"] == "refused-structural-inconsistency"
+    assert refusal["record_ids"] == ["evt_forward", "evt_reverse"]
+    assert refusal["mapped_root"]["mapping_verified"] is False
+    assert refusal["reason"].startswith("structural-inconsistency:")
+    assert "element" in refusal["reason"]
 
 
 def test_persistent_u2_with_remote_spectator_radical_is_classified_per_centre():

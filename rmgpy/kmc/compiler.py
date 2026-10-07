@@ -1825,12 +1825,7 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
     """Bind an applicability root to the stored rewrite and its resonance set."""
     from rmgpy.molecule.molecule import Molecule
 
-    if mapped_root.get("mapping_verified") is False:
-        return {
-            "persistent_neutral_divalent_carbon": False,
-            "resonance_form_count": 0,
-            **mapped_root,
-        }
+    attribution_unresolved = mapped_root.get("mapping_verified") is False
     data = record.to_dict() if isinstance(record, EventRecord) else record
     reactants = [
         Molecule().from_adjacency_list(graph)
@@ -1839,10 +1834,17 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
     root_index = int(mapped_root["reactant_atom_index"])
     reactant_atoms = [atom for molecule in reactants for atom in molecule.atoms]
     if root_index < 0 or root_index >= len(reactant_atoms):
+        if attribution_unresolved:
+            return {
+                "persistent_neutral_divalent_carbon": False,
+                "resonance_form_count": 0,
+                **mapped_root,
+            }
         return {
             **mapped_root,
             "mapping_verified": False,
             "mapping_error": "mapped applicability root is outside the reactant atom map",
+            "structural_inconsistency": True,
             "persistent_neutral_divalent_carbon": False,
             "resonance_form_count": 0,
         }
@@ -1873,7 +1875,18 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
     original_label = root_before.label
     root_before.label = marker
     expected_products = data.get("product_graphs", [])
-    rewritten = apply_record(data, reactants)
+    try:
+        rewritten = apply_record(data, reactants)
+    except ValueError as error:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": f"stored rewrite is invalid: {error}",
+            "structural_inconsistency": True,
+            "product_rewrite_verified": False,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
     rewritten_roots = [
         atom
         for molecule in rewritten
@@ -1885,6 +1898,7 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
             **mapped_root,
             "mapping_verified": False,
             "mapping_error": "stored rewrite did not preserve the mapped root identity",
+            "structural_inconsistency": True,
             "persistent_neutral_divalent_carbon": False,
             "resonance_form_count": 0,
         }
@@ -1899,6 +1913,7 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
             **mapped_root,
             "mapping_verified": False,
             "mapping_error": "mapped applicability root does not reproduce the stored products",
+            "structural_inconsistency": True,
             "product_rewrite_verified": False,
             "persistent_neutral_divalent_carbon": False,
             "resonance_form_count": 0,
@@ -1942,6 +1957,7 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
             **mapped_root,
             "mapping_verified": False,
             "mapping_error": "stored atom map does not contain the mapped root",
+            "structural_inconsistency": True,
             "product_rewrite_verified": True,
             "persistent_neutral_divalent_carbon": False,
             "resonance_form_count": 0,
@@ -1952,6 +1968,16 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
         for molecule in product_molecules
         if mapped_product_atom in molecule.atoms
     )
+    if mapped_product_atom.element.number != root_before.element.number:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "stored atom map changes the mapped root element",
+            "structural_inconsistency": True,
+            "product_rewrite_verified": True,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
     rewritten_molecule = next(
         molecule for molecule in rewritten if rewritten_root in molecule.atoms
     )
@@ -1968,6 +1994,7 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
             "mapping_error": (
                 "stored atom map disagrees with the recipe-labelled rewrite root"
             ),
+            "structural_inconsistency": True,
             "product_rewrite_verified": True,
             "persistent_neutral_divalent_carbon": False,
             "resonance_form_count": 0,
@@ -1984,7 +2011,7 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
 
     return {
         **mapped_root,
-        "mapping_verified": True,
+        "mapping_verified": not attribution_unresolved,
         "product_rewrite_verified": rewrite_verified,
         "resonance_form_count": resonance_form_count,
         "persistent_neutral_divalent_carbon": persistent,
@@ -2004,6 +2031,12 @@ def classify_persistent_carbene(
         "rate_source": copy.deepcopy(rate_source_domain),
     }
     if not root.get("mapping_verified", True):
+        if root.get("structural_inconsistency"):
+            return {
+                **result,
+                "disposition": "refused-structural-inconsistency",
+                "reason": f"structural-inconsistency: {root['mapping_error']}",
+            }
         return {
             **result,
             "disposition": "retained-unresolved-applicability",
@@ -2091,7 +2124,10 @@ def apply_persistent_carbene_policy(
     )
     if decision["disposition"] == "not-applicable":
         return records, None
-    if decision["disposition"] == "refused-unsupported-transfer":
+    if decision["disposition"] in {
+        "refused-unsupported-transfer",
+        "refused-structural-inconsistency",
+    }:
         return [], {
             **decision,
             "record_ids": [record["event_id"] for record in records],
