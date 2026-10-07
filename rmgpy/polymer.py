@@ -93,6 +93,11 @@ In short:
 - μ2 (“width” moment) captures how strongly the population is weighted
   toward larger chains and supports computing Đ and sigma_n.
 
+Shared-spec support is intentionally fail-closed.  A daughter or generated
+route is usable only when the central shared-support allow-list names an exact
+end-inventory law and its production residual proof; all current daughter
+routes are refused before a legacy daughter can escape that boundary.
+
 """
 
 import datetime
@@ -107,6 +112,20 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
+
+
+def _validate_shared_spawn(parent, daughter, source):
+    """Apply the central shared-spec boundary to a newly built daughter."""
+    parent_spec = getattr(parent, "linear_homopolymer_spec", None)
+    if parent_spec is None:
+        return
+    from rmgpy.polymer_shared_support import validate_shared_spec_allowlist
+    validate_shared_spec_allowlist(
+        daughter,
+        context="spawned daughter",
+        route_records=({"flag": -1, "name": source, "row": "spawn"},),
+        parent_shared_spec=parent_spec,
+    )
 
 from rmgpy.exceptions import InputError
 from rmgpy.molecule import Atom, Bond, Molecule
@@ -1242,6 +1261,7 @@ class Polymer(Species):
                 daughter.k_depropagation = deepcopy(kdep)
                 daughter.monomer_product_species = getattr(
                     self, 'monomer_product_species', None)
+            _validate_shared_spawn(self, daughter, HOMOLYSIS_SPAWN_SOURCE)
             daughters.append(daughter)
         return tuple(daughters)
 
@@ -1758,16 +1778,18 @@ class Polymer(Species):
             # from it and ignore the halved values.)
             new_Mn = self.Mn / 2.0 if self.Mn else None
             new_Mw = self.Mw / 2.0 if self.Mw else None
-            return Polymer(label=f"{self.label}_scission_tail",
-                           monomer=self.monomer,
-                           feature_monomer=None,
-                           end_groups=[self.end_groups[0].copy(deep=True), new_tail],
-                           cutoff=self.cutoff,
-                           Mn=new_Mn,
-                           Mw=new_Mw,
-                           initial_mass=0.0,
-                           moments=None,
-                           )
+            daughter = Polymer(label=f"{self.label}_scission_tail",
+                               monomer=self.monomer,
+                               feature_monomer=None,
+                               end_groups=[self.end_groups[0].copy(deep=True), new_tail],
+                               cutoff=self.cutoff,
+                               Mn=new_Mn,
+                               Mw=new_Mw,
+                               initial_mass=0.0,
+                               moments=None,
+                               )
+            _validate_shared_spawn(self, daughter, "SCISSION_TAIL_SPAWN")
+            return daughter
 
         if tail_atoms:
             try:
@@ -1785,15 +1807,17 @@ class Polymer(Species):
                 return None
             new_Mn = self.Mn / 2.0 if self.Mn else None
             new_Mw = self.Mw / 2.0 if self.Mw else None
-            return Polymer(label=f"{self.label}_scission_head",
-                           monomer=self.monomer,
-                           feature_monomer=None,
-                           end_groups=[new_head, self.end_groups[1].copy(deep=True)],
-                           cutoff=self.cutoff,
-                           Mn=new_Mn,
-                           Mw=new_Mw,
-                           initial_mass=0.0,
-                           moments=None)
+            daughter = Polymer(label=f"{self.label}_scission_head",
+                               monomer=self.monomer,
+                               feature_monomer=None,
+                               end_groups=[new_head, self.end_groups[1].copy(deep=True)],
+                               cutoff=self.cutoff,
+                               Mn=new_Mn,
+                               Mw=new_Mw,
+                               initial_mass=0.0,
+                               moments=None)
+            _validate_shared_spawn(self, daughter, "SCISSION_HEAD_SPAWN")
+            return daughter
 
         return None
 
@@ -2076,6 +2100,7 @@ class Polymer(Species):
         if daughter.chain_mass_defect_g_mol > 0.0:
             daughter.chain_mass_defect_provenance = self._defect_provenance(
                 source, defect_src, shed_g)
+        _validate_shared_spawn(self, daughter, source)
         return daughter
 
     def _create_concerted_loss_feature_copy(self, product: Molecule,
@@ -2190,6 +2215,8 @@ class Polymer(Species):
         # ``inherited_g_mol`` must equal.
         daughter.chain_mass_defect_provenance = self._defect_provenance(
             CONCERTED_LOSS_SPAWN_SOURCE, defect_src, gas_mw_g_mol)
+        _validate_shared_spawn(
+            self, daughter, CONCERTED_LOSS_SPAWN_SOURCE)
         return daughter
 
     def _stitch_wing(self, side: str) -> Molecule:
@@ -9613,6 +9640,9 @@ def drain_spawn_intents(
             "triggering_dp": int(intent.triggering_dp),
             "mass_flux_at_spawn": float(intent.mass_flux_at_spawn),
         }
+        _validate_shared_spawn(
+            parent, new_pool,
+            str(new_pool.spawn_metadata.get("source", "SPAWN_INTENT")))
         tp = intent.triggering_product
         if tp is not None:
             try:

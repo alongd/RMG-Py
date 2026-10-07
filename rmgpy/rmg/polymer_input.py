@@ -43,7 +43,7 @@ from rmgpy.solver.polymer import (HybridPolymerSystem, MassTransferConfig, Polym
                                   validate_radical_qssa_unzip,
                                   validate_side_group_homolysis)
 from rmgpy.polymer import strip_rmg_index_suffix
-from rmgpy.polymer_mass import (Composition, observables_from_moments,
+from rmgpy.polymer_mass import (observables_from_moments,
                                 subtract_explicit_moments)
 from rmgpy.species import Species
 
@@ -1472,6 +1472,7 @@ class PolymerPool(object):
         explicit_indices = dict()
         explicit_mw_g_mol = dict()
         explicit_dp_pristine = dict()
+        shared_expected_explicit_dp_molecules = dict()
         shared_spec = getattr(self.proxy_species, "linear_homopolymer_spec", None)
         if self.explicit_map:
             for dp, spc in self.explicit_map.items():
@@ -1480,21 +1481,34 @@ class PolymerPool(object):
 
                 if spc in spc_map:
                     explicit_indices[dp] = spc_map[spc]
-                    explicit_mw_g_mol[dp] = (
-                        spc.molecule[0].get_molecular_weight() * 1000.0
-                    )
                     if shared_spec is not None:
-                        actual = Composition.from_atoms([
-                            {
-                                "element": atom.element.symbol,
-                                "isotope": atom.element.isotope,
-                            }
-                            for atom in spc.molecule[0].atoms
-                        ])
-                        pristine = shared_spec.repeat_unit.composition.scaled(
-                            dp
-                        ).plus(shared_spec.end_composition)
-                        explicit_dp_pristine[dp] = actual == pristine
+                        if not getattr(spc, "molecule", None):
+                            raise ValueError(
+                                f"Pool {self.label}: shared explicit DP={dp} "
+                                "must carry an actual molecular graph")
+                        expected_spc = self.proxy_species._capped_chain_species(dp)
+                        if expected_spc is None or not expected_spc.molecule:
+                            raise ValueError(
+                                f"Pool {self.label}: could not materialize "
+                                f"the declared pristine capped DP={dp} graph")
+                        expected = tuple(expected_spc.molecule)
+                        shared_expected_explicit_dp_molecules[dp] = expected
+                        explicit_dp_pristine[dp] = any(
+                            actual.is_isomorphic(reference)
+                            and actual.multiplicity == reference.multiplicity
+                            for actual in spc.molecule
+                            for reference in expected
+                        )
+                        explicit_mw_g_mol[dp] = (
+                            spc.molecule[0].get_molecular_weight() * 1000.0
+                        )
+                    else:
+                        # Preserve the pre-shared-spec adapter contract: a
+                        # legacy explicit Species may be structureless when
+                        # it supplies molecular_weight.
+                        explicit_mw_g_mol[dp] = (
+                            spc.molecular_weight.value_si * constants.Na * 1000.0
+                        )
                 else:
                     raise ValueError(f"Pool {self.label}: Explicit species for DP={dp} ({spc}) not in core species.")
 
@@ -1714,6 +1728,8 @@ class PolymerPool(object):
             explicit_dp_to_species_index=explicit_indices,
             explicit_dp_mw_g_mol=explicit_mw_g_mol,
             explicit_dp_pristine=explicit_dp_pristine,
+            shared_expected_explicit_dp_molecules=(
+                shared_expected_explicit_dp_molecules or None),
             mu_indices=mu_idxs,
             monomer_poly_index=monomer_idx,
             monomer_mw_g_mol=monomer_mw_g_mol,
@@ -1800,6 +1816,12 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
     base = _base_label
 
     static = set(existing_pool_labels)
+    parent_specs = {
+        base(spc.label): getattr(spc, "linear_homopolymer_spec", None)
+        for spc in core_species
+        if isinstance(spc, Polymer)
+        and getattr(spc, "linear_homopolymer_spec", None) is not None
+    }
     # Base-label -> core index, using the same index-suffix strip the solver
     # binds with (ONE convention: rmgpy.polymer.strip_rmg_index_suffix).
     base_to_index = {}
@@ -1816,6 +1838,22 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
             # Static deck pool's proxy (never re-derived) or a base already
             # configured (the proxy plus its index-suffixed copies).
             continue
+        parent_label = getattr(spc, "parent_pool_label", None)
+        parent_spec = parent_specs.get(base(parent_label)) \
+            if parent_label else None
+        if parent_spec is not None:
+            from rmgpy.polymer_shared_support import validate_shared_spec_allowlist
+            validate_shared_spec_allowlist(
+                spc,
+                context="spawned daughter config",
+                route_records=({
+                    "flag": -1,
+                    "name": str((getattr(spc, "spawn_metadata", None) or {})
+                                .get("source", "SPAWNED_DAUGHTER")),
+                    "row": "spawn",
+                },),
+                parent_shared_spec=parent_spec,
+            )
         mu_indices = tuple(base_to_index.get(f"{b}_mu{k}") for k in (0, 1, 2))
         if any(i is None for i in mu_indices):
             # Daughter registered without its full moment-dummy triplet in the

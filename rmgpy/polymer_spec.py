@@ -424,6 +424,12 @@ class GraphDeclaration:
                 molecule.add_atom(hydrogen)
                 molecule.add_bond(Bond(by_key[declaration.key], hydrogen, 1.0))
         molecule.update_multiplicity()
+        # Ports add temporary stitching radicals, so their legacy view needs
+        # the inferred multiplicity.  A closed physical declaration has no
+        # such representation radicals: retain its authoritative electronic
+        # state exactly, including singlet diradicals used for mobile binding.
+        if not port_by_atom:
+            molecule.multiplicity = self.multiplicity
         molecule.update_atomtypes()
         return molecule
 

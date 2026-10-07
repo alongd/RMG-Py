@@ -400,6 +400,12 @@ class MassVolumeLedger:
         return self.mass_kg / self.density_kg_m3
 
 
+# Ratios wider than this cannot be normalized into IEEE-754 products without
+# losing the realizability inequality to underflow.  The shared contract is
+# fail-closed outside this explicitly supported numerical domain.
+MOMENT_SUPPORTED_DYNAMIC_RANGE = 1.0e150
+
+
 def _validate_moments(values: Sequence[float]) -> Tuple[float, float, float]:
     if len(values) < 3:
         raise ValueError("moments must contain mu0, mu1, and mu2")
@@ -416,6 +422,13 @@ def _validate_moments(values: Sequence[float]) -> Tuple[float, float, float]:
         raise ValueError("a positive-DP distribution requires mu1 >= mu0")
     if mu2 < mu1:
         raise ValueError("a positive-DP distribution requires mu2 >= mu1")
+    smallest = min(value for value in (mu0, mu1, mu2) if value > 0.0)
+    largest = max(mu0, mu1, mu2)
+    if largest / smallest > MOMENT_SUPPORTED_DYNAMIC_RANGE:
+        raise ValueError(
+            "moment ratios exceed the supported dynamic range "
+            f"({MOMENT_SUPPORTED_DYNAMIC_RANGE:.0e})"
+        )
     # Compare on a common scale. Multiplying raw moments first makes a
     # non-realizable distribution appear valid when both products underflow.
     scale = max(mu0, mu1, mu2)

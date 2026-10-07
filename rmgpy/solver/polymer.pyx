@@ -1197,6 +1197,18 @@ class PolymerPoolConfig:
     shared_end_groups_symmetric: bool = True
     explicit_dp_pristine: Optional[Dict[int, bool]] = None
 
+    # Authoritative pristine graphs generated from the shared declaration.
+    # The old boolean above is retained only for positional compatibility;
+    # it is never trusted by the fail-closed validator.
+    shared_expected_explicit_dp_molecules: Optional[Dict[int, tuple]] = None
+
+    def __post_init__(self):
+        # Construction is the first of three shared-spec validation seams.
+        # HybridPolymerSystem repeats this check with live core graphs/routes,
+        # and spawned-daughter derivation repeats it at the lineage boundary.
+        from rmgpy.polymer_shared_support import validate_shared_spec_allowlist
+        validate_shared_spec_allowlist(self, context="PolymerPoolConfig")
+
     def condensed_mass_g(self, mu0_mol, mu1_mol, stationary_depletion_g=0.0,
                          end_inventory_mol=None):
         """EXACT condensed mass [g] of this pool at the given extensive
@@ -1965,6 +1977,24 @@ class HybridPolymerSystem(ReactionSystem):
 
         if len(self.gas_species_mask) != n_core:
             raise ValueError(f"Gas mask len {len(self.gas_species_mask)} != num_core {n_core}")
+
+        # I-066 Step 2: one fail-closed support boundary owns every shared-
+        # spec admission decision.  Run it again here even though the config
+        # constructor already ran it: only the assembled system knows which
+        # generated, refused, or solver-demoted routes touch each pool and it
+        # is the first boundary with the actual core molecular graphs.
+        from rmgpy.polymer_shared_support import validate_shared_spec_allowlist
+        _route_records = getattr(
+            self, "_shared_validation_route_records_by_pool", {})
+        _core_species = getattr(
+            self, "_shared_validation_core_species", None)
+        for _p_idx, _pool in enumerate(self.polymer_pools):
+            validate_shared_spec_allowlist(
+                _pool,
+                context="HybridPolymerSystem",
+                core_species=_core_species,
+                route_records=_route_records.get(_p_idx, ()),
+            )
 
         moment_indices = set()
 
@@ -4092,7 +4122,43 @@ class HybridPolymerSystem(ReactionSystem):
                     r_i, str(combined_rxns[r_i]))
                     for r_i in live_unresolved_rows[:5]))
 
-        self._validate_shared_end_accounting_routes(combined_rxns)
+        # Preserve both generation-time and final solver classifications in
+        # the shared validation record.  A refused or demoted row is still a
+        # route the shared pool was asked to carry and therefore cannot be
+        # hidden by rewriting its final archetype to NONE/UNRESOLVED.
+        from rmgpy.polymer_shared_support import SHARED_ROUTE_FLAGS
+        self._shared_validation_core_species = tuple(core_species)
+        self._shared_validation_route_records_by_pool = {
+            p: [] for p in range(len(self.polymer_pools))}
+        for _r in range(n_rxn):
+            _pre = int(self.reaction_pre_demotion_archetype[_r])
+            _final = int(self.reaction_flux_archetype[_r])
+            _pre_name = SHARED_ROUTE_FLAGS.get(_pre, str(_pre))
+            _final_name = SHARED_ROUTE_FLAGS.get(_final, str(_final))
+            _route_name = (_pre_name if _pre == _final else
+                           "%s->%s" % (_pre_name, _final_name))
+            _touched = set()
+            for _p in (int(self.reaction_src_pool[_r]),
+                       int(self.reaction_dst_pool[_r])):
+                if _p >= 0:
+                    _touched.add(_p)
+            # Refused or malformed rows can lose their src/dst stamp.  Scan
+            # their actual participants as the fail-closed fallback.
+            for _slot in range(3):
+                for _sp_idx in (int(ir_arr[_r, _slot]),
+                                int(ip_arr[_r, _slot])):
+                    if 0 <= _sp_idx < n_core:
+                        _p = int(self.species_to_pool_indices[_sp_idx])
+                        if _p >= 0:
+                            _touched.add(_p)
+            for _p in _touched:
+                for _flag in ((_pre, _final)
+                              if _pre != _final else (_pre,)):
+                    self._shared_validation_route_records_by_pool[_p].append({
+                        "flag": _flag,
+                        "name": _route_name,
+                        "row": _r,
+                    })
 
         # P1-2 (atom-transfer mass defect): per-row MOMENT-space eject units.
         # reaction_eject_units stores the MASS defect a_mass = (net
@@ -4379,85 +4445,6 @@ class HybridPolymerSystem(ReactionSystem):
         ReactionSystem.initialize_solver(self)
 
         self.diagnose_polymer_mapping(core_species)
-
-    def _validate_shared_end_accounting_routes(self, combined_rxns):
-        """Refuse routes whose exact E update is absent from the Step-2 state."""
-        for pool in self.polymer_pools:
-            if not pool.shared_mass_accounting:
-                continue
-            if pool.k_homolysis is not None \
-                    and not pool.shared_end_groups_symmetric:
-                raise ValueError(
-                    f"Pool {pool.label}: HOMOLYSIS is unsupported for a "
-                    "shared-spec pool whose head and tail compositions differ; "
-                    "the moment state cannot assign the two end inventories "
-                    "to positional daughters exactly"
-                )
-            if pool.k_unzip > 0.0:
-                pristine = pool.explicit_dp_pristine or {}
-                if (1 not in pool.explicit_dp_to_species_index
-                        or not pristine.get(1, False)):
-                    raise ValueError(
-                        f"Pool {pool.label}: DP1_UNZIP on a shared-spec pool "
-                        "requires a real pristine capped DP=1 explicit "
-                        "destination for its repeat and end atoms"
-                    )
-            if pool.k_unzip > 0.0 and pool.xs in pool.explicit_dp_to_species_index:
-                pristine = pool.explicit_dp_pristine or {}
-                if not pristine.get(pool.xs, False):
-                    raise ValueError(
-                        f"Pool {pool.label}: HANDSHAKE into explicit DP={pool.xs} "
-                        "is unsupported because that molecular graph differs "
-                        "from the declared pristine capped chain"
-                    )
-
-        route_names = {
-            FLUX_MIGRATION: "MIGRATION",
-            FLUX_SCISSION_FRAGMENT: "SCISSION_FRAGMENT",
-            FLUX_VOLATILE_EJECTION: "VOLATILE_EJECTION",
-            FLUX_MOMENT_CREDIT_CONDUIT: "MOMENT_CREDIT_CONDUIT",
-        }
-        for r, _rxn in enumerate(combined_rxns):
-            arch = int(self.reaction_flux_archetype[r])
-            if arch not in route_names:
-                continue
-            src = int(self.reaction_src_pool[r])
-            dst = int(self.reaction_dst_pool[r])
-            src_shared = src >= 0 and self.polymer_pools[src].shared_mass_accounting
-            dst_shared = dst >= 0 and self.polymer_pools[dst].shared_mass_accounting
-            if not (src_shared or dst_shared):
-                continue
-            route = route_names[arch]
-            if arch == FLUX_SCISSION_FRAGMENT:
-                raise ValueError(
-                    f"{route} route {r} is unsupported for shared-spec pools: "
-                    "fragment routing needs an end-conditioned inventory that "
-                    "the moment state does not carry"
-                )
-            if arch == FLUX_MOMENT_CREDIT_CONDUIT:
-                raise ValueError(
-                    f"{route} route {r} is unsupported for shared-spec pool "
-                    f"'{self.polymer_pools[dst].label}': explicit-to-pool "
-                    "credit would change E without an exact end-bundle credit"
-                )
-            if src_shared != dst_shared:
-                raise ValueError(
-                    f"{route} route {r} crosses the shared-spec end-inventory "
-                    "boundary; both pools must carry the same declaration"
-                )
-            if not bool(self.is_end_group_reaction[r]):
-                raise ValueError(
-                    f"{route} route {r} is length- or site-selective and is "
-                    "unsupported for shared-spec pools because E is not "
-                    "conditioned on chain length or reactive site"
-                )
-            if (not self.polymer_pools[src].shared_end_groups_symmetric
-                    or not self.polymer_pools[dst].shared_end_groups_symmetric):
-                raise ValueError(
-                    f"{route} route {r} cannot use number-average E transfer "
-                    "unless chain selection is uniform and head and tail "
-                    "compositions are identical"
-                )
 
     def _assert_moment_slots_carry_no_molar_amount(self, moment_slots,
                                                    core_species, floor):
