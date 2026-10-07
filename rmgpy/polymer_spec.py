@@ -16,6 +16,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from rmgpy import constants
 from rmgpy.molecule import Atom, Bond, Molecule
+from rmgpy.molecule.adjlist import ConsistencyChecker
 from rmgpy.molecule.element import get_element
 from rmgpy.polymer_mass import (
     Composition,
@@ -27,6 +28,15 @@ from rmgpy.polymer_mass import (
 
 SCHEMA_VERSION = 1
 ROUNDING_V1 = "largest_remainder_dp_ascending_v1"
+
+_LOCALITY_BOUND_FIELDS = {
+    "elements", "isotopes", "formal_charges", "radical_electrons",
+    "lone_pairs", "bond_orders", "spin_multiplicities",
+    "maximum_heavy_atom_degree", "maximum_explicit_hydrogens_per_heavy_atom",
+    "maximum_total_hydrogens_on_free_small_species", "maximum_family_arity",
+    "maximum_root_tuple_size", "maximum_free_small_species_heavy_atoms",
+    "attachment_classes", "topology_metadata_schema",
+}
 
 
 def _integer(value: Any, name: str, minimum: Optional[int] = None) -> int:
@@ -59,11 +69,92 @@ def _canonical_data(value: Any) -> Any:
         }
     if isinstance(value, (list, tuple)):
         return [_canonical_data(item) for item in value]
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise ValueError("normalized declaration values must be finite")
+        return int(value) if value == value.to_integral_value() else float(value)
     if isinstance(value, float) and not math.isfinite(value):
         raise ValueError("normalized declaration values must be finite")
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     raise ValueError(f"value {value!r} is not JSON-normalizable")
+
+
+def _reject_duplicate_json_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key {key!r}")
+        result[key] = value
+    return result
+
+
+def _normalized_dp_mapping(value: Mapping, name: str) -> Dict[int, Any]:
+    normalized = {}
+    for raw_dp, item in value.items():
+        dp = _integer(raw_dp, "DP", 1)
+        if dp in normalized:
+            raise ValueError(f"duplicate DP {dp} in {name}")
+        normalized[dp] = item
+    return normalized
+
+
+def _validated_locality_policy(value: Any) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != {"radius", "bounds"}:
+        raise ValueError("locality_policy must declare exactly radius and finite bounds")
+    radius = _integer(value["radius"], "locality radius", 0)
+    bounds = value["bounds"]
+    if not isinstance(bounds, Mapping):
+        raise ValueError("locality_policy bounds must be a mapping")
+    missing = _LOCALITY_BOUND_FIELDS - set(bounds)
+    unknown = set(bounds) - _LOCALITY_BOUND_FIELDS
+    if missing:
+        raise ValueError(f"missing locality bounds: {sorted(missing)}")
+    if unknown:
+        raise ValueError(f"unknown locality bounds: {sorted(unknown)}")
+
+    normalized = {}
+    for field in ("elements", "attachment_classes"):
+        items = bounds[field]
+        if not isinstance(items, Sequence) or isinstance(items, str):
+            raise ValueError(f"locality bound {field} must be a finite list")
+        if any(not isinstance(item, str) or not item for item in items):
+            raise ValueError(f"locality bound {field} entries must be non-empty strings")
+        if len(items) != len(set(items)):
+            raise ValueError(f"locality bound {field} cannot contain duplicates")
+        normalized[field] = sorted(items)
+    if not normalized["elements"]:
+        raise ValueError("locality bound elements cannot be empty")
+
+    integer_lists = ("isotopes", "formal_charges", "radical_electrons",
+                     "lone_pairs", "spin_multiplicities")
+    for field in integer_lists:
+        items = bounds[field]
+        if not isinstance(items, Sequence) or isinstance(items, str) or not items:
+            raise ValueError(f"locality bound {field} must be a non-empty finite list")
+        converted = [_integer(item, f"locality bound {field}") for item in items]
+        if len(converted) != len(set(converted)):
+            raise ValueError(f"locality bound {field} cannot contain duplicates")
+        normalized[field] = sorted(converted)
+
+    bond_orders = bounds["bond_orders"]
+    if not isinstance(bond_orders, Sequence) or isinstance(bond_orders, str) or not bond_orders:
+        raise ValueError("locality bound bond_orders must be a non-empty finite list")
+    normalized["bond_orders"] = sorted({_finite(item, "locality bond order") for item in bond_orders})
+
+    maxima = (
+        "maximum_heavy_atom_degree", "maximum_explicit_hydrogens_per_heavy_atom",
+        "maximum_total_hydrogens_on_free_small_species", "maximum_family_arity",
+        "maximum_root_tuple_size", "maximum_free_small_species_heavy_atoms",
+    )
+    for field in maxima:
+        normalized[field] = _integer(bounds[field], f"locality bound {field}", 0)
+    if normalized["maximum_family_arity"] != 2:
+        raise ValueError("locality bound maximum_family_arity must be 2 in schema v1")
+    if not isinstance(bounds["topology_metadata_schema"], Mapping):
+        raise ValueError("locality bound topology_metadata_schema must be a mapping")
+    normalized["topology_metadata_schema"] = _canonical_data(bounds["topology_metadata_schema"])
+    return {"radius": radius, "bounds": _canonical_data(normalized)}
 
 
 @dataclass(frozen=True)
@@ -336,10 +427,9 @@ class InitialEnsemble:
             raw_counts = value["dp_counts"]
             if not isinstance(raw_counts, Mapping) or not raw_counts:
                 raise ValueError("dp_counts must be a non-empty mapping")
-            counts = {
-                _integer(dp, "DP", 1): _integer(count, "DP count", 0)
-                for dp, count in raw_counts.items()
-            }
+            raw_counts = _normalized_dp_mapping(raw_counts, "dp_counts")
+            counts = {dp: _integer(count, "DP count", 0)
+                      for dp, count in raw_counts.items()}
             total = sum(counts.values())
             if total <= 0:
                 raise ValueError("dp_counts must contain at least one chain")
@@ -356,8 +446,9 @@ class InitialEnsemble:
         raw_fractions = value["dp_number_fractions"]
         if not isinstance(raw_fractions, Mapping) or not raw_fractions:
             raise ValueError("dp_number_fractions must be a non-empty mapping")
+        raw_fractions = _normalized_dp_mapping(raw_fractions, "dp_number_fractions")
         fractions = tuple(sorted(
-            (_integer(dp, "DP", 1), _fraction(item))
+            (dp, _fraction(item))
             for dp, item in raw_fractions.items()
         ))
         if any(fraction < 0 for _dp, fraction in fractions):
@@ -520,10 +611,7 @@ class LinearHomopolymerSpec:
             raise ValueError("density_basis must be dry_polymer or whole_initial_mixture")
         if any(count for _name, count in mobile_counts) and density_basis != "whole_initial_mixture":
             raise ValueError("mobile representative counts require whole_initial_mixture density")
-        locality = value["locality_policy"]
-        if not isinstance(locality, Mapping) or "radius" not in locality:
-            raise ValueError("locality_policy must declare radius and finite bounds")
-        _integer(locality["radius"], "locality radius", 0)
+        locality = _validated_locality_policy(value["locality_policy"])
         policies = []
         for name in ("family_manifest", "library_manifest", "transport_model", "diagnostics"):
             policy = value[name]
@@ -544,14 +632,68 @@ class LinearHomopolymerSpec:
             InitialEnsemble.from_mapping(value["initial_ensemble"]), mn, mw, tolerance,
             _finite(value["initial_mass_kg"], "initial_mass_kg"),
             _finite(value["density_kg_m3"], "density_kg_m3"), density_basis,
-            mobile_counts, _canonical_data(locality), *policies,
+            mobile_counts, locality, *policies,
         )
         if spec.initial_mass_kg < 0.0:
             raise ValueError("initial_mass_kg cannot be negative")
         if spec.density_kg_m3 <= 0.0:
             raise ValueError("density_kg_m3 must be positive")
+        spec._validate_physical_electronic_states()
         spec._validate_observables()
         return spec
+
+    def _validate_physical_electronic_states(self):
+        """Apply RMG's valence/electron rules to a physical capped dimer."""
+        fragments = (self.head_end_group, self.repeat_unit,
+                     self.repeat_unit, self.tail_end_group)
+        atom_maps = []
+        molecule = Molecule()
+        for fragment in fragments:
+            by_key = {}
+            for declaration in fragment.atoms:
+                atom = Atom(
+                    element=get_element(declaration.element, declaration.isotope),
+                    radical_electrons=declaration.radical_electrons,
+                    charge=declaration.charge,
+                    lone_pairs=declaration.lone_pairs,
+                )
+                molecule.add_atom(atom)
+                by_key[declaration.key] = atom
+                for _index in range(declaration.hydrogens):
+                    hydrogen = Atom(element=get_element("H"), lone_pairs=0)
+                    molecule.add_atom(hydrogen)
+                    molecule.add_bond(Bond(atom, hydrogen, 1.0))
+            for bond in fragment.bonds:
+                left, right = bond.atoms
+                molecule.add_bond(Bond(by_key[left], by_key[right], bond.order))
+            atom_maps.append(by_key)
+
+        head_port = self.head_end_group.ports[0][1]
+        repeat_ports = dict(self.repeat_unit.ports)
+        tail_port = self.tail_end_group.ports[0][1]
+        joins = (
+            (0, head_port, 1, repeat_ports["head"]),
+            (1, repeat_ports["tail"], 2, repeat_ports["head"]),
+            (2, repeat_ports["tail"], 3, tail_port),
+        )
+        for left_index, left_port, right_index, right_port in joins:
+            molecule.add_bond(Bond(
+                atom_maps[left_index][left_port.atom],
+                atom_maps[right_index][right_port.atom],
+                left_port.bond_order,
+            ))
+        molecule.update_multiplicity()
+        try:
+            for atom in molecule.atoms:
+                ConsistencyChecker.check_partial_charge(atom)
+                ConsistencyChecker.check_hund_rule(atom, molecule.multiplicity)
+            ConsistencyChecker.check_multiplicity(
+                molecule.get_radical_count(), molecule.multiplicity
+            )
+        except Exception as exc:
+            raise ValueError(
+                "declared electronic state is inconsistent in the physical capped dimer"
+            ) from exc
 
     @property
     def end_composition(self) -> Composition:
@@ -687,5 +829,9 @@ def normalized_linear_homopolymer_spec(value: Any) -> LinearHomopolymerSpec:
     if isinstance(value, LinearHomopolymerSpec):
         return value
     if isinstance(value, (str, bytes, bytearray)):
-        value = json.loads(value)
+        value = json.loads(
+            value,
+            parse_float=Decimal,
+            object_pairs_hook=_reject_duplicate_json_pairs,
+        )
     return LinearHomopolymerSpec.from_mapping(value)

@@ -23,7 +23,15 @@ def _isotope_number(value) -> int:
         return -1
     if isinstance(value, bool):
         raise ValueError("an isotope number cannot be boolean")
-    isotope = int(value)
+    try:
+        isotope = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("an isotope number must be an integer") from exc
+    if isinstance(value, str):
+        if value.strip() != str(isotope):
+            raise ValueError("an isotope number must be an integer")
+    elif isotope != value:
+        raise ValueError("an isotope number must be an integer")
     if isotope <= 0:
         raise ValueError("an isotope number must be positive")
     return isotope
@@ -198,7 +206,7 @@ def subtract_explicit_moments(
     result = tuple(values[index] - debit[index] for index in range(3))
     if any(value < -1.0e-15 for value in result):
         raise ValueError("explicit-chain moment debit exceeds the pool moments")
-    return tuple(max(0.0, value) for value in result)
+    return _validate_moments(result)
 
 
 @dataclass(frozen=True)
@@ -272,7 +280,9 @@ class EvolvedPoolMass:
         units = _nonnegative(units_mol, "depropagated units")
         mu0_delta = _nonnegative(mu0_debit, "depropagated chain debit")
         if mu2_debit is None:
-            mu2_debit = units
+            raise ValueError(
+                "mu2_debit must be explicit or derived from the actual depropagation operator"
+            )
         mu2_delta = _nonnegative(mu2_debit, "depropagated second-moment debit")
         mu0, mu1, mu2 = self.moments
         new_moments = (mu0 - mu0_delta, mu1 - units, mu2 - mu2_delta)
@@ -334,9 +344,39 @@ class EvolvedPoolMass:
             for term in self.end_inventory + self.defects + self.losses
         }:
             raise ValueError("stationary-depletion provenance must be unique")
+        requested = composition.as_mapping()
+        if any(count < 0 for count in requested.values()):
+            raise ValueError("stationary depletion must name a nonnegative physical inventory")
+        available = self._elemental_inventory_mol()
+        for key, count in requested.items():
+            needed = count * amount
+            present = available.get(key, 0.0)
+            tolerance = 1.0e-12 * max(abs(needed), abs(present), 1.0e-30)
+            if present + tolerance < needed:
+                symbol, isotope = key
+                raise ValueError(
+                    "stationary depletion exceeds available elemental inventory for "
+                    f"{symbol} isotope={isotope}: requested {needed:g} mol-atoms, "
+                    f"available {present:g} mol-atoms"
+                )
         term = InventoryTerm(provenance_id, composition, amount, False)
         updated = replace(self, losses=self.losses + (term,))
         return updated, ExplicitInventory(destination_id, composition, amount)
+
+    def _elemental_inventory_mol(self) -> Dict[Tuple[str, int], float]:
+        """Return the live atom inventory represented by moments/E/D/L."""
+        inventory: Dict[Tuple[str, int], float] = {}
+
+        def add(composition: Composition, amount: float):
+            for key, count in composition.as_mapping().items():
+                inventory[key] = inventory.get(key, 0.0) + count * amount
+
+        add(self.repeat, self.moments[1])
+        for term in self.end_inventory + self.defects:
+            add(term.composition, term.amount_mol)
+        for term in self.losses:
+            add(term.composition, -term.amount_mol)
+        return inventory
 
 
 @dataclass(frozen=True)
@@ -364,6 +404,8 @@ def _validate_moments(values: Sequence[float]) -> Tuple[float, float, float]:
     if len(values) < 3:
         raise ValueError("moments must contain mu0, mu1, and mu2")
     mu0, mu1, mu2 = (float(values[index]) for index in range(3))
+    if not all(math.isfinite(value) for value in (mu0, mu1, mu2)):
+        raise ValueError("moments must be finite")
     if min(mu0, mu1, mu2) < -1.0e-15:
         raise ValueError("moments cannot be negative")
     mu0, mu1, mu2 = max(0.0, mu0), max(0.0, mu1), max(0.0, mu2)
@@ -375,7 +417,9 @@ def _validate_moments(values: Sequence[float]) -> Tuple[float, float, float]:
         raise ValueError("a positive-DP distribution requires mu1 >= mu0")
     if mu2 + 1.0e-15 < mu1:
         raise ValueError("a positive-DP distribution requires mu2 >= mu1")
-    if mu0 * mu2 + 1.0e-12 * max(1.0, mu1 * mu1) < mu1 * mu1:
+    lhs = mu0 * mu2
+    rhs = mu1 * mu1
+    if lhs + 1.0e-12 * max(abs(lhs), abs(rhs)) < rhs:
         raise ValueError("moments violate mu0*mu2 >= mu1^2")
     return mu0, mu1, mu2
 

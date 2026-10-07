@@ -971,7 +971,7 @@ class PolymerPhaseBlueprint(object):
                  label: str,
                  species: List[str],
                  solvent: str,
-                 density: Union[float, tuple] = (1000.0, 'kg/m^3'),
+                 density: Optional[Union[float, tuple]] = None,
                  mass_transfer: Optional[List['MassTransfer']] = None,
                  ):
         self.label = label
@@ -984,7 +984,7 @@ class PolymerPhaseBlueprint(object):
 def polymer_phase(label: str,
                   species: List[str],
                   solvent: str,
-                  density: Union[float, tuple] = (1000.0, 'kg/m^3'),
+                  density: Optional[Union[float, tuple]] = None,
                   mass_transfer: Optional[List['MassTransfer']] = None):
     """
     Input file helper to define the polymer phase contents.
@@ -1008,15 +1008,76 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
     if not isinstance(blueprint, PolymerPhaseBlueprint):
         return blueprint
 
-    # A. Resolve Density
-    rho = Quantity(blueprint.density)
-
-    # B. Resolve Phase Species
+    # A. Resolve Phase Species
     phase_species_set = set()
     for label in blueprint.species_labels:
         if label not in species_dict:
             raise ValueError(f"PolymerPhase species '{label}' not defined in species block.")
         phase_species_set.add(species_dict[label])
+
+    # Shared declarations are authoritative for phase density, pool chain
+    # amount, and representative mobile inventory.  Materialize those values
+    # into the same initial_moles mapping consumed by the solver; an explicit
+    # legacy value may agree, but may never silently override the declaration.
+    spec_pools = [
+        spc for spc in phase_species_set
+        if getattr(spc, 'linear_homopolymer_spec', None) is not None
+    ]
+    if spec_pools:
+        declared_densities = {
+            float(spc.linear_homopolymer_spec.density_kg_m3)
+            for spc in spec_pools
+        }
+        if len(declared_densities) != 1:
+            raise ValueError(
+                "shared polymer specs in one phase declare conflicting density values")
+        declared_density = declared_densities.pop()
+        if blueprint.density is not None:
+            input_density = Quantity(blueprint.density).value_si
+            if not math.isclose(input_density, declared_density,
+                                rel_tol=1.0e-12, abs_tol=0.0):
+                raise ValueError(
+                    f"polymer phase density {input_density:g} kg/m^3 conflicts "
+                    f"with shared declaration density {declared_density:g} kg/m^3")
+        rho = Quantity((declared_density, 'kg/m^3'))
+
+        for spc in spec_pools:
+            spec = spc.linear_homopolymer_spec
+            chain_amount = spec.macroscopic_moments_mol[0]
+            if spc in initial_moles and not math.isclose(
+                    float(initial_moles[spc]), chain_amount,
+                    rel_tol=1.0e-12, abs_tol=1.0e-30):
+                raise ValueError(
+                    f"polymer pool '{spc.label}' chain amount in initialMoles "
+                    "conflicts with the shared declaration")
+            initial_moles[spc] = chain_amount
+
+            small_species = {
+                name: disposition for name, _graph, disposition in spec.small_species
+            }
+            scale = spec.initialization().scale_factor
+            for name, representative_count in spec.initial_mobile_counts:
+                if small_species[name] != 'mobile':
+                    raise ValueError(
+                        f"shared initial mobile species '{name}' does not have "
+                        "disposition='mobile'")
+                mobile_spc = species_dict.get(name)
+                if mobile_spc is None:
+                    raise ValueError(
+                        f"shared initial mobile species '{name}' is absent from species block")
+                amount = scale * representative_count / constants.Na
+                if mobile_spc in initial_moles and not math.isclose(
+                        float(initial_moles[mobile_spc]), amount,
+                        rel_tol=1.0e-12, abs_tol=1.0e-30):
+                    raise ValueError(
+                        f"mobile amount for '{name}' conflicts with the shared declaration")
+                initial_moles[mobile_spc] = amount
+                phase_species_set.add(mobile_spc)
+    else:
+        density = blueprint.density
+        if density is None:
+            density = (1000.0, 'kg/m^3')
+        rho = Quantity(density)
 
     # B2. Validate Mass Transfer definitions
     mass_transfer = blueprint.mass_transfer or list()
@@ -1056,11 +1117,7 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
             mu0 = moles
             shared_spec = getattr(spc, 'linear_homopolymer_spec', None)
             if shared_spec is not None:
-                fractions = shared_spec.initial_ensemble.fractions
-                mean_dp = sum(float(fraction) * dp for dp, fraction in fractions)
-                mean_dp2 = sum(float(fraction) * dp * dp for dp, fraction in fractions)
-                mu1 = mu0 * mean_dp
-                mu2 = mu0 * mean_dp2
+                mu0, mu1, mu2 = shared_spec.macroscopic_moments_mol
             else:
                 mn_kg = spc.Mn / 1000.0
                 mw_kg = spc.Mw / 1000.0
@@ -1108,7 +1165,9 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
             # ordering rule below exists to prevent.
             initial_mass_g = getattr(spc, 'initial_mass_g', None)
             has_mn = spc.Mn is not None and spc.Mn > 0.0
-            if initial_mass_g is not None and has_mn:
+            if shared_spec is not None:
+                spc.initial_mass_g = shared_spec.initial_mass_kg * 1000.0
+            elif initial_mass_g is not None and has_mn:
                 mu0_from_mass = initial_mass_g / spc.Mn
                 if abs(mu0_from_mass - mu0) > 1e-6 * max(abs(mu0_from_mass), abs(mu0)):
                     logging.warning(
@@ -1167,7 +1226,9 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
             # solver-spawned born-at-zero daughters (initial_mass=0.0,
             # moments=[0,0,0]), which are created after compile and never pass
             # through this function at all.
-            if initial_mass_g is not None and has_mn:
+            if shared_spec is not None:
+                pass
+            elif initial_mass_g is not None and has_mn:
                 spc.initial_mass_g = mu0 * spc.Mn
             elif initial_mass_g is not None and (initial_mass_g or mu0):
                 # Mn <= 0 (or absent) with a declared mass: SKIP, LOUDLY.
@@ -1589,6 +1650,8 @@ class PolymerPool(object):
             mu_indices=mu_idxs,
             monomer_poly_index=monomer_idx,
             monomer_mw_g_mol=monomer_mw_g_mol,
+            end_group_mw_g_mol=float(
+                getattr(self.proxy_species, "end_group_mw_g_mol", 0.0) or 0.0),
             monomer_heavy_atoms=monomer_heavy_atoms,
             k_scission=self.k_scission,
             k_unzip=self.k_unzip,
@@ -1783,6 +1846,8 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
             mu_indices=mu_indices,
             monomer_poly_index=monomer_idx,
             monomer_mw_g_mol=float(getattr(spc, "monomer_mw_g_mol", 0.0) or 0.0),
+            end_group_mw_g_mol=float(
+                getattr(spc, "end_group_mw_g_mol", 0.0) or 0.0),
             # r89 dual-axis heavy denominator: a spawned daughter Polymer
             # carries the parent's monomer structure (intact-chain transfer),
             # so the derived config gets the same heavy-atom axis the static

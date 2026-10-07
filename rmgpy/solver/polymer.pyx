@@ -1038,6 +1038,12 @@ class PolymerPoolConfig:
     # defers; nothing is fabricated).
     monomer_mw_g_mol: float = 0.0
 
+    # Physical end-group mass [g/mol of chains].  Shared-spec pools carry
+    # this nonzero correction so the live solver uses the same mass law as
+    # declaration initialization: mu1*M_repeat + mu0*M_ends.  Legacy pools
+    # retain the zero default and therefore keep their historical numerics.
+    end_group_mw_g_mol: float = 0.0
+
     # Monomer (repeat-unit) heavy-atom (non-H) count. The SECOND axis of the
     # r89 dual-axis polymer-sized melt gate in _reference_state_tripwire
     # (mirror of rmgpy.polymer._discrete_is_polymer_sized: mass AND heavy
@@ -1168,17 +1174,19 @@ class PolymerPoolConfig:
     tail_kinetics: Optional[Callable[[float, float, float, float, float, float],
                                      Tuple[float, float, float, Dict[int, float]]]] = None
 
-    def condensed_mass_g(self, mu0_mol, mu1_mol):
+    def condensed_mass_g(self, mu0_mol, mu1_mol, stationary_depletion_g=0.0):
         """EXACT condensed mass [g] of this pool at the given extensive
-        moments [mol] (FR1-K1 mass contract): mu1*monomer_mw_g_mol minus the
-        per-chain X-loss defect mu0*chain_mass_defect_g_mol. For ordinary
-        pools (defect 0) this is the plain moment-derived mass; for X-loss
+        moments [mol]: repeat mass plus physical end-group mass, minus the
+        per-chain X-loss defect and stationary depleted inventory. For legacy
+        ordinary pools both corrections default to zero; for X-loss
         feature pools it carries the one-lost-X-per-chain correction so that
         d(condensed mass)/dt + d(gas X mass)/dt = 0 holds exactly on the
         side-group kernel's contributions (pinned by test). Also works on
         rates: feeding d(mu)/dt returns d(mass)/dt."""
         return (mu1_mol * self.monomer_mw_g_mol
-                - mu0_mol * self.chain_mass_defect_g_mol)
+                + mu0_mol * self.end_group_mw_g_mol
+                - mu0_mol * self.chain_mass_defect_g_mol
+                - stationary_depletion_g)
 
     def __repr__(self):
         return f"<PolymerPool '{self.label}' xs={self.xs}>"
@@ -2129,6 +2137,11 @@ class HybridPolymerSystem(ReactionSystem):
             # which inventory-depletion SGH forbids -- refused by the §1h
             # build guard). It MAY coexist only with k_scission, which acts on
             # backbone C-C bonds and is verified mu1-preserving.
+            if (not math.isfinite(pool.end_group_mw_g_mol)
+                    or pool.end_group_mw_g_mol < 0.0):
+                raise ValueError(
+                    f"Pool {pool.label}: end_group_mw_g_mol="
+                    f"{pool.end_group_mw_g_mol!r} must be a finite value >= 0 [g/mol].")
             if (not math.isfinite(pool.chain_mass_defect_g_mol)
                     or pool.chain_mass_defect_g_mol < 0.0):
                 raise ValueError(
@@ -5738,7 +5751,8 @@ class HybridPolymerSystem(ReactionSystem):
                     z_val = y[int(self.sgh_z_slot[sgh_row])]
                     lost_x += max(0.0, self.sgh_sites[sgh_row] * tail_mu1
                                   - z_val) * self.sgh_mw_X[sgh_row]
-                total += max(0.0, mu1_mol * pool.monomer_mw_g_mol - lost_x)
+                total += max(0.0, pool.condensed_mass_g(
+                    mu0_mol, mu1_mol, lost_x))
             else:
                 total += max(0.0, pool.condensed_mass_g(mu0_mol, mu1_mol))
         return total
