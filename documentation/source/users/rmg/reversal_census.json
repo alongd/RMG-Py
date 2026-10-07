@@ -1634,10 +1634,10 @@
     ]
   },
   {
-    "site": "rmgpy/data/kinetics/depository.py::KineticsDepository.load_entry::Reaction#1",
+    "site": "rmgpy/data/kinetics/depository.py::KineticsDepository.load_entry::TemplateReaction#1",
     "kind": "builder",
-    "line": 315,
-    "source": "reaction = Reaction(reactants=[], products=[], specific_collider=specificCollider,",
+    "line": 320,
+    "source": "reaction = TemplateReaction(reactants=[], products=[], specific_collider=specificCollider,",
     "verdict": "guarded",
     "reason": "Template/depository construction retains declaration or kinetics-free Group template; executable entry rates validate at library/family admission before any reverse generation.",
     "tests": [
@@ -1658,7 +1658,7 @@
   {
     "site": "rmgpy/data/kinetics/depository.py::KineticsDepository.save::reaction-io",
     "kind": "reader-exporter",
-    "line": 336,
+    "line": 342,
     "source": "def save(self, path, reindex=True):",
     "verdict": "guarded",
     "reason": "Depository save renders through save_entry, which checks the exact kinetics and original reaction direction, and writes the paired reaction/dictionary snapshots only after rendering succeeds.",
@@ -1669,7 +1669,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily._create_reaction::TemplateReaction#1",
     "kind": "builder",
-    "line": 2783,
+    "line": 2943,
     "source": "reaction = TemplateReaction(",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -1680,7 +1680,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily._create_reaction::reaction-io",
     "kind": "reader-exporter",
-    "line": 2763,
+    "line": 2923,
     "source": "def _create_reaction(self, reactants, products, is_forward):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -1691,7 +1691,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily._create_reaction::same_species_lists#1",
     "kind": "direction",
-    "line": 2779,
+    "line": 2939,
     "source": "if same_species_lists(reactants, products, save_order=self.save_order):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -1702,7 +1702,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily._generate_reactions::reaction-io",
     "kind": "reader-exporter",
-    "line": 3054,
+    "line": 3214,
     "source": "def _generate_reactions(self, reactants, products=None, forward=True, prod_resonance=True,",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -1713,7 +1713,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily._generate_reactions::same_species_lists#1",
     "kind": "direction",
-    "line": 3428,
+    "line": 3588,
     "source": "if same_species_lists(products, products0, strict=not prod_resonance, save_order=self.save_order):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -1724,7 +1724,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily._split_reactions::reaction_matches#1",
     "kind": "direction",
-    "line": 4001,
+    "line": 4287,
     "source": "if self.reaction_matches(rxn, newgrp):",
     "verdict": "guarded",
     "reason": "Group opt-in matching routes every split decision through reaction_matches, which rejects unopted resolved reactants and uses state-aware merged matching for opted families.",
@@ -1735,7 +1735,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_atom_labels_for_reaction::is_isomorphic#1",
     "kind": "direction",
-    "line": 3939,
+    "line": 4225,
     "source": "if species.is_isomorphic(labeled_molecule, save_order=self.save_order):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -1746,7 +1746,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_atom_labels_for_reaction::is_isomorphic#2",
     "kind": "direction",
-    "line": 3949,
+    "line": 4235,
     "source": "if species.is_isomorphic(labeled_molecule, save_order=self.save_order):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -1757,7 +1757,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_reverse_attribute::find_degenerate_reactions#1",
     "kind": "direction",
-    "line": 2950,
+    "line": 3110,
     "source": "reactions = find_degenerate_reactions(reaction_list, same_reactants, kinetics_family=self)",
     "verdict": "guarded",
     "reason": "Both multiple-candidate comparisons use direction-aware identity; retry retains the same rule.",
@@ -1768,7 +1768,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_reverse_attribute::find_degenerate_reactions#2",
     "kind": "direction",
-    "line": 2973,
+    "line": 3133,
     "source": "reactions = find_degenerate_reactions(reaction_list, same_reactants, kinetics_family=self)",
     "verdict": "guarded",
     "reason": "Both multiple-candidate comparisons use direction-aware identity; retry retains the same rule.",
@@ -1779,7 +1779,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_reverse_attribute::is_isomorphic#1",
     "kind": "direction",
-    "line": 2933,
+    "line": 3093,
     "source": "if len(rxn.products) == 2 and rxn.products[0].is_isomorphic(rxn.products[1]):",
     "verdict": "guarded",
     "reason": "Both multiple-candidate comparisons use direction-aware identity; retry retains the same rule.",
@@ -1790,7 +1790,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_reverse_attribute::is_isomorphic#2",
     "kind": "direction",
-    "line": 2936,
+    "line": 3096,
     "source": "same_01 = rxn.products[0].is_isomorphic(rxn.products[1])",
     "verdict": "guarded",
     "reason": "Both multiple-candidate comparisons use direction-aware identity; retry retains the same rule.",
@@ -1801,7 +1801,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_reverse_attribute::is_isomorphic#3",
     "kind": "direction",
-    "line": 2937,
+    "line": 3097,
     "source": "same_02 = rxn.products[0].is_isomorphic(rxn.products[2])",
     "verdict": "guarded",
     "reason": "Both multiple-candidate comparisons use direction-aware identity; retry retains the same rule.",
@@ -1812,7 +1812,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_reverse_attribute::is_isomorphic#4",
     "kind": "direction",
-    "line": 2942,
+    "line": 3102,
     "source": "elif rxn.products[1].is_isomorphic(rxn.products[2]):",
     "verdict": "guarded",
     "reason": "Both multiple-candidate comparisons use direction-aware identity; retry retains the same rule.",
@@ -1823,7 +1823,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_reverse_attribute::is_same_reaction#1",
     "kind": "direction",
-    "line": 2978,
+    "line": 3138,
     "source": "all([reactions[0].is_same_reaction(other, check_template_rxn_products=True)",
     "verdict": "guarded",
     "reason": "Both multiple-candidate comparisons use direction-aware identity; retry retains the same rule.",
@@ -1834,7 +1834,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_reverse_attribute::is_same_reaction#2",
     "kind": "direction",
-    "line": 2991,
+    "line": 3151,
     "source": "not all([reactions[0].is_same_reaction(other, strict=False, check_template_rxn_products=True)",
     "verdict": "guarded",
     "reason": "Both multiple-candidate comparisons use direction-aware identity; retry retains the same rule.",
@@ -1845,7 +1845,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_rules_from_training::Reaction#1",
     "kind": "builder",
-    "line": 2212,
+    "line": 2372,
     "source": "item=Reaction(reactants=[g.item for g in template], products=[]),",
     "verdict": "guarded",
     "reason": "Checks original entry.data before deepcopy in reverse orientation; the later reverse helper also enforces original/selected policy.",
@@ -1856,7 +1856,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_rules_from_training::Reaction#2",
     "kind": "builder",
-    "line": 2244,
+    "line": 2404,
     "source": "item = Reaction(reactants=[Species(molecule=[m.molecule[0].copy(deep=True)], label=m.label)",
     "verdict": "guarded",
     "reason": "Checks original entry.data before deepcopy in reverse orientation; the later reverse helper also enforces original/selected policy.",
@@ -1867,7 +1867,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_rules_from_training::Reaction#3",
     "kind": "builder",
-    "line": 2298,
+    "line": 2458,
     "source": "item=Reaction(reactants=[g.item for g in template],",
     "verdict": "guarded",
     "reason": "Checks original entry.data before deepcopy in reverse orientation; the later reverse helper also enforces original/selected policy.",
@@ -1878,7 +1878,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_rules_from_training::TemplateReaction#1",
     "kind": "builder",
-    "line": 2274,
+    "line": 2434,
     "source": "item = TemplateReaction(reactants=[m.molecule[0].copy(deep=True) for m in entry.item.products],",
     "verdict": "guarded",
     "reason": "Checks original entry.data before deepcopy in reverse orientation; the later reverse helper also enforces original/selected policy.",
@@ -1889,7 +1889,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_rules_from_training::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 2233,
+    "line": 2393,
     "source": "entry.item.check_resolved_species_reversibility(kinetics=entry.data, reversible=True)",
     "verdict": "guarded",
     "reason": "Checks original entry.data before deepcopy in reverse orientation; the later reverse helper also enforces original/selected policy.",
@@ -1900,7 +1900,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_rules_from_training::generate_reverse_rate_coefficient#1",
     "kind": "reverse",
-    "line": 2272,
+    "line": 2432,
     "source": "data = item.generate_reverse_rate_coefficient()",
     "verdict": "guarded",
     "reason": "Checks original entry.data before deepcopy in reverse orientation; the later reverse helper also enforces original/selected policy.",
@@ -1911,7 +1911,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.add_rules_from_training::reaction-io",
     "kind": "reader-exporter",
-    "line": 2113,
+    "line": 2273,
     "source": "def add_rules_from_training(self, thermo_database=None, train_indices=None):",
     "verdict": "guarded",
     "reason": "Checks original entry.data before deepcopy in reverse orientation; the later reverse helper also enforces original/selected policy.",
@@ -1922,7 +1922,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.apply_recipe::reaction-io",
     "kind": "reader-exporter",
-    "line": 2341,
+    "line": 2501,
     "source": "def apply_recipe(self, reactant_structures, forward=True, unique=True, relabel_atoms=True):",
     "verdict": "guarded",
     "reason": "Family recipes copy and restore per-species state by atom provenance, apply only declared SET_STATE changes, and refuse ambiguous reverse mappings instead of inventing a direction.",
@@ -1933,7 +1933,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.calculate_degeneracy::find_degenerate_reactions#1",
     "kind": "direction",
-    "line": 3040,
+    "line": 3200,
     "source": "reactions = find_degenerate_reactions(reactions, same_reactants, template=reaction.template,",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -1944,7 +1944,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.cross_validate::get_reaction_matches#1",
     "kind": "direction",
-    "line": 4757,
+    "line": 5043,
     "source": "template_rxn_map = self.get_reaction_matches(remove_degeneracy=True, get_reverse=True, fix_labels=True)",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -1955,7 +1955,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.extend_node::reaction_matches#1",
     "kind": "direction",
-    "line": 4323,
+    "line": 4609,
     "source": "if self.reaction_matches(entry,ext[0]):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -1966,7 +1966,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.extend_node::reaction_matches#2",
     "kind": "direction",
-    "line": 4325,
+    "line": 4611,
     "source": "elif ext[1] is None or self.reaction_matches(entry,ext[1]):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -1977,7 +1977,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.extend_node::same_species_lists#1",
     "kind": "direction",
-    "line": 4232,
+    "line": 4518,
     "source": "if not same_species_lists(rxn.reactants, rs[j].reactants, generate_initial_map=True, save_order=self.save_order):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -1988,7 +1988,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.extract_source_from_comments::is_same_reaction#1",
     "kind": "direction",
-    "line": 5636,
+    "line": 5930,
     "source": "if reaction.is_same_reaction(training_entry.item, either_direction=False, save_order=self.save_order):",
     "verdict": "guarded",
     "reason": "Checks training orientation forward-only; merely reports reverse provenance and does not produce kinetics.",
@@ -1999,7 +1999,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.generate_reactions::reaction-io",
     "kind": "reader-exporter",
-    "line": 2873,
+    "line": 3033,
     "source": "def generate_reactions(self, reactants, products=None, prod_resonance=True, delete_labels=True, relabel_atoms=True):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2010,7 +2010,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.generate_tree::get_reaction_matches#1",
     "kind": "direction",
-    "line": 4425,
+    "line": 4711,
     "source": "template_rxn_map = self.get_reaction_matches(rxns=rxns, thermo_database=thermo_database, remove_degeneracy=True,",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2021,7 +2021,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.generate_tree::get_reaction_matches#2",
     "kind": "direction",
-    "line": 4446,
+    "line": 4732,
     "source": "template_rxn_map = self.get_reaction_matches(rxns=rxns, thermo_database=thermo_database, fix_labels=True,",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2032,7 +2032,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.get_kinetics_from_depository::is_same_reaction#1",
     "kind": "direction",
-    "line": 3670,
+    "line": 3830,
     "source": "if entry.item.is_same_reaction(reaction):",
     "verdict": "guarded",
     "reason": "Uses direction-aware reaction identity before selecting a training contribution.",
@@ -2043,7 +2043,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.get_kinetics_from_depository::is_same_reaction#2",
     "kind": "direction",
-    "line": 3672,
+    "line": 3832,
     "source": "[deepcopy(entry.data), entry, entry.item.is_same_reaction(reaction, either_direction=False)])",
     "verdict": "guarded",
     "reason": "Uses direction-aware reaction identity before selecting a training contribution.",
@@ -2054,7 +2054,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.get_labeled_reactants_and_products::same_species_lists#1",
     "kind": "direction",
-    "line": 3878,
+    "line": 4164,
     "source": "if same_species_lists(list(products), list(product_structures), save_order=self.save_order):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2065,7 +2065,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.get_training_set::Reaction#1",
     "kind": "builder",
-    "line": 5314,
+    "line": 5600,
     "source": "rrev = Reaction(reactants=products, products=reacts,",
     "verdict": "guarded",
     "reason": "Actual extraction checks the original entry.data before deepcopy can erase its declaration and before orienting or emitting reverse rates.",
@@ -2076,7 +2076,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.get_training_set::Reaction#2",
     "kind": "builder",
-    "line": 5355,
+    "line": 5641,
     "source": "rrev = Reaction(reactants=products, products=rxns[i].reactants,",
     "verdict": "guarded",
     "reason": "Actual extraction checks the original entry.data before deepcopy can erase its declaration and before orienting or emitting reverse rates.",
@@ -2087,7 +2087,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.get_training_set::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 5209,
+    "line": 5495,
     "source": "entry.item.check_resolved_species_reversibility(kinetics=entry.data, reversible=True)",
     "verdict": "guarded",
     "reason": "Actual extraction checks the original entry.data before deepcopy can erase its declaration and before orienting or emitting reverse rates.",
@@ -2098,7 +2098,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.get_training_set::generate_reverse_rate_coefficient#1",
     "kind": "reverse",
-    "line": 5315,
+    "line": 5601,
     "source": "kinetics=rxns[i].generate_reverse_rate_coefficient(), rank=rxns[i].rank,",
     "verdict": "guarded",
     "reason": "Actual extraction checks the original entry.data before deepcopy can erase its declaration and before orienting or emitting reverse rates.",
@@ -2109,7 +2109,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.get_training_set::generate_reverse_rate_coefficient#2",
     "kind": "reverse",
-    "line": 5356,
+    "line": 5642,
     "source": "kinetics=rxns[i].generate_reverse_rate_coefficient(), rank=rxns[i].rank,",
     "verdict": "guarded",
     "reason": "Actual extraction checks the original entry.data before deepcopy can erase its declaration and before orienting or emitting reverse rates.",
@@ -2120,7 +2120,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.get_training_set::reaction-io",
     "kind": "reader-exporter",
-    "line": 5141,
+    "line": 5427,
     "source": "def get_training_set(self, thermo_database=None, remove_degeneracy=False, estimate_thermo=True, fix_labels=False,",
     "verdict": "guarded",
     "reason": "Actual extraction checks the original entry.data before deepcopy can erase its declaration and before orienting or emitting reverse rates.",
@@ -2131,7 +2131,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.load::Reaction#1",
     "kind": "builder",
-    "line": 1545,
+    "line": 1706,
     "source": "self.reverse_template = Reaction(reactants=self.forward_template.products,",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2142,7 +2142,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.load::Reaction#2",
     "kind": "builder",
-    "line": 1560,
+    "line": 1721,
     "source": "reaction = Reaction(reactants=reactants, products=[])",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2153,7 +2153,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.load::reaction-io",
     "kind": "reader-exporter",
-    "line": 1468,
+    "line": 1630,
     "source": "def load(self, path, local_context=None, global_context=None, depository_labels=None):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2164,7 +2164,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.load_template::Reaction#1",
     "kind": "builder",
-    "line": 1622,
+    "line": 1782,
     "source": "self.forward_template = Reaction(reactants=reactants, products=products)",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2175,7 +2175,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.load_template::reaction-io",
     "kind": "reader-exporter",
-    "line": 1616,
+    "line": 1776,
     "source": "def load_template(self, reactants, products, ownReverse=False):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2186,7 +2186,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.make_tree::get_reaction_matches#1",
     "kind": "direction",
-    "line": 5082,
+    "line": 5368,
     "source": "template_rxn_map = self.get_reaction_matches(thermo_database=thermo_database,",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2197,7 +2197,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.prune_tree::get_reaction_matches#1",
     "kind": "direction",
-    "line": 4520,
+    "line": 4806,
     "source": "template_rxn_map = self.get_reaction_matches(rxns=rxns, thermo_database=thermo_database, fix_labels=fix_labels,",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2208,7 +2208,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.regularize::get_reaction_matches#1",
     "kind": "direction",
-    "line": 5041,
+    "line": 5327,
     "source": "template_rxn_map = self.get_reaction_matches(thermo_database=thermo_database, remove_degeneracy=True,",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2219,7 +2219,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.regularize::get_reaction_matches#2",
     "kind": "direction",
-    "line": 5044,
+    "line": 5330,
     "source": "template_rxn_map = self.get_reaction_matches(rxns=rxns, thermo_database=thermo_database,",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2230,7 +2230,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.save_groups::reaction-io",
     "kind": "reader-exporter",
-    "line": 1922,
+    "line": 2082,
     "source": "def save_groups(self, path):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2241,7 +2241,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.save_training_reactions::is_isomorphic#1",
     "kind": "direction",
-    "line": 1842,
+    "line": 2002,
     "source": "if spec.molecule[0].is_isomorphic(ex_spec.molecule[0], initial_map):",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2252,7 +2252,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::KineticsFamily.save_training_reactions::reaction-io",
     "kind": "reader-exporter",
-    "line": 1785,
+    "line": 1945,
     "source": "def save_training_reactions(self, reactions, reference=None, reference_type='', short_desc='', long_desc='',",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2263,7 +2263,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::TemplateReaction.__init__::reaction-io",
     "kind": "reader-exporter",
-    "line": 843,
+    "line": 1005,
     "source": "def __init__(self,",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2274,7 +2274,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::TemplateReaction.__reduce__::reaction-io",
     "kind": "reader-exporter",
-    "line": 888,
+    "line": 1050,
     "source": "def __reduce__(self):",
     "verdict": "guarded",
     "reason": "Original reaction declarations are checked before state transport or repr; valid irreversible directions are retained.",
@@ -2286,7 +2286,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::TemplateReaction.__reduce__::reaction_state#1",
     "kind": "reader-exporter",
-    "line": 900,
+    "line": 1062,
     "source": "return (TemplateReaction, (), reaction_state(self, _NOT_REPRODUCED,",
     "verdict": "guarded",
     "reason": "Original reaction declarations are checked before state transport or repr; valid irreversible directions are retained.",
@@ -2298,7 +2298,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::TemplateReaction.__repr__::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 917,
+    "line": 1079,
     "source": "self.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Original reaction declarations are checked before state transport or repr; valid irreversible directions are retained.",
@@ -2310,7 +2310,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::TemplateReaction.__repr__::reaction-io",
     "kind": "reader-exporter",
-    "line": 912,
+    "line": 1074,
     "source": "def __repr__(self):",
     "verdict": "guarded",
     "reason": "Original reaction declarations are checked before state transport or repr; valid irreversible directions are retained.",
@@ -2322,7 +2322,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::TemplateReaction.__setstate__::apply_reaction_state#1",
     "kind": "reader-exporter",
-    "line": 910,
+    "line": 1072,
     "source": "apply_reaction_state(self, state)",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2333,7 +2333,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::TemplateReaction.copy::copy_reaction#1",
     "kind": "reader-exporter",
-    "line": 954,
+    "line": 1116,
     "source": "return copy_reaction(self, _TEMPLATE_NOT_COPIED_BY_REFERENCE)",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2344,7 +2344,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::apply_reaction_state::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 200,
+    "line": 362,
     "source": "target.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Original reaction declarations are checked before state transport or repr; valid irreversible directions are retained.",
@@ -2356,7 +2356,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::apply_reaction_state::reaction-io",
     "kind": "reader-exporter",
-    "line": 178,
+    "line": 340,
     "source": "def apply_reaction_state(target, state):",
     "verdict": "guarded",
     "reason": "Original reaction declarations are checked before state transport or repr; valid irreversible directions are retained.",
@@ -2368,7 +2368,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::carry_reaction_state::apply_reaction_state#1",
     "kind": "reader-exporter",
-    "line": 223,
+    "line": 385,
     "source": "return apply_reaction_state(target, reaction_state(source, not_carried, fields))",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2379,7 +2379,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::carry_reaction_state::reaction_state#1",
     "kind": "reader-exporter",
-    "line": 223,
+    "line": 385,
     "source": "return apply_reaction_state(target, reaction_state(source, not_carried, fields))",
     "verdict": "not-reachable-for-resolved",
     "reason": "This site builds/compares molecular group templates or ground-state recipe candidates, without producing a Keq reverse. Current groups cannot match resolved Molecules; actual training reverse extraction is separately guarded.",
@@ -2390,7 +2390,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::copy_reaction::apply_reaction_state#1",
     "kind": "reader-exporter",
-    "line": 785,
+    "line": 947,
     "source": "apply_reaction_state(other, complete_round_trip(state))",
     "verdict": "guarded",
     "reason": "Original reaction declarations are checked before state transport or repr; valid irreversible directions are retained.",
@@ -2402,7 +2402,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::copy_reaction::reaction-io",
     "kind": "reader-exporter",
-    "line": 716,
+    "line": 878,
     "source": "def copy_reaction(reaction, not_copied_by_reference):",
     "verdict": "guarded",
     "reason": "Original reaction declarations are checked before state transport or repr; valid irreversible directions are retained.",
@@ -2414,7 +2414,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::copy_reaction::reaction_state#1",
     "kind": "reader-exporter",
-    "line": 784,
+    "line": 946,
     "source": "state = reaction_state(reaction, {}, deepened)",
     "verdict": "guarded",
     "reason": "Original reaction declarations are checked before state transport or repr; valid irreversible directions are retained.",
@@ -2426,7 +2426,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::reaction_state::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 162,
+    "line": 324,
     "source": "source.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Original reaction declarations are checked before state transport or repr; valid irreversible directions are retained.",
@@ -2438,7 +2438,7 @@
   {
     "site": "rmgpy/data/kinetics/family.py::reaction_state::reaction-io",
     "kind": "reader-exporter",
-    "line": 147,
+    "line": 309,
     "source": "def reaction_state(source, not_carried, fields=None):",
     "verdict": "guarded",
     "reason": "Original reaction declarations are checked before state transport or repr; valid irreversible directions are retained.",
@@ -5125,7 +5125,7 @@
   {
     "site": "rmgpy/rmg/input.py::read_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3115,
+    "line": 3117,
     "source": "def read_input_file(path, rmg0):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Job input reads/writes settings, species, reactor conditions and library references, without building or serializing executable Reaction rates. Actual library resolution is separately guarded.",
@@ -5136,7 +5136,7 @@
   {
     "site": "rmgpy/rmg/input.py::read_thermo_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3224,
+    "line": 3226,
     "source": "def read_thermo_input_file(path, rmg0):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Job input reads/writes settings, species, reactor conditions and library references, without building or serializing executable Reaction rates. Actual library resolution is separately guarded.",
@@ -5147,7 +5147,7 @@
   {
     "site": "rmgpy/rmg/input.py::save_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3395,
+    "line": 3397,
     "source": "def save_input_file(path, rmg):",
     "verdict": "refused",
     "reason": "The job-input writer refuses resolved species identities before creating its state-blind settings file; it never serializes executable Reaction rates.",

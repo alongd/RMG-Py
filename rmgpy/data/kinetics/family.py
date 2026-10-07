@@ -47,6 +47,7 @@ from copy import deepcopy
 from multiprocessing.reduction import ForkingPickler
 
 import numpy as np
+import quantities as pq
 from scipy.optimize import OptimizeWarning
 from sklearn.model_selection import KFold
 
@@ -61,11 +62,12 @@ from rmgpy.data.kinetics.groups import KineticsGroups, ReactionTemplate
 from rmgpy.data.kinetics.quarantine import load_family_quarantine
 from rmgpy.data.kinetics.rules import KineticsRules
 from rmgpy.exceptions import ActionError, AtomTypeError, DatabaseError, InvalidActionError, KekulizationError, \
-                             KineticsError, ForbiddenStructureException, UndeterminableKineticsError
+                             KineticsError, KineticsDepositoryConflictError, ForbiddenStructureException, UndeterminableKineticsError
 from rmgpy.kinetics import Arrhenius, SurfaceArrhenius, SurfaceArrheniusBEP, StickingCoefficient, \
                            StickingCoefficientBEP, ArrheniusBM, SurfaceChargeTransfer, ArrheniusChargeTransfer, \
-                           ArrheniusChargeTransferBM, KineticsModel, Marcus
+                           ArrheniusChargeTransferBM, KineticsData, KineticsModel, Marcus, MultiArrhenius, PDepArrhenius
 from rmgpy.kinetics.uncertainties import RateUncertainty, rank_accuracy_map
+from rmgpy.quantity import ArrayQuantity, ScalarQuantity
 from rmgpy.molecule import Bond, GroupBond, Group, Molecule
 from rmgpy.molecule.molecule import Atom
 from rmgpy.molecule.graph import Graph
@@ -78,6 +80,166 @@ import rmgpy.constants as constants
 from rmgpy.data.solvation import SoluteData, add_solute_data, SoluteTSData, to_soluteTSdata
 
 ################################################################################
+
+
+def _renderable(value):
+    """Render malformed database values without obscuring the conflict report."""
+    try:
+        return str(value)
+    except Exception:
+        try:
+            return repr(value)
+        except Exception as error:
+            return '<unprintable {0}: {1}>'.format(type(value).__name__, type(error).__name__)
+
+
+_KINETICS_IDENTITY_FIELDS = {
+    Arrhenius: ('_A', '_n', '_Ea', '_T0', '_Tmin', '_Tmax', '_Pmin', '_Pmax',
+                'uncertainty', 'solute', 'comment'),
+    KineticsData: ('_Tdata', '_kdata', '_Tmin', '_Tmax', '_Pmin', '_Pmax',
+                   'uncertainty', 'solute', 'comment'),
+    PDepArrhenius: ('_pressures', 'arrhenius', 'efficiencies', 'highPlimit',
+                    '_Tmin', '_Tmax', '_Pmin', '_Pmax', 'uncertainty', 'solute', 'comment'),
+    StickingCoefficient: ('_A', '_n', '_Ea', '_T0', '_coverage_dependence',
+                          '_Tmin', '_Tmax', '_Pmin', '_Pmax',
+                          'uncertainty', 'solute', 'comment'),
+    MultiArrhenius: ('arrhenius', '_Tmin', '_Tmax', '_Pmin', '_Pmax',
+                     'uncertainty', 'solute', 'comment'),
+}
+
+# Include inherited storage descriptors and their public property aliases.  If a known
+# class acquires another field, comparison fails closed until the field is reviewed and
+# added to both this inventory and the structural field list above.
+_KINETICS_IDENTITY_DESCRIPTORS = {
+    Arrhenius: frozenset(('A', 'Ea', 'Pmax', 'Pmin', 'T0', 'Tmax', 'Tmin',
+                          '_A', '_Ea', '_Pmax', '_Pmin', '_T0', '_Tmax', '_Tmin', '_n',
+                          'comment', 'n', 'solute', 'uncertainty')),
+    KineticsData: frozenset(('Pmax', 'Pmin', 'Tdata', 'Tmax', 'Tmin', 'kdata',
+                             '_Pmax', '_Pmin', '_Tdata', '_Tmax', '_Tmin', '_kdata',
+                             'comment', 'solute', 'uncertainty')),
+    PDepArrhenius: frozenset(('Pmax', 'Pmin', 'Tmax', 'Tmin', 'pressures',
+                              '_Pmax', '_Pmin', '_Tmax', '_Tmin', '_pressures',
+                              'arrhenius', 'comment', 'efficiencies', 'highPlimit',
+                              'solute', 'uncertainty')),
+    StickingCoefficient: frozenset(('A', 'Ea', 'Pmax', 'Pmin', 'T0', 'Tmax', 'Tmin',
+                                    'coverage_dependence', 'n', '_A', '_Ea', '_Pmax',
+                                    '_Pmin', '_T0', '_Tmax', '_Tmin',
+                                    '_coverage_dependence', '_n', 'comment', 'solute',
+                                    'uncertainty')),
+    MultiArrhenius: frozenset(('Pmax', 'Pmin', 'Tmax', 'Tmin', '_Pmax', '_Pmin',
+                               '_Tmax', '_Tmin', 'arrhenius', 'comment', 'solute',
+                               'uncertainty')),
+}
+
+_REACTION_IDENTITY_DESCRIPTORS = frozenset((
+    'SurfaceArrhenius', 'SurfaceChargeTransfer', '_degeneracy', '_protons',
+    'allow_max_rate_violation', 'allow_pdep_route', 'comment', 'degeneracy',
+    'duplicate', 'electrons', 'elementary_high_p', 'index', 'is_forward',
+    'k_effective_cache', 'kinetics', 'label', 'network_kinetics', 'pairs',
+    'products', 'protons', 'rank', 'reactants', 'reversible', 'specific_collider',
+    'transition_state',
+))
+
+_VALUE_IDENTITY_DESCRIPTORS = {
+    ScalarQuantity: frozenset(('uncertainty', 'uncertainty_si', 'uncertainty_type',
+                               'units', 'value', 'value_si')),
+    ArrayQuantity: frozenset(('_uncertainty_type', 'uncertainty', 'uncertainty_si',
+                              'uncertainty_type', 'units', 'value', 'value_si')),
+    RateUncertainty: frozenset(('N', 'Tref', 'correlation', 'data_mean', 'mu', 'var')),
+}
+
+_PRIMITIVE_IDENTITY_TYPES = frozenset((type(None), bool, int, float, str))
+_ARRAY_IDENTITY_DTYPES = (np.dtype('float64'),)
+
+
+def _comparable(first, second):
+    """Return whether two known stored values are exactly structurally equal."""
+    if type(first) is not type(second):
+        return False
+    if type(first) in _PRIMITIVE_IDENTITY_TYPES:
+        return first == second
+    if type(first) is ScalarQuantity:
+        descriptors = frozenset(name for name in dir(type(first))
+                                if type(getattr(type(first), name, None)).__name__ == 'getset_descriptor')
+        if (descriptors != _VALUE_IDENTITY_DESCRIPTORS[ScalarQuantity]
+                or getattr(first, '__dict__', None) or getattr(second, '__dict__', None)):
+            return False
+        try:
+            same_dimensions = (pq.Quantity(1.0, first.units).simplified.dimensionality
+                               == pq.Quantity(1.0, second.units).simplified.dimensionality)
+        except Exception:
+            return False
+        return (same_dimensions and first.value_si == second.value_si
+                and first.uncertainty_si == second.uncertainty_si
+                and first.uncertainty_type == second.uncertainty_type)
+    if type(first) is ArrayQuantity:
+        descriptors = frozenset(name for name in dir(type(first))
+                                if type(getattr(type(first), name, None)).__name__ == 'getset_descriptor')
+        if (descriptors != _VALUE_IDENTITY_DESCRIPTORS[ArrayQuantity]
+                or getattr(first, '__dict__', None) or getattr(second, '__dict__', None)):
+            return False
+        array_pairs = ((first.value_si, second.value_si),
+                       (first.uncertainty_si, second.uncertainty_si))
+        for left, right in array_pairs:
+            if type(left) is not np.ndarray or type(right) is not np.ndarray:
+                return False
+            if (not any(left.dtype is allowed for allowed in _ARRAY_IDENTITY_DTYPES)
+                    or not any(right.dtype is allowed for allowed in _ARRAY_IDENTITY_DTYPES)):
+                return False
+            if left.shape != right.shape:
+                return False
+            if not np.array_equal(left, right):
+                return False
+        try:
+            same_dimensions = (pq.Quantity(1.0, first.units).simplified.dimensionality
+                               == pq.Quantity(1.0, second.units).simplified.dimensionality)
+        except Exception:
+            return False
+        return same_dimensions and first.uncertainty_type == second.uncertainty_type
+    if type(first) is RateUncertainty:
+        descriptors = frozenset(name for name in dir(type(first))
+                                if type(getattr(type(first), name, None)).__name__ == 'getset_descriptor')
+        return (descriptors == _VALUE_IDENTITY_DESCRIPTORS[RateUncertainty]
+                and not getattr(first, '__dict__', None)
+                and not getattr(second, '__dict__', None)
+                and all(_comparable(getattr(first, field), getattr(second, field))
+                        for field in ('Tref', 'mu', 'var', 'N', 'data_mean', 'correlation')))
+    if type(first) in (list, tuple):
+        return (len(first) == len(second)
+                and all(_comparable(left, right) for left, right in zip(first, second)))
+    if type(first) is dict:
+        if len(first) != len(second):
+            return False
+        unmatched = list(second.items())
+        for left_key, left_value in first.items():
+            for index, (right_key, right_value) in enumerate(unmatched):
+                if _comparable(left_key, right_key) and _comparable(left_value, right_value):
+                    unmatched.pop(index)
+                    break
+            else:
+                return False
+        return True
+    fields = _KINETICS_IDENTITY_FIELDS.get(type(first))
+    if fields is None:
+        return False
+    descriptors = frozenset(name for name in dir(type(first))
+                            if type(getattr(type(first), name, None)).__name__ == 'getset_descriptor')
+    if descriptors != _KINETICS_IDENTITY_DESCRIPTORS[type(first)]:
+        return False
+    if getattr(first, '__dict__', None) or getattr(second, '__dict__', None):
+        return False
+    try:
+        return all(_comparable(getattr(first, field), getattr(second, field))
+                   for field in fields)
+    except AttributeError:
+        return False
+
+
+def order_depository_names(path):
+    """Return immediate depository children in deterministic non-precedence order."""
+    return sorted(name for name in os.listdir(path)
+                  if os.path.isdir(os.path.join(path, name))
+                  and os.path.isfile(os.path.join(path, name, 'reactions.py')))
 
 
 #: Every field a :class:`~rmgpy.reaction.Reaction` carries, discovered from the class
@@ -1469,12 +1631,11 @@ class KineticsFamily(Database):
         """
         Load a kinetics database from a file located at `path` on disk.
 
-        If `depository_labels` is a list, eg. ['training','PrIMe'], then only those
-        depositories are loaded, and they are searched in that order when
-        generating kinetics.
-
-        If depository_labels is None then load 'training' first then everything else.
-        If depository_labels is not None then load in the order specified in depository_labels.
+        If `depository_labels` is a list, eg. ['training','PrIMe'], those
+        depositories are included in deterministic order. This order is not
+        scientific precedence. Training is also included unless the list contains
+        '!training'. If `depository_labels` is None or empty, only training is
+        loaded. The special value 'all' includes every depository.
         """
         local_context['recipe'] = self.load_recipe
         local_context['template'] = self.load_template
@@ -1570,9 +1731,8 @@ class KineticsFamily(Database):
 
         if depository_labels == 'all':
             # Load everything. This option is generally used for working with the database
-            # load all the remaining depositories, in order returned by os.walk
-            for root, dirs, files in os.walk(path):
-                for name in dirs:
+            # Inclusion order is deterministic but is never used as scientific precedence.
+            for name in order_depository_names(path):
                     # if not f.endswith('.py'): continue
                     # name = f.split('.py')[0]
                     # if name not in ['groups', 'rules']:
@@ -3697,6 +3857,127 @@ class KineticsFamily(Database):
         kinetics_list.sort(key=lambda x: (x[1].rank, x[1].index))
         return kinetics_list[0]
 
+    @staticmethod
+    def _supplies_queried_orientation(entry, is_forward):
+        # An opposite, explicitly one-way entry is a different physical process.
+        return entry.item.reversible or is_forward
+
+    @staticmethod
+    def _same_depository_record(first, second):
+        """Only collapse records whose source and complete representation agree."""
+        _, _, entry_a, forward_a = first
+        _, _, entry_b, forward_b = second
+        if entry_a is entry_b:
+            return True
+        if forward_a != forward_b or type(entry_a) is not type(entry_b):
+            return False
+        entry_fields = ('index', 'label', 'parent', 'children', 'data_sources', 'data_count',
+                        'reference', 'reference_type', 'short_desc', 'long_desc', 'rank',
+                        'nodal_distance', 'metal', 'facet', 'site', 'binding_energies',
+                        'surface_site_density')
+        expected_entry_fields = frozenset(entry_fields).union(('item', 'data'))
+        if (frozenset(vars(entry_a)) != expected_entry_fields
+                or frozenset(vars(entry_b)) != expected_entry_fields):
+            return False
+        if type(entry_a.item) is not type(entry_b.item):
+            return False
+        expected_reaction_descriptors = _REACTION_IDENTITY_DESCRIPTORS
+        if type(entry_a.item) is TemplateReaction:
+            expected_reaction_descriptors = expected_reaction_descriptors.union(('__weakref__',))
+        elif type(entry_a.item) is not Reaction:
+            return False
+        actual_reaction_descriptors = frozenset(
+            name for name in dir(type(entry_a.item))
+            if type(getattr(type(entry_a.item), name, None)).__name__ == 'getset_descriptor')
+        if actual_reaction_descriptors != expected_reaction_descriptors:
+            return False
+        reaction_fields = ('index', 'label', 'kinetics', 'network_kinetics', 'reversible',
+                           'transition_state', 'duplicate', 'degeneracy', 'pairs', 'electrons',
+                           'protons', 'is_forward', 'elementary_high_p', 'allow_pdep_route',
+                           'allow_max_rate_violation', 'rank', 'comment', 'specific_collider',
+                           'k_effective_cache')
+        item_dict_a = getattr(entry_a.item, '__dict__', {})
+        item_dict_b = getattr(entry_b.item, '__dict__', {})
+        if item_dict_a or item_dict_b:
+            template_fields = frozenset(('family', 'template', 'estimator', 'reverse',
+                                         'entry', 'labeled_atoms'))
+            if (type(entry_a.item) is not TemplateReaction
+                    or frozenset(item_dict_a) != template_fields
+                    or frozenset(item_dict_b) != template_fields):
+                return False
+        return (_comparable(entry_a.data, entry_b.data)
+                and _comparable(tuple(getattr(entry_a, field) for field in entry_fields),
+                                tuple(getattr(entry_b, field) for field in entry_fields))
+                and _comparable(tuple(getattr(entry_a.item, field) for field in reaction_fields),
+                                tuple(getattr(entry_b.item, field) for field in reaction_fields))
+                and _comparable(item_dict_a, item_dict_b))
+
+    @classmethod
+    def _distinct_depository_records(cls, candidates):
+        distinct = []
+        for candidate in candidates:
+            if not any(cls._same_depository_record(candidate, kept) for kept in distinct):
+                distinct.append(candidate)
+        return distinct
+
+    @staticmethod
+    def _describe_validity(data):
+        if data is None:
+            return 'unknown'
+        result = []
+        for symbol in ('T', 'P'):
+            lower, upper = getattr(data, symbol + 'min', None), getattr(data, symbol + 'max', None)
+            result.append('{0} {1} to {2}'.format(symbol, lower, upper)
+                          if lower is not None or upper is not None else '{0} not restricted'.format(symbol))
+        return ', '.join(result)
+
+    def _describe_depository_conflict(self, reaction, contenders):
+        lines = [
+            "More than one kinetics depository of family '{0}' supplies kinetics for this reaction, and RMG will not choose between them.".format(self.label),
+            '',
+            "Depository membership is provenance, not a quality ranking; filesystem, load, and kineticsDepositories-list order are not scientific precedence.",
+            '  reaction  : {0}'.format(reaction),
+            '  direction : as queried',
+            '  electrons : {0}'.format(getattr(reaction, 'electrons', 0)),
+            '  candidates: {0}'.format(len(contenders)),
+        ]
+        for number, (_, depository, entry, is_forward) in enumerate(sorted(contenders, key=lambda c: c[1].label), 1):
+            data = entry.data
+            lines.extend(['', '  [{0}] depository : {1}'.format(number, depository.label),
+                          '      entry      : index {0}, label {1}'.format(entry.index, _renderable(entry.label)),
+                          '      reaction   : {0}'.format(_renderable(entry.item)),
+                          '      direction  : {0} the queried reaction'.format('same as' if is_forward else 'OPPOSITE to'),
+                          '      declared   : {0}'.format('reversible' if entry.item.reversible else 'irreversible (one-way)'),
+                          '      electrons  : {0}'.format(getattr(entry.item, 'electrons', 0)),
+                          '      kinetics   : {0}'.format(type(data).__name__ if data is not None else 'none'),
+                          '      parameters : {0}'.format(_renderable(data)),
+                          '      validity   : {0}'.format(self._describe_validity(data)),
+                          '      rank       : {0}'.format(entry.rank if entry.rank is not None else 'not ranked'),
+                          '      uncertainty: {0}'.format(_renderable(getattr(data, 'uncertainty', None)) if data else None),
+                          '      provenance : {0}'.format(_renderable(entry.reference) if entry.reference else 'no citation recorded')])
+        names = sorted(c[1].label.split('/')[-1] for c in contenders)
+        lines.extend(['', 'Resolve this by naming a single, unambiguous source in the input file:'])
+        for name in names:
+            lines.append("    kineticsDepositories = ['training']" if name == 'training' else "    kineticsDepositories = ['{0}', '!training']".format(name))
+        lines.extend(['', 'Alternatively, curate the conflicting entry in a reviewed database patch. RMG has no default here on purpose.'])
+        return '\n'.join(lines)
+
+    def _resolve_depository_candidates(self, reaction, candidates):
+        applicable = self._distinct_depository_records([candidate for candidate in candidates
+                                                        if self._supplies_queried_orientation(candidate[2], candidate[3])])
+        opposite = self._distinct_depository_records([candidate for candidate in candidates
+                                                      if not self._supplies_queried_orientation(candidate[2], candidate[3])])
+        contenders = applicable if applicable else opposite
+        # Do not rank a depository until after orientation has been normalized.
+        # Any independently sourced applicable records are alternatives the report
+        # must retain, not representatives to silently discard.
+        depositories = {candidate[1].label for candidate in contenders}
+        if len(depositories) > 1:
+            raise KineticsDepositoryConflictError(self._describe_depository_conflict(reaction, contenders))
+        choices = [[candidate[0], candidate[2], candidate[3]] for candidate in contenders]
+        kinetics, entry, is_forward = self._select_best_kinetics(choices)
+        return kinetics, contenders[0][1], entry, is_forward
+
     def get_kinetics(self, reaction, template_labels, degeneracy=1, estimator='', return_all_kinetics=True):
         """
         Return the kinetics for the given `reaction` by searching the various
@@ -3723,15 +4004,20 @@ class KineticsFamily(Database):
         molecules = [r.molecule[0] if isinstance(r, Species) else r for r in reaction.reactants]
         template = ReactionTemplate(template, any(m.has_resolved_state() for m in molecules))
 
-        # Check the various depositories for kinetics
+        # Keep every matching record. Orientation normalization and the conflict
+        # decision must happen before a local rank can hide a source.
+        candidates = []
         for depository in depositories:
             kinetics_list0 = self.get_kinetics_from_depository(depository, reaction, template, degeneracy)
             if len(kinetics_list0) > 0 and not return_all_kinetics:
-                kinetics, entry, is_forward = self._select_best_kinetics(kinetics_list0)
-                return kinetics, depository, entry, is_forward
+                candidates.extend((kinetics, depository, entry, is_forward)
+                                  for kinetics, entry, is_forward in kinetics_list0)
             else:
                 for kinetics, entry, is_forward in kinetics_list0:
                     kinetics_list.append([kinetics, depository, entry, is_forward])
+
+        if not return_all_kinetics and candidates:
+            return self._resolve_depository_candidates(reaction, candidates)
 
         # If estimator type of rate rules is given, retrieve the kinetics. 
         # TODO: Since group additivity was removed, this logic can be condensed into just 1 branch.
@@ -5614,23 +5900,31 @@ class KineticsFamily(Database):
         degeneracy = 1
         autogenerated = False
 
-        training_reaction_pattern = r'Matched reaction\s*(\d+).*in.*training'
+        # Every depository match records its complete source in the comment.  Do not
+        # discard NIST-only provenance merely because it is not called training.
+        depository_reaction_pattern = r'Matched reaction\s*(\d+)\s+(.*)\s+in\s+(\S+)\s*$'
         degeneracy_pattern = r'Multiplied by reaction path degeneracy\s*(\d+)'
 
         for line in lines:
-            training_matches = re.search(training_reaction_pattern, line)
+            depository_matches = re.search(depository_reaction_pattern, line)
             degeneracy_matches = re.search(degeneracy_pattern, line)
 
-            if training_matches is not None:
-                # Source of the kinetics is from training reaction
-                training_reaction_index = int(training_matches.group(1))
-                depository = self.get_training_depository()
-                training_entry = depository.entries[training_reaction_index]
+            if depository_matches is not None:
+                entry_index = int(depository_matches.group(1))
+                label = depository_matches.group(3)
+                depository = next((candidate for candidate in self.depositories
+                                   if candidate.label == label or candidate.label.split('/')[-1] == label.split('/')[-1]), None)
+                if depository is None and label.split('/')[-1] == 'training':
+                    # Preserve the long-standing test/API seam for callers that expose
+                    # training through the accessor rather than self.depositories.
+                    depository = self.get_training_depository()
+                if depository is None:
+                    raise DatabaseError('Reaction {0} declares kinetics from depository {1!r} of family {2}, but it is not loaded.'.format(reaction, label, self.label))
+                training_entry = depository.entries[entry_index]
                 # Perform sanity check that the training reaction's label matches that of the comments
                 if training_entry.label not in line:
-                    raise AssertionError(f'Reaction {reaction} uses kinetics from training reaction {training_reaction_index} '
-                                         f'but does not match the training reaction {training_reaction_index} from the '
-                                         f'{self.label} family.')
+                    raise AssertionError(f'Reaction {reaction} uses kinetics from reaction {entry_index} '
+                                         f'but does not match reaction {entry_index} from the {depository.label} depository.')
 
                 # Sometimes the matched kinetics could be in the reverse direction.....
                 if reaction.is_same_reaction(training_entry.item, either_direction=False, save_order=self.save_order):

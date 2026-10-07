@@ -34,6 +34,8 @@ import numpy as np
 
 import rmgpy.constants as constants
 import rmgpy.rmg.input as inp
+from rmgpy import settings
+from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.exceptions import InputError, PlasmaStateError
 from rmgpy.rmg.input import _parse_writer_config, _writer_config_to_input
 from rmgpy.rmg.main import RMG
@@ -1426,9 +1428,8 @@ class TestInputPlasmaReactor:
         assert term.window == 5
 
     def test_save_input_file_round_trips_kinetics_depositories_all(self, tmp_path):
-        # The reader maps kineticsDepositories='all' to rmg.kinetics_depositories = None;
-        # the writer must serialize None back to 'all' or the saved file cannot be re-read.
-        # The list form already round-trips, so 'all' is the case that proves the sentinel.
+        # Preserve the public inclusion directive, rather than translating it to the
+        # training-only None default before families are loaded.
         from rmgpy.solver.plasma import PlasmaReactor
         body = (
             "database(thermoLibraries=['primaryThermoLibrary'], reactionLibraries=[], "
@@ -1440,14 +1441,54 @@ class TestInputPlasmaReactor:
             + "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)\n"
         )
         rmg1 = self._read(tmp_path, body)
-        assert rmg1.kinetics_depositories is None  # 'all' -> None in the reader
+        assert rmg1.kinetics_depositories == 'all'
         saved = tmp_path / "saved.py"
         inp.save_input_file(str(saved), rmg1)
 
         rmg2 = RMG()
         inp.read_input_file(str(saved), rmg2)  # must not raise on the 'all' sentinel
         assert isinstance(rmg2.reaction_systems[0], PlasmaReactor)
-        assert rmg2.kinetics_depositories is None  # the sentinel survived the round-trip
+        assert rmg2.kinetics_depositories == 'all'
+
+        # Drive the value produced by the public directive through the real family
+        # loader.  None is the legacy training-only spelling, so a parser-only test
+        # cannot prove that NIST is actually included.
+        database = KineticsDatabase()
+        database.load_families(
+            os.path.join(settings['database.directory'], 'kinetics', 'families'),
+            families=['HO2_Elimination_from_PeroxyRadical'],
+            depositories=rmg2.kinetics_depositories,
+        )
+        loaded = database.families['HO2_Elimination_from_PeroxyRadical'].depositories
+        assert {item.label.rsplit('/', 1)[-1] for item in loaded} == {'training', 'NIST'}
+
+    def test_save_input_file_round_trips_legacy_none_as_training_only(self, tmp_path):
+        body = (
+            "database(thermoLibraries=['primaryThermoLibrary'], reactionLibraries=[], "
+            "seedMechanisms=[], kineticsFamilies='default', kineticsDepositories='default')\n"
+            + self._preamble()
+            + self._plasma_block("    electronDensity=(1e23,'m^-3'),\n",
+                                 mole_fractions="{'Ar': 0.7, 'He': 0.3}")
+            + "simulator(atol=1e-16, rtol=1e-8)\n"
+            + "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)\n"
+        )
+        rmg1 = self._read(tmp_path, body)
+        rmg1.kinetics_depositories = None  # legacy training-only spelling
+        saved = tmp_path / 'saved-default.py'
+        inp.save_input_file(str(saved), rmg1)
+
+        rmg2 = RMG()
+        inp.read_input_file(str(saved), rmg2)
+        assert rmg2.kinetics_depositories == ['training']
+
+        database = KineticsDatabase()
+        database.load_families(
+            os.path.join(settings['database.directory'], 'kinetics', 'families'),
+            families=['HO2_Elimination_from_PeroxyRadical'],
+            depositories=rmg2.kinetics_depositories,
+        )
+        loaded = database.families['HO2_Elimination_from_PeroxyRadical'].depositories
+        assert {item.label.rsplit('/', 1)[-1] for item in loaded} == {'training'}
 
 
 class TestInputPlasmaChargeBalance:

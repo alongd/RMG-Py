@@ -164,6 +164,24 @@ strings describing which depositories to include.::
 
 	kineticsDepositories = ['training']
 
+The special value ``'all'`` includes every depository available in each
+selected family; it does not give one depository precedence over another and
+is not the default.::
+
+	kineticsDepositories = 'all'
+
+If two independently sourced depository entries provide kinetics for the same
+oriented reaction, including both is a fatal ambiguity: RMG refuses to rank the
+sources by name, load order, rank, uncertainty, or numerical value.  Resolve
+the refusal by selecting one unambiguous source.  For example, retain the
+default training-only selection with::
+
+	kineticsDepositories = ['training']
+
+or load NIST without training with::
+
+	kineticsDepositories = ['NIST', '!training']
+
 
 .. _kineticsfamilies:
 
