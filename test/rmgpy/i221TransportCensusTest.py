@@ -80,6 +80,7 @@ EXPECTED_TRANSPORTS = {
     ('rmgpy/data/kinetics/family.py', 'mp.Process'),
     ('rmgpy/qm/main.py', 'Pool'),
     ('rmgpy/rmg/react.py', 'Pool'),
+    ('rmgpy/tools/eedf/branches.py', 'multiprocessing.get_context'),
 }
 
 #: The only module that imports a pickler at all. This is what makes the plain-pickle path

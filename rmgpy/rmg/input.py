@@ -957,13 +957,14 @@ def _plasma_electron_kinetics(electronKinetics):
     if not isinstance(electronKinetics, Mapping):
         raise InputError("electronKinetics must be a mapping; got {0!r}.".format(electronKinetics))
 
-    keys = ('provider', 'table', 'branch', 'initialReducedField', 'empiricalLaws')
+    keys = ('provider', 'table', 'branch', 'initialReducedField', 'empiricalLaws',
+            'operatingBranch')
     unknown = sorted(set(electronKinetics) - set(keys))
     if unknown:
         raise InputError(
             "electronKinetics has unsupported key(s) {0}; the keys are {1}.".format(
                 unknown, list(keys)))
-    missing = [key for key in keys if key not in electronKinetics]
+    missing = [key for key in keys if key not in electronKinetics and key != 'operatingBranch']
     if missing:
         raise InputError("electronKinetics is missing required key(s) {0}.".format(missing))
 
@@ -993,6 +994,16 @@ def _plasma_electron_kinetics(electronKinetics):
     if not isinstance(branch, str) or not branch.strip():
         raise InputError(
             "electronKinetics branch must be a non-empty string; got {0!r}.".format(branch))
+
+    operating = electronKinetics.get('operatingBranch')
+    if operating is not None:
+        if not isinstance(operating, Mapping) or set(operating) != {'id', 'path'}:
+            raise InputError("electronKinetics operatingBranch must be {'id', 'path'}; got {0!r}.".format(operating))
+        if not all(isinstance(operating[key], str) and operating[key].strip() for key in ('id', 'path')):
+            raise InputError("electronKinetics operatingBranch id and path must be non-empty strings; got {0!r}.".format(operating))
+        operating_path = os.path.expandvars(operating['path'])
+        if not os.path.isabs(operating_path) and _input_file_directory is not None:
+            operating_path = os.path.abspath(os.path.join(_input_file_directory, operating_path))
 
     initial_field = electronKinetics['initialReducedField']
     if not isinstance(initial_field, (tuple, list)) or len(initial_field) != 2:
@@ -1057,6 +1068,8 @@ def _plasma_electron_kinetics(electronKinetics):
         'provider': provider,
         'table': (path, fingerprint.lower()),
         'branch': branch,
+        'operating_branch': (None if operating is None else
+                             {'id': operating['id'], 'path': operating_path}),
         'initial_reduced_field': (field_value, 'Td'),
         'empirical_laws': normalized_laws,
     }
@@ -3364,13 +3377,16 @@ def _format_plasma_wall(system):
             lines.append('    wallBathLumping = {0!r},\n'.format(dict(system.wall_bath_lumping)))
     if getattr(system, 'electron_kinetics', None) is not None:
         declaration = system.electron_kinetics
-        lines.append('    electronKinetics = {0!r},\n'.format({
+        kinetics_declaration = {
             'provider': declaration['provider'],
             'table': tuple(declaration['table']),
             'branch': declaration['branch'],
             'initialReducedField': tuple(declaration['initial_reduced_field']),
             'empiricalLaws': deepcopy(declaration['empirical_laws']),
-        }))
+        }
+        if declaration['operating_branch'] is not None:
+            kinetics_declaration['operatingBranch'] = deepcopy(declaration['operating_branch'])
+        lines.append('    electronKinetics = {0!r},\n'.format(kinetics_declaration))
     if system.energy_balance:
         # The saved geometry is a bare diffusion length, so the chamber volume the power
         # is deposited in is written explicitly.

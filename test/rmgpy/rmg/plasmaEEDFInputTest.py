@@ -15,6 +15,7 @@ def _electron_kinetics(**updates):
         'provider': 'loki-table',
         'table': ('eedf-table.h5', SHA256),
         'branch': 'B1',
+        'operatingBranch': {'id': 'reactor-000', 'path': 'branches.json'},
         'initialReducedField': (16.0, 'Td'),
         'empiricalLaws': {
             'PlasmaArgon:90': {
@@ -86,6 +87,7 @@ def test_public_eedf_declaration_is_normalized_for_the_constructor(tmp_path, mon
         'provider': 'loki-table',
         'table': (str(tmp_path / 'eedf-table.h5'), SHA256.lower()),
         'branch': 'B1',
+        'operating_branch': {'id': 'reactor-000', 'path': str(tmp_path / 'branches.json')},
         'initial_reduced_field': (16.0, 'Td'),
         'empirical_laws': {
             'PlasmaArgon:90': {
@@ -139,6 +141,7 @@ def test_legacy_declaration_still_requires_electron_temperature(tmp_path):
         ({'provider': 'other'}, 'provider'),
         ({'table': ('table.h5', 'bad')}, 'sha256'),
         ({'branch': ''}, 'branch'),
+        ({'operatingBranch': {'id': '', 'path': 'branches.json'}}, 'operatingBranch'),
         ({'initialReducedField': (16.0, 'V')}, 'initialReducedField'),
         ({'initialReducedField': (0.0, 'Td')}, 'initialReducedField'),
         ({'initialReducedField': (True, 'Td')}, 'initialReducedField'),
@@ -238,6 +241,9 @@ def test_real_constructor_save_read_round_trip_uses_deck_relative_table(tmp_path
     table = tmp_path / 'tables' / 'real.h5'
     table.parent.mkdir()
     table.write_bytes(b'fixture path only; provider loading occurs at initialize_model')
+    (tmp_path / 'branches.json').write_text(
+        '{"branches": [{"id": "reactor-000", '
+        '"seed": {"u": 0.0, "n_e": 1e16}, "u": 0.0, "n_e": 1e16}]}')
     declaration = _electron_kinetics(table=('tables/real.h5', SHA256))
     input_path = tmp_path / 'input.py'
     input_path.write_text(

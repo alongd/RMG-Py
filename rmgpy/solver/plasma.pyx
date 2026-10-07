@@ -1008,6 +1008,9 @@ cdef class PlasmaReactor(ReactionSystem):
     cdef public dict eedf_empirical_laws
     cdef public dict eedf_axis_species
     cdef public dict eedf_envelope_species
+    cdef public object operating_branch
+    cdef public object operating_branch_seed
+    cdef public object operating_branch_target
     # Runtime-only monitoring configured by the private unqualified-table harness.
     # None of these fields is a constructor argument or part of __reduce__, so an
     # input deck, restart, or saved reactor cannot select this route.
@@ -1185,15 +1188,20 @@ cdef class PlasmaReactor(ReactionSystem):
         self.eedf_empirical_laws = {}
         self.eedf_axis_species = {}
         self.eedf_envelope_species = {}
+        self.operating_branch = None
+        self.operating_branch_seed = None
+        self.operating_branch_target = None
         if electron_kinetics is None:
             return
         if not isinstance(electron_kinetics, dict):
             raise PlasmaStateError('electron_kinetics must be a normalized mapping')
         required = {'provider', 'table', 'branch', 'initial_reduced_field', 'empirical_laws'}
-        if set(electron_kinetics) != required:
+        allowed = required | {'operating_branch'}
+        if not required <= set(electron_kinetics) <= allowed:
             raise PlasmaStateError(
                 'electron_kinetics fields differ from the normalized contract: {0!r}'.format(
-                    sorted(set(electron_kinetics).symmetric_difference(required))))
+                    sorted(required - set(electron_kinetics) |
+                           (set(electron_kinetics) - allowed))))
         if electron_kinetics['provider'] != 'loki-table':
             raise PlasmaStateError("electron_kinetics provider must be 'loki-table'")
         table = electron_kinetics['table']
@@ -1203,9 +1211,32 @@ cdef class PlasmaReactor(ReactionSystem):
                 or field[1] != 'Td' or not np.isfinite(field[0]) or field[0] <= 0.):
             raise PlasmaStateError('invalid normalized EEDF table or initial_reduced_field')
         self.electron_kinetics = copy.deepcopy(electron_kinetics)
+        self.electron_kinetics.setdefault('operating_branch', None)
         self.electron_kinetics['table'] = tuple(table)
         self.electron_kinetics['initial_reduced_field'] = (float(field[0]), 'Td')
         self.eedf_empirical_laws = copy.deepcopy(electron_kinetics['empirical_laws'])
+        operating = electron_kinetics.get('operating_branch')
+        if operating is None:
+            self.eedf_mode = True
+            return
+        if (not isinstance(operating, dict) or set(operating) != {'id', 'path'}
+                or not all(isinstance(operating[key], str) and operating[key]
+                           for key in ('id', 'path'))):
+            raise PlasmaStateError('invalid normalized operating_branch declaration')
+        try:
+            from rmgpy.tools.eedf.branches import declared_branch
+            branch = declared_branch(operating['path'], operating['id'])
+            seed = branch['seed']
+            if not (np.isfinite(seed['u']) and np.isfinite(seed['n_e']) and seed['n_e'] > 0.):
+                raise ValueError('branch seed has non-finite u or non-positive n_e')
+            if not (np.isfinite(branch['u']) and np.isfinite(branch['n_e']) and branch['n_e'] > 0.):
+                raise ValueError('branch target has non-finite u or non-positive n_e')
+        except (ValueError, KeyError, TypeError) as exc:
+            raise PlasmaStateError('cannot load declared operating branch {0!r}: {1}'.format(
+                operating.get('id'), exc)) from exc
+        self.operating_branch = copy.deepcopy(operating)
+        self.operating_branch_seed = {'u': float(seed['u']), 'n_e': float(seed['n_e'])}
+        self.operating_branch_target = {'u': float(branch['u']), 'n_e': float(branch['n_e'])}
         self.eedf_mode = True
 
     @property
@@ -4695,6 +4726,25 @@ cdef class PlasmaReactor(ReactionSystem):
     def validate_terminal_state(self):
         """Apply EEDF power gates before any accepted termination path."""
         self._check_eedf_power_gates(steady=self.steady_state_reached)
+        if self.eedf_mode and self.operating_branch_target is not None:
+            from rmgpy.tools.eedf.branches import matching_branch
+            actual = {'u': float(self.energy_budget['u']),
+                      'n_e': float(self.energy_budget['n_e'])}
+            try:
+                actual_id = matching_branch(
+                    self.operating_branch['path'], actual,
+                    power=float(self.absorbed_power_total))
+            except ValueError as exc:
+                raise PlasmaStateError(
+                    'terminal state cannot be assigned to one operating branch: '
+                    '{}'.format(exc)) from exc
+            if actual_id != self.operating_branch['id']:
+                raise PlasmaStateError(
+                    'declared operating branch {0!r} converged onto {1!r}: '
+                    'target (u={2!r}, n_e={3!r}), terminal (u={4!r}, n_e={5!r})'.format(
+                        self.operating_branch['id'], actual_id,
+                        self.operating_branch_target['u'], self.operating_branch_target['n_e'],
+                        actual['u'], actual['n_e']))
 
     cpdef object terminal_state(self):
         """'extinct' once the extinction criterion has held (energy balance only), else None."""
@@ -8048,8 +8098,32 @@ cdef class PlasmaReactor(ReactionSystem):
             self.y0[i] = mole_frac
         if self.energy_balance:
             self.y0[self.te_index] = (
+                self.operating_branch_seed['u']
+                if self.eedf_mode and self.operating_branch_seed is not None else
                 log(self.electron_kinetics['initial_reduced_field'][0])
                 if self.eedf_mode else self.te_initial)
+            if self.eedf_mode and self.operating_branch_seed is not None:
+                # branches.json is intensive; the solver state is an amount.
+                # Rebalance the existing cation mixture after changing the electron
+                # amount, preserving its relative composition. Iterate the EOS because
+                # the balanced heavy-ion amount also changes the pressure volume.
+                for _ in range(3):
+                    volume = self.compute_volume(self.y0)
+                    self.y0[self.electron_index] = self.operating_branch_seed['n_e'] * volume / constants.Na
+                    positive_charge = sum(self.species_charges[i] * self.y0[i]
+                                          for i in range(self.num_core_species)
+                                          if i != self.electron_index and self.species_charges[i] > 0)
+                    negative_charge = -sum(self.species_charges[i] * self.y0[i]
+                                           for i in range(self.num_core_species)
+                                           if self.species_charges[i] < 0)
+                    if not positive_charge > 0.0:
+                        raise PlasmaStateError(
+                            'an operating-branch seed needs a positive-ion inventory '
+                            'to balance its declared electron density')
+                    charge_scale = negative_charge / positive_charge
+                    for i in range(self.num_core_species):
+                        if i != self.electron_index and self.species_charges[i] > 0:
+                            self.y0[i] *= charge_scale
             # The reactor is a fixed-inventory image of the chamber: its reference volume
             # at t0 (heavy species at Tg; the electrons' share is excluded so the heating
             # does not depend on Te0) scales the chamber's total P_abs onto it, once, before
