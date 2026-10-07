@@ -230,8 +230,8 @@ MOMENT_EWT_FLOOR_K = 100.0
 #          Q10/(V_poly*(b1 - b0)) is the event-site density that would
 #          spend the whole margin and u is I-090's reverse smoothstep on
 #          the unresolved b1 neighbourhood (zero outside it). M <= M_INNER
-#          returns C; a one-floor smoothstep reaches the original soft-min
-#          cap at M_LO, above which the original band blends it into S_free.
+#          returns C; a C1 smoothstep reaches the original soft-min cap at
+#          M_LO, above which the original band blends it into S_free.
 #      The gate throttles the EVENT RATE only (per-event moment ratios
 #      and mass bookkeeping untouched -- the bundle pick stays
 #      length-biased) and is direction-aware exactly like the exhaustion
@@ -267,7 +267,20 @@ BUNDLE_LIMITER_E_HI = 1.0e4
 # bands may diverge under future adjudication. (Mirrored in the numpy
 # oracle consumer -- keep in sync.)
 CONE_MARGIN_M_LO = 1.0e2
-CONE_MARGIN_M_INNER = 9.9e1
+# I-072 numerical regularization widens I-069's smoothstep from W=1
+# (M=99..100) to W=50 accepted-state floors (M=50..100). These are distances
+# measured IN floor units, not sub-floor noise. A cubic smoothstep's maximum
+# normalized slope is 1.5/W and curvature is 6/W^2, so W=50 is 50x gentler
+# in slope and 2500x gentler in curvature than W=1. Instrumentation found a
+# daughter parked at M=99.02: W=1 accumulated 173 convergence failures and
+# first-order 1.8e-5 s steps; widths 1 and 10 missed the replay budget, while
+# W=50 completed it. PE/PS final moments stayed bit-identical. The depletion-
+# handoff reversible pin near solverPolymerTest.py's directional-gate test
+# deliberately changes from both directions off to its M=93 side live and
+# M=46 side off. W=100 (M_inner=0) also completed, but removes the retained
+# exact-zero dead band entirely, so it is not interchangeable with W=50.
+# M >= M_LO remains bit-for-bit unchanged.
+CONE_MARGIN_M_INNER = 5.0e1
 CONE_MARGIN_M_HI = 1.0e4
 # Soft-min sharpness p (round-29 N2), moderate by design. Chosen by the
 # Lipschitz slope-jump sweeps (the 3001-point C1 band sweep, the regen-#3
@@ -5943,15 +5956,15 @@ class HybridPolymerSystem(ReactionSystem):
         Healthy IN-CONE bulk pools take both early returns: s_base comes
         back bitwise, so byte-pins and bulk reversible-row detailed
         balance (C_G* = Keq*S_base(A)/S_base(B)) are untouched. N5b
-        (round-62 DASSL-hang root cause) floors resolved b1 shapes in the
-        M <= M_inner branch to exact zero rather than trusting S_cone's
-        noise-scale magnitude down there: below M_lo, Q10 is sub-floor-scale
-        cancellation noise (~1e-17 mol/s-scale rows, ~15 orders below any
-        deck observable -- inside the model's own error budget, the same
-        adjudicated logic as the r81 floors). A one-floor inner ramp from the
-        narrowed completion reaches the original band cap at M_lo with zero
-        endpoint slopes. The law for M > M_lo is bit-for-bit unchanged;
-        equality necessarily takes the continuous edge value.
+        (round-62 DASSL-hang root cause) keeps resolved b1 shapes at exact
+        zero through M_inner=50 accepted-state floors. I-072's M=50..100
+        interval is numerical regularization, not a claim that those states
+        are sub-floor noise: widening the cubic handoff reduces its maximum
+        blend slope and curvature by 50x and 2500x versus W=1. It reaches the
+        original band cap at M_lo with zero endpoint slopes. The law for
+        M > M_lo is bit-for-bit unchanged; equality necessarily takes the
+        continuous edge value. See the constant block for measured replay,
+        deck, reversible-pair, and W=100 counterfactual effects.
         s_base is
         the direction's adjudicated site law (mu1/V_poly or mu0/V_poly
         per row scaling, including the pre-existing a>0/a<0 VE
@@ -6060,11 +6073,11 @@ class HybridPolymerSystem(ReactionSystem):
         #   * b1c - 1 -> b1_band : u -> 0 with u' = 0, so the law meets the
         #     N5b hard zero continuously, and BIT-FOR-BIT 0.0 beyond it --
         #     not merely small. At O(1) b1c - 1 the round-62 hard zero remains
-        #     bit-for-bit unchanged through M_INNER; only the one-floor
-        #     interval immediately below M_LO ramps to the original band cap.
-        # That inner smoothstep has zero slope at both ends, removing the
-        # pre-existing M_LO jump without changing any value above M_LO. The
-        # value exactly at M_LO necessarily becomes the continuous edge cap.
+        #     bit-for-bit unchanged through M_INNER; M_INNER < M < M_LO ramps
+        #     to the original band cap. That smoothstep has
+        # zero slope at both ends, removing the pre-existing M_LO jump without
+        # changing any value above M_LO. The value exactly at M_LO necessarily
+        # becomes the continuous edge cap.
         # The neighbourhood half-width is derived, not fitted.  I-090 used
         # only the propagated error weight of the two moments b1c is built
         # from.  Its absolute floor terms divided by y1c, however, diverge as
