@@ -5602,5 +5602,12 @@
     "tests": [
       "test/rmgpy/data/excitedThermoSourceTest.py::test_attached_energy_and_limits_must_match_whole_library_source"
     ]
+  },
+  "rmgpy/tools/eedf/report.py::PowerReport.as_dict::reaction-io": {
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Serializes the explicit power-table mapping and does not serialize or reverse Reaction kinetics.",
+    "tests": [
+      "test/rmgpy/tools/eedf/reportTest.py::test_as_dict_serializes_report"
+    ]
   }
 }
