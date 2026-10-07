@@ -3877,8 +3877,14 @@ def stamp_gas_association_refusal(forward, pool_registry=None) -> None:
                 s if isinstance(s, Molecule) else None)
             if mol is None:
                 return False
-            found_carbene = (
-                found_carbene or mol.get_singlet_carbene_count() > 0)
+            found_carbene = found_carbene or any(
+                atom.element.symbol == "C"
+                and atom.radical_electrons == 0
+                and atom.lone_pairs == 1
+                and atom.charge == 0
+                and atom.get_total_bond_order() == 2.0
+                for atom in mol.atoms
+            )
         return found_carbene
 
     if ((p_condensed and (_all_gas_radicals(reactants)
