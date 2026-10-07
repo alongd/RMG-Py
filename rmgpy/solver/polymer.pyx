@@ -6127,6 +6127,20 @@ class HybridPolymerSystem(ReactionSystem):
     # path is purely ADDITIVE: no residual law, softclamp, r81 floor, or
     # §4 dispatch semantics change anywhere.
     # ------------------------------------------------------------------
+    def advance(self, tout):
+        """Advance and leave scoped-Jacobian diagnostics at the accepted state.
+
+        DASPK normally evaluates a full residual after a user Jacobian, but
+        may return at ``tout`` immediately after the Jacobian sweep. Refresh
+        only in that exceptional ordering; the discarded residual restores
+        rate/census diagnostics without changing the accepted state.
+        """
+        result = super().advance(tout)
+        if self._scoped_jac_diag_stale:
+            self.residual(self.t, np.array(self.y, copy=True),
+                          np.array(self.dydt, copy=True))
+        return result
+
     def request_scoped_jacobian(self, enable=True):
         """Toggle the scoped-Jacobian request on an already-constructed
         system and re-run the arming validation immediately (the caller
