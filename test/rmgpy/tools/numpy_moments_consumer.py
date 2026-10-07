@@ -738,10 +738,11 @@ class ArtifactConsumer:
         their cone cap cannot bind. Stage 2 (M band, INDEPENDENT of E;
         only non-end-group cone-shrinking debits, b1 > b0 = 1):
         Q10 = mu1 - mu0 <= 0 -> 0 regardless of E;
-        M = Q10/floor >= M_hi -> S_free exactly; M <= M_lo -> 0 EXACTLY
-        (round-62 N5b dead band, was softmin_p(S_free, S_cone)); between:
-        C1 v-smoothstep blend of S_free and softmin_p(S_free, S_cone) with
-        S_cone = Q10/(V_poly*(b1 - 1))."""
+        M = Q10/floor >= M_hi -> S_free exactly. Below M_hi, form the
+        narrowed completion C = u*softmin_p(S_free, S_cone), with u the
+        reverse smoothstep on I-090's unresolved b1 neighbourhood and zero
+        outside it. M <= M_lo returns C; between, a C1 v-smoothstep blends C
+        into S_free. S_cone = Q10/(V_poly*(b1 - 1))."""
         # stage 1: exhaustion tail limiter
         e_dist = self._floor_distance(pool, y)
         if e_dist >= BUNDLE_LIMITER_E_HI:

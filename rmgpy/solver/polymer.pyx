@@ -224,11 +224,14 @@ MOMENT_EWT_FLOOR_K = 100.0
 #          deck-independent, scale-aware anchoring as E; degree-1
 #          homogeneous in the moments over fixed floors), with band
 #          edges M_LO/M_HI mirroring E_LO/E_HI: M >= M_HI returns the
-#          exhaustion-limited S_free EXACTLY (margin safely bulk),
-#          M <= M_LO applies the soft cap softmin_p(S_free, S_cone) with
-#          S_cone = Q10/(V_poly*(b1 - b0)) (the event-site density that
-#          would spend the whole margin), and the band between blends
-#          the two C1 laws with the same 3m^2 - 2m^3 smoothstep.
+#          exhaustion-limited S_free EXACTLY (margin safely bulk). Below
+#          M_HI, form the narrowed completion
+#          C = u*softmin_p(S_free, S_cone), where S_cone =
+#          Q10/(V_poly*(b1 - b0)) is the event-site density that would
+#          spend the whole margin and u is I-090's reverse smoothstep on
+#          the unresolved b1 neighbourhood (zero outside it). M <= M_LO
+#          returns C; the band above blends C into S_free with the same
+#          3m^2 - 2m^3 smoothstep, continuously carrying u across M_LO.
 #      The gate throttles the EVENT RATE only (per-event moment ratios
 #      and mass bookkeeping untouched -- the bundle pick stays
 #      length-biased) and is direction-aware exactly like the exhaustion
@@ -6702,7 +6705,8 @@ class HybridPolymerSystem(ReactionSystem):
                     #   margin Q10 = mu1 - mu0 (only for b1 > b0 debits;
                     #   INDEPENDENT of E): Q10 <= 0 -> 0 regardless of E;
                     #   otherwise its own M = Q10/max(f0,f1) band blends
-                    #   toward softmin_p(S_free, S_cone),
+                    #   from I-090's narrowed completion
+                    #   u*softmin_p(S_free, S_cone) into S_free,
                     #   S_cone = Q10/(V_poly*(b1 - b0)),
                     #   w = smoothstep of the debited pool's accepted-state
                     #       floor distance E (see _bundle_limited_site) --

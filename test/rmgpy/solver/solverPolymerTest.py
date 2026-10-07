@@ -4416,6 +4416,10 @@ class TestHybridPolymerReactor:
         # full serial law -- stage 1 blend, then stage 2 v-blend against
         # the narrowed completion.  This resolved b1 shape lies outside
         # the completion band, so the completed cap is exactly zero.
+        # Re-pinned for 9706da4c7: the prior assertion directly expanded
+        # the old discontinuous formula rather than an independent physical
+        # observable. All non-mirror physics pins stayed green, while the
+        # from-deck replay crossed its formerly grinding window.
         s_base, s_eff = solver_s_eff(1.0e-12)
         cap = rs._bundle_availability_cap(1, y, 1.0, False)
         s_free = stage1(s_base, cap)
@@ -4830,6 +4834,9 @@ class TestHybridPolymerReactor:
         # (c) Q10 > 0, M mid-band, E bulk: v-blend toward the narrowed
         # completion, strictly below s_base. This resolved b1 shape lies
         # outside the completion band, so that endpoint is exactly zero.
+        # Re-pinned for 9706da4c7: this hand calculation encoded the same old
+        # formula (including its M_LO jump), not a separate physics result;
+        # the crash-state and full trajectory pins remain the physics check.
         q10 = 5.0e-7                        # M = 5e3, mid-band
         y[5], y[6], y[7] = 1.0e-3, 1.0e-3 + q10, 1.8e-3
         assert rs._pool_floor_distance(1, y) >= 1.0e4   # E bulk
