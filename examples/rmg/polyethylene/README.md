@@ -69,16 +69,22 @@ fitting. This matches the `polymer()` contract: initiation and depropagation
 are first-order, termination is bimolecular, and transfer is already
 pseudo-first-order.
 
-The full rate-point table, source comments, thermochemistry provenance, and
-reproduction script for this example run are in
-`/home/alon/runs/i057-mom-pe/rate_estimation/`.
+The full [rate-point table](rate_estimation/rate_points.csv) and
+[reproduction script](rate_estimation/estimate_rates.py) are kept with this
+example. From the RMG-Py repository root, regenerate all fit artifacts with:
+
+```bash
+PYTHONPATH=. python examples/rmg/polyethylene/rate_estimation/estimate_rates.py \
+    --database ../RMG-database/input --output-dir /tmp/pe-rate-estimation
+```
+
+Omit `--database` to use `database.directory` from `rmgrc`. The checked-in CSV
+can then be compared directly with `/tmp/pe-rate-estimation/rate_points.csv`.
 
 ## Reproduced run
 
 The corrected deck was reproduced from the `i057-mom-pe` branch (based on
-RMG-Py `0693d2c3a`) with RMG-database `cd86d4e1c`. The split-stream,
-tee-captured run is in
-`/home/alon/runs/i057-mom-pe/rework-1/pe-run2/`.
+RMG-Py `0693d2c3a`) with RMG-database `cd86d4e1c`.
 
 - completion marker: `MODEL GENERATION COMPLETED` (exit 0)
 - wall time and peak RSS: 36.15 s and 854580 kB
@@ -93,12 +99,14 @@ tee-captured run is in
   1.78163052862199, 380.955444591674)`
 - `mu1` loss at 0.15338938826752 s: 6.99561158501671e-4 mol of
   repeat units
-- condensed PE mass: 50.0 g initially and 49.9803750954295 g finally;
-  released ethylene mass is 0.0195117788381906 g, leaving a numerical
-  closure residual of -1.13122290997580e-4 g (2.26e-6 of the initial PE
-  charge)
+- condensed PE mass: 50.0 g initially and 49.9803750954295 g finally
+- total condensed-plus-gas mass deficit: 1.13122290997580e-4 g (2.26e-6 of
+  the initial PE charge). This is not a numerical closure residual: the two
+  pressure-network leak terms remove 4.03242526125802e-6 mol of ethylene
+  without adding modeled products, accounting for 1.13122290993658e-4 g.
+  The remaining integration error is 3.92254859236246e-15 g.
 
-The polymer test selection on this base produced 1511 passes, 1 expected
+The polymer test selection on this base produced 1512 passes, 1 expected
 failure, and exactly the three pre-existing failures identified by the I-057
 manager; there were no additional failures attributable to this example or
 its generic fix.

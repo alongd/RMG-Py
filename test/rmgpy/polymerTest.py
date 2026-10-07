@@ -4900,6 +4900,45 @@ def test_gas_carbon_monoxide_with_nonradical_against_pe_proxy_not_refused():
     assert dissociation.polymer_refused_accumulating is False
 
 
+def test_gas_carbanion_with_nonradical_against_pe_proxy_not_refused():
+    """A carbanion lone pair alone is not a neutral singlet carbene.
+
+    Methyl anion is counted by the molecule-level singlet-carbene helper, but
+    its charged carbon must not activate the gas-carbene proxy-bridge refusal.
+    Both written orientations stay available to ordinary adjudication.
+    """
+    from rmgpy.polymer import Polymer, stamp_gas_association_refusal
+    from rmgpy.species import Species
+    from rmgpy.molecule import Molecule
+    from rmgpy.reaction import Reaction
+
+    pe = Polymer(label="PE", monomer="[CH2][CH2]",
+                 end_groups=["[H]", "[H]"],
+                 Mn=5000.0, Mw=6000.0, initial_mass=0.05)
+    methyl_anion = Species(molecule=[Molecule().from_adjacency_list("""
+1 C u0 p1 c-1 {2,S} {3,S} {4,S}
+2 H u0 p0 c0 {1,S}
+3 H u0 p0 c0 {1,S}
+4 H u0 p0 c0 {1,S}
+""")])
+    pentane = Species(molecule=[Molecule().from_smiles("CCCCC")])
+    assert methyl_anion.molecule[0].get_singlet_carbene_count() == 1
+    assert methyl_anion.molecule[0].get_net_charge() == -1
+
+    association = Reaction(reactants=[methyl_anion, pentane], products=[pe],
+                           reversible=True)
+    stamp_gas_association_refusal(association)
+    assert association.polymer_refused is False
+    assert association.polymer_refused_accumulating is False
+
+    dissociation = Reaction(reactants=[pe],
+                            products=[methyl_anion, pentane],
+                            reversible=True)
+    stamp_gas_association_refusal(dissociation)
+    assert dissociation.polymer_refused is False
+    assert dissociation.polymer_refused_accumulating is False
+
+
 def test_gas_gas_gas_recombination_termination_not_refused():
     """Negative control (design constraint 1): the refusal is SHAPE-specific,
     not family-specific. Ordinary gas+gas->gas R_Recombination termination
