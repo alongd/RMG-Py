@@ -181,6 +181,31 @@ def _compiled_spec_phase(spec, *, density=(900.0, "kg/m^3"), chain_moles=None,
     return pool, dummies, phase, initial_moles, species_dict
 
 
+def _solver(core, config, moments, *, volume=2.5, initial_explicit=None,
+            gas_indices=()):
+    """Build the real production residual around one isolated pool."""
+    gas_indices = set(gas_indices)
+    gas_mask = np.array([index in gas_indices for index in range(len(core))])
+    initial_gas = {
+        species: 0.0 for species, is_gas in zip(core, gas_mask) if is_gas
+    }
+    system = HybridPolymerSystem(
+        T=800.0,
+        P=1.0e5,
+        initial_mole_fractions=initial_gas,
+        V_poly=volume,
+        polymer_pools=[config],
+        mass_transfer=[],
+        gas_species_mask=gas_mask,
+        constant_gas_volume=False,
+        initial_polymer_moments={config.label: moments},
+        initial_explicit_species=initial_explicit or {},
+        termination=[],
+    )
+    system.initialize_model(core, [], [], [])
+    return system
+
+
 def test_n3_counts_canonicalize_to_reduced_thirds_reproducibly():
     value = _spec_mapping(ensemble={"dp_counts": {1: 1, 2: 1, 3: 1}})
     first = LinearHomopolymerSpec.from_mapping(value)
@@ -448,6 +473,7 @@ def test_mixture_density_requires_and_counts_explicit_mobile_inventory():
     with pytest.raises(ValueError, match="whole_initial_mixture"):
         LinearHomopolymerSpec.from_mapping(value)
     value["density_basis"] = "whole_initial_mixture"
+    value["locality_policy"]["bounds"]["elements"].append("O")
     spec = LinearHomopolymerSpec.from_mapping(value)
     initialized = spec.initialization()
     expected_mobile = (
@@ -523,7 +549,10 @@ def test_compiled_pool_carries_end_mass_into_live_solver_accounting():
         spec.end_composition.molar_mass_g_mol()
     )
     mu0, mu1, _mu2 = spec.macroscopic_moments_mol
-    assert config.condensed_mass_g(mu0, mu1) == pytest.approx(
+    assert config.shared_mass_accounting is True
+    assert config.condensed_mass_g(
+        mu0, mu1, end_inventory_mol=mu0
+    ) == pytest.approx(
         spec.initial_mass_kg * 1000.0
     )
 
@@ -544,7 +573,7 @@ def test_paired_depropagation_solver_and_ledger_close_mass_and_volume():
     config = PolymerPoolConfig(
         label="PE", xs=2, explicit_dp_to_species_index={}, mu_indices=(2, 3, 4),
         monomer_poly_index=1, monomer_mw_g_mol=repeat_mass,
-        end_group_mw_g_mol=end_mass, k_unzip=1.0,
+        end_group_mw_g_mol=end_mass, shared_mass_accounting=True, k_unzip=1.0,
     )
     solver = HybridPolymerSystem(
         T=800.0, P=1.0e5, initial_mole_fractions={core[1]: 0.0}, V_poly=1.0,
@@ -555,12 +584,15 @@ def test_paired_depropagation_solver_and_ledger_close_mass_and_volume():
     )
     solver.initialize_model(core, [], [], [])
     assert solver.get_total_polymer_condensed_mass_g() == pytest.approx(
-        config.condensed_mass_g(1.0, 2.0)
+        config.condensed_mass_g(1.0, 2.0, end_inventory_mol=1.0)
     )
     rates = np.asarray(solver.residual(0.0, solver.y, np.zeros_like(solver.y))[0])
     assert rates[[2, 3, 4]] == pytest.approx((0.0, -1.0, -3.0))
     assert rates[1] == pytest.approx(1.0)
-    assert config.condensed_mass_g(rates[2], rates[3]) + rates[1] * repeat_mass == pytest.approx(0.0)
+    end_rate = rates[int(solver.end_inventory_slot[0])]
+    assert (config.condensed_mass_g(
+        rates[2], rates[3], end_inventory_mol=end_rate
+    ) + rates[1] * repeat_mass) == pytest.approx(0.0)
 
     ledger_pool = EvolvedPoolMass(
         "PE", repeat, (1.0, 2.0, 4.0),
@@ -621,11 +653,14 @@ def test_paired_complete_bundle_adapter_and_ledger_count_exact_graph_once():
         label="PE", xs=2, explicit_dp_to_species_index={}, mu_indices=(0, 1, 2),
         monomer_mw_g_mol=repeat.molar_mass_g_mol(),
         end_group_mw_g_mol=ends.molar_mass_g_mol(),
+        shared_mass_accounting=True,
     )
     explicit_mass_g = (
         0.4 * explicit_species.molecular_weight.value_si * constants.Na * 1000.0
     )
-    expected_mass_g = production_tail.condensed_mass_g(tail[0], tail[1]) + explicit_mass_g
+    expected_mass_g = production_tail.condensed_mass_g(
+        tail[0], tail[1], end_inventory_mol=tail[0]
+    ) + explicit_mass_g
     assert phase.calculate_volume() == pytest.approx(expected_mass_g / 1000.0 / 900.0)
     assert phase.calculate_volume() == pytest.approx(after.volume_m3)
 
@@ -646,10 +681,13 @@ def test_paired_solver_mass_law_and_disjoint_depletion_close_exactly_once():
         label="defect-bearing", xs=2, explicit_dp_to_species_index={},
         mu_indices=(0, 1, 2), monomer_mw_g_mol=repeat.molar_mass_g_mol(),
         end_group_mw_g_mol=ends.molar_mass_g_mol(),
+        shared_mass_accounting=True,
         chain_mass_defect_g_mol=Composition.from_mapping({"H": 1}).molar_mass_g_mol(),
     )
     before = MassVolumeLedger((ledger_pool,), (), 1100.0)
-    assert solver_pool.condensed_mass_g(2.0, 4.0) == pytest.approx(
+    assert solver_pool.condensed_mass_g(
+        2.0, 4.0, end_inventory_mol=2.0
+    ) == pytest.approx(
         ledger_pool.mass_g
     )
     updated, bromine = ledger_pool.deplete_stationary_inventory(
@@ -660,11 +698,12 @@ def test_paired_solver_mass_law_and_disjoint_depletion_close_exactly_once():
     )
     after = MassVolumeLedger((updated,), (bromine,), 1100.0)
     remaining_solver_mass = solver_pool.condensed_mass_g(
-        2.0, 4.0, stationary_depletion_g=bromine.mass_g
+        2.0, 4.0, stationary_depletion_g=bromine.mass_g,
+        end_inventory_mol=2.0,
     )
     assert remaining_solver_mass == pytest.approx(updated.mass_g)
     assert remaining_solver_mass + bromine.mass_g == pytest.approx(
-        solver_pool.condensed_mass_g(2.0, 4.0)
+        solver_pool.condensed_mass_g(2.0, 4.0, end_inventory_mol=2.0)
     )
     assert updated.defects == ledger_pool.defects
     assert {term.provenance_id for term in updated.defects}.isdisjoint(
@@ -702,3 +741,264 @@ def test_unknown_schema_and_malformed_ports_are_rejected():
     malformed["repeat_unit"]["ports"].pop("tail")
     with pytest.raises(ValueError, match="requires exactly ports"):
         LinearHomopolymerSpec.from_mapping(malformed)
+
+
+def test_live_end_inventory_survives_scission_and_dp1_unzip_at_nonunit_volume():
+    """The shared end inventory is state, not the derived expression b*mu0."""
+    repeat_mass = Composition.from_mapping({"C": 2, "H": 4}).molar_mass_g_mol()
+    end_mass = Composition.from_mapping({"H": 2}).molar_mass_g_mol()
+
+    scission_core = [Species(label=name) for name in
+                     ("PE", "PE_mu0", "PE_mu1", "PE_mu2")]
+    scission_config = PolymerPoolConfig(
+        label="PE", xs=2, explicit_dp_to_species_index={}, mu_indices=(1, 2, 3),
+        monomer_mw_g_mol=repeat_mass, end_group_mw_g_mol=end_mass,
+        shared_mass_accounting=True, k_scission=1.0,
+    )
+    scission = _solver(scission_core, scission_config, (1.0, 3.0, 11.0))
+    end_slot = int(scission.end_inventory_slot[0])
+    before_end = scission.y[end_slot]
+    scission_rates = np.asarray(
+        scission.residual(0.0, scission.y, np.zeros_like(scission.y))[0]
+    )
+    assert scission_rates[1] == pytest.approx(2.0)
+    assert scission_rates[end_slot] == pytest.approx(0.0)
+    assert scission.y[end_slot] == pytest.approx(before_end)
+    assert (scission_rates[2] * repeat_mass
+            + scission_rates[end_slot] * end_mass) == pytest.approx(0.0)
+
+    monomer = Species(label="monomer", molecule=[Molecule().from_smiles("C=C")])
+    unzip_core = [Species(label="PE"), monomer] + [
+        Species(label=f"PE_mu{i}") for i in range(3)
+    ]
+    unzip_config = PolymerPoolConfig(
+        label="PE", xs=2, explicit_dp_to_species_index={}, mu_indices=(2, 3, 4),
+        monomer_poly_index=1, monomer_mw_g_mol=repeat_mass,
+        end_group_mw_g_mol=end_mass, shared_mass_accounting=True, k_unzip=1.0,
+    )
+    unzip = _solver(unzip_core, unzip_config, (1.0, 1.0, 1.0), gas_indices=(1,))
+    end_slot = int(unzip.end_inventory_slot[0])
+    rates = np.asarray(unzip.residual(0.0, unzip.y, np.zeros_like(unzip.y))[0])
+    assert rates[[1, 2, 3, 4]] == pytest.approx((1.0, -1.0, -1.0, -1.0))
+    assert rates[end_slot] == pytest.approx(0.0)
+    independent_mass_rate = (
+        rates[3] * repeat_mass + rates[end_slot] * end_mass
+        + rates[1] * repeat_mass
+    )
+    assert independent_mass_rate == pytest.approx(0.0, abs=1.0e-12)
+
+
+def test_feature_daughter_inherits_the_authoritative_shared_spec():
+    spec = _spec()
+    monomer, ends = spec.legacy_molecules()
+    parent = Polymer(
+        label="PE", monomer=monomer, end_groups=ends,
+        moments=spec.macroscopic_moments_mol, initial_mass=spec.initial_mass_kg,
+        linear_homopolymer_spec=spec,
+    )
+    daughter = parent._born_at_zero_mod_daughter(monomer.copy(deep=True), "test")
+    assert daughter.linear_homopolymer_spec is not None
+    assert daughter.linear_homopolymer_spec.normalized_json == spec.normalized_json
+    assert daughter.end_group_mw_g_mol == pytest.approx(parent.end_group_mw_g_mol)
+
+
+def test_live_explicit_species_mass_uses_its_molecular_graph_once():
+    repeat_mass = Composition.from_mapping({"C": 2, "H": 4}).molar_mass_g_mol()
+    end_mass = Composition.from_mapping({"H": 2}).molar_mass_g_mol()
+    explicit = Species(
+        label="defective_dp2", molecule=[Molecule().from_smiles("[CH2]CCC")]
+    )
+    explicit_mw = explicit.molecular_weight.value_si * constants.Na * 1000.0
+    core = [Species(label="PE"), explicit] + [
+        Species(label=f"PE_mu{i}") for i in range(3)
+    ]
+    config = PolymerPoolConfig(
+        label="PE", xs=2, explicit_dp_to_species_index={2: 1},
+        explicit_dp_mw_g_mol={2: explicit_mw}, mu_indices=(2, 3, 4),
+        monomer_mw_g_mol=repeat_mass, end_group_mw_g_mol=end_mass,
+        shared_mass_accounting=True,
+    )
+    system = _solver(
+        core, config, (1.0, 3.0, 9.0),
+        initial_explicit={"PE": {2: 0.4}},
+    )
+    tail_mu0, tail_mu1 = system.y[2], system.y[3]
+    expected = (
+        tail_mu1 * repeat_mass
+        + system.y[int(system.end_inventory_slot[0])] * end_mass
+        + 0.4 * explicit_mw
+    )
+    reconstructed = (
+        (tail_mu1 + 0.8) * repeat_mass
+        + (tail_mu0 + 0.4) * end_mass
+    )
+    assert system.get_total_polymer_condensed_mass_g() == pytest.approx(expected)
+    assert expected != pytest.approx(reconstructed)
+
+
+def test_mobile_declarations_bind_by_graph_and_reject_undeclared_inventory():
+    value = _spec_mapping()
+    value["small_species"] = {
+        "water": {
+            "graph": _graph([_atom("o", "O", hydrogens=2)]),
+            "disposition": "mobile",
+        }
+    }
+    value["initial_mobile_counts"] = {"water": 5}
+    value["density_basis"] = "whole_initial_mixture"
+    value["locality_policy"]["bounds"]["elements"].append("O")
+    spec = LinearHomopolymerSpec.from_mapping(value)
+    wrong_graph = Species(label="water", molecule=[Molecule().from_smiles("CCO")])
+    with pytest.raises(ValueError, match="graph.*water|water.*graph"):
+        _compiled_spec_phase(spec, density=None, extra_species=(wrong_graph,))
+
+    pool, dummies, _phase, _initial, species_dict = _compiled_spec_phase(
+        _spec(), density=None
+    )
+    ethanol = Species(label="ethanol", molecule=[Molecule().from_smiles("CCO")])
+    species_dict[ethanol.label] = ethanol
+    blueprint = PolymerPhaseBlueprint(
+        "phase", [pool.label, ethanol.label], "", density=None
+    )
+    with pytest.raises(ValueError, match="undeclared mobile|mobile.*declaration"):
+        compile_polymer_phase(
+            blueprint,
+            {pool: _spec().macroscopic_moments_mol[0], ethanol: 0.2},
+            species_dict,
+        )
+
+
+def test_shared_solver_routes_real_explicit_destination_and_gate_boundaries():
+    """Production handshake/deprop operations agree with independent atoms."""
+    repeat_mass = Composition.from_mapping({"C": 2, "H": 4}).molar_mass_g_mol()
+    end_mass = Composition.from_mapping({"H": 2}).molar_mass_g_mol()
+    explicit = Species(label="capped_dp2", molecule=[Molecule().from_smiles("CCCC")])
+    explicit_mw = explicit.molecular_weight.value_si * constants.Na * 1000.0
+    monomer = Species(label="monomer", molecule=[Molecule().from_smiles("C=C")])
+    core = [Species(label="PE"), explicit, monomer] + [
+        Species(label=f"PE_mu{i}") for i in range(3)
+    ]
+    config = PolymerPoolConfig(
+        label="PE", xs=2, explicit_dp_to_species_index={2: 1},
+        explicit_dp_mw_g_mol={2: explicit_mw}, mu_indices=(3, 4, 5),
+        monomer_poly_index=2, monomer_mw_g_mol=repeat_mass,
+        end_group_mw_g_mol=end_mass, shared_mass_accounting=True, k_unzip=1.0,
+    )
+    system = _solver(
+        core, config, (1.0, 3.0, 9.0), volume=2.5, gas_indices=(2,)
+    )
+    rates = np.asarray(system.residual(0.0, system.y, np.zeros_like(system.y))[0])
+    end_slot = int(system.end_inventory_slot[0])
+    assert rates[1] > 0.0  # a real core Species is the handshake destination
+    assert rates[end_slot] == pytest.approx(-rates[1])
+    handshake_mass_rate = (
+        (-2.0 * rates[1]) * repeat_mass
+        + rates[end_slot] * end_mass
+        + rates[1] * explicit_mw
+    )
+    assert handshake_mass_rate == pytest.approx(0.0, abs=1.0e-12)
+
+    # At the active DP=1 boundary the release and chain debit are paired.
+    active_core = [Species(label="PE"), monomer] + [
+        Species(label=f"A_mu{i}") for i in range(3)
+    ]
+    active_config = PolymerPoolConfig(
+        label="A", xs=2, explicit_dp_to_species_index={}, mu_indices=(2, 3, 4),
+        monomer_poly_index=1, monomer_mw_g_mol=repeat_mass,
+        end_group_mw_g_mol=end_mass, shared_mass_accounting=True, k_unzip=1.0,
+    )
+    active = _solver(
+        active_core, active_config, (1.0, 1.0, 1.0), volume=2.5,
+        gas_indices=(1,),
+    )
+    active_rates = np.asarray(active.residual(0.0, active.y, np.zeros_like(active.y))[0])
+    assert active_rates[[1, 2, 3, 4]] == pytest.approx((1.0, -1.0, -1.0, -1.0))
+
+    # Off-cone at zero units: the release gate is inactive, while the legacy
+    # healing debit remains; no gas or repeat mass is fabricated.
+    inactive = _solver(
+        active_core, active_config, (1.0, 0.0, 0.0), volume=2.5,
+        gas_indices=(1,),
+    )
+    inactive_rates = np.asarray(
+        inactive.residual(0.0, inactive.y, np.zeros_like(inactive.y))[0]
+    )
+    assert inactive_rates[1] == pytest.approx(0.0)
+    assert inactive_rates[3] == pytest.approx(0.0)
+    assert inactive_rates[2] < 0.0
+    assert inactive_rates[int(inactive.end_inventory_slot[0])] == pytest.approx(0.0)
+
+
+def test_real_sgh_z_and_gas_accounting_matches_independent_composition():
+    bromine = Species(label="Br", molecule=[Molecule().from_smiles("[Br]")])
+    core = [Species(label="P")] + [Species(label=f"P_mu{i}") for i in range(3)] + [bromine]
+    br_mass = Composition.from_mapping({"Br": 1}).molar_mass_g_mol()
+    repeat_mass = Composition.from_mapping({"C": 2, "H": 3, "Br": 1}).molar_mass_g_mol()
+    end_mass = Composition.from_mapping({"H": 2}).molar_mass_g_mol()
+    channel = dict(
+        label="C-Br", A=1.0, n=0.0, Ea=0.0, site_selector="aliphatic",
+        sites_per_unit=1.0, gas_product="[Br]",
+    )
+    config = PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={}, mu_indices=(1, 2, 3),
+        monomer_mw_g_mol=repeat_mass, end_group_mw_g_mol=end_mass,
+        shared_mass_accounting=True, side_group_homolysis=[channel],
+        side_group_gas_indices=(4,),
+    )
+    system = _solver(
+        core, config, (1.0, 3.0, 11.0), volume=2.5, gas_indices=(4,)
+    )
+    rates = np.asarray(system.residual(0.0, system.y, np.zeros_like(system.y))[0])
+    z_slot = int(system.sgh_z_slot[0])
+    end_slot = int(system.end_inventory_slot[0])
+    assert rates[z_slot] == pytest.approx(-3.0)
+    assert rates[4] == pytest.approx(3.0)
+    assert rates[end_slot] == pytest.approx(0.0)
+    assert rates[z_slot] * br_mass + rates[4] * br_mass == pytest.approx(0.0)
+
+
+def test_legacy_sgh_pool_with_chain_defect_keeps_exact_historical_mass_law():
+    bromine = Species(label="Br", molecule=[Molecule().from_smiles("[Br]")])
+    core = [Species(label="legacy")] + [
+        Species(label=f"legacy_mu{i}") for i in range(3)
+    ] + [bromine]
+    channel = dict(
+        label="C-Br", A=1.0, n=0.0, Ea=0.0, site_selector="aliphatic",
+        sites_per_unit=1.0, gas_product="[Br]",
+    )
+    config = PolymerPoolConfig(
+        label="legacy", xs=2, explicit_dp_to_species_index={}, mu_indices=(1, 2, 3),
+        monomer_mw_g_mol=100.0, end_group_mw_g_mol=7.0,
+        chain_mass_defect_g_mol=10.0,
+        side_group_homolysis=[channel], side_group_gas_indices=(4,),
+    )
+    system = _solver(
+        core, config, (2.0, 5.0, 13.0), volume=2.5, gas_indices=(4,)
+    )
+    assert system.num_end_inventories == 0
+    assert system.get_total_polymer_condensed_mass_g() == pytest.approx(500.0)
+
+
+def test_moment_realizability_is_scale_free():
+    with pytest.raises(ValueError, match="mu1 >= mu0"):
+        observables_from_moments(
+            (1.0e-16, 5.0e-17, 2.5e-17), 100.0, 10.0
+        )
+
+
+@pytest.mark.parametrize(
+    "mutate,match",
+    [
+        (lambda bounds: bounds.update(radical_electrons=[-1, 0, 1]), "radical_electrons"),
+        (lambda bounds: bounds.update(spin_multiplicities=[0, 1, 2]), "spin_multiplicities"),
+        (lambda bounds: bounds.update(bond_orders=[-1, 1]), "bond_orders"),
+        (lambda bounds: bounds.update(elements=["H"]), "elements"),
+        (lambda bounds: bounds.update(maximum_explicit_hydrogens_per_heavy_atom=1),
+         "maximum_explicit_hydrogens"),
+    ],
+)
+def test_locality_bounds_are_domain_valid_and_cover_declared_graphs(mutate, match):
+    value = _spec_mapping()
+    mutate(value["locality_policy"]["bounds"])
+    with pytest.raises(ValueError, match=match):
+        LinearHomopolymerSpec.from_mapping(value)

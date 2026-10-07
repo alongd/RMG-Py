@@ -2035,6 +2035,7 @@ class Polymer(Species):
             Mw=self.Mw,
             moments=None,
             initial_mass=0.0,
+            linear_homopolymer_spec=self.linear_homopolymer_spec,
         )
         daughter.parent_pool_label = self.label
         daughter.spawn_metadata = {"source": source}

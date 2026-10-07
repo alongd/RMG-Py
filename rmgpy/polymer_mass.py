@@ -406,16 +406,15 @@ def _validate_moments(values: Sequence[float]) -> Tuple[float, float, float]:
     mu0, mu1, mu2 = (float(values[index]) for index in range(3))
     if not all(math.isfinite(value) for value in (mu0, mu1, mu2)):
         raise ValueError("moments must be finite")
-    if min(mu0, mu1, mu2) < -1.0e-15:
+    if min(mu0, mu1, mu2) < 0.0:
         raise ValueError("moments cannot be negative")
-    mu0, mu1, mu2 = max(0.0, mu0), max(0.0, mu1), max(0.0, mu2)
     if mu0 == 0.0:
         if mu1 or mu2:
             raise ValueError("nonzero higher moments require nonzero mu0")
         return mu0, mu1, mu2
-    if mu1 + 1.0e-15 < mu0:
+    if mu1 < mu0:
         raise ValueError("a positive-DP distribution requires mu1 >= mu0")
-    if mu2 + 1.0e-15 < mu1:
+    if mu2 < mu1:
         raise ValueError("a positive-DP distribution requires mu2 >= mu1")
     lhs = mu0 * mu2
     rhs = mu1 * mu1

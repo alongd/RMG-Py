@@ -137,10 +137,23 @@ def _validated_locality_policy(value: Any) -> Mapping[str, Any]:
             raise ValueError(f"locality bound {field} cannot contain duplicates")
         normalized[field] = sorted(converted)
 
+    if any(item != -1 and item <= 0 for item in normalized["isotopes"]):
+        raise ValueError("locality bound isotopes must be -1 or positive integers")
+    for field in ("radical_electrons", "lone_pairs"):
+        if any(item < 0 for item in normalized[field]):
+            raise ValueError(f"locality bound {field} cannot contain negative values")
+    if any(item < 1 for item in normalized["spin_multiplicities"]):
+        raise ValueError("locality bound spin_multiplicities must be positive")
+
     bond_orders = bounds["bond_orders"]
     if not isinstance(bond_orders, Sequence) or isinstance(bond_orders, str) or not bond_orders:
         raise ValueError("locality bound bond_orders must be a non-empty finite list")
     normalized["bond_orders"] = sorted({_finite(item, "locality bond order") for item in bond_orders})
+    if any(order not in (1.0, 1.5, 2.0, 3.0)
+           for order in normalized["bond_orders"]):
+        raise ValueError(
+            "locality bound bond_orders may contain only 1, 1.5, 2, or 3"
+        )
 
     maxima = (
         "maximum_heavy_atom_degree", "maximum_explicit_hydrogens_per_heavy_atom",
@@ -639,8 +652,102 @@ class LinearHomopolymerSpec:
         if spec.density_kg_m3 <= 0.0:
             raise ValueError("density_kg_m3 must be positive")
         spec._validate_physical_electronic_states()
+        spec._validate_locality_coverage()
         spec._validate_observables()
         return spec
+
+    def _validate_locality_coverage(self):
+        """Require the finite locality domain to contain every declaration."""
+        bounds = self.locality_policy["bounds"]
+        graphs = [
+            ("repeat_unit", self.repeat_unit, False),
+            ("head_end_group", self.head_end_group, False),
+            ("tail_end_group", self.tail_end_group, False),
+        ]
+        if self.monomer_product is not None:
+            graphs.append(("monomer_product", self.monomer_product, True))
+        graphs.extend(
+            (f"small_species[{name}]", graph, True)
+            for name, graph, _disposition in self.small_species
+        )
+
+        for name, graph, free_small in graphs:
+            atom_by_key = {atom.key: atom for atom in graph.atoms}
+            heavy_degree = {
+                atom.key: 0 for atom in graph.atoms if atom.element != "H"
+            }
+            for bond in graph.bonds:
+                left, right = bond.atoms
+                if left in heavy_degree and atom_by_key[right].element != "H":
+                    heavy_degree[left] += 1
+                if right in heavy_degree and atom_by_key[left].element != "H":
+                    heavy_degree[right] += 1
+                if bond.order not in bounds["bond_orders"]:
+                    raise ValueError(
+                        f"locality bond_orders exclude {bond.order:g} used by {name}"
+                    )
+            for _port_name, port in graph.ports:
+                if port.atom in heavy_degree:
+                    heavy_degree[port.atom] += 1
+                if port.bond_order not in bounds["bond_orders"]:
+                    raise ValueError(
+                        f"locality bond_orders exclude {port.bond_order:g} used by {name}"
+                    )
+
+            for atom in graph.atoms:
+                if atom.element not in bounds["elements"]:
+                    raise ValueError(
+                        f"locality elements exclude {atom.element!r} used by {name}"
+                    )
+                for field, value in (
+                    ("isotopes", atom.isotope),
+                    ("formal_charges", atom.charge),
+                    ("radical_electrons", atom.radical_electrons),
+                    ("lone_pairs", atom.lone_pairs),
+                ):
+                    if value not in bounds[field]:
+                        raise ValueError(
+                            f"locality {field} exclude {value} used by {name}"
+                        )
+                if (atom.element != "H" and atom.hydrogens
+                        > bounds["maximum_explicit_hydrogens_per_heavy_atom"]):
+                    raise ValueError(
+                        "locality maximum_explicit_hydrogens_per_heavy_atom "
+                        f"is smaller than {name}'s declaration"
+                    )
+            if heavy_degree and max(heavy_degree.values()) > bounds["maximum_heavy_atom_degree"]:
+                raise ValueError(
+                    f"locality maximum_heavy_atom_degree is smaller than {name}'s declaration"
+                )
+
+            # Ports are non-atomic topology metadata. Electronic-state
+            # coverage therefore follows only the declared physical radical
+            # electrons; the capped-dimer consistency check owns the joined
+            # molecule separately.
+            multiplicity = sum(
+                atom.radical_electrons for atom in graph.atoms
+            ) + 1
+            if multiplicity not in bounds["spin_multiplicities"]:
+                raise ValueError(
+                    f"locality spin_multiplicities exclude {multiplicity} used by {name}"
+                )
+
+            if free_small:
+                heavy_atoms = sum(atom.element != "H" for atom in graph.atoms)
+                total_hydrogens = (
+                    sum(atom.hydrogens for atom in graph.atoms)
+                    + sum(atom.element == "H" for atom in graph.atoms)
+                )
+                if heavy_atoms > bounds["maximum_free_small_species_heavy_atoms"]:
+                    raise ValueError(
+                        "locality maximum_free_small_species_heavy_atoms "
+                        f"is smaller than {name}'s declaration"
+                    )
+                if total_hydrogens > bounds["maximum_total_hydrogens_on_free_small_species"]:
+                    raise ValueError(
+                        "locality maximum_total_hydrogens_on_free_small_species "
+                        f"is smaller than {name}'s declaration"
+                    )
 
     def _validate_physical_electronic_states(self):
         """Apply RMG's valence/electron rules to a physical capped dimer."""

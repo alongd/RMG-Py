@@ -1041,6 +1041,9 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
                     f"with shared declaration density {declared_density:g} kg/m^3")
         rho = Quantity((declared_density, 'kg/m^3'))
 
+        declared_mobile_amounts = {}
+        declared_mobile_species = set()
+        registered_species = list(dict.fromkeys(species_dict.values()))
         for spc in spec_pools:
             spec = spc.linear_homopolymer_spec
             chain_amount = spec.macroscopic_moments_mol[0]
@@ -1053,26 +1056,53 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
             initial_moles[spc] = chain_amount
 
             small_species = {
-                name: disposition for name, _graph, disposition in spec.small_species
+                name: (graph, disposition)
+                for name, graph, disposition in spec.small_species
             }
             scale = spec.initialization().scale_factor
             for name, representative_count in spec.initial_mobile_counts:
-                if small_species[name] != 'mobile':
+                declared_graph, disposition = small_species[name]
+                if disposition != 'mobile':
                     raise ValueError(
                         f"shared initial mobile species '{name}' does not have "
                         "disposition='mobile'")
-                mobile_spc = species_dict.get(name)
-                if mobile_spc is None:
+                declared_molecule = declared_graph.to_legacy_molecule({})
+                matches = [
+                    candidate for candidate in registered_species
+                    if any(molecule.is_isomorphic(declared_molecule)
+                           for molecule in getattr(candidate, "molecule", ()) or ())
+                ]
+                if not matches:
                     raise ValueError(
-                        f"shared initial mobile species '{name}' is absent from species block")
+                        f"shared initial mobile graph '{name}' is absent from species block")
+                if len(matches) != 1:
+                    raise ValueError(
+                        f"shared initial mobile graph '{name}' matches multiple registered species")
+                mobile_spc = matches[0]
                 amount = scale * representative_count / constants.Na
-                if mobile_spc in initial_moles and not math.isclose(
-                        float(initial_moles[mobile_spc]), amount,
-                        rel_tol=1.0e-12, abs_tol=1.0e-30):
-                    raise ValueError(
-                        f"mobile amount for '{name}' conflicts with the shared declaration")
-                initial_moles[mobile_spc] = amount
+                declared_mobile_amounts[mobile_spc] = (
+                    declared_mobile_amounts.get(mobile_spc, 0.0) + amount
+                )
+                declared_mobile_species.add(mobile_spc)
                 phase_species_set.add(mobile_spc)
+
+        for mobile_spc, amount in declared_mobile_amounts.items():
+            if mobile_spc in initial_moles and not math.isclose(
+                    float(initial_moles[mobile_spc]), amount,
+                    rel_tol=1.0e-12, abs_tol=1.0e-30):
+                raise ValueError(
+                    f"mobile amount for graph '{mobile_spc.label}' conflicts "
+                    "with the shared declaration")
+            initial_moles[mobile_spc] = amount
+
+        for candidate, amount in list(initial_moles.items()):
+            if (candidate in phase_species_set and candidate not in spec_pools
+                    and candidate not in declared_mobile_species
+                    and float(amount) != 0.0):
+                raise ValueError(
+                    f"polymer-phase species '{candidate.label}' has undeclared "
+                    "mobile inventory; add its graph and representative count "
+                    "to the shared declaration")
     else:
         density = blueprint.density
         if density is None:
@@ -1423,6 +1453,7 @@ class PolymerPool(object):
         """
         # 1. Resolve Explicit Map Indices
         explicit_indices = dict()
+        explicit_mw_g_mol = dict()
         if self.explicit_map:
             for dp, spc in self.explicit_map.items():
                 if dp > self.xs:
@@ -1430,6 +1461,9 @@ class PolymerPool(object):
 
                 if spc in spc_map:
                     explicit_indices[dp] = spc_map[spc]
+                    explicit_mw_g_mol[dp] = (
+                        spc.molecular_weight.value_si * constants.Na * 1000.0
+                    )
                 else:
                     raise ValueError(f"Pool {self.label}: Explicit species for DP={dp} ({spc}) not in core species.")
 
@@ -1647,11 +1681,16 @@ class PolymerPool(object):
             label=self.label,
             xs=self.xs,
             explicit_dp_to_species_index=explicit_indices,
+            explicit_dp_mw_g_mol=explicit_mw_g_mol,
             mu_indices=mu_idxs,
             monomer_poly_index=monomer_idx,
             monomer_mw_g_mol=monomer_mw_g_mol,
             end_group_mw_g_mol=float(
                 getattr(self.proxy_species, "end_group_mw_g_mol", 0.0) or 0.0),
+            shared_mass_accounting=(
+                getattr(self.proxy_species, "linear_homopolymer_spec", None)
+                is not None
+            ),
             monomer_heavy_atoms=monomer_heavy_atoms,
             k_scission=self.k_scission,
             k_unzip=self.k_unzip,
@@ -1843,11 +1882,15 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
             # test_daughter_pools_do_not_get_explicit_dp_in_v1
             # (solverPolymerTest.py).
             explicit_dp_to_species_index={},
+            explicit_dp_mw_g_mol={},
             mu_indices=mu_indices,
             monomer_poly_index=monomer_idx,
             monomer_mw_g_mol=float(getattr(spc, "monomer_mw_g_mol", 0.0) or 0.0),
             end_group_mw_g_mol=float(
                 getattr(spc, "end_group_mw_g_mol", 0.0) or 0.0),
+            shared_mass_accounting=(
+                getattr(spc, "linear_homopolymer_spec", None) is not None
+            ),
             # r89 dual-axis heavy denominator: a spawned daughter Polymer
             # carries the parent's monomer structure (intact-chain transfer),
             # so the derived config gets the same heavy-atom axis the static
