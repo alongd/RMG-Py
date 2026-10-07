@@ -61,6 +61,72 @@ def test_gas_reference_provider_labels_reference_and_caches_species_lookup():
     assert database.calls == ["[CH3]", "CC"]
 
 
+def test_reference_assignment_distinguishes_spin_and_preserves_source_graphs():
+    class Database:
+        library_order = ["primaryThermoLibrary"]
+
+        def __init__(self):
+            self.calls = []
+
+        def get_thermo_data(self, species):
+            multiplicity = species.molecule[0].multiplicity
+            self.calls.append(multiplicity)
+            return ThermoData(
+                Tdata=([300, 400, 600, 800, 1000], "K"),
+                Cpdata=([30, 30, 30, 30, 30], "J/(mol*K)"),
+                H298=(10 * multiplicity, "kJ/mol"),
+                S298=(100, "J/(mol*K)"),
+                comment="Thermo library: primaryThermoLibrary",
+            )
+
+    def methylene(multiplicity):
+        electron_state = "u0 p1" if multiplicity == 1 else "u2 p0"
+        return Molecule().from_adjacency_list(
+            f"multiplicity {multiplicity}\n"
+            f"1 *1 C {electron_state} c0 {{2,S}} {{3,S}}\n"
+            "2 H u0 p0 c0 {1,S}\n"
+            "3 H u0 p0 c0 {1,S}"
+        )
+
+    database = Database()
+    provider = GasPhaseRMGReferenceThermo(database, "test-only-database-commit")
+    snapshots = []
+    for multiplicity in (1, 3):
+        molecule = methylene(multiplicity)
+        reaction = Reaction(
+            reactants=[Species(molecule=[molecule])],
+            products=[Species(molecule=[molecule.copy(deep=True)])],
+        )
+        snapshots.append(
+            [
+                species.molecule[0].to_adjacency_list(remove_h=False)
+                for species in reaction.reactants + reaction.products
+            ]
+        )
+        result = provider.evaluate(reaction, (600.0, 800.0))
+        assert list(result.equilibrium_constants) == [
+            1.0,
+            1.0,
+        ]
+        assert snapshots[-1] == [
+            species.molecule[0].to_adjacency_list(remove_h=False)
+            for species in reaction.reactants + reaction.products
+        ]
+
+    assert database.calls == [1, 3]
+    assert provider.provenance["assignment_version"] == "kmc_shared_thermo/1"
+    assert provider.provenance["thermo_library_order"] == [
+        "primaryThermoLibrary"
+    ]
+    assert {
+        item["multiplicity"] for item in result.species_thermo_assignments
+    } == {3}
+    assert {
+        item["thermo_source"]["library"]
+        for item in result.species_thermo_assignments
+    } == {"primaryThermoLibrary"}
+
+
 def test_missing_reference_thermo_names_the_unavailable_species():
     provider = GasPhaseRMGReferenceThermo(None, None)
     with pytest.raises(ThermoUnavailable) as failure:
