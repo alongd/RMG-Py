@@ -189,7 +189,9 @@ def _validate_padding_projection(record: EventRecord) -> None:
         ("reactants", record.reactant_graphs, record.rate_witness_reactant_graphs),
         ("products", record.product_graphs, record.rate_witness_product_graphs),
     ):
-        executable = [Molecule().from_adjacency_list(graph) for graph in executable_graphs]
+        executable = [
+            Molecule().from_adjacency_list(graph) for graph in executable_graphs
+        ]
         witness = [Molecule().from_adjacency_list(graph) for graph in witness_graphs]
         expected = {
             (participant_index, atom_index)
@@ -204,7 +206,9 @@ def _validate_padding_projection(record: EventRecord) -> None:
             for item in entries
         }
         if domain != expected or len(entries) != len(domain):
-            raise ValueError("padded witness projection does not cover executable atoms")
+            raise ValueError(
+                "padded witness projection does not cover executable atoms"
+            )
         images = {
             (item["participant_index"], item.get("witness_atom_index"))
             for item in entries
@@ -219,7 +223,9 @@ def _validate_padding_projection(record: EventRecord) -> None:
             heavy_count = sum(
                 atom.element.number != 1 for atom in witness[participant_index].atoms
             )
-            if not isinstance(witness_index, int) or not (0 <= witness_index < heavy_count):
+            if not isinstance(witness_index, int) or not (
+                0 <= witness_index < heavy_count
+            ):
                 raise ValueError("padded witness projection image is invalid")
 
 

@@ -57,7 +57,8 @@ def test_proxy_fingerprint_is_independent_of_process_global_atom_ids():
 def test_padding_is_off_by_default_and_requires_explicit_k():
     instance = EventSetCompiler(None, [], [])
     assert instance.proxy_padding_distance is None
-    assert instance.compile()["provenance"]["proxy_boundary_padding"]["enabled"] is False
+    padding = instance.compile()["provenance"]["proxy_boundary_padding"]
+    assert padding["enabled"] is False
 
 
 def test_padded_root_degeneracy_is_derived_by_production_generation():

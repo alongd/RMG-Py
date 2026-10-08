@@ -143,7 +143,10 @@ def _canonical_atom_references(participants, atom_ids) -> list[dict[str, int]]:
                 _molecule(participants[participant_index]), atom_id
             ),
         })
-    return sorted(references, key=lambda item: (item["participant_index"], item["atom_index"]))
+    return sorted(
+        references,
+        key=lambda item: (item["participant_index"], item["atom_index"]),
+    )
 
 
 def _projection(executable, witness) -> dict[str, list[dict[str, int]]]:

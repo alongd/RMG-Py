@@ -807,8 +807,14 @@ def _production_padded_root(kinetics_database, reaction):
         raise ReactionNotPaddable("production family generator is unavailable")
 
     generated = kinetics_database.generate_reactions_from_families(
-        [Species(molecule=[_molecule(item).copy(deep=True)]) for item in reaction.reactants],
-        products=[Species(molecule=[_molecule(item).copy(deep=True)]) for item in reaction.products],
+        [
+            Species(molecule=[_molecule(item).copy(deep=True)])
+            for item in reaction.reactants
+        ],
+        products=[
+            Species(molecule=[_molecule(item).copy(deep=True)])
+            for item in reaction.products
+        ],
         only_families=[reaction.family],
         # Padding preserves the selected resonance forms. Re-enumerating resonance
         # here is both unnecessary and unbounded for the enlarged witness graphs.
@@ -3184,7 +3190,10 @@ class EventSetCompiler:
                     "matched_reaction_count": 1,
                     "template": _template(derived),
                     "rooted_degeneracy": float(derived.degeneracy),
-                    "recipe": "production family recipe reapplied by exact product generation",
+                    "recipe": (
+                        "production family recipe reapplied by exact product "
+                        "generation"
+                    ),
                 }
                 witness_reactants = _graph_adjacencies(rate_reaction.reactants)
                 witness_products = _graph_adjacencies(rate_reaction.products)
@@ -3826,7 +3835,10 @@ class EventSetCompiler:
                 "selection_basis": (
                     "explicit caller configuration; no production k selected"
                     if self.proxy_padding_distance is not None
-                    else "disabled until convergence is rerun with reviewed zero-K floor policy"
+                    else (
+                        "disabled until convergence is rerun with reviewed "
+                        "zero-K floor policy"
+                    )
                 ),
                 "excluded_rate_sources": [
                     "styrene_plpsec",
