@@ -34,7 +34,9 @@ def _reaction(thermo):
 
 @pytest.mark.parametrize("value", [0.0, -1.0, math.inf, math.nan, True])
 def test_fixed_b_provider_rejects_invalid_b(value):
-    with pytest.raises((TypeError, ValueError), match="finite positive number"):
+    with pytest.raises(
+        (TypeError, ValueError), match="finite positive number"
+    ):
         FixedBBarrierE0Provider(value)
 
 
@@ -55,7 +57,15 @@ def test_provider_fits_missing_e0_with_the_declared_fixed_b():
         "index": 0,
         "origin": "provider",
         "E0_J_per_mol": pytest.approx(expected),
-        "temperature_grid_K": [300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1500.0],
+        "temperature_grid_K": [
+            300.0,
+            400.0,
+            500.0,
+            600.0,
+            800.0,
+            1000.0,
+            1500.0,
+        ],
         "weights": [1.0] * 7,
     }
 
@@ -126,8 +136,13 @@ def test_compiler_uses_provider_only_for_the_barrier_copy():
 
     assert table is not None
     conversion = source["kinetics_conversion"]
-    assert conversion["barrier_e0_provider"] == compiler.barrier_e0_provider.provenance
-    assert [item["origin"] for item in conversion["barrier_e0_assignments"]] == [
+    assert conversion["barrier_e0_provider"] == (
+        compiler.barrier_e0_provider.provenance
+    )
+    origins = [
+        item["origin"] for item in conversion["barrier_e0_assignments"]
+    ]
+    assert origins == [
         "provider",
         "provider",
     ]

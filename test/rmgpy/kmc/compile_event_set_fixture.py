@@ -74,7 +74,10 @@ def main() -> None:
     parser.add_argument(
         "--barrier-e0-fixed-b",
         type=float,
-        help="opt in to fixed-B Wilhoit E0 values for compiler barrier floors only",
+        help=(
+            "opt in to fixed-B Wilhoit E0 values for compiler barrier floors "
+            "only"
+        ),
     )
     args = parser.parse_args()
     logger = logging.getLogger("rmgpy.kmc.compiler")

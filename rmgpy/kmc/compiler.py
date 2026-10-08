@@ -2524,7 +2524,9 @@ class EventSetCompiler:
                     "species_thermo_assignments": species_thermo_assignments,
                     **(
                         {
-                            "barrier_e0_provider": self.barrier_e0_provider.provenance,
+                            "barrier_e0_provider": (
+                                self.barrier_e0_provider.provenance
+                            ),
                             "barrier_e0_assignments": barrier_e0_assignments,
                         }
                         if self.barrier_e0_provider is not None

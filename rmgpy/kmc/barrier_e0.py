@@ -13,7 +13,7 @@ PROVIDER_VERSION = "1"
 
 @dataclass(frozen=True)
 class FixedBBarrierE0Provider:
-    """Populate missing E0 values on isolated thermo copies using one fixed B."""
+    """Populate missing E0 on isolated thermo copies with one fixed B."""
 
     B: float
 
@@ -47,14 +47,17 @@ class FixedBBarrierE0Provider:
             ) from error
         if len(temperatures) != len(capacities) or len(temperatures) < 4:
             raise ValueError(
-                "fixed-B E0 provider requires at least four paired Tdata/Cpdata values"
+                "fixed-B E0 provider requires at least four paired "
+                "Tdata/Cpdata values"
             )
-        if not all(math.isfinite(value) for value in temperatures + capacities):
+        if not all(
+            math.isfinite(value) for value in temperatures + capacities
+        ):
             raise ValueError("fixed-B E0 provider inputs must be finite")
         return temperatures
 
     def prepare_reaction(self, reaction):
-        """Return an isolated barrier-only reaction and per-participant origins."""
+        """Return a barrier-only reaction and per-participant origins."""
         prepared = copy.deepcopy(reaction)
         assignments = []
         participants = [
@@ -81,9 +84,12 @@ class FixedBBarrierE0Provider:
                         f"fixed-B E0 fit failed for {role} {index}: {error}"
                     ) from error
                 fitted_e0 = getattr(fitted, "E0", None)
-                if fitted_e0 is None or not math.isfinite(float(fitted_e0.value_si)):
+                if fitted_e0 is None or not math.isfinite(
+                    float(fitted_e0.value_si)
+                ):
                     raise ValueError(
-                        f"fixed-B E0 fit returned no finite E0 for {role} {index}"
+                        "fixed-B E0 fit returned no finite E0 for "
+                        f"{role} {index}"
                     )
                 isolated.E0 = (float(fitted_e0.value_si), "J/mol")
                 origin = "provider"
@@ -91,7 +97,9 @@ class FixedBBarrierE0Provider:
                 weights = [1.0] * len(temperatures)
             else:
                 if not math.isfinite(float(supplied.value_si)):
-                    raise ValueError(f"supplied E0 is not finite for {role} {index}")
+                    raise ValueError(
+                        f"supplied E0 is not finite for {role} {index}"
+                    )
                 origin = "supplied"
                 fit_temperatures = None
                 weights = None
