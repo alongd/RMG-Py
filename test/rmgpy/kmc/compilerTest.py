@@ -17,6 +17,7 @@ import rmgpy.kmc.compiler as compiler_module
 from rmgpy.kmc.compiler import (
     DEFAULT_T_GRID,
     EventSetCompiler,
+    ARCHIVED_J_PARA_RATE_PROVENANCE,
     PS_FAMILY_FILTER_REASON,
     SiteProxy,
     _archived_ortho_reaction,
@@ -142,6 +143,19 @@ def test_uses_public_family_pipeline_and_emits_f1_fields():
     assert record["provenance"]["family_list_sha256"]
     assert "archived_j_para_rate" not in artifact["provenance"]
     assert "archived_j_para_rate" not in record["provenance"]
+
+
+def test_archived_j_para_provenance_keeps_extraction_and_compile_sha_distinct():
+    assert ARCHIVED_J_PARA_RATE_PROVENANCE["extraction_database_sha"] == (
+        "4a12d36fcdc193ede82c8d1ab5c1653495d445bc"
+    )
+    assert ARCHIVED_J_PARA_RATE_PROVENANCE["compile_database_sha"] == (
+        "cd86d4e1c187a132109e16cd86f624ed9fb217df"
+    )
+    assert (
+        ARCHIVED_J_PARA_RATE_PROVENANCE["extraction_database_sha"]
+        != ARCHIVED_J_PARA_RATE_PROVENANCE["compile_database_sha"]
+    )
 
 
 def test_barrier_e0_provider_is_off_by_default_and_explicit_when_enabled():
