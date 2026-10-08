@@ -24,6 +24,7 @@ from portable_cache import (
 )
 
 from rmgpy.data.rmg import RMGDatabase
+from rmgpy.kmc.barrier_e0 import FixedBBarrierE0Provider
 from rmgpy.kmc.compiler import (
     DEFAULT_T_GRID,
     EventSetCompiler,
@@ -70,12 +71,25 @@ def main() -> None:
     parser.add_argument("output")
     parser.add_argument("--database-sha", help="commit of a materialized pinned snapshot")
     parser.add_argument("--family-universe", type=Path, help="JSON list from the pinned git tree")
+    parser.add_argument(
+        "--barrier-e0-fixed-b",
+        type=float,
+        help=(
+            "opt in to fixed-B Wilhoit E0 values for compiler barrier floors "
+            "only"
+        ),
+    )
     args = parser.parse_args()
     logger = logging.getLogger("rmgpy.kmc.compiler")
     logger.addHandler(logging.StreamHandler())
     logger.setLevel(logging.INFO)
     logger.propagate = False
     database_path = Path(args.database)
+    barrier_e0_provider = (
+        FixedBBarrierE0Provider(args.barrier_e0_fixed_b)
+        if args.barrier_e0_fixed_b is not None
+        else None
+    )
     family_root = database_path / "input/kinetics/families"
     family_universe = sorted(
         path.name for path in family_root.iterdir() if (path / "groups.py").is_file()
@@ -122,6 +136,11 @@ def main() -> None:
         "proxy_units": PS_PROXY_UNITS,
         "family_candidates": list(PS_FAMILY_CANDIDATES),
         "environment": compile_environment_options(),
+        **(
+            {"barrier_e0_provider": barrier_e0_provider.provenance}
+            if barrier_e0_provider is not None
+            else {}
+        ),
     }
     artifact_key = artifact_cache_key(Path.cwd(), database_path, compile_options)
     artifact_cache = (
@@ -198,6 +217,7 @@ def main() -> None:
         thermo_database=database.thermo,
         reaction_cache=reactions,
         rmg_database_sha=database_commit,
+        barrier_e0_provider=barrier_e0_provider,
     )
     print(
         f"compiling {sum(len(value) for value in reactions.values())} generated reactions",
