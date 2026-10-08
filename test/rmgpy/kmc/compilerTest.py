@@ -54,14 +54,15 @@ def test_proxy_fingerprint_is_independent_of_process_global_atom_ids():
             for atom in molecule.atoms:
                 atom.id += offset
 
-    assert _proxy_fingerprint(first) == _proxy_fingerprint(second)
+    assert _proxy_fingerprint(first, include_padding=True) == _proxy_fingerprint(
+        second, include_padding=True
+    )
 
 
 def test_padding_is_off_by_default_and_requires_explicit_k():
     instance = EventSetCompiler(None, [], [])
     assert instance.proxy_padding_distance is None
-    padding = instance.compile()["provenance"]["proxy_boundary_padding"]
-    assert padding["enabled"] is False
+    assert "proxy_boundary_padding" not in instance.compile()["provenance"]
 
 
 def test_padded_root_degeneracy_is_derived_by_production_generation():
@@ -303,6 +304,33 @@ def test_disabled_barrier_e0_provider_preserves_base_artifact_bytes(
     assert hashlib.sha256(path.read_bytes()).hexdigest() == path.stem
 
 
+def test_default_off_artifact_identity_rejects_unpadded_field_mutant(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        compiler_module,
+        "_LOADED_COMPILER_HASH",
+        "17a155a4026a058e2c4933eb58a5cfde79af0274496e0242a4e2b5642d796ac2",
+    )
+    monkeypatch.setattr(
+        compiler_module,
+        "compiler_source_hash",
+        lambda: "48c1f8b73e311f92d4169734c92b37f7bcc984ee01e2532f0da83bbc573c833d",
+    )
+    compiler, _ = _compiler()
+    compiler.rmgpy_sha = "1e51f1f8f33b81ce66baf3c8b52b84f15ab9f974"
+    compiler.proxies = (
+        replace(compiler.proxies[0], site_type="identity-field-mutant"),
+    )
+
+    path, _ = compiler.write_artifact(tmp_path)
+
+    with pytest.raises(AssertionError):
+        assert path.stem == (
+            "bab79a76501a9dd64015caf08e16d236c1c6fb4d3ddedc5fd917dfcd17f75337"
+        )
+
+
 def test_changing_barrier_e0_provider_invalidates_in_memory_artifact():
     compiler, _ = _compiler()
     disabled = compiler.compile()
@@ -328,6 +356,7 @@ def test_compiler_source_hash_includes_barrier_e0_provider():
                 "atom_map.py",
                 "kinetics_library.py",
                 "database_provenance.py",
+                "proxy_padding.py",
                 "barrier_e0.py",
             )
         )

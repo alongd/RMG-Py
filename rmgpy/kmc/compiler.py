@@ -746,18 +746,23 @@ def _template(reaction) -> str:
     return ";".join(getattr(item, "label", str(item)) for item in template)
 
 
-def _proxy_fingerprint(proxy) -> dict[str, Any]:
+def _proxy_fingerprint(proxy, *, include_padding: bool = False) -> dict[str, Any]:
     """Structural, rather than object-identity, provenance for a proxy input."""
     def declared_molecule(participant):
         molecules = getattr(participant, "molecule", None)
         return molecules[0] if molecules else participant
 
-    return {
+    fingerprint = {
         "site_type": proxy.site_type,
         "frontier": proxy.frontier,
         "metadata": proxy.metadata,
         "participant_site_types": list(proxy.participant_site_types),
-        "artificial_boundaries": [
+        "reactants": [
+            _canonical_adjacency(_molecule(item)) for item in proxy.reactants
+        ],
+    }
+    if include_padding:
+        fingerprint["artificial_boundaries"] = [
             {
                 "participant_index": boundary.participant_index,
                 "atom_index": [
@@ -771,14 +776,11 @@ def _proxy_fingerprint(proxy) -> dict[str, Any]:
                 "kind": boundary.kind,
             }
             for boundary in proxy.artificial_boundaries
-        ],
-        "repeat_unit": (
+        ]
+        fingerprint["repeat_unit"] = (
             proxy.repeat_unit.provenance() if proxy.repeat_unit is not None else None
-        ),
-        "reactants": [
-            _canonical_adjacency(_molecule(item)) for item in proxy.reactants
-        ],
-    }
+        )
+    return fingerprint
 
 
 def _graph_adjacencies(participants: Iterable[Any]) -> list[str]:
@@ -3158,7 +3160,8 @@ class EventSetCompiler:
     def _build_linked_family_pair(self, proxy, reaction, provenance):
         """Estimate exactly one direction, then invert its reference-state Kc."""
         source = getattr(reaction, "source_reaction", reaction)
-        proxy = _map_proxy_boundaries_to_reaction(proxy, source)
+        if self.proxy_padding_distance is not None:
+            proxy = _map_proxy_boundaries_to_reaction(proxy, source)
         proxy = replace(
             proxy, metadata={**proxy.metadata, "generic_reference_pair": True}
         )
@@ -3211,14 +3214,14 @@ class EventSetCompiler:
         )
         rate_reaction = estimate
         padding_distance = getattr(self, "proxy_padding_distance", None)
-        padding_metadata = {
-            "status": "disabled" if padding_distance is None else "not_applicable",
-            "reason": (
-                "no padding distance configured"
-                if padding_distance is None
-                else "proxy has no annotated artificial continuation ports"
-            ),
-        }
+        padding_metadata = (
+            {}
+            if padding_distance is None
+            else {
+                "status": "not_applicable",
+                "reason": "proxy has no annotated artificial continuation ports",
+            }
+        )
         witness_reactants = []
         witness_products = []
         is_library_pair = getattr(self, "use_plpsec_library", True) and (
@@ -3916,7 +3919,9 @@ class EventSetCompiler:
         self._applicability_refusals = []
 
         proxy_inputs = [
-            _proxy_fingerprint(p)
+            _proxy_fingerprint(
+                p, include_padding=self.proxy_padding_distance is not None
+            )
             for p in sorted(self.proxies, key=lambda p: p.site_type)
         ]
         provenance = {
@@ -3940,25 +3945,28 @@ class EventSetCompiler:
                 "database_sha": self.database_provenance["rmg_database_sha"],
             },
             "applicability_policy_version": PERSISTENT_CARBENE_POLICY_VERSION,
-            "proxy_boundary_padding": {
-                "minimum_heavy_bond_distance": self.proxy_padding_distance,
-                "tolerance_max_abs_log10": self.proxy_padding_tolerance_log10,
-                "maximum_heavy_atoms": self.proxy_padding_max_heavy_atoms,
-                "repeat_unit": ps_repeat_unit().provenance(),
-                "enabled": self.proxy_padding_distance is not None,
-                "selection_basis": (
-                    "explicit caller configuration; no production k selected"
-                    if self.proxy_padding_distance is not None
-                    else (
-                        "disabled until convergence is rerun with reviewed "
-                        "zero-K floor policy"
-                    )
-                ),
-                "excluded_rate_sources": [
-                    "styrene_plpsec",
-                    "R-009 archived para/ortho junction records",
-                ],
-            },
+            **(
+                {
+                    "proxy_boundary_padding": {
+                        "minimum_heavy_bond_distance": self.proxy_padding_distance,
+                        "tolerance_max_abs_log10": (
+                            self.proxy_padding_tolerance_log10
+                        ),
+                        "maximum_heavy_atoms": self.proxy_padding_max_heavy_atoms,
+                        "repeat_unit": ps_repeat_unit().provenance(),
+                        "enabled": True,
+                        "selection_basis": (
+                            "explicit caller configuration; no production k selected"
+                        ),
+                        "excluded_rate_sources": [
+                            "styrene_plpsec",
+                            "R-009 archived para/ortho junction records",
+                        ],
+                    }
+                }
+                if self.proxy_padding_distance is not None
+                else {}
+            ),
             **(
                 {"barrier_e0_provider": self.barrier_e0_provider.provenance}
                 if self.barrier_e0_provider is not None

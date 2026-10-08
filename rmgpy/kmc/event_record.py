@@ -99,6 +99,13 @@ class EventRecord:
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d.pop("_KNOWN_FIELDS", None)
+        for field_name in (
+            "rate_witness_reactant_graphs",
+            "rate_witness_product_graphs",
+            "proxy_padding",
+        ):
+            if not d[field_name]:
+                d.pop(field_name)
         return d
 
     def to_json(self, indent: int = 2) -> str:
