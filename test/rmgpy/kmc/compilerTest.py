@@ -2,6 +2,7 @@
 
 import copy
 import hashlib
+import os
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -9,8 +10,11 @@ from types import SimpleNamespace
 
 import pytest
 
+from rmgpy import settings
+from rmgpy.data.rmg import RMGDatabase
 import rmgpy.kmc.compiler as compiler_module
 from rmgpy.kmc.compiler import (
+    DEFAULT_T_GRID,
     EventSetCompiler,
     PS_FAMILY_FILTER_REASON,
     SiteProxy,
@@ -135,6 +139,412 @@ def test_uses_public_family_pipeline_and_emits_f1_fields():
     assert record["provenance"]["family_list_sha256"]
     assert "archived_j_para_rate" not in artifact["provenance"]
     assert "archived_j_para_rate" not in record["provenance"]
+
+
+@pytest.mark.parametrize("kinetics_type", ["ArrheniusBM", "ArrheniusEP"])
+def test_compiled_enthalpy_dependent_tree_rate_uses_reaction_enthalpy(
+    kinetics_type,
+):
+    from rmgpy.kinetics.arrhenius import ArrheniusBM, ArrheniusEP
+
+    class TreeFamily:
+        auto_generated = True
+
+        def get_kinetics(self, *args, **kwargs):
+            entry = SimpleNamespace(rank=7)
+            return kinetics, "rate rules", entry, True
+
+    class ThermoDatabase:
+        def get_thermo_data(self, species):
+            return SimpleNamespace(source="pinned test thermo")
+
+    class ReferenceThermo:
+        provenance = {"reference_thermo": "test gas-phase Kc"}
+
+        def equilibrium_constants(self, reaction, temperatures):
+            return [1.0 for _ in temperatures]
+
+    class EnthalpyDependentReaction(_Reaction):
+        family = "R_Recombination"
+        template = ["Root"]
+        kinetics = None
+        reversible = True
+        is_forward = True
+        dHrxn298 = -100000.0
+
+        def get_enthalpy_of_reaction(self, temperature):
+            assert temperature == 298
+            assert all(
+                species.thermo is not None
+                for species in self.reactants + self.products
+            )
+            return self.dHrxn298
+
+        def fix_barrier_height(self):
+            intrinsic_barrier = self.kinetics.E0.value_si
+            self.kinetics = self.kinetics.to_arrhenius(
+                self.get_enthalpy_of_reaction(298)
+            )
+            if (
+                self.kinetics.Ea.value_si < 0.0
+                and self.kinetics.Ea.value_si < intrinsic_barrier
+            ):
+                self.kinetics.Ea.value_si = min(0.0, intrinsic_barrier)
+
+    if kinetics_type == "ArrheniusBM":
+        kinetics = ArrheniusBM(
+            A=(1.0e6, "s^-1"),
+            n=0.0,
+            w0=(500.0, "kJ/mol"),
+            E0=(20.0, "kJ/mol"),
+        )
+    else:
+        kinetics = ArrheniusEP(
+            A=(1.0e6, "s^-1"),
+            n=0.0,
+            alpha=0.5,
+            E0=(20.0, "kJ/mol"),
+        )
+    molecule = _Molecule()
+    reaction = EnthalpyDependentReaction(molecule)
+    database = _Database(reaction)
+    database.families[reaction.family] = TreeFamily()
+    temperatures = [600.0, 800.0, 1000.0]
+    artifact = EventSetCompiler(
+        database,
+        [SiteProxy("interior", [_Species(molecule)])],
+        [reaction.family],
+        temperature_grid=temperatures,
+        thermo_database=ThermoDatabase(),
+        reference_thermo_provider=ReferenceThermo(),
+    ).compile()
+
+    record = next(
+        record
+        for record in artifact["records"]
+        if record["rate_source"]["kind"] == "RMG family estimate"
+    )
+    model_generation_reaction = copy.deepcopy(reaction)
+    model_generation_reaction.kinetics = copy.deepcopy(kinetics)
+    for species in (
+        model_generation_reaction.reactants + model_generation_reaction.products
+    ):
+        species.thermo = ThermoDatabase().get_thermo_data(species)
+    model_generation_reaction.fix_barrier_height()
+    expected = [
+        model_generation_reaction.kinetics.get_rate_coefficient(t)
+        for t in temperatures
+    ]
+    zero_enthalpy = [kinetics.get_rate_coefficient(t) for t in temperatures]
+
+    assert record["k_table"]["k"] == pytest.approx(expected, rel=1e-12)
+    assert record["k_table"]["k"] != pytest.approx(zero_enthalpy, rel=1e-3)
+    if kinetics_type == "ArrheniusBM":
+        # Corrected R_Recombination BM pin; the former dHrxn=0 values were
+        # [18150.19, 49449.39, 90225.39] on this temperature grid.
+        assert record["k_table"]["k"] == pytest.approx(
+            [1.0e6, 1.0e6, 1.0e6], rel=1e-12
+        )
+    conversion = record["rate_source"]["kinetics_conversion"]
+    assert {
+        key: value
+        for key, value in conversion.items()
+        if key != "species_thermo_assignments"
+    } == {
+        "input_model": kinetics_type,
+        "method": "to_arrhenius(reaction.get_enthalpy_of_reaction(298))",
+        "post_conversion": "reaction.fix_barrier_height()",
+        "output_model": "Arrhenius",
+        "reaction_enthalpy_J_per_mol": reaction.dHrxn298,
+        "activation_energy_J_per_mol": (
+            model_generation_reaction.kinetics.Ea.value_si
+        ),
+    }
+    assert len(conversion["species_thermo_assignments"]) == 2
+    reverse = next(
+        record
+        for record in artifact["records"]
+        if record["rate_source"]["kind"] == "reference-thermo reverse"
+    )
+    assert (
+        reverse["rate_source"]["forward_kinetics_conversion"]
+        == record["rate_source"]["kinetics_conversion"]
+    )
+
+
+def test_shared_featured_assignment_is_call_order_independent_and_closes_kc():
+    from rmgpy.data.kinetics.family import TemplateReaction
+    from rmgpy.kinetics.arrhenius import ArrheniusBM
+    from rmgpy.molecule.molecule import Molecule
+    from rmgpy.species import Species
+    from rmgpy.thermo import ThermoData
+
+    class ThermoDatabase:
+        library_order = ["primaryThermoLibrary"]
+
+        def get_thermo_data(self, species):
+            molecule = species.molecule[0]
+            is_h_atom = len(molecule.atoms) == 1 and molecule.atoms[0].is_hydrogen()
+            is_radical = molecule.get_radical_count() > 0
+            if is_h_atom:
+                enthalpy = 218.0
+            elif is_radical:
+                enthalpy = -80.0 if len(species.molecule) > 1 else 120.0
+            else:
+                enthalpy = -40.0
+            return ThermoData(
+                Tdata=([300, 400, 600, 800, 1000], "K"),
+                Cpdata=([30, 30, 30, 30, 30], "J/(mol*K)"),
+                H298=(enthalpy, "kJ/mol"),
+                S298=(100, "J/(mol*K)"),
+                E0=(enthalpy, "kJ/mol"),
+                comment=(
+                    "Thermo library: primaryThermoLibrary"
+                    if is_h_atom
+                    else "Thermo group additivity estimation: pinned test"
+                ),
+            )
+
+    def make_reaction(preassigned=False):
+        from rmgpy.molecule.molecule import Bond
+
+        toluene = Molecule(smiles="Cc1ccccc1")
+        for identifier, atom in enumerate(toluene.atoms, start=1):
+            atom.id = identifier
+        hydrogen_atom = Molecule(smiles="[H]")
+        hydrogen_atom.atoms[0].id = len(toluene.atoms) + 1
+        benzyl = toluene.copy(deep=True)
+        benzylic_atom = next(
+            atom
+            for atom in benzyl.atoms
+            if atom.element.symbol == "C"
+            and not benzyl.is_atom_in_cycle(atom)
+        )
+        hydrogen = next(
+            atom for atom in benzylic_atom.edges if atom.is_hydrogen()
+        )
+        benzyl.remove_bond(benzyl.get_bond(benzylic_atom, hydrogen))
+        benzyl.remove_atom(hydrogen)
+        benzylic_atom.radical_electrons = 1
+        benzyl.update(sort_atoms=False)
+        h2_atoms = [hydrogen_atom.atoms[0].copy(), hydrogen.copy()]
+        h2_atoms[0].radical_electrons = 0
+        h2_atoms[0].charge = 0
+        h2 = Molecule(atoms=h2_atoms, multiplicity=1)
+        h2.add_bond(Bond(h2_atoms[0], h2_atoms[1], order=1))
+        h2.update(sort_atoms=False)
+        reaction = TemplateReaction(
+            reactants=[
+                Species(label="H", molecule=[hydrogen_atom]),
+                Species(label="toluene", molecule=[toluene]),
+            ],
+            products=[
+                Species(label="H2", molecule=[h2]),
+                Species(label="benzyl", molecule=[benzyl]),
+            ],
+            kinetics=ArrheniusBM(
+                A=(1.0e6, "m^3/(mol*s)"),
+                n=0.0,
+                w0=(500.0, "kJ/mol"),
+                E0=(20.0, "kJ/mol"),
+            ),
+            reversible=True,
+            degeneracy=1.0,
+            family="H_Abstraction",
+            template=["featured-root"],
+            is_forward=True,
+        )
+        if preassigned:
+            reaction.products[1].thermo = ThermoData(
+                Tdata=([300, 400, 600, 800, 1000], "K"),
+                Cpdata=([30, 30, 30, 30, 30], "J/(mol*K)"),
+                H298=(999.0, "kJ/mol"),
+                S298=(100, "J/(mol*K)"),
+                comment="stale call-order thermo",
+            )
+        return reaction
+
+    def compile_reaction(reaction, *, kc_first=False):
+        original_graphs = [
+            species.molecule[0].to_adjacency_list(remove_h=False)
+            for species in reaction.reactants + reaction.products
+        ]
+        kinetics_database = SimpleNamespace(
+            families={"H_Abstraction": SimpleNamespace(auto_generated=True)}
+        )
+        compiler = EventSetCompiler(
+            kinetics_database,
+            [SiteProxy("featured", reaction.reactants)],
+            ["H_Abstraction"],
+            thermo_database=ThermoDatabase(),
+            rmg_database_sha="test-only-database-commit",
+            reaction_cache={"featured": [reaction]},
+        )
+        if kc_first:
+            compiler.reference_thermo_provider.evaluate(
+                copy.deepcopy(reaction), DEFAULT_T_GRID
+            )
+        artifact = compiler.compile()
+        assert original_graphs == [
+            species.molecule[0].to_adjacency_list(remove_h=False)
+            for species in reaction.reactants + reaction.products
+        ]
+        forward = next(
+            item
+            for item in artifact["records"]
+            if item["rate_source"]["kind"] == "RMG family estimate"
+        )
+        reverse_records = [
+            item
+            for item in artifact["records"]
+            if item["rate_source"]["kind"] == "reference-thermo reverse"
+        ]
+        assert reverse_records, [
+            (item["status"], item["status_reason"], item["rate_source"])
+            for item in artifact["records"]
+        ]
+        reverse = reverse_records[0]
+        return forward, reverse
+
+    clean_forward, clean_reverse = compile_reaction(make_reaction())
+    kc_first_forward, kc_first_reverse = compile_reaction(
+        make_reaction(), kc_first=True
+    )
+    stale_forward, stale_reverse = compile_reaction(make_reaction(preassigned=True))
+    assert kc_first_forward["k_table"] == clean_forward["k_table"]
+    assert kc_first_reverse["k_table"] == clean_reverse["k_table"]
+    assert stale_forward["k_table"] == clean_forward["k_table"]
+    assert stale_reverse["k_table"] == clean_reverse["k_table"]
+    assert clean_forward["k_table"]["T"] == list(DEFAULT_T_GRID)
+
+    conversion = clean_forward["rate_source"]["kinetics_conversion"]
+    thermo = clean_forward["thermo_provenance"]
+    assert conversion["reaction_enthalpy_J_per_mol"] == pytest.approx(
+        thermo["reaction_enthalpy_298_J_per_mol"]
+    )
+    for forward_rate, reverse_rate, equilibrium_constant in zip(
+        clean_forward["k_table"]["k"],
+        clean_reverse["k_table"]["k"],
+        thermo["equilibrium_constant_table"]["Kc"],
+    ):
+        assert forward_rate / reverse_rate == pytest.approx(
+            equilibrium_constant, rel=1e-12
+        )
+
+    old_direct = make_reaction()
+    old_database = ThermoDatabase()
+    for species in old_direct.reactants + old_direct.products:
+        species.thermo = old_database.get_thermo_data(species)
+    assert abs(
+        conversion["reaction_enthalpy_J_per_mol"]
+        - old_direct.get_enthalpy_of_reaction(298)
+    ) > 40000.0
+    assert any(
+        item["thermo_source"] == {
+            "kind": "library",
+            "library": "primaryThermoLibrary",
+        }
+        for item in conversion["species_thermo_assignments"]
+    )
+
+
+def test_compiled_real_bm_tree_node_matches_rmg_model_generation():
+    """A real family tree node must not inherit the BM dHrxn=0 default."""
+    from rmgpy.kinetics.arrhenius import ArrheniusBM
+    from rmgpy.species import Species
+
+    database_path = os.path.join(
+        settings["test_data.directory"], "testing_database"
+    )
+    database = RMGDatabase()
+    database.load_kinetics(
+        os.path.join(database_path, "kinetics"),
+        reaction_libraries=[],
+        seed_mechanisms=None,
+        kinetics_families=["Disproportionation"],
+        kinetics_depositories=["training"],
+    )
+    database.load_thermo(
+        os.path.join(database_path, "thermo"),
+        thermo_libraries=["primaryThermoLibrary"],
+        depository=True,
+    )
+    family = database.kinetics.families["Disproportionation"]
+    # Force the normal tree estimate instead of this test database's exact
+    # ethyl-disproportionation training match.
+    family.depositories = []
+    reactants = [Species(label="ethyl", smiles="C[CH2]") for _ in range(2)]
+    generated = database.kinetics.generate_reactions_from_families(
+        reactants,
+        only_families=["Disproportionation"],
+        resonance=True,
+    )
+    assert len(generated) == 1
+    reaction = generated[0]
+    kinetics, source, entry, estimated_forward = family.get_kinetics(
+        reaction,
+        template_labels=reaction.template,
+        degeneracy=reaction.degeneracy,
+        return_all_kinetics=False,
+    )
+    assert isinstance(kinetics, ArrheniusBM)
+    assert source == "rate rules"
+    assert entry.label == reaction.template[0]
+    assert estimated_forward
+
+    for species in reaction.reactants + reaction.products:
+        species.thermo = database.thermo.get_thermo_data(species)
+    reaction_enthalpy = reaction.get_enthalpy_of_reaction(298)
+    temperatures = [600.0, 800.0, 1000.0]
+    expected_kinetics = kinetics.to_arrhenius(reaction_enthalpy)
+    expected_rates = [
+        expected_kinetics.get_rate_coefficient(temperature)
+        for temperature in temperatures
+    ]
+    model_reaction = copy.deepcopy(reaction)
+    model_reaction.kinetics = copy.deepcopy(kinetics)
+    model_reaction.fix_barrier_height()
+    assert [
+        model_reaction.kinetics.get_rate_coefficient(temperature)
+        for temperature in temperatures
+    ] == pytest.approx(expected_rates, rel=1e-12)
+
+    artifact = EventSetCompiler(
+        database.kinetics,
+        [SiteProxy("real_disproportionation", reactants)],
+        ["Disproportionation"],
+        temperature_grid=temperatures,
+        thermo_database=database.thermo,
+        reaction_cache={"real_disproportionation": generated},
+    ).compile()
+    forward = next(
+        record
+        for record in artifact["records"]
+        if record["rate_source"]["kind"] == "RMG family estimate"
+    )
+    reverse = next(
+        record
+        for record in artifact["records"]
+        if record["rate_source"]["kind"] == "reference-thermo reverse"
+    )
+
+    # Re-pinned from the invalid dHrxn=0 path to the real reaction enthalpy.
+    assert forward["k_table"]["k"] == pytest.approx(
+        [7752417.767623479, 6930886.275599589, 6354101.468792986],
+        rel=1e-12,
+    )
+    assert forward["k_table"]["k"] == pytest.approx(expected_rates, rel=1e-12)
+    assert forward["k_table"]["k"] != pytest.approx(
+        [kinetics.get_rate_coefficient(t) for t in temperatures], rel=1e-3
+    )
+    conversion = forward["rate_source"]["kinetics_conversion"]
+    assert conversion["input_model"] == "ArrheniusBM"
+    assert conversion["post_conversion"] == "reaction.fix_barrier_height()"
+    assert conversion["activation_energy_J_per_mol"] == pytest.approx(0.0)
+    assert conversion["reaction_enthalpy_J_per_mol"] == pytest.approx(
+        -272269.616, abs=1e-6
+    )
+    assert reverse["rate_source"]["forward_kinetics_conversion"] == conversion
 
 
 def test_family_filter_accounts_for_every_loaded_family_and_keeps_only_firing():

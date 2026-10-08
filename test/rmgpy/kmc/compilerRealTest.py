@@ -31,6 +31,11 @@ from rmgpy.kmc.compiler import (
     short_ps_molecule_catalogue,
     validate_artifact,
 )
+from rmgpy.kmc.database_provenance import (
+    database_content_digest,
+    provenance_matches_database,
+    resolve_database_declaration,
+)
 from rmgpy.molecule.molecule import Molecule
 from rmgpy.reaction import Reaction
 from rmgpy.species import Species
@@ -46,7 +51,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = os.environ.get("RMG_DATABASE_PATH", str(REPO_ROOT.parent / "RMG-database"))
 CROSS_PROCESS_TIMEOUT_SECONDS = 8 * 60 * 60
 ARCHIVED_PACK_EXEMPTION_REASON = (
-    "owner-approved transport and cage pack rates and Kc (R-009 v12)"
+    "owner-approved transport and cage pack rates and Kc (R-009 v12); "
+    "database repin equivalence (I037_db_repin_equivalence)"
 )
 ARCHIVED_PACK_EVENT_IDS = (
     "evt_16eef4f25e21b91eaf71e9e99b1442421d71c971962030170571e48edb781e90",
@@ -56,6 +62,14 @@ ARCHIVED_PACK_EVENT_IDS = (
     "evt_a86efb350529124c22adf46d1b420f7fb22d87eb73e13cd1cc915b5688de649c",
     "evt_a88efbdc0f390f31d6c4b1fb9e50e52ebc45ca262c2009e1f317a2854a578b9f",
 )
+ARCHIVED_J_PARA_PACK_EVENT_IDS = frozenset(ARCHIVED_PACK_EVENT_IDS[:2])
+ARCHIVED_PACK_DATABASE_SHAS = frozenset(
+    {
+        "4a12d36fcdc193ede82c8d1ab5c1653495d445bc",
+        "cd86d4e1c187a132109e16cd86f624ed9fb217df",
+    }
+)
+ARCHIVED_PACK_DATABASE_SHA_NORMALIZED = "I037_db_repin_equivalence"
 PARA_PACK_KC = (
     1.045410027912e8,
     4.663224384510e6,
@@ -209,6 +223,27 @@ def _normalized_base_record(record):
     return normalized
 
 
+def _normalized_archived_pack_record(record, archived_pack_event_id=None):
+    normalized = _normalized_base_record(record)
+    operation = (normalized.get("junction_ops") or [{}])[0]
+    is_archived_j_para = (
+        archived_pack_event_id in ARCHIVED_J_PARA_PACK_EVENT_IDS
+        or (
+            normalized.get("inventory_class") == "R1:J_ring"
+            and normalized.get("family") == "R_Recombination"
+            and operation.get("junction_kind") == "J_para"
+        )
+    )
+    if not is_archived_j_para:
+        return normalized
+    assert operation.get("junction_kind") == "J_para"
+    rate_source = normalized.get("rate_source")
+    assert rate_source is not None
+    assert rate_source.get("database_sha") in ARCHIVED_PACK_DATABASE_SHAS
+    rate_source["database_sha"] = ARCHIVED_PACK_DATABASE_SHA_NORMALIZED
+    return normalized
+
+
 def _pre_change_artifact():
     path = Path(__file__).with_name("fixtures") / "i035_pre_change_artifact.zlib.b64"
     return json.loads(zlib.decompress(base64.b64decode(path.read_bytes())))
@@ -248,7 +283,8 @@ def _assert_base_record_invariance(artifact):
 
     def normalized(records):
         return sorted(
-            canonical_json_bytes(_normalized_base_record(record)) for record in records
+            canonical_json_bytes(_normalized_archived_pack_record(record))
+            for record in records
         )
 
     assert normalized(actual) == normalized(baseline_records)
@@ -391,14 +427,16 @@ def compilation(rmg_database):
     send_oracle.close()
     deadline = time.monotonic() + CROSS_PROCESS_TIMEOUT_SECONDS
     fixture_script = Path(__file__).with_name("compile_event_set_fixture.py")
+    database_digest, _ = database_content_digest(DB_PATH)
     cache_key = "-".join(
         [
             subprocess.check_output(
-                ["git", "-C", str(path), "rev-parse", "HEAD"], text=True
-            ).strip()
-            for path in (REPO_ROOT, DB_PATH)
+                ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"], text=True
+            ).strip(),
+            resolve_database_declaration() or "none",
+            database_digest,
+            compiler_source_hash(),
         ]
-        + [compiler_source_hash()]
     )
     cache_root = (
         Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(REPO_ROOT / ".kmc-cache")))
@@ -851,17 +889,21 @@ def _pack_exemptions(artifact):
         record["event_id"]: record for record in _pre_change_artifact()["records"]
     }
     permitted = {
-        canonical_json_bytes(_normalized_base_record(baseline[event_id])): event_id
+        canonical_json_bytes(
+            _normalized_archived_pack_record(baseline[event_id], event_id)
+        ): event_id
         for event_id in ARCHIVED_PACK_EVENT_IDS
     }
     exemptions = {}
     for record in artifact["records"]:
-        content = canonical_json_bytes(_normalized_base_record(record))
-        if content in permitted:
+        content = canonical_json_bytes(_normalized_archived_pack_record(record))
+        matches = [event_id for key, event_id in permitted.items() if key == content]
+        if matches:
+            assert len(matches) == 1
             assert record["event_id"] not in exemptions
             exemptions[record["event_id"]] = {
                 "reason": ARCHIVED_PACK_EXEMPTION_REASON,
-                "pack_event_id": permitted[content],
+                "pack_event_id": matches[0],
             }
     assert len(exemptions) == len(ARCHIVED_PACK_EVENT_IDS)
     assert {entry["pack_event_id"] for entry in exemptions.values()} == set(
@@ -876,8 +918,10 @@ def _assert_pack_exemption(record, exemption):
     }
     assert exemption["reason"] == ARCHIVED_PACK_EXEMPTION_REASON
     assert exemption["pack_event_id"] in ARCHIVED_PACK_EVENT_IDS
-    assert _normalized_base_record(record) == _normalized_base_record(
-        baseline[exemption["pack_event_id"]]
+    assert _normalized_archived_pack_record(
+        record, exemption["pack_event_id"]
+    ) == _normalized_archived_pack_record(
+        baseline[exemption["pack_event_id"]], exemption["pack_event_id"]
     )
 
 
@@ -938,9 +982,10 @@ def test_all_pairs_have_exact_graphs_maps_degeneracies_and_detailed_balance(
         partner = reverse if forward is record else record
         assert partner["rate_source"]["kind"] == "reference-thermo reverse"
         assert forward["thermo_provenance"]["reference_thermo"] == "RMG gas-phase Kc"
-        assert (
-            forward["thermo_provenance"]["rmg_database_sha"]
-            == "cd86d4e1c187a132109e16cd86f624ed9fb217df"
+        assert provenance_matches_database(
+            forward["thermo_provenance"],
+            DB_PATH,
+            resolve_database_declaration(),
         )
         reaction = Reaction(
             reactants=[

@@ -108,6 +108,7 @@ def test_tree_invariance_allows_added_channels_and_corrected_site_labels():
         for family in probe.TREE_FAMILIES
     ]}
     new = copy.deepcopy(old)
+    new["provenance"] = {"rmg_database_sha": "pinned"}
     for record in new["records"]:
         record["site_type"] = "benzylic_context"
         record["participant_site_types"] = ["interior_radical"]
@@ -116,6 +117,42 @@ def test_tree_invariance_allows_added_channels_and_corrected_site_labels():
     assert probe.verify_tree_invariance(old, new) == {family: 1 for family in probe.TREE_FAMILIES}
     new["records"][0]["k_table"]["k"] = [3]
     with pytest.raises(AssertionError):
+        probe.verify_tree_invariance(old, new)
+
+
+def test_tree_invariance_rejects_rate_and_non_provenance_source_mutations():
+    probe = load_probe()
+    old = {"records": [
+        {"family": family, "k_table": {"T": [600.0], "k": [1.0]},
+         "rate_source": {"kind": "RMG family estimate",
+                          "reference_thermo": {"rmg_database_sha": "pinned"}}}
+        for family in probe.TREE_FAMILIES
+    ]}
+    new = copy.deepcopy(old)
+    new["provenance"] = {"rmg_database_sha": "pinned"}
+
+    new["records"][0]["k_table"]["k"][0] *= 1.0 + 1.0e-9
+    with pytest.raises(AssertionError):
+        probe.verify_tree_invariance(old, new)
+
+    new = copy.deepcopy(old)
+    new["provenance"] = {"rmg_database_sha": "pinned"}
+    new["records"][0]["rate_source"]["kind"] = "mutated"
+    with pytest.raises(AssertionError):
+        probe.verify_tree_invariance(old, new)
+
+
+def test_tree_invariance_requires_database_provenance_pin():
+    probe = load_probe()
+    old = {"records": [
+        {"family": family, "k_table": {"T": [600.0], "k": [1.0]},
+         "rate_source": {"kind": "RMG family estimate"}}
+        for family in probe.TREE_FAMILIES
+    ]}
+    new = copy.deepcopy(old)
+    new["provenance"] = {}
+
+    with pytest.raises(AssertionError, match="provenance.rmg_database_sha"):
         probe.verify_tree_invariance(old, new)
 
 
@@ -143,8 +180,28 @@ def test_compiled_representative_selects_training_derived_rules(cached_artifacts
     assert source["template"] == record["template"]
 
 
-def test_tree_family_rate_tables_and_sources_are_bit_identical(cached_artifacts):
+def test_tree_family_structures_and_source_nodes_survive_rate_correction(
+    cached_artifacts,
+):
     probe, old, new = cached_artifacts
-    assert probe.verify_tree_invariance(old, new) == {
-        "Disproportionation": 12680, "R_Recombination": 594,
-    }
+    before, after = probe.index(old), probe.index(new)
+    counts = {}
+    for family in probe.TREE_FAMILIES:
+        old_keys = {
+            key for key, record in before.items() if record["family"] == family
+        }
+        new_keys = {
+            key for key, record in after.items() if record["family"] == family
+        }
+        assert old_keys <= new_keys, (family, "missing baseline channels")
+        for key in old_keys:
+            old_source = before[key]["rate_source"]
+            new_source = after[key]["rate_source"]
+            for field in ("kind", "source", "entry", "rank"):
+                assert old_source.get(field) == new_source.get(field), (family, field)
+        counts[family] = len(old_keys)
+
+    # I-070: the former bit-identical k_table pin preserved the erroneous
+    # ArrheniusBM dHrxn=0 evaluation. Rates and conversion provenance must now
+    # change, while chemical rewrites and selected source nodes remain exact.
+    assert counts == {"Disproportionation": 12680, "R_Recombination": 594}

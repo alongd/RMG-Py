@@ -10,6 +10,10 @@ from pathlib import Path
 from rmgpy.molecule.molecule import Molecule
 from rmgpy.molecule.resonance import generate_aromatic_resonance_structure
 from rmgpy.species import Species
+from rmgpy.kmc.database_provenance import (
+    database_content_digest,
+    resolve_database_declaration,
+)
 
 
 CANDIDATE_FAMILIES = (
@@ -72,9 +76,9 @@ def oracle_cache_key(repository, database, radius):
     commits = [subprocess.check_output(
         ["git", "-C", str(repository), "rev-parse", "HEAD"], text=True
     ).strip()]
-    commits.append(os.environ.get("RMG_DATABASE_SHA") or subprocess.check_output(
-        ["git", "-C", str(database), "rev-parse", "HEAD"], text=True
-    ).strip())
+    declaration = resolve_database_declaration()
+    digest, _ = database_content_digest(database)
+    commits.extend((declaration or "none", digest))
     files = [
         Path(__file__),
         Path(repository) / "rmgpy/kmc/compiler.py",

@@ -12,6 +12,7 @@ from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.kinetics.arrhenius import Arrhenius
 from rmgpy.kmc import compiler
 from rmgpy.kmc.kinetics_library import load_plpsec_entry, matches_head_to_tail, plpsec_rate_table
+from rmgpy.kmc.reference_thermo import ReferenceThermoResult
 from rmgpy.molecule.molecule import Bond, Molecule
 from rmgpy.species import Species
 from benzylicEndTest import SmallReferenceThermo, mapped_addition, small_inventory
@@ -163,8 +164,24 @@ def test_estimated_reverse_direction_is_normalized_to_propagation():
     class ReferenceThermo:
         provenance = {"reference_thermo": "mock reciprocal Kc"}
 
-        def equilibrium_constants(self, reaction, temperatures):
-            return [0.25 if len(reaction.reactants) == 1 else 4.0] * len(temperatures)
+        def evaluate(self, reaction, temperatures):
+            assignments = tuple(
+                {
+                    "role": role,
+                    "index": index,
+                    "source_label": f"source_{role}_{index}",
+                }
+                for role, species_list in (
+                    ("reactant", reaction.reactants),
+                    ("product", reaction.products),
+                )
+                for index, _ in enumerate(species_list)
+            )
+            return ReferenceThermoResult(
+                tuple([0.25] * len(temperatures)),
+                12345.0,
+                assignments,
+            )
 
     database = SimpleNamespace(families={"R_Addition_MultipleBond": ReverseEstimatingFamily()})
     instance = _instance(database=database)
@@ -175,7 +192,17 @@ def test_estimated_reverse_direction_is_normalized_to_propagation():
     assert initiating is forward
     assert forward.k_table == plpsec_rate_table(GRID)
     assert reverse.rate_units == "s^-1"
-    assert forward.thermo_provenance["equilibrium_constant_table"]["Kc"] == [4.0] * 3
+    thermo = forward.thermo_provenance
+    assert thermo["equilibrium_constant_table"]["Kc"] == [4.0] * 3
+    assert thermo["reaction_enthalpy_298_J_per_mol"] == -12345.0
+    assert [
+        (assignment["role"], assignment["source_label"])
+        for assignment in thermo["species_thermo_assignments"]
+    ] == [
+        ("product", "source_reactant_0"),
+        ("reactant", "source_product_0"),
+        ("reactant", "source_product_1"),
+    ]
     displaced = forward.rate_source["replaced_rmg_estimate"]
     assert displaced["source"]["family_template_direction"] == "reverse"
     assert displaced["units"] == "s^-1"
@@ -264,7 +291,7 @@ def test_postcompile_census_and_rate_check_accept_small_inventory():
     assert assert_compiled_plpsec_library(artifact) == 2
     assert compiler.compiler_source_hash() == hashlib.sha256(b"".join(
         (Path(compiler.__file__).parent / name).read_bytes()
-        for name in ("compiler.py", "reference_thermo.py", "event_record.py", "atom_map.py", "kinetics_library.py")
+        for name in ("compiler.py", "reference_thermo.py", "event_record.py", "atom_map.py", "kinetics_library.py", "database_provenance.py")
     )).hexdigest()
 
 

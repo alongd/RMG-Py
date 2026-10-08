@@ -13,6 +13,8 @@ import sys
 import tarfile
 import tempfile
 
+from rmgpy.kmc.database_provenance import database_content_digest
+
 SCHEMA = 1
 ARTIFACT_ENV_EXCLUSIONS = frozenset({
     "RMG_KMC_CACHE_ROOT",
@@ -37,14 +39,10 @@ def tree_identity(repository: Path) -> str:
 
 
 def database_identity(database: Path) -> str:
-    entries = []
-    for path in sorted((database / "input").rglob("*")):
-        if path.is_file():
-            entries.append((
-                path.relative_to(database).as_posix(),
-                hashlib.sha256(path.read_bytes()).hexdigest(),
-            ))
-    return "sha256:" + hashlib.sha256(json.dumps(entries, sort_keys=True).encode()).hexdigest()
+    digest, _ = database_content_digest(database)
+    if digest is None:
+        raise ValueError(f"database content digest unavailable: {database}")
+    return digest
 
 
 def identity(repository: Path, database: Path) -> dict:
@@ -53,6 +51,7 @@ def identity(repository: Path, database: Path) -> dict:
         "schema": SCHEMA,
         "rmgpy_tree_sha256": tree_identity(repository),
         "database": database_identity(database),
+        "rmg_database_content_sha256": database_identity(database),
         "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         "rdkit": getattr(rdkit, "__version__", "unknown"),
         "pythonhashseed": os.environ.get("PYTHONHASHSEED", "default"),

@@ -16,7 +16,6 @@ from portable_cache import (
     atomic_write,
     artifact_cache_key,
     compile_environment_options,
-    database_identity,
     identity,
     identity_name,
     migrate,
@@ -29,6 +28,10 @@ from rmgpy.kmc.compiler import (
     PS_PROXY_UNITS,
     prepare_rate_rules,
     ps_proxy_set,
+)
+from rmgpy.kmc.database_provenance import (
+    database_content_digest,
+    resolve_database_declaration,
 )
 
 
@@ -93,15 +96,8 @@ def main() -> None:
     )
     print("preparing non-auto-generated rate rules from training", flush=True)
     prepare_rate_rules(database.kinetics, database.thermo, verbose=True)
-    if args.database_sha:
-        database_commit = args.database_sha
-    else:
-        try:
-            database_commit = subprocess.check_output(
-                ["git", "-C", str(database_path), "rev-parse", "HEAD"], text=True
-            ).strip()
-        except subprocess.CalledProcessError:
-            database_commit = database_identity(database_path)
+    database_commit = resolve_database_declaration(args.database_sha)
+    database_content_sha, _ = database_content_digest(database_path)
     cache_root = Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(Path.cwd() / ".kmc-cache")))
     cache_identity = identity(Path.cwd(), database_path)
     portable_root = cache_root / "portable" / identity_name(cache_identity)
@@ -111,6 +107,7 @@ def main() -> None:
     generated_cache.mkdir(parents=True, exist_ok=True)
     compile_options = {
         "database_sha": database_commit,
+        "database_content_sha256": database_content_sha,
         "family_universe": family_universe,
         "temperature_grid": list(__import__("rmgpy.kmc.compiler", fromlist=["DEFAULT_T_GRID"]).DEFAULT_T_GRID),
         "environment": compile_environment_options(),

@@ -64,7 +64,7 @@ def test_cache_reuse_checks_uncommitted_generator_changes(monkeypatch):
     assert not generator_code_unchanged("repository", "origin", "current")
 
 
-def test_oracle_cache_supports_the_explicit_materialized_database_pin(monkeypatch):
+def test_oracle_cache_supports_the_explicit_materialized_database_pin(monkeypatch, tmp_path):
     import completeness_oracle as oracle
     monkeypatch.setenv("RMG_DATABASE_SHA", "materialized-pin")
     calls = []
@@ -73,6 +73,11 @@ def test_oracle_cache_supports_the_explicit_materialized_database_pin(monkeypatc
         return "repository-head\n"
     monkeypatch.setattr(oracle.subprocess, "check_output", repository_head)
     repository = Path(__file__).resolve().parents[3]
-    key = oracle.oracle_cache_key(repository, "/not-a-git-checkout", 1)
+    database = tmp_path / "database"
+    (database / "input/kinetics").mkdir(parents=True)
+    (database / "input/thermo").mkdir(parents=True)
+    (database / "input/kinetics/rules.py").write_text("rules = 1\n")
+    (database / "input/thermo/library.py").write_text("library = 1\n")
+    key = oracle.oracle_cache_key(repository, database, 1)
     assert key.startswith("repository-head-materialized-pin-")
     assert len(calls) == 1 and calls[0][2] == str(repository)
