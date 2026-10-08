@@ -81,6 +81,7 @@ LINK_PLACEHOLDER = "evt_" + "0" * 64
 PERSISTENT_CARBENE_POLICY_VERSION = "persistent-carbene-applicability/2"
 APPLICABILITY_GENERATION_CACHE_LIMIT = 4
 KEKULE_DRAWING_LIMIT = 64
+KEKULE_MATCHING_SEARCH_NODE_LIMIT = 100_000
 PROXY_PADDING_DISTANCE = None
 PROXY_PADDING_TOLERANCE_LOG10 = 0.01
 PROXY_PADDING_MAX_HEAVY_ATOMS = 512
@@ -134,6 +135,15 @@ class KekuleEnumerationLimitError(ValueError):
         self.evidence = evidence
         bound = evidence["kekule_enumeration"]["bound"]
         super().__init__(f"Kekulé enumeration exceeds bound {bound}")
+
+
+class KekuleMatchingSearchLimitError(ValueError):
+    """Raised when perfect-matching backtracking exceeds its node budget."""
+
+    def __init__(self, evidence):
+        self.evidence = evidence
+        bound = evidence["kekule_enumeration"]["search_node_bound"]
+        super().__init__(f"Kekulé matching search exceeds node bound {bound}")
 
 
 def _thermo_assignment_identities(assignments):
@@ -567,6 +577,8 @@ def _new_kekule_evidence() -> dict[str, dict[str, int]]:
     return {
         "kekule_enumeration": {
             "bound": KEKULE_DRAWING_LIMIT,
+            "search_node_bound": KEKULE_MATCHING_SEARCH_NODE_LIMIT,
+            "search_nodes": 0,
             "candidate_drawings": 0,
             "accepted_drawings": 0,
             "atomtype_rejections": 0,
@@ -581,7 +593,7 @@ def _update_kekule_atomtypes(drawing) -> None:
 
 
 def _radical_aromatic_kekule_forms(
-    molecule, evidence, drawing_limit=None
+    molecule, evidence, drawing_limit=None, search_node_limit=None
 ) -> list[Any]:
     """Return every Kekule drawing of the radical-bearing aromatic rings.
 
@@ -623,8 +635,20 @@ def _radical_aromatic_kekule_forms(
     if not components:
         return []
 
+    summary = evidence["kekule_enumeration"]
+    search_start = summary["search_nodes"]
+    node_limit = (
+        KEKULE_MATCHING_SEARCH_NODE_LIMIT
+        if search_node_limit is None
+        else search_node_limit
+    )
+    summary["search_node_bound"] = KEKULE_MATCHING_SEARCH_NODE_LIMIT
+
     def perfect_matchings(component):
         def extend(remaining, chosen):
+            summary["search_nodes"] += 1
+            if summary["search_nodes"] - search_start > node_limit:
+                raise KekuleMatchingSearchLimitError(evidence)
             if not remaining:
                 yield chosen
                 return
@@ -639,7 +663,6 @@ def _radical_aromatic_kekule_forms(
         yield from extend(component, frozenset())
 
     limit = KEKULE_DRAWING_LIMIT if drawing_limit is None else drawing_limit
-    summary = evidence["kekule_enumeration"]
     summary["bound"] = KEKULE_DRAWING_LIMIT
     candidate_count = 1
     component_assignments = []
@@ -701,6 +724,7 @@ def _stored_resonance_forms(reactants) -> tuple[list[list[Any]], dict[str, Any]]
         molecule_candidate_start = evidence["kekule_enumeration"][
             "candidate_drawings"
         ]
+        molecule_search_start = evidence["kekule_enumeration"]["search_nodes"]
         stored = molecule.copy(deep=True)
         group = [stored]
         states = [_identity_state(stored)]
@@ -723,10 +747,17 @@ def _stored_resonance_forms(reactants) -> tuple[list[list[Any]], dict[str, Any]]
                 evidence["kekule_enumeration"]["candidate_drawings"]
                 - molecule_candidate_start
             )
+            molecule_search_nodes = (
+                evidence["kekule_enumeration"]["search_nodes"]
+                - molecule_search_start
+            )
             for drawing in _radical_aromatic_kekule_forms(
                 form,
                 evidence,
                 drawing_limit=KEKULE_DRAWING_LIMIT - molecule_candidates,
+                search_node_limit=(
+                    KEKULE_MATCHING_SEARCH_NODE_LIMIT - molecule_search_nodes
+                ),
             ):
                 state = _identity_state(drawing)
                 if state not in states:
@@ -855,7 +886,7 @@ def _verified_attributions(
     """
     try:
         forms, evidence = _stored_resonance_forms(reactants)
-    except KekuleEnumerationLimitError as error:
+    except (KekuleEnumerationLimitError, KekuleMatchingSearchLimitError) as error:
         return set(), str(error), error.evidence
     forms, generated, error = _generated_forward_transitions(
         family,

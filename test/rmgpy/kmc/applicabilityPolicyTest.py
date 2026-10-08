@@ -1064,6 +1064,13 @@ def test_synthetic_duplicated_reciprocal_pair_is_detected():
 # --- I-088: verified stored-transition attribution -------------------------
 
 _CENSUS = json.loads((FIXTURES / "i088_carbene_census_records.json").read_text())
+_I078_REFUSED = json.loads(
+    Path("/home/alon/runs/i078/refused_candidates.json").read_text()
+)
+_I078_ARYL_H_ABSTRACTION_IDS = {
+    "evt_d9c6ba38f51dc90885e6832da9be04572898bec9fea9da4e514826dc0cab4f2d",
+    "evt_ad79656ff350380b2179c3401cd6bd0ad0b00b55b9c44d8446efc0634f9da67d",
+}
 
 
 def _pairs(records):
@@ -1209,6 +1216,52 @@ def _kekule_pair_attributions(database):
     )
 
 
+def _i078_aryl_h_abstraction_pair():
+    """Return the named refused pair with a passive aryl-radical witness.
+
+    The named pair and every other I-078 refused candidate have no radical
+    aromatic component, so none can exercise Kekule exhaustion directly.
+    The unchanged spectator is the closest real fixture: it leaves the stored
+    H-abstraction rewrite and unsupported contributor domain untouched while
+    making the production attribution path enumerate aromatic drawings.
+    """
+    records = {
+        record["event_id"]: copy.deepcopy(record)
+        for record in _I078_REFUSED
+        if record["event_id"] in _I078_ARYL_H_ABSTRACTION_IDS
+    }
+    assert set(records) == _I078_ARYL_H_ABSTRACTION_IDS
+    forward = next(
+        record
+        for record in records.values()
+        if record["rate_source"]["kind"] == "RMG family estimate"
+    )
+    reverse = records[forward["reverse_of"]]
+    assert forward["template"] == "C_rad_H;C_rad/H/CbCs"
+    for record in (forward, reverse):
+        reactant_heavy = sum(
+            1
+            for graph in record["reactant_graphs"]
+            for atom in Molecule().from_adjacency_list(graph).atoms
+            if atom.element.number != 1
+        )
+        product_heavy = sum(
+            1
+            for graph in record["product_graphs"]
+            for atom in Molecule().from_adjacency_list(graph).atoms
+            if atom.element.number != 1
+        )
+        record["reactant_graphs"].append(_NAPHTHYL_RADICAL)
+        record["product_graphs"].append(_NAPHTHYL_RADICAL)
+        record["atom_map"].update(
+            {
+                str(reactant_heavy + offset): product_heavy + offset
+                for offset in range(10)
+            }
+        )
+    return forward, reverse
+
+
 def test_aryl_radical_kekule_drawing_verifies_the_stored_template(census_database):
     # RMG fired this pair in reverse and chose Ext-4C-R on the recipe-built
     # Kekule drawing of the aryl radical; Ext-4C-R needs a single bond where
@@ -1221,6 +1274,48 @@ def test_aryl_radical_kekule_drawing_verifies_the_stored_template(census_databas
         ((25, "*1"), (66, "*4"), (78, "*3"), (93, "*2")),
         ((25, "*1"), (66, "*4"), (79, "*3"), (93, "*2")),
     ]
+
+
+@pytest.mark.parametrize(
+    ("limit_name", "failure_reason"),
+    [
+        ("KEKULE_DRAWING_LIMIT", "Kekulé enumeration exceeds bound 0"),
+        (
+            "KEKULE_MATCHING_SEARCH_NODE_LIMIT",
+            "Kekulé matching search exceeds node bound 0",
+        ),
+    ],
+)
+def test_kekule_exhaustion_refuses_named_unsupported_pair_both_directions(
+    census_database, monkeypatch, limit_name, failure_reason
+):
+    from rmgpy.kinetics import Arrhenius
+
+    forward, reverse = _i078_aryl_h_abstraction_pair()
+    family = census_database.kinetics.families["H_Abstraction"]
+    estimate = _reaction_from_record(forward)
+    estimate.kinetics = Arrhenius(
+        A=(1.0, "s^-1"),
+        n=0.0,
+        Ea=(0.0, "J/mol"),
+        T0=(1.0, "K"),
+        comment=forward["rate_source"]["comment"],
+    )
+    domain = compiler_module._training_source_domain(family, estimate, {})
+    assert domain
+    monkeypatch.setattr(compiler_module, limit_name, 0)
+
+    for pair in ((forward, reverse), (reverse, forward)):
+        roots = _mapped_reaction_u2_roots(
+            family, _reaction_from_record(pair[0]), pair[0]
+        )
+        assert len(roots) == 1
+        assert roots[0]["mapping_verified"] is False
+        assert roots[0]["mapping_error"] == failure_reason
+        published, refusal = apply_persistent_carbene_policy(pair, roots[0], domain)
+        assert published == []
+        assert refusal["disposition"] == "refused-unsupported-transfer"
+        assert refusal["record_ids"] == [record["event_id"] for record in pair]
 
 
 def test_verifying_aryl_radical_kekule_drawing_is_not_first(monkeypatch):
@@ -1332,6 +1427,8 @@ def test_fused_naphthyl_radical_has_three_bounded_kekule_drawings(monkeypatch):
     assert len(drawings) == 3
     assert evidence["kekule_enumeration"] == {
         "bound": compiler_module.KEKULE_DRAWING_LIMIT,
+        "search_node_bound": compiler_module.KEKULE_MATCHING_SEARCH_NODE_LIMIT,
+        "search_nodes": 28,
         "candidate_drawings": 3,
         "accepted_drawings": 3,
         "atomtype_rejections": 0,
@@ -1433,6 +1530,32 @@ def test_component_without_matching_keeps_other_component_drawings():
     assert evidence["kekule_enumeration"]["no_matching_components"] == 1
 
 
+def test_no_matching_component_obeys_search_node_budget(monkeypatch):
+    molecule = Molecule().from_adjacency_list(
+        """multiplicity 2
+1 C u1 p0 c0 {2,B} {5,B}
+2 C u0 p0 c0 {1,B} {3,B} {6,S}
+3 C u0 p0 c0 {2,B} {4,B} {7,S}
+4 C u0 p0 c0 {3,B} {5,B} {8,S}
+5 C u0 p0 c0 {1,B} {4,B} {9,S}
+6 H u0 p0 c0 {2,S}
+7 H u0 p0 c0 {3,S}
+8 H u0 p0 c0 {4,S}
+9 H u0 p0 c0 {5,S}
+"""
+    )
+    monkeypatch.setattr(compiler_module, "KEKULE_MATCHING_SEARCH_NODE_LIMIT", 3)
+    evidence = _kekule_evidence()
+    with pytest.raises(
+        compiler_module.KekuleMatchingSearchLimitError,
+        match="Kekulé matching search exceeds node bound 3",
+    ):
+        compiler_module._radical_aromatic_kekule_forms(molecule, evidence)
+    assert evidence["kekule_enumeration"]["search_node_bound"] == 3
+    assert evidence["kekule_enumeration"]["search_nodes"] == 4
+    assert evidence["kekule_enumeration"]["candidate_drawings"] == 0
+
+
 def test_matching_template_string_with_atoms_selecting_another_node_is_rejected(
     census_database, monkeypatch
 ):
@@ -1441,7 +1564,7 @@ def test_matching_template_string_with_atoms_selecting_another_node_is_rejected(
     monkeypatch.setattr(
         compiler_module,
         "_radical_aromatic_kekule_forms",
-        lambda molecule, evidence, drawing_limit=None: [],
+        lambda molecule, evidence, drawing_limit=None, search_node_limit=None: [],
     )
     generate = compiler_module._generated_forward_transitions
 
