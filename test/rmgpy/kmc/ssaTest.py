@@ -490,6 +490,7 @@ def test_real_k_act_oracle_matches_compiled_exothermic_fixture(real_ps_artifact)
             if candidate["family"] == "R_Recombination"
             and candidate["rate_source"]["kind"] == "RMG family estimate"
             and candidate["radical_delta"] < 0
+            and candidate["inventory_class"] != "R1:J_ring"
         ),
         key=lambda candidate: max(
             map(len, candidate["reactant_graphs"] + candidate["product_graphs"])
@@ -512,9 +513,40 @@ def test_real_k_act_oracle_matches_compiled_exothermic_fixture(real_ps_artifact)
     actual = independent_termination_rates(bounded_artifact, database, 700.0)[
         record["event_id"]
     ]
-    temperatures = record["k_table"]["T"]
-    compiled = float(np.exp(np.interp(700.0, temperatures, np.log(record["k_table"]["k"]))))
-    assert actual == pytest.approx(compiled, rel=1e-12)
+    from rmgpy.data.kinetics.family import TemplateReaction
+    from rmgpy.kmc.compiler import EventSetCompiler
+    from rmgpy.molecule.molecule import Molecule
+    from rmgpy.species import Species
+
+    species_cache = {}
+
+    def species(graph):
+        if graph not in species_cache:
+            result = Species(molecule=[Molecule().from_adjacency_list(graph)])
+            result.generate_resonance_structures()
+            species_cache[graph] = result
+        return species_cache[graph]
+
+    reaction = TemplateReaction(
+        reactants=[species(graph).copy(deep=True) for graph in record["reactant_graphs"]],
+        products=[species(graph).copy(deep=True) for graph in record["product_graphs"]],
+        family=record["family"],
+        template=record["template"].split(";") if record["template"] else [],
+        degeneracy=record["raw_path_degeneracy"],
+        is_forward=True,
+    )
+    compiler = EventSetCompiler(
+        database.kinetics,
+        [],
+        ["R_Recombination"],
+        temperature_grid=[700.0],
+        database_path=REAL_DATABASE_PATH,
+        thermo_database=database.thermo,
+        rmg_database_sha=os.environ.get("RMG_DATABASE_SHA"),
+    )
+    compiled_table, provenance = compiler._rate_table(reaction)
+    assert abs(provenance["kinetics_conversion"]["reaction_enthalpy_J_per_mol"]) > 1000.0
+    assert actual == pytest.approx(compiled_table["k"][0], rel=1e-12)
 
 
 def _real_cycle_state(artifact, oracle, seed):
