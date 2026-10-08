@@ -118,6 +118,28 @@ def _thermo_assignment_identities(assignments):
     )
 
 
+def _validate_thermo_assignment_consistency(records):
+    """Reject records whose published kinetics and Kc use different thermo."""
+    for record in records:
+        conversion = (record.get("rate_source") or {}).get("kinetics_conversion")
+        if conversion is None:
+            conversion = (record.get("rate_source") or {}).get(
+                "forward_kinetics_conversion"
+            )
+        reference_assignments = (record.get("thermo_provenance") or {}).get(
+            "species_thermo_assignments"
+        )
+        if conversion is None or reference_assignments is None:
+            continue
+        barrier_assignments = conversion.get("species_thermo_assignments")
+        if _thermo_assignment_identities(barrier_assignments) != _thermo_assignment_identities(
+            reference_assignments
+        ):
+            raise ValueError(
+                "published kinetics conversion and Kc use different thermo assignments"
+            )
+
+
 def canonical_json_bytes(value: Any) -> bytes:
     """Return the one canonical representation used for artifact identity."""
     return json.dumps(
@@ -1727,6 +1749,7 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
             raise ValueError("record canonical_index does not match canonical ordering")
         if record.provenance != provenance:
             raise ValueError("record provenance does not match artifact provenance")
+    _validate_thermo_assignment_consistency(records)
     for record in records:
         partner = record.get("reverse_of")
         if partner is not None and (
@@ -1734,22 +1757,6 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
             or by_id[partner].get("reverse_of") != record["event_id"]
         ):
             raise ValueError("reverse_of links must be reciprocal")
-        conversion = (record.get("rate_source") or {}).get("kinetics_conversion")
-        if conversion is None:
-            conversion = (record.get("rate_source") or {}).get(
-                "forward_kinetics_conversion"
-            )
-        reference_assignments = (record.get("thermo_provenance") or {}).get(
-            "species_thermo_assignments"
-        )
-        if conversion is not None and reference_assignments is not None:
-            barrier_assignments = conversion.get("species_thermo_assignments")
-            if _thermo_assignment_identities(barrier_assignments) != _thermo_assignment_identities(
-                reference_assignments
-            ):
-                raise ValueError(
-                    "published kinetics conversion and Kc use different thermo assignments"
-                )
         if record.get("inventory_class") == "R1:J_ring":
             if partner is None or partner not in by_id:
                 raise ValueError("R1 J_ring reverse-event handle does not resolve")

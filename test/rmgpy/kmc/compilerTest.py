@@ -31,6 +31,7 @@ from rmgpy.kmc.compiler import (
     compiler_source_hash,
     ps_proxy_set,
     short_ps_molecule_catalogue,
+    _validate_thermo_assignment_consistency,
     validate_artifact,
 )
 
@@ -343,6 +344,20 @@ def test_compiled_enthalpy_dependent_tree_rate_uses_reaction_enthalpy(
         ),
     }
     assert len(conversion["species_thermo_assignments"]) == 2
+    split_thermo = copy.deepcopy(artifact)
+    split_record = next(
+        record
+        for record in split_thermo["records"]
+        if record["rate_source"]["kind"] == "RMG family estimate"
+    )
+    split_record["rate_source"]["kinetics_conversion"][
+        "species_thermo_assignments"
+    ][0]["chemical_identity_sha256"] = "deliberately-split-assignment"
+    split_record["thermo_provenance"]["species_thermo_assignments"] = copy.deepcopy(
+        conversion["species_thermo_assignments"]
+    )
+    with pytest.raises(ValueError, match="different thermo assignments"):
+        _validate_thermo_assignment_consistency(split_thermo["records"])
     reverse = next(
         record
         for record in artifact["records"]
