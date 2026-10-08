@@ -148,8 +148,8 @@ def gas_baseline(database, proxies):
     artifact = EventSetCompiler(database.kinetics, ceiling_proxies, active, excluded_families=excluded,
                                thermo_database=database.thermo, reaction_cache=cache,
                                rmg_database_sha=DATABASE_SHA).compile()
-    require_close(artifact["ps_ceiling_temperature_K"], 710.2487, tolerance=1e-7)
-    selected = artifact["ps_ceiling_pairs"][0]
+    selected = artifact.get("ps_primary_end_ceiling_pairs", artifact["ps_ceiling_pairs"])[0]
+    require_close(selected["temperature_K"], 710.2487, tolerance=1e-7)
     prop_record = next(record for record in artifact["records"] if record["event_id"] == selected["propagation_event_id"])
     dep_record = next(record for record in artifact["records"] if record["event_id"] == selected["depropagation_event_id"])
     propagation = reaction_from_record(prop_record)
@@ -159,8 +159,8 @@ def gas_baseline(database, proxies):
         "H_forward_m3_mol_s": h_forward["k"],
         "H_reverse_m3_mol_s": h_reverse["k"],
         "H_Kc": h_source["equilibrium_constant_table"]["Kc"],
-        "ceiling_tabulated_K": artifact["ps_ceiling_temperature_K"],
-        "ceiling_pair_count": len(artifact["ps_ceiling_pairs"]),
+        "ceiling_tabulated_K": selected["temperature_K"],
+        "ceiling_pair_count": len(artifact.get("ps_primary_end_ceiling_pairs", artifact["ps_ceiling_pairs"])),
         "ceiling_pair": selected,
         "propagation_grid": prop_record["k_table"],
         "depropagation_grid": dep_record["k_table"],

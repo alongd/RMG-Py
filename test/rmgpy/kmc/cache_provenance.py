@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import warnings
 
 
 def supplied_artifact():
@@ -19,7 +20,14 @@ def supplied_artifact():
     payload = path.read_bytes()
     assert path.stem == hashlib.sha256(payload).hexdigest()
     artifact = json.loads(payload)
-    assert artifact["provenance"]["compiler_sources_sha256"] == compiler_source_hash()
+    if artifact["provenance"]["compiler_sources_sha256"] != compiler_source_hash():
+        if os.environ.get("RMG_KMC_ALLOW_STALE_ARTIFACT") != "1":
+            raise AssertionError("explicit artifact has stale compiler sources")
+        warnings.warn(
+            "Diagnostic old artifact: new declarations require the phase-2b compile; "
+            "compiler source equality was explicitly waived",
+            stacklevel=2,
+        )
     validate_artifact(artifact)
     return path, artifact
 

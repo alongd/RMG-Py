@@ -452,8 +452,8 @@ def main() -> None:
             "non_ring_linked_reverse_records": sum(
                 bool(record["reverse_of"]) for record in non_ring
             ),
-            "ps_ceiling_temperature_K": artifact["ps_ceiling_temperature_K"],
-            "ps_ceiling_pair_count": len(artifact["ps_ceiling_pairs"]),
+            "ps_ceiling_temperature_K": artifact.get("ps_primary_end_ceiling_pairs", artifact["ps_ceiling_pairs"])[0]["temperature_K"],
+            "ps_ceiling_pair_count": len(artifact.get("ps_primary_end_ceiling_pairs", artifact["ps_ceiling_pairs"])),
             "no_ring_zero_radical_initiators": len(no_ring_initiators),
             "ring_zero_radical_initiators": len(ring_initiators),
         },
