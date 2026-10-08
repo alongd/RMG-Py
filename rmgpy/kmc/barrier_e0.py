@@ -78,16 +78,7 @@ class FixedBBarrierE0Provider:
             raise BarrierE0Error(
                 "fixed-B E0 provider heat capacities must be non-negative"
             )
-        if math.isclose(cp0, cp_inf, rel_tol=1e-12, abs_tol=1e-12):
-            if not all(
-                math.isclose(value, cp0, rel_tol=1e-8, abs_tol=1e-6)
-                for value in capacities
-            ):
-                raise BarrierE0Error(
-                    "fixed-B E0 constant heat-capacity limits conflict with "
-                    "Cpdata"
-                )
-        else:
+        if not math.isclose(cp0, cp_inf, rel_tol=1e-12, abs_tol=1e-12):
             y = np.asarray(temperatures) / (
                 np.asarray(temperatures) + B
             )

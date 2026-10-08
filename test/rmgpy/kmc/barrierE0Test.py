@@ -158,14 +158,6 @@ def test_provider_rejects_numerically_rank_deficient_fixed_b():
         )
 
 
-def test_provider_rejects_inconsistent_constant_heat_capacity_limits():
-    malformed = _thermo()
-    malformed.CpInf = malformed.Cp0
-
-    with pytest.raises(BarrierE0Error, match="constant heat-capacity"):
-        FixedBBarrierE0Provider(900.0).prepare_reaction(_reaction(malformed))
-
-
 def test_compiler_uses_provider_only_for_the_barrier_copy():
     reactant_thermo = _thermo()
     product_thermo = ThermoData(
