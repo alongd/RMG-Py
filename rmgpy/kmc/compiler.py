@@ -1089,7 +1089,7 @@ def _mapped_reaction_u2_roots(
         return _unverified_u2_roots(
             data, original_reactants, stored_products, failure
         )
-    return _u2_roots_from_attributions(
+    roots = _u2_roots_from_attributions(
         data,
         original_reactants,
         stored_products,
@@ -1098,6 +1098,40 @@ def _mapped_reaction_u2_roots(
             attributions, original_reactants, tracked_products
         ),
     )
+    # A persistent u2 carbon the rewrite touches must hold a recipe role; one
+    # that no verified attribution labels stays in-policy, unverified.
+    labelled = {atom_index for attribution in attributions for atom_index, _ in attribution}
+    return roots + [
+        root
+        for root in _unverified_u2_roots(
+            data,
+            original_reactants,
+            stored_products,
+            "persistent u2 centre touched by the stored rewrite carries no "
+            "verified recipe role",
+        )
+        if root["reactant_atom_index"] not in labelled
+        and _stored_u2_persistence(data, original_reactants, stored_products, root)
+    ]
+
+
+def _stored_u2_persistence(data, reactants, products, root) -> bool:
+    """Return whether a stored u2 centre keeps u2 in every resonance form."""
+    atoms = [atom for molecule in reactants for atom in molecule.atoms]
+    atom = atoms[root["reactant_atom_index"]]
+    molecule = next(item for item in reactants if atom in item.atoms)
+    if root["record_role"] == "product":
+        heavy = [item for item in atoms if item.element.number != 1]
+        product_heavy = [
+            item
+            for product in products
+            for item in product.atoms
+            if item.element.number != 1
+        ]
+        atom_map = {int(key): int(value) for key, value in data.get("atom_map", {}).items()}
+        atom = product_heavy[atom_map[heavy.index(atom)]]
+        molecule = next(item for item in products if atom in item.atoms)
+    return _persistent_labeled_u2(molecule, atom)[0]
 
 
 def _training_source_domain(

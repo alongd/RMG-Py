@@ -1445,3 +1445,29 @@ def test_unresolved_ledger_entries_carry_the_published_final_ids(monkeypatch):
         == "retained-unresolved-applicability"
         for record in published
     )
+
+
+def test_touched_persistent_u2_without_a_verified_role_stays_in_policy(monkeypatch):
+    record = _pair()[0]
+    # A verified attribution that leaves the persistent CH2 carbene (atom 0)
+    # unlabelled must not make the carbene disappear from the policy.
+    monkeypatch.setattr(
+        compiler_module,
+        "_verified_attributions",
+        lambda *args: ({((1, "*2"), (3, "*1"), (4, "*3"))}, None),
+    )
+    family = SimpleNamespace(
+        forward_recipe=SimpleNamespace(
+            actions=[["BREAK_BOND", "*1", 1, "*2"], ["FORM_BOND", "*2", 1, "*3"]]
+        )
+    )
+    roots = _mapped_reaction_u2_roots(family, _reaction_from_record(record), record)
+    assert [(root["reactant_atom_index"], root["attribution"]) for root in roots] == [
+        (0, "unverified")
+    ]
+    assert "carries no verified recipe role" in roots[0]["mapping_error"]
+    published, refusal = apply_persistent_carbene_policy(
+        _pair(), roots[0], _source(persistent=False)
+    )
+    assert published == []
+    assert refusal["disposition"] == "refused-unsupported-transfer"

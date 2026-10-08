@@ -200,8 +200,9 @@ def test_disabled_barrier_e0_provider_preserves_base_artifact_bytes(
 
     assert "barrier_e0_provider" not in artifact["provenance"]
     assert "barrier_e0_provider" not in artifact["inputs"]
+    # Moves only with PERSISTENT_CARBENE_POLICY_VERSION (v1 reproduces bab79a76...).
     assert path.stem == (
-        "bab79a76501a9dd64015caf08e16d236c1c6fb4d3ddedc5fd917dfcd17f75337"
+        "bd10d88703512ae17d66d1f543fe6cf4e3186f8f7a45398f0732dc49d33348a4"
     )
     assert hashlib.sha256(path.read_bytes()).hexdigest() == path.stem
 
