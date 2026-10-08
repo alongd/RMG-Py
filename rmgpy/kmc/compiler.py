@@ -3397,10 +3397,10 @@ class EventSetCompiler:
                 "database_sha": self.database_provenance["rmg_database_sha"],
             },
             "applicability_policy_version": PERSISTENT_CARBENE_POLICY_VERSION,
-            "barrier_e0_provider": (
-                self.barrier_e0_provider.provenance
+            **(
+                {"barrier_e0_provider": self.barrier_e0_provider.provenance}
                 if self.barrier_e0_provider is not None
-                else {"enabled": False}
+                else {}
             ),
         }
         if "R_Recombination" in self.families:
@@ -3512,10 +3512,10 @@ class EventSetCompiler:
                 "proxies": proxy_inputs,
                 "temperature_grid": list(self.temperature_grid),
                 "span_radius": self.span_radius,
-                "barrier_e0_provider": (
-                    self.barrier_e0_provider.provenance
+                **(
+                    {"barrier_e0_provider": self.barrier_e0_provider.provenance}
                     if self.barrier_e0_provider is not None
-                    else {"enabled": False}
+                    else {}
                 ),
             },
             "records": [record.to_dict() for record in records],

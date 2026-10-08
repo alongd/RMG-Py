@@ -136,10 +136,10 @@ def main() -> None:
         "proxy_units": PS_PROXY_UNITS,
         "family_candidates": list(PS_FAMILY_CANDIDATES),
         "environment": compile_environment_options(),
-        "barrier_e0_provider": (
-            barrier_e0_provider.provenance
+        **(
+            {"barrier_e0_provider": barrier_e0_provider.provenance}
             if barrier_e0_provider is not None
-            else {"enabled": False}
+            else {}
         ),
     }
     artifact_key = artifact_cache_key(Path.cwd(), database_path, compile_options)
