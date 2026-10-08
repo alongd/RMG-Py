@@ -202,7 +202,7 @@ class SmallReferenceThermo:
         return [10 ** ((midpoint - temperature) / 50) for temperature in temperatures]
 
 
-def small_inventory():
+def small_inventory(*, proxy_padding_distance=None):
     proxies = compiler.ps_proxy_set()
     cache = {proxy.site_type: [] for proxy in proxies}
     for size, site, primary in [(2, "benzylic_end_radical+styrene", False),
@@ -217,6 +217,7 @@ def small_inventory():
         None, proxies, ["R_Addition_MultipleBond"], reaction_cache=cache,
         temperature_grid=[500, 550, 600], rmgpy_sha="fast-test", rmg_database_sha="fast-test",
         reference_thermo_provider=SmallReferenceThermo(), ceiling_monomer_concentration_mol_m3=1,
+        proxy_padding_distance=proxy_padding_distance,
     ).compile()
 
 

@@ -27,7 +27,10 @@ from rmgpy.kmc.compiler import (
     _molecule,
     _ortho_junction_proxy,
     _orient_to_proxy,
+    _proxy_fingerprint,
+    _production_padded_root,
     _reflect_ortho_reaction,
+    _remap_witness_projection,
     ceiling_temperature,
     compiler_source_hash,
     ps_proxy_set,
@@ -35,6 +38,128 @@ from rmgpy.kmc.compiler import (
     _validate_thermo_assignment_consistency,
     validate_artifact,
 )
+
+
+def test_proxy_fingerprint_is_independent_of_process_global_atom_ids():
+    first = ps_proxy_set(3)[0]
+    second = copy.deepcopy(first)
+    offset = 100000
+    second = replace(
+        second,
+        artificial_boundaries=tuple(
+            replace(boundary, atom_id=boundary.atom_id + offset)
+            for boundary in second.artificial_boundaries
+        ),
+    )
+    for participant in second.reactants:
+        for molecule in participant.molecule:
+            for atom in molecule.atoms:
+                atom.id += offset
+
+    assert _proxy_fingerprint(first, include_padding=True) == _proxy_fingerprint(
+        second, include_padding=True
+    )
+
+
+def test_padding_is_off_by_default_and_requires_explicit_k():
+    instance = EventSetCompiler(None, [], [])
+    assert instance.proxy_padding_distance is None
+    assert "proxy_boundary_padding" not in instance.compile()["provenance"]
+
+
+def test_padding_summary_is_published_only_when_enabled():
+    disabled = EventSetCompiler(None, [], []).compile()
+    enabled = EventSetCompiler(None, [], [], proxy_padding_distance=3).compile()
+
+    assert "proxy_padding_summary" not in disabled
+    assert enabled["proxy_padding_summary"] == {
+        "padded": 0,
+        "not_paddable": 0,
+        "excluded": 0,
+    }
+
+
+def test_padded_root_degeneracy_is_derived_by_production_generation():
+    from rmgpy.data.kinetics.family import TemplateReaction
+    from rmgpy.molecule.molecule import Molecule
+    from rmgpy.species import Species
+
+    reactant = Species(molecule=[Molecule(smiles="[CH3]")])
+    product = Species(molecule=[Molecule(smiles="[CH3]")])
+    expected = TemplateReaction(
+        reactants=[reactant], products=[product], family="fake", degeneracy=1.0
+    )
+    derived = copy.deepcopy(expected)
+    derived.degeneracy = 7.0
+
+    class Database:
+        def generate_reactions_from_families(self, reactants, **kwargs):
+            assert kwargs["products"] and kwargs["only_families"] == ["fake"]
+            assert kwargs["resonance"] is False
+            return [derived]
+
+    matched, generated_count = _production_padded_root(Database(), expected)
+    assert generated_count == 1
+    assert matched.degeneracy == 7.0
+
+
+def test_projection_is_remapped_to_regenerated_participant_order():
+    from rmgpy.molecule.molecule import Molecule
+
+    methane = Molecule(smiles="C")
+    ethane = Molecule(smiles="CC")
+    product = Molecule(smiles="CCC")
+    expected = SimpleNamespace(
+        reactants=[methane, ethane], products=[product]
+    )
+    regenerated = SimpleNamespace(
+        reactants=[ethane.copy(deep=True), methane.copy(deep=True)],
+        products=[product.copy(deep=True)],
+    )
+    projection = {
+        "reactants": [
+            {
+                "participant_index": 0,
+                "witness_participant_index": 0,
+                "executable_atom_index": 0,
+                "witness_atom_index": 0,
+            },
+            {
+                "participant_index": 1,
+                "witness_participant_index": 1,
+                "executable_atom_index": 0,
+                "witness_atom_index": 0,
+            },
+            {
+                "participant_index": 1,
+                "witness_participant_index": 1,
+                "executable_atom_index": 1,
+                "witness_atom_index": 1,
+            },
+        ],
+        "products": [
+            {
+                "participant_index": 0,
+                "witness_participant_index": 0,
+                "executable_atom_index": index,
+                "witness_atom_index": index,
+            }
+            for index in range(3)
+        ],
+    }
+
+    remapped = _remap_witness_projection(projection, expected, regenerated)
+
+    assert {
+        item["witness_participant_index"]
+        for item in remapped["reactants"]
+        if item["participant_index"] == 0
+    } == {1}
+    assert {
+        item["witness_participant_index"]
+        for item in remapped["reactants"]
+        if item["participant_index"] == 1
+    } == {0}
 
 
 class _Element:
@@ -207,6 +332,33 @@ def test_disabled_barrier_e0_provider_preserves_base_artifact_bytes(
     assert hashlib.sha256(path.read_bytes()).hexdigest() == path.stem
 
 
+def test_default_off_artifact_identity_rejects_unpadded_field_mutant(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        compiler_module,
+        "_LOADED_COMPILER_HASH",
+        "17a155a4026a058e2c4933eb58a5cfde79af0274496e0242a4e2b5642d796ac2",
+    )
+    monkeypatch.setattr(
+        compiler_module,
+        "compiler_source_hash",
+        lambda: "48c1f8b73e311f92d4169734c92b37f7bcc984ee01e2532f0da83bbc573c833d",
+    )
+    compiler, _ = _compiler()
+    compiler.rmgpy_sha = "1e51f1f8f33b81ce66baf3c8b52b84f15ab9f974"
+    compiler.proxies = (
+        replace(compiler.proxies[0], site_type="identity-field-mutant"),
+    )
+
+    path, _ = compiler.write_artifact(tmp_path)
+
+    with pytest.raises(AssertionError):
+        assert path.stem == (
+            "bab79a76501a9dd64015caf08e16d236c1c6fb4d3ddedc5fd917dfcd17f75337"
+        )
+
+
 def test_changing_barrier_e0_provider_invalidates_in_memory_artifact():
     compiler, _ = _compiler()
     disabled = compiler.compile()
@@ -232,6 +384,7 @@ def test_compiler_source_hash_includes_barrier_e0_provider():
                 "atom_map.py",
                 "kinetics_library.py",
                 "database_provenance.py",
+                "proxy_padding.py",
                 "barrier_e0.py",
             )
         )

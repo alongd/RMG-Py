@@ -55,6 +55,9 @@ class EventRecord:
     resonance_derived: bool = False
     reactant_graphs: list[str] = field(default_factory=list)
     product_graphs: list[str] = field(default_factory=list)
+    rate_witness_reactant_graphs: list[str] = field(default_factory=list)
+    rate_witness_product_graphs: list[str] = field(default_factory=list)
+    proxy_padding: dict[str, Any] = field(default_factory=dict)
 
     # Strand-specific placeholders (null until compiler defines them)
     cut_offset: Optional[int] = None
@@ -78,6 +81,15 @@ class EventRecord:
             item.name: _canonical_link_handles(getattr(self, item.name), item.name)
             for item in fields(self)
             if item.name not in {"event_id", "canonical_index", "_KNOWN_FIELDS"}
+            and not (
+                item.name
+                in {
+                    "rate_witness_reactant_graphs",
+                    "rate_witness_product_graphs",
+                    "proxy_padding",
+                }
+                and not getattr(self, item.name)
+            )
         }
         canonical = json.dumps(
             payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
@@ -87,6 +99,13 @@ class EventRecord:
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d.pop("_KNOWN_FIELDS", None)
+        for field_name in (
+            "rate_witness_reactant_graphs",
+            "rate_witness_product_graphs",
+            "proxy_padding",
+        ):
+            if not d[field_name]:
+                d.pop(field_name)
         return d
 
     def to_json(self, indent: int = 2) -> str:
@@ -150,6 +169,9 @@ class EventRecord:
             raise ValueError("degeneracy and SSA multiplier must be positive")
         if len(self.atom_map) != len(set(self.atom_map.values())):
             raise ValueError("atom_map must be a bijection")
+        if self.proxy_padding.get("status") == "padded":
+            _validate_padding_projection(self)
+            _validate_padding_distance(self)
         if self.status != "enabled" and not self.status_reason:
             raise ValueError("non-enabled records require a status reason")
         if not _is_full_event_id(self.event_id):
@@ -159,6 +181,202 @@ class EventRecord:
         expected = self._compute_event_id()
         if self.event_id != expected:
             raise ValueError("event_id does not match canonical semantic content")
+
+
+def _validate_padding_projection(record: EventRecord) -> None:
+    """Prove every executable heavy atom has one canonical witness image."""
+    from rmgpy.molecule.molecule import Molecule
+
+    padding = record.proxy_padding
+    if "root_validation" not in padding:
+        raise ValueError("padded witness lacks production root validation")
+    projection = padding.get("executable_to_witness_projection")
+    if not isinstance(projection, dict) or set(projection) != {"reactants", "products"}:
+        raise ValueError("padded witness lacks a two-sided executable projection")
+    for side, executable_graphs, witness_graphs in (
+        ("reactants", record.reactant_graphs, record.rate_witness_reactant_graphs),
+        ("products", record.product_graphs, record.rate_witness_product_graphs),
+    ):
+        executable = [
+            Molecule().from_adjacency_list(graph) for graph in executable_graphs
+        ]
+        witness = [Molecule().from_adjacency_list(graph) for graph in witness_graphs]
+        expected = {
+            (participant_index, atom_index)
+            for participant_index, molecule in enumerate(executable)
+            for atom_index, atom in enumerate(
+                atom for atom in molecule.atoms if atom.element.number != 1
+            )
+        }
+        entries = projection[side]
+        domain = {
+            (item.get("participant_index"), item.get("executable_atom_index"))
+            for item in entries
+        }
+        if domain != expected or len(entries) != len(domain):
+            raise ValueError(
+                "padded witness projection does not cover executable atoms"
+            )
+        images = {
+            (
+                item.get("witness_participant_index", item["participant_index"]),
+                item.get("witness_atom_index"),
+            )
+            for item in entries
+        }
+        if len(images) != len(entries):
+            raise ValueError("padded witness projection is not injective")
+        for participant_index, witness_index in images:
+            if not isinstance(participant_index, int) or not (
+                0 <= participant_index < len(witness)
+            ):
+                raise ValueError("padded witness projection participant is invalid")
+            heavy_count = sum(
+                atom.element.number != 1 for atom in witness[participant_index].atoms
+            )
+            if not isinstance(witness_index, int) or not (
+                0 <= witness_index < heavy_count
+            ):
+                raise ValueError("padded witness projection image is invalid")
+        _validate_projected_structure(executable, witness, entries)
+
+
+def _validate_padding_distance(record: EventRecord) -> None:
+    """Check the declared boundary distance on both published witness sides."""
+    from rmgpy.molecule.molecule import Molecule
+
+    padding = record.proxy_padding
+    minimum = padding.get("minimum_heavy_bond_distance")
+    if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 0:
+        raise ValueError("padded witness has an invalid minimum heavy-atom distance")
+    reacting = padding.get("reacting_atoms")
+    boundaries = padding.get("artificial_boundaries")
+    if (
+        not isinstance(reacting, dict)
+        or set(reacting) != {"reactants", "products"}
+        or not isinstance(boundaries, list)
+    ):
+        raise ValueError("padded witness lacks two-sided distance references")
+    for side, graph_strings in (
+        ("reactants", record.rate_witness_reactant_graphs),
+        ("products", record.rate_witness_product_graphs),
+    ):
+        molecules = [
+            Molecule().from_adjacency_list(graph) for graph in graph_strings
+        ]
+        reacting_atoms = [
+            _resolve_padding_reference(item, molecules) for item in reacting[side]
+        ]
+        for boundary in boundaries:
+            boundary_participant, boundary_atom = _resolve_padding_reference(
+                boundary.get(side), molecules
+            )
+            for reacting_participant, reacting_atom in reacting_atoms:
+                if reacting_participant != boundary_participant:
+                    continue
+                distance = _heavy_graph_distance(reacting_atom, boundary_atom)
+                if distance < minimum:
+                    raise ValueError(
+                        "padded witness violates its minimum heavy-atom distance: "
+                        f"{side} participant {boundary_participant} has "
+                        f"distance {distance}, requires {minimum}"
+                    )
+
+
+def _resolve_padding_reference(reference, molecules):
+    if not isinstance(reference, dict):
+        raise ValueError("padded witness distance reference is invalid")
+    participant = reference.get("participant_index")
+    atom_index = reference.get("atom_index")
+    if not isinstance(participant, int) or not 0 <= participant < len(molecules):
+        raise ValueError("padded witness distance participant is invalid")
+    heavy = [
+        atom for atom in molecules[participant].atoms if atom.element.number != 1
+    ]
+    if not isinstance(atom_index, int) or not 0 <= atom_index < len(heavy):
+        raise ValueError("padded witness distance atom is invalid")
+    return participant, heavy[atom_index]
+
+
+def _heavy_graph_distance(first, second) -> int:
+    frontier = [(first, 0)]
+    seen = {first}
+    while frontier:
+        atom, distance = frontier.pop(0)
+        if atom is second:
+            return distance
+        for neighbor in atom.edges:
+            if neighbor.element.number != 1 and neighbor not in seen:
+                seen.add(neighbor)
+                frontier.append((neighbor, distance + 1))
+    raise ValueError("padded witness distance references are disconnected")
+
+
+def _validate_projected_structure(executable, witness, entries) -> None:
+    """Check that projection images preserve atoms and executable heavy bonds."""
+    projected = {}
+    participant_images = {}
+    for item in entries:
+        executable_participant = item["participant_index"]
+        witness_participant = item.get(
+            "witness_participant_index", executable_participant
+        )
+        previous = participant_images.setdefault(
+            executable_participant, witness_participant
+        )
+        if previous != witness_participant:
+            raise ValueError("one executable participant has multiple witness images")
+        executable_atoms = [
+            atom for atom in executable[executable_participant].atoms
+            if atom.element.number != 1
+        ]
+        witness_atoms = [
+            atom for atom in witness[witness_participant].atoms
+            if atom.element.number != 1
+        ]
+        executable_atom = executable_atoms[item["executable_atom_index"]]
+        witness_atom = witness_atoms[item["witness_atom_index"]]
+        executable_signature = (
+            executable_atom.element.number,
+            executable_atom.element.isotope,
+            executable_atom.radical_electrons,
+            executable_atom.lone_pairs,
+            executable_atom.charge,
+        )
+        witness_signature = (
+            witness_atom.element.number,
+            witness_atom.element.isotope,
+            witness_atom.radical_electrons,
+            witness_atom.lone_pairs,
+            witness_atom.charge,
+        )
+        if executable_signature != witness_signature:
+            raise ValueError("padded witness projection changed an executable atom")
+        projected[(executable_participant, item["executable_atom_index"])] = (
+            witness_participant,
+            witness_atom,
+        )
+    for participant_index, molecule in enumerate(executable):
+        heavy = [atom for atom in molecule.atoms if atom.element.number != 1]
+        for first_index, first in enumerate(heavy):
+            for second_index in range(first_index + 1, len(heavy)):
+                second = heavy[second_index]
+                first_image = projected[(participant_index, first_index)]
+                second_image = projected[(participant_index, second_index)]
+                if first_image[0] != second_image[0]:
+                    raise ValueError(
+                        "one executable participant has multiple witness images"
+                    )
+                executable_bond = first.edges.get(second)
+                witness_bond = first_image[1].edges.get(second_image[1])
+                executable_order = (
+                    None if executable_bond is None else executable_bond.order
+                )
+                witness_order = None if witness_bond is None else witness_bond.order
+                if executable_order != witness_order:
+                    raise ValueError(
+                        "padded witness projection changed an executable bond"
+                    )
 
 
 def _is_full_event_id(value: Any) -> bool:
@@ -227,4 +445,7 @@ _LEGACY_REQUIRED_FIELDS = _KNOWN_FIELDS_CLASS - {
     "degeneracy",
     "reactant_graphs",
     "product_graphs",
+    "rate_witness_reactant_graphs",
+    "rate_witness_product_graphs",
+    "proxy_padding",
 }

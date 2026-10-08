@@ -87,6 +87,10 @@ def test_match_uses_exact_graphs_and_rewrite(units, reverse_participants):
     assert not matches_head_to_tail(reverse)
     assert forward.k_table["k"] == pytest.approx(plpsec_rate_table(GRID)["k"])
     assert forward.raw_path_degeneracy == 3  # No extra degeneracy multiplier on measured kp.
+    assert all(not record.proxy_padding for record in (forward, reverse))
+    assert all(
+        not record.rate_witness_reactant_graphs for record in (forward, reverse)
+    )
 
 
 @pytest.mark.parametrize("lookalike", ["primary", "head_to_head", "ring"])
@@ -298,6 +302,7 @@ def test_postcompile_census_and_rate_check_accept_small_inventory():
             "atom_map.py",
             "kinetics_library.py",
             "database_provenance.py",
+            "proxy_padding.py",
             "barrier_e0.py",
         )
     )).hexdigest()
@@ -316,15 +321,96 @@ def test_postcompile_check_rejects_wrong_rate_or_scope(mutation):
         assert_compiled_plpsec_library(artifact)
 
 
-def test_library_changes_forward_rates_without_changing_ceiling(monkeypatch):
+def test_library_records_are_excluded_while_unvalidated_estimates_are_not_paddable(
+    monkeypatch,
+):
     monkeypatch.setenv("RMG_KMC_PLPSEC_LIBRARY", "1")
-    on = small_inventory()
+    on = small_inventory(proxy_padding_distance=3)
     monkeypatch.setenv("RMG_KMC_PLPSEC_LIBRARY", "0")
-    off = small_inventory()
-    for field in ("ps_ceiling_pairs", "ps_primary_end_ceiling_pairs"):
-        assert [pair["temperature_K"] for pair in on[field]] == pytest.approx(
-            [pair["temperature_K"] for pair in off[field]], rel=1e-12)
-    assert on["ps_ceiling_temperature_K"] == pytest.approx(off["ps_ceiling_temperature_K"], rel=1e-12)
-    on_anchor = next(record for record in on["records"] if record["event_id"] == on["ps_ceiling_anchor_event_id"])
-    off_anchor = next(record for record in off["records"] if record["event_id"] == off["ps_ceiling_anchor_event_id"])
+    off = small_inventory(proxy_padding_distance=3)
+    on_records = [record for record in on["records"] if matches_head_to_tail(record)]
+    off_records = [record for record in off["records"] if matches_head_to_tail(record)]
+    assert on_records and off_records
+    assert {
+        record["proxy_padding"]["status"] for record in on_records
+    } == {"excluded_unchanged"}
+    assert {
+        record["proxy_padding"]["status"] for record in off_records
+    } == {"not_paddable"}
+    on_anchor = next(
+        record
+        for record in on["records"]
+        if record["event_id"] == on["ps_ceiling_anchor_event_id"]
+    )
+    off_anchor = next(
+        record
+        for record in off["records"]
+        if record["event_id"] == off["ps_ceiling_anchor_event_id"]
+    )
     assert on_anchor["k_table"]["k"] != off_anchor["k_table"]["k"]
+
+
+def test_padding_off_identity_covers_library_archived_and_ordinary_records(
+    monkeypatch,
+):
+    proxies = compiler.ps_proxy_set()
+    cache = {proxy.site_type: [] for proxy in proxies}
+    for size, site, primary in (
+        (2, "benzylic_end_radical+styrene", False),
+        (4, "benzylic_end_radical+styrene@5", False),
+        (2, "end_radical+styrene", True),
+        (5, "end_radical+styrene@5", True),
+    ):
+        cache[site] = [mapped_addition(size, primary=primary)[0]]
+    cache["benzylic_end_radical+styrene"].append(
+        mapped_addition(2, opposite=True)[0]
+    )
+    cache["end_radical@5"] = [mapped_addition(4, primary=True)[0]]
+    monkeypatch.setattr(compiler, "_LOADED_COMPILER_HASH", "8a" * 32)
+    monkeypatch.setattr(compiler, "compiler_source_hash", lambda: "5c" * 32)
+
+    artifact = compiler.EventSetCompiler(
+        None,
+        proxies,
+        ["R_Addition_MultipleBond", "R_Recombination"],
+        reaction_cache=cache,
+        temperature_grid=[500, 550, 600],
+        rmgpy_sha="1e51f1f8f33b81ce66baf3c8b52b84f15ab9f974",
+        rmg_database_sha="cd86d4e1c187a132109e16cd86f624ed9fb217df",
+        reference_thermo_provider=SmallReferenceThermo(),
+        ceiling_monomer_concentration_mol_m3=1,
+        use_plpsec_library=True,
+    ).compile()
+    records = artifact["records"]
+    library = [
+        record
+        for record in records
+        if record["rate_source"].get("kind") == "kMC kinetics library"
+    ]
+    archived = [
+        record for record in records if record.get("inventory_class") == "R1:J_ring"
+    ]
+    ordinary = [
+        record for record in records if record not in library and record not in archived
+    ]
+
+    assert len(library) == 2
+    assert sorted(
+        (
+            record["junction_ops"][0]["junction_kind"],
+            record["junction_ops"][0]["action"],
+        )
+        for record in archived
+    ) == [
+        ("J_ortho_S6", "create"),
+        ("J_ortho_S6", "dissociate"),
+        ("J_ortho_S7", "create"),
+        ("J_ortho_S7", "dissociate"),
+        ("J_para", "create"),
+        ("J_para", "dissociate"),
+    ]
+    assert ordinary
+    assert all("proxy_padding" not in record for record in records)
+    assert hashlib.sha256(compiler.canonical_json_bytes(artifact)).hexdigest() == (
+        "82168c4f90b8179e7aa49bbf4f385e42cee409f23143594006406db96e60fa75"
+    )

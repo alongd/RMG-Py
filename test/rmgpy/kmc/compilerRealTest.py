@@ -239,6 +239,14 @@ def _normalized_base_record(record):
 
 def _normalized_archived_pack_record(record, archived_pack_event_id=None):
     normalized = _normalized_base_record(record)
+    padding = normalized.pop("proxy_padding", None)
+    normalized.pop("rate_witness_reactant_graphs", None)
+    normalized.pop("rate_witness_product_graphs", None)
+    if padding:
+        assert padding == {
+            "status": "excluded_unchanged",
+            "reason": "owner-approved archived junction record is not re-derived",
+        }
     operation = (normalized.get("junction_ops") or [{}])[0]
     is_archived_j_para = (
         archived_pack_event_id in ARCHIVED_J_PARA_PACK_EVENT_IDS

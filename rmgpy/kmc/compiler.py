@@ -18,7 +18,7 @@ import os
 import subprocess
 import time
 from dataclasses import dataclass, field, replace
-from itertools import combinations
+from itertools import combinations, permutations
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 from types import SimpleNamespace
@@ -30,6 +30,13 @@ from rmgpy.kmc.kinetics_library import (
     load_plpsec_entry,
     matches_head_to_tail,
     plpsec_rate_table,
+)
+from rmgpy.kmc.proxy_padding import (
+    BoundaryPort,
+    PaddingLimitExceeded,
+    ReactionNotPaddable,
+    RepeatUnitGraph,
+    pad_reaction_witness,
 )
 from rmgpy.kmc.reference_thermo import (
     FROZEN_THERMO_PROPERTY,
@@ -73,6 +80,9 @@ PS_FAMILY_FILTER_REASON = (
 LINK_PLACEHOLDER = "evt_" + "0" * 64
 PERSISTENT_CARBENE_POLICY_VERSION = "persistent-carbene-applicability/2"
 APPLICABILITY_GENERATION_CACHE_LIMIT = 4
+PROXY_PADDING_DISTANCE = None
+PROXY_PADDING_TOLERANCE_LOG10 = 0.01
+PROXY_PADDING_MAX_HEAVY_ATOMS = 512
 R1_JUNCTION_LABELS = {
     "J_para": {
         "attacked_atom_label": "S9",
@@ -176,6 +186,7 @@ _LOADED_SOURCE_HASH = hashlib.sha256(
             "atom_map.py",
             "kinetics_library.py",
             "database_provenance.py",
+            "proxy_padding.py",
             "barrier_e0.py",
         )
     )
@@ -1452,9 +1463,13 @@ def _template(reaction) -> str:
     return ";".join(getattr(item, "label", str(item)) for item in template)
 
 
-def _proxy_fingerprint(proxy) -> dict[str, Any]:
+def _proxy_fingerprint(proxy, *, include_padding: bool = False) -> dict[str, Any]:
     """Structural, rather than object-identity, provenance for a proxy input."""
-    return {
+    def declared_molecule(participant):
+        molecules = getattr(participant, "molecule", None)
+        return molecules[0] if molecules else participant
+
+    fingerprint = {
         "site_type": proxy.site_type,
         "frontier": proxy.frontier,
         "metadata": proxy.metadata,
@@ -1463,11 +1478,186 @@ def _proxy_fingerprint(proxy) -> dict[str, Any]:
             _canonical_adjacency(_molecule(item)) for item in proxy.reactants
         ],
     }
+    if include_padding:
+        fingerprint["artificial_boundaries"] = [
+            {
+                "participant_index": boundary.participant_index,
+                "atom_index": [
+                    atom.id for atom in _ordered_atoms(
+                        declared_molecule(
+                            proxy.reactants[boundary.participant_index]
+                        )
+                    ) if atom.element.number != 1
+                ].index(boundary.atom_id),
+                "orientation": boundary.orientation,
+                "kind": boundary.kind,
+            }
+            for boundary in proxy.artificial_boundaries
+        ]
+        fingerprint["repeat_unit"] = (
+            proxy.repeat_unit.provenance() if proxy.repeat_unit is not None else None
+        )
+    return fingerprint
 
 
 def _graph_adjacencies(participants: Iterable[Any]) -> list[str]:
     """Serialize participant graphs as stable, explicit-H adjacency lists."""
     return [_canonical_adjacency(_molecule(item)) for item in participants]
+
+
+def _side_isomorphic(expected, actual) -> bool:
+    """Match participant multisets without relying on process-global atom IDs."""
+    if len(expected) != len(actual):
+        return False
+    return any(
+        all(
+            _molecule(expected[index]).is_isomorphic(
+                _molecule(actual[target]), strict=False
+            )
+            for index, target in enumerate(order)
+        )
+        for order in permutations(range(len(actual)))
+    )
+
+
+def _side_isomorphism(expected, actual):
+    """Return canonical participant and heavy-atom correspondence."""
+    if len(expected) != len(actual):
+        raise ReactionNotPaddable("production witness participant count changed")
+    candidates = []
+    for order in permutations(range(len(actual))):
+        participant_maps = []
+        for expected_index, actual_index in enumerate(order):
+            expected_molecule = _molecule(expected[expected_index])
+            actual_molecule = _molecule(actual[actual_index])
+            mappings = expected_molecule.find_isomorphism(
+                actual_molecule, save_order=True, strict=False
+            )
+            if not mappings:
+                break
+            expected_heavy = [
+                atom for atom in _ordered_atoms(expected_molecule)
+                if atom.element.number != 1
+            ]
+            actual_heavy = [
+                atom for atom in _ordered_atoms(actual_molecule)
+                if atom.element.number != 1
+            ]
+            actual_indices = {atom: index for index, atom in enumerate(actual_heavy)}
+            canonical_maps = [
+                tuple(actual_indices[mapping[atom]] for atom in expected_heavy)
+                for mapping in mappings
+            ]
+            participant_maps.append(min(canonical_maps))
+        else:
+            candidates.append((order, tuple(participant_maps)))
+    if not candidates:
+        raise ReactionNotPaddable("production witness graph correspondence changed")
+    return min(candidates)
+
+
+def _remap_witness_projection(projection, expected, actual):
+    """Move pre-generation witness indices onto regenerated witness graphs."""
+    remapped = copy.deepcopy(projection)
+    for side in ("reactants", "products"):
+        order, atom_maps = _side_isomorphism(
+            getattr(expected, side), getattr(actual, side)
+        )
+        for item in remapped[side]:
+            expected_participant = item["witness_participant_index"]
+            item["witness_participant_index"] = order[expected_participant]
+            item["witness_atom_index"] = atom_maps[expected_participant][
+                item["witness_atom_index"]
+            ]
+    return remapped
+
+
+def _remap_padding_references(padding, expected, actual):
+    """Move distance-audit references onto regenerated published graphs."""
+    remapped = copy.deepcopy(padding)
+    for side in ("reactants", "products"):
+        order, atom_maps = _side_isomorphism(
+            getattr(expected, side), getattr(actual, side)
+        )
+        references = list(remapped["reacting_atoms"][side]) + [
+            boundary[side] for boundary in remapped["artificial_boundaries"]
+        ]
+        for reference in references:
+            expected_participant = reference["participant_index"]
+            reference["participant_index"] = order[expected_participant]
+            reference["atom_index"] = atom_maps[expected_participant][
+                reference["atom_index"]
+            ]
+    return remapped
+
+
+def _reverse_padding_references(padding):
+    """Reverse two-sided distance references with the rate witness direction."""
+    reversed_padding = copy.deepcopy(padding)
+    reacting = reversed_padding["reacting_atoms"]
+    reacting["reactants"], reacting["products"] = (
+        reacting["products"], reacting["reactants"]
+    )
+    for boundary in reversed_padding["artificial_boundaries"]:
+        boundary["reactants"], boundary["products"] = (
+            boundary["products"], boundary["reactants"]
+        )
+    return reversed_padding
+
+
+def _proxy_padding_summary(records) -> dict[str, int]:
+    """Count record dispositions exposed by an enabled padding compile."""
+    statuses = [
+        (
+            record.proxy_padding
+            if isinstance(record, EventRecord)
+            else record.get("proxy_padding", {})
+        ).get("status")
+        for record in records
+    ]
+    return {
+        "padded": statuses.count("padded"),
+        "not_paddable": statuses.count("not_paddable"),
+        "excluded": statuses.count("excluded_unchanged"),
+    }
+
+
+def _padding_exclusion(reason: str) -> dict[str, str]:
+    """Describe a rate source that enabled padding deliberately preserves."""
+    return {"status": "excluded_unchanged", "reason": reason}
+
+
+def _production_padded_root(kinetics_database, reaction):
+    """Re-derive one exact padded reaction through RMG's production generator."""
+    from rmgpy.species import Species
+
+    if not hasattr(kinetics_database, "generate_reactions_from_families"):
+        raise ReactionNotPaddable("production family generator is unavailable")
+
+    generated = kinetics_database.generate_reactions_from_families(
+        [
+            Species(molecule=[_molecule(item).copy(deep=True)])
+            for item in reaction.reactants
+        ],
+        products=[
+            Species(molecule=[_molecule(item).copy(deep=True)])
+            for item in reaction.products
+        ],
+        only_families=[reaction.family],
+        # Padding preserves the selected resonance forms. Re-enumerating resonance
+        # here is both unnecessary and unbounded for the enlarged witness graphs.
+        resonance=False,
+    )
+    matches = [
+        candidate for candidate in generated
+        if _side_isomorphic(reaction.reactants, candidate.reactants)
+        and _side_isomorphic(reaction.products, candidate.products)
+    ]
+    if len(matches) != 1:
+        raise ReactionNotPaddable(
+            f"production root validation found {len(matches)} exact padded reactions"
+        )
+    return matches[0], len(generated)
 
 
 def _copy_participant(item):
@@ -1734,6 +1924,198 @@ def _orient_to_proxy(proxy, reaction):
     )
 
 
+def _map_proxy_boundaries_to_reaction(proxy, reaction):
+    """Carry annotated proxy ports onto the generated reaction's atom IDs."""
+    if not proxy.artificial_boundaries:
+        return proxy
+    initiated, _ = _orient_to_proxy(proxy, reaction)
+    targets = list(initiated.reactants)
+    boundaries_by_participant = {
+        index: [
+            boundary
+            for boundary in proxy.artificial_boundaries
+            if boundary.participant_index == index
+        ]
+        for index in range(len(proxy.reactants))
+    }
+    candidates = []
+    for source_index, source_participant in enumerate(proxy.reactants):
+        source_molecule = _molecule(source_participant)
+        matches = []
+        source_boundaries = boundaries_by_participant[source_index]
+        source_atoms = [
+            next(
+                atom
+                for atom in source_molecule.atoms
+                if atom.id == boundary.atom_id
+            )
+            for boundary in source_boundaries
+        ]
+        for target_index, target_participant in enumerate(targets):
+            target_molecule = _molecule(target_participant)
+            if not source_boundaries:
+                if source_molecule.is_isomorphic(
+                    target_molecule, save_order=True, strict=False
+                ):
+                    matches.append((target_index, {}))
+                continue
+            target_by_id = {
+                atom.id: atom
+                for atom in target_molecule.atoms
+                if atom.element.number != 1
+            }
+            if all(boundary.atom_id in target_by_id for boundary in source_boundaries):
+                direct_map = {
+                    source_atom: target_by_id[boundary.atom_id]
+                    for boundary, source_atom in zip(source_boundaries, source_atoms)
+                }
+                if source_molecule.is_isomorphic(
+                    target_molecule,
+                    initial_map=direct_map,
+                    save_order=True,
+                    strict=False,
+                ):
+                    matches.append(
+                        (
+                            target_index,
+                            {
+                                boundary.atom_id: target_by_id[boundary.atom_id].id
+                                for boundary in source_boundaries
+                            },
+                        )
+                    )
+                    continue
+            candidate_atoms = [
+                atom
+                for atom in target_molecule.atoms
+                if atom.element.number != 1
+                and any(
+                    atom.element.number == source_atom.element.number
+                    and sum(n.element.number != 1 for n in atom.edges)
+                    == sum(n.element.number != 1 for n in source_atom.edges)
+                    for source_atom in source_atoms
+                )
+            ]
+            for target_atoms in permutations(candidate_atoms, len(source_atoms)):
+                initial_map = dict(zip(source_atoms, target_atoms))
+                if source_molecule.is_isomorphic(
+                    target_molecule,
+                    initial_map=initial_map,
+                    save_order=True,
+                    strict=False,
+                ):
+                    matches.append(
+                        (
+                            target_index,
+                            {
+                                boundary.atom_id: target_atom.id
+                                for boundary, target_atom in zip(
+                                    source_boundaries, target_atoms
+                                )
+                            },
+                        )
+                    )
+        candidates.append((source_index, matches))
+
+    assignments = []
+
+    def choose(source_position, used, selected):
+        if source_position == len(candidates):
+            assignments.append(tuple(selected))
+            return
+        _, matches = candidates[source_position]
+        for target_index, mapping in matches:
+            if target_index not in used:
+                choose(
+                    source_position + 1,
+                    used | {target_index},
+                    selected + [(target_index, mapping)],
+                )
+
+    choose(0, set(), [])
+    if not assignments:
+        raise ValueError("annotated proxy cannot be mapped onto generated reaction")
+    mapped_options = set()
+    for assignment in assignments:
+        mapped = []
+        for boundary in proxy.artificial_boundaries:
+            target_index, mapping = assignment[boundary.participant_index]
+            mapped.append(
+                (
+                    target_index,
+                    mapping[boundary.atom_id],
+                    boundary.orientation,
+                    boundary.kind,
+                )
+            )
+        mapped_options.add(tuple(sorted(mapped)))
+    if len(mapped_options) != 1:
+        raise ValueError("artificial boundary mapping is ambiguous")
+    boundaries = tuple(
+        BoundaryPort(
+            atom_id=atom_id,
+            orientation=orientation,
+            participant_index=participant_index,
+            kind=kind,
+        )
+        for participant_index, atom_id, orientation, kind in next(
+            iter(mapped_options)
+        )
+    )
+    return replace(
+        proxy,
+        reactants=tuple(initiated.reactants),
+        artificial_boundaries=boundaries,
+    )
+
+
+def ps_repeat_unit() -> RepeatUnitGraph:
+    """Return the oriented graph extension used by linear PS proxies."""
+    return RepeatUnitGraph.from_smiles(
+        "polystyrene",
+        "CC(c1ccccc1)",
+        head_atom_index=0,
+        tail_atom_index=1,
+    )
+
+
+def _ps_artificial_ports(name: str, molecule, participant_index: int):
+    """Annotate truncation ports; chemical end radicals remain physical."""
+    if name == "styrene":
+        return ()
+    backbone = [
+        atom
+        for atom in molecule.atoms
+        if atom.element.symbol == "C" and not molecule.is_atom_in_cycle(atom)
+    ]
+    endpoints = [
+        atom
+        for atom in backbone
+        if sum(neighbor in backbone for neighbor in atom.edges) == 1
+    ]
+    if len(endpoints) != 2:
+        raise ValueError(f"{name} proxy does not have two linear backbone ends")
+    physical_ids = {
+        atom.id for atom in endpoints if atom.radical_electrons
+    } if name.startswith(("end_radical", "benzylic_end_radical")) else set()
+    ports = []
+    for atom in endpoints:
+        if atom.id in physical_ids:
+            continue
+        phenyl_bearing = any(
+            neighbor.element.symbol == "C" and molecule.is_atom_in_cycle(neighbor)
+            for neighbor in atom.edges
+        )
+        ports.append(
+            BoundaryPort(
+                atom_id=atom.id,
+                orientation="tail" if phenyl_bearing else "head",
+                participant_index=participant_index,
+            )
+        )
+    return tuple(ports)
+
+
 def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
     """Centred PS structures; discover firing families through RMG generation.
 
@@ -1763,6 +2145,7 @@ def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
     for name, smiles in structures.items():
         molecule = Molecule(smiles=smiles)
         molecule.update()
+        molecule.assign_atom_ids()
         species[name] = Species(molecule=[molecule])
     unimolecular_candidates = PS_FAMILY_CANDIDATES
     radical_pair_candidates = PS_FAMILY_CANDIDATES
@@ -1884,34 +2267,46 @@ def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
             )
         )
     )
-    proxies = tuple(
-        SiteProxy(
-            site_type,
-            tuple(species[name] for name in participants),
-            participant_site_types=participant_site_types,
-            metadata={
-                "centred": True,
-                "context_class": context_class,
-                "proxy_units": units,
-                "family_candidates": list(proxy_candidates),
-                **(
-                    {
-                        "junction_kind": "J_para",
-                        "attacker_site_label": "P9",
-                    }
-                    if site_type == "junction_radical+end_radical"
-                    else {}
-                ),
-            },
+    proxies = []
+    repeat_unit = ps_repeat_unit()
+    for (
+        site_type,
+        participants,
+        participant_site_types,
+        context_class,
+        proxy_candidates,
+    ) in declarations:
+        boundaries = tuple(
+            boundary
+            for participant_index, name in enumerate(participants)
+            for boundary in _ps_artificial_ports(
+                name, species[name].molecule[0], participant_index
+            )
         )
-        for (
-            site_type,
-            participants,
-            participant_site_types,
-            context_class,
-            proxy_candidates,
-        ) in declarations
-    )
+        proxies.append(
+            SiteProxy(
+                site_type,
+                tuple(species[name] for name in participants),
+                participant_site_types=participant_site_types,
+                artificial_boundaries=boundaries,
+                repeat_unit=repeat_unit if boundaries else None,
+                metadata={
+                    "centred": True,
+                    "context_class": context_class,
+                    "proxy_units": units,
+                    "family_candidates": list(proxy_candidates),
+                    **(
+                        {
+                            "junction_kind": "J_para",
+                            "attacker_site_label": "P9",
+                        }
+                        if site_type == "junction_radical+end_radical"
+                        else {}
+                    ),
+                },
+            )
+        )
+    proxies = tuple(proxies)
     if units == 3:
         extended = tuple(
             replace(
@@ -2405,6 +2800,13 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
     if event_ids != expected_order or len(event_ids) != len(set(event_ids)):
         raise ValueError("records must have unique canonical event-id ordering")
     provenance = artifact.get("provenance", {})
+    padding_enabled = "proxy_boundary_padding" in provenance
+    if padding_enabled:
+        expected_summary = _proxy_padding_summary(records)
+        if artifact.get("proxy_padding_summary") != expected_summary:
+            raise ValueError("proxy padding disposition summary is inconsistent")
+    elif "proxy_padding_summary" in artifact:
+        raise ValueError("disabled padding artifact has a disposition summary")
     for index, data in enumerate(records):
         record = EventRecord.from_dict(data)
         record.validate()
@@ -3145,6 +3547,8 @@ class SiteProxy:
     frontier: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
     participant_site_types: Sequence[str] = field(default_factory=tuple)
+    artificial_boundaries: Sequence[BoundaryPort] = field(default_factory=tuple)
+    repeat_unit: RepeatUnitGraph | None = None
 
 
 class EventSetCompiler:
@@ -3185,6 +3589,9 @@ class EventSetCompiler:
         family_candidates: Iterable[str] = PS_FAMILY_CANDIDATES,
         kinetics_depositories: Iterable[str] = ("training",),
         use_plpsec_library: bool | None = None,
+        proxy_padding_distance: int | None = PROXY_PADDING_DISTANCE,
+        proxy_padding_tolerance_log10: float = PROXY_PADDING_TOLERANCE_LOG10,
+        proxy_padding_max_heavy_atoms: int = PROXY_PADDING_MAX_HEAVY_ATOMS,
         barrier_e0_provider: FixedBBarrierE0Provider | None = None,
     ):
         # Constructor selection takes precedence over the environment. Invalid
@@ -3250,6 +3657,19 @@ class EventSetCompiler:
         )
         self.reaction_cache = dict(reaction_cache or {})
         self.family_candidates = tuple(sorted(set(family_candidates)))
+        self.proxy_padding_distance = (
+            None if proxy_padding_distance is None else int(proxy_padding_distance)
+        )
+        self.proxy_padding_tolerance_log10 = float(
+            proxy_padding_tolerance_log10
+        )
+        self.proxy_padding_max_heavy_atoms = int(proxy_padding_max_heavy_atoms)
+        if self.proxy_padding_distance is not None and self.proxy_padding_distance < 0:
+            raise ValueError("proxy padding distance must be non-negative")
+        if self.proxy_padding_tolerance_log10 <= 0:
+            raise ValueError("proxy padding tolerance must be positive")
+        if self.proxy_padding_max_heavy_atoms < 1:
+            raise ValueError("proxy padding graph ceiling must be positive")
         self._applicability_source_cache: dict[
             tuple[str, int, bool], list[dict[str, Any]]
         ] = {}
@@ -3615,6 +4035,8 @@ class EventSetCompiler:
     def _build_linked_family_pair(self, proxy, reaction, provenance):
         """Estimate exactly one direction, then invert its reference-state Kc."""
         source = getattr(reaction, "source_reaction", reaction)
+        if getattr(self, "proxy_padding_distance", None) is not None:
+            proxy = _map_proxy_boundaries_to_reaction(proxy, source)
         proxy = replace(
             proxy, metadata={**proxy.metadata, "generic_reference_pair": True}
         )
@@ -3664,6 +4086,145 @@ class EventSetCompiler:
             (structural_forward, structural_reverse)
             if estimated_forward
             else (structural_reverse, structural_forward)
+        )
+        rate_reaction = estimate
+        padding_distance = getattr(self, "proxy_padding_distance", None)
+        padding_metadata = (
+            {}
+            if padding_distance is None
+            else {
+                "status": "not_applicable",
+                "reason": "proxy has no annotated artificial continuation ports",
+            }
+        )
+        witness_reactants = []
+        witness_products = []
+        is_library_pair = getattr(self, "use_plpsec_library", True) and (
+            matches_head_to_tail(forward) or matches_head_to_tail(reverse)
+        )
+        if padding_distance is not None and is_library_pair:
+            padding_metadata = _padding_exclusion(
+                "owner-approved PLP-SEC library rate is not re-derived"
+            )
+        elif (
+            padding_distance is not None
+            and proxy.artificial_boundaries
+            and proxy.repeat_unit is not None
+        ):
+            try:
+                padded = pad_reaction_witness(
+                    estimate,
+                    proxy.artificial_boundaries,
+                    proxy.repeat_unit,
+                    padding_distance,
+                    max_heavy_atoms=self.proxy_padding_max_heavy_atoms,
+                )
+                derived, generated_count = _production_padded_root(
+                    self.kinetics_database, padded.reaction
+                )
+                if _template(derived) != _template(estimate):
+                    raise ReactionNotPaddable(
+                        "production root template changed on padded graph"
+                    )
+                derived_kinetics, derived_source, derived_entry, derived_forward = (
+                    self.kinetics_database.families[derived.family].get_kinetics(
+                        derived,
+                        template_labels=derived.template,
+                        degeneracy=derived.degeneracy,
+                        return_all_kinetics=False,
+                    )
+                )
+                if derived_kinetics is None:
+                    raise ReactionNotPaddable(
+                        "production root kinetics unavailable on padded graph"
+                    )
+                if bool(derived_forward) != bool(estimated_forward):
+                    raise ReactionNotPaddable(
+                        "production root direction changed on padded graph"
+                    )
+                derived.kinetics = derived_kinetics
+                if not derived_forward:
+                    derived.reactants, derived.products = (
+                        derived.products, derived.reactants
+                    )
+                rate_reaction = derived
+                source_name, entry = derived_source, derived_entry
+                padding_metadata = padded.provenance(
+                    proxy.repeat_unit,
+                    padding_distance,
+                    self.proxy_padding_tolerance_log10,
+                )
+                if not derived_forward:
+                    padding_metadata = _reverse_padding_references(
+                        padding_metadata
+                    )
+                    projection = padding_metadata[
+                        "executable_to_witness_projection"
+                    ]
+                    projection["reactants"], projection["products"] = (
+                        projection["products"], projection["reactants"]
+                    )
+                    expected_witness = copy.deepcopy(padded.reaction)
+                    expected_witness.reactants, expected_witness.products = (
+                        expected_witness.products,
+                        expected_witness.reactants,
+                    )
+                else:
+                    expected_witness = padded.reaction
+                padding_metadata["executable_to_witness_projection"] = (
+                    _remap_witness_projection(
+                        padding_metadata["executable_to_witness_projection"],
+                        expected_witness,
+                        rate_reaction,
+                    )
+                )
+                padding_metadata = _remap_padding_references(
+                    padding_metadata, expected_witness, rate_reaction
+                )
+                padding_metadata["root_validation"] = {
+                    "method": "RMGDatabase.generate_reactions_from_families",
+                    "generated_reaction_count": generated_count,
+                    "matched_reaction_count": 1,
+                    "template": _template(derived),
+                    "rooted_degeneracy": float(derived.degeneracy),
+                    "recipe": (
+                        "production family recipe reapplied by exact product "
+                        "generation"
+                    ),
+                }
+                witness_reactants = _graph_adjacencies(rate_reaction.reactants)
+                witness_products = _graph_adjacencies(rate_reaction.products)
+            except ReactionNotPaddable as error:
+                padding_metadata = {
+                    "status": "not_paddable",
+                    "reason": str(error),
+                }
+                rate_reaction = estimate
+        forward = replace(
+            forward,
+            rate_witness_reactant_graphs=witness_reactants,
+            rate_witness_product_graphs=witness_products,
+            proxy_padding=copy.deepcopy(padding_metadata),
+            event_id="",
+        )
+        reverse_padding_metadata = (
+            _reverse_padding_references(padding_metadata)
+            if padding_metadata.get("status") == "padded"
+            else copy.deepcopy(padding_metadata)
+        )
+        projection = reverse_padding_metadata.get(
+            "executable_to_witness_projection"
+        )
+        if projection:
+            projection["reactants"], projection["products"] = (
+                projection["products"], projection["reactants"]
+            )
+        reverse = replace(
+            reverse,
+            rate_witness_reactant_graphs=witness_products,
+            rate_witness_product_graphs=witness_reactants,
+            proxy_padding=reverse_padding_metadata,
+            event_id="",
         )
         applicability = None
         unresolved_decisions: list[dict[str, Any]] = []
@@ -3730,7 +4291,7 @@ class EventSetCompiler:
                 )
 
         # Applicability is decided before evaluating kinetics or reference thermo.
-        forward_table, rate_source = self._rate_table(estimate)
+        forward_table, rate_source = self._rate_table(rate_reaction)
         rate_source = {
             **rate_source,
             "source": str(source_name),
@@ -3777,12 +4338,12 @@ class EventSetCompiler:
         try:
             if hasattr(self.reference_thermo_provider, "evaluate"):
                 reference_result = self.reference_thermo_provider.evaluate(
-                    estimate, self.temperature_grid
+                    rate_reaction, self.temperature_grid
                 )
                 constants = list(reference_result.equilibrium_constants)
             else:
                 constants = self.reference_thermo_provider.equilibrium_constants(
-                    estimate, self.temperature_grid
+                    rate_reaction, self.temperature_grid
                 )
         except (ThermoUnavailable, AttributeError) as error:
             irreversible = replace(
@@ -3983,6 +4544,34 @@ class EventSetCompiler:
             reverse_of=forward.event_id,
             event_id="",
         )
+        if self.proxy_padding_distance is not None:
+            exclusion = _padding_exclusion(
+                "owner-approved archived junction record is not re-derived"
+            )
+            forward = replace(forward, proxy_padding=exclusion, event_id="")
+            reverse = replace(reverse, proxy_padding=exclusion, event_id="")
+        forward = replace(
+            forward,
+            junction_ops=_junction_ops(
+                "R1:J_ring",
+                proxy.metadata,
+                action="create",
+                reverse_event_handle=reverse.event_id,
+            ),
+            reverse_of=reverse.event_id,
+            event_id="",
+        )
+        reverse = replace(
+            reverse,
+            junction_ops=_junction_ops(
+                "R1:J_ring",
+                reverse_proxy.metadata,
+                action="dissociate",
+                reverse_event_handle=forward.event_id,
+            ),
+            reverse_of=forward.event_id,
+            event_id="",
+        )
         return forward, reverse
 
     def _linked_para_pair(
@@ -4067,6 +4656,34 @@ class EventSetCompiler:
                 "gas_phase": "R-009 archived RMG NASA Kc reference",
                 "condensed_phase_constraint": "UNKNOWN",
             },
+            reverse_of=reverse.event_id,
+            event_id="",
+        )
+        reverse = replace(
+            reverse,
+            junction_ops=_junction_ops(
+                "R1:J_ring",
+                reverse_proxy.metadata,
+                action="dissociate",
+                reverse_event_handle=forward.event_id,
+            ),
+            reverse_of=forward.event_id,
+            event_id="",
+        )
+        if self.proxy_padding_distance is not None:
+            exclusion = _padding_exclusion(
+                "owner-approved archived junction record is not re-derived"
+            )
+            forward = replace(forward, proxy_padding=exclusion, event_id="")
+            reverse = replace(reverse, proxy_padding=exclusion, event_id="")
+        forward = replace(
+            forward,
+            junction_ops=_junction_ops(
+                "R1:J_ring",
+                proxy.metadata,
+                action="create",
+                reverse_event_handle=reverse.event_id,
+            ),
             reverse_of=reverse.event_id,
             event_id="",
         )
@@ -4218,7 +4835,9 @@ class EventSetCompiler:
         self._applicability_generation_stats = {}
 
         proxy_inputs = [
-            _proxy_fingerprint(p)
+            _proxy_fingerprint(
+                p, include_padding=self.proxy_padding_distance is not None
+            )
             for p in sorted(self.proxies, key=lambda p: p.site_type)
         ]
         provenance = {
@@ -4242,6 +4861,28 @@ class EventSetCompiler:
                 "database_sha": self.database_provenance["rmg_database_sha"],
             },
             "applicability_policy_version": PERSISTENT_CARBENE_POLICY_VERSION,
+            **(
+                {
+                    "proxy_boundary_padding": {
+                        "minimum_heavy_bond_distance": self.proxy_padding_distance,
+                        "tolerance_max_abs_log10": (
+                            self.proxy_padding_tolerance_log10
+                        ),
+                        "maximum_heavy_atoms": self.proxy_padding_max_heavy_atoms,
+                        "repeat_unit": ps_repeat_unit().provenance(),
+                        "enabled": True,
+                        "selection_basis": (
+                            "explicit caller configuration; no production k selected"
+                        ),
+                        "excluded_rate_sources": [
+                            "styrene_plpsec",
+                            "R-009 archived para/ortho junction records",
+                        ],
+                    }
+                }
+                if self.proxy_padding_distance is not None
+                else {}
+            ),
             **(
                 {"barrier_e0_provider": self.barrier_e0_provider.provenance}
                 if self.barrier_e0_provider is not None
@@ -4343,6 +4984,11 @@ class EventSetCompiler:
             "families": list(self.families),
             "excluded_families": self.excluded_families,
             "provenance": provenance,
+            **(
+                {"proxy_padding_summary": _proxy_padding_summary(records)}
+                if self.proxy_padding_distance is not None
+                else {}
+            ),
             "inventory_arms": {
                 "selected": None,
                 "R0": "resonance-derived ring-site capture omitted",

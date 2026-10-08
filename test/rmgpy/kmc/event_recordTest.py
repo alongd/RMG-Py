@@ -6,7 +6,17 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+from rmgpy.kmc.compiler import _graph_adjacencies
 from rmgpy.kmc.event_record import EventRecord
+from rmgpy.kmc.proxy_padding import (
+    BoundaryPort,
+    RepeatUnitGraph,
+    _canonical_atom_reference,
+    _canonical_atom_references,
+    _projection,
+    pad_molecule,
+)
+from rmgpy.molecule.molecule import Molecule
 
 
 def test_record_roundtrip():
@@ -328,6 +338,23 @@ def test_event_id_deterministic():
 
 
 def _semantic_record():
+    methyl = (
+        "multiplicity 2\n"
+        "1 C u1 p0 c0 {2,S} {3,S} {4,S}\n"
+        "2 H u0 p0 c0 {1,S}\n"
+        "3 H u0 p0 c0 {1,S}\n"
+        "4 H u0 p0 c0 {1,S}"
+    )
+    ethane = (
+        "1 C u0 p0 c0 {2,S} {3,S} {4,S} {5,S}\n"
+        "2 C u0 p0 c0 {1,S} {6,S} {7,S} {8,S}\n"
+        "3 H u0 p0 c0 {1,S}\n"
+        "4 H u0 p0 c0 {1,S}\n"
+        "5 H u0 p0 c0 {1,S}\n"
+        "6 H u0 p0 c0 {2,S}\n"
+        "7 H u0 p0 c0 {2,S}\n"
+        "8 H u0 p0 c0 {2,S}"
+    )
     return EventRecord(
         family="R_Recombination",
         template="J_para",
@@ -357,6 +384,58 @@ def _semantic_record():
         thermo_provenance={"gas_phase": "RMG"},
         provenance={"rmgpy_sha": "a" * 40},
         rate_source={"kind": "RMG family estimate"},
+        reactant_graphs=[methyl, methyl],
+        product_graphs=[ethane],
+        rate_witness_reactant_graphs=[methyl, methyl],
+        rate_witness_product_graphs=[ethane],
+        proxy_padding={
+            "status": "padded",
+            "minimum_heavy_bond_distance": 0,
+            "reacting_atoms": {
+                "reactants": [
+                    {"participant_index": 0, "atom_index": 0},
+                    {"participant_index": 1, "atom_index": 0},
+                ],
+                "products": [
+                    {"participant_index": 0, "atom_index": 0},
+                    {"participant_index": 0, "atom_index": 1},
+                ],
+            },
+            "artificial_boundaries": [
+                {
+                    "reactants": {"participant_index": 0, "atom_index": 0},
+                    "products": {"participant_index": 0, "atom_index": 0},
+                    "orientation": "tail",
+                }
+            ],
+            "root_validation": {"method": "synthetic test fixture"},
+            "executable_to_witness_projection": {
+                "reactants": [
+                    {
+                        "participant_index": 0,
+                        "executable_atom_index": 0,
+                        "witness_atom_index": 0,
+                    },
+                    {
+                        "participant_index": 1,
+                        "executable_atom_index": 0,
+                        "witness_atom_index": 0,
+                    },
+                ],
+                "products": [
+                    {
+                        "participant_index": 0,
+                        "executable_atom_index": 0,
+                        "witness_atom_index": 0,
+                    },
+                    {
+                        "participant_index": 0,
+                        "executable_atom_index": 1,
+                        "witness_atom_index": 1,
+                    },
+                ],
+            },
+        },
         coproducts=[],
         inventory_class="R1:J_ring",
         feature_ops=[{"action": "set_radical", "atom": 0, "value": 0}],
@@ -375,6 +454,83 @@ def test_event_id_is_full_sha256_and_record_is_frozen():
     record.validate()
     with pytest.raises(FrozenInstanceError):
         record.status = "refused"
+
+
+def test_padded_record_requires_explicit_executable_projection():
+    data = _semantic_record().to_dict()
+    del data["proxy_padding"]["executable_to_witness_projection"]
+    record = EventRecord.from_dict({**data, "event_id": ""})
+
+    with pytest.raises(ValueError, match="two-sided executable projection"):
+        record.validate()
+
+
+def _distance_checked_padded_record():
+    molecule = Molecule(smiles="CC")
+    molecule.assign_atom_ids()
+    heavy = [atom for atom in molecule.atoms if atom.element.number != 1]
+    repeat = RepeatUnitGraph.from_smiles(
+        "PE", "CC", head_atom_index=0, tail_atom_index=1
+    )
+    witness = pad_molecule(
+        molecule,
+        [BoundaryPort(heavy[1].id, "tail")],
+        repeat,
+        reacting_atom_ids=[heavy[0].id],
+        min_distance=4,
+    )
+    executable_reaction = type("Reaction", (), {})()
+    executable_reaction.reactants = [molecule]
+    executable_reaction.products = [molecule]
+    witness_reaction = type("Reaction", (), {})()
+    witness_reaction.reactants = [witness.molecule]
+    witness_reaction.products = [witness.molecule]
+    padding = {
+        "status": "padded",
+        "minimum_heavy_bond_distance": 4,
+        "reacting_atoms": {
+            side: _canonical_atom_references(
+                getattr(witness_reaction, side), [heavy[0].id]
+            )
+            for side in ("reactants", "products")
+        },
+        "artificial_boundaries": [
+            {
+                side: _canonical_atom_reference(
+                    getattr(witness_reaction, side), witness.boundaries[0].atom_id
+                )
+                for side in ("reactants", "products")
+            }
+        ],
+        "root_validation": {"method": "synthetic exact-root fixture"},
+        "executable_to_witness_projection": _projection(
+            executable_reaction, witness_reaction
+        ),
+    }
+    return EventRecord(
+        family="identity",
+        arity=1,
+        participant_site_types=["chain"],
+        reactant_multiplicities=[1],
+        atom_map={0: 0, 1: 1},
+        reactant_graphs=_graph_adjacencies(executable_reaction.reactants),
+        product_graphs=_graph_adjacencies(executable_reaction.products),
+        rate_witness_reactant_graphs=_graph_adjacencies(witness_reaction.reactants),
+        rate_witness_product_graphs=_graph_adjacencies(witness_reaction.products),
+        proxy_padding=padding,
+    )
+
+
+def test_padded_record_publishes_the_declared_minimum_boundary_distance(monkeypatch):
+    monkeypatch.setenv("RMG_KMC_DISABLE_PROXY_PADDING", "1")
+    record = _distance_checked_padded_record()
+
+    record.validate()
+    data = record.to_dict()
+    data["proxy_padding"]["minimum_heavy_bond_distance"] = 6
+    too_short = EventRecord.from_dict({**data, "event_id": ""})
+    with pytest.raises(ValueError, match="minimum heavy-atom distance"):
+        too_short.validate()
 
 
 @pytest.mark.parametrize(
@@ -401,6 +557,9 @@ def test_event_id_is_full_sha256_and_record_is_frozen():
         ("cut_offset", 1),
         ("degeneracy", 2.0),
         ("ssa_multiplier", 2.0),
+        ("rate_witness_reactant_graphs", ["tampered reactant witness"]),
+        ("rate_witness_product_graphs", ["tampered product witness"]),
+        ("proxy_padding", {"status": "tampered"}),
         ("provenance", {"rmgpy_sha": "b" * 40}),
     ],
 )
@@ -414,6 +573,22 @@ def test_validate_rejects_semantic_field_tampering(field_name, tampered):
     assert rehashed.event_id != record.event_id
     with pytest.raises(ValueError):
         corrupted.validate()
+
+
+def test_absent_witness_fields_preserve_legacy_event_id():
+    record = EventRecord(family="legacy")
+    data = record.to_dict()
+    for name in (
+        "rate_witness_reactant_graphs",
+        "rate_witness_product_graphs",
+        "proxy_padding",
+    ):
+        data.pop(name, None)
+
+    recovered = EventRecord.from_dict(data)
+
+    assert recovered.event_id == record.event_id
+    recovered.validate()
 
 
 if __name__ == "__main__":
