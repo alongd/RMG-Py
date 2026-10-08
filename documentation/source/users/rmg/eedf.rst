@@ -4,7 +4,8 @@ Offline LoKI-B EEDF tables
 The offline generator and :class:`rmgpy.solver.eedf.EEDFTable` share a
 content fingerprint. They provide electron rates, transport, mean energy,
 normalized EEDF and channel powers together. This facility does not yet
-connect to ``PlasmaReactor`` or choose a reactor operating point.
+choose a reactor operating point. A production ``PlasmaReactor`` using a
+table must additionally pass the terminal qualification described below.
 
 Generate a table with the RMG Python environment::
 
@@ -129,14 +130,126 @@ numeric stored values. HF, adaptive and nonuniform grids currently refuse.
 Production loads require acceptance; ``require_accepted=False`` is available
 only for the offline generator's validation of a provisional artifact.
 
+At an accepted reactor terminal state, qualification resolves the effective
+gas fractions and electronic-state populations, renders one LoKI setup, and
+freezes that exact setup with its solver and input-file hashes. LoKI executes
+the frozen bytes without rendering again. Its output must report the same
+execution identity before the direct result can be compared with the table
+row. A passing comparison is staged with the setup and both rows; export is
+admitted only after an acceptance manifest binding those artifacts is
+published atomically. A missing, stale, failed, or tampered manifest refuses
+export, even if an older file contains a ``PASS`` label.
+
+Qualification keeps a successful candidate unpublished while restoring its
+owned SIGTERM and SIGINT dispositions. A cancellation received by either
+deferrer prevents publication, including during restoration when another
+signal may already terminate the process. Only a clean release publishes
+PASS, under the same attempt lock, with an exclusive hard link of the owned
+staged inode as the success boundary. A known prior record is retired first;
+between retirement and publication the record path can be absent. Absence is
+non-PASS: ``require_qualified`` refuses it with an EEDF qualification error.
+After release, signals follow their original dispositions; foreign
+handlers, hard process death, and power loss retain their existing limits.
+
+A returning handler may re-enter the provider after signal release. A
+terminal failure then revokes suspended publication, including its staged
+file, and remains authoritative when the outer call resumes. Completion
+returns the current run's finalised record. Export continues to see a
+candidate until publication commits; it cannot observe a premature PASS
+latch. Failure bookkeeping repeats interrupted cleanup before propagating
+an interruption, preserving the first finalised failure and its run identity.
+
+``require_qualified(operation)`` returns a revocable admission for the current
+run generation. Failure finalised during validation raises. Failure after
+validation can revoke an admission already on the return stack; receiving an
+object is not permission to export. Qualification records, status strings,
+record paths, table manifests and the reactor's public qualification fields
+remain diagnostic snapshots with their existing types and contents. A retained
+snapshot may still say ``PASS`` after failure and cannot authorize output.
+The reactor keeps the capability separately as ``terminal_admission`` on both
+the already-published and newly-qualified terminal paths. A returning signal
+handler can revoke it at Python's ``RETURN_VALUE`` boundary:
+``validate_terminal_state`` can still return normally with a revoked capability.
+**A normal return carries no acceptance or export authority.** Rechecking just
+before returning cannot remove this limit. Reactor initialization clears its
+terminal admission; detached capabilities remain bound to their original
+provider generation and are revoked by its failure or supersession.
+
+EEDF completion logs describe the end of computation and missing output, and
+make no accepted-run or file-validity claim. Physical termination flags,
+profiles, energy/wall diagnostics, model snapshots and historical records are
+not substitutes for the capability. Non-EEDF completion wording is unchanged.
+
+Future terminal-qualified exporters must prepare their bytes and use
+``admission.commit_bytes(destination, payload)``. This is the only supported
+route for consuming terminal export authority: one destination per call,
+immutable bytes, no callbacks. Boolean conversion refuses. The method
+revalidates the current generation and committed acceptance bytes, stages a
+private file, and publishes with an atomic exclusive hard link to the same
+inode. The destination must be absent and the filesystem must support hard
+links; existing files are never overwritten. The staging name is then removed.
+Failure or a newer qualification revokes both the admission and any suspended
+commit, including a commit interrupted immediately after publication.
+
+Revocation first truncates the owned inode through its open descriptor and
+writes a non-PASS marker at offset zero. It never reopens a replacement path
+for writing. Cleanup atomically captures the public name in a private
+directory, compares the captured inode with the retained descriptor, and
+unlinks only inside that private namespace. A foreign inode is restored by a
+no-replace hard link, or retained and reported by path if restoration cannot
+complete. Between capture and restore, that foreign file is briefly absent
+from its public name. Filesystems without hard links fall back to
+retain-and-report for foreign captures; they cannot publish qualified output.
+An occupied restore target is never overwritten.
+
+Private staging and capture directories are named ``.eedf-<uuid>.private``
+and have mode 0700. They live in the public directory's enclosing directory
+when that is on the same filesystem; at a filesystem boundary they live in
+the public directory itself. Open directory descriptors anchor cleanup.
+Each empty directory is removed with non-recursive ``rmdir``. Successful
+qualification and export leave no private directory behind. A directory
+holding retained foreign data is reported by its exact path and is never
+recursively removed. This namespace is process-owned; it is not a defense
+against a hostile same-UID actor accessing the private directory.
+
+Descriptor retention follows live authority and active calls. After a completed
+qualification, a provider retains at most one current acceptance owner and four
+descriptors: the record stream, public parent, private parent and staging
+directory. Supersession or failure explicitly retires that owner. Completed
+exports retain no descriptors; settled terminal failure leaves zero owners and
+zero descriptors. Historical snapshots and externally retained retired objects
+do not extend resource lifetime. A later invalidation of a released path uses
+the same prior-record adoption checks and releases the adopted owner afterward.
+
+Suspended publication and capture operations keep their resources until their
+actual return or unwind, including settlement retries after a second signal.
+With A additional file owners and C capture scopes in flight, the conservative
+bound is ``4 + 4*A + C`` descriptors and ``1 + A`` owners; A and C return to zero
+when the operations finish. The native lifecycle helper drops the final use
+pin after the Python body's return event. It closes all descriptor slots and
+removes matching registry membership without calling Python or releasing the
+GIL. Python signal handlers therefore observe either live resources or a fully
+released owner. Repeated retirement cannot close a reused descriptor number.
+
+If namespace removal is forbidden but descriptor invalidation succeeds,
+cleanup refuses and reports the remaining non-PASS inode. The explicit
+filesystem limit is forbidden removal together with forbidden inode
+invalidation: refusal reports the surviving file but cannot guarantee removal
+of its bytes. The permission-denial and foreign-inode cases are regression
+tested, including second real signals during cleanup. Hard process death and
+power loss cannot run Python cleanup; this is not a durable multi-file
+transaction.
+No current production exporter consumes this admission; existing EEDF-mode
+Chemkin and Cantera writer guards continue to refuse those exports. Diagnostic
+manifests and profiles do not claim terminal qualification.
+
 The pinned study binary has two explicit limitations: it recomputes a linear
 initial solution at each scan node, so these ordered scans do not prove seeded
 continuation, and temporal-growth iteration counts are not emitted. Counts
 are stored as -1 (unknown). Actual seed-controlled continuation and resolved
 symbolic state ladders require a solver output/interface extension. Reactor
-stability, continuation in absorbed power and terminal qualification belong
-to later tickets. Demo tolerances are fixture proposals, not frozen production
-materiality gates.
+stability and continuation in absorbed power belong to later tickets. Demo
+tolerances are fixture proposals, not frozen production materiality gates.
 
 The manifest and loaded table expose ``branch_certification``. The pinned
 solver currently records ``uncertified: unseeded scans`` for each branch; scan

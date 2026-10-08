@@ -1,0 +1,22 @@
+{
+  "source_commit": "f7ff1d8e17d6fabb87d51a1edf94b046e515b2e0",
+  "source_path": "rmgpy/rmg/main.py",
+  "source_sha256": "f6dc965089c80995f104eb9362a2559ebc833ec21a1593f8db1ebf234fbc1bda",
+  "failure": ["example output", "OSError", "not written"],
+  "report": {
+    "exception_type": "MechanismWriterError",
+    "message": "RMG finished model generation, but 1 export step(s) failed and their output is missing: example output. See the traceback(s) logged above.",
+    "logs": [
+      ["ERROR", ""],
+      ["ERROR", "==============================================================================="],
+      ["ERROR", "EXPORT FAILED. 1 of RMG's output steps did not produce their files:"],
+      ["ERROR", "  example output"],
+      ["ERROR", "      OSError: not written"],
+      ["ERROR", ""],
+      ["ERROR", "Model generation itself completed and every file written before this point is"],
+      ["ERROR", "valid; the output above names what is missing."],
+      ["ERROR", "==============================================================================="],
+      ["ERROR", ""]
+    ]
+  }
+}

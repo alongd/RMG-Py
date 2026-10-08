@@ -130,6 +130,7 @@ ext_modules = [
     'rmgpy/species.py',
     'rmgpy/chemkin.pyx',
     # solvers
+    'rmgpy/solver/_eedf_ownership.pyx',
     'rmgpy/solver/base.pyx',
     'rmgpy/solver/simple.pyx',
     'rmgpy/solver/liquid.pyx',
