@@ -55,6 +55,9 @@ class EventRecord:
     resonance_derived: bool = False
     reactant_graphs: list[str] = field(default_factory=list)
     product_graphs: list[str] = field(default_factory=list)
+    rate_witness_reactant_graphs: list[str] = field(default_factory=list)
+    rate_witness_product_graphs: list[str] = field(default_factory=list)
+    proxy_padding: dict[str, Any] = field(default_factory=dict)
 
     # Strand-specific placeholders (null until compiler defines them)
     cut_offset: Optional[int] = None
@@ -78,6 +81,15 @@ class EventRecord:
             item.name: _canonical_link_handles(getattr(self, item.name), item.name)
             for item in fields(self)
             if item.name not in {"event_id", "canonical_index", "_KNOWN_FIELDS"}
+            and not (
+                item.name
+                in {
+                    "rate_witness_reactant_graphs",
+                    "rate_witness_product_graphs",
+                    "proxy_padding",
+                }
+                and not getattr(self, item.name)
+            )
         }
         canonical = json.dumps(
             payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
@@ -227,4 +239,7 @@ _LEGACY_REQUIRED_FIELDS = _KNOWN_FIELDS_CLASS - {
     "degeneracy",
     "reactant_graphs",
     "product_graphs",
+    "rate_witness_reactant_graphs",
+    "rate_witness_product_graphs",
+    "proxy_padding",
 }

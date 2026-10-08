@@ -87,6 +87,12 @@ def test_match_uses_exact_graphs_and_rewrite(units, reverse_participants):
     assert not matches_head_to_tail(reverse)
     assert forward.k_table["k"] == pytest.approx(plpsec_rate_table(GRID)["k"])
     assert forward.raw_path_degeneracy == 3  # No extra degeneracy multiplier on measured kp.
+    assert {
+        record.proxy_padding["status"] for record in (forward, reverse)
+    } == {"excluded_unchanged"}
+    assert all(
+        not record.rate_witness_reactant_graphs for record in (forward, reverse)
+    )
 
 
 @pytest.mark.parametrize("lookalike", ["primary", "head_to_head", "ring"])
@@ -291,7 +297,15 @@ def test_postcompile_census_and_rate_check_accept_small_inventory():
     assert assert_compiled_plpsec_library(artifact) == 2
     assert compiler.compiler_source_hash() == hashlib.sha256(b"".join(
         (Path(compiler.__file__).parent / name).read_bytes()
-        for name in ("compiler.py", "reference_thermo.py", "event_record.py", "atom_map.py", "kinetics_library.py", "database_provenance.py")
+        for name in (
+            "compiler.py",
+            "reference_thermo.py",
+            "event_record.py",
+            "atom_map.py",
+            "kinetics_library.py",
+            "database_provenance.py",
+            "proxy_padding.py",
+        )
     )).hexdigest()
 
 
@@ -308,15 +322,30 @@ def test_postcompile_check_rejects_wrong_rate_or_scope(mutation):
         assert_compiled_plpsec_library(artifact)
 
 
-def test_library_changes_forward_rates_without_changing_ceiling(monkeypatch):
+def test_library_records_are_excluded_while_disabled_rmg_estimates_are_padded(
+    monkeypatch,
+):
     monkeypatch.setenv("RMG_KMC_PLPSEC_LIBRARY", "1")
     on = small_inventory()
     monkeypatch.setenv("RMG_KMC_PLPSEC_LIBRARY", "0")
     off = small_inventory()
-    for field in ("ps_ceiling_pairs", "ps_primary_end_ceiling_pairs"):
-        assert [pair["temperature_K"] for pair in on[field]] == pytest.approx(
-            [pair["temperature_K"] for pair in off[field]], rel=1e-12)
-    assert on["ps_ceiling_temperature_K"] == pytest.approx(off["ps_ceiling_temperature_K"], rel=1e-12)
-    on_anchor = next(record for record in on["records"] if record["event_id"] == on["ps_ceiling_anchor_event_id"])
-    off_anchor = next(record for record in off["records"] if record["event_id"] == off["ps_ceiling_anchor_event_id"])
+    on_records = [record for record in on["records"] if matches_head_to_tail(record)]
+    off_records = [record for record in off["records"] if matches_head_to_tail(record)]
+    assert on_records and off_records
+    assert {
+        record["proxy_padding"]["status"] for record in on_records
+    } == {"excluded_unchanged"}
+    assert {
+        record["proxy_padding"]["status"] for record in off_records
+    } == {"padded"}
+    on_anchor = next(
+        record
+        for record in on["records"]
+        if record["event_id"] == on["ps_ceiling_anchor_event_id"]
+    )
+    off_anchor = next(
+        record
+        for record in off["records"]
+        if record["event_id"] == off["ps_ceiling_anchor_event_id"]
+    )
     assert on_anchor["k_table"]["k"] != off_anchor["k_table"]["k"]

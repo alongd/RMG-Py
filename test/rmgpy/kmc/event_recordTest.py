@@ -357,6 +357,9 @@ def _semantic_record():
         thermo_provenance={"gas_phase": "RMG"},
         provenance={"rmgpy_sha": "a" * 40},
         rate_source={"kind": "RMG family estimate"},
+        rate_witness_reactant_graphs=["reactant witness"],
+        rate_witness_product_graphs=["product witness"],
+        proxy_padding={"status": "padded", "minimum_heavy_bond_distance": 15},
         coproducts=[],
         inventory_class="R1:J_ring",
         feature_ops=[{"action": "set_radical", "atom": 0, "value": 0}],
@@ -401,6 +404,9 @@ def test_event_id_is_full_sha256_and_record_is_frozen():
         ("cut_offset", 1),
         ("degeneracy", 2.0),
         ("ssa_multiplier", 2.0),
+        ("rate_witness_reactant_graphs", ["tampered reactant witness"]),
+        ("rate_witness_product_graphs", ["tampered product witness"]),
+        ("proxy_padding", {"status": "tampered"}),
         ("provenance", {"rmgpy_sha": "b" * 40}),
     ],
 )
@@ -414,6 +420,22 @@ def test_validate_rejects_semantic_field_tampering(field_name, tampered):
     assert rehashed.event_id != record.event_id
     with pytest.raises(ValueError):
         corrupted.validate()
+
+
+def test_absent_witness_fields_preserve_legacy_event_id():
+    record = EventRecord(family="legacy")
+    data = record.to_dict()
+    for name in (
+        "rate_witness_reactant_graphs",
+        "rate_witness_product_graphs",
+        "proxy_padding",
+    ):
+        data.pop(name)
+
+    recovered = EventRecord.from_dict(data)
+
+    assert recovered.event_id == record.event_id
+    recovered.validate()
 
 
 if __name__ == "__main__":
