@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import os
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
@@ -77,16 +76,19 @@ class PaddedReactionWitness:
             "minimum_heavy_bond_distance": min_distance,
             "tolerance_max_abs_log10": tolerance_log10,
             "repeat_unit": repeat_unit.provenance(),
-            "reacting_atoms": _canonical_atom_references(
-                self.reaction.reactants, self.reacting_atom_ids
-            ),
+            "reacting_atoms": {
+                side: _canonical_atom_references(
+                    getattr(self.reaction, side), self.reacting_atom_ids
+                )
+                for side in ("reactants", "products")
+            },
             "artificial_boundaries": [
                 {
-                    "participant_index": item.participant_index,
-                    "atom_index": _canonical_heavy_index(
-                        _molecule(self.reaction.reactants[item.participant_index]),
-                        item.atom_id,
-                    ),
+                    side: _canonical_atom_reference(
+                        getattr(self.reaction, side), item.atom_id
+                    )
+                    for side in ("reactants", "products")
+                } | {
                     "orientation": item.orientation,
                 }
                 for item in self.boundaries
@@ -147,6 +149,16 @@ def _canonical_atom_references(participants, atom_ids) -> list[dict[str, int]]:
         references,
         key=lambda item: (item["participant_index"], item["atom_index"]),
     )
+
+
+def _canonical_atom_reference(participants, atom_id) -> dict[str, int]:
+    participant_index = _participant_containing(participants, atom_id)
+    return {
+        "participant_index": participant_index,
+        "atom_index": _canonical_heavy_index(
+            _molecule(participants[participant_index]), atom_id
+        ),
+    }
 
 
 def _projection(executable, witness) -> dict[str, list[dict[str, int]]]:
@@ -288,8 +300,6 @@ def pad_molecule(
     if min_distance < 0:
         raise ValueError("minimum boundary distance must be non-negative")
     padded = copy.deepcopy(molecule)
-    if os.environ.get("RMG_KMC_DISABLE_PROXY_PADDING") == "1":
-        return PaddedMolecule(padded, tuple(boundaries), 0)
     reacting_ids = tuple(reacting_atom_ids)
     available = {
         atom.id for atom in padded.atoms if atom.element.number != 1
@@ -431,17 +441,6 @@ def pad_reaction_witness(
         raise ReactionNotPaddable(
             "artificial continuation port is a reacting atom"
         )
-    if os.environ.get("RMG_KMC_DISABLE_PROXY_PADDING") == "1":
-        return PaddedReactionWitness(
-            witness,
-            tuple(boundaries),
-            centers,
-            0,
-            original_heavy_atoms,
-            original_heavy_atoms,
-            _projection(reaction, witness),
-        )
-
     updated = []
     extensions = 0
     all_ids = set(reactant_atoms) | {

@@ -6,7 +6,10 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+from rmgpy.kmc.compiler import _graph_adjacencies
 from rmgpy.kmc.event_record import EventRecord
+from rmgpy.kmc.proxy_padding import BoundaryPort, RepeatUnitGraph, pad_reaction_witness
+from rmgpy.molecule.molecule import Molecule
 
 
 def test_record_roundtrip():
@@ -380,7 +383,24 @@ def _semantic_record():
         rate_witness_product_graphs=[ethane],
         proxy_padding={
             "status": "padded",
-            "minimum_heavy_bond_distance": 15,
+            "minimum_heavy_bond_distance": 0,
+            "reacting_atoms": {
+                "reactants": [
+                    {"participant_index": 0, "atom_index": 0},
+                    {"participant_index": 1, "atom_index": 0},
+                ],
+                "products": [
+                    {"participant_index": 0, "atom_index": 0},
+                    {"participant_index": 0, "atom_index": 1},
+                ],
+            },
+            "artificial_boundaries": [
+                {
+                    "reactants": {"participant_index": 0, "atom_index": 0},
+                    "products": {"participant_index": 0, "atom_index": 0},
+                    "orientation": "tail",
+                }
+            ],
             "root_validation": {"method": "synthetic test fixture"},
             "executable_to_witness_projection": {
                 "reactants": [
@@ -436,6 +456,52 @@ def test_padded_record_requires_explicit_executable_projection():
 
     with pytest.raises(ValueError, match="two-sided executable projection"):
         record.validate()
+
+
+def _distance_checked_padded_record():
+    molecule = Molecule(smiles="CC")
+    molecule.assign_atom_ids()
+    heavy = [atom for atom in molecule.atoms if atom.element.number != 1]
+    reaction = type("Reaction", (), {})()
+    reaction.reactants = [molecule]
+    reaction.products = [molecule.copy(deep=True)]
+    reaction.degeneracy = 1.0
+    repeat = RepeatUnitGraph.from_smiles(
+        "PE", "CC", head_atom_index=0, tail_atom_index=1
+    )
+    witness = pad_reaction_witness(
+        reaction,
+        [BoundaryPort(heavy[1].id, "tail")],
+        repeat,
+        min_distance=4,
+        reacting_atom_ids=[heavy[0].id],
+    )
+    padding = witness.provenance(repeat, 4, 0.01)
+    padding["root_validation"] = {"method": "synthetic exact-root fixture"}
+    return EventRecord(
+        family="identity",
+        arity=1,
+        participant_site_types=["chain"],
+        reactant_multiplicities=[1],
+        atom_map={0: 0, 1: 1},
+        reactant_graphs=_graph_adjacencies(reaction.reactants),
+        product_graphs=_graph_adjacencies(reaction.products),
+        rate_witness_reactant_graphs=_graph_adjacencies(witness.reaction.reactants),
+        rate_witness_product_graphs=_graph_adjacencies(witness.reaction.products),
+        proxy_padding=padding,
+    )
+
+
+def test_padded_record_publishes_the_declared_minimum_boundary_distance(monkeypatch):
+    monkeypatch.setenv("RMG_KMC_DISABLE_PROXY_PADDING", "1")
+    record = _distance_checked_padded_record()
+
+    record.validate()
+    data = record.to_dict()
+    data["proxy_padding"]["minimum_heavy_bond_distance"] = 6
+    too_short = EventRecord.from_dict({**data, "event_id": ""})
+    with pytest.raises(ValueError, match="minimum heavy-atom distance"):
+        too_short.validate()
 
 
 @pytest.mark.parametrize(

@@ -855,6 +855,56 @@ def _remap_witness_projection(projection, expected, actual):
     return remapped
 
 
+def _remap_padding_references(padding, expected, actual):
+    """Move distance-audit references onto regenerated published graphs."""
+    remapped = copy.deepcopy(padding)
+    for side in ("reactants", "products"):
+        order, atom_maps = _side_isomorphism(
+            getattr(expected, side), getattr(actual, side)
+        )
+        references = list(remapped["reacting_atoms"][side]) + [
+            boundary[side] for boundary in remapped["artificial_boundaries"]
+        ]
+        for reference in references:
+            expected_participant = reference["participant_index"]
+            reference["participant_index"] = order[expected_participant]
+            reference["atom_index"] = atom_maps[expected_participant][
+                reference["atom_index"]
+            ]
+    return remapped
+
+
+def _reverse_padding_references(padding):
+    """Reverse two-sided distance references with the rate witness direction."""
+    reversed_padding = copy.deepcopy(padding)
+    reacting = reversed_padding["reacting_atoms"]
+    reacting["reactants"], reacting["products"] = (
+        reacting["products"], reacting["reactants"]
+    )
+    for boundary in reversed_padding["artificial_boundaries"]:
+        boundary["reactants"], boundary["products"] = (
+            boundary["products"], boundary["reactants"]
+        )
+    return reversed_padding
+
+
+def _proxy_padding_summary(records) -> dict[str, int]:
+    """Count record dispositions exposed by an enabled padding compile."""
+    statuses = [
+        (
+            record.proxy_padding
+            if isinstance(record, EventRecord)
+            else record.get("proxy_padding", {})
+        ).get("status")
+        for record in records
+    ]
+    return {
+        "padded": statuses.count("padded"),
+        "not_paddable": statuses.count("not_paddable"),
+        "excluded": statuses.count("excluded_unchanged"),
+    }
+
+
 def _production_padded_root(kinetics_database, reaction):
     """Re-derive one exact padded reaction through RMG's production generator."""
     from rmgpy.species import Species
@@ -2024,6 +2074,13 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
     if event_ids != expected_order or len(event_ids) != len(set(event_ids)):
         raise ValueError("records must have unique canonical event-id ordering")
     provenance = artifact.get("provenance", {})
+    padding_enabled = "proxy_boundary_padding" in provenance
+    if padding_enabled:
+        expected_summary = _proxy_padding_summary(records)
+        if artifact.get("proxy_padding_summary") != expected_summary:
+            raise ValueError("proxy padding disposition summary is inconsistent")
+    elif "proxy_padding_summary" in artifact:
+        raise ValueError("disabled padding artifact has a disposition summary")
     for index, data in enumerate(records):
         record = EventRecord.from_dict(data)
         record.validate()
@@ -3227,7 +3284,7 @@ class EventSetCompiler:
         is_library_pair = getattr(self, "use_plpsec_library", True) and (
             matches_head_to_tail(forward) or matches_head_to_tail(reverse)
         )
-        if is_library_pair:
+        if padding_distance is not None and is_library_pair:
             padding_metadata = {
                 "status": "excluded_unchanged",
                 "reason": "owner-approved PLP-SEC library rate is not re-derived",
@@ -3281,6 +3338,9 @@ class EventSetCompiler:
                     self.proxy_padding_tolerance_log10,
                 )
                 if not derived_forward:
+                    padding_metadata = _reverse_padding_references(
+                        padding_metadata
+                    )
                     projection = padding_metadata[
                         "executable_to_witness_projection"
                     ]
@@ -3300,6 +3360,9 @@ class EventSetCompiler:
                         expected_witness,
                         rate_reaction,
                     )
+                )
+                padding_metadata = _remap_padding_references(
+                    padding_metadata, expected_witness, rate_reaction
                 )
                 padding_metadata["root_validation"] = {
                     "method": "RMGDatabase.generate_reactions_from_families",
@@ -3327,7 +3390,11 @@ class EventSetCompiler:
             proxy_padding=copy.deepcopy(padding_metadata),
             event_id="",
         )
-        reverse_padding_metadata = copy.deepcopy(padding_metadata)
+        reverse_padding_metadata = (
+            _reverse_padding_references(padding_metadata)
+            if padding_metadata.get("status") == "padded"
+            else copy.deepcopy(padding_metadata)
+        )
         projection = reverse_padding_metadata.get(
             "executable_to_witness_projection"
         )
@@ -3630,12 +3697,13 @@ class EventSetCompiler:
             reverse_of=forward.event_id,
             event_id="",
         )
-        exclusion = {
-            "status": "excluded_unchanged",
-            "reason": "owner-approved archived junction record is not re-derived",
-        }
-        forward = replace(forward, proxy_padding=exclusion, event_id="")
-        reverse = replace(reverse, proxy_padding=exclusion, event_id="")
+        if self.proxy_padding_distance is not None:
+            exclusion = {
+                "status": "excluded_unchanged",
+                "reason": "owner-approved archived junction record is not re-derived",
+            }
+            forward = replace(forward, proxy_padding=exclusion, event_id="")
+            reverse = replace(reverse, proxy_padding=exclusion, event_id="")
         forward = replace(
             forward,
             junction_ops=_junction_ops(
@@ -3756,12 +3824,13 @@ class EventSetCompiler:
             reverse_of=forward.event_id,
             event_id="",
         )
-        exclusion = {
-            "status": "excluded_unchanged",
-            "reason": "owner-approved archived junction record is not re-derived",
-        }
-        forward = replace(forward, proxy_padding=exclusion, event_id="")
-        reverse = replace(reverse, proxy_padding=exclusion, event_id="")
+        if self.proxy_padding_distance is not None:
+            exclusion = {
+                "status": "excluded_unchanged",
+                "reason": "owner-approved archived junction record is not re-derived",
+            }
+            forward = replace(forward, proxy_padding=exclusion, event_id="")
+            reverse = replace(reverse, proxy_padding=exclusion, event_id="")
         forward = replace(
             forward,
             junction_ops=_junction_ops(
@@ -4068,6 +4137,11 @@ class EventSetCompiler:
             "families": list(self.families),
             "excluded_families": self.excluded_families,
             "provenance": provenance,
+            **(
+                {"proxy_padding_summary": _proxy_padding_summary(records)}
+                if self.proxy_padding_distance is not None
+                else {}
+            ),
             "inventory_arms": {
                 "selected": None,
                 "R0": "resonance-derived ring-site capture omitted",

@@ -39,6 +39,48 @@ def test_pe_artificial_boundary_is_padded_to_reacting_atom_distance():
     ) == 5
 
 
+def test_padding_checks_achieved_distance_between_repeat_size_steps():
+    molecule = Molecule(smiles="CC")
+    molecule.assign_atom_ids()
+    head, tail = _heavy_atoms(molecule)
+
+    result = pad_molecule(
+        molecule,
+        [BoundaryPort(tail.id, "tail")],
+        RepeatUnitGraph.from_smiles(
+            "PE", "CC", head_atom_index=0, tail_atom_index=1
+        ),
+        reacting_atom_ids=[head.id],
+        min_distance=4,
+    )
+
+    assert heavy_atom_distance(
+        result.molecule, head.id, result.boundaries[0].atom_id
+    ) == 5
+
+
+def test_padding_environment_variable_cannot_bypass_extension(monkeypatch):
+    monkeypatch.setenv("RMG_KMC_DISABLE_PROXY_PADDING", "1")
+    molecule = Molecule(smiles="CC")
+    molecule.assign_atom_ids()
+    head, tail = _heavy_atoms(molecule)
+
+    result = pad_molecule(
+        molecule,
+        [BoundaryPort(tail.id, "tail")],
+        RepeatUnitGraph.from_smiles(
+            "PE", "CC", head_atom_index=0, tail_atom_index=1
+        ),
+        reacting_atom_ids=[head.id],
+        min_distance=4,
+    )
+
+    assert result.extensions == 2
+    assert heavy_atom_distance(
+        result.molecule, head.id, result.boundaries[0].atom_id
+    ) == 5
+
+
 @pytest.mark.parametrize(
     "name,smiles,tail_index,expected_heavy_atoms",
     [

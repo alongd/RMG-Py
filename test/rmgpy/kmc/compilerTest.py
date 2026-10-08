@@ -65,6 +65,18 @@ def test_padding_is_off_by_default_and_requires_explicit_k():
     assert "proxy_boundary_padding" not in instance.compile()["provenance"]
 
 
+def test_padding_summary_is_published_only_when_enabled():
+    disabled = EventSetCompiler(None, [], []).compile()
+    enabled = EventSetCompiler(None, [], [], proxy_padding_distance=3).compile()
+
+    assert "proxy_padding_summary" not in disabled
+    assert enabled["proxy_padding_summary"] == {
+        "padded": 0,
+        "not_paddable": 0,
+        "excluded": 0,
+    }
+
+
 def test_padded_root_degeneracy_is_derived_by_production_generation():
     from rmgpy.data.kinetics.family import TemplateReaction
     from rmgpy.molecule.molecule import Molecule

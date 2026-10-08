@@ -171,6 +171,7 @@ class EventRecord:
             raise ValueError("atom_map must be a bijection")
         if self.proxy_padding.get("status") == "padded":
             _validate_padding_projection(self)
+            _validate_padding_distance(self)
         if self.status != "enabled" and not self.status_reason:
             raise ValueError("non-enabled records require a status reason")
         if not _is_full_event_id(self.event_id):
@@ -238,6 +239,77 @@ def _validate_padding_projection(record: EventRecord) -> None:
             ):
                 raise ValueError("padded witness projection image is invalid")
         _validate_projected_structure(executable, witness, entries)
+
+
+def _validate_padding_distance(record: EventRecord) -> None:
+    """Check the declared boundary distance on both published witness sides."""
+    from rmgpy.molecule.molecule import Molecule
+
+    padding = record.proxy_padding
+    minimum = padding.get("minimum_heavy_bond_distance")
+    if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 0:
+        raise ValueError("padded witness has an invalid minimum heavy-atom distance")
+    reacting = padding.get("reacting_atoms")
+    boundaries = padding.get("artificial_boundaries")
+    if (
+        not isinstance(reacting, dict)
+        or set(reacting) != {"reactants", "products"}
+        or not isinstance(boundaries, list)
+    ):
+        raise ValueError("padded witness lacks two-sided distance references")
+    for side, graph_strings in (
+        ("reactants", record.rate_witness_reactant_graphs),
+        ("products", record.rate_witness_product_graphs),
+    ):
+        molecules = [
+            Molecule().from_adjacency_list(graph) for graph in graph_strings
+        ]
+        reacting_atoms = [
+            _resolve_padding_reference(item, molecules) for item in reacting[side]
+        ]
+        for boundary in boundaries:
+            boundary_participant, boundary_atom = _resolve_padding_reference(
+                boundary.get(side), molecules
+            )
+            for reacting_participant, reacting_atom in reacting_atoms:
+                if reacting_participant != boundary_participant:
+                    continue
+                distance = _heavy_graph_distance(reacting_atom, boundary_atom)
+                if distance < minimum:
+                    raise ValueError(
+                        "padded witness violates its minimum heavy-atom distance: "
+                        f"{side} participant {boundary_participant} has "
+                        f"distance {distance}, requires {minimum}"
+                    )
+
+
+def _resolve_padding_reference(reference, molecules):
+    if not isinstance(reference, dict):
+        raise ValueError("padded witness distance reference is invalid")
+    participant = reference.get("participant_index")
+    atom_index = reference.get("atom_index")
+    if not isinstance(participant, int) or not 0 <= participant < len(molecules):
+        raise ValueError("padded witness distance participant is invalid")
+    heavy = [
+        atom for atom in molecules[participant].atoms if atom.element.number != 1
+    ]
+    if not isinstance(atom_index, int) or not 0 <= atom_index < len(heavy):
+        raise ValueError("padded witness distance atom is invalid")
+    return participant, heavy[atom_index]
+
+
+def _heavy_graph_distance(first, second) -> int:
+    frontier = [(first, 0)]
+    seen = {first}
+    while frontier:
+        atom, distance = frontier.pop(0)
+        if atom is second:
+            return distance
+        for neighbor in atom.edges:
+            if neighbor.element.number != 1 and neighbor not in seen:
+                seen.add(neighbor)
+                frontier.append((neighbor, distance + 1))
+    raise ValueError("padded witness distance references are disconnected")
 
 
 def _validate_projected_structure(executable, witness, entries) -> None:
