@@ -291,7 +291,15 @@ def test_postcompile_census_and_rate_check_accept_small_inventory():
     assert assert_compiled_plpsec_library(artifact) == 2
     assert compiler.compiler_source_hash() == hashlib.sha256(b"".join(
         (Path(compiler.__file__).parent / name).read_bytes()
-        for name in ("compiler.py", "reference_thermo.py", "event_record.py", "atom_map.py", "kinetics_library.py", "database_provenance.py")
+        for name in (
+            "compiler.py",
+            "reference_thermo.py",
+            "event_record.py",
+            "atom_map.py",
+            "kinetics_library.py",
+            "database_provenance.py",
+            "barrier_e0.py",
+        )
     )).hexdigest()
 
 

@@ -12,6 +12,7 @@ import pytest
 
 from rmgpy import settings
 from rmgpy.data.rmg import RMGDatabase
+from rmgpy.kmc.barrier_e0 import FixedBBarrierE0Provider
 import rmgpy.kmc.compiler as compiler_module
 from rmgpy.kmc.compiler import (
     DEFAULT_T_GRID,
@@ -27,6 +28,7 @@ from rmgpy.kmc.compiler import (
     _orient_to_proxy,
     _reflect_ortho_reaction,
     ceiling_temperature,
+    compiler_source_hash,
     ps_proxy_set,
     short_ps_molecule_catalogue,
     validate_artifact,
@@ -139,6 +141,47 @@ def test_uses_public_family_pipeline_and_emits_f1_fields():
     assert record["provenance"]["family_list_sha256"]
     assert "archived_j_para_rate" not in artifact["provenance"]
     assert "archived_j_para_rate" not in record["provenance"]
+
+
+def test_barrier_e0_provider_is_off_by_default_and_explicit_when_enabled():
+    disabled, _ = _compiler()
+    assert disabled.compile()["provenance"]["barrier_e0_provider"] == {
+        "enabled": False
+    }
+
+    enabled, _ = _compiler()
+    enabled.barrier_e0_provider = FixedBBarrierE0Provider(900.0)
+    artifact = enabled.compile()
+    assert artifact["provenance"]["barrier_e0_provider"] == {
+        "enabled": True,
+        "name": "fixed-b-wilhoit",
+        "version": "1",
+        "B_K": 900.0,
+        "fit_temperature_grid": "participant ThermoData.Tdata",
+        "fit_weights": "uniform least squares",
+    }
+    assert artifact["inputs"]["barrier_e0_provider"] == artifact["provenance"][
+        "barrier_e0_provider"
+    ]
+
+
+def test_compiler_source_hash_includes_barrier_e0_provider():
+    source_root = Path(compiler_module.__file__).parent
+    expected = hashlib.sha256(
+        b"".join(
+            (source_root / filename).read_bytes()
+            for filename in (
+                "compiler.py",
+                "reference_thermo.py",
+                "event_record.py",
+                "atom_map.py",
+                "kinetics_library.py",
+                "database_provenance.py",
+                "barrier_e0.py",
+            )
+        )
+    ).hexdigest()
+    assert compiler_source_hash() == expected
 
 
 @pytest.mark.parametrize("kinetics_type", ["ArrheniusBM", "ArrheniusEP"])
