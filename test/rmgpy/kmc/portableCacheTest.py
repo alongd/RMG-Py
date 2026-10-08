@@ -1,6 +1,5 @@
 import json
 import hashlib
-import inspect
 import os
 from pathlib import Path
 import shutil
@@ -385,8 +384,6 @@ def test_artifact_hit_checks_hash_before_json_validation(tmp_path, monkeypatch):
 def test_driver_main_cold_hit_and_generation_only_modes(tmp_path, monkeypatch, capsys):
     import compile_event_set_fixture as driver
 
-    assert "was_cached = cacheable_seed and path.is_file()" in inspect.getsource(driver.main)
-
     database_path = _make_database(tmp_path / "db")
     (database_path / "input/kinetics/families/stub").mkdir(parents=True)
     (database_path / "input/kinetics/families/stub/groups.py").write_text("")
@@ -481,6 +478,12 @@ def test_driver_main_cold_hit_and_generation_only_modes(tmp_path, monkeypatch, c
 
     monkeypatch.setattr(driver, "load_or_generate", load_or_generate)
     calls.clear()
+    run()
+    assert read_cache == [False]
+    assert calls == ["generate"]
+    assert "cached public RMG generation" not in capsys.readouterr().out
+    calls.clear()
+    read_cache.clear()
     run()
     assert read_cache == [False]
     assert calls == ["generate"]
