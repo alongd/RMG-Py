@@ -162,6 +162,8 @@ class EventRecord:
             raise ValueError("degeneracy and SSA multiplier must be positive")
         if len(self.atom_map) != len(set(self.atom_map.values())):
             raise ValueError("atom_map must be a bijection")
+        if self.proxy_padding.get("status") == "padded":
+            _validate_padding_projection(self)
         if self.status != "enabled" and not self.status_reason:
             raise ValueError("non-enabled records require a status reason")
         if not _is_full_event_id(self.event_id):
@@ -171,6 +173,54 @@ class EventRecord:
         expected = self._compute_event_id()
         if self.event_id != expected:
             raise ValueError("event_id does not match canonical semantic content")
+
+
+def _validate_padding_projection(record: EventRecord) -> None:
+    """Prove every executable heavy atom has one canonical witness image."""
+    from rmgpy.molecule.molecule import Molecule
+
+    padding = record.proxy_padding
+    if "root_validation" not in padding:
+        raise ValueError("padded witness lacks production root validation")
+    projection = padding.get("executable_to_witness_projection")
+    if not isinstance(projection, dict) or set(projection) != {"reactants", "products"}:
+        raise ValueError("padded witness lacks a two-sided executable projection")
+    for side, executable_graphs, witness_graphs in (
+        ("reactants", record.reactant_graphs, record.rate_witness_reactant_graphs),
+        ("products", record.product_graphs, record.rate_witness_product_graphs),
+    ):
+        executable = [Molecule().from_adjacency_list(graph) for graph in executable_graphs]
+        witness = [Molecule().from_adjacency_list(graph) for graph in witness_graphs]
+        expected = {
+            (participant_index, atom_index)
+            for participant_index, molecule in enumerate(executable)
+            for atom_index, atom in enumerate(
+                atom for atom in molecule.atoms if atom.element.number != 1
+            )
+        }
+        entries = projection[side]
+        domain = {
+            (item.get("participant_index"), item.get("executable_atom_index"))
+            for item in entries
+        }
+        if domain != expected or len(entries) != len(domain):
+            raise ValueError("padded witness projection does not cover executable atoms")
+        images = {
+            (item["participant_index"], item.get("witness_atom_index"))
+            for item in entries
+        }
+        if len(images) != len(entries):
+            raise ValueError("padded witness projection is not injective")
+        for participant_index, witness_index in images:
+            if not isinstance(participant_index, int) or not (
+                0 <= participant_index < len(witness)
+            ):
+                raise ValueError("padded witness projection participant is invalid")
+            heavy_count = sum(
+                atom.element.number != 1 for atom in witness[participant_index].atoms
+            )
+            if not isinstance(witness_index, int) or not (0 <= witness_index < heavy_count):
+                raise ValueError("padded witness projection image is invalid")
 
 
 def _is_full_event_id(value: Any) -> bool:

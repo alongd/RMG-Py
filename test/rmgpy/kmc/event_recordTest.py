@@ -328,6 +328,23 @@ def test_event_id_deterministic():
 
 
 def _semantic_record():
+    methyl = (
+        "multiplicity 2\n"
+        "1 C u1 p0 c0 {2,S} {3,S} {4,S}\n"
+        "2 H u0 p0 c0 {1,S}\n"
+        "3 H u0 p0 c0 {1,S}\n"
+        "4 H u0 p0 c0 {1,S}"
+    )
+    ethane = (
+        "1 C u0 p0 c0 {2,S} {3,S} {4,S} {5,S}\n"
+        "2 C u0 p0 c0 {1,S} {6,S} {7,S} {8,S}\n"
+        "3 H u0 p0 c0 {1,S}\n"
+        "4 H u0 p0 c0 {1,S}\n"
+        "5 H u0 p0 c0 {1,S}\n"
+        "6 H u0 p0 c0 {2,S}\n"
+        "7 H u0 p0 c0 {2,S}\n"
+        "8 H u0 p0 c0 {2,S}"
+    )
     return EventRecord(
         family="R_Recombination",
         template="J_para",
@@ -357,9 +374,41 @@ def _semantic_record():
         thermo_provenance={"gas_phase": "RMG"},
         provenance={"rmgpy_sha": "a" * 40},
         rate_source={"kind": "RMG family estimate"},
-        rate_witness_reactant_graphs=["reactant witness"],
-        rate_witness_product_graphs=["product witness"],
-        proxy_padding={"status": "padded", "minimum_heavy_bond_distance": 15},
+        reactant_graphs=[methyl, methyl],
+        product_graphs=[ethane],
+        rate_witness_reactant_graphs=[methyl, methyl],
+        rate_witness_product_graphs=[ethane],
+        proxy_padding={
+            "status": "padded",
+            "minimum_heavy_bond_distance": 15,
+            "root_validation": {"method": "synthetic test fixture"},
+            "executable_to_witness_projection": {
+                "reactants": [
+                    {
+                        "participant_index": 0,
+                        "executable_atom_index": 0,
+                        "witness_atom_index": 0,
+                    },
+                    {
+                        "participant_index": 1,
+                        "executable_atom_index": 0,
+                        "witness_atom_index": 0,
+                    },
+                ],
+                "products": [
+                    {
+                        "participant_index": 0,
+                        "executable_atom_index": 0,
+                        "witness_atom_index": 0,
+                    },
+                    {
+                        "participant_index": 0,
+                        "executable_atom_index": 1,
+                        "witness_atom_index": 1,
+                    },
+                ],
+            },
+        },
         coproducts=[],
         inventory_class="R1:J_ring",
         feature_ops=[{"action": "set_radical", "atom": 0, "value": 0}],
@@ -378,6 +427,15 @@ def test_event_id_is_full_sha256_and_record_is_frozen():
     record.validate()
     with pytest.raises(FrozenInstanceError):
         record.status = "refused"
+
+
+def test_padded_record_requires_explicit_executable_projection():
+    data = _semantic_record().to_dict()
+    del data["proxy_padding"]["executable_to_witness_projection"]
+    record = EventRecord.from_dict({**data, "event_id": ""})
+
+    with pytest.raises(ValueError, match="two-sided executable projection"):
+        record.validate()
 
 
 @pytest.mark.parametrize(

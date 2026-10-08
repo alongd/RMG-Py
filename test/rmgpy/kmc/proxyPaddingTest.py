@@ -5,6 +5,7 @@ import pytest
 from rmgpy.kmc.proxy_padding import (
     BoundaryPort,
     PaddingLimitExceeded,
+    ReactionNotPaddable,
     RepeatUnitGraph,
     heavy_atom_distance,
     pad_molecule,
@@ -256,4 +257,68 @@ def test_reaction_padding_fails_at_the_finite_graph_ceiling():
             min_distance=7,
             reacting_atom_ids=[head.id],
             max_heavy_atoms=4,
+        )
+
+
+def test_padding_preserves_declared_singlet_biradical_spin():
+    molecule = Molecule(smiles="[CH2][CH2]")
+    molecule.multiplicity = 1
+    molecule.assign_atom_ids()
+    head, tail = _heavy_atoms(molecule)
+
+    padded = pad_molecule(
+        molecule,
+        [BoundaryPort(tail.id, "tail")],
+        RepeatUnitGraph.from_smiles(
+            "PE", "CC", head_atom_index=0, tail_atom_index=1
+        ),
+        reacting_atom_ids=[head.id],
+        min_distance=3,
+    )
+
+    assert padded.molecule.multiplicity == 1
+
+
+def test_witness_provenance_projects_executable_atoms_without_raw_ids():
+    molecule = Molecule(smiles="CC")
+    molecule.assign_atom_ids()
+    head, tail = _heavy_atoms(molecule)
+    reaction = SimpleNamespace(
+        reactants=[molecule], products=[molecule.copy(deep=True)], degeneracy=1.0
+    )
+    repeat = RepeatUnitGraph.from_smiles(
+        "PE", "CC", head_atom_index=0, tail_atom_index=1
+    )
+    witness = pad_reaction_witness(
+        reaction, [BoundaryPort(tail.id, "tail")], repeat,
+        min_distance=3, reacting_atom_ids=[head.id]
+    )
+    provenance = witness.provenance(repeat, 3, 0.01)
+
+    projection = provenance["executable_to_witness_projection"]["reactants"]
+    assert {item["executable_atom_index"] for item in projection} == {0, 1}
+    assert len({item["witness_atom_index"] for item in projection}) == 2
+    serialized = repr(provenance)
+    assert "atom_id" not in serialized and "reacting_atom_ids" not in serialized
+
+
+def test_reacting_artificial_boundary_is_explicitly_not_paddable():
+    molecule = Molecule(smiles="CC")
+    molecule.assign_atom_ids()
+    _, tail = _heavy_atoms(molecule)
+    reaction = SimpleNamespace(
+        reactants=[molecule], products=[molecule.copy(deep=True)], degeneracy=1.0
+    )
+
+    with pytest.raises(
+        ReactionNotPaddable, match="artificial continuation port is a reacting atom"
+    ):
+        pad_reaction_witness(
+            reaction,
+            [BoundaryPort(tail.id, "tail")],
+            RepeatUnitGraph.from_smiles(
+                "PE", "CC", head_atom_index=0, tail_atom_index=1
+            ),
+            min_distance=3,
+            reacting_atom_ids=[tail.id],
         )

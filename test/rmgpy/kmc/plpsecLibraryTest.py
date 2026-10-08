@@ -322,13 +322,13 @@ def test_postcompile_check_rejects_wrong_rate_or_scope(mutation):
         assert_compiled_plpsec_library(artifact)
 
 
-def test_library_records_are_excluded_while_disabled_rmg_estimates_are_padded(
+def test_library_records_are_excluded_while_unvalidated_estimates_are_not_paddable(
     monkeypatch,
 ):
     monkeypatch.setenv("RMG_KMC_PLPSEC_LIBRARY", "1")
-    on = small_inventory()
+    on = small_inventory(proxy_padding_distance=3)
     monkeypatch.setenv("RMG_KMC_PLPSEC_LIBRARY", "0")
-    off = small_inventory()
+    off = small_inventory(proxy_padding_distance=3)
     on_records = [record for record in on["records"] if matches_head_to_tail(record)]
     off_records = [record for record in off["records"] if matches_head_to_tail(record)]
     assert on_records and off_records
@@ -337,7 +337,7 @@ def test_library_records_are_excluded_while_disabled_rmg_estimates_are_padded(
     } == {"excluded_unchanged"}
     assert {
         record["proxy_padding"]["status"] for record in off_records
-    } == {"padded"}
+    } == {"not_paddable"}
     on_anchor = next(
         record
         for record in on["records"]

@@ -30,6 +30,7 @@ from rmgpy.kmc.kinetics_library import (
 from rmgpy.kmc.proxy_padding import (
     BoundaryPort,
     PaddingLimitExceeded,
+    ReactionNotPaddable,
     RepeatUnitGraph,
     pad_reaction_witness,
 )
@@ -68,7 +69,7 @@ PS_FAMILY_FILTER_REASON = (
 )
 LINK_PLACEHOLDER = "evt_" + "0" * 64
 PERSISTENT_CARBENE_POLICY_VERSION = "persistent-carbene-applicability/1"
-PROXY_PADDING_DISTANCE = 20
+PROXY_PADDING_DISTANCE = None
 PROXY_PADDING_TOLERANCE_LOG10 = 0.01
 PROXY_PADDING_MAX_HEAVY_ATOMS = 512
 R1_JUNCTION_LABELS = {
@@ -745,6 +746,10 @@ def _template(reaction) -> str:
 
 def _proxy_fingerprint(proxy) -> dict[str, Any]:
     """Structural, rather than object-identity, provenance for a proxy input."""
+    def declared_molecule(participant):
+        molecules = getattr(participant, "molecule", None)
+        return molecules[0] if molecules else participant
+
     return {
         "site_type": proxy.site_type,
         "frontier": proxy.frontier,
@@ -753,7 +758,13 @@ def _proxy_fingerprint(proxy) -> dict[str, Any]:
         "artificial_boundaries": [
             {
                 "participant_index": boundary.participant_index,
-                "atom_id": boundary.atom_id,
+                "atom_index": [
+                    atom.id for atom in _ordered_atoms(
+                        declared_molecule(
+                            proxy.reactants[boundary.participant_index]
+                        )
+                    ) if atom.element.number != 1
+                ].index(boundary.atom_id),
                 "orientation": boundary.orientation,
                 "kind": boundary.kind,
             }
@@ -771,6 +782,48 @@ def _proxy_fingerprint(proxy) -> dict[str, Any]:
 def _graph_adjacencies(participants: Iterable[Any]) -> list[str]:
     """Serialize participant graphs as stable, explicit-H adjacency lists."""
     return [_canonical_adjacency(_molecule(item)) for item in participants]
+
+
+def _side_isomorphic(expected, actual) -> bool:
+    """Match participant multisets without relying on process-global atom IDs."""
+    if len(expected) != len(actual):
+        return False
+    return any(
+        all(
+            _molecule(expected[index]).is_isomorphic(
+                _molecule(actual[target]), strict=False
+            )
+            for index, target in enumerate(order)
+        )
+        for order in permutations(range(len(actual)))
+    )
+
+
+def _production_padded_root(kinetics_database, reaction):
+    """Re-derive one exact padded reaction through RMG's production generator."""
+    from rmgpy.species import Species
+
+    if not hasattr(kinetics_database, "generate_reactions_from_families"):
+        raise ReactionNotPaddable("production family generator is unavailable")
+
+    generated = kinetics_database.generate_reactions_from_families(
+        [Species(molecule=[_molecule(item).copy(deep=True)]) for item in reaction.reactants],
+        products=[Species(molecule=[_molecule(item).copy(deep=True)]) for item in reaction.products],
+        only_families=[reaction.family],
+        # Padding preserves the selected resonance forms. Re-enumerating resonance
+        # here is both unnecessary and unbounded for the enlarged witness graphs.
+        resonance=False,
+    )
+    matches = [
+        candidate for candidate in generated
+        if _side_isomorphic(reaction.reactants, candidate.reactants)
+        and _side_isomorphic(reaction.products, candidate.products)
+    ]
+    if len(matches) != 1:
+        raise ReactionNotPaddable(
+            f"production root validation found {len(matches)} exact padded reactions"
+        )
+    return matches[0], len(generated)
 
 
 def _copy_participant(item):
@@ -2603,7 +2656,7 @@ class EventSetCompiler:
         family_candidates: Iterable[str] = PS_FAMILY_CANDIDATES,
         kinetics_depositories: Iterable[str] = ("training",),
         use_plpsec_library: bool | None = None,
-        proxy_padding_distance: int = PROXY_PADDING_DISTANCE,
+        proxy_padding_distance: int | None = PROXY_PADDING_DISTANCE,
         proxy_padding_tolerance_log10: float = PROXY_PADDING_TOLERANCE_LOG10,
         proxy_padding_max_heavy_atoms: int = PROXY_PADDING_MAX_HEAVY_ATOMS,
     ):
@@ -2666,12 +2719,14 @@ class EventSetCompiler:
         )
         self.reaction_cache = dict(reaction_cache or {})
         self.family_candidates = tuple(sorted(set(family_candidates)))
-        self.proxy_padding_distance = int(proxy_padding_distance)
+        self.proxy_padding_distance = (
+            None if proxy_padding_distance is None else int(proxy_padding_distance)
+        )
         self.proxy_padding_tolerance_log10 = float(
             proxy_padding_tolerance_log10
         )
         self.proxy_padding_max_heavy_atoms = int(proxy_padding_max_heavy_atoms)
-        if self.proxy_padding_distance < 0:
+        if self.proxy_padding_distance is not None and self.proxy_padding_distance < 0:
             raise ValueError("proxy padding distance must be non-negative")
         if self.proxy_padding_tolerance_log10 <= 0:
             raise ValueError("proxy padding tolerance must be positive")
@@ -3056,9 +3111,14 @@ class EventSetCompiler:
             else (structural_reverse, structural_forward)
         )
         rate_reaction = estimate
+        padding_distance = getattr(self, "proxy_padding_distance", None)
         padding_metadata = {
-            "status": "not_applicable",
-            "reason": "proxy has no annotated artificial continuation ports",
+            "status": "disabled" if padding_distance is None else "not_applicable",
+            "reason": (
+                "no padding distance configured"
+                if padding_distance is None
+                else "proxy has no annotated artificial continuation ports"
+            ),
         }
         witness_reactants = []
         witness_products = []
@@ -3070,22 +3130,70 @@ class EventSetCompiler:
                 "status": "excluded_unchanged",
                 "reason": "owner-approved PLP-SEC library rate is not re-derived",
             }
-        elif proxy.artificial_boundaries and proxy.repeat_unit is not None:
-            padded = pad_reaction_witness(
-                estimate,
-                proxy.artificial_boundaries,
-                proxy.repeat_unit,
-                self.proxy_padding_distance,
-                max_heavy_atoms=self.proxy_padding_max_heavy_atoms,
-            )
-            rate_reaction = padded.reaction
-            padding_metadata = padded.provenance(
-                proxy.repeat_unit,
-                self.proxy_padding_distance,
-                self.proxy_padding_tolerance_log10,
-            )
-            witness_reactants = _graph_adjacencies(rate_reaction.reactants)
-            witness_products = _graph_adjacencies(rate_reaction.products)
+        elif (
+            padding_distance is not None
+            and proxy.artificial_boundaries
+            and proxy.repeat_unit is not None
+        ):
+            try:
+                padded = pad_reaction_witness(
+                    estimate,
+                    proxy.artificial_boundaries,
+                    proxy.repeat_unit,
+                    padding_distance,
+                    max_heavy_atoms=self.proxy_padding_max_heavy_atoms,
+                )
+                derived, generated_count = _production_padded_root(
+                    self.kinetics_database, padded.reaction
+                )
+                if _template(derived) != _template(estimate):
+                    raise ReactionNotPaddable(
+                        "production root template changed on padded graph"
+                    )
+                derived_kinetics, derived_source, derived_entry, derived_forward = (
+                    self.kinetics_database.families[derived.family].get_kinetics(
+                        derived,
+                        template_labels=derived.template,
+                        degeneracy=derived.degeneracy,
+                        return_all_kinetics=False,
+                    )
+                )
+                if derived_kinetics is None:
+                    raise ReactionNotPaddable(
+                        "production root kinetics unavailable on padded graph"
+                    )
+                if bool(derived_forward) != bool(estimated_forward):
+                    raise ReactionNotPaddable(
+                        "production root direction changed on padded graph"
+                    )
+                derived.kinetics = derived_kinetics
+                if not derived_forward:
+                    derived.reactants, derived.products = (
+                        derived.products, derived.reactants
+                    )
+                rate_reaction = derived
+                source_name, entry = derived_source, derived_entry
+                padding_metadata = padded.provenance(
+                    proxy.repeat_unit,
+                    padding_distance,
+                    self.proxy_padding_tolerance_log10,
+                )
+                padding_metadata["root_validation"] = {
+                    "method": "RMGDatabase.generate_reactions_from_families",
+                    "generated_reaction_count": generated_count,
+                    "matched_reaction_count": 1,
+                    "template": _template(derived),
+                    "rooted_degeneracy": float(derived.degeneracy),
+                    "recipe": "production family recipe reapplied by exact product generation",
+                }
+                witness_reactants = _graph_adjacencies(rate_reaction.reactants)
+                witness_products = _graph_adjacencies(rate_reaction.products)
+            except ReactionNotPaddable as error:
+                padding_metadata = {
+                    "status": "not_paddable",
+                    "reason": str(error),
+                }
+                rate_reaction = estimate
         forward = replace(
             forward,
             rate_witness_reactant_graphs=witness_reactants,
@@ -3093,11 +3201,19 @@ class EventSetCompiler:
             proxy_padding=copy.deepcopy(padding_metadata),
             event_id="",
         )
+        reverse_padding_metadata = copy.deepcopy(padding_metadata)
+        projection = reverse_padding_metadata.get(
+            "executable_to_witness_projection"
+        )
+        if projection:
+            projection["reactants"], projection["products"] = (
+                projection["products"], projection["reactants"]
+            )
         reverse = replace(
             reverse,
             rate_witness_reactant_graphs=witness_products,
             rate_witness_product_graphs=witness_reactants,
-            proxy_padding=copy.deepcopy(padding_metadata),
+            proxy_padding=reverse_padding_metadata,
             event_id="",
         )
         applicability = None
@@ -3706,7 +3822,12 @@ class EventSetCompiler:
                 "tolerance_max_abs_log10": self.proxy_padding_tolerance_log10,
                 "maximum_heavy_atoms": self.proxy_padding_max_heavy_atoms,
                 "repeat_unit": ps_repeat_unit().provenance(),
-                "selection_basis": "smallest k stable through two further structurally distinct completions",
+                "enabled": self.proxy_padding_distance is not None,
+                "selection_basis": (
+                    "explicit caller configuration; no production k selected"
+                    if self.proxy_padding_distance is not None
+                    else "disabled until convergence is rerun with reviewed zero-K floor policy"
+                ),
                 "excluded_rate_sources": [
                     "styrene_plpsec",
                     "R-009 archived para/ortho junction records",

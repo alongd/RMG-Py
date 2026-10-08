@@ -25,12 +25,63 @@ from rmgpy.kmc.compiler import (
     _molecule,
     _ortho_junction_proxy,
     _orient_to_proxy,
+    _proxy_fingerprint,
+    _production_padded_root,
     _reflect_ortho_reaction,
     ceiling_temperature,
     ps_proxy_set,
     short_ps_molecule_catalogue,
     validate_artifact,
 )
+
+
+def test_proxy_fingerprint_is_independent_of_process_global_atom_ids():
+    first = ps_proxy_set(3)[0]
+    second = copy.deepcopy(first)
+    offset = 100000
+    second = replace(
+        second,
+        artificial_boundaries=tuple(
+            replace(boundary, atom_id=boundary.atom_id + offset)
+            for boundary in second.artificial_boundaries
+        ),
+    )
+    for participant in second.reactants:
+        for molecule in participant.molecule:
+            for atom in molecule.atoms:
+                atom.id += offset
+
+    assert _proxy_fingerprint(first) == _proxy_fingerprint(second)
+
+
+def test_padding_is_off_by_default_and_requires_explicit_k():
+    instance = EventSetCompiler(None, [], [])
+    assert instance.proxy_padding_distance is None
+    assert instance.compile()["provenance"]["proxy_boundary_padding"]["enabled"] is False
+
+
+def test_padded_root_degeneracy_is_derived_by_production_generation():
+    from rmgpy.data.kinetics.family import TemplateReaction
+    from rmgpy.molecule.molecule import Molecule
+    from rmgpy.species import Species
+
+    reactant = Species(molecule=[Molecule(smiles="[CH3]")])
+    product = Species(molecule=[Molecule(smiles="[CH3]")])
+    expected = TemplateReaction(
+        reactants=[reactant], products=[product], family="fake", degeneracy=1.0
+    )
+    derived = copy.deepcopy(expected)
+    derived.degeneracy = 7.0
+
+    class Database:
+        def generate_reactions_from_families(self, reactants, **kwargs):
+            assert kwargs["products"] and kwargs["only_families"] == ["fake"]
+            assert kwargs["resonance"] is False
+            return [derived]
+
+    matched, generated_count = _production_padded_root(Database(), expected)
+    assert generated_count == 1
+    assert matched.degeneracy == 7.0
 
 
 class _Element:

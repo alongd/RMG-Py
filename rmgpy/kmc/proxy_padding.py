@@ -67,6 +67,7 @@ class PaddedReactionWitness:
     extensions: int
     original_heavy_atoms: int
     padded_heavy_atoms: int
+    executable_to_witness_projection: dict[str, list[dict[str, int]]]
 
     def provenance(
         self, repeat_unit: RepeatUnitGraph, min_distance: int, tolerance_log10: float
@@ -76,15 +77,23 @@ class PaddedReactionWitness:
             "minimum_heavy_bond_distance": min_distance,
             "tolerance_max_abs_log10": tolerance_log10,
             "repeat_unit": repeat_unit.provenance(),
-            "reacting_atom_ids": list(self.reacting_atom_ids),
+            "reacting_atoms": _canonical_atom_references(
+                self.reaction.reactants, self.reacting_atom_ids
+            ),
             "artificial_boundaries": [
                 {
                     "participant_index": item.participant_index,
-                    "atom_id": item.atom_id,
+                    "atom_index": _canonical_heavy_index(
+                        _molecule(self.reaction.reactants[item.participant_index]),
+                        item.atom_id,
+                    ),
                     "orientation": item.orientation,
                 }
                 for item in self.boundaries
             ],
+            "executable_to_witness_projection": copy.deepcopy(
+                self.executable_to_witness_projection
+            ),
             "repeat_extensions": self.extensions,
             "original_heavy_atoms": self.original_heavy_atoms,
             "padded_heavy_atoms": self.padded_heavy_atoms,
@@ -93,6 +102,79 @@ class PaddedReactionWitness:
 
 class PaddingLimitExceeded(ValueError):
     """The requested completion exceeded its pinned graph-size ceiling."""
+
+
+class ReactionNotPaddable(ValueError):
+    """An annotated artificial boundary cannot be replaced for this event."""
+
+
+def _canonical_atoms(molecule) -> list[Any]:
+    """Return an atom order determined by graph structure, never RMG atom IDs."""
+    if molecule.__class__.__module__.startswith("rmgpy."):
+        from rdkit import Chem
+        from rmgpy.molecule.converter import to_rdkit_mol
+
+        rdkit_molecule, mapping = to_rdkit_mol(
+            molecule, remove_h=False, return_mapping=True, save_order=True
+        )
+        ranks = Chem.CanonicalRankAtoms(
+            rdkit_molecule, breakTies=True, includeChirality=True,
+            includeIsotopes=True,
+        )
+        return sorted(molecule.atoms, key=lambda atom: ranks[mapping[atom]])
+    return list(molecule.atoms)
+
+
+def _canonical_heavy_index(molecule, atom_id: int) -> int:
+    heavy = [atom for atom in _canonical_atoms(molecule) if atom.element.number != 1]
+    matches = [index for index, atom in enumerate(heavy) if atom.id == atom_id]
+    if len(matches) != 1:
+        raise ValueError("canonical atom reference is absent or ambiguous")
+    return matches[0]
+
+
+def _canonical_atom_references(participants, atom_ids) -> list[dict[str, int]]:
+    references = []
+    for atom_id in atom_ids:
+        participant_index = _participant_containing(participants, atom_id)
+        references.append({
+            "participant_index": participant_index,
+            "atom_index": _canonical_heavy_index(
+                _molecule(participants[participant_index]), atom_id
+            ),
+        })
+    return sorted(references, key=lambda item: (item["participant_index"], item["atom_index"]))
+
+
+def _projection(executable, witness) -> dict[str, list[dict[str, int]]]:
+    result = {}
+    for side_name in ("reactants", "products"):
+        source_side = getattr(executable, side_name)
+        witness_side = getattr(witness, side_name)
+        entries = []
+        for participant_index, source_participant in enumerate(source_side):
+            source_molecule = _molecule(source_participant)
+            witness_molecule = _molecule(witness_side[participant_index])
+            witness_ids = {
+                atom.id for atom in witness_molecule.atoms
+                if atom.element.number != 1
+            }
+            for source_atom in _canonical_atoms(source_molecule):
+                if source_atom.element.number == 1:
+                    continue
+                if source_atom.id not in witness_ids:
+                    raise ValueError("executable atom is absent from padded witness")
+                entries.append({
+                    "participant_index": participant_index,
+                    "executable_atom_index": _canonical_heavy_index(
+                        source_molecule, source_atom.id
+                    ),
+                    "witness_atom_index": _canonical_heavy_index(
+                        witness_molecule, source_atom.id
+                    ),
+                })
+        result[side_name] = entries
+    return result
 
 
 def heavy_atom_distance(molecule, first_id: int, second_id: int) -> int:
@@ -182,6 +264,7 @@ def _append_repeat(
     molecule.multiplicity = multiplicity
     molecule.add_bond(Bond(old_port, attach, order="S"))
     molecule.update(sort_atoms=False)
+    molecule.multiplicity = multiplicity
     return molecule, BoundaryPort(
         atom_id=new_port.id,
         orientation=boundary.orientation,
@@ -336,6 +419,14 @@ def pad_reaction_witness(
     original_heavy_atoms = len(reactant_atoms)
     if original_heavy_atoms > max_heavy_atoms:
         raise PaddingLimitExceeded("unpadded witness exceeds maximum graph size")
+    reacting_boundaries = sorted(
+        boundary.atom_id for boundary in boundaries
+        if boundary.kind == "artificial" and boundary.atom_id in centers
+    )
+    if reacting_boundaries:
+        raise ReactionNotPaddable(
+            "artificial continuation port is a reacting atom"
+        )
     if os.environ.get("RMG_KMC_DISABLE_PROXY_PADDING") == "1":
         return PaddedReactionWitness(
             witness,
@@ -344,6 +435,7 @@ def pad_reaction_witness(
             0,
             original_heavy_atoms,
             original_heavy_atoms,
+            _projection(reaction, witness),
         )
 
     updated = []
@@ -460,4 +552,5 @@ def pad_reaction_witness(
         extensions,
         original_heavy_atoms,
         padded_heavy_atoms,
+        _projection(reaction, witness),
     )
