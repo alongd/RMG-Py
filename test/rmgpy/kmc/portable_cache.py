@@ -47,6 +47,7 @@ def database_identity(database: Path) -> str:
 
 def identity(repository: Path, database: Path) -> dict:
     import rdkit
+    hash_seed = os.environ.get("PYTHONHASHSEED")
     return {
         "schema": SCHEMA,
         "rmgpy_tree_sha256": tree_identity(repository),
@@ -54,7 +55,7 @@ def identity(repository: Path, database: Path) -> dict:
         "rmg_database_content_sha256": database_identity(database),
         "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         "rdkit": getattr(rdkit, "__version__", "unknown"),
-        "pythonhashseed": os.environ.get("PYTHONHASHSEED", "default"),
+        "pythonhashseed": hash_seed,
     }
 
 
@@ -82,12 +83,29 @@ def atomic_write(path: Path, payload: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def load_or_generate(path: Path, generate, dump, load):
+    """Load a migrated generation entry or call the expensive producer once."""
+    if path.is_file():
+        return load(path.read_bytes())
+    value = generate()
+    atomic_write(path, dump(value))
+    return value
+
+
 def _file_hashes(root: Path) -> dict[str, str]:
     return {
         path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(root.rglob("*"))
         if path.is_file() and not path.is_symlink() and path != root / "manifest.json"
     }
+
+
+def _source_hash(repository: Path, relative_paths: tuple[str, ...]) -> str:
+    entries = []
+    for relative in relative_paths:
+        path = repository / relative
+        entries.append((relative, hashlib.sha256(path.read_bytes()).hexdigest()))
+    return hashlib.sha256(json.dumps(entries, sort_keys=True).encode()).hexdigest()
 
 
 def artifact_identity(repository: Path, database: Path) -> dict:
@@ -98,6 +116,10 @@ def artifact_identity(repository: Path, database: Path) -> dict:
         [(p, hashlib.sha256((repository / p).read_bytes()).hexdigest()) for p in tracked],
         sort_keys=True,
     ).encode()).hexdigest()
+    value["compile_driver_sha256"] = _source_hash(repository, (
+        "test/rmgpy/kmc/compile_event_set_fixture.py",
+        "test/rmgpy/kmc/portable_cache.py",
+    ))
     return value
 
 
@@ -108,6 +130,32 @@ def artifact_cache_key(repository: Path, database: Path, compile_options: dict) 
     })
 
 
+def validate_artifact_cache_entry(
+    manifest_path: Path,
+    expected_key: str,
+    database: Path,
+    database_declaration: str | None,
+) -> Path:
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get("identity") != expected_key:
+        raise ValueError("identity mismatch")
+    artifact_path = manifest_path.parent / manifest["artifact"]
+    payload = artifact_path.read_bytes()
+    if manifest.get("artifact_sha256") != hashlib.sha256(payload).hexdigest():
+        raise ValueError("artifact hash mismatch")
+    artifact = json.loads(payload)
+    from rmgpy.kmc.compiler import compiler_source_hash, validate_artifact
+    from rmgpy.kmc.database_provenance import provenance_matches_database
+    validate_artifact(artifact)
+    if artifact["provenance"].get("compiler_sources_sha256") != compiler_source_hash():
+        raise ValueError("compiler provenance mismatch")
+    if not provenance_matches_database(
+        artifact["provenance"], database, database_declaration
+    ):
+        raise ValueError("database provenance mismatch")
+    return artifact_path
+
+
 def compile_environment_options() -> dict[str, str]:
     """Return every content-affecting RMG_KMC_ setting in stable order."""
     return {
@@ -115,13 +163,6 @@ def compile_environment_options() -> dict[str, str]:
         for name, value in sorted(os.environ.items())
         if name.startswith("RMG_KMC_") and name not in ARTIFACT_ENV_EXCLUSIONS
     }
-
-
-def _git_database_identity(database: Path) -> str | None:
-    try:
-        return _run("git", "-C", str(database), "rev-parse", "HEAD")
-    except subprocess.CalledProcessError:
-        return None
 
 
 def tree_identity_at_commit(repository: Path, commit: str) -> str:
@@ -155,23 +196,22 @@ def migrate(
     old = cache_root / "generated-reactions"
     out = target / "generated-reactions"
     out.mkdir(exist_ok=True)
-    accepted_database_names = {generation_identity["database"]}
-    if database_sha:
-        accepted_database_names.add(database_sha)
-    git_database_sha = _git_database_identity(database)
-    if git_database_sha:
-        accepted_database_names.add(git_database_sha)
     current_tree = generation_identity["rmgpy_tree_sha256"]
+    current_database = generation_identity["database"]
+    current_seed = os.environ.get("PYTHONHASHSEED")
+    if current_seed is None:
+        print("skipping legacy migration: PYTHONHASHSEED is unset")
+        return target
     for directory in old.iterdir() if old.is_dir() else ():
         if not directory.is_dir():
             continue
         try:
-            origin_commit, old_database = directory.name.rsplit("-", 1)
+            origin_commit, declaration, old_database = directory.name.rsplit("-", 2)
         except ValueError:
-            print(f"skipping unrecognized cache directory: {directory}")
+            print(f"skipping legacy cache without database content digest: {directory}")
             continue
-        if old_database not in accepted_database_names:
-            print(f"skipping cache with mismatched database: {directory}")
+        if old_database != current_database:
+            print(f"skipping cache with mismatched database content: {directory}")
             continue
         try:
             if tree_identity_at_commit(repository, origin_commit) != current_tree:
@@ -181,7 +221,7 @@ def migrate(
             print(f"skipping cache with missing origin commit: {directory}")
             continue
         for seed in directory.iterdir():
-            if seed.name != os.environ.get("PYTHONHASHSEED", "default"):
+            if seed.name != current_seed:
                 print(f"skipping cache with mismatched hash seed: {directory}/{seed.name}")
                 continue
             if seed.is_dir():
@@ -194,7 +234,14 @@ def migrate(
 
 
 def export_cache(cache: Path, archive: Path, repository: Path, database: Path) -> None:
-    manifest = identity(repository, database)
+    expected = identity(repository, database)
+    source_manifest_path = cache / "manifest.json"
+    if not source_manifest_path.is_file():
+        raise ValueError("cache bucket has no identity manifest")
+    source_manifest = json.loads(source_manifest_path.read_text())
+    if source_manifest != expected:
+        raise ValueError("cache bucket identity does not match this checkout")
+    manifest = dict(source_manifest)
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary) / "kmc-cache"
         shutil.copytree(cache, root)

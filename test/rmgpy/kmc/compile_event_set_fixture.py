@@ -18,11 +18,14 @@ from portable_cache import (
     compile_environment_options,
     identity,
     identity_name,
+    load_or_generate,
     migrate,
+    validate_artifact_cache_entry,
 )
 
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.kmc.compiler import (
+    DEFAULT_T_GRID,
     EventSetCompiler,
     PS_FAMILY_CANDIDATES,
     PS_PROXY_UNITS,
@@ -99,9 +102,14 @@ def main() -> None:
     database_commit = resolve_database_declaration(args.database_sha)
     database_content_sha, _ = database_content_digest(database_path)
     cache_root = Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(Path.cwd() / ".kmc-cache")))
+    hash_seed = os.environ.get("PYTHONHASHSEED")
     cache_identity = identity(Path.cwd(), database_path)
-    portable_root = cache_root / "portable" / identity_name(cache_identity)
-    if not (portable_root / "manifest.json").exists():
+    if hash_seed is None:
+        print("PYTHONHASHSEED is unset; cache reuse is disabled", flush=True)
+        portable_root = cache_root / "uncacheable" / str(os.getpid())
+    else:
+        portable_root = cache_root / "portable" / identity_name(cache_identity)
+    if hash_seed is not None and not (portable_root / "manifest.json").exists():
         migrate(cache_root, Path.cwd(), database_path, database_commit)
     generated_cache = portable_root / "generated-reactions"
     generated_cache.mkdir(parents=True, exist_ok=True)
@@ -109,23 +117,32 @@ def main() -> None:
         "database_sha": database_commit,
         "database_content_sha256": database_content_sha,
         "family_universe": family_universe,
-        "temperature_grid": list(__import__("rmgpy.kmc.compiler", fromlist=["DEFAULT_T_GRID"]).DEFAULT_T_GRID),
+        "temperature_grid": list(DEFAULT_T_GRID),
+        "proxy_units": list(PS_PROXY_UNITS),
+        "family_candidates": list(PS_FAMILY_CANDIDATES),
         "environment": compile_environment_options(),
     }
     artifact_key = artifact_cache_key(Path.cwd(), database_path, compile_options)
-    artifact_cache = cache_root / "portable-artifacts" / artifact_key
+    artifact_cache = (
+        cache_root / "portable-artifacts" / artifact_key
+        if hash_seed is not None
+        else cache_root / "uncacheable-artifacts" / str(os.getpid())
+    )
     artifact_manifest = artifact_cache / "manifest.json"
-    if artifact_manifest.is_file():
-        artifact_name = json.loads(artifact_manifest.read_text())["artifact"]
-        cached_artifact = artifact_cache / artifact_name
-        if not cached_artifact.is_file():
-            raise RuntimeError(f"artifact manifest names missing file: {cached_artifact}")
-        output = Path(args.output)
-        output.mkdir(parents=True, exist_ok=True)
-        destination = output / cached_artifact.name
-        atomic_copy(cached_artifact, destination)
-        print(destination)
-        return
+    if hash_seed is not None and os.environ.get("RMG_KMC_DISABLE_ARTIFACT_CACHE") != "1":
+        try:
+            cached_artifact = validate_artifact_cache_entry(
+                artifact_manifest, artifact_key, database_path, database_commit
+            )
+            output = Path(args.output)
+            output.mkdir(parents=True, exist_ok=True)
+            destination = output / cached_artifact.name
+            atomic_copy(cached_artifact, destination)
+            print(destination)
+            return
+        except (FileNotFoundError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            if artifact_manifest.exists():
+                print(f"rejecting invalid artifact cache: {error}", flush=True)
     generate = database.kinetics.generate_reactions_from_families
     generation_source = hashlib.sha256(inspect.getsource(generate).encode()).hexdigest()
 
@@ -150,13 +167,15 @@ def main() -> None:
             json.dumps(parameters, sort_keys=True).encode()
         ).hexdigest()
         path = generated_cache / (key + ".pickle")
-        if path.is_file():
+        was_cached = path.is_file()
+        reactions = load_or_generate(
+            path,
+            lambda: generate(reactants, products, only_families, resonance),
+            dump_generated_reactions,
+            load_generated_reactions,
+        )
+        if was_cached:
             print(f"cached public RMG generation: {only_families}", flush=True)
-            return load_generated_reactions(path.read_bytes())
-        reactions = generate(reactants, products, only_families, resonance)
-        temporary = path.with_suffix(f".{os.getpid()}.tmp")
-        temporary.write_bytes(dump_generated_reactions(reactions))
-        temporary.replace(path)
         return reactions
 
     database.kinetics.generate_reactions_from_families = cached_generate
@@ -191,6 +210,7 @@ def main() -> None:
     atomic_write(artifact_cache / "manifest.json", json.dumps({
         "identity": artifact_cache_key(Path.cwd(), database_path, compile_options),
         "artifact": path.name,
+        "artifact_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
     }, sort_keys=True, indent=2).encode() + b"\n")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)

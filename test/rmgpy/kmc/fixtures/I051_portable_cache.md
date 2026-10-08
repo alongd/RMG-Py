@@ -24,8 +24,10 @@ python -m portable_cache import DESTINATION DATABASE ARCHIVE
 
 Migration copies only entries from old `<repository>-<database>/<hash-seed>`
 directories whose database identity, origin commit's non-kMC `rmgpy` tree,
-and hash seed all match. It reports and skips the rest, and never removes or
-moves anything. Export writes one gzip tar archive
+database content digest, and hash seed all match. Legacy directories carrying
+only a declared SHA are rejected. If `PYTHONHASHSEED` is unset, cache reuse is
+disabled because each interpreter is randomized. It reports and skips the
+rest, and never removes or moves anything. Export writes one gzip tar archive
 containing generated reactions, compiled artifacts, and `manifest.json`.
 Import refuses the archive unless its manifest exactly matches the current
 identity, contains exactly the manifest-listed files, and every listed
@@ -42,3 +44,5 @@ environment variable. The explicit exclusions are `RMG_KMC_CACHE_ROOT` and
 `RMG_KMC_ARTIFACT`, which are path selectors only and do not change compiled
 content. Lookup uses the manifest's exact artifact filename rather than an
 arbitrary JSON file.
+Set `RMG_KMC_DISABLE_ARTIFACT_CACHE=1` to disable the artifact shortcut while
+retaining generation-cache reuse.
