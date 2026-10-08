@@ -29,6 +29,7 @@
 
 """HDF5 storage with separate training and independent held-out groups."""
 import json
+import copy
 import tempfile
 from pathlib import Path
 from urllib.parse import quote, unquote
@@ -36,7 +37,7 @@ from urllib.parse import quote, unquote
 import h5py
 import numpy as np
 
-from rmgpy.tools.eedf.schema import canonical_json, content_hash, file_hash, SpecError, FingerprintMismatch
+from rmgpy.tools.eedf.schema import _canonical_json, _content_hash, _file_hash, SpecError, FingerprintMismatch
 
 NUMERIC = ('u', 'EN_Td', 'k_ine', 'k_sup', 'channel_power', 'attachment_energy_eV',
            'target_fractions', 'product_fractions', 'rate_floors', 'below_floor',
@@ -44,7 +45,7 @@ NUMERIC = ('u', 'EN_Td', 'k_ine', 'k_sup', 'channel_power', 'attachment_energy_e
 MAPPINGS = ('swarm', 'power_groups', 'gas_fractions', 'state_populations')
 
 
-def storage_key(identifier):
+def _storage_key(identifier):
     """Encode one HDF5 component reversibly, including empty and dot names."""
     if not isinstance(identifier, str):
         raise SpecError('storage identifiers must be strings')
@@ -55,17 +56,17 @@ def storage_key(identifier):
     return quote(identifier, safe="()[]'+* ")
 
 
-def storage_items(group):
+def _storage_items(group):
     """Read keys in the declared encoding; legacy simple keys stay readable."""
     encoded = group.attrs.get('identifier_encoding') == 'percent-v1'
     for key, value in group.items():
         identifier = ('' if key == '%' else unquote(key)) if encoded else key
-        if encoded and storage_key(identifier) != key:
+        if encoded and _storage_key(identifier) != key:
             raise SpecError('noncanonical HDF5 identifier')
         yield identifier, value
 
 
-def write_rows(group, rows):
+def _write_rows(group, rows):
     """Preserve tensor shape, numeric fields and exact symbolic assumptions."""
     rows = np.asarray(rows, dtype=object)
     first = rows.flat[0]
@@ -81,14 +82,14 @@ def write_rows(group, rows):
         for key in first[name]:
             values = [row[name][key] for row in rows.flat]
             if all(isinstance(v, (int, float)) for v in values):
-                child.create_dataset(storage_key(key), data=np.asarray(values).reshape(rows.shape))
+                child.create_dataset(_storage_key(key), data=np.asarray(values).reshape(rows.shape))
             else:
                 raise SpecError('symbolic population/property must be resolved: ' + key)
     for name in ('setup', 'composition', 'branch_id'):
-        group.attrs[name] = canonical_json([row.get(name) for row in rows.flat])
+        group.attrs[name] = _canonical_json([row.get(name) for row in rows.flat])
 
 
-def validate_storage(h5):
+def _validate_storage(h5):
     """Refuse storage that can change the meaning of a pinned file's bytes.
 
     Inspect links, layouts, filters and types before reading values. Generated
@@ -133,8 +134,10 @@ def validate_storage(h5):
     visit(h5)
 
 
-def write_artifact(root, manifest, branches, held_out, *, extra_files=None):
+def _write_artifact(root, manifest, branches, held_out, *, extra_files=None):
     """Write an immutable content-addressed artifact; return its directory."""
+    manifest, branches, held_out, extra_files = copy.deepcopy(
+        (manifest, branches, held_out, extra_files))
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     for rows in list(branches.values()) + ([held_out] if held_out else []):
@@ -144,31 +147,35 @@ def write_artifact(root, manifest, branches, held_out, *, extra_files=None):
                     raise SpecError('row energy grid differs bit for bit: ' + name)
     with tempfile.TemporaryDirectory(prefix='.writing-', dir=root) as temporary:
         destination = Path(temporary)
-        manifest = dict(manifest)
+        manifest = copy.deepcopy(manifest)
         manifest['branches'] = list(branches)
         path = destination / 'table.h5'
         with h5py.File(path, 'w') as h5:
             h5.attrs['schema_version'] = manifest['schema_version']
             h5.attrs['fingerprint'] = manifest['fingerprint']
-            h5.attrs['qualification_sha256'] = content_hash({key: manifest.get(key) for key in ('accepted', 'held_out_verdicts', 'screen_results', 'branch_detection')})
-            h5.attrs['branch_certification_sha256'] = content_hash(manifest['branch_certification'])
-            h5.attrs['channel_map_content_sha256'] = content_hash(manifest['channel_map'])
-            h5.attrs['policy_sha256'] = content_hash({key: manifest[key] for key in ('tolerances', 'floors', 'envelopes')})
+            h5.attrs['qualification_sha256'] = _content_hash({
+                key: manifest.get(key) for key in (
+                    'accepted', 'held_out_verdicts', 'screen_results',
+                    'branch_detection', 'A6b-source', 'A6b-runtime',
+                    'T10 interpolation qualification')})
+            h5.attrs['branch_certification_sha256'] = _content_hash(manifest['branch_certification'])
+            h5.attrs['channel_map_content_sha256'] = _content_hash(manifest['channel_map'])
+            h5.attrs['policy_sha256'] = _content_hash({key: manifest[key] for key in ('tolerances', 'floors', 'envelopes')})
             h5.create_dataset('energy_eV', data=manifest['energy_eV'])
             h5.create_dataset('energy_edges_eV', data=manifest['energy_edges_eV'])
             axes = h5.create_group('axes')
             axes.attrs['identifier_encoding'] = 'percent-v1'
             for name, values in manifest['axes'].items():
-                axes.create_dataset(storage_key(name), data=values)
+                axes.create_dataset(_storage_key(name), data=values)
             training = h5.create_group('branches')
             training.attrs['identifier_encoding'] = 'percent-v1'
             for branch_id, rows in branches.items():
-                write_rows(training.create_group(storage_key(branch_id)), rows)
+                _write_rows(training.create_group(_storage_key(branch_id)), rows)
             independent = h5.create_group('held_out')
             if held_out:
-                write_rows(independent, held_out)
-            validate_storage(h5)
-        manifest['artifact_sha256'] = file_hash(path)
+                _write_rows(independent, held_out)
+            _validate_storage(h5)
+        manifest['artifact_sha256'] = _file_hash(path)
         final = root / manifest['artifact_sha256']
         (destination / 'manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True, allow_nan=False) + '\n')
         for name, contents in (extra_files or {}).items():

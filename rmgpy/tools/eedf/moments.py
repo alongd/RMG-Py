@@ -33,7 +33,7 @@ from scipy.constants import elementary_charge, electron_mass, Boltzmann
 from rmgpy.tools.eedf.schema import EEDFError
 
 
-def distribution_moments(row, channels):
+def _distribution_moments(row, channels):
     """Integrate rates and collision powers using stored collision sections.
 
     The table format uses a fixed uniform grid. Reverse channels require

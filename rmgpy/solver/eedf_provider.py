@@ -60,7 +60,7 @@ class DevelopmentWallBudgetExceeded(RuntimeError):
 
 
 @contextmanager
-def development_unqualified_table_route():
+def _development_unqualified_table_route():
     """Temporarily admit an unqualified table for an explicit development run.
 
     This process-local context is deliberately absent from the input DSL and
@@ -74,7 +74,7 @@ def development_unqualified_table_route():
         _development_unqualified_route.reset(token)
 
 
-def unqualified_artifact_blockers(manifest):
+def _unqualified_artifact_blockers(manifest):
     """Return the artifact's qualification blockers without changing them."""
     blockers = []
     verdicts = manifest.get('held_out_verdicts', [])
@@ -120,10 +120,22 @@ class EEDFProvider:
 
     def __init__(self, path, current_model, *, artifact_sha256, reaction_map,
                  branch, empirical_laws=None):
+        (path, current_model, artifact_sha256, reaction_map, branch,
+         empirical_laws) = copy.deepcopy(
+            (path, current_model, artifact_sha256, reaction_map, branch,
+             empirical_laws))
+        if not isinstance(artifact_sha256, str):
+            raise TypeError('artifact_sha256 must be a string')
+        if not isinstance(branch, str):
+            raise TypeError('branch must be a string')
         development = bool(_development_unqualified_route.get())
         table = EEDFTable.load(path, current_model,
                                artifact_sha256=artifact_sha256,
                                require_accepted=not development)
+        if not development and not table.a6b_source['passed']:
+            raise FingerprintMismatch('A6b-source native field-power identity')
+        if not development and not table.t10_interpolation['passed']:
+            raise FingerprintMismatch('T10 interpolation qualification')
         if branch not in table.manifest['branches']:
             raise AmbiguousBranch('declared branch ' + str(branch))
         energy_index = table._layout[branch]['swarm/mean_energy_eV'][0]
@@ -143,7 +155,7 @@ class EEDFProvider:
         if development and table.manifest.get('accepted') is True:
             raise EEDFError(
                 'development unqualified-table route refuses an already qualified artifact')
-        self._development_blockers = (unqualified_artifact_blockers(table.manifest)
+        self._development_blockers = (_unqualified_artifact_blockers(table.manifest)
                                       if development else ())
         self._cache_identity = None
         self._cached_row = None
@@ -176,19 +188,19 @@ class EEDFProvider:
         return validated
 
     @property
-    def branch(self):
+    def _branch_value(self):
         return self._branch
 
     @property
-    def reaction_map(self):
+    def _reaction_mapping(self):
         return self._reaction_map
 
     @property
-    def empirical_laws(self):
+    def _empirical_law_metadata(self):
         return self._empirical_laws
 
     @property
-    def manifest(self):
+    def _manifest_snapshot(self):
         """A defensive copy of the checked artifact manifest."""
         manifest = copy.deepcopy(self._table.manifest)
         notice = self.development_notice
@@ -213,8 +225,11 @@ class EEDFProvider:
             'qualification_allowed': False,
         }
 
-    def require_qualified(self, operation):
+    def _require_qualified(self, operation):
         """Refuse export/qualification consumers for a development provider."""
+        if not isinstance(operation, str):
+            raise TypeError('operation must be a string')
+        operation = str(operation)
         if self._development_blockers:
             raise EEDFError(
                 '{0} refuses {1}: {2}'.format(
@@ -223,31 +238,38 @@ class EEDFProvider:
 
     def annotate_development_diagnostic(self, diagnostic):
         """Add the mandatory development warning to one diagnostic mapping."""
+        if not isinstance(diagnostic, dict):
+            raise TypeError('diagnostic must be a mapping')
         notice = self.development_notice
         if notice is not None:
             diagnostic.update(notice)
-        return diagnostic
+        return copy.deepcopy(diagnostic)
 
     @property
     def axis_names(self):
         return tuple(self._table.axis_names)
 
     def axis(self, name):
+        if not isinstance(name, str):
+            raise TypeError('axis name must be a string')
+        name = str(name)
+        table = self._table
+        axis_names = table.axis_names
         try:
-            index = self._table.axis_names.index(name)
+            index = axis_names.index(name)
         except ValueError as error:
             raise KeyError(name) from error
-        result = self._table.axes[index].copy()
+        result = table.axes[index].copy()
         result.setflags(write=False)
         return result
 
     @property
-    def cache_identity(self):
+    def _cache_identity_snapshot(self):
         with self._cache_lock:
             return self._cache_identity
 
     @property
-    def cached_row(self):
+    def _cached_row_snapshot(self):
         with self._cache_lock:
             return self._cached_row
 
@@ -257,16 +279,34 @@ class EEDFProvider:
         return (float(u), tuple(sorted((name, float(value))
                                        for name, value in composition.items())))
 
+    def _query_snapshot(self, u, composition, table=None):
+        """Own and normalize one query for checking, identity and evaluation."""
+        table = self._table if table is None else table
+        u, composition = copy.deepcopy((u, composition))
+        if not isinstance(composition, dict):
+            raise OutOfDomain('composition must be a named coordinate mapping')
+        supplied = tuple(composition)
+        point = table._domain_check(u, composition)
+        identity = {name: composition[name] for name in supplied}
+        return point[0], composition, identity
+
     def domain_check(self, u, composition, y=None, context=None):
         """Validate an accepted state; y/context are reactor-hook context."""
+        u, composition = copy.deepcopy((u, composition))
+        table = self._table
+        axis_names = tuple(table.axis_names)
+        axes = tuple(table.axes)
         try:
-            return self._table.domain_check(u, composition)
+            normalized_u, normalized_composition, _ = self._query_snapshot(
+                u, composition, table)
+            return table._domain_check(
+                normalized_u, normalized_composition)
         except OutOfDomain:
             values = [u]
             if isinstance(composition, dict):
-                values.extend(composition.get(name) for name in self.axis_names[1:])
-            if len(values) == len(self.axis_names):
-                for name, axis, value in zip(self.axis_names, self._table.axes, values):
+                values.extend(composition.get(name) for name in axis_names[1:])
+            if len(values) == len(axis_names):
+                for name, axis, value in zip(axis_names, axes, values):
                     if (value is not None and
                             (not np.isfinite(value) or not axis[0] <= value <= axis[-1])):
                         raise OutOfDomain(
@@ -277,13 +317,16 @@ class EEDFProvider:
     def row(self, u, composition, y=None, context=None):
         """Return this provider's immutable row handle for one full identity."""
         with self._cache_lock:
-            self.domain_check(u, composition, y=y, context=context)
-            identity = self._identity(u, composition)
+            table = self._table
+            branch = self._branch
+            u, composition, identity_composition = self._query_snapshot(
+                u, composition, table)
+            identity = self._identity(u, identity_composition)
             cached = self._cached_row
             if identity == self._cache_identity and cached is not None:
                 return cached
-            local_row = _freeze_row(self._table.row(u, composition, self._branch))
-            if local_row.branch_id != self._branch:
+            local_row = _freeze_row(table.row(u, composition, branch))
+            if local_row.branch_id != branch:
                 raise AmbiguousBranch('row branch differs from declared branch')
             self._issued_rows[id(local_row)] = local_row
             # Publish the row and its full identity as one critical section.
@@ -307,6 +350,14 @@ class EEDFProvider:
 
     def reaction_rate(self, reaction_index, row):
         """Return a mapped SI rate from an explicit provider-issued row."""
+        try:
+            value = np.asarray(reaction_index)
+            if (value.ndim != 0 or value.dtype.kind not in 'iu' or
+                    value.dtype.kind == 'b'):
+                raise ValueError
+            reaction_index = int(value)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise KeyError('reaction index must be an integer scalar') from error
         if reaction_index not in self._reaction_map:
             raise KeyError('unmapped reaction index ' + repr(reaction_index))
         row = self._require_row(row)

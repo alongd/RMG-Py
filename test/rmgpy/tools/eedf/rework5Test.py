@@ -6,7 +6,7 @@ import runpy
 import numpy as np
 import pytest
 
-from rmgpy.tools.eedf.integrity import physical_properties, resolved_properties
+from rmgpy.tools.eedf.integrity import _physical_properties, _resolved_properties
 from rmgpy.tools.eedf import moments, validation
 
 
@@ -39,7 +39,7 @@ def test_r5_regression_saved_real_forward_rate_with_inactive_target_qualifies(mo
                            'relative_power_share': 0., 'absolute_power_share': 0.},
                 'channel_map': [{'kind': 'excitation', 'description': 'e + Ar(3P2) -> Ar(4p), Excitation'}],
                 'row_inputs': {'Tg_K': 300.}}
-    monkeypatch.setattr(moments, 'distribution_moments',
+    monkeypatch.setattr(moments, '_distribution_moments',
                         lambda predicted, channels: {'mean_energy_eV': 1., 'k_ine': predicted['k_ine'],
                                                      'k_sup': predicted['k_sup'], 'channel_power': predicted['channel_power']})
     for rate in saved_rates:
@@ -51,11 +51,11 @@ def test_r5_regression_saved_real_forward_rate_with_inactive_target_qualifies(mo
                   'power_groups': powers, 'composition': {'Tg_K': 300.},
                   'f0': np.array([0.]), 'attachment_energy_eV': 0.}
         predicted = dict(direct, k_ine=np.array([rate * 1.000000134]))
-        checks = [check for check in validation.compare_row(predicted, direct, manifest)
+        checks = [check for check in validation._compare_row(predicted, direct, manifest)
                   if check['rule'] == 'H3' and check['quantity'] == 'k_ine:0']
         assert checks and checks[0]['passed'], checks
         predicted['k_ine'] *= 1.1
-        checks = [check for check in validation.compare_row(predicted, direct, manifest)
+        checks = [check for check in validation._compare_row(predicted, direct, manifest)
                   if check['rule'] == 'H3' and check['quantity'] == 'k_ine:0']
         assert checks and not checks[0]['passed']
 
@@ -65,7 +65,7 @@ def test_r5_regression_saved_real_forward_rate_with_inactive_target_qualifies(mo
 def test_r5_regression_identical_selector_aliases_are_accepted(tmp_path, property_name, alias):
     spec, _ = request_and_channels(tmp_path)
     spec['state_properties'][property_name] = ['Ar(1S0) = 1', alias + ' = 1']
-    _, properties = physical_properties(spec)
+    _, properties = _physical_properties(spec)
     assert properties[property_name] == ['Ar(1S0) = 1']
-    _, resolved, _, _ = resolved_properties(spec, {})
+    _, resolved, _, _ = _resolved_properties(spec, {})
     assert resolved[property_name] == ['Ar(1S0) = 1']

@@ -30,17 +30,17 @@
 from pathlib import Path
 import pytest
 
-from rmgpy.tools.eedf.schema import content_hash, check_model, FingerprintMismatch
+from rmgpy.tools.eedf.schema import _content_hash, _check_model, FingerprintMismatch
 
 
 def test_fingerprint_ignores_repository_commits_but_checks_row_inputs():
-    row_inputs = {'cross_sections': {'ar': 'abc'}, 'Tg_K': 298.15, 'P_Pa': 666.61}
-    manifest = {'row_inputs': row_inputs, 'fingerprint': content_hash(row_inputs),
+    _row_inputs = {'cross_sections': {'ar': 'abc'}, 'Tg_K': 298.15, 'P_Pa': 666.61}
+    manifest = {'row_inputs': _row_inputs, 'fingerprint': _content_hash(_row_inputs),
                 'repositories': {'rmgpy': 'old', 'database': 'old'}}
-    check_model(manifest, dict(row_inputs), relative_tolerance=1e-9)
-    changed = dict(row_inputs, cross_sections={'ar': 'def'})
+    _check_model(manifest, dict(_row_inputs), relative_tolerance=1e-9)
+    changed = dict(_row_inputs, cross_sections={'ar': 'def'})
     with pytest.raises(FingerprintMismatch, match='cross_sections'):
-        check_model(manifest, changed, relative_tolerance=1e-9)
+        _check_model(manifest, changed, relative_tolerance=1e-9)
 
 
 def test_json_spec_preserves_exponential_numeric_tolerances(tmp_path):
@@ -57,3 +57,32 @@ def test_json_spec_preserves_exponential_numeric_tolerances(tmp_path):
     path.write_text(json.dumps(spec))
     with pytest.raises(SpecError, match='numeric'):
         load_spec(path)
+
+
+def test_generator_only_helpers_are_not_public_entries():
+    import rmgpy.tools.eedf.artifact as artifact
+    import rmgpy.tools.eedf.channels as channels
+    import rmgpy.tools.eedf.integrity as integrity
+    import rmgpy.tools.eedf.loki as loki
+    import rmgpy.tools.eedf.moments as moments
+    import rmgpy.tools.eedf.schema as schema
+    import rmgpy.tools.eedf.validation as validation
+
+    retired = {
+        artifact: ('storage_key', 'storage_items', 'write_rows',
+                   'validate_storage', 'write_artifact'),
+        channels: ('validate_map', 'validate_physical_map'),
+        integrity: ('solver_environment', 'check_solver',
+                    'physical_properties', 'legacy_string',
+                    'neutral_state_key', 'resolved_properties',
+                    'channel_fractions'),
+        loki: ('setup_text', 'enrich_row'),
+        moments: ('distribution_moments',),
+        schema: ('canonical_json', 'content_hash', 'file_hash', 'check_model',
+                 'validate_spec', 'interpolant_identity', 'row_inputs'),
+        validation: ('quantities', 'rows_agree', 'split_branches',
+                     'held_out_points', 'freeze_accuracy_criteria',
+                     'compare_row', 'channel_power_checks'),
+    }
+    for module, names in retired.items():
+        assert all(not hasattr(module, name) for name in names)

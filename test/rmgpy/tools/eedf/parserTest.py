@@ -27,10 +27,13 @@
 #                                                                             #
 ###############################################################################
 
+import concurrent.futures
 from pathlib import Path
+import os
+import shutil
 import numpy as np
 import pytest
-from rmgpy.tools.eedf.loki import parse_output
+from rmgpy.tools.eedf.loki import LoKIError, parse_output
 
 
 def test_stored_ar_output_has_independent_known_rates_and_transport():
@@ -43,8 +46,38 @@ def test_stored_ar_output_has_independent_known_rates_and_transport():
     assert np.sum(row['f0'] * np.sqrt(row['energy_eV']) * np.diff(row['energy_edges_eV'])) == pytest.approx(1)
 
 
+@pytest.mark.parametrize('shallow', [False, True], ids=['deep-control', 'shallow-preview'])
+def test_parser_owns_scalar_tolerance_before_file_io(tmp_path, shallow):
+    source = Path(__file__).parent / 'fixtures' / 'ar'
+    folder = tmp_path / 'parser'
+    folder.mkdir()
+    for item in source.iterdir():
+        if item.name != 'swarmParameters.txt':
+            shutil.copyfile(item, folder / item.name)
+    fifo = folder / 'swarmParameters.txt'
+    os.mkfifo(fifo)
+    storage = np.array([1.e-8])
+    tolerance = storage[:1].reshape(())
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(parse_output, folder, tolerance)
+        with fifo.open('w') as stream:
+            preview = storage.view() if shallow else storage.copy()
+            preview[0] = 0.
+            stream.write((source / fifo.name).read_text())
+        row = future.result()
+
+    assert row['swarm']['mean_energy_eV'] == pytest.approx(5.63869451471794)
+
+
+@pytest.mark.parametrize('tolerance', [np.array([1.e-8]), np.nan, np.inf])
+def test_parser_refuses_invalid_scalar_tolerance_before_file_io(tmp_path, tolerance):
+    with pytest.raises(LoKIError, match='normalization_atol must be a finite scalar'):
+        parse_output(tmp_path / 'missing', tolerance)
+
+
 def test_attachment_power_uses_same_eedf_weighted_energy(tmp_path):
-    from rmgpy.tools.eedf.loki import enrich_row
+    from rmgpy.tools.eedf.loki import _enrich_row
     from scipy.constants import elementary_charge, electron_mass
     gamma = np.sqrt(2 * elementary_charge / electron_mass)
     rate = gamma * 1e-20 * (.5 * .5 + 1.5)
@@ -57,12 +90,12 @@ def test_attachment_power_uses_same_eedf_weighted_energy(tmp_path):
     spec = {'Tg_K': 298.15, 'envelopes': {}, 'input_files': {}, 'solver_options': {}, 'gas_properties': {'fraction': ['X = 1.0']},
             'state_properties': {'population': ['X(gnd) = 0.25']},
             'floors': {'rate_absolute': 1e-40, 'eedf_dynamic_range': 1e-30}}
-    from rmgpy.tools.eedf.schema import file_hash
+    from rmgpy.tools.eedf.schema import _file_hash
     section = tmp_path / 'attachment.txt'
     section.write_text('PARAM.: E = 0 eV\nCOMMENT: [X(gnd) + e -> X(-,gnd), Attachment]\n--\n0 1e-20\n2 1e-20\n--\n')
-    spec['input_files']['attachment.txt'] = {'path': str(section), 'sha256': file_hash(section), 'kind': 'cross_section'}
+    spec['input_files']['attachment.txt'] = {'path': str(section), 'sha256': _file_hash(section), 'kind': 'cross_section'}
     channel.update(classification='B', flux_group=channel['description'], reaction=None)
-    enriched = enrich_row(row, [channel], spec)
+    enriched = _enrich_row(row, [channel], spec)
     # The zero-energy face is zero for attachment. Nodal averaging gives
     # cell sections [0.5, 1]*sigma, so the energy moment is 19/14 eV.
     assert enriched['attachment_energy_eV'][0] == pytest.approx(19 / 14)

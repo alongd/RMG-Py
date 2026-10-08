@@ -37,6 +37,7 @@ import pytest
 from rmgpy.solver.eedf import (
     AmbiguousBranch,
     EEDFError,
+    EEDFTable,
     EnvelopeBreach,
     IllConditionedCoordinate,
     OutOfDomain,
@@ -44,14 +45,14 @@ from rmgpy.solver.eedf import (
 from rmgpy.solver.eedf_provider import (
     DEVELOPMENT_UNQUALIFIED_STATUS,
     EEDFProvider,
-    development_unqualified_table_route,
+    _development_unqualified_table_route,
 )
-from rmgpy.tools.eedf.artifact import write_artifact
+from rmgpy.tools.eedf.artifact import _write_artifact
 from rmgpy.tools.eedf.schema import (
     FingerprintMismatch,
-    content_hash,
-    file_hash,
-    interpolant_identity,
+    _content_hash,
+    _file_hash,
+    _interpolant_identity,
 )
 
 
@@ -83,7 +84,9 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
                 'product_fractions': np.zeros(2),
                 'rate_floors': np.full(2, 1e-40),
                 'below_floor': np.zeros((2, 2), dtype=bool),
-                'power_groups': {'field': scale},
+                'power_groups': {
+                    'field': (1.e24 * scale) *
+                             (np.exp(axes['u'][u_index]) * 1.e-21) ** 2},
                 'f0': np.array([1.]),
                 'energy_eV': np.array([.5]),
                 'energy_edges_eV': np.array([0., 1.]),
@@ -109,11 +112,17 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
         'channel_map_sha256': 'map',
         'reactions': identities,
         'solver_options': {'growth': 'temporal'},
-        'interpolant': interpolant_identity(),
+        'interpolant': _interpolant_identity(),
         'state_populations': {'Ar(1S0)': 1.},
     }
     manifest = {
         'accepted': accepted,
+        'T10 interpolation qualification': {
+            'check': 'T10 interpolation qualification',
+            'criterion': 'fixture frozen accuracy criteria',
+            'verdict_count': 1,
+            'passed': accepted,
+        },
         'held_out_verdicts': [{'point': {'u': .5}, 'branch_id': 'branch_0',
                                'passed': accepted, 'checks': [{'passed': accepted}]}],
         'branch_certification': {
@@ -122,7 +131,7 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
         },
         'schema_version': 1,
         'row_inputs': model,
-        'fingerprint': content_hash(model),
+        'fingerprint': _content_hash(model),
         'axes': axes,
         'envelopes': {
             'Tg_K': {'min': 298.15, 'max': 298.15, 'reference': 298.15},
@@ -144,7 +153,7 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
         'energy_eV': [.5],
         'energy_edges_eV': [0., 1.],
     }
-    path = write_artifact(
+    path = _write_artifact(
         tmp_path,
         manifest,
         {f'branch_{index}': branch_values() for index in range(branches)},
@@ -155,7 +164,7 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
 
 def make_provider(path, model, **overrides):
     arguments = {
-        'artifact_sha256': file_hash(path / 'table.h5'),
+        'artifact_sha256': _file_hash(path / 'table.h5'),
         'reaction_map': {4: (1, 'ine'), 7: (0, 'sup')},
         'branch': 'branch_0',
         'empirical_laws': {'Ar2+ recombination': {'evaluate_at': 'Te_eff'}},
@@ -173,14 +182,14 @@ def test_pure_argon_and_composition_axis_use_the_same_provider_type(tmp_path):
 
     assert type(pure) is EEDFProvider
     assert type(arm) is EEDFProvider
-    assert pure.empirical_laws['Ar2+ recombination']['evaluate_at'] == 'Te_eff'
-    assert arm.manifest['fingerprint'] == content_hash(arm_model)
+    assert pure._empirical_law_metadata['Ar2+ recombination']['evaluate_at'] == 'Te_eff'
+    assert arm._manifest_snapshot['fingerprint'] == _content_hash(arm_model)
 
 
 def test_unqualified_table_is_development_context_only_and_carries_blockers(tmp_path):
     qualified_path, qualified_model = fixture_provider_table(
         tmp_path / 'qualified', accepted=True)
-    with development_unqualified_table_route():
+    with _development_unqualified_table_route():
         with pytest.raises(EEDFError, match='already qualified'):
             make_provider(qualified_path, qualified_model)
 
@@ -188,7 +197,7 @@ def test_unqualified_table_is_development_context_only_and_carries_blockers(tmp_
     with pytest.raises(FingerprintMismatch, match='held-out qualification'):
         make_provider(path, model)
 
-    with development_unqualified_table_route():
+    with _development_unqualified_table_route():
         provider = make_provider(path, model)
 
     notice = provider.development_notice
@@ -198,11 +207,11 @@ def test_unqualified_table_is_development_context_only_and_carries_blockers(tmp_
         '1 of 1 held-out verdicts failed',
         'branch_0: uncertified: unseeded scans',
     ]
-    assert provider.manifest['scientific_status'] == DEVELOPMENT_UNQUALIFIED_STATUS
+    assert provider._manifest_snapshot['scientific_status'] == DEVELOPMENT_UNQUALIFIED_STATUS
     with pytest.raises(EEDFError, match='refuses qualification'):
-        provider.require_qualified('qualification')
+        provider._require_qualified('qualification')
     with pytest.raises(EEDFError, match='refuses export'):
-        provider.require_qualified('export')
+        provider._require_qualified('export')
 
     # Leaving the context restores the production loader immediately.
     with pytest.raises(FingerprintMismatch, match='held-out qualification'):
@@ -214,12 +223,12 @@ def test_complete_composition_identity_controls_the_one_row_cache(tmp_path):
     provider = make_provider(path, model)
 
     first = provider.row(1., {'x': 0.})
-    first_identity = provider.cache_identity
+    first_identity = provider._cache_identity_snapshot
     assert provider.row(1., {'x': 0.}) is first
 
     changed = provider.row(1., {'x': 1.})
     assert changed is not first
-    assert provider.cache_identity != first_identity
+    assert provider._cache_identity_snapshot != first_identity
     assert provider.reaction_rate(4, changed) == pytest.approx(2. * first.k_ine[1])
     assert provider.mean_energy_eV(changed) == pytest.approx(3.)
     assert provider.transport(changed)['mobility_N'] == pytest.approx(4e24)
@@ -250,10 +259,10 @@ def test_configuration_and_issued_rows_are_defensive(tmp_path):
     row = provider.row(1., {})
 
     with pytest.raises(TypeError):
-        provider.reaction_map[4] = (0, 'ine')
-    manifest = provider.manifest
+        provider._reaction_mapping[4] = (0, 'ine')
+    manifest = provider._manifest_snapshot
     manifest['fingerprint'] = 'mutated copy'
-    assert provider.manifest['fingerprint'] != 'mutated copy'
+    assert provider._manifest_snapshot['fingerprint'] != 'mutated copy'
     with pytest.raises(ValueError):
         row.k_ine[0] = 0.
     with pytest.raises(ValueError):
@@ -295,8 +304,8 @@ def test_cache_identity_and_row_are_published_atomically(tmp_path, monkeypatch):
 
     assert len(reader_result) == 1
     assert reader_result[0].u == first.u
-    assert provider.cache_identity == (1., ())
-    assert provider.cached_row is reader_result[0]
+    assert provider._cache_identity_snapshot == (1., ())
+    assert provider._cached_row_snapshot is reader_result[0]
 
 
 def test_fingerprint_branch_and_named_domain_errors_are_preserved(tmp_path):
@@ -321,3 +330,48 @@ def test_provider_refuses_a_monotone_decreasing_energy_branch(tmp_path):
     path, model = fixture_provider_table(tmp_path, decreasing=True)
     with pytest.raises(IllConditionedCoordinate, match='increase strictly'):
         make_provider(path, model)
+
+
+def test_row_uses_one_normalized_query_for_cache_and_evaluation(tmp_path, monkeypatch):
+    path, model = fixture_provider_table(tmp_path)
+    provider = make_provider(path, model)
+    storage = np.array([.75])
+    query = storage[:1].reshape(())
+    original = provider._table.row
+
+    def edit_then_evaluate(u, composition, branch):
+        storage[0] = 2.25
+        return original(u, composition, branch)
+
+    monkeypatch.setattr(provider._table, 'row', edit_then_evaluate)
+    row = provider.row(query, {})
+
+    assert row.u == .75
+    assert provider._cache_identity_snapshot == (.75, ())
+
+
+def test_provider_constructor_owns_configuration_before_table_io(
+        tmp_path, monkeypatch):
+    path, model = fixture_provider_table(tmp_path)
+    reaction_map = {4: (1, 'ine')}
+    original = EEDFTable.load
+
+    def load_and_edit(*args, **kwargs):
+        result = original(*args, **kwargs)
+        reaction_map[4] = (0, 'sup')
+        return result
+
+    monkeypatch.setattr(EEDFTable, 'load', load_and_edit)
+    provider = EEDFProvider(
+        path, model, artifact_sha256=_file_hash(path / 'table.h5'),
+        reaction_map=reaction_map, branch='branch_0')
+    row = provider.row(1., {})
+
+    assert provider.reaction_rate(4, row) == pytest.approx(row.k_ine[1])
+
+
+def test_test_only_provider_accessors_are_private():
+    for name in (
+            'branch', 'reaction_map', 'empirical_laws', 'manifest',
+            'require_qualified', 'cache_identity', 'cached_row'):
+        assert not hasattr(EEDFProvider, name)

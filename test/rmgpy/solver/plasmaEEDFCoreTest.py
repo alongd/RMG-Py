@@ -18,13 +18,13 @@ from rmgpy.solver.plasma import PlasmaReactor
 from rmgpy.solver.eedf_provider import (
     DEVELOPMENT_UNQUALIFIED_STATUS,
     DevelopmentWallBudgetExceeded,
-    development_unqualified_table_route,
+    _development_unqualified_table_route,
 )
 from rmgpy.rmg.main import RMG
 from rmgpy.species import Species
 from rmgpy.thermo import ThermoData
-from rmgpy.tools.eedf.artifact import write_artifact
-from rmgpy.tools.eedf.schema import content_hash, file_hash, interpolant_identity
+from rmgpy.tools.eedf.artifact import _write_artifact
+from rmgpy.tools.eedf.schema import _content_hash, _file_hash, _interpolant_identity
 
 
 TGAS = 298.15
@@ -113,7 +113,7 @@ def artifact(tmp_path, marker, composition=True, cold_mean=False, accepted=True,
         'cross_sections': {'Ar': 'sha'}, 'channel_map_sha256': 'map',
         'reactions': ([identity] if reaction_owned else []),
         'solver_options': {'growth': 'temporal'},
-        'interpolant': interpolant_identity(), 'state_populations': {'Ar': 1.},
+        'interpolant': _interpolant_identity(), 'state_populations': {'Ar': 1.},
     }
     envelopes = {
         'Tg_K': {'min': TGAS, 'max': TGAS, 'reference': TGAS},
@@ -124,10 +124,16 @@ def artifact(tmp_path, marker, composition=True, cold_mean=False, accepted=True,
         envelopes['Ar4s_total'] = {'min': 0., 'max': .15, 'reference': .1}
     manifest = {
         'accepted': accepted,
+        'T10 interpolation qualification': {
+            'check': 'T10 interpolation qualification',
+            'criterion': 'fixture frozen accuracy criteria',
+            'verdict_count': 1,
+            'passed': accepted,
+        },
         'held_out_verdicts': [{'point': {'u': .5}, 'branch_id': 'branch_0',
                                'passed': accepted, 'checks': [{'passed': accepted}]}],
         'branch_certification': {'branch_0': 'fixture'}, 'schema_version': 1,
-        'row_inputs': model, 'fingerprint': content_hash(model), 'axes': axes,
+        'row_inputs': model, 'fingerprint': _content_hash(model), 'axes': axes,
         'envelopes': envelopes,
         'tolerances': {'fingerprint_rtol': 1.e-9, 'G1': {'rtol': 1.e-6, 'atol': 1.e-24},
                        'u_condition': {'min_abs_denergy_du': 1.e-6,
@@ -141,7 +147,7 @@ def artifact(tmp_path, marker, composition=True, cold_mean=False, accepted=True,
                          'classification': 'B', 'reaction': None, 'mass_ratio': 1.e-5}],
         'energy_eV': [.5], 'energy_edges_eV': [0., 1.],
     }
-    path = write_artifact(tmp_path, manifest, {'branch_0': rows}, [])
+    path = _write_artifact(tmp_path, manifest, {'branch_0': rows}, [])
     return path
 
 
@@ -157,7 +163,7 @@ def build_reactor(tmp_path, composition=True, extra_reaction=None, empirical_law
     reaction.index = reaction_index
     reaction.entry.index = entry_index
     config = {
-        'provider': 'loki-table', 'table': (str(path), file_hash(path / 'table.h5')),
+        'provider': 'loki-table', 'table': (str(path), _file_hash(path / 'table.h5')),
         'branch': 'branch_0', 'initial_reduced_field': (np.e, 'Td'),
         'empirical_laws': dict(empirical_laws or {}),
     }
@@ -180,7 +186,7 @@ def build_reactor(tmp_path, composition=True, extra_reaction=None, empirical_law
         electron_energy_balance=energy_balance,
         electron_kinetics=config, thermo_source_assertions={'Ar+': 'ion'})
     if development:
-        with development_unqualified_table_route():
+        with _development_unqualified_table_route():
             reactor.initialize_model(core, reactions, [], [])
     else:
         reactor.initialize_model(core, reactions, [], [])
@@ -444,7 +450,7 @@ def build_eedf_electronegative_reactor(
         variable_epsilon=variable_epsilon, accepted=accepted)
     config = {
         'provider': 'loki-table',
-        'table': (str(path), file_hash(path / 'table.h5')),
+        'table': (str(path), _file_hash(path / 'table.h5')),
         'branch': 'branch_0',
         'initial_reduced_field': (np.e, 'Td'),
         'empirical_laws': {},
@@ -474,7 +480,7 @@ def build_eedf_electronegative_reactor(
             geometry_reference=capture_reference),
     }
     if development:
-        with development_unqualified_table_route():
+        with _development_unqualified_table_route():
             reactor, species, reactions = en.model(**kwargs)
     else:
         reactor, species, reactions = en.model(**kwargs)
@@ -610,7 +616,7 @@ def test_development_run_labels_provider_diagnostics_budget_and_manifest(tmp_pat
         'export_allowed': False,
         'qualification_allowed': False,
     }
-    assert {key: reactor.eedf_provider.manifest[key] for key in expected} == expected
+    assert {key: reactor.eedf_provider._manifest_snapshot[key] for key in expected} == expected
     assert {key: reactor.electron_energy_terms[key] for key in expected} == expected
     assert {key: reactor.energy_budget[key] for key in expected} == expected
     assert {key: reactor.eedf_run_manifest()[key] for key in expected} == expected
@@ -634,7 +640,7 @@ def test_input_deck_naming_unaccepted_artifact_still_refuses(tmp_path):
     core, reaction = species_and_reaction()
     path = artifact(tmp_path / 'table', reaction.kinetics, composition=False,
                     accepted=False)
-    digest = file_hash(path / 'table.h5')
+    digest = _file_hash(path / 'table.h5')
     input_path = tmp_path / 'input.py'
     deck = """
 species(label='e-', reactive=True, structure=adjacencyList('1 e u1 p0 c-1'))
@@ -703,7 +709,7 @@ def test_eedf_requires_the_energy_balance_at_construction():
 def test_full_coordinate_cache_eos_and_transport_move_together(tmp_path):
     reactor, core, _ = build_reactor(tmp_path)
     y = np.array(reactor.y0)
-    first = reactor.eedf_provider.cache_identity
+    first = reactor.eedf_provider._cache_identity_snapshot
     rate = reactor.kf[0]
     volume = reactor.compute_volume(y)
     nu = reactor.compute_nu_wall(y, volume)
@@ -714,7 +720,7 @@ def test_full_coordinate_cache_eos_and_transport_move_together(tmp_path):
     y[excited] += .04
     y[ground] -= .04
     reactor.residual(0., y, np.zeros_like(y))
-    assert reactor.eedf_provider.cache_identity != first
+    assert reactor.eedf_provider._cache_identity_snapshot != first
     assert reactor.kf[0] != rate
     assert reactor.compute_volume(y) != volume
     assert reactor.compute_nu_wall(y, reactor.compute_volume(y)) != nu
@@ -727,8 +733,9 @@ def test_elastic_row_power_is_a_positive_loss_and_steady_state_gates_run(tmp_pat
     reactor.residual(0., y, np.zeros_like(y))
     assert reactor.electron_energy_terms['Q_elastic'] > 0.
     reactor.energy_budget = {'A6a_relative': 0.0, 'A6a_steady_relative': 0.0,
-                             'A6b_relative': 0.0,
-                             'A6b_tolerance': 1.e-6}
+                             'A6b-runtime': {
+                                 'relative_error': 0.0, 'tolerance': 1.e-6,
+                                 'passed': True}}
     reactor.validate_steady_state()
     reactor.energy_budget['A6a_steady_relative'] = 0.02
     with pytest.raises(PlasmaStateError, match='A6a'):
@@ -784,7 +791,7 @@ def test_duplicate_superelastic_binding_is_refused(tmp_path):
 
     core, reaction = species_and_reaction()
     path = artifact(tmp_path, reaction.kinetics)
-    config = {'provider': 'loki-table', 'table': (str(path), file_hash(path / 'table.h5')),
+    config = {'provider': 'loki-table', 'table': (str(path), _file_hash(path / 'table.h5')),
               'branch': 'branch_0', 'initial_reduced_field': (np.e, 'Td'),
               'empirical_laws': {}}
     initial = {core[0]: 1.e-6, core[2]: 1.e-6, core[3]: .1, core[1]: .899998}
@@ -889,92 +896,64 @@ def test_energy_chain_rule_and_central_difference_jacobian(tmp_path):
 
 def test_terminal_a6_gates_pass_and_fail_by_name(tmp_path):
     reactor, _, _ = build_reactor(tmp_path)
-    reactor.energy_budget.update(A6a_relative=.01, A6b_relative=5.e-7,
-                                 A6b_tolerance=1.e-6)
+    reactor.energy_budget.update(
+        A6a_relative=.01,
+        **{'A6b-runtime': {
+            'relative_error': 5.e-7, 'tolerance': 1.e-6, 'passed': True}})
     reactor._check_eedf_power_gates()
     reactor.energy_budget['A6a_relative'] = .0100001
-    with pytest.raises(PlasmaStateError, match='A6a.*tolerance'):
+    with pytest.raises(PlasmaStateError, match='A6a'):
         reactor._check_eedf_power_gates()
     reactor.energy_budget['A6a_relative'] = 0.
-    reactor.energy_budget['A6b_relative'] = 1.0001e-6
-    with pytest.raises(PlasmaStateError, match='A6b.*tolerance'):
+    reactor.energy_budget['A6b-runtime']['relative_error'] = 1.0001e-6
+    reactor.energy_budget['A6b-runtime']['passed'] = False
+    with pytest.raises(PlasmaStateError, match='A6b-runtime'):
         reactor._check_eedf_power_gates()
 
 
-def test_only_development_route_continues_past_recorded_a6b_failure(tmp_path):
-    production, _, _ = build_reactor(tmp_path / 'production')
+def test_development_record_carries_three_separate_a6b_and_t10_checks(tmp_path):
     development, _, _ = build_reactor(
         tmp_path / 'development', accepted=False, development=True)
-    failed = {
-        'A6a_relative': 0.0,
-        'A6a_steady_relative': 0.0,
-        'A6b_relative': 3.1240246954502026e-6,
-        'A6b_tolerance': 1.0294419182226285e-6,
-        'A6b_numerator': 0.002454087231,
-        'A6b_denominator': 785.288329393846,
-    }
-    production.energy_budget.update(failed)
-    development.energy_budget.update(failed)
+    development.residual(0., development.y0, np.zeros_like(development.y0))
+    record = development.electron_energy_terms
 
-    with pytest.raises(PlasmaStateError, match='A6b.*tolerance'):
-        production._check_eedf_power_gates(steady=True)
-
-    development.configure_development_run(progress_interval_seconds=30.)
-    development._check_eedf_power_gates(steady=True)
-
-    record = development.development_a6b_failure
-    assert record['outcome'] == 'FAIL'
-    assert record['value'] == failed['A6b_relative']
-    assert record['tolerance'] == failed['A6b_tolerance']
-    assert record['numerator'] == failed['A6b_numerator']
-    assert record['denominator'] == failed['A6b_denominator']
-    assert record['artifact_sha256'] == development.electron_kinetics['table'][1]
-    assert record['scientific_status'] == (
-        'DEVELOPMENT ONLY \u2014 TABLE QUALIFICATION FAILED')
-    assert record['export_allowed'] is False
-    assert record['qualification_allowed'] is False
+    assert set(('A6b-source', 'A6b-runtime',
+                'T10 interpolation qualification')).issubset(record)
+    assert record['A6b-source']['passed']
+    assert record['A6b-runtime']['passed']
+    assert not record['T10 interpolation qualification']['passed']
+    assert 'A6b_passed' not in record
 
 
 @pytest.mark.parametrize('field,value', [
-    ('A6b_relative', 'missing'),
-    ('A6b_relative', np.nan),
-    ('A6b_relative', np.inf),
-    ('A6b_relative', -1.e-6),
-    ('A6b_tolerance', 'missing'),
-    ('A6b_tolerance', np.nan),
-    ('A6b_tolerance', np.inf),
-    ('A6b_tolerance', 0.0),
-    ('A6b_tolerance', -1.e-6),
-    ('A6b_numerator', 'missing'),
-    ('A6b_numerator', np.nan),
-    ('A6b_numerator', np.inf),
-    ('A6b_numerator', -1.0),
-    ('A6b_denominator', 'missing'),
-    ('A6b_denominator', np.nan),
-    ('A6b_denominator', np.inf),
-    ('A6b_denominator', 0.0),
-    ('A6b_denominator', -1.0),
+    ('relative_error', 'missing'),
+    ('relative_error', np.nan),
+    ('relative_error', np.inf),
+    ('relative_error', -1.e-6),
+    ('tolerance', 'missing'),
+    ('tolerance', np.nan),
+    ('tolerance', np.inf),
+    ('tolerance', 0.0),
+    ('tolerance', -1.e-6),
+    ('passed', False),
 ])
-def test_development_route_refuses_invalid_a6b_diagnostics(tmp_path, field, value):
+def test_development_route_refuses_invalid_a6b_runtime_diagnostics(
+        tmp_path, field, value):
     reactor, _, _ = build_reactor(tmp_path, accepted=False, development=True)
-    diagnostics = {
+    runtime = {'relative_error': 0., 'tolerance': 1.e-6, 'passed': True}
+    if value != 'missing':
+        runtime[field] = value
+    if value == 'missing':
+        runtime.pop(field, None)
+    reactor.energy_budget.update({
         'A6a_relative': 0.0,
         'A6a_steady_relative': 0.0,
-        'A6b_relative': 3.e-6,
-        'A6b_tolerance': 1.e-6,
-        'A6b_numerator': 0.002,
-        'A6b_denominator': 700.0,
-    }
-    if value != 'missing':
-        diagnostics[field] = value
-    reactor.energy_budget.update(diagnostics)
-    if value == 'missing':
-        reactor.energy_budget.pop(field, None)
+        'A6b-runtime': runtime,
+    })
     reactor.configure_development_run(progress_interval_seconds=30.)
 
-    with pytest.raises(PlasmaStateError, match='A6b.*tolerance'):
+    with pytest.raises(PlasmaStateError, match='A6b-runtime'):
         reactor._check_eedf_power_gates(steady=True)
-    assert reactor.development_a6b_failure is None
 
 
 def test_extinction_uses_row_effective_temperature_and_elastic_frequency(tmp_path):
@@ -989,7 +968,7 @@ def test_extinction_uses_row_effective_temperature_and_elastic_frequency(tmp_pat
     volume = reactor.compute_volume(y)
     neutral_density = sum(y[j] for j in range(reactor.num_core_species)
                           if reactor.neutral_heavy_mask[j]) * constants.Na / volume
-    elastic = reactor.eedf_provider.manifest['channel_map'][1]
+    elastic = reactor.eedf_provider._manifest_snapshot['channel_map'][1]
     relaxation_rate = (2. * elastic['mass_ratio'] *
                        reactor.eedf_row.target_fractions[1] *
                        reactor.eedf_row.k_ine[1] * neutral_density)

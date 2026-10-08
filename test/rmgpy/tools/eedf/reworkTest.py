@@ -41,8 +41,8 @@ import pytest
 from rmgpy.solver.eedf import EEDFTable
 from rmgpy.tools.eedf import loki
 from rmgpy.tools.eedf.generate import model_inputs
-from rmgpy.tools.eedf.schema import SpecError, FingerprintMismatch, file_hash, content_hash
-from rmgpy.tools.eedf.validation import compare_row
+from rmgpy.tools.eedf.schema import SpecError, FingerprintMismatch, _file_hash, _content_hash
+from rmgpy.tools.eedf.validation import _compare_row
 import runpy
 fixture_table = runpy.run_path(str(Path(__file__).parents[2] / 'solver' / 'eedfTableTest.py'))['fixture_table']
 
@@ -56,7 +56,7 @@ def raw_spec():
 def pinned(path, model, **kw):
     # Execute the same behavioral regression against both API generations.
     if 'artifact_sha256' in inspect.signature(EEDFTable.load).parameters:
-        kw['artifact_sha256'] = kw.get('artifact_sha256', file_hash(path / 'table.h5'))
+        kw['artifact_sha256'] = kw.get('artifact_sha256', _file_hash(path / 'table.h5'))
     return EEDFTable.load(path, model, **kw)
 
 
@@ -65,7 +65,7 @@ def mutate(path, edit):
     manifest = json.loads(manifest_path.read_text())
     with h5py.File(path / 'table.h5', 'r+') as h5:
         edit(h5, manifest)
-    manifest['artifact_sha256'] = file_hash(path / 'table.h5')
+    manifest['artifact_sha256'] = _file_hash(path / 'table.h5')
     manifest_path.write_text(json.dumps(manifest))
 
 
@@ -94,7 +94,7 @@ def test_mf02_absolute_unlisted_property_file_is_refused():
 
 def test_mf03_rehashed_hdf5_tamper_does_not_change_callers_pin(tmp_path):
     path,model=fixture_table(tmp_path)
-    original=file_hash(path/'table.h5')
+    original=_file_hash(path/'table.h5')
     mutate(path, lambda h,m: h['branches/branch_0/k_ine'].__setitem__(Ellipsis, h['branches/branch_0/k_ine'][...]*1e6))
     kw={'artifact_sha256': original} if 'artifact_sha256' in inspect.signature(EEDFTable.load).parameters else {}
     with pytest.raises(FingerprintMismatch, match='artifact'):
@@ -106,7 +106,10 @@ def test_mf03_stored_acceptance_cannot_override_failing_checks(tmp_path):
     def edit(h,m):
         m['accepted']=True
         m['held_out_verdicts']=[{'passed':True,'checks':[{'passed':False}]}]
-        h.attrs['qualification_sha256']=content_hash({k:m.get(k) for k in ('accepted','held_out_verdicts','screen_results','branch_detection')})
+        h.attrs['qualification_sha256']=_content_hash({
+            k:m.get(k) for k in (
+                'accepted','held_out_verdicts','screen_results','branch_detection',
+                'A6b-source','A6b-runtime','T10 interpolation qualification')})
     mutate(path,edit)
     with pytest.raises(FingerprintMismatch, match='qualification'):
         pinned(path,model)
@@ -128,7 +131,7 @@ def test_mf04_rate_policy_changes_model_identity(name):
 
 def test_mf05_perturbed_setup_preserves_temperature_and_pressure():
     spec=raw_spec()
-    text=loki.setup_text(spec,{'Tg_K':350.,'P_Pa':777.},[17.],'solve')
+    text=loki._setup_text(spec,{'Tg_K':350.,'P_Pa':777.},[17.],'solve')
     assert 'gasTemperature: 350.0' in text
     assert 'gasPressure: 777.0' in text
 
@@ -138,25 +141,25 @@ def test_mf06_reversed_eedf_fails_held_out_qualification():
     row=loki.parse_output(FIXTURE,1e-8)
     row['composition']={}
     channels=json.loads(Path(spec['channel_map']['path']).read_text())
-    loki.enrich_row(row,channels,spec)
+    loki._enrich_row(row,channels,spec)
     row['product_fractions']=np.zeros(len(channels))
     predicted=copy.deepcopy(row)
     predicted['f0']=predicted['f0'][::-1]
-    verdicts=compare_row(predicted,row,{'tolerances':spec['tolerances'],'floors':spec['floors'],'channel_map':channels,'row_inputs': {'Tg_K':spec['Tg_K']}})
+    verdicts=_compare_row(predicted,row,{'tolerances':spec['tolerances'],'floors':spec['floors'],'channel_map':channels,'row_inputs': {'Tg_K':spec['Tg_K']}})
     assert any(not v['passed'] and 'f0' in v['quantity'] for v in verdicts)
 
 
 def test_mf07_row_grid_mismatch_refuses_storage(tmp_path):
-    from rmgpy.tools.eedf.artifact import write_artifact
+    from rmgpy.tools.eedf.artifact import _write_artifact
     path,model=fixture_table(tmp_path/'initial')
     table=pinned(path,model)
     manifest=copy.deepcopy(table.manifest)
     rows=np.empty((4,),dtype=object)
     for i in range(4):
-        rows[i]=table.row(float(i),{}).as_dict()
+        rows[i]=table.row(float(i),{})._as_dict()
     rows[2]['energy_eV']=np.array([.6])
     with pytest.raises((SpecError,FingerprintMismatch),match='grid'):
-        write_artifact(tmp_path/'bad',manifest,{'branch_0':rows},[])
+        _write_artifact(tmp_path/'bad',manifest,{'branch_0':rows},[])
 
 
 def test_mf08_constant_symbolic_population_refuses(tmp_path):
@@ -202,7 +205,7 @@ def test_mf10_elastic_channel_power_is_retained():
     row=loki.parse_output(FIXTURE,1e-8)
     row['composition']={}
     channels=json.loads(Path(spec['channel_map']['path']).read_text())
-    loki.enrich_row(row,channels,spec)
+    loki._enrich_row(row,channels,spec)
     assert row['channel_power'][0]==pytest.approx(-row['power_groups']['elastic_loss']-row['power_groups']['elastic_gain'],rel=1e-12,abs=0)
 
 
@@ -213,7 +216,7 @@ def test_mf10_wrong_threshold_fails_group_power_check():
     channels=json.loads(Path(spec['channel_map']['path']).read_text())
     channels[1]['threshold_eV']*=100
     with pytest.raises((loki.LoKIError, SpecError),match='power|threshold'):
-        loki.enrich_row(row,channels,spec)
+        loki._enrich_row(row,channels,spec)
 
 
 def test_mf11_composition_fixture_rates_depend_on_composition(tmp_path):
@@ -223,18 +226,18 @@ def test_mf11_composition_fixture_rates_depend_on_composition(tmp_path):
 
 
 def test_mf11_numeric_policy_test_reaches_numeric_validation():
-    from rmgpy.tools.eedf.schema import validate_spec
+    from rmgpy.tools.eedf.schema import _validate_spec
     spec=raw_spec()
     spec['tolerances']['H1']['rtol']='not a number'
     with pytest.raises(SpecError,match='numeric'):
-        validate_spec(spec)
+        _validate_spec(spec)
 
 
 def test_shared_loader_environment_clears_overrides(monkeypatch):
-    from rmgpy.tools.eedf.integrity import solver_environment
+    from rmgpy.tools.eedf.integrity import _solver_environment
     monkeypatch.setenv('LD_LIBRARY_PATH', '/untrusted')
     monkeypatch.setenv('LD_PRELOAD', '/untrusted.so')
-    env = solver_environment(raw_spec())
+    env = _solver_environment(raw_spec())
     assert 'LD_LIBRARY_PATH' not in env and 'LD_PRELOAD' not in env
 
 
@@ -242,7 +245,7 @@ def test_relative_nested_population_file_must_be_hashed(tmp_path):
     spec = raw_spec()
     population = tmp_path / 'population.txt'
     population.write_text('nested.txt\n')
-    spec['input_files']['population.txt'] = {'path': str(population), 'sha256': file_hash(population), 'kind': 'property'}
+    spec['input_files']['population.txt'] = {'path': str(population), 'sha256': _file_hash(population), 'kind': 'property'}
     spec['state_properties']['population'] = ['population.txt']
     with pytest.raises(SpecError, match='unhashed'):
         model_inputs(spec)
@@ -252,14 +255,14 @@ def test_numeric_population_file_is_resolved_and_stored(tmp_path):
     spec = raw_spec()
     population = tmp_path / 'population.txt'
     population.write_text('Ar(1S0) 1.0\n')
-    spec['input_files']['population.txt'] = {'path': str(population), 'sha256': file_hash(population), 'kind': 'property'}
+    spec['input_files']['population.txt'] = {'path': str(population), 'sha256': _file_hash(population), 'kind': 'property'}
     spec['state_properties']['population'] = ['population.txt']
     row = loki.parse_output(FIXTURE, 1e-8)
     row['composition'] = {}
     channels = json.loads(Path(spec['channel_map']['path']).read_text())
-    loki.enrich_row(row, channels, spec)
+    loki._enrich_row(row, channels, spec)
     assert row['state_populations'] == {'Ar(1S0)': 1.}
-    assert 'Ar(1S0) = 1' in loki.setup_text(spec, {}, [17.], 'solve')
+    assert 'Ar(1S0) = 1' in loki._setup_text(spec, {}, [17.], 'solve')
 
 
 def test_constant_symbolic_population_is_refused_before_execution():
@@ -286,7 +289,7 @@ def test_nonfinite_solver_values_refuse(tmp_path, filename, old, new):
 
 def test_loader_hashes_and_reads_one_snapshot(tmp_path, monkeypatch):
     path, model = fixture_table(tmp_path)
-    expected = file_hash(path / 'table.h5')
+    expected = _file_hash(path / 'table.h5')
     real_open = Path.open
     count = []
     def opened(self, *args, **kw):
@@ -321,11 +324,11 @@ def test_normalization_overflow_refuses(tmp_path):
 
 
 def test_hf_refuses_at_spec_validation():
-    from rmgpy.tools.eedf.schema import validate_spec
+    from rmgpy.tools.eedf.schema import _validate_spec
     spec = raw_spec()
     spec['working_conditions']['excitationFrequency'] = 1.
     with pytest.raises(SpecError, match='excitationFrequency'):
-        validate_spec(spec)
+        _validate_spec(spec)
 
 
 def test_refinement_runs_and_keeps_original_midpoint_held_out(tmp_path, monkeypatch):
@@ -341,15 +344,18 @@ def test_refinement_runs_and_keeps_original_midpoint_held_out(tmp_path, monkeypa
     direct = loki.parse_output(FIXTURE, 1e-8)
     direct['composition'] = {}
     channels = json.loads(Path(spec['channel_map']['path']).read_text())
-    loki.enrich_row(direct, channels, spec)
+    loki._enrich_row(direct, channels, spec)
     direct['product_fractions'] = np.zeros(len(channels))
     direct['power_absolute'] = 0.
-    def solve(driver, channel_map, local_spec, coordinates, fields, label):
+    def solve(driver, channel_map, local_spec, coordinates, u_values, label):
         rows = []
-        for field in fields:
+        for u in u_values:
+            field = float(np.exp(u))
             row = copy.deepcopy(direct)
-            row['EN_Td'], row['u'], row['composition'], row['setup'] = field, float(np.log(field)), coordinates, label
+            row['EN_Td'], row['u'], row['composition'], row['setup'] = field, float(u), coordinates, label
             row['swarm']['mean_energy_eV'] = 1 + row['u']
+            row['power_groups']['field'] = (
+                row['swarm']['mobility_N'] * (field * 1.e-21) ** 2)
             rows.append(row)
         return rows
     monkeypatch.setattr(generation, '_solve', solve)
@@ -357,7 +363,7 @@ def test_refinement_runs_and_keeps_original_midpoint_held_out(tmp_path, monkeypa
     def compare(predicted, reference, manifest):
         passed = len(manifest['axes']['u']) > 2
         return [{'passed': passed, 'rule': 'H1', 'relative_error': 0., 'quantity': 'fixture', 'absolute_error': 0., 'allowed_error': 1.}]
-    monkeypatch.setattr(generation, 'compare_row', compare)
+    monkeypatch.setattr(generation, '_compare_row', compare)
     path = generation.generate(spec)
     manifest = json.loads((path / 'manifest.json').read_text())
     assert len(manifest['refinement_history']) == 2
@@ -366,4 +372,5 @@ def test_refinement_runs_and_keeps_original_midpoint_held_out(tmp_path, monkeypa
     with h5py.File(path / 'table.h5', 'r') as h5:
         assert .5 in h5['held_out/u'][...]
         assert .5 not in h5['branches/branch_0/u'][...]
-    assert manifest['accepted']
+    assert not manifest['accepted']
+    assert not manifest['T10 interpolation qualification']['passed']

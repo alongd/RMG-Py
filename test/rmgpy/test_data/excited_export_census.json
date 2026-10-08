@@ -5252,21 +5252,21 @@
       "line": 169,
       "signature": "6c3f934b3340329a195f991a4b587a3a793c57356c97aea790ce63998a891aa1"
     },
-    "rmgpy/tools/eedf/artifact.py:write_artifact": {
+    "rmgpy/tools/eedf/artifact.py:_write_artifact": {
       "verdict": "E",
       "reason": "Copies normalized explicit EEDF spec/manifest and numerical tables; no Species/Molecule identity or inferred molecular name.",
       "file": "rmgpy/tools/eedf/artifact.py",
-      "function": "write_artifact",
-      "line": 136,
-      "signature": "8853a50caade1881bd4774f17b83d6a2fad8d629461db3a12c36a5ab942d32c6"
+      "function": "_write_artifact",
+      "line": 137,
+      "signature": "6303e33e3d74efe0f40683d30f59a0e6dc29f2e971c3859af12a803c7db0b52a"
     },
     "rmgpy/tools/eedf/loki.py:LoKIDriver.run": {
       "verdict": "E",
       "reason": "Writes explicit LoKI solver setup text and numeric electron-energy parameters; no Species/Molecule identity export.",
       "file": "rmgpy/tools/eedf/loki.py",
       "function": "LoKIDriver.run",
-      "line": 239,
-      "signature": "133f71ffbe1c2972be4ceef0db68edecd018d65beccabd7d7cad702c3c1de0b1"
+      "line": 265,
+      "signature": "0f230edad0a57856890832c5df01e748bc2196a7c101de6a87b369e2c790a7c0"
     },
     "rmgpy/tools/fluxdiagram.py:create_flux_diagram": {
       "verdict": "E",
@@ -5300,11 +5300,11 @@
       "line": 69,
       "signature": "087f50690b808254a263b1793f2244f5c004b28ff9bdab931950f19ac60a0b69"
     },
-    "rmgpy/tools/eedf/artifact.py:write_rows": {
+    "rmgpy/tools/eedf/artifact.py:_write_rows": {
       "file": "rmgpy/tools/eedf/artifact.py",
-      "function": "write_rows",
-      "line": 68,
-      "signature": "3b15a6011550ecbb8207e4cd0bf601ae08204e4c5652624cf93af10188b5d1f3",
+      "function": "_write_rows",
+      "line": 69,
+      "signature": "8b9e6e1cd46879a85c94cc0073982a0f8586a0f20e53b37bd4b381219bead56c",
       "verdict": "E",
       "reason": "Stores numerical solver tensors and explicit symbolic spec assumptions; identifiers are encoded reversibly with storage_key. No Species/Molecule graph or inferred molecular name is exported."
     },

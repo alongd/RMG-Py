@@ -36,10 +36,10 @@ from pathlib import Path
 import re
 import subprocess
 
-from rmgpy.tools.eedf.schema import FingerprintMismatch, SpecError, file_hash
+from rmgpy.tools.eedf.schema import FingerprintMismatch, SpecError, _file_hash
 
 
-def solver_environment(spec):
+def _solver_environment(spec):
     """Use loader resolution independent of the invoking shell."""
     # No parent-shell values reach ldd or the solver, including future loader,
     # allocator, locale, OpenMP, and vendor-library switches.
@@ -48,16 +48,16 @@ def solver_environment(spec):
 
 
 
-def check_solver(spec):
+def _check_solver(spec):
     """Pin every shared object resolved from the immutable build by ldd."""
-    if file_hash(spec['binary']['path']) != spec['binary']['sha256']:
+    if _file_hash(spec['binary']['path']) != spec['binary']['sha256']:
         raise FingerprintMismatch('binary SHA-256')
     build = Path(spec['cmake_cache']['path']).resolve().parent
     pins = {str(Path(p).resolve()): digest for p, digest in spec.get('shared_objects', {}).items()}
     for path, digest in pins.items():
-        if file_hash(path) != digest:
+        if _file_hash(path) != digest:
             raise FingerprintMismatch('shared object SHA-256: ' + path)
-    completed = subprocess.run(['ldd', spec['binary']['path']], env=solver_environment(spec),
+    completed = subprocess.run(['ldd', spec['binary']['path']], env=_solver_environment(spec),
                                capture_output=True, text=True, check=False)
     if completed.returncode or 'not found' in completed.stdout:
         raise FingerprintMismatch('shared object resolution')
@@ -71,7 +71,7 @@ def check_solver(spec):
     return pins
 
 
-def physical_properties(spec):
+def _physical_properties(spec):
     """Close every property-file reference; return scratch-safe resolved values.
 
     Population files may include other files, but every leaf must be numeric.
@@ -80,17 +80,17 @@ def physical_properties(spec):
     registry = spec['input_files']
     by_path = {str(Path(entry['path']).resolve()): name for name, entry in registry.items()}
     for name, entry in registry.items():
-        if legacy_string(name) != name:
+        if _legacy_string(name) != name:
             raise SpecError('ambiguous scratch input name: ' + name)
         if (Path(name).is_absolute() or '..' in Path(name).parts
                 or any(c in name for c in ('%', '\n', '\r'))):
             raise SpecError('unsafe input_files name: ' + name)
-        if file_hash(entry['path']) != entry['sha256']:
+        if _file_hash(entry['path']) != entry['sha256']:
             raise FingerprintMismatch('input file ' + name)
 
     def reference(value):
         # OffSideToJSON strips % comments, then JSON-decodes quoted strings.
-        value = legacy_string(value)
+        value = _legacy_string(value)
         if value in registry:
             return value
         if Path(value).is_absolute() and str(Path(value).resolve()) in by_path:
@@ -102,7 +102,7 @@ def physical_properties(spec):
             raise SpecError('legacy state properties must be lists')
         result = []
         for raw in values:
-            value = legacy_string(raw)
+            value = _legacy_string(raw)
             # LegacyToJSON.cpp:94 uses regex_search, NOT a test for '='.
             match = re.search(r'(\S+)\s+=\s+(\S+)\s*$', value)
             if match:
@@ -111,7 +111,7 @@ def physical_properties(spec):
                 key, expr = match.groups()
                 if not re.fullmatch(r'\{[A-Za-z_][A-Za-z_0-9]*\}|[+\-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+\-]?\d+)?', expr):
                     raise SpecError('symbolic state property must be resolved to numbers')
-                result.append(neutral_state_key(key) + ' = ' + expr)
+                result.append(_neutral_state_key(key) + ' = ' + expr)
                 continue
             name = reference(value)
             if name in seen:
@@ -199,7 +199,7 @@ def physical_properties(spec):
     return gas, states
 
 
-def legacy_string(value):
+def _legacy_string(value):
     """Decode a string as the pinned off-side setup parser does."""
     if not isinstance(value, str) or '\n' in value or '\r' in value:
         raise SpecError('legacy entry must be a single string')
@@ -213,7 +213,7 @@ def legacy_string(value):
     return decoded
 
 
-def neutral_state_key(selector):
+def _neutral_state_key(selector):
     """Resolve the supported subset of LoKI's propertyStateFromString.
 
     StateEntry.cpp:393-495 splits comma tokens with std::getline (which drops
@@ -242,7 +242,7 @@ def neutral_state_key(selector):
     return outer[1] + '(' + electronic + ')'
 
 
-def resolved_properties(spec, coordinates):
+def _resolved_properties(spec, coordinates):
     """Produce the very same explicit constants for setup and row metadata.
 
     Flattened numeric state selectors are deliberately limited to neutral
@@ -251,17 +251,17 @@ def resolved_properties(spec, coordinates):
     """
     state = {name: item['reference'] for name, item in spec['envelopes'].items()}
     state.update(coordinates)
-    gas, properties = physical_properties(spec)
+    gas, properties = _physical_properties(spec)
 
     def numbers(entries, population=False):
         result = {}
         for entry in entries:
-            match = re.fullmatch(r'(\S+)\s+=\s+(\S+)', legacy_string(entry))
+            match = re.fullmatch(r'(\S+)\s+=\s+(\S+)', _legacy_string(entry))
             if not match:
                 raise SpecError('ambiguous numeric property assignment')
             key, expr = match.groups()
             if population:
-                key = neutral_state_key(key)
+                key = _neutral_state_key(key)
             if not population and not re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', key):
                 raise SpecError('ambiguous gas fraction identifier')
             try:
@@ -297,7 +297,7 @@ def resolved_properties(spec, coordinates):
     return gas, properties, fractions, populations
 
 
-def channel_fractions(channel_map, gas, populations, coordinates):
+def _channel_fractions(channel_map, gas, populations, coordinates):
     """Check map fractions bit for bit against LoKI's neutral state densities.
 
     Gas.cpp:233-238 multiplies the electronic population by the neutral

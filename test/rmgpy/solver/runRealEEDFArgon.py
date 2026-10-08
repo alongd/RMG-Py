@@ -20,12 +20,12 @@ from rmgpy.exceptions import PlasmaStateError
 from rmgpy.rmg.main import RMG
 from rmgpy.solver.eedf_provider import (
     DEVELOPMENT_UNQUALIFIED_STATUS,
-    development_unqualified_table_route,
+    _development_unqualified_table_route,
 )
 from rmgpy.solver.electronegative import manifest_values
-from rmgpy.tools.eedf.loki import LoKIDriver, enrich_row
-from rmgpy.tools.eedf.schema import file_hash, load_spec
-from rmgpy.tools.eedf.validation import compare_row
+from rmgpy.tools.eedf.loki import LoKIDriver, _enrich_row
+from rmgpy.tools.eedf.schema import _file_hash, load_spec
+from rmgpy.tools.eedf.validation import _compare_row
 from real_eedf_harness import (
     DEVELOPMENT_SWEEP_TOLERANCES,
     generate_real_artifact,
@@ -81,7 +81,7 @@ def git_fingerprint(path):
 def configuration_fingerprint(args, deck_path):
     """Fingerprint the deck and the runner settings that select this trajectory."""
     values = {
-        'deck_sha256': file_hash(deck_path),
+        'deck_sha256': _file_hash(deck_path),
         'development_unqualified': bool(args.development_unqualified),
         'seed_multiplier': args.seed_multiplier,
         'arm_label': args.arm_label,
@@ -133,12 +133,12 @@ def a_posteriori_resolve(reactor, artifact, run_directory):
         driver = LoKIDriver(spec)
         direct = driver.run(
             coordinates, [float(reactor.eedf_row.EN_Td)], 'endpoint')[0]
-        enrich_row(direct, channel_map, spec)
+        _enrich_row(direct, channel_map, spec)
         direct['power_absolute'] = (
             abs(direct['power_groups']['field']) *
             spec['floors']['absolute_power_share'])
-        predicted = reactor.eedf_row.as_dict()
-        checks = compare_row(predicted, direct, reactor.eedf_provider.runtime_metadata)
+        predicted = reactor.eedf_row._as_dict()
+        checks = _compare_row(predicted, direct, reactor.eedf_provider.runtime_metadata)
         result.update(
             outcome=('PASS' if all(check['passed'] for check in checks) else 'FAIL'),
             checks=checks,
@@ -255,7 +255,7 @@ def main():
     if args.artifact:
         artifact = Path(args.artifact).resolve()
         manifest = json.loads((artifact / 'manifest.json').read_text())
-        if file_hash(artifact / 'table.h5') != manifest['artifact_sha256']:
+        if _file_hash(artifact / 'table.h5') != manifest['artifact_sha256']:
             parser.error('artifact table hash differs from manifest')
     else:
         spec_path = os.environ.get('EEDF_REAL_SPEC')
@@ -306,7 +306,7 @@ def main():
         'fingerprints': {
             'table': manifest['artifact_sha256'],
             'solver': git_fingerprint(Path(__file__).resolve().parents[3]),
-            'deck': file_hash(deck_path),
+            'deck': _file_hash(deck_path),
             'configuration': configuration_fingerprint(args, deck_path),
             'table_solver': manifest.get('solver'),
         },
@@ -348,7 +348,7 @@ def main():
             progress_interval_seconds=args.progress_interval_seconds,
             wall_budget_seconds=args.wall_budget_seconds)
         try:
-            with development_unqualified_table_route():
+            with _development_unqualified_table_route():
                 simulation = reactor.simulate(
                     core_species, core_reactions, [], [], [], [],
                     model_settings=rmg.model_settings_list[0],
@@ -399,8 +399,10 @@ def main():
         'energy_budget': budget,
         'A6a_relative': float(budget['A6a_relative']),
         'A6a_passed': bool(budget['A6a_passed']),
-        'A6b_relative': float(budget['A6b_relative']),
-        'A6b_passed': bool(budget['A6b_passed']),
+        'A6b-source': dict(budget['A6b-source']),
+        'A6b-runtime': dict(budget['A6b-runtime']),
+        'T10 interpolation qualification': dict(
+            budget['T10 interpolation qualification']),
     }
     if args.development_unqualified:
         trajectory = list(reactor.development_trajectory)
@@ -414,26 +416,22 @@ def main():
             'convergence_time_s': float(reactor.t),
             'transient_extrema': dict(reactor.development_transient_extrema),
         })
-        a6b = (dict(reactor.development_a6b_failure)
-               if reactor.development_a6b_failure is not None else {
-                   'check': 'A6b LoKI-B/table field-power consistency',
-                   'outcome': 'PASS',
-                   'value': float(budget['A6b_relative']),
-                   'tolerance': float(budget['A6b_tolerance']),
-                   'numerator': float(budget['A6b_numerator']),
-                   'denominator': float(budget['A6b_denominator']),
-                   'artifact_sha256': manifest['artifact_sha256'],
-               })
+        checks = {
+            'A6b-source': dict(budget['A6b-source']),
+            'A6b-runtime': dict(budget['A6b-runtime']),
+            'T10 interpolation qualification': dict(
+                budget['T10 interpolation qualification']),
+        }
         a_posteriori = a_posteriori_resolve(reactor, artifact, run_directory)
         run_manifest = reactor.eedf_run_manifest()
         run_manifest.update({
             'initialization': initialization,
             'fingerprints': status['fingerprints'],
-            'A6b_outcome': a6b,
+            'A6b_and_T10_checks': checks,
             'a_posteriori_LoKI_B': a_posteriori,
         })
         result.update({
-            'A6b_outcome': a6b,
+            'A6b_and_T10_checks': checks,
             'a_posteriori_LoKI_B': a_posteriori,
             'run_manifest': run_manifest,
         })

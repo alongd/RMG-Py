@@ -36,11 +36,11 @@ import re
 import numpy as np
 from scipy.constants import electron_mass
 
-from rmgpy.tools.eedf.integrity import physical_properties, resolved_properties
+from rmgpy.tools.eedf.integrity import _physical_properties, _resolved_properties
 from rmgpy.tools.eedf.schema import SpecError
 
 
-def validate_map(channels):
+def _validate_map(channels):
     """Check internal bounds and structural production classifications."""
     required = {'description', 'kind', 'classification', 'threshold_eV',
                 'target_fraction', 'product_fraction', 'sigma_max_m2',
@@ -157,10 +157,10 @@ def _gas_values(path, digest):
     return data
 
 
-def validate_physical_map(channels, spec, coordinates):
+def _validate_physical_map(channels, spec, coordinates):
     """Refuse verdict-changing metadata that differs from actual solver inputs."""
-    validate_map(channels)
-    gas, _ = physical_properties(spec)
+    _validate_map(channels)
+    gas, _ = _physical_properties(spec)
     sections = {}
     for entry in spec['input_files'].values():
         if entry['kind'] == 'cross_section':
@@ -171,7 +171,7 @@ def validate_physical_map(channels, spec, coordinates):
                 sections[name] = section
     if set(sections) != {c['description'] for c in channels} or len(sections) != len(channels):
         raise SpecError('channel map does not cover physical collision identities')
-    _, states, _, _ = resolved_properties(spec, coordinates)
+    _, states, _, _ = _resolved_properties(spec, coordinates)
     weights = {v.split(' = ', 1)[0]: float(v.split(' = ', 1)[1])
                for v in states.get('statisticalWeight', [])}
 

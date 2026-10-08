@@ -37,10 +37,10 @@ import numpy as np
 import pytest
 
 from rmgpy.tools.eedf.generate import model_inputs
-from rmgpy.tools.eedf.integrity import physical_properties, solver_environment
-from rmgpy.tools.eedf.loki import LoKIDriver, LoKIError, enrich_row, parse_output, setup_text
-from rmgpy.tools.eedf.schema import SpecError, file_hash, load_spec
-from rmgpy.tools.eedf.validation import channel_power_checks
+from rmgpy.tools.eedf.integrity import _physical_properties, _solver_environment
+from rmgpy.tools.eedf.loki import LoKIDriver, LoKIError, _enrich_row, parse_output, _setup_text
+from rmgpy.tools.eedf.schema import SpecError, _file_hash, load_spec
+from rmgpy.tools.eedf.validation import _channel_power_checks
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'ar'
 
@@ -56,7 +56,7 @@ def test_r2_01_ld_audit_and_all_parent_environment_are_dropped(monkeypatch):
                  'GLIBC_TUNABLES', 'MALLOC_PERTURB_', 'LC_NUMERIC', 'LANG',
                  'OMP_DYNAMIC', 'GOMP_CPU_AFFINITY', 'LOKI_UNLISTED_SWITCH'):
         monkeypatch.setenv(name, 'untrusted')
-    env = solver_environment(request)
+    env = _solver_environment(request)
     assert env == {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'TZ': 'UTC',
                    'OMP_NUM_THREADS': '1', 'OMP_DYNAMIC': 'FALSE'}
 
@@ -78,7 +78,7 @@ def test_r2_03_wrong_map_target_population_is_refused(tmp_path):
     request['scratch_root'] = str(tmp_path / 'loki')
     row = LoKIDriver(request).run({}, [3.], 'wrong-population')[0]
     with pytest.raises((SpecError, LoKIError), match='population'):
-        enrich_row(row, channels, request)
+        _enrich_row(row, channels, request)
 
 
 def test_r2_03_group_budget_cannot_hide_ninety_percent_material_channel_error():
@@ -88,7 +88,7 @@ def test_r2_03_group_budget_cannot_hide_ninety_percent_material_channel_error():
            'power_groups': {'field': 1e-23, 'excitation_loss': -1e-24}}
     manifest = {'channel_map': [{'kind': 'excitation'}],
                 'tolerances': request['tolerances'], 'floors': request['floors']}
-    checks = channel_power_checks(row, manifest)
+    checks = _channel_power_checks(row, manifest)
     assert not next(v for v in checks if v['quantity'] == 'power.sum.excitation')['passed']
 
 
@@ -108,13 +108,13 @@ def test_state_file_grammar_closes_all_property_keys(tmp_path, property_name, sy
         parent_name = 'parent.json' if syntax == 'json_nested' else 'parent.in'
         parent = tmp_path / parent_name
         parent.write_text(json.dumps({'files': [name]}) if syntax == 'json_nested' else name+'\n')
-        request['input_files'][parent_name] = {'path': str(parent), 'sha256': file_hash(parent), 'kind': 'property'}
+        request['input_files'][parent_name] = {'path': str(parent), 'sha256': _file_hash(parent), 'kind': 'property'}
         reference = parent_name
     request['state_properties'][property_name] = [reference]
     with pytest.raises(SpecError, match='unhashed'):
-        physical_properties(request)
-    request['input_files'][name] = {'path': str(value), 'sha256': file_hash(value), 'kind': 'property'}
-    _, states = physical_properties(request)
+        _physical_properties(request)
+    request['input_files'][name] = {'path': str(value), 'sha256': _file_hash(value), 'kind': 'property'}
+    _, states = _physical_properties(request)
     assert states[property_name] == ['Ar(1S0) = 1.0']
 
 
@@ -123,7 +123,7 @@ def test_every_cross_section_file_key_requires_a_hash(key):
     request = spec()
     request['solver_options'][key] = ['unlisted=1']
     with pytest.raises(SpecError, match='unhashed'):
-        physical_properties(request)
+        _physical_properties(request)
 
 
 @pytest.mark.parametrize('syntax', ['duplicate', 'wildcard', 'hierarchy', 'charge', 'prefix', 'symbolic'])
@@ -134,7 +134,7 @@ def test_ambiguous_population_selectors_are_refused(syntax):
                'charge': ['Ar(+) = 1'], 'prefix': ['ignored Ar(1S0) = 1'], 'symbolic': ['Ar(1S0) = constantValue@1']}
     request['state_properties']['population'] = entries[syntax]
     with pytest.raises(SpecError):
-        setup_text(request, {}, [17.], 'solve')
+        _setup_text(request, {}, [17.], 'solve')
 
 
 @pytest.mark.parametrize('direction', ['target_fraction', 'product_fraction'])
@@ -146,7 +146,7 @@ def test_both_map_populations_compare_bits(direction):
     row = parse_output(FIXTURE, request['tolerances']['normalization_atol'])
     row['composition'] = {}
     with pytest.raises(SpecError, match='population'):
-        enrich_row(row, channels, request)
+        _enrich_row(row, channels, request)
 
 
 def test_real_solve_resolves_hashed_population_file_and_ignores_parent_environment(tmp_path, monkeypatch):
@@ -156,7 +156,7 @@ def test_real_solve_resolves_hashed_population_file_and_ignores_parent_environme
     leaf.write_text('Ar(1S0) 1.0 % numeric leaf\n')
     parent.write_text(json.dumps({'files': ['population=1']}))
     for file in (parent, leaf):
-        request['input_files'][file.name] = {'path': str(file), 'sha256': file_hash(file), 'kind': 'property'}
+        request['input_files'][file.name] = {'path': str(file), 'sha256': _file_hash(file), 'kind': 'property'}
     request['state_properties']['population'] = [parent.name]
     request['scratch_root'] = str(tmp_path / 'loki')
     baseline = model_inputs(request)
@@ -165,31 +165,32 @@ def test_real_solve_resolves_hashed_population_file_and_ignores_parent_environme
     monkeypatch.setenv('MALLOC_PERTURB_', '255')
     channels = json.loads(Path(request['channel_map']['path']).read_text())
     row = LoKIDriver(request).run({}, [17.], 'hashed-population')[0]
-    enrich_row(row, channels, request)
+    _enrich_row(row, channels, request)
     assert row['target_fractions'][1] == 1.
     assert 'audit' not in (tmp_path / 'loki/hashed-population/stderr.log').read_text().lower()
     leaf.write_text('Ar(1S0) 1.00\n')
-    request['input_files'][leaf.name]['sha256'] = file_hash(leaf)
+    request['input_files'][leaf.name]['sha256'] = _file_hash(leaf)
     assert model_inputs(request) != baseline
 
 
 def test_gas_fraction_exponent_is_normalized_for_pinned_parser():
     request = spec()
     request['gas_properties']['fraction'] = ['Ar = 1e0']
-    assert 'Ar = 1' in setup_text(request, {}, [17.], 'solve')
+    assert 'Ar = 1' in _setup_text(request, {}, [17.], 'solve')
 
 
 def test_loader_rejects_map_population_disagreement_even_with_current_artifact_pin(tmp_path):
     import h5py
-    from rmgpy.tools.eedf.schema import content_hash
+    from rmgpy.tools.eedf.schema import _content_hash
     from rmgpy.tools.eedf.generate import generate
     from rmgpy.solver.eedf import EEDFTable
     request = spec()
     request['axes']['u'] = np.linspace(np.log(16), np.log(18), 9).tolist()
     request['held_out']['lhs_count'] = 0
     request['screen']['candidates'] = []
-    request['envelopes']['electron_density']['min'] = request['envelopes']['electron_density']['reference']
-    request['envelopes']['electron_density']['max'] = request['envelopes']['electron_density']['reference']
+    for bounds in request['envelopes'].values():
+        bounds['min'] = bounds['reference']
+        bounds['max'] = bounds['reference']
     request['refinement']['max_rounds'] = 0
     request['scratch_root'] = str(tmp_path / 'loki')
     request['output_root'] = str(tmp_path / 'tables')
@@ -198,8 +199,8 @@ def test_loader_rejects_map_population_disagreement_even_with_current_artifact_p
     manifest = json.loads(manifest_path.read_text())
     manifest['channel_map'][1]['target_fraction'] = .1
     with h5py.File(path / 'table.h5', 'r+') as h5:
-        h5.attrs['channel_map_content_sha256'] = content_hash(manifest['channel_map'])
-    digest = file_hash(path / 'table.h5')
+        h5.attrs['channel_map_content_sha256'] = _content_hash(manifest['channel_map'])
+    digest = _file_hash(path / 'table.h5')
     manifest['artifact_sha256'] = digest
     manifest_path.write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match='populations'):
@@ -214,7 +215,7 @@ def test_group_budget_catches_channel_undercounted_below_materiality_threshold()
            'power_groups': {'field': 1e-17, 'excitation_loss': -1e-17}}
     manifest = {'channel_map': [{'kind': 'excitation'}, {'kind': 'excitation'}],
                 'tolerances': request['tolerances'], 'floors': request['floors']}
-    checks = channel_power_checks(row, manifest)
+    checks = _channel_power_checks(row, manifest)
     assert not next(v for v in checks if v['quantity'] == 'power.sum.excitation')['passed']
 
 
@@ -224,7 +225,7 @@ def test_every_gas_property_file_key_requires_a_hash(name):
     request = spec()
     request['gas_properties'][name] = 'unlisted=1'
     with pytest.raises(SpecError, match='unhashed'):
-        physical_properties(request)
+        _physical_properties(request)
 
 
 @pytest.mark.parametrize('entry', ['Ar(1S0)=1', 'Ar(1S0)= 1', 'Ar(1S0) =1'])
@@ -232,7 +233,7 @@ def test_equals_without_surrounding_whitespace_is_a_file_reference(entry):
     request = spec()
     request['state_properties']['population'] = [entry]
     with pytest.raises(SpecError, match='unhashed'):
-        physical_properties(request)
+        _physical_properties(request)
 
 
 @pytest.mark.parametrize('entry', ['Ar(1S0) 1.2.3', 'Ar(1S0) = 1', '# ignored', '// ignored'])
@@ -240,14 +241,14 @@ def test_ambiguous_legacy_property_file_lines_are_refused(tmp_path, entry):
     request = spec()
     file = tmp_path / 'population.in'
     file.write_text(entry+'\n')
-    request['input_files'][file.name] = {'path': str(file), 'sha256': file_hash(file), 'kind': 'property'}
+    request['input_files'][file.name] = {'path': str(file), 'sha256': _file_hash(file), 'kind': 'property'}
     request['state_properties']['population'] = [file.name]
     with pytest.raises(SpecError):
-        physical_properties(request)
+        _physical_properties(request)
 
 
 def test_setup_list_cannot_inject_another_file_key():
     request = spec()
     request['working_conditions']['extra'] = ['1\n  LXCatFilesExtra:\n    - /unlisted']
     with pytest.raises(LoKIError, match='ambiguous'):
-        setup_text(request, {}, [17.], 'solve')
+        _setup_text(request, {}, [17.], 'solve')
