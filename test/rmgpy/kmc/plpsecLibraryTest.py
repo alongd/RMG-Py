@@ -305,6 +305,7 @@ def test_postcompile_census_and_rate_check_accept_small_inventory():
             "kinetics_library.py",
             "database_provenance.py",
             "proxy_padding.py",
+            "barrier_e0.py",
         )
     )).hexdigest()
 

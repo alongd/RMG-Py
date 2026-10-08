@@ -12,6 +12,7 @@ import pytest
 
 from rmgpy import settings
 from rmgpy.data.rmg import RMGDatabase
+from rmgpy.kmc.barrier_e0 import FixedBBarrierE0Provider
 import rmgpy.kmc.compiler as compiler_module
 from rmgpy.kmc.compiler import (
     DEFAULT_T_GRID,
@@ -30,6 +31,7 @@ from rmgpy.kmc.compiler import (
     _reflect_ortho_reaction,
     _remap_witness_projection,
     ceiling_temperature,
+    compiler_source_hash,
     ps_proxy_set,
     short_ps_molecule_catalogue,
     validate_artifact,
@@ -251,6 +253,86 @@ def test_uses_public_family_pipeline_and_emits_f1_fields():
     assert record["provenance"]["family_list_sha256"]
     assert "archived_j_para_rate" not in artifact["provenance"]
     assert "archived_j_para_rate" not in record["provenance"]
+
+
+def test_barrier_e0_provider_is_off_by_default_and_explicit_when_enabled():
+    disabled, _ = _compiler()
+    disabled_artifact = disabled.compile()
+    assert "barrier_e0_provider" not in disabled_artifact["provenance"]
+    assert "barrier_e0_provider" not in disabled_artifact["inputs"]
+
+    enabled, _ = _compiler()
+    enabled.barrier_e0_provider = FixedBBarrierE0Provider(900.0)
+    artifact = enabled.compile()
+    assert artifact["provenance"]["barrier_e0_provider"] == {
+        "enabled": True,
+        "name": "fixed-b-wilhoit",
+        "version": "1",
+        "B_K": 900.0,
+        "fit_temperature_grid": "participant ThermoData.Tdata",
+        "fit_weights": "uniform least squares",
+    }
+    assert artifact["inputs"]["barrier_e0_provider"] == artifact["provenance"][
+        "barrier_e0_provider"
+    ]
+
+
+def test_disabled_barrier_e0_provider_preserves_base_artifact_bytes(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        compiler_module,
+        "_LOADED_COMPILER_HASH",
+        "17a155a4026a058e2c4933eb58a5cfde79af0274496e0242a4e2b5642d796ac2",
+    )
+    monkeypatch.setattr(
+        compiler_module,
+        "compiler_source_hash",
+        lambda: "48c1f8b73e311f92d4169734c92b37f7bcc984ee01e2532f0da83bbc573c833d",
+    )
+    compiler, _ = _compiler()
+    compiler.rmgpy_sha = "1e51f1f8f33b81ce66baf3c8b52b84f15ab9f974"
+
+    path, artifact = compiler.write_artifact(tmp_path)
+
+    assert "barrier_e0_provider" not in artifact["provenance"]
+    assert "barrier_e0_provider" not in artifact["inputs"]
+    assert path.stem == (
+        "bab79a76501a9dd64015caf08e16d236c1c6fb4d3ddedc5fd917dfcd17f75337"
+    )
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == path.stem
+
+
+def test_changing_barrier_e0_provider_invalidates_in_memory_artifact():
+    compiler, _ = _compiler()
+    disabled = compiler.compile()
+
+    compiler.barrier_e0_provider = FixedBBarrierE0Provider(900.0)
+    enabled = compiler.compile()
+
+    assert "barrier_e0_provider" not in disabled["provenance"]
+    assert "barrier_e0_provider" not in disabled["inputs"]
+    assert enabled["provenance"]["barrier_e0_provider"]["B_K"] == 900.0
+    assert enabled is not disabled
+
+
+def test_compiler_source_hash_includes_barrier_e0_provider():
+    source_root = Path(compiler_module.__file__).parent
+    expected = hashlib.sha256(
+        b"".join(
+            (source_root / filename).read_bytes()
+            for filename in (
+                "compiler.py",
+                "reference_thermo.py",
+                "event_record.py",
+                "atom_map.py",
+                "kinetics_library.py",
+                "database_provenance.py",
+                "barrier_e0.py",
+            )
+        )
+    ).hexdigest()
+    assert compiler_source_hash() == expected
 
 
 @pytest.mark.parametrize("kinetics_type", ["ArrheniusBM", "ArrheniusEP"])

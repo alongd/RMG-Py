@@ -8,12 +8,25 @@ import logging
 import os
 import pickle
 import subprocess
+import tempfile
 from pathlib import Path
 
-from cache_provenance import generator_code_unchanged
+from portable_cache import (
+    atomic_copy,
+    atomic_write,
+    artifact_cache_key,
+    compile_environment_options,
+    identity,
+    identity_name,
+    load_or_generate,
+    migrate,
+    validate_artifact_cache_entry,
+)
 
 from rmgpy.data.rmg import RMGDatabase
+from rmgpy.kmc.barrier_e0 import FixedBBarrierE0Provider
 from rmgpy.kmc.compiler import (
+    DEFAULT_T_GRID,
     EventSetCompiler,
     PS_FAMILY_CANDIDATES,
     PS_PROXY_UNITS,
@@ -58,12 +71,25 @@ def main() -> None:
     parser.add_argument("output")
     parser.add_argument("--database-sha", help="commit of a materialized pinned snapshot")
     parser.add_argument("--family-universe", type=Path, help="JSON list from the pinned git tree")
+    parser.add_argument(
+        "--barrier-e0-fixed-b",
+        type=float,
+        help=(
+            "opt in to fixed-B Wilhoit E0 values for compiler barrier floors "
+            "only"
+        ),
+    )
     args = parser.parse_args()
     logger = logging.getLogger("rmgpy.kmc.compiler")
     logger.addHandler(logging.StreamHandler())
     logger.setLevel(logging.INFO)
     logger.propagate = False
     database_path = Path(args.database)
+    barrier_e0_provider = (
+        FixedBBarrierE0Provider(args.barrier_e0_fixed_b)
+        if args.barrier_e0_fixed_b is not None
+        else None
+    )
     family_root = database_path / "input/kinetics/families"
     family_universe = sorted(
         path.name for path in family_root.iterdir() if (path / "groups.py").is_file()
@@ -87,26 +113,56 @@ def main() -> None:
     )
     print("preparing non-auto-generated rate rules from training", flush=True)
     prepare_rate_rules(database.kinetics, database.thermo, verbose=True)
-    repository_commit = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], text=True
-    ).strip()
     database_commit = resolve_database_declaration(args.database_sha)
-    database_digest, _ = database_content_digest(database_path)
-    database_cache_identity = f"{database_commit or 'none'}-{database_digest}"
-    commits = repository_commit + "-" + database_cache_identity
-    generated_cache = (
-        Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(Path.cwd() / ".kmc-cache")))
-        / "generated-reactions"
-        / commits
-        / os.environ.get("PYTHONHASHSEED", "default")
-    )
+    database_content_sha, _ = database_content_digest(database_path)
+    cache_root = Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(Path.cwd() / ".kmc-cache")))
+    hash_seed = os.environ.get("PYTHONHASHSEED")
+    cache_identity = identity(Path.cwd(), database_path)
+    cacheable_seed = hash_seed not in (None, "random")
+    if not cacheable_seed:
+        print("PYTHONHASHSEED is unset or random; cache reuse is disabled", flush=True)
+        portable_root = cache_root / "uncacheable" / str(os.getpid())
+    else:
+        portable_root = cache_root / "portable" / identity_name(cache_identity)
+    if cacheable_seed and not (portable_root / "manifest.json").exists():
+        migrate(cache_root, Path.cwd(), database_path, database_commit)
+    generated_cache = portable_root / "generated-reactions"
     generated_cache.mkdir(parents=True, exist_ok=True)
-    reusable_caches = []
-    for candidate in generated_cache.parent.parent.iterdir():
-        if candidate.name.endswith("-" + database_cache_identity) and candidate.name != commits:
-            origin = candidate.name.split("-")[0]
-            if generator_code_unchanged(Path.cwd(), origin, repository_commit):
-                reusable_caches.append(candidate / generated_cache.name)
+    compile_options = {
+        "database_sha": database_commit,
+        "database_content_sha256": database_content_sha,
+        "family_universe": family_universe,
+        "temperature_grid": list(DEFAULT_T_GRID),
+        "proxy_units": PS_PROXY_UNITS,
+        "family_candidates": list(PS_FAMILY_CANDIDATES),
+        "environment": compile_environment_options(),
+        **(
+            {"barrier_e0_provider": barrier_e0_provider.provenance}
+            if barrier_e0_provider is not None
+            else {}
+        ),
+    }
+    artifact_key = artifact_cache_key(Path.cwd(), database_path, compile_options)
+    artifact_cache = (
+        cache_root / "portable-artifacts" / artifact_key
+        if cacheable_seed
+        else cache_root / "uncacheable-artifacts" / str(os.getpid())
+    )
+    artifact_manifest = artifact_cache / "manifest.json"
+    if cacheable_seed and os.environ.get("RMG_KMC_DISABLE_ARTIFACT_CACHE") != "1":
+        try:
+            cached_artifact = validate_artifact_cache_entry(
+                artifact_manifest, artifact_key, database_path, database_commit
+            )
+            output = Path(args.output)
+            output.mkdir(parents=True, exist_ok=True)
+            destination = output / cached_artifact.name
+            atomic_copy(cached_artifact, destination)
+            print(destination)
+            return
+        except (FileNotFoundError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            if artifact_manifest.exists():
+                print(f"rejecting invalid artifact cache: {error}", flush=True)
     generate = database.kinetics.generate_reactions_from_families
     generation_source = hashlib.sha256(inspect.getsource(generate).encode()).hexdigest()
 
@@ -131,24 +187,16 @@ def main() -> None:
             json.dumps(parameters, sort_keys=True).encode()
         ).hexdigest()
         path = generated_cache / (key + ".pickle")
-        if not path.is_file():
-            for origin in reusable_caches:
-                previous = origin / path.name
-                if previous.is_file():
-                    temporary = path.with_suffix(f".{os.getpid()}.tmp")
-                    temporary.write_bytes(previous.read_bytes())
-                    temporary.replace(path)
-                    print(
-                        f"reused unchanged public RMG generator: {previous}", flush=True
-                    )
-                    break
-        if path.is_file():
+        was_cached = cacheable_seed and path.is_file()
+        reactions = load_or_generate(
+            path,
+            lambda: generate(reactants, products, only_families, resonance),
+            dump_generated_reactions,
+            load_generated_reactions,
+            read_cache=cacheable_seed,
+        )
+        if was_cached:
             print(f"cached public RMG generation: {only_families}", flush=True)
-            return load_generated_reactions(path.read_bytes())
-        reactions = generate(reactants, products, only_families, resonance)
-        temporary = path.with_suffix(f".{os.getpid()}.tmp")
-        temporary.write_bytes(dump_generated_reactions(reactions))
-        temporary.replace(path)
         return reactions
 
     database.kinetics.generate_reactions_from_families = cached_generate
@@ -169,12 +217,29 @@ def main() -> None:
         thermo_database=database.thermo,
         reaction_cache=reactions,
         rmg_database_sha=database_commit,
+        barrier_e0_provider=barrier_e0_provider,
     )
     print(
         f"compiling {sum(len(value) for value in reactions.values())} generated reactions",
         flush=True,
     )
-    path, _ = compiler.write_artifact(args.output)
+    artifact_cache.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=artifact_cache.parent) as temporary:
+        path, _ = compiler.write_artifact(temporary)
+        final_path = artifact_cache / path.name
+        os.replace(path, final_path)
+    path = final_path
+    atomic_write(artifact_cache / "manifest.json", json.dumps({
+        "identity": artifact_cache_key(Path.cwd(), database_path, compile_options),
+        "artifact": path.name,
+        "artifact_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }, sort_keys=True, indent=2).encode() + b"\n")
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    destination = output / path.name
+    if destination != path:
+        atomic_copy(path, destination)
+    path = destination
     print(path)
 
 
