@@ -28,6 +28,7 @@ from rmgpy.kmc.compiler import (
     _proxy_fingerprint,
     _production_padded_root,
     _reflect_ortho_reaction,
+    _remap_witness_projection,
     ceiling_temperature,
     ps_proxy_set,
     short_ps_molecule_catalogue,
@@ -83,6 +84,65 @@ def test_padded_root_degeneracy_is_derived_by_production_generation():
     matched, generated_count = _production_padded_root(Database(), expected)
     assert generated_count == 1
     assert matched.degeneracy == 7.0
+
+
+def test_projection_is_remapped_to_regenerated_participant_order():
+    from rmgpy.molecule.molecule import Molecule
+
+    methane = Molecule(smiles="C")
+    ethane = Molecule(smiles="CC")
+    product = Molecule(smiles="CCC")
+    expected = SimpleNamespace(
+        reactants=[methane, ethane], products=[product]
+    )
+    regenerated = SimpleNamespace(
+        reactants=[ethane.copy(deep=True), methane.copy(deep=True)],
+        products=[product.copy(deep=True)],
+    )
+    projection = {
+        "reactants": [
+            {
+                "participant_index": 0,
+                "witness_participant_index": 0,
+                "executable_atom_index": 0,
+                "witness_atom_index": 0,
+            },
+            {
+                "participant_index": 1,
+                "witness_participant_index": 1,
+                "executable_atom_index": 0,
+                "witness_atom_index": 0,
+            },
+            {
+                "participant_index": 1,
+                "witness_participant_index": 1,
+                "executable_atom_index": 1,
+                "witness_atom_index": 1,
+            },
+        ],
+        "products": [
+            {
+                "participant_index": 0,
+                "witness_participant_index": 0,
+                "executable_atom_index": index,
+                "witness_atom_index": index,
+            }
+            for index in range(3)
+        ],
+    }
+
+    remapped = _remap_witness_projection(projection, expected, regenerated)
+
+    assert {
+        item["witness_participant_index"]
+        for item in remapped["reactants"]
+        if item["participant_index"] == 0
+    } == {1}
+    assert {
+        item["witness_participant_index"]
+        for item in remapped["reactants"]
+        if item["participant_index"] == 1
+    } == {0}
 
 
 class _Element:

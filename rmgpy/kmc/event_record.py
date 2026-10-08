@@ -210,7 +210,10 @@ def _validate_padding_projection(record: EventRecord) -> None:
                 "padded witness projection does not cover executable atoms"
             )
         images = {
-            (item["participant_index"], item.get("witness_atom_index"))
+            (
+                item.get("witness_participant_index", item["participant_index"]),
+                item.get("witness_atom_index"),
+            )
             for item in entries
         }
         if len(images) != len(entries):
@@ -227,6 +230,74 @@ def _validate_padding_projection(record: EventRecord) -> None:
                 0 <= witness_index < heavy_count
             ):
                 raise ValueError("padded witness projection image is invalid")
+        _validate_projected_structure(executable, witness, entries)
+
+
+def _validate_projected_structure(executable, witness, entries) -> None:
+    """Check that projection images preserve atoms and executable heavy bonds."""
+    projected = {}
+    participant_images = {}
+    for item in entries:
+        executable_participant = item["participant_index"]
+        witness_participant = item.get(
+            "witness_participant_index", executable_participant
+        )
+        previous = participant_images.setdefault(
+            executable_participant, witness_participant
+        )
+        if previous != witness_participant:
+            raise ValueError("one executable participant has multiple witness images")
+        executable_atoms = [
+            atom for atom in executable[executable_participant].atoms
+            if atom.element.number != 1
+        ]
+        witness_atoms = [
+            atom for atom in witness[witness_participant].atoms
+            if atom.element.number != 1
+        ]
+        executable_atom = executable_atoms[item["executable_atom_index"]]
+        witness_atom = witness_atoms[item["witness_atom_index"]]
+        executable_signature = (
+            executable_atom.element.number,
+            executable_atom.element.isotope,
+            executable_atom.radical_electrons,
+            executable_atom.lone_pairs,
+            executable_atom.charge,
+        )
+        witness_signature = (
+            witness_atom.element.number,
+            witness_atom.element.isotope,
+            witness_atom.radical_electrons,
+            witness_atom.lone_pairs,
+            witness_atom.charge,
+        )
+        if executable_signature != witness_signature:
+            raise ValueError("padded witness projection changed an executable atom")
+        projected[(executable_participant, item["executable_atom_index"])] = (
+            witness_participant,
+            witness_atom,
+        )
+    for participant_index, molecule in enumerate(executable):
+        heavy = [atom for atom in molecule.atoms if atom.element.number != 1]
+        for first_index, first in enumerate(heavy):
+            for second_index in range(first_index + 1, len(heavy)):
+                second = heavy[second_index]
+                first_image = projected[(participant_index, first_index)]
+                second_image = projected[(participant_index, second_index)]
+                if first_image[0] != second_image[0]:
+                    raise ValueError(
+                        "one executable participant has multiple witness images"
+                    )
+                executable_bond = first.edges.get(second)
+                witness_bond = first_image[1].edges.get(second_image[1])
+                executable_order = (
+                    None if executable_bond is None else executable_bond.order
+                )
+                witness_order = None if witness_bond is None else witness_bond.order
+                if executable_order != witness_order:
+                    raise ValueError(
+                        "padded witness projection changed an executable bond"
+                    )
 
 
 def _is_full_event_id(value: Any) -> bool:

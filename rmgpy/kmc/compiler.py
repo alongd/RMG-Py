@@ -799,6 +799,58 @@ def _side_isomorphic(expected, actual) -> bool:
     )
 
 
+def _side_isomorphism(expected, actual):
+    """Return canonical participant and heavy-atom correspondence."""
+    if len(expected) != len(actual):
+        raise ReactionNotPaddable("production witness participant count changed")
+    candidates = []
+    for order in permutations(range(len(actual))):
+        participant_maps = []
+        for expected_index, actual_index in enumerate(order):
+            expected_molecule = _molecule(expected[expected_index])
+            actual_molecule = _molecule(actual[actual_index])
+            mappings = expected_molecule.find_isomorphism(
+                actual_molecule, save_order=True, strict=False
+            )
+            if not mappings:
+                break
+            expected_heavy = [
+                atom for atom in _ordered_atoms(expected_molecule)
+                if atom.element.number != 1
+            ]
+            actual_heavy = [
+                atom for atom in _ordered_atoms(actual_molecule)
+                if atom.element.number != 1
+            ]
+            actual_indices = {atom: index for index, atom in enumerate(actual_heavy)}
+            canonical_maps = [
+                tuple(actual_indices[mapping[atom]] for atom in expected_heavy)
+                for mapping in mappings
+            ]
+            participant_maps.append(min(canonical_maps))
+        else:
+            candidates.append((order, tuple(participant_maps)))
+    if not candidates:
+        raise ReactionNotPaddable("production witness graph correspondence changed")
+    return min(candidates)
+
+
+def _remap_witness_projection(projection, expected, actual):
+    """Move pre-generation witness indices onto regenerated witness graphs."""
+    remapped = copy.deepcopy(projection)
+    for side in ("reactants", "products"):
+        order, atom_maps = _side_isomorphism(
+            getattr(expected, side), getattr(actual, side)
+        )
+        for item in remapped[side]:
+            expected_participant = item["witness_participant_index"]
+            item["witness_participant_index"] = order[expected_participant]
+            item["witness_atom_index"] = atom_maps[expected_participant][
+                item["witness_atom_index"]
+            ]
+    return remapped
+
+
 def _production_padded_root(kinetics_database, reaction):
     """Re-derive one exact padded reaction through RMG's production generator."""
     from rmgpy.species import Species
@@ -3183,6 +3235,27 @@ class EventSetCompiler:
                     proxy.repeat_unit,
                     padding_distance,
                     self.proxy_padding_tolerance_log10,
+                )
+                if not derived_forward:
+                    projection = padding_metadata[
+                        "executable_to_witness_projection"
+                    ]
+                    projection["reactants"], projection["products"] = (
+                        projection["products"], projection["reactants"]
+                    )
+                    expected_witness = copy.deepcopy(padded.reaction)
+                    expected_witness.reactants, expected_witness.products = (
+                        expected_witness.products,
+                        expected_witness.reactants,
+                    )
+                else:
+                    expected_witness = padded.reaction
+                padding_metadata["executable_to_witness_projection"] = (
+                    _remap_witness_projection(
+                        padding_metadata["executable_to_witness_projection"],
+                        expected_witness,
+                        rate_reaction,
+                    )
                 )
                 padding_metadata["root_validation"] = {
                     "method": "RMGDatabase.generate_reactions_from_families",

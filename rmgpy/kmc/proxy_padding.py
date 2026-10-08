@@ -169,6 +169,7 @@ def _projection(executable, witness) -> dict[str, list[dict[str, int]]]:
                     raise ValueError("executable atom is absent from padded witness")
                 entries.append({
                     "participant_index": participant_index,
+                    "witness_participant_index": participant_index,
                     "executable_atom_index": _canonical_heavy_index(
                         source_molecule, source_atom.id
                     ),
