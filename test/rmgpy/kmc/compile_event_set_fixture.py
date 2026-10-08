@@ -20,6 +20,10 @@ from rmgpy.kmc.compiler import (
     prepare_rate_rules,
     ps_proxy_set,
 )
+from rmgpy.kmc.database_provenance import (
+    database_content_digest,
+    resolve_database_declaration,
+)
 
 
 def dump_generated_reactions(reactions):
@@ -86,10 +90,10 @@ def main() -> None:
     repository_commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], text=True
     ).strip()
-    database_commit = args.database_sha or subprocess.check_output(
-        ["git", "-C", str(database_path), "rev-parse", "HEAD"], text=True
-    ).strip()
-    commits = repository_commit + "-" + database_commit
+    database_commit = resolve_database_declaration(args.database_sha)
+    database_digest, _ = database_content_digest(database_path)
+    database_cache_identity = f"{database_commit or 'none'}-{database_digest}"
+    commits = repository_commit + "-" + database_cache_identity
     generated_cache = (
         Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(Path.cwd() / ".kmc-cache")))
         / "generated-reactions"
@@ -97,10 +101,9 @@ def main() -> None:
         / os.environ.get("PYTHONHASHSEED", "default")
     )
     generated_cache.mkdir(parents=True, exist_ok=True)
-    repository_commit, database_commit = commits.split("-")
     reusable_caches = []
     for candidate in generated_cache.parent.parent.iterdir():
-        if candidate.name.endswith("-" + database_commit) and candidate.name != commits:
+        if candidate.name.endswith("-" + database_cache_identity) and candidate.name != commits:
             origin = candidate.name.split("-")[0]
             if generator_code_unchanged(Path.cwd(), origin, repository_commit):
                 reusable_caches.append(candidate / generated_cache.name)

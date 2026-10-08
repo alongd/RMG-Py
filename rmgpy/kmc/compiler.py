@@ -28,11 +28,20 @@ from rmgpy.kmc.kinetics_library import (
     load_plpsec_entry, matches_head_to_tail, plpsec_rate_table,
 )
 from rmgpy.kmc.reference_thermo import (
+    FROZEN_THERMO_PROPERTY,
     GasPhaseRMGReferenceThermo,
     ReferenceThermoProvider,
+    SharedThermoAssignment,
     ThermoUnavailable,
 )
+from rmgpy.kmc.database_provenance import database_provenance
+from rmgpy.kmc.database_provenance import (
+    check_database_identity,
+    reject_external_library_paths,
+)
+from rmgpy.kinetics.arrhenius import ArrheniusBM, ArrheniusEP
 from rmgpy.kinetics.model import get_rate_coefficient_units_from_reaction_order
+from rmgpy.exceptions import ActionError
 
 
 _PAIR_MOLECULE_CACHE = ContextVar("pair_molecule_cache", default=None)
@@ -52,6 +61,7 @@ PS_FAMILY_FILTER_REASON = (
     "(H transfer, radical addition/recombination/disproportionation, and migration)"
 )
 LINK_PLACEHOLDER = "evt_" + "0" * 64
+PERSISTENT_CARBENE_POLICY_VERSION = "persistent-carbene-applicability/1"
 R1_JUNCTION_LABELS = {
     "J_para": {
         "attacked_atom_label": "S9",
@@ -119,6 +129,7 @@ _LOADED_SOURCE_HASH = hashlib.sha256(
             "event_record.py",
             "atom_map.py",
             "kinetics_library.py",
+            "database_provenance.py",
         )
     )
 ).hexdigest()
@@ -234,6 +245,298 @@ def _rate_rule_source(family, reaction):
             for rule, entry, weight in details["training"]
         ]
     return result
+
+
+def _persistent_labeled_u2(molecule, atom) -> tuple[bool, int]:
+    """Return whether one labeled triplet u2 carbon survives every resonance form."""
+    from rmgpy.species import Species
+
+    if not (
+        atom.element.number == 6
+        and atom.charge == 0
+        and atom.radical_electrons == 2
+        and math.isclose(sum(bond.order for bond in atom.edges.values()), 2.0)
+    ):
+        return False, 0
+    copied = molecule.copy(deep=True)
+    marker = "*kmc_applicability_root"
+    copied.atoms[molecule.atoms.index(atom)].label = marker
+    species = Species(molecule=[copied])
+    species.generate_resonance_structures()
+    roots = []
+    for form in species.molecule:
+        matches = [candidate for candidate in form.atoms if candidate.label == marker]
+        if len(matches) != 1:
+            raise ValueError("resonance generation did not preserve mapped root identity")
+        roots.append(matches[0])
+    return (
+        all(
+            root.element.number == 6
+            and root.charge == 0
+            and root.radical_electrons == 2
+            and math.isclose(sum(bond.order for bond in root.edges.values()), 2.0)
+            for root in roots
+        ),
+        len(species.molecule),
+    )
+
+
+def _touched_atom_indices(operations) -> set[int]:
+    """Return every stored atom index named by rewrite operations."""
+    return {
+        index
+        for operation in operations
+        for index in (
+            operation.get("atoms", [])
+            + ([operation["atom"]] if "atom" in operation else [])
+        )
+    }
+
+
+def _select_family_root_candidate(
+    family_candidates: set[int], preferred: set[int], label: str
+) -> tuple[int, str | None]:
+    """Select one jointly bound root, or retain a deterministic unresolved witness."""
+    candidates = family_candidates & preferred if preferred else family_candidates
+    if len(candidates) == 1:
+        return next(iter(candidates)), None
+    witness_pool = candidates or family_candidates or preferred
+    witness = min(witness_pool) if witness_pool else -1
+    if family_candidates and preferred and not candidates:
+        reason = "stored rewrite does not touch the family-derived recipe root"
+    else:
+        reason = f"mapped recipe root {label} is ambiguous in the stored reaction"
+    return witness, reason
+
+
+def _mapped_reaction_u2_roots(
+    family, reaction, record: EventRecord | dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Map recipe-labelled u2 centres without replacing the fired resonance form."""
+    mapping_reaction = _reaction_from_record(record) if record is not None else reaction
+    if not any(
+        atom.element.number == 6 and atom.radical_electrons == 2
+        for participant in mapping_reaction.reactants + mapping_reaction.products
+        for atom in _molecule(participant).atoms
+    ):
+        return []
+    original_reactants = [
+        (
+            participant.molecule[0]
+            if hasattr(participant, "molecule")
+            else participant
+        ).copy(deep=True)
+        for participant in mapping_reaction.reactants
+    ]
+    labeled = copy.deepcopy(mapping_reaction)
+    family.add_atom_labels_for_reaction(
+        labeled, output_with_resonance=False, save_order=True
+    )
+    recipe_labels = {
+        token
+        for action in family.forward_recipe.actions
+        for token in action
+        if isinstance(token, str) and token.startswith("*")
+    }
+    side_molecules = {
+        side: [
+            participant.molecule[0]
+            if hasattr(participant, "molecule")
+            else participant
+            for participant in getattr(labeled, f"{side}s")
+        ]
+        for side in ("reactant", "product")
+    }
+    reactant_atoms = [atom for molecule in original_reactants for atom in molecule.atoms]
+    reactant_root_candidates: dict[str, set[int]] = {}
+    for original, labeled_molecule in zip(
+        original_reactants, side_molecules["reactant"]
+    ):
+        mappings = original.find_isomorphism(labeled_molecule, save_order=True)
+        if not mappings:
+            raise ValueError("family labeling changed a stored reactant graph")
+        for mapping in mappings:
+            for original_atom, labeled_atom in mapping.items():
+                if labeled_atom.label in recipe_labels:
+                    reactant_root_candidates.setdefault(
+                        labeled_atom.label, set()
+                    ).add(reactant_atoms.index(original_atom))
+    preferred_by_side = {"reactant": set(), "product": set()}
+    if record is not None:
+        data = record.to_dict() if isinstance(record, EventRecord) else record
+        touched_indices = _touched_atom_indices(data.get("bond_ops", []))
+        preferred_by_side["product"] = {
+            operation["atom"]
+            for operation in data.get("bond_ops", [])
+            if operation.get("action") == "set_radical"
+            and operation.get("value") == 2
+        }
+        preferred_by_side["reactant"] = {
+            index
+            for index in touched_indices
+            if reactant_atoms[index].element.number == 6
+            and reactant_atoms[index].charge == 0
+            and reactant_atoms[index].radical_electrons == 2
+        }
+    by_side = {}
+    for side in ("reactant", "product"):
+        by_side[side] = {
+            atom.label: (molecule, atom)
+            for molecule in side_molecules[side]
+            for atom in molecule.atoms
+            if atom.label in recipe_labels
+        }
+    roots = []
+    for label in sorted(recipe_labels):
+        reactant_item = by_side["reactant"].get(label)
+        product_item = by_side["product"].get(label)
+        if reactant_item is None or product_item is None:
+            continue
+        selected = []
+        for side, item in (("reactant", reactant_item), ("product", product_item)):
+            persistent, resonance_count = _persistent_labeled_u2(*item)
+            if item[1].element.number == 6 and item[1].radical_electrons == 2:
+                selected.append((side, persistent, resonance_count))
+        for side, persistent, resonance_count in selected:
+            family_candidates = reactant_root_candidates.get(label, set())
+            preferred = preferred_by_side[side]
+            root_index, mapping_error = _select_family_root_candidate(
+                family_candidates, preferred, label
+            )
+            roots.append(
+                {
+                    "reactant_atom_index": root_index,
+                    "recipe_label": label,
+                    "record_role": side,
+                    "family_forward_role": side,
+                    "persistent_neutral_divalent_carbon": persistent,
+                    "resonance_form_count": resonance_count,
+                    **(
+                        {
+                            "mapping_verified": False,
+                            "mapping_error": mapping_error,
+                        }
+                        if mapping_error is not None
+                        else {}
+                    ),
+                }
+            )
+    return roots
+
+
+def _training_source_domain(family, reaction, cache) -> list[dict[str, Any]] | None:
+    """Serialize the actual calibrated contributors selected by an RMG estimate."""
+    if getattr(family, "auto_generated", True):
+        return None
+    training, source = family.extract_source_from_comments(reaction)
+    rule_entries = []
+    if training:
+        entries = [(source[1], 1.0, source[2], None)]
+    else:
+        details = source[1]
+        entries = [
+            (entry, float(weight), False, rule)
+            for rule, entry, weight in details.get("training", [])
+        ]
+        rule_entries = details.get("rules", [])
+    domain = []
+    for entry, weight, reverse, rule in entries:
+        key = (family.label, entry.index, bool(reverse))
+        if key not in cache:
+            source_reaction = copy.deepcopy(entry.item)
+            if reverse:
+                source_reaction.reactants, source_reaction.products = (
+                    source_reaction.products,
+                    source_reaction.reactants,
+                )
+            cache[key] = _mapped_reaction_u2_roots(family, source_reaction)
+        mapped_roots = copy.deepcopy(cache[key])
+        domain.append(
+            {
+                "source": {
+                    "kind": "training",
+                    "entry_index": entry.index,
+                    "entry_label": entry.label,
+                    "rule_index": getattr(rule, "index", None),
+                    "weight": weight,
+                    "stored_reverse": bool(reverse),
+                },
+                "mapped_roots": mapped_roots,
+            }
+        )
+    domain.extend(
+        {
+            "source": {
+                "kind": "rule",
+                "entry_index": entry.index,
+                "entry_label": entry.label,
+                "weight": float(weight),
+            },
+            "mapped_roots": None,
+        }
+        for entry, weight in rule_entries
+    )
+    return domain or None
+
+
+def _reaction_from_record(record: EventRecord | dict[str, Any]):
+    """Reconstruct the exact stored direction for family root labeling."""
+    from rmgpy.molecule.molecule import Molecule
+    from rmgpy.reaction import Reaction
+    from rmgpy.species import Species
+
+    def make_side(graphs):
+        return [
+            Species(molecule=[Molecule().from_adjacency_list(graph)])
+            for graph in graphs
+        ]
+    data = record.to_dict() if isinstance(record, EventRecord) else record
+    return Reaction(
+        reactants=make_side(data["reactant_graphs"]),
+        products=make_side(data["product_graphs"]),
+    )
+
+
+def _stored_u2_root_fallback(record: EventRecord | dict[str, Any]) -> list[dict[str, Any]]:
+    """Bind touched u2 atoms when family relabeling cannot survive normalization."""
+    from rmgpy.molecule.molecule import Molecule
+
+    data = record.to_dict() if isinstance(record, EventRecord) else record
+    reactant_atoms = [
+        atom
+        for graph in data.get("reactant_graphs", [])
+        for atom in Molecule().from_adjacency_list(graph).atoms
+    ]
+    touched = _touched_atom_indices(data.get("bond_ops", []))
+    roots = []
+    reactant_u2 = {
+        index
+        for index in touched
+        if reactant_atoms[index].element.number == 6
+        and reactant_atoms[index].charge == 0
+        and reactant_atoms[index].radical_electrons == 2
+    }
+    product_u2 = {
+        operation["atom"]
+        for operation in data.get("bond_ops", [])
+        if operation.get("action") == "set_radical"
+        and operation.get("value") == 2
+    }
+    for side, indices in (("reactant", reactant_u2), ("product", product_u2)):
+        for index in sorted(indices):
+            roots.append(
+                {
+                    "reactant_atom_index": index,
+                    "recipe_label": "__runtime_recipe_root_unresolved__",
+                    "record_role": side,
+                    "family_forward_role": side,
+                    "mapping_caveat": (
+                        "family relabeling failed; exact touched atom is bound to "
+                        "the stored rewrite"
+                    ),
+                }
+            )
+    return roots
 
 
 def _atom_total_order(atom) -> tuple[Any, ...]:
@@ -626,9 +929,17 @@ def _same_participants(first: Sequence[Any], second: Sequence[Any]) -> bool:
             left, right = _molecule(item), _molecule(candidate)
             same = item is candidate or left is right
             if not same and hasattr(item, "is_isomorphic"):
-                same = item.is_isomorphic(candidate)
+                same = (
+                    item.is_isomorphic(candidate, save_order=True)
+                    if item.__class__.__module__.startswith("rmgpy.")
+                    else item.is_isomorphic(candidate)
+                )
             if not same and hasattr(left, "is_isomorphic"):
-                same = left.is_isomorphic(right)
+                same = (
+                    left.is_isomorphic(right, save_order=True)
+                    if left.__class__.__module__.startswith("rmgpy.")
+                    else left.is_isomorphic(right)
+                )
             if (
                 not same
                 and hasattr(left, "to_adjacency_list")
@@ -1015,6 +1326,8 @@ def _archived_junction_reaction(
     )
     product_species = Species(molecule=[product])
     product_species.thermo = nasa(product_join, product_low, product_high)
+    for species in [*proxy.reactants, product_species]:
+        species.props[FROZEN_THERMO_PROPERTY] = True
     return TemplateReaction(
         reactants=list(proxy.reactants),
         products=[product_species],
@@ -1429,6 +1742,12 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
             partner_operation = partner_operations[0]
             if partner_operation.get("action") != inverse_action:
                 raise ValueError("R1 J_ring linked actions are not inverse")
+    linked_records = [
+        record for record in records if record.get("reverse_of") in by_id
+    ]
+    duplicates = duplicate_transition_groups(linked_records)
+    if duplicates:
+        raise ValueError(f"duplicate reciprocal transitions: {duplicates}")
     catalogue = artifact.get("short_molecule_catalogue", {})
     if catalogue.get("size") != len(catalogue.get("molecules", [])):
         raise ValueError("short-molecule catalogue size is inconsistent")
@@ -1508,6 +1827,519 @@ def apply_record(
     )
 
 
+def _molecules_from_graphs(graphs: Sequence[str]) -> list[Any]:
+    """Deserialize graphs without importing Molecule during compiler import."""
+    from rmgpy.molecule.molecule import Molecule
+
+    return [Molecule().from_adjacency_list(graph) for graph in graphs]
+
+
+def _record_structure_error(
+    data: dict[str, Any], reactants
+) -> tuple[str | None, bool]:
+    """Return a demonstrated structural inconsistency and rewrite status."""
+    try:
+        rewritten = apply_record(data, reactants)
+    except ValueError as error:
+        return f"stored rewrite is invalid: {error}", False
+    expected_products = data.get("product_graphs", [])
+    rewritten_graphs = [
+        molecule.to_adjacency_list(remove_h=False) for molecule in rewritten
+    ]
+    if not _graph_lists_isomorphic(rewritten_graphs, expected_products):
+        return "stored rewrite does not reproduce the stored products", False
+
+    heavy_before = [
+        atom
+        for molecule in reactants
+        for atom in molecule.atoms
+        if atom.element.number != 1
+    ]
+    product_molecules = _molecules_from_graphs(expected_products)
+    heavy_after = [
+        atom
+        for molecule in product_molecules
+        for atom in molecule.atoms
+        if atom.element.number != 1
+    ]
+    atom_map = {
+        int(key): int(value) for key, value in data.get("atom_map", {}).items()
+    }
+    expected_indices = set(range(len(heavy_before)))
+    if (
+        len(heavy_before) != len(heavy_after)
+        or set(atom_map) != expected_indices
+        or set(atom_map.values()) != expected_indices
+    ):
+        return "stored atom map is not a complete heavy-atom bijection", True
+    if any(
+        heavy_before[before].element.number
+        != heavy_after[after].element.number
+        for before, after in atom_map.items()
+    ):
+        return "stored atom map changes a mapped atom element", True
+    return None, True
+
+
+def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
+    """Bind an applicability root to the stored rewrite and its resonance set."""
+    attribution_unresolved = mapped_root.get("mapping_verified") is False
+    data = record.to_dict() if isinstance(record, EventRecord) else record
+    reactants = _molecules_from_graphs(data.get("reactant_graphs", []))
+    structure_error, rewrite_verified = _record_structure_error(data, reactants)
+    if structure_error is not None:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": structure_error,
+            "structural_inconsistency": True,
+            "product_rewrite_verified": rewrite_verified,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+    root_index = int(mapped_root["reactant_atom_index"])
+    reactant_atoms = [atom for molecule in reactants for atom in molecule.atoms]
+    if root_index < 0 or root_index >= len(reactant_atoms):
+        if attribution_unresolved:
+            return {
+                "persistent_neutral_divalent_carbon": False,
+                "resonance_form_count": 0,
+                **mapped_root,
+            }
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "mapped applicability root is outside the reactant atom map",
+            "structural_inconsistency": True,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+    root_before = reactant_atoms[root_index]
+    root_side = mapped_root.get(
+        "record_role", mapped_root["family_forward_role"]
+    )
+    if root_side not in {"reactant", "product"}:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "mapped applicability root role must be reactant or product",
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+
+    touched_indices = _touched_atom_indices(data.get("bond_ops", []))
+    if root_index not in touched_indices:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "mapped recipe root is not touched by the stored rewrite",
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+
+    marker = "*kmc_stored_rewrite_root"
+    original_label = root_before.label
+    root_before.label = marker
+    expected_products = data.get("product_graphs", [])
+    try:
+        rewritten = apply_record(data, reactants)
+    except ValueError as error:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": f"stored rewrite is invalid: {error}",
+            "structural_inconsistency": True,
+            "product_rewrite_verified": False,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+    rewritten_roots = [
+        atom
+        for molecule in rewritten
+        for atom in molecule.atoms
+        if atom.label == marker
+    ]
+    if len(rewritten_roots) != 1:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "stored rewrite did not preserve the mapped root identity",
+            "structural_inconsistency": True,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+    rewritten_root = rewritten_roots[0]
+    rewritten_root.label = original_label
+    rewritten_graphs = [
+        molecule.to_adjacency_list(remove_h=False) for molecule in rewritten
+    ]
+    rewrite_verified = _graph_lists_isomorphic(rewritten_graphs, expected_products)
+    if not rewrite_verified:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "mapped applicability root does not reproduce the stored products",
+            "structural_inconsistency": True,
+            "product_rewrite_verified": False,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+
+    selected_atom = root_before
+    selected_molecule = next(
+        molecule for molecule in reactants if root_before in molecule.atoms
+    )
+    if root_before.element.number == 1:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "persistent-carbene roots must be heavy atoms",
+            "product_rewrite_verified": True,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+    heavy_before = [
+        atom
+        for molecule in reactants
+        for atom in molecule.atoms
+        if atom.element.number != 1
+    ]
+    reactant_heavy_index = heavy_before.index(root_before)
+    atom_map = {
+        int(key): int(value) for key, value in data.get("atom_map", {}).items()
+    }
+    product_heavy_index = atom_map.get(reactant_heavy_index)
+    product_molecules = _molecules_from_graphs(expected_products)
+    heavy_after = [
+        atom
+        for molecule in product_molecules
+        for atom in molecule.atoms
+        if atom.element.number != 1
+    ]
+    if product_heavy_index is None or not 0 <= product_heavy_index < len(heavy_after):
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "stored atom map does not contain the mapped root",
+            "structural_inconsistency": True,
+            "product_rewrite_verified": True,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+    mapped_product_atom = heavy_after[product_heavy_index]
+    mapped_product_molecule = next(
+        molecule
+        for molecule in product_molecules
+        if mapped_product_atom in molecule.atoms
+    )
+    if mapped_product_atom.element.number != root_before.element.number:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": "stored atom map changes the mapped root element",
+            "structural_inconsistency": True,
+            "product_rewrite_verified": True,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+    rewritten_molecule = next(
+        molecule for molecule in rewritten if rewritten_root in molecule.atoms
+    )
+    correspondence_verified = any(
+        mapping.get(rewritten_root) is mapped_product_atom
+        for mapping in rewritten_molecule.find_isomorphism(
+            mapped_product_molecule, save_order=True
+        )
+    )
+    if not correspondence_verified:
+        return {
+            **mapped_root,
+            "mapping_verified": False,
+            "mapping_error": (
+                "stored atom map disagrees with the recipe-labelled rewrite root"
+            ),
+            "structural_inconsistency": True,
+            "product_rewrite_verified": True,
+            "persistent_neutral_divalent_carbon": False,
+            "resonance_form_count": 0,
+        }
+    if root_side == "product":
+        selected_atom = mapped_product_atom
+        selected_molecule = mapped_product_molecule
+
+    persistent, resonance_form_count = False, 0
+    if root_index in touched_indices:
+        persistent, resonance_form_count = _persistent_labeled_u2(
+            selected_molecule, selected_atom
+        )
+
+    return {
+        **mapped_root,
+        "mapping_verified": not attribution_unresolved,
+        "product_rewrite_verified": rewrite_verified,
+        "resonance_form_count": resonance_form_count,
+        "persistent_neutral_divalent_carbon": persistent,
+    }
+
+
+def _reciprocal_mapping_root(
+    record, mapped_root: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Carry a mapped reactant root into the reciprocal reactant ordering."""
+    data = record.to_dict() if isinstance(record, EventRecord) else record
+    reactants = _molecules_from_graphs(data.get("reactant_graphs", []))
+    reactant_atoms = [atom for molecule in reactants for atom in molecule.atoms]
+    root_index = int(mapped_root["reactant_atom_index"])
+    if root_index < 0 or root_index >= len(reactant_atoms):
+        return None
+    root_before = reactant_atoms[root_index]
+    if root_before.element.number == 1:
+        return None
+    heavy_before = [
+        atom for atom in reactant_atoms if atom.element.number != 1
+    ]
+    atom_map = {
+        int(key): int(value) for key, value in data.get("atom_map", {}).items()
+    }
+    product_heavy_index = atom_map.get(heavy_before.index(root_before))
+    product_molecules = _molecules_from_graphs(data.get("product_graphs", []))
+    product_atoms = [
+        atom for molecule in product_molecules for atom in molecule.atoms
+    ]
+    heavy_after = [
+        atom for atom in product_atoms if atom.element.number != 1
+    ]
+    if product_heavy_index is None or not 0 <= product_heavy_index < len(heavy_after):
+        return None
+    record_role = mapped_root.get(
+        "record_role", mapped_root["family_forward_role"]
+    )
+    reciprocal_role = {
+        "reactant": "product",
+        "product": "reactant",
+    }.get(record_role, record_role)
+    return {
+        **mapped_root,
+        "reactant_atom_index": product_atoms.index(heavy_after[product_heavy_index]),
+        "record_role": reciprocal_role,
+    }
+
+
+def classify_persistent_carbene(
+    record,
+    mapped_root: dict[str, Any],
+    rate_source_domain: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Classify one mapped reacting centre against selected-rate contributors."""
+    root = _record_mapping_root(record, mapped_root)
+    result = {
+        "policy_version": PERSISTENT_CARBENE_POLICY_VERSION,
+        "mapped_root": root,
+        "rate_source": copy.deepcopy(rate_source_domain),
+    }
+    if not root.get("mapping_verified", True):
+        if root.get("structural_inconsistency"):
+            return {
+                **result,
+                "disposition": "refused-structural-inconsistency",
+                "reason": f"structural-inconsistency: {root['mapping_error']}",
+            }
+        return {
+            **result,
+            "disposition": "retained-unresolved-applicability",
+            "reason": root["mapping_error"],
+        }
+    if not root["persistent_neutral_divalent_carbon"]:
+        return {**result, "disposition": "not-applicable"}
+    if root.get("mapping_caveat"):
+        return {
+            **result,
+            "disposition": "retained-unresolved-applicability",
+            "reason": root["mapping_caveat"],
+        }
+    if rate_source_domain is None:
+        return {
+            **result,
+            "disposition": "retained-unresolved-applicability",
+            "reason": "selected rate has no serialized calibrated contributor domain",
+        }
+    contributors = [
+        contributor
+        for contributor in rate_source_domain
+        if float(
+            contributor.get("source", {}).get("weight", 1.0)
+            if isinstance(contributor.get("source"), dict)
+            else 1.0
+        ) > 0.0
+    ]
+    matches = [
+        contributor
+        for contributor in contributors
+        if any(
+            source_root.get("recipe_label") == root["recipe_label"]
+            and source_root.get("family_forward_role")
+            == root["family_forward_role"]
+            and source_root.get("persistent_neutral_divalent_carbon") is True
+            for source_root in contributor.get("mapped_roots") or []
+        )
+    ]
+    if contributors and len(matches) == len(contributors):
+        return {
+            **result,
+            "disposition": "retained-supported-transfer",
+            "supporting_contributors": copy.deepcopy(matches),
+            "caveat": "same reacting role; donor/acceptor environment may differ",
+        }
+    if matches or any(
+        contributor.get("mapped_roots") is None for contributor in contributors
+    ):
+        return {
+            **result,
+            "disposition": "retained-unresolved-applicability",
+            "reason": "the whole selected contributor domain is not approved",
+        }
+    return {
+        **result,
+        "disposition": "refused-unsupported-transfer",
+        "reason": "no selected rate contributor supports persistent u2 in the mapped role",
+    }
+
+
+def apply_persistent_carbene_policy(
+    pair: Sequence[Any],
+    mapped_root: dict[str, Any],
+    rate_source_domain: list[dict[str, Any]] | None,
+) -> tuple[list[Any], dict[str, Any] | None]:
+    """Apply one decision atomically before or after reciprocal pair linking."""
+    if len(pair) != 2:
+        raise ValueError("applicability policy requires exactly one reciprocal pair")
+    records = [
+        record.to_dict() if isinstance(record, EventRecord) else copy.deepcopy(record)
+        for record in pair
+    ]
+    by_id = {record["event_id"]: record for record in records}
+    prepublication = all(record.get("reverse_of") is None for record in records)
+    linked = all(
+        record.get("reverse_of") in by_id
+        and by_id[record["reverse_of"]].get("reverse_of") == record["event_id"]
+        for record in records
+    )
+    if len(by_id) != 2 or not (prepublication or linked):
+        raise ValueError("applicability policy requires reciprocal reverse links")
+    for record in records:
+        reactants = _molecules_from_graphs(record.get("reactant_graphs", []))
+        structure_error, rewrite_verified = _record_structure_error(
+            record, reactants
+        )
+        if structure_error is not None:
+            decision = {
+                "policy_version": PERSISTENT_CARBENE_POLICY_VERSION,
+                "mapped_root": {
+                    **mapped_root,
+                    "mapping_verified": False,
+                    "mapping_error": structure_error,
+                    "structural_inconsistency": True,
+                    "product_rewrite_verified": rewrite_verified,
+                    "persistent_neutral_divalent_carbon": False,
+                    "resonance_form_count": 0,
+                },
+                "rate_source": copy.deepcopy(rate_source_domain),
+                "disposition": "refused-structural-inconsistency",
+                "reason": f"structural-inconsistency: {structure_error}",
+                "structural_record_id": record["event_id"],
+            }
+            return [], {
+                **decision,
+                "record_ids": [item["event_id"] for item in records],
+            }
+    decision = classify_persistent_carbene(
+        records[0], mapped_root, rate_source_domain
+    )
+    if decision["disposition"] != "refused-structural-inconsistency":
+        reciprocal_root = _reciprocal_mapping_root(records[0], mapped_root)
+        if reciprocal_root is not None:
+            reciprocal_decision = classify_persistent_carbene(
+                records[1], reciprocal_root, rate_source_domain
+            )
+            if (
+                reciprocal_decision["disposition"]
+                == "refused-structural-inconsistency"
+            ):
+                decision = reciprocal_decision
+    if decision["disposition"] == "not-applicable":
+        return records, None
+    if decision["disposition"] in {
+        "refused-unsupported-transfer",
+        "refused-structural-inconsistency",
+    }:
+        return [], {
+            **decision,
+            "record_ids": [record["event_id"] for record in records],
+        }
+    for record in records:
+        record["rate_source"] = {
+            **record.get("rate_source", {}),
+            "applicability": copy.deepcopy(decision),
+        }
+    return records, None
+
+
+def _pair_relative_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Remove concrete link identities while retaining reciprocal semantics."""
+    ignored = {"event_id", "reverse_of", "canonical_index"}
+    result = {
+        key: copy.deepcopy(value)
+        for key, value in record.items()
+        if key not in ignored
+    }
+    for operation in result.get("junction_ops") or []:
+        if operation.get("reverse_event_handle") is not None:
+            operation["reverse_event_handle"] = "__pair_partner__"
+    return result
+
+
+_TRANSITION_SHAPE_FIELDS = {
+    "reactant_graphs",
+    "bond_ops",
+    "inventory_class",
+    "junction_ops",
+}
+
+
+def _transition_shape_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Return a compact prefilter for potentially duplicate transitions."""
+    return _pair_relative_record({
+        key: value
+        for key, value in record.items()
+        if key in _TRANSITION_SHAPE_FIELDS
+    })
+
+
+def duplicate_transition_groups(records: Sequence[dict[str, Any]]) -> list[list[tuple[str, str]]]:
+    """Return duplicate reciprocal transitions using pair-relative identities."""
+    by_id = {record["event_id"]: record for record in records}
+    seen = set()
+    groups: dict[str, list[tuple[str, str]]] = {}
+    for event_id in sorted(by_id):
+        if event_id in seen:
+            continue
+        record = by_id[event_id]
+        partner_id = record.get("reverse_of")
+        partner = by_id.get(partner_id)
+        if partner is None or partner.get("reverse_of") != event_id:
+            raise ValueError("duplicate audit requires complete reciprocal pairs")
+        pair_ids = tuple(sorted((event_id, partner_id)))
+        seen.update(pair_ids)
+        shape_views = sorted(
+            canonical_json_bytes(_transition_shape_record(item)).decode("ascii")
+            for item in (record, partner)
+        )
+        groups.setdefault(sha256_json(shape_views), []).append(pair_ids)
+    return sorted(
+        [sorted(group) for group in groups.values() if len(group) > 1]
+    )
+
+
 @dataclass(frozen=True)
 class SiteProxy:
     """A centred finite proxy and its declared kMC site type."""
@@ -1552,7 +2384,7 @@ class EventSetCompiler:
             use_plpsec_library = selection == "1"
         self.use_plpsec_library = bool(use_plpsec_library)
         self.kinetics_database = kinetics_database
-        self.proxies = tuple(proxies)
+        self.proxies = tuple(copy.deepcopy(tuple(proxies)))
         self.families = tuple(sorted(set(families)))
         self.rmgpy_path = (
             Path(rmgpy_path) if rmgpy_path else Path(__file__).resolve().parents[2]
@@ -1568,10 +2400,33 @@ class EventSetCompiler:
             kinetics_database, thermo_database,
             kinetics_depositories=tuple(kinetics_depositories), verbose=True,
         )
-        self.reference_thermo_provider = (
-            reference_thermo_provider
-            or GasPhaseRMGReferenceThermo(
-                thermo_database, rmg_database_sha or _git_sha(self.database_path)
+        self.database_provenance = database_provenance(
+            self.database_path, rmg_database_sha
+        )
+        reject_external_library_paths(
+            self.database_path, kinetics_database, thermo_database
+        )
+        database_commit = self.database_provenance["rmg_database_sha"]
+        injected_assignment = getattr(reference_thermo_provider, "assignment", None)
+        if injected_assignment is not None:
+            check_database_identity(
+                injected_assignment.provenance, self.database_provenance
+            )
+        if reference_thermo_provider is not None and self.database_path is not None:
+            check_database_identity(
+                getattr(reference_thermo_provider, "provenance", {}),
+                self.database_provenance,
+            )
+        self.thermo_assignment = injected_assignment or SharedThermoAssignment(
+            thermo_database, database_commit,
+            database_provenance_data=self.database_provenance,
+        )
+        self.reference_thermo_provider = reference_thermo_provider or (
+            GasPhaseRMGReferenceThermo(
+                thermo_database,
+                database_commit,
+                database_provenance_data=self.database_provenance,
+                assignment=self.thermo_assignment,
             )
         )
         self.ceiling_monomer_concentration_mol_m3 = float(
@@ -1579,17 +2434,20 @@ class EventSetCompiler:
         )
         self.reaction_cache = dict(reaction_cache or {})
         self.family_candidates = tuple(sorted(set(family_candidates)))
-        self._thermo_cache: dict[str, Any] = {}
+        self._applicability_source_cache: dict[
+            tuple[str, int, bool], list[dict[str, Any]]
+        ] = {}
+        self._applicability_refusals: list[dict[str, Any]] = []
         self._compiled_artifact: dict[str, Any] | None = None
 
     def _generate(self, proxy: SiteProxy):
         """Use RMG's public merged-path pipeline (the C2 degeneracy oracle)."""
         if proxy.site_type in self.reaction_cache:
-            return [
+            return (
                 reaction
                 for reaction in self.reaction_cache[proxy.site_type]
                 if reaction.family in self.families
-            ]
+            )
         reactions = []
         for family in self.families:
             reactions.extend(
@@ -1625,8 +2483,40 @@ class EventSetCompiler:
                 }
         if kinetics is None:
             return None, {"kind": "RMG family estimate", "available": False}
+        evaluated_kinetics = kinetics
+        kinetics_conversion = None
+        if isinstance(kinetics, (ArrheniusBM, ArrheniusEP)):
+            try:
+                species_thermo_assignments = (
+                    self.thermo_assignment.assign_reaction(source_reaction)
+                )
+                reaction_enthalpy = float(
+                    source_reaction.get_enthalpy_of_reaction(298)
+                )
+                model_generation_reaction = copy.deepcopy(source_reaction)
+                model_generation_reaction.kinetics = copy.deepcopy(kinetics)
+                model_generation_reaction.fix_barrier_height()
+                evaluated_kinetics = model_generation_reaction.kinetics
+                kinetics_conversion = {
+                    "input_model": type(kinetics).__name__,
+                    "method": "to_arrhenius(reaction.get_enthalpy_of_reaction(298))",
+                    "post_conversion": "reaction.fix_barrier_height()",
+                    "output_model": type(evaluated_kinetics).__name__,
+                    "reaction_enthalpy_J_per_mol": reaction_enthalpy,
+                    "species_thermo_assignments": species_thermo_assignments,
+                    "activation_energy_J_per_mol": float(
+                        evaluated_kinetics.Ea.value_si
+                    ),
+                }
+            except Exception as error:
+                return None, {
+                    "kind": "RMG family estimate",
+                    "available": False,
+                    "error": f"enthalpy-dependent kinetics conversion failed: {error}",
+                }
         values = [
-            float(kinetics.get_rate_coefficient(t)) for t in self.temperature_grid
+            float(evaluated_kinetics.get_rate_coefficient(t))
+            for t in self.temperature_grid
         ]
         reference = "forward RMG family estimate"
         equilibrium_constants = None
@@ -1638,16 +2528,7 @@ class EventSetCompiler:
                     "error": "reverse rate requires gas-phase thermochemistry",
                 }
             try:
-                for species in list(source_reaction.reactants) + list(
-                    source_reaction.products
-                ):
-                    if getattr(species, "thermo", None) is None:
-                        key = _molecule(species).to_adjacency_list(remove_h=False)
-                        if key not in self._thermo_cache:
-                            self._thermo_cache[key] = (
-                                self.thermo_database.get_thermo_data(species)
-                            )
-                        species.thermo = self._thermo_cache[key]
+                self.thermo_assignment.assign_reaction(source_reaction)
                 equilibrium_constants = [
                     float(
                         source_reaction.get_equilibrium_constant(temperature, type="Kc")
@@ -1690,6 +2571,11 @@ class EventSetCompiler:
                 "entry": str(entry) if entry else None,
                 "rank": getattr(entry, "rank", None),
                 "uncertainty": str(getattr(kinetics, "uncertainty", None) or "UNKNOWN"),
+                **(
+                    {"kinetics_conversion": kinetics_conversion}
+                    if kinetics_conversion is not None
+                    else {}
+                ),
                 "source_temperature_range_K": [
                     getattr(getattr(kinetics, bound, None), "value_si", None)
                     for bound in ("Tmin", "Tmax")
@@ -1866,7 +2752,9 @@ class EventSetCompiler:
         """Reuse immutable structural representatives only within this pair."""
         token = _PAIR_MOLECULE_CACHE.set({})
         try:
-            return self._build_linked_family_pair(proxy, reaction, provenance)
+            return self._build_linked_family_pair(
+                proxy, copy.deepcopy(reaction), provenance
+            )
         finally:
             _PAIR_MOLECULE_CACHE.reset(token)
 
@@ -1909,19 +2797,7 @@ class EventSetCompiler:
                 estimate.products,
                 estimate.reactants,
             )
-        forward_table, rate_source = self._rate_table(estimate)
-        rate_source = {
-            **rate_source,
-            "source": str(source_name),
-            "entry": str(entry) if entry else None,
-            "rank": getattr(entry, "rank", None),
-            "generated_is_forward": getattr(source, "is_forward", None),
-            "family_template_direction": "forward" if estimated_forward else "reverse",
-            "reference_thermo": self.reference_thermo_provider.provenance,
-        }
         family = getattr(self.kinetics_database, "families", {}).get(estimate.family)
-        if family is not None and getattr(family, "auto_generated", True) is False:
-            rate_source.update(_rate_rule_source(family, estimate))
         reverse_view = _reverse_view(source)
         structural_reverse = self._record(
             self._direction_proxy(proxy, reverse_view),
@@ -1935,6 +2811,73 @@ class EventSetCompiler:
             if estimated_forward
             else (structural_reverse, structural_forward)
         )
+        applicability = None
+        has_selected_u2 = any(
+            " u2 " in graph
+            for graph in forward.reactant_graphs + forward.product_graphs
+        )
+        if family is not None and has_selected_u2:
+            try:
+                mapped_roots = _mapped_reaction_u2_roots(
+                    family, _reaction_from_record(forward), forward
+                )
+            except ActionError:
+                if not getattr(family, "auto_generated", False):
+                    raise
+                mapped_roots = _stored_u2_root_fallback(forward)
+            if mapped_roots:
+                rate_source_domain = _training_source_domain(
+                    family, estimate, self._applicability_source_cache
+                )
+                policy_results = [
+                    apply_persistent_carbene_policy(
+                        (forward, reverse), mapped_root, rate_source_domain
+                    )
+                    for mapped_root in mapped_roots
+                ]
+                refused = next(
+                    (
+                        refusal for _, refusal in policy_results
+                        if refusal is not None
+                    ),
+                    None,
+                )
+                if refused is not None:
+                    refusal = {
+                        **refused,
+                        "family": estimate.family,
+                        "template": _template(estimate),
+                    }
+                    self._applicability_refusals.append(refusal)
+                    return [], None
+                applicability = next(
+                    (
+                        published[0]["rate_source"].get("applicability")
+                        for published, _ in policy_results
+                        if published[0]["rate_source"].get("applicability")
+                        is not None
+                    ),
+                    None,
+                )
+
+        # Applicability is decided before evaluating kinetics or reference thermo.
+        forward_table, rate_source = self._rate_table(estimate)
+        rate_source = {
+            **rate_source,
+            "source": str(source_name),
+            "entry": str(entry) if entry else None,
+            "rank": getattr(entry, "rank", None),
+            "generated_is_forward": getattr(source, "is_forward", None),
+            "family_template_direction": "forward" if estimated_forward else "reverse",
+            "reference_thermo": self.reference_thermo_provider.provenance,
+            **(
+                {"applicability": applicability}
+                if applicability is not None
+                else {}
+            ),
+        }
+        if family is not None and getattr(family, "auto_generated", True) is False:
+            rate_source.update(_rate_rule_source(family, estimate))
         forward = replace(
             forward,
             k_table=forward_table,
@@ -1963,10 +2906,17 @@ class EventSetCompiler:
                 event_id="",
             )
             return [irreversible], irreversible
+        reference_result = None
         try:
-            constants = self.reference_thermo_provider.equilibrium_constants(
-                estimate, self.temperature_grid
-            )
+            if hasattr(self.reference_thermo_provider, "evaluate"):
+                reference_result = self.reference_thermo_provider.evaluate(
+                    estimate, self.temperature_grid
+                )
+                constants = list(reference_result.equilibrium_constants)
+            else:
+                constants = self.reference_thermo_provider.equilibrium_constants(
+                    estimate, self.temperature_grid
+                )
         except (ThermoUnavailable, AttributeError) as error:
             irreversible = replace(
                 forward,
@@ -1984,7 +2934,11 @@ class EventSetCompiler:
             # physical propagation before installing the library coefficient.
             if not matches_head_to_tail(forward):
                 forward, reverse = reverse, forward
-                constants = [1.0 / constant for constant in constants]
+                if reference_result is not None:
+                    reference_result = reference_result.reversed_direction()
+                    constants = list(reference_result.equilibrium_constants)
+                else:
+                    constants = [1.0 / constant for constant in constants]
                 replaced_table["k"] = [
                     rate * constant for rate, constant in zip(forward_table["k"], constants)
                 ]
@@ -2024,6 +2978,18 @@ class EventSetCompiler:
             )
         thermo = {
             **self.reference_thermo_provider.provenance,
+            **(
+                {
+                    "reaction_enthalpy_298_J_per_mol": (
+                        reference_result.reaction_enthalpy_298_J_per_mol
+                    ),
+                    "species_thermo_assignments": (
+                        list(reference_result.species_thermo_assignments)
+                    ),
+                }
+                if reference_result is not None
+                else {}
+            ),
             "equilibrium_constant_table": {
                 "T": list(self.temperature_grid),
                 "Kc": constants,
@@ -2043,8 +3009,18 @@ class EventSetCompiler:
                 "reference": ("k_library / Kc" if rate_source["kind"] == "kMC kinetics library"
                               else "k_family / Kc"),
                 **self.reference_thermo_provider.provenance,
+                **(
+                    {"forward_kinetics_conversion": rate_source["kinetics_conversion"]}
+                    if "kinetics_conversion" in rate_source
+                    else {}
+                ),
                 **({"forward_rate_source": rate_source}
                    if "comment" in rate_source or rate_source["kind"] == "kMC kinetics library" else {}),
+                **(
+                    {"applicability": applicability}
+                    if applicability is not None
+                    else {}
+                ),
             },
             rate_units=get_rate_coefficient_units_from_reaction_order(reverse.arity),
             thermo_provenance=thermo,
@@ -2353,6 +3329,7 @@ class EventSetCompiler:
     def compile(self) -> dict[str, Any]:
         if self._compiled_artifact is not None:
             return copy.deepcopy(self._compiled_artifact)
+        self._applicability_refusals = []
 
         proxy_inputs = [
             _proxy_fingerprint(p)
@@ -2364,7 +3341,7 @@ class EventSetCompiler:
             "family_list_sha256": sha256_json(self.families),
             "family_filter_sha256": sha256_json(self.family_candidates),
             "rmgpy_sha": self.rmgpy_sha or _git_sha(self.rmgpy_path),
-            "rmg_database_sha": self.rmg_database_sha or _git_sha(self.database_path),
+            **self.database_provenance,
             "proxy_set_sha256": sha256_json(proxy_inputs),
             "kinetics_libraries": {
                 "styrene_plpsec": {
@@ -2376,8 +3353,9 @@ class EventSetCompiler:
             },
             "rate_rule_preparation": {
                 **self.rate_rule_preparation,
-                "database_sha": self.rmg_database_sha or _git_sha(self.database_path),
+                "database_sha": self.database_provenance["rmg_database_sha"],
             },
+            "applicability_policy_version": PERSISTENT_CARBENE_POLICY_VERSION,
         }
         if "R_Recombination" in self.families:
             provenance["archived_j_para_rate"] = copy.deepcopy(
@@ -2492,6 +3470,9 @@ class EventSetCompiler:
             "records": [record.to_dict() for record in records],
             "discovery": discovery,
             "excluded_channels": excluded_channels,
+            "applicability_refusals": copy.deepcopy(
+                self._applicability_refusals
+            ),
             "irreversible_pairs": [
                 {
                     "event_id": r.event_id,

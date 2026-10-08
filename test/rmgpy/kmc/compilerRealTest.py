@@ -31,6 +31,11 @@ from rmgpy.kmc.compiler import (
     short_ps_molecule_catalogue,
     validate_artifact,
 )
+from rmgpy.kmc.database_provenance import (
+    database_content_digest,
+    provenance_matches_database,
+    resolve_database_declaration,
+)
 from rmgpy.molecule.molecule import Molecule
 from rmgpy.reaction import Reaction
 from rmgpy.species import Species
@@ -422,14 +427,16 @@ def compilation(rmg_database):
     send_oracle.close()
     deadline = time.monotonic() + CROSS_PROCESS_TIMEOUT_SECONDS
     fixture_script = Path(__file__).with_name("compile_event_set_fixture.py")
+    database_digest, _ = database_content_digest(DB_PATH)
     cache_key = "-".join(
         [
             subprocess.check_output(
-                ["git", "-C", str(path), "rev-parse", "HEAD"], text=True
-            ).strip()
-            for path in (REPO_ROOT, DB_PATH)
+                ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"], text=True
+            ).strip(),
+            resolve_database_declaration() or "none",
+            database_digest,
+            compiler_source_hash(),
         ]
-        + [compiler_source_hash()]
     )
     cache_root = (
         Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(REPO_ROOT / ".kmc-cache")))
@@ -975,9 +982,10 @@ def test_all_pairs_have_exact_graphs_maps_degeneracies_and_detailed_balance(
         partner = reverse if forward is record else record
         assert partner["rate_source"]["kind"] == "reference-thermo reverse"
         assert forward["thermo_provenance"]["reference_thermo"] == "RMG gas-phase Kc"
-        assert (
-            forward["thermo_provenance"]["rmg_database_sha"]
-            == "cd86d4e1c187a132109e16cd86f624ed9fb217df"
+        assert provenance_matches_database(
+            forward["thermo_provenance"],
+            DB_PATH,
+            resolve_database_declaration(),
         )
         reaction = Reaction(
             reactants=[

@@ -941,6 +941,7 @@ class ThermoDatabase(object):
                         logging.info('Loading thermodynamics library from {0} in {1}...'.format(f, root))
                         library = ThermoLibrary()
                         library.load(os.path.join(root, f), self.local_context, self.global_context)
+                        library.source_path = os.path.abspath(os.path.join(root, f))
                         library.label = os.path.splitext(f)[0]
                         self.libraries[library.label] = library
                         self.library_order.append(library.label)
@@ -952,6 +953,7 @@ class ThermoDatabase(object):
                     logging.info(f'Loading thermodynamics library from an external location: {libraryName}..')
                     library = ThermoLibrary()
                     library.load(libraryName, self.local_context, self.global_context)
+                    library.source_path = os.path.abspath(libraryName)
                     library.label = os.path.splitext(os.path.split(libraryName)[-1])[0]
                     self.libraries[library.label] = library
                     self.library_order.append(library.label)
@@ -959,6 +961,7 @@ class ThermoDatabase(object):
                     logging.info(f'Loading thermodynamics library from {f} in {path}...')
                     library = ThermoLibrary()
                     library.load(os.path.join(path, f), self.local_context, self.global_context)
+                    library.source_path = os.path.abspath(os.path.join(path, f))
                     library.label = os.path.splitext(f)[0]
                     self.libraries[library.label] = library
                     self.library_order.append(library.label)
@@ -2904,4 +2907,3 @@ def find_cp0_and_cpinf(species, heat_capacity):
     if heat_capacity.CpInf is None:
         cp_inf = species.calculate_cpinf()
         heat_capacity.CpInf = (cp_inf, "J/(mol*K)")
-
