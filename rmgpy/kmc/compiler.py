@@ -80,6 +80,7 @@ PS_FAMILY_FILTER_REASON = (
 LINK_PLACEHOLDER = "evt_" + "0" * 64
 PERSISTENT_CARBENE_POLICY_VERSION = "persistent-carbene-applicability/2"
 APPLICABILITY_GENERATION_CACHE_LIMIT = 4
+KEKULE_DRAWING_LIMIT = 64
 PROXY_PADDING_DISTANCE = None
 PROXY_PADDING_TOLERANCE_LOG10 = 0.01
 PROXY_PADDING_MAX_HEAVY_ATOMS = 512
@@ -124,6 +125,15 @@ ARCHIVED_J_PARA_RATE_PROVENANCE = {
     "extraction_script": "polymer-pm/reports/R-009_sources/R-009_v8_rmg_archive.py",
     "archive_record": "polymer-pm/reports/R-009_sources/R-009_v8_rmg_archive.txt",
 }
+
+
+class KekuleEnumerationLimitError(ValueError):
+    """Raised before an aromatic-radical drawing set exceeds its bound."""
+
+    def __init__(self, evidence):
+        self.evidence = evidence
+        bound = evidence["kekule_enumeration"]["bound"]
+        super().__init__(f"Kekulé enumeration exceeds bound {bound}")
 
 
 def _thermo_assignment_identities(assignments):
@@ -552,7 +562,25 @@ def _identity_resonance_states(molecule) -> list[tuple[dict, dict]]:
     return states
 
 
-def _radical_aromatic_kekule_forms(molecule) -> list[Any]:
+def _new_kekule_evidence() -> dict[str, dict[str, int]]:
+    """Return counters attached to stored-transition attribution evidence."""
+    return {
+        "kekule_enumeration": {
+            "bound": KEKULE_DRAWING_LIMIT,
+            "candidate_drawings": 0,
+            "accepted_drawings": 0,
+            "atomtype_rejections": 0,
+            "no_matching_components": 0,
+        }
+    }
+
+
+def _update_kekule_atomtypes(drawing) -> None:
+    """Validate a generated drawing at a patchable test seam."""
+    drawing.update_atomtypes(log_species=False)
+
+
+def _radical_aromatic_kekule_forms(molecule, evidence) -> list[Any]:
     """Return every Kekule drawing of the radical-bearing aromatic rings.
 
     Automatic resonance never Kekulizes aryl radicals, but RMG fires reverse
@@ -594,43 +622,66 @@ def _radical_aromatic_kekule_forms(molecule) -> list[Any]:
         return []
 
     def perfect_matchings(component):
-        matchings = []
-
         def extend(remaining, chosen):
             if not remaining:
-                matchings.append(chosen)
+                yield chosen
                 return
             first = remaining[0]
             for pair in adjacency[atoms[first]]:
                 other = pair[0] if pair[1] == first else pair[1]
                 if other in remaining:
-                    extend(
+                    yield from extend(
                         [i for i in remaining if i not in pair], chosen | {pair}
                     )
 
-        extend(component, frozenset())
-        bonds = {pair for i in component for pair in adjacency[atoms[i]]}
-        return [(bonds, doubles) for doubles in matchings]
+        yield from extend(component, frozenset())
+
+    summary = evidence["kekule_enumeration"]
+    summary["bound"] = KEKULE_DRAWING_LIMIT
+    candidate_count = 1
+    component_assignments = []
+    for component in components:
+        allowance = KEKULE_DRAWING_LIMIT // candidate_count
+        matching_count = 0
+        for _ in perfect_matchings(component):
+            matching_count += 1
+            if matching_count > allowance:
+                summary["candidate_drawings"] += candidate_count * matching_count
+                raise KekuleEnumerationLimitError(evidence)
+        if matching_count == 0:
+            summary["no_matching_components"] += 1
+            component_assignments.append((None,))
+            continue
+        candidate_count *= matching_count
+        component_assignments.append(perfect_matchings(component))
+
+    summary["candidate_drawings"] += candidate_count
+    component_bonds = [
+        {pair for i in component for pair in adjacency[atoms[i]]}
+        for component in components
+    ]
 
     drawings = []
-    for assignment in product(
-        *(perfect_matchings(component) for component in components)
-    ):
+    for assignment in product(*component_assignments):
         drawing = molecule.copy(deep=True)
-        for bonds, doubles in assignment:
+        for bonds, doubles in zip(component_bonds, assignment):
+            if doubles is None:
+                continue
             for first, second in bonds:
                 drawing.get_bond(
                     drawing.atoms[first], drawing.atoms[second]
                 ).order = 2 if (first, second) in doubles else 1
         try:
-            drawing.update_atomtypes(log_species=False)
+            _update_kekule_atomtypes(drawing)
         except AtomTypeError:
+            summary["atomtype_rejections"] += 1
             continue
+        summary["accepted_drawings"] += 1
         drawings.append(drawing)
     return drawings
 
 
-def _stored_resonance_forms(reactants) -> list[list[Any]]:
+def _stored_resonance_forms(reactants) -> tuple[list[list[Any]], dict[str, Any]]:
     """Return id-tracked resonance forms of each stored reactant, stored form first.
 
     Kekule drawings of radical-bearing aromatic rings are added to every form
@@ -639,6 +690,7 @@ def _stored_resonance_forms(reactants) -> list[list[Any]]:
     from rmgpy.exceptions import AtomTypeError, ResonanceError
 
     forms = []
+    evidence = _new_kekule_evidence()
     for molecule in reactants:
         stored = molecule.copy(deep=True)
         group = [stored]
@@ -658,13 +710,13 @@ def _stored_resonance_forms(reactants) -> list[list[Any]]:
                 states.append(state)
                 group.append(form)
         for form in list(group):
-            for drawing in _radical_aromatic_kekule_forms(form):
+            for drawing in _radical_aromatic_kekule_forms(form, evidence):
                 state = _identity_state(drawing)
                 if state not in states:
                     states.append(state)
                     group.append(drawing)
         forms.append(group)
-    return forms
+    return forms, evidence
 
 
 def _products_correspond(candidate_products, stored_products, stored_states) -> bool:
@@ -776,7 +828,7 @@ def _generated_forward_transitions(family, data, forms, generation_cache, genera
 
 def _verified_attributions(
     family, data, reactants, stored_products, recipe_labels, generation_cache, generation_stats
-) -> tuple[set[tuple[tuple[int, str], ...]], str | None]:
+) -> tuple[set[tuple[tuple[int, str], ...]], str | None, dict[str, Any]]:
     """Return attributions bound to the stored transition, or why there are none.
 
     An attribution is verified only when a family-generated forward candidate
@@ -784,15 +836,19 @@ def _verified_attributions(
     the stored template, the attributed atoms select that template, and its
     products equal the stored rewrite atom-for-atom up to product resonance.
     """
+    try:
+        forms, evidence = _stored_resonance_forms(reactants)
+    except KekuleEnumerationLimitError as error:
+        return set(), str(error), error.evidence
     forms, generated, error = _generated_forward_transitions(
         family,
         data,
-        _stored_resonance_forms(reactants),
+        forms,
         generation_cache,
         generation_stats,
     )
     if error is not None:
-        return set(), error
+        return set(), error, evidence
     fired = [form for group in forms for form in group]
     template = data.get("template") or ""
     stored_states: dict[frozenset, list] = {}
@@ -833,14 +889,24 @@ def _verified_attributions(
             continue
         attributions.add(attribution)
     if attributions:
-        return attributions, None
+        return attributions, None, evidence
     if counts["forward"] == 0:
-        return attributions, "no family-generated forward candidate fired on the stored reactants"
+        return (
+            attributions,
+            "no family-generated forward candidate fired on the stored reactants",
+            evidence,
+        )
     if counts["template"] == 0:
-        return attributions, "no family-generated candidate matched the stored template"
-    return attributions, (
+        return (
+            attributions,
+            "no family-generated candidate matched the stored template",
+            evidence,
+        )
+    return (
+        attributions,
         "no template-matched candidate reproduces the stored rewrite "
-        "up to product resonance"
+        "up to product resonance",
+        evidence,
     )
 
 
@@ -1003,7 +1069,7 @@ def _collapse_automorphic_attributions(attributions, reactants, products=None):
 
 
 def _u2_roots_from_attributions(
-    data, reactants, products, attributions, collapsed
+    data, reactants, products, attributions, collapsed, attribution_evidence=None
 ) -> list[dict[str, Any]]:
     """Bind u2 centres to recipe roles across verified attribution orbits.
 
@@ -1036,6 +1102,8 @@ def _u2_roots_from_attributions(
                 for label in recipe_labels
             ],
         }
+        if attribution_evidence is not None:
+            root["attribution_evidence"] = copy.deepcopy(attribution_evidence)
         if len(labels) > 1:
             root.update(
                 attribution="ambiguous",
@@ -1049,10 +1117,12 @@ def _u2_roots_from_attributions(
     return roots
 
 
-def _unverified_u2_roots(data, reactants, products, reason) -> list[dict[str, Any]]:
+def _unverified_u2_roots(
+    data, reactants, products, reason, attribution_evidence=None
+) -> list[dict[str, Any]]:
     """Keep every touched stored u2 centre in-policy when attribution fails."""
     touched = _touched_atom_indices(data.get("bond_ops", []))
-    return [
+    roots = [
         {
             "reactant_atom_index": atom_index,
             "recipe_label": "__runtime_recipe_root_unresolved__",
@@ -1066,6 +1136,10 @@ def _unverified_u2_roots(data, reactants, products, reason) -> list[dict[str, An
         for atom_index in sorted(touched)
         for side in sorted(_stored_u2_roles(data, reactants, products, atom_index))
     ]
+    if attribution_evidence is not None:
+        for root in roots:
+            root["attribution_evidence"] = copy.deepcopy(attribution_evidence)
+    return roots
 
 
 def _mapped_reaction_u2_roots(
@@ -1175,7 +1249,7 @@ def _mapped_reaction_u2_roots(
             stored_products,
             f"stored rewrite is invalid: {error}",
         )
-    attributions, failure = _verified_attributions(
+    attributions, failure, attribution_evidence = _verified_attributions(
         family,
         data,
         original_reactants,
@@ -1186,7 +1260,11 @@ def _mapped_reaction_u2_roots(
     )
     if not attributions:
         return _unverified_u2_roots(
-            data, original_reactants, stored_products, failure
+            data,
+            original_reactants,
+            stored_products,
+            failure,
+            attribution_evidence,
         )
     roots = _u2_roots_from_attributions(
         data,
@@ -1196,6 +1274,7 @@ def _mapped_reaction_u2_roots(
         _collapse_automorphic_attributions(
             attributions, original_reactants, tracked_products
         ),
+        attribution_evidence,
     )
     # A persistent u2 carbon the rewrite touches must hold a recipe role; one
     # that no verified attribution labels stays in-policy, unverified.

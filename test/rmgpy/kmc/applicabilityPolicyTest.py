@@ -5,6 +5,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import time
+import tracemalloc
 from types import SimpleNamespace
 
 import pytest
@@ -760,7 +762,7 @@ def test_nine_form_delocalised_witness_has_no_carbene_reacting_centre():
     reactants = compiler_module._molecules_from_graphs(witness["reactant_graphs"])
     compiler_module._tag_atom_ids(reactants)
     tracked, _ = _apply_record(witness, reactants)
-    attributions, failure = compiler_module._verified_attributions(
+    attributions, failure, _ = compiler_module._verified_attributions(
         family, witness, reactants, tracked, {"*1", "*2", "*3"}, {}, {}
     )
     # The stored product draws u2 on atom 74 only as one of nine resonance
@@ -1212,12 +1214,216 @@ def test_aryl_radical_kekule_drawing_verifies_the_stored_template(census_databas
     # Kekule drawing of the aryl radical; Ext-4C-R needs a single bond where
     # the stored aromatic drawing has a benzene bond.  Automatic resonance
     # never Kekulizes aryl radicals, so attribution must add those drawings.
-    attributions, error = _kekule_pair_attributions(census_database)
+    attributions, error, evidence = _kekule_pair_attributions(census_database)
     assert error is None
+    assert evidence["kekule_enumeration"]["accepted_drawings"] >= 2
     assert sorted(attributions) == [
         ((25, "*1"), (66, "*4"), (78, "*3"), (93, "*2")),
         ((25, "*1"), (66, "*4"), (79, "*3"), (93, "*2")),
     ]
+
+
+def test_verifying_aryl_radical_kekule_drawing_is_not_first(monkeypatch):
+    molecule = Molecule().from_adjacency_list(_NAPHTHYL_RADICAL)
+    compiler_module._tag_atom_ids([molecule])
+
+    def stored_form_plus_kekule_drawings(reactants):
+        evidence = compiler_module._new_kekule_evidence()
+        stored = reactants[0].copy(deep=True)
+        return [
+            [stored]
+            + compiler_module._radical_aromatic_kekule_forms(stored, evidence)
+        ], evidence
+
+    monkeypatch.setattr(
+        compiler_module, "_stored_resonance_forms", stored_form_plus_kekule_drawings
+    )
+
+    class SecondDrawingFamily:
+        label = "second-kekule-drawing"
+
+        def _generate_reactions(self, forms, **kwargs):
+            drawings = [
+                form
+                for form in forms[0]
+                if not any(bond.is_benzene() for bond in form.get_all_edges())
+            ]
+            if len(drawings) < 2:
+                return []
+            product = drawings[1].copy(deep=True)
+            product.atoms[0].label = "*1"
+            return [
+                SimpleNamespace(
+                    is_forward=True,
+                    reactants=[drawings[1]],
+                    products=[product],
+                    template=["synthetic"],
+                )
+            ]
+
+    monkeypatch.setattr(compiler_module, "_products_correspond", lambda *args: True)
+    monkeypatch.setattr(
+        compiler_module, "_attribution_satisfies_template", lambda *args: True
+    )
+    data = {"reactant_graphs": [_NAPHTHYL_RADICAL], "template": "synthetic"}
+    attributions, error, evidence = compiler_module._verified_attributions(
+        SecondDrawingFamily(),
+        data,
+        [molecule],
+        [molecule.copy(deep=True)],
+        {"*1"},
+        {},
+        {},
+    )
+    assert error is None
+    assert attributions == {((0, "*1"),)}
+    assert evidence["kekule_enumeration"]["accepted_drawings"] == 3
+
+    monkeypatch.setattr(compiler_module, "KEKULE_DRAWING_LIMIT", 2)
+    attributions, error, evidence = compiler_module._verified_attributions(
+        SecondDrawingFamily(),
+        data,
+        [molecule],
+        [molecule.copy(deep=True)],
+        {"*1"},
+        {},
+        {},
+    )
+    assert attributions == set()
+    assert error == "Kekulé enumeration exceeds bound 2"
+    assert evidence["kekule_enumeration"]["candidate_drawings"] == 3
+
+
+_NAPHTHYL_RADICAL = """multiplicity 2
+1  C u1 p0 c0 {2,B} {10,B}
+2  C u0 p0 c0 {1,B} {3,B} {11,S}
+3  C u0 p0 c0 {2,B} {4,B} {12,S}
+4  C u0 p0 c0 {3,B} {5,B} {13,S}
+5  C u0 p0 c0 {4,B} {6,B} {10,B}
+6  C u0 p0 c0 {5,B} {7,B} {14,S}
+7  C u0 p0 c0 {6,B} {8,B} {15,S}
+8  C u0 p0 c0 {7,B} {9,B} {16,S}
+9  C u0 p0 c0 {8,B} {10,B} {17,S}
+10 C u0 p0 c0 {1,B} {5,B} {9,B}
+11 H u0 p0 c0 {2,S}
+12 H u0 p0 c0 {3,S}
+13 H u0 p0 c0 {4,S}
+14 H u0 p0 c0 {6,S}
+15 H u0 p0 c0 {7,S}
+16 H u0 p0 c0 {8,S}
+17 H u0 p0 c0 {9,S}
+"""
+
+
+def _kekule_evidence():
+    return {
+        "kekule_enumeration": {
+            "bound": compiler_module.KEKULE_DRAWING_LIMIT,
+            "candidate_drawings": 0,
+            "accepted_drawings": 0,
+            "atomtype_rejections": 0,
+            "no_matching_components": 0,
+        }
+    }
+
+
+def test_fused_naphthyl_radical_has_three_bounded_kekule_drawings(monkeypatch):
+    molecule = Molecule().from_adjacency_list(_NAPHTHYL_RADICAL)
+    evidence = _kekule_evidence()
+    tracemalloc.start()
+    started = time.perf_counter()
+    drawings = compiler_module._radical_aromatic_kekule_forms(molecule, evidence)
+    elapsed = time.perf_counter() - started
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert len(drawings) == 3
+    assert evidence["kekule_enumeration"] == {
+        "bound": compiler_module.KEKULE_DRAWING_LIMIT,
+        "candidate_drawings": 3,
+        "accepted_drawings": 3,
+        "atomtype_rejections": 0,
+        "no_matching_components": 0,
+    }
+    assert elapsed < 2.0
+    assert peak < 20_000_000
+
+    monkeypatch.setattr(compiler_module, "KEKULE_DRAWING_LIMIT", 2)
+    refused = _kekule_evidence()
+    with pytest.raises(
+        compiler_module.KekuleEnumerationLimitError,
+        match="Kekulé enumeration exceeds bound 2",
+    ):
+        compiler_module._radical_aromatic_kekule_forms(molecule, refused)
+    assert refused["kekule_enumeration"]["candidate_drawings"] == 3
+
+
+def test_kekule_atomtype_rejections_are_counted(monkeypatch):
+    molecule = Molecule().from_adjacency_list(
+        """multiplicity 2
+1 C u1 p0 c0 {2,B} {6,B}
+2 C u0 p0 c0 {1,B} {3,B} {7,S}
+3 C u0 p0 c0 {2,B} {4,B} {8,S}
+4 C u0 p0 c0 {3,B} {5,B} {9,S}
+5 C u0 p0 c0 {4,B} {6,B} {10,S}
+6 C u0 p0 c0 {1,B} {5,B} {11,S}
+7 H u0 p0 c0 {2,S}
+8 H u0 p0 c0 {3,S}
+9 H u0 p0 c0 {4,S}
+10 H u0 p0 c0 {5,S}
+11 H u0 p0 c0 {6,S}
+"""
+    )
+    original = compiler_module._update_kekule_atomtypes
+    calls = 0
+
+    def reject_first(drawing, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            from rmgpy.exceptions import AtomTypeError
+
+            raise AtomTypeError("synthetic rejected drawing")
+        return original(drawing, *args, **kwargs)
+
+    monkeypatch.setattr(compiler_module, "_update_kekule_atomtypes", reject_first)
+    evidence = _kekule_evidence()
+    drawings = compiler_module._radical_aromatic_kekule_forms(molecule, evidence)
+    assert len(drawings) == 1
+    assert evidence["kekule_enumeration"]["candidate_drawings"] == 2
+    assert evidence["kekule_enumeration"]["atomtype_rejections"] == 1
+
+
+def test_component_without_matching_keeps_other_component_drawings():
+    molecule = Molecule().from_adjacency_list(
+        """multiplicity 3
+1 C u1 p0 c0 {2,B} {6,B}
+2 C u0 p0 c0 {1,B} {3,B} {12,S}
+3 C u0 p0 c0 {2,B} {4,B} {13,S}
+4 C u0 p0 c0 {3,B} {5,B} {14,S}
+5 C u0 p0 c0 {4,B} {6,B} {15,S}
+6 C u0 p0 c0 {1,B} {5,B} {16,S}
+7 C u1 p0 c0 {8,B} {11,B}
+8 C u0 p0 c0 {7,B} {9,B} {17,S}
+9 C u0 p0 c0 {8,B} {10,B} {18,S}
+10 C u0 p0 c0 {9,B} {11,B} {19,S}
+11 C u0 p0 c0 {7,B} {10,B} {20,S}
+12 H u0 p0 c0 {2,S}
+13 H u0 p0 c0 {3,S}
+14 H u0 p0 c0 {4,S}
+15 H u0 p0 c0 {5,S}
+16 H u0 p0 c0 {6,S}
+17 H u0 p0 c0 {8,S}
+18 H u0 p0 c0 {9,S}
+19 H u0 p0 c0 {10,S}
+20 H u0 p0 c0 {11,S}
+"""
+    )
+    evidence = _kekule_evidence()
+    drawings = compiler_module._radical_aromatic_kekule_forms(molecule, evidence)
+    assert len(drawings) == 2
+    assert evidence["kekule_enumeration"]["candidate_drawings"] == 2
+    assert evidence["kekule_enumeration"]["no_matching_components"] == 1
 
 
 def test_matching_template_string_with_atoms_selecting_another_node_is_rejected(
@@ -1226,7 +1432,9 @@ def test_matching_template_string_with_atoms_selecting_another_node_is_rejected(
     (forward, _), = _pairs(_CENSUS["kekule_aryl_radical_pair"])
     # Aromatic drawings only: the rewrite-reproducing atoms select Ext-7C-R.
     monkeypatch.setattr(
-        compiler_module, "_radical_aromatic_kekule_forms", lambda molecule: []
+        compiler_module,
+        "_radical_aromatic_kekule_forms",
+        lambda molecule, evidence: [],
     )
     generate = compiler_module._generated_forward_transitions
 
@@ -1239,7 +1447,7 @@ def test_matching_template_string_with_atoms_selecting_another_node_is_rejected(
     monkeypatch.setattr(
         compiler_module, "_generated_forward_transitions", forged_template_strings
     )
-    attributions, error = _kekule_pair_attributions(census_database)
+    attributions, error, _ = _kekule_pair_attributions(census_database)
     assert attributions == set()
     assert error == (
         "no template-matched candidate reproduces the stored rewrite "
@@ -1293,7 +1501,7 @@ def test_real_recombination_binds_both_repeated_star_labels(census_database):
     reactants = compiler_module._molecules_from_graphs(record["reactant_graphs"])
     compiler_module._tag_atom_ids(reactants)
     tracked, _ = _apply_record(record, reactants)
-    attributions, failure = compiler_module._verified_attributions(
+    attributions, failure, _ = compiler_module._verified_attributions(
         family, record, reactants, tracked, {"*"}, {}, {}
     )
     assert failure is None
@@ -1510,7 +1718,11 @@ def test_touched_persistent_u2_without_a_verified_role_stays_in_policy(monkeypat
     monkeypatch.setattr(
         compiler_module,
         "_verified_attributions",
-        lambda *args: ({((1, "*2"), (3, "*1"), (4, "*3"))}, None),
+        lambda *args: (
+            {((1, "*2"), (3, "*1"), (4, "*3"))},
+            None,
+            compiler_module._new_kekule_evidence(),
+        ),
     )
     family = SimpleNamespace(
         forward_recipe=SimpleNamespace(
