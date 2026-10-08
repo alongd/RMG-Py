@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from rmgpy.kmc.barrier_e0 import FixedBBarrierE0Provider
+from rmgpy.kmc.barrier_e0 import BarrierE0Error, FixedBBarrierE0Provider
 from rmgpy.kmc.compiler import EventSetCompiler
 from rmgpy.kinetics.arrhenius import ArrheniusEP
 from rmgpy.reaction import Reaction
@@ -101,7 +101,68 @@ def test_provider_on_rejects_unfittable_thermo_without_fallback():
     malformed = _thermo()
     malformed.Cp0 = None
 
-    with pytest.raises(ValueError, match="fixed-B E0 fit failed"):
+    with pytest.raises(BarrierE0Error, match="fixed-B E0 provider requires"):
+        FixedBBarrierE0Provider(900.0).prepare_reaction(_reaction(malformed))
+
+
+@pytest.mark.parametrize(
+    "temperatures, capacities",
+    [
+        ([300, 400, 400, 400], [70, 95, 95, 95]),
+        ([300, 600, 500, 800], [70, 130, 115, 150]),
+        ([300, 400, 500, 600], [70, -95, 115, 130]),
+    ],
+)
+def test_provider_rejects_invalid_or_rank_deficient_fit_inputs(
+    temperatures, capacities
+):
+    malformed = ThermoData(
+        Tdata=(temperatures, "K"),
+        Cpdata=(capacities, "J/(mol*K)"),
+        H298=(50, "kJ/mol"),
+        S298=(250, "J/(mol*K)"),
+        Cp0=(30, "J/(mol*K)"),
+        CpInf=(200, "J/(mol*K)"),
+    )
+
+    with pytest.raises(BarrierE0Error):
+        FixedBBarrierE0Provider(900.0).prepare_reaction(_reaction(malformed))
+
+
+def test_provider_treats_aliased_participants_as_independent_inputs():
+    species = Species(label="aliased", thermo=_thermo())
+    reaction = Reaction(
+        reactants=[species, species],
+        products=[species],
+    )
+
+    prepared, assignments = FixedBBarrierE0Provider(900.0).prepare_reaction(
+        reaction
+    )
+
+    assert [item["origin"] for item in assignments] == [
+        "provider",
+        "provider",
+        "provider",
+    ]
+    prepared_species = [*prepared.reactants, *prepared.products]
+    assert len({id(item) for item in prepared_species}) == 3
+    assert len({id(item.thermo) for item in prepared_species}) == 3
+    assert species.thermo.E0 is None
+
+
+def test_provider_rejects_numerically_rank_deficient_fixed_b():
+    with pytest.raises(BarrierE0Error, match="rank deficient"):
+        FixedBBarrierE0Provider(1.0e20).prepare_reaction(
+            _reaction(_thermo())
+        )
+
+
+def test_provider_rejects_inconsistent_constant_heat_capacity_limits():
+    malformed = _thermo()
+    malformed.CpInf = malformed.Cp0
+
+    with pytest.raises(BarrierE0Error, match="constant heat-capacity"):
         FixedBBarrierE0Provider(900.0).prepare_reaction(_reaction(malformed))
 
 
@@ -150,3 +211,25 @@ def test_compiler_uses_provider_only_for_the_barrier_copy():
     assert reaction.products[0].thermo is product_thermo
     assert reactant_thermo.E0 is None
     assert product_thermo.E0 is None
+
+
+def test_compiler_propagates_provider_fit_failures():
+    malformed = _thermo()
+    malformed.Cp0 = None
+    reaction = _reaction(malformed)
+    reaction.kinetics = ArrheniusEP(
+        A=(1.0e6, "s^-1"), n=0.0, alpha=0.0, E0=(0.0, "kJ/mol")
+    )
+
+    class Assignment:
+        def assign_reaction(self, assigned):
+            return []
+
+    compiler = EventSetCompiler.__new__(EventSetCompiler)
+    compiler.temperature_grid = (300.0, 600.0)
+    compiler.thermo_assignment = Assignment()
+    compiler.thermo_database = object()
+    compiler.barrier_e0_provider = FixedBBarrierE0Provider(900.0)
+
+    with pytest.raises(BarrierE0Error, match="fixed-B E0"):
+        compiler._rate_table(reaction)

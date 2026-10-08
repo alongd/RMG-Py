@@ -165,6 +165,18 @@ def test_barrier_e0_provider_is_off_by_default_and_explicit_when_enabled():
     ]
 
 
+def test_changing_barrier_e0_provider_invalidates_in_memory_artifact():
+    compiler, _ = _compiler()
+    disabled = compiler.compile()
+
+    compiler.barrier_e0_provider = FixedBBarrierE0Provider(900.0)
+    enabled = compiler.compile()
+
+    assert disabled["provenance"]["barrier_e0_provider"] == {"enabled": False}
+    assert enabled["provenance"]["barrier_e0_provider"]["B_K"] == 900.0
+    assert enabled is not disabled
+
+
 def test_compiler_source_hash_includes_barrier_e0_provider():
     source_root = Path(compiler_module.__file__).parent
     expected = hashlib.sha256(

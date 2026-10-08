@@ -23,7 +23,7 @@ from typing import Any, Iterable, Sequence
 from types import SimpleNamespace
 
 from rmgpy.kmc.atom_map import extract_atom_map
-from rmgpy.kmc.barrier_e0 import FixedBBarrierE0Provider
+from rmgpy.kmc.barrier_e0 import BarrierE0Error, FixedBBarrierE0Provider
 from rmgpy.kmc.event_record import EventRecord, ssa_multiplier_for
 from rmgpy.kmc.kinetics_library import (
     load_plpsec_entry, matches_head_to_tail, plpsec_rate_table,
@@ -2356,6 +2356,23 @@ class SiteProxy:
 class EventSetCompiler:
     """Compile declared family reactions on finite, centred polymer proxies."""
 
+    @property
+    def barrier_e0_provider(self):
+        return self._barrier_e0_provider
+
+    @barrier_e0_provider.setter
+    def barrier_e0_provider(self, provider):
+        if provider is not None and not isinstance(
+            provider, FixedBBarrierE0Provider
+        ):
+            raise TypeError(
+                "barrier_e0_provider must be FixedBBarrierE0Provider or None"
+            )
+        changed = getattr(self, "_barrier_e0_provider", None) != provider
+        self._barrier_e0_provider = provider
+        if changed and hasattr(self, "_compiled_artifact"):
+            self._compiled_artifact = None
+
     def __init__(
         self,
         kinetics_database,
@@ -2386,12 +2403,6 @@ class EventSetCompiler:
                 raise ValueError("RMG_KMC_PLPSEC_LIBRARY must be 0 or 1")
             use_plpsec_library = selection == "1"
         self.use_plpsec_library = bool(use_plpsec_library)
-        if barrier_e0_provider is not None and not isinstance(
-            barrier_e0_provider, FixedBBarrierE0Provider
-        ):
-            raise TypeError(
-                "barrier_e0_provider must be FixedBBarrierE0Provider or None"
-            )
         self.barrier_e0_provider = barrier_e0_provider
         self.kinetics_database = kinetics_database
         self.proxies = tuple(copy.deepcopy(tuple(proxies)))
@@ -2537,6 +2548,8 @@ class EventSetCompiler:
                     ),
                 }
             except Exception as error:
+                if isinstance(error, BarrierE0Error):
+                    raise
                 return None, {
                     "kind": "RMG family estimate",
                     "available": False,
