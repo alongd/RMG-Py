@@ -69,6 +69,8 @@ ARCHIVED_PACK_DATABASE_SHAS = frozenset(
         "cd86d4e1c187a132109e16cd86f624ed9fb217df",
     }
 )
+ARCHIVED_J_PARA_EXTRACTION_SHA = "4a12d36fcdc193ede82c8d1ab5c1653495d445bc"
+ARCHIVED_J_PARA_COMPILE_SHA = "cd86d4e1c187a132109e16cd86f624ed9fb217df"
 ARCHIVED_PACK_DATABASE_SHA_NORMALIZED = "I037_db_repin_equivalence"
 PARA_PACK_KC = (
     1.045410027912e8,
@@ -239,8 +241,16 @@ def _normalized_archived_pack_record(record, archived_pack_event_id=None):
     assert operation.get("junction_kind") == "J_para"
     rate_source = normalized.get("rate_source")
     assert rate_source is not None
-    assert rate_source.get("database_sha") in ARCHIVED_PACK_DATABASE_SHAS
-    rate_source["database_sha"] = ARCHIVED_PACK_DATABASE_SHA_NORMALIZED
+    if "extraction_database_sha" in rate_source:
+        assert rate_source.get("extraction_database_sha") == ARCHIVED_J_PARA_EXTRACTION_SHA
+        assert rate_source.get("compile_database_sha") in ARCHIVED_PACK_DATABASE_SHAS
+        rate_source["compile_database_sha"] = ARCHIVED_PACK_DATABASE_SHA_NORMALIZED
+        rate_source.pop("database_sha", None)
+        rate_source.pop("extraction_database_sha", None)
+        rate_source["database_sha"] = rate_source.pop("compile_database_sha")
+    else:
+        assert rate_source.get("database_sha") in ARCHIVED_PACK_DATABASE_SHAS
+        rate_source["database_sha"] = ARCHIVED_PACK_DATABASE_SHA_NORMALIZED
     return normalized
 
 

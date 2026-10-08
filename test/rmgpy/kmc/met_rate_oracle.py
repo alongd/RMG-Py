@@ -4,6 +4,9 @@ from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.molecule.molecule import Molecule
 from rmgpy.reaction import Reaction
 from rmgpy.species import Species
+from rmgpy.kmc.barrier_e0 import FixedBBarrierE0Provider
+from rmgpy.kmc.reference_thermo import SharedThermoAssignment
+from rmgpy.kinetics.arrhenius import ArrheniusBM, ArrheniusEP
 
 
 def independent_termination_rates(artifact, database, temperature):
@@ -11,6 +14,15 @@ def independent_termination_rates(artifact, database, temperature):
     species_cache = {}
     estimated_rates = {}
     rates = {}
+    provenance = artifact.get("provenance", {})
+    database_sha = provenance.get("rmg_database_sha")
+    assignment = SharedThermoAssignment(database.thermo, database_sha)
+    provider_data = provenance.get("barrier_e0_provider")
+    barrier_provider = (
+        FixedBBarrierE0Provider(provider_data["B_K"])
+        if provider_data and provider_data.get("enabled")
+        else None
+    )
 
     def species(graph):
         if graph not in species_cache:
@@ -70,7 +82,23 @@ def independent_termination_rates(artifact, database, temperature):
                 return_all_kinetics=False,
             )
             assert bool(estimated_forward) == is_forward
-            estimated_rates[direct["event_id"]] = kinetics.get_rate_coefficient(
+            source_reaction = TemplateReaction(
+                reactants=direct_reactants if is_forward else direct_products,
+                products=direct_products if is_forward else direct_reactants,
+                family=direct["family"],
+                template=direct["template"].split(";") if direct["template"] else [],
+                degeneracy=direct["raw_path_degeneracy"],
+                is_forward=True,
+            )
+            assignment.assign_reaction(source_reaction)
+            evaluated = kinetics
+            if isinstance(kinetics, (ArrheniusBM, ArrheniusEP)):
+                source_reaction.kinetics = kinetics
+                if barrier_provider is not None:
+                    source_reaction, _ = barrier_provider.prepare_reaction(source_reaction)
+                source_reaction.fix_barrier_height()
+                evaluated = source_reaction.kinetics
+            estimated_rates[direct["event_id"]] = evaluated.get_rate_coefficient(
                 temperature
             )
         rate = estimated_rates[direct["event_id"]]
@@ -79,9 +107,7 @@ def independent_termination_rates(artifact, database, temperature):
                 reactants=[species(graph) for graph in direct["reactant_graphs"]],
                 products=[species(graph) for graph in direct["product_graphs"]],
             )
-            for participant in reference.reactants + reference.products:
-                if participant.thermo is None:
-                    participant.thermo = database.thermo.get_thermo_data(participant)
+            assignment.assign_reaction(reference)
             rate /= reference.get_equilibrium_constant(temperature, type="Kc")
         rates[record["event_id"]] = rate * record["ssa_multiplier"]
     return rates

@@ -24,7 +24,8 @@ def _j_para_records(records):
 def _repinned_records():
     records = _fixture_records()
     for record in _j_para_records(records):
-        record["rate_source"]["database_sha"] = next(
+        record["rate_source"]["extraction_database_sha"] = real.ARCHIVED_J_PARA_EXTRACTION_SHA
+        record["rate_source"]["compile_database_sha"] = next(
             sha
             for sha in real.ARCHIVED_PACK_DATABASE_SHAS
             if sha != "4a12d36fcdc193ede82c8d1ab5c1653495d445bc"
@@ -55,7 +56,7 @@ def test_repinned_sha_is_accepted_and_four_other_pack_records_are_exact():
 
 def test_unknown_sha_is_rejected():
     records = _repinned_records()
-    _j_para_records(records)[0]["rate_source"]["database_sha"] = "unknown"
+    _j_para_records(records)[0]["rate_source"]["compile_database_sha"] = "unknown"
     with pytest.raises(AssertionError):
         real._pack_exemptions(_artifact(records))
 

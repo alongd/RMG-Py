@@ -99,10 +99,23 @@ ARCHIVED_J_PARA_RATE_PROVENANCE = {
         "Ea_J_mol": 0.0,
         "T0_K": 1.0,
     },
-    "database_sha": "cd86d4e1c187a132109e16cd86f624ed9fb217df",
+    "extraction_database_sha": "4a12d36fcdc193ede82c8d1ab5c1653495d445bc",
+    "compile_database_sha": "cd86d4e1c187a132109e16cd86f624ed9fb217df",
     "extraction_script": "polymer-pm/reports/R-009_sources/R-009_v8_rmg_archive.py",
     "archive_record": "polymer-pm/reports/R-009_sources/R-009_v8_rmg_archive.txt",
 }
+
+
+def _thermo_assignment_identities(assignments):
+    """Return the identity-bearing part of a thermo assignment list."""
+    return tuple(
+        (
+            item.get("role"),
+            item.get("index"),
+            item.get("chemical_identity_sha256"),
+        )
+        for item in assignments or ()
+    )
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -1698,6 +1711,22 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
             or by_id[partner].get("reverse_of") != record["event_id"]
         ):
             raise ValueError("reverse_of links must be reciprocal")
+        conversion = (record.get("rate_source") or {}).get("kinetics_conversion")
+        if conversion is None:
+            conversion = (record.get("rate_source") or {}).get(
+                "forward_kinetics_conversion"
+            )
+        reference_assignments = (record.get("thermo_provenance") or {}).get(
+            "species_thermo_assignments"
+        )
+        if conversion is not None and reference_assignments is not None:
+            barrier_assignments = conversion.get("species_thermo_assignments")
+            if _thermo_assignment_identities(barrier_assignments) != _thermo_assignment_identities(
+                reference_assignments
+            ):
+                raise ValueError(
+                    "published kinetics conversion and Kc use different thermo assignments"
+                )
         if record.get("inventory_class") == "R1:J_ring":
             if partner is None or partner not in by_id:
                 raise ValueError("R1 J_ring reverse-event handle does not resolve")
