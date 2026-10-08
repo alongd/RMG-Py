@@ -46,7 +46,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from rmgpy.tools.eedf.validation import split_branches
+from rmgpy.tools.eedf.validation import _split_branches
 from rmgpy.tools.eedf.branches import (
     CERTIFICATE_LIMITS,
     CERTIFICATE_STATEMENT,
@@ -281,7 +281,7 @@ def test_two_different_scan_paths_are_not_averaged():
                 'attachment_energy_eV': np.array([0.])}
     low = [row(1.), row(2.)]
     high = [row(3.), row(4.)]
-    branches, verdict = split_branches({'up': low, 'down': high[::-1], 'cold': low},
+    branches, verdict = _split_branches({'up': low, 'down': high[::-1], 'cold': low},
                                       {'rtol': 1e-6, 'atol': 0.})
     assert len(branches) == 2
     assert not verdict['agreement']

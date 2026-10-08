@@ -54,14 +54,15 @@ class SpecError(EEDFError):
     """An incomplete or inconsistent generation specification."""
 
 
-def canonical_json(value):
+def _canonical_json(value):
     """Serialize manifest values independently of dictionary order."""
+    value = copy.deepcopy(value)
     return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
 
 
-def content_hash(value):
+def _content_hash(value):
     """Hash content, excluding no fields implicitly."""
-    return hashlib.sha256(canonical_json(value).encode()).hexdigest()
+    return hashlib.sha256(_canonical_json(value).encode()).hexdigest()
 
 
 def qualification_setup_identity(spec):
@@ -154,8 +155,9 @@ def qualification_rule_for_quantity(quantity):
     return None
 
 
-def file_hash(path):
+def _file_hash(path):
     """SHA-256 of the bytes of an input or artifact."""
+    path = Path(copy.deepcopy(path))
     with open(path, 'rb') as stream:
         digest = hashlib.sha256()
         for block in iter(lambda: stream.read(1024 * 1024), b''):
@@ -163,14 +165,14 @@ def file_hash(path):
     return digest.hexdigest()
 
 
-def check_model(manifest, current, relative_tolerance):
+def _check_model(manifest, current, relative_tolerance):
     """Check all row inputs. Repository SHAs belong only to provenance.
 
     Tg and pressure allow the explicitly recorded relative comparison tolerance.
     All other fields, including arrays and dictionary key sets, compare exactly.
     """
     stored = manifest['row_inputs']
-    if content_hash(stored) != manifest['fingerprint']:
+    if _content_hash(stored) != manifest['fingerprint']:
         raise FingerprintMismatch('manifest fingerprint')
     current = copy.deepcopy(current)
     if set(current) != set(stored):
@@ -179,7 +181,7 @@ def check_model(manifest, current, relative_tolerance):
         if key in ('Tg_K', 'P_Pa'):
             if not np.isclose(current[key], value, rtol=relative_tolerance, atol=0):
                 raise FingerprintMismatch(key)
-        elif canonical_json(current[key]) != canonical_json(value):
+        elif _canonical_json(current[key]) != _canonical_json(value):
             raise FingerprintMismatch(key)
 
 
@@ -188,7 +190,7 @@ def load_spec(path):
     path = Path(path).resolve()
     with path.open() as stream:
         spec = json.load(stream) if path.suffix == '.json' else yaml.safe_load(stream)
-    validate_spec(spec)
+    _validate_spec(spec)
     spec = copy.deepcopy(spec)
     spec['shared_objects'] = {str((path.parent / name).resolve()): digest for name, digest in spec['shared_objects'].items()}
     for key in ('binary', 'cmake_cache', 'channel_map'):
@@ -200,7 +202,7 @@ def load_spec(path):
     return spec
 
 
-def validate_spec(spec):
+def _validate_spec(spec):
     """Reject unspecified policy instead of freezing tolerances in code."""
     required = {'schema_version', 'arm', 'Tg_K', 'P_Pa', 'binary', 'shared_objects', 'cmake_cache',
                 'compiler', 'loki_commit', 'input_files', 'channel_map', 'axes',
@@ -334,21 +336,31 @@ def validate_spec(spec):
         raise SpecError('floors fields')
     if floors['rate_absolute'] <= 0 or any(v < 0 or not np.isfinite(v) for v in floors.values()):
         raise SpecError('floors')
-    if set(spec['held_out']) != {'lhs_count', 'seed', 'cell_midpoints'} or not spec['held_out']['cell_midpoints']:
+    held_out_fields = set(spec['held_out'])
+    if (held_out_fields not in ({'lhs_count', 'seed', 'cell_midpoints'},
+                                {'lhs_count', 'seed', 'cell_midpoints', 'off_centre'})
+            or not spec['held_out']['cell_midpoints']):
         raise SpecError('held_out scheme')
     if spec['held_out']['lhs_count'] < 0:
         raise SpecError('held_out lhs_count')
+    for point in spec['held_out'].get('off_centre', []):
+        if (not isinstance(point, dict) or set(point) != set(axes)
+                or any(not isinstance(point[name], (int, float)) or
+                       not np.isfinite(point[name]) or
+                       not axes[name][0] <= point[name] <= axes[name][-1]
+                       for name in axes)):
+            raise SpecError('held_out off_centre')
     if set(spec['refinement']) != {'max_rounds'} or spec['refinement']['max_rounds'] < 0:
         raise SpecError('refinement')
 
 
-def interpolant_identity():
+def _interpolant_identity():
     """Version and source hash checked at runtime."""
     from rmgpy.tools.eedf import __version__
-    return {'version': __version__, 'source_sha256': file_hash(Path(__file__).parents[2] / 'solver' / 'eedf.py')}
+    return {'version': __version__, 'source_sha256': _file_hash(Path(__file__).parents[2] / 'solver' / 'eedf.py')}
 
 
-def row_inputs(spec):
+def _row_inputs(spec):
     """Content-address the physical inputs and numerical row-generation choices."""
     result = {key: copy.deepcopy(spec[key]) for key in (
         'arm', 'Tg_K', 'P_Pa', 'loki_commit', 'axes', 'gas_properties',

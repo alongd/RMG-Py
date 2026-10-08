@@ -74,9 +74,13 @@ _OPTIONAL_BOOLEAN_FIELDS = {
 _OPTIONAL_TEXT_FIELDS = {
     'Te_eff_basis', 'discharge_state', 'scientific_status', 'wall_sheath_basis',
 }
+_QUALIFICATION_RECORD_FIELDS = {
+    'A6b-runtime', 'A6b-source', 'T10 interpolation qualification',
+}
 _BUDGET_FIELDS = (
     _REQUIRED_NUMERIC_FIELDS | _REQUIRED_VECTOR_FIELDS | _OPTIONAL_NUMERIC_FIELDS
     | _OPTIONAL_VECTOR_FIELDS | _OPTIONAL_BOOLEAN_FIELDS | _OPTIONAL_TEXT_FIELDS
+    | _QUALIFICATION_RECORD_FIELDS
     | {'Q_energy_only', 'artifact_blockers', 'electron_energy_disclosures'}
 )
 _CHANNEL_MAP_FIELDS = {
@@ -105,6 +109,9 @@ class PowerReport:
     channel_assignments: tuple = field(default_factory=tuple)
     show_excitation_channels: bool = False
     electron_energy_disclosure: str = ''
+    a6b_runtime: object = None
+    a6b_source: object = None
+    t10_interpolation_qualification: object = None
 
     def __post_init__(self, _validated):
         if _validated is not _VALIDATED_REPORT:
@@ -114,6 +121,11 @@ class PowerReport:
             records = tuple(MappingProxyType(dict(record))
                             for record in getattr(self, name))
             object.__setattr__(self, name, records)
+        for name in ('a6b_runtime', 'a6b_source',
+                     't10_interpolation_qualification'):
+            record = getattr(self, name)
+            if record is not None:
+                object.__setattr__(self, name, MappingProxyType(dict(record)))
 
     @property
     def p1(self):
@@ -123,7 +135,7 @@ class PowerReport:
         return _p1_verdict(self.closure, absorbed, self.p1_tolerance)
 
     def as_dict(self):
-        return {
+        result = {
             'rows': [dict(row) for row in self.rows],
             'excitation_channels': [dict(item) for item in self.excitation_channels],
             'closure': self.closure,
@@ -137,6 +149,15 @@ class PowerReport:
             'show_excitation_channels': self.show_excitation_channels,
             'electron_energy_disclosure': self.electron_energy_disclosure,
         }
+        for key, name in (
+                ('A6b-runtime', 'a6b_runtime'),
+                ('A6b-source', 'a6b_source'),
+                ('T10 interpolation qualification',
+                 't10_interpolation_qualification')):
+            record = getattr(self, name)
+            if record is not None:
+                result[key] = dict(record)
+        return result
 
 
 @dataclass(frozen=True)
@@ -161,6 +182,9 @@ class _ValidatedInputs:
     energy_only: dict
     channels: list
     disclosures: list
+    a6b_runtime: object
+    a6b_source: object
+    t10_interpolation_qualification: object
     qualification: str
     p1_rtol: float
 
@@ -207,6 +231,65 @@ def _single_line(value, label):
     if not isinstance(value, str) or not value or '\n' in value or '\r' in value:
         raise ReportRefusal('invalid ' + label)
     return value
+
+
+def _qualification_record(value, name):
+    """Validate one persisted qualification record as a closed structure."""
+    numeric_fields = {
+        'A6b-runtime': {
+            'numerator', 'denominator', 'relative_error', 'tolerance',
+        },
+        'A6b-source': {'tolerance', 'maximum_relative_error'},
+        'T10 interpolation qualification': set(),
+    }
+    integer_fields = {
+        'A6b-runtime': set(),
+        'A6b-source': set(),
+        'T10 interpolation qualification': {'verdict_count'},
+    }
+    nullable_text_fields = {
+        'A6b-runtime': set(),
+        'A6b-source': set(),
+        'T10 interpolation qualification': {'blocker'},
+    }
+    required = (
+        {'check', 'criterion', 'passed'} | numeric_fields[name]
+        | integer_fields[name] | nullable_text_fields[name]
+    )
+    if type(value) is not dict:
+        raise ReportRefusal(name + ' must be a structured record')
+    unknown = set(value) - required
+    missing = required - set(value)
+    if unknown or missing:
+        detail = []
+        if unknown:
+            detail.append('unknown fields ' + ', '.join(sorted(unknown)))
+        if missing:
+            detail.append('missing fields ' + ', '.join(sorted(missing)))
+        raise ReportRefusal(name + ' has ' + '; '.join(detail))
+    if value['check'] != name:
+        raise ReportRefusal(name + ' has an invalid check name')
+    normalized = {
+        'check': name,
+        'criterion': _single_line(value['criterion'], name + ' criterion'),
+    }
+    for field_name in numeric_fields[name]:
+        normalized[field_name] = _number(
+            value[field_name], name + ' ' + field_name)
+    for field_name in integer_fields[name]:
+        field_value = value[field_name]
+        if type(field_value) is not int or field_value < 0:
+            raise ReportRefusal(name + ' has an invalid ' + field_name)
+        normalized[field_name] = field_value
+    for field_name in nullable_text_fields[name]:
+        field_value = value[field_name]
+        if field_value is not None:
+            field_value = _single_line(field_value, name + ' ' + field_name)
+        normalized[field_name] = field_value
+    if type(value['passed']) is not bool:
+        raise ReportRefusal(name + ' has an invalid passed verdict')
+    normalized['passed'] = value['passed']
+    return normalized
 
 
 def _escape_markdown(value):
@@ -285,10 +368,10 @@ def _stoichiometric_side(text):
 def _reaction_class(channel):
     """Classify the two cases absent from channel.kind from declared identity."""
     identity = _declared_process(channel)
-    try:
+    if ', ' in identity:
         equation, _display_kind = identity.rsplit(', ', 1)
-    except ValueError:
-        return None
+    else:
+        equation = identity
     kind = channel.get('kind')
     equation_match = re.fullmatch(r'(.+?) (<->|->) (.+)', equation)
     if equation_match is None:
@@ -445,6 +528,11 @@ def _validate_boundary(budget, channels, qualification, p1_rtol):
             raise ReportRefusal('invalid artifact blockers')
         for blocker in budget['artifact_blockers']:
             _single_line(blocker, 'artifact blocker')
+    qualification_records = {
+        name: _qualification_record(budget[name], name)
+        if name in budget else None
+        for name in _QUALIFICATION_RECORD_FIELDS
+    }
     if numbers['P_abs'] <= 0.:
         raise ReportRefusal('P_abs must be positive')
     powers = _vector(budget['Q_inelastic_channels'], 'Q_inelastic_channels')
@@ -526,9 +614,18 @@ def _validate_boundary(budget, channels, qualification, p1_rtol):
             raise ReportRefusal('invalid core reaction position: ' + str(position))
         group_id = -1
         if classification == 'B':
-            if 'flux_group' not in channel:
-                raise ReportRefusal('channel is missing declared flux_group: ' + description)
-            flux_group = _single_line(channel['flux_group'], 'channel flux_group')
+            if 'flux_group' in channel:
+                flux_group = _single_line(
+                    channel['flux_group'], 'channel flux_group')
+            elif (all(record is not None
+                      for record in qualification_records.values())
+                  and description in energy_only):
+                # The current runtime inventory uses its exact declared
+                # description as the independently persisted B-group key.
+                flux_group = description
+            else:
+                raise ReportRefusal(
+                    'channel is missing declared flux_group: ' + description)
             if flux_group not in group_ids:
                 group_ids[flux_group] = len(group_ids)
             group_id = group_ids[flux_group]
@@ -543,7 +640,10 @@ def _validate_boundary(budget, channels, qualification, p1_rtol):
         ))
     return _ValidatedInputs(
         numbers, powers, superelastic, heavy, energy_only, normalized_channels,
-        disclosures, _qualification_text(qualification), tolerance,
+        disclosures, qualification_records['A6b-runtime'],
+        qualification_records['A6b-source'],
+        qualification_records['T10 interpolation qualification'],
+        _qualification_text(qualification), tolerance,
     )
 
 
@@ -710,7 +810,11 @@ def power_table(budget, channels, *, qualification=None, p1_rtol=1e-3):
         show_excitation_channels=(
             values['excitation'] >= _finite_product(
                 .22, numbers['P_abs'], 'excitation display threshold')),
-        electron_energy_disclosure=disclosure_text)
+        electron_energy_disclosure=disclosure_text,
+        a6b_runtime=validated.a6b_runtime,
+        a6b_source=validated.a6b_source,
+        t10_interpolation_qualification=(
+            validated.t10_interpolation_qualification))
     report.p1
     return report
 
@@ -757,12 +861,22 @@ def _reconcile_channel_labels(data, channels):
         raise ReportRefusal('persisted channel labels disagree with --channels')
 
 
+def _unique_object(pairs):
+    """Refuse duplicate persisted names before record validation."""
+    result = {}
+    for name, value in pairs:
+        if name in result:
+            raise ReportRefusal('duplicate JSON name: ' + name)
+        result[name] = value
+    return result
+
+
 def _main():
     parser = argparse.ArgumentParser()
     parser.add_argument('budget', type=Path)
     parser.add_argument('--channels', type=Path)
     args = parser.parse_args()
-    data = json.loads(args.budget.read_text())
+    data = json.loads(args.budget.read_text(), object_pairs_hook=_unique_object)
     if not isinstance(data, dict) or 'energy_budget' not in data:
         raise ReportRefusal('persisted result has no declared energy budget')
     budget = data['energy_budget']

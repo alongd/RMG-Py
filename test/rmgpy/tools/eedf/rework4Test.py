@@ -40,9 +40,9 @@ import pytest
 from rmgpy.solver.eedf import EEDFTable
 from rmgpy.tools.eedf import artifact
 from rmgpy.tools.eedf.generate import generate, model_inputs
-from rmgpy.tools.eedf.integrity import physical_properties, resolved_properties
-from rmgpy.tools.eedf.loki import LoKIDriver, enrich_row, setup_text
-from rmgpy.tools.eedf.schema import FingerprintMismatch, SpecError, file_hash
+from rmgpy.tools.eedf.integrity import _physical_properties, _resolved_properties
+from rmgpy.tools.eedf.loki import LoKIDriver, _enrich_row, _setup_text
+from rmgpy.tools.eedf.schema import FingerprintMismatch, SpecError, _file_hash
 
 helpers = runpy.run_path(str(Path(__file__).with_name('rework3Test.py')))
 fixture_table = helpers['fixture_table']
@@ -52,7 +52,7 @@ reversible_request = helpers['reversible_request']
 
 def repin(path):
     manifest = json.loads((path / 'manifest.json').read_text())
-    manifest['artifact_sha256'] = file_hash(path / 'table.h5')
+    manifest['artifact_sha256'] = _file_hash(path / 'table.h5')
     (path / 'manifest.json').write_text(json.dumps(manifest))
     return manifest['artifact_sha256']
 
@@ -122,11 +122,12 @@ def test_r4_regression_storage_is_self_contained_before_reading(tmp_path, storag
     assert not reads
 
 
-def test_r4_regression_real_reversible_table_qualifies(tmp_path):
+def test_r4_regression_real_reversible_table_passes_legacy_checks_but_awaits_t10(
+        tmp_path):
     spec, channels = reversible_request(tmp_path)
     mapping = tmp_path / 'reversible-map.json'
     mapping.write_text(json.dumps(channels))
-    spec['channel_map'] = {'path': str(mapping), 'sha256': file_hash(mapping)}
+    spec['channel_map'] = {'path': str(mapping), 'sha256': _file_hash(mapping)}
     spec['axes']['u'] = np.linspace(np.log(17), np.log(17.1), 3).tolist()
     spec['held_out']['lhs_count'] = 0
     spec['refinement']['max_rounds'] = 0
@@ -135,20 +136,23 @@ def test_r4_regression_real_reversible_table_qualifies(tmp_path):
     reverse = [c for v in manifest['held_out_verdicts'] for c in v['checks']
                if c['rule'] == 'H3' and c['quantity'] == 'k_sup:1']
     assert reverse and all(c['passed'] for c in reverse), reverse
-    assert manifest['accepted'], [v for v in manifest['held_out_verdicts'] if not v['passed']]
-    table = EEDFTable.load(path, model_inputs(spec), artifact_sha256=file_hash(path / 'table.h5'))
+    assert not manifest['accepted']
+    assert not manifest['T10 interpolation qualification']['passed']
+    table = EEDFTable.load(
+        path, model_inputs(spec), artifact_sha256=_file_hash(path / 'table.h5'),
+        require_accepted=False)
     row = table.row(np.log(17.05), {})
     assert row.k_sup[1] > 0 and row.product_fractions[1] == 0
     assert (path / 'generation_spec.json').is_file() and (path / 'validation.md').is_file()
-    from rmgpy.tools.eedf.validation import compare_row
+    from rmgpy.tools.eedf.validation import _compare_row
     # A zero product population must not hide a bad reverse coefficient.
     with h5py.File(path / 'table.h5', 'r') as h5:
         direct = {name: h5['held_out'][name][0] for name in artifact.NUMERIC}
         for name in artifact.MAPPINGS:
             direct[name] = {key: dataset[0] for key, dataset in h5['held_out'][name].items()}
-    predicted = table.row(float(direct['u']), {}).as_dict()
+    predicted = table.row(float(direct['u']), {})._as_dict()
     predicted['k_sup'][1] *= 1.1
-    checks = [c for c in compare_row(predicted, direct, manifest)
+    checks = [c for c in _compare_row(predicted, direct, manifest)
               if c['rule'] == 'H3' and c['quantity'] == 'k_sup:1']
     assert checks and not checks[0]['passed']
 
@@ -167,12 +171,12 @@ def test_r4_regression_conflicting_selector_aliases_refuse(tmp_path, property_na
             leaf.write_text(json.dumps({'states': {s.split(' = ')[0]: {'type': 'constant', 'value': float(s.split(' = ')[1])} for s in entries}}))
         else:
             leaf.write_text('\n'.join(s.replace(' = ', ' ') for s in entries) + '\n')
-        spec['input_files'][leaf.name] = {'path': str(leaf), 'sha256': file_hash(leaf), 'kind': 'property'}
+        spec['input_files'][leaf.name] = {'path': str(leaf), 'sha256': _file_hash(leaf), 'kind': 'property'}
         spec['state_properties'][property_name] = [leaf.name]
     with pytest.raises(SpecError, match='selector'):
-        physical_properties(spec)
+        _physical_properties(spec)
     with pytest.raises(SpecError, match='selector'):
-        resolved_properties(spec, {})
+        _resolved_properties(spec, {})
 
 
 @pytest.mark.parametrize('property_name', ['energy', 'statisticalWeight'])
@@ -181,7 +185,7 @@ def test_r4_regression_unsupported_state_tree_overrides_refuse(tmp_path, propert
     spec, _ = request_and_channels(tmp_path)
     spec['state_properties'][property_name] = [selector + ' = 100']
     with pytest.raises(SpecError, match='selector'):
-        resolved_properties(spec, {})
+        _resolved_properties(spec, {})
 
 
 def test_r4_regression_artifact_is_complete_when_published(tmp_path, monkeypatch):
@@ -192,7 +196,7 @@ def test_r4_regression_artifact_is_complete_when_published(tmp_path, monkeypatch
             observed.append(source)
             assert (source / 'manifest.json').is_file(), 'manifest absent at publication'
             manifest = json.loads((source / 'manifest.json').read_text())
-            assert manifest['artifact_sha256'] == file_hash(source / 'table.h5')
+            assert manifest['artifact_sha256'] == _file_hash(source / 'table.h5')
             assert Path(target).name == manifest['artifact_sha256']
         return original(source, target)
     monkeypatch.setattr(Path, 'rename', rename)
@@ -204,7 +208,7 @@ def test_r4_regression_incomplete_artifact_has_named_refusal(tmp_path):
     path, model = fixture_table(tmp_path)
     (path / 'manifest.json').unlink()
     with pytest.raises(FingerprintMismatch, match='manifest'):
-        EEDFTable.load(path, model, artifact_sha256=file_hash(path / 'table.h5'))
+        EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'))
 
 
 def test_r4_regression_manifest_failure_does_not_publish(tmp_path, monkeypatch):
@@ -225,21 +229,21 @@ def test_resolved_single_alias_matches_real_loki(tmp_path, alias):
     spec['state_properties']['population'] = [alias + ' = 1']
     spec['state_properties']['statisticalWeight'] = [alias + ' = 1', 'Ar(3P2) = 5']
     spec['state_properties']['energy'] = [alias + ' = 0']
-    row = enrich_row(LoKIDriver(spec).run({}, [17.], 'single-alias')[0], channels, spec)
+    row = _enrich_row(LoKIDriver(spec).run({}, [17.], 'single-alias')[0], channels, spec)
     assert row['state_populations'] == {'Ar(1S0)': 1.}
-    from rmgpy.tools.eedf.moments import distribution_moments
-    moments = distribution_moments(dict(row, gas_temperature_K=spec['Tg_K']), channels)
+    from rmgpy.tools.eedf.moments import _distribution_moments
+    moments = _distribution_moments(dict(row, gas_temperature_K=spec['Tg_K']), channels)
     assert moments['k_sup'][1] == pytest.approx(row['k_sup'][1], rel=1e-6)
 
 
 def test_writer_refuses_external_storage_before_publication(tmp_path, monkeypatch):
-    original = artifact.write_rows
+    original = artifact._write_rows
     def write(group, rows):
         original(group, rows)
         data = group['k_ine'][...]
         del group['k_ine']
         group.create_dataset('k_ine', data=data, external=[(str(tmp_path / 'rates.raw'), 0, h5py.h5f.UNLIMITED)])
-    monkeypatch.setattr(artifact, 'write_rows', write)
+    monkeypatch.setattr(artifact, '_write_rows', write)
     with pytest.raises(FingerprintMismatch, match='HDF5 storage'):
         fixture_table(tmp_path / 'tables')
     assert list((tmp_path / 'tables').iterdir()) == []
@@ -253,8 +257,10 @@ def real_forward_table(tmp_path_factory):
     spec['held_out']['lhs_count'] = 0
     spec['refinement']['max_rounds'] = 0
     path = generate(spec)
-    pin = file_hash(path / 'table.h5')
-    EEDFTable.load(path, model_inputs(spec), artifact_sha256=pin)
+    pin = _file_hash(path / 'table.h5')
+    EEDFTable.load(
+        path, model_inputs(spec), artifact_sha256=pin,
+        require_accepted=False)
     return path, model_inputs(spec)
 
 
@@ -281,6 +287,7 @@ def test_r4_regression_real_qualified_storage_refuses(tmp_path, real_forward_tab
     pin = repin(path)
     if storage == 'external_raw':
         raw.write_bytes((rates * 1e6).tobytes())
-    assert file_hash(path / 'table.h5') == pin
+    assert _file_hash(path / 'table.h5') == pin
     with pytest.raises(FingerprintMismatch, match='HDF5 storage'):
-        EEDFTable.load(path, model, artifact_sha256=pin)
+        EEDFTable.load(
+            path, model, artifact_sha256=pin, require_accepted=False)

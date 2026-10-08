@@ -24592,21 +24592,13 @@
       ],
       "source_sha256": "a1d5a1d65063f91c7eca0a1dc7512ea9769f3ff1371843d2d1ee85bb9a6a7e29"
     },
-    "rmgpy/solver/eedf.py:EEDFRow.as_dict": {
-      "verdict": "carried",
-      "reason": "Consumes already assigned species models and reaction rates while evolving populations. No independent thermo/group-template acquisition; reaction/species identity is retained in model arrays.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "7366167f5f3df0464f5e10a0553ae55b76bd18bed120e32ca5233def15091bfe"
-    },
     "rmgpy/solver/eedf.py:EEDFTable._check_population_rows": {
       "verdict": "carried",
       "reason": "Consumes already assigned species models and reaction rates while evolving populations. No independent thermo/group-template acquisition; reaction/species identity is retained in model arrays.",
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "c4dc796de3b8e7a1d2abcd9f7c047c90c258aff1d9dba18b93d471147ae4c590"
+      "source_sha256": "aa8fa81af5d89c3d1a55790c5648239a6790b3f3baf5f6aaeddfc1f65dc4fbf8"
     },
     "rmgpy/solver/eedf.py:EEDFTable._read_branch": {
       "verdict": "carried",
@@ -24614,7 +24606,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "a9c33cf7733e7077d784744ef3cadb0057274cbb5004c58c0087949933093cd5"
+      "source_sha256": "471590616d202c6e8ca07ac2fdfdc5790bec3abf717d4b2fa6bcb0300887120a"
     },
     "rmgpy/solver/eedf.py:EEDFTable._read_branch.append": {
       "verdict": "carried",
@@ -24624,21 +24616,13 @@
       ],
       "source_sha256": "fdc5f302072de18778fb44694b6d35fa83eb4766473326a6a7aa6137d743d335"
     },
-    "rmgpy/solver/eedf.py:EEDFTable.domain_check": {
-      "verdict": "carried",
-      "reason": "Consumes already assigned species models and reaction rates while evolving populations. No independent thermo/group-template acquisition; reaction/species identity is retained in model arrays.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "abf623c90e3efb80c1ebf88690597fe9e44106ddf52661f81377b6f9ec3aba7e"
-    },
     "rmgpy/solver/eedf.py:EEDFTable.load": {
       "verdict": "carried",
       "reason": "Consumes already assigned species models and reaction rates while evolving populations. No independent thermo/group-template acquisition; reaction/species identity is retained in model arrays.",
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "37abc5304a19d295132b498345d7976c647bd5a134c142ef95474ed1bfd88ec7"
+      "source_sha256": "abe8ef89eb89bed2aa2d3bedcfd57420b757541ac7e78008c0dfccaa1ffc78b2"
     },
     "rmgpy/solver/eedf.py:EEDFTable.row": {
       "verdict": "carried",
@@ -24646,7 +24630,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "1c8805ddf6827ae5c756923e521c84317bd6a0034351afbcf7aeafb550a9e57b"
+      "source_sha256": "c907675d54051061540c062d5b46751c2c8d3a0a21a9ffdd649b961fe0799684"
     },
     "rmgpy/solver/eedf.py:EEDFTable.row.take": {
       "verdict": "carried",
@@ -24962,7 +24946,7 @@
       ],
       "source_sha256": "35b39d32f28f3d19bc051e244671fac742bee9998b554378f2bc5c43ad194ae9",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1042
+      "line": 1043
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.__reduce__": {
       "verdict": "carried",
@@ -24973,7 +24957,7 @@
       ],
       "source_sha256": "3dea0685a3d8e46ea8333c11ab27f82a14a09e98f9ab3f073394e05f9dd51cb0",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4926
+      "line": 4909
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._apply_wall_jacobian": {
       "verdict": "carried",
@@ -24984,7 +24968,7 @@
       ],
       "source_sha256": "cf3a597c6ec01946154b6a35fceed8f9618b239361873169048812905c6779e7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8974
+      "line": 8957
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._apply_wall_terms": {
       "verdict": "carried",
@@ -24995,7 +24979,7 @@
       ],
       "source_sha256": "37fcbbc91b167ffdeeb73d5f5664d813675dfd03ec015dac6da7b4176cea76d3",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8702
+      "line": 8685
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._bath_amounts": {
       "verdict": "carried",
@@ -25005,7 +24989,7 @@
       ],
       "source_sha256": "351b1eb1bbed5215f143db9a099c48f1b4e882556ab3a7c074585eef0aa54243",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6683
+      "line": 6666
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._blanc_combine": {
       "verdict": "carried",
@@ -25015,7 +24999,7 @@
       ],
       "source_sha256": "908072764c7cb0b1d6046588eb1e24af84429e48f01135a7ef15b5690f3c2245",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6693
+      "line": 6676
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_accepted_plasma_domain": {
       "verdict": "carried",
@@ -25026,7 +25010,7 @@
       ],
       "source_sha256": "07810bde68722a94916fe417822ea026ab53ad0f20274dc5ead965825e4702f9",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3918
+      "line": 3930
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_bath_threshold": {
       "verdict": "carried",
@@ -25036,7 +25020,7 @@
       ],
       "source_sha256": "e31157e55d55bb20a64b65b69d54fd239923e3028f5aded4892fc744f287d6ff",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6779
+      "line": 6762
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_charged_species_thermo_provenance": {
       "verdict": "carried",
@@ -25047,7 +25031,7 @@
       ],
       "source_sha256": "5d8063479e4011babd85fa764538de28ce2719573e59c680e24f8854824ae7f5",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5202
+      "line": 5185
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_en_complete_operator": {
       "verdict": "carried",
@@ -25058,7 +25042,7 @@
       ],
       "source_sha256": "686762ab9d5000a63f671ac7508ddef340bac60c7f08fe4ef288dff298ef86fd",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7442
+      "line": 7425
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_en_transport_parameters": {
       "verdict": "carried",
@@ -25069,7 +25053,7 @@
       ],
       "source_sha256": "52478a9302d98bccd91fdf7d3f1e2f912e30b57bbd629791794f56da5c2b88cf",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2044
+      "line": 2045
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_en_wall_domain": {
       "verdict": "carried",
@@ -25080,7 +25064,7 @@
       ],
       "source_sha256": "e3aa85e87fdffb11f0949ad2904dfd698c4696f29464ea73317afddd9ce5fdfc",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4025
+      "line": 4037
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_energy_state": {
       "verdict": "carried",
@@ -25091,7 +25075,7 @@
       ],
       "source_sha256": "8c10955c00473dac76a72abbcdcc39e1183ccee343a82bfd698012826d234496",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3350
+      "line": 3351
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_plasma_energy_parameters": {
       "verdict": "carried",
@@ -25102,7 +25086,7 @@
       ],
       "source_sha256": "9356d8d1417d5a15005f947a24d34ce8edd80d5fb664616ec3c234e49a31bb53",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2087
+      "line": 2088
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_plasma_rate_parameters": {
       "verdict": "carried",
@@ -25113,7 +25097,7 @@
       ],
       "source_sha256": "34c4e4179a7821ea11f6a3f243959308cab86ec0c7df138d8536948897f41a37",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2109
+      "line": 2110
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_rate_temperature_exponent": {
       "verdict": "carried",
@@ -25124,7 +25108,7 @@
       ],
       "source_sha256": "3fce636dc9fa402e816fcb6a9b920fff986d63375bbd7d0ff265c2ea07901cc5",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2063
+      "line": 2064
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_anion_transport_data": {
       "verdict": "carried",
@@ -25135,7 +25119,7 @@
       ],
       "source_sha256": "2a44ec3f0920f2d5753de2a7f709db9c283687184ece533865d6e5da8795ad69",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7278
+      "line": 7261
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_electronegative_wall_jacobian": {
       "verdict": "carried",
@@ -25146,7 +25130,7 @@
       ],
       "source_sha256": "ea322a0b1d22bfa00d6d75414c871157222c8f1087d618cdfa556128d708e36e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4045
+      "line": 4057
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_ion_wall_components": {
       "verdict": "carried",
@@ -25157,7 +25141,7 @@
       ],
       "source_sha256": "407f7c56afc8cc5b030215cb45532cc8927534db51b3e9ea1cba86da3f525584",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1535
+      "line": 1536
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_mixture_reduced_mobilities": {
       "verdict": "carried",
@@ -25168,7 +25152,7 @@
       ],
       "source_sha256": "3476989827ff843114a6a5ae739ca9ca0cd5e82338c48653b126f954415aa221",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6732
+      "line": 6715
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_neutral_wall_frequencies": {
       "verdict": "carried",
@@ -25179,7 +25163,7 @@
       ],
       "source_sha256": "09b5b8ebf8813b168513b6ce4f4d1478b346c4d38c1c5b50c5b795aa8eeed343",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7019
+      "line": 7002
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_nu_wall": {
       "verdict": "carried",
@@ -25190,7 +25174,7 @@
       ],
       "source_sha256": "43d9ecea7510d036dc30fd0d6912391b5f9703b5ef7f6bb5efeaaa37d00367d1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6872
+      "line": 6855
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_nu_wall_per_ion": {
       "verdict": "carried",
@@ -25201,7 +25185,7 @@
       ],
       "source_sha256": "2813061e0789fb7c03b84f90d9290b2a8983ebe5cab1c726dfee6182e6f0c62e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6962
+      "line": 6945
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data": {
       "source_sha256": "a842358f1f3942615bfaa765e9ad8ca35cb156f70184d80d25a0f049057597b4",
@@ -25213,7 +25197,7 @@
         "test/rmgpy/yaml_writer/excitedExportRework10Test.py"
       ],
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7326
+      "line": 7309
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_bath_transport": {
       "verdict": "carried",
@@ -25223,7 +25207,7 @@
       ],
       "source_sha256": "2fac5ef9b77d66b1217485eb067cec606e5f4b35746cb278bc336594ca465c9e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2169
+      "line": 2170
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_electronegative_wall": {
       "verdict": "carried",
@@ -25234,7 +25218,7 @@
       ],
       "source_sha256": "e2e7f0860472ac174279f15ca2e061783abc7a8d1a324ebc95eeef6b6277b786",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1438
+      "line": 1439
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_energy_balance": {
       "verdict": "carried",
@@ -25245,7 +25229,7 @@
       ],
       "source_sha256": "5e80d29316bd0552c7fa0334dd3cdac982309193e6a34328a1958885f6af565f",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2441
+      "line": 2442
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_energy_balance._si": {
       "verdict": "carried",
@@ -25255,7 +25239,7 @@
       ],
       "source_sha256": "09ffc4a80e05ef5295d7887b902f7ddec311edf801312a66c4d5cdffff41b581",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2553
+      "line": 2554
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_neutral_wall_diffusion": {
       "verdict": "carried",
@@ -25265,7 +25249,7 @@
       ],
       "source_sha256": "c7c46479bddd4b067744c08237c41140065ed078cbdb2a76fc247596acce7cb4",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2307
+      "line": 2308
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_wall": {
       "verdict": "carried",
@@ -25276,7 +25260,7 @@
       ],
       "source_sha256": "c9be6c009e7f3d2e6ba3f66772a7f371c69a2b2170baf989606551bb408259bb",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1555
+      "line": 1556
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._declared_entry_kinetics": {
       "verdict": "carried",
@@ -25286,7 +25270,7 @@
       ],
       "source_sha256": "c2cd79968dc9b0faee71b43b9f294e029d0c6b9bf21542ec09ba11440f8954e7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2682
+      "line": 2683
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._derive_mobility_entry": {
       "verdict": "carried",
@@ -25297,7 +25281,7 @@
       ],
       "source_sha256": "0f3e88b11d68b9ba9431f5713fe5fd52a87bc1b807e57a0e1987db0a4f7b0b4e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2130
+      "line": 2131
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._electron_energy_row": {
       "verdict": "carried",
@@ -25308,7 +25292,7 @@
       ],
       "source_sha256": "9327dd3f27913813fce264abf10b77fe34fb0497d44c48a6cdea2b8ce0c192f9",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3368
+      "line": 3369
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._electronegative_wall_factor": {
       "verdict": "carried",
@@ -25319,7 +25303,7 @@
       ],
       "source_sha256": "367a6e3f2ead92bda3d0e014bf310cde76e29e70ff1a27da425f98267a86b333",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1518
+      "line": 1519
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_chemical_energy": {
       "verdict": "carried",
@@ -25330,7 +25314,7 @@
       ],
       "source_sha256": "a584f0fc02473636a1c883377041ca41069079c579acd5f9e8c6d9021140b157",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4200
+      "line": 4212
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_energy_jacobian": {
       "verdict": "carried",
@@ -25341,7 +25325,7 @@
       ],
       "source_sha256": "5680c0f6f877e4ad306018ba4c54506e4528db452785c46ba56cc7093a73163e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4296
+      "line": 4308
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_floating_shift": {
       "verdict": "carried",
@@ -25352,7 +25336,7 @@
       ],
       "source_sha256": "2c952da3fe5004875481952193a29941b0a44c75e63afcee82c0a523dbcb1fe8",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3686
+      "line": 3698
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_net_rows": {
       "verdict": "carried",
@@ -25363,7 +25347,7 @@
       ],
       "source_sha256": "1e05326612e95ba9dd36ac149e5e44fd46a3cb5ee77ed090205db45b3ef3dd78",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4172
+      "line": 4184
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_other_pressure_volumes": {
       "verdict": "carried",
@@ -25374,7 +25358,7 @@
       ],
       "source_sha256": "35e0d8c586f743bde15e97997cdc737e68248b5dc4bc920d1874a4ff5f78fda0",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4156
+      "line": 4168
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_product": {
       "verdict": "carried",
@@ -25385,7 +25369,7 @@
       ],
       "source_sha256": "da870c8c8f13b520481854ee99ccac3e3766225629fb7af57b1f8b80db47af71",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4145
+      "line": 4157
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_signed_energy_cost": {
       "verdict": "carried",
@@ -25396,7 +25380,7 @@
       ],
       "source_sha256": "82e0028d777a62764740d985ac24191178badc98405a3ffa9ad173e160ba446c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4177
+      "line": 4189
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_wall_linearization": {
       "verdict": "carried",
@@ -25407,7 +25391,7 @@
       ],
       "source_sha256": "362174a118cfec67c9b171017a7a59ee4c587a40f7f19e19852f65232e51141a",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3712
+      "line": 3724
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._energy_jacobian": {
       "verdict": "carried",
@@ -25418,7 +25402,7 @@
       ],
       "source_sha256": "51f6c0298866adc64259800274133b5de76801992777b65a7e2ae13d1043149d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4449
+      "line": 4461
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "source_sha256": "580034bb7b74be8687f63a2476e9c2e8659d040b5bed5d125feeb2f77ce8a7b2",
@@ -25430,7 +25414,7 @@
         "test/rmgpy/yaml_writer/excitedExportRework10Test.py"
       ],
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7456
+      "line": 7439
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime.<lambda1>": {
       "verdict": "carried",
@@ -25441,7 +25425,7 @@
       ],
       "source_sha256": "dc8d3d0289ab1cd09cfe3d20d1336a11650e47a53a15049caa8fa268e6c3a96c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7548
+      "line": 7531
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_two_temperature_rate_coefficient": {
       "verdict": "carried",
@@ -25452,7 +25436,7 @@
       ],
       "source_sha256": "de5b1659639bd76c2cb42803d669b816682a0994a81dc4f5e9341ce956b785db",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5808
+      "line": 5791
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._extinction_persistence_time": {
       "verdict": "carried",
@@ -25463,7 +25447,7 @@
       ],
       "source_sha256": "688f7080ad3b96a37774e9eb77978c1915d1cf270996638c39292acba0cd7911",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4654
+      "line": 4666
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._finite_en_state": {
       "verdict": "carried",
@@ -25474,7 +25458,7 @@
       ],
       "source_sha256": "a93c727e39ae782f22b96719af719a6c4ca7f3e199f6e69934d036158f9b86a9",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3683
+      "line": 3695
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._identity": {
       "verdict": "carried",
@@ -25484,7 +25468,7 @@
       ],
       "source_sha256": "e7a830046939188672342f36e246ad316a48bf19555c7da27ed9f1251f57f237",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4916
+      "line": 4899
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._initialize_model": {
       "verdict": "carried",
@@ -25495,7 +25479,7 @@
       ],
       "source_sha256": "3c6c650e0a5ba679e19631a964f8d08c28552829a0b20eaa7cd842a70dca9b7c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5011
+      "line": 4994
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_energy_budget": {
       "verdict": "carried",
@@ -25504,9 +25488,7 @@
         "rmgpy/solver/plasma.pyx",
         "test/rmgpy/solver/plasmaElectronegativeRework7Test.py"
       ],
-      "source_sha256": "4e14ca2ff6a1f986e13d296103be9c83d0cf4f8eb7bf2c91eec8d8da17d73123",
-      "file": "rmgpy/solver/plasma.pyx",
-      "line": 4491
+      "source_sha256": "5299b05dab135cf014279cb7368ef557bd366ef3ab229290c021f0471e28c814"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_wall_diagnostics": {
       "verdict": "carried",
@@ -25517,7 +25499,7 @@
       ],
       "source_sha256": "94c751e7b8cf1a8c6942ad5d1f3b1e0a19bb8e45fc9e92b61bcc1c5e9c1ffafc",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7647
+      "line": 7630
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._needs_electron_placement": {
       "verdict": "carried",
@@ -25527,7 +25509,7 @@
       ],
       "source_sha256": "bc80e99e00b47914ecd43678788a5c2ea853322b0ea2bb5b60b7a257572f3d5a",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5341
+      "line": 5324
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._net_charge": {
       "verdict": "carried",
@@ -25537,7 +25519,7 @@
       ],
       "source_sha256": "18d47a3f8555bc04c638c43374cb2a29f73e91f67797e0ec93cbf3e4910b5489",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8662
+      "line": 8645
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._neutral_dn_effective": {
       "verdict": "carried",
@@ -25547,7 +25529,7 @@
       ],
       "source_sha256": "945a6e9117ee335f27ca90a165e39f2d449f480973dd23e4baca67bb5f33f6df",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7040
+      "line": 7023
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._neutral_dn_value": {
       "verdict": "carried",
@@ -25558,7 +25540,7 @@
       ],
       "source_sha256": "0fe2725d48a9cea09a982b1497648bd593d7bc766bd710850ad9bcb6e81c0347",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2246
+      "line": 2247
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._neutral_wall_scale": {
       "verdict": "carried",
@@ -25568,7 +25550,7 @@
       ],
       "source_sha256": "c2e7196db5c5e62c996a916ff28c16d35a5431a44d142c4567b56640a4a5be4b",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7001
+      "line": 6984
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._prepare_public_wall_state": {
       "verdict": "carried",
@@ -25579,7 +25561,7 @@
       ],
       "source_sha256": "81cdf4c1d01d4e6f4f3ce2b9f1ba437f7dc051e530190f7cd29b531e17644455",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4130
+      "line": 4142
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._record_electronegative_wall_output": {
       "verdict": "carried",
@@ -25590,7 +25572,7 @@
       ],
       "source_sha256": "fc0116c2daa8788dd65808e124603a7fcb08e05346915a8fb8fdff469f64e163",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1426
+      "line": 1427
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._refresh_electron_temperature_rates": {
       "verdict": "carried",
@@ -25601,7 +25583,7 @@
       ],
       "source_sha256": "1ab6ab19d36c9ebbf4fc2e7cdef2f554d743e20f93d47068715aba106212eec1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3304
+      "line": 3305
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._rekey_reaction_index_to_model": {
       "verdict": "carried",
@@ -25612,7 +25594,7 @@
       ],
       "source_sha256": "471de832c580787ca755ff1d34de028ef990396aed39674ab6f94df735333811",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5263
+      "line": 5246
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._requires_en_steps": {
       "verdict": "carried",
@@ -25623,7 +25605,7 @@
       ],
       "source_sha256": "08f9f4a01c06ec3ac4922fcd6409970d28f29858111f9cf456d260cfc3baa354",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8054
+      "line": 8037
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_bath_transport": {
       "verdict": "carried",
@@ -25633,7 +25615,7 @@
       ],
       "source_sha256": "c7d753bf222fba1fb120f7b2e8319461bd1acacfaa02c5826de7a350d0dfa6a8",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6461
+      "line": 6444
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_declared_neutral": {
       "verdict": "carried",
@@ -25643,7 +25625,7 @@
       ],
       "source_sha256": "eba8f7a4fdc5fd4357c6d0157a0cc877e8714fcbc4c7ecbc0f48e1530646e488",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6825
+      "line": 6808
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_electron_placements": {
       "verdict": "carried",
@@ -25653,7 +25635,7 @@
       ],
       "source_sha256": "6286ac23ebad36f6c911ca918467e658246f56dc2911ce678435e293e9502c59",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5278
+      "line": 5261
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_energy_balance": {
       "verdict": "carried",
@@ -25663,7 +25645,7 @@
       ],
       "source_sha256": "6ad9cce7e7988595fa52911460cba0eac73f39afd567bd8e4eea293bdb9b0221",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2701
+      "line": 2702
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_neutral_wall_diffusion": {
       "verdict": "carried",
@@ -25673,7 +25655,7 @@
       ],
       "source_sha256": "6e4dbdda1453060a91753075b1bb49ce9adb119e368c15d8e0c35bc5c2547629",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6349
+      "line": 6332
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_wall_state": {
       "verdict": "carried",
@@ -25684,7 +25666,7 @@
       ],
       "source_sha256": "502da96152615f02f352b138f42073a3c4e1252cb12a2c745c65099de0b7c346",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5945
+      "line": 5928
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._set_charge_row_scale": {
       "verdict": "carried",
@@ -25694,7 +25676,7 @@
       ],
       "source_sha256": "a652c14a0cf96284129b1996cd677054bb1ec1d9d838a553804ce21af9c3d693",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8624
+      "line": 8607
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._skeleton_key": {
       "verdict": "carried",
@@ -25704,7 +25686,7 @@
       ],
       "source_sha256": "3da7ae9e57730dca6aa8590ae5f2bd784279e2b3dc4810473071ff6833cc3f00",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5899
+      "line": 5882
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._source_total_at_volume": {
       "verdict": "carried",
@@ -25714,7 +25696,7 @@
       ],
       "source_sha256": "17df4e55851f05b08b9ab6111643053dda79648efb8902f4020e7fa0e3c96ef3",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8671
+      "line": 8654
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._species_enthalpy": {
       "verdict": "carried",
@@ -25724,7 +25706,7 @@
       ],
       "source_sha256": "c4742bb032637b024d447f494eada5032e7e4a4b341bd2a11f91ef417d3be832",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6811
+      "line": 6794
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._sync_electron_temperature": {
       "verdict": "carried",
@@ -25735,7 +25717,7 @@
       ],
       "source_sha256": "99d3cc18055249920f772d7334f349858f464f58680b6e76e9d50e6c1aa9a718",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3287
+      "line": 3288
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._update_terminal_state": {
       "verdict": "carried",
@@ -25746,7 +25728,7 @@
       ],
       "source_sha256": "32a75a55c5e8820f9e037501e8a44cd71ae6630bbaf2dbcc294e979cc4d8705c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4695
+      "line": 4707
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._validate_electron_state": {
       "verdict": "carried",
@@ -25756,7 +25738,7 @@
       ],
       "source_sha256": "c2996008c7728cff44002ed14299ea1bdf8ad1f7c0e62ae875a02607ff5224d3",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5391
+      "line": 5374
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._validate_reactions": {
       "verdict": "carried",
@@ -25767,7 +25749,7 @@
       ],
       "source_sha256": "71f9baeec7551ed81819cc54319bd1043970e1b8a2bd561334cda5f371935a1e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5654
+      "line": 5637
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._warn_if_balance_ion_unreachable": {
       "verdict": "carried",
@@ -25777,7 +25759,7 @@
       ],
       "source_sha256": "80a02165a9600004aafde48745e4bafd319c8a769f23bfabf793f821ff29d4bc",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5571
+      "line": 5554
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._warn_if_not_charge_neutral": {
       "verdict": "carried",
@@ -25787,7 +25769,7 @@
       ],
       "source_sha256": "c551b1f412af07547c34e7e9179a34817f05333faef91dbc7e75f276dbebccf4",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5495
+      "line": 5478
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.advance": {
       "verdict": "carried",
@@ -25798,7 +25780,7 @@
       ],
       "source_sha256": "592040e6677c22a992ef56289350b413b4fa56a1875fb8585560f068b266f47f",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8105
+      "line": 8088
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.check_wall_support": {
       "verdict": "carried",
@@ -25809,7 +25791,7 @@
       ],
       "source_sha256": "22dfb153c61f47eddc938fa07472f5bac8a7f282f789fef3dcf8b6e53c4a9fe7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7055
+      "line": 7038
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_anion_transport_data": {
       "verdict": "carried",
@@ -25820,7 +25802,7 @@
       ],
       "source_sha256": "eaf0e04640f545d63ef051cae5c078e366cc47833db3eb3893ca9e5d7cfd09eb",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3903
+      "line": 3915
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_anion_transport_frequencies": {
       "verdict": "carried",
@@ -25831,7 +25813,7 @@
       ],
       "source_sha256": "adf4a08b9100706aa5181c22ef702002f70367479fbb402b40da8883c83f3d0a",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7321
+      "line": 7304
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_electronegative_wall_jacobian": {
       "verdict": "carried",
@@ -25842,7 +25824,7 @@
       ],
       "source_sha256": "1ac060abd0030ca483d8169264b9ecdbb442cc2728f2c0463e2cc52f933f4c9e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3913
+      "line": 3925
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_ion_wall_components": {
       "verdict": "carried",
@@ -25853,7 +25835,7 @@
       ],
       "source_sha256": "a20459d1e1554d41d2a5df09871a294dade74577ef24407de5db342781058906",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1530
+      "line": 1531
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_ion_wall_frequencies": {
       "verdict": "carried",
@@ -25864,7 +25846,7 @@
       ],
       "source_sha256": "9be7565e837ce38bd23e5d6b52e4f2272c755ec15b3eb435b86539a1cd586e77",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6758
+      "line": 6741
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_mixture_reduced_mobilities": {
       "verdict": "carried",
@@ -25875,7 +25857,7 @@
       ],
       "source_sha256": "89745ef6c44471db07ea06adaa79c431c1a6f178e262a4c0efe7c83f6e006c1b",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3888
+      "line": 3900
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_neutral_wall_frequencies": {
       "verdict": "carried",
@@ -25886,7 +25868,7 @@
       ],
       "source_sha256": "443f0a6c2b049c9e70019b79f92575c687064b00c01c3d7699ec0eed384dbf70",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3898
+      "line": 3910
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_nu_wall": {
       "verdict": "carried",
@@ -25897,7 +25879,7 @@
       ],
       "source_sha256": "bdd64bec4df4a790e2c7f26b4bab6958207eb463bcd2e9b1be1cc3959faeca78",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3893
+      "line": 3905
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_reference_reaction_data": {
       "verdict": "carried",
@@ -25908,7 +25890,7 @@
       ],
       "source_sha256": "147a8fdf954f834ffae16a149a788b42ec28346c312fbd373be1c9184954fb05",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3908
+      "line": 3920
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_volume": {
       "verdict": "carried",
@@ -25918,7 +25900,7 @@
       ],
       "source_sha256": "923d3f66687b52c5759bef3d8c3bb97e152270c2963a5d4c02d0c5cbea16f9a8",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8191
+      "line": 8174
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.convert_initial_keys_to_species_objects": {
       "verdict": "carried",
@@ -25928,7 +25910,7 @@
       ],
       "source_sha256": "6bc70da1dd75bbbf8e90b52e5c3f328cec6190a293a1fa35b180fa5af59b97f6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4899
+      "line": 4882
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.discharge_state": {
       "verdict": "carried",
@@ -25938,7 +25920,7 @@
       ],
       "source_sha256": "362f0b21e94c9fc87a1c9397def82848b47b9f3dcd59de1297cf0519c068a7b7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4890
+      "line": 4873
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_factor": {
       "verdict": "carried",
@@ -25949,7 +25931,7 @@
       ],
       "source_sha256": "1051183fa37bb0c1b7e7436ca0041471026beed9aff70204dd93a1cbca812cde",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3883
+      "line": 3895
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_manifest": {
       "source_sha256": "930c41d4425f7560cd375679ca8c25d2f76e0c64e3b049803c5a2384dc5c94b6",
@@ -25961,7 +25943,7 @@
         "test/rmgpy/yaml_writer/excitedExportRework10Test.py"
       ],
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1249
+      "line": 1250
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_qualification": {
       "verdict": "carried",
@@ -25972,7 +25954,7 @@
       ],
       "source_sha256": "f3d00cf270964d44a13dfac8752b09fcc435b0f19b316abcf81a7aa64bb122d6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1244
+      "line": 1245
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.evaluate_two_temperature_rate_coefficient": {
       "verdict": "carried",
@@ -25983,7 +25965,7 @@
       ],
       "source_sha256": "fa6b107e24f8900011faedbd1bd3128b4bb4933d9d5305f9add9ebeff788709e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5801
+      "line": 5784
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.extinction_persistence_time": {
       "verdict": "carried",
@@ -25994,7 +25976,7 @@
       ],
       "source_sha256": "06ab13c43df533100701d62bf4ccfd11f5141d2f33076129c47f4d06c81c1d81",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4649
+      "line": 4661
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.generate_rate_coefficients": {
       "verdict": "carried",
@@ -26005,7 +25987,7 @@
       ],
       "source_sha256": "89627409d89829407c0d3eaae17ff6687ca3bb40d396874db058afdf44157249",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5825
+      "line": 5808
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.get_non_chemical_char_rate": {
       "verdict": "carried",
@@ -26016,7 +25998,7 @@
       ],
       "source_sha256": "0531dcd246d3f1da4b35dc7f7e2c60f0307236675c21bdde9cfab9a4076b3bc6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7864
+      "line": 7847
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.initialize_model": {
       "verdict": "carried",
@@ -26026,7 +26008,7 @@
       ],
       "source_sha256": "65b1bf50a7d078123070715d64c9efe3ab0716564349069495ce42d75e2300b8",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4991
+      "line": 4974
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.ion_reduced_mobilities": {
       "verdict": "carried",
@@ -26036,7 +26018,7 @@
       ],
       "source_sha256": "f3d00cf270964d44a13dfac8752b09fcc435b0f19b316abcf81a7aa64bb122d6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4921
+      "line": 4904
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.jacobian": {
       "verdict": "carried",
@@ -26046,7 +26028,7 @@
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8808
+      "line": 8791
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.monitor_electronegative_wall": {
       "verdict": "carried",
@@ -26057,7 +26039,7 @@
       ],
       "source_sha256": "121f2d1d7eb0d29fa573327560fd21654abec74cdea8d44ecf24a1af55e18db5",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7384
+      "line": 7367
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.residual": {
       "verdict": "carried",
@@ -26067,7 +26049,7 @@
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8372
+      "line": 8355
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.set_initial_conditions": {
       "verdict": "carried",
@@ -26077,7 +26059,7 @@
       ],
       "source_sha256": "cd5b712cc4d86a4bd084272fa48dc7c7c0dd8fe8344fcfb395589e0080ebc23d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8221
+      "line": 8204
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.steady_state_external_armed": {
       "verdict": "carried",
@@ -26088,7 +26070,7 @@
       ],
       "source_sha256": "5ee10b2d085e7dcc9a64923be8017f49a5dcf070360f22807626d0c0197e9876",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7966
+      "line": 7949
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.steady_state_external_residual": {
       "verdict": "carried",
@@ -26099,7 +26081,7 @@
       ],
       "source_sha256": "4e7474761c9a927ad41603b13742de1e35f8ab405b02613190c6b70968e1bd45",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7909
+      "line": 7892
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.steady_state_relaxation_time": {
       "verdict": "carried",
@@ -26110,7 +26092,7 @@
       ],
       "source_sha256": "dd5aafab8edeea93d35ae1747c630ad8ae99cbc1d7ae418458f1851e1606ac47",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8002
+      "line": 7985
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.step": {
       "verdict": "carried",
@@ -26121,7 +26103,7 @@
       ],
       "source_sha256": "81d2c1e4716c880003d85d3af58ea46ca9f8025deb782e3a0087332c80584d7d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8165
+      "line": 8148
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.terminal_state": {
       "verdict": "carried",
@@ -26131,7 +26113,7 @@
       ],
       "source_sha256": "079c2074c8122713ed2684e12bd09e11df56c1274bb2575de94753b581b29ee2",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4884
+      "line": 4867
     },
     "rmgpy/solver/plasma.pyx:_build_charged_thermo_library_index": {
       "verdict": "carried",
@@ -26142,7 +26124,7 @@
       ],
       "source_sha256": "8fc732bbebbdae52b2c0bf5d729097ef9c5f833bfcca7c331f9bd5e179ad497d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 544
+      "line": 545
     },
     "rmgpy/solver/plasma.pyx:_charged_species_identity": {
       "verdict": "not-reachable-for-resolved",
@@ -26153,7 +26135,7 @@
       ],
       "source_sha256": "f237bbdf4d1b530fa340c9461866d5a46a3e0310be87a6a22698aac8e74187a9",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 260
+      "line": 261
     },
     "rmgpy/solver/plasma.pyx:_charged_species_library_thermo_match": {
       "source_sha256": "bb2051bfcda4f2c34c6fc4d98afd19316da6d8405f4bbaed0b354cd2a53a4340",
@@ -26164,7 +26146,7 @@
         "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py"
       ],
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 566
+      "line": 567
     },
     "rmgpy/solver/plasma.pyx:_charged_thermo_formula_charge_key": {
       "verdict": "carried",
@@ -26175,7 +26157,7 @@
       ],
       "source_sha256": "9bcc6d9ab597b0164cdff7442d6776e91f8d68f041ebe8e0643cbb7b38169faa",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 538
+      "line": 539
     },
     "rmgpy/solver/plasma.pyx:_coerce_bool_flag": {
       "verdict": "carried",
@@ -26185,7 +26167,7 @@
       ],
       "source_sha256": "c2fbecc63178be3755a7dc654cdd995d56d652e0dc3072d935a589671d8e9884",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 214
+      "line": 215
     },
     "rmgpy/solver/plasma.pyx:_is_finite_normal_positive": {
       "verdict": "carried",
@@ -26195,7 +26177,7 @@
       ],
       "source_sha256": "efbbda7ac18c26e4529d2271483f2f8bbcc72b8068b9f32fff50a5e64d5166e1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 253
+      "line": 254
     },
     "rmgpy/solver/plasma.pyx:_is_per_bath_mobility": {
       "verdict": "carried",
@@ -26205,7 +26187,7 @@
       ],
       "source_sha256": "9b5a887947b8cc8ba81537d6101cc0c535cc5b1f5936233fb1066926be4a0efd",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 244
+      "line": 245
     },
     "rmgpy/solver/plasma.pyx:_library_entry_thermo_forms": {
       "verdict": "carried",
@@ -26215,7 +26197,7 @@
       ],
       "source_sha256": "04f1370a228da990694fb50dfb62249849a81f4a958eb66ca01afb7d8eaf5708",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 521
+      "line": 522
     },
     "rmgpy/solver/plasma.pyx:_reference_temperature_kelvin": {
       "verdict": "carried",
@@ -26225,7 +26207,7 @@
       ],
       "source_sha256": "fb3ce1b09a6aca9837a7b6c6c8b4c4869e42a6bf081f8c6bc2cbcb94f834e4bc",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 648
+      "line": 649
     },
     "rmgpy/solver/plasma.pyx:_require_finite_normal_positive": {
       "verdict": "carried",
@@ -26235,7 +26217,7 @@
       ],
       "source_sha256": "72ae392dd6826f59db9545a1676822731853f5eebd05b21f5d7aaf24d56e8acd",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 626
+      "line": 627
     },
     "rmgpy/solver/plasma.pyx:_temperature_exponent": {
       "verdict": "carried",
@@ -26245,7 +26227,7 @@
       ],
       "source_sha256": "2ca61fcc85bc5cfe3ce3bc97663a0680cf25c7628e3ee590c866a8c4de4699cc",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 681
+      "line": 682
     },
     "rmgpy/solver/plasma.pyx:_temperature_law_factor": {
       "verdict": "carried",
@@ -26255,7 +26237,7 @@
       ],
       "source_sha256": "f0a2dd783d09625925dbf6221c03a36ba31ce13d23071e0222d5279d75c65fa6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 703
+      "line": 704
     },
     "rmgpy/solver/plasma.pyx:_thermo_comparison_plan": {
       "verdict": "carried",
@@ -26265,7 +26247,7 @@
       ],
       "source_sha256": "175870ad8530815613019c127182bda6a55b0dbd7b4875441c172125cdc40f1b",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 351
+      "line": 352
     },
     "rmgpy/solver/plasma.pyx:_thermo_comparison_segments": {
       "verdict": "carried",
@@ -26275,7 +26257,7 @@
       ],
       "source_sha256": "2177f6d04d4f9e6e03c922b9d967415938c8b863bb3ecbadf943c71a26b4b2fe",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 265
+      "line": 266
     },
     "rmgpy/solver/plasma.pyx:_thermo_coverage_gap": {
       "verdict": "carried",
@@ -26285,7 +26267,7 @@
       ],
       "source_sha256": "9f6cff7ee47d8a26c6f78eb52d2c7c5a9f67c47f5df1c52b3139860c2211f2b6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 299
+      "line": 300
     },
     "rmgpy/solver/plasma.pyx:_thermo_match_diagnostic": {
       "verdict": "carried",
@@ -26295,7 +26277,7 @@
       ],
       "source_sha256": "60e26bd6408af18e78f9f2063692345f315987214bd6e2b3ed10270ddb34129d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 506
+      "line": 507
     },
     "rmgpy/solver/plasma.pyx:_thermo_mismatch_reason_text": {
       "verdict": "carried",
@@ -26305,7 +26287,7 @@
       ],
       "source_sha256": "10fb3b2413eeda261d47252ba9dd5d24d083940fb0353f7287ddb13ef44743b5",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 480
+      "line": 481
     },
     "rmgpy/solver/plasma.pyx:_thermo_mismatch_summary": {
       "verdict": "carried",
@@ -26315,7 +26297,7 @@
       ],
       "source_sha256": "f44ee296913f3bb8a33f91a8206a671f633077fa20a1e9b56142aee7f3b116ad",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 498
+      "line": 499
     },
     "rmgpy/solver/plasma.pyx:_thermo_sample_values": {
       "verdict": "carried",
@@ -26325,7 +26307,7 @@
       ],
       "source_sha256": "e8db173f984a7812b96d2c8a8541b245e63ce7fcc4695c68587abb10e7c22571",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 405
+      "line": 406
     },
     "rmgpy/solver/plasma.pyx:_thermo_values_match": {
       "verdict": "carried",
@@ -26335,7 +26317,7 @@
       ],
       "source_sha256": "83bf9627ec0cec85d6a047b3dd133b08410568db4d680055c2767ef4a9329a92",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 424
+      "line": 425
     },
     "rmgpy/solver/plasma.pyx:_thermodata_cp_breakpoints": {
       "verdict": "carried",
@@ -26345,7 +26327,7 @@
       ],
       "source_sha256": "3f091ae8eaa29bb4dbb0256a0ffe3ef71b42c2417764b44e058342466f26c340",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 323
+      "line": 324
     },
     "rmgpy/solver/plasma.pyx:classify_discharge": {
       "verdict": "carried",
@@ -26355,7 +26337,7 @@
       ],
       "source_sha256": "6f32083e28e96ba69a9d74c01faf024e8bdb437800091520e68663906a2b9cc5",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 193
+      "line": 194
     },
     "rmgpy/solver/simple.pyx:SimpleReactor.__init__": {
       "verdict": "carried",
@@ -30359,62 +30341,6 @@
       ],
       "source_sha256": "3d0fd82fea4a0173017fe0755417e72708f7b3967330ebab028890657138c67c"
     },
-    "rmgpy/tools/eedf/artifact.py:storage_items": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "ec355f4a5747e11879e3ab2785a00de85fa963ac1479d37cbecdf46c57565007"
-    },
-    "rmgpy/tools/eedf/artifact.py:storage_key": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "9f8d9d1c5b46eb335031cfae5cd8e7c9aafe2e0739e59c3100e7d204c4a2d817"
-    },
-    "rmgpy/tools/eedf/artifact.py:validate_storage": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "62cca099c17006f3065cc85bde533b3577a7511fda220d61a9682c75fd4981d1"
-    },
-    "rmgpy/tools/eedf/artifact.py:validate_storage.refuse": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "cee8f29c318676297957175de4ea455a6334598dfd81d2af2fb1a273a8c35753"
-    },
-    "rmgpy/tools/eedf/artifact.py:validate_storage.visit": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "25217f731e376689f35ad15793c8022a94afc748958beaaf4c2fd337e72af699"
-    },
-    "rmgpy/tools/eedf/artifact.py:write_artifact": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "ece51538438de4d470bd6622b81953836a68b50ed57e3e1376e16f56a7e5e865"
-    },
-    "rmgpy/tools/eedf/artifact.py:write_rows": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "db37868d25e8572a124159187be011b79e0fdd64ee9bce7e4ff6f938521ae8ec"
-    },
     "rmgpy/tools/eedf/corroborate.py:_sha256_bytes": {
       "verdict": "excluded",
       "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
@@ -30512,7 +30438,7 @@
         "rmgpy/tools/eedf/corroborate.py",
         "test/rmgpy/tools/eedf/corroborateTest.py"
       ],
-      "source_sha256": "aae433687922ca9975d89c69cad8b9f8354a0f892b26d47a9c26a7df861b9529"
+      "source_sha256": "efcb000ef8a9d226bb2f79c188fd52031faa2196e4877cd642957ad1c83f46fb"
     },
     "rmgpy/tools/eedf/corroborate.py:_same_effective_value": {
       "verdict": "excluded",
@@ -30584,7 +30510,7 @@
         "rmgpy/tools/eedf/corroborate.py",
         "test/rmgpy/tools/eedf/corroborateTest.py"
       ],
-      "source_sha256": "869a197d757c8dc43446a37e90be2128f41bf1ebcae531a241b3003ae5c9b19f"
+      "source_sha256": "36fde9b83bc178ce12c61639b15ee4f082ed4e0b7135d16d1b727f5353072904"
     },
     "rmgpy/tools/eedf/corroborate.py:_process_dicts": {
       "verdict": "excluded",
@@ -30890,37 +30816,13 @@
       ],
       "source_sha256": "f2113862de73965de9230f59ae0ca5f9976bf23c6cf59a29468b3e87b61c9d8b"
     },
-    "rmgpy/tools/eedf/channels.py:validate_map": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "2b60fba1cdbf5d8b1fcee4fc985b4f956dba11e0bcbab79fd8dd432a2174a4a6"
-    },
-    "rmgpy/tools/eedf/channels.py:validate_physical_map": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "c8174b8f76146ddeffdf2feff8a86ef5eb161a3cb8c88d06af00189ef97c7c9b"
-    },
-    "rmgpy/tools/eedf/channels.py:validate_physical_map.gas_value": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "f43bcce82eb0b2a1fef387b1a162ca21fbbfc598a9e1875eb5322768167590fc"
-    },
     "rmgpy/tools/eedf/generate.py:_manifest": {
       "verdict": "carried",
       "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "f629f8bc70500136d334f49d102d702f275049288a42bba80b8e0062f87706fe"
+      "source_sha256": "ed013fd76a79550ced633f376f0e6181b1d30d6c845521f83afdf4ddcd74bf0d"
     },
     "rmgpy/tools/eedf/generate.py:_screen": {
       "verdict": "carried",
@@ -30928,7 +30830,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "c1af89f5505d19b749df364d7d32f5ad5a1223a9d45d9776de96fc037102535a"
+      "source_sha256": "4ca24ffd964cd300ca3a14cade22b886bfb7c714c37e4211dd5b96e33bac7807"
     },
     "rmgpy/tools/eedf/generate.py:_solve": {
       "verdict": "carried",
@@ -30936,7 +30838,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "9ceb55aa67b29e552018315f3016dae612825901cf0cd336f45a3ec28ad1ee9d"
+      "source_sha256": "44a832cea6c0a40010aabf36ffa0f6ad6ad6b2f7cc33eabb7eb3618c986edfb8"
     },
     "rmgpy/tools/eedf/generate.py:_validation_report": {
       "verdict": "carried",
@@ -30944,15 +30846,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "706432e73d3b05c62556c85c2d72549995c0c61e2103aaaa39d04dedcb13fa6b"
-    },
-    "rmgpy/tools/eedf/generate.py:canonical_failure": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/generateTest.py"
-      ],
-      "source_sha256": "a32408f760b56fe8023a9ead1de87455f3f48f5d69764c82ad4fd15510ecf666"
+      "source_sha256": "172875ea3c7538183bba7215c77ef13daeafee05cb86834b11cb1fcc74d691fb"
     },
     "rmgpy/tools/eedf/generate.py:generate": {
       "verdict": "carried",
@@ -30960,15 +30854,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "a2e48fc0cc1328d59a86c87a9045ea3819dd22569c992d3608583b6e0e814e9f"
-    },
-    "rmgpy/tools/eedf/generate.py:main": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/generateTest.py"
-      ],
-      "source_sha256": "111ead03688fa0df302287ce6e432858e4bcbe5b2038c4642b29bc225f6b2883"
+      "source_sha256": "69d0f0ed7c15a642cb96923f1f7f2d69e6d8d024ef520edeb3af342f71a5f404"
     },
     "rmgpy/tools/eedf/generate.py:model_inputs": {
       "verdict": "carried",
@@ -30976,95 +30862,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "9f02e23079c28d22963ec66b0c946a35ebbbc6c62133ea636a8f5dd9a6ad0d61"
-    },
-    "rmgpy/tools/eedf/integrity.py:channel_fractions": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "66755a02b2a175c5491b46f838477467e7888cd6e11356f7433cdb9ba347cc53"
-    },
-    "rmgpy/tools/eedf/integrity.py:channel_fractions.density": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "a90b33092539d844493ee68823b037f43bfbc26b86e7681793ae96e81831872b"
-    },
-    "rmgpy/tools/eedf/integrity.py:check_solver": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "2127c479e996b9f4918efcf08c7042a018f75903c0517ceac0288b142776b5ef"
-    },
-    "rmgpy/tools/eedf/integrity.py:legacy_string": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "216c0f55cf91d8a831c6573f53f373d2592af028c59ba2dd4bd91d274068ad03"
-    },
-    "rmgpy/tools/eedf/integrity.py:neutral_state_key": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "fb4b6cf12f425346453740e49d4165d4ba94cfeaac292046790b0f11d477a54f"
-    },
-    "rmgpy/tools/eedf/integrity.py:physical_properties": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "af8e2972a4ed99005a70848c8d36af4a7a4ecf9ebaae02d5f05ecce734cf7a22"
-    },
-    "rmgpy/tools/eedf/integrity.py:physical_properties.entries": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "a1393bd38911e6d17554edade415b38dd85c08e1d69d39fb49437f1075707ca3"
-    },
-    "rmgpy/tools/eedf/integrity.py:physical_properties.reference": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "328a9421168f7722bcbc4ddf6a883f308160a047676d374abfec166b0282a1a7"
-    },
-    "rmgpy/tools/eedf/integrity.py:resolved_properties": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "1268576014ed8838e1f3143ea961852b79d6520c5f36c421ff88622194349fe0"
-    },
-    "rmgpy/tools/eedf/integrity.py:resolved_properties.numbers": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "f4e715501f34d7cd241b8ec53b93e0291959af1f22def99e75f27ca08ddbc13e"
-    },
-    "rmgpy/tools/eedf/integrity.py:solver_environment": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "c846430d43661d02e6e14327cb4e7a09d45e57941f3144b3cf23eef87015bc52"
+      "source_sha256": "ed78d6921b72855ef3bb6062a745ae84e990db7579361779a64b1352ff51c7fb"
     },
     "rmgpy/tools/eedf/loki.py:LoKIDriver.__init__": {
       "verdict": "carried",
@@ -31072,7 +30870,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "c6c143ee6f9b49d713572f8df9bab90fe1ee9a410e70ae33ef99dea3b687f092"
+      "source_sha256": "2a7c50f500b74c6976eb40c6a4065568cb74f169643801d53715217887777c8f"
     },
     "rmgpy/tools/eedf/loki.py:LoKIDriver.run": {
       "verdict": "carried",
@@ -31106,93 +30904,13 @@
       ],
       "source_sha256": "af2fe5d42dfeddca429f42dee4f57792b6ab18fce85c2ded7078a0cfff27750d"
     },
-    "rmgpy/tools/eedf/loki.py:enrich_row": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "5eb3dea06f88223ab8255f533e843057354210da6eb5c5b45331c0771e97d2ed"
-    },
     "rmgpy/tools/eedf/loki.py:parse_output": {
       "verdict": "carried",
       "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "9c741d72d7c3e252a0f857a71ccffd58a6f174fe4496e532c9bae30f0a3b435b"
-    },
-    "rmgpy/tools/eedf/loki.py:setup_text": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "d7b568463af0d32ddd7e71b37f49774d07c742eb03f6497d6e5ceb33185327b1"
-    },
-    "rmgpy/tools/eedf/loki.py:setup_text.emit": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "6ecc00e0c211747efe3082d2038a3029069b1194c0c507713642773b1f489dc3"
-    },
-    "rmgpy/tools/eedf/moments.py:distribution_moments": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "4c9925727896e6690e4d56223449cff726f76a7894bf0be4e38eb4848adc45e7"
-    },
-    "rmgpy/tools/eedf/schema.py:canonical_json": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/schemaTest.py"
-      ],
-      "source_sha256": "515176edaa2d26f0689ac34fbd44717974579d9c5c1c47ff2a75f68c072570d9"
-    },
-    "rmgpy/tools/eedf/schema.py:check_model": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/schemaTest.py"
-      ],
-      "source_sha256": "997ee8cd5b35a4aa3ba8df3e56ae54b494169ee5df5dbe8834332a9f05ff9b1d"
-    },
-    "rmgpy/tools/eedf/schema.py:content_hash": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/schemaTest.py"
-      ],
-      "source_sha256": "9d7b25808f54a621c56614f51c884fd1586503dd61bfbe739b334810323a1aaa"
-    },
-    "rmgpy/tools/eedf/schema.py:file_hash": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/schemaTest.py"
-      ],
-      "source_sha256": "5a601c0cace29dae096c3617a5f6d9d3d6764cecb49f42f84463b0aecc15b25a"
-    },
-    "rmgpy/tools/eedf/schema.py:file_hash.<lambda1>": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/schemaTest.py"
-      ],
-      "source_sha256": "d4a26c1c7664c0176a611d9b26d9e73755fe2a3f1e15b18e56aa0df0e3663244"
-    },
-    "rmgpy/tools/eedf/schema.py:interpolant_identity": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/schemaTest.py"
-      ],
-      "source_sha256": "bfc5af16965e1316a6d1fc5e73535884e307efcb3b29d2baeb0192957ffe27b7"
+      "source_sha256": "8c930168cf7373ff1c305e6131d670fc2c05c37e604d6f97e69139e0edffdd7e"
     },
     "rmgpy/tools/eedf/schema.py:load_spec": {
       "verdict": "carried",
@@ -31200,79 +30918,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/schemaTest.py"
       ],
-      "source_sha256": "b069c82cb38df8a38e0f0ba8f889f1b25f7a14239e0a63448f334eb4d8638e70"
-    },
-    "rmgpy/tools/eedf/schema.py:row_inputs": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/schemaTest.py"
-      ],
-      "source_sha256": "6ff7ac40f7205e98e12d9089c555c4f73b08c2cdbbcf8e2ba335d74883d688a4"
-    },
-    "rmgpy/tools/eedf/schema.py:validate_spec": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/schemaTest.py"
-      ],
-      "source_sha256": "99ff61ddeb49c19557c49c87f8481fdf6579c201312dfdf7c55b990301c61b42"
-    },
-    "rmgpy/tools/eedf/validation.py:channel_power_checks": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "81ae32ef242dba3cf9479a0c04cd8e1042be28435bdf5b316b86823cc45338d1"
-    },
-    "rmgpy/tools/eedf/validation.py:compare_row": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "096f6d29a64443364b5e1811a545671bfaf0eb62e6b4fe8455af38b149cb4d85"
-    },
-    "rmgpy/tools/eedf/validation.py:compare_row.record": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "823386ff5f6542e0d1cd19a101ac8cb4f6a0ac64158042b2a0428be357fb35c2"
-    },
-    "rmgpy/tools/eedf/validation.py:held_out_points": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "648763b2e510565b6d66b78b3dd88fc4ee46c344d6ef60d85fcc2d5d581b7970"
-    },
-    "rmgpy/tools/eedf/validation.py:quantities": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "8220a786ff7528bb8b3eaa908174c0aeecce53ba43ee6f0a3553e3a5ab42d7d8"
-    },
-    "rmgpy/tools/eedf/validation.py:rows_agree": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "adcc0280870b718d11722a0d8af5e0aa6ab038b57fe977b0428fd4b5f9660314"
-    },
-    "rmgpy/tools/eedf/validation.py:split_branches": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "11a5c772bc89e1898429b5671a875535c35b7337bff54abc42b9ed7349b8e6eb"
+      "source_sha256": "00dcd026f23cf58d6ebee98b4ea22baa119bf27a3d8f577a0b87fc5c22fccf92"
     },
     "rmgpy/tools/fluxdiagram.py:add_adjacent_nodes": {
       "verdict": "carried",
@@ -33251,7 +32897,7 @@
       ],
       "source_sha256": "566d72d10fbe52df63cee0ae202ea4a72c850f820efca13f700201b865249098",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 556
+      "line": 557
     },
     "rmgpy/species.py:Species._invalidate_thermo_state_cache": {
       "verdict": "not-reachable-for-resolved",
@@ -33460,7 +33106,7 @@
       ],
       "source_sha256": "cf0525c23c789c13c293b132222c087ff5bd319f13b3754accdffc6eb5d424d1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4106
+      "line": 4118
     },
     "rmgpy/eedf_export.py:require_non_eedf_reactor_mode": {
       "verdict": "refused",
@@ -33578,7 +33224,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "c4bf0c33eb93aa6a70c1bdbf9f204ba32c3b1296df33b339d50126839ebd9b07"
+      "source_sha256": "db35fe5a3eeccec75f4919c6cf09c1568277a4939ffd34090d4faa98b78d1f3a"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider._identity": {
       "verdict": "carried",
@@ -33610,7 +33256,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "74d5af7cfbbca41c015661d6876ea1554e4e6558da483967da13ad79a60e7b77"
+      "source_sha256": "0c57b8339bdf5afd35bce9ee456d1c2cc611f2abb14095da06e5220b76af0b86"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.axis_names": {
       "verdict": "carried",
@@ -33620,53 +33266,13 @@
       ],
       "source_sha256": "37c6e6d89d5fc41f905cfbc69217b246e365f30299bdffd2cee14b4434f4e388"
     },
-    "rmgpy/solver/eedf_provider.py:EEDFProvider.branch": {
-      "verdict": "carried",
-      "reason": "EEDFProvider.branch: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
-      "evidence": [
-        "test/rmgpy/solver/eedfProviderTest.py"
-      ],
-      "source_sha256": "a77797684d2b1f18d87153a42838bdb330e76c9811fdbfba3c7b363e9c5cf70a"
-    },
-    "rmgpy/solver/eedf_provider.py:EEDFProvider.cache_identity": {
-      "verdict": "carried",
-      "reason": "EEDFProvider.cache_identity: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
-      "evidence": [
-        "test/rmgpy/solver/eedfProviderTest.py"
-      ],
-      "source_sha256": "c09e4b2da1fbf01c4a0d1d3697c48941282904196d5bc236a11ceb473591099c"
-    },
-    "rmgpy/solver/eedf_provider.py:EEDFProvider.cached_row": {
-      "verdict": "carried",
-      "reason": "EEDFProvider.cached_row: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
-      "evidence": [
-        "test/rmgpy/solver/eedfProviderTest.py"
-      ],
-      "source_sha256": "49854eac6a8ab24ac572ccf5313ab2c20613f4cb55976a08aa2217352253ee08"
-    },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.domain_check": {
       "verdict": "carried",
       "reason": "Checks the exact supplied coordinates against immutable, artifact-fingerprinted axes and carries any refusal with the offending coordinate and frozen bounds; it does not infer or substitute data.",
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "7b7c2239653bbc52f2c50685fc1469b4cbb54dd45f3b66b3bc959a23edf4cd66"
-    },
-    "rmgpy/solver/eedf_provider.py:EEDFProvider.empirical_laws": {
-      "verdict": "carried",
-      "reason": "EEDFProvider.empirical_laws: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
-      "evidence": [
-        "test/rmgpy/solver/eedfProviderTest.py"
-      ],
-      "source_sha256": "ccc054ba5f95f8226b9485f3f6d0e5c47220b3d4797d0fa707af7456d7cbfc64"
-    },
-    "rmgpy/solver/eedf_provider.py:EEDFProvider.manifest": {
-      "verdict": "carried",
-      "reason": "Returns defensive artifact provenance and, for the isolated development route, adds the unqualified warning, blocker list, and export/qualification refusals.",
-      "evidence": [
-        "test/rmgpy/solver/eedfProviderTest.py"
-      ],
-      "source_sha256": "4176fea0f44c3879a1655047d337cb1350a6eaed3cc8bd873fd78c69f4fdd13e"
+      "source_sha256": "1053076f405a841fa278e2148a0df7c143a7904e5eadba2c96863f283b823a0e"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.mean_energy_eV": {
       "verdict": "carried",
@@ -33676,21 +33282,13 @@
       ],
       "source_sha256": "eea6083000eb8faa5e15536b22578bc268ae10d0015c845e4b849eb80890b6b4"
     },
-    "rmgpy/solver/eedf_provider.py:EEDFProvider.reaction_map": {
-      "verdict": "carried",
-      "reason": "EEDFProvider.reaction_map: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
-      "evidence": [
-        "test/rmgpy/solver/eedfProviderTest.py"
-      ],
-      "source_sha256": "260d161c9f438047080bb2e76ed15c04e41de3b3473d2bd19f3c9643a6a2b823"
-    },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.reaction_rate": {
       "verdict": "carried",
       "reason": "EEDFProvider.reaction_rate: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "96ffed454ee6e8951100f306975ed1dcbcbfd90482b37cc3c07b3bb1e97102ff"
+      "source_sha256": "c3bf18082af0ce127fd07cf35c244a96b2498bf052229f828b0a7dbabdc0ec24"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.row": {
       "verdict": "carried",
@@ -33698,7 +33296,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "16aa520a17f68cd3166e7e1edacb5fc14afba7d82d73fd7118088ac6e9ffe47f"
+      "source_sha256": "19031f2a02f555931a2812599b7c28c254d649618fed0c9161303c24e3861696"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.transport": {
       "verdict": "carried",
@@ -33726,15 +33324,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_eedf_power_gates": {
       "verdict": "carried",
-      "reason": "Uses the declared EEDF configuration and exact provider-owned row. Production still refuses any failed A6 gate; only the already-private failed-table route records a finite, measured A6b tolerance failure as FAIL and retains the candidate state for diagnostics. Missing, non-finite or physically invalid diagnostics are refused without inferring molecular data.",
+      "reason": "Checks the separate source-node identity, runtime-construction identity, and held-out interpolation records carried by the exact provider-owned table. Production refuses any failed gate; missing or invalid diagnostics are never repaired with inferred molecular data.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "47d50e0d1848cef2ff3da782b3690b14226315d3725e5cca9c2c01a5d086fd46",
-      "file": "rmgpy/solver/plasma.pyx",
-      "line": 4750
+      "source_sha256": "e7fac9d74e3af91285b27fab4c6819bddeee7920dd7a08dbe15054596fe45cde"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_eedf_wall_worst_case": {
       "verdict": "carried",
@@ -33746,7 +33342,7 @@
       ],
       "source_sha256": "8dda6d6b6c7eeb9e37d7c4fb29cde33dc515ab3a62caf191553ae2c0ef511456",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3088
+      "line": 3089
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_eedf": {
       "verdict": "carried",
@@ -33758,7 +33354,7 @@
       ],
       "source_sha256": "c9e150d5691f002cfc44912132d5f629a665cef7222926cd680a94e9ed5ab74b",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1182
+      "line": 1183
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_composition_energy_derivative": {
       "verdict": "carried",
@@ -33770,7 +33366,7 @@
       ],
       "source_sha256": "711d3171fb8b9c7b1e2ca3804f6666d722068f7c13863fe3ee1f979d0552ad76",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3479
+      "line": 3480
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_coordinate_label": {
       "verdict": "carried",
@@ -33782,7 +33378,7 @@
       ],
       "source_sha256": "63fbfbfa95693731c93806d7c89059d492f9d69ddcf46813422d31eeda4479b1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3119
+      "line": 3120
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_coordinates": {
       "verdict": "carried",
@@ -33794,7 +33390,7 @@
       ],
       "source_sha256": "8107f84bc25bfe74c2e359eeee92966d73d7fd7ea4f1e9be441396f1f83bd397",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3129
+      "line": 3130
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_coordinates.resolve": {
       "verdict": "carried",
@@ -33806,7 +33402,7 @@
       ],
       "source_sha256": "e32d4b0b30d7719f6fe2e923c60442b66d7561139ebe86f720ed916cf98d588d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3151
+      "line": 3152
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_empirical_key": {
       "verdict": "carried",
@@ -33818,19 +33414,17 @@
       ],
       "source_sha256": "641efb871e5cdfa4fad95301e7b2300d56a5b63ab14d9ef46d63618f0e41ed5a",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3196
+      "line": 3197
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_energy_row": {
       "verdict": "carried",
-      "reason": "Uses one provider-owned fingerprinted row for rates, energy, and transport; the added A6b numerator and denominator report the existing row/transport comparison, and any development row retains its failed-qualification warning and blockers.",
+      "reason": "Uses one provider-owned fingerprinted row for rates, energy, and transport, derives runtime field power from the row mobility and actual E/N, and records the separate runtime-construction identity without substituting scientific data.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "0c8e28fafb20788c3c80280c6f87166324daea60fec0f7f13152310b48baba59",
-      "file": "rmgpy/solver/plasma.pyx",
-      "line": 3516
+      "source_sha256": "426ebb6fb43aef107fda94ab8f6ba67382719e5c18687a6abc90513e14e43df0"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._initialize_eedf_provider": {
       "verdict": "carried",
@@ -33842,7 +33436,7 @@
       ],
       "source_sha256": "97ea7457da27d079968f1d38cf83a4220bf8e4fce5d4660544537f5cb70f83af",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2848
+      "line": 2849
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_eedf_energy_balance": {
       "verdict": "carried",
@@ -33854,7 +33448,7 @@
       ],
       "source_sha256": "6a7ef515400d4a411f01eb6b2f839e7d14cf4469ace4cdff63a6410545377c2a",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3204
+      "line": 3205
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._sync_electron_state": {
       "verdict": "carried",
@@ -33866,7 +33460,7 @@
       ],
       "source_sha256": "e0d93f8bb02f4a90a892853aa7d7bb62c132ba1b2fdc3c6c91c9a7286cdd6e4f",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3264
+      "line": 3265
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.eedf_run_manifest": {
       "verdict": "carried",
@@ -33878,7 +33472,7 @@
       ],
       "source_sha256": "2344be9cc3dd150640a03bf4c6ffed39c888f688584eca1406f4ccc619a534c3",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1279
+      "line": 1280
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.validate_steady_state": {
       "verdict": "carried",
@@ -33890,7 +33484,7 @@
       ],
       "source_sha256": "3498a63bf4f12123f3a86dddcb94a3c3ab4f5e25ab0d3b60a3762b14264ab155",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4803
+      "line": 4786
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.validate_terminal_state": {
       "verdict": "carried",
@@ -33902,16 +33496,7 @@
       ],
       "source_sha256": "66095580bfc3336da211df5a224d442aa789cf233118c851c08e8db9a9562318",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4816
-    },
-    "rmgpy/solver/eedf_provider.py:development_unqualified_table_route": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "A process-local development harness context with no DSL keyword or argument, rmg.py flag, restart or saved-file state, or environment-variable entry. Input files are trusted Python and can reach arbitrary objects by introspection; hardening that escape is explicitly out of scope. The route remains unqualified and cannot supply a production resolved-state model.",
-      "evidence": [
-        "test/rmgpy/solver/eedfProviderTest.py",
-        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
-      ],
-      "source_sha256": "a5179a441bd88fa4d8708d78b60e2dca97177b2117fb151b4c11acc19e4311b3"
+      "line": 4799
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.development_notice": {
       "verdict": "not-reachable-for-resolved",
@@ -33929,16 +33514,7 @@
         "test/rmgpy/solver/eedfProviderTest.py",
         "test/rmgpy/eedfExportRefusalTest.py"
       ],
-      "source_sha256": "8308510b2ce12086bb56c5f8a59a572a7608fb82629aa5bbaae33a1c2dbb85ad"
-    },
-    "rmgpy/solver/eedf_provider.py:unqualified_artifact_blockers": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Reports existing artifact qualification failures only inside the isolated development route and never supplies or changes scientific values.",
-      "evidence": [
-        "test/rmgpy/solver/eedfProviderTest.py",
-        "test/rmgpy/solver/plasmaEEDFRealIntegrationTest.py"
-      ],
-      "source_sha256": "9627969ff479d2b2ae667176d8ee8bef9bddcadfa36d46b63b2c3e019d076fd7"
+      "source_sha256": "73cf442e4e8b8e004e7212a5706443905e35c444a755061d5365aba1497d9b5e"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.annotate_development_diagnostic": {
       "verdict": "not-reachable-for-resolved",
@@ -33947,7 +33523,7 @@
         "test/rmgpy/solver/eedfProviderTest.py",
         "test/rmgpy/solver/plasmaEEDFCoreTest.py"
       ],
-      "source_sha256": "2736390d3ddc7313c9ffc08fd046fa95e671338bf69bcae82e7449ec0397ea6d"
+      "source_sha256": "837b2d9294ae13496591c2bdffe7b5e05d58b036f205483954dc8671d0d1fb26"
     },
     "rmgpy/rmg/pdep.py:_native_graph_uses_eedf_channel": {
       "verdict": "carried",
@@ -33966,7 +33542,7 @@
       ],
       "source_sha256": "62523137550c7bf74103923e978bba535a20c18d009532d1db563a6cc3854df3",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1297
+      "line": 1298
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._development_run_active": {
       "verdict": "excluded",
@@ -33976,7 +33552,7 @@
       ],
       "source_sha256": "c6957d19f61b460b95ea9c97fa77b2be05a9cc8f91960b7458ba95209890ed19",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1337
+      "line": 1338
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._development_begin_evaluation": {
       "verdict": "excluded",
@@ -33986,7 +33562,7 @@
       ],
       "source_sha256": "f2dc470493eba191892f488295314e63cb6dd9d1e12044b3ae09d57e5dec91c1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1343
+      "line": 1344
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._development_finish_residual": {
       "verdict": "excluded",
@@ -33996,7 +33572,7 @@
       ],
       "source_sha256": "20f5759faf2879263cac451465ac2e8e6c093837432c5dbeb54b79b8b9ef8669",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1366
+      "line": 1367
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._emit_development_progress": {
       "verdict": "excluded",
@@ -34006,7 +33582,7 @@
       ],
       "source_sha256": "5489d0021f049e7690e58eb79b85f55fbe3cbb3f2539ae62df88c0191efe960c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1374
+      "line": 1375
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.runtime_metadata": {
       "verdict": "carried",
@@ -34025,7 +33601,7 @@
       ],
       "source_sha256": "790c9152fca162ea1e416a5ee6cf25ea9bdd7fe5377abf24c598ee1715d0477c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8063
+      "line": 8046
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._raise_native_callback_failure": {
       "verdict": "carried",
@@ -34035,7 +33611,7 @@
       ],
       "source_sha256": "484c1503160e6fbbed6933dcde1ff08d3fbb7da9d8501a689fd861caa9eec0c6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8069
+      "line": 8052
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._restore_native_step": {
       "verdict": "carried",
@@ -34045,7 +33621,7 @@
       ],
       "source_sha256": "884ec93ce32e39cf9c237cee6bb011c5ad4e1acba2992ccebf7356196ef3da03",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8073
+      "line": 8056
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._native_solver_step": {
       "verdict": "carried",
@@ -34055,7 +33631,7 @@
       ],
       "source_sha256": "3e70c9751c7c778d17f74ee188759e28bd66cbde17058d778c0886d3e32bb183",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8083
+      "line": 8066
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._residual": {
       "verdict": "carried",
@@ -34065,7 +33641,7 @@
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8390
+      "line": 8373
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._jacobian": {
       "verdict": "carried",
@@ -34075,7 +33651,7 @@
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8826
+      "line": 8809
     },
     "rmgpy/tools/eedf/report.py:PowerReport.__post_init__": {
       "verdict": "excluded",
@@ -34083,7 +33659,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/reportTest.py"
       ],
-      "source_sha256": "cf26d6d3220b4e819f945b67e9ca1ce2ded7e3b8f0079ec71f914f4b693b216c"
+      "source_sha256": "60ad18bc5647ee034b9e571486575821767787ba56feee6a9d47efae6a275714"
     },
     "rmgpy/tools/eedf/report.py:PowerReport.as_dict": {
       "verdict": "excluded",
@@ -34091,7 +33667,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/reportTest.py"
       ],
-      "source_sha256": "7a707f43d65cf8b26d54b59d5e26faf690934c26b18e69f42537ede249f2b964"
+      "source_sha256": "b5a23b7b0a8bf610a17da0d93f7d706ee869721108a509741bbfc3829a1de378"
     },
     "rmgpy/tools/eedf/report.py:PowerReport.p1": {
       "verdict": "excluded",
@@ -34107,7 +33683,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/reportTest.py"
       ],
-      "source_sha256": "c73a7cae3903a9d0a24e427bcea39454dc6e9179081b9c8ddcaff845c86cd6b8"
+      "source_sha256": "5ac37af754b134fd2f99c3c870ebe0c35a24b65ad7e75656e3316232e35bbaf6"
     },
     "rmgpy/tools/eedf/report.py:_number": {
       "verdict": "excluded",
@@ -34203,7 +33779,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/reportTest.py"
       ],
-      "source_sha256": "7dc6b385b2be295d38e323471cc2255d877767c0fe681b1040a139fbdf175211"
+      "source_sha256": "c1e5b48c8660233429368df98df8541245a85e0638422ae56553464443df129e"
     },
     "rmgpy/tools/eedf/report.py:_reaction_id": {
       "verdict": "excluded",
@@ -34227,7 +33803,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/reportTest.py"
       ],
-      "source_sha256": "3581127510582b92614cb112341a753471d43e9e3d040f76781836433d4e448b"
+      "source_sha256": "1882d5ff70489a80465d38277c152bfec58b096fceda6fd9fd34b81ee122500e"
     },
     "rmgpy/tools/eedf/report.py:power_table": {
       "verdict": "excluded",
@@ -34235,7 +33811,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/reportTest.py"
       ],
-      "source_sha256": "4bfad74e03ac238b9e0d05a348ba7db1f31e3d18977fdaa84adb0523ebe9c97f"
+      "source_sha256": "66e3a5f585391fe132e0128810d2f39f0d6b7bb47c2dd31b25330b3d1e56f362"
     },
     "rmgpy/tools/eedf/report.py:render_markdown": {
       "verdict": "excluded",
@@ -34563,7 +34139,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "c7816af2a6dabdf9cc43bac3881cf2712359a1ae9f6428510d69d1348dec3ca9"
+      "source_sha256": "444e1a71c89ba49755d8c74d3b143f03d56f908efd4d317d5b5972f787a631a3"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider._run_qualification.<lambda1>": {
       "verdict": "carried",
@@ -34587,7 +34163,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "337a8432659240f19aac30e911a3ece57d03e735911234f7549a4a272a980bb2"
+      "source_sha256": "3900ba054e1479414c440d3d09cb588a1593a199474e79f846b2ccd40d6f24c1"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider._verify_generation_spec.require_equal": {
       "verdict": "carried",
@@ -34595,7 +34171,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "3ab495728223ba856d13e3c77cd8b78c9263d7f48ccc0f4f91d2972c389ea772"
+      "source_sha256": "e114f33d6ed85feadaa0564fc9341969d24cc3474d42115b093e09ee82da8b41"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.bind_qualification_state": {
       "verdict": "carried",
@@ -34629,7 +34205,7 @@
       ],
       "source_sha256": "b978a19de1d5fba371de033e4786affc5ddae8dcb5c20c1af630bd6ffec93d8f",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3009
+      "line": 3010
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.development_eedf_diagnostic": {
       "verdict": "carried",
@@ -34639,7 +34215,7 @@
       ],
       "source_sha256": "ea3241eef594e00c729d84d6b2ba27db2297103f475f91c4d04c9f03edbcd056",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3077
+      "line": 3078
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider._check_all_recorded_quantities.check": {
       "verdict": "carried",
@@ -34655,7 +34231,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "39d8e1241de82576f64c1945a7fe09512caa8d0486918655b4b9801ed6ffb129"
+      "source_sha256": "ec9eea2ea8586a6945c516fb240d447cddd3e73120360be829bf9749477920ee"
     },
     "rmgpy/tools/eedf/schema.py:qualification_setup_identity": {
       "verdict": "carried",
@@ -34800,7 +34376,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "1834fe5122286e28d4b207cf882e8d1afed39d7fe10ca97bed8efb97c477cf12"
+      "source_sha256": "d81d1b724079a7f98f908861ae1e27a07392422e4c253bd8d7624b3fbfc82236"
     },
     "rmgpy/tools/eedf/loki.py:LoKIDriver.run_prepared": {
       "verdict": "carried",
@@ -34808,7 +34384,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "b480ebf9391c33031437f7e446151f157524f6fbdf154863307e326b9d9c7e5e"
+      "source_sha256": "96f32ddbd4d30f139c6a56c0a8d3610f20af6eb5eb76a7cb1bf1513a75b79642"
     },
     "rmgpy/tools/eedf/loki.py:LoKIDriver.run_prepared.<lambda1>": {
       "verdict": "carried",
@@ -34872,7 +34448,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "2db33781215613462718848887736cb4eef62de056101bd6a9ec29a6623c482a"
+      "source_sha256": "31ad765bde2758078970537c35af36db178b5de5305c55af6e8ec5ec8ac4d22e"
     },
     "rmgpy/tools/eedf/loki.py:qualification_setup_sha256_from_rendered.parsed_declarations": {
       "verdict": "carried",
@@ -35043,7 +34619,7 @@
       ],
       "source_sha256": "f3d00cf270964d44a13dfac8752b09fcc435b0f19b316abcf81a7aa64bb122d6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4807
+      "line": 4790
     },
     "rmgpy/solver/eedf_provider.py:_QualificationExport._settle_revocation": {
       "verdict": "excluded",
@@ -36786,6 +36362,658 @@
       "file": "rmgpy/tools/eedf/branches.py",
       "line": 1049,
       "source_sha256": "59829e85121b20175b7cb821909a053ed66304e277953567dc47d2860875ef8a"
+    },
+    "rmgpy/solver/eedf.py:EEDFRow._as_dict": {
+      "verdict": "carried",
+      "reason": "Consumes already assigned species models and reaction rates while evolving populations. No independent thermo/group-template acquisition; reaction/species identity is retained in model arrays.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "ce595066ea1fe3c8f8a3ff732bbfafa0c77ce37670f0af0bb5d4cc2d02d8be1e"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable._domain_check": {
+      "verdict": "carried",
+      "reason": "Validates and normalizes explicit query coordinates against the fingerprinted table's owned axes and envelopes; it performs no scientific-data lookup or substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "f4c0753230545c36d3fd71b67c9abe9fcdcc9c20d236b62afdc5312d3c2d9710"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable._interpolation_qualification_summary": {
+      "verdict": "carried",
+      "reason": "Returns the frozen held-out interpolation qualification already stored in the fingerprinted table manifest; it performs no scientific-data lookup or substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "bc10b009875392afdbafcbee6c8b9428032da09196929bae47b98721b16c700c"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable._source_identity_summary": {
+      "verdict": "carried",
+      "reason": "Checks the native table-node field-power identity from the artifact's stored field power, mobility, and E/N; absent or inconsistent source values are refused rather than inferred.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "596b49087257c280100e525576804ade610227a852ef0f31eb540dbadf4d7a69"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable.a6b_source": {
+      "verdict": "carried",
+      "reason": "Returns a defensive copy of the already checked native field-power identity verdict; it performs no scientific-data lookup or substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "231ca395427bab3e1ed620088f5d3e48c2dad063d0ed890c5459a29827ff6235"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable.axes": {
+      "verdict": "carried",
+      "reason": "Returns detached copies of the fingerprinted table axes so caller-side transforms cannot alter checked interpolation state.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "98c958942590f062e315d4f6402e97a65d99eca8f1e382a11044352a3a400267"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable.axis_names": {
+      "verdict": "carried",
+      "reason": "Returns the immutable coordinate-name order already checked from the artifact manifest; it performs no data lookup or substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "1aebfb5917c3b6a86e9fd3fae9990f45529df4a9d570e3f1b4ff6945aae8202d"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable.branch_certification": {
+      "verdict": "carried",
+      "reason": "Returns a defensive copy of branch certification already bound to the checked artifact; it performs no scientific-data lookup or substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "d2bb0cdb9c38c2e279070947cc48b855f3ed19969d19ce6a8538067fdf755bdb"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable.manifest": {
+      "verdict": "carried",
+      "reason": "Returns a defensive copy of already checked artifact metadata so callers cannot alter the table-owned scientific state; it performs no data lookup or substitution.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "8fcbbec9709ab6aa07f27ef777d035b126450bf97f6d58b3234d59a8e31ebfbf"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable.row.interpolate": {
+      "verdict": "carried",
+      "reason": "Interpolates an explicitly named field of the fingerprinted EEDF artifact at the supplied coordinates; it cannot acquire missing molecular data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "0c0cbdcf9a0b678308cb41d670a9d9ca8845ad4bf112829cd79d86e76e504844"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable.t10_interpolation": {
+      "verdict": "carried",
+      "reason": "Returns a defensive copy of the frozen interpolation qualification already stored in the fingerprinted table; it performs no data lookup or substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "8c74340ef8cd90870d3671595e07c297c4d3af093c77c7c96b514ab4d96d1971"
+    },
+    "rmgpy/solver/eedf.py:_coordinate_signature": {
+      "verdict": "carried",
+      "reason": "Validates an explicitly supplied held-out coordinate mapping and converts its numeric values to exact signatures; it performs no scientific-data lookup or substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "dc15c0b62af79bb7e742e06ccd2d09c1844cde5118185dc533c87cd1a18d4fe5"
+    },
+    "rmgpy/solver/eedf.py:_field_power_derivatives": {
+      "verdict": "carried",
+      "reason": "Computes analytic derivatives from the supplied reduced mobility, its supplied derivatives, and actual reduced field; no molecular data are acquired or reassigned.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "0798a69023a9a148c78b85ecbbcb7ef8f00293b1c3a71476102e871aa9796008"
+    },
+    "rmgpy/solver/eedf.py:_finite_scalar": {
+      "verdict": "carried",
+      "reason": "Normalizes one explicitly supplied table coordinate to an owned finite Python float and refuses malformed values; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "2cddb2a02178e2c77062d2ee63f2ca8ce57c468f4fbf98bd6a4c3c130572389c"
+    },
+    "rmgpy/solver/eedf.py:_pchip_tangent": {
+      "verdict": "carried",
+      "reason": "Propagates an explicitly supplied ordinate tangent through the same numeric PCHIP interpolation used by the fingerprinted EEDF table; it performs no data lookup or identity substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "6e59ec1533a8e286d5d0ee19af51dd0e86a86ad7d0365e700a72238029f33dbe"
+    },
+    "rmgpy/solver/eedf.py:_pchip_tangent.endpoint": {
+      "verdict": "carried",
+      "reason": "Differentiates the numeric PCHIP endpoint slope limiter for the supplied table ordinates and tangent; it performs no data lookup or identity substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "4cc4d9c1b4c77f6b2d2c6319aa1033eaa6baee8d4e98312469d6edb766933ec0"
+    },
+    "rmgpy/solver/eedf.py:_plain_bool": {
+      "verdict": "carried",
+      "reason": "Normalizes one explicitly supplied loader flag to an owned plain Boolean and refuses malformed values; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "960391fef45337b6aa618a14ec75cd9362644407bcccfa9200a7b89a5f0b334e"
+    },
+    "rmgpy/solver/eedf.py:_stored_held_out_signatures": {
+      "verdict": "carried",
+      "reason": "Reconstructs retained held-out coordinates from the already pinned artifact and refuses malformed rows; it cannot acquire or replace molecular data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "a8368525af30ad512548991d3ecda7560185a8c3b89a258940aba2651e2ab3e4"
+    },
+    "rmgpy/solver/eedf.py:field_power_from_mobility": {
+      "verdict": "carried",
+      "reason": "Computes field power from the explicitly supplied reduced mobility and actual reduced field; no molecular data are acquired or reassigned.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "58998b7a3446bb09d42f1399d1b6b40d2ba600e145b381b9b491bf1d879fda42"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._branch_value": {
+      "verdict": "carried",
+      "reason": "EEDFProvider.branch: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "7420aa48ec490de63ce75396c6aad08eff5dbfaaa3a4a57e42de10906a169c7c"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._cache_identity_snapshot": {
+      "verdict": "carried",
+      "reason": "EEDFProvider.cache_identity: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "99dc9e9331afa8098a6e571de14d62daa87df88c4da4ac76465277d02a7622e0"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._cached_row_snapshot": {
+      "verdict": "carried",
+      "reason": "EEDFProvider.cached_row: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "cd4bc47650c0ededffca4ad45f4ad78f9200c43af4afe94a092b88252a4a44ce"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._empirical_law_metadata": {
+      "verdict": "carried",
+      "reason": "EEDFProvider.empirical_laws: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "90d04bf4b38f80ff58e82d9e4302504f29ed01aa42c8b490a3260435b0f8e3c3"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._manifest_snapshot": {
+      "verdict": "carried",
+      "reason": "Returns defensive artifact provenance and, for the isolated development route, adds the unqualified warning, blocker list, and export/qualification refusals.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "5f651b1847a73135877732cd5089ad9c924b03b3a039ce8e992e80be8b5d552d"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._query_snapshot": {
+      "verdict": "carried",
+      "reason": "Owns and normalizes the explicitly supplied full-coordinate provider query before domain, cache-identity, or interpolation use.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "14dcd46190098a0ffd9ec08454cc20c97a2e708fe06ad6c59fac24b75b305f80"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._reaction_mapping": {
+      "verdict": "carried",
+      "reason": "EEDFProvider.reaction_map: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "1c0a37b0bd57b1e195ecf30523f14179993108b25b89747aa863179ee1d85241"
+    },
+    "rmgpy/solver/eedf_provider.py:_development_unqualified_table_route": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "A process-local development harness context with no DSL keyword or argument, rmg.py flag, restart or saved-file state, or environment-variable entry. Input files are trusted Python and can reach arbitrary objects by introspection; hardening that escape is explicitly out of scope. The route remains unqualified and cannot supply a production resolved-state model.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py",
+        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
+      ],
+      "source_sha256": "889cc5ea97f21729ebd5b142af6d422de04569fd965807c1aefc73381c45beed"
+    },
+    "rmgpy/solver/eedf_provider.py:_unqualified_artifact_blockers": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Reports existing artifact qualification failures only inside the isolated development route and never supplies or changes scientific values.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py",
+        "test/rmgpy/solver/plasmaEEDFRealIntegrationTest.py"
+      ],
+      "source_sha256": "bbc7bb84a88f9d338ca0b05d3afa3f896be65811b18327b2c0ae4357bd0d2b26"
+    },
+    "rmgpy/tools/eedf/artifact.py:_storage_items": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "70ab2977130be892e097088aa0e3a597eb8d5ec8fcea4e7fcf6b872c4cb69d22"
+    },
+    "rmgpy/tools/eedf/artifact.py:_storage_key": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "4b3e56531a28296c0ef0783ed68210b39d96aca2acedffac7efc0b42b261a532"
+    },
+    "rmgpy/tools/eedf/artifact.py:_validate_storage": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "6bbe36890fed13852ced002c055fa2b1d37fbf9169819e3e13b2b1ab002c76f8"
+    },
+    "rmgpy/tools/eedf/artifact.py:_validate_storage.refuse": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "cee8f29c318676297957175de4ea455a6334598dfd81d2af2fb1a273a8c35753"
+    },
+    "rmgpy/tools/eedf/artifact.py:_validate_storage.visit": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "25217f731e376689f35ad15793c8022a94afc748958beaaf4c2fd337e72af699"
+    },
+    "rmgpy/tools/eedf/artifact.py:_write_artifact": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "cf839019bca81f9713cde5f37923841ef828eb542724e1382f7cd89354b97914"
+    },
+    "rmgpy/tools/eedf/artifact.py:_write_rows": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "e08a518b4aa440182e5ee516274bbcb2006bc74ee388a47aef75c4282f10e571"
+    },
+    "rmgpy/tools/eedf/channels.py:_validate_map": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "aa72780255ec3bc5e8966014b45376123b68d27dd2c11f709f7f3451fff9981a"
+    },
+    "rmgpy/tools/eedf/channels.py:_validate_physical_map": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "73521c829731745520e4d835dc4eae480c984a04ec3232d3fc97aca87f0714bd"
+    },
+    "rmgpy/tools/eedf/channels.py:_validate_physical_map.gas_value": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "f43bcce82eb0b2a1fef387b1a162ca21fbbfc598a9e1875eb5322768167590fc"
+    },
+    "rmgpy/tools/eedf/generate.py:_canonical_failure": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "0ff388fb483023b920e041ddf8d942e6d9b6d73cc11c738e98368565a1795f59"
+    },
+    "rmgpy/tools/eedf/generate.py:_main": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "b50eedbb94c82f8bafc3c235e16275b417f512a97eff75c30e093918b080054d"
+    },
+    "rmgpy/tools/eedf/generate.py:_reconcile_off_centre_after_axis_drop": {
+      "verdict": "carried",
+      "reason": "Projects explicitly declared EEDF coordinates after sensitivity screening. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "1f932f5ae688413a8ed17c75c5f7f78f927dee47db437f5fa9dffe6375b3a355"
+    },
+    "rmgpy/tools/eedf/generate.py:qualify_interpolation": {
+      "verdict": "carried",
+      "reason": "Compares fingerprinted table interpolation against fresh direct solves at predeclared held-out coordinates using frozen criteria; it does not infer species identities or substitute molecular data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "19e47651efb668c8e14dd1bdf6ce1aa054341f2f5936633e22c8b42d4879cba0"
+    },
+    "rmgpy/tools/eedf/generate.py:qualify_interpolation.direct_solver": {
+      "verdict": "carried",
+      "reason": "Runs the configured LoKI solver directly from the held-out point and explicit spec, independently of table values; failures are returned as qualification failures.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "d11bfcfd7abd2d9311779332aa929b59aebb3da56a8a8d7b24d0009333d87c35"
+    },
+    "rmgpy/tools/eedf/integrity.py:_channel_fractions": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "ea8e3f925cd67f50158c5d2332f3c816a6d669d1bd43b18ed25088dfd9a3cea7"
+    },
+    "rmgpy/tools/eedf/integrity.py:_channel_fractions.density": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "a90b33092539d844493ee68823b037f43bfbc26b86e7681793ae96e81831872b"
+    },
+    "rmgpy/tools/eedf/integrity.py:_check_solver": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "be6b38146599eb3c8dad0c37c398b946eeb3073d1172e9f7dfcb414b1fbd2ab9"
+    },
+    "rmgpy/tools/eedf/integrity.py:_legacy_string": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "804704d214dd03c3fd7c4eaf91e848843ef1e97f07b9023b3d31c298ba26f8b2"
+    },
+    "rmgpy/tools/eedf/integrity.py:_neutral_state_key": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "e4ae6084fe916932e62149b1821aaf6c32cdfc08b9416bc4d9992726fb7c029d"
+    },
+    "rmgpy/tools/eedf/integrity.py:_physical_properties": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "e8f83cec46f6ef97fbb0d971bbdab446c452ef0f16c07f890b36f128da41cae6"
+    },
+    "rmgpy/tools/eedf/integrity.py:_physical_properties.entries": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "c426e4a58c0852c7f31b8d4be6e26ea0ba065e0cc95f503f71868e22a32fd4ad"
+    },
+    "rmgpy/tools/eedf/integrity.py:_physical_properties.reference": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "b49347f11246333e328e166991d0da63dc530c2033a1f7fc314b271b1210f6e8"
+    },
+    "rmgpy/tools/eedf/integrity.py:_resolved_properties": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "4965bab427cbd974cbfe6f83ce636939b2ffa7a03bba3c89e3dc79fc0a874471"
+    },
+    "rmgpy/tools/eedf/integrity.py:_resolved_properties.numbers": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "0596d506bbdd2d447d96391d6e2ef1d16bd93d852858ad6b6799638f6d139e49"
+    },
+    "rmgpy/tools/eedf/integrity.py:_solver_environment": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "9756df0c59b7336e6efd5dc8bc21efa918050f050563b8d627d07b87640c5bca"
+    },
+    "rmgpy/tools/eedf/loki.py:_enrich_row": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "210996a5eefd8d070c95bc54073208cad4e91270eaa3ed569bd82fd17f48cae5"
+    },
+    "rmgpy/tools/eedf/loki.py:_finite_scalar": {
+      "verdict": "carried",
+      "reason": "Normalizes one explicitly supplied parser tolerance to an owned finite Python float and refuses malformed values; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/parserTest.py"
+      ],
+      "source_sha256": "df4dc884d28d389873afd7fa5a3a12f4a9ae21d1f480700d5be4862203fbc08e"
+    },
+    "rmgpy/tools/eedf/loki.py:_setup_text": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "73cecba264984611f16bfa4cc9cf3df163a6c8f13fa996f7f75561d24cd63482"
+    },
+    "rmgpy/tools/eedf/loki.py:_setup_text.emit": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "6ecc00e0c211747efe3082d2038a3029069b1194c0c507713642773b1f489dc3"
+    },
+    "rmgpy/tools/eedf/moments.py:_distribution_moments": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "d343678570ce66b639932a10df2f1506eb70220bc7c66533468985079e30ef6f"
+    },
+    "rmgpy/tools/eedf/schema.py:_canonical_json": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/schemaTest.py"
+      ],
+      "source_sha256": "7c78e24b1115a7940604fc97c73ee639d522715c3f8000dc4dcec9ee93a217e4"
+    },
+    "rmgpy/tools/eedf/schema.py:_check_model": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/schemaTest.py"
+      ],
+      "source_sha256": "7bb7babcb2fa5b0d7d6e29b21c69e5dfcc414acea3e8711a7a57eb605702ac28"
+    },
+    "rmgpy/tools/eedf/schema.py:_content_hash": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/schemaTest.py"
+      ],
+      "source_sha256": "67fac911a7dfa8bd9440a93fc7530c8c90d1200817eb0172b047f31ed8682d2f"
+    },
+    "rmgpy/tools/eedf/schema.py:_file_hash": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/schemaTest.py"
+      ],
+      "source_sha256": "ac0a03eb35edc9da150494224fe558aebcdd93f45de1ec057a067c37df60b11e"
+    },
+    "rmgpy/tools/eedf/schema.py:_file_hash.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/schemaTest.py"
+      ],
+      "source_sha256": "d4a26c1c7664c0176a611d9b26d9e73755fe2a3f1e15b18e56aa0df0e3663244"
+    },
+    "rmgpy/tools/eedf/schema.py:_interpolant_identity": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/schemaTest.py"
+      ],
+      "source_sha256": "a8e90f59faeea3603e44fd63ea7e72e259c54c29f964b34c1e1a5d447f9384a6"
+    },
+    "rmgpy/tools/eedf/schema.py:_row_inputs": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/schemaTest.py"
+      ],
+      "source_sha256": "39e376b60b2bb9204be71e9c6521c715747bb68d7d5e1b5a0aca1cbbf5308b9c"
+    },
+    "rmgpy/tools/eedf/schema.py:_validate_spec": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/schemaTest.py"
+      ],
+      "source_sha256": "63f45f5eb0d256524e654a9c3dfc48427a478b21667a5e897b598f736d820457"
+    },
+    "rmgpy/tools/eedf/validation.py:_channel_power_checks": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "d2ece7b6bc6b92ad4d682aee0bebf5e18ee82454c0cb3abded81b4bfe6f5f09f"
+    },
+    "rmgpy/tools/eedf/validation.py:_compare_row": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "4af43d721e31d2648ae5f35143d051017d5b24b40a979eedbac442be4f575f7b"
+    },
+    "rmgpy/tools/eedf/validation.py:_compare_row.record": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "823386ff5f6542e0d1cd19a101ac8cb4f6a0ac64158042b2a0428be357fb35c2"
+    },
+    "rmgpy/tools/eedf/validation.py:_freeze_accuracy_criteria": {
+      "verdict": "carried",
+      "reason": "Validates and freezes explicitly supplied held-out tolerances; it supplies no scientific values and refuses incomplete criteria.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "12fcb791867105fab10d04b680b429aa051c317acc7b9e7a7e1852e70a3f35fa"
+    },
+    "rmgpy/tools/eedf/validation.py:_held_out_accuracy": {
+      "verdict": "carried",
+      "reason": "Privately compares a fingerprinted table row with the explicit direct-solver row supplied only by the qualification wrapper at one pinned held-out point; it performs no molecular-data lookup or substitution.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "a0c6459d19ca81d539093c09b894f5470b50289535de294d9aefe53ece7b0db8"
+    },
+    "rmgpy/tools/eedf/validation.py:_held_out_accuracy.record": {
+      "verdict": "carried",
+      "reason": "Records the numerical verdict for one explicitly named predicted/direct quantity under frozen tolerances; it performs no data acquisition or substitution.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "649d5f184f6bf6da0fcadfae5183134c99650279668711f0ce959e546edf9b51"
+    },
+    "rmgpy/tools/eedf/validation.py:_held_out_points": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "4ff639e13adc1715a9dcde66f9b60046f0224c3bcde51e1a089f761a354f7de7"
+    },
+    "rmgpy/tools/eedf/validation.py:_quantities": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "c479223a53ca34a191c7dce9dfc3ba9470432f2ba40f340f7b6e7deee4bea755"
+    },
+    "rmgpy/tools/eedf/validation.py:_rows_agree": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "4da7d7e274a86b2653786d1d786d02af7a061901b9c645ab038e0536b9b838be"
+    },
+    "rmgpy/tools/eedf/validation.py:_split_branches": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "39150a177d7f94519e9c56972e03a1b9ecc69ee69810a6621c8cecc17ddd09c1"
+    },
+    "rmgpy/tools/eedf/_ownership.py:_detached_copy": {
+      "verdict": "carried",
+      "reason": "Converts explicitly supplied EEDF row and diagnostic values to detached plain containers; it performs no molecular or state-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py",
+        "test/rmgpy/solver/eedfTableTest.py",
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "4de0cbd08164409182a7bf6ced3d1c7b2128b27eceada6b7c9995bd230168451"
+    },
+    "rmgpy/tools/eedf/_ownership.py:_plain_numeric_dtype": {
+      "verdict": "excluded",
+      "reason": "Checks an explicitly supplied NumPy dtype against the ownership allow-list; it acquires no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "ee3e288952fa7513676a05f6268a94ca4c1e5e3954ab0b379d9cfd5b3e2b4b67"
+    },
+    "rmgpy/tools/eedf/report.py:_qualification_record": {
+      "verdict": "excluded",
+      "reason": "Validates an explicit persisted qualification record without acquiring scientific data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "20ce22cbb7e3f5ac044fe4b83e5d19bd706e38444ab41569e1812c1db30765a0"
+    },
+    "rmgpy/tools/eedf/report.py:_unique_object": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Validates persisted JSON object names before reading an EEDF diagnostic report; acquires no species or state data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "e6176c8717fe355169c607b374d8ade4d771f3059d5761f52e7c3c7d6b6040a0"
     }
   }
 }

@@ -5,11 +5,12 @@ import os
 from types import MappingProxyType, SimpleNamespace
 
 import pytest
+import numpy as np
 
 import rmgpy.rmg.input as rmg_input
 from rmgpy.rmg.main import RMG
 from rmgpy.exceptions import PlasmaStateError
-from rmgpy.tools.eedf.schema import file_hash
+from rmgpy.tools.eedf.schema import _file_hash
 from real_eedf_harness import (
     DEVELOPMENT_BINDINGS,
     DEVELOPMENT_SWEEP_TOLERANCES,
@@ -22,8 +23,14 @@ from real_eedf_harness import (
     pure_argon_deck,
     reactor_readiness,
 )
-from rmgpy.solver.eedf_provider import DevelopmentWallBudgetExceeded
+from rmgpy.solver.eedf_provider import (
+    DevelopmentWallBudgetExceeded,
+    EEDFProvider,
+    _development_unqualified_table_route,
+)
 from rmgpy.solver.electronegative import manifest_values
+from rmgpy.tools.eedf.generate import model_inputs
+from rmgpy.tools.eedf.schema import load_spec
 import runRealEEDFArgon as real_eedf_runner
 from runRealEEDFArgon import (
     development_diagnostic,
@@ -152,7 +159,7 @@ def test_full_real_artifact_is_unaccepted_and_fingerprinted(real_pure_argon_arti
     assert manifest['accepted'] is False
     assert len([item for item in manifest['held_out_verdicts']
                 if not item['passed']]) == 8
-    assert file_hash(artifact / 'table.h5') == manifest['artifact_sha256']
+    assert _file_hash(artifact / 'table.h5') == manifest['artifact_sha256']
     assert manifest['branches'] == ['branch_0']
     assert manifest['branch_detection'][0]['agreement'] is True
     assert manifest['row_inputs']['Tg_K'] == 298.15
@@ -162,6 +169,135 @@ def test_full_real_artifact_is_unaccepted_and_fingerprinted(real_pure_argon_arti
         '8 of 188 held-out verdicts failed',
         'branch_0: uncertified: unseeded scans',
     ]
+    assert (
+        'Deliberate forgery by same-user code (hand-setting a verdict field, '
+        'swapping a program between hashing and running, passing a fake solver, '
+        'hand-built same-name copies, overflow-constructed inputs) is out of scope.'
+        in manifest['limitations'])
+
+
+@pytest.fixture(scope='module')
+def boundary_real_artifact(tmp_path_factory):
+    from pathlib import Path
+    from rmgpy.tools.eedf.generate import generate
+
+    spec_path = os.environ.get('EEDF_REAL_SPEC')
+    if not spec_path:
+        pytest.skip('EEDF_REAL_SPEC supplies the complete pinned fixture')
+    spec = load_real_spec(spec_path)
+    work = tmp_path_factory.mktemp('boundary-real-eedf')
+    spec['axes'] = {'u': [float(np.log(16.99)), float(np.log(17.01))]}
+    a, b = spec['axes']['u']
+    spec['held_out'] = {
+        'cell_midpoints': True, 'lhs_count': 0, 'seed': 233,
+        'off_centre': [{'u': .75 * a + .25 * b}],
+    }
+    spec['refinement']['max_rounds'] = 0
+    spec['screen']['candidates'] = []
+    for envelope in spec['envelopes'].values():
+        envelope['min'] = envelope['max'] = envelope['reference']
+    spec.update(output_root=str(work / 'tables'), scratch_root=str(work / 'loki'))
+    artifact = Path(generate(spec, command_line=['pytest real input boundaries']))
+    return artifact, json.loads((artifact / 'manifest.json').read_text())
+
+
+def test_real_diagnostic_refuses_dtype_metadata(boundary_real_artifact):
+    artifact, manifest = boundary_real_artifact
+    spec = load_spec(artifact / 'generation_spec.json')
+    with _development_unqualified_table_route():
+        provider = EEDFProvider(
+            artifact, model_inputs(spec),
+            artifact_sha256=manifest['artifact_sha256'],
+            reaction_map={}, branch='branch_0')
+    calibration = np.array([1., 2.])
+    history = np.array([3., 4.], dtype=np.dtype(
+        'f8', metadata={'calibration': calibration}))
+
+    with pytest.raises(TypeError, match='metadata'):
+        provider.annotate_development_diagnostic({'history': history})
+
+    assert float((history * calibration[0]).sum()) == 7.
+
+
+def test_real_generation_refuses_readonly_spec_before_publication(
+        boundary_real_artifact, tmp_path):
+    from rmgpy.tools.eedf.generate import generate
+
+    artifact, _ = boundary_real_artifact
+    spec = load_spec(artifact / 'generation_spec.json')
+    output = tmp_path / 'readonly-tables'
+    scratch = tmp_path / 'readonly-loki'
+    spec.update(output_root=str(output), scratch_root=str(scratch), max_parallel=1)
+
+    with pytest.raises(TypeError, match='mutable'):
+        generate(MappingProxyType(spec), command_line=['pytest readonly spec'])
+
+    assert not output.exists()
+    assert not scratch.exists()
+
+
+def test_real_driver_accepts_issued_composition(
+        boundary_real_artifact, tmp_path):
+    from rmgpy.tools.eedf.loki import LoKIDriver
+
+    artifact, manifest = boundary_real_artifact
+    spec = load_spec(artifact / 'generation_spec.json')
+    with _development_unqualified_table_route():
+        provider = EEDFProvider(
+            artifact, model_inputs(spec),
+            artifact_sha256=manifest['artifact_sha256'],
+            reaction_map={}, branch='branch_0')
+    row = provider.row(sum(spec['axes']['u']) / len(spec['axes']['u']), {})
+    spec['scratch_root'] = str(tmp_path)
+    driver = LoKIDriver(spec)
+    control = driver.run(dict(row.composition), [row.EN_Td], 'roundtrip_plain')
+    issued = driver.run(row.composition, [row.EN_Td], 'roundtrip_issued')
+
+    assert issued[0]['composition'] == control[0]['composition']
+    assert issued[0]['EN_Td'] == control[0]['EN_Td'] == row.EN_Td
+    np.testing.assert_array_equal(issued[0]['f0'], control[0]['f0'])
+    assert len(list(tmp_path.glob('*/output/solve/reducedField_*/eedf.txt'))) == 2
+
+
+def test_public_provider_row_survives_real_endpoint_resolve(
+        real_pure_argon_artifact, tmp_path):
+    artifact, manifest = real_pure_argon_artifact
+    spec = load_spec(artifact / 'generation_spec.json')
+    with _development_unqualified_table_route():
+        provider = EEDFProvider(
+            artifact,
+            model_inputs(spec),
+            artifact_sha256=manifest['artifact_sha256'],
+            reaction_map={},
+            branch='branch_0',
+        )
+    u = (spec['axes']['u'][0] + spec['axes']['u'][-1]) / 2.
+    row = provider.row(u, {})
+    coordinates = {
+        name: envelope['reference']
+        for name, envelope in spec['envelopes'].items()
+    }
+    reactor = SimpleNamespace(
+        development_trajectory=[{'time_s': 0., 'u': u}],
+        electron_kinetics={
+            'table': (str(artifact), manifest['artifact_sha256']),
+        },
+        eedf_provider=provider,
+        eedf_row=row,
+        T=SimpleNamespace(value_si=spec['Tg_K']),
+        P=SimpleNamespace(value_si=spec['P_Pa']),
+        y=None,
+        _eedf_coordinates=lambda y: dict(coordinates),
+    )
+
+    result = real_eedf_runner.a_posteriori_resolve(
+        reactor, artifact, tmp_path / 'endpoint-resolve')
+
+    assert 'reason' not in result
+    assert result['outcome'] in {'PASS', 'FAIL'}
+    assert result['checks']
+    output = tmp_path / 'endpoint-resolve' / 'loki-a-posteriori'
+    assert len(list(output.glob('*/output/solve/reducedField_*/eedf.txt'))) == 1
 
 
 def test_run_deck_is_reproducible_and_names_current_blockers(
@@ -193,19 +329,24 @@ def test_run_deck_is_reproducible_and_names_current_blockers(
     assert initialization['initial_reduced_field_Td'] == 17.0
     assert initialization['gas_density_m^-3'] == pytest.approx(1.6194013103625856e23)
     assert initialization['reference_electron_density_m^-3'] == pytest.approx(
-        2.7715502016522555e13, rel=2.e-6)
+        2.7715708425639016e13, rel=2.e-6)
     assert initialization['electron_mole_fraction'] == pytest.approx(
-        1.711465992158105e-10, rel=2.e-6)
+        1.711478738172658e-10, rel=2.e-6)
     assert initialization['reactor_reference_volume_m3'] == pytest.approx(
-        3.7187455691997435, rel=2.e-6)
+        3.7187455691992075, rel=2.e-6)
     assert initialization['reactor_absorbed_power_W'] == pytest.approx(
         789.1423192522975, rel=2.e-6)
     assert initialization['table_field_power_coefficient_eV_m3_s^-1'] == pytest.approx(
-        2.9510139153579735e-16, rel=2.e-6)
-    assert initialization['table_A6b_relative'] == pytest.approx(
+        2.950991938067493e-16, rel=2.e-6)
+    assert initialization['A6b-runtime']['relative_error'] == 0.
+    assert initialization['A6b-runtime']['passed'] is True
+    assert initialization['former_implementation_A6b']['relative_error'] == pytest.approx(
         7.447369314637744e-6)
-    assert initialization['table_A6b_tolerance'] == 1.e-6
-    assert initialization['table_A6b_outcome'] == 'FAIL'
+    assert initialization['former_implementation_A6b']['tolerance'] == 1.e-6
+    assert initialization['former_implementation_A6b']['outcome'] == 'FAIL'
+    assert initialization['former_implementation_endpoint_A6b']['relative_error'] == pytest.approx(
+        3.1240247322087792e-6)
+    assert initialization['former_implementation_endpoint_A6b']['outcome'] == 'FAIL'
     assert initialization['over_ionised_field_power_W'] == pytest.approx(
         4.610238207728393e6, rel=2.e-4)
     assert mole_fractions == pytest.approx({
@@ -244,7 +385,7 @@ def test_sweep_comparison_declares_every_required_metric_before_execution():
             'Q_wall_electron': 1., 'Q_wall_ion': 3.,
         },
         'A6a_relative': 1.e-12,
-        'A6b_relative': 3.12e-6,
+        'A6b-runtime': {'relative_error': 0.0},
         'convergence_time_s': 0.0165,
         'transient_extrema': {
             'electron_density_m^-3': {'min': 2.8e13, 'max': 2.4e14},
@@ -265,7 +406,7 @@ def test_sweep_comparison_declares_every_required_metric_before_execution():
         'electron_power_partition_W.Q_elastic',
         'electron_power_partition_W.Q_wall_electron',
         'electron_power_partition_W.Q_wall_ion',
-        'A6a_relative', 'A6b_relative',
+        'A6a_relative', 'A6b-runtime.relative_error',
     }
     assert comparison['convergence_time_comparison']['agreement_required'] is False
     assert comparison['convergence_time_comparison']['arms']['1x']['value_s'] == 0.0165
@@ -299,7 +440,7 @@ def test_nonconverged_results_cannot_be_candidates_or_enter_summary():
             'Q_wall_electron': 1., 'Q_wall_ion': 3.,
         },
         'A6a_relative': 1.e-12,
-        'A6b_relative': 3.12e-6,
+        'A6b-runtime': {'relative_error': 0.0},
         'convergence_time_s': 0.0165,
         'transient_extrema': {},
     }

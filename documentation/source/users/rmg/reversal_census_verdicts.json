@@ -1,11 +1,4 @@
 {
-  "rmgpy/solver/eedf_provider.py::EEDFProvider._run_qualification::as_dict#1": {
-    "verdict": "not-reachable-for-resolved",
-    "reason": "Serializes an immutable EEDFRow of numerical solver quantities into qualification evidence; it does not serialize executable Reaction kinetics or a reaction direction.",
-    "tests": [
-      "test/rmgpy/solver/eedfProviderTest.py::test_qualify_passes_only_when_direct_and_interpolated_rows_agree"
-    ]
-  },
   "arkane/common.py::ArkaneSpecies.__repr__::as_dict#1": {
     "verdict": "not-reachable-for-resolved",
     "reason": "Serializes quantities, thermodynamic/statistical-mechanics species data or EEDF table rows, not executable Reaction kinetics/directions.",
@@ -4223,13 +4216,6 @@
       "test/rmgpy/data/kinetics/superelasticRework2Test.py::test_reverse_census_reactors"
     ]
   },
-  "rmgpy/solver/eedf.py::EEDFRow.as_dict::reaction-io": {
-    "verdict": "guarded",
-    "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
-    "tests": [
-      "test/rmgpy/data/kinetics/superelasticRework2Test.py::test_reverse_census_reactors"
-    ]
-  },
   "rmgpy/solver/liquid.pyx::LiquidReactor.generate_rate_coefficients::check_reverse_from_equilibrium_supported#1": {
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -4681,13 +4667,6 @@
     "tests": [
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_chemkin_duplicate_roundtrip_retains_independent_reverse",
       "test/rmgpy/data/kinetics/superelasticRework2Test.py::test_direction_census_diff_models"
-    ]
-  },
-  "rmgpy/tools/eedf/generate.py::generate::as_dict#1": {
-    "verdict": "not-reachable-for-resolved",
-    "reason": "Serializes quantities, thermodynamic/statistical-mechanics species data or EEDF table rows, not executable Reaction kinetics/directions.",
-    "tests": [
-      "test/rmgpy/data/kinetics/superelasticCensusTest.py::test_nonreaction_serialized_data_has_no_direction"
     ]
   },
   "rmgpy/tools/fluxdiagram.py::load_chemkin_output::reaction-io": {

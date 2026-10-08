@@ -21,10 +21,11 @@ identity for loading::
     from rmgpy.solver.eedf import EEDFTable
 
     spec = load_spec('/tables/<artifact_sha256>/generation_spec.json')
-    # Obtain this content address from the approved generation result.
+    # Obtain this content address from the provisional generation result.
     expected_artifact_sha256 = '<artifact_sha256>'
     table = EEDFTable.load('/tables/<artifact_sha256>', model_inputs(spec),
-                           artifact_sha256=expected_artifact_sha256)
+                           artifact_sha256=expected_artifact_sha256,
+                           require_accepted=False)  # offline qualification only
     row = table.row(u, composition, branch_id='branch_0')
 
 ``u`` is ln(E/N / 1 Td). ``composition`` maps each named composition axis to
@@ -97,10 +98,12 @@ JSON specs are also accepted. In YAML, write exponential numbers such as
   ``relative_power_share``, ``absolute_power_share``. Below-floor rates are
   flagged and checked absolutely. Rate interpolation uses ln(1 + k/floor),
   preserving identically zero channels with continuous below-floor behavior.
-* ``held_out``: ``{lhs_count, seed, cell_midpoints: true}``. Independent points
-  include each axis-cell midpoint at the other axes' nodes, joint cell
-  midpoints and seeded Latin-hypercube points. The study scheme uses 32 LHS
-  points; a smaller count is useful for a real-solver integration fixture.
+* ``held_out``: ``{lhs_count, seed, cell_midpoints: true, off_centre: [...]}``.
+  Independent points include each axis-cell midpoint at the other axes' nodes,
+  joint cell midpoints, seeded Latin-hypercube points and the explicitly
+  preselected off-centre points. Offline T10 qualification requires a nonempty
+  ``off_centre`` list. A declared off-centre point on the training grid is not
+  independent and is refused rather than silently omitted.
 * ``refinement``: ``{max_rounds}``. Failing cells receive third-point nodes.
   All old independent points stay held out; new subcell midpoints join them.
 * ``repositories``: engine and database SHAs, recorded without comparison.
@@ -111,24 +114,44 @@ Interpolation and qualification
 -------------------------------
 
 Tensor PCHIP reduces composition dimensions first and u last. Rate logarithms,
-mean energy and all transport and power quantities use the same interpolation
-call. The mean-energy derivative is the derivative of that exact interpolant.
-Zero or sign-changing mean-energy secants refuse the branch; a small derivative
-refuses the requested row. Nonphysical transport and EEDFs also refuse.
+mean energy, mobility and the other swarm and power quantities use the same
+interpolation call, except for field power. At a requested state, field power
+is derived from the interpolated reduced mobility as
+``mobility_N * (EN_Td * 1e-21)**2``; the stored native field-power tensor is
+retained for source-identity checks, not used as a second runtime interpolant.
+The field-power derivatives are derived from that same mobility interpolant.
+The mean-energy derivative is the derivative of its exact interpolant. Zero or
+sign-changing mean-energy secants refuse the branch; a small derivative refuses
+the requested row. Nonphysical transport and EEDFs also refuse.
 
 The generator compares ascending, descending and independent cold scans and
 preserves distinct observed paths as separate branch tensors. It never
 averages different EEDFs. Branch count or correspondence changes across the
-composition tensor refuse generation. Every held-out cell/quantity failure
-is recorded, and an unsuccessful qualification returns CLI exit status 2.
+composition tensor refuse generation. Generation records the source-identity
+and legacy held-out checks, but always publishes a provisional artifact with
+``accepted=False`` and a blocked T10 accuracy verdict; its CLI therefore exits
+with status 2. Runtime identity records that field power is mobility-derived by
+construction, but is explicitly not an interpolation-accuracy claim.
+
+The public offline ``qualify_interpolation`` wrapper supplies the separate T10
+accuracy evidence. It requires frozen ``mobility_N`` and ``field_power``
+criteria, the exact fingerprint-bound generation setup, one pinned branch and
+a nonempty set of preselected off-centre points. It runs fresh direct LoKI
+solves for every declared held-out point in per-attempt directories, refuses
+training-grid declarations, and checks that the evaluated point set exactly
+matches the declared set before returning verdicts. Passing source identity or
+runtime identity does not substitute for passing these fresh-direct T10 checks,
+and the wrapper does not silently promote the generated artifact.
+
 The caller must supply the approved artifact byte hash; the loader hashes and
-reads one opened snapshot. Acceptance is derived from recorded verdicts.
-Every rate-changing floor and all qualification policies enter model identity.
-Training, scan and held-out grids agree bit for bit, including stored cell faces.
-Symbolic populations, even constant expressions, refuse unless resolved to
-numeric stored values. HF, adaptive and nonuniform grids currently refuse.
-Production loads require acceptance; ``require_accepted=False`` is available
-only for the offline generator's validation of a provisional artifact.
+reads one opened snapshot. A production load requires ``accepted=True``, all
+recorded legacy held-out results passing, and a passing T10 interpolation
+qualification. Every rate-changing floor and all qualification policies enter
+model identity. Training, scan and held-out grids agree bit for bit, including
+stored cell faces. Symbolic populations, even constant expressions, refuse
+unless resolved to numeric stored values. HF, adaptive and nonuniform grids
+currently refuse. ``require_accepted=False`` is available only for offline
+qualification of a provisional artifact.
 
 At an accepted reactor terminal state, qualification resolves the effective
 gas fractions and electronic-state populations, renders one LoKI setup, and
@@ -331,6 +354,12 @@ or chunked numeric datasets, built-in filters, unique hard links, and
 numeric/string attributes are supported. External raw storage, virtual
 datasets, soft/external links, plugin filters and references refuse. The
 writer checks the same restrictions before publishing.
+
+The Python generator requires a mutable plain ``dict`` spec so its successful
+grid update can be copied back; read-only specs refuse before solver work or
+publication. Public EEDF ownership conversion refuses NumPy dtype metadata.
+Issued row compositions can be passed directly to ``LoKIDriver.run``.
+The power-report CLI refuses duplicate JSON names in persisted results.
 
 Every state-property selector (population, energy and statistical weight) is
 resolved as the pinned LoKI parser resolves it. Equivalent explicit neutral

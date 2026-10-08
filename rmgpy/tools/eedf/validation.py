@@ -33,11 +33,11 @@ import itertools
 import numpy as np
 from scipy.stats import qmc
 
-from rmgpy.tools.eedf.schema import EEDFError
+from rmgpy.tools.eedf.schema import EEDFError, FingerprintMismatch, SpecError
 
 
-def quantities(row):
-    """Numeric quantities shared by scan, sensitivity and held-out comparisons."""
+def _quantities(row):
+    """Numeric _quantities shared by scan, sensitivity and held-out comparisons."""
     values = {'k_ine': np.asarray(row['k_ine']), 'k_sup': np.asarray(row['k_sup']),
               'channel_power': np.asarray(row['channel_power']),
               'attachment_energy_eV': np.asarray(row['attachment_energy_eV']),
@@ -47,13 +47,13 @@ def quantities(row):
     return values
 
 
-def rows_agree(a, b, tolerance):
-    """All row quantities, with rate/power absolute floors where available."""
+def _rows_agree(a, b, tolerance):
+    """All row _quantities, with rate/power absolute floors where available."""
     for name in ('energy_eV', 'energy_edges_eV'):
         if name in a or name in b:
             if name not in a or name not in b or not np.array_equal(a[name], b[name]):
                 raise EEDFError('energy grid changes across solves')
-    qa, qb = quantities(a), quantities(b)
+    qa, qb = _quantities(a), _quantities(b)
     if set(qa) != set(qb):
         return False
     for key in qa:
@@ -67,7 +67,7 @@ def rows_agree(a, b, tolerance):
     return True
 
 
-def split_branches(passes, tolerance):
+def _split_branches(passes, tolerance):
     """Keep distinct ordered scan trajectories; never average different EEDFs.
 
     Down-scan rows enter in descending order. A branch is a full observed scan
@@ -79,7 +79,7 @@ def split_branches(passes, tolerance):
     branches, sources = {}, {}
     for name, rows in ordered.items():
         for branch_id, existing in branches.items():
-            if all(rows_agree(a, b, tolerance) for a, b in zip(rows, existing)):
+            if all(_rows_agree(a, b, tolerance) for a, b in zip(rows, existing)):
                 sources[branch_id].append(name)
                 break
         else:
@@ -87,14 +87,14 @@ def split_branches(passes, tolerance):
             branches[branch_id] = rows
             sources[branch_id] = [name]
     disagreements = [i for i in range(len(ordered['up']))
-                     if not all(rows_agree(ordered['up'][i], ordered[name][i], tolerance)
+                     if not all(_rows_agree(ordered['up'][i], ordered[name][i], tolerance)
                                 for name in ('down', 'cold'))]
     return branches, {'agreement': not disagreements, 'disagreeing_nodes': disagreements,
                       'branch_sources': sources}
 
 
-def held_out_points(axes, policy):
-    """Every cell's u/composition midpoints, joint midpoints and seeded LHS."""
+def _held_out_points(axes, policy):
+    """Every cell midpoint plus frozen off-centre and seeded points."""
     names = list(axes)
     grid = [np.asarray(v, dtype=float) for v in axes.values()]
     points = set()
@@ -108,11 +108,84 @@ def held_out_points(axes, policy):
     if len(lhs):
         samples = qmc.scale(lhs, [v[0] for v in grid], [v[-1] for v in grid])
         points.update(map(tuple, samples))
+    for point in policy.get('off_centre', []):
+        if set(point) != set(names):
+            raise SpecError('held_out off_centre coordinates')
+        values = tuple(float(point[name]) for name in names)
+        if any(not axis[0] <= value <= axis[-1]
+               for axis, value in zip(grid, values)):
+            raise SpecError('held_out off_centre domain')
+        points.add(values)
     training = set(itertools.product(*grid))
     return [dict(zip(names, map(float, p))) for p in sorted(points - training)]
 
 
-def compare_row(predicted, direct, manifest):
+def _freeze_accuracy_criteria(criteria):
+    """Validate and copy the separately frozen T10 transport criteria."""
+    if not isinstance(criteria, dict) or set(criteria) != {
+            'mobility_N', 'field_power'}:
+        raise SpecError('held-out accuracy criteria require mobility_N and field_power')
+    frozen = {}
+    for name, tolerance in criteria.items():
+        if (not isinstance(tolerance, dict) or set(tolerance) != {'rtol', 'atol'}
+                or any(not isinstance(value, (int, float)) or
+                       not np.isfinite(value) or value < 0.
+                       for value in tolerance.values())):
+            raise SpecError('held-out accuracy criterion ' + name)
+        frozen[name] = {key: float(value) for key, value in tolerance.items()}
+    return frozen
+
+
+def _held_out_accuracy(table, direct, point, *, criteria, setup_fingerprint):
+    """Compare one table prediction with an already-run direct-solver row.
+
+    This private comparator neither runs nor labels a reference. The public
+    qualification wrapper owns the pinned point set and direct solver, and adds
+    provenance only after the solver returns.
+    """
+    frozen = _freeze_accuracy_criteria(criteria)
+    if not setup_fingerprint or setup_fingerprint != table.manifest.get('fingerprint'):
+        raise FingerprintMismatch('held-out direct-solver setup fingerprint')
+
+    names = tuple(table.axis_names)
+
+    def record(quantity, actual, reference, tolerance):
+        difference = abs(float(actual) - float(reference))
+        allowed = tolerance['atol'] + tolerance['rtol'] * abs(float(reference))
+        return {
+            'rule': 'T10',
+            'quantity': quantity,
+            'index': [],
+            'absolute_error': difference,
+            'relative_error': (difference / abs(float(reference))
+                               if reference else None),
+            'allowed_error': allowed,
+            'passed': bool(difference <= allowed),
+        }
+
+    if not isinstance(point, dict) or set(point) != set(names):
+        raise SpecError('held-out point coordinates')
+    composition = {name: point[name] for name in names[1:]}
+    if not isinstance(direct, dict):
+        raise EEDFError('direct solver did not return a row mapping')
+    predicted = table.row(point['u'], composition)._as_dict()
+    checks = _compare_row(predicted, direct, table.manifest)
+    checks.append(record(
+        'mobility_N', predicted['swarm']['mobility_N'],
+        direct['swarm']['mobility_N'], frozen['mobility_N']))
+    checks.append(record(
+        'field_power', predicted['power_groups']['field'],
+        direct['power_groups']['field'], frozen['field_power']))
+    return {
+        'point': {name: float(point[name]) for name in names},
+        'branch_id': predicted['branch_id'],
+        'criteria': frozen,
+        'checks': checks,
+        'passed': bool(checks) and all(check['passed'] for check in checks),
+    }
+
+
+def _compare_row(predicted, direct, manifest):
     """Return named H1–H4 verdicts, using species flux and field power scales.
 
     Resolved target fractions supply conservative individual flux budgets. Rates
@@ -177,9 +250,9 @@ def compare_row(predicted, direct, manifest):
     distance = np.sum(abs(np.asarray(predicted['f0']) - direct['f0']) * weights)
     record('F0', 'f0.weighted_L1', distance, 0., 0., tol['F0']['atol'])
     record('F0', 'attachment_energy_eV', predicted['attachment_energy_eV'], direct['attachment_energy_eV'], **tol['H1'])
-    from rmgpy.tools.eedf.moments import distribution_moments
+    from rmgpy.tools.eedf.moments import _distribution_moments
     physical = dict(predicted, gas_temperature_K=predicted.get('composition', {}).get('Tg_K', manifest.get('row_inputs', {}).get('Tg_K', manifest.get('Tg_K'))))
-    moments = distribution_moments(physical, manifest['channel_map'])
+    moments = _distribution_moments(physical, manifest['channel_map'])
     record('consistency', 'f0.mean_energy_eV', predicted['swarm']['mean_energy_eV'], moments['mean_energy_eV'], **tol['H1'])
     for direction in ('k_ine', 'k_sup'):
         record('consistency', 'f0.' + direction, predicted[direction], moments[direction],
@@ -187,12 +260,12 @@ def compare_row(predicted, direct, manifest):
     field = abs(predicted['power_groups']['field'])
     record('consistency', 'f0.channel_power', predicted['channel_power'], moments['channel_power'],
            tol['H4']['rtol'], max(tol['H4']['atol'], floors['absolute_power_share'] * field))
-    verdicts.extend(channel_power_checks(predicted, manifest))
-    verdicts.extend(channel_power_checks(direct, manifest))
+    verdicts.extend(_channel_power_checks(predicted, manifest))
+    verdicts.extend(_channel_power_checks(direct, manifest))
     return verdicts
 
 
-def channel_power_checks(row, manifest):
+def _channel_power_checks(row, manifest):
     """Compare group sums with a material-channel and field-scaled error cap.
 
     A fixed absolute floor must not hide a missing channel at low fields. The

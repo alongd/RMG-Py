@@ -46,21 +46,37 @@ import numpy as np
 import yaml
 from scipy.constants import elementary_charge, electron_mass
 
-from rmgpy.tools.eedf.channels import validate_physical_map
+from rmgpy.tools.eedf._ownership import _detached_copy
+from rmgpy.tools.eedf.channels import _validate_physical_map
 from rmgpy.tools.eedf.schema import (
-    EEDFError,
-    FingerprintMismatch,
-    canonical_json,
-    content_hash,
-    file_hash,
-    qualification_setup_identity,
-    terminal_working_condition_fields,
+    EEDFError, FingerprintMismatch, _canonical_json, _content_hash, _file_hash,
+    qualification_setup_identity, terminal_working_condition_fields,
 )
-from rmgpy.tools.eedf.integrity import check_solver, physical_properties, solver_environment, resolved_properties, channel_fractions
+from rmgpy.tools.eedf.integrity import (
+    _channel_fractions,
+    _check_solver,
+    _physical_properties,
+    _resolved_properties,
+    _solver_environment,
+)
 
 
 class LoKIError(EEDFError):
     """Missing, non-converged, malformed, or inconsistent solver output."""
+
+
+def _finite_scalar(value, name):
+    """Return one finite Python float without retaining a caller array/view."""
+    try:
+        array = np.asarray(value)
+        if array.ndim != 0:
+            raise ValueError
+        result = float(array)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise LoKIError(name + ' must be a finite scalar') from error
+    if not np.isfinite(result):
+        raise LoKIError(name + ' must be a finite scalar')
+    return result
 
 
 SWARM = {
@@ -115,6 +131,15 @@ def _number(value):
 
 def parse_output(folder, normalization_atol, energy_edges=None):
     """Parse the four per-solve output files, preserving LoKI's SI/eV units."""
+    folder, normalization_atol, energy_edges = copy.deepcopy(
+        (folder, normalization_atol, energy_edges))
+    normalization_atol = _finite_scalar(
+        normalization_atol, 'normalization_atol')
+    if normalization_atol < 0:
+        raise LoKIError('normalization_atol must be a finite scalar')
+    if energy_edges is not None:
+        energy_edges = np.array(energy_edges, dtype=float, copy=True)
+        energy_edges.setflags(write=False)
     folder = Path(folder)
     swarm = _terms(folder / 'swarmParameters.txt', SWARM)
     power = _terms(folder / 'powerBalance.txt', POWER)
@@ -192,8 +217,10 @@ def _format(value, state):
     return str(value).lower() if isinstance(value, bool) else str(value)
 
 
-def setup_text(spec, coordinates, fields_Td, folder):
+def _setup_text(spec, coordinates, fields_Td, folder):
     """Write a complete legacy setup from explicit, fingerprinted properties."""
+    spec, coordinates, fields_Td = copy.deepcopy(
+        (spec, coordinates, fields_Td))
     state = {name: item['reference'] for name, item in spec['envelopes'].items()}
     state.update(coordinates)
     wc = copy.deepcopy(spec['working_conditions'])
@@ -202,7 +229,7 @@ def setup_text(spec, coordinates, fields_Td, folder):
     options = copy.deepcopy(spec['solver_options'])
     options['isOn'] = True
     options['LXCatFiles'] = [name for name, entry in spec['input_files'].items() if entry['kind'] == 'cross_section']
-    options['gasProperties'], options['stateProperties'], _, _ = resolved_properties(spec, coordinates)
+    options['gasProperties'], options['stateProperties'], _, _ = _resolved_properties(spec, coordinates)
     data = {'workingConditions': wc, 'electronKinetics': options,
             'gui': {'isOn': False, 'refreshFrequency': 1},
             'output': {'isOn': True, 'dataFormat': 'txt', 'folder': folder,
@@ -241,7 +268,7 @@ def qualification_setup_sha256(spec, coordinates=None, fields_Td=None):
             if name != 'u'
         }
     fields_Td = [1.] if fields_Td is None else fields_Td
-    rendered = setup_text(spec, coordinates, fields_Td, 'qualification')
+    rendered = _setup_text(spec, coordinates, fields_Td, 'qualification')
     return qualification_setup_sha256_from_rendered(spec, rendered)
 
 
@@ -275,7 +302,7 @@ def qualification_setup_sha256_from_rendered(spec, setup):
     for name in terminal_working_condition_fields(spec):
         rendered['workingConditions'][name] = '<terminal>'
     rendered['output']['folder'] = '<run folder>'
-    return content_hash({
+    return _content_hash({
         'physical_spec': qualification_setup_identity(spec),
         'rendered_setup': rendered,
     })
@@ -365,14 +392,15 @@ class LoKIDriver:
     """Execute an immutable binary in isolated scratch jobs, with bounded OMP."""
 
     def __init__(self, spec):
+        spec = copy.deepcopy(spec)
         self.spec = spec
-        check_solver(spec)
-        physical_properties(spec)
+        _check_solver(spec)
+        _physical_properties(spec)
         for name, item in spec['input_files'].items():
-            if file_hash(item['path']) != item['sha256']:
+            if _file_hash(item['path']) != item['sha256']:
                 raise FingerprintMismatch('input file ' + name)
         for key in ('channel_map', 'cmake_cache'):
-            if file_hash(spec[key]['path']) != spec[key]['sha256']:
+            if _file_hash(spec[key]['path']) != spec[key]['sha256']:
                 raise FingerprintMismatch(key)
         self.setups = {}
 
@@ -384,16 +412,28 @@ class LoKIDriver:
     def prepare(self, coordinates, fields_Td, job_name, terminal_state=None,
                 verify_dependencies=True):
         """Render and validate exactly one immutable execution bundle."""
-        spec = copy.deepcopy(self.spec)
+        spec, coordinates, fields_Td, job_name = _detached_copy(
+            (self.spec, coordinates, fields_Td, job_name), 'LoKI inputs')
+        if not isinstance(coordinates, dict):
+            raise LoKIError('coordinates must be a named mapping')
+        coordinates = {
+            str(name): _finite_scalar(value, str(name))
+            for name, value in coordinates.items()
+        }
+        try:
+            fields_Td = tuple(
+                _finite_scalar(value, 'fields_Td') for value in fields_Td)
+        except TypeError as error:
+            raise LoKIError('fields_Td must be a finite sequence') from error
+        if not fields_Td or any(value <= 0. for value in fields_Td):
+            raise LoKIError('fields_Td must contain positive finite scalars')
+        if not isinstance(job_name, str):
+            raise LoKIError('job_name must be a string')
+        job_name = str(job_name)
         if verify_dependencies:
-            check_solver(spec)
-            physical_properties(spec)
-        coordinates = {str(name): float(value)
-                       for name, value in coordinates.items()}
-        fields_Td = tuple(float(value) for value in fields_Td)
-        if not fields_Td or not all(np.isfinite(fields_Td)):
-            raise LoKIError('prepared setup has invalid reduced field')
-        setup = setup_text(spec, coordinates, fields_Td, 'solve')
+            _check_solver(spec)
+            _physical_properties(spec)
+        setup = _setup_text(spec, coordinates, fields_Td, 'solve')
         setup_bytes = setup.encode('utf-8')
         rendered = yaml.safe_load(setup_bytes)
         if terminal_state is not None:
@@ -429,10 +469,10 @@ class LoKIDriver:
                     raise LoKIError('terminal state has no ' + state_key)
                 if float(conditions.get(field, float('nan'))) != float(expected):
                     raise LoKIError('prepared setup ' + field + ' differs from terminal state')
-        spec_bytes = canonical_json(spec).encode('utf-8')
+        spec_bytes = _canonical_json(spec).encode('utf-8')
         dependencies = _dependency_identity(spec)
         table_identity = qualification_setup_sha256_from_rendered(spec, setup_bytes)
-        execution_identity = content_hash({
+        execution_identity = _content_hash({
             'setup_sha256': hashlib.sha256(setup_bytes).hexdigest(),
             'spec_sha256': hashlib.sha256(spec_bytes).hexdigest(),
             'dependencies': dependencies,
@@ -458,7 +498,7 @@ class LoKIDriver:
         spec = bundle.spec
         coordinates = bundle.coordinate_values
         fields_Td = list(bundle.fields_Td)
-        expected = content_hash({
+        expected = _content_hash({
             'setup_sha256': hashlib.sha256(bundle.setup_bytes).hexdigest(),
             'spec_sha256': hashlib.sha256(bundle.spec_bytes).hexdigest(),
             'dependencies': bundle.dependency_identity,
@@ -468,8 +508,8 @@ class LoKIDriver:
         })
         if expected != bundle.execution_identity:
             raise FingerprintMismatch('prepared execution bundle')
-        check_solver(spec)
-        physical_properties(spec)
+        _check_solver(spec)
+        _physical_properties(spec)
         work = Path(spec['scratch_root']) / bundle.job_name
         work.mkdir(parents=True, exist_ok=False)
         for name, item in spec['input_files'].items():
@@ -478,14 +518,14 @@ class LoKIDriver:
                 raise LoKIError('unsafe scratch input name')
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(item['path'], target)
-            if file_hash(target) != item['sha256']:
+            if _file_hash(target) != item['sha256']:
                 raise FingerprintMismatch(name)
         (work / 'setup.in').write_bytes(bundle.setup_bytes)
         if hashlib.sha256((work / 'setup.in').read_bytes()).hexdigest() != hashlib.sha256(
                 bundle.setup_bytes).hexdigest():
             raise FingerprintMismatch('materialized setup bytes')
         self.setups[bundle.job_name] = bundle.setup_bytes.decode('utf-8')
-        env = solver_environment(spec)
+        env = _solver_environment(spec)
         with (work / 'stdout.log').open('w') as stdout, (work / 'stderr.log').open('w') as stderr:
             try:
                 completed = subprocess.run([spec['binary']['path'], 'setup.in'], cwd=work,
@@ -493,7 +533,7 @@ class LoKIDriver:
                                            stderr=stderr, timeout=spec['timeout_s'], check=False)
             except subprocess.TimeoutExpired as error:
                 raise LoKIError('timed out; inspect ' + str(work)) from error
-        if file_hash(spec['binary']['path']) != spec['binary']['sha256']:
+        if _file_hash(spec['binary']['path']) != spec['binary']['sha256']:
             raise FingerprintMismatch('binary changed during execution')
         diagnostics = (work / 'stderr.log').read_text()
         if completed.returncode or re.search(r'did not converge|not converged|Results might be incorrect', diagnostics, re.I):
@@ -521,15 +561,17 @@ class LoKIDriver:
         return rows if fields_Td[0] <= fields_Td[-1] else rows[::-1]
 
 
-def enrich_row(row, channel_map, spec):
+def _enrich_row(row, channel_map, spec):
     """Add collision powers, attachment moments, physical inputs and floor flags."""
+    caller_row = row
+    row, channel_map, spec = copy.deepcopy((row, channel_map, spec))
     if row['channels'] != [entry['description'] for entry in channel_map]:
         raise LoKIError('channel map does not exactly cover the solver collision set')
-    validate_physical_map(channel_map, spec, row['composition'])
+    _validate_physical_map(channel_map, spec, row['composition'])
     state = {name: env['reference'] for name, env in spec['envelopes'].items()}
     state.update(row['composition'])
-    _, _, gas, populations = resolved_properties(spec, row['composition'])
-    targets, products = channel_fractions(channel_map, gas, populations, state)
+    _, _, gas, populations = _resolved_properties(spec, row['composition'])
+    targets, products = _channel_fractions(channel_map, gas, populations, state)
     row['gas_fractions'] = gas
     row['state_populations'] = populations
     row['channel_power'] = np.zeros(len(channel_map))
@@ -556,10 +598,10 @@ def enrich_row(row, channel_map, spec):
                 row['attachment_energy_eV'][i] = np.sum(integrand * energy) / rate
             row['channel_power'][i] = xtgt * row['k_ine'][i] * row['attachment_energy_eV'][i]
     if all('cross_section' in channel for channel in channel_map):
-        from rmgpy.tools.eedf.moments import distribution_moments
+        from rmgpy.tools.eedf.moments import _distribution_moments
         physical = dict(row, product_fractions=np.asarray(products),
                         gas_temperature_K=state.get('Tg_K', spec['Tg_K']))
-        row['channel_power'] = distribution_moments(physical, channel_map)['channel_power']
+        row['channel_power'] = _distribution_moments(physical, channel_map)['channel_power']
     elastic = [i for i, channel in enumerate(channel_map) if channel['kind'] == 'elastic']
     if elastic and 'power_groups' in row:
         if len(elastic) > 1 and not all('cross_section' in channel and 'mass_ratio' in channel for channel in channel_map if channel['kind'] == 'elastic'):
@@ -567,9 +609,11 @@ def enrich_row(row, channel_map, spec):
         if len(elastic) == 1:
             row['channel_power'][elastic[0]] = -row['power_groups']['elastic_gain'] - row['power_groups']['elastic_loss']
     if 'power_groups' in row:
-        from rmgpy.tools.eedf.validation import channel_power_checks
-        checks = channel_power_checks(row, {'channel_map': channel_map, 'tolerances': spec['tolerances'], 'floors': spec['floors']})
+        from rmgpy.tools.eedf.validation import _channel_power_checks
+        checks = _channel_power_checks(row, {'channel_map': channel_map, 'tolerances': spec['tolerances'], 'floors': spec['floors']})
         if any(not check['passed'] for check in checks):
             raise LoKIError('per-channel power sum disagrees with LoKI groups: ' + str([c for c in checks if not c['passed']]))
     row['below_floor'] = np.stack([row['k_ine'] < row['rate_floors'], row['k_sup'] < row['rate_floors']], axis=-1)
-    return row
+    caller_row.clear()
+    caller_row.update(copy.deepcopy(row))
+    return caller_row

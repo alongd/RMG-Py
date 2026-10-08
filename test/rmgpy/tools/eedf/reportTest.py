@@ -75,6 +75,34 @@ def budget(**overrides):
     return value
 
 
+def runtime_qualification_records():
+    return {
+        'A6b-runtime': {
+            'check': 'A6b-runtime',
+            'criterion': 'field power derived from interpolated mobility at query state',
+            'numerator': 0.,
+            'denominator': 346335.12620646146,
+            'relative_error': 0.,
+            'tolerance': 1.045111733660167e-6,
+            'passed': True,
+        },
+        'A6b-source': {
+            'check': 'A6b-source',
+            'criterion': 'native LoKI-B power and mobility identity',
+            'tolerance': 1.e-6,
+            'maximum_relative_error': 0.,
+            'passed': True,
+        },
+        'T10 interpolation qualification': {
+            'check': 'T10 interpolation qualification',
+            'criterion': 'fixture frozen accuracy criteria',
+            'verdict_count': 1,
+            'passed': True,
+            'blocker': None,
+        },
+    }
+
+
 def budget_for(declared, **overrides):
     value = budget(**overrides)
     if 'Q_inelastic' not in overrides:
@@ -598,6 +626,91 @@ def test_cli_requires_independent_channel_inventory(tmp_path, monkeypatch, capsy
         'report.py', str(path), '--channels', str(channel_path),
     ])
     _main()
+    assert '| absorbed electron power | 100 |' in capsys.readouterr().out
+
+
+def test_runtime_qualification_records_are_distinct_validated_fields():
+    report = power_table(budget(**runtime_qualification_records()), channels())
+
+    assert report.a6b_runtime['check'] == 'A6b-runtime'
+    assert report.a6b_source['check'] == 'A6b-source'
+    assert report.t10_interpolation_qualification['verdict_count'] == 1
+    serialized = report.as_dict()
+    assert serialized['A6b-runtime']['passed'] is True
+    assert serialized['A6b-source']['maximum_relative_error'] == 0.
+    assert serialized['T10 interpolation qualification']['blocker'] is None
+
+
+@pytest.mark.parametrize(('record', 'edit', 'message'), [
+    ('A6b-runtime', {'passed': 1}, 'A6b-runtime'),
+    ('A6b-source', {'unexpected': 0.}, 'A6b-source'),
+    ('T10 interpolation qualification', {'verdict_count': True},
+     'T10 interpolation qualification'),
+])
+def test_runtime_qualification_records_have_independent_closed_schemas(
+        record, edit, message):
+    records = runtime_qualification_records()
+    records[record].update(edit)
+
+    with pytest.raises(ReportRefusal, match=message):
+        power_table(budget(**records), channels())
+
+
+@pytest.mark.parametrize('duplicate', ['record', 'subfield'])
+def test_cli_refuses_duplicate_qualification_keys(tmp_path, monkeypatch, capsys, duplicate):
+    declared = channels()
+    declared[3]['description'] = 'e + D -> e + e + D+'
+    del declared[0]['flux_group']
+    records = runtime_qualification_records()
+    result = {
+        'energy_budget': budget(**records),
+        'run_manifest': {'a_posteriori_LoKI_B': {'direct_result': {
+            'channels': [channel['description'] for channel in declared],
+        }}},
+    }
+    payload = json.dumps(result)
+    if duplicate == 'record':
+        conflicting = dict(records['A6b-runtime'], passed=False)
+        payload = payload.replace(
+            '"energy_budget": {',
+            '"energy_budget": {"A6b-runtime": ' + json.dumps(conflicting) + ',', 1)
+    else:
+        payload = payload.replace('"passed": true', '"passed": false, "passed": true', 1)
+    result_path = tmp_path / 'result.json'
+    channel_path = tmp_path / 'channels.json'
+    result_path.write_text(payload)
+    channel_path.write_text(json.dumps(declared))
+    monkeypatch.setattr('sys.argv', [
+        'report.py', str(result_path), '--channels', str(channel_path),
+    ])
+
+    with pytest.raises(ReportRefusal, match='duplicate'):
+        _main()
+
+    assert capsys.readouterr().out == ''
+
+
+def test_cli_accepts_runtime_qualification_records(
+        tmp_path, monkeypatch, capsys):
+    declared = channels()
+    declared[3]['description'] = 'e + D -> e + e + D+'
+    del declared[0]['flux_group']
+    result = {
+        'energy_budget': budget(**runtime_qualification_records()),
+        'run_manifest': {'a_posteriori_LoKI_B': {'direct_result': {
+            'channels': [channel['description'] for channel in declared],
+        }}},
+    }
+    result_path = tmp_path / 'result.json'
+    channel_path = tmp_path / 'channels.json'
+    result_path.write_text(json.dumps(result))
+    channel_path.write_text(json.dumps(declared))
+    monkeypatch.setattr('sys.argv', [
+        'report.py', str(result_path), '--channels', str(channel_path),
+    ])
+
+    _main()
+
     assert '| absorbed electron power | 100 |' in capsys.readouterr().out
 
 

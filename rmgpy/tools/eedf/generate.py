@@ -46,19 +46,19 @@ import uuid
 
 import numpy as np
 
-from rmgpy.tools.eedf.artifact import write_artifact
-from rmgpy.tools.eedf.channels import validate_map as _validate_map, validate_physical_map
-from rmgpy.tools.eedf.integrity import check_solver, physical_properties, solver_environment
-from rmgpy.tools.eedf.loki import (
-    LoKIDriver,
-    enrich_row,
-    qualification_setup_sha256,
-)
+from rmgpy.tools.eedf.artifact import _write_artifact
+from rmgpy.tools.eedf._ownership import _detached_copy
+from rmgpy.tools.eedf.channels import _validate_map, _validate_physical_map
+from rmgpy.tools.eedf.integrity import _check_solver, _physical_properties, _solver_environment
+from rmgpy.tools.eedf.loki import LoKIDriver, _enrich_row, qualification_setup_sha256
 from rmgpy.tools.eedf.schema import (
-    EEDFError, SpecError, content_hash, file_hash, interpolant_identity,
-    load_spec, row_inputs, validate_spec, FingerprintMismatch,
+    EEDFError, SpecError, _content_hash, _file_hash, _interpolant_identity,
+    load_spec, _row_inputs, _validate_spec, FingerprintMismatch,
 )
-from rmgpy.tools.eedf.validation import compare_row, held_out_points, quantities, split_branches
+from rmgpy.tools.eedf.validation import (
+    _held_out_accuracy, _compare_row, _freeze_accuracy_criteria, _held_out_points,
+    _quantities, _split_branches,
+)
 
 
 class AxisScreenRefusal(EEDFError):
@@ -73,41 +73,135 @@ def model_inputs(spec):
     Paths and repository SHAs are excluded; file bytes and solver identity
     own the fingerprint. All property files, not only LXCat, shape rows.
     """
-    shared = check_solver(spec)
-    physical_properties(spec)
+    spec = copy.deepcopy(spec)
+    shared = _check_solver(spec)
+    _physical_properties(spec)
     for key in ('binary', 'cmake_cache', 'channel_map'):
-        if file_hash(spec[key]['path']) != spec[key]['sha256']:
+        if _file_hash(spec[key]['path']) != spec[key]['sha256']:
             raise FingerprintMismatch(key)
     for name, item in spec['input_files'].items():
-        if file_hash(item['path']) != item['sha256']:
+        if _file_hash(item['path']) != item['sha256']:
             raise FingerprintMismatch('input file ' + name)
-    inputs = row_inputs(spec)
+    inputs = _row_inputs(spec)
     # File closure is hashed above; store flattened constants/placeholders so
     # production loading can independently validate each row's populations.
-    _, states = physical_properties(spec)
+    _, states = _physical_properties(spec)
     inputs['state_properties'] = states
-    inputs['solver_environment'] = solver_environment(spec)
+    inputs['solver_environment'] = _solver_environment(spec)
     inputs['shared_objects'] = shared
-    inputs['binary_sha256'] = file_hash(spec['binary']['path'])
-    inputs['cross_sections'] = {name: file_hash(item['path']) for name, item in spec['input_files'].items()
+    inputs['binary_sha256'] = _file_hash(spec['binary']['path'])
+    inputs['cross_sections'] = {name: _file_hash(item['path']) for name, item in spec['input_files'].items()
                                 if item['kind'] == 'cross_section'}
-    inputs['auxiliary_inputs'] = {name: file_hash(item['path']) for name, item in spec['input_files'].items()
+    inputs['auxiliary_inputs'] = {name: _file_hash(item['path']) for name, item in spec['input_files'].items()
                                  if item['kind'] != 'cross_section'}
-    inputs['channel_map_sha256'] = file_hash(spec['channel_map']['path'])
+    inputs['channel_map_sha256'] = _file_hash(spec['channel_map']['path'])
     channel_map = json.loads(Path(spec['channel_map']['path']).read_text())
-    validate_physical_map(channel_map, spec, {name: values[0] for name, values in spec['axes'].items() if name != 'u'})
+    _validate_physical_map(channel_map, spec, {name: values[0] for name, values in spec['axes'].items() if name != 'u'})
     inputs['reactions'] = [item['reaction'] for item in channel_map if item['reaction'] is not None]
-    inputs['interpolant'] = interpolant_identity()
+    inputs['interpolant'] = _interpolant_identity()
     inputs['qualification_setup_sha256'] = qualification_setup_sha256(spec)
     return inputs
 
 
-def _solve(driver, channel_map, spec, coordinate, fields, label):
+def _solve(driver, channel_map, spec, coordinate, u_values, label):
+    u_values = [float(u) for u in u_values]
+    fields = np.exp(u_values).tolist()
     rows = driver.run(coordinate, fields, label)
-    for row in rows:
-        enrich_row(row, channel_map, spec)
+    if len(rows) != len(u_values):
+        raise EEDFError('direct solver row count does not match requested u coordinates')
+    for row, u in zip(rows, u_values):
+        row['u'] = u
+        _enrich_row(row, channel_map, spec)
         row['power_absolute'] = abs(row['power_groups']['field']) * spec['floors']['absolute_power_share']
     return rows
+
+
+def qualify_interpolation(table, spec, *, criteria):
+    """Run fresh pinned LoKI-B solves for an existing table's T10 points.
+
+    This is an offline accuracy check, not a runtime identity check. The caller
+    must supply frozen mobility and field-power criteria; omitting them refuses
+    before any solver is started.
+    """
+    spec, criteria = copy.deepcopy((spec, criteria))
+    criteria = _freeze_accuracy_criteria(criteria)
+    _validate_spec(spec)
+    manifest = table.manifest
+    fingerprint = _content_hash(model_inputs(spec))
+    if fingerprint != manifest.get('fingerprint'):
+        raise FingerprintMismatch('held-out direct-solver setup fingerprint')
+    if not spec['held_out'].get('off_centre'):
+        raise SpecError(
+            'T10 qualification requires preselected held_out off_centre points')
+    if len(manifest['branches']) != 1:
+        raise EEDFError(
+            'T10 multi-branch qualification requires a pinned direct-solver '
+            'setup for each branch')
+    axis_names = tuple(table.axis_names)
+    training = set(itertools.product(*[
+        map(float, manifest['axes'][name]) for name in axis_names]))
+    declared_off_centre = {
+        tuple(float(point[name]) for name in axis_names)
+        for point in spec['held_out']['off_centre']}
+    overlap = sorted(declared_off_centre & training)
+    if overlap:
+        point = dict(zip(axis_names, overlap[0]))
+        raise SpecError(
+            'declared held_out off_centre point lies on the training grid: '
+            + repr(point))
+    persisted = manifest.get('held_out', [])
+    if not isinstance(persisted, list):
+        raise SpecError('artifact retained held-out point set')
+    declared_points = []
+    for point in persisted:
+        if not isinstance(point, dict) or set(point) != set(axis_names):
+            raise SpecError('artifact retained held-out point coordinates')
+        declared_points.append({
+            name: float(point[name]) for name in axis_names})
+    if not declared_points:
+        raise SpecError(
+            'T10 qualification requires a nonempty pinned held-out point set')
+    declared_set = {
+        tuple(point[name] for name in axis_names)
+        for point in declared_points}
+    if len(declared_set) != len(declared_points):
+        raise SpecError('artifact retained held-out point set contains duplicates')
+    missing_off_centre = sorted(declared_off_centre - declared_set)
+    if missing_off_centre:
+        point = dict(zip(axis_names, missing_off_centre[0]))
+        raise SpecError(
+            'declared held_out off_centre point is absent from the artifact '
+            'retained set: ' + repr(point))
+    channel_map = json.loads(Path(spec['channel_map']['path']).read_text())
+    _validate_map(channel_map)
+    driver = LoKIDriver(spec)
+    attempt = 't10_' + uuid.uuid4().hex
+    counter = itertools.count()
+
+    def direct_solver(point):
+        coordinate = {
+            name: point[name] for name in table.axis_names if name != 'u'}
+        rows = _solve(
+            driver, channel_map, spec, coordinate, [point['u']],
+            attempt + '_held_' + str(next(counter)))
+        if len(rows) != 1:
+            raise EEDFError('direct held-out solve returned multiple rows')
+        return rows[0]
+
+    results = []
+    for point in declared_points:
+        direct = direct_solver(point)
+        result = _held_out_accuracy(
+            table, direct, point, criteria=criteria,
+            setup_fingerprint=fingerprint)
+        result['reference'] = 'fresh direct solver output'
+        results.append(result)
+    evaluated_set = {
+        tuple(float(result['point'][name]) for name in axis_names)
+        for result in results}
+    if len(results) != len(declared_set) or evaluated_set != declared_set:
+        raise EEDFError('T10 qualification produced a partial pinned held-out point set')
+    return results
 
 
 def _screen(spec, driver, channel_map, prefix):
@@ -117,17 +211,19 @@ def _screen(spec, driver, channel_map, prefix):
     screened composition axis or a declared non-axis envelope. Frozen inputs
     with zero-width envelopes require no perturbation claim.
     """
-    fields = np.exp(spec['axes']['u']).tolist()
+    caller_spec = spec
+    spec = copy.deepcopy(spec)
+    u_values = spec['axes']['u']
     reference = {item['name']: item['reference'] for item in spec['screen']['candidates']}
     results = []
-    baseline = _solve(driver, channel_map, spec, reference, fields, prefix + '_screen_ref')
+    baseline = _solve(driver, channel_map, spec, reference, u_values, prefix + '_screen_ref')
     for i, candidate in enumerate(spec['screen']['candidates']):
         maximum, worst = 0., None
         for j, value in enumerate(candidate['values']):
             coordinates = dict(reference, **{candidate['name']: value})
-            rows = _solve(driver, channel_map, spec, coordinates, fields, f'{prefix}_screen_{i}_{j}')
+            rows = _solve(driver, channel_map, spec, coordinates, u_values, f'{prefix}_screen_{i}_{j}')
             for a, b in zip(baseline, rows):
-                verdicts = compare_row(b, a, {'tolerances': spec['tolerances'], 'floors': spec['floors'], 'channel_map': channel_map, 'row_inputs': {'Tg_K': spec['Tg_K']}})
+                verdicts = _compare_row(b, a, {'tolerances': spec['tolerances'], 'floors': spec['floors'], 'channel_map': channel_map, 'row_inputs': {'Tg_K': spec['Tg_K']}})
                 for verdict in verdicts:
                     if verdict['rule'] in ('consistency', 'channel_power_sum'):
                         continue
@@ -143,6 +239,7 @@ def _screen(spec, driver, channel_map, prefix):
             if name not in spec['envelopes']:
                 raise AxisScreenRefusal(name + ' needs a refusing envelope before dropping its axis')
             del spec['axes'][name]
+            _reconcile_off_centre_after_axis_drop(spec, name)
         if significant and (min(candidate['values']) > spec['axes'][name][0] or max(candidate['values']) < spec['axes'][name][-1]):
             raise AxisScreenRefusal('screen does not cover axis ' + name)
         if not significant:
@@ -157,12 +254,38 @@ def _screen(spec, driver, channel_map, prefix):
         raise AxisScreenRefusal('nonzero-width envelope has no sensitivity screen')
     if set(spec['axes']) - {'u'} - screened:
         raise AxisScreenRefusal('unscreened composition axes')
+    caller_spec.clear()
+    caller_spec.update(spec)
     return results
+
+
+def _reconcile_off_centre_after_axis_drop(spec, removed):
+    """Project declared points onto the selected axes without losing identity."""
+    if 'off_centre' not in spec['held_out']:
+        return
+    names = tuple(spec['axes'])
+    projected = [
+        {name: float(point[name]) for name in names}
+        for point in spec['held_out']['off_centre']
+    ]
+    keys = [tuple(point[name] for name in names) for point in projected]
+    if len(set(keys)) != len(keys):
+        raise AxisScreenRefusal(
+            f'screening {removed} makes held_out off_centre points collide after projection')
+    training = set(itertools.product(*[
+        map(float, spec['axes'][name]) for name in names]))
+    overlap = sorted(set(keys) & training)
+    if overlap:
+        point = dict(zip(names, overlap[0]))
+        raise AxisScreenRefusal(
+            f'screening {removed} projects a held_out off_centre point onto '
+            f'the training grid: {point!r}')
+    spec['held_out']['off_centre'] = projected
 
 
 def _manifest(spec, driver, channel_map, screen_results, scans, row, command_line):
     inputs = model_inputs(spec)
-    return {'schema_version': 1, 'row_inputs': inputs, 'fingerprint': content_hash(inputs),
+    return {'schema_version': 1, 'row_inputs': inputs, 'fingerprint': _content_hash(inputs),
             'qualification_setup_sha256': inputs['qualification_setup_sha256'],
             'axes': spec['axes'], 'energy_eV': row['energy_eV'].tolist(),
             'energy_edges_eV': row['energy_edges_eV'].tolist(), 'envelopes': spec['envelopes'],
@@ -186,7 +309,8 @@ def _manifest(spec, driver, channel_map, screen_results, scans, row, command_lin
             'branch_certification': {branch: 'uncertified: unseeded scans' for branch in scans[0]['branch_sources']},
             'limitations': ['Pinned temporal-growth binary does not expose iteration count; -1 means unknown.',
                             'Pinned solver starts each solve with invertLinearMatrix; ordered scans do not prove seeded continuation.',
-                            'This generator enumerates observed EEDF scan branches, not stability or P_abs continuation of reactor branches.']}
+                            'This generator enumerates observed EEDF scan branches, not stability or P_abs continuation of reactor branches.',
+                            'Deliberate forgery by same-user code (hand-setting a verdict field, swapping a program between hashing and running, passing a fake solver, hand-built same-name copies, overflow-constructed inputs) is out of scope.']}
 
 
 def generate(spec, command_line=None):
@@ -197,8 +321,18 @@ def generate(spec, command_line=None):
     failing quantity. No tolerance is relaxed. The caller's grid is updated
     to the exact screened/refined grid, for current-model fingerprint checks.
     """
+    if type(spec) is not dict:
+        raise TypeError('generation spec must be a mutable dict')
+    caller_spec = spec
+    spec, command_line = _detached_copy(
+        (spec, sys.argv if command_line is None else command_line),
+        'generation inputs')
     from rmgpy.solver.eedf import EEDFTable
-    validate_spec(spec)
+    if (not isinstance(command_line, (list, tuple)) or
+            any(not isinstance(item, str) for item in command_line)):
+        raise SpecError('command_line must be a sequence of strings')
+    command_line = tuple(command_line)
+    _validate_spec(spec)
     started = time.monotonic()
     prefix = 'run_' + uuid.uuid4().hex
     channel_map = json.loads(Path(spec['channel_map']['path']).read_text())
@@ -212,7 +346,7 @@ def generate(spec, command_line=None):
         axes = spec['axes']
         names = list(axes)
         shape = tuple(len(axis) for axis in axes.values())
-        fields = np.exp(axes['u']).tolist()
+        u_values = list(axes['u'])
         composition_grid = list(itertools.product(*[axes[name] for name in names[1:]]))
         scans, per_node = [], []
         # Each job is isolated. This bound applies to all solves, including cold and held-out.
@@ -222,12 +356,12 @@ def generate(spec, command_line=None):
                 coordinate = dict(zip(names[1:], composition))
                 base = f'{prefix}_r{round_index}_c{i}'
                 pending.append((coordinate,
-                    executor.submit(_solve, driver, channel_map, spec, coordinate, fields, base + '_up'),
-                    executor.submit(_solve, driver, channel_map, spec, coordinate, fields[::-1], base + '_down'),
-                    [executor.submit(_solve, driver, channel_map, spec, coordinate, [field], base + f'_cold{j}')
-                     for j, field in enumerate(fields)]))
+                    executor.submit(_solve, driver, channel_map, spec, coordinate, u_values, base + '_up'),
+                    executor.submit(_solve, driver, channel_map, spec, coordinate, u_values[::-1], base + '_down'),
+                    [executor.submit(_solve, driver, channel_map, spec, coordinate, [u], base + f'_cold{j}')
+                     for j, u in enumerate(u_values)]))
             for coordinate, up, down, cold in pending:
-                branches, verdict = split_branches({'up': up.result(), 'down': down.result(),
+                branches, verdict = _split_branches({'up': up.result(), 'down': down.result(),
                     'cold': [future.result()[0] for future in cold]}, spec['tolerances']['G1'])
                 verdict['composition'] = coordinate
                 scans.append(verdict)
@@ -244,30 +378,37 @@ def generate(spec, command_line=None):
                 for u_index, row in enumerate(rows):
                     row['branch_id'] = branch_id
                     tensors[branch_id][(u_index,) + index] = row
-        points = held_out_points(axes, spec['held_out'])
+        points = _held_out_points(axes, spec['held_out'])
         training = set(itertools.product(*axes.values()))
         if training.intersection(held):
             raise EEDFError('refinement would promote a held-out point')
         new_points = [point for point in points if tuple(point[name] for name in names) not in held]
         with ThreadPoolExecutor(max_workers=spec['max_parallel']) as executor:
             pending = [executor.submit(_solve, driver, channel_map, spec,
-                {name: point[name] for name in names[1:]}, [np.exp(point['u'])],
+                {name: point[name] for name in names[1:]}, [point['u']],
                 f'{prefix}_r{round_index}_held{i}') for i, point in enumerate(new_points)]
             for point, future in zip(new_points, pending):
                 key = tuple(point[name] for name in names)
                 held[key] = future.result()[0]
         sample = next(iter(tensors.values())).flat[0]
-        manifest = _manifest(spec, driver, channel_map, screen_results, scans, sample, command_line or sys.argv)
+        manifest = _manifest(spec, driver, channel_map, screen_results, scans, sample, command_line)
         manifest['held_out'] = [dict(zip(names, key)) for key in held]
-        provisional = write_artifact(Path(spec['scratch_root']) / f'{prefix}_r{round_index}_table', manifest, tensors, list(held.values()))
-        table = EEDFTable.load(provisional, model_inputs(spec), artifact_sha256=file_hash(provisional / 'table.h5'), require_accepted=False)
+        provisional = _write_artifact(Path(spec['scratch_root']) / f'{prefix}_r{round_index}_table', manifest, tensors, list(held.values()))
+        table = EEDFTable.load(provisional, model_inputs(spec), artifact_sha256=_file_hash(provisional / 'table.h5'), require_accepted=False)
+        manifest['A6b-source'] = table.a6b_source
+        manifest['A6b-runtime'] = {
+            'check': 'A6b-runtime',
+            'criterion': 'field power derived from interpolated mobility at query state',
+            'passed_by_construction': True,
+            'accuracy_claim': False,
+        }
         failures, verdicts = [], []
         for key, direct in held.items():
             point = dict(zip(names, key))
             for branch_id in sorted(branch_ids):
                 try:
-                    predicted = table.row(point['u'], {name: point[name] for name in names[1:]}, branch_id).as_dict()
-                    checks = compare_row(predicted, direct, manifest)
+                    predicted = table.row(point['u'], {name: point[name] for name in names[1:]}, branch_id)._as_dict()
+                    checks = _compare_row(predicted, direct, manifest)
                     passed = all(check['passed'] for check in checks)
                     result = {'point': point, 'branch_id': branch_id, 'passed': passed, 'checks': checks}
                 except EEDFError as error:
@@ -279,13 +420,22 @@ def generate(spec, command_line=None):
         history.append({'round': round_index, 'axes': copy.deepcopy(axes), 'held_out_count': len(held),
                         'failing_points': failures})
         manifest['held_out_verdicts'] = verdicts
-        manifest['accepted'] = not failures
+        manifest['T10 interpolation qualification'] = {
+            'check': 'T10 interpolation qualification',
+            'criterion': 'separately frozen mobility and field-power accuracy criteria',
+            'verdict_count': 0,
+            'passed': False,
+            'blocker': 'T10 accuracy criteria have not been supplied',
+        }
+        manifest['accepted'] = False
         manifest['refinement_history'] = history
         if not failures or round_index == spec['refinement']['max_rounds']:
             manifest['generation_seconds'] = time.monotonic() - started
-            final = write_artifact(spec['output_root'], manifest, tensors, list(held.values()),
+            final = _write_artifact(spec['output_root'], manifest, tensors, list(held.values()),
                                    extra_files={'generation_spec.json': json.dumps(spec, indent=2, allow_nan=False) + '\n',
                                                 'validation.md': _validation_report(manifest)})
+            caller_spec.clear()
+            caller_spec.update(copy.deepcopy(spec))
             logging.info('Generated %s; accepted=%s; %.3f s', final, manifest['accepted'], manifest['generation_seconds'])
             return final
         # Refine only failing cells, without promoting any existing independent point.
@@ -303,6 +453,11 @@ def generate(spec, command_line=None):
 def _validation_report(manifest):
     lines = ['# EEDF held-out validation', '', 'Accepted: ' + str(manifest['accepted']),
              'Generation seconds: ' + str(manifest['generation_seconds']), '',
+             'A6b-source: ' + ('PASS' if manifest['A6b-source']['passed'] else 'FAIL'),
+             'A6b-runtime: PASS by construction (not an accuracy claim)',
+             'T10 interpolation qualification: ' + (
+                 'PASS' if manifest['T10 interpolation qualification']['passed']
+                 else 'FAIL'), '',
              '| rule | checks | failures | maximum relative error |', '|---|---:|---:|---:|']
     for rule in ('H1', 'H2', 'H3', 'H4', 'F0', 'consistency', 'channel_power_sum'):
         checks = [check for result in manifest['held_out_verdicts'] for check in result['checks'] if check['rule'] == rule]
@@ -311,19 +466,20 @@ def _validation_report(manifest):
     lines.extend(['', '## Failing cells', ''])
     failures = [v for v in manifest['held_out_verdicts'] if not v['passed']]
     for result in failures:
-        lines.append(canonical_failure(result))
+        lines.append(_canonical_failure(result))
     if not failures:
         lines.append('None.')
     lines.extend(['', '## Limits', ''] + manifest['limitations'])
     return '\n'.join(lines) + '\n'
 
 
-def canonical_failure(result):
+def _canonical_failure(result):
+    result = copy.deepcopy(result)
     return json.dumps({'point': result['point'], 'branch_id': result['branch_id'],
                        'refusal': result.get('refusal'), 'failing_checks': [v for v in result['checks'] if not v['passed']]}, sort_keys=True)
 
 
-def main():
+def _main():
     """Run the generation CLI; unsuccessful qualification returns nonzero."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('spec')
@@ -336,4 +492,4 @@ def main():
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    raise SystemExit(_main())

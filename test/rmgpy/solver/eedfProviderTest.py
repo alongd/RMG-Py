@@ -31,6 +31,11 @@ import copy
 from collections.abc import Mapping
 from contextlib import contextmanager, nullcontext
 import errno
+
+
+from decimal import Decimal
+import enum
+from fractions import Fraction
 import gc
 import inspect
 import json
@@ -39,7 +44,7 @@ from pathlib import Path
 import signal
 import sys
 import threading
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 import numpy as np
 import pytest
@@ -48,6 +53,7 @@ import yaml
 from rmgpy.solver.eedf import (
     AmbiguousBranch,
     EEDFError,
+    EEDFTable,
     EnvelopeBreach,
     IllConditionedCoordinate,
     OutOfDomain,
@@ -56,15 +62,15 @@ from rmgpy.solver.eedf_provider import (
     DEVELOPMENT_DIAGNOSTIC_STATUS,
     DEVELOPMENT_UNQUALIFIED_STATUS,
     EEDFProvider,
-    development_unqualified_table_route,
+    _development_unqualified_table_route,
 )
-from rmgpy.tools.eedf.artifact import write_artifact
+from rmgpy.tools.eedf.artifact import _write_artifact
 from rmgpy.tools.eedf.loki import qualification_setup_sha256
 from rmgpy.tools.eedf.schema import (
     FingerprintMismatch,
-    content_hash,
-    file_hash,
-    interpolant_identity,
+    _content_hash,
+    _file_hash,
+    _interpolant_identity,
 )
 
 
@@ -126,7 +132,10 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
                 'product_fractions': np.zeros(2),
                 'rate_floors': np.full(2, 1e-40),
                 'below_floor': np.zeros((2, 2), dtype=bool),
-                'power_groups': {'field': scale, 'balance': .01 * scale},
+                'power_groups': {
+                    'field': (1.e24 * scale) *
+                             (np.exp(axes['u'][u_index]) * 1.e-21) ** 2,
+                    'balance': .01 * scale},
                 'f0': np.array([1.]),
                 'energy_eV': np.array([.5]),
                 'energy_edges_eV': np.array([0., 1.]),
@@ -150,8 +159,8 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
         'arm': {'gas': 'Ar'},
         'loki_commit': 'fixture-loki-commit',
         'binary_sha256': 'fixture-binary-sha256',
-        'cross_sections': {'Ar': file_hash(ar_input)},
-        'auxiliary_inputs': {'masses': file_hash(mass_input)},
+        'cross_sections': {'Ar': _file_hash(ar_input)},
+        'auxiliary_inputs': {'masses': _file_hash(mass_input)},
         'channel_map_sha256': 'map',
         'reactions': identities,
         'solver_options': {
@@ -160,7 +169,7 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
             'includeEECollisions': False,
         },
         'working_conditions': {'electronDensity': '1e16'},
-        'interpolant': interpolant_identity(),
+        'interpolant': _interpolant_identity(),
         'state_populations': {'Ar(1S0)': 1.},
     }
     rules = {
@@ -236,6 +245,12 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
         tolerances['G1'] = {'rtol': 1e-6, 'atol': 1e-12}
     manifest = {
         'accepted': accepted,
+        'T10 interpolation qualification': {
+            'check': 'T10 interpolation qualification',
+            'criterion': 'fixture frozen accuracy criteria',
+            'verdict_count': 1,
+            'passed': accepted,
+        },
         'held_out_verdicts': [{'point': {'u': .5}, 'branch_id': 'branch_0',
                                'passed': accepted, 'checks': [{'passed': accepted}]}],
         'branch_certification': {
@@ -244,7 +259,7 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
         },
         'schema_version': 1,
         'row_inputs': model,
-        'fingerprint': content_hash(model),
+        'fingerprint': _content_hash(model),
         'axes': axes,
         'envelopes': {
             'Tg_K': {'min': 298.15, 'max': 298.15, 'reference': 298.15},
@@ -284,9 +299,9 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
     setup_spec['floors'] = manifest['floors']
     if setup_fingerprint:
         model['qualification_setup_sha256'] = qualification_setup_sha256(setup_spec)
-        manifest['fingerprint'] = content_hash(model)
+        manifest['fingerprint'] = _content_hash(model)
         manifest['qualification_setup_sha256'] = model['qualification_setup_sha256']
-    path = write_artifact(
+    path = _write_artifact(
         tmp_path,
         manifest,
         {f'branch_{index}': branch_values() for index in range(branches)},
@@ -306,7 +321,7 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
 
 def make_provider(path, model, **overrides):
     arguments = {
-        'artifact_sha256': file_hash(path / 'table.h5'),
+        'artifact_sha256': _file_hash(path / 'table.h5'),
         'reaction_map': {4: (1, 'ine'), 7: (0, 'sup')},
         'branch': 'branch_0',
         'empirical_laws': {'Ar2+ recombination': {'evaluate_at': 'Te_eff'}},
@@ -324,14 +339,14 @@ def test_pure_argon_and_composition_axis_use_the_same_provider_type(tmp_path):
 
     assert type(pure) is EEDFProvider
     assert type(arm) is EEDFProvider
-    assert pure.empirical_laws['Ar2+ recombination']['evaluate_at'] == 'Te_eff'
-    assert arm.manifest['fingerprint'] == content_hash(arm_model)
+    assert pure._empirical_law_metadata['Ar2+ recombination']['evaluate_at'] == 'Te_eff'
+    assert arm._manifest_snapshot['fingerprint'] == _content_hash(arm_model)
 
 
 def test_unqualified_table_is_development_context_only_and_carries_blockers(tmp_path):
     qualified_path, qualified_model = fixture_provider_table(
         tmp_path / 'qualified', accepted=True)
-    with development_unqualified_table_route():
+    with _development_unqualified_table_route():
         with pytest.raises(EEDFError, match='already qualified'):
             make_provider(qualified_path, qualified_model)
 
@@ -339,7 +354,7 @@ def test_unqualified_table_is_development_context_only_and_carries_blockers(tmp_
     with pytest.raises(FingerprintMismatch, match='held-out qualification'):
         make_provider(path, model)
 
-    with development_unqualified_table_route():
+    with _development_unqualified_table_route():
         provider = make_provider(path, model)
 
     notice = provider.development_notice
@@ -349,7 +364,7 @@ def test_unqualified_table_is_development_context_only_and_carries_blockers(tmp_
         '1 of 1 held-out verdicts failed',
         'branch_0: uncertified: unseeded scans',
     ]
-    assert provider.manifest['scientific_status'] == DEVELOPMENT_UNQUALIFIED_STATUS
+    assert provider._manifest_snapshot['scientific_status'] == DEVELOPMENT_UNQUALIFIED_STATUS
     with pytest.raises(EEDFError, match='refuses qualification'):
         provider.require_qualified('qualification')
     with pytest.raises(EEDFError, match='refuses export'):
@@ -365,12 +380,12 @@ def test_complete_composition_identity_controls_the_one_row_cache(tmp_path):
     provider = make_provider(path, model)
 
     first = provider.row(1., {'x': 0.})
-    first_identity = provider.cache_identity
+    first_identity = provider._cache_identity_snapshot
     assert provider.row(1., {'x': 0.}) is first
 
     changed = provider.row(1., {'x': 1.})
     assert changed is not first
-    assert provider.cache_identity != first_identity
+    assert provider._cache_identity_snapshot != first_identity
     assert provider.reaction_rate(4, changed) == pytest.approx(2. * first.k_ine[1])
     assert provider.mean_energy_eV(changed) == pytest.approx(3.)
     assert provider.transport(changed)['mobility_N'] == pytest.approx(4e24)
@@ -401,10 +416,10 @@ def test_configuration_and_issued_rows_are_defensive(tmp_path):
     row = provider.row(1., {})
 
     with pytest.raises(TypeError):
-        provider.reaction_map[4] = (0, 'ine')
-    manifest = provider.manifest
+        provider._reaction_mapping[4] = (0, 'ine')
+    manifest = provider._manifest_snapshot
     manifest['fingerprint'] = 'mutated copy'
-    assert provider.manifest['fingerprint'] != 'mutated copy'
+    assert provider._manifest_snapshot['fingerprint'] != 'mutated copy'
     with pytest.raises(ValueError):
         row.k_ine[0] = 0.
     with pytest.raises(ValueError):
@@ -446,8 +461,8 @@ def test_cache_identity_and_row_are_published_atomically(tmp_path, monkeypatch):
 
     assert len(reader_result) == 1
     assert reader_result[0].u == first.u
-    assert provider.cache_identity == (1., ())
-    assert provider.cached_row is reader_result[0]
+    assert provider._cache_identity_snapshot == (1., ())
+    assert provider._cached_row_snapshot is reader_result[0]
 
 
 def test_fingerprint_branch_and_named_domain_errors_are_preserved(tmp_path):
@@ -503,7 +518,7 @@ def direct_runner(provider, mutate=None):
     def run(bundle):
         coordinates = bundle.coordinate_values
         fields = bundle.fields_Td
-        row = provider.row(float(np.log(fields[0])), coordinates).as_dict()
+        row = provider.row(float(np.log(fields[0])), coordinates)._as_dict()
         direct = {}
         for key, value in row.items():
             if isinstance(value, np.ndarray):
@@ -545,7 +560,7 @@ def public_qualification_fixture(tmp_path, monkeypatch):
     spec_path.write_text(json.dumps(spec))
     provider = make_provider(path, model)
     state = qualification_state(tmp_path, provider)
-    agreed = provider._json_value(provider.row(1., {}).as_dict())
+    agreed = provider._json_value(provider.row(1., {})._as_dict())
 
     def initialize(driver, specification):
         driver.spec = specification
@@ -568,17 +583,17 @@ def public_qualification_fixture(tmp_path, monkeypatch):
         return result
 
     monkeypatch.setattr(loki.LoKIDriver, '__init__', initialize)
-    monkeypatch.setattr(loki, 'check_solver', lambda specification: None)
-    monkeypatch.setattr(loki, 'physical_properties', lambda specification: None)
-    original_file_hash = loki.file_hash
+    monkeypatch.setattr(loki, '_check_solver', lambda specification: None)
+    monkeypatch.setattr(loki, '_physical_properties', lambda specification: None)
+    original_file_hash = loki._file_hash
     monkeypatch.setattr(
-        loki, 'file_hash',
+        loki, '_file_hash',
         lambda candidate: (spec['binary']['sha256']
                            if Path(candidate) == Path(spec['binary']['path'])
                            else original_file_hash(candidate)))
     monkeypatch.setattr(loki.subprocess, 'run', execute)
     monkeypatch.setattr(loki, 'parse_output', parsed)
-    monkeypatch.setattr(loki, 'enrich_row', enriched)
+    monkeypatch.setattr(loki, '_enrich_row', enriched)
     return provider, state
 
 
@@ -606,7 +621,7 @@ def supported_declaration_table(tmp_path, declaration):
     original, model = fixture_provider_table(tmp_path / 'original')
     original_provider = make_provider(original, model)
     spec = json.loads((original / 'generation_spec.json').read_text())
-    manifest = original_provider.manifest
+    manifest = original_provider._manifest_snapshot
     expected_gas = {'Ar': 1.}
     expected_populations = {'Ar(1S0)': 1.}
     expected_weights = {'Ar(1S0)': 1.}
@@ -616,7 +631,7 @@ def supported_declaration_table(tmp_path, declaration):
         property_file.write_text('Ar(1S0) 1\n')
         entry = {
             'path': str(property_file),
-            'sha256': file_hash(property_file),
+            'sha256': _file_hash(property_file),
             'kind': 'property',
         }
         spec['input_files']['populations.txt'] = entry
@@ -644,15 +659,15 @@ def supported_declaration_table(tmp_path, declaration):
     identity = qualification_setup_sha256(spec)
     model['qualification_setup_sha256'] = identity
     manifest['row_inputs'] = model
-    manifest['fingerprint'] = content_hash(model)
+    manifest['fingerprint'] = _content_hash(model)
     manifest['qualification_setup_sha256'] = identity
     values = np.empty((4,), dtype=object)
     for index, u in enumerate(model['axes']['u']):
-        row = original_provider._json_value(original_provider.row(u, {}).as_dict())
+        row = original_provider._json_value(original_provider.row(u, {})._as_dict())
         row['gas_fractions'] = copy.deepcopy(expected_gas)
         row['state_populations'] = copy.deepcopy(expected_populations)
         values[index] = row
-    changed = write_artifact(
+    changed = _write_artifact(
         tmp_path / 'changed', manifest, {'branch_0': values}, [])
     (changed / 'generation_spec.json').write_text(json.dumps(spec))
     return (changed, model, expected_gas, expected_populations,
@@ -805,8 +820,8 @@ def test_qualification_renders_once_and_executes_the_tested_operator(
     spec_path.write_text(json.dumps(spec))
     provider = make_provider(path, model)
     state = qualification_state(tmp_path, provider)
-    agreed = provider._json_value(provider.row(1., {}).as_dict())
-    original_render = loki.setup_text
+    agreed = provider._json_value(provider.row(1., {})._as_dict())
+    original_render = loki._setup_text
     render_folders = []
     executed_setups = []
 
@@ -834,13 +849,13 @@ def test_qualification_renders_once_and_executes_the_tested_operator(
         row['power_groups']['relative_balance_percent'] = 0.
         return row
 
-    monkeypatch.setattr(loki, 'setup_text', renderer)
+    monkeypatch.setattr(loki, '_setup_text', renderer)
     monkeypatch.setattr(loki.LoKIDriver, '__init__', initialize)
-    monkeypatch.setattr(loki, 'check_solver', lambda specification: None)
-    monkeypatch.setattr(loki, 'physical_properties', lambda specification: None)
-    original_file_hash = loki.file_hash
+    monkeypatch.setattr(loki, '_check_solver', lambda specification: None)
+    monkeypatch.setattr(loki, '_physical_properties', lambda specification: None)
+    original_file_hash = loki._file_hash
     monkeypatch.setattr(
-        loki, 'file_hash',
+        loki, '_file_hash',
         lambda candidate: (spec['binary']['sha256']
                            if Path(candidate) == Path(spec['binary']['path'])
                            else original_file_hash(candidate)))
@@ -851,7 +866,7 @@ def test_qualification_renders_once_and_executes_the_tested_operator(
         enriched['execution_identity'] = row['execution_identity']
         return enriched
 
-    monkeypatch.setattr(loki, 'enrich_row', enrich_with_bound_identity)
+    monkeypatch.setattr(loki, '_enrich_row', enrich_with_bound_identity)
 
     record = qualify_provider(provider, state, 2.5)
 
@@ -932,7 +947,7 @@ def test_rendered_terminal_fraction_mismatch_refuses_before_acceptance(
     state['gas_fractions'] = gas
     state['state_populations'] = populations
     state['state_statistical_weights'] = weights
-    original_render = loki.setup_text
+    original_render = loki._setup_text
 
     def wrong_fraction(spec, coordinates, fields, folder):
         rendered = original_render(spec, coordinates, fields, folder)
@@ -941,7 +956,7 @@ def test_rendered_terminal_fraction_mismatch_refuses_before_acceptance(
         ).replace(
             'He = 0.1', 'He = 0.2', 1)
 
-    monkeypatch.setattr(loki, 'setup_text', wrong_fraction)
+    monkeypatch.setattr(loki, '_setup_text', wrong_fraction)
     calls = []
     from rmgpy.exceptions import PlasmaStateError
     with pytest.raises(PlasmaStateError, match='gas_fractions.Ar'):
@@ -960,13 +975,13 @@ def test_blank_rendered_terminal_value_names_the_refused_field(
     path, model = fixture_provider_table(tmp_path / 'table')
     provider = make_provider(path, model)
     state = qualification_state(tmp_path, provider)
-    original_render = loki.setup_text
+    original_render = loki._setup_text
 
     def blank_fraction(spec, coordinates, fields, folder):
         return original_render(spec, coordinates, fields, folder).replace(
             '    fraction:\n      - Ar = 1\n', '    fraction: []\n')
 
-    monkeypatch.setattr(loki, 'setup_text', blank_fraction)
+    monkeypatch.setattr(loki, '_setup_text', blank_fraction)
     from rmgpy.exceptions import PlasmaStateError
     with pytest.raises(PlasmaStateError, match='gasProperties.fraction'):
         qualify_provider(provider, state, 2.5, runner=direct_runner(provider))
@@ -1284,12 +1299,12 @@ def test_qualification_fingerprint_covers_renderer_owned_setup_fields(
     path, model = fixture_provider_table(tmp_path / 'table')
     provider = make_provider(path, model)
     state = qualification_state(tmp_path, provider)
-    original = loki.setup_text
+    original = loki._setup_text
 
     def changed_renderer(*args, **kwargs):
         return original(*args, **kwargs).replace('isOn: true', 'isOn: false')
 
-    monkeypatch.setattr(loki, 'setup_text', changed_renderer)
+    monkeypatch.setattr(loki, '_setup_text', changed_renderer)
     calls = []
     from rmgpy.exceptions import PlasmaStateError
     with pytest.raises(PlasmaStateError, match='physical setup fingerprint'):
@@ -1307,7 +1322,7 @@ def test_qualification_checks_the_actual_terminal_rendering(tmp_path, monkeypatc
     path, model = fixture_provider_table(tmp_path / 'table')
     provider = make_provider(path, model)
     state = qualification_state(tmp_path, provider)
-    original = loki.setup_text
+    original = loki._setup_text
 
     def terminal_only_change(spec, coordinates, fields, folder):
         rendered = original(spec, coordinates, fields, folder)
@@ -1316,7 +1331,7 @@ def test_qualification_checks_the_actual_terminal_rendering(tmp_path, monkeypatc
                                     'ionizationOperatorType: conservative')
         return rendered
 
-    monkeypatch.setattr(loki, 'setup_text', terminal_only_change)
+    monkeypatch.setattr(loki, '_setup_text', terminal_only_change)
     calls = []
     agreed = direct_runner(provider)
 
@@ -1370,7 +1385,7 @@ def test_equivalent_terminal_only_weight_spelling_is_accepted(tmp_path, monkeypa
     path, model = fixture_provider_table(tmp_path / 'table', weight_spelling='1')
     provider = make_provider(path, model)
     state = qualification_state(tmp_path, provider)
-    original = loki.setup_text
+    original = loki._setup_text
 
     def terminal_only_spelling(spec, coordinates, fields, folder):
         rendered = original(spec, coordinates, fields, folder)
@@ -1378,7 +1393,7 @@ def test_equivalent_terminal_only_weight_spelling_is_accepted(tmp_path, monkeypa
             return rendered.replace('Ar(1S0) = 1\n', 'Ar(1S0) = 1.0\n')
         return rendered
 
-    monkeypatch.setattr(loki, 'setup_text', terminal_only_spelling)
+    monkeypatch.setattr(loki, '_setup_text', terminal_only_spelling)
 
     record = qualify_provider(provider, state, 2.5, runner=direct_runner(provider))
 
@@ -1511,7 +1526,7 @@ def test_qualify_composition_mismatch_refuses_and_invalidates_export(tmp_path):
         coordinates = bundle.coordinate_values
         fields = bundle.fields_Td
         assert coordinates == {'x': 0.25}
-        row = provider.row(float(np.log(fields[0])), {'x': 0.5}).as_dict()
+        row = provider.row(float(np.log(fields[0])), {'x': 0.5})._as_dict()
         row['execution_identity'] = bundle.execution_identity
         return [row]
 
@@ -1617,7 +1632,7 @@ def test_nonfinite_solver_evidence_is_recorded_and_latches_failure(
 
 def test_development_diagnostic_can_never_report_pass(tmp_path):
     path, model = fixture_provider_table(tmp_path / 'table', accepted=False)
-    with development_unqualified_table_route():
+    with _development_unqualified_table_route():
         provider = make_provider(path, model)
     state = qualification_state(tmp_path, provider)
 
@@ -1665,7 +1680,7 @@ def test_export_uses_committed_artifact_bytes_not_manifest_claims(tmp_path, tamp
     if tamper == 'omit':
         del manifest['artifacts']['solver-row.json']
     else:
-        manifest['artifacts']['solver-row.json'] = file_hash(solver_row)
+        manifest['artifacts']['solver-row.json'] = _file_hash(solver_row)
     manifest_path.write_text(json.dumps(manifest))
 
     with pytest.raises(EEDFError, match='artifact bytes differ'):
@@ -2639,7 +2654,7 @@ def test_admission_snapshots_cannot_authorize_output(tmp_path, monkeypatch, snap
     record = provider.qualify(state, 2.5)
     admission = provider.require_qualified('export')
     snapshot = {'record': record, 'status': provider._qualification_status,
-                'manifest': provider.manifest, 'path': provider.qualification_record_path}[snapshot_kind]
+                'manifest': provider._manifest_snapshot, 'path': provider.qualification_record_path}[snapshot_kind]
     original = provider._json_value(snapshot)
     events = []
 
@@ -3517,7 +3532,7 @@ def test_run_prepared_refuses_an_executable_changed_by_the_run(
     binary = tmp_path / 'loki'
     binary.write_bytes(b'original executable')
     binary.chmod(0o755)
-    spec['binary'] = {'path': str(binary), 'sha256': file_hash(binary)}
+    spec['binary'] = {'path': str(binary), 'sha256': _file_hash(binary)}
     spec['scratch_root'] = str(tmp_path / 'jobs')
     spec['solver_options']['numerics'] = {
         'energyGrid': {'maxEnergy': 1., 'cellNumber': 2},
@@ -3529,9 +3544,9 @@ def test_run_prepared_refuses_an_executable_changed_by_the_run(
     driver.setups = {}
     bundle = driver.prepare({}, [1.], 'changed-binary', verify_dependencies=False)
 
-    monkeypatch.setattr(loki, 'check_solver', lambda request: None)
-    monkeypatch.setattr(loki, 'physical_properties', lambda request: None)
-    monkeypatch.setattr(loki, 'solver_environment', lambda request: {})
+    monkeypatch.setattr(loki, '_check_solver', lambda request: None)
+    monkeypatch.setattr(loki, '_physical_properties', lambda request: None)
+    monkeypatch.setattr(loki, '_solver_environment', lambda request: {})
 
     def execute(*args, **kwargs):
         binary.write_bytes(b'changed executable')
@@ -3677,3 +3692,231 @@ def test_working_condition_placeholders_are_terminal_fingerprint_fields(tmp_path
         spec, {'electron_density': 2.e16}, [1.])
 
     assert interior == reference
+
+
+def test_row_uses_one_normalized_query_for_cache_and_evaluation(tmp_path, monkeypatch):
+    path, model = fixture_provider_table(tmp_path)
+    provider = make_provider(path, model)
+    storage = np.array([.75])
+    query = storage[:1].reshape(())
+    original = provider._table.row
+
+    def edit_then_evaluate(u, composition, branch):
+        storage[0] = 2.25
+        return original(u, composition, branch)
+
+    monkeypatch.setattr(provider._table, 'row', edit_then_evaluate)
+    row = provider.row(query, {})
+
+    assert row.u == .75
+    assert provider._cache_identity_snapshot == (.75, ())
+
+
+def test_row_owns_query_before_waiting_for_cache_lock(tmp_path, monkeypatch):
+    path, model = fixture_provider_table(tmp_path)
+    provider = make_provider(path, model)
+    first_inside_table = threading.Event()
+    release_first = threading.Event()
+    second_waiting = threading.Event()
+    original_row = provider._table.row
+    original_lock = provider._cache_lock
+
+    def paused_row(u, composition, branch):
+        if u == 1.:
+            first_inside_table.set()
+            assert release_first.wait(5.)
+        return original_row(u, composition, branch)
+
+    class ObservedLock:
+        def __enter__(self):
+            if threading.current_thread().name == 'second-query':
+                second_waiting.set()
+            return original_lock.__enter__()
+
+        def __exit__(self, *args):
+            return original_lock.__exit__(*args)
+
+    monkeypatch.setattr(provider._table, 'row', paused_row)
+    monkeypatch.setattr(provider, '_cache_lock', ObservedLock())
+    first = threading.Thread(target=lambda: provider.row(1., {}), name='first-query')
+    first.start()
+    assert first_inside_table.wait(5.)
+
+    storage = np.array([.75])
+    query = storage[:1].reshape(())
+    returned = []
+    second = threading.Thread(
+        target=lambda: returned.append(provider.row(query, {})),
+        name='second-query')
+    second.start()
+    assert second_waiting.wait(5.)
+    storage[0] = 2.25
+    release_first.set()
+    first.join(5.)
+    second.join(5.)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert returned[0].u == .75
+    assert provider._cache_identity_snapshot == (.75, ())
+
+
+def test_public_row_and_diagnostic_conversion_detach_read_only_values(tmp_path):
+    path, model = fixture_provider_table(tmp_path)
+    provider = make_provider(path, model)
+    row = provider.row(1., {})
+
+    row_values = row._as_dict()
+    assert isinstance(row_values['swarm'], dict)
+    assert row_values['k_ine'] is not row.k_ine
+    row_values['swarm']['mean_energy_eV'] = -1.
+    row_values['k_ine'][0] = -1.
+    assert row.swarm['mean_energy_eV'] == 2.
+    assert row.k_ine[0] > 0.
+
+    read_only = np.array([1., 2.])
+    read_only.setflags(write=False)
+    diagnostic = {
+        'transport': provider.transport(row),
+        'metadata': provider.runtime_metadata,
+        'nested': (MappingProxyType({'array': read_only}), 3.),
+    }
+    converted = provider.annotate_development_diagnostic(diagnostic)
+    assert isinstance(converted['transport'], dict)
+    assert isinstance(converted['metadata'], dict)
+    assert isinstance(converted['nested'][0], dict)
+    assert converted['nested'][0]['array'] is not read_only
+    converted['nested'][0]['array'][0] = -1.
+    assert read_only[0] == 1.
+
+
+def test_public_diagnostic_conversion_refuses_unknown_values(tmp_path):
+    path, model = fixture_provider_table(tmp_path)
+    provider = make_provider(path, model)
+
+    with pytest.raises(TypeError, match='diagnostic.*unsupported value type.*object'):
+        provider.annotate_development_diagnostic({'unknown': object()})
+
+
+def test_query_coordinates_normalize_extended_real_scalars(tmp_path):
+    path, model = fixture_provider_table(tmp_path)
+    provider = make_provider(path, model)
+    expected = float(np.longdouble('1.25'))
+
+    assert provider.row(np.longdouble('1.25'), {}).u == expected
+    assert provider.row(np.array(np.longdouble('1.25')), {}).u == expected
+    row = provider.row(1., {})
+    assert provider.domain_check(row.u, row.composition) == [1.]
+
+
+class _DiagnosticFlag(enum.Enum):
+    READY = 'ready'
+
+
+class _DiagnosticCode(enum.IntEnum):
+    READY = 1
+
+
+class _DiagnosticText(str, enum.Enum):
+    READY = 'ready'
+
+
+class _DiagnosticDict(dict):
+    pass
+
+
+class _DiagnosticTuple(tuple):
+    pass
+
+
+class _DiagnosticArray(np.ndarray):
+    pass
+
+
+class _DiagnosticFloat(float):
+    pass
+
+
+@pytest.mark.parametrize('value', [
+    b'ok',
+    np.longdouble('1.0000000000000000001'),
+    np.clongdouble(1. + 2.j),
+    np.str_('ok'),
+    np.bytes_(b'ok'),
+    np.datetime64('2026-10-25', 'D'),
+    np.datetime64('2026-10-25', 'ns'),
+    _DiagnosticFlag.READY,
+    _DiagnosticCode.READY,
+    _DiagnosticText.READY,
+    Fraction(1, 3),
+    Decimal('0.1'),
+    _DiagnosticDict({'a': 1.}),
+    _DiagnosticTuple((1.,)),
+    np.array([1., 2.]).view(_DiagnosticArray),
+    np.matrix([[1., 2.]]),
+    np.ma.array([1., 99.], mask=[False, True]),
+    np.array([np.longdouble('1.0000000000000000001')]),
+    np.array([(np.array([1., 2.]), 2)], dtype=[('series', object), ('count', 'i4')]),
+    np.array([((np.array([1., 2.]),), 2)],
+             dtype=[('nested', [('series', object)]), ('count', 'i4')]),
+    np.array([(1.25, 2)], dtype=[('energy', 'f8'), ('count', 'i4')]).view(np.recarray),
+    np.array([(1.25, 2)], dtype=[('energy', 'f8'), ('count', 'i4')])[0],
+    np.array([{'value': 1.}], dtype=object),
+    _DiagnosticFloat(.1),
+], ids=lambda value: type(value).__name__)
+def test_public_diagnostic_conversion_refuses_every_non_allowlisted_type(
+        tmp_path, value):
+    path, model = fixture_provider_table(tmp_path)
+    provider = make_provider(path, model)
+
+    with pytest.raises(TypeError, match='diagnostic.*unsupported value type'):
+        provider.annotate_development_diagnostic({'value': value})
+
+
+def test_public_diagnostic_conversion_copies_numeric_structures(tmp_path):
+    path, model = fixture_provider_table(tmp_path)
+    provider = make_provider(path, model)
+    record = np.array([(1.25, 2)], dtype=[('energy', 'f8'), ('count', 'i4')])
+    source = np.array([1., 2.])
+    source.setflags(write=False)
+
+    converted = provider.annotate_development_diagnostic({
+        'scalar': np.float64(1.25),
+        'complex': np.complex128(1. + 2.j),
+        'record': record,
+        'nested': MappingProxyType({'array': source}),
+    })
+
+    assert converted['scalar'] == 1.25
+    assert converted['complex'] == 1. + 2.j
+    assert converted['record'].dtype == record.dtype
+    assert not np.shares_memory(converted['record'], record)
+    assert converted['nested']['array'].flags.writeable
+    assert not np.shares_memory(converted['nested']['array'], source)
+
+
+def test_provider_constructor_owns_configuration_before_table_io(
+        tmp_path, monkeypatch):
+    path, model = fixture_provider_table(tmp_path)
+    reaction_map = {4: (1, 'ine')}
+    original = EEDFTable.load
+
+    def load_and_edit(*args, **kwargs):
+        result = original(*args, **kwargs)
+        reaction_map[4] = (0, 'sup')
+        return result
+
+    monkeypatch.setattr(EEDFTable, 'load', load_and_edit)
+    provider = EEDFProvider(
+        path, model, artifact_sha256=_file_hash(path / 'table.h5'),
+        reaction_map=reaction_map, branch='branch_0')
+    row = provider.row(1., {})
+
+    assert provider.reaction_rate(4, row) == pytest.approx(row.k_ine[1])
+
+
+def test_test_only_provider_accessors_are_private():
+    for name in (
+            'branch', 'reaction_map', 'empirical_laws', 'manifest',
+            'cache_identity', 'cached_row'):
+        assert not hasattr(EEDFProvider, name)

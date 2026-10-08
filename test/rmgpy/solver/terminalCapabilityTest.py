@@ -78,7 +78,9 @@ def test_revoked_terminal_has_no_acceptance_effect(
     reactor.eedf_provider = provider
     provider.bind_qualification_state(lambda y, t: state)
     reactor.energy_budget = {'A6a_relative': 0., 'A6a_steady_relative': 0.,
-                             'A6b_relative': 0., 'A6b_tolerance': 1.e-6}
+                             'A6b-runtime': {
+                                 'relative_error': 0., 'tolerance': 1.e-6,
+                                 'passed': True}}
     events, failures = [], []
 
     def handler(received, frame):

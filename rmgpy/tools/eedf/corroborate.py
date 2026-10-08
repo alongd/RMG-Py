@@ -57,10 +57,14 @@ import numpy as np
 from scipy import integrate
 from scipy.constants import Boltzmann, elementary_charge, electron_mass
 
-from rmgpy.tools.eedf.channels import _classic_sections, validate_physical_map
-from rmgpy.tools.eedf.integrity import channel_fractions, resolved_properties, solver_environment
-from rmgpy.tools.eedf.loki import LoKIError, parse_output, setup_text
-from rmgpy.tools.eedf.schema import SpecError, canonical_json
+from rmgpy.tools.eedf.channels import _classic_sections, _validate_physical_map
+from rmgpy.tools.eedf.integrity import (
+    _channel_fractions,
+    _resolved_properties,
+    _solver_environment,
+)
+from rmgpy.tools.eedf.loki import LoKIError, _setup_text, parse_output
+from rmgpy.tools.eedf.schema import SpecError, _canonical_json
 
 logger = logging.getLogger(__name__)
 
@@ -346,7 +350,7 @@ def _canonical_collisions(spec, manifest, coordinates, snapshots, materialized_r
     if not isinstance(channels, list) or not channels:
         raise CorroborationError("manifest channel_map is missing or empty")
     try:
-        validate_physical_map(channels, materialized, coordinates)
+        _validate_physical_map(channels, materialized, coordinates)
     except SpecError as exc:
         raise CorroborationError(str(exc)) from exc
     raw_blocks = []
@@ -461,11 +465,11 @@ def build_canonical_setup(artifact, branch, node, u):
     with tempfile.TemporaryDirectory(prefix="eedf-canonical-parse-") as temporary:
         collisions, materialized = _canonical_collisions(spec, manifest, node, snapshots, Path(temporary))
         try:
-            _, _, gas_fractions, populations = resolved_properties(materialized, node)
-            expected_targets, expected_products = channel_fractions(
+            _, _, gas_fractions, populations = _resolved_properties(materialized, node)
+            expected_targets, expected_products = _channel_fractions(
                 manifest["channel_map"], gas_fractions, populations, node
             )
-            rendered_setup = setup_text(materialized, node, [reduced_field], "solve").encode("utf-8")
+            rendered_setup = _setup_text(materialized, node, [reduced_field], "solve").encode("utf-8")
         except (SpecError, LoKIError) as exc:
             raise CorroborationError(str(exc)) from exc
     if len(set(collision.description for collision in collisions)) != len(collisions):
@@ -543,7 +547,7 @@ def build_canonical_setup(artifact, branch, node, u):
         "loki_setup_sha256": _sha256_bytes(rendered_setup),
         "loki_binary_sha256": binary["sha256"],
     }
-    fingerprint = hashlib.sha256(canonical_json(payload).encode()).hexdigest()
+    fingerprint = hashlib.sha256(_canonical_json(payload).encode()).hexdigest()
     setup = CanonicalSetup(
         fingerprint_version=SETUP_FINGERPRINT_VERSION,
         fingerprint=fingerprint,
@@ -576,7 +580,7 @@ def build_canonical_setup(artifact, branch, node, u):
         loki_setup=rendered_setup,
         loki_binary_path=binary["path"],
         loki_binary_sha256=binary["sha256"],
-        loki_environment=tuple(sorted(solver_environment(spec).items())),
+        loki_environment=tuple(sorted(_solver_environment(spec).items())),
     )
     return setup
 
