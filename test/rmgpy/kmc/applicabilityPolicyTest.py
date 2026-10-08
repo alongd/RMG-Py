@@ -1,6 +1,7 @@
 """Behavioral contract for the persistent-carbene applicability policy."""
 
 import copy
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,8 @@ from rmgpy.kmc.compiler import (
     apply_persistent_carbene_policy,
     classify_persistent_carbene,
     duplicate_transition_groups,
+    _mapped_reaction_u2_roots,
+    _reaction_from_record,
 )
 from rmgpy.kmc.event_record import EventRecord
 from rmgpy.molecule.molecule import Molecule
@@ -30,6 +33,17 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = Path(
     os.environ.get("RMG_DATABASE_PATH", str(REPO_ROOT.parent / "RMG-database"))
 )
+
+_I084_FIXTURE_SPEC = importlib.util.spec_from_file_location(
+    "i084_applicability_record", FIXTURES / "i084_applicability_record.py"
+)
+_I084_FIXTURE = importlib.util.module_from_spec(_I084_FIXTURE_SPEC)
+_I084_FIXTURE_SPEC.loader.exec_module(_I084_FIXTURE)
+_I084_QUINOID_SPEC = importlib.util.spec_from_file_location(
+    "i084_quinoid_product", FIXTURES / "i084_quinoid_product.py"
+)
+_I084_QUINOID = importlib.util.module_from_spec(_I084_QUINOID_SPEC)
+_I084_QUINOID_SPEC.loader.exec_module(_I084_QUINOID)
 
 
 def _h_abstraction_record(event_id="evt_forward", reverse_of="evt_reverse"):
@@ -91,6 +105,27 @@ def _pair():
         ],
     )
     return [forward, reverse]
+
+
+def test_real_quinoid_intra_h_migration_mapping_uses_generated_resonance_form():
+    database = KineticsDatabase()
+    database.load_families(
+        str(DB_PATH / "input/kinetics/families"),
+        families=["intra_H_migration"],
+    )
+    record = {
+        "reactant_graphs": _I084_FIXTURE.REACTANT_GRAPHS,
+        "product_graphs": [_I084_QUINOID.PRODUCT_GRAPH],
+        "template": "R7HJ_2;C_rad_out_OneDe/Cs;Cb_H_out",
+    }
+    reaction = _reaction_from_record(record)
+    roots = _mapped_reaction_u2_roots(
+        database.families["intra_H_migration"], reaction, record
+    )
+    assert roots
+    assert roots[0]["recipe_label"] == "*2"
+    assert roots[0]["family_forward_role"] == "product"
+    assert roots[0]["persistent_neutral_divalent_carbon"] is False
 
 
 def _root():

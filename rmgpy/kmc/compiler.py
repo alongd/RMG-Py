@@ -365,25 +365,112 @@ def _mapped_reaction_u2_roots(
         ).copy(deep=True)
         for participant in mapping_reaction.reactants
     ]
-    labeled = copy.deepcopy(mapping_reaction)
-    family.add_atom_labels_for_reaction(
-        labeled, output_with_resonance=False, save_order=True
-    )
+    fallback_reaction = copy.deepcopy(mapping_reaction)
     recipe_labels = {
         token
         for action in family.forward_recipe.actions
         for token in action
         if isinstance(token, str) and token.startswith("*")
     }
-    side_molecules = {
-        side: [
+    stored_products = [
+        (
             participant.molecule[0]
             if hasattr(participant, "molecule")
             else participant
-            for participant in getattr(labeled, f"{side}s")
-        ]
-        for side in ("reactant", "product")
-    }
+        ).copy(deep=True)
+        for participant in mapping_reaction.products
+    ]
+    expected_template = (
+        (record.to_dict() if isinstance(record, EventRecord) else record).get("template")
+        if record is not None
+        else _template(reaction)
+    )
+    if record is None:
+        generated = []
+    else:
+        try:
+            generated = family.generate_reactions(
+                [molecule.copy(deep=True) for molecule in original_reactants],
+                products=None,
+                prod_resonance=True,
+                delete_labels=False,
+                relabel_atoms=False,
+            )
+        except ActionError:
+            generated = []
+
+    def isomorphic_product_lists(first, second):
+        if len(first) != len(second):
+            return False
+        remaining = list(second)
+        for candidate in first:
+            for index, stored in enumerate(remaining):
+                if candidate.is_isomorphic(stored, save_order=False, strict=False):
+                    del remaining[index]
+                    break
+            else:
+                return False
+        return True
+
+    labeled = next(
+        (
+            candidate
+            for candidate in generated
+            if (not expected_template or _template(candidate) == expected_template)
+            and isomorphic_product_lists(candidate.products, stored_products)
+        ),
+        None,
+    )
+    if labeled is not None:
+        labeled_reactants = list(labeled.reactants)
+        labeled_products = list(labeled.products)
+
+        # Keep the stored product resonance form for applicability checks, while
+        # carrying the template labels from the family-generated product onto it.
+        # The stored graph may be a non-representative Kekule form (including a
+        # quinoid u2 form), so add_atom_labels_for_reaction cannot match it directly.
+        stored_labeled_products = [product.copy(deep=True) for product in stored_products]
+        for generated_product, stored_product in zip(labeled_products, stored_labeled_products):
+            generated_match = generated_product.copy(deep=True)
+            stored_match = stored_product.copy(deep=True)
+            generated_atoms = list(generated_match.atoms)
+            stored_atoms = list(stored_match.atoms)
+            mappings = generated_match.find_isomorphism(
+                stored_match, save_order=False, strict=False
+            )
+            if not mappings:
+                labeled = None
+                break
+            generated_by_match = dict(zip(generated_atoms, generated_product.atoms))
+            stored_by_match = dict(zip(stored_atoms, stored_product.atoms))
+            for mapping in mappings[:1]:
+                for generated_atom, stored_atom in mapping.items():
+                    label = generated_by_match[generated_atom].label
+                    if label in recipe_labels:
+                        stored_by_match[stored_atom].label = label
+        if labeled is not None:
+            side_molecules = {
+                "reactant": labeled_reactants,
+                "product": stored_labeled_products,
+            }
+
+    if labeled is None:
+        # Preserve the established exact-graph path for ordinary reactions and
+        # reverse stored directions.  The generated-resonance path above is
+        # needed only when the stored graph is a non-representative resonance.
+        labeled = fallback_reaction
+        family.add_atom_labels_for_reaction(
+            labeled, output_with_resonance=False, save_order=True
+        )
+        side_molecules = {
+            side: [
+                participant.molecule[0]
+                if hasattr(participant, "molecule")
+                else participant
+                for participant in getattr(labeled, f"{side}s")
+            ]
+            for side in ("reactant", "product")
+        }
     reactant_atoms = [atom for molecule in original_reactants for atom in molecule.atoms]
     reactant_root_candidates: dict[str, set[int]] = {}
     for original, labeled_molecule in zip(
