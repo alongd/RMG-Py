@@ -71,7 +71,8 @@ PS_FAMILY_FILTER_REASON = (
     "(H transfer, radical addition/recombination/disproportionation, and migration)"
 )
 LINK_PLACEHOLDER = "evt_" + "0" * 64
-PERSISTENT_CARBENE_POLICY_VERSION = "persistent-carbene-applicability/1"
+PERSISTENT_CARBENE_POLICY_VERSION = "persistent-carbene-applicability/2"
+APPLICABILITY_GENERATION_CACHE_LIMIT = 4
 R1_JUNCTION_LABELS = {
     "J_para": {
         "attacked_atom_label": "S9",
@@ -363,22 +364,6 @@ def _touched_atom_indices(operations) -> set[int]:
     }
 
 
-def _select_family_root_candidate(
-    family_candidates: set[int], preferred: set[int], label: str
-) -> tuple[int, str | None]:
-    """Select one jointly bound root, or retain a deterministic unresolved witness."""
-    candidates = family_candidates & preferred if preferred else family_candidates
-    if len(candidates) == 1:
-        return next(iter(candidates)), None
-    witness_pool = candidates or family_candidates or preferred
-    witness = min(witness_pool) if witness_pool else -1
-    if family_candidates and preferred and not candidates:
-        reason = "stored rewrite does not touch the family-derived recipe root"
-    else:
-        reason = f"mapped recipe root {label} is ambiguous in the stored reaction"
-    return witness, reason
-
-
 def _templates_equivalent(first: str, second: str) -> bool:
     """Compare template participants independently of family reordering."""
     return sorted(first.split(";")) == sorted(second.split(";"))
@@ -399,8 +384,12 @@ def _participant_label_attributions(
     recipe_labels: set[str],
     *,
     strict: bool = True,
-) -> set[tuple[tuple[str, int], ...]]:
-    """Return label attributions across participant permutations."""
+) -> set[tuple[tuple[int, str], ...]]:
+    """Project labelled participants onto stored atom indices.
+
+    An attribution is a sorted tuple of ``(stored atom index, label)`` pairs,
+    so a label repeated on several atoms (R_Recombination's ``*``) is kept.
+    """
     labeled_molecules = [
         _stored_form_molecule(item) for item in labeled_participants
     ]
@@ -409,97 +398,54 @@ def _participant_label_attributions(
     ]
     if len(labeled_molecules) != len(stored_molecules):
         return set()
+    expected = sorted(
+        atom.label
+        for molecule in labeled_molecules
+        for atom in molecule.atoms
+        if atom.label in recipe_labels
+    )
     stored_indices = {
         atom: index
         for index, atom in enumerate(
             atom for molecule in stored_molecules for atom in molecule.atoms
         )
     }
-    pair_projections: dict[
-        tuple[int, int], set[tuple[tuple[str, int], ...]]
-    ] = {}
+    pair_projections: dict[tuple[int, int], set[tuple[tuple[int, str], ...]]] = {}
     for labeled_index, labeled_molecule in enumerate(labeled_molecules):
         labeled_atoms = list(labeled_molecule.atoms)
-        labeled_recipe_atoms = {
-            atom: atom.label
-            for atom in labeled_atoms
-            if atom.label in recipe_labels
-        }
         for stored_index, stored_molecule in enumerate(stored_molecules):
             labeled_match = labeled_molecule.copy(deep=True)
             stored_match = stored_molecule.copy(deep=True)
             labeled_by_match = dict(zip(labeled_match.atoms, labeled_atoms))
-            stored_by_match = dict(
-                zip(stored_match.atoms, stored_molecule.atoms)
-            )
-            projections = set()
-            for mapping in labeled_match.find_isomorphism(
-                stored_match, save_order=False, strict=strict
-            ):
-                projection = tuple(
+            stored_by_match = dict(zip(stored_match.atoms, stored_molecule.atoms))
+            pair_projections[labeled_index, stored_index] = {
+                tuple(
                     sorted(
-                        (
-                            label,
-                            stored_indices[
-                                stored_by_match[mapping[match_atom]]
-                            ],
-                        )
+                        (stored_indices[stored_by_match[mapping[match_atom]]], atom.label)
                         for match_atom, atom in labeled_by_match.items()
-                        if (
-                            label := labeled_recipe_atoms.get(atom)
-                        ) is not None
+                        if atom.label in recipe_labels
                     )
                 )
-                if len({label for label, _ in projection}) == len(projection):
-                    projections.add(projection)
-            pair_projections[labeled_index, stored_index] = projections
+                for mapping in labeled_match.find_isomorphism(
+                    stored_match, save_order=False, strict=strict
+                )
+            }
 
-    results: set[tuple[tuple[str, int], ...]] = set()
+    results: set[tuple[tuple[int, str], ...]] = set()
 
     def assign_participant(index, unused, attributed):
         if index == len(labeled_molecules):
-            if set(attributed) == recipe_labels:
-                results.add(tuple(sorted(attributed.items())))
+            if sorted(label for _, label in attributed) == expected:
+                results.add(tuple(sorted(attributed)))
             return
         for stored_index in sorted(unused):
             for projection in pair_projections[index, stored_index]:
-                candidate = dict(attributed)
-                conflict = False
-                for label, atom_index in projection:
-                    if label in candidate and candidate[label] != atom_index:
-                        conflict = True
-                        break
-                    candidate[label] = atom_index
-                if not conflict:
-                    assign_participant(
-                        index + 1, unused - {stored_index}, candidate
-                    )
+                assign_participant(
+                    index + 1, unused - {stored_index}, attributed + projection
+                )
 
-    assign_participant(0, set(range(len(stored_molecules))), {})
+    assign_participant(0, set(range(len(stored_molecules))), ())
     return results
-
-
-def _participant_lists_match(first, second, *, strict: bool) -> bool:
-    """Match participant lists without assuming either side's order."""
-    first_molecules = [_stored_form_molecule(item) for item in first]
-    second_molecules = [_stored_form_molecule(item) for item in second]
-    if len(first_molecules) != len(second_molecules):
-        return False
-
-    def match(index, unused):
-        if index == len(first_molecules):
-            return True
-        for candidate_index in sorted(unused):
-            left = first_molecules[index].copy(deep=True)
-            right = second_molecules[candidate_index].copy(deep=True)
-            isomorphic = left.is_isomorphic(
-                right, save_order=False, strict=strict
-            )
-            if isomorphic and match(index + 1, unused - {candidate_index}):
-                return True
-        return False
-
-    return match(0, set(range(len(second_molecules))))
 
 
 def _stored_u2_roles(data, reactants, products, reactant_atom_index):
@@ -547,242 +493,480 @@ def _stored_u2_roles(data, reactants, products, reactant_atom_index):
     return roles
 
 
-def _unresolved_stored_u2_roots(data, reactants, products, reason):
-    """Keep stored u2 records in-policy when family attribution fails."""
-    reactant_atoms = [
-        atom for molecule in reactants for atom in molecule.atoms
-    ]
-    reactant_heavy = [
-        atom for atom in reactant_atoms if atom.element.number != 1
-    ]
-    product_atoms = [atom for molecule in products for atom in molecule.atoms]
-    product_heavy = [
-        atom for atom in product_atoms if atom.element.number != 1
-    ]
-    atom_map = {
-        int(key): int(value)
-        for key, value in data.get("atom_map", {}).items()
+def _tag_atom_ids(molecules) -> None:
+    """Give every atom its zero-based position in the concatenated order."""
+    index = 0
+    for molecule in molecules:
+        for atom in molecule.atoms:
+            atom.id = index
+            index += 1
+
+
+def _identity_state(molecule) -> tuple[dict[int, tuple], dict[tuple[int, int], float]]:
+    """Return per-atom electrons and per-pair bond orders keyed by atom id."""
+    atoms = {
+        atom.id: (
+            atom.element.number,
+            atom.radical_electrons,
+            atom.charge,
+            atom.lone_pairs,
+        )
+        for atom in molecule.atoms
     }
-    inverse_map = {product: reactant for reactant, product in atom_map.items()}
-    roots = set()
-    for atom_index, atom in enumerate(reactant_atoms):
-        if (
-            atom.element.number == 6
-            and atom.charge == 0
-            and atom.radical_electrons == 2
-        ):
-            roots.add((atom_index, "reactant"))
-    for product_index, atom in enumerate(product_heavy):
-        if (
-            atom.element.number != 6
-            or atom.charge != 0
-            or atom.radical_electrons != 2
+    bonds = {
+        tuple(sorted((atom.id, other.id))): float(bond.order)
+        for atom in molecule.atoms
+        for other, bond in atom.edges.items()
+    }
+    return atoms, bonds
+
+
+def _identity_resonance_states(molecule) -> list[tuple[dict, dict]]:
+    """Return the identity-tracked states of a molecule's resonance forms."""
+    from rmgpy.exceptions import AtomTypeError, ResonanceError
+
+    states = [_identity_state(molecule)]
+    try:
+        forms = molecule.copy(deep=True).generate_resonance_structures(
+            keep_isomorphic=True, filter_structures=False
+        )
+    except (AtomTypeError, ResonanceError, ValueError):
+        return states
+    ids = sorted(atom.id for atom in molecule.atoms)
+    for form in forms:
+        if sorted(atom.id for atom in form.atoms) == ids:
+            state = _identity_state(form)
+            if state not in states:
+                states.append(state)
+    return states
+
+
+def _stored_resonance_forms(reactants) -> list[list[Any]]:
+    """Return id-tracked resonance forms of each stored reactant, stored form first."""
+    from rmgpy.exceptions import AtomTypeError, ResonanceError
+
+    forms = []
+    for molecule in reactants:
+        stored = molecule.copy(deep=True)
+        group = [stored]
+        states = [_identity_state(stored)]
+        try:
+            alternatives = molecule.copy(deep=True).generate_resonance_structures(
+                keep_isomorphic=True, filter_structures=True
+            )
+        except (AtomTypeError, ResonanceError, ValueError):
+            alternatives = []
+        ids = sorted(atom.id for atom in molecule.atoms)
+        for form in alternatives:
+            if sorted(atom.id for atom in form.atoms) != ids:
+                continue
+            state = _identity_state(form)
+            if state not in states:
+                states.append(state)
+                group.append(form)
+        forms.append(group)
+    return forms
+
+
+def _products_correspond(candidate_products, stored_products, stored_states) -> bool:
+    """Match generated and stored products atom-for-atom, up to resonance.
+
+    Both sides carry stored reactant indices as atom ids.  Components and
+    connectivity must agree exactly; electrons and bond orders may differ
+    only by a resonance form of the same component.
+    """
+    candidate = {
+        frozenset(atom.id for atom in molecule.atoms): molecule
+        for molecule in candidate_products
+    }
+    stored = {
+        frozenset(atom.id for atom in molecule.atoms): molecule
+        for molecule in stored_products
+    }
+    if len(candidate) != len(candidate_products) or set(candidate) != set(stored):
+        return False
+    for key, stored_molecule in stored.items():
+        candidate_state = _identity_state(candidate[key])
+        stored_state = _identity_state(stored_molecule)
+        if set(candidate_state[1]) != set(stored_state[1]):
+            return False
+        if candidate_state == stored_state:
+            continue
+        if key not in stored_states:
+            stored_states[key] = _identity_resonance_states(stored_molecule)
+        if candidate_state in stored_states[key]:
+            continue
+        if stored_state in _identity_resonance_states(candidate[key]):
+            continue
+        return False
+    return True
+
+
+def _attribution_satisfies_template(family, fired_forms, labels, template) -> bool:
+    """Ask the family which template the labelled fired atoms select.
+
+    ``labels`` maps atom ids to every template label (recipe and auxiliary,
+    e.g. intra_H_migration's ring path), as carried by the candidate products.
+    """
+    from rmgpy.exceptions import UndeterminableKineticsError
+    from rmgpy.reaction import Reaction
+
+    labeled = []
+    for form in fired_forms:
+        copied = form.copy(deep=True)
+        for atom in copied.atoms:
+            atom.label = labels.get(atom.id, "")
+        labeled.append(copied)
+    try:
+        entries = family.get_reaction_template(Reaction(reactants=labeled, products=[]))
+    except (UndeterminableKineticsError, KeyError, ValueError, IndexError):
+        return False
+    return _templates_equivalent(
+        ";".join(entry.label for entry in entries), template
+    )
+
+
+def _generated_forward_transitions(family, data, forms, generation_cache, generation_stats):
+    """Run the family forward on id-tracked stored forms, through a bounded LRU."""
+    label = getattr(family, "label", "")
+    key = (label, tuple(data.get("reactant_graphs", [])))
+    stats = None
+    if generation_stats is not None:
+        stats = generation_stats.setdefault(
+            label,
+            {
+                "requests": 0,
+                "generation_calls": 0,
+                "cache_hits": 0,
+                "evictions": 0,
+                "seconds": 0.0,
+            },
+        )
+        stats.setdefault("evictions", 0)
+        stats["requests"] += 1
+    if generation_cache is not None and key in generation_cache:
+        cached = generation_cache.pop(key)
+        generation_cache[key] = cached
+        if stats is not None:
+            stats["cache_hits"] += 1
+        return cached
+    started = time.perf_counter()
+    error = None
+    try:
+        generated = family._generate_reactions(
+            forms,
+            forward=True,
+            prod_resonance=True,
+            delete_labels=False,
+            relabel_atoms=False,
+        )
+    except ActionError as raised:
+        generated, error = [], f"family generation raised ActionError: {raised}"
+    if stats is not None:
+        stats["generation_calls"] += 1
+        stats["seconds"] += time.perf_counter() - started
+    result = (forms, generated, error)
+    if generation_cache is not None:
+        generation_cache[key] = result
+        while len(generation_cache) > APPLICABILITY_GENERATION_CACHE_LIMIT:
+            generation_cache.pop(next(iter(generation_cache)))
+            if stats is not None:
+                stats["evictions"] += 1
+    return result
+
+
+def _verified_attributions(
+    family, data, reactants, stored_products, recipe_labels, generation_cache, generation_stats
+) -> tuple[set[tuple[tuple[int, str], ...]], str | None]:
+    """Return attributions bound to the stored transition, or why there are none.
+
+    An attribution is verified only when a family-generated forward candidate
+    fired on (a resonance form of) the stored reactants, its template equals
+    the stored template, the attributed atoms select that template, and its
+    products equal the stored rewrite atom-for-atom up to product resonance.
+    """
+    forms, generated, error = _generated_forward_transitions(
+        family,
+        data,
+        _stored_resonance_forms(reactants),
+        generation_cache,
+        generation_stats,
+    )
+    if error is not None:
+        return set(), error
+    fired = [form for group in forms for form in group]
+    template = data.get("template") or ""
+    stored_states: dict[frozenset, list] = {}
+    attributions = set()
+    counts = {"forward": 0, "template": 0}
+    for candidate in generated:
+        if getattr(candidate, "is_forward", True) is False or not all(
+            any(participant is form for form in fired)
+            for participant in candidate.reactants
         ):
             continue
-        reactant_heavy_index = inverse_map.get(product_index)
-        if reactant_heavy_index is not None and 0 <= reactant_heavy_index < len(
-            reactant_heavy
-        ):
-            roots.add(
-                (
-                    reactant_atoms.index(
-                        reactant_heavy[reactant_heavy_index]
-                    ),
-                    "product",
-                )
+        counts["forward"] += 1
+        if not _templates_equivalent(_template(candidate), template):
+            continue
+        counts["template"] += 1
+        # Candidate reactants are shared, re-labelled molecule objects inside
+        # RMG generation; only the per-candidate products keep its own labels.
+        labels = {
+            atom.id: atom.label
+            for product in candidate.products
+            for atom in product.atoms
+            if atom.label
+        }
+        attribution = tuple(
+            sorted(
+                (atom_id, label)
+                for atom_id, label in labels.items()
+                if label in recipe_labels
             )
+        )
+        if {label for _, label in attribution} != recipe_labels:
+            continue
+        if not _products_correspond(candidate.products, stored_products, stored_states):
+            continue
+        if not _attribution_satisfies_template(
+            family, candidate.reactants, labels, template
+        ):
+            continue
+        attributions.add(attribution)
+    if attributions:
+        return attributions, None
+    if counts["forward"] == 0:
+        return attributions, "no family-generated forward candidate fired on the stored reactants"
+    if counts["template"] == 0:
+        return attributions, "no family-generated candidate matched the stored template"
+    return attributions, (
+        "no template-matched candidate reproduces the stored rewrite "
+        "up to product resonance"
+    )
+
+
+def _heavy_state(atoms: dict[int, tuple], bonds: dict[tuple[int, int], float]):
+    """Project an identity state onto heavy atoms, folding hydrogens into counts."""
+    hydrogens = {index for index, state in atoms.items() if state[0] == 1}
+    counts = dict.fromkeys(atoms, 0)
+    for (first, second) in bonds:
+        if first in hydrogens and second not in hydrogens:
+            counts[second] += 1
+        elif second in hydrogens and first not in hydrogens:
+            counts[first] += 1
+    return (
+        {
+            index: (*state, counts[index])
+            for index, state in atoms.items()
+            if index not in hydrogens
+        },
+        {
+            pair: order
+            for pair, order in bonds.items()
+            if not hydrogens & set(pair)
+        },
+    )
+
+
+def _hashable_state(atoms, bonds):
+    return frozenset(atoms.items()), frozenset(bonds.items())
+
+
+def _species_states(molecules) -> dict[frozenset, set]:
+    """Return every resonance form's heavy-atom state, per id-tracked component."""
+    return {
+        frozenset(atom.id for atom in molecule.atoms if atom.element.number != 1): {
+            _hashable_state(*_heavy_state(*state))
+            for state in _identity_resonance_states(molecule)
+        }
+        for molecule in molecules
+    }
+
+
+def _permutation_preserves_species(sigma, molecules, species_states) -> bool:
+    """Check that permuting one drawn form lands on a resonance form of each species."""
+    atoms, bonds = {}, {}
+    for molecule in molecules:
+        molecule_atoms, molecule_bonds = _heavy_state(*_identity_state(molecule))
+        atoms.update(molecule_atoms)
+        bonds.update(molecule_bonds)
+    permuted_atoms = {sigma[index]: state for index, state in atoms.items()}
+    permuted_bonds = {
+        tuple(sorted((sigma[first], sigma[second]))): order
+        for (first, second), order in bonds.items()
+    }
+    for component, states in species_states.items():
+        image = _hashable_state(
+            {index: permuted_atoms[index] for index in component},
+            {
+                pair: order
+                for pair, order in permuted_bonds.items()
+                if pair[0] in component
+            },
+        )
+        if image not in states:
+            return False
+    return True
+
+
+def _transition_automorphism_exists(first, second, reactants, products=None) -> bool:
+    """Return whether one automorphism maps ``first`` onto ``second``.
+
+    The automorphism permutes heavy atoms (hydrogens on one heavy atom are
+    interchangeable), carries every recipe role onto the same role, and maps
+    each reactant species, and when ``products`` are given each id-tracked
+    product species, onto itself up to resonance: it preserves the complete
+    mapped transition, not merely one drawn resonance form.
+    """
+    from itertools import permutations, product as cartesian
+
+    if sorted(label for _, label in first) != sorted(label for _, label in second):
+        return False
+    if first == second:
+        return True
+    atoms = {atom.id: atom for molecule in reactants for atom in molecule.atoms}
+    parent = {
+        index: next(iter(atom.edges)).id
+        for index, atom in atoms.items()
+        if atom.element.number == 1 and len(atom.edges) == 1
+    }
+    skeletons = []
+    for molecule in reactants:
+        skeleton = molecule.copy(deep=True)
+        for atom in list(skeleton.atoms):
+            if atom.id in parent:
+                skeleton.remove_atom(atom)
+        skeletons.append(skeleton)
+    left = [skeleton.copy(deep=True) for skeleton in skeletons]
+    right = [skeleton.copy(deep=True) for skeleton in skeletons]
+    left_atoms = {atom.id: atom for molecule in left for atom in molecule.atoms}
+    right_atoms = {atom.id: atom for molecule in right for atom in molecule.atoms}
+    left_combined, right_combined = left[0], right[0]
+    for molecule in left[1:]:
+        left_combined = left_combined.merge(molecule)
+    for molecule in right[1:]:
+        right_combined = right_combined.merge(molecule)
+    reactant_states = _species_states(reactants)
+    product_states = _species_states(products) if products is not None else None
+
+    def heavy(index):
+        return parent.get(index, index)
+
+    by_label: dict[str, tuple[list[int], list[int]]] = {}
+    for index, label in first:
+        by_label.setdefault(label, ([], []))[0].append(index)
+    for index, label in second:
+        by_label[label][1].append(index)
+    choices = [
+        [list(zip(sources, ordering)) for ordering in permutations(targets)]
+        for sources, targets in by_label.values()
+    ]
+    for selection in cartesian(*choices):
+        pinned = {}
+        for pairs in selection:
+            for source, target in pairs:
+                if (source in parent) != (target in parent):
+                    break
+                if pinned.setdefault(heavy(source), heavy(target)) != heavy(target):
+                    break
+            else:
+                continue
+            break
+        else:
+            initial_map = {
+                left_atoms[source]: right_atoms[target]
+                for source, target in pinned.items()
+            }
+            for mapping in left_combined.find_isomorphism(
+                right_combined, initial_map=initial_map, save_order=True, strict=False
+            ):
+                sigma = {atom.id: image.id for atom, image in mapping.items()}
+                if _permutation_preserves_species(
+                    sigma, reactants, reactant_states
+                ) and (
+                    products is None
+                    or _permutation_preserves_species(sigma, products, product_states)
+                ):
+                    return True
+    return False
+
+
+def _collapse_automorphic_attributions(attributions, reactants, products=None):
+    """Keep one deterministic representative per transition-automorphism orbit."""
+    representatives = []
+    for attribution in sorted(attributions):
+        if not any(
+            _transition_automorphism_exists(representative, attribution, reactants, products)
+            for representative in representatives
+        ):
+            representatives.append(attribution)
+    return representatives
+
+
+def _u2_roots_from_attributions(
+    data, reactants, products, attributions, collapsed
+) -> list[dict[str, Any]]:
+    """Bind u2 centres to recipe roles across verified attribution orbits.
+
+    Ambiguity is declared only when the orbits disagree about the roles of a
+    u2 centre; disagreement on other labels (equivalent H atoms, resonance-
+    equivalent ``*3`` choices) does not matter to the policy.
+    """
+    roles_by_root: dict[tuple[int, str], set[str | None]] = {}
+    for attribution in collapsed:
+        for atom_index, label in attribution:
+            for side in _stored_u2_roles(data, reactants, products, atom_index):
+                roles_by_root.setdefault((atom_index, side), set()).add(label)
+    for key, labels in roles_by_root.items():
+        for attribution in collapsed:
+            if key[0] not in {atom_index for atom_index, _ in attribution}:
+                labels.add(None)
+    roots = []
+    for (atom_index, side), labels in sorted(roles_by_root.items()):
+        recipe_labels = sorted(label for label in labels if label is not None)
+        root = {
+            "reactant_atom_index": atom_index,
+            "recipe_label": "|".join(recipe_labels),
+            "record_role": side,
+            "family_forward_role": side,
+            "attribution": "verified",
+            "attribution_count": len(attributions),
+            "attribution_orbits": len(collapsed),
+            "admissible_roles": [
+                {"recipe_label": label, "family_forward_role": side}
+                for label in recipe_labels
+            ],
+        }
+        if len(labels) > 1:
+            root.update(
+                attribution="ambiguous",
+                attribution_caveat=(
+                    "verified attributions disagree on the recipe role of this "
+                    "u2 centre: "
+                    + ", ".join(label or "spectator" for label in sorted(labels, key=str))
+                ),
+            )
+        roots.append(root)
+    return roots
+
+
+def _unverified_u2_roots(data, reactants, products, reason) -> list[dict[str, Any]]:
+    """Keep every touched stored u2 centre in-policy when attribution fails."""
+    touched = _touched_atom_indices(data.get("bond_ops", []))
     return [
         {
             "reactant_atom_index": atom_index,
             "recipe_label": "__runtime_recipe_root_unresolved__",
-            "record_role": role,
-            "family_forward_role": role,
+            "record_role": side,
+            "family_forward_role": side,
             "mapping_verified": False,
             "mapping_error": reason,
+            "attribution": "unverified",
+            "admissible_roles": None,
         }
-        for atom_index, role in sorted(roots)
+        for atom_index in sorted(touched)
+        for side in sorted(_stored_u2_roles(data, reactants, products, atom_index))
     ]
-
-
-def _attribution_matches_stored_rewrite(family, attribution, data, reactants):
-    """Check recipe actions against the atom-indexed stored rewrite."""
-    label_indices = dict(attribution)
-    atoms = [atom for molecule in reactants for atom in molecule.atoms]
-    stored_bonds = set()
-    stored_values = set()
-    for operation in data.get("bond_ops", []):
-        action = operation.get("action")
-        if action in {"break", "form"}:
-            stored_bonds.add(
-                (
-                    action,
-                    tuple(sorted(operation["atoms"])),
-                    float(operation["order"]),
-                )
-            )
-        elif action.startswith("set_"):
-            stored_values.add(
-                (action, operation["atom"], int(operation["value"]))
-            )
-
-    for action in family.forward_recipe.actions:
-        kind = action[0]
-        if kind in {"BREAK_BOND", "FORM_BOND", "CHANGE_BOND"}:
-            first = label_indices.get(action[1])
-            second = label_indices.get(action[3])
-            if first is None or second is None:
-                return False
-            pair = tuple(sorted((first, second)))
-            if kind == "CHANGE_BOND":
-                bond = atoms[first].edges.get(atoms[second])
-                if bond is None:
-                    return False
-                old_order = float(bond.order)
-                expected = {
-                    ("break", pair, old_order),
-                    ("form", pair, old_order + float(action[2])),
-                }
-                if not expected <= stored_bonds:
-                    return False
-            else:
-                expected = (
-                    "break" if kind == "BREAK_BOND" else "form",
-                    pair,
-                    float(action[2]),
-                )
-                if expected not in stored_bonds:
-                    return False
-        elif kind in {"GAIN_RADICAL", "LOSE_RADICAL"}:
-            atom_index = label_indices.get(action[1])
-            if atom_index is None:
-                return False
-            delta = int(action[2]) * (1 if kind == "GAIN_RADICAL" else -1)
-            if (
-                "set_radical",
-                atom_index,
-                atoms[atom_index].radical_electrons + delta,
-            ) not in stored_values:
-                return False
-        elif kind in {"GAIN_PAIR", "LOSE_PAIR"}:
-            atom_index = label_indices.get(action[1])
-            if atom_index is None:
-                return False
-            delta = int(action[2]) * (1 if kind == "GAIN_PAIR" else -1)
-            if (
-                "set_lone_pairs",
-                atom_index,
-                atoms[atom_index].lone_pairs + delta,
-            ) not in stored_values:
-                return False
-    return True
-
-
-def _rewrite_label_attributions(
-    family,
-    data,
-    reactants,
-    recipe_labels,
-    label_elements,
-):
-    """Solve all recipe-label assignments admitted by the stored rewrite."""
-    atoms = [atom for molecule in reactants for atom in molecule.atoms]
-    bond_operations = [
-        operation
-        for operation in data.get("bond_ops", [])
-        if operation.get("action") in {"break", "form"}
-    ]
-    partials = [dict()]
-
-    def merge(partial, first_label, first_atom, second_label, second_atom):
-        candidate = dict(partial)
-        for label, atom_index in (
-            (first_label, first_atom),
-            (second_label, second_atom),
-        ):
-            if label in candidate and candidate[label] != atom_index:
-                return None
-            allowed = label_elements.get(label)
-            if allowed and atoms[atom_index].element.number not in allowed:
-                return None
-            candidate[label] = atom_index
-        return candidate
-
-    for recipe_action in family.forward_recipe.actions:
-        kind = recipe_action[0]
-        if kind not in {"BREAK_BOND", "FORM_BOND", "CHANGE_BOND"}:
-            continue
-        matches = []
-        if kind in {"BREAK_BOND", "FORM_BOND"}:
-            stored_action = "break" if kind == "BREAK_BOND" else "form"
-            matches = [
-                tuple(operation["atoms"])
-                for operation in bond_operations
-                if operation["action"] == stored_action
-                and float(operation["order"]) == float(recipe_action[2])
-            ]
-        else:
-            delta = float(recipe_action[2])
-            for broken in bond_operations:
-                if broken["action"] != "break":
-                    continue
-                pair = tuple(sorted(broken["atoms"]))
-                if any(
-                    formed["action"] == "form"
-                    and tuple(sorted(formed["atoms"])) == pair
-                    and math.isclose(
-                        float(formed["order"]),
-                        float(broken["order"]) + delta,
-                    )
-                    for formed in bond_operations
-                ):
-                    matches.append(tuple(broken["atoms"]))
-        next_partials = []
-        for partial in partials:
-            for first_atom, second_atom in matches:
-                for oriented in (
-                    (first_atom, second_atom),
-                    (second_atom, first_atom),
-                ):
-                    candidate = merge(
-                        partial,
-                        recipe_action[1],
-                        oriented[0],
-                        recipe_action[3],
-                        oriented[1],
-                    )
-                    if candidate is not None:
-                        next_partials.append(candidate)
-        partials = next_partials
-        if not partials:
-            return set()
-
-    changed_radical_atoms = {
-        operation["atom"]
-        for operation in data.get("bond_ops", [])
-        if operation.get("action") == "set_radical"
-    }
-    for recipe_action in family.forward_recipe.actions:
-        if recipe_action[0] not in {"GAIN_RADICAL", "LOSE_RADICAL"}:
-            continue
-        label = recipe_action[1]
-        if all(label in partial for partial in partials):
-            continue
-        next_partials = []
-        for partial in partials:
-            for atom_index in changed_radical_atoms:
-                allowed = label_elements.get(label)
-                if allowed and atoms[atom_index].element.number not in allowed:
-                    continue
-                candidate = dict(partial)
-                candidate[label] = atom_index
-                next_partials.append(candidate)
-        partials = next_partials
-
-    return {
-        tuple(sorted(partial.items()))
-        for partial in partials
-        if set(partial) == recipe_labels
-    }
 
 
 def _mapped_reaction_u2_roots(
@@ -792,7 +976,15 @@ def _mapped_reaction_u2_roots(
     generation_cache: dict[Any, Any] | None = None,
     generation_stats: dict[str, dict[str, float | int]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Map recipe-labelled u2 centres on the fired resonance form."""
+    """Map recipe-labelled u2 centres onto a stored or source transition.
+
+    With ``record`` the roots are bound to the stored transition by
+    :func:`_verified_attributions`; an empty list means the verified reacting
+    centre carries no u2 carbon.  When no attribution verifies, every touched
+    stored u2 centre is returned unverified with no admissible role, so the
+    policy can never mistake an attribution failure for support.  Without
+    ``record`` (training sources) the family labels the reaction itself.
+    """
     mapping_reaction = (
         _reaction_from_record(record) if record is not None else reaction
     )
@@ -805,11 +997,7 @@ def _mapped_reaction_u2_roots(
     ):
         return []
     original_reactants = [
-        (
-            participant.molecule[0]
-            if hasattr(participant, "molecule")
-            else participant
-        ).copy(deep=True)
+        _stored_form_molecule(participant).copy(deep=True)
         for participant in mapping_reaction.reactants
     ]
     recipe_labels = {
@@ -819,11 +1007,7 @@ def _mapped_reaction_u2_roots(
         if isinstance(token, str) and token.startswith("*")
     }
     stored_products = [
-        (
-            participant.molecule[0]
-            if hasattr(participant, "molecule")
-            else participant
-        ).copy(deep=True)
+        _stored_form_molecule(participant).copy(deep=True)
         for participant in mapping_reaction.products
     ]
     if record is None:
@@ -831,15 +1015,17 @@ def _mapped_reaction_u2_roots(
         family.add_atom_labels_for_reaction(
             labeled, output_with_resonance=False, save_order=True
         )
-        attributions = _participant_label_attributions(
-            labeled.reactants, original_reactants, recipe_labels
+        _tag_atom_ids(original_reactants)
+        collapsed = _collapse_automorphic_attributions(
+            _participant_label_attributions(
+                labeled.reactants, original_reactants, recipe_labels
+            ),
+            original_reactants,
         )
-        label_indices = {
-            label: {dict(attribution)[label] for attribution in attributions}
-            for label in recipe_labels
-            if attributions
-            and all(label in dict(item) for item in attributions)
-        }
+        label_indices: dict[str, set[int]] = {}
+        for attribution in collapsed:
+            for atom_index, label in attribution:
+                label_indices.setdefault(label, set()).add(atom_index)
         roots = []
         for side in ("reactant", "product"):
             for participant in getattr(labeled, f"{side}s"):
@@ -852,17 +1038,17 @@ def _mapped_reaction_u2_roots(
                     ):
                         continue
                     indices = label_indices.get(atom.label, set())
-                    root_index = min(indices) if indices else -1
                     persistent, resonance_count = _persistent_labeled_u2(
                         molecule, atom
                     )
                     root = {
-                        "reactant_atom_index": root_index,
+                        "reactant_atom_index": min(indices) if indices else -1,
                         "recipe_label": atom.label,
                         "record_role": side,
                         "family_forward_role": side,
                         "persistent_neutral_divalent_carbon": persistent,
                         "resonance_form_count": resonance_count,
+                        "attribution_orbits": len(collapsed),
                     }
                     if len(indices) != 1:
                         root.update(
@@ -876,189 +1062,41 @@ def _mapped_reaction_u2_roots(
         return roots
 
     data = record.to_dict() if isinstance(record, EventRecord) else record
-    expected_template = data.get("template")
     if generation_cache is None:
         generation_cache = _APPLICABILITY_GENERATION_CACHE.get()
     if generation_stats is None:
         generation_stats = _APPLICABILITY_GENERATION_STATS.get()
-    cache_key = (
-        getattr(family, "label", ""),
-        tuple(
-            _canonical_adjacency(molecule)
-            for molecule in original_reactants
-        ),
-    )
-    family_stats = None
-    if generation_stats is not None:
-        family_stats = generation_stats.setdefault(
-            getattr(family, "label", ""),
-            {
-                "requests": 0,
-                "generation_calls": 0,
-                "cache_hits": 0,
-                "seconds": 0.0,
-            },
-        )
-        family_stats["requests"] += 1
-    if generation_cache is not None and cache_key in generation_cache:
-        generated = copy.deepcopy(generation_cache[cache_key])
-        if family_stats is not None:
-            family_stats["cache_hits"] += 1
-    else:
-        started = time.perf_counter()
-        try:
-            generated = family.generate_reactions(
-                [molecule.copy(deep=True) for molecule in original_reactants],
-                products=None,
-                prod_resonance=True,
-                delete_labels=False,
-                relabel_atoms=False,
-            )
-        except ActionError:
-            generated = []
-        elapsed = time.perf_counter() - started
-        if generation_cache is not None:
-            generation_cache[cache_key] = copy.deepcopy(generated)
-        if family_stats is not None:
-            family_stats["generation_calls"] += 1
-            family_stats["seconds"] += elapsed
-
-    attributions = set()
-    matching_candidates = 0
-    for candidate in generated:
-        if expected_template and not _templates_equivalent(
-            _template(candidate), expected_template
-        ):
-            continue
-        if not _participant_lists_match(
-            candidate.products, stored_products, strict=False
-        ):
-            continue
-        matching_candidates += 1
-        label_elements: dict[str, set[int]] = {}
-        for participant in candidate.reactants:
-            for atom in _stored_form_molecule(participant).atoms:
-                if atom.label in recipe_labels:
-                    label_elements.setdefault(atom.label, set()).add(
-                        atom.element.number
-                    )
-        candidate_attributions = _participant_label_attributions(
-            candidate.reactants, original_reactants, recipe_labels
-        )
-        attributions.update(
-            attribution
-            for attribution in candidate_attributions
-            if _attribution_matches_stored_rewrite(
-                family, attribution, data, original_reactants
-            )
-        )
-        attributions.update(
-            _rewrite_label_attributions(
-                family,
-                data,
-                original_reactants,
-                recipe_labels,
-                label_elements,
-            )
-        )
-    if not attributions:
-        exact_labeled = copy.deepcopy(mapping_reaction)
-        try:
-            family.add_atom_labels_for_reaction(
-                exact_labeled, output_with_resonance=False, save_order=True
-            )
-        except ActionError:
-            exact_labeled = None
-        else:
-            if expected_template:
-                try:
-                    family.retrieve_template(expected_template.split(";"))
-                except KeyError:
-                    exact_labeled = None
-        if exact_labeled is not None:
-            label_elements = {}
-            for participant in exact_labeled.reactants:
-                for atom in _stored_form_molecule(participant).atoms:
-                    if atom.label in recipe_labels:
-                        label_elements.setdefault(atom.label, set()).add(
-                            atom.element.number
-                        )
-            exact_attributions = _participant_label_attributions(
-                exact_labeled.reactants, original_reactants, recipe_labels
-            )
-            attributions.update(
-                attribution
-                for attribution in exact_attributions
-                if _attribution_matches_stored_rewrite(
-                    family, attribution, data, original_reactants
-                )
-            )
-            attributions.update(
-                _rewrite_label_attributions(
-                    family,
-                    data,
-                    original_reactants,
-                    recipe_labels,
-                    label_elements,
-                )
-            )
-
-    label_indices = {
-        label: {
-            dict(attribution)[label]
-            for attribution in attributions
-            if label in dict(attribution)
-        }
-        for label in recipe_labels
-    }
-    ambiguous_labels = sorted(
-        label for label, indices in label_indices.items() if len(indices) > 1
-    )
-    if ambiguous_labels:
-        return _unresolved_stored_u2_roots(
+    _tag_atom_ids(original_reactants)
+    try:
+        tracked_products, _ = _apply_record(data, original_reactants)
+    except ValueError as error:
+        return _unverified_u2_roots(
             data,
             original_reactants,
             stored_products,
-            "stored-transition attribution is ambiguous for recipe labels "
-            + ", ".join(ambiguous_labels),
+            f"stored rewrite is invalid: {error}",
         )
-    roots = []
-    for label in sorted(recipe_labels):
-        indices = label_indices[label]
-        roles = {
-            role
-            for atom_index in indices
-            for role in _stored_u2_roles(
-                data, original_reactants, stored_products, atom_index
-            )
-        }
-        for role in sorted(roles):
-            role_indices = {
-                atom_index
-                for atom_index in indices
-                if role
-                in _stored_u2_roles(
-                    data, original_reactants, stored_products, atom_index
-                )
-            }
-            root_index = next(iter(role_indices or indices))
-            root = {
-                "reactant_atom_index": root_index,
-                "recipe_label": label,
-                "record_role": role,
-                "family_forward_role": role,
-            }
-            roots.append(root)
-    if roots:
-        return roots
-    reason = (
-        "no family-generated candidate matched the stored template "
-        "and products"
-        if matching_candidates == 0
-        else "family-generated candidates did not resolve a stored recipe root"
+    attributions, failure = _verified_attributions(
+        family,
+        data,
+        original_reactants,
+        tracked_products,
+        recipe_labels,
+        generation_cache,
+        generation_stats,
     )
-    return _unresolved_stored_u2_roots(
-        data, original_reactants, stored_products, reason
+    if not attributions:
+        return _unverified_u2_roots(
+            data, original_reactants, stored_products, failure
+        )
+    return _u2_roots_from_attributions(
+        data,
+        original_reactants,
+        stored_products,
+        attributions,
+        _collapse_automorphic_attributions(
+            attributions, original_reactants, tracked_products
+        ),
     )
 
 
@@ -1179,6 +1217,8 @@ def _stored_u2_root_fallback(
                         "family relabeling failed; exact touched atom is bound to "
                         "the stored rewrite"
                     ),
+                    "attribution": "unverified",
+                    "admissible_roles": None,
                 }
             )
     return roots
@@ -2559,9 +2599,9 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
     if root_index < 0 or root_index >= len(reactant_atoms):
         if attribution_unresolved:
             return {
-                "persistent_neutral_divalent_carbon": False,
-                "resonance_form_count": 0,
                 **mapped_root,
+                "persistent_neutral_divalent_carbon": None,
+                "resonance_form_count": 0,
             }
         return {
             **mapped_root,
@@ -2582,7 +2622,7 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
             "mapping_error": (
                 "mapped applicability root role must be reactant or product"
             ),
-            "persistent_neutral_divalent_carbon": False,
+            "persistent_neutral_divalent_carbon": None,
             "resonance_form_count": 0,
         }
 
@@ -2592,7 +2632,7 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
             **mapped_root,
             "mapping_verified": False,
             "mapping_error": "mapped recipe root is not touched by the stored rewrite",
-            "persistent_neutral_divalent_carbon": False,
+            "persistent_neutral_divalent_carbon": None,
             "resonance_form_count": 0,
         }
 
@@ -2763,32 +2803,144 @@ def _reciprocal_mapping_root(
     }
 
 
+_ROLE_SEVERITY = {"supported": 0, "unresolved": 1, "refused": 2}
+
+
+def _admissible_roles(root: dict[str, Any]) -> list[tuple[str, str]] | None:
+    """Return the recipe roles a root may hold, or ``None`` when any role may."""
+    if "admissible_roles" in root:
+        roles = root["admissible_roles"]
+        if roles is None:
+            return None
+        return sorted(
+            {(role["recipe_label"], role["family_forward_role"]) for role in roles}
+        )
+    label = root.get("recipe_label")
+    if label is None or label == "__runtime_recipe_root_unresolved__":
+        return None
+    return [(label, root["family_forward_role"])]
+
+
+def _role_support(contributors, role: tuple[str, str] | None) -> str:
+    """Grade one admissible role against the selected positive-weight contributors."""
+    matches = (
+        []
+        if role is None
+        else [
+            contributor
+            for contributor in contributors
+            if any(
+                source_root.get("recipe_label") == role[0]
+                and source_root.get("family_forward_role") == role[1]
+                and source_root.get("persistent_neutral_divalent_carbon") is True
+                for source_root in contributor.get("mapped_roots") or []
+            )
+        ]
+    )
+    if contributors and len(matches) == len(contributors):
+        return "supported"
+    if matches or any(
+        contributor.get("mapped_roots") is None for contributor in contributors
+    ):
+        return "unresolved"
+    return "refused"
+
+
 def classify_persistent_carbene(
     record,
     mapped_root: dict[str, Any],
     rate_source_domain: list[dict[str, Any]] | None,
 ) -> dict[str, Any]:
-    """Classify one mapped reacting centre against selected-rate contributors."""
+    """Classify one mapped reacting centre against selected-rate contributors.
+
+    Order (policy version 2, fail-closed):
+
+    1. a demonstrated structural inconsistency refuses the pair;
+    2. a centre that is definitively not a persistent u2 carbon is not
+       applicable (an unverifiable centre is never assumed non-persistent);
+    3. every admissible recipe role is graded against the contributor domain
+       *before* attribution status is consulted.  Admissible roles are the
+       one verified role, every role over the verified automorphism orbits
+       when they disagree, or any role at all when no attribution verified.
+       If any admissible role is unsupported by the whole domain the pair is
+       refused, so an unverified or ambiguous root can never hide a refusal;
+    4. only then is an unverified attribution retained as unresolved, and a
+       verified one graded unresolved (no calibrated domain, or a partial one)
+       or supported (every contributor supports every admissible role).
+    """
     root = _record_mapping_root(record, mapped_root)
+    attribution_verified = root.get("mapping_verified", True) is not False
     result = {
         "policy_version": PERSISTENT_CARBENE_POLICY_VERSION,
         "mapped_root": root,
         "rate_source": copy.deepcopy(rate_source_domain),
+        "attribution": root.get(
+            "attribution", "verified" if attribution_verified else "unverified"
+        ),
     }
-    if not root.get("mapping_verified", True):
-        if root.get("structural_inconsistency"):
-            return {
-                **result,
-                "disposition": "refused-structural-inconsistency",
-                "reason": f"structural-inconsistency: {root['mapping_error']}",
-            }
+    if root.get("structural_inconsistency"):
+        return {
+            **result,
+            "disposition": "refused-structural-inconsistency",
+            "reason": f"structural-inconsistency: {root['mapping_error']}",
+        }
+    if root.get("persistent_neutral_divalent_carbon") is False:
+        return {**result, "disposition": "not-applicable"}
+    roles = _admissible_roles(root)
+    if rate_source_domain is None:
+        grades = {}
+        worst = "unresolved"
+        contributors = []
+    else:
+        contributors = [
+            contributor
+            for contributor in rate_source_domain
+            if float(
+                contributor.get("source", {}).get("weight", 1.0)
+                if isinstance(contributor.get("source"), dict)
+                else 1.0
+            )
+            > 0.0
+        ]
+        grades = {
+            role: _role_support(contributors, role)
+            for role in (roles if roles is not None else [None])
+        }
+        worst = max(grades.values(), key=_ROLE_SEVERITY.__getitem__)
+    if worst == "refused":
+        if not attribution_verified:
+            reason = (
+                "stored-transition attribution unverified "
+                f"({root.get('mapping_error')}); an admissible persistent-u2 role "
+                "is not supported by any selected rate contributor"
+            )
+        elif result["attribution"] == "ambiguous":
+            reason = (
+                "ambiguous stored-transition attribution admits persistent-u2 "
+                "role(s) "
+                + ", ".join(
+                    f"{role[0]}/{role[1]}"
+                    for role, grade in sorted(grades.items())
+                    if grade == "refused"
+                )
+                + " that no selected rate contributor supports"
+            )
+        else:
+            reason = (
+                "no selected rate contributor supports persistent u2 in the "
+                "mapped role"
+            )
+        return {
+            **result,
+            "disposition": "refused-unsupported-transfer",
+            "reason": reason,
+        }
+    if not attribution_verified:
         return {
             **result,
             "disposition": "retained-unresolved-applicability",
             "reason": root["mapping_error"],
         }
-    if not root["persistent_neutral_divalent_carbon"]:
-        return {**result, "disposition": "not-applicable"}
     if root.get("mapping_caveat"):
         return {
             **result,
@@ -2801,36 +2953,7 @@ def classify_persistent_carbene(
             "disposition": "retained-unresolved-applicability",
             "reason": "selected rate has no serialized calibrated contributor domain",
         }
-    contributors = [
-        contributor
-        for contributor in rate_source_domain
-        if float(
-            contributor.get("source", {}).get("weight", 1.0)
-            if isinstance(contributor.get("source"), dict)
-            else 1.0
-        )
-        > 0.0
-    ]
-    matches = [
-        contributor
-        for contributor in contributors
-        if any(
-            source_root.get("recipe_label") == root["recipe_label"]
-            and source_root.get("family_forward_role") == root["family_forward_role"]
-            and source_root.get("persistent_neutral_divalent_carbon") is True
-            for source_root in contributor.get("mapped_roots") or []
-        )
-    ]
-    if contributors and len(matches) == len(contributors):
-        return {
-            **result,
-            "disposition": "retained-supported-transfer",
-            "supporting_contributors": copy.deepcopy(matches),
-            "caveat": "same reacting role; donor/acceptor environment may differ",
-        }
-    if matches or any(
-        contributor.get("mapped_roots") is None for contributor in contributors
-    ):
+    if worst == "unresolved":
         return {
             **result,
             "disposition": "retained-unresolved-applicability",
@@ -2838,8 +2961,14 @@ def classify_persistent_carbene(
         }
     return {
         **result,
-        "disposition": "refused-unsupported-transfer",
-        "reason": "no selected rate contributor supports persistent u2 in the mapped role",
+        "disposition": "retained-supported-transfer",
+        "supporting_contributors": copy.deepcopy(contributors),
+        "caveat": "same reacting role; donor/acceptor environment may differ",
+        **(
+            {"attribution_caveat": root["attribution_caveat"]}
+            if root.get("attribution_caveat")
+            else {}
+        ),
     }
 
 
@@ -2848,7 +2977,13 @@ def apply_persistent_carbene_policy(
     mapped_root: dict[str, Any],
     rate_source_domain: list[dict[str, Any]] | None,
 ) -> tuple[list[Any], dict[str, Any] | None]:
-    """Apply one decision atomically before or after reciprocal pair linking."""
+    """Apply one decision atomically before or after reciprocal pair linking.
+
+    The decision rule (structural check, persistence, fail-closed grading of
+    every admissible role before attribution status) is documented on
+    :func:`classify_persistent_carbene`; ``PERSISTENT_CARBENE_POLICY_VERSION``
+    names it.
+    """
     if len(pair) != 2:
         raise ValueError("applicability policy requires exactly one reciprocal pair")
     records = [
@@ -3435,6 +3570,14 @@ class EventSetCompiler:
             _APPLICABILITY_GENERATION_CACHE.reset(generation_cache_token)
             _PAIR_MOLECULE_CACHE.reset(token)
 
+    def _ledger_unresolved(self, decisions, published, initiating):
+        """Record retained-unresolved decisions under the published final IDs."""
+        for decision in decisions:
+            self._applicability_refusals.append(
+                {**decision, "record_ids": [record.event_id for record in published]}
+            )
+        return published, initiating
+
     def _build_linked_family_pair(self, proxy, reaction, provenance):
         """Estimate exactly one direction, then invert its reference-state Kc."""
         source = getattr(reaction, "source_reaction", reaction)
@@ -3489,6 +3632,7 @@ class EventSetCompiler:
             else (structural_reverse, structural_forward)
         )
         applicability = None
+        unresolved_decisions: list[dict[str, Any]] = []
         has_selected_u2 = any(
             " u2 " in graph
             for graph in forward.reactant_graphs + forward.product_graphs
@@ -3501,8 +3645,6 @@ class EventSetCompiler:
             except ActionError:
                 if not getattr(family, "auto_generated", False):
                     raise
-                mapped_roots = _stored_u2_root_fallback(forward)
-            if not mapped_roots:
                 mapped_roots = _stored_u2_root_fallback(forward)
             if mapped_roots:
                 rate_source_domain = _training_source_domain(
@@ -3526,30 +3668,31 @@ class EventSetCompiler:
                     }
                     self._applicability_refusals.append(refusal)
                     return [], None
-                for published, _ in policy_results:
-                    decision = (
-                        published[0]["rate_source"].get("applicability")
-                        if published
-                        else None
-                    )
-                    if decision is not None and decision.get("disposition") == (
-                        "retained-unresolved-applicability"
-                    ):
-                        self._applicability_refusals.append(
-                            {
-                                **copy.deepcopy(decision),
-                                "family": estimate.family,
-                                "template": _template(estimate),
-                                "record_ids": [forward.event_id, reverse.event_id],
-                            }
-                        )
+                decisions = [
+                    published[0]["rate_source"]["applicability"]
+                    for published, _ in policy_results
+                    if published[0]["rate_source"].get("applicability") is not None
+                ]
+                # Ledger entries take the published records' final identities
+                # once rates are installed; structural IDs never reach the ledger.
+                unresolved_decisions = [
+                    {
+                        **copy.deepcopy(decision),
+                        "family": estimate.family,
+                        "template": _template(estimate),
+                    }
+                    for decision in decisions
+                    if decision.get("disposition")
+                    == "retained-unresolved-applicability"
+                ]
                 applicability = next(
                     (
-                        published[0]["rate_source"].get("applicability")
-                        for published, _ in policy_results
-                        if published[0]["rate_source"].get("applicability") is not None
+                        decision
+                        for decision in decisions
+                        if decision.get("disposition")
+                        == "retained-unresolved-applicability"
                     ),
-                    None,
+                    decisions[0] if decisions else None,
                 )
 
         # Applicability is decided before evaluating kinetics or reference thermo.
@@ -3581,7 +3724,7 @@ class EventSetCompiler:
                 status_reason="RMG family kinetics unavailable",
                 event_id="",
             )
-            return [refused], refused
+            return self._ledger_unresolved(unresolved_decisions, [refused], refused)
         if not getattr(source, "reversible", True):
             irreversible = replace(
                 forward,
@@ -3593,7 +3736,9 @@ class EventSetCompiler:
                 ),
                 event_id="",
             )
-            return [irreversible], irreversible
+            return self._ledger_unresolved(
+                unresolved_decisions, [irreversible], irreversible
+            )
         reference_result = None
         try:
             if hasattr(self.reference_thermo_provider, "evaluate"):
@@ -3612,7 +3757,9 @@ class EventSetCompiler:
                 status_reason="frontier channel" if proxy.frontier else str(error),
                 event_id="",
             )
-            return [irreversible], irreversible
+            return self._ledger_unresolved(
+                unresolved_decisions, [irreversible], irreversible
+            )
         if self.use_plpsec_library and (
             matches_head_to_tail(forward) or matches_head_to_tail(reverse)
         ):
@@ -3728,7 +3875,11 @@ class EventSetCompiler:
         )
         forward = replace(forward, reverse_of=reverse.event_id, event_id="")
         reverse = replace(reverse, reverse_of=forward.event_id, event_id="")
-        return [forward, reverse], forward if initiated_forward else reverse
+        return self._ledger_unresolved(
+            unresolved_decisions,
+            [forward, reverse],
+            forward if initiated_forward else reverse,
+        )
 
     def _linked_ortho_pair(
         self,

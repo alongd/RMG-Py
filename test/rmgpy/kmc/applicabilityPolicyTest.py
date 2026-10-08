@@ -227,9 +227,12 @@ def test_real_quinoid_intra_h_migration_mapping_uses_generated_resonance_form():
     roots = _mapped_reaction_u2_roots(
         database.families["intra_H_migration"], reaction, record
     )
-    assert roots
+    assert len(roots) == 1
     assert roots[0]["recipe_label"] == "*2"
     assert roots[0]["family_forward_role"] == "product"
+    assert roots[0]["attribution"] == "verified"
+    touched = compiler_module._touched_atom_indices(record["bond_ops"])
+    assert roots[0]["reactant_atom_index"] in touched
     decision = classify_persistent_carbene(record, roots[0], None)
     assert decision["disposition"] == "not-applicable"
     assert decision["mapped_root"]["mapping_verified"] is True
@@ -237,38 +240,31 @@ def test_real_quinoid_intra_h_migration_mapping_uses_generated_resonance_form():
         decision["mapped_root"]["persistent_neutral_divalent_carbon"]
         is False
     )
-    family = database.families["intra_H_migration"]
-    generated = family.generate_reactions(
-        [participant.molecule[0] for participant in reaction.reactants],
-        prod_resonance=True,
-        delete_labels=False,
-        relabel_atoms=False,
+    stored_atoms = [
+        atom
+        for graph in record["reactant_graphs"]
+        for atom in Molecule().from_adjacency_list(graph).atoms
+    ]
+    untouched_carbon = next(
+        index
+        for index, atom in enumerate(stored_atoms)
+        if atom.element.number == 6 and index not in touched
     )
-    first_skeleton_indices = {
-        dict(attribution)["*2"]
-        for candidate in generated
-        if compiler_module._templates_equivalent(
-            compiler_module._template(candidate), record["template"]
-        )
-        and compiler_module._participant_lists_match(
-            candidate.products, reaction.products, strict=False
-        )
-        for attribution in compiler_module._participant_label_attributions(
-            candidate.reactants,
-            reaction.reactants,
-            {"*1", "*2", "*3"},
-        )
-    }
-    assert roots[0]["reactant_atom_index"] not in first_skeleton_indices
     misplaced = {
         **roots[0],
-        "reactant_atom_index": min(first_skeleton_indices),
+        "reactant_atom_index": untouched_carbon,
+        "mapping_verified": False,
+        "mapping_error": "misplaced root",
     }
     misplaced_decision = classify_persistent_carbene(record, misplaced, None)
     assert misplaced_decision["disposition"] == (
         "retained-unresolved-applicability"
     )
     assert misplaced_decision["mapped_root"]["mapping_verified"] is False
+    assert (
+        misplaced_decision["mapped_root"]["persistent_neutral_divalent_carbon"]
+        is None
+    )
 
     reverse = _complete_inverse_record(record)
     published, refusal = apply_persistent_carbene_policy(
@@ -571,6 +567,19 @@ def test_real_training_629_forward_and_reverse_bind_the_same_supported_source(
         template=generated.template,
         degeneracy=generated.degeneracy,
     )
+    # A record estimated in the CH2 + NH3 direction carries that direction's
+    # family template, exactly as the compiler stores ``estimate.template``.
+    reverse_template = next(
+        reaction.template
+        for reaction in family.generate_reactions(
+            [molecule.copy(deep=True) for molecule in generated.products],
+            prod_resonance=True,
+        )
+        if all(
+            any(product.is_isomorphic(reactant) for reactant in generated.reactants)
+            for product in reaction.products
+        )
+    )
     dispositions = []
     recipe_labels = []
     roles = []
@@ -583,7 +592,7 @@ def test_real_training_629_forward_and_reverse_bind_the_same_supported_source(
             products=copy.deepcopy(base.reactants if reverse else base.products),
             kinetics=copy.deepcopy(entry.data),
             family=family.label,
-            template=base.template,
+            template=reverse_template if reverse else base.template,
             degeneracy=base.degeneracy,
         )
         if permute_reactants:
@@ -740,39 +749,46 @@ def test_mixed_rule_training_source_is_retained_unresolved_as_a_whole(
     )
 
 
-def test_nine_form_delocalised_witness_is_reported_unresolved_end_to_end():
+def test_nine_form_delocalised_witness_has_no_carbene_reacting_centre():
     witness = json.loads((FIXTURES / "i078_resonance_witness.json").read_text())
     database = KineticsDatabase()
     database.load_families(
         str(DB_PATH / "input/kinetics/families"),
         families=["H_Abstraction"],
     )
-    roots = _mapped_reaction_u2_roots(
-        database.families["H_Abstraction"],
-        _reaction_from_record(witness),
-        witness,
+    family = database.families["H_Abstraction"]
+    reactants = compiler_module._molecules_from_graphs(witness["reactant_graphs"])
+    compiler_module._tag_atom_ids(reactants)
+    tracked, _ = _apply_record(witness, reactants)
+    attributions, failure = compiler_module._verified_attributions(
+        family, witness, reactants, tracked, {"*1", "*2", "*3"}, {}, {}
     )
-    assert len(roots) == 1
-    assert roots[0]["reactant_atom_index"] == 74
-    assert roots[0]["mapping_verified"] is False
-    decision = classify_persistent_carbene(witness, roots[0], _source())
+    # The stored product draws u2 on atom 74 only as one of nine resonance
+    # forms; the verified recipe centre is *1 = 96, which never carries u2.
+    assert failure is None
+    assert attributions == {((25, "*3"), (72, "*2"), (96, "*1"))}
+    assert (
+        _mapped_reaction_u2_roots(family, _reaction_from_record(witness), witness)
+        == []
+    )
     assert (
         witness["event_id"]
         == "evt_453febdaa6658ad2fa22f6375f21b3c46d0eb8ac92c534f69fb7dfafb72665b5"
     )
-    assert decision["disposition"] == "retained-unresolved-applicability"
+    stored_root = compiler_module._stored_u2_root_fallback(witness)
+    assert [root["reactant_atom_index"] for root in stored_root] == [74]
+    decision = classify_persistent_carbene(witness, stored_root[0], _source())
+    assert decision["disposition"] == "not-applicable"
     assert decision["mapped_root"]["product_rewrite_verified"] is True
     assert decision["mapped_root"]["resonance_form_count"] == 9
     assert decision["mapped_root"]["persistent_neutral_divalent_carbon"] is False
     reverse = _complete_inverse_record(witness)
     published, refusal = apply_persistent_carbene_policy(
-        (witness, reverse), roots[0], _source()
+        (witness, reverse), stored_root[0], _source()
     )
     assert refusal is None
     assert len(published) == 2
-    assert published[0]["rate_source"]["applicability"]["disposition"] == (
-        "retained-unresolved-applicability"
-    )
+    assert "applicability" not in published[0]["rate_source"]
 
 
 def test_wrong_recipe_root_is_retained_only_as_unresolved():
@@ -788,32 +804,61 @@ def test_wrong_recipe_root_is_retained_only_as_unresolved():
 
 
 @pytest.mark.parametrize(
-    "family_candidates, preferred, reason",
+    "root_index, mapping_error",
     [
-        ({1, 2}, {1, 2}, "ambiguous"),
-        ({1}, {2}, "does not touch"),
-        (set(), set(), "ambiguous"),
+        (-1, "no family-generated candidate matched the stored template"),
+        (0, "no template-matched candidate reproduces the stored rewrite"),
     ],
 )
-def test_ambiguous_or_unbound_family_root_becomes_unresolved_evidence(
-    family_candidates, preferred, reason
+def test_unverified_root_is_retained_only_when_every_role_is_supported(
+    root_index, mapping_error
 ):
-    index, mapping_error = compiler_module._select_family_root_candidate(
-        family_candidates, preferred, "*1"
-    )
-    assert index == min(family_candidates or preferred or {-1})
-    assert reason in mapping_error
-    decision = classify_persistent_carbene(
-        _pair()[0],
-        {
-            **_root(),
-            "reactant_atom_index": index,
-            "mapping_verified": False,
-            "mapping_error": mapping_error,
-        },
-        _source(),
-    )
+    root = {
+        **_root(),
+        "reactant_atom_index": root_index,
+        "mapping_verified": False,
+        "mapping_error": mapping_error,
+    }
+    decision = classify_persistent_carbene(_pair()[0], root, _source())
     assert decision["disposition"] == "retained-unresolved-applicability"
+    assert decision["reason"] == mapping_error
+    assert decision["attribution"] == "unverified"
+
+
+@pytest.mark.parametrize("root_index", [-1, 0])
+@pytest.mark.parametrize("admissible_roles", [None, "declared"])
+def test_unverified_root_cannot_hide_an_unsupported_role(root_index, admissible_roles):
+    root = {
+        **_root(),
+        "reactant_atom_index": root_index,
+        "mapping_verified": False,
+        "mapping_error": "no family-generated candidate matched the stored template",
+    }
+    if admissible_roles is None:
+        root.update(
+            recipe_label="__runtime_recipe_root_unresolved__",
+            admissible_roles=None,
+        )
+    published, refusal = apply_persistent_carbene_policy(
+        _pair(), root, _source(persistent=False)
+    )
+    assert published == []
+    assert refusal["disposition"] == "refused-unsupported-transfer"
+    assert refusal["reason"].startswith("stored-transition attribution unverified")
+    assert refusal["record_ids"] == ["evt_forward", "evt_reverse"]
+
+
+def test_unverified_any_role_is_refused_even_when_one_role_is_supported():
+    root = {
+        **_root(),
+        "recipe_label": "__runtime_recipe_root_unresolved__",
+        "admissible_roles": None,
+        "mapping_verified": False,
+        "mapping_error": "no family-generated candidate matched the stored template",
+    }
+    published, refusal = apply_persistent_carbene_policy(_pair(), root, _source())
+    assert published == []
+    assert refusal["disposition"] == "refused-unsupported-transfer"
 
 
 @pytest.mark.parametrize("corrupt_direction", [0, 1])
@@ -928,8 +973,11 @@ def test_disproportionation_fallback_root_can_never_be_supported():
         fallback[0],
         _source(label="__runtime_recipe_root_unresolved__", role="product"),
     )
-    assert decision["disposition"] == "retained-unresolved-applicability"
+    assert decision["disposition"] == "refused-unsupported-transfer"
     assert "family relabeling failed" in decision["reason"]
+    uncalibrated = classify_persistent_carbene(_pair()[0], fallback[0], None)
+    assert uncalibrated["disposition"] == "retained-unresolved-applicability"
+    assert "family relabeling failed" in uncalibrated["reason"]
 
 
 def test_ordinary_radical_channel_is_byte_unchanged():
@@ -1009,3 +1057,391 @@ def test_synthetic_duplicated_reciprocal_pair_is_detected():
     assert duplicate_transition_groups(records) == [
         [("duplicate_f", "duplicate_r"), ("first_f", "first_r")]
     ]
+
+
+# --- I-088: verified stored-transition attribution -------------------------
+
+_CENSUS = json.loads((FIXTURES / "i088_carbene_census_records.json").read_text())
+
+
+def _pairs(records):
+    by_id = {record["event_id"]: record for record in records}
+    return [
+        (record, by_id[record["reverse_of"]])
+        for record in records
+        if record["rate_source"]["kind"] == "RMG family estimate"
+    ]
+
+
+@pytest.fixture(scope="module")
+def census_database():
+    from rmgpy.data.rmg import RMGDatabase
+
+    database = RMGDatabase()
+    database.load_kinetics(
+        str(DB_PATH / "input/kinetics"),
+        reaction_libraries=[],
+        seed_mechanisms=None,
+        kinetics_families=["H_Abstraction", "Disproportionation", "R_Recombination"],
+        kinetics_depositories=["training"],
+    )
+    database.load_thermo(
+        str(DB_PATH / "input/thermo"),
+        thermo_libraries=["primaryThermoLibrary"],
+        depository=True,
+    )
+    compiler_module.prepare_rate_rules(
+        database.kinetics, database.thermo, verbose=True
+    )
+    return database
+
+
+def _census_decision(database, forward, reverse):
+    """Run the production attribution, source domain and policy on one pair."""
+    from rmgpy.kinetics import Arrhenius
+
+    family = database.kinetics.families[forward["family"]]
+    roots = _mapped_reaction_u2_roots(
+        family, _reaction_from_record(forward), forward
+    )
+    estimate = _reaction_from_record(forward)
+    estimate.kinetics = Arrhenius(
+        A=(1.0, "s^-1"),
+        n=0.0,
+        Ea=(0.0, "J/mol"),
+        T0=(1.0, "K"),
+        comment=forward["rate_source"].get("comment", ""),
+    )
+    domain = compiler_module._training_source_domain(family, estimate, {})
+    results = [
+        apply_persistent_carbene_policy((forward, reverse), root, domain)
+        for root in roots
+    ]
+    return roots, domain, results
+
+
+@pytest.mark.parametrize(
+    "pair",
+    _pairs(_CENSUS["refused_pairs"]),
+    ids=lambda pair: pair[0]["template"] + ":" + pair[0]["event_id"][4:12],
+)
+def test_census_u05_u07_pairs_are_refused_on_verified_roots(census_database, pair):
+    forward, reverse = pair
+    roots, domain, results = _census_decision(census_database, forward, reverse)
+    assert len(roots) == 1
+    assert roots[0]["attribution"] == "verified"
+    assert roots[0]["recipe_label"] == "*1"
+    assert roots[0]["family_forward_role"] == "product"
+    assert roots[0]["attribution_count"] == 1
+    assert domain and all(
+        contributor["source"]["kind"] == "training" for contributor in domain
+    )
+    (published, refusal), = results
+    assert published == []
+    assert refusal["disposition"] == "refused-unsupported-transfer"
+    assert refusal["reason"] == (
+        "no selected rate contributor supports persistent u2 in the mapped role"
+    )
+    assert refusal["record_ids"] == [forward["event_id"], reverse["event_id"]]
+    assert refusal["mapped_root"]["persistent_neutral_divalent_carbon"] is True
+
+
+@pytest.mark.parametrize(
+    "pair",
+    _pairs(_CENSUS["u08_pairs"]),
+    ids=lambda pair: pair[0]["event_id"][4:12],
+)
+def test_census_u08_training_629_pairs_are_supported(census_database, pair):
+    forward, reverse = pair
+    roots, domain, results = _census_decision(census_database, forward, reverse)
+    assert [
+        (root["recipe_label"], root["family_forward_role"], root["attribution"])
+        for root in roots
+    ] == [("*1", "product", "verified")]
+    assert [contributor["source"]["entry_index"] for contributor in domain] == [629]
+    assert domain[0]["mapped_roots"][0]["attribution_orbits"] == 1
+    (published, refusal), = results
+    assert refusal is None
+    decisions = [record["rate_source"]["applicability"] for record in published]
+    assert [decision["disposition"] for decision in decisions] == [
+        "retained-supported-transfer"
+    ] * 2
+    assert decisions[0]["caveat"] == (
+        "same reacting role; donor/acceptor environment may differ"
+    )
+
+
+def test_real_disproportionation_shard_pair_is_unresolved_only_by_source_domain(
+    census_database,
+):
+    (forward, reverse), = _pairs(_CENSUS["disproportionation_pair"])
+    roots, domain, results = _census_decision(census_database, forward, reverse)
+    assert domain is None
+    assert len(roots) == 1
+    root = roots[0]
+    assert (root["recipe_label"], root["family_forward_role"]) == ("*1", "reactant")
+    assert root["attribution"] == "verified"
+    # Two resonance-equivalent *3 choices, related by the ring mirror that
+    # preserves the whole mapped transition.
+    assert root["attribution_count"] == 2
+    assert root["attribution_orbits"] == 1
+    (published, refusal), = results
+    assert refusal is None
+    decision = published[0]["rate_source"]["applicability"]
+    assert decision["disposition"] == "retained-unresolved-applicability"
+    assert decision["reason"] == (
+        "selected rate has no serialized calibrated contributor domain"
+    )
+    assert decision["mapped_root"]["mapping_verified"] is True
+    assert decision["mapped_root"]["persistent_neutral_divalent_carbon"] is True
+
+
+def test_real_recombination_binds_both_repeated_star_labels(census_database):
+    family = census_database.kinetics.families["R_Recombination"]
+    # A remote spectator carbene rides on the radical end that recombines.
+    carbene_radical = Molecule().from_adjacency_list(
+        """multiplicity 4
+1 C u2 p0 c0 {2,S} {4,S}
+2 C u0 p0 c0 {1,S} {3,S} {5,S} {6,S}
+3 C u1 p0 c0 {2,S} {7,S} {8,S}
+4 H u0 p0 c0 {1,S}
+5 H u0 p0 c0 {2,S}
+6 H u0 p0 c0 {2,S}
+7 H u0 p0 c0 {3,S}
+8 H u0 p0 c0 {3,S}
+"""
+    )
+    methyl = Molecule().from_smiles("[CH3]")
+    participants = [Species(molecule=[carbene_radical]), Species(molecule=[methyl])]
+    ensure_independent_atom_ids(participants, resonance=False)
+    generated = [
+        reaction
+        for reaction in family.generate_reactions(
+            [species.molecule for species in participants], prod_resonance=True
+        )
+        if len(reaction.products) == 1
+    ]
+    assert generated
+    reaction = TemplateReaction(
+        reactants=[Species(molecule=[molecule]) for molecule in generated[0].reactants],
+        products=[Species(molecule=[molecule]) for molecule in generated[0].products],
+        family=family.label,
+        template=generated[0].template,
+        degeneracy=generated[0].degeneracy,
+    )
+    compiler = object.__new__(EventSetCompiler)
+    compiler.reference_thermo_provider = SimpleNamespace(provenance={})
+    proxy = SiteProxy(
+        "recombination",
+        reaction.reactants,
+        participant_site_types=["recombination"] * len(reaction.reactants),
+    )
+    record = compiler._record(
+        proxy, reaction, {}, rate_override=(None, {"available": True})
+    ).to_dict()
+    reactants = compiler_module._molecules_from_graphs(record["reactant_graphs"])
+    compiler_module._tag_atom_ids(reactants)
+    tracked, _ = _apply_record(record, reactants)
+    attributions, failure = compiler_module._verified_attributions(
+        family, record, reactants, tracked, {"*"}, {}, {}
+    )
+    assert failure is None
+    (attribution,) = attributions
+    atoms = [atom for molecule in reactants for atom in molecule.atoms]
+    # Both centres carry the repeated recipe label; neither is the carbene.
+    assert [label for _, label in attribution] == ["*", "*"]
+    assert sorted(atoms[index].radical_electrons for index, _ in attribution) == [1, 1]
+    assert {index for index, _ in attribution} <= compiler_module._touched_atom_indices(
+        record["bond_ops"]
+    )
+    assert any(atom.radical_electrons == 2 for atom in atoms)
+    assert _mapped_reaction_u2_roots(family, _reaction_from_record(record), record) == []
+
+
+def test_wrong_template_is_never_upgraded_by_the_stored_rewrite():
+    database = KineticsDatabase()
+    database.load_families(
+        str(DB_PATH / "input/kinetics/families"),
+        families=["H_Abstraction"],
+    )
+    family = database.families["H_Abstraction"]
+    record = _pair()[0]
+    roots = _mapped_reaction_u2_roots(family, _reaction_from_record(record), record)
+    # The rewrite alone fixes *1/*2/*3, but no generated candidate carries the
+    # stored template, so nothing is verified and no role is admitted.
+    assert [
+        (root["reactant_atom_index"], root["attribution"], root["admissible_roles"])
+        for root in roots
+    ] == [(0, "unverified", None)]
+    assert roots[0]["mapping_error"] == (
+        "no family-generated candidate matched the stored template"
+    )
+    published, refusal = apply_persistent_carbene_policy(_pair(), roots[0], _source())
+    assert published == []
+    assert refusal["disposition"] == "refused-unsupported-transfer"
+
+
+def _disagreeing_attributions():
+    return [((0, "*1"), (3, "*2"), (4, "*3")), ((0, "*3"), (3, "*2"), (4, "*1"))]
+
+
+def test_ambiguity_is_declared_when_orbits_disagree_on_the_u2_role():
+    record = _pair()[0]
+    reactants = compiler_module._molecules_from_graphs(record["reactant_graphs"])
+    products = compiler_module._molecules_from_graphs(record["product_graphs"])
+    attributions = _disagreeing_attributions()
+    roots = compiler_module._u2_roots_from_attributions(
+        record, reactants, products, set(attributions), attributions
+    )
+    assert len(roots) == 1
+    root = roots[0]
+    assert root["attribution"] == "ambiguous"
+    assert root["admissible_roles"] == [
+        {"recipe_label": "*1", "family_forward_role": "product"},
+        {"recipe_label": "*3", "family_forward_role": "product"},
+    ]
+    published, refusal = apply_persistent_carbene_policy(_pair(), root, _source())
+    assert published == []
+    assert refusal["disposition"] == "refused-unsupported-transfer"
+    assert refusal["reason"].startswith("ambiguous stored-transition attribution")
+    assert "*3/product" in refusal["reason"]
+    both = _source()
+    both[0]["mapped_roots"].append(
+        {
+            "recipe_label": "*3",
+            "family_forward_role": "product",
+            "persistent_neutral_divalent_carbon": True,
+        }
+    )
+    published, refusal = apply_persistent_carbene_policy(_pair(), root, both)
+    assert refusal is None
+    decision = published[0]["rate_source"]["applicability"]
+    assert decision["disposition"] == "retained-supported-transfer"
+    assert decision["attribution"] == "ambiguous"
+    assert "attribution_caveat" in decision
+
+
+def test_disagreement_on_non_u2_labels_is_not_ambiguity():
+    record = _pair()[0]
+    reactants = compiler_module._molecules_from_graphs(record["reactant_graphs"])
+    products = compiler_module._molecules_from_graphs(record["product_graphs"])
+    attributions = [((0, "*1"), (1, "*2"), (4, "*3")), ((0, "*1"), (3, "*2"), (4, "*3"))]
+    roots = compiler_module._u2_roots_from_attributions(
+        record, reactants, products, set(attributions), attributions
+    )
+    assert [(root["recipe_label"], root["attribution"]) for root in roots] == [
+        ("*1", "verified")
+    ]
+
+
+def test_symmetric_recombination_attributions_collapse_to_one_orbit():
+    methyl = """multiplicity 2
+1 C u1 p0 c0 {2,S} {3,S} {4,S}
+2 H u0 p0 c0 {1,S}
+3 H u0 p0 c0 {1,S}
+4 H u0 p0 c0 {1,S}
+"""
+    record = {
+        "reactant_graphs": [methyl, methyl],
+        "product_graphs": [],
+        "atom_map": {0: 0, 1: 1},
+        "bond_ops": [
+            {"action": "form", "atoms": [0, 4], "order": "1.0"},
+            {"action": "set_radical", "atom": 0, "value": 0},
+            {"action": "set_radical", "atom": 4, "value": 0},
+        ],
+    }
+    reactants = compiler_module._molecules_from_graphs(record["reactant_graphs"])
+    compiler_module._tag_atom_ids(reactants)
+    tracked, _ = _apply_record(record, reactants)
+    swapped = [((0, "*1"), (4, "*2")), ((0, "*2"), (4, "*1"))]
+    assert compiler_module._collapse_automorphic_attributions(
+        swapped, reactants, tracked
+    ) == [swapped[0]]
+    # Moving a role onto an atom the transition does not touch is no symmetry.
+    moved = [((0, "*1"), (4, "*2")), ((1, "*1"), (4, "*2"))]
+    assert compiler_module._collapse_automorphic_attributions(
+        moved, reactants, tracked
+    ) == sorted(moved)
+
+
+def test_generation_cache_is_a_bounded_lru(monkeypatch):
+    calls = []
+    family = SimpleNamespace(
+        label="fake",
+        _generate_reactions=lambda forms, **kwargs: calls.append(forms) or [],
+    )
+    monkeypatch.setattr(compiler_module, "APPLICABILITY_GENERATION_CACHE_LIMIT", 2)
+    cache, stats = {}, {}
+    for key in ("a", "b", "a", "c", "b"):
+        compiler_module._generated_forward_transitions(
+            family, {"reactant_graphs": [key]}, [[key]], cache, stats
+        )
+    assert list(cache) == [("fake", ("c",)), ("fake", ("b",))]
+    assert stats["fake"]["requests"] == 5
+    assert stats["fake"]["cache_hits"] == 1
+    assert stats["fake"]["generation_calls"] == 4
+    assert stats["fake"]["evictions"] == 2
+
+
+def test_unresolved_ledger_entries_carry_the_published_final_ids(monkeypatch):
+    pair = _pair()
+    structural = [
+        EventRecord(
+            reactant_graphs=record["reactant_graphs"],
+            product_graphs=record["product_graphs"],
+            atom_map=record["atom_map"],
+            bond_ops=record["bond_ops"],
+            rate_source={"available": True},
+        )
+        for record in pair
+    ]
+    structural_ids = {record.event_id for record in structural}
+    grid = compiler_module.DEFAULT_T_GRID
+    compiler = object.__new__(EventSetCompiler)
+    compiler.kinetics_database = SimpleNamespace(
+        families={"Disproportionation": SimpleNamespace(auto_generated=True)}
+    )
+    compiler._applicability_source_cache = {}
+    compiler._applicability_refusals = []
+    compiler.temperature_grid = grid
+    compiler.use_plpsec_library = False
+    compiler.reference_thermo_provider = SimpleNamespace(
+        provenance={},
+        equilibrium_constants=lambda reaction, temperatures: [1.0] * len(temperatures),
+    )
+    compiler._direction_proxy = lambda proxy, reaction: proxy
+    compiler._record = lambda *args, **kwargs: structural.pop(0)
+    compiler._rate_table = lambda reaction: (
+        {"T": list(grid), "k": [1.0] * len(grid)},
+        {"kind": "RMG family estimate", "available": True, "units": "m^3/(mol*s)"},
+    )
+    monkeypatch.setattr(compiler_module, "_reverse_view", lambda reaction: reaction)
+    monkeypatch.setattr(
+        compiler_module,
+        "_mapped_reaction_u2_roots",
+        lambda family, reaction, record: [_root()],
+    )
+    monkeypatch.setattr(
+        compiler_module, "_training_source_domain", lambda family, reaction, cache: None
+    )
+    reaction = SimpleNamespace(
+        family="Disproportionation",
+        kinetics=object(),
+        template=["Root"],
+        reactants=[],
+        products=[],
+    )
+    published, _ = compiler._build_linked_family_pair(
+        SiteProxy("synthetic", []), reaction, {}
+    )
+    assert len(published) == 2
+    (entry,) = compiler._applicability_refusals
+    assert entry["disposition"] == "retained-unresolved-applicability"
+    assert entry["record_ids"] == [record.event_id for record in published]
+    assert not structural_ids & set(entry["record_ids"])
+    assert all(
+        record.rate_source["applicability"]["disposition"]
+        == "retained-unresolved-applicability"
+        for record in published
+    )
