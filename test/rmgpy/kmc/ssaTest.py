@@ -474,6 +474,49 @@ def test_real_k_act_is_pair_specific_at_700_k(real_ps_artifact):
     print(f"k_act 700 K: {rows}")
 
 
+@pytest.mark.skipif(
+    not os.environ.get("RMG_KMC_ARTIFACT"),
+    reason="requires the pinned real event-set artifact",
+)
+def test_real_k_act_oracle_matches_compiled_exothermic_fixture(real_ps_artifact):
+    """The independent oracle agrees with one bounded exothermic compiler row."""
+    from rmgpy.data.rmg import RMGDatabase
+    from met_rate_oracle import independent_termination_rates
+
+    record = min(
+        (
+            candidate
+            for candidate in real_ps_artifact["records"]
+            if candidate["family"] == "R_Recombination"
+            and candidate["rate_source"]["kind"] == "RMG family estimate"
+            and candidate["radical_delta"] < 0
+        ),
+        key=lambda candidate: max(
+            map(len, candidate["reactant_graphs"] + candidate["product_graphs"])
+        ),
+    )
+    database = RMGDatabase()
+    database.load_kinetics(
+        str(REAL_DATABASE_PATH / "input/kinetics"),
+        reaction_libraries=[],
+        seed_mechanisms=None,
+        kinetics_families=["R_Recombination"],
+        kinetics_depositories=["training"],
+    )
+    database.load_thermo(
+        str(REAL_DATABASE_PATH / "input/thermo"),
+        thermo_libraries=["primaryThermoLibrary"],
+        depository=True,
+    )
+    bounded_artifact = {**real_ps_artifact, "records": [record]}
+    actual = independent_termination_rates(bounded_artifact, database, 700.0)[
+        record["event_id"]
+    ]
+    temperatures = record["k_table"]["T"]
+    compiled = float(np.exp(np.interp(700.0, temperatures, np.log(record["k_table"]["k"]))))
+    assert actual == pytest.approx(compiled, rel=1e-12)
+
+
 def _real_cycle_state(artifact, oracle, seed):
     state = oracle._seed_evolving_state(artifact, "R_Addition_MultipleBond", seed)
     owners = state._uuid_owners()
