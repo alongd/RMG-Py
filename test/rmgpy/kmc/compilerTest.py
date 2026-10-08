@@ -232,6 +232,46 @@ def _compiler():
     )
 
 
+def test_bounded_discovery_preserves_selected_compiled_records():
+    baseline_compiler, baseline_database = _compiler()
+    baseline_proxies = baseline_compiler.proxies
+    active, excluded, exhaustive = EventSetCompiler.discover_family_reactions(
+        baseline_database,
+        baseline_proxies,
+        ["H_Abstraction"],
+        family_universe=["H_Abstraction"],
+    )
+    baseline = EventSetCompiler(
+        baseline_database,
+        baseline_proxies,
+        active,
+        excluded_families=excluded,
+        temperature_grid=[600.0, 700.0],
+        reaction_cache=exhaustive,
+    ).compile()["records"]
+
+    bounded_compiler, bounded_database = _compiler()
+    bounded_active, bounded_excluded, bounded = (
+        EventSetCompiler.discover_bounded_family_reactions(
+            bounded_database,
+            bounded_compiler.proxies,
+            ["H_Abstraction"],
+            family_universe=["H_Abstraction"],
+            reaction_count_bound=1,
+        )
+    )
+    optimized = EventSetCompiler(
+        bounded_database,
+        bounded_compiler.proxies,
+        bounded_active,
+        excluded_families=bounded_excluded,
+        temperature_grid=[600.0, 700.0],
+        reaction_cache=bounded,
+    ).compile()["records"]
+
+    assert optimized == baseline
+
+
 def test_uses_public_family_pipeline_and_emits_f1_fields():
     compiler, database = _compiler()
     artifact = compiler.compile()

@@ -16,6 +16,7 @@ import logging
 import math
 import os
 import subprocess
+import time
 from dataclasses import dataclass, field, replace
 from itertools import combinations, permutations
 from pathlib import Path
@@ -3896,6 +3897,123 @@ class EventSetCompiler:
                     else "no reaction on bounded L=3 PS proxy set with "
                     "resonance enabled"
                 )
+            )
+        return active, excluded, reaction_cache
+
+    @classmethod
+    def discover_bounded_family_reactions(
+        cls,
+        kinetics_database,
+        proxies: Iterable[SiteProxy],
+        candidate_families: Iterable[str] = PS_FAMILY_CANDIDATES,
+        family_universe: Iterable[str] | None = None,
+        *,
+        reaction_count_bound: int,
+        progress_callback=None,
+    ) -> tuple[list[str], dict[str, str], dict[str, Sequence[Any]]]:
+        """Select deterministic family/context witnesses without exhaustive discovery.
+
+        The first reaction uses the same proxy-major and generator order as
+        :meth:`discover_family_reactions`.  Generation stops once every firing
+        candidate family and every declared proxy context has one witness.
+        """
+        proxies = tuple(proxies)
+        loaded = set(kinetics_database.families)
+        universe = set(family_universe) if family_universe is not None else loaded
+        declared_candidates = set(candidate_families)
+        missing_candidates = (universe & declared_candidates) - loaded
+        if missing_candidates:
+            raise ValueError(
+                "PS family candidates were enumerated but not loaded: "
+                + ", ".join(sorted(missing_candidates))
+            )
+        candidates = sorted(loaded & declared_candidates)
+        if reaction_count_bound < len(candidates):
+            raise ValueError("reaction count bound cannot cover every candidate family")
+
+        generated_by_pair = {}
+
+        def generate(proxy, family):
+            key = (proxy.site_type, family)
+            if key in generated_by_pair:
+                return generated_by_pair[key]
+            started = time.monotonic()
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "status": "start",
+                        "proxy": proxy.site_type,
+                        "family": family,
+                    }
+                )
+            generated = kinetics_database.generate_reactions_from_families(
+                [_copy_participant(item) for item in proxy.reactants],
+                only_families=[family],
+                resonance=True,
+            )
+            generated_by_pair[key] = generated
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "status": "end",
+                        "proxy": proxy.site_type,
+                        "family": family,
+                        "generated_reaction_count": len(generated),
+                        "elapsed_seconds": time.monotonic() - started,
+                    }
+                )
+            return generated
+
+        selected = []
+        selected_keys = set()
+        for family in candidates:
+            for proxy in proxies:
+                if family not in set(
+                    proxy.metadata.get("family_candidates", candidates)
+                ):
+                    continue
+                generated = generate(proxy, family)
+                if generated:
+                    selected.append((proxy, generated[0]))
+                    selected_keys.add((proxy.site_type, family))
+                    break
+
+        covered_proxies = {proxy.site_type for proxy, _ in selected}
+        for proxy in proxies:
+            if proxy.site_type in covered_proxies:
+                continue
+            proxy_candidates = sorted(
+                set(proxy.metadata.get("family_candidates", candidates))
+                & set(candidates)
+            )
+            for family in proxy_candidates:
+                generated = generate(proxy, family)
+                if generated:
+                    selected.append((proxy, generated[0]))
+                    selected_keys.add((proxy.site_type, family))
+                    covered_proxies.add(proxy.site_type)
+                    break
+
+        if len(selected) > reaction_count_bound:
+            raise ValueError("bounded discovery exceeded reaction count bound")
+        reaction_cache = {proxy.site_type: [] for proxy in proxies}
+        for proxy, reaction in selected:
+            reaction_cache[proxy.site_type].append(reaction)
+        for proxy in proxies:
+            proxy.metadata["generated_families"] = sorted(
+                family
+                for proxy_name, family in selected_keys
+                if proxy_name == proxy.site_type
+            )
+
+        active_set = {reaction.family for _, reaction in selected}
+        active = sorted(active_set)
+        excluded = {}
+        for family in sorted(universe - active_set):
+            excluded[family] = (
+                PS_FAMILY_FILTER_REASON
+                if family not in candidates
+                else "no reaction found by bounded deterministic discovery"
             )
         return active, excluded, reaction_cache
 
