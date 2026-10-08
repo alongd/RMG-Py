@@ -681,9 +681,8 @@ def _radical_aromatic_kekule_forms(
         candidate_count *= matching_count
         component_assignments.append(perfect_matchings(component))
 
-    if candidate_count > limit:
-        summary["candidate_drawings"] += candidate_count
-        raise KekuleEnumerationLimitError(evidence)
+    # Surviving the per-component check proves
+    # candidate_count * matching_count <= limit at every multiplication.
     summary["candidate_drawings"] += candidate_count
     component_bonds = [
         {pair for i in component for pair in adjacency[atoms[i]]}

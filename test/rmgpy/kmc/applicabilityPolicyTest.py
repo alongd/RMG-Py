@@ -1447,6 +1447,26 @@ def test_fused_naphthyl_radical_has_three_bounded_kekule_drawings(monkeypatch):
     assert refused["kekule_enumeration"]["candidate_drawings"] == 3
 
 
+def test_drawing_bound_stops_matching_count_at_first_excess(monkeypatch):
+    molecule = Molecule().from_adjacency_list(_NAPHTHYL_RADICAL)
+    monkeypatch.setattr(compiler_module, "KEKULE_DRAWING_LIMIT", 0)
+    evidence = _kekule_evidence()
+
+    refused = False
+    try:
+        compiler_module._radical_aromatic_kekule_forms(molecule, evidence)
+    except compiler_module.KekuleEnumerationLimitError:
+        refused = True
+
+    summary = evidence["kekule_enumeration"]
+    # Reaching the first complete matching visits six recursive search nodes.
+    # Counting all three naphthyl matchings would visit fourteen before the
+    # later product traversal, so this proves the count itself stops early.
+    assert summary["search_nodes"] == 6
+    assert summary["candidate_drawings"] == 1
+    assert refused
+
+
 def test_kekule_bound_is_cumulative_across_resonance_forms_per_molecule(
     monkeypatch,
 ):
