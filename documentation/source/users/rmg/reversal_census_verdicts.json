@@ -1,4 +1,11 @@
 {
+  "rmgpy/solver/eedf_provider.py::EEDFProvider._run_qualification::as_dict#1": {
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Serializes an immutable EEDFRow of numerical solver quantities into qualification evidence; it does not serialize executable Reaction kinetics or a reaction direction.",
+    "tests": [
+      "test/rmgpy/solver/eedfProviderTest.py::test_qualify_passes_only_when_direct_and_interpolated_rows_agree"
+    ]
+  },
   "arkane/common.py::ArkaneSpecies.__repr__::as_dict#1": {
     "verdict": "not-reachable-for-resolved",
     "reason": "Serializes quantities, thermodynamic/statistical-mechanics species data or EEDF table rows, not executable Reaction kinetics/directions.",

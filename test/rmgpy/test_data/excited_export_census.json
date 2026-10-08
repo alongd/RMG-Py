@@ -2334,7 +2334,7 @@
     "rmgpy/rmg/main.py:RMG.generate_end_of_run_cantera_files": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.generate_end_of_run_cantera_files",
-      "line": 1435,
+      "line": 1438,
       "signature": "c935506d61e85a777895132904b9e6c53069ad7604eb08db0f1500ea5b2ef511",
       "verdict": "R",
       "reason": "End-of-run export orchestration checks thermo for all core and edge species before invoking existing Cantera/Chemkin writers and validates state-bearing thermodynamic coverage references through those writers.",
@@ -2358,7 +2358,7 @@
     "rmgpy/rmg/main.py:RMG.make_seed_mech": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.make_seed_mech",
-      "line": 1999,
+      "line": 2011,
       "signature": "18cf62cbdf6b876eeaa51c34aa1a5fec95bcbb867991c89d6633ffee98e061ce",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmg/main.py:RMG.make_seed_mech]",
@@ -2376,7 +2376,7 @@
     "rmgpy/rmg/main.py:RMG.generate_cantera_files_from_chemkin": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.generate_cantera_files_from_chemkin",
-      "line": 2255,
+      "line": 2267,
       "signature": "bcbd9918de62fd816a64a504002e25e2826fe99767c3db6622724db2bbceffb2",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/rmg/main.py:RMG.generate_cantera_files_from_chemkin]",
@@ -4017,7 +4017,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._compute_reference_reaction_data",
-      "line": 7023,
+      "line": 7276,
       "signature": "4e16933925d7bb2f387b5e73d5b0e0e565eb8f80fa92124ccdeb788c3df50785",
       "verdict": "R",
       "reason": "Charged-reaction diagnostic equations use shared declarations when any participant is resolved and retain historical str(reaction) bytes for ground-only reactions. Thermo rebase classification: Reference-reaction names and equations include canonical v0 identity for declared participants; the reference energy calculation still uses its previously checked source.",
@@ -4039,7 +4039,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._evaluate_electronegative_wall_regime",
-      "line": 7153,
+      "line": 7406,
       "signature": "c0534dbafe3fd70cd2debb87c2f8284fbe156429631e29d4634048c0656d014e",
       "verdict": "R",
       "reason": "Wall destruction-channel equations and anion labels include declared v0 identifiers while gate computation and ground labels retain the existing code.",
@@ -4061,7 +4061,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_manifest": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor.electronegative_wall_manifest",
-      "line": 1209,
+      "line": 1218,
       "signature": "661ea95545b49d6f63bee51997f098a0ff15dc59fcc830dc80eeaa6f0b54cf0d",
       "verdict": "R",
       "reason": "Published wall species identifiers include declared v0 names through has_export_state and the shared Chemkin allocator; ordinary wall identifiers and calculations retain their existing paths.",
@@ -4686,7 +4686,7 @@
     "rmgpy/rmg/main.py:RMG.check_model": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.check_model",
-      "line": 1866,
+      "line": 1878,
       "signature": "9fc16df4e4cdb8e9a1897e3f60dec298579eccc9872ac31e91937ccde5938b87",
       "reason": "Diagnostics and logging; no exported species identifiers.",
       "verdict": "E"
@@ -4694,7 +4694,7 @@
     "rmgpy/rmg/main.py:RMG.initialize_reaction_threshold_and_react_flags": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.initialize_reaction_threshold_and_react_flags",
-      "line": 2326,
+      "line": 2338,
       "signature": "625f8174dbe5f7892adc6024d426176a8bf01381a809e89572ea453ee098c80e",
       "reason": "Internal restart state bookkeeping; dictionary reload has a separate audited path.",
       "verdict": "E"
@@ -5147,14 +5147,14 @@
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.execute",
       "line": 941,
-      "signature": "6a87c05622422382db0e92fa07a22a4e8b383ae6b0874db2871ad062c98be12b"
+      "signature": "34cf2f70a2ac30a958a680f76a26f8cf90b20a8ce90cd045a6d2b5936eb79262"
     },
     "rmgpy/rmg/main.py:RMG.initialize_seed_mech": {
       "verdict": "E",
       "reason": "Copies the full explicit input deck verbatim with a restart directive; seed molecular records use separately audited paired save.",
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.initialize_seed_mech",
-      "line": 1958,
+      "line": 1970,
       "signature": "1991cc566de235a765285c8a68bc7198bb44d3ed8d45af98060b705850145571"
     },
     "rmgpy/rmg/main.py:RMG.save_profiler_info": {
@@ -5162,7 +5162,7 @@
       "reason": "marshal.dump persists profiler timing statistics only, not a molecular mechanism.",
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.save_profiler_info",
-      "line": 2560,
+      "line": 2572,
       "signature": "178fd0183d2b302c0e7654490c2e210db62df834cdbb13a6c0a887292bfca2f2"
     },
     "rmgpy/rmg/main.py:_add_coverage_dependence_to_cantera_yaml": {
@@ -5170,7 +5170,7 @@
       "reason": "Inserts already-rendered thermo coverage blocks into an existing YAML by exact Chemkin names; does not rebuild or rename molecular records.",
       "file": "rmgpy/rmg/main.py",
       "function": "_add_coverage_dependence_to_cantera_yaml",
-      "line": 2936,
+      "line": 2948,
       "signature": "97ad55a8fa2cf8b2f74b491a1b025dc808081bb8f30d06295d15a71ac1af9658"
     },
     "rmgpy/rmg/main.py:Tee.write": {
@@ -5178,7 +5178,7 @@
       "reason": "Generic byte-preserving diagnostic stream fan-out; takes only strings, performs no molecular naming or reconstruction.",
       "file": "rmgpy/rmg/main.py",
       "function": "Tee.write",
-      "line": 3003,
+      "line": 3015,
       "signature": "81c59c0e5b7611675612830436b7fb2e9832edb38f703c7307f50fc18c18d15a"
     },
     "rmgpy/rmg/main.py:process_profile_stats": {
@@ -5186,7 +5186,7 @@
       "reason": "print(file=...) writes function timing/call-count diagnostics, not species identities.",
       "file": "rmgpy/rmg/main.py",
       "function": "process_profile_stats",
-      "line": 3030,
+      "line": 3042,
       "signature": "78cddbe838b7b68b127406544946151c1ce494ee24bb126e7263b7b481636834"
     },
     "rmgpy/rmg/main.py:make_profile_graph": {
@@ -5194,7 +5194,7 @@
       "reason": "Writes a function-call profiler graph and timing metrics, not molecular drawings.",
       "file": "rmgpy/rmg/main.py",
       "function": "make_profile_graph",
-      "line": 3050,
+      "line": 3062,
       "signature": "d1089cbb7e60fed4691c36fbb827a521adbc3e552c56c45971717e4d8aca58b7"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.update": {
@@ -5300,14 +5300,6 @@
         "verdict": "E",
         "reason": "Writes or supervises explicit EEDF solver/provenance files only; it emits no molecular identity or saved mechanism representation."
       },
-    "rmgpy/tools/eedf/loki.py:LoKIDriver.run": {
-      "verdict": "E",
-      "reason": "Writes explicit LoKI solver setup text and numeric electron-energy parameters; no Species/Molecule identity export.",
-      "file": "rmgpy/tools/eedf/loki.py",
-      "function": "LoKIDriver.run",
-      "line": 239,
-      "signature": "133f71ffbe1c2972be4ceef0db68edecd018d65beccabd7d7cad702c3c1de0b1"
-    },
     "rmgpy/tools/fluxdiagram.py:create_flux_diagram": {
       "verdict": "E",
       "reason": "savez_compressed writes numerical trajectory arrays in the loaded model order; diagram names go through audited generate_flux_diagram declarations, optional images refuse via Molecule.draw.",
@@ -5516,10 +5508,120 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._emit_development_progress": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._emit_development_progress",
-      "line": 1331,
+      "line": 1343,
       "signature": "5747f0e9ecd18b23f53f5c383c181b5a751645fe29aac281308e141e02a16559",
       "verdict": "E",
       "reason": "Development-only JSON telemetry written to stderr; it reports numerical solver state and emits no molecular identity or saved mechanism."
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._write_json": {
+      "file": "rmgpy/solver/eedf_provider.py",
+      "function": "EEDFProvider._write_json",
+      "line": 791,
+      "signature": "3c1bdd3c811ec5f00cb2ee79530c5f6da989f78e38f3b9ed345e15386d9c68c1",
+      "verdict": "E",
+      "reason": "Writes only exact LoKI setup bytes or numerical qualification evidence bound to an immutable execution; it emits no mechanism, species dictionary, or reloadable molecular representation.",
+      "evidence": [
+        "rmgpy/solver/eedf_provider.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ]
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._run_qualification": {
+      "file": "rmgpy/solver/eedf_provider.py",
+      "function": "EEDFProvider._run_qualification",
+      "line": 1533,
+      "signature": "27c854da898cca3fd442c7871e3f692850b44ea19e137964d58bf683bcf60d18",
+      "verdict": "E",
+      "reason": "Writes only exact LoKI setup bytes or numerical qualification evidence bound to an immutable execution; it emits no mechanism, species dictionary, or reloadable molecular representation.",
+      "evidence": [
+        "rmgpy/solver/eedf_provider.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ]
+    },
+    "rmgpy/tools/eedf/loki.py:LoKIDriver.run_prepared": {
+      "file": "rmgpy/tools/eedf/loki.py",
+      "function": "LoKIDriver.run_prepared",
+      "line": 454,
+      "signature": "53028040c6afe13ac26446f26d0d11e7b45fe48cb579b656234021784ba36352",
+      "verdict": "E",
+      "reason": "Writes only exact LoKI setup bytes or numerical qualification evidence bound to an immutable execution; it emits no mechanism, species dictionary, or reloadable molecular representation.",
+      "evidence": [
+        "rmgpy/tools/eedf/loki.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ]
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationAdmission.commit_bytes": {
+      "file": "rmgpy/solver/eedf_provider.py",
+      "function": "_QualificationAdmission.commit_bytes",
+      "line": 389,
+      "signature": "e5be95dafdc2b91f63f7a2a753904a79802b5bd3a60a4cae719c837e7e403135",
+      "verdict": "E",
+      "reason": "Commits opaque caller-prepared bytes under revocable terminal admission; it performs no species naming or molecular reconstruction. Format exporters remain responsible for the existing resolved-state refusal guards.",
+      "evidence": [
+        "rmgpy/solver/eedf_provider.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ]
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationExport._settle_revocation": {
+      "file": "rmgpy/solver/eedf_provider.py",
+      "function": "_QualificationExport._settle_revocation",
+      "line": 318,
+      "signature": "788aeae57bb9c488fb5a526aaf9416955ee5478af2129a7f493b11dec241907b",
+      "verdict": "E",
+      "reason": "Writes opaque qualification or refusal bytes under retained inode ownership; it performs no species naming or molecular reconstruction. Format-specific resolved-state refusal guards remain unchanged.",
+      "evidence": [
+        "rmgpy/solver/eedf_provider.py",
+        "test/rmgpy/solver/terminalCapabilityTest.py"
+      ]
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationExport.stage": {
+      "file": "rmgpy/solver/eedf_provider.py",
+      "function": "_QualificationExport.stage",
+      "line": 270,
+      "signature": "9cff91e319421aceff95e45cae0c1e5f55a733d974d1c4b04f1b5890d7c1fe6d",
+      "verdict": "E",
+      "reason": "Writes opaque qualification or refusal bytes under retained inode ownership; it performs no species naming or molecular reconstruction. Format-specific resolved-state refusal guards remain unchanged.",
+      "evidence": [
+        "rmgpy/solver/eedf_provider.py",
+        "test/rmgpy/solver/terminalCapabilityTest.py"
+      ]
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._publish_acceptance": {
+      "file": "rmgpy/solver/eedf_provider.py",
+      "function": "EEDFProvider._publish_acceptance",
+      "line": 1041,
+      "signature": "bf0f7e4ce57fed9e49080fe9b1d352365686a2c9e0531ba1a61cbcbe9fe4d441",
+      "verdict": "E",
+      "reason": "Writes opaque qualification or refusal bytes under retained inode ownership; it performs no species naming or molecular reconstruction. Format-specific resolved-state refusal guards remain unchanged.",
+      "evidence": [
+        "rmgpy/solver/eedf_provider.py",
+        "test/rmgpy/solver/terminalCapabilityTest.py"
+      ]
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._publish_failure": {
+      "file": "rmgpy/solver/eedf_provider.py",
+      "function": "EEDFProvider._publish_failure",
+      "line": 831,
+      "signature": "8136b169c89366169495f6d8cd063b586b5aed86337b6a89d7903b8800040019",
+      "verdict": "E",
+      "reason": "Transfers opaque qualification, refusal, or caller-prepared bytes under existing inode ownership; it performs no species naming or molecular reconstruction. Format-specific refusal guards are unchanged.",
+      "evidence": [
+        "rmgpy/solver/eedf_provider.py",
+        "rmgpy/solver/_eedf_ownership.pyx",
+        "test/rmgpy/solver/eedfRetentionTest.py"
+      ]
+    },
+    "rmgpy/solver/_eedf_ownership.pyx:Handles.write": {
+      "file": "rmgpy/solver/_eedf_ownership.pyx",
+      "function": "Handles.write",
+      "line": 258,
+      "signature": "6e9827800f1d3a4468a6d750105c81647a000c72e1d1857cf4b93cf40464b39f",
+      "verdict": "E",
+      "reason": "Transfers opaque qualification, refusal, or caller-prepared bytes under existing inode ownership; it performs no species naming or molecular reconstruction. Format-specific refusal guards are unchanged.",
+      "evidence": [
+        "rmgpy/solver/eedf_provider.py",
+        "rmgpy/solver/_eedf_ownership.pyx",
+        "test/rmgpy/solver/eedfRetentionTest.py"
+      ]
     }
   }
 }

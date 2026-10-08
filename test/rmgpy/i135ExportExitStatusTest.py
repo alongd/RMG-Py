@@ -68,6 +68,36 @@ class TestAFailedExportIsNotSilent:
             rmg.report_export_failures()
         assert 'cantera_from_ck' in str(exc.value)
 
+    @pytest.mark.parametrize('reaction_systems', [None, []], ids=['none', 'empty'])
+    def test_non_eedf_failure_report_matches_base(self, caplog, reaction_systems):
+        """Preserve the report executed at f7ff1d8e1, including banner ordering."""
+        import json
+        import logging
+        from pathlib import Path
+
+        from rmgpy.rmg.main import RMG
+
+        baseline = json.loads((Path(__file__).parent / 'test_data' /
+                               'non_eedf_failure_report.json').read_text())
+        rmg = RMG()
+        assert rmg.reaction_systems is None
+        rmg.reaction_systems = reaction_systems
+        step, error_type, message = baseline['failure']
+        assert error_type == 'OSError'
+        rmg.export_failures.append((step, OSError(message)))
+
+        with caplog.at_level(logging.INFO):
+            with pytest.raises(MechanismWriterError) as exc:
+                rmg.report_export_failures()
+                logging.info('MODEL GENERATION COMPLETED')
+
+        assert type(exc.value) is MechanismWriterError
+        assert {
+            'exception_type': type(exc.value).__name__,
+            'message': str(exc.value),
+            'logs': [[record.levelname, record.getMessage()] for record in caplog.records],
+        } == baseline['report']
+
     def test_execute_consults_the_record(self):
         """The wiring, not just the helper. Without this call the helper is
         dead code and the run still exits 0, which is the whole defect."""
