@@ -5260,6 +5260,46 @@
       "line": 136,
       "signature": "8853a50caade1881bd4774f17b83d6a2fad8d629461db3a12c36a5ab942d32c6"
     },
+    "rmgpy/tools/eedf/corroborate.py:kill_scope": {
+        "file": "rmgpy/tools/eedf/corroborate.py",
+        "function": "kill_scope",
+      "line": 806,
+        "signature": "7529b47d526ad15cbcded6f6fc274757e8fba0d2d9a6252c762ba105f7339038",
+        "verdict": "E",
+        "reason": "Text of the _OWNER_WATCH lifeline program run inside the solver scope; it writes 1 to its own unit's cgroup.kill and emits no molecular identity or saved mechanism representation."
+      },
+    "rmgpy/tools/eedf/corroborate.py:SystemdScopeBackend._kill_and_verify": {
+        "file": "rmgpy/tools/eedf/corroborate.py",
+        "function": "SystemdScopeBackend._kill_and_verify",
+      "line": 1189,
+        "signature": "5a8a9bd0cf2236b323ef7510b44b5e80963465d33aeac1b4f0d4820067edb7e2",
+        "verdict": "E",
+        "reason": "Writes or supervises explicit EEDF solver/provenance files only; it emits no molecular identity or saved mechanism representation."
+      },
+      "rmgpy/tools/eedf/corroborate.py:_bolos_request": {
+        "file": "rmgpy/tools/eedf/corroborate.py",
+        "function": "_bolos_request",
+      "line": 1769,
+        "signature": "0238d466f769dc1295234f68e20a886b4f142e3119b0785a18d980a03b47bb5f",
+        "verdict": "E",
+        "reason": "Writes or supervises explicit EEDF solver/provenance files only; it emits no molecular identity or saved mechanism representation."
+      },
+      "rmgpy/tools/eedf/corroborate.py:_materialize_loki_setup": {
+        "file": "rmgpy/tools/eedf/corroborate.py",
+        "function": "_materialize_loki_setup",
+      "line": 1607,
+        "signature": "39bb3b0795aec57617f099b9a0811680ef0fedbf317aeafd47ebcad0104aedb8",
+        "verdict": "E",
+        "reason": "Writes or supervises explicit EEDF solver/provenance files only; it emits no molecular identity or saved mechanism representation."
+      },
+      "rmgpy/tools/eedf/corroborate.py:_materialized_spec": {
+        "file": "rmgpy/tools/eedf/corroborate.py",
+        "function": "_materialized_spec",
+      "line": 236,
+        "signature": "a39315dc5008c6a32053a4f53bb33465439220735dcf1fe8ebb990232343b952",
+        "verdict": "E",
+        "reason": "Writes or supervises explicit EEDF solver/provenance files only; it emits no molecular identity or saved mechanism representation."
+      },
     "rmgpy/tools/eedf/loki.py:LoKIDriver.run": {
       "verdict": "E",
       "reason": "Writes explicit LoKI solver setup text and numeric electron-energy parameters; no Species/Molecule identity export.",

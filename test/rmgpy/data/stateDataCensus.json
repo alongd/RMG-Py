@@ -30023,6 +30023,465 @@
       ],
       "source_sha256": "db37868d25e8572a124159187be011b79e0fdd64ee9bce7e4ff6f938521ae8ec"
     },
+      "rmgpy/tools/eedf/corroborate.py:_sha256_bytes": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "c4dc76abb072c8ad470edc6c428f443f4d20b161264f3647a553fc05689ba59e"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_finite_float": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "95c2b36766490c08d5dfa8b4e137bad6cf5de4ad0940cb01224a72615e9599d0"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_strict_int": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "cde84676eb43b7081739514e0a8d450fe59b4940b6c4a13553442b6059fae460"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_numeric_array": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "705f0c18a210295b8c42c701deba1e6d71033d5a4e5c4f89e1c62e83f2b4d1c8"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_safe_source_name": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "8018f8572a059245deb74e3bbbc8c9a0f1526110637db8823cc0b81afda34075"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_read_artifact_bytes": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "71ae65a043be48a4f740c90616b99241c2796c27723f6387e6709164693d83c3"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_snapshot_sources": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "bb238dbe851fae17b137dce38d1553c68a3f1ca864515ed4804a367e391df932"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_materialized_spec": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "edcdb77255645fe240d89c3b164529e862828d9f9a2fc4c3b77a1a6d6ca7449b"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_parse_bolos_blocks": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "6a5504ef4ecc16afcdb2940ec4eab9cd249ebcb6c3e42794335cd445c2cb51b3"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_channel_participants": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "ddb05cae944fb6edb14a625249f86fa4528a6fba4c797689fe9ea88712adf8cc"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_canonical_collisions": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "aae433687922ca9975d89c69cad8b9f8354a0f892b26d47a9c26a7df861b9529"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_same_effective_value": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "7d9b1d5df4de7dd23b357e1e9a97af3a82c4f77510342bd7d26c56903bd2c810"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_native_quantity": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "10be5e4278543f4e135c640995a0e901c55f4d95a11d2c2072fd1297eb78eec7"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_native_constant_states": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "c68c1e9d6db0f6a4ae8ecee982496c97561a3fb6e73b15f100e17b601eb8e665"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_materialize_loki_setup": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "647a9d9fbc79b849e8495158caeb12d3473414619b2fad1b569f8f5b3478092f"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_loki_effective_configuration": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "3d2a0a668bebf0245015f386dcf8e3eff67932e44fdcac95966eabc32a423657"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_loki_mismatches_live": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "15fdf332aa5ae07db5286ae9c07f6b089c836f956e439d9771ddb4976d8c0a9d"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_run_loki": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "6261959c37d597ffb5b032e92b9041cdf40bb87b21b16bf5f512829dc510cc48"
+      },
+      "rmgpy/tools/eedf/corroborate.py:build_canonical_setup": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "869a197d757c8dc43446a37e90be2128f41bf1ebcae531a241b3003ae5c9b19f"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_process_dicts": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "877aa34800c8920aa87e8e3df55065f801d36ce2a93185a2044dcf0d37da919b"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_quadrature": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "1b37c20db10b1ab57b2251b398df7d33d42a2d1eb3a69b34828d5ebdf4b80e91"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_after_fork_in_child": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "8cf621d5b2972d7219bf45ee710fdef4ffee2ca88b07f2b7f822a19b2d73e783"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_close_lifeline": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "14d7b3f6c65784031370eadb84f4f1c5c04d4d8f917e8bbf4db51d521cd94280"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_open_lifeline": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "3cd75e67abfd4b01934c90ec034e10f40844901ef612f255dfd02539c52b50fb"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_identity": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "05131335e6ebac5a224174482846aa537a981a7b78cf6648b2cd82d42cd30904"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_cpython_signal_handler": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "1fdba7906d9b0bfabe05429e249ef6658d89cf237c60b97dd9133422f99c6d7b"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_elf_function_offset": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "cdd63afdea745ae15dde6d27d93acd96ab5568c1a6ca7ee34246976112726ba4"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_mapped_file": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "e1a2dba356128d634e463538bdb6548ff4dcc7ad7e4a79caf0ae173174fb525f"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_image_base": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "1c87c872104364917b12a6168d96c9f5333f09b4cef1450f27f5d20de353cc62"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_cpython_handler_by_image": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "df14fbfeb7ef7e02b54f494a9ed9719c3cb3d7cd3cf66b438c9d2b47a579897e"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_raw_sigaction": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "59cf05a65ba32af906b53092114f4da66d1220b8d18c2a65653abe63e88b4561"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_restore_raw_sigaction": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "9c38bec14aeaa5fdf98386484911bf940e976602cbb636f95ee82cb0551a7f2d"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_rt_sigaction": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "e3d479f0aad9b1228a193c4f5e73e38085ac346e24e7b95fc06dac24adb898a9"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_effective_disposition": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "2d0db564edc8b5a3b0154bdb5b752457cc5fc151dfb00be0931ac5db8d51c7f3"
+      },
+      "rmgpy/tools/eedf/corroborate.py:SystemdScopeBackend.__init__": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "876e99a6a6ccf936bf382860d21db361cd1fcff3641643b0feed15411dca2cca"
+      },
+      "rmgpy/tools/eedf/corroborate.py:SystemdScopeBackend._control_group": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "0f67ce2c0885ab746f742fab62ad579eb1095cdb00270861a89138d5e06125ca"
+      },
+      "rmgpy/tools/eedf/corroborate.py:SystemdScopeBackend._empty": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "dc045b23f755418450ca561eef31356dbd6696c6d5130de1ddc1a5b6ad946519"
+      },
+      "rmgpy/tools/eedf/corroborate.py:SystemdScopeBackend._kill_and_verify": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "ed442056978b98746581a85daa125ee10f718dbb54a0e8448615cf99cb2c55d5"
+      },
+      "rmgpy/tools/eedf/corroborate.py:SystemdScopeBackend._kill_and_verify.remember_failure": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "3978ab632f4109938d7a5669b01caeca2e9f7dc06c64567caec6e04c4577b67d"
+      },
+      "rmgpy/tools/eedf/corroborate.py:SystemdScopeBackend.run": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "de9789951f45e3d43a6074b5c320218def9524f85d05b270e07180208b1c4416"
+      },
+      "rmgpy/tools/eedf/corroborate.py:SystemdScopeBackend.run.defer_signal": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "1c2c9ece25de6b6bc7c3747e36a7ae5e6ead6c853634ce0fc5ce4f3df053e719"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_bolos_request": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "e3c02ad4f56bb71e964b85081e710255bb6dd18c87a7ceb5d01c0eab589493a9"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_validate_bolos_convergence": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "aa2a23e797738b67121e746cb68bf69e29d81ae47c1bbb3bbd97f7d5b2f27626"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_initialized_bolos_collision": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "50249a0a3d8beae5b39612f51bda9ed7846dc17f5423530a61a239015a90b70a"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_bolos_mismatches": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "3eb5ced7ef83ef53ec2e1e1f67903cbbc1d6cb136fd91c66c7a3feeb386799be"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_run_bolos": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "ea769fce59cab37001965c5a2732608bc53d80ece4544cb45f079494d54a32c1"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_flat_quantities": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "3f799d7dd4f3071e8866d26f7768249a3af965619d289e539d074b34fa5f5095"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_compare": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "c1b77917a4774c3363460f32e306e27203be3b08c045e14b3f4526e4deacaa89"
+      },
+      "rmgpy/tools/eedf/corroborate.py:_transport_consistency_ratio": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "229b06e9e16a2437fd55e3770a10aac5bfde8300dec71fa1a1bb2193c78405ba"
+      },
+      "rmgpy/tools/eedf/corroborate.py:corroborate_row": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "70bccca8dd35aebdf37182d2f8c52ed499aff42c08b195900f382a3e2f83520c"
+      },
+      "rmgpy/tools/eedf/corroborate.py:main": {
+        "verdict": "excluded",
+        "reason": "Operates only on explicit EEDF solver inputs, numerical arrays, process supervision, and pinned provenance; it neither acquires nor supplies molecular state data.",
+        "evidence": [
+          "rmgpy/tools/eedf/corroborate.py",
+          "test/rmgpy/tools/eedf/corroborateTest.py"
+        ],
+        "source_sha256": "6a5889c7b6d0d789b320218a5c27600e3c7d8385329bf16afd2504700ee20f01"
+      },
     "rmgpy/tools/eedf/channels.py:_classic_sections": {
       "verdict": "carried",
       "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
