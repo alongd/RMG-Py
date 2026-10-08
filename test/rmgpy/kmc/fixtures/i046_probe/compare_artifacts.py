@@ -14,6 +14,7 @@ OLD_ARTIFACT = Path("/home/alon/runs/polymer/i038-bench/head-artifact/"
 HERE = Path(__file__).resolve().parent
 TREE_FAMILIES = ("Disproportionation", "R_Recombination")
 TEMPERATURES = (600.0, 700.0, 800.0)
+DATABASE_PROVENANCE_KEYS = {"database_sha", "rmg_database_sha"}
 
 
 def load_i044():
@@ -88,16 +89,47 @@ def representative(old, new, family):
     return index(new)[structural_key(record)]
 
 
+def _without_database_provenance(value):
+    if isinstance(value, dict):
+        return {
+            key: _without_database_provenance(item)
+            for key, item in value.items()
+            if key not in DATABASE_PROVENANCE_KEYS
+        }
+    if isinstance(value, list):
+        return [_without_database_provenance(item) for item in value]
+    return value
+
+
+def _assert_database_provenance(value, expected_sha, path=()):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in DATABASE_PROVENANCE_KEYS:
+                assert item == expected_sha, (path + (key,), item, expected_sha)
+            else:
+                _assert_database_provenance(item, expected_sha, path + (key,))
+    elif isinstance(value, list):
+        for index_, item in enumerate(value):
+            _assert_database_provenance(item, expected_sha, path + (index_,))
+
+
 def verify_tree_invariance(old, new):
     before, after = index(old), index(new)
+    database_sha = new.get("provenance", {}).get("rmg_database_sha")
+    assert database_sha, "new artifact must declare provenance.rmg_database_sha"
     counts = {}
     for family in TREE_FAMILIES:
         old_keys = {key for key, record in before.items() if record["family"] == family}
         new_keys = {key for key, record in after.items() if record["family"] == family}
         assert old_keys <= new_keys, (family, "missing baseline channels")
         for key in old_keys:
-            for field in ("k_table", "rate_source"):
-                assert json.dumps(before[key][field], sort_keys=True) == json.dumps(after[key][field], sort_keys=True), (family, field)
+            assert json.dumps(before[key]["k_table"], sort_keys=True) == json.dumps(
+                after[key]["k_table"], sort_keys=True
+            ), (family, "k_table")
+            assert _without_database_provenance(before[key]["rate_source"]) == _without_database_provenance(
+                after[key]["rate_source"]
+            ), (family, "rate_source")
+            _assert_database_provenance(after[key]["rate_source"], database_sha)
         counts[family] = len(old_keys)
     return counts
 
