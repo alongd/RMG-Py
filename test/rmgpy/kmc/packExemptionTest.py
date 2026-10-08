@@ -76,6 +76,10 @@ def _mutate_degeneracy(record):
     record["degeneracy"] += 1.0
 
 
+def _mutate_k_table(record):
+    record["k_table"]["k"][0] *= 2.0
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -83,6 +87,7 @@ def _mutate_degeneracy(record):
         pytest.param(_mutate_atom_map, id="atom-map"),
         pytest.param(_mutate_rewrite, id="rewrite"),
         pytest.param(_mutate_degeneracy, id="degeneracy"),
+        pytest.param(_mutate_k_table, id="k-table"),
     ],
 )
 def test_repinned_sha_does_not_hide_record_mutations(mutation):
@@ -91,3 +96,25 @@ def test_repinned_sha_does_not_hide_record_mutations(mutation):
     mutation(candidate)
     with pytest.raises(AssertionError):
         real._pack_exemptions(_artifact(records))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        pytest.param(_mutate_arrhenius, id="arrhenius"),
+        pytest.param(_mutate_atom_map, id="atom-map"),
+        pytest.param(_mutate_rewrite, id="rewrite"),
+        pytest.param(_mutate_degeneracy, id="degeneracy"),
+        pytest.param(_mutate_k_table, id="k-table"),
+    ],
+)
+def test_assert_pack_exemption_rejects_archived_record_mutations(mutation):
+    records = _repinned_records()
+    candidate = _j_para_records(records)[0]
+    exemption = {
+        "reason": real.ARCHIVED_PACK_EXEMPTION_REASON,
+        "pack_event_id": candidate["event_id"],
+    }
+    mutation(candidate)
+    with pytest.raises(AssertionError):
+        real._assert_pack_exemption(candidate, exemption)

@@ -61,6 +61,22 @@ def test_identity_excludes_kmc_and_changes_for_other_rmgpy(tmp_path, monkeypatch
     assert identity(repo, db) != before
 
 
+def test_identity_hashes_database_once_per_fixture_call(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    (repo / "rmgpy").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "rmgpy/x.py").write_text("x")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", "x"], check=True)
+    db = _make_database(tmp_path / "db")
+    calls = []
+    monkeypatch.setattr("portable_cache.database_content_digest", lambda path: calls.append(path) or ("digest", ()))
+
+    identity(repo, db)
+
+    assert calls == [db]
+
+
 def test_export_import_and_manifest_mismatch(tmp_path):
     repo = tmp_path / "repo"
     (repo / "rmgpy").mkdir(parents=True)
@@ -365,7 +381,7 @@ def test_artifact_hit_checks_hash_before_json_validation(tmp_path, monkeypatch):
         validate_artifact_cache_entry(manifest, "expected", db, None)
 
 
-def test_driver_main_cold_hit_and_generation_only_modes(tmp_path, monkeypatch):
+def test_driver_main_cold_hit_and_generation_only_modes(tmp_path, monkeypatch, capsys):
     import compile_event_set_fixture as driver
 
     database_path = _make_database(tmp_path / "db")
@@ -444,6 +460,34 @@ def test_driver_main_cold_hit_and_generation_only_modes(tmp_path, monkeypatch):
     run(disable=True)
     assert calls == ["generate"]
     assert next(output.glob("*.json")).read_bytes() == first
+
+    capsys.readouterr()
+    monkeypatch.setenv("PYTHONHASHSEED", "random")
+    monkeypatch.setattr(driver, "migrate", lambda *args: pytest.fail("random seed migrated cache"))
+    monkeypatch.setattr(
+        driver,
+        "validate_artifact_cache_entry",
+        lambda *args: pytest.fail("random seed read artifact cache"),
+    )
+    read_cache = []
+    original_load_or_generate = driver.load_or_generate
+
+    def load_or_generate(*args, **kwargs):
+        read_cache.append(kwargs["read_cache"])
+        return original_load_or_generate(*args, **kwargs)
+
+    monkeypatch.setattr(driver, "load_or_generate", load_or_generate)
+    calls.clear()
+    run()
+    assert read_cache == [False]
+    assert calls == ["generate"]
+    assert "cached public RMG generation" not in capsys.readouterr().out
+    calls.clear()
+    read_cache.clear()
+    run()
+    assert read_cache == [False]
+    assert calls == ["generate"]
+    assert "cached public RMG generation" not in capsys.readouterr().out
 
 
 def test_new_rmg_kmc_environment_setting_changes_artifact_key(tmp_path, monkeypatch):

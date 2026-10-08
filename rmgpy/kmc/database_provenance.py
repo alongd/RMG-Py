@@ -188,10 +188,7 @@ def reject_external_library_paths(
                 getattr(library, attribute, None)
                 for attribute in ("path", "file", "filename")
             )
-    allowed_roots = tuple(
-        (root / "input" / subdirectory).resolve()
-        for subdirectory in ("kinetics", "thermo")
-    )
+    allowed_roots = tuple(path.resolve() for path in _input_roots(root))
 
     def is_under(path: Path, parent: Path) -> bool:
         try:
@@ -200,9 +197,11 @@ def reject_external_library_paths(
         except ValueError:
             return False
 
-    for candidate in [*candidates, *recorded_sources]:
+    pending = [*candidates, *recorded_sources]
+    while pending:
+        candidate = pending.pop(0)
         if isinstance(candidate, tuple):
-            candidates.extend(candidate[:1])
+            pending.extend(candidate[:1])
             continue
         if not isinstance(candidate, (str, Path)):
             continue

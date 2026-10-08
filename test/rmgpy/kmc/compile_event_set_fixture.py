@@ -168,7 +168,7 @@ def main() -> None:
             json.dumps(parameters, sort_keys=True).encode()
         ).hexdigest()
         path = generated_cache / (key + ".pickle")
-        was_cached = path.is_file()
+        was_cached = cacheable_seed and path.is_file()
         reactions = load_or_generate(
             path,
             lambda: generate(reactants, products, only_families, resonance),
