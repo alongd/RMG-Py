@@ -580,7 +580,9 @@ def _update_kekule_atomtypes(drawing) -> None:
     drawing.update_atomtypes(log_species=False)
 
 
-def _radical_aromatic_kekule_forms(molecule, evidence) -> list[Any]:
+def _radical_aromatic_kekule_forms(
+    molecule, evidence, drawing_limit=None
+) -> list[Any]:
     """Return every Kekule drawing of the radical-bearing aromatic rings.
 
     Automatic resonance never Kekulizes aryl radicals, but RMG fires reverse
@@ -636,12 +638,13 @@ def _radical_aromatic_kekule_forms(molecule, evidence) -> list[Any]:
 
         yield from extend(component, frozenset())
 
+    limit = KEKULE_DRAWING_LIMIT if drawing_limit is None else drawing_limit
     summary = evidence["kekule_enumeration"]
     summary["bound"] = KEKULE_DRAWING_LIMIT
     candidate_count = 1
     component_assignments = []
     for component in components:
-        allowance = KEKULE_DRAWING_LIMIT // candidate_count
+        allowance = limit // candidate_count
         matching_count = 0
         for _ in perfect_matchings(component):
             matching_count += 1
@@ -655,6 +658,9 @@ def _radical_aromatic_kekule_forms(molecule, evidence) -> list[Any]:
         candidate_count *= matching_count
         component_assignments.append(perfect_matchings(component))
 
+    if candidate_count > limit:
+        summary["candidate_drawings"] += candidate_count
+        raise KekuleEnumerationLimitError(evidence)
     summary["candidate_drawings"] += candidate_count
     component_bonds = [
         {pair for i in component for pair in adjacency[atoms[i]]}
@@ -692,6 +698,9 @@ def _stored_resonance_forms(reactants) -> tuple[list[list[Any]], dict[str, Any]]
     forms = []
     evidence = _new_kekule_evidence()
     for molecule in reactants:
+        molecule_candidate_start = evidence["kekule_enumeration"][
+            "candidate_drawings"
+        ]
         stored = molecule.copy(deep=True)
         group = [stored]
         states = [_identity_state(stored)]
@@ -710,7 +719,15 @@ def _stored_resonance_forms(reactants) -> tuple[list[list[Any]], dict[str, Any]]
                 states.append(state)
                 group.append(form)
         for form in list(group):
-            for drawing in _radical_aromatic_kekule_forms(form, evidence):
+            molecule_candidates = (
+                evidence["kekule_enumeration"]["candidate_drawings"]
+                - molecule_candidate_start
+            )
+            for drawing in _radical_aromatic_kekule_forms(
+                form,
+                evidence,
+                drawing_limit=KEKULE_DRAWING_LIMIT - molecule_candidates,
+            ):
                 state = _identity_state(drawing)
                 if state not in states:
                     states.append(state)
@@ -1287,6 +1304,7 @@ def _mapped_reaction_u2_roots(
             stored_products,
             "persistent u2 centre touched by the stored rewrite carries no "
             "verified recipe role",
+            attribution_evidence,
         )
         if root["reactant_atom_index"] not in labelled
         and _stored_u2_persistence(data, original_reactants, stored_products, root)

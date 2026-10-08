@@ -1316,15 +1316,7 @@ _NAPHTHYL_RADICAL = """multiplicity 2
 
 
 def _kekule_evidence():
-    return {
-        "kekule_enumeration": {
-            "bound": compiler_module.KEKULE_DRAWING_LIMIT,
-            "candidate_drawings": 0,
-            "accepted_drawings": 0,
-            "atomtype_rejections": 0,
-            "no_matching_components": 0,
-        }
-    }
+    return compiler_module._new_kekule_evidence()
 
 
 def test_fused_naphthyl_radical_has_three_bounded_kekule_drawings(monkeypatch):
@@ -1356,6 +1348,21 @@ def test_fused_naphthyl_radical_has_three_bounded_kekule_drawings(monkeypatch):
     ):
         compiler_module._radical_aromatic_kekule_forms(molecule, refused)
     assert refused["kekule_enumeration"]["candidate_drawings"] == 3
+
+
+def test_kekule_bound_is_cumulative_across_resonance_forms_per_molecule(
+    monkeypatch,
+):
+    molecule = Molecule().from_adjacency_list(_NAPHTHYL_RADICAL)
+    compiler_module._tag_atom_ids([molecule])
+    monkeypatch.setattr(compiler_module, "KEKULE_DRAWING_LIMIT", 3)
+
+    with pytest.raises(compiler_module.KekuleEnumerationLimitError) as raised:
+        compiler_module._stored_resonance_forms([molecule])
+
+    summary = raised.value.evidence["kekule_enumeration"]
+    assert summary["bound"] == 3
+    assert summary["candidate_drawings"] > 3
 
 
 def test_kekule_atomtype_rejections_are_counted(monkeypatch):
@@ -1734,6 +1741,7 @@ def test_touched_persistent_u2_without_a_verified_role_stays_in_policy(monkeypat
         (0, "unverified")
     ]
     assert "carries no verified recipe role" in roots[0]["mapping_error"]
+    assert roots[0]["attribution_evidence"] == compiler_module._new_kekule_evidence()
     published, refusal = apply_persistent_carbene_policy(
         _pair(), roots[0], _source(persistent=False)
     )
