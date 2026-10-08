@@ -18,7 +18,7 @@ import os
 import subprocess
 import time
 from dataclasses import dataclass, field, replace
-from itertools import combinations, permutations
+from itertools import combinations, permutations, product
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 from types import SimpleNamespace
@@ -552,8 +552,90 @@ def _identity_resonance_states(molecule) -> list[tuple[dict, dict]]:
     return states
 
 
+def _radical_aromatic_kekule_forms(molecule) -> list[Any]:
+    """Return every Kekule drawing of the radical-bearing aromatic rings.
+
+    Automatic resonance never Kekulizes aryl radicals, but RMG fires reverse
+    recipes on Kekule drawings and selects templates there (a single bond at
+    the accepting centre reaches Ext-4C-R, a benzene bond Ext-7C-R).  Each
+    benzene bond in a component that carries a radical becomes single or
+    double so that every component atom has exactly one double bond.  Atom
+    order and ids are kept; other aromatic rings stay as drawn.
+    """
+    from rmgpy.exceptions import AtomTypeError
+
+    atoms = molecule.atoms
+    index = {atom: position for position, atom in enumerate(atoms)}
+    adjacency: dict[Any, list[tuple[int, int]]] = {}
+    for bond in molecule.get_all_edges():
+        if bond.is_benzene():
+            pair = tuple(sorted((index[bond.atom1], index[bond.atom2])))
+            adjacency.setdefault(bond.atom1, []).append(pair)
+            adjacency.setdefault(bond.atom2, []).append(pair)
+    components, seen = [], set()
+    for start in adjacency:
+        if start in seen:
+            continue
+        component, stack = set(), [start]
+        while stack:
+            atom = stack.pop()
+            if atom not in component:
+                component.add(atom)
+                stack.extend(
+                    atoms[other]
+                    for pair in adjacency[atom]
+                    for other in pair
+                    if atoms[other] is not atom
+                )
+        seen |= component
+        if any(atom.radical_electrons for atom in component):
+            components.append(sorted(index[atom] for atom in component))
+    if not components:
+        return []
+
+    def perfect_matchings(component):
+        matchings = []
+
+        def extend(remaining, chosen):
+            if not remaining:
+                matchings.append(chosen)
+                return
+            first = remaining[0]
+            for pair in adjacency[atoms[first]]:
+                other = pair[0] if pair[1] == first else pair[1]
+                if other in remaining:
+                    extend(
+                        [i for i in remaining if i not in pair], chosen | {pair}
+                    )
+
+        extend(component, frozenset())
+        bonds = {pair for i in component for pair in adjacency[atoms[i]]}
+        return [(bonds, doubles) for doubles in matchings]
+
+    drawings = []
+    for assignment in product(
+        *(perfect_matchings(component) for component in components)
+    ):
+        drawing = molecule.copy(deep=True)
+        for bonds, doubles in assignment:
+            for first, second in bonds:
+                drawing.get_bond(
+                    drawing.atoms[first], drawing.atoms[second]
+                ).order = 2 if (first, second) in doubles else 1
+        try:
+            drawing.update_atomtypes(log_species=False)
+        except AtomTypeError:
+            continue
+        drawings.append(drawing)
+    return drawings
+
+
 def _stored_resonance_forms(reactants) -> list[list[Any]]:
-    """Return id-tracked resonance forms of each stored reactant, stored form first."""
+    """Return id-tracked resonance forms of each stored reactant, stored form first.
+
+    Kekule drawings of radical-bearing aromatic rings are added to every form
+    (see ``_radical_aromatic_kekule_forms``).
+    """
     from rmgpy.exceptions import AtomTypeError, ResonanceError
 
     forms = []
@@ -575,6 +657,12 @@ def _stored_resonance_forms(reactants) -> list[list[Any]]:
             if state not in states:
                 states.append(state)
                 group.append(form)
+        for form in list(group):
+            for drawing in _radical_aromatic_kekule_forms(form):
+                state = _identity_state(drawing)
+                if state not in states:
+                    states.append(state)
+                    group.append(drawing)
         forms.append(group)
     return forms
 

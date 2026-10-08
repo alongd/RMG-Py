@@ -1196,6 +1196,57 @@ def test_real_disproportionation_shard_pair_is_unresolved_only_by_source_domain(
     assert decision["mapped_root"]["persistent_neutral_divalent_carbon"] is True
 
 
+def _kekule_pair_attributions(database):
+    (forward, _), = _pairs(_CENSUS["kekule_aryl_radical_pair"])
+    family = database.kinetics.families["Disproportionation"]
+    reactants = compiler_module._molecules_from_graphs(forward["reactant_graphs"])
+    compiler_module._tag_atom_ids(reactants)
+    stored_products, _ = compiler_module._apply_record(forward, reactants)
+    return compiler_module._verified_attributions(
+        family, forward, reactants, stored_products, {"*1", "*2", "*3", "*4"}, {}, {}
+    )
+
+
+def test_aryl_radical_kekule_drawing_verifies_the_stored_template(census_database):
+    # RMG fired this pair in reverse and chose Ext-4C-R on the recipe-built
+    # Kekule drawing of the aryl radical; Ext-4C-R needs a single bond where
+    # the stored aromatic drawing has a benzene bond.  Automatic resonance
+    # never Kekulizes aryl radicals, so attribution must add those drawings.
+    attributions, error = _kekule_pair_attributions(census_database)
+    assert error is None
+    assert sorted(attributions) == [
+        ((25, "*1"), (66, "*4"), (78, "*3"), (93, "*2")),
+        ((25, "*1"), (66, "*4"), (79, "*3"), (93, "*2")),
+    ]
+
+
+def test_matching_template_string_with_atoms_selecting_another_node_is_rejected(
+    census_database, monkeypatch
+):
+    (forward, _), = _pairs(_CENSUS["kekule_aryl_radical_pair"])
+    # Aromatic drawings only: the rewrite-reproducing atoms select Ext-7C-R.
+    monkeypatch.setattr(
+        compiler_module, "_radical_aromatic_kekule_forms", lambda molecule: []
+    )
+    generate = compiler_module._generated_forward_transitions
+
+    def forged_template_strings(*args, **kwargs):
+        forms, generated, error = generate(*args, **kwargs)
+        for candidate in generated:
+            candidate.template = forward["template"].split(";")
+        return forms, generated, error
+
+    monkeypatch.setattr(
+        compiler_module, "_generated_forward_transitions", forged_template_strings
+    )
+    attributions, error = _kekule_pair_attributions(census_database)
+    assert attributions == set()
+    assert error == (
+        "no template-matched candidate reproduces the stored rewrite "
+        "up to product resonance"
+    )
+
+
 def test_real_recombination_binds_both_repeated_star_labels(census_database):
     family = census_database.kinetics.families["R_Recombination"]
     # A remote spectator carbene rides on the radical end that recombines.
@@ -1365,23 +1416,28 @@ def test_symmetric_recombination_attributions_collapse_to_one_orbit():
     ) == sorted(moved)
 
 
-def test_generation_cache_is_a_bounded_lru(monkeypatch):
-    calls = []
-    family = SimpleNamespace(
-        label="fake",
-        _generate_reactions=lambda forms, **kwargs: calls.append(forms) or [],
-    )
-    monkeypatch.setattr(compiler_module, "APPLICABILITY_GENERATION_CACHE_LIMIT", 2)
+def test_generation_cache_is_a_bounded_lru():
+    # Bound to the production constant: per-shard peak RSS was measured at 4.
+    limit = compiler_module.APPLICABILITY_GENERATION_CACHE_LIMIT
+    assert limit == 4
+    family = SimpleNamespace(label="fake", _generate_reactions=lambda forms, **kwargs: [])
+    requests = ["k0", "k1", "k2", "k3", "k0", "extra1", "extra2", "k1"]
     cache, stats = {}, {}
-    for key in ("a", "b", "a", "c", "b"):
+    for key in requests:
         compiler_module._generated_forward_transitions(
             family, {"reactant_graphs": [key]}, [[key]], cache, stats
         )
-    assert list(cache) == [("fake", ("c",)), ("fake", ("b",))]
-    assert stats["fake"]["requests"] == 5
+    # k0 was refreshed before the overflow, so k1, k2 and k3 go first.
+    assert list(cache) == [
+        ("fake", ("k0",)),
+        ("fake", ("extra1",)),
+        ("fake", ("extra2",)),
+        ("fake", ("k1",)),
+    ]
+    assert stats["fake"]["requests"] == 8
     assert stats["fake"]["cache_hits"] == 1
-    assert stats["fake"]["generation_calls"] == 4
-    assert stats["fake"]["evictions"] == 2
+    assert stats["fake"]["generation_calls"] == 7
+    assert stats["fake"]["evictions"] == 3
 
 
 def test_unresolved_ledger_entries_carry_the_published_final_ids(monkeypatch):

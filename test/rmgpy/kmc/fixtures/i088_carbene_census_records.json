@@ -395,6 +395,402 @@
    "template": "Root_Ext-1R!H-R_N-4R->O_N-Sp-5R!H=1R!H_Ext-4CHNS-R_N-6R!H->S_4CHNS->C_N-Sp-6BrBrBrCCCClClClFFFIIINNNOOOPPPSiSiSi#4C_6BrCClFINOPSi->C"
   }
  ],
+ "kekule_aryl_radical_pair": [
+  {
+   "atom_map": {
+    "0": 26,
+    "1": 31,
+    "10": 33,
+    "11": 35,
+    "12": 36,
+    "13": 37,
+    "14": 38,
+    "15": 39,
+    "16": 40,
+    "17": 41,
+    "18": 42,
+    "19": 43,
+    "2": 32,
+    "20": 44,
+    "21": 45,
+    "22": 46,
+    "23": 47,
+    "24": 0,
+    "25": 1,
+    "26": 2,
+    "27": 11,
+    "28": 12,
+    "29": 3,
+    "3": 24,
+    "30": 4,
+    "31": 5,
+    "32": 6,
+    "33": 7,
+    "34": 8,
+    "35": 9,
+    "36": 10,
+    "37": 13,
+    "38": 14,
+    "39": 15,
+    "4": 25,
+    "40": 17,
+    "41": 18,
+    "42": 16,
+    "43": 19,
+    "44": 20,
+    "45": 21,
+    "46": 23,
+    "47": 22,
+    "5": 28,
+    "6": 27,
+    "7": 29,
+    "8": 30,
+    "9": 34
+   },
+   "bond_ops": [
+    {
+     "action": "break",
+     "atoms": [
+      93,
+      78
+     ],
+     "order": "1.0"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      93,
+      78
+     ],
+     "order": "1.5"
+    },
+    {
+     "action": "break",
+     "atoms": [
+      93,
+      79
+     ],
+     "order": "1.0"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      93,
+      79
+     ],
+     "order": "1.5"
+    },
+    {
+     "action": "break",
+     "atoms": [
+      93,
+      66
+     ],
+     "order": "1.0"
+    },
+    {
+     "action": "break",
+     "atoms": [
+      78,
+      76
+     ],
+     "order": "2.0"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      78,
+      76
+     ],
+     "order": "1.5"
+    },
+    {
+     "action": "break",
+     "atoms": [
+      79,
+      77
+     ],
+     "order": "2.0"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      79,
+      77
+     ],
+     "order": "1.5"
+    },
+    {
+     "action": "break",
+     "atoms": [
+      76,
+      75
+     ],
+     "order": "1.0"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      76,
+      75
+     ],
+     "order": "1.5"
+    },
+    {
+     "action": "break",
+     "atoms": [
+      77,
+      75
+     ],
+     "order": "1.0"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      77,
+      75
+     ],
+     "order": "1.5"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      25,
+      66
+     ],
+     "order": "1.0"
+    },
+    {
+     "action": "set_radical",
+     "atom": 25,
+     "value": 0
+    },
+    {
+     "action": "set_radical",
+     "atom": 75,
+     "value": 1
+    }
+   ],
+   "event_id": "evt_105ce85cd46a5c270bf23bebe63dcd6133ea0be1d5d51a7e488b2f00701c8724",
+   "family": "Disproportionation",
+   "participant_site_types": [
+    "junction_radical",
+    "doubly_featured"
+   ],
+   "product_graphs": [
+    "multiplicity 2\n1  H u0 p0 c0 {27,S}\n2  H u0 p0 c0 {28,S}\n3  H u0 p0 c0 {29,S}\n4  H u0 p0 c0 {30,S}\n5  H u0 p0 c0 {31,S}\n6  H u0 p0 c0 {32,S}\n7  H u0 p0 c0 {33,S}\n8  H u0 p0 c0 {34,S}\n9  H u0 p0 c0 {35,S}\n10 H u0 p0 c0 {36,S}\n11 H u0 p0 c0 {37,S}\n12 H u0 p0 c0 {38,S}\n13 H u0 p0 c0 {39,S}\n14 H u0 p0 c0 {40,S}\n15 H u0 p0 c0 {44,S}\n16 H u0 p0 c0 {44,S}\n17 H u0 p0 c0 {44,S}\n18 H u0 p0 c0 {45,S}\n19 H u0 p0 c0 {45,S}\n20 H u0 p0 c0 {46,S}\n21 H u0 p0 c0 {46,S}\n22 H u0 p0 c0 {47,S}\n23 H u0 p0 c0 {47,S}\n24 H u0 p0 c0 {48,S}\n25 H u0 p0 c0 {49,S}\n26 C u1 p0 c0 {27,B} {28,B}\n27 C u0 p0 c0 {1,S} {26,B} {37,B}\n28 C u0 p0 c0 {2,S} {26,B} {38,B}\n29 C u0 p0 c0 {3,S} {31,B} {32,B}\n30 C u0 p0 c0 {4,S} {33,B} {34,B}\n31 C u0 p0 c0 {5,S} {29,B} {35,B}\n32 C u0 p0 c0 {6,S} {29,B} {36,B}\n33 C u0 p0 c0 {7,S} {30,B} {39,B}\n34 C u0 p0 c0 {8,S} {30,B} {40,B}\n35 C u0 p0 c0 {9,S} {31,B} {41,B}\n36 C u0 p0 c0 {10,S} {32,B} {41,B}\n37 C u0 p0 c0 {11,S} {27,B} {42,B}\n38 C u0 p0 c0 {12,S} {28,B} {42,B}\n39 C u0 p0 c0 {13,S} {33,B} {43,B}\n40 C u0 p0 c0 {14,S} {34,B} {43,B}\n41 C u0 p0 c0 {35,B} {36,B} {45,S}\n42 C u0 p0 c0 {37,B} {38,B} {48,S}\n43 C u0 p0 c0 {39,B} {40,B} {49,S}\n44 C u0 p0 c0 {15,S} {16,S} {17,S} {48,S}\n45 C u0 p0 c0 {18,S} {19,S} {41,S} {46,S}\n46 C u0 p0 c0 {20,S} {21,S} {45,S} {49,S}\n47 C u0 p0 c0 {22,S} {23,S} {48,S} {49,S}\n48 C u0 p0 c0 {24,S} {42,S} {44,S} {47,S}\n49 C u0 p0 c0 {25,S} {43,S} {46,S} {47,S}\n",
+    "1  H u0 p0 c0 {27,S}\n2  H u0 p0 c0 {28,S}\n3  H u0 p0 c0 {29,S}\n4  H u0 p0 c0 {30,S}\n5  H u0 p0 c0 {31,S}\n6  H u0 p0 c0 {32,S}\n7  H u0 p0 c0 {33,S}\n8  H u0 p0 c0 {34,S}\n9  H u0 p0 c0 {35,S}\n10 H u0 p0 c0 {36,S}\n11 H u0 p0 c0 {37,S}\n12 H u0 p0 c0 {38,S}\n13 H u0 p0 c0 {39,S}\n14 H u0 p0 c0 {40,S}\n15 H u0 p0 c0 {41,S}\n16 H u0 p0 c0 {45,S}\n17 H u0 p0 c0 {45,S}\n18 H u0 p0 c0 {45,S}\n19 H u0 p0 c0 {46,S}\n20 H u0 p0 c0 {46,S}\n21 H u0 p0 c0 {47,S}\n22 H u0 p0 c0 {47,S}\n23 H u0 p0 c0 {48,S}\n24 H u0 p0 c0 {48,S}\n25 H u0 p0 c0 {49,S}\n26 H u0 p0 c0 {50,S}\n27 C u0 p0 c0 {1,S} {30,B} {31,B}\n28 C u0 p0 c0 {2,S} {32,B} {33,B}\n29 C u0 p0 c0 {3,S} {34,B} {35,B}\n30 C u0 p0 c0 {4,S} {27,B} {36,B}\n31 C u0 p0 c0 {5,S} {27,B} {37,B}\n32 C u0 p0 c0 {6,S} {28,B} {38,B}\n33 C u0 p0 c0 {7,S} {28,B} {39,B}\n34 C u0 p0 c0 {8,S} {29,B} {40,B}\n35 C u0 p0 c0 {9,S} {29,B} {41,B}\n36 C u0 p0 c0 {10,S} {30,B} {42,B}\n37 C u0 p0 c0 {11,S} {31,B} {42,B}\n38 C u0 p0 c0 {12,S} {32,B} {43,B}\n39 C u0 p0 c0 {13,S} {33,B} {43,B}\n40 C u0 p0 c0 {14,S} {34,B} {44,B}\n41 C u0 p0 c0 {15,S} {35,B} {44,B}\n42 C u0 p0 c0 {36,B} {37,B} {46,S}\n43 C u0 p0 c0 {38,B} {39,B} {49,S}\n44 C u0 p0 c0 {40,B} {41,B} {50,S}\n45 C u0 p0 c0 {16,S} {17,S} {18,S} {49,S}\n46 C u0 p0 c0 {19,S} {20,S} {42,S} {47,S}\n47 C u0 p0 c0 {21,S} {22,S} {46,S} {50,S}\n48 C u0 p0 c0 {23,S} {24,S} {49,S} {50,S}\n49 C u0 p0 c0 {25,S} {43,S} {45,S} {48,S}\n50 C u0 p0 c0 {26,S} {44,S} {47,S} {48,S}\n"
+   ],
+   "rate_source": {
+    "available": true,
+    "kind": "RMG family estimate"
+   },
+   "reactant_graphs": [
+    "multiplicity 2\n1  H u0 p0 c0 {27,S}\n2  H u0 p0 c0 {28,S}\n3  H u0 p0 c0 {29,S}\n4  H u0 p0 c0 {30,S}\n5  H u0 p0 c0 {31,S}\n6  H u0 p0 c0 {32,S}\n7  H u0 p0 c0 {33,S}\n8  H u0 p0 c0 {34,S}\n9  H u0 p0 c0 {35,S}\n10 H u0 p0 c0 {36,S}\n11 H u0 p0 c0 {37,S}\n12 H u0 p0 c0 {38,S}\n13 H u0 p0 c0 {39,S}\n14 H u0 p0 c0 {40,S}\n15 H u0 p0 c0 {44,S}\n16 H u0 p0 c0 {44,S}\n17 H u0 p0 c0 {44,S}\n18 H u0 p0 c0 {45,S}\n19 H u0 p0 c0 {45,S}\n20 H u0 p0 c0 {46,S}\n21 H u0 p0 c0 {46,S}\n22 H u0 p0 c0 {47,S}\n23 H u0 p0 c0 {47,S}\n24 H u0 p0 c0 {48,S}\n25 H u0 p0 c0 {49,S}\n26 C u1 p0 c0 {27,B} {28,B}\n27 C u0 p0 c0 {1,S} {26,B} {39,B}\n28 C u0 p0 c0 {2,S} {26,B} {40,B}\n29 C u0 p0 c0 {3,S} {31,B} {32,B}\n30 C u0 p0 c0 {4,S} {33,B} {34,B}\n31 C u0 p0 c0 {5,S} {29,B} {35,B}\n32 C u0 p0 c0 {6,S} {29,B} {36,B}\n33 C u0 p0 c0 {7,S} {30,B} {37,B}\n34 C u0 p0 c0 {8,S} {30,B} {38,B}\n35 C u0 p0 c0 {9,S} {31,B} {41,B}\n36 C u0 p0 c0 {10,S} {32,B} {41,B}\n37 C u0 p0 c0 {11,S} {33,B} {42,B}\n38 C u0 p0 c0 {12,S} {34,B} {42,B}\n39 C u0 p0 c0 {13,S} {27,B} {43,B}\n40 C u0 p0 c0 {14,S} {28,B} {43,B}\n41 C u0 p0 c0 {35,B} {36,B} {45,S}\n42 C u0 p0 c0 {37,B} {38,B} {48,S}\n43 C u0 p0 c0 {39,B} {40,B} {49,S}\n44 C u0 p0 c0 {15,S} {16,S} {17,S} {48,S}\n45 C u0 p0 c0 {18,S} {19,S} {41,S} {46,S}\n46 C u0 p0 c0 {20,S} {21,S} {45,S} {49,S}\n47 C u0 p0 c0 {22,S} {23,S} {48,S} {49,S}\n48 C u0 p0 c0 {24,S} {42,S} {44,S} {47,S}\n49 C u0 p0 c0 {25,S} {43,S} {46,S} {47,S}\n",
+    "multiplicity 3\n1     H u0 p0 c0 {28,S}\n2     H u0 p0 c0 {29,S}\n3     H u0 p0 c0 {30,S}\n4     H u0 p0 c0 {31,S}\n5     H u0 p0 c0 {32,S}\n6     H u0 p0 c0 {33,S}\n7     H u0 p0 c0 {34,S}\n8     H u0 p0 c0 {35,S}\n9     H u0 p0 c0 {36,S}\n10    H u0 p0 c0 {37,S}\n11    H u0 p0 c0 {38,S}\n12    H u0 p0 c0 {39,S}\n13    H u0 p0 c0 {40,S}\n14    H u0 p0 c0 {41,S}\n15    H u0 p0 c0 {44,S}\n16    H u0 p0 c0 {44,S}\n17    H u0 p0 c0 {44,S}\n18    H u0 p0 c0 {45,S}\n19    H u0 p0 c0 {46,S}\n20    H u0 p0 c0 {46,S}\n21    H u0 p0 c0 {47,S}\n22    H u0 p0 c0 {47,S}\n23    H u0 p0 c0 {48,S}\n24    H u0 p0 c0 {48,S}\n25    H u0 p0 c0 {49,S}\n26    H u0 p0 c0 {50,S}\n27 *1 C u2 p0 c0 {28,S} {29,S}\n28    C u0 p0 c0 {1,S} {27,S} {30,D}\n29    C u0 p0 c0 {2,S} {27,S} {31,D}\n30    C u0 p0 c0 {3,S} {28,D} {45,S}\n31    C u0 p0 c0 {4,S} {29,D} {45,S}\n32    C u0 p0 c0 {5,S} {34,B} {35,B}\n33    C u0 p0 c0 {6,S} {36,B} {37,B}\n34    C u0 p0 c0 {7,S} {32,B} {38,B}\n35    C u0 p0 c0 {8,S} {32,B} {39,B}\n36    C u0 p0 c0 {9,S} {33,B} {40,B}\n37    C u0 p0 c0 {10,S} {33,B} {41,B}\n38    C u0 p0 c0 {11,S} {34,B} {42,B}\n39    C u0 p0 c0 {12,S} {35,B} {42,B}\n40    C u0 p0 c0 {13,S} {36,B} {43,B}\n41    C u0 p0 c0 {14,S} {37,B} {43,B}\n42    C u0 p0 c0 {38,B} {39,B} {46,S}\n43    C u0 p0 c0 {40,B} {41,B} {49,S}\n44    C u0 p0 c0 {15,S} {16,S} {17,S} {50,S}\n45    C u0 p0 c0 {18,S} {30,S} {31,S} {50,S}\n46    C u0 p0 c0 {19,S} {20,S} {42,S} {47,S}\n47    C u0 p0 c0 {21,S} {22,S} {46,S} {49,S}\n48    C u0 p0 c0 {23,S} {24,S} {49,S} {50,S}\n49    C u0 p0 c0 {25,S} {43,S} {47,S} {48,S}\n50    C u0 p0 c0 {26,S} {44,S} {45,S} {48,S}\n"
+   ],
+   "reverse_of": "evt_0470f278be750120208035ae0634cd4bf4bc986921cb40afa35d8258c5e7c4e9",
+   "status": "enabled",
+   "template": "Root_Ext-1R!H-R_N-4R->O_Ext-1R!H-R_4CHNS->C_Ext-4C-R_N-Sp-7R!H#4C_7R!H->C_Ext-4C-R"
+  },
+  {
+   "atom_map": {
+    "0": 24,
+    "1": 25,
+    "10": 36,
+    "11": 27,
+    "12": 28,
+    "13": 37,
+    "14": 38,
+    "15": 39,
+    "16": 42,
+    "17": 40,
+    "18": 41,
+    "19": 43,
+    "2": 26,
+    "20": 44,
+    "21": 45,
+    "22": 47,
+    "23": 46,
+    "24": 3,
+    "25": 4,
+    "26": 0,
+    "27": 6,
+    "28": 5,
+    "29": 7,
+    "3": 29,
+    "30": 8,
+    "31": 1,
+    "32": 2,
+    "33": 10,
+    "34": 9,
+    "35": 11,
+    "36": 12,
+    "37": 13,
+    "38": 14,
+    "39": 15,
+    "4": 30,
+    "40": 16,
+    "41": 17,
+    "42": 18,
+    "43": 19,
+    "44": 20,
+    "45": 21,
+    "46": 22,
+    "47": 23,
+    "5": 31,
+    "6": 32,
+    "7": 33,
+    "8": 34,
+    "9": 35
+   },
+   "bond_ops": [
+    {
+     "action": "break",
+     "atoms": [
+      41,
+      36
+     ],
+     "order": "1.5"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      41,
+      36
+     ],
+     "order": "1.0"
+    },
+    {
+     "action": "break",
+     "atoms": [
+      41,
+      37
+     ],
+     "order": "1.5"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      41,
+      37
+     ],
+     "order": "1.0"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      41,
+      51
+     ],
+     "order": "1.0"
+    },
+    {
+     "action": "break",
+     "atoms": [
+      36,
+      26
+     ],
+     "order": "1.5"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      36,
+      26
+     ],
+     "order": "2.0"
+    },
+    {
+     "action": "break",
+     "atoms": [
+      37,
+      27
+     ],
+     "order": "1.5"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      37,
+      27
+     ],
+     "order": "2.0"
+    },
+    {
+     "action": "break",
+     "atoms": [
+      26,
+      25
+     ],
+     "order": "1.5"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      26,
+      25
+     ],
+     "order": "1.0"
+    },
+    {
+     "action": "break",
+     "atoms": [
+      27,
+      25
+     ],
+     "order": "1.5"
+    },
+    {
+     "action": "form",
+     "atoms": [
+      27,
+      25
+     ],
+     "order": "1.0"
+    },
+    {
+     "action": "break",
+     "atoms": [
+      77,
+      51
+     ],
+     "order": "1.0"
+    },
+    {
+     "action": "set_radical",
+     "atom": 25,
+     "value": 2
+    },
+    {
+     "action": "set_radical",
+     "atom": 77,
+     "value": 1
+    }
+   ],
+   "event_id": "evt_0470f278be750120208035ae0634cd4bf4bc986921cb40afa35d8258c5e7c4e9",
+   "family": "Disproportionation",
+   "participant_site_types": [
+    "junction_radical",
+    "pristine"
+   ],
+   "product_graphs": [
+    "multiplicity 2\n1  H u0 p0 c0 {27,S}\n2  H u0 p0 c0 {28,S}\n3  H u0 p0 c0 {29,S}\n4  H u0 p0 c0 {30,S}\n5  H u0 p0 c0 {31,S}\n6  H u0 p0 c0 {32,S}\n7  H u0 p0 c0 {33,S}\n8  H u0 p0 c0 {34,S}\n9  H u0 p0 c0 {35,S}\n10 H u0 p0 c0 {36,S}\n11 H u0 p0 c0 {37,S}\n12 H u0 p0 c0 {38,S}\n13 H u0 p0 c0 {39,S}\n14 H u0 p0 c0 {40,S}\n15 H u0 p0 c0 {44,S}\n16 H u0 p0 c0 {44,S}\n17 H u0 p0 c0 {44,S}\n18 H u0 p0 c0 {45,S}\n19 H u0 p0 c0 {45,S}\n20 H u0 p0 c0 {46,S}\n21 H u0 p0 c0 {46,S}\n22 H u0 p0 c0 {47,S}\n23 H u0 p0 c0 {47,S}\n24 H u0 p0 c0 {48,S}\n25 H u0 p0 c0 {49,S}\n26 C u1 p0 c0 {27,B} {28,B}\n27 C u0 p0 c0 {1,S} {26,B} {39,B}\n28 C u0 p0 c0 {2,S} {26,B} {40,B}\n29 C u0 p0 c0 {3,S} {31,B} {32,B}\n30 C u0 p0 c0 {4,S} {33,B} {34,B}\n31 C u0 p0 c0 {5,S} {29,B} {35,B}\n32 C u0 p0 c0 {6,S} {29,B} {36,B}\n33 C u0 p0 c0 {7,S} {30,B} {37,B}\n34 C u0 p0 c0 {8,S} {30,B} {38,B}\n35 C u0 p0 c0 {9,S} {31,B} {41,B}\n36 C u0 p0 c0 {10,S} {32,B} {41,B}\n37 C u0 p0 c0 {11,S} {33,B} {42,B}\n38 C u0 p0 c0 {12,S} {34,B} {42,B}\n39 C u0 p0 c0 {13,S} {27,B} {43,B}\n40 C u0 p0 c0 {14,S} {28,B} {43,B}\n41 C u0 p0 c0 {35,B} {36,B} {45,S}\n42 C u0 p0 c0 {37,B} {38,B} {48,S}\n43 C u0 p0 c0 {39,B} {40,B} {49,S}\n44 C u0 p0 c0 {15,S} {16,S} {17,S} {48,S}\n45 C u0 p0 c0 {18,S} {19,S} {41,S} {46,S}\n46 C u0 p0 c0 {20,S} {21,S} {45,S} {49,S}\n47 C u0 p0 c0 {22,S} {23,S} {48,S} {49,S}\n48 C u0 p0 c0 {24,S} {42,S} {44,S} {47,S}\n49 C u0 p0 c0 {25,S} {43,S} {46,S} {47,S}\n",
+    "multiplicity 3\n1     H u0 p0 c0 {28,S}\n2     H u0 p0 c0 {29,S}\n3     H u0 p0 c0 {30,S}\n4     H u0 p0 c0 {31,S}\n5     H u0 p0 c0 {32,S}\n6     H u0 p0 c0 {33,S}\n7     H u0 p0 c0 {34,S}\n8     H u0 p0 c0 {35,S}\n9     H u0 p0 c0 {36,S}\n10    H u0 p0 c0 {37,S}\n11    H u0 p0 c0 {38,S}\n12    H u0 p0 c0 {39,S}\n13    H u0 p0 c0 {40,S}\n14    H u0 p0 c0 {41,S}\n15    H u0 p0 c0 {44,S}\n16    H u0 p0 c0 {44,S}\n17    H u0 p0 c0 {44,S}\n18    H u0 p0 c0 {45,S}\n19    H u0 p0 c0 {46,S}\n20    H u0 p0 c0 {46,S}\n21    H u0 p0 c0 {47,S}\n22    H u0 p0 c0 {47,S}\n23    H u0 p0 c0 {48,S}\n24    H u0 p0 c0 {48,S}\n25    H u0 p0 c0 {49,S}\n26    H u0 p0 c0 {50,S}\n27 *1 C u2 p0 c0 {28,S} {29,S}\n28    C u0 p0 c0 {1,S} {27,S} {30,D}\n29    C u0 p0 c0 {2,S} {27,S} {31,D}\n30    C u0 p0 c0 {3,S} {28,D} {45,S}\n31    C u0 p0 c0 {4,S} {29,D} {45,S}\n32    C u0 p0 c0 {5,S} {34,B} {35,B}\n33    C u0 p0 c0 {6,S} {36,B} {37,B}\n34    C u0 p0 c0 {7,S} {32,B} {38,B}\n35    C u0 p0 c0 {8,S} {32,B} {39,B}\n36    C u0 p0 c0 {9,S} {33,B} {40,B}\n37    C u0 p0 c0 {10,S} {33,B} {41,B}\n38    C u0 p0 c0 {11,S} {34,B} {42,B}\n39    C u0 p0 c0 {12,S} {35,B} {42,B}\n40    C u0 p0 c0 {13,S} {36,B} {43,B}\n41    C u0 p0 c0 {14,S} {37,B} {43,B}\n42    C u0 p0 c0 {38,B} {39,B} {46,S}\n43    C u0 p0 c0 {40,B} {41,B} {49,S}\n44    C u0 p0 c0 {15,S} {16,S} {17,S} {50,S}\n45    C u0 p0 c0 {18,S} {30,S} {31,S} {50,S}\n46    C u0 p0 c0 {19,S} {20,S} {42,S} {47,S}\n47    C u0 p0 c0 {21,S} {22,S} {46,S} {49,S}\n48    C u0 p0 c0 {23,S} {24,S} {49,S} {50,S}\n49    C u0 p0 c0 {25,S} {43,S} {47,S} {48,S}\n50    C u0 p0 c0 {26,S} {44,S} {45,S} {48,S}\n"
+   ],
+   "rate_source": {
+    "available": true,
+    "kind": "reference-thermo reverse"
+   },
+   "reactant_graphs": [
+    "multiplicity 2\n1  H u0 p0 c0 {27,S}\n2  H u0 p0 c0 {28,S}\n3  H u0 p0 c0 {29,S}\n4  H u0 p0 c0 {30,S}\n5  H u0 p0 c0 {31,S}\n6  H u0 p0 c0 {32,S}\n7  H u0 p0 c0 {33,S}\n8  H u0 p0 c0 {34,S}\n9  H u0 p0 c0 {35,S}\n10 H u0 p0 c0 {36,S}\n11 H u0 p0 c0 {37,S}\n12 H u0 p0 c0 {38,S}\n13 H u0 p0 c0 {39,S}\n14 H u0 p0 c0 {40,S}\n15 H u0 p0 c0 {44,S}\n16 H u0 p0 c0 {44,S}\n17 H u0 p0 c0 {44,S}\n18 H u0 p0 c0 {45,S}\n19 H u0 p0 c0 {45,S}\n20 H u0 p0 c0 {46,S}\n21 H u0 p0 c0 {46,S}\n22 H u0 p0 c0 {47,S}\n23 H u0 p0 c0 {47,S}\n24 H u0 p0 c0 {48,S}\n25 H u0 p0 c0 {49,S}\n26 C u1 p0 c0 {27,B} {28,B}\n27 C u0 p0 c0 {1,S} {26,B} {37,B}\n28 C u0 p0 c0 {2,S} {26,B} {38,B}\n29 C u0 p0 c0 {3,S} {31,B} {32,B}\n30 C u0 p0 c0 {4,S} {33,B} {34,B}\n31 C u0 p0 c0 {5,S} {29,B} {35,B}\n32 C u0 p0 c0 {6,S} {29,B} {36,B}\n33 C u0 p0 c0 {7,S} {30,B} {39,B}\n34 C u0 p0 c0 {8,S} {30,B} {40,B}\n35 C u0 p0 c0 {9,S} {31,B} {41,B}\n36 C u0 p0 c0 {10,S} {32,B} {41,B}\n37 C u0 p0 c0 {11,S} {27,B} {42,B}\n38 C u0 p0 c0 {12,S} {28,B} {42,B}\n39 C u0 p0 c0 {13,S} {33,B} {43,B}\n40 C u0 p0 c0 {14,S} {34,B} {43,B}\n41 C u0 p0 c0 {35,B} {36,B} {45,S}\n42 C u0 p0 c0 {37,B} {38,B} {48,S}\n43 C u0 p0 c0 {39,B} {40,B} {49,S}\n44 C u0 p0 c0 {15,S} {16,S} {17,S} {48,S}\n45 C u0 p0 c0 {18,S} {19,S} {41,S} {46,S}\n46 C u0 p0 c0 {20,S} {21,S} {45,S} {49,S}\n47 C u0 p0 c0 {22,S} {23,S} {48,S} {49,S}\n48 C u0 p0 c0 {24,S} {42,S} {44,S} {47,S}\n49 C u0 p0 c0 {25,S} {43,S} {46,S} {47,S}\n",
+    "1  H u0 p0 c0 {27,S}\n2  H u0 p0 c0 {28,S}\n3  H u0 p0 c0 {29,S}\n4  H u0 p0 c0 {30,S}\n5  H u0 p0 c0 {31,S}\n6  H u0 p0 c0 {32,S}\n7  H u0 p0 c0 {33,S}\n8  H u0 p0 c0 {34,S}\n9  H u0 p0 c0 {35,S}\n10 H u0 p0 c0 {36,S}\n11 H u0 p0 c0 {37,S}\n12 H u0 p0 c0 {38,S}\n13 H u0 p0 c0 {39,S}\n14 H u0 p0 c0 {40,S}\n15 H u0 p0 c0 {41,S}\n16 H u0 p0 c0 {45,S}\n17 H u0 p0 c0 {45,S}\n18 H u0 p0 c0 {45,S}\n19 H u0 p0 c0 {46,S}\n20 H u0 p0 c0 {46,S}\n21 H u0 p0 c0 {47,S}\n22 H u0 p0 c0 {47,S}\n23 H u0 p0 c0 {48,S}\n24 H u0 p0 c0 {48,S}\n25 H u0 p0 c0 {49,S}\n26 H u0 p0 c0 {50,S}\n27 C u0 p0 c0 {1,S} {30,B} {31,B}\n28 C u0 p0 c0 {2,S} {32,B} {33,B}\n29 C u0 p0 c0 {3,S} {34,B} {35,B}\n30 C u0 p0 c0 {4,S} {27,B} {36,B}\n31 C u0 p0 c0 {5,S} {27,B} {37,B}\n32 C u0 p0 c0 {6,S} {28,B} {38,B}\n33 C u0 p0 c0 {7,S} {28,B} {39,B}\n34 C u0 p0 c0 {8,S} {29,B} {40,B}\n35 C u0 p0 c0 {9,S} {29,B} {41,B}\n36 C u0 p0 c0 {10,S} {30,B} {42,B}\n37 C u0 p0 c0 {11,S} {31,B} {42,B}\n38 C u0 p0 c0 {12,S} {32,B} {43,B}\n39 C u0 p0 c0 {13,S} {33,B} {43,B}\n40 C u0 p0 c0 {14,S} {34,B} {44,B}\n41 C u0 p0 c0 {15,S} {35,B} {44,B}\n42 C u0 p0 c0 {36,B} {37,B} {46,S}\n43 C u0 p0 c0 {38,B} {39,B} {49,S}\n44 C u0 p0 c0 {40,B} {41,B} {50,S}\n45 C u0 p0 c0 {16,S} {17,S} {18,S} {49,S}\n46 C u0 p0 c0 {19,S} {20,S} {42,S} {47,S}\n47 C u0 p0 c0 {21,S} {22,S} {46,S} {50,S}\n48 C u0 p0 c0 {23,S} {24,S} {49,S} {50,S}\n49 C u0 p0 c0 {25,S} {43,S} {45,S} {48,S}\n50 C u0 p0 c0 {26,S} {44,S} {47,S} {48,S}\n"
+   ],
+   "reverse_of": "evt_105ce85cd46a5c270bf23bebe63dcd6133ea0be1d5d51a7e488b2f00701c8724",
+   "status": "enabled",
+   "template": "Root_Ext-1R!H-R_N-4R->O_Ext-1R!H-R_4CHNS->C_Ext-4C-R_N-Sp-7R!H#4C_7R!H->C_Ext-4C-R"
+  }
+ ],
  "refused_pairs": [
   {
    "atom_map": {
@@ -2277,6 +2673,7 @@
  ],
  "source": {
   "disproportionation_pair": "I-084 bounded end_radical+pristine shard artifact 276027b98d73...json",
+  "kekule_aryl_radical_pair": "I-088 bounded junction_radical+pristine shard (run2) artifact 3271206dfa10...json; RMG chose Ext-4C-R on the reverse-recipe Kekule drawing of the aryl radical",
   "refused_pairs": "/home/alon/runs/i078/refused_candidates.json (I-078 census, 16 records / 8 pairs)",
   "u08_pairs": "/home/alon/runs/i078/persistent_records.json, template C_rad_H;Cb_rad (training 629), 2 pairs"
  },
