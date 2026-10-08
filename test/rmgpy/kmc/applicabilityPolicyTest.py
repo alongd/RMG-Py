@@ -1441,7 +1441,7 @@ def test_matching_template_string_with_atoms_selecting_another_node_is_rejected(
     monkeypatch.setattr(
         compiler_module,
         "_radical_aromatic_kekule_forms",
-        lambda molecule, evidence: [],
+        lambda molecule, evidence, drawing_limit=None: [],
     )
     generate = compiler_module._generated_forward_transitions
 
