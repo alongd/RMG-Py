@@ -122,7 +122,8 @@ def test_r4_regression_storage_is_self_contained_before_reading(tmp_path, storag
     assert not reads
 
 
-def test_r4_regression_real_reversible_table_qualifies(tmp_path):
+def test_r4_regression_real_reversible_table_passes_legacy_checks_but_awaits_t10(
+        tmp_path):
     spec, channels = reversible_request(tmp_path)
     mapping = tmp_path / 'reversible-map.json'
     mapping.write_text(json.dumps(channels))
@@ -135,8 +136,11 @@ def test_r4_regression_real_reversible_table_qualifies(tmp_path):
     reverse = [c for v in manifest['held_out_verdicts'] for c in v['checks']
                if c['rule'] == 'H3' and c['quantity'] == 'k_sup:1']
     assert reverse and all(c['passed'] for c in reverse), reverse
-    assert manifest['accepted'], [v for v in manifest['held_out_verdicts'] if not v['passed']]
-    table = EEDFTable.load(path, model_inputs(spec), artifact_sha256=file_hash(path / 'table.h5'))
+    assert not manifest['accepted']
+    assert not manifest['T10 interpolation qualification']['passed']
+    table = EEDFTable.load(
+        path, model_inputs(spec), artifact_sha256=file_hash(path / 'table.h5'),
+        require_accepted=False)
     row = table.row(np.log(17.05), {})
     assert row.k_sup[1] > 0 and row.product_fractions[1] == 0
     assert (path / 'generation_spec.json').is_file() and (path / 'validation.md').is_file()
@@ -254,7 +258,9 @@ def real_forward_table(tmp_path_factory):
     spec['refinement']['max_rounds'] = 0
     path = generate(spec)
     pin = file_hash(path / 'table.h5')
-    EEDFTable.load(path, model_inputs(spec), artifact_sha256=pin)
+    EEDFTable.load(
+        path, model_inputs(spec), artifact_sha256=pin,
+        require_accepted=False)
     return path, model_inputs(spec)
 
 
@@ -283,4 +289,5 @@ def test_r4_regression_real_qualified_storage_refuses(tmp_path, real_forward_tab
         raw.write_bytes((rates * 1e6).tobytes())
     assert file_hash(path / 'table.h5') == pin
     with pytest.raises(FingerprintMismatch, match='HDF5 storage'):
-        EEDFTable.load(path, model, artifact_sha256=pin)
+        EEDFTable.load(
+            path, model, artifact_sha256=pin, require_accepted=False)

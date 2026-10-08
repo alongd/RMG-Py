@@ -109,8 +109,11 @@ def test_r3_03_real_reversible_loki_solve_enriches(tmp_path):
     spec['held_out']['lhs_count'] = 0
     spec['refinement']['max_rounds'] = 0
     path = generate(spec)
-    table = EEDFTable.load(path, model_inputs(spec), artifact_sha256=file_hash(path / 'table.h5'))
-    assert table.manifest['accepted']
+    table = EEDFTable.load(
+        path, model_inputs(spec), artifact_sha256=file_hash(path / 'table.h5'),
+        require_accepted=False)
+    assert not table.manifest['accepted']
+    assert not table.t10_interpolation['passed']
     assert table.row(np.log(17.05), {}).k_sup[1] > 0
 
 
@@ -139,7 +142,9 @@ def test_r3_04_real_generation_with_slash_state_name(tmp_path):
     spec['held_out']['lhs_count'] = 0
     spec['refinement']['max_rounds'] = 0
     path = generate(spec)
-    table = EEDFTable.load(path, model_inputs(spec), artifact_sha256=file_hash(path / 'table.h5'))
+    table = EEDFTable.load(
+        path, model_inputs(spec), artifact_sha256=file_hash(path / 'table.h5'),
+        require_accepted=False)
     assert table.row(np.log(17.05), {}).state_populations['Ar(4p[1/2]1)'] == 0
 
 

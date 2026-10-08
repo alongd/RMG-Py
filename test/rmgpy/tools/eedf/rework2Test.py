@@ -188,8 +188,9 @@ def test_loader_rejects_map_population_disagreement_even_with_current_artifact_p
     request['axes']['u'] = np.linspace(np.log(16), np.log(18), 9).tolist()
     request['held_out']['lhs_count'] = 0
     request['screen']['candidates'] = []
-    request['envelopes']['electron_density']['min'] = request['envelopes']['electron_density']['reference']
-    request['envelopes']['electron_density']['max'] = request['envelopes']['electron_density']['reference']
+    for bounds in request['envelopes'].values():
+        bounds['min'] = bounds['reference']
+        bounds['max'] = bounds['reference']
     request['refinement']['max_rounds'] = 0
     request['scratch_root'] = str(tmp_path / 'loki')
     request['output_root'] = str(tmp_path / 'tables')

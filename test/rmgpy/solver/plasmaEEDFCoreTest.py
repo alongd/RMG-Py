@@ -124,6 +124,12 @@ def artifact(tmp_path, marker, composition=True, cold_mean=False, accepted=True,
         envelopes['Ar4s_total'] = {'min': 0., 'max': .15, 'reference': .1}
     manifest = {
         'accepted': accepted,
+        'T10 interpolation qualification': {
+            'check': 'T10 interpolation qualification',
+            'criterion': 'fixture frozen accuracy criteria',
+            'verdict_count': 1,
+            'passed': accepted,
+        },
         'held_out_verdicts': [{'point': {'u': .5}, 'branch_id': 'branch_0',
                                'passed': accepted, 'checks': [{'passed': accepted}]}],
         'branch_certification': {'branch_0': 'fixture'}, 'schema_version': 1,
@@ -727,8 +733,9 @@ def test_elastic_row_power_is_a_positive_loss_and_steady_state_gates_run(tmp_pat
     reactor.residual(0., y, np.zeros_like(y))
     assert reactor.electron_energy_terms['Q_elastic'] > 0.
     reactor.energy_budget = {'A6a_relative': 0.0, 'A6a_steady_relative': 0.0,
-                             'A6b_relative': 0.0,
-                             'A6b_tolerance': 1.e-6}
+                             'A6b-runtime': {
+                                 'relative_error': 0.0, 'tolerance': 1.e-6,
+                                 'passed': True}}
     reactor.validate_steady_state()
     reactor.energy_budget['A6a_steady_relative'] = 0.02
     with pytest.raises(PlasmaStateError, match='A6a'):
@@ -889,92 +896,64 @@ def test_energy_chain_rule_and_central_difference_jacobian(tmp_path):
 
 def test_terminal_a6_gates_pass_and_fail_by_name(tmp_path):
     reactor, _, _ = build_reactor(tmp_path)
-    reactor.energy_budget.update(A6a_relative=.01, A6b_relative=5.e-7,
-                                 A6b_tolerance=1.e-6)
+    reactor.energy_budget.update(
+        A6a_relative=.01,
+        **{'A6b-runtime': {
+            'relative_error': 5.e-7, 'tolerance': 1.e-6, 'passed': True}})
     reactor._check_eedf_power_gates()
     reactor.energy_budget['A6a_relative'] = .0100001
-    with pytest.raises(PlasmaStateError, match='A6a.*tolerance'):
+    with pytest.raises(PlasmaStateError, match='A6a'):
         reactor._check_eedf_power_gates()
     reactor.energy_budget['A6a_relative'] = 0.
-    reactor.energy_budget['A6b_relative'] = 1.0001e-6
-    with pytest.raises(PlasmaStateError, match='A6b.*tolerance'):
+    reactor.energy_budget['A6b-runtime']['relative_error'] = 1.0001e-6
+    reactor.energy_budget['A6b-runtime']['passed'] = False
+    with pytest.raises(PlasmaStateError, match='A6b-runtime'):
         reactor._check_eedf_power_gates()
 
 
-def test_only_development_route_continues_past_recorded_a6b_failure(tmp_path):
-    production, _, _ = build_reactor(tmp_path / 'production')
+def test_development_record_carries_three_separate_a6b_and_t10_checks(tmp_path):
     development, _, _ = build_reactor(
         tmp_path / 'development', accepted=False, development=True)
-    failed = {
-        'A6a_relative': 0.0,
-        'A6a_steady_relative': 0.0,
-        'A6b_relative': 3.1240246954502026e-6,
-        'A6b_tolerance': 1.0294419182226285e-6,
-        'A6b_numerator': 0.002454087231,
-        'A6b_denominator': 785.288329393846,
-    }
-    production.energy_budget.update(failed)
-    development.energy_budget.update(failed)
+    development.residual(0., development.y0, np.zeros_like(development.y0))
+    record = development.electron_energy_terms
 
-    with pytest.raises(PlasmaStateError, match='A6b.*tolerance'):
-        production._check_eedf_power_gates(steady=True)
-
-    development.configure_development_run(progress_interval_seconds=30.)
-    development._check_eedf_power_gates(steady=True)
-
-    record = development.development_a6b_failure
-    assert record['outcome'] == 'FAIL'
-    assert record['value'] == failed['A6b_relative']
-    assert record['tolerance'] == failed['A6b_tolerance']
-    assert record['numerator'] == failed['A6b_numerator']
-    assert record['denominator'] == failed['A6b_denominator']
-    assert record['artifact_sha256'] == development.electron_kinetics['table'][1]
-    assert record['scientific_status'] == (
-        'DEVELOPMENT ONLY \u2014 TABLE QUALIFICATION FAILED')
-    assert record['export_allowed'] is False
-    assert record['qualification_allowed'] is False
+    assert set(('A6b-source', 'A6b-runtime',
+                'T10 interpolation qualification')).issubset(record)
+    assert record['A6b-source']['passed']
+    assert record['A6b-runtime']['passed']
+    assert not record['T10 interpolation qualification']['passed']
+    assert 'A6b_passed' not in record
 
 
 @pytest.mark.parametrize('field,value', [
-    ('A6b_relative', 'missing'),
-    ('A6b_relative', np.nan),
-    ('A6b_relative', np.inf),
-    ('A6b_relative', -1.e-6),
-    ('A6b_tolerance', 'missing'),
-    ('A6b_tolerance', np.nan),
-    ('A6b_tolerance', np.inf),
-    ('A6b_tolerance', 0.0),
-    ('A6b_tolerance', -1.e-6),
-    ('A6b_numerator', 'missing'),
-    ('A6b_numerator', np.nan),
-    ('A6b_numerator', np.inf),
-    ('A6b_numerator', -1.0),
-    ('A6b_denominator', 'missing'),
-    ('A6b_denominator', np.nan),
-    ('A6b_denominator', np.inf),
-    ('A6b_denominator', 0.0),
-    ('A6b_denominator', -1.0),
+    ('relative_error', 'missing'),
+    ('relative_error', np.nan),
+    ('relative_error', np.inf),
+    ('relative_error', -1.e-6),
+    ('tolerance', 'missing'),
+    ('tolerance', np.nan),
+    ('tolerance', np.inf),
+    ('tolerance', 0.0),
+    ('tolerance', -1.e-6),
+    ('passed', False),
 ])
-def test_development_route_refuses_invalid_a6b_diagnostics(tmp_path, field, value):
+def test_development_route_refuses_invalid_a6b_runtime_diagnostics(
+        tmp_path, field, value):
     reactor, _, _ = build_reactor(tmp_path, accepted=False, development=True)
-    diagnostics = {
+    runtime = {'relative_error': 0., 'tolerance': 1.e-6, 'passed': True}
+    if value != 'missing':
+        runtime[field] = value
+    if value == 'missing':
+        runtime.pop(field, None)
+    reactor.energy_budget.update({
         'A6a_relative': 0.0,
         'A6a_steady_relative': 0.0,
-        'A6b_relative': 3.e-6,
-        'A6b_tolerance': 1.e-6,
-        'A6b_numerator': 0.002,
-        'A6b_denominator': 700.0,
-    }
-    if value != 'missing':
-        diagnostics[field] = value
-    reactor.energy_budget.update(diagnostics)
-    if value == 'missing':
-        reactor.energy_budget.pop(field, None)
+        'A6b-runtime': runtime,
+    })
     reactor.configure_development_run(progress_interval_seconds=30.)
 
-    with pytest.raises(PlasmaStateError, match='A6b.*tolerance'):
+    with pytest.raises(PlasmaStateError, match='A6b-runtime'):
         reactor._check_eedf_power_gates(steady=True)
-    assert reactor.development_a6b_failure is None
 
 
 def test_extinction_uses_row_effective_temperature_and_elastic_frequency(tmp_path):

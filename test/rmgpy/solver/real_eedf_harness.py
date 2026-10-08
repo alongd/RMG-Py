@@ -17,6 +17,7 @@ from scipy.interpolate import PchipInterpolator
 
 from rmgpy import constants
 from rmgpy.kinetics import EEDFChannel
+from rmgpy.solver.eedf import field_power_from_mobility
 from rmgpy.solver.eedf_provider import unqualified_artifact_blockers
 
 from rmgpy.tools.eedf.generate import generate
@@ -47,7 +48,7 @@ DEVELOPMENT_SWEEP_TOLERANCES = {
     'electron_power_partition_W.Q_wall_electron': {'rtol': 2.e-4, 'atol': 1.e-10},
     'electron_power_partition_W.Q_wall_ion': {'rtol': 2.e-4, 'atol': 1.e-10},
     'A6a_relative': {'rtol': 0.0, 'atol': 1.e-8},
-    'A6b_relative': {'rtol': 2.e-4, 'atol': 1.e-12},
+    'A6b-runtime.relative_error': {'rtol': 0., 'atol': 1.e-15},
 }
 
 
@@ -73,10 +74,32 @@ def _interpolate_initial_row(artifact, branch, field_td):
             'bracketing_row_indices': [lower, upper],
             'bracketing_EN_Td': [float(math.exp(u_axis[lower])),
                                   float(math.exp(u_axis[upper]))],
-            'field_power_coefficient_eV_m3_s^-1': interpolate('power_groups/field'),
+            'native_interpolated_field_power_coefficient_eV_m3_s^-1': (
+                interpolate('power_groups/field')),
             'mobility_N': interpolate('swarm/mobility_N'),
             'mean_energy_eV': interpolate('swarm/mean_energy_eV'),
         }
+
+
+def _a6b_source_check(artifact, manifest):
+    """Evaluate native node identity without using the runtime interpolant."""
+    maximum = 0.
+    with h5py.File(Path(artifact) / 'table.h5', 'r') as table:
+        for branch in manifest['branches']:
+            rows = table['branches'][branch]
+            native = np.asarray(rows['power_groups/field'], dtype=float)
+            mobility = np.asarray(rows['swarm/mobility_N'], dtype=float)
+            field = np.asarray(rows['EN_Td'], dtype=float)
+            derived = field_power_from_mobility(mobility, field)
+            scale = np.maximum(np.maximum(abs(native), abs(derived)),
+                               np.finfo(float).tiny)
+            maximum = max(maximum, float(np.max(abs(native - derived) / scale)))
+    return {
+        'check': 'A6b-source',
+        'maximum_relative_error': maximum,
+        'tolerance': 1.e-6,
+        'passed': maximum <= 1.e-6,
+    }
 
 
 def power_consistent_initialization(artifact, manifest, multiplier=1.0):
@@ -96,13 +119,15 @@ def power_consistent_initialization(artifact, manifest, multiplier=1.0):
         artifact, branch, DEVELOPMENT_INITIAL_FIELD_TD)
     gas_density = pressure / (constants.kB * gas_temperature)
     power_density = DEVELOPMENT_ABSORBED_POWER_W / DEVELOPMENT_CHAMBER_VOLUME_M3
-    loss_scale = row['field_power_coefficient_eV_m3_s^-1']
     transport_field = (row['mobility_N'] *
                        (DEVELOPMENT_INITIAL_FIELD_TD * 1.e-21) ** 2)
-    table_a6b_numerator = abs(loss_scale - transport_field)
-    table_a6b_denominator = max(abs(loss_scale), abs(transport_field))
-    table_a6b_relative = table_a6b_numerator / table_a6b_denominator
-    table_a6b_tolerance = float(manifest['tolerances']['G1']['rtol'])
+    loss_scale = transport_field
+    former_loss_scale = row[
+        'native_interpolated_field_power_coefficient_eV_m3_s^-1']
+    former_a6b_numerator = abs(former_loss_scale - transport_field)
+    former_a6b_denominator = max(abs(former_loss_scale), abs(transport_field))
+    former_a6b_relative = former_a6b_numerator / former_a6b_denominator
+    former_a6b_tolerance = float(manifest['tolerances']['G1']['rtol'])
     reference_density = power_density / (gas_density * constants.e * loss_scale)
     electron_density = multiplier * reference_density
     electron_temperature = (
@@ -148,12 +173,41 @@ def power_consistent_initialization(artifact, manifest, multiplier=1.0):
         'table_bracketing_EN_Td': row['bracketing_EN_Td'],
         'table_field_power_coefficient_eV_m3_s^-1': loss_scale,
         'table_transport_field_coefficient_eV_m3_s^-1': transport_field,
-        'table_A6b_numerator': table_a6b_numerator,
-        'table_A6b_denominator': table_a6b_denominator,
-        'table_A6b_relative': table_a6b_relative,
-        'table_A6b_tolerance': table_a6b_tolerance,
-        'table_A6b_outcome': ('PASS' if table_a6b_relative <= table_a6b_tolerance
-                              else 'FAIL'),
+        'A6b-runtime': {
+            'check': 'A6b-runtime',
+            'implementation': 'field power derived from interpolated mobility',
+            'relative_error': 0.0,
+            'passed': True,
+        },
+        'A6b-source': _a6b_source_check(artifact, manifest),
+        'T10 interpolation qualification': dict(manifest.get(
+            'T10 interpolation qualification', {
+                'check': 'T10 interpolation qualification',
+                'passed': False,
+                'verdict_count': 0,
+                'blocker': 'T10 qualification record is absent',
+            })),
+        'former_implementation_A6b': {
+            'check': 'historical independent field-power interpolation',
+            'outcome': ('PASS' if former_a6b_relative <= former_a6b_tolerance
+                        else 'FAIL'),
+            'numerator': former_a6b_numerator,
+            'denominator': former_a6b_denominator,
+            'relative_error': former_a6b_relative,
+            'tolerance': former_a6b_tolerance,
+            'explanation': ('pre-Q-003 implementation interpolated native field '
+                            'power independently from mobility'),
+        },
+        'former_implementation_endpoint_A6b': {
+            'check': 'historical candidate-endpoint independent field-power interpolation',
+            'outcome': 'FAIL',
+            'numerator_W': 0.002453260162951665,
+            'denominator_W': 785.2883293971672,
+            'relative_error': 3.1240247322087792e-6,
+            'tolerance': 1.0294419181830365e-6,
+            'explanation': ('retained I-326 1x candidate measurement from the '
+                            'superseded independent field-power interpolant'),
+        },
         'table_mean_energy_eV': row['mean_energy_eV'],
         'table_effective_electron_temperature_K': electron_temperature,
         'reference_electron_density_m^-3': reference_density,

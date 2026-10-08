@@ -195,10 +195,20 @@ def validate_spec(spec):
         raise SpecError('floors fields')
     if floors['rate_absolute'] <= 0 or any(v < 0 or not np.isfinite(v) for v in floors.values()):
         raise SpecError('floors')
-    if set(spec['held_out']) != {'lhs_count', 'seed', 'cell_midpoints'} or not spec['held_out']['cell_midpoints']:
+    held_out_fields = set(spec['held_out'])
+    if (held_out_fields not in ({'lhs_count', 'seed', 'cell_midpoints'},
+                                {'lhs_count', 'seed', 'cell_midpoints', 'off_centre'})
+            or not spec['held_out']['cell_midpoints']):
         raise SpecError('held_out scheme')
     if spec['held_out']['lhs_count'] < 0:
         raise SpecError('held_out lhs_count')
+    for point in spec['held_out'].get('off_centre', []):
+        if (not isinstance(point, dict) or set(point) != set(axes)
+                or any(not isinstance(point[name], (int, float)) or
+                       not np.isfinite(point[name]) or
+                       not axes[name][0] <= point[name] <= axes[name][-1]
+                       for name in axes)):
+            raise SpecError('held_out off_centre')
     if set(spec['refinement']) != {'max_rounds'} or spec['refinement']['max_rounds'] < 0:
         raise SpecError('refinement')
 
