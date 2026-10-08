@@ -905,6 +905,11 @@ def _proxy_padding_summary(records) -> dict[str, int]:
     }
 
 
+def _padding_exclusion(reason: str) -> dict[str, str]:
+    """Describe a rate source that enabled padding deliberately preserves."""
+    return {"status": "excluded_unchanged", "reason": reason}
+
+
 def _production_padded_root(kinetics_database, reaction):
     """Re-derive one exact padded reaction through RMG's production generator."""
     from rmgpy.species import Species
@@ -3285,10 +3290,9 @@ class EventSetCompiler:
             matches_head_to_tail(forward) or matches_head_to_tail(reverse)
         )
         if padding_distance is not None and is_library_pair:
-            padding_metadata = {
-                "status": "excluded_unchanged",
-                "reason": "owner-approved PLP-SEC library rate is not re-derived",
-            }
+            padding_metadata = _padding_exclusion(
+                "owner-approved PLP-SEC library rate is not re-derived"
+            )
         elif (
             padding_distance is not None
             and proxy.artificial_boundaries
@@ -3698,10 +3702,9 @@ class EventSetCompiler:
             event_id="",
         )
         if self.proxy_padding_distance is not None:
-            exclusion = {
-                "status": "excluded_unchanged",
-                "reason": "owner-approved archived junction record is not re-derived",
-            }
+            exclusion = _padding_exclusion(
+                "owner-approved archived junction record is not re-derived"
+            )
             forward = replace(forward, proxy_padding=exclusion, event_id="")
             reverse = replace(reverse, proxy_padding=exclusion, event_id="")
         forward = replace(
@@ -3825,10 +3828,9 @@ class EventSetCompiler:
             event_id="",
         )
         if self.proxy_padding_distance is not None:
-            exclusion = {
-                "status": "excluded_unchanged",
-                "reason": "owner-approved archived junction record is not re-derived",
-            }
+            exclusion = _padding_exclusion(
+                "owner-approved archived junction record is not re-derived"
+            )
             forward = replace(forward, proxy_padding=exclusion, event_id="")
             reverse = replace(reverse, proxy_padding=exclusion, event_id="")
         forward = replace(
