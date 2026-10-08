@@ -23,6 +23,7 @@ from rmgpy.solver.eedf_provider import (
     development_unqualified_table_route,
 )
 from rmgpy.solver.electronegative import manifest_values
+from rmgpy.tools.eedf.integrity import resolved_properties
 from rmgpy.tools.eedf.loki import LoKIDriver, enrich_row
 from rmgpy.tools.eedf.schema import file_hash, load_spec
 from rmgpy.tools.eedf.validation import compare_row
@@ -131,8 +132,23 @@ def a_posteriori_resolve(reactor, artifact, run_directory):
         coordinates = {
             name: resolved_coordinates[name] for name in coordinate_names}
         driver = LoKIDriver(spec)
-        direct = driver.run(
-            coordinates, [float(reactor.eedf_row.EN_Td)], 'endpoint')[0]
+        _, state_properties, gas_fractions, state_populations = (
+            resolved_properties(spec, coordinates))
+        state_statistical_weights = {}
+        for declaration in state_properties.get('statisticalWeight', []):
+            name, value = declaration.split(' = ', 1)
+            state_statistical_weights[name] = float(value)
+        terminal_state = {
+            'Tg_K': float(reactor.T.value_si),
+            'P_Pa': float(reactor.P.value_si),
+            'gas_fractions': gas_fractions,
+            'state_populations': state_populations,
+            'state_statistical_weights': state_statistical_weights,
+        }
+        bundle = driver.prepare(
+            coordinates, [float(reactor.eedf_row.EN_Td)], 'endpoint',
+            terminal_state=terminal_state)
+        direct = driver.run_prepared(bundle)[0]
         enrich_row(direct, channel_map, spec)
         direct['power_absolute'] = (
             abs(direct['power_groups']['field']) *
@@ -142,6 +158,11 @@ def a_posteriori_resolve(reactor, artifact, run_directory):
         result.update(
             outcome=('PASS' if all(check['passed'] for check in checks) else 'FAIL'),
             checks=checks,
+            table_identity=bundle.table_identity,
+            execution_identity=bundle.execution_identity,
+            terminal_state_basis=(
+                'development-only artifact-declared ground-state projection; '
+                'never qualification authority'),
             coordinates=coordinates,
             table_prediction=predicted,
             direct_result=direct,

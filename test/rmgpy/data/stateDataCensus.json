@@ -22753,7 +22753,7 @@
       "evidence": [
         "test/rmgpy/rmg/mainTest.py"
       ],
-      "source_sha256": "de59068f96684bead851b680116ea4844c5f59aade36f56d06e513dfc5af810c"
+      "source_sha256": "5daa13c5e58124e2f83e7df72dd2de78c1f2c1184af0a37b7c7c8f0cdf22b1e8"
     },
     "rmgpy/rmg/main.py:RMG.finish": {
       "verdict": "carried",
@@ -22930,7 +22930,7 @@
       "evidence": [
         "test/rmgpy/rmg/mainTest.py"
       ],
-      "source_sha256": "049e280dbbb9902e10c7a05f6433ec1c975d7a65daf0155c019b3651d45b8574"
+      "source_sha256": "639e3f97dfba7d8c90e6c01da92a722f4dca952c174126252bc975e004817ae5"
     },
     "rmgpy/rmg/main.py:RMG.run_model_analysis": {
       "verdict": "carried",
@@ -25269,7 +25269,7 @@
         "rmgpy/solver/plasma.pyx",
         "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
       ],
-      "source_sha256": "a482e2660de43e2d18d2aeb0583f462ec1cbc785e4e536b1a7a85bda60c9c46e"
+      "source_sha256": "3c6c650e0a5ba679e19631a964f8d08c28552829a0b20eaa7cd842a70dca9b7c"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_energy_budget": {
       "verdict": "carried",
@@ -25472,7 +25472,7 @@
         "rmgpy/solver/plasma.pyx",
         "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
       ],
-      "source_sha256": "5bfd28c2b96be93862b0dac3024d024d64b3a40dd0c9df5a54cca6ba4ad80ccf"
+      "source_sha256": "32a75a55c5e8820f9e037501e8a44cd71ae6630bbaf2dbcc294e979cc4d8705c"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._validate_electron_state": {
       "verdict": "carried",
@@ -30530,7 +30530,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "1e1209ee60fac6a57df5bbca39ec6c84c7c0629295e78120a32064986f25c68f"
+      "source_sha256": "f629f8bc70500136d334f49d102d702f275049288a42bba80b8e0062f87706fe"
     },
     "rmgpy/tools/eedf/generate.py:_screen": {
       "verdict": "carried",
@@ -30586,7 +30586,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "b00c4f5d4364b105b18129be99d37a23bd042fe428e47ae78df5ed9f60e9052b"
+      "source_sha256": "9f02e23079c28d22963ec66b0c946a35ebbbc6c62133ea636a8f5dd9a6ad0d61"
     },
     "rmgpy/tools/eedf/integrity.py:channel_fractions": {
       "verdict": "carried",
@@ -30690,15 +30690,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "fda1d811399e8bcf2ab0c68188f090e225faf17bc1218384954394df78383c5b"
-    },
-    "rmgpy/tools/eedf/loki.py:LoKIDriver.run.<lambda1>": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "d92de89b18d9e03950b20032e2865f81a2dab2012cb706a9329511e5f26b7b52"
+      "source_sha256": "1ee274050f11009bb3f7fa544a8be548dadb47d3386c3273e79fbb431e1ad256"
     },
     "rmgpy/tools/eedf/loki.py:_format": {
       "verdict": "carried",
@@ -30826,7 +30818,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/schemaTest.py"
       ],
-      "source_sha256": "84c8f18c2381e1fefe49e7916d159aab8696b17bb1431552c3169875c9563140"
+      "source_sha256": "6ff7ac40f7205e98e12d9089c555c4f73b08c2cdbbcf8e2ba335d74883d688a4"
     },
     "rmgpy/tools/eedf/schema.py:validate_spec": {
       "verdict": "carried",
@@ -30834,7 +30826,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/schemaTest.py"
       ],
-      "source_sha256": "b5c8ca309d044e91c20f4027608b44f5696b7d12c439f3e39058ec8a5d1bab1a"
+      "source_sha256": "99ff61ddeb49c19557c49c87f8481fdf6579c201312dfdf7c55b990301c61b42"
     },
     "rmgpy/tools/eedf/validation.py:channel_power_checks": {
       "verdict": "carried",
@@ -33188,7 +33180,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "0571f08d221e17d4d60a268e16b08b312389a487edc3814362c118cc1cc1c2fe"
+      "source_sha256": "08737821cbb960d280b3454e220dd8a578dc63ea845214229363235d28874560"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider._identity": {
       "verdict": "carried",
@@ -33276,7 +33268,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "b4b0f9e70ee0cb1fcf4bf2980f5fc6be6c36d867fc4ba142cf79bfc4691f0685"
+      "source_sha256": "4176fea0f44c3879a1655047d337cb1350a6eaed3cc8bd873fd78c69f4fdd13e"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.mean_energy_eV": {
       "verdict": "carried",
@@ -33362,7 +33354,7 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "064ab99a586c53a265f14e42b56d5a5c8d00bec51dd148d42721275a59a50b0e"
+      "source_sha256": "7ad8953d53fe1d883897fa78b6481eb6928d0fd331a6620ec453fe04e6eeb77c"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_composition_energy_derivative": {
       "verdict": "carried",
@@ -33432,7 +33424,7 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "f0818bdcd7bd4a4ef1e9cae400a5cfee117f91ceda129833a07c60087fd1d8db"
+      "source_sha256": "97ea7457da27d079968f1d38cf83a4220bf8e4fce5d4660544537f5cb70f83af"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_eedf_energy_balance": {
       "verdict": "carried",
@@ -33482,7 +33474,7 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "ce6fcf0e476a18e5090f22f7934ea8a7762a910790d3e6612089d920845c29a2"
+      "source_sha256": "d687ee9de1a47b54af7ec6b23aa7d4e3929df13edc32f2c49dc4f2093f7960ad"
     },
     "rmgpy/solver/eedf_provider.py:development_unqualified_table_route": {
       "verdict": "not-reachable-for-resolved",
@@ -33509,7 +33501,7 @@
         "test/rmgpy/solver/eedfProviderTest.py",
         "test/rmgpy/eedfExportRefusalTest.py"
       ],
-      "source_sha256": "a5ec9e86d328003b24bde0eff1a61972fd16c9d5d6d208fbbade76aa8e86162a"
+      "source_sha256": "8308510b2ce12086bb56c5f8a59a572a7608fb82629aa5bbaae33a1c2dbb85ad"
     },
     "rmgpy/solver/eedf_provider.py:unqualified_artifact_blockers": {
       "verdict": "not-reachable-for-resolved",
@@ -33585,7 +33577,7 @@
         "test/rmgpy/solver/eedfProviderTest.py",
         "test/rmgpy/solver/plasmaEEDFCoreTest.py"
       ],
-      "source_sha256": "4a7782a946531787cff4a6e8a9b570c513952ac819e22d99ce0286b3e7ac0d73"
+      "source_sha256": "5f009981afc5f912c0da5fe7e3226ac39851c078818f7c8182938b57e885d0ae"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._capture_native_callback_failure": {
       "verdict": "carried",
@@ -33913,6 +33905,797 @@
         "test/rmgpy/data/kinetics/depositoryOrderTest.py"
       ],
       "source_sha256": "689550ad9ba37e3e951cdfa26d680f2ca60db8e804eec900c89fa30b8ac6df27"
+    },
+    "rmgpy/solver/eedf_provider.py:_qualification_attempt_locked": {
+      "verdict": "excluded",
+      "reason": "Defines attempt locking and signal-finalization control flow only; it neither acquires nor substitutes scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "499844d33a143332f4e1f336cba1b6de1df8dab5b6071b3fb64eaa3d142285dd"
+    },
+    "rmgpy/solver/eedf_provider.py:_qualification_attempt_locked.locked": {
+      "verdict": "excluded",
+      "reason": "Serializes an attempt and defers owned process signals through failure finalization; it neither acquires nor substitutes scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "64d3c4b42b0b68c308b6db3a5a120973a6133e8fea1aa316f14dcb0b01e86b73"
+    },
+    "rmgpy/solver/eedf_provider.py:_qualification_attempt_locked.locked.attempt": {
+      "verdict": "excluded",
+      "reason": "Invokes the wrapped terminal qualification operation only; it neither acquires nor substitutes scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "0d0c98523e845689c8de012e33e05a9c16bbe291aea4e3bd2a854dea6209b146"
+    },
+    "rmgpy/solver/eedf_provider.py:_qualification_attempt_locked.locked.finalize": {
+      "verdict": "excluded",
+      "reason": "Converts an attempt failure into lifecycle refusal evidence; it neither acquires nor substitutes scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "38fdbbf2502ada59c5f9395c1743f11253e1c140c55834df3a590b3150bc4546"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:run_guarded_attempt": {
+      "verdict": "excluded",
+      "reason": "Defers and restores owned operating-system signals around lifecycle locking and finalization; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "f68d51653198047784fef597fe29178bc3ae8af5fee63ee7284b6e7fb29bf561"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:run_guarded_attempt.defer_signal": {
+      "verdict": "excluded",
+      "reason": "Records a process signal number for later replay; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "1c2c9ece25de6b6bc7c3747e36a7ae5e6ead6c853634ce0fc5ce4f3df053e719"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:run_guarded_attempt.finalize_attempt": {
+      "verdict": "excluded",
+      "reason": "Transfers a lifecycle failure into the caller's finalizer; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "68e950ad3c6b963a2ab7dc391b324a2af21f10714a82f1447c7ff4c15c9a700a"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:run_guarded_attempt.signal_error": {
+      "verdict": "excluded",
+      "reason": "Names an owned process signal as lifecycle refusal evidence; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "ab4f8764c96855bca74d5f092edc146bd28f2496f87e131456f9fe91574ea0e0"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:_cpython_handler_by_image": {
+      "verdict": "excluded",
+      "reason": "Identifies CPython signal-handler ownership from process metadata only; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "08d38547eaf7cba7bfda806a0cf0d5286b1a63401e060815dbe26265986f5fb7"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:_cpython_signal_handler": {
+      "verdict": "excluded",
+      "reason": "Locates CPython's signal trampoline in process metadata only; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "439d4067a61dfffd2a8dedc29e44c97da47d0cbbcc30d7b89fb37b84f8decf20"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:_effective_disposition": {
+      "verdict": "excluded",
+      "reason": "Classifies raw operating-system signal ownership only; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e84e89a690db8bd95dddb8def2374cca4068947f761fb1cc2985bbb1105326d9"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:_elf_function_offset": {
+      "verdict": "excluded",
+      "reason": "Reads executable symbol metadata solely to identify signal-handler ownership; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "87c51080c11e0ecc84edbb6f05eea9da1f91db21ea4e67f273abb0ca89b1455e"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:_image_base": {
+      "verdict": "excluded",
+      "reason": "Reads process image metadata solely to identify signal-handler ownership; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "5df8cef2f46f17c993c258ba4d51d210a40779ba5a5e7003a8e9fb4c9bfebdf4"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:_mapped_file": {
+      "verdict": "excluded",
+      "reason": "Reads process mapping metadata solely to identify signal-handler ownership; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "bda5c09f9616083c620aafaf6f481edb97e891e6746283bc3c47341ff333ff8a"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:_raw_sigaction": {
+      "verdict": "excluded",
+      "reason": "Reads an operating-system signal disposition only; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "1b82fa24874884258b317fc228b64b875abe27283e76aa5d0a20517f7a578ce3"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:_restore_raw_sigaction": {
+      "verdict": "excluded",
+      "reason": "Restores an operating-system signal disposition only; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "9c38bec14aeaa5fdf98386484911bf940e976602cbb636f95ee82cb0551a7f2d"
+    },
+    "rmgpy/tools/eedf/signal_guard.py:_rt_sigaction": {
+      "verdict": "excluded",
+      "reason": "Invokes the operating-system signal-disposition interface only; it does not handle scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e3d479f0aad9b1228a193c4f5e73e38085ac346e24e7b95fc06dac24adb898a9"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._all_quantity_drifts": {
+      "verdict": "carried",
+      "reason": "Compares only explicit immutable direct-solver and interpolated EEDF row quantities; no scientific data are acquired or substituted.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e11a9f434c1866c26a90bf18bfc58f42cf877f9172788d825ce91979be9ce8c4"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._check_all_recorded_quantities": {
+      "verdict": "carried",
+      "reason": "Applies the artifact-fingerprinted A-rule assignment to every supplementary direct/interpolated row quantity recorded in qualification evidence; no scientific data are acquired or substituted.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "cdcc3cf69eff5d1cb37a695a621b8e71e907d101b97da5b072dead2b52c03402"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._compare_qualification_rows": {
+      "verdict": "carried",
+      "reason": "Applies artifact-supplied A1-A6 tolerances to explicit direct and interpolated EEDF rows without acquiring substitute data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e8b872f2be968b3e65d6fe5dab4fc60f637c9a002ccb73ffe8d39d87507e1fe0"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._json_value": {
+      "verdict": "carried",
+      "reason": "Converts already supplied qualification values into JSON primitives and performs no data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "a3905c2624dff69fa5c3c494a12e95690ed2582e2309ebfb91ca55b256008a61"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._capture_qualification_state": {
+      "verdict": "carried",
+      "reason": "Carries an explicitly resolved terminal output path into the guarded qualification attempt; it performs no scientific-data lookup.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "84ea552b0f1e10ac4184fecdbaab7cfd6408d7d20f4ded352361cd45cc2c5fc8"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._enter_failed": {
+      "verdict": "carried",
+      "reason": "Carries explicit terminal state and refusal evidence into the sole FAILED transition while invalidating prior acceptance; it performs no scientific-data lookup.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "bff572e2c037392e2a45fa42194ba7b1e2e5ffbb4998c6b4ea515f75003a56a8"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._qualification_state": {
+      "verdict": "carried",
+      "reason": "Carries the exact accepted terminal state supplied by the reactor callback; it does not infer or reacquire molecular data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py",
+        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
+      ],
+      "source_sha256": "961116860403f63ffef22f41c2894d25cd8cbbc423bf4b7151693df28d28280e"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._quantity_drift": {
+      "verdict": "carried",
+      "reason": "Computes drift from two explicitly supplied numeric quantities and performs no scientific-data lookup.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "c9c43dabe88208cf27b318e1739ed54d4d57b61abf6f8a2e0e82f7e5e2db7259"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._run_qualification": {
+      "verdict": "carried",
+      "reason": "Runs the artifact-pinned solver with the exact supplied terminal populations and carries its full numerical row into refusal evidence.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "c7816af2a6dabdf9cc43bac3881cf2712359a1ae9f6428510d69d1348dec3ca9"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._run_qualification.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Selects a maximum from already computed qualification checks; no scientific data are acquired.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e2da7714c342e2648a3b7e0bdf3e2c6c5c769395cefbd2939abedccaeceade58"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._tolerance_check": {
+      "verdict": "carried",
+      "reason": "Applies an explicitly supplied tolerance to explicit numeric values and performs no scientific-data lookup.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e537d5aa205b7ce6563df005a4e61b1e339bfb1dad689d38758ae8d3f8d892f3"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._verify_generation_spec": {
+      "verdict": "carried",
+      "reason": "Compares the saved generation request only with the loaded artifact's explicit fingerprinted row inputs and solver pins; it refuses mismatches and acquires no substitute data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "337a8432659240f19aac30e911a3ece57d03e735911234f7549a4a272a980bb2"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._verify_generation_spec.require_equal": {
+      "verdict": "carried",
+      "reason": "Compares two explicitly supplied canonical provenance values and refuses inequality; it performs no scientific-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "3ab495728223ba856d13e3c77cd8b78c9263d7f48ccc0f4f91d2972c389ea772"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider.bind_qualification_state": {
+      "verdict": "carried",
+      "reason": "Binds the reactor-owned exact accepted-state callback and performs no independent data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
+      ],
+      "source_sha256": "3535813ed2028bfd498e45bda507cda9fb007c0d466c8a8609a6fa3d2c832808"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider.development_diagnostic": {
+      "verdict": "carried",
+      "reason": "Carries exact explicit terminal/table values into a non-qualifying diagnostic and cannot lift development status.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "67c5141cefa71d98b57cc4a7d35a761f7908f9f59644c10d41831ac90ac4befc"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider.qualify": {
+      "verdict": "carried",
+      "reason": "Carries the exact terminal state through the artifact-pinned direct solve and refuses any mismatch; it acquires no substitute model data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "4b054ecda936672c38154ee5d932b36166d61c4defff70fdf03e4bb3ce97b0d5"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_qualification_state": {
+      "verdict": "carried",
+      "reason": "Carries accepted reactor populations through the artifact-owned exact engine-to-LoKI state map; missing or ambiguous mappings refuse rather than acquiring fallback data.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
+      ],
+      "source_sha256": "b978a19de1d5fba371de033e4786affc5ddae8dcb5c20c1af630bd6ffec93d8f"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.development_eedf_diagnostic": {
+      "verdict": "carried",
+      "reason": "Carries the accepted reactor state and an optional explicit legacy state map into a non-qualifying diagnostic; it does not infer or reacquire model data.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
+      ],
+      "source_sha256": "ea3241eef594e00c729d84d6b2ba27db2297103f475f91c4d04c9f03edbcd056"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._check_all_recorded_quantities.check": {
+      "verdict": "carried",
+      "reason": "Applies the artifact-fingerprinted A-rule assignment to explicitly supplied direct and interpolated numeric quantities; it performs no scientific-data lookup.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "569f54e7596bedb3e0f9591d84a4824d0aedd7d88b6917e630786817fc5ede09"
+    },
+    "rmgpy/tools/eedf/loki.py:qualification_setup_sha256": {
+      "verdict": "carried",
+      "reason": "Hashes an explicitly supplied generation specification and its rendered solver setup after blanking only terminal qualification substitutions and canonicalizing invariant numeric declarations; it acquires no substitute scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "39d8e1241de82576f64c1945a7fe09512caa8d0486918655b4b9801ed6ffb129"
+    },
+    "rmgpy/tools/eedf/schema.py:qualification_setup_identity": {
+      "verdict": "carried",
+      "reason": "Canonicalizes an explicitly supplied generation specification while retaining acceptance policy and removing only execution paths, non-acceptance policy, and the three permitted terminal values; it performs no scientific-data lookup.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "12a7c89b4b60620a4983818c4388e346cc3ebc0f3e64996fb1cfa9728d2d1d57"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._compare_qualification_rows.materiality": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e6371c1dffb52c45f8110e0475bb09afd6fd4d3b9c7161adf80c9d3c5c3d5bb9"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._declared_values": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "df84f1bb7c5e97adb6c975d46a6c94961dba6f2827f4167e9681a727e494d0a0"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._terminal_values": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "db7e9636f2ef0bb89b637d60b1c48c97bae39db004a8e36694df2755df93c165"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._validate_qualification_row": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "50c1fab4c01830e2092730301dd51cf130052a215b43a515869541ca665cf865"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider.record_terminal_failure": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
+      ],
+      "source_sha256": "85ccb9ea780dcdb3b3cffc6842de5a5aa1533b66636f2ad654571fd5e474e186"
+    },
+    "rmgpy/tools/eedf/schema.py:_canonical_physical_value": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "cd964e039cff744acbce0d1a79cd17ab6335ef45babbd8fed1a6d399b66aa405"
+    },
+    "rmgpy/tools/eedf/schema.py:qualification_rule_for_quantity": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py",
+        "test/rmgpy/tools/eedf/schemaTest.py"
+      ],
+      "source_sha256": "2b1e33c6d2902f11c8dd85dcd361ebbe662aa07765c1de991d1b778e00821f3c"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._publish_acceptance": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "3127c4b11b1786ef3bb963721214f60ba0c5f7651952211b42eb9fbdcd5f0cbe"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._record_path": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "0e460fddf9d50893c188bb8afd5bce2a2047b042e2279012eed0462f902aed8b"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._invalidate_acceptance": {
+      "verdict": "carried",
+      "reason": "Invalidates only explicit qualification publication evidence before an attempt; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "3624f66c3b700379329c6f2fd21b77147ef3e395d7d4a838e7ccc1ece6bbcdc2"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._invalidate_record": {
+      "verdict": "carried",
+      "reason": "Invalidates only explicit qualification publication evidence by removal or in-place refusal bytes; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e0df876b0ad196dfdf9e4305b1c77e201d2b21b6ac48ec448680e396bfe86ead"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._validate_acceptance_manifest": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "81d2dc65abbb14f14bdc465dbf86906c33cfb610c582731da7be38425761caaa"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._write_development_record": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "8d372b374066b9f5fb2cd623a9e74e6440ccececedc4b583a385ee2686a0f877"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._write_failure": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "8ed13945dc9ab0b3ec765498aaf02bfd5626bb1bbe894b1e46b0fbc89b2d50d4"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._write_json": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "d74b155536c93513e428c5f1ead9dcb6c381051255170156e8e726f45f94b198"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider.qualification_record_path": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "dd116aae18bbdc9fd39bd6c6c82b1c572c7b9cae17596701d5e3adb028dacbd7"
+    },
+    "rmgpy/tools/eedf/loki.py:LoKIDriver.prepare": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "1834fe5122286e28d4b207cf882e8d1afed39d7fe10ca97bed8efb97c477cf12"
+    },
+    "rmgpy/tools/eedf/loki.py:LoKIDriver.run_prepared": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "b480ebf9391c33031437f7e446151f157524f6fbdf154863307e326b9d9c7e5e"
+    },
+    "rmgpy/tools/eedf/loki.py:LoKIDriver.run_prepared.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "d92de89b18d9e03950b20032e2865f81a2dab2012cb706a9329511e5f26b7b52"
+    },
+    "rmgpy/tools/eedf/loki.py:PreparedLoKIBundle.coordinate_values": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "a7c731b71782c130860ab0fe9540039da81d525f192eff00f0aeb9194acf7ce1"
+    },
+    "rmgpy/tools/eedf/loki.py:PreparedLoKIBundle.spec": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "cbaf9ee248495c3b929de10d5a150d5b7fe77acd6819f3e6256e857d2b27db63"
+    },
+    "rmgpy/tools/eedf/loki.py:_dependency_identity": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e3c33ec5ae07e531387a68d2bef4fd0250509e67d0ea40ae4a87e731db92a4a6"
+    },
+    "rmgpy/tools/eedf/loki.py:_require_exact_values": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e00e73858971c7ba8e9756dd552d4fd87134ea7a9e708a88cee5a958e72beca3"
+    },
+    "rmgpy/tools/eedf/loki.py:_require_normalized": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "2240ee8b91979c2c81999d6311f1a34d85598de9cc5e192a284e44e80cc6535d"
+    },
+    "rmgpy/tools/eedf/loki.py:_setup_values": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e504b589372c87ba0af160bfafdcf070e49aa09adc09cf7666793226190d790c"
+    },
+    "rmgpy/tools/eedf/loki.py:qualification_setup_sha256_from_rendered": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "2db33781215613462718848887736cb4eef62de056101bd6a9ec29a6623c482a"
+    },
+    "rmgpy/tools/eedf/loki.py:qualification_setup_sha256_from_rendered.parsed_declarations": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "cfa61d7fc5fc7c3472e9ab9e49022f6f05549f665e638817c245f78ecb94a33d"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._json_bytes": {
+      "verdict": "carried",
+      "reason": "Serializes already supplied qualification values into deterministic bytes and performs no scientific-data acquisition or substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "fdd008d78edaae16d5975fd5a6d395d98ecf2dbc3605c1858e4c46b10db749b8"
+    },
+    "rmgpy/solver/eedf_provider.py:_qualification_locked": {
+      "verdict": "carried",
+      "reason": "Serializes access to provider-owned qualification state without acquiring or substituting scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "55684048685e6c0fb93bad8858dbc497307c3fdda1adf0a5737f362017a4fdf1"
+    },
+    "rmgpy/solver/eedf_provider.py:_qualification_locked.locked": {
+      "verdict": "carried",
+      "reason": "Runs an explicit qualification call under its provider-owned lock and performs no scientific-data acquisition or substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "4b62e05186ea007d816e7225ba5840be6ceda18fbaed1b951609b9def6811006"
+    },
+    "rmgpy/tools/eedf/schema.py:terminal_working_condition_fields": {
+      "verdict": "carried",
+      "reason": "Identifies explicit working-condition placeholders backed by declared envelopes; it performs no scientific-data lookup or substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "d2c30b4acb09d47fbc2c48ea7eac6c75eeb37490ad0b9ad56c5518dcd5677da4"
+    },
+    "rmgpy/solver/eedf_provider.py:_qualification_attempt_locked.locked.complete": {
+      "verdict": "excluded",
+      "reason": "Publishes already compared qualification evidence after a clean signal release; it neither acquires nor substitutes scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "f82226605529611063c191dfeb5374c56eee18eaa3099283c558981cb3729d1f"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._begin_qualification_publication": {
+      "verdict": "excluded",
+      "reason": "Registers current-run publication ownership and revokes superseded sources; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "1791cdf453b05a141239205b678ad036c0ea8a5bb1bf856e60f45ac00e07a077"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._finalize_failure_record": {
+      "verdict": "excluded",
+      "reason": "Invalidates acceptance and publishes failure diagnostics; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "2177d84bbc5d55babfcebfe2ed2511dbe185bc15fed8db7a367c004a9576dd22"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._publication_is_current": {
+      "verdict": "excluded",
+      "reason": "Checks process-local publication ownership and failure precedence; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "fa6d1b505daf1a6697626414b21c78875d345b7806e8c82575038ccf4951e1cd"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._qualification_status": {
+      "verdict": "excluded",
+      "reason": "Reads failure and publication state for the qualification gate; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "d750958b09d61e68575ff8894e438548cb7740c71907b923f719faa1274bd4e8"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._revoke_publications": {
+      "verdict": "excluded",
+      "reason": "Revokes staged acceptance files after failure or supersession; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "24df788ef56cb721838a031b34948bc1fab4d02f7efbe5382537cef470e411cf"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._sync_qualification_responses": {
+      "verdict": "excluded",
+      "reason": "Updates active response aliases to the authoritative current-run result; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "7ca397806720391ba0e2960bbab7296d4fc38db0f29dba31d8d64ee55aa490a8"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationPublication.__init__": {
+      "verdict": "excluded",
+      "reason": "Initializes process-local publication state and response ownership; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "126780fef38d502a7de0beafa6629fec069e2b5f3f6bb1936494fe34208e431c"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationAdmission.__bool__": {
+      "verdict": "excluded",
+      "reason": "Refuses boolean admission; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "c22b4bd83a001fc6412e49f7f5ada88edcfd7c2edf4bb819e2f242d8a567b9dd"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationAdmission.__init__": {
+      "verdict": "excluded",
+      "reason": "Binds export authority to a run generation; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "9bed2d0a224eab9bb0c30b0a2144fee676c0c156e41aed2032348d5b143ef5fc"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationAdmission._check": {
+      "verdict": "excluded",
+      "reason": "Checks current generation and failure precedence; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "4c4feeb655c8730a31ae5a7d37bd98d0ca6e93d33df4f702ef4a002e77608a14"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationAdmission.commit_bytes": {
+      "verdict": "excluded",
+      "reason": "Commits caller-prepared bytes with revocable inode ownership; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "014be41028541065215d320f750d48234df07399f1af948b83dc9b9319d0e7dd"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationExport.__init__": {
+      "verdict": "excluded",
+      "reason": "Registers single-file output ownership; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "d950a20fc3dadb5ec426baa8e1bc58e2e03dc2b80857256a9d8e8ea136923b41"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationExport._remove_owned": {
+      "verdict": "excluded",
+      "reason": "Removes or invalidates only a captured export inode; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "51e83b4375caeab8cb019b6d97c4c07a7708241a9914e95eab91fb595f742f0a"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationExport.revoke": {
+      "verdict": "excluded",
+      "reason": "Retries interrupted export cleanup; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "c765a9bf6f36d7c7e62caf407579083eb6f004597c1021fb87c49f4562181744"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.terminal_admission": {
+      "verdict": "excluded",
+      "reason": "Returns a run-bound capability, not a scientific state or mutable record view.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "f3d00cf270964d44a13dfac8752b09fcc435b0f19b316abcf81a7aa64bb122d6"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationExport._settle_revocation": {
+      "verdict": "excluded",
+      "reason": "Invalidates owned bytes and settles captured names; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "741fffef34539b1959ad5d1b375d30acd3ec15d0d13141e6be63f5684f48caac"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationCapture.__init__": {
+      "verdict": "excluded",
+      "reason": "Registers a unique private capture namespace; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "171e487db3b158c331af51233456843910ae4f741d4fb79cba36ce78dda11bf9"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._stage_record": {
+      "verdict": "excluded",
+      "reason": "Stages opaque serialized qualification records; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e6d98b1005e44e99ddb4f8c720f5d481a837986570c3f591ecfc32f156fff6fd"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationExport.finish": {
+      "verdict": "excluded",
+      "reason": "Retires the private staging alias without invalidating successful output; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "94c6196d27a98f9c433b39588f48db146ff6806a28526557c6f53c8fbb13a6fd"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationExport.__del__": {
+      "verdict": "excluded",
+      "reason": "Closes retained directory descriptors; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "46c539006508321427a7e925729a8b50fed5b67c4d37c6d09c656ce871468b63"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._new_record_file": {
+      "verdict": "excluded",
+      "reason": "Registers exact record-file ownership; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "0230a3e482a5b9d93e84b53d1cc254b0927eed606aad0438f615df1aab27b6c6"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationExport.stage": {
+      "verdict": "excluded",
+      "reason": "Stages caller-prepared bytes in a private namespace; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "c7865b30881a16870b1230293867de35826d3538b2d9c398b61531b092169441"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationCapture.capture": {
+      "verdict": "excluded",
+      "reason": "Atomically captures a shared name for ownership checking; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "8ed36f8feebd6866bb660de5cfa9b3bd8ae32d42e636ddd51c2da4c399ef693a"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationExport.anchor": {
+      "verdict": "excluded",
+      "reason": "Anchors private and public directories on the same filesystem; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "35bbe14ddd486362334060e49b245dd77622985e41b109f82fb51ca80fa3efac"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationCapture.settle": {
+      "verdict": "excluded",
+      "reason": "Removes only an owned captured inode or preserves foreign data; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "a654c7da36420ae7e1d3368ce479b95a6838e7eb02340f961516b0c88ada463f"
+    },
+    "rmgpy/solver/eedf_provider.py:_QualificationCapture.__del__": {
+      "verdict": "excluded",
+      "reason": "Closes a retained directory descriptor; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "490aee7b5215b5c56ec7eb21a1ec4fbbda40df74acc570516438543a5433c485"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._settled_qualification_record": {
+      "verdict": "excluded",
+      "reason": "Retries failed record finalization after a returning handler; it supplies no scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/terminalCapabilityTest.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "17038fd78c554eb27bd026f453eb0c75ff0b5e32039139c8e948e44d914d3a5f"
     }
   }
 }

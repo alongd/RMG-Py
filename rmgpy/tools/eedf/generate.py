@@ -49,7 +49,11 @@ import numpy as np
 from rmgpy.tools.eedf.artifact import write_artifact
 from rmgpy.tools.eedf.channels import validate_map as _validate_map, validate_physical_map
 from rmgpy.tools.eedf.integrity import check_solver, physical_properties, solver_environment
-from rmgpy.tools.eedf.loki import LoKIDriver, enrich_row
+from rmgpy.tools.eedf.loki import (
+    LoKIDriver,
+    enrich_row,
+    qualification_setup_sha256,
+)
 from rmgpy.tools.eedf.schema import (
     EEDFError, SpecError, content_hash, file_hash, interpolant_identity,
     load_spec, row_inputs, validate_spec, FingerprintMismatch,
@@ -94,6 +98,7 @@ def model_inputs(spec):
     validate_physical_map(channel_map, spec, {name: values[0] for name, values in spec['axes'].items() if name != 'u'})
     inputs['reactions'] = [item['reaction'] for item in channel_map if item['reaction'] is not None]
     inputs['interpolant'] = interpolant_identity()
+    inputs['qualification_setup_sha256'] = qualification_setup_sha256(spec)
     return inputs
 
 
@@ -158,6 +163,7 @@ def _screen(spec, driver, channel_map, prefix):
 def _manifest(spec, driver, channel_map, screen_results, scans, row, command_line):
     inputs = model_inputs(spec)
     return {'schema_version': 1, 'row_inputs': inputs, 'fingerprint': content_hash(inputs),
+            'qualification_setup_sha256': inputs['qualification_setup_sha256'],
             'axes': spec['axes'], 'energy_eV': row['energy_eV'].tolist(),
             'energy_edges_eV': row['energy_edges_eV'].tolist(), 'envelopes': spec['envelopes'],
             'screen_results': screen_results, 'tolerances': spec['tolerances'], 'floors': spec['floors'],

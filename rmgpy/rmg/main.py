@@ -1402,7 +1402,10 @@ class RMG(util.Subject):
 
         if not end_early:
             logging.info("")
-            logging.info("MODEL GENERATION COMPLETED")
+            if any(getattr(system, 'eedf_mode', False) for system in self.reaction_systems):
+                logging.info("EEDF computation ended; this log does not establish terminal qualification.")
+            else:
+                logging.info("MODEL GENERATION COMPLETED")
             logging.info("")
             core_spec, core_reac, edge_spec, edge_reac = self.reaction_model.get_model_size()
             logging.info("The final model core has %s species and %s reactions" % (core_spec, core_reac))
@@ -1654,11 +1657,20 @@ class RMG(util.Subject):
             logging.error("  %s", step)
             logging.error("      %s: %s", type(exc).__name__, str(exc).strip().splitlines()[0] if str(exc).strip() else exc)
         logging.error("")
-        logging.error("Model generation itself completed and every file written before this point is")
-        logging.error("valid; the output above names what is missing.")
+        eedf_mode = any(getattr(system, 'eedf_mode', False) for system in self.reaction_systems)
+        if eedf_mode:
+            logging.error("The output above names missing files; existing files do not establish terminal qualification.")
+        else:
+            logging.error("Model generation itself completed and every file written before this point is")
+            logging.error("valid; the output above names what is missing.")
         logging.error("=" * 79)
         logging.error("")
 
+        if eedf_mode:
+            raise MechanismWriterError(
+                "EEDF output is missing from {0} export step(s): {1}. "
+                "See the traceback(s) logged above.".format(
+                    len(self.export_failures), "; ".join(step for step, _ in self.export_failures)))
         raise MechanismWriterError(
             "RMG finished model generation, but {0} export step(s) failed and their output is "
             "missing: {1}. See the traceback(s) logged above.".format(
