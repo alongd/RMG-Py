@@ -302,19 +302,14 @@ def test_witness_provenance_projects_executable_atoms_without_raw_ids():
     assert "atom_id" not in serialized and "reacting_atom_ids" not in serialized
 
 
-def test_evt_2a4417_reacting_cap_72_is_explicitly_not_paddable():
+def test_reacting_artificial_boundary_is_explicitly_not_paddable():
     molecule = Molecule(smiles="CC")
     molecule.assign_atom_ids()
     _, tail = _heavy_atoms(molecule)
-    tail.id = 72
-    event_id = (
-        "evt_2a4417ed82585599febae85dec839b4f991e98cc5b8abebd3fb6ff10fb41b286"
-    )
     reaction = SimpleNamespace(
         reactants=[molecule], products=[molecule.copy(deep=True)], degeneracy=1.0
     )
 
-    assert event_id.startswith("evt_2a4417") and tail.id == 72
     with pytest.raises(
         ReactionNotPaddable, match="artificial continuation port is a reacting atom"
     ):
