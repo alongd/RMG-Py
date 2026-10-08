@@ -367,15 +367,34 @@ def _mapped_reaction_u2_roots(
     for original, labeled_molecule in zip(
         original_reactants, side_molecules["reactant"]
     ):
+        # VF2 with save_order=False is allowed to reorder both input graphs.
+        # Match on private copies and translate the returned atom identities
+        # back to the stable graphs used for stored atom indices.
+        original_match = original.copy(deep=True)
+        labeled_match = labeled_molecule.copy(deep=True)
+        original_match_atoms = list(original_match.atoms)
+        labeled_match_atoms = list(labeled_match.atoms)
+        original_atoms = list(original.atoms)
+        labeled_atoms = list(labeled_molecule.atoms)
+        if len(original_match_atoms) != len(original_atoms) or len(
+            labeled_match_atoms
+        ) != len(labeled_atoms):
+            raise ValueError("family labeling changed a stored reactant graph")
+        original_atom_by_match = dict(zip(original_match_atoms, original_atoms))
+        labeled_atom_by_match = dict(zip(labeled_match_atoms, labeled_atoms))
         # The family labeler may replace the molecule with an isomorphic graph
         # whose vertex storage was rebuilt.  This mapping only consumes the
         # correspondence; asking VF2 to restore the old vertex order can then
         # fail with "Number of vertices has changed" for real migration records.
-        mappings = original.find_isomorphism(labeled_molecule, save_order=False)
+        mappings = original_match.find_isomorphism(
+            labeled_match, save_order=False
+        )
         if not mappings:
             raise ValueError("family labeling changed a stored reactant graph")
         for mapping in mappings:
-            for original_atom, labeled_atom in mapping.items():
+            for match_original_atom, match_labeled_atom in mapping.items():
+                original_atom = original_atom_by_match[match_original_atom]
+                labeled_atom = labeled_atom_by_match[match_labeled_atom]
                 if labeled_atom.label in recipe_labels:
                     reactant_root_candidates.setdefault(
                         labeled_atom.label, set()

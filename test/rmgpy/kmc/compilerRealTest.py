@@ -436,10 +436,25 @@ def test_real_intra_h_migration_applicability_mapping(rmg_database):
     })
     for species in reaction.reactants + reaction.products:
         species.generate_resonance_structures()
+    before = [
+        tuple(
+            (id(atom), atom.id, atom.label)
+            for atom in species.molecule[0].atoms
+        )
+        for species in reaction.reactants + reaction.products
+    ]
     roots = _mapped_reaction_u2_roots(family, reaction)
+    after = [
+        tuple(
+            (id(atom), atom.id, atom.label)
+            for atom in species.molecule[0].atoms
+        )
+        for species in reaction.reactants + reaction.products
+    ]
     # The regression is the applicability-label pass itself: before the fix
     # VF2 raises while restoring order, before any root decision is published.
     assert isinstance(roots, list)
+    assert after == before
 
 
 @pytest.fixture(scope="module")
