@@ -106,7 +106,10 @@ def test_mf03_stored_acceptance_cannot_override_failing_checks(tmp_path):
     def edit(h,m):
         m['accepted']=True
         m['held_out_verdicts']=[{'passed':True,'checks':[{'passed':False}]}]
-        h.attrs['qualification_sha256']=content_hash({k:m.get(k) for k in ('accepted','held_out_verdicts','screen_results','branch_detection')})
+        h.attrs['qualification_sha256']=content_hash({
+            k:m.get(k) for k in (
+                'accepted','held_out_verdicts','screen_results','branch_detection',
+                'A6b-source','A6b-runtime','T10 interpolation qualification')})
     mutate(path,edit)
     with pytest.raises(FingerprintMismatch, match='qualification'):
         pinned(path,model)
@@ -350,6 +353,8 @@ def test_refinement_runs_and_keeps_original_midpoint_held_out(tmp_path, monkeypa
             row = copy.deepcopy(direct)
             row['EN_Td'], row['u'], row['composition'], row['setup'] = field, float(np.log(field)), coordinates, label
             row['swarm']['mean_energy_eV'] = 1 + row['u']
+            row['power_groups']['field'] = (
+                row['swarm']['mobility_N'] * (field * 1.e-21) ** 2)
             rows.append(row)
         return rows
     monkeypatch.setattr(generation, '_solve', solve)
@@ -366,4 +371,5 @@ def test_refinement_runs_and_keeps_original_midpoint_held_out(tmp_path, monkeypa
     with h5py.File(path / 'table.h5', 'r') as h5:
         assert .5 in h5['held_out/u'][...]
         assert .5 not in h5['branches/branch_0/u'][...]
-    assert manifest['accepted']
+    assert not manifest['accepted']
+    assert not manifest['T10 interpolation qualification']['passed']

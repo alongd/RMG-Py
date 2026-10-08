@@ -54,7 +54,10 @@ from rmgpy.tools.eedf.schema import (
     EEDFError, SpecError, content_hash, file_hash, interpolant_identity,
     load_spec, row_inputs, validate_spec, FingerprintMismatch,
 )
-from rmgpy.tools.eedf.validation import compare_row, held_out_points, quantities, split_branches
+from rmgpy.tools.eedf.validation import (
+    compare_row, freeze_accuracy_criteria, held_out_points, quantities,
+    run_held_out_accuracy, split_branches,
+)
 
 
 class AxisScreenRefusal(EEDFError):
@@ -103,6 +106,46 @@ def _solve(driver, channel_map, spec, coordinate, fields, label):
         enrich_row(row, channel_map, spec)
         row['power_absolute'] = abs(row['power_groups']['field']) * spec['floors']['absolute_power_share']
     return rows
+
+
+def qualify_interpolation(table, spec, *, criteria):
+    """Run fresh pinned LoKI-B solves for an existing table's T10 points.
+
+    This is an offline accuracy check, not a runtime identity check. The caller
+    must supply frozen mobility and field-power criteria; omitting them refuses
+    before any solver is started.
+    """
+    criteria = freeze_accuracy_criteria(criteria)
+    validate_spec(spec)
+    fingerprint = content_hash(model_inputs(spec))
+    if fingerprint != table.manifest.get('fingerprint'):
+        raise FingerprintMismatch('held-out direct-solver setup fingerprint')
+    if not spec['held_out'].get('off_centre'):
+        raise SpecError(
+            'T10 qualification requires preselected held_out off_centre points')
+    if len(table.manifest['branches']) != 1:
+        raise EEDFError(
+            'T10 multi-branch qualification requires a pinned direct-solver '
+            'setup for each branch')
+    points = held_out_points(table.manifest['axes'], spec['held_out'])
+    channel_map = json.loads(Path(spec['channel_map']['path']).read_text())
+    _validate_map(channel_map)
+    driver = LoKIDriver(spec)
+    counter = itertools.count()
+
+    def direct_solver(point):
+        coordinate = {
+            name: point[name] for name in table.axis_names if name != 'u'}
+        rows = _solve(
+            driver, channel_map, spec, coordinate, [np.exp(point['u'])],
+            't10_held_' + str(next(counter)))
+        if len(rows) != 1:
+            raise EEDFError('direct held-out solve returned multiple rows')
+        return rows[0]
+
+    return run_held_out_accuracy(
+        table, direct_solver, points, criteria=criteria,
+        setup_fingerprint=fingerprint)
 
 
 def _screen(spec, driver, channel_map, prefix):
@@ -255,6 +298,13 @@ def generate(spec, command_line=None):
         manifest['held_out'] = [dict(zip(names, key)) for key in held]
         provisional = write_artifact(Path(spec['scratch_root']) / f'{prefix}_r{round_index}_table', manifest, tensors, list(held.values()))
         table = EEDFTable.load(provisional, model_inputs(spec), artifact_sha256=file_hash(provisional / 'table.h5'), require_accepted=False)
+        manifest['A6b-source'] = table.a6b_source
+        manifest['A6b-runtime'] = {
+            'check': 'A6b-runtime',
+            'criterion': 'field power derived from interpolated mobility at query state',
+            'passed_by_construction': True,
+            'accuracy_claim': False,
+        }
         failures, verdicts = [], []
         for key, direct in held.items():
             point = dict(zip(names, key))
@@ -273,7 +323,14 @@ def generate(spec, command_line=None):
         history.append({'round': round_index, 'axes': copy.deepcopy(axes), 'held_out_count': len(held),
                         'failing_points': failures})
         manifest['held_out_verdicts'] = verdicts
-        manifest['accepted'] = not failures
+        manifest['T10 interpolation qualification'] = {
+            'check': 'T10 interpolation qualification',
+            'criterion': 'separately frozen mobility and field-power accuracy criteria',
+            'verdict_count': 0,
+            'passed': False,
+            'blocker': 'T10 accuracy criteria have not been supplied',
+        }
+        manifest['accepted'] = False
         manifest['refinement_history'] = history
         if not failures or round_index == spec['refinement']['max_rounds']:
             manifest['generation_seconds'] = time.monotonic() - started
@@ -297,6 +354,11 @@ def generate(spec, command_line=None):
 def _validation_report(manifest):
     lines = ['# EEDF held-out validation', '', 'Accepted: ' + str(manifest['accepted']),
              'Generation seconds: ' + str(manifest['generation_seconds']), '',
+             'A6b-source: ' + ('PASS' if manifest['A6b-source']['passed'] else 'FAIL'),
+             'A6b-runtime: PASS by construction (not an accuracy claim)',
+             'T10 interpolation qualification: ' + (
+                 'PASS' if manifest['T10 interpolation qualification']['passed']
+                 else 'FAIL'), '',
              '| rule | checks | failures | maximum relative error |', '|---|---:|---:|---:|']
     for rule in ('H1', 'H2', 'H3', 'H4', 'F0', 'consistency', 'channel_power_sum'):
         checks = [check for result in manifest['held_out_verdicts'] for check in result['checks'] if check['rule'] == rule]

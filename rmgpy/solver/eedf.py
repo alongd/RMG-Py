@@ -66,6 +66,101 @@ class IllConditionedCoordinate(EEDFError):
     """Mean energy folds or its u derivative is unusable."""
 
 
+def field_power_from_mobility(mobility_N, EN_Td):
+    """Return the LoKI field-power coefficient from reduced mobility.
+
+    ``mobility_N`` is in ``1/(m*s*V)`` and ``EN_Td`` is in Townsend, so the
+    result is in the table's ``eV*m3/s`` convention.
+    """
+    mobility_N = np.asarray(mobility_N, dtype=float)
+    EN_Td = np.asarray(EN_Td, dtype=float)
+    result = mobility_N * (EN_Td * 1.e-21) ** 2
+    return float(result) if result.ndim == 0 else result
+
+
+def field_power_derivatives(mobility_N, EN_Td, dmobility_du,
+                            dmobility_dcomposition):
+    """Derivatives of mobility-derived field power at the query state."""
+    scale = (float(EN_Td) * 1.e-21) ** 2
+    return {
+        'u': scale * (float(dmobility_du) + 2. * float(mobility_N)),
+        'composition': {
+            name: scale * float(derivative)
+            for name, derivative in dmobility_dcomposition.items()
+        },
+    }
+
+
+def _pchip_tangent(x, values, tangent, point):
+    """Propagate one ordinate tangent through scalar PCHIP evaluation.
+
+    PCHIP is nonlinear in its ordinates, so interpolating an already-computed
+    derivative does not give the derivative of a tensor interpolation. This
+    applies the directional derivative of the Fritsch-Butland slope rules.
+    ``values`` and ``tangent`` have the interpolation dimension first.
+    """
+    x = np.asarray(x, dtype=float)
+    values = np.asarray(values, dtype=float)
+    tangent = np.asarray(tangent, dtype=float)
+    h = np.diff(x)
+    reshape = (len(h),) + (1,) * (values.ndim - 1)
+    slopes = np.diff(values, axis=0) / h.reshape(reshape)
+    tangent_slopes = np.diff(tangent, axis=0) / h.reshape(reshape)
+    derivatives = np.zeros_like(values)
+    tangent_derivatives = np.zeros_like(tangent)
+    if len(x) == 2:
+        derivatives[:] = slopes[0]
+        tangent_derivatives[:] = tangent_slopes[0]
+    else:
+        left, right = slopes[:-1], slopes[1:]
+        tangent_left, tangent_right = tangent_slopes[:-1], tangent_slopes[1:]
+        h_left = h[:-1].reshape((len(h) - 1,) + (1,) * (values.ndim - 1))
+        h_right = h[1:].reshape((len(h) - 1,) + (1,) * (values.ndim - 1))
+        weight_left = 2. * h_right + h_left
+        weight_right = h_right + 2. * h_left
+        same_sign = ((left != 0.) & (right != 0.) &
+                     (np.sign(left) == np.sign(right)))
+        with np.errstate(divide='ignore', invalid='ignore'):
+            denominator = weight_left / left + weight_right / right
+            harmonic = (weight_left + weight_right) / denominator
+            tangent_harmonic = ((weight_left + weight_right) /
+                                denominator ** 2 *
+                                (weight_left * tangent_left / left ** 2 +
+                                 weight_right * tangent_right / right ** 2))
+        derivatives[1:-1] = np.where(same_sign, harmonic, 0.)
+        tangent_derivatives[1:-1] = np.where(
+            same_sign, tangent_harmonic, 0.)
+
+        def endpoint(h0, h1, slope0, slope1, dslope0, dslope1):
+            value = ((2. * h0 + h1) * slope0 - h0 * slope1) / (h0 + h1)
+            dvalue = ((2. * h0 + h1) * dslope0 - h0 * dslope1) / (h0 + h1)
+            wrong_sign = np.sign(value) != np.sign(slope0)
+            limited = ((~wrong_sign) & (np.sign(slope0) != np.sign(slope1)) &
+                       (abs(value) > 3. * abs(slope0)))
+            return (np.where(wrong_sign, 0., np.where(limited, 3. * slope0, value)),
+                    np.where(wrong_sign, 0., np.where(limited, 3. * dslope0, dvalue)))
+
+        derivatives[0], tangent_derivatives[0] = endpoint(
+            h[0], h[1], slopes[0], slopes[1],
+            tangent_slopes[0], tangent_slopes[1])
+        derivatives[-1], tangent_derivatives[-1] = endpoint(
+            h[-1], h[-2], slopes[-1], slopes[-2],
+            tangent_slopes[-1], tangent_slopes[-2])
+
+    interval = min(max(int(np.searchsorted(x, point, side='right')) - 1, 0),
+                   len(x) - 2)
+    step = h[interval]
+    fraction = (float(point) - x[interval]) / step
+    h00 = 2. * fraction ** 3 - 3. * fraction ** 2 + 1.
+    h10 = fraction ** 3 - 2. * fraction ** 2 + fraction
+    h01 = -2. * fraction ** 3 + 3. * fraction ** 2
+    h11 = fraction ** 3 - fraction ** 2
+    return (h00 * tangent[interval] +
+            h10 * step * tangent_derivatives[interval] +
+            h01 * tangent[interval + 1] +
+            h11 * step * tangent_derivatives[interval + 1])
+
+
 @dataclass(frozen=True)
 class EEDFRow:
     """All chemistry, transport and energy quantities from one interpolation.
@@ -96,6 +191,10 @@ class EEDFRow:
     converged: bool
     iteration_count: int
     denergy_du: float
+    derivatives: dict
+    a6b_source: dict
+    a6b_runtime: dict
+    t10_interpolation: dict
     fingerprint: str
 
     def as_dict(self):
@@ -126,11 +225,15 @@ class EEDFTable:
         except FileNotFoundError as error:
             raise FingerprintMismatch('incomplete artifact: missing manifest') from error
         results = manifest.get('held_out_verdicts', [])
-        accepted = bool(results) and all(result.get('passed') is True and bool(result.get('checks'))
-            and all(check.get('passed') is True for check in result['checks']) for result in results)
-        manifest['accepted'] = accepted
+        legacy_held_out_passed = bool(results) and all(
+            result.get('passed') is True and bool(result.get('checks')) and
+            all(check.get('passed') is True for check in result['checks'])
+            for result in results)
+        t10 = manifest.get('T10 interpolation qualification', {})
+        accepted = (manifest.get('accepted') is True and
+                    legacy_held_out_passed and t10.get('passed') is True)
         if require_accepted and not accepted:
-            raise FingerprintMismatch('held-out qualification')
+            raise FingerprintMismatch('T10 held-out qualification')
         if require_accepted and any(channel.get('classification') not in ('A', 'B')
                                     for channel in manifest.get('channel_map', [])):
             raise FingerprintMismatch('channel classification is excluded from production')
@@ -165,6 +268,8 @@ class EEDFTable:
         table.axis_names = ['u'] + [name for name in manifest['axes'] if name != 'u']
         table.axes = [np.asarray(manifest['axes'][name], dtype=float) for name in table.axis_names]
         table._data, table._layout, table._symbolic = {}, {}, {}
+        table._native_field_power, table._native_mobility = {}, {}
+        table._native_EN_Td = {}
         table.branch_certification = dict(manifest['branch_certification'])
         if set(table.branch_certification) != set(manifest['branches']):
             raise FingerprintMismatch('branch certification keys')
@@ -172,7 +277,11 @@ class EEDFTable:
             validate_storage(h5)
             if h5.attrs['branch_certification_sha256'] != content_hash(table.branch_certification):
                 raise FingerprintMismatch('branch certification')
-            if h5.attrs['qualification_sha256'] != content_hash({key: manifest.get(key) for key in ('accepted', 'held_out_verdicts', 'screen_results', 'branch_detection')}):
+            if h5.attrs['qualification_sha256'] != content_hash({
+                    key: manifest.get(key) for key in (
+                        'accepted', 'held_out_verdicts', 'screen_results',
+                        'branch_detection', 'A6b-source', 'A6b-runtime',
+                        'T10 interpolation qualification')}):
                 raise FingerprintMismatch('held-out qualification content')
             if h5.attrs['channel_map_content_sha256'] != content_hash(manifest['channel_map']):
                 raise FingerprintMismatch('channel map content')
@@ -198,7 +307,58 @@ class EEDFTable:
             for branch_id in manifest['branches']:
                 table._read_branch(branch_id, stored_branches[branch_id])
             table._check_population_rows(h5)
+        table.a6b_source = table.source_identity_summary()
+        table.t10_interpolation = table.interpolation_qualification_summary()
+        if require_accepted and not table.a6b_source['passed']:
+            raise FingerprintMismatch('A6b-source native field-power identity')
         return table
+
+    def source_identity_summary(self):
+        """Check native node power against native mobility without interpolation."""
+        tolerance = 1.e-6
+        records = []
+        for branch_id in self.manifest['branches']:
+            native = self._native_field_power[branch_id]
+            EN_Td = self._native_EN_Td[branch_id]
+            derived = field_power_from_mobility(
+                self._native_mobility[branch_id], EN_Td)
+            denominator = np.maximum(np.maximum(abs(native), abs(derived)),
+                                     np.finfo(float).tiny)
+            relative = abs(native - derived) / denominator
+            worst = np.unravel_index(int(np.argmax(relative)), relative.shape)
+            records.append({
+                'branch_id': branch_id,
+                'maximum_relative_error': float(relative[worst]),
+                'worst_index': [int(index) for index in worst],
+                'tolerance': float(tolerance),
+                'passed': bool(np.all(relative <= tolerance)),
+            })
+        return {
+            'check': 'A6b-source',
+            'criterion': 'native LoKI-B power and mobility identity',
+            'tolerance': float(tolerance),
+            'maximum_relative_error': max(
+                (record['maximum_relative_error'] for record in records),
+                default=float('inf')),
+            'branches': records,
+            'passed': bool(records) and all(record['passed'] for record in records),
+        }
+
+    def interpolation_qualification_summary(self):
+        """Report T10 independently from runtime identity consistency."""
+        qualification = self.manifest.get(
+            'T10 interpolation qualification', {})
+        return {
+            'check': 'T10 interpolation qualification',
+            'criterion': qualification.get(
+                'criterion',
+                'separately frozen mobility and field-power accuracy criteria'),
+            'verdict_count': int(qualification.get('verdict_count', 0)),
+            'passed': qualification.get('passed') is True,
+            'blocker': qualification.get(
+                'blocker', None if qualification.get('passed') is True else
+                'T10 qualification record is absent'),
+        }
 
     def _check_population_rows(self, h5):
         """Validate generated training and held-out densities against row inputs."""
@@ -255,7 +415,13 @@ class EEDFTable:
         for name, value in group.items():
             if isinstance(value, h5py.Group):
                 for key, dataset in storage_items(value):
-                    append(name + '/' + key, dataset[...])
+                    values = dataset[...]
+                    if name == 'power_groups' and key == 'field':
+                        self._native_field_power[branch_id] = np.asarray(values)
+                        continue
+                    if name == 'swarm' and key == 'mobility_N':
+                        self._native_mobility[branch_id] = np.asarray(values)
+                    append(name + '/' + key, values)
                 symbolic[name] = {}
                 for key in set(value.attrs) - {'identifier_encoding'}:
                     raise FingerprintMismatch('symbolic populations need resolved output: ' + key)
@@ -263,8 +429,28 @@ class EEDFTable:
                 expected = np.broadcast_to(self.manifest[name], value.shape)
                 if not np.array_equal(value[...], expected):
                     raise FingerprintMismatch('row energy grid: ' + name)
-            elif name not in ('u', 'EN_Td', 'iteration_count'):
+            elif name == 'EN_Td':
+                values = np.asarray(value[...])
+                expected = np.broadcast_to(
+                    np.exp(self.axes[0]).reshape(
+                        (len(self.axes[0]),) + (1,) * (rank - 1)), shape)
+                if values.shape != shape or not np.array_equal(values, expected):
+                    raise FingerprintMismatch('native EN_Td state mapping')
+                self._native_EN_Td[branch_id] = values
+            elif name == 'u':
+                expected = np.broadcast_to(
+                    self.axes[0].reshape(
+                        (len(self.axes[0]),) + (1,) * (rank - 1)), shape)
+                if value.shape != shape or not np.array_equal(value[...], expected):
+                    raise FingerprintMismatch('native u state mapping')
+            elif name != 'iteration_count':
                 append(name, value[...])
+        if branch_id not in self._native_field_power:
+            raise FingerprintMismatch('missing required native field power')
+        if branch_id not in self._native_mobility:
+            raise FingerprintMismatch('missing required native mobility_N')
+        if branch_id not in self._native_EN_Td:
+            raise FingerprintMismatch('missing required native EN_Td')
         for direction in ('k_ine', 'k_sup'):
             start, stop, _ = layout[direction]
             original = np.concatenate(arrays, axis=-1)[..., start:stop]
@@ -316,18 +502,44 @@ class EEDFTable:
             branch_id = next(iter(self._data))
         if branch_id not in self._data:
             raise AmbiguousBranch('unknown branch ' + str(branch_id))
-        data = self._data[branch_id]
+        source = self._data[branch_id]
+
+        def interpolate(derivative_dimension=None):
+            data = source
+            tangent = None
+            for dimension in range(len(self.axes) - 1, 0, -1):
+                ordinate_data = np.moveaxis(data, dimension, 0)
+                interpolation = PchipInterpolator(
+                    self.axes[dimension], data, axis=dimension, extrapolate=False)
+                if derivative_dimension == dimension:
+                    tangent = interpolation.derivative()(point[dimension])
+                elif tangent is not None:
+                    tangent = _pchip_tangent(
+                        self.axes[dimension], ordinate_data,
+                        np.moveaxis(tangent, dimension, 0), point[dimension])
+                data = interpolation(point[dimension])
+            ordinate_data = data
+            interpolation = PchipInterpolator(
+                self.axes[0], data, axis=0, extrapolate=False)
+            if derivative_dimension == 0:
+                return interpolation.derivative()(u)
+            if tangent is not None:
+                return _pchip_tangent(self.axes[0], ordinate_data, tangent, u)
+            return interpolation(u)
+
+        data = source
         for dimension in range(len(self.axes) - 1, 0, -1):
-            data = PchipInterpolator(self.axes[dimension], data, axis=dimension, extrapolate=False)(point[dimension])
+            data = PchipInterpolator(self.axes[dimension], data, axis=dimension,
+                                     extrapolate=False)(point[dimension])
         layout = self._layout[branch_id]
         energy_start = layout['swarm/mean_energy_eV'][0]
         energy = data[:, energy_start]
         deltas = np.diff(energy)
         if np.any(deltas == 0) or (np.any(deltas > 0) and np.any(deltas < 0)):
             raise IllConditionedCoordinate('folded/flat mean-energy branch')
-        interpolation = PchipInterpolator(self.axes[0], data, axis=0, extrapolate=False)
-        values = interpolation(u)
-        derivative = float(interpolation.derivative()(u)[energy_start])
+        values = interpolate()
+        u_derivatives = interpolate(0)
+        derivative = float(u_derivatives[energy_start])
         conditioning = self.manifest['tolerances']['u_condition']
         mean_energy = float(values[energy_start])
         if (not np.isfinite(derivative) or mean_energy <= 0 or
@@ -346,6 +558,32 @@ class EEDFTable:
             if '/' in name:
                 parent, key = name.split('/', 1)
                 mappings[parent][key] = take(name)
+        mobility_start = layout['swarm/mobility_N'][0]
+        mobility = float(values[mobility_start])
+        dmobility_du = float(u_derivatives[mobility_start])
+        dmobility_dcomposition = {
+            name: float(interpolate(dimension)[mobility_start])
+            for dimension, name in enumerate(self.axis_names[1:], start=1)
+        }
+        EN_Td = float(np.exp(u))
+        field_power = field_power_from_mobility(mobility, EN_Td)
+        field_derivatives = field_power_derivatives(
+            mobility, EN_Td, dmobility_du, dmobility_dcomposition)
+        mappings['power_groups']['field'] = field_power
+        derivatives = {
+            'u': {
+                'swarm': {'mobility_N': dmobility_du},
+                'power_groups': {'field': field_derivatives['u']},
+            },
+            'composition': {
+                name: {
+                    'swarm': {'mobility_N': dmobility_dcomposition[name]},
+                    'power_groups': {
+                        'field': field_derivatives['composition'][name]},
+                }
+                for name in self.axis_names[1:]
+            },
+        }
         result = {name: take(name) for name in ('k_ine', 'k_sup', 'channel_power',
                   'attachment_energy_eV', 'target_fractions', 'product_fractions', 'rate_floors', 'f0')}
         for direction in ('k_ine', 'k_sup'):
@@ -373,10 +611,20 @@ class EEDFTable:
                         for index in itertools.product(*indices)], axis=0)
         for j, direction in enumerate(('k_ine', 'k_sup')):
             flags[:, j] |= result[direction] < result['rate_floors']
-        return EEDFRow(u=float(u), EN_Td=float(np.exp(u)), branch_id=branch_id,
+        runtime_check = {
+            'check': 'A6b-runtime',
+            'criterion': 'field power derived from interpolated mobility at query state',
+            'relative_error': 0.0,
+            'passed': True,
+        }
+        return EEDFRow(u=float(u), EN_Td=EN_Td, branch_id=branch_id,
                        composition={name: c[name] for name in self.axis_names[1:]},
                        **mappings, **result, below_floor=flags,
                        energy_eV=np.asarray(self.manifest['energy_eV']),
                        energy_edges_eV=np.asarray(self.manifest['energy_edges_eV']),
                        converged=bool(take('converged') == 1), iteration_count=-1,
-                       denergy_du=derivative, fingerprint=self.manifest['fingerprint'])
+                       denergy_du=derivative, derivatives=derivatives,
+                       a6b_source=dict(self.a6b_source),
+                       a6b_runtime=runtime_check,
+                       t10_interpolation=dict(self.t10_interpolation),
+                       fingerprint=self.manifest['fingerprint'])

@@ -24486,7 +24486,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "a9c33cf7733e7077d784744ef3cadb0057274cbb5004c58c0087949933093cd5"
+      "source_sha256": "6f4b189642fa560a046a5a3d9801bcccb0e7c13c9442a855530226132646a4bf"
     },
     "rmgpy/solver/eedf.py:EEDFTable._read_branch.append": {
       "verdict": "carried",
@@ -24510,7 +24510,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "37abc5304a19d295132b498345d7976c647bd5a134c142ef95474ed1bfd88ec7"
+      "source_sha256": "f22db37c01c180ed128bd82cfc0c5fb6be0e861eaf56fbb955d21439a7b4d70e"
     },
     "rmgpy/solver/eedf.py:EEDFTable.row": {
       "verdict": "carried",
@@ -24518,7 +24518,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "1c8805ddf6827ae5c756923e521c84317bd6a0034351afbcf7aeafb550a9e57b"
+      "source_sha256": "f124f4f51967c9b077a1eb7db72b04952d9c94f24da41350e52dffb7dd04f0ae"
     },
     "rmgpy/solver/eedf.py:EEDFTable.row.take": {
       "verdict": "carried",
@@ -25276,7 +25276,7 @@
         "rmgpy/solver/plasma.pyx",
         "test/rmgpy/solver/plasmaElectronegativeRework7Test.py"
       ],
-      "source_sha256": "4e14ca2ff6a1f986e13d296103be9c83d0cf4f8eb7bf2c91eec8d8da17d73123"
+      "source_sha256": "5299b05dab135cf014279cb7368ef557bd366ef3ab229290c021f0471e28c814"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_wall_diagnostics": {
       "verdict": "carried",
@@ -30013,7 +30013,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "ece51538438de4d470bd6622b81953836a68b50ed57e3e1376e16f56a7e5e865"
+      "source_sha256": "aee18d1d9f653c722fb863827f9c3fa5967a6a70918d203bdaf9f21856c87492"
     },
     "rmgpy/tools/eedf/artifact.py:write_rows": {
       "verdict": "carried",
@@ -30093,7 +30093,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "706432e73d3b05c62556c85c2d72549995c0c61e2103aaaa39d04dedcb13fa6b"
+      "source_sha256": "fc2715d35d8ecbcfcbfbe206d4be92ee09d7ad31dab32c7224e6f34c3cb2ded2"
     },
     "rmgpy/tools/eedf/generate.py:canonical_failure": {
       "verdict": "carried",
@@ -30109,7 +30109,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "a2e48fc0cc1328d59a86c87a9045ea3819dd22569c992d3608583b6e0e814e9f"
+      "source_sha256": "1afa64b9a88ff780041d75cfff365f7b0b70a319dc096b9ff92c9fd57120586e"
     },
     "rmgpy/tools/eedf/generate.py:main": {
       "verdict": "carried",
@@ -30373,7 +30373,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/schemaTest.py"
       ],
-      "source_sha256": "b5c8ca309d044e91c20f4027608b44f5696b7d12c439f3e39058ec8a5d1bab1a"
+      "source_sha256": "51fe53556284f293b7a8f465d28dfe912c81b9e9c28f82e56c3fd0e0b46b9996"
     },
     "rmgpy/tools/eedf/validation.py:channel_power_checks": {
       "verdict": "carried",
@@ -30405,7 +30405,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "648763b2e510565b6d66b78b3dd88fc4ee46c344d6ef60d85fcc2d5d581b7970"
+      "source_sha256": "ba285aea1975a78aa0481948c39b7a53e80618c2fd2a6af3e9e795781abeb7a4"
     },
     "rmgpy/tools/eedf/validation.py:quantities": {
       "verdict": "carried",
@@ -32727,7 +32727,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "0571f08d221e17d4d60a268e16b08b312389a487edc3814362c118cc1cc1c2fe"
+      "source_sha256": "28062e1d5666c9da89c3a2bba799e2f8aeedb9101ee9bfd18af02933dd94533b"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider._identity": {
       "verdict": "carried",
@@ -32875,13 +32875,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_eedf_power_gates": {
       "verdict": "carried",
-      "reason": "Uses the declared EEDF configuration and exact provider-owned row. Production still refuses any failed A6 gate; only the already-private failed-table route records a finite, measured A6b tolerance failure as FAIL and retains the candidate state for diagnostics. Missing, non-finite or physically invalid diagnostics are refused without inferring molecular data.",
+      "reason": "Checks the separate source-node identity, runtime-construction identity, and held-out interpolation records carried by the exact provider-owned table. Production refuses any failed gate; missing or invalid diagnostics are never repaired with inferred molecular data.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "47d50e0d1848cef2ff3da782b3690b14226315d3725e5cca9c2c01a5d086fd46"
+      "source_sha256": "e7fac9d74e3af91285b27fab4c6819bddeee7920dd7a08dbe15054596fe45cde"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_eedf_wall_worst_case": {
       "verdict": "carried",
@@ -32955,13 +32955,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_energy_row": {
       "verdict": "carried",
-      "reason": "Uses one provider-owned fingerprinted row for rates, energy, and transport; the added A6b numerator and denominator report the existing row/transport comparison, and any development row retains its failed-qualification warning and blockers.",
+      "reason": "Uses one provider-owned fingerprinted row for rates, energy, and transport, derives runtime field power from the row mobility and actual E/N, and records the separate runtime-construction identity without substituting scientific data.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "0c8e28fafb20788c3c80280c6f87166324daea60fec0f7f13152310b48baba59"
+      "source_sha256": "426ebb6fb43aef107fda94ab8f6ba67382719e5c18687a6abc90513e14e43df0"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._initialize_eedf_provider": {
       "verdict": "carried",
@@ -33173,6 +33173,102 @@
         "test/rmgpy/solver/plasmaEEDFCoreTest.py"
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable.interpolation_qualification_summary": {
+      "verdict": "carried",
+      "reason": "Returns the frozen held-out interpolation qualification already stored in the fingerprinted table manifest; it performs no scientific-data lookup or substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "f19f0a38e2948206f9b2c77f2190e11deba874dcaef7cb02ffe921f2cfc7b383"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable.row.interpolate": {
+      "verdict": "carried",
+      "reason": "Interpolates an explicitly named field of the fingerprinted EEDF artifact at the supplied coordinates; it cannot acquire missing molecular data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "c8c140937851c86c4aeccd62f14341212c3113e93bbb778b8a1ee4d1891b7db8"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable.source_identity_summary": {
+      "verdict": "carried",
+      "reason": "Checks the native table-node field-power identity from the artifact's stored field power, mobility, and E/N; absent or inconsistent source values are refused rather than inferred.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "8a078140333eb15a00eaf31c83381fe7569ed1a64afdb769a52dffb79414c276"
+    },
+    "rmgpy/solver/eedf.py:field_power_derivatives": {
+      "verdict": "carried",
+      "reason": "Computes analytic derivatives from the supplied reduced mobility, its supplied derivatives, and actual reduced field; no molecular data are acquired or reassigned.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "be157e9fbb2a491fa9ad1af108e2e471871d6e8d565c729fd4b7ce0d0363b52d"
+    },
+    "rmgpy/solver/eedf.py:field_power_from_mobility": {
+      "verdict": "carried",
+      "reason": "Computes field power from the explicitly supplied reduced mobility and actual reduced field; no molecular data are acquired or reassigned.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "5beb746179f897119ecdb0757f02aee124d408534b53e39837e4afb5f7fc5d38"
+    },
+    "rmgpy/tools/eedf/generate.py:qualify_interpolation": {
+      "verdict": "carried",
+      "reason": "Compares fingerprinted table interpolation against fresh direct solves at predeclared held-out coordinates using frozen criteria; it does not infer species identities or substitute molecular data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "8a4543f7e9d6c1cccf8ec37bcd69eab89e607a4b1fc6cd3141a2fbcabd4c8793"
+    },
+    "rmgpy/tools/eedf/generate.py:qualify_interpolation.direct_solver": {
+      "verdict": "carried",
+      "reason": "Runs the configured LoKI solver directly from the held-out point and explicit spec, independently of table values; failures are returned as qualification failures.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "0ef302fe766b9a88d232e774d9b180bbbee4c57617061a627856f9ddfb1e3023"
+    },
+    "rmgpy/tools/eedf/validation.py:freeze_accuracy_criteria": {
+      "verdict": "carried",
+      "reason": "Validates and freezes explicitly supplied held-out tolerances; it supplies no scientific values and refuses incomplete criteria.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "57b7b577ae9282ad6d8d67a324ac633544712f48bbc882cebb899a60583105c7"
+    },
+    "rmgpy/tools/eedf/validation.py:run_held_out_accuracy": {
+      "verdict": "carried",
+      "reason": "Compares a fingerprinted table row with a separately supplied direct-solver result at a declared held-out point under frozen criteria; absent provenance or criteria are refused.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "e2d53467e8c43ba4b80784b83beb14a946773f69eaa5b2e998f3c4fab99b7ba6"
+    },
+    "rmgpy/tools/eedf/validation.py:run_held_out_accuracy.record": {
+      "verdict": "carried",
+      "reason": "Records the numerical verdict for one explicitly named predicted/direct quantity under frozen tolerances; it performs no data acquisition or substitution.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "649d5f184f6bf6da0fcadfae5183134c99650279668711f0ce959e546edf9b51"
+    },
+    "rmgpy/solver/eedf.py:_pchip_tangent": {
+      "verdict": "carried",
+      "reason": "Propagates an explicitly supplied ordinate tangent through the same numeric PCHIP interpolation used by the fingerprinted EEDF table; it performs no data lookup or identity substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "6e59ec1533a8e286d5d0ee19af51dd0e86a86ad7d0365e700a72238029f33dbe"
+    },
+    "rmgpy/solver/eedf.py:_pchip_tangent.endpoint": {
+      "verdict": "carried",
+      "reason": "Differentiates the numeric PCHIP endpoint slope limiter for the supplied table ordinates and tangent; it performs no data lookup or identity substitution.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "4cc4d9c1b4c77f6b2d2c6319aa1033eaa6baee8d4e98312469d6edb766933ec0"
     }
   }
 }

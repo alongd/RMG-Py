@@ -150,7 +150,11 @@ def write_artifact(root, manifest, branches, held_out, *, extra_files=None):
         with h5py.File(path, 'w') as h5:
             h5.attrs['schema_version'] = manifest['schema_version']
             h5.attrs['fingerprint'] = manifest['fingerprint']
-            h5.attrs['qualification_sha256'] = content_hash({key: manifest.get(key) for key in ('accepted', 'held_out_verdicts', 'screen_results', 'branch_detection')})
+            h5.attrs['qualification_sha256'] = content_hash({
+                key: manifest.get(key) for key in (
+                    'accepted', 'held_out_verdicts', 'screen_results',
+                    'branch_detection', 'A6b-source', 'A6b-runtime',
+                    'T10 interpolation qualification')})
             h5.attrs['branch_certification_sha256'] = content_hash(manifest['branch_certification'])
             h5.attrs['channel_map_content_sha256'] = content_hash(manifest['channel_map'])
             h5.attrs['policy_sha256'] = content_hash({key: manifest[key] for key in ('tolerances', 'floors', 'envelopes')})

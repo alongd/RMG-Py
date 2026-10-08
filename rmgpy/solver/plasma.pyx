@@ -80,6 +80,7 @@ from rmgpy.quantity import Quantity
 from rmgpy.quantity cimport ScalarQuantity
 from rmgpy.kinetics.arrhenius cimport Arrhenius, TwoTemperaturePlasma
 from rmgpy.solver.base cimport ReactionSystem
+from rmgpy.solver.eedf import field_power_from_mobility
 from rmgpy.solver.eedf_provider import DevelopmentWallBudgetExceeded
 from rmgpy.thermo import NASA, ThermoData, Wilhoit
 from rmgpy.thermo.thermoengine import process_thermo_data
@@ -3516,14 +3517,15 @@ cdef class PlasmaReactor(ReactionSystem):
         if (not np.isfinite(denominator) or not np.isfinite(row.denergy_du)
                 or row.denergy_du < minimum_derivative):
             raise PlasmaStateError('EEDF d<epsilon>/du is non-positive or insufficiently conditioned')
-        joule = power_factor * float(row.power_groups.get('field', 0.0))
-        transport_field = (power_factor * mobility *
-                           (float(row.EN_Td) * 1.e-21) ** 2)
-        a6b_scale = max(abs(joule), abs(transport_field), np.finfo(float).tiny)
-        a6b_relative = abs(joule - transport_field) / a6b_scale
+        joule = power_factor * float(row.power_groups['field'])
+        transport_field = power_factor * field_power_from_mobility(
+            mobility, row.EN_Td)
+        a6b_runtime_scale = max(abs(joule), abs(transport_field), np.finfo(float).tiny)
+        a6b_runtime_relative = abs(joule - transport_field) / a6b_runtime_scale
         generation_tolerance = self.eedf_provider.runtime_metadata['tolerances']['G1']
-        a6b_tolerance = (generation_tolerance['rtol'] +
-                         power_factor * generation_tolerance['atol'] / a6b_scale)
+        a6b_runtime_tolerance = (generation_tolerance['rtol'] +
+                                 power_factor * generation_tolerance['atol'] /
+                                 a6b_runtime_scale)
         by_reaction = np.array(heavy_by_reaction, copy=True)
         inelastic_by_reaction = np.zeros(self.num_core_reactions)
         superelastic_by_reaction = np.zeros(self.num_core_reactions)
@@ -3555,11 +3557,21 @@ cdef class PlasmaReactor(ReactionSystem):
             'mean_energy_eV': mean, 'epsilon_k_eV': epsilon_k,
             'joule_power': joule,
             'power_mismatch_fraction': ((p_abs - joule) / p_abs if p_abs else 0.0),
-            'A6b_relative': a6b_relative,
-            'A6b_numerator': abs(joule - transport_field),
-            'A6b_denominator': a6b_scale,
-            'A6b_tolerance': a6b_tolerance,
-            'A6b_passed': a6b_relative <= a6b_tolerance,
+            'A6b-source': {
+                key: row.a6b_source[key] for key in (
+                    'check', 'criterion', 'tolerance',
+                    'maximum_relative_error', 'passed')
+            },
+            'A6b-runtime': {
+                'check': 'A6b-runtime',
+                'criterion': row.a6b_runtime['criterion'],
+                'numerator': abs(joule - transport_field),
+                'denominator': a6b_runtime_scale,
+                'relative_error': a6b_runtime_relative,
+                'tolerance': a6b_runtime_tolerance,
+                'passed': a6b_runtime_relative <= a6b_runtime_tolerance,
+            },
+            'T10 interpolation qualification': dict(row.t10_interpolation),
             'wall_sheath_basis': 'Maxwellian form at epsilon_k',
         }
         self.eedf_provider.annotate_development_diagnostic(
@@ -4470,11 +4482,10 @@ cdef class PlasmaReactor(ReactionSystem):
                 },
                 'A6a_relative': float(b['A6a_relative']),
                 'A6a_passed': bool(b['A6a_passed']),
-                'A6b_numerator': float(b['A6b_numerator']),
-                'A6b_denominator': float(b['A6b_denominator']),
-                'A6b_relative': float(b['A6b_relative']),
-                'A6b_tolerance': float(b['A6b_tolerance']),
-                'A6b_passed': bool(b['A6b_passed']),
+                'A6b-source': dict(b['A6b-source']),
+                'A6b-runtime': dict(b['A6b-runtime']),
+                'T10 interpolation qualification': dict(
+                    b['T10 interpolation qualification']),
             }
             self.eedf_provider.annotate_development_diagnostic(
                 development_record)
@@ -4495,7 +4506,8 @@ cdef class PlasmaReactor(ReactionSystem):
                 'electron_power_partition_W.Q_wall_ion': (
                     development_record['electron_power_partition_W']['Q_wall_ion']),
                 'A6a_relative': development_record['A6a_relative'],
-                'A6b_relative': development_record['A6b_relative'],
+                'A6b-runtime.relative_error': (
+                    development_record['A6b-runtime']['relative_error']),
             }
             for name, value in transient_values.items():
                 extrema = self.development_transient_extrema.get(name)
@@ -4636,57 +4648,28 @@ cdef class PlasmaReactor(ReactionSystem):
                          b['nu_ionisation'] / b['nu_loss'], self._identity())
 
     def _check_eedf_power_gates(self, steady=False):
-        """Enforce frozen A6a/A6b thresholds at an accepted terminal state."""
+        """Enforce closure and the separately labelled runtime invariant."""
         if not self.eedf_mode:
             return
         a6a_key = 'A6a_steady_relative' if steady else 'A6a_relative'
-        for gate, description, tolerance in (
-                ('A6a', 'global electron-energy closure', 0.01),
-                ('A6b', 'LoKI-B/table field-power consistency',
-                 self.energy_budget.get('A6b_tolerance'))):
-            relative = self.energy_budget.get(
-                a6a_key if gate == 'A6a' else gate + '_relative')
-            if (relative is None or tolerance is None or not np.isfinite(relative)
-                    or not np.isfinite(tolerance) or relative < 0.
-                    or tolerance <= 0. or relative > tolerance):
-                numerator = self.energy_budget.get('A6b_numerator')
-                denominator = self.energy_budget.get('A6b_denominator')
-                measured_a6b_failure = (
-                    gate == 'A6b' and relative is not None and
-                    tolerance is not None and numerator is not None and
-                    denominator is not None and np.isfinite(relative) and
-                    np.isfinite(tolerance) and np.isfinite(numerator) and
-                    np.isfinite(denominator) and relative >= 0. and
-                    tolerance > 0. and numerator >= 0. and denominator > 0. and
-                    relative > tolerance)
-                if (measured_a6b_failure and
-                        self._development_run_active()):
-                    self.development_a6b_failure = {
-                        'check': 'A6b LoKI-B/table field-power consistency',
-                        'outcome': 'FAIL',
-                        'value': relative,
-                        'tolerance': tolerance,
-                        'numerator': numerator,
-                        'denominator': denominator,
-                        'artifact_sha256': self.electron_kinetics['table'][1],
-                        'terminal_state': ('candidate numerical steady state'
-                                           if steady else 'candidate terminal state'),
-                    }
-                    self.eedf_provider.annotate_development_diagnostic(
-                        self.development_a6b_failure)
-                    logging.error(
-                        '%s: A6b remains FAIL (numerator=%r, denominator=%r, '
-                        'relative=%r, tolerance=%r); retaining candidate state '
-                        'for development diagnostics only',
-                        self.development_a6b_failure['scientific_status'],
-                        self.development_a6b_failure['numerator'],
-                        self.development_a6b_failure['denominator'],
-                        relative, tolerance)
-                    continue
-                raise PlasmaStateError(
-                    '{0} {1} gate failed at accepted terminal state: relative error '
-                    '{2!r} exceeds tolerance {3!r}'.format(
-                        gate, description, relative, tolerance))
+        relative = self.energy_budget.get(a6a_key)
+        if (relative is None or not np.isfinite(relative) or relative < 0.
+                or relative > 0.01):
+            raise PlasmaStateError(
+                'A6a global electron-energy closure gate failed at accepted '
+                'terminal state: relative error {0!r} exceeds tolerance 0.01'.format(
+                    relative))
+        runtime = self.energy_budget.get('A6b-runtime')
+        if (not isinstance(runtime, dict) or runtime.get('passed') is not True
+                or runtime.get('relative_error') is None
+                or runtime.get('tolerance') is None
+                or not np.isfinite(runtime['relative_error'])
+                or not np.isfinite(runtime['tolerance'])
+                or runtime['relative_error'] < 0. or runtime['tolerance'] <= 0.
+                or runtime['relative_error'] > runtime['tolerance']):
+            raise PlasmaStateError(
+                'A6b-runtime mobility-derived field-power invariant failed at '
+                'accepted terminal state: {0!r}'.format(runtime))
 
     def validate_steady_state(self):
         """Apply EEDF power gates before generic steady-state termination."""

@@ -161,7 +161,6 @@ def test_full_real_artifact_is_unaccepted_and_fingerprinted(real_pure_argon_arti
         'artifact manifest is not accepted',
         '8 of 188 held-out verdicts failed',
         'branch_0: uncertified: unseeded scans',
-        "artifact has no reaction-owned channels; channel classifications are {'B': 39}",
     ]
 
 
@@ -194,19 +193,24 @@ def test_run_deck_is_reproducible_and_names_current_blockers(
     assert initialization['initial_reduced_field_Td'] == 17.0
     assert initialization['gas_density_m^-3'] == pytest.approx(1.6194013103625856e23)
     assert initialization['reference_electron_density_m^-3'] == pytest.approx(
-        2.7715502016522555e13, rel=2.e-6)
+        2.7715708425639016e13, rel=2.e-6)
     assert initialization['electron_mole_fraction'] == pytest.approx(
-        1.711465992158105e-10, rel=2.e-6)
+        1.711478738172658e-10, rel=2.e-6)
     assert initialization['reactor_reference_volume_m3'] == pytest.approx(
-        3.7187455691997435, rel=2.e-6)
+        3.7187455691992075, rel=2.e-6)
     assert initialization['reactor_absorbed_power_W'] == pytest.approx(
         789.1423192522975, rel=2.e-6)
     assert initialization['table_field_power_coefficient_eV_m3_s^-1'] == pytest.approx(
-        2.9510139153579735e-16, rel=2.e-6)
-    assert initialization['table_A6b_relative'] == pytest.approx(
+        2.950991938067493e-16, rel=2.e-6)
+    assert initialization['A6b-runtime']['relative_error'] == 0.
+    assert initialization['A6b-runtime']['passed'] is True
+    assert initialization['former_implementation_A6b']['relative_error'] == pytest.approx(
         7.447369314637744e-6)
-    assert initialization['table_A6b_tolerance'] == 1.e-6
-    assert initialization['table_A6b_outcome'] == 'FAIL'
+    assert initialization['former_implementation_A6b']['tolerance'] == 1.e-6
+    assert initialization['former_implementation_A6b']['outcome'] == 'FAIL'
+    assert initialization['former_implementation_endpoint_A6b']['relative_error'] == pytest.approx(
+        3.1240247322087792e-6)
+    assert initialization['former_implementation_endpoint_A6b']['outcome'] == 'FAIL'
     assert initialization['over_ionised_field_power_W'] == pytest.approx(
         4.610238207728393e6, rel=2.e-4)
     assert mole_fractions == pytest.approx({
@@ -245,7 +249,7 @@ def test_sweep_comparison_declares_every_required_metric_before_execution():
             'Q_wall_electron': 1., 'Q_wall_ion': 3.,
         },
         'A6a_relative': 1.e-12,
-        'A6b_relative': 3.12e-6,
+        'A6b-runtime': {'relative_error': 0.0},
         'convergence_time_s': 0.0165,
         'transient_extrema': {
             'electron_density_m^-3': {'min': 2.8e13, 'max': 2.4e14},
@@ -266,7 +270,7 @@ def test_sweep_comparison_declares_every_required_metric_before_execution():
         'electron_power_partition_W.Q_elastic',
         'electron_power_partition_W.Q_wall_electron',
         'electron_power_partition_W.Q_wall_ion',
-        'A6a_relative', 'A6b_relative',
+        'A6a_relative', 'A6b-runtime.relative_error',
     }
     assert comparison['convergence_time_comparison']['agreement_required'] is False
     assert comparison['convergence_time_comparison']['arms']['1x']['value_s'] == 0.0165
@@ -300,7 +304,7 @@ def test_nonconverged_results_cannot_be_candidates_or_enter_summary():
             'Q_wall_electron': 1., 'Q_wall_ion': 3.,
         },
         'A6a_relative': 1.e-12,
-        'A6b_relative': 3.12e-6,
+        'A6b-runtime': {'relative_error': 0.0},
         'convergence_time_s': 0.0165,
         'transient_extrema': {},
     }

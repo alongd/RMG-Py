@@ -83,7 +83,9 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
                 'product_fractions': np.zeros(2),
                 'rate_floors': np.full(2, 1e-40),
                 'below_floor': np.zeros((2, 2), dtype=bool),
-                'power_groups': {'field': scale},
+                'power_groups': {
+                    'field': (1.e24 * scale) *
+                             (np.exp(axes['u'][u_index]) * 1.e-21) ** 2},
                 'f0': np.array([1.]),
                 'energy_eV': np.array([.5]),
                 'energy_edges_eV': np.array([0., 1.]),
@@ -114,6 +116,12 @@ def fixture_provider_table(tmp_path, composition=False, branches=1, decreasing=F
     }
     manifest = {
         'accepted': accepted,
+        'T10 interpolation qualification': {
+            'check': 'T10 interpolation qualification',
+            'criterion': 'fixture frozen accuracy criteria',
+            'verdict_count': 1,
+            'passed': accepted,
+        },
         'held_out_verdicts': [{'point': {'u': .5}, 'branch_id': 'branch_0',
                                'passed': accepted, 'checks': [{'passed': accepted}]}],
         'branch_certification': {

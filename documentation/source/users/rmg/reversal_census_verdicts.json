@@ -5602,5 +5602,12 @@
     "tests": [
       "test/rmgpy/data/excitedThermoSourceTest.py::test_attached_energy_and_limits_must_match_whole_library_source"
     ]
+  },
+  "rmgpy/tools/eedf/validation.py::run_held_out_accuracy::as_dict#1": {
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Serializes an interpolated EEDF table row for comparison with a fresh held-out direct solve; it does not inspect or alter Reaction kinetics or direction.",
+    "tests": [
+      "test/rmgpy/data/kinetics/superelasticCensusTest.py::test_nonreaction_serialized_data_has_no_direction"
+    ]
   }
 }

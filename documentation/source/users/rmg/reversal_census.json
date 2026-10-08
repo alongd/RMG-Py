@@ -6526,7 +6526,7 @@
   {
     "site": "rmgpy/solver/eedf.py::EEDFRow.as_dict::reaction-io",
     "kind": "reader-exporter",
-    "line": 101,
+    "line": 200,
     "source": "def as_dict(self):",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6581,7 +6581,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._compute_reference_reaction_data::reaction-io",
     "kind": "reader-exporter",
-    "line": 7140,
+    "line": 7123,
     "source": "def _compute_reference_reaction_data(self, np.ndarray y):",
     "verdict": "guarded",
     "reason": "The diagnostic serializes already-initialized directed kf/kb arrays; reactor initialization has checked original declarations, and irreversible explicit channels never synthesize a reverse record.",
@@ -6592,7 +6592,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._evaluate_electronegative_wall_regime::reaction-io",
     "kind": "reader-exporter",
-    "line": 7270,
+    "line": 7253,
     "source": "def _evaluate_electronegative_wall_regime(self, np.ndarray y, double t, result=None):",
     "verdict": "guarded",
     "reason": "The accepted-state diagnostic formats original directed reactions and already-initialized kf/kb arrays; initialization enforces resolved reversibility, and the formatter preserves the declared arrow.",
@@ -6603,7 +6603,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._requires_en_steps::reaction-io",
     "kind": "reader-exporter",
-    "line": 7868,
+    "line": 7851,
     "source": "def _requires_en_steps(self):",
     "verdict": "guarded",
     "reason": "The wall-step predicate only inspects admitted reaction direction flags and participants; admission has enforced resolved reversibility, and opposite irreversible channels remain independent entries.",
@@ -6614,7 +6614,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._validate_reactions::reaction-io",
     "kind": "reader-exporter",
-    "line": 5468,
+    "line": 5451,
     "source": "def _validate_reactions(self, core_species, edge_species, core_reactions, edge_reactions):",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6625,7 +6625,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::check_reverse_from_equilibrium_supported#1",
     "kind": "reverse",
-    "line": 5704,
+    "line": 5687,
     "source": "rxn.check_reverse_from_equilibrium_supported()",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6636,7 +6636,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 5705,
+    "line": 5688,
     "source": "self.Keq[j] = rxn.get_equilibrium_constant(self.T.value_si)",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6647,7 +6647,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::reaction-io",
     "kind": "reader-exporter",
-    "line": 5639,
+    "line": 5622,
     "source": "def generate_rate_coefficients(self, core_reactions, edge_reactions):",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6658,7 +6658,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::_charged_species_library_thermo_match::is_isomorphic#1",
     "kind": "direction",
-    "line": 582,
+    "line": 583,
     "source": "if not any(molecule.is_isomorphic(entry_item)",
     "verdict": "not-reachable-for-resolved",
     "reason": "Species thermo provenance matching has no reaction direction/rate operation.",
@@ -7253,10 +7253,21 @@
   {
     "site": "rmgpy/tools/eedf/generate.py::generate::as_dict#1",
     "kind": "reader-exporter",
-    "line": 263,
+    "line": 313,
     "source": "predicted = table.row(point['u'], {name: point[name] for name in names[1:]}, branch_id).as_dict()",
     "verdict": "not-reachable-for-resolved",
     "reason": "Serializes quantities, thermodynamic/statistical-mechanics species data or EEDF table rows, not executable Reaction kinetics/directions.",
+    "tests": [
+      "test/rmgpy/data/kinetics/superelasticCensusTest.py::test_nonreaction_serialized_data_has_no_direction"
+    ]
+  },
+  {
+    "site": "rmgpy/tools/eedf/validation.py::run_held_out_accuracy::as_dict#1",
+    "kind": "reader-exporter",
+    "line": 176,
+    "source": "predicted = table.row(point['u'], composition).as_dict()",
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Serializes an interpolated EEDF table row for comparison with a fresh held-out direct solve; it does not inspect or alter Reaction kinetics or direction.",
     "tests": [
       "test/rmgpy/data/kinetics/superelasticCensusTest.py::test_nonreaction_serialized_data_has_no_direction"
     ]

@@ -399,8 +399,10 @@ def main():
         'energy_budget': budget,
         'A6a_relative': float(budget['A6a_relative']),
         'A6a_passed': bool(budget['A6a_passed']),
-        'A6b_relative': float(budget['A6b_relative']),
-        'A6b_passed': bool(budget['A6b_passed']),
+        'A6b-source': dict(budget['A6b-source']),
+        'A6b-runtime': dict(budget['A6b-runtime']),
+        'T10 interpolation qualification': dict(
+            budget['T10 interpolation qualification']),
     }
     if args.development_unqualified:
         trajectory = list(reactor.development_trajectory)
@@ -414,26 +416,22 @@ def main():
             'convergence_time_s': float(reactor.t),
             'transient_extrema': dict(reactor.development_transient_extrema),
         })
-        a6b = (dict(reactor.development_a6b_failure)
-               if reactor.development_a6b_failure is not None else {
-                   'check': 'A6b LoKI-B/table field-power consistency',
-                   'outcome': 'PASS',
-                   'value': float(budget['A6b_relative']),
-                   'tolerance': float(budget['A6b_tolerance']),
-                   'numerator': float(budget['A6b_numerator']),
-                   'denominator': float(budget['A6b_denominator']),
-                   'artifact_sha256': manifest['artifact_sha256'],
-               })
+        checks = {
+            'A6b-source': dict(budget['A6b-source']),
+            'A6b-runtime': dict(budget['A6b-runtime']),
+            'T10 interpolation qualification': dict(
+                budget['T10 interpolation qualification']),
+        }
         a_posteriori = a_posteriori_resolve(reactor, artifact, run_directory)
         run_manifest = reactor.eedf_run_manifest()
         run_manifest.update({
             'initialization': initialization,
             'fingerprints': status['fingerprints'],
-            'A6b_outcome': a6b,
+            'A6b_and_T10_checks': checks,
             'a_posteriori_LoKI_B': a_posteriori,
         })
         result.update({
-            'A6b_outcome': a6b,
+            'A6b_and_T10_checks': checks,
             'a_posteriori_LoKI_B': a_posteriori,
             'run_manifest': run_manifest,
         })

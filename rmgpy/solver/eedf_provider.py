@@ -124,6 +124,10 @@ class EEDFProvider:
         table = EEDFTable.load(path, current_model,
                                artifact_sha256=artifact_sha256,
                                require_accepted=not development)
+        if not development and not table.a6b_source['passed']:
+            raise FingerprintMismatch('A6b-source native field-power identity')
+        if not development and not table.t10_interpolation['passed']:
+            raise FingerprintMismatch('T10 interpolation qualification')
         if branch not in table.manifest['branches']:
             raise AmbiguousBranch('declared branch ' + str(branch))
         energy_index = table._layout[branch]['swarm/mean_energy_eV'][0]

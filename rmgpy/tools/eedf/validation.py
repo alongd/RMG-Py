@@ -33,7 +33,7 @@ import itertools
 import numpy as np
 from scipy.stats import qmc
 
-from rmgpy.tools.eedf.schema import EEDFError
+from rmgpy.tools.eedf.schema import EEDFError, FingerprintMismatch, SpecError
 
 
 def quantities(row):
@@ -94,7 +94,7 @@ def split_branches(passes, tolerance):
 
 
 def held_out_points(axes, policy):
-    """Every cell's u/composition midpoints, joint midpoints and seeded LHS."""
+    """Every cell midpoint plus frozen off-centre and seeded points."""
     names = list(axes)
     grid = [np.asarray(v, dtype=float) for v in axes.values()]
     points = set()
@@ -108,8 +108,88 @@ def held_out_points(axes, policy):
     if len(lhs):
         samples = qmc.scale(lhs, [v[0] for v in grid], [v[-1] for v in grid])
         points.update(map(tuple, samples))
+    for point in policy.get('off_centre', []):
+        if set(point) != set(names):
+            raise SpecError('held_out off_centre coordinates')
+        values = tuple(float(point[name]) for name in names)
+        if any(not axis[0] <= value <= axis[-1]
+               for axis, value in zip(grid, values)):
+            raise SpecError('held_out off_centre domain')
+        points.add(values)
     training = set(itertools.product(*grid))
     return [dict(zip(names, map(float, p))) for p in sorted(points - training)]
+
+
+def freeze_accuracy_criteria(criteria):
+    """Validate and copy the separately frozen T10 transport criteria."""
+    if not isinstance(criteria, dict) or set(criteria) != {
+            'mobility_N', 'field_power'}:
+        raise SpecError('held-out accuracy criteria require mobility_N and field_power')
+    frozen = {}
+    for name, tolerance in criteria.items():
+        if (not isinstance(tolerance, dict) or set(tolerance) != {'rtol', 'atol'}
+                or any(not isinstance(value, (int, float)) or
+                       not np.isfinite(value) or value < 0.
+                       for value in tolerance.values())):
+            raise SpecError('held-out accuracy criterion ' + name)
+        frozen[name] = {key: float(value) for key, value in tolerance.items()}
+    return frozen
+
+
+def run_held_out_accuracy(table, direct_solver, points, *, criteria,
+                          setup_fingerprint):
+    """Compare table predictions with fresh direct-solver rows.
+
+    ``criteria`` is deliberately mandatory and separate from A6b's identity
+    tolerance. The direct-solver callback is invoked once per point; references
+    are never obtained from the table under test.
+    """
+    frozen = freeze_accuracy_criteria(criteria)
+    if not setup_fingerprint or setup_fingerprint != table.manifest.get('fingerprint'):
+        raise FingerprintMismatch('held-out direct-solver setup fingerprint')
+
+    names = tuple(table.axis_names)
+    results = []
+
+    def record(quantity, actual, reference, tolerance):
+        difference = abs(float(actual) - float(reference))
+        allowed = tolerance['atol'] + tolerance['rtol'] * abs(float(reference))
+        return {
+            'rule': 'T10',
+            'quantity': quantity,
+            'index': [],
+            'absolute_error': difference,
+            'relative_error': (difference / abs(float(reference))
+                               if reference else None),
+            'allowed_error': allowed,
+            'passed': bool(difference <= allowed),
+        }
+
+    for point in points:
+        if not isinstance(point, dict) or set(point) != set(names):
+            raise SpecError('held-out point coordinates')
+        composition = {name: point[name] for name in names[1:]}
+        table.domain_check(point['u'], composition)
+        direct = direct_solver(dict(point))
+        if not isinstance(direct, dict):
+            raise EEDFError('direct solver did not return a row mapping')
+        predicted = table.row(point['u'], composition).as_dict()
+        checks = compare_row(predicted, direct, table.manifest)
+        checks.append(record(
+            'mobility_N', predicted['swarm']['mobility_N'],
+            direct['swarm']['mobility_N'], frozen['mobility_N']))
+        checks.append(record(
+            'field_power', predicted['power_groups']['field'],
+            direct['power_groups']['field'], frozen['field_power']))
+        results.append({
+            'point': {name: float(point[name]) for name in names},
+            'branch_id': predicted['branch_id'],
+            'reference': 'fresh direct solver output',
+            'criteria': frozen,
+            'checks': checks,
+            'passed': bool(checks) and all(check['passed'] for check in checks),
+        })
+    return results
 
 
 def compare_row(predicted, direct, manifest):
