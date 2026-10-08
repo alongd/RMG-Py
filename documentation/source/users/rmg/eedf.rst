@@ -4,7 +4,8 @@ Offline LoKI-B EEDF tables
 The offline generator and :class:`rmgpy.solver.eedf.EEDFTable` share a
 content fingerprint. They provide electron rates, transport, mean energy,
 normalized EEDF and channel powers together. This facility does not yet
-connect to ``PlasmaReactor`` or choose a reactor operating point.
+choose a reactor operating point. A production ``PlasmaReactor`` using a
+table must additionally pass the terminal qualification described below.
 
 Generate a table with the RMG Python environment::
 
@@ -129,14 +130,23 @@ numeric stored values. HF, adaptive and nonuniform grids currently refuse.
 Production loads require acceptance; ``require_accepted=False`` is available
 only for the offline generator's validation of a provisional artifact.
 
+At an accepted reactor terminal state, qualification resolves the effective
+gas fractions and electronic-state populations, renders one LoKI setup, and
+freezes that exact setup with its solver and input-file hashes. LoKI executes
+the frozen bytes without rendering again. Its output must report the same
+execution identity before the direct result can be compared with the table
+row. A passing comparison is staged with the setup and both rows; export is
+admitted only after an acceptance manifest binding those artifacts is
+published atomically. A missing, stale, failed, or tampered manifest refuses
+export, even if an older file contains a ``PASS`` label.
+
 The pinned study binary has two explicit limitations: it recomputes a linear
 initial solution at each scan node, so these ordered scans do not prove seeded
 continuation, and temporal-growth iteration counts are not emitted. Counts
 are stored as -1 (unknown). Actual seed-controlled continuation and resolved
 symbolic state ladders require a solver output/interface extension. Reactor
-stability, continuation in absorbed power and terminal qualification belong
-to later tickets. Demo tolerances are fixture proposals, not frozen production
-materiality gates.
+stability and continuation in absorbed power belong to later tickets. Demo
+tolerances are fixture proposals, not frozen production materiality gates.
 
 The manifest and loaded table expose ``branch_certification``. The pinned
 solver currently records ``uncertified: unseeded scans`` for each branch; scan

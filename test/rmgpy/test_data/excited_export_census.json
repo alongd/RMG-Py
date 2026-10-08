@@ -5260,14 +5260,6 @@
       "line": 136,
       "signature": "8853a50caade1881bd4774f17b83d6a2fad8d629461db3a12c36a5ab942d32c6"
     },
-    "rmgpy/tools/eedf/loki.py:LoKIDriver.run": {
-      "verdict": "E",
-      "reason": "Writes explicit LoKI solver setup text and numeric electron-energy parameters; no Species/Molecule identity export.",
-      "file": "rmgpy/tools/eedf/loki.py",
-      "function": "LoKIDriver.run",
-      "line": 239,
-      "signature": "133f71ffbe1c2972be4ceef0db68edecd018d65beccabd7d7cad702c3c1de0b1"
-    },
     "rmgpy/tools/fluxdiagram.py:create_flux_diagram": {
       "verdict": "E",
       "reason": "savez_compressed writes numerical trajectory arrays in the loaded model order; diagram names go through audited generate_flux_diagram declarations, optional images refuse via Molecule.draw.",
@@ -5480,6 +5472,42 @@
       "signature": "5747f0e9ecd18b23f53f5c383c181b5a751645fe29aac281308e141e02a16559",
       "verdict": "E",
       "reason": "Development-only JSON telemetry written to stderr; it reports numerical solver state and emits no molecular identity or saved mechanism."
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._write_json": {
+      "file": "rmgpy/solver/eedf_provider.py",
+      "function": "EEDFProvider._write_json",
+      "line": 321,
+      "signature": "3c1bdd3c811ec5f00cb2ee79530c5f6da989f78e38f3b9ed345e15386d9c68c1",
+      "verdict": "E",
+      "reason": "Writes only exact LoKI setup bytes or numerical qualification evidence bound to an immutable execution; it emits no mechanism, species dictionary, or reloadable molecular representation.",
+      "evidence": [
+        "rmgpy/solver/eedf_provider.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ]
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._run_qualification": {
+      "file": "rmgpy/solver/eedf_provider.py",
+      "function": "EEDFProvider._run_qualification",
+      "line": 825,
+      "signature": "53e51a0bd0ad00feaf7a4419b65f3b47e56e111d05163917ef34f8a247a94d4c",
+      "verdict": "E",
+      "reason": "Writes only exact LoKI setup bytes or numerical qualification evidence bound to an immutable execution; it emits no mechanism, species dictionary, or reloadable molecular representation.",
+      "evidence": [
+        "rmgpy/solver/eedf_provider.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ]
+    },
+    "rmgpy/tools/eedf/loki.py:LoKIDriver.run_prepared": {
+      "file": "rmgpy/tools/eedf/loki.py",
+      "function": "LoKIDriver.run_prepared",
+      "line": 450,
+      "signature": "7111d7dbd4bbd6f3aff60833551ac4f1257074ef8b7f6fe5835b0f3922973f2a",
+      "verdict": "E",
+      "reason": "Writes only exact LoKI setup bytes or numerical qualification evidence bound to an immutable execution; it emits no mechanism, species dictionary, or reloadable molecular representation.",
+      "evidence": [
+        "rmgpy/tools/eedf/loki.py",
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ]
     }
   }
 }

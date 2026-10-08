@@ -24,7 +24,7 @@ from rmgpy.rmg.main import RMG
 from rmgpy.species import Species
 from rmgpy.thermo import ThermoData
 from rmgpy.tools.eedf.artifact import write_artifact
-from rmgpy.tools.eedf.schema import content_hash, file_hash, interpolant_identity
+from rmgpy.tools.eedf.schema import EEDFError, content_hash, file_hash, interpolant_identity
 
 
 TGAS = 298.15
@@ -733,6 +733,199 @@ def test_elastic_row_power_is_a_positive_loss_and_steady_state_gates_run(tmp_pat
     reactor.energy_budget['A6a_steady_relative'] = 0.02
     with pytest.raises(PlasmaStateError, match='A6a'):
         reactor.validate_steady_state()
+
+
+def test_terminal_state_qualifies_once_and_records_the_outcome(tmp_path, monkeypatch):
+    reactor, _, _ = build_reactor(tmp_path)
+    reactor.energy_budget = {'A6a_relative': 0., 'A6a_steady_relative': 0.,
+                             'A6b_relative': 0., 'A6b_tolerance': 1.e-6}
+    calls = []
+
+    def qualify(y, t, *, runner=None):
+        calls.append((np.array(y), t))
+        return {'status': 'PASS', 'record': 'fixture'}
+
+    monkeypatch.setattr(reactor.eedf_provider, 'qualify', qualify)
+    reactor.validate_terminal_state()
+    reactor.validate_terminal_state()
+
+    assert len(calls) == 1
+    assert reactor.energy_terminal['qualification'] == 'PASS'
+    assert reactor.energy_terminal['qualification_record']['record'] == 'fixture'
+
+
+def test_terminal_qualification_failure_marks_the_state_before_refusing(tmp_path, monkeypatch):
+    reactor, _, _ = build_reactor(tmp_path)
+    reactor.energy_budget = {'A6a_relative': 0., 'A6a_steady_relative': 0.,
+                             'A6b_relative': 0., 'A6b_tolerance': 1.e-6}
+
+    calls = []
+
+    def refuse(y, t, *, runner=None):
+        calls.append((y, t))
+        raise PlasmaStateError('EEDF qualification failed: A3')
+
+    monkeypatch.setattr(reactor.eedf_provider, 'qualify', refuse)
+    with pytest.raises(PlasmaStateError, match='EEDF qualification failed: A3'):
+        reactor.validate_terminal_state()
+    assert reactor.energy_terminal['qualification'] == 'FAILED'
+    with pytest.raises(PlasmaStateError, match='latched FAILED'):
+        reactor.validate_terminal_state()
+    assert len(calls) == 1
+
+
+def test_terminal_power_refusal_replaces_an_earlier_pass_and_blocks_export(
+        tmp_path):
+    reactor, _, _ = build_reactor(tmp_path)
+    provider = reactor.eedf_provider
+    record_path = tmp_path / 'eedf_qualification.json'
+    state = {
+        'u': 1., 'composition': {'x(Ars)': 0.},
+        'record_path': str(record_path),
+        'scratch_root': str(tmp_path / 'qualification-runs'),
+        'Tg_K': 300., 'P_Pa': 101325.,
+        'gas_fractions': {'Ar': 1.},
+        'state_populations': {'Ar': 1.},
+        'state_statistical_weights': {'Ar': 1.},
+    }
+    row = provider.row(state['u'], state['composition'])
+    state['energy_budget'] = {
+            'P_abs': float(row.power_groups['field']),
+            'joule_power': float(row.power_groups['field']),
+            'A6b_relative': 0.,
+            'A6b_tolerance': 1.e-6,
+    }
+    provider.bind_qualification_state(lambda y, t: state)
+    provider._qualification_status = 'PASS'
+    reactor.energy_terminal = {
+        'termination': 'accepted', 'qualification': 'PASS',
+        'qualification_record': {'status': 'PASS'},
+    }
+    with pytest.raises(EEDFError, match='manifest refuses export'):
+        provider.require_qualified('export')
+    provider._qualification_status = 'PASS'
+    reactor.energy_budget = {
+        'A6a_relative': .02, 'A6a_steady_relative': .02,
+        'A6b_relative': 0., 'A6b_tolerance': 1.e-6,
+    }
+
+    with pytest.raises(PlasmaStateError, match='A6a'):
+        reactor.validate_terminal_state()
+
+    assert reactor.energy_terminal['qualification'] == 'FAILED'
+    assert reactor.energy_terminal['qualification_record']['status'] == 'FAIL'
+    assert json.loads(record_path.read_text())['status'] == 'FAIL'
+    with pytest.raises(EEDFError, match='FAILED.*export'):
+        provider.require_qualified('export')
+
+
+def test_extinction_power_refusal_runs_inside_terminal_transaction(tmp_path):
+    reactor, _, _ = build_reactor(tmp_path, cold_mean=True)
+    provider = reactor.eedf_provider
+    record_path = tmp_path / 'eedf_qualification.json'
+    state = {
+        'u': 0., 'composition': {'x(Ars)': 0.},
+        'record_path': str(record_path),
+        'scratch_root': str(tmp_path / 'qualification-runs'),
+        'Tg_K': 300., 'P_Pa': 101325.,
+        'gas_fractions': {'Ar': 1.},
+        'state_populations': {'Ar': 1.},
+        'state_statistical_weights': {'Ar': 1.},
+    }
+    row = provider.row(state['u'], state['composition'])
+    state['energy_budget'] = {
+        'P_abs': float(row.power_groups['field']),
+        'joule_power': float(row.power_groups['field']),
+        'A6b_relative': 0.,
+        'A6b_tolerance': 1.e-6,
+    }
+    provider.bind_qualification_state(lambda y, t: state)
+    provider._qualification_status = 'PASS'
+    with pytest.raises(EEDFError, match='manifest refuses export'):
+        provider.require_qualified('export')
+    provider._qualification_status = 'PASS'
+
+    y = np.array(reactor.y0)
+    y[reactor.te_index] = 0.
+    reactor._check_accepted_plasma_domain(y)
+    reactor.energy_budget.update(
+        discharge_state='extinct', nu_ionisation=0., nu_source=0., nu_loss=1.e99,
+        A6a_relative=.02, A6a_steady_relative=.02,
+        A6b_relative=0., A6b_tolerance=1.e-6)
+    reactor.energy_was_self_sustained = True
+    reactor._update_terminal_state(y, 0.)
+    reactor._update_terminal_state(y, reactor.extinction_persistence_time(y))
+
+    assert reactor.energy_terminal['termination'] == 'extinct'
+    with pytest.raises(PlasmaStateError, match='A6a'):
+        reactor.validate_terminal_state()
+
+    assert reactor.energy_terminal['qualification'] == 'FAILED'
+    assert reactor.energy_terminal['qualification_record']['status'] == 'FAIL'
+    assert json.loads(record_path.read_text())['status'] == 'FAIL'
+    with pytest.raises(EEDFError, match='FAILED.*export'):
+        provider.require_qualified('export')
+
+
+def test_development_diagnostic_accepts_an_explicit_legacy_state_map(
+        tmp_path, monkeypatch):
+    reactor, core, _ = build_reactor(
+        tmp_path, accepted=False, development=True)
+    state_map = []
+    for index, species in enumerate(core):
+        molecule = species.molecule[0]
+        if molecule.get_net_charge() != 0:
+            continue
+        state_map.append({
+            'formula': molecule.get_formula(),
+            'electronic_state': str(molecule.electronic_state or ''),
+            'vibrational_level': molecule.vibrational_level,
+            'multiplicity': molecule.multiplicity,
+            'loki_state': 'Ar(fixture-{0})'.format(index),
+            'statistical_weight': float(molecule.multiplicity),
+        })
+
+    captured = {}
+
+    def diagnostic(state, t, *, runner=None):
+        captured.update(state)
+        return {'status': 'DEVELOPMENT — not a qualification'}
+
+    monkeypatch.setattr(reactor.eedf_provider, 'development_diagnostic', diagnostic)
+    record = reactor.development_eedf_diagnostic(engine_state_map=state_map)
+
+    assert record['status'] == 'DEVELOPMENT — not a qualification'
+    assert captured['state_populations']
+    assert captured['state_statistical_weights']
+
+
+def test_qualification_state_keeps_a_mapped_zero_population_gas_absent(
+        tmp_path):
+    helium = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
+    helium.thermo = thermo()
+    reactor, core, _ = build_reactor(tmp_path, extra_species=helium)
+    state_map = []
+    for index, species in enumerate(core):
+        molecule = species.molecule[0]
+        if molecule.get_net_charge() != 0:
+            continue
+        formula = molecule.get_formula()
+        state_map.append({
+            'formula': formula,
+            'electronic_state': str(molecule.electronic_state or ''),
+            'vibrational_level': molecule.vibrational_level,
+            'multiplicity': molecule.multiplicity,
+            'loki_state': '{0}(fixture-{1})'.format(formula, index),
+            'statistical_weight': float(molecule.multiplicity),
+        })
+
+    state = reactor._eedf_qualification_state(
+        reactor.y0, 0., engine_state_map=state_map)
+
+    assert state['gas_fractions']['He'] == 0.
+    assert state['state_populations'][
+        next(entry['loki_state'] for entry in state_map
+             if entry['formula'] == 'He')] == 0.
 
 
 def test_unowned_temperature_law_is_refused(tmp_path):

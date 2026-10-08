@@ -25470,7 +25470,7 @@
         "rmgpy/solver/plasma.pyx",
         "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
       ],
-      "source_sha256": "5bfd28c2b96be93862b0dac3024d024d64b3a40dd0c9df5a54cca6ba4ad80ccf"
+      "source_sha256": "32a75a55c5e8820f9e037501e8a44cd71ae6630bbaf2dbcc294e979cc4d8705c"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._validate_electron_state": {
       "verdict": "carried",
@@ -30069,7 +30069,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "1e1209ee60fac6a57df5bbca39ec6c84c7c0629295e78120a32064986f25c68f"
+      "source_sha256": "f629f8bc70500136d334f49d102d702f275049288a42bba80b8e0062f87706fe"
     },
     "rmgpy/tools/eedf/generate.py:_screen": {
       "verdict": "carried",
@@ -30125,7 +30125,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "b00c4f5d4364b105b18129be99d37a23bd042fe428e47ae78df5ed9f60e9052b"
+      "source_sha256": "9f02e23079c28d22963ec66b0c946a35ebbbc6c62133ea636a8f5dd9a6ad0d61"
     },
     "rmgpy/tools/eedf/integrity.py:channel_fractions": {
       "verdict": "carried",
@@ -30229,15 +30229,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "fda1d811399e8bcf2ab0c68188f090e225faf17bc1218384954394df78383c5b"
-    },
-    "rmgpy/tools/eedf/loki.py:LoKIDriver.run.<lambda1>": {
-      "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "d92de89b18d9e03950b20032e2865f81a2dab2012cb706a9329511e5f26b7b52"
+      "source_sha256": "1ee274050f11009bb3f7fa544a8be548dadb47d3386c3273e79fbb431e1ad256"
     },
     "rmgpy/tools/eedf/loki.py:_format": {
       "verdict": "carried",
@@ -30365,7 +30357,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/schemaTest.py"
       ],
-      "source_sha256": "84c8f18c2381e1fefe49e7916d159aab8696b17bb1431552c3169875c9563140"
+      "source_sha256": "6ff7ac40f7205e98e12d9089c555c4f73b08c2cdbbcf8e2ba335d74883d688a4"
     },
     "rmgpy/tools/eedf/schema.py:validate_spec": {
       "verdict": "carried",
@@ -30373,7 +30365,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/schemaTest.py"
       ],
-      "source_sha256": "b5c8ca309d044e91c20f4027608b44f5696b7d12c439f3e39058ec8a5d1bab1a"
+      "source_sha256": "99ff61ddeb49c19557c49c87f8481fdf6579c201312dfdf7c55b990301c61b42"
     },
     "rmgpy/tools/eedf/validation.py:channel_power_checks": {
       "verdict": "carried",
@@ -32727,7 +32719,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "0571f08d221e17d4d60a268e16b08b312389a487edc3814362c118cc1cc1c2fe"
+      "source_sha256": "da72ea7e7227ac4e91ca8ebc85ea7386b365ca10e9868586c0917972e623fadf"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider._identity": {
       "verdict": "carried",
@@ -32971,7 +32963,7 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "f0818bdcd7bd4a4ef1e9cae400a5cfee117f91ceda129833a07c60087fd1d8db"
+      "source_sha256": "97ea7457da27d079968f1d38cf83a4220bf8e4fce5d4660544537f5cb70f83af"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_eedf_energy_balance": {
       "verdict": "carried",
@@ -33021,7 +33013,7 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "ce6fcf0e476a18e5090f22f7934ea8a7762a910790d3e6612089d920845c29a2"
+      "source_sha256": "197caba86c251855b40adbd44895945d3a25e1a0ec4479b9276a781c6ca8ce68"
     },
     "rmgpy/solver/eedf_provider.py:development_unqualified_table_route": {
       "verdict": "not-reachable-for-resolved",
@@ -33048,7 +33040,7 @@
         "test/rmgpy/solver/eedfProviderTest.py",
         "test/rmgpy/eedfExportRefusalTest.py"
       ],
-      "source_sha256": "a5ec9e86d328003b24bde0eff1a61972fd16c9d5d6d208fbbade76aa8e86162a"
+      "source_sha256": "ddccaceae2816a36fb8cc37403c2ac331d8b013f856da463e25a36b07f8b7340"
     },
     "rmgpy/solver/eedf_provider.py:unqualified_artifact_blockers": {
       "verdict": "not-reachable-for-resolved",
@@ -33166,6 +33158,135 @@
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7"
     },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._all_quantity_drifts": {
+      "verdict": "carried",
+      "reason": "Compares only explicit immutable direct-solver and interpolated EEDF row quantities; no scientific data are acquired or substituted.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e11a9f434c1866c26a90bf18bfc58f42cf877f9172788d825ce91979be9ce8c4"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._check_all_recorded_quantities": {
+      "verdict": "carried",
+      "reason": "Applies the artifact-fingerprinted A-rule assignment to every supplementary direct/interpolated row quantity recorded in qualification evidence; no scientific data are acquired or substituted.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "cdcc3cf69eff5d1cb37a695a621b8e71e907d101b97da5b072dead2b52c03402"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._compare_qualification_rows": {
+      "verdict": "carried",
+      "reason": "Applies artifact-supplied A1-A6 tolerances to explicit direct and interpolated EEDF rows without acquiring substitute data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e8b872f2be968b3e65d6fe5dab4fc60f637c9a002ccb73ffe8d39d87507e1fe0"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._json_value": {
+      "verdict": "carried",
+      "reason": "Converts already supplied qualification values into JSON primitives and performs no data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "a3905c2624dff69fa5c3c494a12e95690ed2582e2309ebfb91ca55b256008a61"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._qualification_state": {
+      "verdict": "carried",
+      "reason": "Carries the exact accepted terminal state supplied by the reactor callback; it does not infer or reacquire molecular data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py",
+        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
+      ],
+      "source_sha256": "c79abaaf7fbe4ae89dae4406874843165bb0ffb9cd444418add57287b194f6ef"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._quantity_drift": {
+      "verdict": "carried",
+      "reason": "Computes drift from two explicitly supplied numeric quantities and performs no scientific-data lookup.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "c9c43dabe88208cf27b318e1739ed54d4d57b61abf6f8a2e0e82f7e5e2db7259"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._run_qualification": {
+      "verdict": "carried",
+      "reason": "Runs the artifact-pinned solver with the exact supplied terminal populations and carries its full numerical row into refusal evidence.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "ea7a7db98577a2e7fc997865bb51fb8f365ddb1e603d525dd5426f005bd2a414"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._run_qualification.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Selects a maximum from already computed qualification checks; no scientific data are acquired.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e2da7714c342e2648a3b7e0bdf3e2c6c5c769395cefbd2939abedccaeceade58"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._tolerance_check": {
+      "verdict": "carried",
+      "reason": "Applies an explicitly supplied tolerance to explicit numeric values and performs no scientific-data lookup.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e537d5aa205b7ce6563df005a4e61b1e339bfb1dad689d38758ae8d3f8d892f3"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._verify_generation_spec": {
+      "verdict": "carried",
+      "reason": "Compares the saved generation request only with the loaded artifact's explicit fingerprinted row inputs and solver pins; it refuses mismatches and acquires no substitute data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "337a8432659240f19aac30e911a3ece57d03e735911234f7549a4a272a980bb2"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._verify_generation_spec.require_equal": {
+      "verdict": "carried",
+      "reason": "Compares two explicitly supplied canonical provenance values and refuses inequality; it performs no scientific-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "3ab495728223ba856d13e3c77cd8b78c9263d7f48ccc0f4f91d2972c389ea772"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider.bind_qualification_state": {
+      "verdict": "carried",
+      "reason": "Binds the reactor-owned exact accepted-state callback and performs no independent data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
+      ],
+      "source_sha256": "3535813ed2028bfd498e45bda507cda9fb007c0d466c8a8609a6fa3d2c832808"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider.development_diagnostic": {
+      "verdict": "carried",
+      "reason": "Carries exact explicit terminal/table values into a non-qualifying diagnostic and cannot lift development status.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "67c5141cefa71d98b57cc4a7d35a761f7908f9f59644c10d41831ac90ac4befc"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider.qualify": {
+      "verdict": "carried",
+      "reason": "Carries the exact terminal state through the artifact-pinned direct solve and refuses any mismatch; it acquires no substitute model data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "58d1b85ff008f333dfb774184dc64ebe6a931545478133dbc79022927cbc114e"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_qualification_state": {
+      "verdict": "carried",
+      "reason": "Carries accepted reactor populations through the artifact-owned exact engine-to-LoKI state map; missing or ambiguous mappings refuse rather than acquiring fallback data.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
+      ],
+      "source_sha256": "b978a19de1d5fba371de033e4786affc5ddae8dcb5c20c1af630bd6ffec93d8f"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.development_eedf_diagnostic": {
+      "verdict": "carried",
+      "reason": "Carries the accepted reactor state and an optional explicit legacy state map into a non-qualifying diagnostic; it does not infer or reacquire model data.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
+      ],
+      "source_sha256": "ea3241eef594e00c729d84d6b2ba27db2297103f475f91c4d04c9f03edbcd056"
+    },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._jacobian": {
       "verdict": "carried",
       "reason": "Consumes already assigned species models, EEDF rows, and reaction rates while evolving populations. No independent scientific-data acquisition or identity substitution is introduced by the callback adapter split.",
@@ -33173,6 +33294,231 @@
         "test/rmgpy/solver/plasmaEEDFCoreTest.py"
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._check_all_recorded_quantities.check": {
+      "verdict": "carried",
+      "reason": "Applies the artifact-fingerprinted A-rule assignment to explicitly supplied direct and interpolated numeric quantities; it performs no scientific-data lookup.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "569f54e7596bedb3e0f9591d84a4824d0aedd7d88b6917e630786817fc5ede09"
+    },
+    "rmgpy/tools/eedf/loki.py:qualification_setup_sha256": {
+      "verdict": "carried",
+      "reason": "Hashes an explicitly supplied generation specification and its rendered solver setup after blanking only terminal qualification substitutions and canonicalizing invariant numeric declarations; it acquires no substitute scientific data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "39d8e1241de82576f64c1945a7fe09512caa8d0486918655b4b9801ed6ffb129"
+    },
+    "rmgpy/tools/eedf/schema.py:qualification_setup_identity": {
+      "verdict": "carried",
+      "reason": "Canonicalizes an explicitly supplied generation specification while retaining acceptance policy and removing only execution paths, non-acceptance policy, and the three permitted terminal values; it performs no scientific-data lookup.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "73f97da2198c5e4ff444655831d8b351a8903865eb670de12cee9172234f6931"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._compare_qualification_rows.materiality": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e6371c1dffb52c45f8110e0475bb09afd6fd4d3b9c7161adf80c9d3c5c3d5bb9"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._declared_values": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "df84f1bb7c5e97adb6c975d46a6c94961dba6f2827f4167e9681a727e494d0a0"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._terminal_values": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "db7e9636f2ef0bb89b637d60b1c48c97bae39db004a8e36694df2755df93c165"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._validate_qualification_row": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "50c1fab4c01830e2092730301dd51cf130052a215b43a515869541ca665cf865"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider.record_terminal_failure": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
+      ],
+      "source_sha256": "c5ed425a1b7140e5236ce39ece96e157294b3787e77aa8973060552d86f36c6e"
+    },
+    "rmgpy/tools/eedf/schema.py:_canonical_physical_value": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "cd964e039cff744acbce0d1a79cd17ab6335ef45babbd8fed1a6d399b66aa405"
+    },
+    "rmgpy/tools/eedf/schema.py:qualification_rule_for_quantity": {
+      "verdict": "carried",
+      "reason": "Operates only on explicit terminal state, fingerprinted artifact policy, or direct/interpolated numerical EEDF rows; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py",
+        "test/rmgpy/tools/eedf/schemaTest.py"
+      ],
+      "source_sha256": "2b1e33c6d2902f11c8dd85dcd361ebbe662aa07765c1de991d1b778e00821f3c"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._publish_acceptance": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "1f42cc9c82c74addb9b448b33a996e574157ac23c03c6e8a0a70ab75854dcd5e"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._record_path": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "0e460fddf9d50893c188bb8afd5bce2a2047b042e2279012eed0462f902aed8b"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._validate_acceptance_manifest": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "5ff3e6c86601c1ecd50fdf09da82cb796942387a48b4dd3fa3431a939c78f30f"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._write_development_record": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "8d372b374066b9f5fb2cd623a9e74e6440ccececedc4b583a385ee2686a0f877"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._write_failure": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "906ca221c87c25bd92106970cc3ae353499561071222d31e1de1a740cfb9dd36"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider._write_json": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "d74b155536c93513e428c5f1ead9dcb6c381051255170156e8e726f45f94b198"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider.qualification_record_path": {
+      "verdict": "carried",
+      "reason": "Carries explicit immutable qualification state, identities, artifacts, or publication evidence; it acquires and substitutes no molecular or database data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "dff035d7b240a49d1aeb017cc7301fd3912deb0363207f203ffbb0be36587f87"
+    },
+    "rmgpy/tools/eedf/loki.py:LoKIDriver.prepare": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "1834fe5122286e28d4b207cf882e8d1afed39d7fe10ca97bed8efb97c477cf12"
+    },
+    "rmgpy/tools/eedf/loki.py:LoKIDriver.run_prepared": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "bff723845b20ef892e3556b52df3cc169a67d4982bb566c37714910bf842c6be"
+    },
+    "rmgpy/tools/eedf/loki.py:LoKIDriver.run_prepared.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "d92de89b18d9e03950b20032e2865f81a2dab2012cb706a9329511e5f26b7b52"
+    },
+    "rmgpy/tools/eedf/loki.py:PreparedLoKIBundle.coordinate_values": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "a7c731b71782c130860ab0fe9540039da81d525f192eff00f0aeb9194acf7ce1"
+    },
+    "rmgpy/tools/eedf/loki.py:PreparedLoKIBundle.spec": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "cbaf9ee248495c3b929de10d5a150d5b7fe77acd6819f3e6256e857d2b27db63"
+    },
+    "rmgpy/tools/eedf/loki.py:_dependency_identity": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e3c33ec5ae07e531387a68d2bef4fd0250509e67d0ea40ae4a87e731db92a4a6"
+    },
+    "rmgpy/tools/eedf/loki.py:_require_exact_values": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e00e73858971c7ba8e9756dd552d4fd87134ea7a9e708a88cee5a958e72beca3"
+    },
+    "rmgpy/tools/eedf/loki.py:_require_normalized": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "2240ee8b91979c2c81999d6311f1a34d85598de9cc5e192a284e44e80cc6535d"
+    },
+    "rmgpy/tools/eedf/loki.py:_setup_values": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "e504b589372c87ba0af160bfafdcf070e49aa09adc09cf7666793226190d790c"
+    },
+    "rmgpy/tools/eedf/loki.py:qualification_setup_sha256_from_rendered": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "6eb6adb022ebbee28711afcdf1c6b3dc0962f86af61bdbfb3c142e4770035719"
+    },
+    "rmgpy/tools/eedf/loki.py:qualification_setup_sha256_from_rendered.parsed_declarations": {
+      "verdict": "carried",
+      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "cfa61d7fc5fc7c3472e9ab9e49022f6f05549f665e638817c245f78ecb94a33d"
     }
   }
 }

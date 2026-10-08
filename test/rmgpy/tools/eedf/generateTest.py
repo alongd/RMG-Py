@@ -75,7 +75,8 @@ def test_real_pure_ar_table_passes_held_out_and_three_scans(tmp_path):
                 'solver', 'setups', 'state_population_assumptions', 'density_convention', 'units',
                 'generator_command', 'generated_at', 'generation_seconds', 'held_out',
                 'held_out_verdicts', 'accepted', 'branch_detection', 'limitations',
-                'refinement_history', 'branches', 'artifact_sha256', 'branch_certification'}
+                'refinement_history', 'branches', 'artifact_sha256', 'branch_certification',
+                'qualification_setup_sha256'}
     assert set(table.manifest) == expected
     assert 'cold' in table.manifest['branch_detection'][0]['branch_sources']['branch_0']
 

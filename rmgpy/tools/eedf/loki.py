@@ -32,7 +32,10 @@
 The external GPL solver is executed, never linked. No study build is changed.
 """
 import copy
+from dataclasses import dataclass
+import hashlib
 import io
+import json
 import os
 import re
 import shutil
@@ -40,10 +43,18 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+import yaml
 from scipy.constants import elementary_charge, electron_mass
 
 from rmgpy.tools.eedf.channels import validate_physical_map
-from rmgpy.tools.eedf.schema import EEDFError, FingerprintMismatch, file_hash
+from rmgpy.tools.eedf.schema import (
+    EEDFError,
+    FingerprintMismatch,
+    canonical_json,
+    content_hash,
+    file_hash,
+    qualification_setup_identity,
+)
 from rmgpy.tools.eedf.integrity import check_solver, physical_properties, solver_environment, resolved_properties, channel_fractions
 
 
@@ -221,6 +232,132 @@ def setup_text(spec, coordinates, fields_Td, folder):
     return '\n'.join(lines) + '\n'
 
 
+def qualification_setup_sha256(spec, coordinates=None, fields_Td=None):
+    """Hash policy and the canonical setup rendered for the requested state."""
+    if coordinates is None:
+        coordinates = {
+            name: values[0] for name, values in spec.get('axes', {}).items()
+            if name != 'u'
+        }
+    fields_Td = [1.] if fields_Td is None else fields_Td
+    rendered = setup_text(spec, coordinates, fields_Td, 'qualification')
+    return qualification_setup_sha256_from_rendered(spec, rendered)
+
+
+def qualification_setup_sha256_from_rendered(spec, setup):
+    """Return the table/operator identity of exact rendered setup bytes."""
+    rendered = yaml.safe_load(setup)
+    kinetics = rendered['electronKinetics']
+
+    def parsed_declarations(properties, field):
+        declarations = kinetics[properties][field]
+        values = []
+        for declaration in declarations:
+            match = re.fullmatch(r'\s*(.+?)\s*=\s*([-+0-9.eE]+)\s*',
+                                 str(declaration))
+            if match is None or not np.isfinite(float(match.group(2))):
+                raise LoKIError('invalid terminal setup declaration')
+            values.append((match.group(1), float(match.group(2))))
+        return values
+
+    for properties, field in (('gasProperties', 'fraction'),
+                              ('stateProperties', 'population')):
+        values = parsed_declarations(properties, field)
+        kinetics[properties][field] = [
+            {'name': name, 'value': '<terminal>'}
+            for name, value in sorted(values)]
+    if 'statisticalWeight' in kinetics['stateProperties']:
+        weights = parsed_declarations('stateProperties', 'statisticalWeight')
+        kinetics['stateProperties']['statisticalWeight'] = [
+            '{0} = {1:.17g}'.format(name, value) for name, value in weights]
+    rendered['workingConditions']['reducedField'] = '<terminal>'
+    rendered['output']['folder'] = '<run folder>'
+    return content_hash({
+        'physical_spec': qualification_setup_identity(spec),
+        'rendered_setup': rendered,
+    })
+
+
+def _setup_values(rendered, properties, field):
+    """Parse one explicit numerical declaration list from rendered setup bytes."""
+    try:
+        declarations = rendered['electronKinetics'][properties][field]
+    except (KeyError, TypeError) as error:
+        raise LoKIError('prepared setup has no ' + properties + '.' + field) from error
+    if not isinstance(declarations, list) or not declarations:
+        raise LoKIError('prepared setup has blank ' + properties + '.' + field)
+    result = {}
+    for declaration in declarations:
+        match = re.fullmatch(r'\s*(.+?)\s*=\s*([-+0-9.eE]+)\s*', str(declaration))
+        if match is None:
+            raise LoKIError('prepared setup has invalid ' + properties + '.' + field)
+        name, value = match.groups()
+        value = float(value)
+        if name in result or not np.isfinite(value):
+            raise LoKIError('prepared setup has invalid ' + properties + '.' + field)
+        result[name] = value
+    return result
+
+
+def _require_exact_values(actual, expected, label):
+    """Require complete, finite, bit-for-bit terminal declarations."""
+    if not isinstance(expected, dict) or set(actual) != set(expected):
+        raise LoKIError('prepared setup terminal mapping is incomplete for ' + label)
+    for name, expected_value in expected.items():
+        expected_value = float(expected_value)
+        if not np.isfinite(expected_value):
+            raise LoKIError('prepared setup terminal value is blank for ' + label + '.' + name)
+        if actual[name] != expected_value:
+            raise LoKIError('prepared setup terminal value differs for ' + label + '.' + name)
+
+
+def _require_normalized(values, label):
+    """Accept only round-off from the explicit unit-sum normalization basis."""
+    if any(value < 0. or value > 1. for value in values.values()):
+        raise LoKIError('prepared setup has invalid normalized ' + label)
+    roundoff = 8. * np.finfo(float).eps * max(1, len(values))
+    if abs(sum(values.values()) - 1.) > roundoff:
+        raise LoKIError('prepared setup does not normalize ' + label + ' to one')
+
+
+@dataclass(frozen=True)
+class PreparedLoKIBundle:
+    """Immutable exact inputs for one LoKI execution."""
+
+    setup_bytes: bytes
+    spec_bytes: bytes
+    coordinates: tuple
+    fields_Td: tuple
+    job_name: str
+    table_identity: str
+    execution_identity: str
+    dependency_identity: tuple
+
+    @property
+    def spec(self):
+        """Reconstruct a defensive execution-spec copy from frozen bytes."""
+        return json.loads(self.spec_bytes.decode('utf-8'))
+
+    @property
+    def coordinate_values(self):
+        """Reconstruct a defensive coordinate mapping from frozen values."""
+        return dict(self.coordinates)
+
+
+def _dependency_identity(spec):
+    inputs = tuple(sorted(
+        (name, item['kind'], item['sha256'])
+        for name, item in spec['input_files'].items()))
+    shared = tuple(sorted(spec.get('shared_objects', {}).items()))
+    return (
+        ('binary', spec['binary']['sha256']),
+        ('cmake_cache', spec['cmake_cache']['sha256']),
+        ('channel_map', spec['channel_map']['sha256']),
+        ('input_files', inputs),
+        ('shared_objects', shared),
+    )
+
+
 class LoKIDriver:
     """Execute an immutable binary in isolated scratch jobs, with bounded OMP."""
 
@@ -238,11 +375,101 @@ class LoKIDriver:
 
     def run(self, coordinates, fields_Td, job_name):
         """One ordered scan; returns a row per requested field in that order."""
-        check_solver(self.spec)
-        physical_properties(self.spec)
-        work = Path(self.spec['scratch_root']) / job_name
+        bundle = self.prepare(coordinates, fields_Td, job_name)
+        return self.run_prepared(bundle)
+
+    def prepare(self, coordinates, fields_Td, job_name, terminal_state=None,
+                verify_dependencies=True):
+        """Render and validate exactly one immutable execution bundle."""
+        spec = copy.deepcopy(self.spec)
+        if verify_dependencies:
+            check_solver(spec)
+            physical_properties(spec)
+        coordinates = {str(name): float(value)
+                       for name, value in coordinates.items()}
+        fields_Td = tuple(float(value) for value in fields_Td)
+        if not fields_Td or not all(np.isfinite(fields_Td)):
+            raise LoKIError('prepared setup has invalid reduced field')
+        setup = setup_text(spec, coordinates, fields_Td, 'solve')
+        setup_bytes = setup.encode('utf-8')
+        rendered = yaml.safe_load(setup_bytes)
+        if terminal_state is not None:
+            gas = _setup_values(rendered, 'gasProperties', 'fraction')
+            populations = _setup_values(rendered, 'stateProperties', 'population')
+            _require_exact_values(gas, terminal_state.get('gas_fractions'),
+                                  'gas_fractions')
+            _require_exact_values(populations, terminal_state.get('state_populations'),
+                                  'state_populations')
+            state_properties = rendered['electronKinetics']['stateProperties']
+            if 'statisticalWeight' in state_properties:
+                weights = _setup_values(
+                    rendered, 'stateProperties', 'statisticalWeight')
+                _require_exact_values(
+                    weights, terminal_state.get('state_statistical_weights'),
+                    'state_statistical_weights')
+            _require_normalized(gas, 'gas fractions')
+            for gas_name in gas:
+                states = {name: value for name, value in populations.items()
+                          if name.startswith(gas_name + '(')}
+                if not states:
+                    raise LoKIError(
+                        'prepared setup terminal mapping has no states for ' + gas_name)
+                _require_normalized(states, gas_name + ' state populations')
+            conditions = rendered.get('workingConditions', {})
+            expected_field = list(fields_Td)
+            if conditions.get('reducedField') != expected_field:
+                raise LoKIError('prepared setup reduced field differs from terminal state')
+            for field, state_key in (('gasTemperature', 'Tg_K'),
+                                     ('gasPressure', 'P_Pa')):
+                expected = terminal_state.get(state_key)
+                if expected is None or not np.isfinite(float(expected)):
+                    raise LoKIError('terminal state has no ' + state_key)
+                if float(conditions.get(field, float('nan'))) != float(expected):
+                    raise LoKIError('prepared setup ' + field + ' differs from terminal state')
+        spec_bytes = canonical_json(spec).encode('utf-8')
+        dependencies = _dependency_identity(spec)
+        table_identity = qualification_setup_sha256_from_rendered(spec, setup_bytes)
+        execution_identity = content_hash({
+            'setup_sha256': hashlib.sha256(setup_bytes).hexdigest(),
+            'spec_sha256': hashlib.sha256(spec_bytes).hexdigest(),
+            'dependencies': dependencies,
+            'coordinates': coordinates,
+            'fields_Td': fields_Td,
+            'job_name': str(job_name),
+        })
+        return PreparedLoKIBundle(
+            setup_bytes=setup_bytes,
+            spec_bytes=spec_bytes,
+            coordinates=tuple(sorted(coordinates.items())),
+            fields_Td=fields_Td,
+            job_name=str(job_name),
+            table_identity=table_identity,
+            execution_identity=execution_identity,
+            dependency_identity=dependencies,
+        )
+
+    def run_prepared(self, bundle):
+        """Execute exact prepared bytes without consulting mutable driver state."""
+        if not isinstance(bundle, PreparedLoKIBundle):
+            raise TypeError('LoKI execution requires a PreparedLoKIBundle')
+        spec = bundle.spec
+        coordinates = bundle.coordinate_values
+        fields_Td = list(bundle.fields_Td)
+        expected = content_hash({
+            'setup_sha256': hashlib.sha256(bundle.setup_bytes).hexdigest(),
+            'spec_sha256': hashlib.sha256(bundle.spec_bytes).hexdigest(),
+            'dependencies': bundle.dependency_identity,
+            'coordinates': coordinates,
+            'fields_Td': bundle.fields_Td,
+            'job_name': bundle.job_name,
+        })
+        if expected != bundle.execution_identity:
+            raise FingerprintMismatch('prepared execution bundle')
+        check_solver(spec)
+        physical_properties(spec)
+        work = Path(spec['scratch_root']) / bundle.job_name
         work.mkdir(parents=True, exist_ok=False)
-        for name, item in self.spec['input_files'].items():
+        for name, item in spec['input_files'].items():
             target = work / name
             if Path(name).is_absolute() or '..' in Path(name).parts:
                 raise LoKIError('unsafe scratch input name')
@@ -250,37 +477,40 @@ class LoKIDriver:
             shutil.copyfile(item['path'], target)
             if file_hash(target) != item['sha256']:
                 raise FingerprintMismatch(name)
-        setup = setup_text(self.spec, coordinates, fields_Td, 'solve')
-        (work / 'setup.in').write_text(setup)
-        self.setups[job_name] = setup
-        env = solver_environment(self.spec)
+        (work / 'setup.in').write_bytes(bundle.setup_bytes)
+        if hashlib.sha256((work / 'setup.in').read_bytes()).hexdigest() != hashlib.sha256(
+                bundle.setup_bytes).hexdigest():
+            raise FingerprintMismatch('materialized setup bytes')
+        self.setups[bundle.job_name] = bundle.setup_bytes.decode('utf-8')
+        env = solver_environment(spec)
         with (work / 'stdout.log').open('w') as stdout, (work / 'stderr.log').open('w') as stderr:
             try:
-                completed = subprocess.run([self.spec['binary']['path'], 'setup.in'], cwd=work,
+                completed = subprocess.run([spec['binary']['path'], 'setup.in'], cwd=work,
                                            env=env, stdin=subprocess.DEVNULL, stdout=stdout,
-                                           stderr=stderr, timeout=self.spec['timeout_s'], check=False)
+                                           stderr=stderr, timeout=spec['timeout_s'], check=False)
             except subprocess.TimeoutExpired as error:
                 raise LoKIError('timed out; inspect ' + str(work)) from error
         diagnostics = (work / 'stderr.log').read_text()
         if completed.returncode or re.search(r'did not converge|not converged|Results might be incorrect', diagnostics, re.I):
             raise LoKIError('LoKI refused; inspect ' + str(work))
-        grid = self.spec['solver_options']['numerics']['energyGrid']
+        grid = spec['solver_options']['numerics']['energyGrid']
         edges = np.linspace(0, grid['maxEnergy'], grid['cellNumber'] + 1)
-        rows = [parse_output(p, self.spec['tolerances']['normalization_atol'], edges)
+        rows = [parse_output(p, spec['tolerances']['normalization_atol'], edges)
                 for p in (work / 'output' / 'solve').glob('reducedField_*')]
         if len(rows) != len(fields_Td):
             raise LoKIError('LoKI output count; possible rounded folder collision')
         rows.sort(key=lambda row: row['EN_Td'])
         fields_sorted = sorted(fields_Td)
         for row, field in zip(rows, fields_sorted):
-            if not np.isclose(row['EN_Td'], field, rtol=self.spec['tolerances']['fingerprint_rtol'], atol=0):
+            if not np.isclose(row['EN_Td'], field, rtol=spec['tolerances']['fingerprint_rtol'], atol=0):
                 raise LoKIError('output field mismatch')
             row['EN_Td'] = float(field)
             row['u'] = float(np.log(field))
             row['composition'] = dict(coordinates)
-            row['setup'] = job_name
+            row['setup'] = bundle.job_name
+            row['execution_identity'] = bundle.execution_identity
             row['converged'] = (abs(row['power_groups']['relative_balance_percent']) / 100 <=
-                                self.spec['solver_options']['numerics']['maxPowerBalanceRelError'])
+                                spec['solver_options']['numerics']['maxPowerBalanceRelError'])
             if not row['converged']:
                 raise LoKIError('power convergence')
         return rows if fields_Td[0] <= fields_Td[-1] else rows[::-1]
