@@ -161,7 +161,6 @@ def test_full_real_artifact_is_unaccepted_and_fingerprinted(real_pure_argon_arti
         'artifact manifest is not accepted',
         '8 of 188 held-out verdicts failed',
         'branch_0: uncertified: unseeded scans',
-        "artifact has no reaction-owned channels; channel classifications are {'B': 39}",
     ]
 
 
