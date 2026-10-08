@@ -48,11 +48,12 @@ def database_identity(database: Path) -> str:
 def identity(repository: Path, database: Path) -> dict:
     import rdkit
     hash_seed = os.environ.get("PYTHONHASHSEED")
+    database_digest = database_identity(database)
     return {
         "schema": SCHEMA,
         "rmgpy_tree_sha256": tree_identity(repository),
-        "database": database_identity(database),
-        "rmg_database_content_sha256": database_identity(database),
+        "database": database_digest,
+        "rmg_database_content_sha256": database_digest,
         "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         "rdkit": getattr(rdkit, "__version__", "unknown"),
         "pythonhashseed": hash_seed,

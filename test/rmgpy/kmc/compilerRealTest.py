@@ -365,7 +365,7 @@ def _load_independent_oracle(kinetics_database):
                     "generator_origin_commit": origin,
                     "validated_current_commit": current,
                     "database_commit": key.split("-")[1],
-                    "identical_oracle_and_input_source_hash": key.split("-")[2],
+                    "database_content_sha256": key.split("-")[2],
                 }
                 destination.write_text(json.dumps(data, sort_keys=True))
                 break

@@ -2,11 +2,20 @@
 
 import hashlib
 import json
+import inspect
 from pathlib import Path
 
 import pytest
 
 from cache_provenance import generator_code_unchanged, supplied_artifact
+
+
+def test_oracle_cache_provenance_names_database_digest():
+    import compilerRealTest
+
+    source = inspect.getsource(compilerRealTest._load_independent_oracle)
+    assert '"database_content_sha256"' in source
+    assert '"identical_oracle_and_input_source_hash"' not in source
 
 
 def test_explicit_stale_artifact_is_rejected_without_cache_fallback(tmp_path, monkeypatch):

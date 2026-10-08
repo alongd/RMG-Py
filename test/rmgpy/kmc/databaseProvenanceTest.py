@@ -100,6 +100,55 @@ def test_database_digest_changes_when_kinetics_input_changes(tmp_path):
     ).hexdigest()
 
 
+def test_standalone_layout_rejects_external_kinetics_library(tmp_path):
+    root = tmp_path / "database"
+    (root / "kinetics").mkdir(parents=True)
+    (root / "thermo").mkdir()
+    (root / "kinetics" / "inside.py").write_text("inside = True\n")
+    external = tmp_path / "external.py"
+    external.write_text("external = True\n")
+    database = type("Database", (), {"library_order": [(str(root / "kinetics" / "inside.py"), "library")]})()
+
+    from rmgpy.kmc.database_provenance import reject_external_library_paths
+
+    reject_external_library_paths(root, database)
+    database.library_order = [(str(external), "library")]
+
+    with pytest.raises(ValueError, match="outside hashed input roots"):
+        reject_external_library_paths(root, database)
+
+
+def test_standalone_layout_rejects_external_thermo_library(tmp_path):
+    root = tmp_path / "database"
+    (root / "kinetics").mkdir(parents=True)
+    (root / "thermo").mkdir()
+    (root / "thermo" / "inside.py").write_text("inside = True\n")
+    external = tmp_path / "external.py"
+    external.write_text("external = True\n")
+    database = type("Database", (), {"library_order": [(str(root / "thermo" / "inside.py"), "library")]})()
+
+    from rmgpy.kmc.database_provenance import reject_external_library_paths
+
+    reject_external_library_paths(root, database)
+    database.library_order = [(str(external), "library")]
+
+    with pytest.raises(ValueError, match="outside hashed input roots"):
+        reject_external_library_paths(root, database)
+
+
+def test_tuple_library_path_is_checked(tmp_path):
+    root = tmp_path / "database"
+    _database(root)
+    external = tmp_path / "external.py"
+    external.write_text("external = True\n")
+    database = type("Database", (), {"library_order": [(str(external), "library")]})()
+
+    with pytest.raises(ValueError, match="outside hashed input roots"):
+        from rmgpy.kmc.database_provenance import reject_external_library_paths
+
+        reject_external_library_paths(root, database)
+
+
 def test_database_nested_in_unrelated_git_repo_has_no_git_identity(tmp_path):
     outer = tmp_path / "outer"
     database = outer / "database"
@@ -310,6 +359,7 @@ def test_fixture_declaration_path_accepts_gitless_stub_artifact(tmp_path, monkey
     _database(root)
     digest, _ = database_content_digest(root)
     from rmgpy.kmc.database_provenance import resolve_database_declaration
+    from rmgpy.kmc.database_provenance import database_provenance
 
     for declared in (None, "declared-copy"):
         if declared is None:
@@ -317,13 +367,7 @@ def test_fixture_declaration_path_accepts_gitless_stub_artifact(tmp_path, monkey
         else:
             monkeypatch.setenv("RMG_DATABASE_SHA", declared)
         resolved = resolve_database_declaration()
-        artifact = {
-            "provenance": {
-                "rmg_database_sha": None,
-                "rmg_database_sha_declared": resolved,
-                "rmg_database_content_sha256": digest,
-            }
-        }
+        artifact = {"provenance": database_provenance(root, resolved)}
         assert provenance_matches_database(
             artifact["provenance"], root, resolved
         )
