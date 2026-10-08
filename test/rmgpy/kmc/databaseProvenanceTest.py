@@ -357,9 +357,19 @@ def test_consumer_identity_accepts_fresh_digest_and_rejects_mismatch(tmp_path):
 def test_fixture_declaration_path_accepts_gitless_stub_artifact(tmp_path, monkeypatch):
     root = tmp_path / "database"
     _database(root)
-    digest, _ = database_content_digest(root)
     from rmgpy.kmc.database_provenance import resolve_database_declaration
     from rmgpy.kmc.database_provenance import database_provenance
+    calls = []
+    real_database_provenance = database_provenance
+
+    def fixture_database_provenance(path, declared):
+        calls.append((path, declared))
+        return real_database_provenance(path, declared)
+
+    monkeypatch.setattr(
+        "rmgpy.kmc.database_provenance.database_provenance",
+        fixture_database_provenance,
+    )
 
     for declared in (None, "declared-copy"):
         if declared is None:
@@ -371,6 +381,7 @@ def test_fixture_declaration_path_accepts_gitless_stub_artifact(tmp_path, monkey
         assert provenance_matches_database(
             artifact["provenance"], root, resolved
         )
+    assert calls == [(root, None), (root, "declared-copy")]
 
 
 def test_generation_cache_key_changes_with_database_contents(tmp_path, monkeypatch):
