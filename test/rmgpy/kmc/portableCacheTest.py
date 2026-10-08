@@ -1,8 +1,10 @@
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 
@@ -123,6 +125,27 @@ def test_import_rejects_stray_file(tmp_path):
         import_cache(archive, tmp_path / "refused", repo, db)
 
 
+def test_import_rejects_symlink_before_copying(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "rmgpy").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "rmgpy/x.py").write_text("x")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", "x"], check=True)
+    db = _make_database(tmp_path / "db")
+    source = tmp_path / "cache/generated-reactions"
+    source.mkdir(parents=True)
+    (source / "entry.pickle").write_bytes(b"entry")
+    (source.parent / "manifest.json").write_text(json.dumps(identity(repo, db)))
+    archive = tmp_path / "cache.tgz"
+    export_cache(source.parent, archive, repo, db)
+    _rewrite_archive(archive, lambda root: (root / "generated-reactions/link.pickle").symlink_to("entry.pickle"))
+    destination = tmp_path / "refused"
+    with pytest.raises(ValueError, match="symlink"):
+        import_cache(archive, destination, repo, db)
+    assert not destination.exists()
+
+
 def test_migration_copies_old_named_entries(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONHASHSEED", "0")
     repo = tmp_path / "repo"
@@ -234,6 +257,27 @@ def test_generation_cache_hit_does_not_call_stubbed_generator(tmp_path):
     assert calls == ["called"]
 
 
+@pytest.mark.parametrize("seed", [None, "random"])
+def test_uncacheable_generation_never_reads_persistent_entries(tmp_path, monkeypatch, seed):
+    if seed is None:
+        monkeypatch.delenv("PYTHONHASHSEED", raising=False)
+    else:
+        monkeypatch.setenv("PYTHONHASHSEED", seed)
+    path = tmp_path / "uncacheable" / "same-pid" / "entry.pickle"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"old")
+    calls = []
+    value = load_or_generate(
+        path,
+        lambda: calls.append("called") or {"new": True},
+        lambda value: json.dumps(value).encode(),
+        json.loads,
+        read_cache=False,
+    )
+    assert value == {"new": True}
+    assert calls == ["called"]
+
+
 def test_artifact_key_includes_compile_options(tmp_path):
     repo = tmp_path / "repo"
     (repo / "rmgpy").mkdir(parents=True)
@@ -292,6 +336,114 @@ def test_artifact_hit_rejects_misplaced_and_corrupt_entries(tmp_path):
     manifest.write_text(json.dumps({"identity": "expected", "artifact": artifact.name, "artifact_sha256": __import__("hashlib").sha256(artifact.read_bytes()).hexdigest()}))
     with pytest.raises(ValueError):
         validate_artifact_cache_entry(manifest, "expected", db, None)
+
+
+def test_artifact_hit_checks_hash_before_json_validation(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    (repo / "rmgpy").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "rmgpy/x.py").write_text("x")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", "x"], check=True)
+    db = _make_database(tmp_path / "db")
+    bucket = tmp_path / "artifact"
+    bucket.mkdir()
+    artifact = bucket / "artifact.json"
+    original = b'{"provenance": {"compiler_sources_sha256": "sources"}}\n'
+    artifact.write_bytes(original)
+    manifest = bucket / "manifest.json"
+    manifest.write_text(json.dumps({
+        "identity": "expected",
+        "artifact": artifact.name,
+        "artifact_sha256": hashlib.sha256(original).hexdigest(),
+    }))
+    artifact.write_bytes(b'{ "provenance": {"compiler_sources_sha256": "sources"} }\n')
+    monkeypatch.setattr("rmgpy.kmc.compiler.compiler_source_hash", lambda: "sources")
+    monkeypatch.setattr("rmgpy.kmc.compiler.validate_artifact", lambda value: None)
+    monkeypatch.setattr("rmgpy.kmc.database_provenance.provenance_matches_database", lambda *args: True)
+    with pytest.raises(ValueError, match="artifact hash mismatch"):
+        validate_artifact_cache_entry(manifest, "expected", db, None)
+
+
+def test_driver_main_cold_hit_and_generation_only_modes(tmp_path, monkeypatch):
+    import compile_event_set_fixture as driver
+
+    database_path = _make_database(tmp_path / "db")
+    (database_path / "input/kinetics/families/stub").mkdir(parents=True)
+    (database_path / "input/kinetics/families/stub/groups.py").write_text("")
+    cache_root = tmp_path / "cache"
+    calls = []
+
+    class FakeKinetics:
+        def generate_reactions_from_families(self, *args):
+            calls.append("generate")
+            return []
+
+    class FakeDatabase:
+        def __init__(self):
+            self.kinetics = FakeKinetics()
+            self.thermo = object()
+
+        def load_kinetics(self, *args, **kwargs):
+            pass
+
+        def load_thermo(self, *args, **kwargs):
+            pass
+
+    class FakeCompiler:
+        @staticmethod
+        def discover_family_reactions(kinetics, proxies, families, family_universe=None):
+            return {}, set(), {"stub": kinetics.generate_reactions_from_families([], [])}
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def write_artifact(self, directory):
+            path = Path(directory) / "stub-artifact.json"
+            path.write_text(json.dumps({"provenance": {"compiler_sources_sha256": "sources"}}))
+            return path, None
+
+    monkeypatch.setenv("PYTHONHASHSEED", "0")
+    monkeypatch.setenv("RMG_KMC_CACHE_ROOT", str(cache_root))
+    monkeypatch.setattr(driver, "RMGDatabase", FakeDatabase)
+    monkeypatch.setattr(driver, "EventSetCompiler", FakeCompiler)
+    monkeypatch.setattr(driver, "prepare_rate_rules", lambda *args, **kwargs: None)
+    monkeypatch.setattr(driver, "ps_proxy_set", lambda units: ())
+    monkeypatch.setattr(driver, "resolve_database_declaration", lambda value: value)
+    monkeypatch.setattr(driver, "database_content_digest", lambda path: ("database", {}))
+    monkeypatch.setattr(driver, "identity", lambda repo, db: {"identity": "generation"})
+    monkeypatch.setattr(driver, "identity_name", lambda value: "generation")
+    monkeypatch.setattr(driver, "artifact_cache_key", lambda repo, db, options: "artifact")
+    monkeypatch.setattr(driver, "migrate", lambda *args: cache_root / "portable/generation")
+    monkeypatch.setattr(
+        driver,
+        "validate_artifact_cache_entry",
+        lambda manifest, key, db, declaration: manifest.parent / json.loads(manifest.read_text())["artifact"],
+    )
+    (tmp_path / "repo").mkdir()
+    monkeypatch.chdir(tmp_path / "repo")
+    output = tmp_path / "output"
+
+    def run(disable=False):
+        if disable:
+            monkeypatch.setenv("RMG_KMC_DISABLE_ARTIFACT_CACHE", "1")
+        else:
+            monkeypatch.delenv("RMG_KMC_DISABLE_ARTIFACT_CACHE", raising=False)
+        old_argv = sys.argv
+        sys.argv = ["driver", str(database_path), str(output)]
+        try:
+            driver.main()
+        finally:
+            sys.argv = old_argv
+
+    run()
+    first = next(output.glob("*.json")).read_bytes()
+    assert calls == ["generate"]
+    run()
+    assert calls == ["generate"]
+    run(disable=True)
+    assert calls == ["generate"]
+    assert next(output.glob("*.json")).read_bytes() == first
 
 
 def test_new_rmg_kmc_environment_setting_changes_artifact_key(tmp_path, monkeypatch):

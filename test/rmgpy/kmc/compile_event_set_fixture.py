@@ -104,12 +104,13 @@ def main() -> None:
     cache_root = Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(Path.cwd() / ".kmc-cache")))
     hash_seed = os.environ.get("PYTHONHASHSEED")
     cache_identity = identity(Path.cwd(), database_path)
-    if hash_seed is None:
-        print("PYTHONHASHSEED is unset; cache reuse is disabled", flush=True)
+    cacheable_seed = hash_seed not in (None, "random")
+    if not cacheable_seed:
+        print("PYTHONHASHSEED is unset or random; cache reuse is disabled", flush=True)
         portable_root = cache_root / "uncacheable" / str(os.getpid())
     else:
         portable_root = cache_root / "portable" / identity_name(cache_identity)
-    if hash_seed is not None and not (portable_root / "manifest.json").exists():
+    if cacheable_seed and not (portable_root / "manifest.json").exists():
         migrate(cache_root, Path.cwd(), database_path, database_commit)
     generated_cache = portable_root / "generated-reactions"
     generated_cache.mkdir(parents=True, exist_ok=True)
@@ -118,18 +119,18 @@ def main() -> None:
         "database_content_sha256": database_content_sha,
         "family_universe": family_universe,
         "temperature_grid": list(DEFAULT_T_GRID),
-        "proxy_units": list(PS_PROXY_UNITS),
+        "proxy_units": PS_PROXY_UNITS,
         "family_candidates": list(PS_FAMILY_CANDIDATES),
         "environment": compile_environment_options(),
     }
     artifact_key = artifact_cache_key(Path.cwd(), database_path, compile_options)
     artifact_cache = (
         cache_root / "portable-artifacts" / artifact_key
-        if hash_seed is not None
+        if cacheable_seed
         else cache_root / "uncacheable-artifacts" / str(os.getpid())
     )
     artifact_manifest = artifact_cache / "manifest.json"
-    if hash_seed is not None and os.environ.get("RMG_KMC_DISABLE_ARTIFACT_CACHE") != "1":
+    if cacheable_seed and os.environ.get("RMG_KMC_DISABLE_ARTIFACT_CACHE") != "1":
         try:
             cached_artifact = validate_artifact_cache_entry(
                 artifact_manifest, artifact_key, database_path, database_commit
@@ -173,6 +174,7 @@ def main() -> None:
             lambda: generate(reactants, products, only_families, resonance),
             dump_generated_reactions,
             load_generated_reactions,
+            read_cache=cacheable_seed,
         )
         if was_cached:
             print(f"cached public RMG generation: {only_families}", flush=True)

@@ -83,9 +83,9 @@ def atomic_write(path: Path, payload: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def load_or_generate(path: Path, generate, dump, load):
+def load_or_generate(path: Path, generate, dump, load, *, read_cache: bool = True):
     """Load a migrated generation entry or call the expensive producer once."""
-    if path.is_file():
+    if read_cache and path.is_file():
         return load(path.read_bytes())
     value = generate()
     atomic_write(path, dump(value))
@@ -264,6 +264,8 @@ def import_cache(archive: Path, destination: Path, repository: Path, database: P
         with tarfile.open(archive, "r:gz") as tar:
             tar.extractall(temporary, filter="data")
         root = Path(temporary) / "kmc-cache"
+        if any(path.is_symlink() for path in root.rglob("*")):
+            raise ValueError("cache archive contains symlink")
         actual = json.loads((root / "manifest.json").read_text())
         if {key: value for key, value in actual.items() if key != "files"} != expected:
             raise ValueError("cache manifest identity does not match this checkout")
