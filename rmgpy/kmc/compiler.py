@@ -367,7 +367,15 @@ def _mapped_reaction_u2_roots(
     for original, labeled_molecule in zip(
         original_reactants, side_molecules["reactant"]
     ):
-        mappings = original.find_isomorphism(labeled_molecule, save_order=True)
+        # The family labeler may replace the molecule with an isomorphic graph
+        # whose vertex storage was rebuilt.  This mapping only consumes the
+        # correspondence; asking VF2 to restore the old vertex order can then
+        # fail with "Number of vertices has changed" for real migration records.
+        # The family labeler may replace the molecule with an isomorphic graph
+        # whose vertex storage was rebuilt.  This mapping only consumes the
+        # correspondence; asking VF2 to restore the old vertex order can then
+        # fail with "Number of vertices has changed" for real migration records.
+        mappings = original.find_isomorphism(labeled_molecule, save_order=False)
         if not mappings:
             raise ValueError("family labeling changed a stored reactant graph")
         for mapping in mappings:

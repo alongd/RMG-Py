@@ -5,6 +5,7 @@ import base64
 import zlib
 from dataclasses import replace
 import hashlib
+import importlib.util
 import json
 import multiprocessing
 import os
@@ -23,6 +24,8 @@ from rmgpy.kmc.compiler import (
     PS_FAMILY_FILTER_REASON,
     PS_PROXY_UNITS,
     _canonical_adjacency,
+    _mapped_reaction_u2_roots,
+    _reaction_from_record,
     compiler_source_hash,
     apply_record,
     canonical_json_bytes,
@@ -45,6 +48,15 @@ from completeness_oracle import (
     reaction_graph_key,
 )
 from cache_provenance import generator_code_unchanged, supplied_artifact
+
+_I084_FIXTURE_SPEC = importlib.util.spec_from_file_location(
+    "i084_applicability_record",
+    Path(__file__).with_name("fixtures") / "i084_applicability_record.py",
+)
+_I084_FIXTURE = importlib.util.module_from_spec(_I084_FIXTURE_SPEC)
+_I084_FIXTURE_SPEC.loader.exec_module(_I084_FIXTURE)
+PRODUCT_GRAPHS = _I084_FIXTURE.PRODUCT_GRAPHS
+REACTANT_GRAPHS = _I084_FIXTURE.REACTANT_GRAPHS
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -413,6 +425,21 @@ def rmg_database():
         depository=True,
     )
     return database
+
+
+def test_real_intra_h_migration_applicability_mapping(rmg_database):
+    """Family labeling must map the real resonance-rich migration record."""
+    family = rmg_database.kinetics.families["intra_H_migration"]
+    reaction = _reaction_from_record({
+        "reactant_graphs": REACTANT_GRAPHS,
+        "product_graphs": PRODUCT_GRAPHS,
+    })
+    for species in reaction.reactants + reaction.products:
+        species.generate_resonance_structures()
+    roots = _mapped_reaction_u2_roots(family, reaction)
+    # The regression is the applicability-label pass itself: before the fix
+    # VF2 raises while restoring order, before any root decision is published.
+    assert isinstance(roots, list)
 
 
 @pytest.fixture(scope="module")
