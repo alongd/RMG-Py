@@ -490,6 +490,146 @@ def test_driver_main_cold_hit_and_generation_only_modes(tmp_path, monkeypatch, c
     assert "cached public RMG generation" not in capsys.readouterr().out
 
 
+def test_driver_main_publishes_database_policy_and_provider_provenance(
+    tmp_path, monkeypatch
+):
+    import compile_event_set_fixture as driver
+    from rmgpy.kmc.barrier_e0 import FixedBBarrierE0Provider
+
+    database_path = _make_database(tmp_path / "db")
+    (database_path / "input/kinetics/families/stub").mkdir(parents=True)
+    (database_path / "input/kinetics/families/stub/groups.py").write_text("")
+    observed = []
+
+    class FakeDatabase:
+        def __init__(self):
+            self.kinetics = type(
+                "Kinetics", (),
+                {"generate_reactions_from_families": lambda *args: []},
+            )()
+            self.thermo = object()
+
+        def load_kinetics(self, *args, **kwargs):
+            pass
+
+        def load_thermo(self, *args, **kwargs):
+            pass
+
+    class FakeCompiler:
+        @staticmethod
+        def discover_family_reactions(*args, **kwargs):
+            return {}, set(), {"stub": []}
+
+        def __init__(self, *args, **kwargs):
+            observed.append(kwargs)
+
+        def write_artifact(self, directory):
+            path = Path(directory) / "provenance.json"
+            provider = observed[-1]["barrier_e0_provider"]
+            path.write_text(json.dumps({
+                "provenance": {
+                    "database_sha": observed[-1]["rmg_database_sha"],
+                    "applicability_policy_version": "persistent-carbene-applicability/1",
+                    **({"barrier_e0_provider": provider.provenance} if provider else {}),
+                }
+            }))
+            return path, None
+
+    monkeypatch.setattr(driver, "RMGDatabase", FakeDatabase)
+    monkeypatch.setattr(driver, "EventSetCompiler", FakeCompiler)
+    monkeypatch.setattr(driver, "prepare_rate_rules", lambda *args, **kwargs: None)
+    monkeypatch.setattr(driver, "ps_proxy_set", lambda units: ())
+    monkeypatch.setattr(driver, "resolve_database_declaration", lambda value: value)
+    monkeypatch.setattr(driver, "database_content_digest", lambda path: ("content", {}))
+    monkeypatch.setattr(driver, "identity", lambda repo, db: {"identity": "driver"})
+    monkeypatch.setattr(driver, "identity_name", lambda value: "driver")
+    monkeypatch.setattr(driver, "artifact_cache_key", lambda *args: "artifact")
+    monkeypatch.setattr(
+        driver, "migrate", lambda *args: tmp_path / "cache" / "portable" / "driver"
+    )
+    monkeypatch.setenv("PYTHONHASHSEED", "0")
+    monkeypatch.setenv("RMG_KMC_CACHE_ROOT", str(tmp_path / "cache"))
+    monkeypatch.chdir(tmp_path)
+    output = tmp_path / "output"
+    old_argv = sys.argv
+    sys.argv = [
+        "driver", str(database_path), str(output),
+        "--database-sha", "declared-db",
+        "--barrier-e0-fixed-b", "900",
+    ]
+    try:
+        driver.main()
+    finally:
+        sys.argv = old_argv
+    artifact = json.loads(next(output.glob("*.json")).read_text())
+    provenance = artifact["provenance"]
+    assert provenance["database_sha"] == "declared-db"
+    assert provenance["applicability_policy_version"] == (
+        "persistent-carbene-applicability/1"
+    )
+    assert provenance["barrier_e0_provider"] == FixedBBarrierE0Provider(900).provenance
+
+    observed.clear()
+    output_off = tmp_path / "output-off"
+    sys.argv = ["driver", str(database_path), str(output_off), "--database-sha", "declared-db"]
+    try:
+        driver.main()
+    finally:
+        sys.argv = old_argv
+    off = json.loads(next(output_off.glob("*.json")).read_text())["provenance"]
+    assert "barrier_e0_provider" not in off
+
+
+def test_portable_cache_replays_in_fresh_depth_one_clone(tmp_path):
+    repo = Path(__file__).resolve().parents[3]
+    database = _make_database(tmp_path / "db")
+    source = tmp_path / "source-cache"
+    source.mkdir()
+    identity_value = identity(repo, database)
+    (source / "manifest.json").write_text(json.dumps(identity_value))
+    artifact = {"artifact": "bounded-fixture", "source": "generation"}
+    (source / "artifact.json").write_text(json.dumps(artifact, sort_keys=True))
+    archive = tmp_path / "cache.tgz"
+    export_cache(source, archive, repo, database)
+
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "--depth", "1", f"file://{repo}", str(clone)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    imported = tmp_path / "imported"
+    import_cache(archive, imported, clone, database)
+    replay_script = (
+        "import json,sys; from pathlib import Path; "
+        "from portable_cache import load_or_generate; "
+        "p=Path(sys.argv[1]); calls=[]; "
+        "v=load_or_generate(p, lambda: calls.append(1) or {'artifact':'bounded-fixture'}, "
+        "lambda x: json.dumps(x, sort_keys=True).encode(), json.loads); "
+        "print(len(calls), json.dumps(v, sort_keys=True))"
+    )
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(clone / "test/rmgpy/kmc"),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    replay = subprocess.check_output(
+        [sys.executable, "-c", replay_script, str(imported / "artifact.json")],
+        cwd=clone, env=env, text=True,
+    ).strip()
+    assert replay.startswith("0 ")
+    assert hashlib.sha256((imported / "artifact.json").read_bytes()).hexdigest() == hashlib.sha256(
+        (source / "artifact.json").read_bytes()
+    ).hexdigest()
+
+    (clone / "rmgpy/data/replay_marker.py").write_text("changed")
+    miss = subprocess.check_output(
+        [sys.executable, "-c", replay_script, str(tmp_path / "miss.json")],
+        cwd=clone, env=env, text=True,
+    ).strip()
+    assert miss.startswith("1 ")
+
+
 def test_new_rmg_kmc_environment_setting_changes_artifact_key(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     (repo / "rmgpy").mkdir(parents=True)
