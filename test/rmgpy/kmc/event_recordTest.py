@@ -488,7 +488,7 @@ def test_absent_witness_fields_preserve_legacy_event_id():
         "rate_witness_product_graphs",
         "proxy_padding",
     ):
-        data.pop(name)
+        data.pop(name, None)
 
     recovered = EventRecord.from_dict(data)
 

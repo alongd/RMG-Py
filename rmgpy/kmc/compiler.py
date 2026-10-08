@@ -3161,7 +3161,7 @@ class EventSetCompiler:
     def _build_linked_family_pair(self, proxy, reaction, provenance):
         """Estimate exactly one direction, then invert its reference-state Kc."""
         source = getattr(reaction, "source_reaction", reaction)
-        if self.proxy_padding_distance is not None:
+        if getattr(self, "proxy_padding_distance", None) is not None:
             proxy = _map_proxy_boundaries_to_reaction(proxy, source)
         proxy = replace(
             proxy, metadata={**proxy.metadata, "generic_reference_pair": True}
