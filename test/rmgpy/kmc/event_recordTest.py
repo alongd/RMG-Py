@@ -8,7 +8,14 @@ import pytest
 
 from rmgpy.kmc.compiler import _graph_adjacencies
 from rmgpy.kmc.event_record import EventRecord
-from rmgpy.kmc.proxy_padding import BoundaryPort, RepeatUnitGraph, pad_reaction_witness
+from rmgpy.kmc.proxy_padding import (
+    BoundaryPort,
+    RepeatUnitGraph,
+    _canonical_atom_reference,
+    _canonical_atom_references,
+    _projection,
+    pad_molecule,
+)
 from rmgpy.molecule.molecule import Molecule
 
 
@@ -462,32 +469,54 @@ def _distance_checked_padded_record():
     molecule = Molecule(smiles="CC")
     molecule.assign_atom_ids()
     heavy = [atom for atom in molecule.atoms if atom.element.number != 1]
-    reaction = type("Reaction", (), {})()
-    reaction.reactants = [molecule]
-    reaction.products = [molecule.copy(deep=True)]
-    reaction.degeneracy = 1.0
     repeat = RepeatUnitGraph.from_smiles(
         "PE", "CC", head_atom_index=0, tail_atom_index=1
     )
-    witness = pad_reaction_witness(
-        reaction,
+    witness = pad_molecule(
+        molecule,
         [BoundaryPort(heavy[1].id, "tail")],
         repeat,
-        min_distance=4,
         reacting_atom_ids=[heavy[0].id],
+        min_distance=4,
     )
-    padding = witness.provenance(repeat, 4, 0.01)
-    padding["root_validation"] = {"method": "synthetic exact-root fixture"}
+    executable_reaction = type("Reaction", (), {})()
+    executable_reaction.reactants = [molecule]
+    executable_reaction.products = [molecule]
+    witness_reaction = type("Reaction", (), {})()
+    witness_reaction.reactants = [witness.molecule]
+    witness_reaction.products = [witness.molecule]
+    padding = {
+        "status": "padded",
+        "minimum_heavy_bond_distance": 4,
+        "reacting_atoms": {
+            side: _canonical_atom_references(
+                getattr(witness_reaction, side), [heavy[0].id]
+            )
+            for side in ("reactants", "products")
+        },
+        "artificial_boundaries": [
+            {
+                side: _canonical_atom_reference(
+                    getattr(witness_reaction, side), witness.boundaries[0].atom_id
+                )
+                for side in ("reactants", "products")
+            }
+        ],
+        "root_validation": {"method": "synthetic exact-root fixture"},
+        "executable_to_witness_projection": _projection(
+            executable_reaction, witness_reaction
+        ),
+    }
     return EventRecord(
         family="identity",
         arity=1,
         participant_site_types=["chain"],
         reactant_multiplicities=[1],
         atom_map={0: 0, 1: 1},
-        reactant_graphs=_graph_adjacencies(reaction.reactants),
-        product_graphs=_graph_adjacencies(reaction.products),
-        rate_witness_reactant_graphs=_graph_adjacencies(witness.reaction.reactants),
-        rate_witness_product_graphs=_graph_adjacencies(witness.reaction.products),
+        reactant_graphs=_graph_adjacencies(executable_reaction.reactants),
+        product_graphs=_graph_adjacencies(executable_reaction.products),
+        rate_witness_reactant_graphs=_graph_adjacencies(witness_reaction.reactants),
+        rate_witness_product_graphs=_graph_adjacencies(witness_reaction.products),
         proxy_padding=padding,
     )
 
