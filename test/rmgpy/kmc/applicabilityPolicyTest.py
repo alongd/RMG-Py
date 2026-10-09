@@ -1064,9 +1064,6 @@ def test_synthetic_duplicated_reciprocal_pair_is_detected():
 # --- I-088: verified stored-transition attribution -------------------------
 
 _CENSUS = json.loads((FIXTURES / "i088_carbene_census_records.json").read_text())
-_I078_REFUSED = json.loads(
-    Path("/home/alon/runs/i078/refused_candidates.json").read_text()
-)
 _I078_ARYL_H_ABSTRACTION_IDS = {
     "evt_d9c6ba38f51dc90885e6832da9be04572898bec9fea9da4e514826dc0cab4f2d",
     "evt_ad79656ff350380b2179c3401cd6bd0ad0b00b55b9c44d8446efc0634f9da67d",
@@ -1227,7 +1224,7 @@ def _i078_aryl_h_abstraction_pair():
     """
     records = {
         record["event_id"]: copy.deepcopy(record)
-        for record in _I078_REFUSED
+        for record in _CENSUS["refused_pairs"]
         if record["event_id"] in _I078_ARYL_H_ABSTRACTION_IDS
     }
     assert set(records) == _I078_ARYL_H_ABSTRACTION_IDS
@@ -1409,6 +1406,18 @@ _NAPHTHYL_RADICAL = """multiplicity 2
 17 H u0 p0 c0 {9,S}
 """
 
+_ODD_AROMATIC_RADICAL = """multiplicity 2
+1 C u1 p0 c0 {2,B} {5,B}
+2 C u0 p0 c0 {1,B} {3,B} {6,S}
+3 C u0 p0 c0 {2,B} {4,B} {7,S}
+4 C u0 p0 c0 {3,B} {5,B} {8,S}
+5 C u0 p0 c0 {1,B} {4,B} {9,S}
+6 H u0 p0 c0 {2,S}
+7 H u0 p0 c0 {3,S}
+8 H u0 p0 c0 {4,S}
+9 H u0 p0 c0 {5,S}
+"""
+
 
 def _kekule_evidence():
     return compiler_module._new_kekule_evidence()
@@ -1465,6 +1474,20 @@ def test_drawing_bound_stops_matching_count_at_first_excess(monkeypatch):
     assert summary["search_nodes"] == 6
     assert summary["candidate_drawings"] == 1
     assert refused
+
+
+def test_zero_drawing_bound_refuses_no_matching_noop_drawing(monkeypatch):
+    molecule = Molecule().from_adjacency_list(_ODD_AROMATIC_RADICAL)
+    monkeypatch.setattr(compiler_module, "KEKULE_DRAWING_LIMIT", 0)
+    evidence = _kekule_evidence()
+
+    with pytest.raises(
+        compiler_module.KekuleEnumerationLimitError,
+        match="Kekulé enumeration exceeds bound 0",
+    ):
+        compiler_module._radical_aromatic_kekule_forms(molecule, evidence)
+    assert evidence["kekule_enumeration"]["no_matching_components"] == 1
+    assert evidence["kekule_enumeration"]["candidate_drawings"] == 1
 
 
 def test_kekule_bound_is_cumulative_across_resonance_forms_per_molecule(
@@ -1551,19 +1574,7 @@ def test_component_without_matching_keeps_other_component_drawings():
 
 
 def test_no_matching_component_obeys_search_node_budget(monkeypatch):
-    molecule = Molecule().from_adjacency_list(
-        """multiplicity 2
-1 C u1 p0 c0 {2,B} {5,B}
-2 C u0 p0 c0 {1,B} {3,B} {6,S}
-3 C u0 p0 c0 {2,B} {4,B} {7,S}
-4 C u0 p0 c0 {3,B} {5,B} {8,S}
-5 C u0 p0 c0 {1,B} {4,B} {9,S}
-6 H u0 p0 c0 {2,S}
-7 H u0 p0 c0 {3,S}
-8 H u0 p0 c0 {4,S}
-9 H u0 p0 c0 {5,S}
-"""
-    )
+    molecule = Molecule().from_adjacency_list(_ODD_AROMATIC_RADICAL)
     monkeypatch.setattr(compiler_module, "KEKULE_MATCHING_SEARCH_NODE_LIMIT", 3)
     evidence = _kekule_evidence()
     with pytest.raises(
