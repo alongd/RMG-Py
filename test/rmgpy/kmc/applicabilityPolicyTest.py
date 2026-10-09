@@ -1505,6 +1505,23 @@ def test_kekule_bound_is_cumulative_across_resonance_forms_per_molecule(
     assert summary["candidate_drawings"] > 3
 
 
+def test_kekule_search_node_budget_is_cumulative_across_resonance_forms(
+    monkeypatch,
+):
+    molecule = Molecule().from_adjacency_list(_NAPHTHYL_RADICAL)
+    compiler_module._tag_atom_ids([molecule])
+    # The two enumerated resonance forms visit 28 and 14 nodes separately.
+    # Each fits under 35 alone, but their per-molecule total does not.
+    monkeypatch.setattr(compiler_module, "KEKULE_MATCHING_SEARCH_NODE_LIMIT", 35)
+
+    with pytest.raises(compiler_module.KekuleMatchingSearchLimitError) as raised:
+        compiler_module._stored_resonance_forms([molecule])
+
+    summary = raised.value.evidence["kekule_enumeration"]
+    assert summary["search_node_bound"] == 35
+    assert summary["search_nodes"] == 36
+
+
 def test_kekule_atomtype_rejections_are_counted(monkeypatch):
     molecule = Molecule().from_adjacency_list(
         """multiplicity 2
