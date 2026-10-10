@@ -321,8 +321,14 @@ class TestThreeWaySweep:
         assert res.e_dist >= E_HI                 # stage 1 bulk-inactive
         if "dead" in regime:
             assert res.m_dist <= M_LO
-            assert res.solver == 0.0
-            # ...and the zero is a CHOICE, not a degenerate state
+            # b1a7d3385 widened the C1 handoff from M=99..100 to M=50..100.
+            # The inner dead band is exactly zero; the point just inside M_lo
+            # is deliberately nonzero.
+            if res.m_dist <= solver_mod.CONE_MARGIN_M_INNER:
+                assert res.solver == 0.0
+            else:
+                assert 0.0 < res.solver < res.case.s_base
+            # ...and the gate is a choice, not a degenerate state
             s_cone = res.q10 / (V_POLY * (res.b1c - 1.0))
             assert softmin_p([res.case.s_base, s_cone]) > 0.0
             assert res.b1_n >= 1.0                # off the b1c == 1 surface
