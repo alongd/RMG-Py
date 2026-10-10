@@ -1,0 +1,1204 @@
+{
+  "attempts": [
+    {
+      "converged": true,
+      "seed": {
+        "n_e": 1e+16,
+        "state": [],
+        "u": 1.0
+      },
+      "state": {
+        "discharge_class": "self-sustained",
+        "n_e": 1e+16,
+        "self_sustained": true,
+        "u": 1.0
+      }
+    }
+  ],
+  "branches": [
+    {
+      "continuation_path": [
+        {
+          "certificate_solves": 0,
+          "continuation_settings": {
+            "certificate": "reversible-chain-v1",
+            "departure_fraction": 2.0,
+            "eigenvalue_band": 10.0,
+            "eigenvalue_fraction": 0.5,
+            "initial_power": 0.0,
+            "log_ne_tolerance": 0.001,
+            "max_step": 0.025,
+            "min_step": 0.0125,
+            "predictor_tolerance": 0.25,
+            "sample_roundoff": 1e-09,
+            "stability_resolution": 0.025,
+            "targets": [
+              0.05
+            ],
+            "u_tolerance": 0.0001
+          },
+          "converged": true,
+          "corrector_noise_floor": [
+            1.4210854715202004e-14,
+            1.4210854715202004e-14
+          ],
+          "corrector_reproducibility": 0.0,
+          "corrector_scaled_departure": 0.0,
+          "corrector_solves": 2,
+          "departure_fraction": 2.0,
+          "determinant": 2.0,
+          "discharge_class": "self-sustained",
+          "event_type": null,
+          "fold_detected": false,
+          "fold_reason": null,
+          "hopf_detected": false,
+          "n_e": 1e+16,
+          "power": 0.0,
+          "predictor_relative_distance": 0.0,
+          "seed": {
+            "n_e": 1e+16,
+            "state": [
+              1.0,
+              1.0
+            ],
+            "u": 1.0
+          },
+          "segment_certified": true,
+          "stability": {
+            "algebraic_indices": [],
+            "classification": "stable",
+            "conservation_left_null_relative_residuals": {},
+            "conservation_modes": [],
+            "eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "full_step_classification": "stable",
+            "half_step_classification": "stable",
+            "half_step_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "near_zero_reduced_mode": false,
+            "raw_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "reduced_determinant": 2.0,
+            "reduced_dimension": 2,
+            "stable": true,
+            "step_halving_same_verdict": true,
+            "zero_tolerance": 1e-08
+          },
+          "stability_resolution": 0.025,
+          "state": [
+            1.0,
+            1.0
+          ],
+          "step_size": 0.0,
+          "tangent_cosine": null,
+          "u": 1.0,
+          "unresolved": false
+        },
+        {
+          "certificate": {
+            "forward_log_ne_difference": 0.0,
+            "forward_u_difference": 0.0,
+            "gap": 0.0125,
+            "log_ne_tolerance": 0.001,
+            "max_reverse_log_ne_difference": 0.0,
+            "max_reverse_u_difference": 0.0,
+            "name": "reversible-chain-v1",
+            "sub_steps": 2,
+            "u_tolerance": 0.0001
+          },
+          "certificate_solves": 3,
+          "certification_points": [
+            {
+              "converged": true,
+              "n_e": 1e+16,
+              "power": 0.0125,
+              "segment_certified": true,
+              "state": [
+                0.99953125,
+                1.0125
+              ],
+              "u": 1.0125
+            }
+          ],
+          "converged": true,
+          "corrector_scaled_departure": 0.0172691415192021,
+          "corrector_solves": 5,
+          "corrector_to_tangent_ratio": null,
+          "determinant": 2.0,
+          "discharge_class": "self-sustained",
+          "eigenvalue_change_ratio": 0.0,
+          "eigenvalue_fraction": 0.5,
+          "event_type": null,
+          "fold_detected": false,
+          "fold_reason": null,
+          "hopf_detected": false,
+          "interpolation_checks": [
+            {
+              "midpoint_log_ne_error": 0.0,
+              "midpoint_u_error": 0.0,
+              "power": [
+                0.0,
+                0.025
+              ],
+              "resolution": 0.0125
+            }
+          ],
+          "interpolation_segments": [
+            {
+              "certificate": "declared-error-bound-v1",
+              "log_ne_error_bound": 2.6177361780742625e-13,
+              "n_e": [
+                1e+16,
+                1e+16
+              ],
+              "power": [
+                0.0,
+                0.025
+              ],
+              "resolution": 0.0125,
+              "u": [
+                1.0,
+                1.025
+              ],
+              "u_error_bound": 7.283063041541026e-15
+            }
+          ],
+          "n_e": 1e+16,
+          "power": 0.025,
+          "predictor_relative_distance": 0.0172691415192021,
+          "seed": {
+            "n_e": 1e+16,
+            "state": [
+              1.0,
+              1.0
+            ],
+            "u": 1.0
+          },
+          "segment_certified": true,
+          "stability": {
+            "algebraic_indices": [],
+            "classification": "stable",
+            "conservation_left_null_relative_residuals": {},
+            "conservation_modes": [],
+            "eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "full_step_classification": "stable",
+            "half_step_classification": "stable",
+            "half_step_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "near_zero_reduced_mode": false,
+            "raw_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "reduced_determinant": 2.0,
+            "reduced_dimension": 2,
+            "stable": true,
+            "step_halving_same_verdict": true,
+            "zero_tolerance": 1e-08
+          },
+          "stability_probe_power": 0.0125,
+          "stability_resolution": 0.0125,
+          "state": [
+            0.99875,
+            1.025
+          ],
+          "step_size": 0.025,
+          "tangent_cosine": null,
+          "u": 1.025,
+          "unresolved": false
+        },
+        {
+          "certificate": {
+            "forward_log_ne_difference": 0.0,
+            "forward_u_difference": 0.0,
+            "gap": 0.0125,
+            "log_ne_tolerance": 0.001,
+            "max_reverse_log_ne_difference": 0.0,
+            "max_reverse_u_difference": 0.0,
+            "name": "reversible-chain-v1",
+            "sub_steps": 2,
+            "u_tolerance": 0.0001
+          },
+          "certificate_solves": 3,
+          "certification_points": [
+            {
+              "converged": true,
+              "n_e": 1e+16,
+              "power": 0.037500000000000006,
+              "segment_certified": true,
+              "state": [
+                0.9976562499999999,
+                1.0375
+              ],
+              "u": 1.0375
+            }
+          ],
+          "converged": true,
+          "corrector_scaled_departure": 0.000884989713625197,
+          "corrector_solves": 5,
+          "corrector_to_tangent_ratio": 0.7075488609450901,
+          "determinant": 2.0,
+          "discharge_class": "self-sustained",
+          "eigenvalue_change_ratio": 0.0,
+          "eigenvalue_fraction": 0.5,
+          "event_type": null,
+          "fold_detected": false,
+          "fold_reason": null,
+          "hopf_detected": false,
+          "interpolation_checks": [
+            {
+              "midpoint_log_ne_error": 0.0,
+              "midpoint_u_error": 0.0,
+              "power": [
+                0.025,
+                0.05
+              ],
+              "resolution": 0.012500000000000004
+            }
+          ],
+          "interpolation_segments": [
+            {
+              "certificate": "declared-error-bound-v1",
+              "log_ne_error_bound": 2.6177361780742625e-13,
+              "n_e": [
+                1e+16,
+                1e+16
+              ],
+              "power": [
+                0.025,
+                0.05
+              ],
+              "resolution": 0.012500000000000004,
+              "u": [
+                1.025,
+                1.05
+              ],
+              "u_error_bound": 7.460698725481052e-15
+            }
+          ],
+          "n_e": 1e+16,
+          "power": 0.05,
+          "predictor_relative_distance": 0.000884989713625197,
+          "seed": {
+            "n_e": 1.0000000000000034e+16,
+            "state": [
+              0.9975,
+              1.0499999999999998
+            ],
+            "u": 1.0499999999999998
+          },
+          "segment_certified": true,
+          "stability": {
+            "algebraic_indices": [],
+            "classification": "stable",
+            "conservation_left_null_relative_residuals": {},
+            "conservation_modes": [],
+            "eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "full_step_classification": "stable",
+            "half_step_classification": "stable",
+            "half_step_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "near_zero_reduced_mode": false,
+            "raw_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "reduced_determinant": 2.0,
+            "reduced_dimension": 2,
+            "stable": true,
+            "step_halving_same_verdict": true,
+            "zero_tolerance": 1e-08
+          },
+          "stability_probe_power": 0.037500000000000006,
+          "stability_resolution": 0.0125,
+          "state": [
+            0.9962500000000001,
+            1.05
+          ],
+          "step_size": 0.025,
+          "tangent_cosine": 0.9486832980505139,
+          "u": 1.05,
+          "unresolved": false
+        }
+      ],
+      "continuation_path_half_step": [
+        {
+          "certificate_solves": 0,
+          "continuation_settings": {
+            "certificate": "reversible-chain-v1",
+            "departure_fraction": 2.0,
+            "eigenvalue_band": 10.0,
+            "eigenvalue_fraction": 0.5,
+            "initial_power": 0.0,
+            "log_ne_tolerance": 0.001,
+            "max_step": 0.0125,
+            "min_step": 0.00625,
+            "predictor_tolerance": 0.25,
+            "sample_roundoff": 1e-09,
+            "stability_resolution": 0.0125,
+            "targets": [
+              0.05
+            ],
+            "u_tolerance": 0.0001
+          },
+          "converged": true,
+          "corrector_noise_floor": [
+            1.4210854715202004e-14,
+            1.4210854715202004e-14
+          ],
+          "corrector_reproducibility": 0.0,
+          "corrector_scaled_departure": 0.0,
+          "corrector_solves": 2,
+          "departure_fraction": 2.0,
+          "determinant": 2.0,
+          "discharge_class": "self-sustained",
+          "event_type": null,
+          "fold_detected": false,
+          "fold_reason": null,
+          "hopf_detected": false,
+          "n_e": 1e+16,
+          "power": 0.0,
+          "predictor_relative_distance": 0.0,
+          "seed": {
+            "n_e": 1e+16,
+            "state": [
+              1.0,
+              1.0
+            ],
+            "u": 1.0
+          },
+          "segment_certified": true,
+          "stability": {
+            "algebraic_indices": [],
+            "classification": "stable",
+            "conservation_left_null_relative_residuals": {},
+            "conservation_modes": [],
+            "eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "full_step_classification": "stable",
+            "half_step_classification": "stable",
+            "half_step_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "near_zero_reduced_mode": false,
+            "raw_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "reduced_determinant": 2.0,
+            "reduced_dimension": 2,
+            "stable": true,
+            "step_halving_same_verdict": true,
+            "zero_tolerance": 1e-08
+          },
+          "stability_resolution": 0.0125,
+          "state": [
+            1.0,
+            1.0
+          ],
+          "step_size": 0.0,
+          "tangent_cosine": null,
+          "u": 1.0,
+          "unresolved": false
+        },
+        {
+          "certificate": {
+            "forward_log_ne_difference": 0.0,
+            "forward_u_difference": 0.0,
+            "gap": 0.00625,
+            "log_ne_tolerance": 0.001,
+            "max_reverse_log_ne_difference": 0.0,
+            "max_reverse_u_difference": 0.0,
+            "name": "reversible-chain-v1",
+            "sub_steps": 2,
+            "u_tolerance": 0.0001
+          },
+          "certificate_solves": 3,
+          "certification_points": [
+            {
+              "converged": true,
+              "n_e": 1e+16,
+              "power": 0.00625,
+              "segment_certified": true,
+              "state": [
+                0.9998046875000001,
+                1.00625
+              ],
+              "u": 1.00625
+            }
+          ],
+          "converged": true,
+          "corrector_scaled_departure": 0.008736003572525927,
+          "corrector_solves": 5,
+          "corrector_to_tangent_ratio": null,
+          "determinant": 2.0,
+          "discharge_class": "self-sustained",
+          "eigenvalue_change_ratio": 0.0,
+          "eigenvalue_fraction": 0.5,
+          "event_type": null,
+          "fold_detected": false,
+          "fold_reason": null,
+          "hopf_detected": false,
+          "interpolation_checks": [
+            {
+              "midpoint_log_ne_error": 0.0,
+              "midpoint_u_error": 0.0,
+              "power": [
+                0.0,
+                0.0125
+              ],
+              "resolution": 0.00625
+            }
+          ],
+          "interpolation_segments": [
+            {
+              "certificate": "declared-error-bound-v1",
+              "log_ne_error_bound": 2.6177361780742625e-13,
+              "n_e": [
+                1e+16,
+                1e+16
+              ],
+              "power": [
+                0.0,
+                0.0125
+              ],
+              "resolution": 0.00625,
+              "u": [
+                1.0,
+                1.0125
+              ],
+              "u_error_bound": 7.194245199571014e-15
+            }
+          ],
+          "n_e": 1e+16,
+          "power": 0.0125,
+          "predictor_relative_distance": 0.008736003572525927,
+          "seed": {
+            "n_e": 1e+16,
+            "state": [
+              1.0,
+              1.0
+            ],
+            "u": 1.0
+          },
+          "segment_certified": true,
+          "stability": {
+            "algebraic_indices": [],
+            "classification": "stable",
+            "conservation_left_null_relative_residuals": {},
+            "conservation_modes": [],
+            "eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "full_step_classification": "stable",
+            "half_step_classification": "stable",
+            "half_step_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "near_zero_reduced_mode": false,
+            "raw_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "reduced_determinant": 2.0,
+            "reduced_dimension": 2,
+            "stable": true,
+            "step_halving_same_verdict": true,
+            "zero_tolerance": 1e-08
+          },
+          "stability_probe_power": 0.00625,
+          "stability_resolution": 0.00625,
+          "state": [
+            0.99953125,
+            1.0125
+          ],
+          "step_size": 0.0125,
+          "tangent_cosine": null,
+          "u": 1.0125,
+          "unresolved": false
+        },
+        {
+          "certificate": {
+            "forward_log_ne_difference": 0.0,
+            "forward_u_difference": 0.0,
+            "gap": 0.00625,
+            "log_ne_tolerance": 0.001,
+            "max_reverse_log_ne_difference": 0.0,
+            "max_reverse_u_difference": 0.0,
+            "name": "reversible-chain-v1",
+            "sub_steps": 2,
+            "u_tolerance": 0.0001
+          },
+          "certificate_solves": 3,
+          "certification_points": [
+            {
+              "converged": true,
+              "n_e": 1e+16,
+              "power": 0.018750000000000003,
+              "segment_certified": true,
+              "state": [
+                0.9991796875,
+                1.01875
+              ],
+              "u": 1.01875
+            }
+          ],
+          "converged": true,
+          "corrector_scaled_departure": 0.00022107449779159194,
+          "corrector_solves": 5,
+          "corrector_to_tangent_ratio": 0.47151501916995536,
+          "determinant": 2.0,
+          "discharge_class": "self-sustained",
+          "eigenvalue_change_ratio": 0.0,
+          "eigenvalue_fraction": 0.5,
+          "event_type": null,
+          "fold_detected": false,
+          "fold_reason": null,
+          "hopf_detected": false,
+          "interpolation_checks": [
+            {
+              "midpoint_log_ne_error": 0.0,
+              "midpoint_u_error": 0.0,
+              "power": [
+                0.0125,
+                0.025
+              ],
+              "resolution": 0.006250000000000002
+            }
+          ],
+          "interpolation_segments": [
+            {
+              "certificate": "declared-error-bound-v1",
+              "log_ne_error_bound": 2.6177361780742625e-13,
+              "n_e": [
+                1e+16,
+                1e+16
+              ],
+              "power": [
+                0.0125,
+                0.025
+              ],
+              "resolution": 0.006250000000000002,
+              "u": [
+                1.0125,
+                1.025
+              ],
+              "u_error_bound": 7.283063041541026e-15
+            }
+          ],
+          "n_e": 1e+16,
+          "power": 0.025,
+          "predictor_relative_distance": 0.00022107449779159194,
+          "seed": {
+            "n_e": 1.0000000000000034e+16,
+            "state": [
+              0.9990625,
+              1.025
+            ],
+            "u": 1.025
+          },
+          "segment_certified": true,
+          "stability": {
+            "algebraic_indices": [],
+            "classification": "stable",
+            "conservation_left_null_relative_residuals": {},
+            "conservation_modes": [],
+            "eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "full_step_classification": "stable",
+            "half_step_classification": "stable",
+            "half_step_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "near_zero_reduced_mode": false,
+            "raw_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "reduced_determinant": 2.0,
+            "reduced_dimension": 2,
+            "stable": true,
+            "step_halving_same_verdict": true,
+            "zero_tolerance": 1e-08
+          },
+          "stability_probe_power": 0.018750000000000003,
+          "stability_resolution": 0.00625,
+          "state": [
+            0.99875,
+            1.025
+          ],
+          "step_size": 0.0125,
+          "tangent_cosine": 0.970142500145342,
+          "u": 1.025,
+          "unresolved": false
+        },
+        {
+          "certificate": {
+            "forward_log_ne_difference": 0.0,
+            "forward_u_difference": 0.0,
+            "gap": 0.006250000000000002,
+            "log_ne_tolerance": 0.001,
+            "max_reverse_log_ne_difference": 0.0,
+            "max_reverse_u_difference": 0.0,
+            "name": "reversible-chain-v1",
+            "sub_steps": 2,
+            "u_tolerance": 0.0001
+          },
+          "certificate_solves": 3,
+          "certification_points": [
+            {
+              "converged": true,
+              "n_e": 1e+16,
+              "power": 0.03125,
+              "segment_certified": true,
+              "state": [
+                0.9982421875,
+                1.03125
+              ],
+              "u": 1.03125
+            }
+          ],
+          "converged": true,
+          "corrector_scaled_departure": 0.00022124742840641716,
+          "corrector_solves": 5,
+          "corrector_to_tangent_ratio": 0.2829532713146548,
+          "determinant": 2.0,
+          "discharge_class": "self-sustained",
+          "eigenvalue_change_ratio": 0.0,
+          "eigenvalue_fraction": 0.5,
+          "event_type": null,
+          "fold_detected": false,
+          "fold_reason": null,
+          "hopf_detected": false,
+          "interpolation_checks": [
+            {
+              "midpoint_log_ne_error": 0.0,
+              "midpoint_u_error": 0.0,
+              "power": [
+                0.025,
+                0.037500000000000006
+              ],
+              "resolution": 0.0062500000000000056
+            }
+          ],
+          "interpolation_segments": [
+            {
+              "certificate": "declared-error-bound-v1",
+              "log_ne_error_bound": 2.6177361780742625e-13,
+              "n_e": [
+                1e+16,
+                1e+16
+              ],
+              "power": [
+                0.025,
+                0.037500000000000006
+              ],
+              "resolution": 0.0062500000000000056,
+              "u": [
+                1.025,
+                1.0375
+              ],
+              "u_error_bound": 7.37188088351104e-15
+            }
+          ],
+          "n_e": 1e+16,
+          "power": 0.037500000000000006,
+          "predictor_relative_distance": 0.00022124742840641716,
+          "seed": {
+            "n_e": 1.0000000000000034e+16,
+            "state": [
+              0.9979687500000001,
+              1.0374999999999999
+            ],
+            "u": 1.0374999999999999
+          },
+          "segment_certified": true,
+          "stability": {
+            "algebraic_indices": [],
+            "classification": "stable",
+            "conservation_left_null_relative_residuals": {},
+            "conservation_modes": [],
+            "eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "full_step_classification": "stable",
+            "half_step_classification": "stable",
+            "half_step_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "near_zero_reduced_mode": false,
+            "raw_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "reduced_determinant": 2.0,
+            "reduced_dimension": 2,
+            "stable": true,
+            "step_halving_same_verdict": true,
+            "zero_tolerance": 1e-08
+          },
+          "stability_probe_power": 0.03125,
+          "stability_resolution": 0.006250000000000002,
+          "state": [
+            0.9976562499999999,
+            1.0375
+          ],
+          "step_size": 0.012500000000000004,
+          "tangent_cosine": 0.9863939238321311,
+          "u": 1.0375,
+          "unresolved": false
+        },
+        {
+          "certificate": {
+            "forward_log_ne_difference": 0.0,
+            "forward_u_difference": 0.0,
+            "gap": 0.006249999999999999,
+            "log_ne_tolerance": 0.001,
+            "max_reverse_log_ne_difference": 0.0,
+            "max_reverse_u_difference": 0.0,
+            "name": "reversible-chain-v1",
+            "sub_steps": 2,
+            "u_tolerance": 0.0001
+          },
+          "certificate_solves": 3,
+          "certification_points": [
+            {
+              "converged": true,
+              "n_e": 1e+16,
+              "power": 0.043750000000000004,
+              "segment_certified": true,
+              "state": [
+                0.9976921875,
+                1.04375
+              ],
+              "u": 1.04375
+            }
+          ],
+          "converged": true,
+          "corrector_scaled_departure": 0.00022148998627592934,
+          "corrector_solves": 5,
+          "corrector_to_tangent_ratio": 0.20214116289435696,
+          "determinant": 2.0,
+          "discharge_class": "self-sustained",
+          "eigenvalue_change_ratio": 0.0,
+          "eigenvalue_fraction": 0.5,
+          "event_type": null,
+          "fold_detected": false,
+          "fold_reason": null,
+          "hopf_detected": false,
+          "interpolation_checks": [
+            {
+              "midpoint_log_ne_error": 0.0,
+              "midpoint_u_error": 2.220446049250313e-16,
+              "power": [
+                0.037500000000000006,
+                0.05
+              ],
+              "resolution": 0.006249999999999999
+            }
+          ],
+          "interpolation_segments": [
+            {
+              "certificate": "declared-error-bound-v1",
+              "log_ne_error_bound": 2.6177361780742625e-13,
+              "n_e": [
+                1e+16,
+                1e+16
+              ],
+              "power": [
+                0.037500000000000006,
+                0.05
+              ],
+              "resolution": 0.006249999999999999,
+              "u": [
+                1.0375,
+                1.05
+              ],
+              "u_error_bound": 8.348877145181177e-15
+            }
+          ],
+          "n_e": 1e+16,
+          "power": 0.05,
+          "predictor_relative_distance": 0.00022148998627592934,
+          "seed": {
+            "n_e": 1.0000000000000034e+16,
+            "state": [
+              0.9965624999999998,
+              1.0500000000000003
+            ],
+            "u": 1.0500000000000003
+          },
+          "segment_certified": true,
+          "stability": {
+            "algebraic_indices": [],
+            "classification": "stable",
+            "conservation_left_null_relative_residuals": {},
+            "conservation_modes": [],
+            "eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "full_step_classification": "stable",
+            "half_step_classification": "stable",
+            "half_step_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "near_zero_reduced_mode": false,
+            "raw_eigenvalues": [
+              {
+                "imag": 0.0,
+                "real": -1.0
+              },
+              {
+                "imag": 0.0,
+                "real": -2.0
+              }
+            ],
+            "reduced_determinant": 2.0,
+            "reduced_dimension": 2,
+            "stable": true,
+            "step_halving_same_verdict": true,
+            "zero_tolerance": 1e-08
+          },
+          "stability_probe_power": 0.043750000000000004,
+          "stability_resolution": 0.006249999999999999,
+          "state": [
+            0.9962500000000001,
+            1.05
+          ],
+          "step_size": 0.012499999999999997,
+          "tangent_cosine": 0.9922778767136811,
+          "u": 1.05,
+          "unresolved": false
+        }
+      ],
+      "discharge_class": "self-sustained",
+      "id": "reactor-000",
+      "members": 1,
+      "n_e": 1e+16,
+      "seed": {
+        "n_e": 1e+16,
+        "state": [],
+        "u": 1.0
+      },
+      "self_sustained": true,
+      "stability": {
+        "algebraic_indices": [],
+        "classification": "stable",
+        "conservation_left_null_relative_residuals": {},
+        "conservation_modes": [],
+        "eigenvalues": [
+          {
+            "imag": 0.0,
+            "real": -1.0
+          },
+          {
+            "imag": 0.0,
+            "real": -2.0
+          }
+        ],
+        "full_step_classification": "stable",
+        "half_step_classification": "stable",
+        "half_step_eigenvalues": [
+          {
+            "imag": 0.0,
+            "real": -1.0
+          },
+          {
+            "imag": 0.0,
+            "real": -2.0
+          }
+        ],
+        "near_zero_reduced_mode": false,
+        "raw_eigenvalues": [
+          {
+            "imag": 0.0,
+            "real": -1.0
+          },
+          {
+            "imag": 0.0,
+            "real": -2.0
+          }
+        ],
+        "reduced_determinant": 2.0,
+        "reduced_dimension": 2,
+        "stable": true,
+        "step_halving_same_verdict": true,
+        "zero_tolerance": 1e-08
+      },
+      "u": 1.0
+    }
+  ],
+  "certified_coverage": {
+    "reactor-000": {
+      "powers": [
+        0.0,
+        0.0125,
+        0.025,
+        0.037500000000000006,
+        0.05
+      ],
+      "segments": [
+        [
+          0.0,
+          0.025
+        ],
+        [
+          0.025,
+          0.05
+        ]
+      ]
+    }
+  },
+  "continuation_certificate": {
+    "identity": {
+      "components": [
+        "u",
+        "ln n_e"
+      ],
+      "log_ne_tolerance": 0.001,
+      "u_tolerance": 0.0001
+    },
+    "limits": [
+      "The corrector integrates the reactor in time, so it selects a state by basin of attraction: the certificate never shows that no other branch exists.",
+      "Branch identity is (u, ln n_e) within (u_tolerance, log_ne_tolerance), the criterion cluster_states uses; states that differ only in other components are one branch by the scan's definition.",
+      "Aliasing: when a branch moves, within one gap, by at least its distance to the basin boundary of a neighbouring branch, a hop to that branch can be reversible at that gap. A steady neighbour then fails the next gap; a hop at the last gap of a path is exposed only by disagreement between the step and half-step paths or between legs at a common power, and matching refuses a branch whose recorded states disagree.",
+      "A corrector whose result does not depend on its seed makes the reversibility test vacuous. For it only the secant departure trigger remains, which detects a jump larger than departure_fraction times the local motion over the floor step.",
+      "Unstable windows narrower than the stability resolution can be missed; reduced modes farther from zero than eigenvalue_band times the slowest mode are assumed not to reach zero within one gap.",
+      "A fold bracket is where the corrector stops following the branch: only failures the adapter declares as no-steady-state (is_fold_failure) narrow it, so it encloses a fold only if those failures are fold-caused; any other corrector failure ends unresolved."
+    ],
+    "name": "reversible-chain-v1",
+    "statement": "Each accepted step is reversible within the branch tolerances at the declared step and floor. The step is split into gaps no wider than the stability resolution. Each sample is corrected from the previous sample (zero-order); correcting it back to the previous power returns to the previous sample within (u_tolerance, log_ne_tolerance); and the last sample matches the predictor-corrected endpoint within the same tolerances. This applies to every accepted step, the first step of each leg included. Every sample and endpoint is classified stable."
+  },
+  "continuation_settings": {
+    "reactor-000": {
+      "continuation_path": {
+        "certificate": "reversible-chain-v1",
+        "departure_fraction": 2.0,
+        "eigenvalue_band": 10.0,
+        "eigenvalue_fraction": 0.5,
+        "initial_power": 0.0,
+        "log_ne_tolerance": 0.001,
+        "max_step": 0.025,
+        "min_step": 0.0125,
+        "predictor_tolerance": 0.25,
+        "sample_roundoff": 1e-09,
+        "stability_resolution": 0.025,
+        "targets": [
+          0.05
+        ],
+        "u_tolerance": 0.0001
+      },
+      "continuation_path_half_step": {
+        "certificate": "reversible-chain-v1",
+        "departure_fraction": 2.0,
+        "eigenvalue_band": 10.0,
+        "eigenvalue_fraction": 0.5,
+        "initial_power": 0.0,
+        "log_ne_tolerance": 0.001,
+        "max_step": 0.0125,
+        "min_step": 0.00625,
+        "predictor_tolerance": 0.25,
+        "sample_roundoff": 1e-09,
+        "stability_resolution": 0.0125,
+        "targets": [
+          0.05
+        ],
+        "u_tolerance": 0.0001
+      }
+    }
+  },
+  "continuation_solves": {
+    "reactor-000": {
+      "continuation_path": {
+        "certificate_solves": 6,
+        "corrector_solves": 12
+      },
+      "continuation_path_half_step": {
+        "certificate_solves": 12,
+        "corrector_solves": 22
+      }
+    }
+  },
+  "log_ne_tolerance": 0.001,
+  "path_consistency": {
+    "reactor-000": {
+      "compared_powers": 5,
+      "consistent": true,
+      "disagreeing_powers": [],
+      "max_log_ne_difference": 0.0,
+      "max_u_difference": 0.0,
+      "unconfirmed_by_half_step": []
+    }
+  },
+  "reference_power": 0.0,
+  "schema": 1,
+  "stability_resolution": 0.025,
+  "timeout_rechecks": [],
+  "u_tolerance": 0.0001
+}

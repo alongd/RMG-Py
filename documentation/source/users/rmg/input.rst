@@ -1597,6 +1597,110 @@ omits ``electronTemperature`` and never reconstructs ``elasticCollisions``; it r
 non-table ``electronEnergies`` declarations, so re-reading retains the same reduced-field
 coordinate authority and heavy-particle electron-energy accounting.
 
+.. _plasmaoperatingbranch:
+
+Declaring an operating branch
+-----------------------------
+
+At one absorbed power a discharge can have more than one steady state.  ``operatingBranch`` names
+the one a run is meant to reach and makes the run fail if it ends anywhere else::
+
+	plasmaReactor(
+	    ...
+	    electronKinetics={
+	        ...
+	        'operatingBranch': {'id': 'reactor-000', 'path': 'branches/branches.json'},
+	    },
+	    electronEnergyBalance={'absorbedPower': (0.5, 'W'), 'sheath': 'floatingWall'},
+	)
+
+``operatingBranch`` is optional and, when given, has exactly the keys ``'id'`` and ``'path'``, both
+non-empty strings.  ``path`` names a ``branches.json`` written by the branch scanner
+(:mod:`rmgpy.tools.eedf.branches`); environment variables in it are expanded and a relative path is
+resolved beside the input deck.  ``id`` is a branch id recorded in that file, such as
+``'reactor-000'``.  Saving the input preserves the declaration.
+
+When the reactor is built, the file is read and the branch must be *matchable* (below); otherwise
+the run stops with a ``PlasmaStateError`` before it starts.  The branch's recorded seed then replaces
+``initialReducedField`` as the initial coordinate: the seed's ``u`` (the natural logarithm of the
+reduced field in Td) is the initial electron-energy state, and its electron density ``n_e``
+(m\ :sup:`-3`) sets the initial electron amount, with the positive ions rescaled in their declared
+proportions to keep the mixture neutral.  At every accepted termination the terminal ``(u, n_e)``
+at the run's absorbed power is matched against the file again; the run fails unless it matches the
+declared branch and no other.
+
+**What the file certifies.**  The scanner solves a lattice of seeds at the scan's reference power,
+clusters the converged states into branches, and records every one with its stability verdict.  A
+stable, self-sustained branch is then continued over absorbed power twice, on a step path
+(``continuation_path``) and on a half-step path (``continuation_path_half_step``).  Each step is
+accepted only under the continuation certificate (``reversible-chain-v2``):
+
+	Each accepted step is reversible within the branch tolerances at the declared step and floor. The
+	step is split into gaps no wider than the stability resolution. Each sample is corrected from the
+	previous sample (zero-order); correcting it back to the previous power returns to the previous
+	sample within (u_tolerance, log_ne_tolerance); and the last sample matches the predictor-corrected
+	endpoint within the same tolerances. This applies to every accepted step, the first step of each
+	leg included. Every sample and endpoint is classified stable.
+
+Two states are the same branch when they agree within the file's ``u_tolerance`` and
+``log_ne_tolerance`` (``10^-4`` and ``10^-3`` by default).
+
+**Matching.**  A branch is matchable only when its reference verdict is stable, the half-step path
+is recorded, and the two paths agree: every power both paths solved holds one state, and every
+state of the step path lies within the range the half-step path reached.  Any other branch is
+recorded for reporting only and never matched, at the reference power included.  A matchable
+branch is a candidate only at a power where either path solved a certified state; the file lists
+these as ``certified_coverage``.  Nothing between two solved powers is certified, so a run at any
+other power is refused with the list of certified powers rather than matched.
+``interpolation_diagnostics`` are recorded for inspection only.
+
+**Refusals.**  Besides an unmatchable declaration, the loader refuses a file whose continuation was
+certified by an older certificate.  Before ``reversible-chain-v2`` the producer did not judge the
+stability of the last chain sample of a step, and that verdict cannot be recovered from the file;
+such a file must be re-scanned.  A path judged with tolerances other than the file's is refused
+when the file is written, and a file whose ``u_tolerance`` or ``log_ne_tolerance`` was edited
+after the scan is refused when it is read: the certificates were judged at the scan's tolerances
+and are not reinterpreted at others.  So is a file whose ``reference_power`` is missing, not a finite
+number, or not the power every continuation path starts from.
+
+**Declared limits.**  The certificate does not establish the following; the same text is recorded in
+every ``branches.json`` (``continuation_certificate.limits``):
+
+1. The corrector integrates the reactor in time, so it selects a state by basin of attraction: the
+   certificate never shows that no other branch exists.
+2. Branch identity is (u, ln n_e) within (u_tolerance, log_ne_tolerance), the criterion
+   cluster_states uses; states that differ only in other components are one branch by the scan's
+   definition.
+3. Aliasing: when a branch moves, within one gap, by at least its distance to the basin boundary of
+   a neighbouring branch, a hop to that branch can be reversible at that gap. If that motion is
+   confined to one gap, the hop is undetected: the following gaps are reversible on the neighbour,
+   and step halving does not expose it when the motion is narrower than the half-step gap, because
+   both paths then hop. A hop is exposed only when the step and half-step paths, or the two legs,
+   reach different branches at a common power; matching then refuses the branch, and it refuses any
+   branch without a recorded half-step path. aliasing_radius records each path's largest per-gap
+   \|delta u\| and \|delta ln n_e\| between recorded states, absolutely and in branch tolerances; a
+   neighbour whose basin boundary lies within it is not excluded, and the motion across a gap where
+   a hop occurred is not recorded, so the radius does not bound such a hop.
+4. A corrector whose result does not depend on its seed makes the reversibility test vacuous. For it
+   only the secant departure trigger remains, which detects a jump larger than departure_fraction
+   times the local motion over the floor step. The first step of each leg has no secant, so there no
+   trigger remains and a jump inside that step is accepted.
+5. Unstable windows narrower than the stability resolution can be missed; reduced modes farther from
+   zero than eigenvalue_band times the slowest mode are assumed not to reach zero within one gap.
+6. A fold bracket is where the corrector stops following the branch: only failures the adapter
+   declares as no-steady-state (is_fold_failure) narrow it, so it encloses a fold only if those
+   failures are fold-caused; any other corrector failure ends unresolved. On the real adapter
+   (PlasmaReactorAdapter) a simulation that exhausts its time budget without steady state, such as
+   critical slowing down short of a fold, raises that same failure, so a time-budget stop narrows a
+   fold bracket and can label it fold; only a wall-clock TimeoutError does not.
+7. Coverage is the solved powers only: a run is matched to a branch only at a power where the step
+   or half-step path solved a certified state, and nothing is certified between solved powers.
+   interpolation_diagnostics are adapter estimates of the midpoint error, recorded for inspection;
+   they bound nothing and matching never reads them.
+
+The scanner is a development tool: a scan of the real argon deck runs for many hours, and the
+match certifies the branch assignment only, not the qualification of the electron-kinetics table.
+
 .. _plasmaenergybalance:
 
 Solving the Electron Temperature: Electron Energy Balance

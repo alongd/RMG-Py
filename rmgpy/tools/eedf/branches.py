@@ -36,6 +36,7 @@ converged reactor steady state, including failed and timed-out seeds.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import multiprocessing
@@ -66,7 +67,9 @@ EIGENVALUE_BAND = 10.0
 # Relative roundoff allowed when a step is split into gaps of the declared width.
 SAMPLE_ROUNDOFF = 1.0e-9
 CONTINUATION_PATHS = ('continuation_path', 'continuation_path_half_step')
-CONTINUATION_CERTIFICATE = 'reversible-chain-v1'
+# v2: the last chain sample's own stability verdict gates its step. Paths
+# certified before that discarded the verdict, so they cannot be re-certified.
+CONTINUATION_CERTIFICATE = 'reversible-chain-v2'
 CERTIFICATE_STATEMENT = (
     'Each accepted step is reversible within the branch tolerances at the '
     'declared step and floor. The step is split into gaps no wider than the '
@@ -85,21 +88,40 @@ CERTIFICATE_LIMITS = (
     'components are one branch by the scan\'s definition.',
     'Aliasing: when a branch moves, within one gap, by at least its distance '
     'to the basin boundary of a neighbouring branch, a hop to that branch can '
-    'be reversible at that gap. A steady neighbour then fails the next gap; '
-    'a hop at the last gap of a path is exposed only by disagreement between '
-    'the step and half-step paths or between legs at a common power, and '
-    'matching refuses a branch whose recorded states disagree.',
+    'be reversible at that gap. If that motion is confined to one gap, the hop '
+    'is undetected: the following gaps are reversible on the neighbour, and '
+    'step halving does not expose it when the motion is narrower than the '
+    'half-step gap, because both paths then hop. A hop is exposed only when '
+    'the step and half-step paths, or the two legs, reach different branches '
+    'at a common power; matching then refuses the branch, and it refuses any '
+    'branch without a recorded half-step path. '
+    'aliasing_radius records each path\'s largest per-gap |delta u| and '
+    '|delta ln n_e| between recorded states, absolutely and in branch '
+    'tolerances; a neighbour whose basin boundary lies within it is not '
+    'excluded, and the motion across a gap where a hop occurred is not '
+    'recorded, so the radius does not bound such a hop.',
     'A corrector whose result does not depend on its seed makes the '
     'reversibility test vacuous. For it only the secant departure trigger '
     'remains, which detects a jump larger than departure_fraction times the '
-    'local motion over the floor step.',
+    'local motion over the floor step. The first step of each leg has no '
+    'secant, so there no trigger remains and a jump inside that step is '
+    'accepted.',
     'Unstable windows narrower than the stability resolution can be missed; '
     'reduced modes farther from zero than eigenvalue_band times the slowest '
     'mode are assumed not to reach zero within one gap.',
     'A fold bracket is where the corrector stops following the branch: only '
     'failures the adapter declares as no-steady-state (is_fold_failure) '
     'narrow it, so it encloses a fold only if those failures are '
-    'fold-caused; any other corrector failure ends unresolved.',
+    'fold-caused; any other corrector failure ends unresolved. On the real '
+    'adapter (PlasmaReactorAdapter) a simulation that exhausts its time '
+    'budget without steady state, such as critical slowing down short of a '
+    'fold, raises that same failure, so a time-budget stop narrows a fold '
+    'bracket and can label it fold; only a wall-clock TimeoutError does not.',
+    'Coverage is the solved powers only: a run is matched to a branch only at '
+    'a power where the step or half-step path solved a certified state, and '
+    'nothing is certified between solved powers. interpolation_diagnostics '
+    'are adapter estimates of the midpoint error, recorded for inspection; '
+    'they bound nothing and matching never reads them.',
 )
 
 
@@ -394,8 +416,12 @@ class PlasmaReactorAdapter:
         return failure == 'RuntimeError: reactor returned without reaching steady state'
 
     @staticmethod
-    def certify_interpolation(left, middle, right):
-        """Declare a guarded local interpolation envelope for a smooth branch."""
+    def estimate_interpolation_error(left, middle, right):
+        """Estimate the interpolation error of a smooth branch from three solves.
+
+        Four times the midpoint discrepancy, plus roundoff: a diagnostic for
+        the artifact, not a bound. Matching never uses it.
+        """
         fraction = ((float(middle['power']) - float(left['power']))
                     / (float(right['power']) - float(left['power'])))
         estimated_u = float(left['u']) + fraction * (
@@ -412,8 +438,8 @@ class PlasmaReactorAdapter:
             abs(np.log(float(middle['n_e']))),
             abs(np.log(float(right['n_e']))), 1.0)
         return {
-            'u_error_bound': 4.0 * u_error + u_roundoff,
-            'log_ne_error_bound': 4.0 * log_ne_error + log_roundoff,
+            'u_error_estimate': 4.0 * u_error + u_roundoff,
+            'log_ne_error_estimate': 4.0 * log_ne_error + log_roundoff,
         }
 
     @staticmethod
@@ -686,7 +712,13 @@ def scan(adapter, u_limits, output, *, u_steps=12, electron_density_decades=5,
     Every seed is solved at ``reference_power``, which is required: an
     artifact without it cannot be matched at a run's power. A seed that times
     out is solved once more when ``recheck_timeouts`` is set, and the attempt
-    records both outcomes.
+    records both outcomes. Continuing to ``powers`` needs a declared
+    ``continuation_stability_resolution``. The scan continues each branch on
+    the step path only; until a caller records a half-step path,
+    ``path_consistency`` reports the branch unconfirmed and matching refuses
+    it. Every converged cluster is recorded, but only a branch with a stable
+    reference verdict and a consistent certified path can be matched
+    (``matchable_issue``).
     """
     if not isinstance(processes, int) or isinstance(processes, bool) or not 1 <= processes <= MAX_PROCESSES:
         raise ValueError('processes must be an integer from 1 to at most 6')
@@ -698,6 +730,10 @@ def scan(adapter, u_limits, output, *, u_steps=12, electron_density_decades=5,
         raise ValueError('scan needs a finite reference_power') from exc
     if not math.isfinite(reference_power):
         raise ValueError('scan needs a finite reference_power')
+    if powers and continuation_stability_resolution is None:
+        raise ValueError(
+            'scan continuation needs a declared continuation_stability_resolution; '
+            'the certificate solves twice per gap of that width')
     seeds = seed_lattice(u_limits, u_steps, electron_density_decades,
                          electron_density_limits)
     outcomes = _integrate_many(
@@ -769,7 +805,7 @@ def scan(adapter, u_limits, output, *, u_steps=12, electron_density_decades=5,
                 log_ne_tolerance=log_ne_tolerance)
         branches.append(branch)
     payload = {
-        'schema': 1,
+        'schema': 2,
         'reference_power': reference_power,
         'u_tolerance': float(u_tolerance),
         'log_ne_tolerance': float(log_ne_tolerance),
@@ -798,19 +834,35 @@ def _certified_states(path):
             if 'power' in entry and 'u' in entry and 'n_e' in entry]
 
 
-def certified_coverage(branch):
-    """Powers and declared segments at which a branch has certified states."""
-    powers = sorted({float(entry['power'])
-                     for entry in _certified_states(branch.get('continuation_path'))})
-    segments = []
-    for entry in branch.get('continuation_path') or []:
-        if not (entry.get('converged') and entry.get('segment_certified', False)):
-            continue
-        for segment in entry.get('interpolation_segments', []):
-            if segment.get('certificate') == 'declared-error-bound-v1':
-                segments.append(sorted(float(value) for value in segment['power']))
-    return {'powers': powers, 'segments': sorted(segments)}
+def _branch_certified_states(branch):
+    """Certified states of the step and half-step paths of one branch."""
+    states = []
+    for key in CONTINUATION_PATHS:
+        states.extend(_certified_states(branch.get(key)))
+    return states
 
+
+def _distinct_powers(powers):
+    """Sorted powers with values equal within the sample roundoff merged."""
+    distinct = []
+    for power in sorted(float(value) for value in powers):
+        if not distinct or abs(power - distinct[-1]) > SAMPLE_ROUNDOFF * max(abs(power), 1.0):
+            distinct.append(power)
+    return distinct
+
+
+def certified_coverage(branch):
+    """Powers at which a branch has solved, certified states.
+
+    Both paths contribute; powers equal within the sample roundoff, such as
+    one power reached on the outgoing and the return leg, are listed once.
+    Nothing between these powers is certified (``CERTIFICATE_LIMITS[6]``).
+    """
+    return {
+        'paths': [key for key in CONTINUATION_PATHS if branch.get(key)],
+        'powers': _distinct_powers(
+            entry['power'] for entry in _branch_certified_states(branch)),
+    }
 
 def path_consistency(branch, u_tolerance, log_ne_tolerance):
     """Check that every recorded state of a branch at one power is one state.
@@ -818,23 +870,23 @@ def path_consistency(branch, u_tolerance, log_ne_tolerance):
     States from the step and half-step paths, and from the outgoing and return
     legs of each, are grouped by power; each group must be one cluster under
     the scan's own tolerances. A group that splits is a hop one path took and
-    another did not. When a half-step path is recorded, every certified power
-    of the step path must also lie within the half-step path's certified
-    range: a step state the half-step path never reached is unconfirmed.
+    another did not. Every certified power of the step path must also lie
+    within the half-step path's certified range: a step state the half-step
+    path never reached is unconfirmed. Without a recorded half-step path
+    nothing was cross-checked, so every step state is unconfirmed and the
+    branch is never consistent.
     """
-    records = []
-    for key in CONTINUATION_PATHS:
-        records.extend(_certified_states(branch.get(key)))
+    records = _branch_certified_states(branch)
+    half_recorded = bool(branch.get(CONTINUATION_PATHS[1]))
+    half_powers = [float(entry['power'])
+                   for entry in _certified_states(branch.get(CONTINUATION_PATHS[1]))]
     unconfirmed = []
-    if CONTINUATION_PATHS[1] in branch:
-        half_powers = [float(entry['power'])
-                       for entry in _certified_states(branch.get(CONTINUATION_PATHS[1]))]
-        for entry in _certified_states(branch.get(CONTINUATION_PATHS[0])):
-            power = float(entry['power'])
-            margin = SAMPLE_ROUNDOFF * max(abs(power), 1.0)
-            if not half_powers or not (min(half_powers) - margin <= power
-                                       <= max(half_powers) + margin):
-                unconfirmed.append(power)
+    for entry in _certified_states(branch.get(CONTINUATION_PATHS[0])):
+        power = float(entry['power'])
+        margin = SAMPLE_ROUNDOFF * max(abs(power), 1.0)
+        if not half_powers or not (min(half_powers) - margin <= power
+                                   <= max(half_powers) + margin):
+            unconfirmed.append(power)
     records.sort(key=lambda entry: float(entry['power']))
     groups = []
     for entry in records:
@@ -863,18 +915,101 @@ def path_consistency(branch, u_tolerance, log_ne_tolerance):
         'max_u_difference': largest_u,
         'max_log_ne_difference': largest_log_ne,
         'disagreeing_powers': sorted(set(disagreements)),
-        'unconfirmed_by_half_step': sorted(set(unconfirmed)),
-        'consistent': not disagreements and not unconfirmed,
+        'unconfirmed_by_half_step': _distinct_powers(unconfirmed),
+        'half_step_recorded': half_recorded,
+        'consistent': half_recorded and not disagreements and not unconfirmed,
     }
 
 
+def aliasing_radius(path, u_tolerance, log_ne_tolerance):
+    """Largest per-gap motion between consecutive recorded states of a path.
+
+    Consecutive states are the chain samples and endpoints in path order. A
+    neighbour whose basin boundary lies closer than this motion can alias at
+    one gap (``CERTIFICATE_LIMITS[2]``).
+    """
+    states = _certified_states(path)
+    largest_u = 0.0
+    largest_log_ne = 0.0
+    for left, right in zip(states, states[1:]):
+        u_gap, log_gap = _identity_gap(left, right)
+        largest_u = max(largest_u, u_gap)
+        largest_log_ne = max(largest_log_ne, log_gap)
+    return {
+        'gaps': max(len(states) - 1, 0),
+        'max_u_motion': largest_u,
+        'max_log_ne_motion': largest_log_ne,
+        'max_u_motion_in_u_tolerances': largest_u / u_tolerance,
+        'max_log_ne_motion_in_log_ne_tolerances': largest_log_ne / log_ne_tolerance,
+    }
+
+
+def _path_certificate_issue(path):
+    """Name the first accepted entry of a path not certified by this code's certificate.
+
+    A step records its certificate; the initial state records the settings
+    of the run that certified the path. An accepted entry with neither, or
+    with an older certificate, was not certified with the last-sample gate.
+    """
+    for entry in path:
+        if not (entry.get('converged') and entry.get('segment_certified', False)):
+            continue
+        record = entry.get('certificate') or entry.get('continuation_settings') or {}
+        name = record.get('name', record.get('certificate'))
+        if name != CONTINUATION_CERTIFICATE:
+            return 'the accepted state at {!r} W was certified with {!r}'.format(
+                entry.get('power'), name)
+    return None
+
+
+def certificate_issue(payload):
+    """Why an artifact's continuation was not certified by this code, or None.
+
+    ``CONTINUATION_CERTIFICATE`` names the version. Artifacts written before
+    v2 never judged the last chain sample of a step, and the verdict they
+    discarded cannot be restored from the file, so they must be re-scanned.
+    """
+    recorded = (payload.get('continuation_certificate') or {}).get('name')
+    if recorded != CONTINUATION_CERTIFICATE:
+        return 'artifact certificate {!r} is not {!r}'.format(
+            recorded, CONTINUATION_CERTIFICATE)
+    for branch in payload.get('branches', []):
+        for key in CONTINUATION_PATHS:
+            issue = _path_certificate_issue(branch.get(key) or [])
+            if issue is not None:
+                return 'branch {} {}: {}'.format(branch.get('id'), key, issue)
+    return None
+
+
+def _tolerance_mismatch(path, u_tolerance, log_ne_tolerance):
+    """Name the first certificate tolerance in a path that differs from the artifact's."""
+    declared = path[0].get('continuation_settings')
+    records = [('settings', declared)] if declared is not None else []
+    records.extend(('certificate at {!r} W'.format(entry.get('power')), entry['certificate'])
+                   for entry in path if entry.get('certificate'))
+    for label, record in records:
+        for key, expected in (('u_tolerance', u_tolerance),
+                              ('log_ne_tolerance', log_ne_tolerance)):
+            if key in record and float(record[key]) != expected:
+                return '{} {} {!r} differs from the artifact\'s {!r}'.format(
+                    label, key, record[key], expected)
+    return None
+
+
 def record_continuation(payload):
-    """Write the certificate, settings, coverage and consistency at top level."""
+    """Write the certificate, settings, coverage and consistency at top level.
+
+    A path whose certificate was judged with tolerances other than the
+    artifact's is refused: its certificate says nothing about the artifact's
+    branch identity. So is a path certified by an older certificate: writing
+    this code's metadata over it would not restore what it never checked.
+    """
     u_tolerance = float(payload['u_tolerance'])
     log_ne_tolerance = float(payload['log_ne_tolerance'])
     settings = {}
     coverage = {}
     consistency = {}
+    radius = {}
     solves = {}
     resolutions = []
     for branch in payload.get('branches', []):
@@ -883,6 +1018,12 @@ def record_continuation(payload):
             path = branch.get(key) or []
             if not path:
                 continue
+            mismatch = (_tolerance_mismatch(path, u_tolerance, log_ne_tolerance)
+                        or _path_certificate_issue(path))
+            if mismatch is not None:
+                raise ValueError('branch {} {}: {}'.format(branch_id, key, mismatch))
+            radius.setdefault(branch_id, {})[key] = aliasing_radius(
+                path, u_tolerance, log_ne_tolerance)
             declared = path[0].get('continuation_settings')
             if declared is not None:
                 settings.setdefault(branch_id, {})[key] = declared
@@ -904,11 +1045,13 @@ def record_continuation(payload):
         'identity': {'u_tolerance': u_tolerance,
                      'log_ne_tolerance': log_ne_tolerance,
                      'components': ['u', 'ln n_e']},
+        'branches_py_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
     }
     payload['continuation_settings'] = settings
     payload['stability_resolution'] = max(resolutions) if resolutions else None
     payload['certified_coverage'] = coverage
     payload['path_consistency'] = consistency
+    payload['aliasing_radius'] = radius
     payload['continuation_solves'] = solves
     return payload
 
@@ -1148,7 +1291,7 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
             and np.isfinite(u_tolerance) and u_tolerance > 0.0
             and np.isfinite(log_ne_tolerance) and log_ne_tolerance > 0.0):
         raise ValueError(
-            'continuation bounds, resolution and interpolation tolerances must '
+            'continuation bounds, resolution and branch tolerances must '
             'be finite, positive and ordered')
     settings = {
         'certificate': CONTINUATION_CERTIFICATE,
@@ -1277,13 +1420,20 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
                 64.0 * np.finfo(float).eps,
                 4.0 * _component_noise(initial_corrected, repeat_corrected))
             reproduced = same_branch(initial_result, repeat)
+    seed_branch = failure is None and same_branch(current, initial_result)
     if (failure is not None or initial_correction > predictor_tolerance
-            or reproducibility > predictor_tolerance or not reproduced):
+            or reproducibility > predictor_tolerance or not reproduced
+            or not seed_branch):
         if failure is not None:
             reason = 'corrector failed: ' + failure
         elif not reproduced:
             reason = ('corrector does not reproduce the initial state within '
                       'the branch tolerances')
+        elif not seed_branch:
+            reason = ('initial state (u={!r}, n_e={!r}) is not the seed\'s branch '
+                      '(u={!r}, n_e={!r}) within the branch tolerances'.format(
+                          initial_result['u'], initial_result['n_e'],
+                          current['u'], current['n_e']))
         else:
             reason = 'corrector left scaled predictor neighbourhood'
         path.append(_event_entry(
@@ -1359,10 +1509,16 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
             # than the declared floor (roundoff, or the tail after refinement)
             # resolves nothing and its corrector noise can mimic a fold. A
             # remainder of exactly step + floor is split, so a refined step
-            # is taken rather than snapped back to the target.
-            trial_power = (
-                target if remaining < step + step_floor * (1.0 - SAMPLE_ROUNDOFF)
-                else current_power + direction * step)
+            # is taken rather than snapped back to the target. A short tail
+            # longer than the ceiling is taken in two equal steps, so no step
+            # exceeds max_step; each half is at least the floor whenever
+            # max_step is at least twice min_step.
+            if remaining >= step + step_floor * (1.0 - SAMPLE_ROUNDOFF):
+                trial_power = current_power + direction * step
+            elif remaining <= step_ceiling * (1.0 + SAMPLE_ROUNDOFF):
+                trial_power = target
+            else:
+                trial_power = current_power + direction * remaining / 2.0
             trial_interval = abs(trial_power - current_power)
             has_tangent = len(history) >= 2 and history[-1][0] != history[-2][0]
             if has_tangent:
@@ -1459,7 +1615,7 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
 
             certification_points = []
             interpolation_checks = []
-            interpolation_segments = []
+            interpolation_diagnostics = []
             motions = []
             certificate = None
             sample_count = 0
@@ -1536,12 +1692,15 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
                         'u_tolerance': u_tolerance,
                         'log_ne_tolerance': log_ne_tolerance,
                     }
+                    certificate['sample_verdicts'] = [
+                        sample[3]['classification'] for sample in chain[1:]]
                     for sample in chain[1:-1]:
                         certification_points.append({
                             'power': float(sample[0]),
                             'u': float(sample[1]['u']),
                             'n_e': float(sample[1]['n_e']),
                             'state': sample[2].tolist(),
+                            'stability': sample[3]['classification'],
                             'converged': True,
                             'segment_certified': True,
                         })
@@ -1570,6 +1729,17 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
                         if not motion['certified'] and uncertified is None:
                             uncertified = (
                                 'unresolved', motion['reason'], bracket)
+                    if issue is None and not chain[-1][3]['stable']:
+                        # The endpoint replaces the last sample in the
+                        # recorded path; the sample's own verdict still counts.
+                        verdict = chain[-1][3]['classification']
+                        issue = (
+                            'stability' if verdict == 'unstable' else 'unresolved',
+                            'stability verdict {!r} of the last chain sample at '
+                            '{!r} W; a non-stable state is not continued'.format(
+                                verdict, trial_power),
+                            (chain[-2][0], trial_power))
+                        issue_source = 'verdict'
                     if issue is None:
                         issue = uncertified
                     if issue is None:
@@ -1593,37 +1763,32 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
                                     abs(middle[0] - left[0]),
                                     abs(right[0] - middle[0]))),
                             })
-                            certifier = getattr(
-                                adapter, 'certify_interpolation', None)
-                            if certifier is not None:
-                                declared = certifier(
+                            estimator = getattr(
+                                adapter, 'estimate_interpolation_error', None)
+                            if estimator is not None:
+                                estimate = estimator(
                                     {'power': left[0], 'u': left[1]['u'],
                                      'n_e': left[1]['n_e']},
                                     {'power': middle[0], 'u': middle[1]['u'],
                                      'n_e': middle[1]['n_e']},
                                     {'power': right[0], 'u': right[1]['u'],
                                      'n_e': right[1]['n_e']})
-                                declared_u = float(declared['u_error_bound'])
-                                declared_log_ne = float(
-                                    declared['log_ne_error_bound'])
-                                if (np.isfinite(declared_u)
-                                        and np.isfinite(declared_log_ne)
-                                        and 0.0 <= declared_u <= u_tolerance
-                                        and 0.0 <= declared_log_ne
-                                        <= log_ne_tolerance):
-                                    interpolation_segments.append({
-                                        'certificate': 'declared-error-bound-v1',
-                                        'power': [float(left[0]), float(right[0])],
-                                        'u': [float(left[1]['u']),
-                                              float(right[1]['u'])],
-                                        'n_e': [float(left[1]['n_e']),
-                                                float(right[1]['n_e'])],
-                                        'u_error_bound': declared_u,
-                                        'log_ne_error_bound': declared_log_ne,
-                                        'resolution': float(max(
-                                            abs(middle[0] - left[0]),
-                                            abs(right[0] - middle[0]))),
-                                    })
+                                interpolation_diagnostics.append({
+                                    'certified': False,
+                                    'kind': 'adapter-estimated-midpoint-error',
+                                    'power': [float(left[0]), float(right[0])],
+                                    'u': [float(left[1]['u']),
+                                          float(right[1]['u'])],
+                                    'n_e': [float(left[1]['n_e']),
+                                            float(right[1]['n_e'])],
+                                    'u_error_estimate': float(
+                                        estimate['u_error_estimate']),
+                                    'log_ne_error_estimate': float(
+                                        estimate['log_ne_error_estimate']),
+                                    'resolution': float(max(
+                                        abs(middle[0] - left[0]),
+                                        abs(right[0] - middle[0]))),
+                                })
 
             can_refine = (trial_interval > step_floor * (1.0 + 1.0e-12)
                           and step > step_floor * (1.0 + 1.0e-12))
@@ -1682,7 +1847,7 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
                 'stability_resolution': float(trial_interval / sample_count),
                 'certification_points': certification_points,
                 'interpolation_checks': interpolation_checks,
-                'interpolation_segments': interpolation_segments,
+                'interpolation_diagnostics': interpolation_diagnostics,
                 'certificate': certificate,
                 'corrector_solves': solves['corrector'],
                 'certificate_solves': sample_count + 1,
@@ -1706,108 +1871,31 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
     return path
 
 
-def declared_branch(path, branch_id):
-    """Read one reactor operating branch by id from ``branches.json``."""
+def _load_artifact(path):
+    """Read ``branches.json``, refusing one not certified by this code."""
     try:
         payload = json.loads(Path(path).read_text())
     except (OSError, ValueError) as exc:
         raise ValueError('cannot read operating branches {}: {}'.format(path, exc)) from exc
-    for branch in payload.get('branches', []):
-        if branch.get('id') == branch_id:
-            return branch
-    raise ValueError('operating branch {!r} is absent from {}'.format(branch_id, path))
+    if not isinstance(payload, dict):
+        raise ValueError('operating branches {} is not a branch artifact'.format(path))
+    issue = certificate_issue(payload)
+    if issue is not None:
+        raise ValueError(
+            'operating branches {} predates the current continuation certificate: '
+            '{}; re-run the scan'.format(path, issue))
+    issue = tolerance_issue(payload)
+    if issue is not None:
+        raise ValueError(
+            'operating branches {} matches at tolerances its certificates were not judged '
+            'with: {}; restore the scan\'s tolerances or re-run the scan'.format(path, issue))
+    issue = reference_issue(payload)
+    if issue is not None:
+        raise ValueError('operating branches {} {}'.format(path, issue))
+    return payload
 
 
-def _branch_states_at_power(branch, power, reference_power,
-                            u_tolerance, log_ne_tolerance):
-    """Return recorded/interpolated states on certified path segments only.
-
-    A branch whose recorded states disagree at a common power (step against
-    half-step path, or outgoing against return leg) has no certified state
-    away from the reference power.
-    """
-    power_scale = max(abs(float(power)), 1.0)
-    power_tolerance = 16.0 * np.finfo(float).eps * power_scale
-    at_reference = abs(reference_power - power) <= power_tolerance
-    if not path_consistency(branch, u_tolerance, log_ne_tolerance)['consistent']:
-        return [{'u': float(branch['u']), 'n_e': float(branch['n_e'])}] if at_reference else []
-    path = _certified_states(branch.get('continuation_path'))
-    exact = [entry for entry in path
-             if abs(float(entry['power']) - power) <= power_tolerance]
-    if exact:
-        return [{'u': float(entry['u']), 'n_e': float(entry['n_e'])}
-                for entry in exact]
-    states = []
-    for entry in branch.get('continuation_path', []):
-        if not (entry.get('converged')
-                and entry.get('segment_certified', False)):
-            continue
-        for segment in entry.get('interpolation_segments', []):
-            if segment.get('certificate') != 'declared-error-bound-v1':
-                continue
-            try:
-                left_power, right_power = map(float, segment['power'])
-                left_u, right_u = map(float, segment['u'])
-                left_ne, right_ne = map(float, segment['n_e'])
-                u_error = float(segment['u_error_bound'])
-                log_ne_error = float(segment['log_ne_error_bound'])
-                resolution = float(segment['resolution'])
-            except (KeyError, TypeError, ValueError, OverflowError):
-                continue
-            values = (left_power, right_power, left_u, right_u,
-                      left_ne, right_ne, u_error, log_ne_error, resolution)
-            if not (np.isfinite(values).all()
-                    and left_ne > 0.0 and right_ne > 0.0
-                    and 0.0 <= u_error < u_tolerance
-                    and 0.0 <= log_ne_error < log_ne_tolerance
-                    and resolution > 0.0
-                    and min(left_power, right_power) < power
-                    < max(left_power, right_power)):
-                continue
-            fraction = (power - left_power) / (right_power - left_power)
-            states.append({
-                'u': left_u + fraction * (right_u - left_u),
-                'n_e': float(np.exp(
-                    np.log(left_ne) + fraction * (
-                        np.log(right_ne) - np.log(left_ne)))),
-                '_u_error_bound': u_error,
-                '_log_ne_error_bound': log_ne_error,
-            })
-    if states:
-        return states
-    if at_reference:
-        return [{'u': float(branch['u']), 'n_e': float(branch['n_e'])}]
-    return []
-
-
-def _uncertified_power_message(branch, power, u_tolerance, log_ne_tolerance):
-    coverage = certified_coverage(branch)
-    consistency = path_consistency(branch, u_tolerance, log_ne_tolerance)
-    reason = '' if consistency['consistent'] else (
-        '; its recorded states disagree at {} W and the half-step path does '
-        'not reach {} W, so only the reference power is certified'.format(
-            ['{:.9g}'.format(value) for value in consistency['disagreeing_powers']],
-            ['{:.9g}'.format(value)
-             for value in consistency['unconfirmed_by_half_step']]))
-    return 'power not certified for branch {} at {!r} W{}; certified powers: {}; ' \
-        'certified segments: {}'.format(
-            branch.get('id'), power, reason,
-            ['{:.9g}'.format(value) for value in coverage['powers']],
-            [['{:.9g}'.format(value) for value in segment]
-             for segment in coverage['segments']])
-
-
-def matching_branch(path, state, power=None):
-    """Return the unique branch matching state at the run's absorbed power.
-
-    When the state matches no certified state, and some branch has no
-    certified state at ``power``, the refusal names that branch, its
-    certified powers and its segments, rather than reporting no match.
-    """
-    try:
-        payload = json.loads(Path(path).read_text())
-    except (OSError, ValueError) as exc:
-        raise ValueError('cannot read operating branches {}: {}'.format(path, exc)) from exc
+def _artifact_tolerances(payload):
     try:
         u_tolerance = float(payload['u_tolerance'])
         log_ne_tolerance = float(payload['log_ne_tolerance'])
@@ -1817,6 +1905,142 @@ def matching_branch(path, state, power=None):
     if not (np.isfinite(u_tolerance) and u_tolerance > 0.0
             and np.isfinite(log_ne_tolerance) and log_ne_tolerance > 0.0):
         raise ValueError('operating branches artifact tolerances must be finite and positive')
+    return u_tolerance, log_ne_tolerance
+
+
+def tolerance_issue(payload):
+    """Name the first recorded tolerance that differs from the matching tolerances, or None.
+
+    Matching reads the top-level ``u_tolerance`` and ``log_ne_tolerance``, but
+    the certificate identity, each path's settings and each step's certificate
+    record the tolerances the scan judged. Edited settings are refused, not
+    applied: the certificates say nothing about branch identity at other
+    tolerances.
+    """
+    u_tolerance, log_ne_tolerance = _artifact_tolerances(payload)
+    identity = (payload.get('continuation_certificate') or {}).get('identity') or {}
+    records = [('certificate identity', identity)]
+    records.extend(('branch {} {} settings'.format(branch_id, key), settings)
+                   for branch_id, paths in (payload.get('continuation_settings') or {}).items()
+                   for key, settings in paths.items())
+    for label, record in records:
+        for key, expected in (('u_tolerance', u_tolerance),
+                              ('log_ne_tolerance', log_ne_tolerance)):
+            if key in record and float(record[key]) != expected:
+                return '{} {} {!r} differs from the artifact\'s {!r}'.format(
+                    label, key, record[key], expected)
+    for branch in payload.get('branches', []):
+        for key in CONTINUATION_PATHS:
+            path = branch.get(key) or []
+            issue = _tolerance_mismatch(path, u_tolerance, log_ne_tolerance) if path else None
+            if issue is not None:
+                return 'branch {} {}: {}'.format(branch.get('id'), key, issue)
+    return None
+
+
+def reference_issue(payload):
+    """Why the recorded reference power is unusable or disagrees with the paths, or None.
+
+    Every seed was solved at the reference power and every continuation path
+    starts from it, so each path's settings and initial state record it.
+    """
+    recorded = payload.get('reference_power')
+    try:
+        reference_power = float(recorded)
+    except (TypeError, ValueError, OverflowError):
+        return 'records no valid reference power: {!r}'.format(recorded)
+    if isinstance(recorded, bool) or not np.isfinite(reference_power):
+        return 'records no valid reference power: {!r}'.format(recorded)
+    records = [('branch {} {} settings'.format(branch_id, key), settings.get('initial_power'))
+               for branch_id, paths in (payload.get('continuation_settings') or {}).items()
+               for key, settings in paths.items()]
+    for branch in payload.get('branches', []):
+        for key in CONTINUATION_PATHS:
+            path = branch.get(key) or []
+            if path:
+                start = path[0]
+                records.append(('branch {} {} initial state'.format(branch.get('id'), key),
+                                start.get('power')))
+                records.append(('branch {} {} initial settings'.format(branch.get('id'), key),
+                                (start.get('continuation_settings') or {}).get('initial_power')))
+    for label, power in records:
+        if power is not None and float(power) != reference_power:
+            return 'records reference power {!r} W, but its {} starts at {!r} W'.format(
+                recorded, label, power)
+    return None
+
+
+def matchable_issue(branch, u_tolerance, log_ne_tolerance):
+    """Why a recorded branch can never be matched, or None.
+
+    The scan records every converged cluster, but a run is assigned only to a
+    branch whose reference verdict is stable and whose step and half-step
+    paths certify consistent states. The reference power gets no exception:
+    there, too, a candidate is a state a path solved.
+    """
+    stability = branch.get('stability') or {}
+    if stability.get('stable') is not True:
+        return 'its reference verdict is {!r}, so it is recorded for reporting only'.format(
+            stability.get('classification'))
+    if not _branch_certified_states(branch):
+        return 'it has no certified continuation path, so it is recorded for reporting only'
+    consistency = path_consistency(branch, u_tolerance, log_ne_tolerance)
+    if not consistency['half_step_recorded']:
+        return 'no half-step path is recorded, so nothing confirms its step path'
+    if not consistency['consistent']:
+        return ('its recorded states disagree at {} W and the half-step path does '
+                'not reach {} W'.format(
+                    ['{:.9g}'.format(value) for value in consistency['disagreeing_powers']],
+                    ['{:.9g}'.format(value)
+                     for value in consistency['unconfirmed_by_half_step']]))
+    return None
+
+
+def declared_branch(path, branch_id):
+    """Read one matchable reactor operating branch by id from ``branches.json``."""
+    payload = _load_artifact(path)
+    for branch in payload.get('branches', []):
+        if branch.get('id') == branch_id:
+            issue = matchable_issue(branch, *_artifact_tolerances(payload))
+            if issue is not None:
+                raise ValueError('operating branch {!r} cannot be matched: {}'.format(
+                    branch_id, issue))
+            return branch
+    raise ValueError('operating branch {!r} is absent from {}'.format(branch_id, path))
+
+
+def _branch_states_at_power(branch, power):
+    """Return the certified states either path of a matchable branch solved at ``power``.
+
+    Only solved states count, at the reference power as anywhere else:
+    nothing between two corrector solves is certified.
+    """
+    power_tolerance = 16.0 * np.finfo(float).eps * max(abs(float(power)), 1.0)
+    return [{'u': float(entry['u']), 'n_e': float(entry['n_e'])}
+            for entry in _branch_certified_states(branch)
+            if abs(float(entry['power']) - power) <= power_tolerance]
+
+
+def _uncertified_power_message(branch, power, issue):
+    if issue is not None:
+        return 'branch {} cannot be matched: {}'.format(branch.get('id'), issue)
+    return 'power not certified for branch {} at {!r} W; certified powers: {}'.format(
+        branch.get('id'), power,
+        ['{:.9g}'.format(value) for value in certified_coverage(branch)['powers']])
+
+
+def matching_branch(path, state, power=None):
+    """Return the unique branch matching state at the run's absorbed power.
+
+    When the state matches no certified state, and some branch has no
+    certified state at ``power``, the refusal names that branch, its
+    certified powers, rather than reporting no match. Only powers a path
+    solved are certified; nothing is interpolated between them. A branch
+    that ``matchable_issue`` refuses has no candidate at any power, and an
+    artifact certified by an older certificate is refused whole.
+    """
+    payload = _load_artifact(path)
+    u_tolerance, log_ne_tolerance = _artifact_tolerances(payload)
     if power is not None:
         try:
             power = float(power)
@@ -1824,38 +2048,25 @@ def matching_branch(path, state, power=None):
             raise ValueError('terminal matching power must be finite') from exc
         if not np.isfinite(power):
             raise ValueError('terminal matching power must be finite')
-    reference_power = payload.get('reference_power')
-    if reference_power is not None:
-        try:
-            reference_power = float(reference_power)
-        except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError('operating branches artifact reference power is invalid') from exc
-        if not np.isfinite(reference_power):
-            raise ValueError('operating branches artifact reference power is invalid')
-    elif power is not None:
-        raise ValueError(
-            'operating branches artifact records no reference power, so no state '
-            'is certified at {!r} W'.format(power))
     matches = []
     uncovered = []
     for branch in payload.get('branches', []):
-        candidates = ([branch] if power is None else
-                      _branch_states_at_power(
-                          branch, power, reference_power,
-                          u_tolerance, log_ne_tolerance))
+        issue = matchable_issue(branch, u_tolerance, log_ne_tolerance)
+        if issue is not None:
+            candidates = []
+        elif power is None:
+            candidates = [branch]
+        else:
+            candidates = _branch_states_at_power(branch, power)
         if not candidates:
-            uncovered.append(branch)
-        if any(same_cluster(
-                candidate, state,
-                u_tolerance - float(candidate.get('_u_error_bound', 0.0)),
-                log_ne_tolerance - float(
-                    candidate.get('_log_ne_error_bound', 0.0)))
+            uncovered.append((branch, issue))
+        if any(same_cluster(candidate, state, u_tolerance, log_ne_tolerance)
                for candidate in candidates):
             matches.append(branch.get('id'))
     if not matches and uncovered:
         raise ValueError('; '.join(
-            _uncertified_power_message(branch, power, u_tolerance, log_ne_tolerance)
-            for branch in uncovered))
+            _uncertified_power_message(branch, power, issue)
+            for branch, issue in uncovered))
     if not matches:
         raise ValueError('terminal state matches no recorded branch')
     if len(matches) > 1:
