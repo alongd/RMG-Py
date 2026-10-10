@@ -1,3 +1,4 @@
+import json
 from copy import deepcopy
 
 import pytest
@@ -5,6 +6,7 @@ import pytest
 import rmgpy.rmg.input as inp
 from rmgpy.exceptions import InputError
 from rmgpy.rmg.main import RMG
+from rmgpy.tools.eedf.branches import continue_branch, record_continuation
 
 
 SHA256 = "A" * 64
@@ -237,13 +239,42 @@ def test_eedf_energy_balance_preserves_geometry_volume_conflict(tmp_path):
         _read(tmp_path, _eedf_block(energy_balance=energy))
 
 
+class _LinearBranch:
+    """One stable state per power, u = P and n_e = 1e16 (1 + P)."""
+
+    def integrate(self, seed, power=None):
+        power = float(power)
+        return {'u': power, 'n_e': 1.e16 * (1. + power), '_state_vector': [power],
+                '_jacobian': [[-1.]], '_half_step_jacobian': [[-1.]],
+                '_conservation_constraints': []}
+
+
+def _write_matchable_branches(path):
+    """Write a branches.json the reactor accepts, through the producer's own record.
+
+    The declaration is loaded when the reactor is built, so the round trip
+    needs a branch with a stable verdict and certified, consistent step and
+    half-step paths.
+    """
+    seed = {'u': 0., 'n_e': 1.e16, 'state': [0.]}
+    paths = {key: continue_branch(_LinearBranch(), seed, [.05], initial_power=0.,
+                                  max_step=step, min_step=step / 4.,
+                                  stability_resolution=step / 4.)
+             for key, step in (('continuation_path', .025),
+                               ('continuation_path_half_step', .0125))}
+    path.write_text(json.dumps(record_continuation({
+        'reference_power': 0., 'u_tolerance': 1.e-4, 'log_ne_tolerance': 1.e-3,
+        'branches': [{'id': 'reactor-000', 'seed': {'u': 0., 'n_e': 1.e16},
+                      'u': 0., 'n_e': 1.e16,
+                      'stability': paths['continuation_path'][0]['stability'],
+                      **paths}]})))
+
+
 def test_real_constructor_save_read_round_trip_uses_deck_relative_table(tmp_path):
     table = tmp_path / 'tables' / 'real.h5'
     table.parent.mkdir()
     table.write_bytes(b'fixture path only; provider loading occurs at initialize_model')
-    (tmp_path / 'branches.json').write_text(
-        '{"branches": [{"id": "reactor-000", '
-        '"seed": {"u": 0.0, "n_e": 1e16}, "u": 0.0, "n_e": 1e16}]}')
+    _write_matchable_branches(tmp_path / 'branches.json')
     declaration = _electron_kinetics(table=('tables/real.h5', SHA256))
     input_path = tmp_path / 'input.py'
     input_path.write_text(
@@ -271,5 +302,7 @@ def test_real_constructor_save_read_round_trip_uses_deck_relative_table(tmp_path
     inp.read_input_file(str(saved), rmg2)
     reactor2 = rmg2.reaction_systems[0]
     assert reactor2.electron_kinetics == reactor1.electron_kinetics
+    assert reactor2.electron_kinetics['operating_branch'] == {
+        'id': 'reactor-000', 'path': str(tmp_path / 'branches.json')}
     assert set(reactor2.electron_energy_balance) == {
         'absorbed_power', 'chamber_volume', 'sheath'}

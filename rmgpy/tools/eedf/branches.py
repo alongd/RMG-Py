@@ -36,11 +36,24 @@ converged reactor steady state, including failed and timed-out seeds.
 
 from __future__ import annotations
 
+import ctypes
+import fcntl
+import hashlib
+import itertools
 import json
 import math
+import logging
+import mmap
 import multiprocessing
+import os
+import platform
+import signal
+import struct
+import sys
+import threading
 import time
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
+from multiprocessing.connection import Connection
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -59,14 +72,24 @@ LOG_NE_TOLERANCE = 1.0e-3
 ENGINE_FD_RELATIVE_STEP = 6.0e-6
 MAX_PROCESSES = 6
 WORKER_TERMINATE_GRACE = 0.1
-WORKER_KILL_GRACE = 0.1
+# Bound on the join after SIGKILL. A worker in an uninterruptible kernel wait
+# (D state) can outlive SIGKILL; that is a recorded limit, so the scan logs it
+# and continues rather than waiting forever.
+WORKER_KILL_TIMEOUT = 5.0
+# A worker exits with this status when its lifeline reports its owner gone.
+WORKER_ORPHANED_EXIT = 70
+# Signals a scan on the main thread defers while it owns workers, highest
+# rank first: SIGTERM outranks SIGINT.
+_DEFERRED_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 # Reduced modes farther from zero than this multiple of the slowest mode's
 # distance are assumed unable to reach zero inside one sample gap.
 EIGENVALUE_BAND = 10.0
 # Relative roundoff allowed when a step is split into gaps of the declared width.
 SAMPLE_ROUNDOFF = 1.0e-9
 CONTINUATION_PATHS = ('continuation_path', 'continuation_path_half_step')
-CONTINUATION_CERTIFICATE = 'reversible-chain-v1'
+# v2: the last chain sample's own stability verdict gates its step. Paths
+# certified before that discarded the verdict, so they cannot be re-certified.
+CONTINUATION_CERTIFICATE = 'reversible-chain-v2'
 CERTIFICATE_STATEMENT = (
     'Each accepted step is reversible within the branch tolerances at the '
     'declared step and floor. The step is split into gaps no wider than the '
@@ -85,21 +108,40 @@ CERTIFICATE_LIMITS = (
     'components are one branch by the scan\'s definition.',
     'Aliasing: when a branch moves, within one gap, by at least its distance '
     'to the basin boundary of a neighbouring branch, a hop to that branch can '
-    'be reversible at that gap. A steady neighbour then fails the next gap; '
-    'a hop at the last gap of a path is exposed only by disagreement between '
-    'the step and half-step paths or between legs at a common power, and '
-    'matching refuses a branch whose recorded states disagree.',
+    'be reversible at that gap. If that motion is confined to one gap, the hop '
+    'is undetected: the following gaps are reversible on the neighbour, and '
+    'step halving does not expose it when the motion is narrower than the '
+    'half-step gap, because both paths then hop. A hop is exposed only when '
+    'the step and half-step paths, or the two legs, reach different branches '
+    'at a common power; matching then refuses the branch, and it refuses any '
+    'branch without a recorded half-step path. '
+    'aliasing_radius records each path\'s largest per-gap |delta u| and '
+    '|delta ln n_e| between recorded states, absolutely and in branch '
+    'tolerances; a neighbour whose basin boundary lies within it is not '
+    'excluded, and the motion across a gap where a hop occurred is not '
+    'recorded, so the radius does not bound such a hop.',
     'A corrector whose result does not depend on its seed makes the '
     'reversibility test vacuous. For it only the secant departure trigger '
     'remains, which detects a jump larger than departure_fraction times the '
-    'local motion over the floor step.',
+    'local motion over the floor step. The first step of each leg has no '
+    'secant, so there no trigger remains and a jump inside that step is '
+    'accepted.',
     'Unstable windows narrower than the stability resolution can be missed; '
     'reduced modes farther from zero than eigenvalue_band times the slowest '
     'mode are assumed not to reach zero within one gap.',
     'A fold bracket is where the corrector stops following the branch: only '
     'failures the adapter declares as no-steady-state (is_fold_failure) '
     'narrow it, so it encloses a fold only if those failures are '
-    'fold-caused; any other corrector failure ends unresolved.',
+    'fold-caused; any other corrector failure ends unresolved. On the real '
+    'adapter (PlasmaReactorAdapter) a simulation that exhausts its time '
+    'budget without steady state, such as critical slowing down short of a '
+    'fold, raises that same failure, so a time-budget stop narrows a fold '
+    'bracket and can label it fold; only a wall-clock TimeoutError does not.',
+    'Coverage is the solved powers only: a run is matched to a branch only at '
+    'a power where the step or half-step path solved a certified state, and '
+    'nothing is certified between solved powers. interpolation_diagnostics '
+    'are adapter estimates of the midpoint error, recorded for inspection; '
+    'they bound nothing and matching never reads them.',
 )
 
 
@@ -394,8 +436,12 @@ class PlasmaReactorAdapter:
         return failure == 'RuntimeError: reactor returned without reaching steady state'
 
     @staticmethod
-    def certify_interpolation(left, middle, right):
-        """Declare a guarded local interpolation envelope for a smooth branch."""
+    def estimate_interpolation_error(left, middle, right):
+        """Estimate the interpolation error of a smooth branch from three solves.
+
+        Four times the midpoint discrepancy, plus roundoff: a diagnostic for
+        the artifact, not a bound. Matching never uses it.
+        """
         fraction = ((float(middle['power']) - float(left['power']))
                     / (float(right['power']) - float(left['power'])))
         estimated_u = float(left['u']) + fraction * (
@@ -412,8 +458,8 @@ class PlasmaReactorAdapter:
             abs(np.log(float(middle['n_e']))),
             abs(np.log(float(right['n_e']))), 1.0)
         return {
-            'u_error_bound': 4.0 * u_error + u_roundoff,
-            'log_ne_error_bound': 4.0 * log_ne_error + log_roundoff,
+            'u_error_estimate': 4.0 * u_error + u_roundoff,
+            'log_ne_error_estimate': 4.0 * log_ne_error + log_roundoff,
         }
 
     @staticmethod
@@ -573,19 +619,782 @@ def _integration_child(connection, adapter, seed, power):
         connection.close()
 
 
-def _bounded_worker_shutdown(process, *, terminate=False):
-    """Reap one worker without allowing any join to outlive its deadline."""
-    if terminate and process.is_alive():
+# Owner-death backstop, two layers. On Linux the kernel ties each worker to
+# its owner (PR_SET_PDEATHSIG): SIGKILL arrives when the owner's thread that
+# started it ends, which needs nothing from the worker (no GIL, no thread, no
+# descriptor state). That thread is the one running scan(), which reaps every
+# worker before it can return. Everywhere, each worker also reads a lifeline
+# pipe whose write end only its owner holds, and exits at end of file. A fork
+# copies every descriptor, so a sibling, a nested worker or an unrelated fork
+# of the owner would hold the write end open; every Python fork therefore
+# closes the write ends it inherited (_after_fork_in_child), each only if the
+# descriptor is still the pipe end that was registered.
+_LIFELINES = {}  # write end -> (st_dev, st_ino) of the pipe it was opened on
+_LIFELINES_LOCK = threading.Lock()
+_PR_SET_PDEATHSIG = 1
+_LIBC = ctypes.CDLL(None, use_errno=True) if sys.platform.startswith('linux') else None
+
+
+def _open_lifeline():
+    """Return (read end for the worker, write end the owner keeps)."""
+    with _LIFELINES_LOCK:
+        read_end, write_end = os.pipe()
+        identity = os.fstat(write_end)
+        _LIFELINES[write_end] = (identity.st_dev, identity.st_ino)
+    return Connection(read_end, writable=False), write_end
+
+
+def _close_lifeline(write_end):
+    with _LIFELINES_LOCK:
+        if _LIFELINES.pop(write_end, None) is not None:
+            os.close(write_end)
+
+
+def _is_registered_writer(descriptor, identity):
+    """Whether a descriptor is still the lifeline write end registered as it."""
+    try:
+        status = os.fstat(descriptor)
+        mode = fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_ACCMODE
+    except OSError:
+        return False
+    return mode == os.O_WRONLY and (status.st_dev, status.st_ino) == identity
+
+
+def _arm_owner_death(owner):
+    """Have the kernel SIGKILL this worker when its owner goes; exit if it already has."""
+    if _LIBC is not None:
+        _LIBC.prctl(_PR_SET_PDEATHSIG, int(signal.SIGKILL), 0, 0, 0)
+    # The owner may have died before the request: then this process was
+    # already re-parented and no death signal will come.
+    if os.getppid() != owner:
+        os._exit(WORKER_ORPHANED_EXIT)
+
+
+def _exit_when_orphaned(lifeline):
+    # The owner never writes, so the read returns only at end of file.
+    while os.read(lifeline.fileno(), 1):
+        pass
+    os._exit(WORKER_ORPHANED_EXIT)
+
+
+def _worker(owner, lifeline, connection, adapter, seed, power):
+    # Under fork the fork hook has already armed the worker; ``owner`` is
+    # passed for a spawned worker, whose parent is also its owner.
+    if owner is not None:
+        _arm_owner_death(owner)
+    threading.Thread(target=_exit_when_orphaned, args=(lifeline,), daemon=True,
+                     name='eedf-worker-lifeline').start()
+    # Under fork the owner's deferral is still installed here (see
+    # _after_fork_in_child): restore the caller's handlers and act on any
+    # signal this worker received since its fork.
+    _DEFERRAL.release()
+    _integration_child(connection, adapter, seed, power)
+
+
+# Exact signal dispositions (glibc on Linux). Deferral replaces a handler and
+# must put back exactly what was there, flags (SA_RESTART) included; where
+# the disposition cannot be read and restored this way, nothing is deferred.
+class _Sigaction(ctypes.Structure):
+    _fields_ = [('handler', ctypes.c_void_p), ('mask', ctypes.c_ulong * 16),
+                ('flags', ctypes.c_int), ('restorer', ctypes.c_void_p)]
+
+
+_SIGACTION = None
+if _LIBC is not None and platform.libc_ver()[0] == 'glibc':
+    _SIGACTION = _LIBC.sigaction
+    _SIGACTION.argtypes = (ctypes.c_int, ctypes.POINTER(_Sigaction), ctypes.POINTER(_Sigaction))
+    _SIGACTION.restype = ctypes.c_int
+# Address of CPython's C-level signal handler, once learnt (_defer_signals).
+_PYTHON_HANDLER = None
+_SIG_IGN_HANDLER = 1  # SIG_IGN as a raw sa_handler value
+_TRAMPOLINES = {}  # (path, inode) -> signal_handler's offset from the image base, or None
+
+
+class _DlInfo(ctypes.Structure):
+    _fields_ = [('fname', ctypes.c_char_p), ('fbase', ctypes.c_void_p),
+                ('sname', ctypes.c_char_p), ('saddr', ctypes.c_void_p)]
+
+
+def _image_base(address):
+    """Load address of the object (executable or library) that contains ``address``."""
+    dladdr = getattr(_LIBC, 'dladdr', None) if _SIGACTION is not None else None
+    if dladdr is None:
+        return None
+    info = _DlInfo()
+    if not dladdr(ctypes.c_void_p(address), ctypes.byref(info)):
+        return None
+    return info.fbase
+
+
+def _mapped_file(address):
+    """(path, inode) of the file this process has mapped at ``address``, or None.
+
+    dladdr names the main program by argv[0], which may be relative or
+    another file's name, so the file is found from /proc/self/maps.
+    """
+    try:
+        with open('/proc/self/maps') as maps:
+            for line in maps:
+                fields = line.split(None, 5)
+                low, high = (int(bound, 16) for bound in fields[0].split('-'))
+                if low <= address < high:
+                    return (fields[5].rstrip('\n'), int(fields[4])) if len(fields) == 6 else None
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def _elf_function(path, inode, name=b'signal_handler', source=b'signalmodule.c'):
+    """Offset from the image base of a local function, read from an ELF64 .symtab.
+
+    The function must be the only local one called ``name``, or the only one
+    listed under a ``source`` file symbol where the table names its sources
+    (CPython's own build leaves those names empty). None when the file is not
+    that mapping's (another inode), not ELF64, stripped, or holds no single
+    such function.
+    """
+    try:
+        with open(path, 'rb') as image:
+            if os.fstat(image.fileno()).st_ino != inode:
+                return None
+            ident = image.read(64)
+            if ident[:4] != b'\x7fELF' or ident[4] != 2 or ident[5] not in (1, 2):
+                return None
+            order = '<' if ident[5] == 1 else '>'
+            phoff, shoff = struct.unpack_from(order + 'QQ', ident, 0x20)
+            phentsize, phnum, shentsize, shnum = struct.unpack_from(order + 'HHHH', ident, 0x36)
+            image.seek(phoff)
+            headers = image.read(phentsize * phnum)
+            loads = [struct.unpack_from(order + 'II8xQ', headers, i * phentsize) for i in range(phnum)]
+            lowest = min(vaddr for kind, _, vaddr in loads if kind == 1)  # PT_LOAD
+            image.seek(shoff)
+            table = image.read(shentsize * shnum)
+            sections = [struct.unpack_from(order + 'II16xQQI', table, i * shentsize)
+                        for i in range(shnum)]
+            symtab = next((section for section in sections if section[1] == 2), None)  # SHT_SYMTAB
+            if symtab is None:
+                return None
+            image.seek(sections[symtab[4]][2])
+            strings = image.read(sections[symtab[4]][3])
+            image.seek(symtab[2])
+            symbols = image.read(symtab[3])
+    except (OSError, ValueError, IndexError, struct.error):
+        return None
+    found, file = {}, None
+    for offset in range(0, len(symbols) - 23, 24):
+        label, info, _, _, value, _ = struct.unpack_from(order + 'IBBHQQ', symbols, offset)
+        symbol = strings[label:strings.find(b'\0', label)]
+        if info & 0xf == 4:  # STT_FILE: the locals that follow come from it
+            file = symbol
+        elif info == 2 and symbol == name:  # STB_LOCAL, STT_FUNC
+            found[value] = file
+    named = {value for value, file in found.items() if file == source}
+    values = named or set(found)
+    if len(values) != 1:
+        return None
+    return values.pop() - (lowest & ~(mmap.PAGESIZE - 1))
+
+
+def _trampoline_offset(address):
+    mapped = _mapped_file(address)
+    if mapped is None:
+        return None
+    if mapped not in _TRAMPOLINES:
+        _TRAMPOLINES[mapped] = _elf_function(*mapped)
+    return _TRAMPOLINES[mapped]
+
+
+def _interpreter_handler(actions):
+    """CPython's handler address, identified from the kernel's actions alone, or None.
+
+    A handler function is CPython's own only if Python's table holds a
+    callable for its signal, it lies in the object that exports
+    PyOS_getsig (the interpreter, or libpython), and its offset there is
+    that of signalmodule.c's ``signal_handler`` in the object's symbol
+    table. Another function in the same object (faulthandler's, say) has
+    another offset; without a symbol table nothing is identified.
+    """
+    try:
+        interpreter = _image_base(ctypes.cast(ctypes.pythonapi.PyOS_getsig, ctypes.c_void_p).value)
+    except (AttributeError, ValueError):
+        return None
+    if interpreter is None:
+        return None
+    found = set()
+    for signum, action in actions.items():
+        if (action is not None and action.handler and action.handler != _SIG_IGN_HANDLER
+                and callable(signal.getsignal(signum))
+                and _image_base(action.handler) == interpreter
+                and action.handler - interpreter == _trampoline_offset(action.handler)):
+            found.add(action.handler)
+    # One symbol has one address: two would be a bug here, so nothing is identified.
+    return found.pop() if len(found) == 1 else None
+
+
+def _raw_disposition(signum):
+    if _SIGACTION is None:
+        return None
+    action = _Sigaction()
+    if _SIGACTION(signum, None, ctypes.byref(action)) != 0:
+        return None
+    return action
+
+
+def _restore_disposition(signum, handler, action):
+    # Python's table first (None, a handler set outside Python, is not
+    # settable: SIG_DFL stands in), then the exact kernel action over it.
+    signal.signal(signum, signal.SIG_DFL if handler is None else handler)
+    _SIGACTION(signum, ctypes.byref(action), None)
+
+
+class _ScanCancelled(BaseException):
+    """A deferred signal whose action can run only once the scan is cleaned up.
+
+    The outermost deferral re-delivers the signal after every worker is
+    reaped. It escapes only when that signal's default action is held by a
+    signal mask the caller set in every thread.
+    """
+
+
+class _Deferral:
+    """SIGINT and SIGTERM recorded on the main thread while a scan owns workers.
+
+    Python runs signal handlers on the main thread whichever OS thread the
+    signal reached, so the recording handler defers a signal however the
+    process routes it, and at any bytecode. A recorded signal is acted on
+    only where every started worker is owned: a checkpoint in the scan loop
+    calls the caller's own Python handler there (so KeyboardInterrupt and a
+    raising SIGTERM handler unwind through the cleanup, which still defers).
+    A signal whose previous disposition is SIG_DFL cancels the scan and is
+    re-delivered after the cleanup, so a default SIGTERM still ends the
+    process with status -15. SIGTERM outranks SIGINT: once a handler has
+    raised, only a higher-ranked signal is delivered after it. Deferral
+    nests: only the outermost scope installs and restores handlers; a scan
+    re-entered on the same thread (from a signal handler, say) acts on a
+    signal at its own checkpoint, and its exception unwinds through the
+    outer scan's cleanup before it leaves ``scan()``.
+    """
+
+    def __init__(self):
+        self.previous = {}
+        self.pending = {}
+        self.raised = None
+
+    def checkpoint(self):
+        for rank, signum in enumerate(_DEFERRED_SIGNALS):
+            if signum not in self.pending:
+                continue
+            handler = self.previous[signum][2]
+            if not callable(handler):
+                raise _ScanCancelled(signum)
+            self._call(rank, signum, handler, self.pending.pop(signum))
+
+    def _call(self, rank, signum, handler, frame):
+        try:
+            handler(signum, frame)
+        except BaseException:
+            if self.raised is None or rank < self.raised:
+                self.raised = rank
+            raise
+
+    def release(self):
+        """Restore the caller's handlers, then deliver what is still pending."""
+        taken, self.pending = self.pending, {}
+        previous, self.previous = self.previous, {}
+        for signum, (handler, action, _action_now) in previous.items():
+            _restore_disposition(signum, handler, action)
+        taken.update(self.pending)  # recorded between the swap and the restore
+        self.pending = {}
+        raised, self.raised = self.raised, None
+        for rank, signum in enumerate(_DEFERRED_SIGNALS):
+            if signum not in taken or (raised is not None and rank >= raised):
+                continue
+            handler = previous[signum][2]
+            if callable(handler):
+                self._call(rank, signum, handler, taken[signum])
+            else:
+                os.kill(os.getpid(), signum)
+
+
+class _NoDeferral:
+    """Off the main thread a scan cannot install handlers; the main thread's own govern."""
+
+    @staticmethod
+    def checkpoint():
+        pass
+
+
+_DEFERRAL = _Deferral()
+# Set on the thread that starts a worker, for the duration of the start, so
+# the fork hook can tell this module's workers from any other fork.
+_STARTING = threading.local()
+_STARTING_FIELDS = ('owner', 'start', 'worker')
+
+
+def _record_signal(signum, frame):
+    _DEFERRAL.pending[signum] = frame
+
+
+@contextmanager
+def _cancellation_deferred():
+    """Defer SIGINT/SIGTERM from before the first worker until the last is reaped.
+
+    Yields an object whose ``checkpoint()`` acts on deferred signals. A
+    signal is left alone when it is ignored, when its disposition belongs to
+    C code rather than to Python, or when it cannot be saved and restored
+    exactly. Off the main thread nothing is deferred. The owner-death
+    backstop covers every one of these cases.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        yield _NoDeferral
+        return
+    if any(signal.getsignal(signum) is _record_signal for signum in _DEFERRED_SIGNALS):
+        yield _DEFERRAL  # nested: the outermost scope delivers
+        return
+    try:
+        _DEFERRAL.pending = {}
+        _DEFERRAL.raised = None
+        _defer_signals()
+        yield _DEFERRAL
+    finally:
+        _DEFERRAL.release()
+
+
+def _defer_signals():
+    """Install the recording handler on each deferred signal C code does not own.
+
+    Ownership is read from the kernel before anything is written, never from
+    signal.getsignal(), which reports Python's table and can be stale: a C
+    library may install its own handler, or reset the signal to SIG_DFL,
+    behind Python's back (RDKit's embedding leaves a SIGINT handler that does
+    the latter when it fires). A kernel SIG_DFL is deferred as SIG_DFL,
+    whatever the table says, so the scan reaps its workers before the signal
+    ends the process. An ignored signal stays ignored. A handler function is
+    Python's only if it is CPython's own C handler and Python's table holds a
+    callable; any other is C code's and is never written, not even briefly.
+
+    CPython's handler address is not public. It is learnt by reading back
+    the first install on a signal whose kernel action is SIG_DFL, which the
+    scan defers anyway; failing that, it is identified, without writing,
+    from the actions read and the interpreter's symbol table
+    (_interpreter_handler). Until one of the two succeeds no handler
+    function can be told apart from C code's, so all are left alone: with
+    SIGTERM ignored and SIGINT held by a ctypes callback at the first scan,
+    say, or with Python handlers on both signals under a stripped
+    interpreter.
+    """
+    global _PYTHON_HANDLER
+    actions = {signum: _raw_disposition(signum) for signum in _DEFERRED_SIGNALS}
+    for signum, action in actions.items():
+        if action is not None and not action.handler:
+            _install_recorder(signum, action, signal.SIG_DFL)
+            if _PYTHON_HANDLER is None:
+                learnt = _raw_disposition(signum)
+                if learnt is not None and learnt.handler:
+                    _PYTHON_HANDLER = learnt.handler
+    if _PYTHON_HANDLER is None:
+        _PYTHON_HANDLER = _interpreter_handler(actions)
+    for signum, action in actions.items():
+        if (action is None or not action.handler or _PYTHON_HANDLER is None
+                or action.handler != _PYTHON_HANDLER):
+            continue
+        handler = signal.getsignal(signum)
+        if callable(handler):
+            _install_recorder(signum, action, handler)
+
+
+def _install_recorder(signum, action, effective):
+    # Each entry: Python's table value and the raw action, both restored
+    # exactly, and the action the signal would have taken (delivered later).
+    _DEFERRAL.previous[signum] = (signal.getsignal(signum), action, effective)
+    signal.signal(signum, _record_signal)
+
+
+class _Start:
+    """One worker start, whose child this process can recognize without its help.
+
+    A handler for a signal the scan does not defer can raise inside
+    Process.start() after the fork but before multiprocessing records the
+    child, and an application at-fork hook registered before this module's
+    can keep that child from running any code of ours for as long as it
+    likes. The worker is therefore recognized by memory it cannot have
+    changed: a random nonce that _WorkerPopen writes into this start's own
+    buffer just before the worker's fork and clears just after it returns.
+    The fork copies the buffer, so the worker's copy holds the nonce from
+    its first instruction; a process forked before the write or after the
+    clear holds zeros. The owner reads a new child's copy with
+    process_vm_readv (_read_child). The worker also reports its pid through
+    ``slot`` once this module's child hook runs.
+    """
+
+    __slots__ = ('nonce', 'buffer', 'children', 'armed', 'reclaimed', 'slot')
+
+    def __init__(self):
+        self.nonce = os.urandom(16)
+        self.buffer = ctypes.create_string_buffer(16)
+        self.children = None
+        self.armed = False  # whether the worker's fork was reached
+        self.reclaimed = False
+        self.slot = mmap.mmap(-1, 8)
+
+    def open(self):
+        """List the children that exist before the start."""
+        self.children = _children()
+
+    def arm(self):
+        self.armed = True
+        self.buffer.raw = self.nonce
+
+    def disarm(self):
+        self.buffer.raw = bytes(16)
+
+    def pid(self):
+        return struct.unpack('q', self.slot[:8])[0]
+
+    def new_children(self):
+        listed = _children()
+        if listed is None or self.children is None:
+            return set()
+        return listed - self.children
+
+
+try:
+    from multiprocessing import popen_fork
+    from multiprocessing import util as _multiprocessing_util
+    _ForkPopen = popen_fork.Popen
+except ImportError:  # no fork start method here
+    popen_fork = None
+    _ForkPopen = object
+
+
+class _WorkerPopen(_ForkPopen):
+    """multiprocessing's fork Popen, with the start's nonce set across the fork alone."""
+
+    def _launch(self, process_obj):
+        code = 1
+        parent_r, child_w = os.pipe()
+        child_r, parent_w = os.pipe()
+        start = getattr(_STARTING, 'start', None)
+        if start is not None:
+            start.arm()
+        try:
+            self.pid = os.fork()
+        finally:
+            if start is not None and getattr(self, 'pid', None) != 0:
+                start.disarm()
+        if self.pid == 0:
+            try:
+                os.close(parent_r)
+                os.close(parent_w)
+                code = process_obj._bootstrap(parent_sentinel=child_r)
+            finally:
+                os._exit(code)
+        else:
+            os.close(child_w)
+            os.close(child_r)
+            self.finalizer = _multiprocessing_util.Finalize(
+                self, _multiprocessing_util.close_fds, (parent_r, parent_w,))
+            self.sentinel = parent_r
+
+
+_LAUNCHES = ((popen_fork.Popen._launch.__code__, _WorkerPopen._launch.__code__)
+             if popen_fork is not None else ())
+
+
+class _Iovec(ctypes.Structure):
+    _fields_ = [('base', ctypes.c_void_p), ('len', ctypes.c_size_t)]
+
+
+_VM_READV = getattr(_LIBC, 'process_vm_readv', None)
+if _VM_READV is not None:
+    _VM_READV.argtypes = (ctypes.c_int, ctypes.POINTER(_Iovec), ctypes.c_ulong,
+                          ctypes.POINTER(_Iovec), ctypes.c_ulong, ctypes.c_ulong)
+    _VM_READV.restype = ctypes.c_ssize_t
+
+
+def _read_child(pid, address, size=16):
+    """A child's copy of ``size`` bytes at ``address``, or None if it cannot be read.
+
+    A parent may read its own children (Yama ptrace_scope 1 included). A
+    zombie, an exited process or a stricter policy gives None.
+    """
+    copy = ctypes.create_string_buffer(size)
+    if _VM_READV is not None:
+        local, remote = _Iovec(ctypes.addressof(copy), size), _Iovec(address, size)
+        if _VM_READV(pid, ctypes.byref(local), 1, ctypes.byref(remote), 1, 0) == size:
+            return copy.raw
+    try:
+        with open('/proc/{}/mem'.format(pid), 'rb', buffering=0) as memory:
+            memory.seek(address)
+            data = memory.read(size)
+    except (OSError, ValueError, OverflowError):
+        return None
+    return data if len(data) == size else None
+
+
+def _alive(pid):
+    try:
+        with open('/proc/{}/stat'.format(pid)) as stat:
+            return stat.read().rsplit(')', 1)[1].split()[0] != 'Z'
+    except (OSError, IndexError):
+        return False
+
+
+def _children():
+    """Every child of this process, from each thread's list; None where /proc lists none."""
+    if not os.path.exists('/proc/self/task/{}/children'.format(threading.get_native_id())):
+        return None
+    try:
+        tasks = os.listdir('/proc/self/task')
+    except OSError:
+        return None
+    children = set()
+    for task in tasks:
+        try:
+            with open('/proc/self/task/{}/children'.format(task)) as listing:
+                children.update(int(pid) for pid in listing.read().split())
+        except OSError:
+            pass  # that thread has exited; its children moved to another's list
+    return children
+
+
+def _kill_and_reap(pid):
+    try:
+        os.kill(pid, signal.SIGKILL)
+        deadline = time.monotonic() + WORKER_KILL_TIMEOUT
+        while not os.waitpid(pid, os.WNOHANG)[0]:
+            if time.monotonic() >= deadline:
+                logging.getLogger(__name__).error(
+                    'reactor worker pid %s is still alive %.3g s after SIGKILL '
+                    '(uninterruptible kernel wait?); not waiting further',
+                    pid, WORKER_KILL_TIMEOUT)
+                return
+            time.sleep(0.001)
+    except (ProcessLookupError, ChildProcessError):
+        pass
+
+
+def _reclaim(start):
+    """Kill and reap the child of a start that multiprocessing never recorded.
+
+    Only a new child that holds the start's nonce, or the one that reported
+    its pid, is the worker; any other new child is the application's and is
+    neither killed nor waited on. A live new child whose memory cannot be
+    read may be the worker: it is waited on until the worker reports or it
+    exits. So is every holder when more than one child holds the nonce,
+    which only an application fork inside the worker's fork window can
+    cause. Where /proc lists no children, only the report identifies the
+    child, and it is awaited for WORKER_KILL_TIMEOUT. A start that never
+    reached the worker's fork has no child to find.
+    """
+    if start.reclaimed or not start.armed:  # not armed: the worker was never forked
+        start.reclaimed = True
+        return
+    since = noted = time.monotonic()
+    address = ctypes.addressof(start.buffer)
+    while True:
+        holders, unread = [], []
+        for pid in sorted(start.new_children()):
+            copy = _read_child(pid, address)
+            if copy == start.nonce:
+                holders.append(pid)
+            elif copy is None and _alive(pid):
+                unread.append(pid)
+        reported = start.pid()
+        if reported and reported in holders + unread:
+            pid = reported
+        elif len(holders) == 1 and not unread:
+            pid = holders[0]
+        else:
+            pid = None
+        if pid:
+            _kill_and_reap(pid)
+            break
+        if start.children is None:
+            if time.monotonic() - since >= WORKER_KILL_TIMEOUT:
+                break
+        elif not holders and not unread:
+            break
+        if time.monotonic() - noted >= WORKER_KILL_TIMEOUT:
+            noted = time.monotonic()
+            logging.getLogger(__name__).warning(
+                'waiting for new child processes %s to show which is the reactor '
+                'worker of an interrupted start', holders + unread)
+        time.sleep(0.001)
+    start.reclaimed = True
+
+
+def _worker_fork(caller):
+    """Whether the fork under way, called from ``caller``, starts this module's worker.
+
+    During a start, a signal handler on the same thread may fork too; only
+    multiprocessing's own fork is the worker's.
+    """
+    if not getattr(_STARTING, 'worker', False):
+        return False
+    return not _LAUNCHES or caller.f_code in _LAUNCHES
+
+
+
+def _after_fork_in_child():
+    # The before-fork hook took the lock, so this process's copy is held.
+    _LIFELINES_LOCK.release()
+    # Only multiprocessing's own fork is a worker: not a fork a signal
+    # handler makes on the starting thread meanwhile.
+    worker = _worker_fork(sys._getframe(1))
+    _STARTING.worker = False
+    if worker:
+        start = getattr(_STARTING, 'start', None)
+        if start is not None:
+            start.slot[:8] = struct.pack('q', os.getpid())
+        _arm_owner_death(getattr(_STARTING, 'owner', os.getppid()))
+    # An application hook that ran first may have closed these and reused
+    # the numbers: close a descriptor only if it is still the registered pipe.
+    for write_end, identity in _LIFELINES.items():
+        if _is_registered_writer(write_end, identity):
+            os.close(write_end)
+    _LIFELINES.clear()
+    # Signals the owner recorded are the owner's; from here on a recorded
+    # signal was sent to this process.
+    _DEFERRAL.pending = {}
+    _DEFERRAL.raised = None
+    if worker:
+        # One of this module's workers keeps recording until _worker restores
+        # the caller's handlers: a handler that raised in this hook would be
+        # swallowed, and the owner may terminate a worker that is still here.
+        return
+    # Any other fork gets the caller's dispositions back at once, exactly.
+    for signum, (handler, action, _action_now) in _DEFERRAL.previous.items():
+        if signal.getsignal(signum) is _record_signal:
+            _restore_disposition(signum, handler, action)
+    _DEFERRAL.previous = {}
+
+
+if hasattr(os, 'register_at_fork'):
+    # No Python code runs in the parent's hooks: a handler for a signal the
+    # scan does not defer could run there, and its exception would be lost.
+    os.register_at_fork(before=_LIFELINES_LOCK.acquire,
+                        after_in_parent=_LIFELINES_LOCK.release,
+                        after_in_child=_after_fork_in_child)
+
+
+def _running(process):
+    """Whether the OS still runs a started worker.
+
+    multiprocessing reports a worker that someone else reaped (a caller's
+    SIGCHLD handler, a stray waitpid) as alive with no exit code forever;
+    waitid without reaping tells that case apart.
+    """
+    if not process.is_alive():
+        return False
+    if not hasattr(os, 'waitid'):
+        return True
+    try:
+        state = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError:
+        return False
+    return state is None
+
+
+def _join(process, timeout):
+    # Short joins: a descendant of the worker can hold the sentinel a long
+    # join waits on, long after the worker itself has exited.
+    deadline = time.monotonic() + timeout
+    while _running(process):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.0:
+            return
+        process.join(min(remaining, 0.05))
+
+
+def _reap_worker(process, *, terminate=False):
+    """Stop one worker and reap it before returning.
+
+    A worker has WORKER_TERMINATE_GRACE to exit, after SIGTERM or after
+    sending its result, and is then killed. SIGKILL cannot be caught or
+    ignored, so the last join waits up to WORKER_KILL_TIMEOUT for the exit
+    and reaps the child. A worker still running after that is logged and
+    left, never waited on forever; an uninterruptible kernel wait (D state)
+    is the one known cause. It still dies with its owner.
+    """
+    if terminate and _running(process):
         process.terminate()
-    process.join(WORKER_TERMINATE_GRACE)
-    if process.is_alive():
+    _join(process, WORKER_TERMINATE_GRACE)
+    if _running(process):
         process.kill()
-        process.join(WORKER_KILL_GRACE)
-    return not process.is_alive()
+        killed = time.monotonic()
+        _join(process, WORKER_KILL_TIMEOUT)
+        if _running(process):
+            logging.getLogger(__name__).error(
+                'reactor worker pid %s is still alive %.3g s after SIGKILL '
+                '(uninterruptible kernel wait?); not waiting further',
+                process.pid, time.monotonic() - killed)
 
 
 def _integrate_many(adapter, seeds, processes, timeout, power=None):
-    """Run seed integrations in isolated processes, preserving input order."""
+    """Run seed integrations in isolated processes, preserving input order.
+
+    On the main thread SIGINT and SIGTERM are deferred from before the first
+    worker starts until the last is reaped (_cancellation_deferred), so a
+    signal cannot split a worker's start from its registration or abort the
+    cleanup, whichever thread the OS gave it to. The loop acts on it within
+    one poll interval. Whatever happens to this process, each worker dies
+    with it: on Linux the kernel kills it (PR_SET_PDEATHSIG), and everywhere
+    it exits when its lifeline closes (_exit_when_orphaned).
+
+    Known limits:
+
+    - Off Linux only the lifeline ties a worker to its owner. It is watched
+      by a Python thread, so there a worker in a native call that holds the
+      GIL exits only when the call releases it, and a fork made outside
+      os.fork() (C code calling fork directly) can hold the lifeline open
+      until that process exits.
+    - Off glibc Linux nothing is deferred, because a disposition cannot be
+      saved and restored exactly there.
+    - Under the forkserver start method a worker's parent is the server, not
+      the owner: only the lifeline applies.
+    - Helper processes an adapter's own code creates are not scan processes:
+      the scan neither kills nor reaps them.
+    - Off the main thread nothing is deferred: the main thread's handlers
+      govern and the scanning thread is not interrupted; owner death still
+      ends the workers.
+    - A signal whose disposition belongs to C code (a handler installed
+      behind Python's back, as RDKit's embedding leaves for SIGINT) is not
+      deferred: that handler runs during the scan as it would without one,
+      and if it ends the process, the workers die with it, unreaped. Until
+      CPython's own handler address is known (_defer_signals), a Python
+      handler cannot be told from C code's and is treated the same way. It
+      is known once a scan meets SIGTERM or SIGINT at SIG_DFL, or from the
+      interpreter's symbol table: under a stripped interpreter, a process
+      whose deferred signals all start on Python handlers gets no deferral.
+      Other signals (SIGHUP, SIGQUIT, ...) are not deferred either.
+    - A scan re-entered on the same thread (from a signal handler, say) acts
+      on a deferred signal at its own checkpoint rather than at the
+      outermost scan's; the exception still unwinds through the outer scan's
+      cleanup, which reaps every outer worker before it leaves ``scan()``.
+    - An application at-fork child hook registered before this module's runs
+      in a forked worker before any code of the scan's, so neither backstop
+      is armed until it returns. If the owner dies meanwhile, the worker ends
+      within 5 s after the later of the owner's death and the completion of
+      those earlier hooks.
+    - Off Linux a start cut short after its fork finds its child only by the
+      pid the child reports, and waits WORKER_KILL_TIMEOUT for it. Under the
+      spawn and forkserver start methods such a child is not recognized at
+      all; it ends with its lifeline.
+    - A start cut short after its fork recognizes its child by a nonce in
+      memory copied at the fork (_Start). The nonce is set for the worker's
+      fork call alone, a few milliseconds in a large owner (the fork system
+      call itself). A process another thread forks, or a signal handler
+      forks, within that window carries the nonce too: it is waited on until
+      the worker reports its pid, and taken for the worker only if the
+      worker's own fork failed. Where this process may not read
+      its children's memory (Yama ptrace_scope 2 or 3), a new child is waited
+      on until the worker reports or the child exits.
+    - A SIGTERM sent to a worker before its fork hook runs is lost
+      (CPython clears signals that reach a child before its after-fork
+      step); _reap_worker's SIGKILL after WORKER_TERMINATE_GRACE stops that
+      worker.
+    """
     if processes == 1 and timeout is None:
         results = []
         for seed in seeds:
@@ -595,52 +1404,109 @@ def _integrate_many(adapter, seeds, processes, timeout, power=None):
                 results.append(('error', '{}: {}'.format(type(exc).__name__, exc)))
         return results
     context = multiprocessing.get_context()
+    # A spawned worker's parent is its owner and arms itself at entry; a
+    # forked one is armed by the fork hook; a forkserver child's parent is the
+    # server, so only the lifeline ties it to this process.
+    method = getattr(context, 'get_start_method', None)
+    method = method() if method is not None else None
+    spawn_owner = os.getpid() if method == 'spawn' else None
     waiting = list(enumerate(seeds))
     active = {}
     results = [None] * len(seeds)
-    try:
-        while waiting or active:
-            while waiting and len(active) < processes:
-                index, seed = waiting.pop(0)
-                parent, child = context.Pipe(duplex=False)
-                process = context.Process(
-                    target=_integration_child, args=(child, adapter, seed, power))
-                process.start()
-                child.close()
-                active[index] = (process, parent, time.monotonic())
-            progressed = False
-            for index, (process, connection, started) in list(active.items()):
-                if connection.poll():
+    with _cancellation_deferred() as deferral:
+        try:
+            while waiting or active:
+                deferral.checkpoint()
+                while waiting and len(active) < processes:
+                    deferral.checkpoint()
+                    index, seed = waiting.pop(0)
+                    parent, child = context.Pipe(duplex=False)
+                    lifeline, write_end = _open_lifeline()
                     try:
-                        results[index] = connection.recv()
-                    except (EOFError, OSError) as exc:
-                        _bounded_worker_shutdown(process, terminate=True)
+                        process = context.Process(
+                            target=_worker,
+                            args=(spawn_owner, lifeline, child, adapter, seed, power))
+                    except BaseException:
+                        _close_lifeline(write_end)
+                        for end in (parent, child, lifeline):
+                            end.close()
+                        raise
+                    if method == 'fork' and popen_fork is not None:
+                        process._Popen = _WorkerPopen  # sets the start's nonce across the fork
+                    # Owned before it exists. A start cut short after its fork
+                    # leaves a child multiprocessing never recorded: it is found
+                    # and reaped before the exception leaves (_Start, _reclaim).
+                    start = _Start()
+                    active[index] = (process, parent, write_end, time.monotonic(), start)
+                    outer = [getattr(_STARTING, name, None) for name in _STARTING_FIELDS]
+                    try:
+                        start.open()
+                        _STARTING.owner, _STARTING.start, _STARTING.worker = (
+                            os.getpid(), start, True)
+                        process.start()
+                    finally:
+                        # A scan re-entered from a handler during the start
+                        # hands the outer start back its own fields.
+                        for name, value in zip(_STARTING_FIELDS, outer):
+                            setattr(_STARTING, name, value)
+                        child.close()
+                        lifeline.close()
+                        if process.pid is None:
+                            _reclaim(start)
+                progressed = False
+                for index, (process, connection, write_end, started, _start) in list(active.items()):
+                    if connection.poll():
+                        try:
+                            results[index] = connection.recv()
+                        except (EOFError, OSError) as exc:
+                            _reap_worker(process, terminate=True)
+                            results[index] = (
+                                'error',
+                                '{}: reactor worker receive failed after exit code {}: {}'.format(
+                                    type(exc).__name__, process.exitcode, exc))
+                        else:
+                            _reap_worker(process)
+                    elif timeout is not None and time.monotonic() - started >= timeout:
+                        _reap_worker(process, terminate=True)
+                        results[index] = ('error', 'TimeoutError: exceeded {:.6g} s'.format(timeout))
+                    elif not _running(process):
+                        _reap_worker(process)
                         results[index] = (
                             'error',
-                            '{}: reactor worker receive failed after exit code {}: {}'.format(
-                                type(exc).__name__, process.exitcode, exc))
+                            'ChildProcessError: reactor worker exited without a result '
+                            '(exit code {})'.format(process.exitcode))
                     else:
-                        _bounded_worker_shutdown(process)
-                elif timeout is not None and time.monotonic() - started >= timeout:
-                    _bounded_worker_shutdown(process, terminate=True)
-                    results[index] = ('error', 'TimeoutError: exceeded {:.6g} s'.format(timeout))
-                elif not process.is_alive():
-                    _bounded_worker_shutdown(process)
-                    results[index] = (
-                        'error',
-                        'ChildProcessError: reactor worker exited without a result '
-                        '(exit code {})'.format(process.exitcode))
-                else:
-                    continue
-                connection.close()
-                del active[index]
-                progressed = True
-            if active and not progressed:
-                time.sleep(0.01)
-    finally:
-        for process, connection, _started in active.values():
-            connection.close()
-            _bounded_worker_shutdown(process, terminate=True)
+                        continue
+                    del active[index]
+                    connection.close()
+                    _close_lifeline(write_end)
+                    progressed = True
+                if active and not progressed:
+                    time.sleep(0.01)
+        finally:
+            # A handler for a signal the scan does not defer can raise here;
+            # every step is idempotent, so cleanup resumes until nothing is owned.
+            interrupted = None
+            while active:
+                try:
+                    for index, (process, connection, write_end, _started, start) in list(active.items()):
+                        try:
+                            connection.close()
+                        except Exception:
+                            logging.getLogger(__name__).exception('closing worker pipe failed')
+                        try:
+                            if process.pid is None:
+                                _reclaim(start)
+                            _reap_worker(process, terminate=True)
+                        except Exception:
+                            logging.getLogger(__name__).exception(
+                                'reaping reactor worker pid %s failed', process.pid)
+                        _close_lifeline(write_end)
+                        del active[index]
+                except BaseException as exc:
+                    interrupted = exc
+            if interrupted is not None:
+                raise interrupted
     return results
 
 
@@ -686,7 +1552,20 @@ def scan(adapter, u_limits, output, *, u_steps=12, electron_density_decades=5,
     Every seed is solved at ``reference_power``, which is required: an
     artifact without it cannot be matched at a run's power. A seed that times
     out is solved once more when ``recheck_timeouts`` is set, and the attempt
-    records both outcomes.
+    records both outcomes. Continuing to ``powers`` needs a declared
+    ``continuation_stability_resolution``. The scan continues each branch on
+    the step path only; until a caller records a half-step path,
+    ``path_consistency`` reports the branch unconfirmed and matching refuses
+    it. Every converged cluster is recorded, but only a branch with a stable
+    reference verdict and a consistent certified path can be matched
+    (``matchable_issue``).
+
+    With ``processes`` above one or a ``timeout``, seeds run in worker
+    processes. Called on the main thread, the scan holds SIGINT and SIGTERM
+    until every started worker is reaped, then acts on them as the caller's
+    handlers would: KeyboardInterrupt, the caller's SIGTERM handler, or
+    termination with status -15 under the default action. Workers exit with
+    their owner however it ends (see ``_integrate_many`` for the limits).
     """
     if not isinstance(processes, int) or isinstance(processes, bool) or not 1 <= processes <= MAX_PROCESSES:
         raise ValueError('processes must be an integer from 1 to at most 6')
@@ -698,6 +1577,10 @@ def scan(adapter, u_limits, output, *, u_steps=12, electron_density_decades=5,
         raise ValueError('scan needs a finite reference_power') from exc
     if not math.isfinite(reference_power):
         raise ValueError('scan needs a finite reference_power')
+    if powers and continuation_stability_resolution is None:
+        raise ValueError(
+            'scan continuation needs a declared continuation_stability_resolution; '
+            'the certificate solves twice per gap of that width')
     seeds = seed_lattice(u_limits, u_steps, electron_density_decades,
                          electron_density_limits)
     outcomes = _integrate_many(
@@ -769,7 +1652,7 @@ def scan(adapter, u_limits, output, *, u_steps=12, electron_density_decades=5,
                 log_ne_tolerance=log_ne_tolerance)
         branches.append(branch)
     payload = {
-        'schema': 1,
+        'schema': 2,
         'reference_power': reference_power,
         'u_tolerance': float(u_tolerance),
         'log_ne_tolerance': float(log_ne_tolerance),
@@ -798,19 +1681,35 @@ def _certified_states(path):
             if 'power' in entry and 'u' in entry and 'n_e' in entry]
 
 
-def certified_coverage(branch):
-    """Powers and declared segments at which a branch has certified states."""
-    powers = sorted({float(entry['power'])
-                     for entry in _certified_states(branch.get('continuation_path'))})
-    segments = []
-    for entry in branch.get('continuation_path') or []:
-        if not (entry.get('converged') and entry.get('segment_certified', False)):
-            continue
-        for segment in entry.get('interpolation_segments', []):
-            if segment.get('certificate') == 'declared-error-bound-v1':
-                segments.append(sorted(float(value) for value in segment['power']))
-    return {'powers': powers, 'segments': sorted(segments)}
+def _branch_certified_states(branch):
+    """Certified states of the step and half-step paths of one branch."""
+    states = []
+    for key in CONTINUATION_PATHS:
+        states.extend(_certified_states(branch.get(key)))
+    return states
 
+
+def _distinct_powers(powers):
+    """Sorted powers with values equal within the sample roundoff merged."""
+    distinct = []
+    for power in sorted(float(value) for value in powers):
+        if not distinct or abs(power - distinct[-1]) > SAMPLE_ROUNDOFF * max(abs(power), 1.0):
+            distinct.append(power)
+    return distinct
+
+
+def certified_coverage(branch):
+    """Powers at which a branch has solved, certified states.
+
+    Both paths contribute; powers equal within the sample roundoff, such as
+    one power reached on the outgoing and the return leg, are listed once.
+    Nothing between these powers is certified (``CERTIFICATE_LIMITS[6]``).
+    """
+    return {
+        'paths': [key for key in CONTINUATION_PATHS if branch.get(key)],
+        'powers': _distinct_powers(
+            entry['power'] for entry in _branch_certified_states(branch)),
+    }
 
 def path_consistency(branch, u_tolerance, log_ne_tolerance):
     """Check that every recorded state of a branch at one power is one state.
@@ -818,23 +1717,23 @@ def path_consistency(branch, u_tolerance, log_ne_tolerance):
     States from the step and half-step paths, and from the outgoing and return
     legs of each, are grouped by power; each group must be one cluster under
     the scan's own tolerances. A group that splits is a hop one path took and
-    another did not. When a half-step path is recorded, every certified power
-    of the step path must also lie within the half-step path's certified
-    range: a step state the half-step path never reached is unconfirmed.
+    another did not. Every certified power of the step path must also lie
+    within the half-step path's certified range: a step state the half-step
+    path never reached is unconfirmed. Without a recorded half-step path
+    nothing was cross-checked, so every step state is unconfirmed and the
+    branch is never consistent.
     """
-    records = []
-    for key in CONTINUATION_PATHS:
-        records.extend(_certified_states(branch.get(key)))
+    records = _branch_certified_states(branch)
+    half_recorded = bool(branch.get(CONTINUATION_PATHS[1]))
+    half_powers = [float(entry['power'])
+                   for entry in _certified_states(branch.get(CONTINUATION_PATHS[1]))]
     unconfirmed = []
-    if CONTINUATION_PATHS[1] in branch:
-        half_powers = [float(entry['power'])
-                       for entry in _certified_states(branch.get(CONTINUATION_PATHS[1]))]
-        for entry in _certified_states(branch.get(CONTINUATION_PATHS[0])):
-            power = float(entry['power'])
-            margin = SAMPLE_ROUNDOFF * max(abs(power), 1.0)
-            if not half_powers or not (min(half_powers) - margin <= power
-                                       <= max(half_powers) + margin):
-                unconfirmed.append(power)
+    for entry in _certified_states(branch.get(CONTINUATION_PATHS[0])):
+        power = float(entry['power'])
+        margin = SAMPLE_ROUNDOFF * max(abs(power), 1.0)
+        if not half_powers or not (min(half_powers) - margin <= power
+                                   <= max(half_powers) + margin):
+            unconfirmed.append(power)
     records.sort(key=lambda entry: float(entry['power']))
     groups = []
     for entry in records:
@@ -863,18 +1762,101 @@ def path_consistency(branch, u_tolerance, log_ne_tolerance):
         'max_u_difference': largest_u,
         'max_log_ne_difference': largest_log_ne,
         'disagreeing_powers': sorted(set(disagreements)),
-        'unconfirmed_by_half_step': sorted(set(unconfirmed)),
-        'consistent': not disagreements and not unconfirmed,
+        'unconfirmed_by_half_step': _distinct_powers(unconfirmed),
+        'half_step_recorded': half_recorded,
+        'consistent': half_recorded and not disagreements and not unconfirmed,
     }
 
 
+def aliasing_radius(path, u_tolerance, log_ne_tolerance):
+    """Largest per-gap motion between consecutive recorded states of a path.
+
+    Consecutive states are the chain samples and endpoints in path order. A
+    neighbour whose basin boundary lies closer than this motion can alias at
+    one gap (``CERTIFICATE_LIMITS[2]``).
+    """
+    states = _certified_states(path)
+    largest_u = 0.0
+    largest_log_ne = 0.0
+    for left, right in zip(states, states[1:]):
+        u_gap, log_gap = _identity_gap(left, right)
+        largest_u = max(largest_u, u_gap)
+        largest_log_ne = max(largest_log_ne, log_gap)
+    return {
+        'gaps': max(len(states) - 1, 0),
+        'max_u_motion': largest_u,
+        'max_log_ne_motion': largest_log_ne,
+        'max_u_motion_in_u_tolerances': largest_u / u_tolerance,
+        'max_log_ne_motion_in_log_ne_tolerances': largest_log_ne / log_ne_tolerance,
+    }
+
+
+def _path_certificate_issue(path):
+    """Name the first accepted entry of a path not certified by this code's certificate.
+
+    A step records its certificate; the initial state records the settings
+    of the run that certified the path. An accepted entry with neither, or
+    with an older certificate, was not certified with the last-sample gate.
+    """
+    for entry in path:
+        if not (entry.get('converged') and entry.get('segment_certified', False)):
+            continue
+        record = entry.get('certificate') or entry.get('continuation_settings') or {}
+        name = record.get('name', record.get('certificate'))
+        if name != CONTINUATION_CERTIFICATE:
+            return 'the accepted state at {!r} W was certified with {!r}'.format(
+                entry.get('power'), name)
+    return None
+
+
+def certificate_issue(payload):
+    """Why an artifact's continuation was not certified by this code, or None.
+
+    ``CONTINUATION_CERTIFICATE`` names the version. Artifacts written before
+    v2 never judged the last chain sample of a step, and the verdict they
+    discarded cannot be restored from the file, so they must be re-scanned.
+    """
+    recorded = (payload.get('continuation_certificate') or {}).get('name')
+    if recorded != CONTINUATION_CERTIFICATE:
+        return 'artifact certificate {!r} is not {!r}'.format(
+            recorded, CONTINUATION_CERTIFICATE)
+    for branch in payload.get('branches', []):
+        for key in CONTINUATION_PATHS:
+            issue = _path_certificate_issue(branch.get(key) or [])
+            if issue is not None:
+                return 'branch {} {}: {}'.format(branch.get('id'), key, issue)
+    return None
+
+
+def _tolerance_mismatch(path, u_tolerance, log_ne_tolerance):
+    """Name the first certificate tolerance in a path that differs from the artifact's."""
+    declared = path[0].get('continuation_settings')
+    records = [('settings', declared)] if declared is not None else []
+    records.extend(('certificate at {!r} W'.format(entry.get('power')), entry['certificate'])
+                   for entry in path if entry.get('certificate'))
+    for label, record in records:
+        for key, expected in (('u_tolerance', u_tolerance),
+                              ('log_ne_tolerance', log_ne_tolerance)):
+            if key in record and float(record[key]) != expected:
+                return '{} {} {!r} differs from the artifact\'s {!r}'.format(
+                    label, key, record[key], expected)
+    return None
+
+
 def record_continuation(payload):
-    """Write the certificate, settings, coverage and consistency at top level."""
+    """Write the certificate, settings, coverage and consistency at top level.
+
+    A path whose certificate was judged with tolerances other than the
+    artifact's is refused: its certificate says nothing about the artifact's
+    branch identity. So is a path certified by an older certificate: writing
+    this code's metadata over it would not restore what it never checked.
+    """
     u_tolerance = float(payload['u_tolerance'])
     log_ne_tolerance = float(payload['log_ne_tolerance'])
     settings = {}
     coverage = {}
     consistency = {}
+    radius = {}
     solves = {}
     resolutions = []
     for branch in payload.get('branches', []):
@@ -883,6 +1865,12 @@ def record_continuation(payload):
             path = branch.get(key) or []
             if not path:
                 continue
+            mismatch = (_tolerance_mismatch(path, u_tolerance, log_ne_tolerance)
+                        or _path_certificate_issue(path))
+            if mismatch is not None:
+                raise ValueError('branch {} {}: {}'.format(branch_id, key, mismatch))
+            radius.setdefault(branch_id, {})[key] = aliasing_radius(
+                path, u_tolerance, log_ne_tolerance)
             declared = path[0].get('continuation_settings')
             if declared is not None:
                 settings.setdefault(branch_id, {})[key] = declared
@@ -904,11 +1892,13 @@ def record_continuation(payload):
         'identity': {'u_tolerance': u_tolerance,
                      'log_ne_tolerance': log_ne_tolerance,
                      'components': ['u', 'ln n_e']},
+        'branches_py_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
     }
     payload['continuation_settings'] = settings
     payload['stability_resolution'] = max(resolutions) if resolutions else None
     payload['certified_coverage'] = coverage
     payload['path_consistency'] = consistency
+    payload['aliasing_radius'] = radius
     payload['continuation_solves'] = solves
     return payload
 
@@ -1148,7 +2138,7 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
             and np.isfinite(u_tolerance) and u_tolerance > 0.0
             and np.isfinite(log_ne_tolerance) and log_ne_tolerance > 0.0):
         raise ValueError(
-            'continuation bounds, resolution and interpolation tolerances must '
+            'continuation bounds, resolution and branch tolerances must '
             'be finite, positive and ordered')
     settings = {
         'certificate': CONTINUATION_CERTIFICATE,
@@ -1277,13 +2267,20 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
                 64.0 * np.finfo(float).eps,
                 4.0 * _component_noise(initial_corrected, repeat_corrected))
             reproduced = same_branch(initial_result, repeat)
+    seed_branch = failure is None and same_branch(current, initial_result)
     if (failure is not None or initial_correction > predictor_tolerance
-            or reproducibility > predictor_tolerance or not reproduced):
+            or reproducibility > predictor_tolerance or not reproduced
+            or not seed_branch):
         if failure is not None:
             reason = 'corrector failed: ' + failure
         elif not reproduced:
             reason = ('corrector does not reproduce the initial state within '
                       'the branch tolerances')
+        elif not seed_branch:
+            reason = ('initial state (u={!r}, n_e={!r}) is not the seed\'s branch '
+                      '(u={!r}, n_e={!r}) within the branch tolerances'.format(
+                          initial_result['u'], initial_result['n_e'],
+                          current['u'], current['n_e']))
         else:
             reason = 'corrector left scaled predictor neighbourhood'
         path.append(_event_entry(
@@ -1359,10 +2356,16 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
             # than the declared floor (roundoff, or the tail after refinement)
             # resolves nothing and its corrector noise can mimic a fold. A
             # remainder of exactly step + floor is split, so a refined step
-            # is taken rather than snapped back to the target.
-            trial_power = (
-                target if remaining < step + step_floor * (1.0 - SAMPLE_ROUNDOFF)
-                else current_power + direction * step)
+            # is taken rather than snapped back to the target. A short tail
+            # longer than the ceiling is taken in two equal steps, so no step
+            # exceeds max_step; each half is at least the floor whenever
+            # max_step is at least twice min_step.
+            if remaining >= step + step_floor * (1.0 - SAMPLE_ROUNDOFF):
+                trial_power = current_power + direction * step
+            elif remaining <= step_ceiling * (1.0 + SAMPLE_ROUNDOFF):
+                trial_power = target
+            else:
+                trial_power = current_power + direction * remaining / 2.0
             trial_interval = abs(trial_power - current_power)
             has_tangent = len(history) >= 2 and history[-1][0] != history[-2][0]
             if has_tangent:
@@ -1459,7 +2462,7 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
 
             certification_points = []
             interpolation_checks = []
-            interpolation_segments = []
+            interpolation_diagnostics = []
             motions = []
             certificate = None
             sample_count = 0
@@ -1536,12 +2539,15 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
                         'u_tolerance': u_tolerance,
                         'log_ne_tolerance': log_ne_tolerance,
                     }
+                    certificate['sample_verdicts'] = [
+                        sample[3]['classification'] for sample in chain[1:]]
                     for sample in chain[1:-1]:
                         certification_points.append({
                             'power': float(sample[0]),
                             'u': float(sample[1]['u']),
                             'n_e': float(sample[1]['n_e']),
                             'state': sample[2].tolist(),
+                            'stability': sample[3]['classification'],
                             'converged': True,
                             'segment_certified': True,
                         })
@@ -1570,6 +2576,17 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
                         if not motion['certified'] and uncertified is None:
                             uncertified = (
                                 'unresolved', motion['reason'], bracket)
+                    if issue is None and not chain[-1][3]['stable']:
+                        # The endpoint replaces the last sample in the
+                        # recorded path; the sample's own verdict still counts.
+                        verdict = chain[-1][3]['classification']
+                        issue = (
+                            'stability' if verdict == 'unstable' else 'unresolved',
+                            'stability verdict {!r} of the last chain sample at '
+                            '{!r} W; a non-stable state is not continued'.format(
+                                verdict, trial_power),
+                            (chain[-2][0], trial_power))
+                        issue_source = 'verdict'
                     if issue is None:
                         issue = uncertified
                     if issue is None:
@@ -1593,37 +2610,32 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
                                     abs(middle[0] - left[0]),
                                     abs(right[0] - middle[0]))),
                             })
-                            certifier = getattr(
-                                adapter, 'certify_interpolation', None)
-                            if certifier is not None:
-                                declared = certifier(
+                            estimator = getattr(
+                                adapter, 'estimate_interpolation_error', None)
+                            if estimator is not None:
+                                estimate = estimator(
                                     {'power': left[0], 'u': left[1]['u'],
                                      'n_e': left[1]['n_e']},
                                     {'power': middle[0], 'u': middle[1]['u'],
                                      'n_e': middle[1]['n_e']},
                                     {'power': right[0], 'u': right[1]['u'],
                                      'n_e': right[1]['n_e']})
-                                declared_u = float(declared['u_error_bound'])
-                                declared_log_ne = float(
-                                    declared['log_ne_error_bound'])
-                                if (np.isfinite(declared_u)
-                                        and np.isfinite(declared_log_ne)
-                                        and 0.0 <= declared_u <= u_tolerance
-                                        and 0.0 <= declared_log_ne
-                                        <= log_ne_tolerance):
-                                    interpolation_segments.append({
-                                        'certificate': 'declared-error-bound-v1',
-                                        'power': [float(left[0]), float(right[0])],
-                                        'u': [float(left[1]['u']),
-                                              float(right[1]['u'])],
-                                        'n_e': [float(left[1]['n_e']),
-                                                float(right[1]['n_e'])],
-                                        'u_error_bound': declared_u,
-                                        'log_ne_error_bound': declared_log_ne,
-                                        'resolution': float(max(
-                                            abs(middle[0] - left[0]),
-                                            abs(right[0] - middle[0]))),
-                                    })
+                                interpolation_diagnostics.append({
+                                    'certified': False,
+                                    'kind': 'adapter-estimated-midpoint-error',
+                                    'power': [float(left[0]), float(right[0])],
+                                    'u': [float(left[1]['u']),
+                                          float(right[1]['u'])],
+                                    'n_e': [float(left[1]['n_e']),
+                                            float(right[1]['n_e'])],
+                                    'u_error_estimate': float(
+                                        estimate['u_error_estimate']),
+                                    'log_ne_error_estimate': float(
+                                        estimate['log_ne_error_estimate']),
+                                    'resolution': float(max(
+                                        abs(middle[0] - left[0]),
+                                        abs(right[0] - middle[0]))),
+                                })
 
             can_refine = (trial_interval > step_floor * (1.0 + 1.0e-12)
                           and step > step_floor * (1.0 + 1.0e-12))
@@ -1682,7 +2694,7 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
                 'stability_resolution': float(trial_interval / sample_count),
                 'certification_points': certification_points,
                 'interpolation_checks': interpolation_checks,
-                'interpolation_segments': interpolation_segments,
+                'interpolation_diagnostics': interpolation_diagnostics,
                 'certificate': certificate,
                 'corrector_solves': solves['corrector'],
                 'certificate_solves': sample_count + 1,
@@ -1706,108 +2718,31 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
     return path
 
 
-def declared_branch(path, branch_id):
-    """Read one reactor operating branch by id from ``branches.json``."""
+def _load_artifact(path):
+    """Read ``branches.json``, refusing one not certified by this code."""
     try:
         payload = json.loads(Path(path).read_text())
     except (OSError, ValueError) as exc:
         raise ValueError('cannot read operating branches {}: {}'.format(path, exc)) from exc
-    for branch in payload.get('branches', []):
-        if branch.get('id') == branch_id:
-            return branch
-    raise ValueError('operating branch {!r} is absent from {}'.format(branch_id, path))
+    if not isinstance(payload, dict):
+        raise ValueError('operating branches {} is not a branch artifact'.format(path))
+    issue = certificate_issue(payload)
+    if issue is not None:
+        raise ValueError(
+            'operating branches {} predates the current continuation certificate: '
+            '{}; re-run the scan'.format(path, issue))
+    issue = tolerance_issue(payload)
+    if issue is not None:
+        raise ValueError(
+            'operating branches {} matches at tolerances its certificates were not judged '
+            'with: {}; restore the scan\'s tolerances or re-run the scan'.format(path, issue))
+    issue = reference_issue(payload)
+    if issue is not None:
+        raise ValueError('operating branches {} {}'.format(path, issue))
+    return payload
 
 
-def _branch_states_at_power(branch, power, reference_power,
-                            u_tolerance, log_ne_tolerance):
-    """Return recorded/interpolated states on certified path segments only.
-
-    A branch whose recorded states disagree at a common power (step against
-    half-step path, or outgoing against return leg) has no certified state
-    away from the reference power.
-    """
-    power_scale = max(abs(float(power)), 1.0)
-    power_tolerance = 16.0 * np.finfo(float).eps * power_scale
-    at_reference = abs(reference_power - power) <= power_tolerance
-    if not path_consistency(branch, u_tolerance, log_ne_tolerance)['consistent']:
-        return [{'u': float(branch['u']), 'n_e': float(branch['n_e'])}] if at_reference else []
-    path = _certified_states(branch.get('continuation_path'))
-    exact = [entry for entry in path
-             if abs(float(entry['power']) - power) <= power_tolerance]
-    if exact:
-        return [{'u': float(entry['u']), 'n_e': float(entry['n_e'])}
-                for entry in exact]
-    states = []
-    for entry in branch.get('continuation_path', []):
-        if not (entry.get('converged')
-                and entry.get('segment_certified', False)):
-            continue
-        for segment in entry.get('interpolation_segments', []):
-            if segment.get('certificate') != 'declared-error-bound-v1':
-                continue
-            try:
-                left_power, right_power = map(float, segment['power'])
-                left_u, right_u = map(float, segment['u'])
-                left_ne, right_ne = map(float, segment['n_e'])
-                u_error = float(segment['u_error_bound'])
-                log_ne_error = float(segment['log_ne_error_bound'])
-                resolution = float(segment['resolution'])
-            except (KeyError, TypeError, ValueError, OverflowError):
-                continue
-            values = (left_power, right_power, left_u, right_u,
-                      left_ne, right_ne, u_error, log_ne_error, resolution)
-            if not (np.isfinite(values).all()
-                    and left_ne > 0.0 and right_ne > 0.0
-                    and 0.0 <= u_error < u_tolerance
-                    and 0.0 <= log_ne_error < log_ne_tolerance
-                    and resolution > 0.0
-                    and min(left_power, right_power) < power
-                    < max(left_power, right_power)):
-                continue
-            fraction = (power - left_power) / (right_power - left_power)
-            states.append({
-                'u': left_u + fraction * (right_u - left_u),
-                'n_e': float(np.exp(
-                    np.log(left_ne) + fraction * (
-                        np.log(right_ne) - np.log(left_ne)))),
-                '_u_error_bound': u_error,
-                '_log_ne_error_bound': log_ne_error,
-            })
-    if states:
-        return states
-    if at_reference:
-        return [{'u': float(branch['u']), 'n_e': float(branch['n_e'])}]
-    return []
-
-
-def _uncertified_power_message(branch, power, u_tolerance, log_ne_tolerance):
-    coverage = certified_coverage(branch)
-    consistency = path_consistency(branch, u_tolerance, log_ne_tolerance)
-    reason = '' if consistency['consistent'] else (
-        '; its recorded states disagree at {} W and the half-step path does '
-        'not reach {} W, so only the reference power is certified'.format(
-            ['{:.9g}'.format(value) for value in consistency['disagreeing_powers']],
-            ['{:.9g}'.format(value)
-             for value in consistency['unconfirmed_by_half_step']]))
-    return 'power not certified for branch {} at {!r} W{}; certified powers: {}; ' \
-        'certified segments: {}'.format(
-            branch.get('id'), power, reason,
-            ['{:.9g}'.format(value) for value in coverage['powers']],
-            [['{:.9g}'.format(value) for value in segment]
-             for segment in coverage['segments']])
-
-
-def matching_branch(path, state, power=None):
-    """Return the unique branch matching state at the run's absorbed power.
-
-    When the state matches no certified state, and some branch has no
-    certified state at ``power``, the refusal names that branch, its
-    certified powers and its segments, rather than reporting no match.
-    """
-    try:
-        payload = json.loads(Path(path).read_text())
-    except (OSError, ValueError) as exc:
-        raise ValueError('cannot read operating branches {}: {}'.format(path, exc)) from exc
+def _artifact_tolerances(payload):
     try:
         u_tolerance = float(payload['u_tolerance'])
         log_ne_tolerance = float(payload['log_ne_tolerance'])
@@ -1817,6 +2752,142 @@ def matching_branch(path, state, power=None):
     if not (np.isfinite(u_tolerance) and u_tolerance > 0.0
             and np.isfinite(log_ne_tolerance) and log_ne_tolerance > 0.0):
         raise ValueError('operating branches artifact tolerances must be finite and positive')
+    return u_tolerance, log_ne_tolerance
+
+
+def tolerance_issue(payload):
+    """Name the first recorded tolerance that differs from the matching tolerances, or None.
+
+    Matching reads the top-level ``u_tolerance`` and ``log_ne_tolerance``, but
+    the certificate identity, each path's settings and each step's certificate
+    record the tolerances the scan judged. Edited settings are refused, not
+    applied: the certificates say nothing about branch identity at other
+    tolerances.
+    """
+    u_tolerance, log_ne_tolerance = _artifact_tolerances(payload)
+    identity = (payload.get('continuation_certificate') or {}).get('identity') or {}
+    records = [('certificate identity', identity)]
+    records.extend(('branch {} {} settings'.format(branch_id, key), settings)
+                   for branch_id, paths in (payload.get('continuation_settings') or {}).items()
+                   for key, settings in paths.items())
+    for label, record in records:
+        for key, expected in (('u_tolerance', u_tolerance),
+                              ('log_ne_tolerance', log_ne_tolerance)):
+            if key in record and float(record[key]) != expected:
+                return '{} {} {!r} differs from the artifact\'s {!r}'.format(
+                    label, key, record[key], expected)
+    for branch in payload.get('branches', []):
+        for key in CONTINUATION_PATHS:
+            path = branch.get(key) or []
+            issue = _tolerance_mismatch(path, u_tolerance, log_ne_tolerance) if path else None
+            if issue is not None:
+                return 'branch {} {}: {}'.format(branch.get('id'), key, issue)
+    return None
+
+
+def reference_issue(payload):
+    """Why the recorded reference power is unusable or disagrees with the paths, or None.
+
+    Every seed was solved at the reference power and every continuation path
+    starts from it, so each path's settings and initial state record it.
+    """
+    recorded = payload.get('reference_power')
+    try:
+        reference_power = float(recorded)
+    except (TypeError, ValueError, OverflowError):
+        return 'records no valid reference power: {!r}'.format(recorded)
+    if isinstance(recorded, bool) or not np.isfinite(reference_power):
+        return 'records no valid reference power: {!r}'.format(recorded)
+    records = [('branch {} {} settings'.format(branch_id, key), settings.get('initial_power'))
+               for branch_id, paths in (payload.get('continuation_settings') or {}).items()
+               for key, settings in paths.items()]
+    for branch in payload.get('branches', []):
+        for key in CONTINUATION_PATHS:
+            path = branch.get(key) or []
+            if path:
+                start = path[0]
+                records.append(('branch {} {} initial state'.format(branch.get('id'), key),
+                                start.get('power')))
+                records.append(('branch {} {} initial settings'.format(branch.get('id'), key),
+                                (start.get('continuation_settings') or {}).get('initial_power')))
+    for label, power in records:
+        if power is not None and float(power) != reference_power:
+            return 'records reference power {!r} W, but its {} starts at {!r} W'.format(
+                recorded, label, power)
+    return None
+
+
+def matchable_issue(branch, u_tolerance, log_ne_tolerance):
+    """Why a recorded branch can never be matched, or None.
+
+    The scan records every converged cluster, but a run is assigned only to a
+    branch whose reference verdict is stable and whose step and half-step
+    paths certify consistent states. The reference power gets no exception:
+    there, too, a candidate is a state a path solved.
+    """
+    stability = branch.get('stability') or {}
+    if stability.get('stable') is not True:
+        return 'its reference verdict is {!r}, so it is recorded for reporting only'.format(
+            stability.get('classification'))
+    if not _branch_certified_states(branch):
+        return 'it has no certified continuation path, so it is recorded for reporting only'
+    consistency = path_consistency(branch, u_tolerance, log_ne_tolerance)
+    if not consistency['half_step_recorded']:
+        return 'no half-step path is recorded, so nothing confirms its step path'
+    if not consistency['consistent']:
+        return ('its recorded states disagree at {} W and the half-step path does '
+                'not reach {} W'.format(
+                    ['{:.9g}'.format(value) for value in consistency['disagreeing_powers']],
+                    ['{:.9g}'.format(value)
+                     for value in consistency['unconfirmed_by_half_step']]))
+    return None
+
+
+def declared_branch(path, branch_id):
+    """Read one matchable reactor operating branch by id from ``branches.json``."""
+    payload = _load_artifact(path)
+    for branch in payload.get('branches', []):
+        if branch.get('id') == branch_id:
+            issue = matchable_issue(branch, *_artifact_tolerances(payload))
+            if issue is not None:
+                raise ValueError('operating branch {!r} cannot be matched: {}'.format(
+                    branch_id, issue))
+            return branch
+    raise ValueError('operating branch {!r} is absent from {}'.format(branch_id, path))
+
+
+def _branch_states_at_power(branch, power):
+    """Return the certified states either path of a matchable branch solved at ``power``.
+
+    Only solved states count, at the reference power as anywhere else:
+    nothing between two corrector solves is certified.
+    """
+    power_tolerance = 16.0 * np.finfo(float).eps * max(abs(float(power)), 1.0)
+    return [{'u': float(entry['u']), 'n_e': float(entry['n_e'])}
+            for entry in _branch_certified_states(branch)
+            if abs(float(entry['power']) - power) <= power_tolerance]
+
+
+def _uncertified_power_message(branch, power, issue):
+    if issue is not None:
+        return 'branch {} cannot be matched: {}'.format(branch.get('id'), issue)
+    return 'power not certified for branch {} at {!r} W; certified powers: {}'.format(
+        branch.get('id'), power,
+        ['{:.9g}'.format(value) for value in certified_coverage(branch)['powers']])
+
+
+def matching_branch(path, state, power=None):
+    """Return the unique branch matching state at the run's absorbed power.
+
+    When the state matches no certified state, and some branch has no
+    certified state at ``power``, the refusal names that branch, its
+    certified powers, rather than reporting no match. Only powers a path
+    solved are certified; nothing is interpolated between them. A branch
+    that ``matchable_issue`` refuses has no candidate at any power, and an
+    artifact certified by an older certificate is refused whole.
+    """
+    payload = _load_artifact(path)
+    u_tolerance, log_ne_tolerance = _artifact_tolerances(payload)
     if power is not None:
         try:
             power = float(power)
@@ -1824,38 +2895,25 @@ def matching_branch(path, state, power=None):
             raise ValueError('terminal matching power must be finite') from exc
         if not np.isfinite(power):
             raise ValueError('terminal matching power must be finite')
-    reference_power = payload.get('reference_power')
-    if reference_power is not None:
-        try:
-            reference_power = float(reference_power)
-        except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError('operating branches artifact reference power is invalid') from exc
-        if not np.isfinite(reference_power):
-            raise ValueError('operating branches artifact reference power is invalid')
-    elif power is not None:
-        raise ValueError(
-            'operating branches artifact records no reference power, so no state '
-            'is certified at {!r} W'.format(power))
     matches = []
     uncovered = []
     for branch in payload.get('branches', []):
-        candidates = ([branch] if power is None else
-                      _branch_states_at_power(
-                          branch, power, reference_power,
-                          u_tolerance, log_ne_tolerance))
+        issue = matchable_issue(branch, u_tolerance, log_ne_tolerance)
+        if issue is not None:
+            candidates = []
+        elif power is None:
+            candidates = [branch]
+        else:
+            candidates = _branch_states_at_power(branch, power)
         if not candidates:
-            uncovered.append(branch)
-        if any(same_cluster(
-                candidate, state,
-                u_tolerance - float(candidate.get('_u_error_bound', 0.0)),
-                log_ne_tolerance - float(
-                    candidate.get('_log_ne_error_bound', 0.0)))
+            uncovered.append((branch, issue))
+        if any(same_cluster(candidate, state, u_tolerance, log_ne_tolerance)
                for candidate in candidates):
             matches.append(branch.get('id'))
     if not matches and uncovered:
         raise ValueError('; '.join(
-            _uncertified_power_message(branch, power, u_tolerance, log_ne_tolerance)
-            for branch in uncovered))
+            _uncertified_power_message(branch, power, issue)
+            for branch, issue in uncovered))
     if not matches:
         raise ValueError('terminal state matches no recorded branch')
     if len(matches) > 1:
