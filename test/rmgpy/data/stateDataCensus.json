@@ -33344,7 +33344,7 @@
     },
     "rmgpy/tools/eedf/branches.py:_integration_child": {
       "verdict": "carried",
-      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications. It performs numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Runs one explicitly declared seed integration in a worker and sends back its result or failure. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
@@ -33352,11 +33352,11 @@
     },
     "rmgpy/tools/eedf/branches.py:_integrate_many": {
       "verdict": "carried",
-      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications. It performs numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Starts and reaps isolated worker processes for explicitly declared seeds; workers are owned before they start (the child of an interrupted start is recognized from outside by its copy of a nonce set across the worker's fork, or by its pid report, and reaped before the exception leaves), on the main thread SIGINT/SIGTERM are deferred by handler until the last is reaped and acted on at loop checkpoints, cleanup resumes after an interruption, and every worker dies with its owner (PR_SET_PDEATHSIG on Linux, plus a lifeline pipe). Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "f8a09513e86f2b29ff1840dbee51598f05526ed943283691ecf56305a9f0712d"
+      "source_sha256": "bdf5964aa68b1a7f4db9142c55f96eba5d39660b0b9350cb3cde7aac9bfcf4a8"
     },
     "rmgpy/tools/eedf/branches.py:_public_state": {
       "verdict": "carried",
@@ -33384,11 +33384,11 @@
     },
     "rmgpy/tools/eedf/branches.py:scan": {
       "verdict": "carried",
-      "reason": "Requires a reference power, solves the seed lattice through the adapter, rechecks timed-out seeds and records the recheck and continuation metadata in the artifact; numerical scan of adapter-resolved states.",
+      "reason": "Requires a reference power and, when continuing, a declared stability resolution; solves the seed lattice through the adapter, rechecks timed-out seeds and records the recheck and continuation metadata in the artifact; numerical scan of adapter-resolved states.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "8a3f43564f1c437a53ed516086dd018b320a86a7ec6c7589d9d907660f159316"
+      "source_sha256": "80d3bffc2381955a89af8d7e3d434a9fd57ff66ee962fde2a2d0599183bb314c"
     },
     "rmgpy/tools/eedf/branches.py:scan.<lambda1>": {
       "verdict": "carried",
@@ -33406,21 +33406,37 @@
       ],
       "source_sha256": "984f11676cd1c5f864910ceda05b4c38ca92188060be369666d964a75a4e4c40"
     },
-    "rmgpy/tools/eedf/branches.py:certified_coverage": {
+    "rmgpy/tools/eedf/branches.py:_branch_certified_states": {
       "verdict": "carried",
-      "reason": "Lists certified powers and declared interpolation segments of a recorded branch path; numerical bookkeeping.",
+      "reason": "Concatenates the certified (power, u, n_e) records of the step and half-step paths of one recorded branch; numerical bookkeeping, no molecular data.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "c4c740b4cbcf34cbc109e4f407396d277886260f53d5487acac76cc897e9cdad"
+      "source_sha256": "8b376bc41a33580ca95837d4ce27abc214e8feb92889d62998d3b8c1f80aa53f"
+    },
+    "rmgpy/tools/eedf/branches.py:_distinct_powers": {
+      "verdict": "carried",
+      "reason": "Sorts powers and merges values equal within the sample roundoff; pure arithmetic.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "d3224c74e28754167057372e9d2ff9a26b55dd91a1661c7de42a2071264df935"
+    },
+    "rmgpy/tools/eedf/branches.py:certified_coverage": {
+      "verdict": "carried",
+      "reason": "Lists the solved certified powers of both recorded paths, merged within roundoff, and the paths they come from; numerical bookkeeping.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "8b8e58a5afdd279baf1682a8437e8a8c5b3045865fcabf1b34a27df0b3e43773"
     },
     "rmgpy/tools/eedf/branches.py:path_consistency": {
       "verdict": "carried",
-      "reason": "Groups recorded certified states of the step and half-step paths by power and checks they form one cluster under the scan tolerances; numerical bookkeeping.",
+      "reason": "Groups recorded certified states of the step and half-step paths by power and checks they form one cluster under the scan tolerances; a branch without a half-step path is unconfirmed. Numerical bookkeeping.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "33c9c0f162d85668da23133f82f311d852fb9c3362dec9d6c4f50c6b8486bf7a"
+      "source_sha256": "12d77aedecc9effb1c8aed1eee8f90b5d4473cad7beec75c49213dfedfd5dbd1"
     },
     "rmgpy/tools/eedf/branches.py:path_consistency.<lambda1>": {
       "verdict": "carried",
@@ -33430,13 +33446,29 @@
       ],
       "source_sha256": "f774cd3e91be8a1607e6d3045c64fb2847c9a1df45bcb185111a6f9f02496405"
     },
-    "rmgpy/tools/eedf/branches.py:record_continuation": {
+    "rmgpy/tools/eedf/branches.py:aliasing_radius": {
       "verdict": "carried",
-      "reason": "Writes the certificate statement, continuation settings, certified coverage, path consistency and solve counts at the artifact top level from recorded paths; no molecular data.",
+      "reason": "Largest per-gap |delta u| and |delta ln n_e| between consecutive recorded states of a path, absolute and in branch tolerances; numerical bookkeeping.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "446eaea5e5590b21860055bb6c3b14529b3b88b13721817c77b9da8aac461241"
+      "source_sha256": "bd1c7177f6f7bcbbe44c27d27a35e5fa30c624cdad45c979a1e97f0f185707e9"
+    },
+    "rmgpy/tools/eedf/branches.py:_tolerance_mismatch": {
+      "verdict": "carried",
+      "reason": "Compares the u and ln n_e tolerances recorded in a path's settings and certificates with the artifact's; numerical bookkeeping.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "d624fbbc39d230c816086411260be0bfb6a96bfb77b652c0bfe7bba4f3839828"
+    },
+    "rmgpy/tools/eedf/branches.py:record_continuation": {
+      "verdict": "carried",
+      "reason": "Refuses paths certified at other tolerances, then writes the certificate statement and limits, the hash of its own source file, continuation settings, coverage, path consistency, aliasing radius and solve counts at the artifact top level; no molecular data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "b9bc39e7f9ad16038d7bf9dad7a485cbf1ac0a85f33e028ce20ed3c8ba466de7"
     },
     "rmgpy/tools/eedf/branches.py:_continuation_state": {
       "verdict": "carried",
@@ -33448,11 +33480,11 @@
     },
     "rmgpy/tools/eedf/branches.py:continue_branch": {
       "verdict": "carried",
-      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications, and certifies each step with zero-order samples, reverse corrections and a forward identity check. Numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications, refuses an initial state off its seed's branch, and certifies each step with zero-order samples, reverse corrections, a forward identity check and every sample's stability verdict, which it records, together with adapter interpolation estimates labelled uncertified. Numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "10f26e8963b8f622114c3c0869a0565f061d8cd6f0aaa193456fda89e5078095"
+      "source_sha256": "e3b38803a0270be5b9b4c2aafef5ac022e65b86faa53413fd919975ed1b45eed"
     },
     "rmgpy/tools/eedf/branches.py:declared_branch": {
       "verdict": "carried",
@@ -33460,15 +33492,15 @@
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "e17727dcf81ea3cad5d880ac1e560c5096dc2d65bb3c10f879645a21042379da"
+      "source_sha256": "2b9a51745091a78c24242d6d2e399d3c6fb3794c48ce1ed9660778e21d6d0851"
     },
     "rmgpy/tools/eedf/branches.py:matching_branch": {
       "verdict": "carried",
-      "reason": "Matches a terminal (u, n_e) against certified recorded states; refuses an uncertified run power with the certified powers and segments, and an artifact without a reference power. No molecular data.",
+      "reason": "Matches a terminal (u, n_e) against certified states solved at the run power within the artifact tolerances; refuses any other power with the certified powers, and an artifact without a reference power. No molecular data.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "b16730a6104e96b042d585d005169276a9d8b95bb5350102df4a38e70ac4a0df"
+      "source_sha256": "1cf36bb3f5945c46698ff4fe9ea85656ee3760782d2307fb9284365d7791f662"
     },
     "rmgpy/tools/eedf/branches.py:PlasmaReactorAdapter.is_fold_failure": {
       "verdict": "carried",
@@ -33478,21 +33510,13 @@
       ],
       "source_sha256": "9dabf1c10a1da0c3cd0ee583939a43f58a2e19433553340474efef7b4d07384b"
     },
-    "rmgpy/tools/eedf/branches.py:PlasmaReactorAdapter.certify_interpolation": {
+    "rmgpy/tools/eedf/branches.py:PlasmaReactorAdapter.estimate_interpolation_error": {
       "verdict": "carried",
-      "reason": "Declares an interpolation error bound from three recorded numerical branch points (power, u, n_e); it performs no molecular-data lookup.",
+      "reason": "Estimates the midpoint interpolation error of three solved (power, u, n_e) states for an uncertified artifact diagnostic; matching never reads it. Arithmetic on recorded states, no molecular data.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "d4508c2f9393920b4029883ef7ed6044d110617cfca035ff6dafb44189900788"
-    },
-    "rmgpy/tools/eedf/branches.py:_bounded_worker_shutdown": {
-      "verdict": "carried",
-      "reason": "Reaps a scan worker process within fixed deadlines; it handles no scientific data.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/branchesTest.py"
-      ],
-      "source_sha256": "3bfa555c174461ed9bbb4180da969331a6b2fc2d0d2a555ae8f67c3845ff3cdc"
+      "source_sha256": "e5e1bcd57231850a85a2c36e44e770db9eb2e1fe1eb3f8d6eb134a16df9bc0fd"
     },
     "rmgpy/tools/eedf/branches.py:_component_scale": {
       "verdict": "carried",
@@ -33656,19 +33680,387 @@
     },
     "rmgpy/tools/eedf/branches.py:_branch_states_at_power": {
       "verdict": "carried",
-      "reason": "Reads only certified recorded states, and none away from the reference power for a branch whose recorded paths disagree; no molecular data.",
+      "reason": "Returns the certified (u, n_e) states either path solved at a power, only for a consistent branch; nothing is interpolated. Numerical bookkeeping, no molecular data.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "e7319b264f5734049c1716004a4cabe988bb59559dc0965a6685518c84249202"
+      "source_sha256": "1e700bff4ce13a030b8ecc517e120dd2af2322cb8266c6fc8afeb2df1f3249d5"
     },
     "rmgpy/tools/eedf/branches.py:_uncertified_power_message": {
       "verdict": "carried",
-      "reason": "Formats the refusal naming the branch, its certified powers and segments from the recorded artifact; no molecular data.",
+      "reason": "Formats the refusal for an uncertified power, naming a missing half-step path, disagreeing or unconfirmed powers and the solved certified powers; no molecular data.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "1e17034ad0a009ff49be7b834a84eacfc00c684d33a85e5fca0ce597b0b68388"
+      "source_sha256": "e46efbfe7438630a1ec96d34a208a7f0e9a054e5ec54f61767c8ac6546e4e13f"
+    },
+    "rmgpy/tools/eedf/branches.py:_path_certificate_issue": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications. It performs numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "b714492512abd3bb8bcc9fa9ef5817de6f0c32a633d5b40527fb93a0ecbe5e64"
+    },
+    "rmgpy/tools/eedf/branches.py:certificate_issue": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications. It performs numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "a8afde9225d2cee315206ada8930e946311f3232aa988ad0864cb33babd98db0"
+    },
+    "rmgpy/tools/eedf/branches.py:_load_artifact": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications. It performs numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "de93e3962422698e02fdfa8c7d0b60db7726ea2e33176b9b20e699bf65e7818b"
+    },
+    "rmgpy/tools/eedf/branches.py:_artifact_tolerances": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications. It performs numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "2409f2333d599eb4a97fdaaaf9efb7a81f202eb5a2930f1ca6cf9f863c72f650"
+    },
+    "rmgpy/tools/eedf/branches.py:matchable_issue": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications. It performs numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "1bdf9596595fd10aa3fb3bf9e10eb89b43b2da7f49441659bb86f667679b2473"
+    },
+    "rmgpy/tools/eedf/branches.py:tolerance_issue": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications. It performs numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "fff23d303a7c91936b5ee90d00b81c803ac259fdeed0320f4b3102754d2d5237"
+    },
+    "rmgpy/tools/eedf/branches.py:reference_issue": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications. It performs numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "35af88f62ef8122ee8d8331a193a84824b0d07908d3e376083b1eaafb9c768ff"
+    },
+    "rmgpy/tools/eedf/branches.py:_reap_worker": {
+      "verdict": "carried",
+      "reason": "Stops and reaps one worker: terminate, grace join, kill, then a bounded join that logs a worker still running after SIGKILL with the actual elapsed time. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "4cc584ce400c942db2d6ca533b71bcb44e88d356f5e3b57aad1e969e7187982c"
+    },
+    "rmgpy/tools/eedf/branches.py:_Deferral.__init__": {
+      "verdict": "carried",
+      "reason": "Initialises the main-thread record of deferred SIGINT/SIGTERM and the caller handlers to restore. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "c38227d67bb8fdf73dc26acbb1bd472868703ea2ac94e22e15a162bfe7961fb4"
+    },
+    "rmgpy/tools/eedf/branches.py:_Deferral._call": {
+      "verdict": "carried",
+      "reason": "Calls a caller signal handler and records the rank of a signal whose handler raised. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "af1c401d2cad5d70825b5e8509cd11c333a430e20c139e3015fdae0eb67963b3"
+    },
+    "rmgpy/tools/eedf/branches.py:_Deferral.checkpoint": {
+      "verdict": "carried",
+      "reason": "Acts on deferred signals at a point where every started worker is owned: calls the caller handler, or cancels the scan for a signal whose action is the default. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "8c254f6028f5ca9d55a5c9c16a27b9a25fb8a6dcf72fe8d100c12d8927074739"
+    },
+    "rmgpy/tools/eedf/branches.py:_Deferral.release": {
+      "verdict": "carried",
+      "reason": "Restores the caller signal dispositions exactly, then delivers still-pending signals in rank order (SIG_DFL by re-sending the signal). Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "45765c92fbb952186810c7a7fc3b23d3adbb99b0074acd1ac0e653bce6fe2967"
+    },
+    "rmgpy/tools/eedf/branches.py:_NoDeferral.checkpoint": {
+      "verdict": "carried",
+      "reason": "No-op checkpoint for a scan off the main thread, where handlers cannot be installed. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "1db695356c4e0321f25158d31c5c972e7edc94baa98c7bf49c8098cc8aa03a99"
+    },
+    "rmgpy/tools/eedf/branches.py:_after_fork_in_child": {
+      "verdict": "carried",
+      "reason": "At-fork hook: in a worker this module is starting (multiprocessing's own fork only), reports its pid and arms owner death; closes inherited lifeline and marker write ends that are still the registered pipes; restores the caller dispositions exactly in any other fork. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "cef0d7eca859b04718588d0774a500b3acce205a6efe7d18faefc069a5902cec"
+    },
+    "rmgpy/tools/eedf/branches.py:_cancellation_deferred": {
+      "verdict": "carried",
+      "reason": "Context manager installing the deferral handlers on the main thread (outermost scope only) for signals whose kernel disposition is not foreign, and releasing them exactly on exit. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "5de482a47c911a51ccbcfec7ff6b3108f968ed029613748e0c91a35eef1b7fd9"
+    },
+    "rmgpy/tools/eedf/branches.py:_close_lifeline": {
+      "verdict": "carried",
+      "reason": "Closes and unregisters one worker lifeline write end. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "14d7b3f6c65784031370eadb84f4f1c5c04d4d8f917e8bbf4db51d521cd94280"
+    },
+    "rmgpy/tools/eedf/branches.py:_exit_when_orphaned": {
+      "verdict": "carried",
+      "reason": "Worker thread that exits the worker when its lifeline reports end of file (owner gone or released). Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "7d0d7f46816c712dca48147b401ca22f9417cb7d63e619b292a878987104b071"
+    },
+    "rmgpy/tools/eedf/branches.py:_join": {
+      "verdict": "carried",
+      "reason": "Joins a worker in short slices until it stops running or a deadline passes. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "a7bbc5e02569af849d241986c2cec78fafe77585796db7969f4053426a396f5e"
+    },
+    "rmgpy/tools/eedf/branches.py:_open_lifeline": {
+      "verdict": "carried",
+      "reason": "Creates and registers one worker lifeline pipe. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "3a31811c3d1af0b50a894f1c4fbd84164530634d607f43dfaed1ae8e99c48ff5"
+    },
+    "rmgpy/tools/eedf/branches.py:_record_signal": {
+      "verdict": "carried",
+      "reason": "Signal handler that records a SIGINT/SIGTERM for later delivery. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "4ad4ba2f2f193f067d6958de8308080c9dcfbea9b7afa77a6a685df106418a4d"
+    },
+    "rmgpy/tools/eedf/branches.py:_running": {
+      "verdict": "carried",
+      "reason": "Reports whether the OS still runs a started worker, telling a worker reaped elsewhere from a live one. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "cd3caeec100fca28e6355ca3a00fae72850eabd554823d043839ee1211bec2b5"
+    },
+    "rmgpy/tools/eedf/branches.py:_worker": {
+      "verdict": "carried",
+      "reason": "Worker entry: arms the owner-death signal for a spawned worker, starts the lifeline watcher, restores the caller signal handlers and acts on signals received since the fork, then runs the seed integration. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "a6f2a3afd1c882036da1a0733414bca7d8de1011a90663c863f293984ba82dd1"
+    },
+    "rmgpy/tools/eedf/branches.py:_arm_owner_death": {
+      "verdict": "carried",
+      "reason": "Asks the kernel to SIGKILL the worker when its owner goes (PR_SET_PDEATHSIG) and exits at once if the owner is already gone. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "9a061e7bb4aea723269299ff0672e0bad37106b970520b8091ff6d467d467aaf"
+    },
+    "rmgpy/tools/eedf/branches.py:_defer_signals": {
+      "verdict": "carried",
+      "reason": "Decides from the kernel's raw disposition, before any write, which of SIGINT and SIGTERM to defer during a scan. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "b79ce3b068cbfa1b61afc4ffbe71d1adae18903d9b9264ca7e4062e98d435c07"
+    },
+    "rmgpy/tools/eedf/branches.py:_image_base": {
+      "verdict": "carried",
+      "reason": "Finds, through dladdr, the load address of the object containing a code address. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "81277fcff1464e277b46ef41353c0f8fa3c58abb08530881e21a79fcc4ebb7a0"
+    },
+    "rmgpy/tools/eedf/branches.py:_interpreter_handler": {
+      "verdict": "carried",
+      "reason": "Identifies CPython's own signal handler from raw sigaction reads and the interpreter's symbol table, without writing a disposition. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "25d9dc315c8f6d79a717376c54fa04b033bb7d2b5b318869a49e9854493ca719"
+    },
+    "rmgpy/tools/eedf/branches.py:_install_recorder": {
+      "verdict": "carried",
+      "reason": "Saves a signal's disposition and installs the scan's recording handler. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "d9273ac28c4d937764afa715ddc1ab6f3aa4bbf0007a2c0154e9c6644f377c45"
+    },
+    "rmgpy/tools/eedf/branches.py:_Start.open": {
+      "verdict": "carried",
+      "reason": "Lists the children that exist before a start. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "3271ebdfe3547790cd161df856ce766dd77cdaa431865a3a197c00fba4c5e1cb"
+    },
+    "rmgpy/tools/eedf/branches.py:_mapped_file": {
+      "verdict": "carried",
+      "reason": "Finds, in /proc/self/maps, the file and inode this process has mapped at a code address. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "a7f487de836a90dad7fd7025b6fcced4be0cbc18d291ecad367583d15bcdbfe7"
+    },
+    "rmgpy/tools/eedf/branches.py:_elf_function": {
+      "verdict": "carried",
+      "reason": "Reads one local function's offset from an ELF64 symbol table, failing closed on a stripped, foreign or unreadable file. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "1f6131a0b807fe6330fc64073098f58deb19ca149c6296dbea6b5709d41f7fd2"
+    },
+    "rmgpy/tools/eedf/branches.py:_trampoline_offset": {
+      "verdict": "carried",
+      "reason": "Caches, per mapped interpreter image, the offset of CPython's signal_handler. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "129087d17c9e663bf4a5f6c2c09d1cf0f5a9d76b0c6599870b71ee715b3d06b4"
+    },
+    "rmgpy/tools/eedf/branches.py:_Start.arm": {
+      "verdict": "carried",
+      "reason": "Writes a start's nonce into its buffer just before the worker's fork. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "f626d32993f03bd87b36cf619f1c3fd604eb83a5dc35c79b3d4f7270442bba77"
+    },
+    "rmgpy/tools/eedf/branches.py:_Start.disarm": {
+      "verdict": "carried",
+      "reason": "Clears a start's nonce buffer just after the worker's fork returns. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "d1eda25511dcb6ff73fa97a3c8798278ba068f5c9bcce8068c1b8d062af0ceaf"
+    },
+    "rmgpy/tools/eedf/branches.py:_Start.new_children": {
+      "verdict": "carried",
+      "reason": "Lists the children that appeared since a start began. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "dd8ceff68cd94ce1772cb65be8691d6806c34ab82123654018e5bffdbfdb148e"
+    },
+    "rmgpy/tools/eedf/branches.py:_WorkerPopen._launch": {
+      "verdict": "carried",
+      "reason": "multiprocessing's fork launch, with the start's nonce set across the fork call alone. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "757f243071db3f91396d48db110394c8ca026c836f342dc69fe417ad015e07ca"
+    },
+    "rmgpy/tools/eedf/branches.py:_read_child": {
+      "verdict": "carried",
+      "reason": "Reads a child's copy of a buffer (process_vm_readv, else /proc/<pid>/mem); None when it cannot be read. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "ee6f549c0a914b32ff8b980b63cd016bf1d614a69d2dbb769b6d8e5152a45229"
+    },
+    "rmgpy/tools/eedf/branches.py:_alive": {
+      "verdict": "carried",
+      "reason": "Reports from /proc whether a process is alive and not a zombie. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "00d5ad9f7d0bb0dfc08ddab3c43ee685bac7adb40b2f832bd6c2888df2df0cef"
+    },
+    "rmgpy/tools/eedf/branches.py:_children": {
+      "verdict": "carried",
+      "reason": "Reads this process's children from every thread's /proc list. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "304fb5dc2c7455c176e83398ade06f775658c64c0c452e8eed1700ce93f6d196"
+    },
+    "rmgpy/tools/eedf/branches.py:_kill_and_reap": {
+      "verdict": "carried",
+      "reason": "Kills and reaps one child process within a bound. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "ca0a478b91bc014a2247e6889a005f8359dc503a80305b05a9d92fb9b7e8b387"
+    },
+    "rmgpy/tools/eedf/branches.py:_worker_fork": {
+      "verdict": "carried",
+      "reason": "Tells a worker's own fork from any other fork made during a start. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "7ab07326bcdeb9a931391e5d2c58eed0dbf6fa93117dd7a0ab5fdd550a0b9ba4"
+    },
+    "rmgpy/tools/eedf/branches.py:_is_registered_writer": {
+      "verdict": "carried",
+      "reason": "Checks that a descriptor is still the registered lifeline write end (device, inode, write-only) before the fork hook closes it. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "3d15762495df9c37a07d97d31dc9b0afa58d830af8fbfe7478daac759496643c"
+    },
+    "rmgpy/tools/eedf/branches.py:_raw_disposition": {
+      "verdict": "carried",
+      "reason": "Reads the exact kernel signal disposition (handler, mask, flags) through sigaction. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "efbbf72ef944a77f7398b8e7977a089ab58ded73d5f60f390433e3879057ba37"
+    },
+    "rmgpy/tools/eedf/branches.py:_restore_disposition": {
+      "verdict": "carried",
+      "reason": "Restores a signal disposition exactly: the Python handler (SIG_DFL standing in for a table None) and the raw sigaction, flags included. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "ef59c3f13cc52e0ea25b2c821ff3252feeaaaa831510ab31550aae3499b9a44b"
+    },
+    "rmgpy/tools/eedf/branches.py:_Start.__init__": {
+      "verdict": "carried",
+      "reason": "Creates the record of one worker start: a random nonce, the buffer it is written to across the worker's fork, the children snapshot slot, and a shared page for the pid its child reports. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "128a2523883ef5f800c609546049058ab6af9c35b574685230706f501bdfadd1"
+    },
+    "rmgpy/tools/eedf/branches.py:_Start.pid": {
+      "verdict": "carried",
+      "reason": "Reads the pid a forked worker reported for its start. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "c30819819537ca4a3c2e694e65ec3c533a7221930deca1037cb94d078ec37ada"
+    },
+    "rmgpy/tools/eedf/branches.py:_reclaim": {
+      "verdict": "carried",
+      "reason": "Kills and reaps the child of a start interrupted after its fork that multiprocessing never recorded, recognized by its copy of the start's nonce or its pid report; never kills or waits on another child, and waits on one it cannot read. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "1990b7a63728306b19b9277deb557443e0140904f3d48da161b94d84b7a7e1f1"
     }
   }
 }

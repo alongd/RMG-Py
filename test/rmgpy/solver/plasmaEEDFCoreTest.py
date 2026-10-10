@@ -2,6 +2,7 @@
 
 import copy
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -24,6 +25,7 @@ from rmgpy.rmg.main import RMG
 from rmgpy.species import Species
 from rmgpy.thermo import ThermoData
 from rmgpy.tools.eedf.artifact import write_artifact
+from rmgpy.tools.eedf.branches import continue_branch, record_continuation, scan
 from rmgpy.tools.eedf.schema import content_hash, file_hash, interpolant_identity
 
 
@@ -693,16 +695,65 @@ def test_u_state_atol_restart_and_mapped_rate(tmp_path):
     assert manifest['branch'] == 'branch_0'
 
 
+class _ParallelLines:
+    """Stable states u = c - P, n_e = 4e16 (1 - P): one branch per offset c.
+
+    The packed state carries c, so a continuation step follows its own line
+    however close another lies; a scan seed takes the offset nearest u + P.
+    """
+
+    def __init__(self, *offsets):
+        self.offsets = offsets
+
+    def integrate(self, seed, power=None):
+        power = float(power)
+        guess = seed.state[1] if len(seed.state) == 2 else seed.u + power
+        offset = min(self.offsets, key=lambda value: abs(value - guess))
+        return {'u': offset - power, 'n_e': 4.e16 * (1. - power),
+                '_state_vector': [offset - power, offset],
+                '_jacobian': [[-1., 0.], [0., -1.]],
+                '_half_step_jacobian': [[-1., 0.], [0., -1.]],
+                '_conservation_constraints': [], 'self_sustained': True,
+                'discharge_class': 'self-sustained'}
+
+
+def _scanned(tmp_path, offsets=(1.75,), u_limits=(1.25, 1.25), u_steps=1,
+             u_tolerance=1.e-6, log_ne_tolerance=1.e-6, half_step=True, name='branches.json'):
+    """Write ``branches.json`` as the real-deck driver does, and return it and its payload.
+
+    scan() solves the seeds at 0.5 W, judges them and continues each stable
+    branch to 0.25 W on the step path; the half-step path is continued from
+    the same state and the artifact recorded again. At 0.5 W the first line
+    is at (1.25, 2e16), at 0.25 W at (1.5, 3e16). Malformed cases edit this.
+    """
+    adapter = _ParallelLines(*offsets)
+    output = tmp_path / name
+    payload = scan(adapter, u_limits, output, u_steps=u_steps, electron_density_decades=1,
+                   electron_density_limits=(1.e16, 1.e16), reference_power=.5,
+                   powers=(.25,), continuation_max_step=.125, continuation_min_step=.03125,
+                   continuation_stability_resolution=.0625, u_tolerance=u_tolerance,
+                   log_ne_tolerance=log_ne_tolerance)
+    if half_step:
+        for branch in payload['branches']:
+            start = branch['continuation_path'][0]
+            branch['continuation_path_half_step'] = continue_branch(
+                adapter, {key: start[key] for key in ('u', 'n_e', 'state')}, (.25,),
+                initial_power=.5, max_step=.0625, min_step=.015625,
+                stability_resolution=.03125, u_tolerance=u_tolerance,
+                log_ne_tolerance=log_ne_tolerance)
+        output.write_text(json.dumps(record_continuation(payload)))
+    return output, json.loads(output.read_text())
+
+
+def _write(path, payload):
+    path.write_text(json.dumps(payload))
+    return path
+
+
 def test_operating_branch_terminal_hook_passes_right_and_refuses_wrong_branch(tmp_path):
-    branches = tmp_path / 'branches.json'
-    payload = {'reference_power': .5, 'u_tolerance': 1.e-6,
-               'log_ne_tolerance': 1.e-6, 'branches': [
-        {'id': 'reactor-000', 'seed': {'u': 1., 'n_e': 1.e16},
-         'u': 1.25, 'n_e': 2.e16},
-        {'id': 'reactor-001', 'seed': {'u': 2., 'n_e': 3.e16},
-         'u': 1.25005, 'n_e': 2.e16},
-    ]}
-    branches.write_text(json.dumps(payload))
+    branches, payload = _scanned(tmp_path, offsets=(1.75, 1.75005),
+                                 u_limits=(1.25, 1.25005), u_steps=2)
+    assert [branch['id'] for branch in payload['branches']] == ['reactor-000', 'reactor-001']
     declaration = {'id': 'reactor-000', 'path': str(branches)}
     reactor, _, _ = build_reactor(
         tmp_path / 'reactor', operating_branch=declaration)
@@ -710,7 +761,7 @@ def test_operating_branch_terminal_hook_passes_right_and_refuses_wrong_branch(tm
         A6a_relative=0., A6b_relative=0., A6b_tolerance=1.e-6,
         u=1.25, n_e=2.e16)
 
-    assert reactor.operating_branch_seed == {'u': 1., 'n_e': 1.e16}
+    assert reactor.operating_branch_seed == {'u': 1.25, 'n_e': 1.e16}
     assert reactor.operating_branch_target == {'u': 1.25, 'n_e': 2.e16}
     reactor.validate_terminal_state()
 
@@ -724,32 +775,23 @@ def test_operating_branch_terminal_hook_passes_right_and_refuses_wrong_branch(tm
     with pytest.raises(PlasmaStateError, match='no recorded branch'):
         reactor.validate_terminal_state()
 
-    payload['u_tolerance'] = 1.e-4
-    branches.write_text(json.dumps(payload))
+    # Widening the tolerance after the scan is refused, not applied (review r234).
+    _write(branches, {**payload, 'u_tolerance': 1.e-4})
     reactor.energy_budget.update(u=1.250025, n_e=2.e16)
+    with pytest.raises(PlasmaStateError, match='matches at tolerances its certificates were '
+                                               'not judged with'):
+        reactor.validate_terminal_state()
+
+    duplicate = copy.deepcopy(payload['branches'][0])
+    duplicate['id'] = 'reactor-002'
+    _write(branches, {**payload, 'branches': payload['branches'] + [duplicate]})
+    reactor.energy_budget.update(u=1.25, n_e=2.e16)
     with pytest.raises(PlasmaStateError, match='more than one recorded branch'):
         reactor.validate_terminal_state()
 
 
 def test_operating_branch_terminal_hook_matches_certified_state_at_run_power(tmp_path):
-    branches = tmp_path / 'branches.json'
-    branches.write_text(json.dumps({
-        'reference_power': .5,
-        'u_tolerance': 1.e-6,
-        'log_ne_tolerance': 1.e-6,
-        'branches': [{
-            'id': 'reactor-000',
-            'seed': {'u': 1., 'n_e': 1.e16},
-            'u': 1.25,
-            'n_e': 2.e16,
-            'continuation_path': [
-                {'power': .25, 'u': 1.5, 'n_e': 3.e16, 'converged': True,
-                 'segment_certified': True},
-                {'power': .5, 'u': 1.25, 'n_e': 2.e16, 'converged': True,
-                 'segment_certified': True},
-            ],
-        }],
-    }))
+    branches, _ = _scanned(tmp_path)
     reactor, _, _ = build_reactor(
         tmp_path / 'reactor', power_w=.25,
         operating_branch={'id': 'reactor-000', 'path': str(branches)})
@@ -761,45 +803,189 @@ def test_operating_branch_terminal_hook_matches_certified_state_at_run_power(tmp
 
 
 def test_operating_branch_terminal_hook_refuses_off_grid_power_as_not_certified(tmp_path):
-    branches = tmp_path / 'branches.json'
-    branches.write_text(json.dumps({
-        'reference_power': .5,
-        'u_tolerance': 1.e-6,
-        'log_ne_tolerance': 1.e-6,
-        'branches': [{
-            'id': 'reactor-000',
-            'seed': {'u': 1., 'n_e': 1.e16},
-            'u': 1.25,
-            'n_e': 2.e16,
-            'continuation_path': [
-                {'power': .5, 'u': 1.25, 'n_e': 2.e16, 'converged': True,
-                 'segment_certified': True},
-                {'power': .25, 'u': 1.5, 'n_e': 3.e16, 'converged': True,
-                 'segment_certified': True},
-            ],
-        }],
-    }))
+    branches, payload = _scanned(tmp_path)
+    powers = payload['certified_coverage']['reactor-000']['powers']
+    assert .3123 not in powers
     reactor, _, _ = build_reactor(
         tmp_path / 'reactor', power_w=.3123,
         operating_branch={'id': 'reactor-000', 'path': str(branches)})
     reactor.energy_budget.update(
         A6a_relative=0., A6b_relative=0., A6b_tolerance=1.e-6,
-        u=1.4, n_e=2.6e16)
+        u=1.4377, n_e=2.75e16)
 
     with pytest.raises(PlasmaStateError) as refused:
         reactor.validate_terminal_state()
     message = str(refused.value)
     assert 'power not certified for branch reactor-000 at 0.3123 W' in message
-    assert "certified powers: ['0.25', '0.5']" in message
+    assert 'certified powers: {}'.format(['{:.9g}'.format(value) for value in powers]) in message
     assert 'no recorded branch' not in message
 
 
-def test_operating_branch_restart_round_trips_declaration_seed_and_target(tmp_path):
+def test_operating_branch_terminal_hook_refuses_a_step_path_no_half_path_confirms(tmp_path):
+    """A scan() artifact records the step path only; nothing confirms it anywhere."""
+    branches, _ = _scanned(tmp_path, half_step=False)
+    with pytest.raises(PlasmaStateError, match="cannot load declared operating branch "
+                                               "'reactor-000': .*no half-step path is recorded"):
+        build_reactor(tmp_path / 'declared', power_w=.25,
+                      operating_branch={'id': 'reactor-000', 'path': str(branches)})
+
+    # A declaration loaded while the half path existed is matched against the
+    # file as it stands at the end of the run.
+    branches, payload = _scanned(tmp_path)
+    reactor, _, _ = build_reactor(
+        tmp_path / 'reactor', power_w=.25,
+        operating_branch={'id': 'reactor-000', 'path': str(branches)})
+    reactor.energy_budget.update(
+        A6a_relative=0., A6b_relative=0., A6b_tolerance=1.e-6,
+        u=1.5, n_e=3.e16)
+    reactor.validate_terminal_state()
+    del payload['branches'][0]['continuation_path_half_step']
+    _write(branches, payload)
+
+    with pytest.raises(PlasmaStateError) as refused:
+        reactor.validate_terminal_state()
+    message = str(refused.value)
+    assert 'branch reactor-000 cannot be matched: no half-step path is recorded' in message
+
+
+def test_operating_branch_hook_refuses_an_artifact_from_before_the_final_sample_gate(tmp_path):
+    """Review r224 P1-1 through the compiled hook: a genuine v1 file is refused.
+
+    At declaration, and at the terminal state when the file was replaced
+    after the declaration was loaded.
+    """
+    stale = (Path(__file__).parents[2] / 'rmgpy' / 'test_data' / 'operating_branches'
+             / 'reversible_chain_v1_marginal_final_sample.json')
+    refusal = ("predates the current continuation certificate: artifact certificate "
+               "'reversible-chain-v1' is not 'reversible-chain-v2'")
+    with pytest.raises(PlasmaStateError, match="cannot load declared operating branch "
+                                               "'reactor-000': .*" + refusal):
+        build_reactor(tmp_path / 'declared', power_w=.05,
+                      operating_branch={'id': 'reactor-000', 'path': str(stale)})
+
+    branches, _ = _scanned(tmp_path)
+    reactor, _, _ = build_reactor(
+        tmp_path / 'reactor', power_w=.25,
+        operating_branch={'id': 'reactor-000', 'path': str(branches)})
+    reactor.energy_budget.update(
+        A6a_relative=0., A6b_relative=0., A6b_tolerance=1.e-6, u=1.5, n_e=3.e16)
+    reactor.validate_terminal_state()
+    branches.write_text(stale.read_text())
+    with pytest.raises(PlasmaStateError, match='terminal state cannot be assigned to one '
+                                               'operating branch: .*' + refusal):
+        reactor.validate_terminal_state()
+
+
+def test_operating_branch_hook_refuses_tolerances_edited_after_the_scan(tmp_path):
+    """Review r234 P1-1 through the compiled hook, on the producer's own artifact.
+
+    Only the two top-level tolerances are edited, widening them 100x. The
+    declaration is refused, and so is a terminal state outside the scan's
+    tolerances once the file was edited after the declaration was loaded.
+    """
+    branches, payload = _scanned(tmp_path, u_tolerance=1.e-4, log_ne_tolerance=1.e-3)
+    edited = _write(tmp_path / 'edited.json',
+                    {**payload, 'u_tolerance': .01, 'log_ne_tolerance': .1})
+    refusal = ("matches at tolerances its certificates were not judged with: certificate "
+               "identity u_tolerance 0.0001 differs from the artifact's 0.01")
+    with pytest.raises(PlasmaStateError, match="cannot load declared operating branch "
+                                               "'reactor-000': .*" + refusal):
+        build_reactor(tmp_path / 'declared', power_w=.5,
+                      operating_branch={'id': 'reactor-000', 'path': str(edited)})
+
+    reactor, _, _ = build_reactor(
+        tmp_path / 'reactor', power_w=.5,
+        operating_branch={'id': 'reactor-000', 'path': str(branches)})
+    reactor.energy_budget.update(
+        A6a_relative=0., A6b_relative=0., A6b_tolerance=1.e-6, u=1.25, n_e=2.e16)
+    reactor.validate_terminal_state()
+    reactor.energy_budget.update(u=1.25 + .0016, n_e=2.e16 * float(np.exp(.0095)))
+    with pytest.raises(PlasmaStateError, match='terminal state matches no recorded branch'):
+        reactor.validate_terminal_state()
+    branches.write_text(edited.read_text())
+    with pytest.raises(PlasmaStateError, match='terminal state cannot be assigned to one '
+                                               'operating branch: .*' + refusal):
+        reactor.validate_terminal_state()
+
+
+@pytest.mark.parametrize('reference', [None, 'half', .5001])
+def test_operating_branch_hook_refuses_a_reference_power_the_paths_do_not_record(
+        tmp_path, reference):
+    """Review r238 P3-1 through the compiled hook: refused at construction, not at the end."""
+    branches, payload = _scanned(tmp_path)
+    payload.pop('reference_power')
+    if reference is not None:
+        payload['reference_power'] = reference
+    _write(branches, payload)
+    with pytest.raises(PlasmaStateError, match="cannot load declared operating branch "
+                                               "'reactor-000': .*records (no valid )?reference "
+                                               "power"):
+        build_reactor(tmp_path / 'declared', power_w=.5,
+                      operating_branch={'id': 'reactor-000', 'path': str(branches)})
+
+
+def test_compiled_hook_fixtures_carry_what_the_current_writer_records(tmp_path):
+    """Review r238 P2-2: a fixture is the writer's output, not a stamped name."""
+    _, payload = _scanned(tmp_path)
+    assert payload['continuation_certificate']['identity']['u_tolerance'] == 1.e-6
+    assert set(payload['continuation_settings']['reactor-000']) == {
+        'continuation_path', 'continuation_path_half_step'}
+    assert payload['path_consistency']['reactor-000']['consistent'] is True
+
+
+def test_operating_branch_hook_refuses_the_marginal_reference_branch_scan_reports(tmp_path):
+    """Review r224 P1-2 through the compiled hook, on scan()'s own artifact.
+
+    u' = -1e-9 (u - (1 + P)) is integrated by LSODA; its mode lies in the
+    marginal band, so scan() records the branch with a marginal verdict and
+    no path. Declaring it is refused; so is a terminal state on it when the
+    run declared another, matchable branch.
+    """
+    from scipy.integrate import solve_ivp
+
+    class SlowPhysicalMode:
+        def integrate(self, seed, power=None):
+            target = 1. + float(power)
+            solution = solve_ivp(lambda _t, y: [-1.e-9 * (y[0] - target)], (0., 1.e12),
+                                 [seed.u], method='LSODA', rtol=1.e-11, atol=1.e-13)
+            assert solution.success
+            return {'u': float(solution.y[0, -1]), 'n_e': 1.e16,
+                    '_state_vector': solution.y[:, -1].tolist(),
+                    '_jacobian': [[-1.e-9]], '_half_step_jacobian': [[-1.e-9]],
+                    '_conservation_constraints': [], 'self_sustained': True,
+                    'discharge_class': 'self-sustained'}
+
     branches = tmp_path / 'branches.json'
-    branches.write_text(json.dumps({'branches': [{
-        'id': 'reactor-000', 'seed': {'u': 1., 'n_e': 1.e16},
-        'u': 1.25, 'n_e': 2.e16,
-    }]}))
+    payload = scan(SlowPhysicalMode(), (1.5, 1.5), branches, u_steps=1,
+                   electron_density_decades=1, electron_density_limits=(1.e16, 1.e16),
+                   reference_power=.5, powers=[.6], continuation_stability_resolution=.005)
+    marginal = payload['branches'][0]
+    assert marginal['stability']['classification'] == 'marginal'
+    assert marginal['continuation_path'] == []
+    refusal = ("cannot be matched: its reference verdict is 'marginal', so it is recorded "
+               "for reporting only")
+    with pytest.raises(PlasmaStateError, match="cannot load declared operating branch "
+                                               "'reactor-000': .*" + refusal):
+        build_reactor(tmp_path / 'declared', power_w=.5,
+                      operating_branch={'id': 'reactor-000', 'path': str(branches)})
+
+    # The marginal branch beside a matchable one the writer produced at the same tolerances.
+    _, combined = _scanned(tmp_path, u_tolerance=1.e-4, log_ne_tolerance=1.e-3,
+                                name='stable.json')
+    marginal['id'] = 'reactor-001'
+    _write(branches, {**combined, 'branches': combined['branches'] + [marginal]})
+    reactor, _, _ = build_reactor(
+        tmp_path / 'reactor', power_w=.5,
+        operating_branch={'id': 'reactor-000', 'path': str(branches)})
+    reactor.energy_budget.update(
+        A6a_relative=0., A6b_relative=0., A6b_tolerance=1.e-6, u=1.5, n_e=1.e16)
+    with pytest.raises(PlasmaStateError, match='terminal state cannot be assigned to one '
+                                               'operating branch: branch reactor-001 ' + refusal):
+        reactor.validate_terminal_state()
+
+
+def test_operating_branch_restart_round_trips_declaration_seed_and_target(tmp_path):
+    branches, _ = _scanned(tmp_path)
     reactor, _, _ = build_reactor(
         tmp_path / 'reactor',
         operating_branch={'id': 'reactor-000', 'path': str(branches)})
