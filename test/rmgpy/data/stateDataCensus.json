@@ -33384,11 +33384,11 @@
     },
     "rmgpy/tools/eedf/branches.py:scan": {
       "verdict": "carried",
-      "reason": "Requires a reference power, solves the seed lattice through the adapter, rechecks timed-out seeds and records the recheck and continuation metadata in the artifact; numerical scan of adapter-resolved states.",
+      "reason": "Requires a reference power and, when continuing, a declared stability resolution; solves the seed lattice through the adapter, rechecks timed-out seeds and records the recheck and continuation metadata in the artifact; numerical scan of adapter-resolved states.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "8a3f43564f1c437a53ed516086dd018b320a86a7ec6c7589d9d907660f159316"
+      "source_sha256": "c186619cd4df39607f75c5788e5686e2eb52923dddbc0a47a8e36258b315276b"
     },
     "rmgpy/tools/eedf/branches.py:scan.<lambda1>": {
       "verdict": "carried",
@@ -33406,21 +33406,45 @@
       ],
       "source_sha256": "984f11676cd1c5f864910ceda05b4c38ca92188060be369666d964a75a4e4c40"
     },
-    "rmgpy/tools/eedf/branches.py:certified_coverage": {
+    "rmgpy/tools/eedf/branches.py:_branch_certified_states": {
       "verdict": "carried",
-      "reason": "Lists certified powers and declared interpolation segments of a recorded branch path; numerical bookkeeping.",
+      "reason": "Concatenates the certified (power, u, n_e) records of the step and half-step paths of one recorded branch; numerical bookkeeping, no molecular data.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "c4c740b4cbcf34cbc109e4f407396d277886260f53d5487acac76cc897e9cdad"
+      "source_sha256": "8b376bc41a33580ca95837d4ce27abc214e8feb92889d62998d3b8c1f80aa53f"
+    },
+    "rmgpy/tools/eedf/branches.py:_distinct_powers": {
+      "verdict": "carried",
+      "reason": "Sorts powers and merges values equal within the sample roundoff; pure arithmetic.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "d3224c74e28754167057372e9d2ff9a26b55dd91a1661c7de42a2071264df935"
+    },
+    "rmgpy/tools/eedf/branches.py:_certified_segments": {
+      "verdict": "carried",
+      "reason": "Collects declared-error-bound interpolation segments from the certified steps of both recorded paths; numerical bookkeeping.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "9422e065e130b00409a45eff0bcd28555963579f24715f42baac09c30b05df3d"
+    },
+    "rmgpy/tools/eedf/branches.py:certified_coverage": {
+      "verdict": "carried",
+      "reason": "Lists certified powers of both recorded paths, merged within roundoff, the declared segments and the paths they come from; numerical bookkeeping.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "cfe198c2ab4c8219470ce4edd7c62edaafb879ba8d159f908d4e17156ea5d395"
     },
     "rmgpy/tools/eedf/branches.py:path_consistency": {
       "verdict": "carried",
-      "reason": "Groups recorded certified states of the step and half-step paths by power and checks they form one cluster under the scan tolerances; numerical bookkeeping.",
+      "reason": "Groups recorded certified states of the step and half-step paths by power and checks they form one cluster under the scan tolerances; a branch without a half-step path is unconfirmed. Numerical bookkeeping.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "33c9c0f162d85668da23133f82f311d852fb9c3362dec9d6c4f50c6b8486bf7a"
+      "source_sha256": "12d77aedecc9effb1c8aed1eee8f90b5d4473cad7beec75c49213dfedfd5dbd1"
     },
     "rmgpy/tools/eedf/branches.py:path_consistency.<lambda1>": {
       "verdict": "carried",
@@ -33430,13 +33454,29 @@
       ],
       "source_sha256": "f774cd3e91be8a1607e6d3045c64fb2847c9a1df45bcb185111a6f9f02496405"
     },
-    "rmgpy/tools/eedf/branches.py:record_continuation": {
+    "rmgpy/tools/eedf/branches.py:aliasing_radius": {
       "verdict": "carried",
-      "reason": "Writes the certificate statement, continuation settings, certified coverage, path consistency and solve counts at the artifact top level from recorded paths; no molecular data.",
+      "reason": "Largest per-gap |delta u| and |delta ln n_e| between consecutive recorded states of a path, absolute and in branch tolerances; numerical bookkeeping.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "446eaea5e5590b21860055bb6c3b14529b3b88b13721817c77b9da8aac461241"
+      "source_sha256": "bd1c7177f6f7bcbbe44c27d27a35e5fa30c624cdad45c979a1e97f0f185707e9"
+    },
+    "rmgpy/tools/eedf/branches.py:_tolerance_mismatch": {
+      "verdict": "carried",
+      "reason": "Compares the u and ln n_e tolerances recorded in a path's settings and certificates with the artifact's; numerical bookkeeping.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "d624fbbc39d230c816086411260be0bfb6a96bfb77b652c0bfe7bba4f3839828"
+    },
+    "rmgpy/tools/eedf/branches.py:record_continuation": {
+      "verdict": "carried",
+      "reason": "Refuses paths certified at other tolerances, then writes the certificate statement and limits, the hash of its own source file, continuation settings, coverage, path consistency, aliasing radius and solve counts at the artifact top level; no molecular data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "e5622c1309a1c01cc0eb8ada3198946eaa5cd1c9c238d0383a1b6968b1e86dba"
     },
     "rmgpy/tools/eedf/branches.py:_continuation_state": {
       "verdict": "carried",
@@ -33448,11 +33488,11 @@
     },
     "rmgpy/tools/eedf/branches.py:continue_branch": {
       "verdict": "carried",
-      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications, and certifies each step with zero-order samples, reverse corrections and a forward identity check. Numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Consumes explicitly declared seed coordinates or resolved reactor states, Jacobians and discharge classifications, refuses an initial state off its seed's branch, and certifies each step with zero-order samples, reverse corrections, a forward identity check and every sample's stability verdict, which it records. Numerical branch analysis without thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "10f26e8963b8f622114c3c0869a0565f061d8cd6f0aaa193456fda89e5078095"
+      "source_sha256": "3bdb92ab26f5b940e3078067d36f62eef5148886dc39ce94931c97b52ae802a0"
     },
     "rmgpy/tools/eedf/branches.py:declared_branch": {
       "verdict": "carried",
@@ -33656,19 +33696,19 @@
     },
     "rmgpy/tools/eedf/branches.py:_branch_states_at_power": {
       "verdict": "carried",
-      "reason": "Reads only certified recorded states, and none away from the reference power for a branch whose recorded paths disagree; no molecular data.",
+      "reason": "Returns recorded or interpolated certified (u, n_e) states of both paths at a power, only for a consistent branch; numerical bookkeeping, no molecular data.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "e7319b264f5734049c1716004a4cabe988bb59559dc0965a6685518c84249202"
+      "source_sha256": "d4594e2543a5bd1b4f82fc3a8ffe00407f54ed614ca73d5a9a64d61bb10301e0"
     },
     "rmgpy/tools/eedf/branches.py:_uncertified_power_message": {
       "verdict": "carried",
-      "reason": "Formats the refusal naming the branch, its certified powers and segments from the recorded artifact; no molecular data.",
+      "reason": "Formats the refusal for an uncertified power, naming a missing half-step path, disagreeing or unconfirmed powers and the certified coverage; no molecular data.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "1e17034ad0a009ff49be7b834a84eacfc00c684d33a85e5fca0ce597b0b68388"
+      "source_sha256": "404042d216a4e9f64dae21698cd1b79ab79b71b44cfbd661e51b6d2a9195cb68"
     }
   }
 }

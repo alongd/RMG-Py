@@ -5484,10 +5484,10 @@
     "rmgpy/tools/eedf/branches.py:scan": {
       "file": "rmgpy/tools/eedf/branches.py",
       "function": "scan",
-      "line": 678,
-      "signature": "571b3f1c4102a2a78d20ec9dd9e5ac3984b6c0a3ee938b0405a8883bb938f496",
+      "line": 693,
+      "signature": "0b3d667f7aae76982bffa7fe3f9d6208dcb490c6e64e6c14b75a8a7a87e37ab7",
       "verdict": "E",
-      "reason": "Reactor-branch scan output contains numerical seed, solver-state, stability, discharge, timeout-recheck and continuation-certificate records only; it emits no molecular identity or saved mechanism.",
+      "reason": "Reactor-branch scan output contains numerical seed, solver-state, stability, discharge, timeout-recheck and continuation-certificate records only, and it refuses continuation without a declared stability resolution; it emits no molecular identity or saved mechanism.",
       "evidence": [
         "rmgpy/tools/eedf/branches.py",
         "test/rmgpy/tools/eedf/branchesTest.py"

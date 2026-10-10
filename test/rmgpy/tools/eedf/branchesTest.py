@@ -38,6 +38,7 @@ import numpy as np
 import pytest
 from rmgpy.tools.eedf.validation import split_branches
 from rmgpy.tools.eedf.branches import (
+    CERTIFICATE_LIMITS,
     AdapterContractError,
     PlasmaReactorAdapter,
     ReactorRun,
@@ -185,7 +186,8 @@ def test_reactor_scan_finds_stable_and_unstable_states_and_fold(tmp_path):
 
     synthetic = Synthetic()
     result = scan(synthetic, (-1., 1.), tmp_path / 'branches.json', u_steps=2,
-                  electron_density_decades=2, powers=(1., 0.), reference_power=1.)
+                  electron_density_decades=2, powers=(1., 0.), reference_power=1.,
+                  continuation_stability_resolution=.05 / 64.)
     assert len(result['branches']) == 2
     assert [item['stability']['stable'] for item in result['branches']] == [True, False]
     stable = result['branches'][0]
@@ -689,7 +691,7 @@ def test_fast_companion_component_cannot_dilute_a_branch_jump():
                 '_jacobian': [[1. - 3. * physical * physical, 0.], [0., -1.]],
             })
 
-    start = 2. - .02 / np.sqrt(.75)
+    start = 2. - .02
     path = continue_branch(
         CubicWithCompanion(), {'u': start, 'n_e': 1.e16, 'state': [start, 1.]},
         [.5], initial_power=0.)
@@ -928,6 +930,9 @@ def test_matching_branch_uses_only_certified_path_at_run_power(tmp_path):
              }]},
         ],
     }
+    # A matchable branch needs a recorded half-step path; here it holds the
+    # same states, so it agrees everywhere.
+    branch['continuation_path_half_step'] = branch['continuation_path']
     payload = {
         'reference_power': .5,
         'u_tolerance': 1.e-6,
@@ -975,6 +980,7 @@ def test_matching_branch_uses_recorded_certification_points_on_curved_path(tmp_p
              }]},
         ],
     }
+    branch['continuation_path_half_step'] = branch['continuation_path']
     payload = {
         'reference_power': .5,
         'u_tolerance': 1.e-6,
@@ -1008,6 +1014,11 @@ def test_scanner_emits_interpolation_only_from_adapter_declared_bound(tmp_path):
         [.5], initial_power=.25, max_step=.25, min_step=.01,
         stability_resolution=.05, u_tolerance=1.e-6,
         log_ne_tolerance=1.e-6)
+    half_step = continue_branch(
+        CertifiedLinear(), {'u': .25, 'n_e': 1.e16, 'state': [.25]},
+        [.5], initial_power=.25, max_step=.125, min_step=.005,
+        stability_resolution=.025, u_tolerance=1.e-6,
+        log_ne_tolerance=1.e-6)
     artifact = {
         'reference_power': .5,
         'u_tolerance': 1.e-6,
@@ -1015,6 +1026,7 @@ def test_scanner_emits_interpolation_only_from_adapter_declared_bound(tmp_path):
         'branches': [{
             'id': 'reactor-000', 'u': .5, 'n_e': 1.e16,
             'continuation_path': continuation,
+            'continuation_path_half_step': half_step,
         }],
     }
     path = tmp_path / 'branches.json'
@@ -1247,7 +1259,10 @@ def test_r220_case_g_first_step_of_a_leg_is_certified_at_real_settings(gap):
     assert all(adapter.branch(entry['u'], entry['power']) == 'A' for entry in accepted)
     assert path[-1]['event_type'] is not None or path[-1]['power'] == pytest.approx(1.)
     branch = {'id': 'reactor-000', 'u': 1.75, 'n_e': 1.e16, 'continuation_path': path}
-    assert path_consistency(branch, 1.e-4, 1.e-3)['consistent'] is True
+    consistency = path_consistency(branch, 1.e-4, 1.e-3)
+    assert consistency['consistent'] is False
+    assert consistency['disagreeing_powers'] == []
+    assert consistency['half_step_recorded'] is False
 
 
 class _RotatingPair:
@@ -1402,13 +1417,19 @@ class _LinearStable:
 
 def test_off_grid_power_is_refused_as_not_certified_with_certified_powers(tmp_path):
     """Review r220 P2-2: no certified state at the run power is named as such."""
+    tolerances = {'u_tolerance': 1.e-6, 'log_ne_tolerance': 1.e-6}
     path = continue_branch(
         _LinearStable(), {'u': 1.5, 'n_e': 1.5e16, 'state': [1.5]}, [.25, .5],
         initial_power=.5, max_step=.125, min_step=.03125,
-        stability_resolution=.0625)
+        stability_resolution=.0625, **tolerances)
+    half_step = continue_branch(
+        _LinearStable(), {'u': 1.5, 'n_e': 1.5e16, 'state': [1.5]}, [.25, .5],
+        initial_power=.5, max_step=.0625, min_step=.015625,
+        stability_resolution=.03125, **tolerances)
     payload = {'reference_power': .5, 'u_tolerance': 1.e-6, 'log_ne_tolerance': 1.e-6,
                'branches': [{'id': 'reactor-000', 'u': 1.5, 'n_e': 1.5e16,
-                             'continuation_path': path}]}
+                             'continuation_path': path,
+                             'continuation_path_half_step': half_step}]}
     record_continuation(payload)
     coverage = payload['certified_coverage']['reactor-000']
     assert coverage['powers'][0] == pytest.approx(.25)
@@ -1423,7 +1444,8 @@ def test_off_grid_power_is_refused_as_not_certified_with_certified_powers(tmp_pa
         matching_branch(artifact, {'u': 1.3123, 'n_e': 1.3123e16}, power=.3123)
     message = str(refused.value)
     assert message.startswith('power not certified for branch reactor-000 at 0.3123 W')
-    assert "certified powers: ['0.25', '0.3125', '0.375', '0.4375', '0.5']" in message
+    assert ("certified powers: ['0.25', '0.28125', '0.3125', '0.34375', '0.375', "
+            "'0.40625', '0.4375', '0.46875', '0.5']") in message
     assert 'no recorded branch' not in message
 
 
@@ -1458,7 +1480,8 @@ def test_scan_records_certificate_resolution_coverage_and_consistency(tmp_path):
     assert written['continuation_settings']['reactor-000']['continuation_path'][
         'stability_resolution'] == .0625
     assert written['certified_coverage']['reactor-000']['powers'][0] == .25
-    assert written['path_consistency']['reactor-000']['consistent'] is True
+    assert written['path_consistency']['reactor-000']['consistent'] is False
+    assert written['path_consistency']['reactor-000']['half_step_recorded'] is False
     assert written['continuation_solves']['reactor-000']['continuation_path'][
         'certificate_solves'] > 0
     assert payload['timeout_rechecks'] == []
@@ -1522,7 +1545,8 @@ def test_adapter_missing_data_is_refused_not_defaulted(missing, message, tmp_pat
                         initial_power=0.)
     with pytest.raises(AdapterContractError, match=message):
         scan(Incomplete(), (1., 1.), tmp_path / 'branches.json', u_steps=1,
-             electron_density_decades=1, powers=(.5, .25), reference_power=.5)
+             electron_density_decades=1, powers=(.5, .25), reference_power=.5,
+             continuation_max_step=.125, continuation_stability_resolution=.0625)
 
 
 def test_scan_and_continuation_refuse_missing_reference_power_or_seed_state(tmp_path):
@@ -1642,3 +1666,376 @@ def test_per_component_departure_sees_a_jump_a_fast_companion_would_dilute():
     assert event['event_bracket'][0] < .3 <= event['event_bracket'][1]
     assert all(entry['state'][0] < 1.e-9 * (1.05 + entry['power'])
                for entry in _accepted_states(path))
+
+
+HALF_SETTINGS = {'initial_power': .5, 'max_step': .0125, 'min_step': .003125,
+                 'stability_resolution': .003125}
+
+
+def _with_paths(main, half, reference_power=.5, u=1.75, n_e=1.e16):
+    payload = {'reference_power': reference_power, 'u_tolerance': 1.e-4,
+               'log_ne_tolerance': 1.e-3,
+               'branches': [{'id': 'reactor-000', 'u': u, 'n_e': n_e,
+                             'continuation_path': main,
+                             'continuation_path_half_step': half}]}
+    return record_continuation(payload)
+
+
+def test_limit_3_interior_single_gap_alias_is_declared_not_caught(tmp_path):
+    """Review r221 case J: a hop confined to one gap passes both paths.
+
+    A has the real deck's slope; B sits 0.02 (200 u_tol) above it. Both shift
+    down by 0.012 through a tanh 2e-4 W wide inside one half-step gap, so that
+    gap alone moves A by more than the 0.01 to the basin boundary. Every gap
+    is reversible, both paths hop, and matching accepts B and refuses A. The
+    recorded aliasing radius is the motion between recorded states; across the
+    hop gap that is A's motion less the 0.02 offset, so the radius stays below
+    the boundary distance. This is
+    CERTIFICATE_LIMITS[2] as declared, not a detection.
+    """
+    neighbour, shift, width, centre = .02, .012, 2.e-4, .6015
+    adapter = _ParallelPair(
+        lambda power: 1.75 - .86 * (power - .5)
+        - shift * (1. + np.tanh((power - centre) / width)) / 2., neighbour)
+    seed = {'u': adapter.a(.5), 'n_e': 1.e16, 'state': [adapter.a(.5)]}
+
+    main = continue_branch(adapter, seed, REAL_TARGETS, **REAL_SETTINGS)
+    half = continue_branch(adapter, seed, REAL_TARGETS, **HALF_SETTINGS)
+
+    for path in (main, half):
+        assert path[-1]['power'] == 1. and path[-1]['event_type'] is None
+        assert all(adapter.branch(entry['u'], entry['power']) == 'A'
+                   for entry in _accepted_states(path) if entry['power'] < centre)
+        assert all(adapter.branch(entry['u'], entry['power']) == 'B'
+                   for entry in _accepted_states(path) if entry['power'] > .61)
+    payload = _with_paths(main, half)
+    assert payload['path_consistency']['reactor-000']['consistent'] is True
+    radius = payload['aliasing_radius']['reactor-000']
+    assert radius['continuation_path']['max_u_motion'] == pytest.approx(.86 * .00625, rel=1.e-6)
+    for key in ('continuation_path', 'continuation_path_half_step'):
+        assert radius[key]['max_u_motion'] < neighbour / 2.
+    artifact = tmp_path / 'branches.json'
+    artifact.write_text(json.dumps(payload))
+    on_a = adapter.a(.7)
+    assert matching_branch(artifact, {'u': on_a + neighbour, 'n_e': 1.e16}, power=.7) == 'reactor-000'
+    with pytest.raises(ValueError, match='no recorded branch'):
+        matching_branch(artifact, {'u': on_a, 'n_e': 1.e16}, power=.7)
+    limit = CERTIFICATE_LIMITS[2]
+    assert 'confined to one gap, the hop is undetected' in limit
+    assert 'step halving does not expose it when the motion is narrower than the half-step gap' in limit
+    assert 'the radius does not bound such a hop' in limit
+    assert 'A steady neighbour then fails the next gap' not in limit
+
+
+def test_aliasing_radius_is_recorded_per_path_absolutely_and_in_tolerances(tmp_path):
+    """Review r221 P2-1: each path's largest per-gap motion, in both units."""
+    seed = {'u': 1.5, 'n_e': 1.5e16, 'state': [1.5]}
+    main = continue_branch(_LinearStable(), seed, [.25, .5], initial_power=.5,
+                           max_step=.125, min_step=.03125, stability_resolution=.0625)
+    half = continue_branch(_LinearStable(), seed, [.25, .5], initial_power=.5,
+                           max_step=.0625, min_step=.015625, stability_resolution=.03125)
+
+    radius = _with_paths(main, half, u=1.5, n_e=1.5e16)['aliasing_radius']['reactor-000']
+
+    for key, gap in (('continuation_path', .0625), ('continuation_path_half_step', .03125)):
+        assert radius[key]['max_u_motion'] == pytest.approx(gap)
+        assert radius[key]['max_u_motion_in_u_tolerances'] == pytest.approx(gap / 1.e-4)
+        assert radius[key]['max_log_ne_motion'] == pytest.approx(np.log((1.25 + gap) / 1.25))
+        assert radius[key]['max_log_ne_motion_in_log_ne_tolerances'] == pytest.approx(
+            np.log((1.25 + gap) / 1.25) / 1.e-3)
+    assert radius['continuation_path']['gaps'] == 8
+    assert radius['continuation_path_half_step']['gaps'] == 16
+
+
+class _ScanPair(_ParallelPair):
+    """The last-gap alias of the r221 case L, reached through scan()."""
+
+    def integrate(self, seed, power=None):
+        if not seed.state:
+            seed = Seed(seed.u, seed.n_e, (self.a(float(power)),))
+        state = super().integrate(seed, power)
+        state.update(self_sustained=True, discharge_class='self-sustained')
+        return state
+
+
+def test_scan_without_half_step_path_is_unconfirmed_and_refused_off_reference(tmp_path):
+    """Review r221 case L: production scan() checks nothing against a half path.
+
+    The step path aliases onto B at its last gap (see the last-gap test). With
+    no half-step path the artifact must not read consistent, and matching
+    refuses both branches' states at 0.5 W instead of accepting B.
+    """
+    adapter = _ScanPair(lambda power: 1. - power ** 3, 2. * 28. / 512.)
+    output = tmp_path / 'branches.json'
+
+    payload = scan(adapter, (1., 1.), output, u_steps=1, electron_density_decades=1,
+                   powers=(.5,), reference_power=0., continuation_max_step=.5,
+                   continuation_min_step=.125, continuation_stability_resolution=.125)
+
+    path = payload['branches'][0]['continuation_path']
+    assert adapter.branch(path[-1]['u'], .5) == 'B'
+    for u in (path[-1]['u'], adapter.a(.5)):
+        with pytest.raises(ValueError, match='no half-step path is recorded'):
+            matching_branch(output, {'u': u, 'n_e': 1.e16}, power=.5)
+    assert matching_branch(output, {'u': 1., 'n_e': 1.e16}, power=0.) == 'reactor-000'
+    consistency = json.loads(output.read_text())['path_consistency']['reactor-000']
+    assert consistency['consistent'] is False
+    assert consistency['half_step_recorded'] is False
+    assert consistency['unconfirmed_by_half_step'] == [0., .125, .25, .375, .5]
+    # A branch whose step path certified nothing was cross-checked by nothing.
+    assert path_consistency({'id': 'reactor-001', 'continuation_path': []},
+                            1.e-4, 1.e-3)['consistent'] is False
+
+
+def test_scan_refuses_continuation_without_a_declared_resolution(tmp_path):
+    """Review r221 P3-6: no silent 64-gap default through scan(powers=...)."""
+    with pytest.raises(ValueError, match='declared continuation_stability_resolution'):
+        scan(_LinearStable(), (1., 1.), tmp_path / 'branches.json', u_steps=1,
+             electron_density_decades=1, powers=(.25,), reference_power=.5)
+    assert not (tmp_path / 'branches.json').exists()
+
+
+@pytest.mark.parametrize('initial_power', [.29, .2999])
+def test_limit_4_first_step_of_a_leg_has_no_departure_trigger(initial_power):
+    """Review r221 case K: a seed-independent 0.2 jump inside a leg's first step.
+
+    The jump is 2000 u_tol at 0.3 W. The first step has no secant, and the
+    corrector ignores its seed, so every gap reverses exactly: the step and the
+    20 states after it are accepted. CERTIFICATE_LIMITS[3] declares this.
+    """
+    adapter = _SilentHop()
+    start = adapter.u(initial_power)
+
+    path = continue_branch(adapter, {'u': start, 'n_e': 1.e16, 'state': [start]},
+                           [.5], initial_power=initial_power)
+
+    accepted = _accepted_states(path)
+    assert path[-1]['power'] == .5 and path[-1]['event_type'] is None
+    assert sum(entry['power'] >= .3 for entry in path if entry.get('converged')) == 20
+    assert all(entry['u'] == adapter.u(entry['power']) for entry in accepted)
+    certificate = path[1]['certificate']
+    assert certificate['sub_steps'] == 64
+    assert certificate['max_reverse_u_difference'] == 0.
+    assert certificate['forward_u_difference'] == 0.
+    assert path[1]['corrector_to_tangent_ratio'] is None
+    assert ('The first step of each leg has no secant, so there no trigger '
+            'remains and a jump inside that step is accepted.') in CERTIFICATE_LIMITS[3]
+
+
+def test_initial_state_on_another_branch_than_its_seed_is_refused():
+    """Review r221 probe M: the seed settles 0.005 (50 u_tol) away, on B."""
+    class Pair:
+        def integrate(self, seed, power=None):
+            u = 1.76 if seed.state[0] >= 1.7549 else 1.75
+            return _complete({'u': u, 'n_e': 1.e16, '_state_vector': [u],
+                              '_jacobian': [[-1.]]})
+
+    path = continue_branch(Pair(), {'u': 1.755, 'n_e': 1.e16, 'state': [1.755]},
+                           [.6], initial_power=.5)
+
+    assert len(path) == 1
+    assert path[0]['event_type'] == 'unresolved'
+    assert "is not the seed's branch" in path[0]['failure']
+    on_branch = continue_branch(Pair(), {'u': 1.75, 'n_e': 1.e16, 'state': [1.75]},
+                                [.6], initial_power=.5)
+    assert on_branch[-1]['power'] == .6 and on_branch[-1]['converged'] is True
+
+
+def test_chain_sample_verdicts_and_code_hash_are_recorded(tmp_path):
+    """Review r221 P3-3: the artifact shows each sample's verdict and the code."""
+    seed = {'u': 1.5, 'n_e': 1.5e16, 'state': [1.5]}
+    main = continue_branch(_LinearStable(), seed, [.25], initial_power=.5,
+                           max_step=.125, min_step=.03125, stability_resolution=.0625)
+    half = continue_branch(_LinearStable(), seed, [.25], initial_power=.5,
+                           max_step=.0625, min_step=.015625, stability_resolution=.03125)
+
+    payload = _with_paths(main, half, u=1.5, n_e=1.5e16)
+
+    for entry in main[1:]:
+        assert entry['certificate']['sample_verdicts'] == ['stable', 'stable']
+        assert [point['stability'] for point in entry['certification_points']] == ['stable']
+    source = Path(__file__).parents[4] / 'rmgpy/tools/eedf/branches.py'
+    import hashlib
+    assert payload['continuation_certificate']['branches_py_sha256'] == hashlib.sha256(
+        source.read_bytes()).hexdigest()
+
+
+def test_last_chain_sample_verdict_is_enforced_although_the_endpoint_replaces_it():
+    """The certificate statement says every sample is stable, the last included.
+
+    The last chain sample is solved from the sample before it, the endpoint
+    from the step's start, so the two can differ. Here only the last sample,
+    seeded from 0.375 W, is unstable at 0.5 W; the endpoint is stable.
+    """
+    class SeedDependentVerdict:
+        def integrate(self, seed, power=None):
+            power = float(power)
+            unstable = abs(power - .5) < 1.e-12 and seed.state[0] > 1.3
+            return _complete({'u': 1. + power, 'n_e': 1.e16,
+                              '_state_vector': [1. + power],
+                              '_jacobian': [[1. if unstable else -1.]]})
+
+    path = continue_branch(
+        SeedDependentVerdict(), {'u': 1.25, 'n_e': 1.e16, 'state': [1.25]}, [.5],
+        initial_power=.25, max_step=.25, min_step=.125, stability_resolution=.125)
+
+    event = path[-1]
+    assert event['event_type'] == 'stability'
+    assert 'of the last chain sample at 0.5 W' in event['failure']
+    assert not any(entry['power'] > .25 for entry in _accepted_states(path))
+
+
+def test_coverage_spans_both_paths_once_and_matching_uses_half_step_states(tmp_path):
+    """Review r221 P3-4: legs that meet within roundoff are one covered power."""
+    class Linear:
+        def integrate(self, seed, power=None):
+            power = float(power)
+            u = 1.75 - .86 * (power - .5)
+            return _complete({'u': u, 'n_e': 1.e16, '_state_vector': [u],
+                              '_jacobian': [[-1.]]})
+
+    seed = {'u': 1.75, 'n_e': 1.e16, 'state': [1.75]}
+    main = continue_branch(Linear(), seed, REAL_TARGETS, **REAL_SETTINGS)
+    half = continue_branch(Linear(), seed, REAL_TARGETS, **HALF_SETTINGS)
+
+    payload = _with_paths(main, half)
+
+    main_powers = [entry['power'] for entry in main if entry.get('converged')]
+    main_powers += [point['power'] for entry in main
+                    for point in entry.get('certification_points', [])]
+    half_only = next(point['power'] for entry in half
+                     for point in entry.get('certification_points', [])
+                     if min(abs(point['power'] - other) for other in main_powers) > 1.e-6)
+    artifact = tmp_path / 'branches.json'
+    artifact.write_text(json.dumps(payload))
+    u = 1.75 - .86 * (half_only - .5)
+    assert matching_branch(artifact, {'u': u, 'n_e': 1.e16}, power=half_only) == 'reactor-000'
+    coverage = payload['certified_coverage']['reactor-000']
+    powers = coverage['powers']
+    assert half_only in powers
+    assert all(right - left > 1.e-9 for left, right in zip(powers, powers[1:]))
+    assert len(powers) == 241
+    assert coverage['paths'] == ['continuation_path', 'continuation_path_half_step']
+
+
+def test_record_continuation_refuses_paths_certified_at_other_tolerances():
+    """Review r221 P3-5: a path judged at u_tol 0.1 says nothing at 1e-4."""
+    seed = {'u': 1., 'n_e': 1.e16, 'state': [1.]}
+    loose = continue_branch(_LinearStable(), seed, [.5], initial_power=0.,
+                            max_step=.25, min_step=.0625, stability_resolution=.125,
+                            u_tolerance=.1)
+    payload = {'reference_power': 0., 'u_tolerance': 1.e-4, 'log_ne_tolerance': 1.e-3,
+               'branches': [{'id': 'reactor-000', 'u': 1., 'n_e': 1.e16,
+                             'continuation_path': loose}]}
+
+    with pytest.raises(ValueError, match="continuation_path: settings u_tolerance 0.1 "
+                                         "differs from the artifact's 0.0001"):
+        record_continuation(payload)
+    del loose[0]['continuation_settings']
+    with pytest.raises(ValueError, match='certificate at 0.25 W u_tolerance 0.1'):
+        record_continuation(payload)
+
+
+class _BudgetStopCubic(_TimeCubic):
+    """Critical slowing down: simulations short of the fold exhaust their budget."""
+
+    def integrate(self, seed, power=None):
+        if self.slow_window[0] < float(power) < self.slow_window[1]:
+            raise RuntimeError('reactor returned without reaching steady state')
+        return super().integrate(seed, power)
+
+
+def test_limit_6_time_budget_stop_on_the_real_adapter_narrows_a_fold_bracket():
+    """Review r221 P3-7: the real adapter cannot tell a budget stop from a fold.
+
+    PlasmaReactorAdapter raises one failure whenever simulate returns without
+    steady state, which includes exhausting the deck's time budget, and its
+    is_fold_failure accepts it. Before the fold at 0.3849 W such stops narrow
+    the bracket below the fold and label it fold.
+    """
+    class BudgetReactor:
+        steady_state_reached = False
+        initial_mole_fractions = {}
+        electron_kinetics = {'initial_reduced_field': (1., 'Td')}
+
+        def simulate(self, *args, **kwargs):
+            pass
+
+    adapter = PlasmaReactorAdapter(
+        lambda seed, power: ReactorRun(BudgetReactor(), ['e-'], [], object(), object()))
+    with pytest.raises(RuntimeError) as stopped:
+        adapter.integrate(Seed(1., 1.e16, (1., 0.)), power=.5)
+    failure = '{}: {}'.format(type(stopped.value).__name__, stopped.value)
+    assert PlasmaReactorAdapter.is_fold_failure(failure)
+    assert not PlasmaReactorAdapter.is_fold_failure('TimeoutError: worker exceeded 1 s')
+
+    fold = 2. / np.sqrt(27.)
+    cubic = _BudgetStopCubic(slow_window=(.379, fold))
+    cubic.is_fold_failure = PlasmaReactorAdapter.is_fold_failure
+    start = cubic.offset + cubic.scale * min(
+        root.real for root in np.roots([1., 0., -1., -.35]) if abs(root.imag) < 1.e-10)
+    path = continue_branch(
+        cubic, {'u': start, 'n_e': 1.e16, 'state': [start]}, [.5],
+        initial_power=.35, max_step=.025, min_step=1.e-4, stability_resolution=.025)
+
+    event = path[-1]
+    assert event['event_type'] == 'fold'
+    assert event['fold_bracket'][1] < fold
+    assert 'a time-budget stop narrows a fold bracket and can label it fold' in CERTIFICATE_LIMITS[5]
+
+
+def test_limit_2_states_differing_only_off_identity_are_one_branch(tmp_path):
+    """Review r221 P3-8: identity is (u, ln n_e); other components do not split.
+
+    Two seeds settle on states with equal u and n_e but a hidden component of
+    0 and 1. The scan clusters them as one branch with two members.
+    """
+    class HiddenComponent:
+        def integrate(self, seed, power=None):
+            hidden = 0. if seed.n_e < 1.e16 else 1.
+            return _complete({'u': 1., 'n_e': 1.e16, '_state_vector': [1., hidden],
+                              '_jacobian': [[-1., 0.], [0., -1.]]})
+
+    payload = scan(HiddenComponent(), (1., 1.), tmp_path / 'branches.json', u_steps=1,
+                   electron_density_decades=2, reference_power=.5)
+
+    assert len(payload['branches']) == 1
+    assert payload['branches'][0]['members'] == 2
+    assert [attempt['seed']['n_e'] for attempt in payload['attempts']] == [1.e14, 1.e18]
+    assert [HiddenComponent().integrate(Seed(1., n_e))['_state_vector'][1]
+            for n_e in (1.e14, 1.e18)] == [0., 1.]
+    assert "components are one branch by the scan's definition" in CERTIFICATE_LIMITS[1]
+
+
+@pytest.mark.parametrize('width, caught', [(.004, True), (.001, False), (.0004, False)])
+def test_limit_5_unstable_window_narrower_than_the_resolution_can_be_missed(width, caught):
+    """Review r221 probe H at the real settings: resolution 0.00625 W.
+
+    A Gaussian excursion pushes the slowest mode (-483) past zero over an
+    interval of 0.93 * width. At 0.0037 W it is caught; at 0.00093 and
+    0.00037 W, centred between samples, the path runs through it.
+    """
+    centre = .3021
+
+    class Excursion:
+        def integrate(self, seed, power=None):
+            power = float(power)
+            mode = -483. + 600. * np.exp(-((power - centre) / width) ** 2)
+            u = 1.75 - .86 * (power - .5)
+            return _complete({'u': u, 'n_e': 1.e16, '_state_vector': [u],
+                              '_jacobian': [[mode]]})
+
+    path = continue_branch(Excursion(), {'u': 1.75, 'n_e': 1.e16, 'state': [1.75]},
+                           REAL_TARGETS, **REAL_SETTINGS)
+
+    unstable = 2. * width * np.sqrt(np.log(600. / 483.))
+    if caught:
+        assert unstable < REAL_SETTINGS['stability_resolution']
+        assert path[-1]['event_type'] == 'stability'
+        low, high = path[-1]['event_bracket']
+        assert low < centre + unstable / 2. and high > centre - unstable / 2.
+    else:
+        assert path[-1]['power'] == 1. and path[-1]['event_type'] is None
+        assert any(entry['power'] < centre for entry in _accepted_states(path))
+    assert 'Unstable windows narrower than the stability resolution can be missed' in \
+        CERTIFICATE_LIMITS[4]

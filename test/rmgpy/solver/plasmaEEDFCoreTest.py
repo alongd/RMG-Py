@@ -748,6 +748,12 @@ def test_operating_branch_terminal_hook_matches_certified_state_at_run_power(tmp
                 {'power': .5, 'u': 1.25, 'n_e': 2.e16, 'converged': True,
                  'segment_certified': True},
             ],
+            'continuation_path_half_step': [
+                {'power': .25, 'u': 1.5, 'n_e': 3.e16, 'converged': True,
+                 'segment_certified': True},
+                {'power': .5, 'u': 1.25, 'n_e': 2.e16, 'converged': True,
+                 'segment_certified': True},
+            ],
         }],
     }))
     reactor, _, _ = build_reactor(
@@ -792,6 +798,38 @@ def test_operating_branch_terminal_hook_refuses_off_grid_power_as_not_certified(
     assert 'power not certified for branch reactor-000 at 0.3123 W' in message
     assert "certified powers: ['0.25', '0.5']" in message
     assert 'no recorded branch' not in message
+
+
+def test_operating_branch_terminal_hook_refuses_a_step_path_no_half_path_confirms(tmp_path):
+    """A scan() artifact records the step path only; nothing confirms it off reference."""
+    branches = tmp_path / 'branches.json'
+    branches.write_text(json.dumps({
+        'reference_power': .5, 'u_tolerance': 1.e-6, 'log_ne_tolerance': 1.e-6,
+        'branches': [{
+            'id': 'reactor-000',
+            'seed': {'u': 1., 'n_e': 1.e16},
+            'u': 1.25,
+            'n_e': 2.e16,
+            'continuation_path': [
+                {'power': .5, 'u': 1.25, 'n_e': 2.e16, 'converged': True,
+                 'segment_certified': True},
+                {'power': .25, 'u': 1.5, 'n_e': 3.e16, 'converged': True,
+                 'segment_certified': True},
+            ],
+        }],
+    }))
+    reactor, _, _ = build_reactor(
+        tmp_path / 'reactor', power_w=.25,
+        operating_branch={'id': 'reactor-000', 'path': str(branches)})
+    reactor.energy_budget.update(
+        A6a_relative=0., A6b_relative=0., A6b_tolerance=1.e-6,
+        u=1.5, n_e=3.e16)
+
+    with pytest.raises(PlasmaStateError) as refused:
+        reactor.validate_terminal_state()
+    message = str(refused.value)
+    assert 'power not certified for branch reactor-000 at 0.25 W' in message
+    assert 'no half-step path is recorded' in message
 
 
 def test_operating_branch_restart_round_trips_declaration_seed_and_target(tmp_path):
