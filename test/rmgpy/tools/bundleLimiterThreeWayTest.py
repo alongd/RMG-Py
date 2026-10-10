@@ -432,7 +432,7 @@ def _classify(res):
     return f"neg/{stage1}/{stage2}"
 
 
-class TestKnownThreeWayDivergences:
+class TestThreeWayDivergences:
     """Characterization, NOT approval.
 
     The sweep found three points where the three copies do not implement one
@@ -443,27 +443,21 @@ class TestKnownThreeWayDivergences:
     has to come past this file and update it deliberately.
     """
 
-    def test_D_A_oracle_does_not_skip_stage_2_on_end_group_rows(self):
-        """Copy 1 (``if end_group: return s_free``, the round-62 N5b
-        adjudicated fix) and copy 3 skip the stage-2 cone gate entirely for
-        end-group rows.  Copy 2 does not: it forms ``b1c = mu1/mu0`` and falls
-        through into the M-band decision, which is the PRE-round-62 behaviour.
-
-        Reachability is not exotic -- any end-group row on a pool with mean
-        chain length > 1 whose cone margin mu1 - mu0 sits below M_hi floors.
-        The existing two-way pin cannot see it: it is non-end-group only.
-        """
+    def test_D_A_end_group_rows_agree_after_mirror_alignment(self):
+        """d96dd28b264 made copy 2 return the stage-1 result for end-group
+        rows, matching copies 1 and 3. These points retain the former
+        counterexamples as exact agreement pins, including the low-inventory
+        tail where the old oracle incorrectly returned hard zero."""
         a = 1.0e3 * FLOOR / softmin_p([1.0, 4.0, 20.0])
         blend = Case("D-A/blend", (a, 4 * a, 20 * a), True, a / V_POLY, "D-A")
         res = evaluate(blend)
         assert res.e_dist == pytest.approx(1.0e3, rel=1e-12)
-        # copy 2's stage-2 gate is ACTIVE here (its M blend); copies 1 and 3
-        # never reach it at all on an end-group row
+        # All three skip stage 2 for this end-group row.
         assert M_LO < res.m_dist < M_HI
         assert res.b1c == pytest.approx(4.0, rel=1e-12)   # = mu1/mu0 > 1
         assert res.solver == res.seff       # copies 1 and 3 are one law
-        assert res.oracle < res.solver
-        assert res.rel_12 == pytest.approx(2.2497e-2, rel=1e-3), res.rel_12
+        assert res.oracle == res.solver
+        assert res.rel_12 == 0.0
 
         b = 1.0e1 * FLOOR / softmin_p([1.0, 4.0, 20.0])
         tail = Case("D-A/tail", (b, 4 * b, 20 * b), True, b / V_POLY, "D-A")
@@ -471,8 +465,7 @@ class TestKnownThreeWayDivergences:
         assert res.m_dist <= M_LO           # copy 2's dead band: hard zero
         assert res.solver == pytest.approx(8.408980191297415e-14, rel=1e-12)
         assert res.seff == pytest.approx(res.solver, rel=1e-15)
-        assert res.oracle == 0.0, (
-            "copy 2 zeroes an end-group drain that copies 1 and 3 keep")
+        assert res.oracle == res.solver
 
     def test_D_B_mu3_noise_band_splits_all_three(self):
         """``_safe_mu3_from_mu012`` (copy 1) returns mu1 for a realizability
