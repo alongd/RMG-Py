@@ -1391,7 +1391,9 @@ multiplicity 2
         valid_polymer_product_found = False
         for rxn in rxns:
             product_mol = next(p for p in rxn.products if any(atom.is_carbon() for atom in p.atoms))
-            new_polymer = polymer.create_reacted_copy(product_mol)
+            # Direct calls have no reaction-level handshake to establish the
+            # H-loss route; this fixture constructs that exact route.
+            new_polymer = polymer.create_reacted_copy(product_mol, h_loss_feature=True)
 
             if new_polymer:
                 valid_polymer_product_found = True
