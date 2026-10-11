@@ -57,7 +57,7 @@ exactly once, so a missing or ambiguous channel stops before fitting.
 
 The checked-in [rate-point table](rate_estimation/rate_points.csv) was generated
 from artifact SHA-256
-`dfd3c856d265e5497c9b1a018ee7e330ca89cc4f96b8e5bd695102199c201860`
+`f1fa450b8627d55559b0eaa3871771c3c36de9a6fbc024a54ce654b6e732b170`
 using all 29 tabulated temperatures from 300 through 1000 K. From the RMG-Py
 repository root, reproduce it with:
 
@@ -77,9 +77,9 @@ The unique structural matches were:
 
 | Channel | Family | Template | Current event record(s) |
 |---|---|---|---|
-| Initiation | `R_Recombination` (reverse) | `Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-2R-R_N-3R!H->O_Ext-1C-R` | `evt_9fbefbcf21568b2e60bab8cb985e0e665dec1790d0f98a6cd410947900f3f104` |
-| Depropagation | `R_Addition_MultipleBond` (reverse) | `Cds-HH_Cds-CbH;CsJ-CbCsH` | `evt_1eab9574e11a21df23ed7c522c0753bca5e1a61eb49c98dffb213b52d6364a91` |
-| Termination | `R_Recombination` + `Disproportionation` | the two templates cited beside the deck rows | `evt_c70402aba338c6984a32b76cd423e6b88c5952793ecb4fd6227d7e5a225caf7d`; `evt_79d839a45609b268524b818c1fd18c137e0046419593ac0ff74d3bcb594c045d` |
+| Initiation | `R_Recombination` (reverse) | `Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-2R-R_N-3R!H->O_Ext-1C-R` | `evt_a09358573398f9407aa264637d54523fb6fc6451e661545044acda1c25ebdc92` |
+| Depropagation | `R_Addition_MultipleBond` (reverse) | `Cds-HH_Cds-CbH;CsJ-CbCsH` | `evt_918df20362275be38908c300a8dd81c91247366be8350cf537a0aa6d4be0648d` |
+| Termination | `R_Recombination` + `Disproportionation` | the two templates cited beside the deck rows | `evt_3d1bf01d9fc851afb1e0c49315cc00143f47d4a32056941963ee8fa6680f872b`; `evt_3d96955a82837d37aa643389552079339d622160884ff39ca83ab304d79bc293` |
 | Transfer | `H_Abstraction` | `C/H/Cs2Cb;C_rad/H/CbCs`, `C/H2/NonDeC;C_rad/H/CbCs`, `C/H3/Cs;C_rad/H/CbCs`, `Cb_H;C_rad/H/CbCs` | 14 unique records listed beside the deck row and in `rate_points.csv` |
 
 The resulting coefficients replace the stale pre-correction rows as follows.
