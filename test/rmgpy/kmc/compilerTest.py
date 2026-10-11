@@ -76,6 +76,34 @@ def _expand_manifest_references(value, artifact_provenance):
     return value
 
 
+def _first_manifest_reference(value):
+    if isinstance(value, dict):
+        if "rmg_database_content_manifest" in value:
+            return value
+        for item in value.values():
+            reference = _first_manifest_reference(item)
+            if reference is not None:
+                return reference
+    elif isinstance(value, list):
+        for item in value:
+            reference = _first_manifest_reference(item)
+            if reference is not None:
+                return reference
+    return None
+
+
+def _replace_string_in_place(value, old, new):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            value[key] = _replace_string_in_place(item, old, new)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            value[index] = _replace_string_in_place(item, old, new)
+    elif value == old:
+        return new
+    return value
+
+
 def test_proxy_fingerprint_is_independent_of_process_global_atom_ids():
     first = ps_proxy_set(3)[0]
     second = copy.deepcopy(first)
@@ -1065,6 +1093,31 @@ def test_compact_artifact_stores_database_manifest_once():
 def test_compact_record_database_reference_mismatch_is_rejected():
     artifact = _compiler()[0].compile()
     artifact["records"][0]["provenance"]["rmg_database_content_sha256"] = "wrong"
+
+    with pytest.raises(ValueError, match="database manifest reference"):
+        validate_artifact(artifact)
+
+
+@pytest.mark.parametrize("field_name", ["rate_source", "thermo_provenance"])
+def test_compact_nested_database_identity_cannot_drop_manifest_reference(field_name):
+    artifact = _compiler()[0].compile()
+    record = next(
+        item
+        for item in artifact["records"]
+        if _first_manifest_reference(item[field_name]) is not None
+    )
+    reference = _first_manifest_reference(record[field_name])
+    reference.pop("rmg_database_content_manifest")
+    reference["rmg_database_content_sha256"] = "wrong"
+
+    old_event_id = record["event_id"]
+    record["event_id"] = ""
+    new_event_id = EventRecord.from_dict(record).event_id
+    record["event_id"] = new_event_id
+    _replace_string_in_place(artifact, old_event_id, new_event_id)
+    artifact["records"].sort(key=lambda item: item["event_id"])
+    for index, item in enumerate(artifact["records"]):
+        item["canonical_index"] = index
 
     with pytest.raises(ValueError, match="database manifest reference"):
         validate_artifact(artifact)

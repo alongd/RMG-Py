@@ -348,6 +348,14 @@ def _validate_database_manifest_references(value: Any, manifest: dict) -> int:
         if "rmg_database_content_files" in value:
             raise ValueError("compact record re-inlines database content manifest")
         references = 0
+        database_identity_keys = set(DATABASE_IDENTITY_KEYS) - {
+            "rmg_database_content_files"
+        }
+        if (
+            database_identity_keys.intersection(value)
+            and DATABASE_MANIFEST_FIELD not in value
+        ):
+            raise ValueError("database identity lacks a database manifest reference")
         if DATABASE_MANIFEST_FIELD in value:
             if value[DATABASE_MANIFEST_FIELD] != DATABASE_MANIFEST_REFERENCE:
                 raise ValueError("invalid database manifest reference")
