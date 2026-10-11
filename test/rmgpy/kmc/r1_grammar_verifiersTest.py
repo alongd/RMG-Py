@@ -473,6 +473,25 @@ def _harness(data):
     return state, record, current_sites
 
 
+def _assert_database_identity_storage(artifact):
+    schema_version = artifact["schema_version"]
+    provenance = artifact["provenance"]
+    if schema_version == "kmc_event_set/0.1":
+        assert all(
+            record["provenance"] == provenance for record in artifact["records"]
+        )
+        return
+    assert schema_version == "kmc_event_set/0.2"
+    assert all(
+        record["provenance"]["rmg_database_content_manifest"]
+        == "artifact.provenance.rmg_database_content_files"
+        and record["provenance"]["rmg_database_content_sha256"]
+        == provenance["rmg_database_content_sha256"]
+        and "rmg_database_content_files" not in record["provenance"]
+        for record in artifact["records"]
+    )
+
+
 def test_registered_literals_and_expected_rows_are_intact():
     assert hashlib.sha256(EVENT_ARTIFACT).hexdigest() == EVENT_ARTIFACT_SHA256
     j_product = _literal_graph(J_H, J_BONDS)
@@ -505,18 +524,55 @@ def test_registered_literals_and_expected_rows_are_intact():
     assert len(_literal_block_sha256()) == 64
 
 
+@pytest.mark.parametrize(
+    "artifact",
+    [
+        {
+            "schema_version": "kmc_event_set/0.1",
+            "provenance": {
+                "rmg_database_content_sha256": "db-digest",
+                "rmg_database_content_files": ["input/kinetics/families/example.py"],
+            },
+            "records": [
+                {
+                    "provenance": {
+                        "rmg_database_content_sha256": "db-digest",
+                        "rmg_database_content_files": [
+                            "input/kinetics/families/example.py"
+                        ],
+                    }
+                }
+            ],
+        },
+        {
+            "schema_version": "kmc_event_set/0.2",
+            "provenance": {
+                "rmg_database_content_sha256": "db-digest",
+                "rmg_database_content_files": ["input/kinetics/families/example.py"],
+            },
+            "records": [
+                {
+                    "provenance": {
+                        "rmg_database_content_sha256": "db-digest",
+                        "rmg_database_content_manifest": (
+                            "artifact.provenance.rmg_database_content_files"
+                        ),
+                    }
+                }
+            ],
+        },
+    ],
+    ids=["legacy-inline", "compact-reference"],
+)
+def test_database_identity_storage_assertion_supports_both_schemas(artifact):
+    _assert_database_identity_storage(artifact)
+
+
 def test_real_artifact_hash_provenance_and_injected_defects(compiled_artifact):
     artifact_path, artifact = compiled_artifact
     assert hashlib.sha256(artifact_path.read_bytes()).hexdigest() == artifact_path.stem
     validate_artifact(artifact)
-    assert all(
-        record["provenance"]["rmg_database_content_manifest"]
-        == "artifact.provenance.rmg_database_content_files"
-        and record["provenance"]["rmg_database_content_sha256"]
-        == artifact["provenance"]["rmg_database_content_sha256"]
-        and "rmg_database_content_files" not in record["provenance"]
-        for record in artifact["records"]
-    )
+    _assert_database_identity_storage(artifact)
 
     swapped = copy.deepcopy(artifact)
     classified = next(
