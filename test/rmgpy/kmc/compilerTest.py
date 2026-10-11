@@ -17,6 +17,7 @@ from rmgpy import settings
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.kmc.barrier_e0 import FixedBBarrierE0Provider
 import rmgpy.kmc.compiler as compiler_module
+from rmgpy.kmc.database_provenance import DATABASE_IDENTITY_KEYS
 from rmgpy.kmc.compiler import (
     DEFAULT_T_GRID,
     EventSetCompiler,
@@ -102,6 +103,29 @@ def _replace_string_in_place(value, old, new):
     elif value == old:
         return new
     return value
+
+
+def _recompute_record_event_id(artifact, record):
+    old_event_id = record["event_id"]
+    record["event_id"] = ""
+    new_event_id = EventRecord.from_dict(record).event_id
+    record["event_id"] = new_event_id
+    _replace_string_in_place(artifact, old_event_id, new_event_id)
+    artifact["records"].sort(key=lambda item: item["event_id"])
+    for index, item in enumerate(artifact["records"]):
+        item["canonical_index"] = index
+
+
+def _strip_database_manifest_references(value):
+    if isinstance(value, dict):
+        value.pop("rmg_database_content_manifest", None)
+        for key in DATABASE_IDENTITY_KEYS:
+            value.pop(key, None)
+        for item in value.values():
+            _strip_database_manifest_references(item)
+    elif isinstance(value, list):
+        for item in value:
+            _strip_database_manifest_references(item)
 
 
 def test_proxy_fingerprint_is_independent_of_process_global_atom_ids():
@@ -1098,6 +1122,38 @@ def test_compact_record_database_reference_mismatch_is_rejected():
         validate_artifact(artifact)
 
 
+@pytest.mark.parametrize(
+    "field_name", ["provenance", "rate_source", "thermo_provenance"]
+)
+def test_compact_record_rejects_reinlined_database_manifest(field_name):
+    artifact = _compiler()[0].compile()
+    record = next(
+        item
+        for item in artifact["records"]
+        if _first_manifest_reference(item[field_name]) is not None
+    )
+    reference = _first_manifest_reference(record[field_name])
+    reference["rmg_database_content_files"] = copy.deepcopy(
+        artifact["provenance"]["rmg_database_content_files"]
+    )
+    _recompute_record_event_id(artifact, record)
+
+    with pytest.raises(
+        ValueError, match="compact record re-inlines database content manifest"
+    ):
+        validate_artifact(artifact)
+
+
+def test_compact_record_rejects_all_manifest_references_removed():
+    artifact = _compiler()[0].compile()
+    record = artifact["records"][0]
+    _strip_database_manifest_references(record)
+    _recompute_record_event_id(artifact, record)
+
+    with pytest.raises(ValueError, match="record lacks a database manifest reference"):
+        validate_artifact(artifact)
+
+
 @pytest.mark.parametrize("field_name", ["rate_source", "thermo_provenance"])
 def test_compact_nested_database_identity_cannot_drop_manifest_reference(field_name):
     artifact = _compiler()[0].compile()
@@ -1110,14 +1166,7 @@ def test_compact_nested_database_identity_cannot_drop_manifest_reference(field_n
     reference.pop("rmg_database_content_manifest")
     reference["rmg_database_content_sha256"] = "wrong"
 
-    old_event_id = record["event_id"]
-    record["event_id"] = ""
-    new_event_id = EventRecord.from_dict(record).event_id
-    record["event_id"] = new_event_id
-    _replace_string_in_place(artifact, old_event_id, new_event_id)
-    artifact["records"].sort(key=lambda item: item["event_id"])
-    for index, item in enumerate(artifact["records"]):
-        item["canonical_index"] = index
+    _recompute_record_event_id(artifact, record)
 
     with pytest.raises(ValueError, match="database manifest reference"):
         validate_artifact(artifact)
