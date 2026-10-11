@@ -42,9 +42,116 @@ the default reaction families, with no oxygen feedstock.
 
 The output directory contains the generated core and edge mechanisms, chemistry
 and thermodynamic files, solver profiles, and the HTML model summary. The deck
-configures the moments solver's radical-QSSA chain channel from the same
-RMG-derived event set used by the kinetic Monte Carlo PS mechanism: backbone
-homolysis initiates radicals, chain-end beta-scission releases styrene,
-recombination and disproportionation terminate radicals, and H abstraction
-provides the pseudo-first-order transfer loss. Each modified-Arrhenius fit is
-annotated in `input.py` with its event-set record IDs and fit error.
+configures the moments solver's radical-QSSA chain channel from a corrected
+RMG-derived kMC event set: backbone homolysis initiates radicals, chain-end
+beta-scission releases styrene, recombination and disproportionation terminate
+radicals, and H abstraction provides the pseudo-first-order transfer loss.
+
+## Reproducing the channel fits
+
+The checked-in [fitting script](rate_estimation/estimate_rates.py) reads plain
+`kmc_event_set/0.2` JSON; it does not import or require the kMC package. It
+selects every source record by family, template, and canonical reactant/product
+structures. Event IDs are output provenance only. Every selector must match
+exactly once, so a missing or ambiguous channel stops before fitting.
+
+The checked-in [rate-point table](rate_estimation/rate_points.csv) was generated
+from artifact SHA-256
+`dfd3c856d265e5497c9b1a018ee7e330ca89cc4f96b8e5bd695102199c201860`
+using all 29 tabulated temperatures from 300 through 1000 K. From the RMG-Py
+repository root, reproduce it with:
+
+```bash
+PYTHONPATH=. python examples/rmg/polystyrene/rate_estimation/estimate_rates.py \
+    /path/to/event-set.json --database /path/to/RMG-database/input \
+    --output-dir /tmp/ps-rate-estimation
+```
+
+Omit `--database` to use `database.directory` from `rmgrc`. The database path
+is validated as provenance; the fitted values come only from the artifact's
+`k_table` arrays. The artifact itself declares RMG-database revision
+`cd86d4e1c`.
+
+The unique structural matches were:
+
+| Channel | Family | Template | Current event record(s) |
+|---|---|---|---|
+| Initiation | `R_Recombination` (reverse) | `Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-2R-R_N-3R!H->O_Ext-1C-R` | `evt_9fbefbcf21568b2e60bab8cb985e0e665dec1790d0f98a6cd410947900f3f104` |
+| Depropagation | `R_Addition_MultipleBond` (reverse) | `Cds-HH_Cds-CbH;CsJ-CbCsH` | `evt_1eab9574e11a21df23ed7c522c0753bca5e1a61eb49c98dffb213b52d6364a91` |
+| Termination | `R_Recombination` + `Disproportionation` | the two templates cited beside the deck rows | `evt_c70402aba338c6984a32b76cd423e6b88c5952793ecb4fd6227d7e5a225caf7d`; `evt_79d839a45609b268524b818c1fd18c137e0046419593ac0ff74d3bcb594c045d` |
+| Transfer | `H_Abstraction` | `C/H/Cs2Cb;C_rad/H/CbCs`, `C/H2/NonDeC;C_rad/H/CbCs`, `C/H3/Cs;C_rad/H/CbCs`, `Cb_H;C_rad/H/CbCs` | 14 unique records listed beside the deck row and in `rate_points.csv` |
+
+The resulting coefficients replace the stale pre-correction rows as follows.
+Here `k(1000 K)` uses the solver's pinned `R = 8.314 J mol-1 K-1`; the ratio
+is new/old.
+
+| Channel | Version | A (SI) | n | Ea (J/mol) | k(1000 K) | Ratio |
+|---|---|---:|---:|---:|---:|---:|
+| Initiation | old | 3.04130412e23 | -2.45832701 | 337516.492 | 3.00185436e-2 s-1 | — |
+|  | new | 6.082608239264e23 | -2.45832700751 | 320216.873028 | 4.80940806e-1 s-1 | 16.0215 |
+| Depropagation | old | 3.17364888e18 | -1.69158135 | 114749.955 | 2.70816894e7 s-1 | — |
+|  | new | 3.173648881804e18 | -1.69158135443 | 114750.084903 | 2.70812655e7 s-1 | 0.999984 |
+| Termination | old | 5.84674717e7 | -0.555949338 | 16783.0069 | 1.66870787e5 m3 mol-1 s-1 | — |
+|  | new | 2.655663993173e8 | -0.553042197084 | 728.804264 | 5.33305829e6 m3 mol-1 s-1 | 31.9592 |
+| Transfer | old | 6.80127073e-11 | 5.72127748 | 26917.9991 | 3.89331665e5 s-1 | — |
+|  | new | 1.057374272215e-10 | 5.72127747789 | 26918.029522 | 6.05280675e5 s-1 | 1.55467 |
+
+The maximum pointwise RMG-law fit errors are 2.188%, 1.574%, 0.077%, and
+6.265% for initiation, depropagation, termination, and transfer. Because the
+QSSA solver pins a slightly different gas constant, its corresponding maxima
+are 2.898%, 1.831%, 0.079%, and 6.283%; both columns are retained in the CSV.
+
+## Moment-channel conventions
+
+The conventions follow the `polymer()` docstring in `rmgpy/rmg/input.py`:
+initiation, depropagation, and transfer enter as first-order coefficients in
+s-1; termination is bimolecular in m3 mol-1 s-1; activation energies are in
+J/mol. Transfer is already pseudo-first-order when supplied to the solver.
+
+The solver counts initiation sites as `mu1 - mu0`. A styrene repeat contributes
+two backbone C-C bonds, so the script doubles the per-bond homolysis table and
+the deck applies `2(mu1-mu0)`. As in the PE and PP examples, this finite-chain
+approximation omits one bond per capped chain relative to `2mu1-mu0`.
+
+Intermolecular transfer sums the 14 structurally matched H-abstraction tables,
+divides by the three-repeat proxy, and premultiplies by the declared initial
+repeat concentration `mu1/V_poly = 10081.7203363 mol/m3`. The coefficient is
+therefore fixed at the initial substrate concentration as `mu1` falls. Only PS
+is listed in `polymer_phase.species`; N2 remains in `initialMoles` as a gas and
+bath-gas collider. A declaration-path probe gives:
+
+| Phase list | V_poly (m3) | mu1/V_poly (mol/m3) | N2 gas? |
+|---|---:|---:|---|
+| `['PS']` | 4.76190476190e-5 | 10081.7203363 | yes |
+| `['PS', 'N2']` | 7.40319851004e-5 | 6484.79059589 | yes |
+
+No rate in this example was fitted to experimental product, mass-loss, TGA,
+yield, or molecular-weight-distribution data.
+
+## Reproduced run
+
+The corrected deck completed from branch `mom-i071-ps-refit` with the database
+input snapshot declared as RMG-database `cd86d4e1c`.
+
+- completion marker: `MODEL GENERATION COMPLETED` (exit 0)
+- wall time and peak RSS: 2 min 16.44 s and 899112 kB
+- final model: 9 core species / 1 core reaction; 47 edge species / 69 edge
+  reactions
+- requested termination time: 0.1 s; actual retained solver time after
+  crossing: 0.100388194957991 s
+- styrene is in the core at index 7; its final amount is
+  0.469000018822440 mol (the core also contains
+  3.02046072287673e-12 mol of its `C[C]c1ccccc1` pressure-network isomer)
+- initial moments `(mu0, mu1, mu2)`: `(0.01, 0.480081920774394,
+  27.6574380785317)`
+- final moments `(mu0, mu1, mu2)`: `(0.000431858498441344,
+  0.00973982522010400, 0.447785596978296)`
+- `mu1` loss: 0.470342095554290 mol of repeat units
+- condensed PS mass: 50.0 g initially and 1.01439200255585 g finally
+- styrene-formula core products account for 48.8458321934869 g. The remaining
+  condensed-plus-core-gas deficit is 0.139775803957036 g; the pressure-network
+  leak path removes 0.00134207672882958 mol of repeat-unit equivalent,
+  accounting for 0.139775803957035 g. The floating-point integration residual
+  is 9.16e-16 g.
+
+The prescribed polymer regression selection completed with 1543 passes.
