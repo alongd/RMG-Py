@@ -384,7 +384,10 @@ def _summarize(
         dict[tuple[Any, ...], tuple[_CompactGraph, _CompactGraph]] | None
     ) = None,
 ) -> _ArtifactSummary:
-    if artifact.get("schema_version") != "kmc_event_set/0.1":
+    if artifact.get("schema_version") not in {
+        "kmc_event_set/0.1",
+        "kmc_event_set/0.2",
+    }:
         raise EquivalenceError("unknown event-set schema")
     grid = tuple(
         float(value) for value in artifact.get("inputs", {}).get("temperature_grid", [])

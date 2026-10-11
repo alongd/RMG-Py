@@ -22,6 +22,15 @@ ARTIFACT_ENV_EXCLUSIONS = frozenset({
 })
 
 
+def file_sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    """Hash a file without retaining a second whole-file copy in memory."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(chunk_size):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _run(*args: str, cwd: Path | None = None) -> str:
     return subprocess.check_output(args, cwd=cwd, text=True, stderr=subprocess.DEVNULL).strip()
 
@@ -141,10 +150,10 @@ def validate_artifact_cache_entry(
     if manifest.get("identity") != expected_key:
         raise ValueError("identity mismatch")
     artifact_path = manifest_path.parent / manifest["artifact"]
-    payload = artifact_path.read_bytes()
-    if manifest.get("artifact_sha256") != hashlib.sha256(payload).hexdigest():
+    if manifest.get("artifact_sha256") != file_sha256(artifact_path):
         raise ValueError("artifact hash mismatch")
-    artifact = json.loads(payload)
+    with artifact_path.open(encoding="utf-8") as stream:
+        artifact = json.load(stream)
     from rmgpy.kmc.compiler import compiler_source_hash, validate_artifact
     from rmgpy.kmc.database_provenance import provenance_matches_database
     validate_artifact(artifact)

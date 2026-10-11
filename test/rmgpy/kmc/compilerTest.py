@@ -1,9 +1,12 @@
 """Fast contract tests for the offline event-set compiler."""
 
 import copy
+import gc
 import hashlib
+import json
 import os
 import subprocess
+import tracemalloc
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -32,12 +35,45 @@ from rmgpy.kmc.compiler import (
     _reflect_ortho_reaction,
     _remap_witness_projection,
     ceiling_temperature,
+    canonical_json_bytes,
+    compact_artifact,
     compiler_source_hash,
     ps_proxy_set,
     short_ps_molecule_catalogue,
     _validate_thermo_assignment_consistency,
     validate_artifact,
 )
+from rmgpy.kmc.event_record import EventRecord
+
+
+DATABASE_MANIFEST_REFERENCE = "artifact.provenance.rmg_database_content_files"
+
+
+def _count_key(value, key):
+    if isinstance(value, dict):
+        return int(key in value) + sum(_count_key(item, key) for item in value.values())
+    if isinstance(value, list):
+        return sum(_count_key(item, key) for item in value)
+    return 0
+
+
+def _expand_manifest_references(value, artifact_provenance):
+    if isinstance(value, dict):
+        expanded = {
+            key: _expand_manifest_references(item, artifact_provenance)
+            for key, item in value.items()
+            if key != "rmg_database_content_manifest"
+        }
+        if value.get("rmg_database_content_manifest") == DATABASE_MANIFEST_REFERENCE:
+            expanded["rmg_database_content_files"] = copy.deepcopy(
+                artifact_provenance["rmg_database_content_files"]
+            )
+        return expanded
+    if isinstance(value, list):
+        return [
+            _expand_manifest_references(item, artifact_provenance) for item in value
+        ]
+    return value
 
 
 def test_proxy_fingerprint_is_independent_of_process_global_atom_ids():
@@ -325,9 +361,9 @@ def test_disabled_barrier_e0_provider_preserves_base_artifact_bytes(
 
     assert "barrier_e0_provider" not in artifact["provenance"]
     assert "barrier_e0_provider" not in artifact["inputs"]
-    # Moves only with PERSISTENT_CARBENE_POLICY_VERSION (v1 reproduces bab79a76...).
+    # Moves with the artifact schema and persistent-carbene policy version.
     assert path.stem == (
-        "bd10d88703512ae17d66d1f543fe6cf4e3186f8f7a45398f0732dc49d33348a4"
+        "10c5284124bca6fd0de407ed964a68ce55c58462bc02ac9ce1490bc671460b4e"
     )
     assert hashlib.sha256(path.read_bytes()).hexdigest() == path.stem
 
@@ -1006,6 +1042,85 @@ def test_artifact_is_byte_deterministic_and_content_addressed(tmp_path):
     with pytest.raises(ValueError, match="bijection"):
         validate_artifact(corrupted)
     assert compiler.compile()["records"][0]["atom_map"] != {1: 1, 2: 1}
+
+
+def test_compact_artifact_stores_database_manifest_once():
+    compiler, _ = _compiler()
+    artifact = compiler.compile()
+    record = artifact["records"][0]
+
+    assert artifact["schema_version"] == "kmc_event_set/0.2"
+    assert _count_key(artifact, "rmg_database_content_files") == 1
+    assert artifact["provenance"]["rmg_database_content_files"] == []
+    for provenance in (record["provenance"], record["thermo_provenance"]):
+        assert provenance["rmg_database_content_manifest"] == (
+            DATABASE_MANIFEST_REFERENCE
+        )
+        assert provenance["rmg_database_content_sha256"] == artifact["provenance"][
+            "rmg_database_content_sha256"
+        ]
+        assert "rmg_database_content_files" not in provenance
+
+
+def test_compact_record_database_reference_mismatch_is_rejected():
+    artifact = _compiler()[0].compile()
+    artifact["records"][0]["provenance"]["rmg_database_content_sha256"] = "wrong"
+
+    with pytest.raises(ValueError, match="database manifest reference"):
+        validate_artifact(artifact)
+
+
+def test_legacy_inline_manifest_artifact_still_loads_and_validates():
+    compact = _compiler()[0].compile()
+    legacy = _expand_manifest_references(compact, compact["provenance"])
+    legacy["schema_version"] = "kmc_event_set/0.1"
+    legacy_record = legacy["records"][0]
+    legacy_record["event_id"] = ""
+    legacy["records"][0] = EventRecord.from_dict(legacy_record).to_dict()
+
+    loaded = json.loads(json.dumps(legacy))
+    validate_artifact(loaded)
+    compact_artifact(loaded)
+    assert loaded["schema_version"] == "kmc_event_set/0.2"
+    assert _count_key(loaded, "rmg_database_content_files") == 1
+    validate_artifact(loaded)
+
+
+def test_streamed_writer_matches_canonical_bytes_for_nested_values(tmp_path):
+    artifact = {
+        "ascii": "plain",
+        "float": 1.25e-17,
+        "nested": {"z": [3.5, {"unicode": "snowman ☃"}], "a": -0.0},
+    }
+    compiler = object.__new__(EventSetCompiler)
+    compiler._compiled_artifact = artifact
+
+    path, returned = compiler.write_artifact(tmp_path)
+
+    expected = canonical_json_bytes(artifact)
+    assert path.read_bytes() == expected
+    assert path.stem == hashlib.sha256(expected).hexdigest()
+    assert returned is artifact
+
+
+def test_streamed_writer_peak_allocation_is_bounded_by_one_record(tmp_path):
+    payload = "x" * (64 * 1024)
+    record = {"payload": payload, "nested": {"value": 1.25}}
+    artifact = {"records": [record] * 512}
+    compiler = object.__new__(EventSetCompiler)
+    compiler._compiled_artifact = artifact
+    gc.collect()
+
+    tracemalloc.start()
+    try:
+        path, returned = compiler.write_artifact(tmp_path)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert returned is artifact
+    assert path.stat().st_size > 32 * 1024 * 1024
+    assert peak < 2 * 1024 * 1024
 
 
 def test_artifact_identity_changes_with_each_declared_input(tmp_path):

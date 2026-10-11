@@ -16,6 +16,7 @@ import logging
 import math
 import os
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field, replace
 from itertools import combinations, permutations, product
@@ -47,6 +48,7 @@ from rmgpy.kmc.reference_thermo import (
 )
 from rmgpy.kmc.database_provenance import database_provenance
 from rmgpy.kmc.database_provenance import (
+    DATABASE_IDENTITY_KEYS,
     check_database_identity,
     reject_external_library_paths,
 )
@@ -62,7 +64,10 @@ _APPLICABILITY_GENERATION_CACHE = ContextVar(
 _APPLICABILITY_GENERATION_STATS = ContextVar(
     "applicability_generation_stats", default=None
 )
-SCHEMA_VERSION = "kmc_event_set/0.1"
+SCHEMA_VERSION = "kmc_event_set/0.2"
+LEGACY_SCHEMA_VERSION = "kmc_event_set/0.1"
+DATABASE_MANIFEST_FIELD = "rmg_database_content_manifest"
+DATABASE_MANIFEST_REFERENCE = "artifact.provenance.rmg_database_content_files"
 DEFAULT_T_GRID = tuple(float(temperature) for temperature in range(300, 1001, 25))
 ATOMIC_MASS_NUMBERS = {"H": 1, "C": 12, "N": 14, "O": 16, "S": 32}
 PS_PROXY_UNITS = 3
@@ -185,6 +190,184 @@ def canonical_json_bytes(value: Any) -> bytes:
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     ).encode("utf-8")
+
+
+def _write_canonical_json(value: Any, stream) -> str:
+    """Stream canonical JSON to a binary file while computing its digest."""
+    digest = hashlib.sha256()
+    encoder = json.JSONEncoder(
+        sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
+    for chunk in encoder.iterencode(value):
+        payload = chunk.encode("utf-8")
+        stream.write(payload)
+        digest.update(payload)
+    return digest.hexdigest()
+
+
+def _compact_database_manifest_references(value: Any, manifest: dict) -> Any:
+    """Replace inline database file lists with a digest-bound manifest link."""
+    if isinstance(value, dict):
+        if "rmg_database_content_files" in value:
+            if (
+                value.get("rmg_database_content_sha256")
+                != manifest.get("rmg_database_content_sha256")
+                or value["rmg_database_content_files"]
+                != manifest.get("rmg_database_content_files")
+            ):
+                raise ValueError("record database identity differs from artifact manifest")
+            compact = {
+                key: _compact_database_manifest_references(item, manifest)
+                for key, item in value.items()
+                if key != "rmg_database_content_files"
+            }
+            compact[DATABASE_MANIFEST_FIELD] = DATABASE_MANIFEST_REFERENCE
+            return compact
+        return {
+            key: _compact_database_manifest_references(item, manifest)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [
+            _compact_database_manifest_references(item, manifest) for item in value
+        ]
+    return value
+
+
+def _replace_event_ids(value: Any, replacements: dict[str, str]) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _replace_event_ids(item, replacements)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_replace_event_ids(item, replacements) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_replace_event_ids(item, replacements) for item in value)
+    return replacements.get(value, value) if isinstance(value, str) else value
+
+
+def _replace_event_ids_in_place(value: Any, replacements: dict[str, str]) -> Any:
+    """Remap artifact links without allocating another whole artifact."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            value[key] = _replace_event_ids_in_place(item, replacements)
+        return value
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            value[index] = _replace_event_ids_in_place(item, replacements)
+        return value
+    return replacements.get(value, value) if isinstance(value, str) else value
+
+
+def _compact_event_records(
+    records: Iterable[EventRecord], manifest: dict
+) -> tuple[list[EventRecord], dict[str, str]]:
+    """Compact record identities and return the resulting event-ID mapping."""
+    records = list(records)
+    provisional = [
+        replace(
+            record,
+            provenance=_compact_database_manifest_references(
+                record.provenance, manifest
+            ),
+            rate_source=_compact_database_manifest_references(
+                record.rate_source, manifest
+            ),
+            thermo_provenance=_compact_database_manifest_references(
+                record.thermo_provenance, manifest
+            ),
+            event_id="",
+        )
+        for record in records
+    ]
+    replacements = {
+        original.event_id: compact.event_id
+        for original, compact in zip(records, provisional)
+    }
+    compact_records = []
+    for original, record in zip(records, provisional):
+        data = _replace_event_ids(record.to_dict(), replacements)
+        data["event_id"] = ""
+        compact = EventRecord.from_dict(data)
+        if compact.event_id != replacements[original.event_id]:
+            raise ValueError("event ID changed while remapping compact record links")
+        compact_records.append(compact)
+    return compact_records, replacements
+
+
+def compact_artifact(artifact: dict[str, Any]) -> dict[str, Any]:
+    """Compact a legacy artifact in place using the production record schema."""
+    schema_version = artifact.get("schema_version")
+    if schema_version == SCHEMA_VERSION:
+        validate_artifact(artifact)
+        return artifact
+    if schema_version != LEGACY_SCHEMA_VERSION:
+        raise ValueError("unknown event-set schema")
+    manifest = artifact.get("provenance", {})
+    if not isinstance(manifest.get("rmg_database_content_files"), list):
+        raise ValueError("legacy artifact database content manifest is missing")
+
+    replacements = {}
+    records = artifact.get("records", [])
+    for data in records:
+        old_event_id = data["event_id"]
+        for field_name in ("provenance", "rate_source", "thermo_provenance"):
+            data[field_name] = _compact_database_manifest_references(
+                data.get(field_name, {}), manifest
+            )
+        data["event_id"] = ""
+        replacements[old_event_id] = EventRecord.from_dict(data).event_id
+        data["event_id"] = replacements[old_event_id]
+
+    _replace_event_ids_in_place(artifact, replacements)
+    legacy_records = []
+    ortho_records = []
+    for record in records:
+        operations = record.get("junction_ops") or []
+        operation = operations[0] if operations else {}
+        destination = (
+            ortho_records
+            if operation.get("junction_kind", "").startswith("J_ortho")
+            else legacy_records
+        )
+        destination.append(record)
+    artifact["records"] = sorted(
+        legacy_records, key=lambda record: record["event_id"]
+    ) + sorted(ortho_records, key=lambda record: record["event_id"])
+    for index, record in enumerate(artifact["records"]):
+        record["canonical_index"] = index
+    artifact["schema_version"] = SCHEMA_VERSION
+    validate_artifact(artifact)
+    return artifact
+
+
+def _validate_database_manifest_references(value: Any, manifest: dict) -> int:
+    """Validate compact database links and reject any re-inlined record list."""
+    if isinstance(value, dict):
+        if "rmg_database_content_files" in value:
+            raise ValueError("compact record re-inlines database content manifest")
+        references = 0
+        if DATABASE_MANIFEST_FIELD in value:
+            if value[DATABASE_MANIFEST_FIELD] != DATABASE_MANIFEST_REFERENCE:
+                raise ValueError("invalid database manifest reference")
+            for key in DATABASE_IDENTITY_KEYS:
+                if key == "rmg_database_content_files":
+                    continue
+                if key not in value or value[key] != manifest.get(key):
+                    raise ValueError(
+                        f"database manifest reference identity differs: {key}"
+                    )
+            references += 1
+        return references + sum(
+            _validate_database_manifest_references(item, manifest)
+            for item in value.values()
+        )
+    if isinstance(value, (list, tuple)):
+        return sum(
+            _validate_database_manifest_references(item, manifest) for item in value
+        )
+    return 0
 
 
 def sha256_json(value: Any) -> str:
@@ -2950,7 +3133,8 @@ def ceiling_temperature(
 
 def validate_artifact(artifact: dict[str, Any]) -> None:
     """Reject structural corruption in a compiled event-set artifact."""
-    if artifact.get("schema_version") != SCHEMA_VERSION:
+    schema_version = artifact.get("schema_version")
+    if schema_version not in {SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}:
         raise ValueError("unknown event-set schema")
     records = artifact.get("records", [])
     by_id = {record.get("event_id"): record for record in records}
@@ -3018,6 +3202,12 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
     if event_ids != expected_order or len(event_ids) != len(set(event_ids)):
         raise ValueError("records must have unique canonical event-id ordering")
     provenance = artifact.get("provenance", {})
+    if schema_version == SCHEMA_VERSION:
+        if not isinstance(provenance.get("rmg_database_content_files"), list):
+            raise ValueError("artifact database content manifest is missing")
+        compact_provenance = _compact_database_manifest_references(
+            provenance, provenance
+        )
     padding_enabled = "proxy_boundary_padding" in provenance
     if padding_enabled:
         expected_summary = _proxy_padding_summary(records)
@@ -3026,11 +3216,22 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
     elif "proxy_padding_summary" in artifact:
         raise ValueError("disabled padding artifact has a disposition summary")
     for index, data in enumerate(records):
+        if schema_version == SCHEMA_VERSION:
+            reference_count = _validate_database_manifest_references(
+                data, provenance
+            )
+            if reference_count == 0:
+                raise ValueError("record lacks a database manifest reference")
         record = EventRecord.from_dict(data)
         record.validate()
         if record.canonical_index != index:
             raise ValueError("record canonical_index does not match canonical ordering")
-        if record.provenance != provenance:
+        expected_provenance = (
+            compact_provenance
+            if schema_version == SCHEMA_VERSION
+            else provenance
+        )
+        if record.provenance != expected_provenance:
             raise ValueError("record provenance does not match artifact provenance")
     _validate_thermo_assignment_consistency(records)
     for record in records:
@@ -5046,8 +5247,13 @@ class EventSetCompiler:
         return active, excluded
 
     def compile(self) -> dict[str, Any]:
+        """Compile and return an independently owned artifact."""
+        return copy.deepcopy(self._compile_artifact())
+
+    def _compile_artifact(self) -> dict[str, Any]:
+        """Compile once and retain the publication copy internally."""
         if self._compiled_artifact is not None:
-            return copy.deepcopy(self._compiled_artifact)
+            return self._compiled_artifact
         self._applicability_refusals = []
         self._applicability_generation_cache = {}
         self._applicability_generation_stats = {}
@@ -5184,14 +5390,21 @@ class EventSetCompiler:
                     }
                 )
         records.extend(self._para_junction_records(provenance))
+        records, event_id_replacements = _compact_event_records(records, provenance)
         records.sort(key=lambda record: record.event_id)
         records = [
             replace(record, canonical_index=index)
             for index, record in enumerate(records)
         ]
-        ortho_records = sorted(
-            self._ortho_junction_records(provenance), key=lambda record: record.event_id
+        ortho_records, ortho_id_replacements = _compact_event_records(
+            self._ortho_junction_records(provenance), provenance
         )
+        event_id_replacements.update(ortho_id_replacements)
+        discovery = _replace_event_ids(discovery, event_id_replacements)
+        self._applicability_refusals = _replace_event_ids(
+            self._applicability_refusals, event_id_replacements
+        )
+        ortho_records.sort(key=lambda record: record.event_id)
         first_ortho_index = len(records)
         records.extend(
             replace(record, canonical_index=first_ortho_index + index)
@@ -5373,14 +5586,22 @@ class EventSetCompiler:
             anchor["temperature_K"] if anchor else None
         )
         validate_artifact(artifact)
-        self._compiled_artifact = copy.deepcopy(artifact)
-        return copy.deepcopy(self._compiled_artifact)
+        self._compiled_artifact = artifact
+        return artifact
 
     def write_artifact(self, directory: str | Path) -> tuple[Path, dict[str, Any]]:
-        artifact = self.compile()
-        payload = canonical_json_bytes(artifact)
-        artifact_id = hashlib.sha256(payload).hexdigest()
-        target = Path(directory) / f"{artifact_id}.json"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(payload)
+        artifact = self._compile_artifact()
+        output = Path(directory)
+        output.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=".kmc-artifact-", suffix=".json.tmp", dir=output
+        )
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                artifact_id = _write_canonical_json(artifact, stream)
+            target = output / f"{artifact_id}.json"
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
         return target, artifact

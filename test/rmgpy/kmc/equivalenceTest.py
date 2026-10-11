@@ -80,6 +80,13 @@ def reversible_artifact():
     return artifact([forward, reverse])
 
 
+def test_compact_schema_is_accepted_by_equivalence_reader():
+    compact = artifact([record("event")])
+    compact["schema_version"] = "kmc_event_set/0.2"
+
+    assert compare_artifacts(compact, copy.deepcopy(compact))["equal"] is True
+
+
 @pytest.fixture(scope="module")
 def real_sample():
     if not REAL_ARTIFACT.is_file():

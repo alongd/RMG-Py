@@ -510,7 +510,12 @@ def test_real_artifact_hash_provenance_and_injected_defects(compiled_artifact):
     assert hashlib.sha256(artifact_path.read_bytes()).hexdigest() == artifact_path.stem
     validate_artifact(artifact)
     assert all(
-        record["provenance"] == artifact["provenance"] for record in artifact["records"]
+        record["provenance"]["rmg_database_content_manifest"]
+        == "artifact.provenance.rmg_database_content_files"
+        and record["provenance"]["rmg_database_content_sha256"]
+        == artifact["provenance"]["rmg_database_content_sha256"]
+        and "rmg_database_content_files" not in record["provenance"]
+        for record in artifact["records"]
     )
 
     swapped = copy.deepcopy(artifact)

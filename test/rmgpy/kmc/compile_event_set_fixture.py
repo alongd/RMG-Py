@@ -16,6 +16,7 @@ from portable_cache import (
     atomic_write,
     artifact_cache_key,
     compile_environment_options,
+    file_sha256,
     identity,
     identity_name,
     load_or_generate,
@@ -232,7 +233,7 @@ def main() -> None:
     atomic_write(artifact_cache / "manifest.json", json.dumps({
         "identity": artifact_cache_key(Path.cwd(), database_path, compile_options),
         "artifact": path.name,
-        "artifact_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "artifact_sha256": file_sha256(path),
     }, sort_keys=True, indent=2).encode() + b"\n")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
