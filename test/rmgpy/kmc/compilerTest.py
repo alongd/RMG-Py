@@ -1096,6 +1096,19 @@ def test_artifact_is_byte_deterministic_and_content_addressed(tmp_path):
     assert compiler.compile()["records"][0]["atom_map"] != {1: 1, 2: 1}
 
 
+def test_write_artifact_return_cannot_mutate_later_publication(tmp_path):
+    compiler, _ = _compiler()
+    first_path, returned = compiler.write_artifact(tmp_path / "first")
+
+    returned["provenance"]["caller_mutation"] = True
+
+    second_path, second_returned = compiler.write_artifact(tmp_path / "second")
+    compiled = compiler.compile()
+    assert second_path.stem == first_path.stem
+    assert "caller_mutation" not in second_returned["provenance"]
+    assert "caller_mutation" not in compiled["provenance"]
+
+
 def test_compact_artifact_stores_database_manifest_once():
     compiler, _ = _compiler()
     artifact = compiler.compile()
@@ -1202,7 +1215,8 @@ def test_streamed_writer_matches_canonical_bytes_for_nested_values(tmp_path):
     expected = canonical_json_bytes(artifact)
     assert path.read_bytes() == expected
     assert path.stem == hashlib.sha256(expected).hexdigest()
-    assert returned is artifact
+    assert returned == artifact
+    assert returned is not artifact
 
 
 def test_streamed_writer_peak_allocation_is_bounded_by_one_record(tmp_path):
@@ -1215,12 +1229,12 @@ def test_streamed_writer_peak_allocation_is_bounded_by_one_record(tmp_path):
 
     tracemalloc.start()
     try:
-        path, returned = compiler.write_artifact(tmp_path)
+        path, artifact_id = compiler._write_artifact_file(tmp_path)
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
 
-    assert returned is artifact
+    assert artifact_id == path.stem
     assert path.stat().st_size > 32 * 1024 * 1024
     assert peak < 2 * 1024 * 1024
 

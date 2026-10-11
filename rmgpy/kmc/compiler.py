@@ -5597,7 +5597,8 @@ class EventSetCompiler:
         self._compiled_artifact = artifact
         return artifact
 
-    def write_artifact(self, directory: str | Path) -> tuple[Path, dict[str, Any]]:
+    def _write_artifact_file(self, directory: str | Path) -> tuple[Path, str]:
+        """Stream the retained publication artifact without copying it."""
         artifact = self._compile_artifact()
         output = Path(directory)
         output.mkdir(parents=True, exist_ok=True)
@@ -5612,4 +5613,8 @@ class EventSetCompiler:
             os.replace(temporary, target)
         finally:
             temporary.unlink(missing_ok=True)
-        return target, artifact
+        return target, artifact_id
+
+    def write_artifact(self, directory: str | Path) -> tuple[Path, dict[str, Any]]:
+        target, _ = self._write_artifact_file(directory)
+        return target, self.compile()
