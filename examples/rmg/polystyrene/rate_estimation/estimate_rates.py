@@ -1,7 +1,8 @@
 """Fit the polystyrene MOM channels from a compact kMC event-set artifact.
 
 Records are selected by family, template, and canonical reactant/product
-structures. Event IDs are output provenance only and never selectors.
+structures. Event IDs are output provenance only and never selectors. The
+supplied RMG-database content must match the artifact's declared manifest SHA.
 """
 
 import argparse
@@ -119,7 +120,7 @@ def parse_arguments():
         type=Path,
         help=(
             "RMG-database input directory used by the artifact; defaults to "
-            "database.directory from rmgrc (validated for provenance only)"
+            "database.directory from rmgrc and must match the artifact digest"
         ),
     )
     parser.add_argument(
@@ -136,6 +137,32 @@ def file_sha256(path):
     with path.open("rb") as handle:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
+    return digest.hexdigest()
+
+
+def database_content_sha256(database_path, relative_paths):
+    """Hash the artifact-declared database manifest in its recorded order."""
+    digest = hashlib.sha256()
+    for relative in relative_paths:
+        if not isinstance(relative, str):
+            raise SystemExit("Database content manifest entries must be strings")
+        manifest_path = Path(relative)
+        if (
+            manifest_path.is_absolute()
+            or ".." in manifest_path.parts
+            or len(manifest_path.parts) < 2
+            or manifest_path.parts[0] != "input"
+        ):
+            raise SystemExit(f"Unsafe database content manifest path: {relative!r}")
+        content_path = database_path.joinpath(*manifest_path.parts[1:])
+        if not content_path.is_file():
+            raise SystemExit(f"Database content manifest file is missing: {content_path}")
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        with content_path.open("rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+        digest.update(b"\0")
     return digest.hexdigest()
 
 
@@ -298,6 +325,27 @@ def main():
             f"{artifact.get('schema_version')!r}"
         )
 
+    provenance = artifact.get("provenance", {})
+    database_manifest = provenance.get("rmg_database_content_files")
+    expected_database_sha = provenance.get("rmg_database_content_sha256")
+    if not isinstance(database_manifest, list) or not database_manifest:
+        raise SystemExit("Artifact has no RMG-database content manifest")
+    if (
+        not isinstance(expected_database_sha, str)
+        or len(expected_database_sha) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in expected_database_sha
+        )
+    ):
+        raise SystemExit("Artifact has no valid RMG-database content SHA-256")
+    actual_database_sha = database_content_sha256(database_path, database_manifest)
+    if actual_database_sha != expected_database_sha:
+        raise SystemExit(
+            "RMG-database content SHA-256 mismatch: artifact declares "
+            f"{expected_database_sha}, supplied database has {actual_database_sha}"
+        )
+
     selected = select_records(artifact.get("records", []))
     initiation_record = selected["initiation"]
     temperatures = np.asarray(initiation_record["k_table"]["T"], dtype=float)
@@ -367,6 +415,7 @@ def main():
     print(f"artifact={artifact_path}")
     print(f"artifact_sha256={artifact_sha}")
     print(f"database={database_path}")
+    print(f"database_content_sha256={actual_database_sha}")
     print(f"output={output_path}")
     print(f"temperature_points={len(temperatures)}")
     print(f"repeat_mw_kg_mol={repeat_mw_kg_mol:.15g}")

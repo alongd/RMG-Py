@@ -67,10 +67,11 @@ PYTHONPATH=. python examples/rmg/polystyrene/rate_estimation/estimate_rates.py \
     --output-dir /tmp/ps-rate-estimation
 ```
 
-Omit `--database` to use `database.directory` from `rmgrc`. The database path
-is validated as provenance; the fitted values come only from the artifact's
-`k_table` arrays. The artifact itself declares RMG-database revision
-`cd86d4e1c`.
+Omit `--database` to use `database.directory` from `rmgrc`. The script hashes
+the artifact-declared database content manifest and refuses a supplied database
+whose SHA-256 differs from the artifact provenance. The fitted values still
+come only from the artifact's `k_table` arrays. The artifact itself declares
+RMG-database revision `cd86d4e1c`.
 
 The unique structural matches were:
 
@@ -149,9 +150,10 @@ input snapshot declared as RMG-database `cd86d4e1c`.
 - `mu1` loss: 0.470342095554290 mol of repeat units
 - condensed PS mass: 50.0 g initially and 1.01439200255585 g finally
 - styrene-formula core products account for 48.8458321934869 g. The remaining
-  condensed-plus-core-gas deficit is 0.139775803957036 g; the pressure-network
-  leak path removes 0.00134207672882958 mol of repeat-unit equivalent,
-  accounting for 0.139775803957035 g. The floating-point integration residual
-  is 9.16e-16 g.
+  condensed-plus-core-gas deficit is 0.139775803957036 g. With no independently
+  accumulated leak inventory in the retained solver output, assigning that
+  deficit to the pressure-network path infers 0.00134207672882958 mol of
+  repeat-unit equivalent; the resulting 9.16e-16 g arithmetic closure residual
+  is not an independent conservation check.
 
 The prescribed polymer regression selection completed with 1543 passes.
