@@ -23,7 +23,8 @@ from rmgpy.kmc.merge_accounting import (
 from rmgpy.molecule.molecule import Molecule
 
 
-DATABASE = Path(os.environ["RMG_DATABASE_PATH"])
+ROOT = Path(__file__).resolve().parents[3]
+DATABASE = Path(os.environ.get("RMG_DATABASE_PATH", ROOT.parent / "RMG-database"))
 
 
 @pytest.fixture(scope="module")
