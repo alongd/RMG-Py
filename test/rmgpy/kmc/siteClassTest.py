@@ -237,6 +237,7 @@ def test_every_supported_chemical_field_and_version_changes_the_key():
         != baseline
     )
     assert keyed(policy_change={"orientation": "participant-1"}) != baseline
+    assert keyed(policy_change={"max_search_nodes": 1000}) == baseline
 
 
 def test_invalid_inputs_and_every_finite_policy_bound_fail_without_mutation():
@@ -433,13 +434,19 @@ def aromatic_substituted_chain_roots(molecule):
     return methylene[len(methylene) // 2], benzylic[len(benzylic) // 2]
 
 
+def aromatic_substituted_oligomers():
+    return (
+        Molecule(
+            smiles="CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)C"
+        ),
+        Molecule(
+            smiles="CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)C"
+        ),
+    )
+
+
 def test_aromatic_substituted_oligomer_backbone_classes_are_length_stable():
-    short = Molecule(
-        smiles="CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)C"
-    )
-    long = Molecule(
-        smiles="CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)C"
-    )
+    short, long = aromatic_substituted_oligomers()
     short_roots = aromatic_substituted_chain_roots(short)
     long_roots = aromatic_substituted_chain_roots(long)
     for short_root, long_root in zip(short_roots, long_roots):
@@ -450,17 +457,17 @@ def test_aromatic_substituted_oligomer_backbone_classes_are_length_stable():
 
 
 def test_large_aromatic_substituted_contexts_finish_and_are_length_stable():
-    five_mer = Molecule(
-        smiles="CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)C"
-    )
-    seven_mer = Molecule(
-        smiles="CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)C"
-    )
+    five_mer, seven_mer = aromatic_substituted_oligomers()
     five_roots = [roots[1] for roots in aromatic_substituted_chain_root_sets(five_mer)]
     seven_roots = [
         roots[1] for roots in aromatic_substituted_chain_root_sets(seven_mer)
     ]
     for radius in (3, 4):
+        for molecule in (five_mer, seven_mer):
+            for manager_root in aromatic_substituted_chain_roots(molecule):
+                timed_site_class(
+                    molecule, (("site", manager_root),), policy(radius=radius)
+                )
         for five_root, seven_root in zip(five_roots, seven_roots):
             five_result, _ = timed_site_class(
                 five_mer, (("site", five_root),), policy(radius=radius)

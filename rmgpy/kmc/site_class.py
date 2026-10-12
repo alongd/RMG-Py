@@ -612,7 +612,10 @@ def extract_site_class(
             }
         )
 
-    policy_text = _canonical_json(policy)
+    identity_policy = {
+        name: value for name, value in policy.items() if name != "max_search_nodes"
+    }
+    policy_text = _canonical_json(identity_policy)
     policy_digest = sha256(policy_text.encode("ascii")).hexdigest()
 
     def serialize(order: Sequence[int]) -> dict[str, Any]:
