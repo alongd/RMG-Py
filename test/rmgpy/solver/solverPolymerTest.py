@@ -2477,6 +2477,24 @@ class TestHybridPolymerReactor:
         assert len(rs.atol_array) == 7
         assert len(rs.rtol_array) == 7
 
+    def test_initial_derivative_satisfies_residual(self):
+        """The y-prime handed to DASPK must satisfy G(t0, y0, y-prime)=0.
+
+        This pins the sign convention for every differential state, including
+        the appended weak-link U slot.  A sign-reversed initial derivative is
+        an inconsistent initial condition; initially empty produced states
+        then dominate DASPK's weighted error and can collapse the first step.
+        """
+        rs = self._qssa_m2_system(
+            self._qssa_m2_pool(_weaklink_exact_channel(
+                ki_A=1.0e-3, kdp_A=1.0e-3, kia_A=1.0e-9,
+                ktrec_A=50.0, ktdisp_A=50.0)),
+            moments=(1.0, 5.0, 30.0))
+
+        residual = rs.residual(
+            rs.t0, rs.y0.copy(), rs.dydt0.copy())[0]
+        assert np.array_equal(residual, np.zeros(rs.neq))
+
     def test_weaklink_sensitivity_layout_not_supported(self):
         """The DASPK sensitivity layout interleaves per-species blocks; a
         trailing U slot does not fit it. Refuse loudly instead of silently
