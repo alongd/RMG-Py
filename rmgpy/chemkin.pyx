@@ -1498,14 +1498,14 @@ def get_species_identifier(species):
     limit). For indexed species the label and index are combined; if that
     exceeds 16 chars the chemical formula is tried, then a bare index.
 
-    For index-less species (``species.index == -1``, e.g. polymer moment
-    dummies) whose raw label fits in 16 chars the label is returned unchanged.
-    Labels longer than 16 chars are deterministically compressed to exactly
-    16 chars as ``<stem>-<6hex>[<suffix>]`` where the 6-hex field is a prefix
-    of the MD5 digest of the full label and ``<suffix>`` is the ``_mu<N>``
-    tail if present (preserving human readability). Collisions are silent (no
-    guard in the Chemkin writers); the 6-hex width gives a birthday bound of
-    roughly 8 000 same-stem labels, sufficient for current polymer scales.
+    For index-less polymer moment dummies whose raw label fits in 16 chars the
+    label is returned unchanged. Longer moment-dummy labels are
+    deterministically compressed to exactly 16 chars as
+    ``<stem>-<6hex>[<suffix>]`` where the 6-hex field is a prefix of the MD5
+    digest of the full label and ``<suffix>`` is the ``_mu<N>`` tail if present
+    (preserving human readability). Collisions are silent (no guard in the
+    Chemkin writers); the 6-hex width gives a birthday bound of roughly 8 000
+    same-stem labels, sufficient for current polymer scales.
     """
     label = species.label
     # Special case for inert colliders - just use the label if possible
@@ -1519,7 +1519,7 @@ def get_species_identifier(species):
         # No index present -- probably not in RMG job
         # In this case just return the label (if the right size)
         if len(label) > 0 and not re.search(r'[^A-Za-z0-9\-_,\(\)\*#.:\[\]]+', label):
-            if len(label) <= 16:
+            if len(label) <= 16 or not getattr(species, 'is_moment_dummy', False):
                 return label
             else:
                 # Compress to a deterministic 16-char identifier instead of
