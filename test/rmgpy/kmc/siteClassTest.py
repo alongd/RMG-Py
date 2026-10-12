@@ -231,6 +231,12 @@ def test_invalid_inputs_and_every_finite_policy_bound_fail_without_mutation():
         ((("site", root),), policy(allowed_lone_pairs=[1]), "domain_exceeded"),
         ((("site", root),), policy(allowed_bond_orders=[2.0]), "domain_exceeded"),
         ((("site", root),), policy(allowed_multiplicities=[2]), "domain_exceeded"),
+        ((("site", root),), policy(instance_uuid="run-specific"), "invalid_policy"),
+        (
+            (("site", root),),
+            policy(max_valence_by_element={}),
+            "invalid_policy",
+        ),
     ]
     for roots, selected_policy, code in cases:
         with pytest.raises(SiteClassError) as error:
@@ -264,6 +270,40 @@ def test_invalid_inputs_and_every_finite_policy_bound_fail_without_mutation():
     with pytest.raises(SiteClassError, match="malformed_port"):
         extract_site_class(
             bad_cap, (("site", heavy_atoms(bad_cap)[1]),), policy(radius=1)
+        )
+
+    orphan_port = molecule.copy(deep=True)
+    orphan_port.atoms[0].props["boundary_port"] = {
+        "element": "C",
+        "bond_orders": [1.0],
+    }
+    with pytest.raises(SiteClassError, match="malformed_port"):
+        extract_site_class(
+            orphan_port, (("site", heavy_atoms(orphan_port)[1]),), policy()
+        )
+
+    non_hydrogen_cap = molecule.copy(deep=True)
+    non_hydrogen_cap.atoms[0].props["artificial_cap"] = True
+    non_hydrogen_cap.atoms[0].props["boundary_port"] = {
+        "element": "C",
+        "bond_orders": [1.0],
+    }
+    with pytest.raises(SiteClassError, match="malformed_port"):
+        extract_site_class(
+            non_hydrogen_cap,
+            (("site", heavy_atoms(non_hydrogen_cap)[1]),),
+            policy(),
+        )
+
+    nonnumeric_port = molecule.copy(deep=True)
+    cap = next(atom for atom in nonnumeric_port.atoms if atom.symbol == "H")
+    cap.props["artificial_cap"] = True
+    cap.props["boundary_port"] = {"element": "C", "bond_orders": ["single"]}
+    with pytest.raises(SiteClassError, match="malformed_port"):
+        extract_site_class(
+            nonnumeric_port,
+            (("site", heavy_atoms(nonnumeric_port)[1]),),
+            policy(),
         )
 
 

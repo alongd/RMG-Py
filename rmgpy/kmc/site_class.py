@@ -35,6 +35,7 @@ _REQUIRED_POLICY_FIELDS = {
     "max_heavy_atoms",
     "max_radius",
     "max_root_size",
+    "max_valence_by_element",
     "orientation",
     "policy_id",
     "radius",
@@ -65,6 +66,9 @@ def _normalize_policy(locality_policy: Mapping[str, Any]) -> dict[str, Any]:
     missing = sorted(_REQUIRED_POLICY_FIELDS - set(locality_policy))
     if missing:
         _fail("invalid_policy", f"missing fields: {', '.join(missing)}")
+    unknown = sorted(set(locality_policy) - _REQUIRED_POLICY_FIELDS)
+    if unknown:
+        _fail("invalid_policy", f"unsupported fields: {', '.join(unknown)}")
 
     policy = dict(locality_policy)
     for name in (
@@ -82,6 +86,25 @@ def _normalize_policy(locality_policy: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(value, (list, tuple)) or not value:
             _fail("invalid_policy", f"{name} must be a nonempty finite sequence")
         policy[name] = sorted(set(value))
+
+    valence_table = policy["max_valence_by_element"]
+    if not isinstance(valence_table, Mapping) or not valence_table:
+        _fail("invalid_policy", "max_valence_by_element must be a nonempty mapping")
+    if not set(policy["allowed_elements"]).issubset(valence_table):
+        _fail(
+            "invalid_policy",
+            "max_valence_by_element must define every allowed element",
+        )
+    normalized_valences = {}
+    for element, maximum in valence_table.items():
+        if (
+            not isinstance(maximum, (int, float))
+            or isinstance(maximum, bool)
+            or maximum <= 0
+        ):
+            _fail("invalid_policy", f"invalid maximum valence for {element!r}")
+        normalized_valences[element] = float(maximum)
+    policy["max_valence_by_element"] = normalized_valences
 
     for name in (
         "max_degree",
@@ -233,6 +256,16 @@ def _validate_atom(atom: Any, graph: Any, policy: Mapping[str, Any]) -> None:
     _allowed(atom.charge, policy, "allowed_charges", "charge")
     _allowed(atom.radical_electrons, policy, "allowed_radicals", "radical_electrons")
     _allowed(atom.lone_pairs, policy, "allowed_lone_pairs", "lone_pairs")
+    valence = 0.0
+    for bond in atom.bonds.values():
+        try:
+            order = float(bond.order)
+        except (TypeError, ValueError):
+            _fail("unsupported_field", f"nonnumeric bond order {bond.order!r}")
+        _allowed(order, policy, "allowed_bond_orders", "bond_order")
+        valence += order
+    if valence > policy["max_valence_by_element"][atom.symbol]:
+        _fail("domain_exceeded", f"valence {valence!r} exceeds finite policy bound")
     stereo = _atom_stereo(graph, atom)
     if stereo is not None:
         if stereo not in policy["allowed_atom_stereo"]:
@@ -264,6 +297,12 @@ def _hydrogen_descriptor(
     _validate_atom(atom, graph, policy)
     return {
         "bond": _bond_descriptor(graph, bond, policy),
+        **_chemical_state_descriptor(graph, atom),
+    }
+
+
+def _chemical_state_descriptor(graph: Any, atom: Any) -> dict[str, Any]:
+    return {
         "charge": atom.charge,
         "isotope": atom.element.isotope,
         "lone_pairs": atom.lone_pairs,
@@ -284,13 +323,9 @@ def _atom_descriptor(
         _fail("domain_exceeded", "explicit hydrogen count exceeds max_explicit_h")
     hydrogens.sort(key=_canonical_json)
     return {
-        "charge": atom.charge,
+        **_chemical_state_descriptor(graph, atom),
         "element": atom.symbol,
         "explicit_hydrogens": hydrogens,
-        "isotope": atom.element.isotope,
-        "lone_pairs": atom.lone_pairs,
-        "radical_electrons": atom.radical_electrons,
-        "stereo": _atom_stereo(graph, atom),
     }
 
 
@@ -405,6 +440,16 @@ def extract_site_class(
     roots, root_atoms = _normalize_roots(
         graph_atoms, ordered_root, policy["max_root_size"]
     )
+    for atom in graph_atoms:
+        props = _props(atom)
+        is_cap = props.get("artificial_cap") is True
+        has_port = "boundary_port" in props
+        if has_port and not is_cap:
+            _fail("malformed_port", "boundary_port annotation requires artificial_cap")
+        if is_cap:
+            if not _is_hydrogen(atom):
+                _fail("malformed_port", "an artificial cap must be hydrogen")
+            _validate_atom(atom, graph, policy)
     multiplicity = getattr(graph, "multiplicity", None)
     if multiplicity in (None, -187):
         _fail("missing_multiplicity", "graph multiplicity is not authoritative")
@@ -490,7 +535,10 @@ def extract_site_class(
                 _fail("domain_exceeded", "boundary element is outside allowed_elements")
             if not isinstance(signature["bond_orders"], (list, tuple)):
                 _fail("malformed_port", "boundary bond_orders must be a sequence")
-            orders = sorted(float(order) for order in signature["bond_orders"])
+            try:
+                orders = sorted(float(order) for order in signature["bond_orders"])
+            except (TypeError, ValueError):
+                _fail("malformed_port", "boundary bond_orders must be numeric")
             for order in orders:
                 _allowed(order, policy, "allowed_bond_orders", "boundary_bond_order")
             ports.append(
