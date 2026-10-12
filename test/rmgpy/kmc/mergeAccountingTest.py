@@ -8,6 +8,10 @@ import pytest
 
 from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.kmc.merge_accounting import (
+    MergeAccountingError,
+    RootAtomV1,
+    RootedPathV1,
+    _root_weights,
     generate_reactions_with_merge_accounting,
 )
 from rmgpy.molecule.molecule import Molecule
@@ -76,13 +80,8 @@ def test_root_weights_close_exactly_and_preserve_distinct_roots(
     assert len(identical.root_weights) == 1
     assert sum(weight.weight for weight in identical.root_weights) == identical.G_final
 
-    h_abstraction = KineticsDatabase()
-    h_abstraction.load_families(
-        str(DATABASE / "input/kinetics/families"),
-        families=["H_Abstraction"],
-    )
     records = generate_reactions_with_merge_accounting(
-        h_abstraction,
+        kinetics_database,
         [Molecule(smiles="[CH3]"), Molecule(smiles="CCC")],
         only_families=["H_Abstraction"],
         resonance=False,
@@ -104,6 +103,17 @@ def test_root_weights_close_exactly_and_preserve_distinct_roots(
             for graph in record.product_graphs
             for atom_id in graph.atom_ids
         }
+
+
+def test_inconsistent_root_decomposition_is_refused():
+    root = (RootAtomV1(participant_index=0, atom_id=1),)
+    paths = (
+        RootedPathV1("raw-000000", 1.0, root),
+        RootedPathV1("raw-000001", 1.0, root),
+    )
+
+    with pytest.raises(MergeAccountingError, match="does not match G_final"):
+        _root_weights(paths, divisor=1.0, final_degeneracy=1.0)
 
 
 def _reaction_signature(reaction):
@@ -246,7 +256,9 @@ def test_small_ps_proxy_witness_is_accounted_without_special_case_logic(
     )
 
 
-def test_c_to_two_a_keeps_kc_degeneracy_and_unordered_counting_independent():
+def test_c_to_two_a_keeps_kc_degeneracy_and_unordered_counting_independent(
+    kinetics_database,
+):
     from scipy.constants import Avogadro
 
     from rmgpy.data.kinetics.family import TemplateReaction
@@ -273,7 +285,11 @@ def test_c_to_two_a_keeps_kc_degeneracy_and_unordered_counting_independent():
     species_c = Species(
         label="C", molecule=[Molecule(smiles="CC")], thermo=thermo(-50, 200)
     )
-    source_trace_degeneracy = 7.0
+    source_record = _records(kinetics_database, ["[CH3]", "[CH3]"])[0]
+    source_trace_degeneracy = source_record.G_final
+    assert source_trace_degeneracy == sum(
+        weight.weight for weight in source_record.root_weights
+    )
     reaction = TemplateReaction(
         reactants=[species_c],
         products=[species_a, second_a],

@@ -269,23 +269,26 @@ def _root_weights(
     if not grouped:
         raise MergeAccountingError("no rooted paths contribute to final degeneracy")
 
-    entries = list(grouped.items())
-    weights = []
-    allocated = 0.0
-    for index, (root, (weight, path_ids)) in enumerate(entries):
-        if index == len(entries) - 1:
-            weight = final_degeneracy - allocated
-        allocated += weight
-        weights.append(RootWeightV1(root, weight, tuple(path_ids)))
+    natural_total = sum(item[0] for item in grouped.values())
+    if natural_total != final_degeneracy:
+        raise MergeAccountingError(
+            "rooted-path allocation {0!r} does not match G_final {1!r}".format(
+                natural_total, final_degeneracy
+            )
+        )
+    weights = tuple(
+        RootWeightV1(root, weight, tuple(path_ids))
+        for root, (weight, path_ids) in grouped.items()
+    )
     if sum(weight.weight for weight in weights) != final_degeneracy:
         raise MergeAccountingError(
             "root weights do not sum exactly to final degeneracy"
         )
-    return tuple(weights)
+    return weights
 
 
 def _trace_recalculated_degeneracy(family, reaction, resonance):
-    """Re-run ``calculate_degeneracy``'s isolated generation for evidence."""
+    """Drive ``calculate_degeneracy``'s generation before native correction."""
 
     traced_reaction = copy.deepcopy(reaction)
     reactants, same_reactants = check_for_same_reactants(
@@ -341,12 +344,6 @@ def _trace_recalculated_degeneracy(family, reaction, resonance):
             )
         )
     representative = merged[0]
-    if float(representative.degeneracy) != float(reaction.degeneracy):
-        raise MergeAccountingError(
-            "recalculated trace degeneracy {0!r} does not match G_final {1!r}".format(
-                representative.degeneracy, reaction.degeneracy
-            )
-        )
     group = group_by_representative[id(representative)]
     contributors = set(map(id, group.contributors))
     paths = tuple(
@@ -365,7 +362,13 @@ def _trace_recalculated_degeneracy(family, reaction, resonance):
     divisor = _corrected_divisor(
         representative, pre_correction, float(representative.degeneracy)
     )
-    return paths, contributing, int(same_reactants), divisor
+    return (
+        paths,
+        contributing,
+        int(same_reactants),
+        divisor,
+        float(representative.degeneracy),
+    )
 
 
 def _generate_traced(
@@ -394,6 +397,14 @@ def _generate_traced(
     groups = _group_raw_reactions(raw_reactions)
     snapshots = _path_snapshots(raw_reactions)
     group_by_representative = {id(group.contributors[0]): group for group in groups}
+    reverse_evidence = {}
+    for group in groups:
+        representative = group.contributors[0]
+        family = kinetics_database.families[representative.family]
+        if not representative.is_forward and not family.own_reverse:
+            reverse_evidence[id(representative)] = _trace_recalculated_degeneracy(
+                family, representative, resonance
+            )
 
     reactions = find_degenerate_reactions(
         raw_reactions,
@@ -436,9 +447,14 @@ def _generate_traced(
                 allocation_paths,
                 accounting_same_reactants,
                 divisor,
-            ) = _trace_recalculated_degeneracy(
-                family, reaction, resonance
-            )
+                traced_final_degeneracy,
+            ) = reverse_evidence[id(reaction)]
+            if traced_final_degeneracy != final_degeneracy:
+                raise MergeAccountingError(
+                    "captured reverse degeneracy {0!r} does not match G_final {1!r}".format(
+                        traced_final_degeneracy, final_degeneracy
+                    )
+                )
         else:
             recalculated_paths = ()
             allocation_paths = contributing_paths
