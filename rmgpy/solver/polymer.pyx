@@ -1202,6 +1202,10 @@ class PolymerPoolConfig:
     # it is never trusted by the fail-closed validator.
     shared_expected_explicit_dp_molecules: Optional[Dict[int, tuple]] = None
 
+    # The one authoritative declaration behind every shared-spec graph and
+    # mass check. Appended for positional compatibility with legacy configs.
+    linear_homopolymer_spec: Optional[object] = None
+
     def __post_init__(self):
         # Construction is the first of three shared-spec validation seams.
         # HybridPolymerSystem repeats this check with live core graphs/routes,
@@ -2295,6 +2299,31 @@ class HybridPolymerSystem(ReactionSystem):
                 raise ValueError(f"Mass transfer poly_index {mt.poly_index} is masked as GAS.")
             if not self.gas_species_mask[mt.gas_index]:
                 raise ValueError(f"Mass transfer gas_index {mt.gas_index} is NOT masked as GAS.")
+
+            for pool in self.polymer_pools:
+                if (pool.shared_mass_accounting
+                        and mt.poly_index in pool.mu_indices):
+                    raise ValueError(
+                        f"Pool {pool.label}: shared moment slot "
+                        f"{mt.poly_index} cannot be a mass transfer "
+                        "poly_index; generic transfer debits one slot "
+                        "without updating the complete moment/end bundle")
+
+        if self.const_spc_names:
+            _labels_by_index = {
+                getattr(species, "label", None): index
+                for index, species in enumerate(_core_species or ())
+            }
+            for _name in self.const_spc_names:
+                _idx = _labels_by_index.get(_name)
+                for pool in self.polymer_pools:
+                    if (pool.shared_mass_accounting
+                            and _idx in pool.mu_indices):
+                        raise ValueError(
+                            f"Pool {pool.label}: shared moment slot {_idx} "
+                            f"('{_name}') cannot be constant; zeroing its "
+                            "derivative would discard a debit while keeping "
+                            "the corresponding credit")
 
         # Moment isolation check
         ir = self.reactant_indices

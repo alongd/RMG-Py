@@ -35,17 +35,25 @@ from rmgpy.rmg.polymer_input import (
     PolymerPhaseBlueprint,
     compile_polymer_phase,
 )
-from rmgpy.solver.polymer import HybridPolymerSystem, PolymerPoolConfig
+from rmgpy.solver.polymer import (
+    HybridPolymerSystem,
+    MassTransferConfig,
+    PolymerPoolConfig,
+)
 from rmgpy.species import Species
 
 
-def _atom(key, element="C", hydrogens=0, isotope=None, radicals=0):
+def _atom(
+        key, element="C", hydrogens=0, isotope=None, radicals=0,
+        lone_pairs=0):
     value = {
         "key": key,
         "element": element,
         "hydrogens": hydrogens,
         "electronic_state": {"radical_electrons": radicals},
     }
+    if lone_pairs:
+        value["lone_pairs"] = lone_pairs
     if isotope is not None:
         value["isotope"] = isotope
     return value
@@ -161,6 +169,66 @@ def _spec_mapping(label="PE", repeat=None, ensemble=None, monomer_product=None):
 
 def _spec(**kwargs):
     return LinearHomopolymerSpec.from_mapping(_spec_mapping(**kwargs))
+
+
+def _shared_pe_spec():
+    repeat = _pe_repeat()
+    return _spec(monomer_product=_alkene_product(repeat))
+
+
+def _brominated_repeat():
+    return _graph(
+        [
+            _atom("c1", hydrogens=2),
+            _atom("c2", hydrogens=1),
+            _atom("br", element="Br", lone_pairs=3),
+        ],
+        [(('c1', 'c2'), 1), (('c2', 'br'), 1)],
+        {
+            "head": {"atom": "c1", "bond_order": 1},
+            "tail": {"atom": "c2", "bond_order": 1},
+        },
+    )
+
+
+def _brominated_spec():
+    value = _spec_mapping(repeat=_brominated_repeat())
+    value["locality_policy"]["bounds"]["elements"].append("Br")
+    value["locality_policy"]["bounds"]["lone_pairs"].append(3)
+    return LinearHomopolymerSpec.from_mapping(value)
+
+
+def _deuterated_spec():
+    repeat = _graph(
+        [
+            _atom("c1"),
+            _atom("c2"),
+            *[
+                _atom(f"d{i}", element="H", isotope=2)
+                for i in range(1, 5)
+            ],
+        ],
+        [
+            (('c1', 'c2'), 1),
+            (('c1', 'd1'), 1),
+            (('c1', 'd2'), 1),
+            (('c2', 'd3'), 1),
+            (('c2', 'd4'), 1),
+        ],
+        {
+            "head": {"atom": "c1", "bond_order": 1},
+            "tail": {"atom": "c2", "bond_order": 1},
+        },
+    )
+    value = _spec_mapping(repeat=repeat)
+    value["locality_policy"]["bounds"]["isotopes"].append(2)
+    return LinearHomopolymerSpec.from_mapping(value)
+
+
+def _attach_shared_spec(config, spec):
+    """Exercise direct-config admission with an authoritative declaration."""
+    object.__setattr__(config, "linear_homopolymer_spec", spec)
+    return config
 
 
 def _compiled_spec_phase(spec, *, density=(900.0, "kg/m^3"), chain_moles=None,
@@ -568,6 +636,7 @@ def test_compiled_pool_carries_end_mass_into_live_solver_accounting():
 
 def test_shared_unzip_residual_closes_dp_above_one_and_dp1_mass():
     """Production residual pair for pinned polymer.pyx:7304-7315."""
+    spec = _shared_pe_spec()
     repeat = Composition.from_mapping({"C": 2, "H": 4})
     ends = Composition.from_mapping({"H": 2})
     repeat_mass = repeat.molar_mass_g_mol()
@@ -587,6 +656,7 @@ def test_shared_unzip_residual_closes_dp_above_one_and_dp1_mass():
         shared_expected_explicit_dp_molecules={1: (core[2].molecule[0],)},
         monomer_poly_index=1, monomer_mw_g_mol=repeat_mass,
         end_group_mw_g_mol=end_mass, shared_mass_accounting=True, k_unzip=1.0,
+        linear_homopolymer_spec=spec,
     )
     solver = HybridPolymerSystem(
         T=800.0, P=1.0e5, initial_mole_fractions={core[1]: 0.0}, V_poly=1.0,
@@ -776,6 +846,7 @@ def test_unknown_schema_and_malformed_ports_are_rejected():
 
 def test_shared_scission_is_refused_and_dp1_unzip_debits_live_end_inventory():
     """Unsupported scission fails closed; the admitted DP1 law consumes E."""
+    spec = _shared_pe_spec()
     repeat_mass = Composition.from_mapping({"C": 2, "H": 4}).molar_mass_g_mol()
     end_mass = Composition.from_mapping({"H": 2}).molar_mass_g_mol()
 
@@ -800,6 +871,7 @@ def test_shared_scission_is_refused_and_dp1_unzip_debits_live_end_inventory():
         shared_expected_explicit_dp_molecules={1: (capped_dp1.molecule[0],)},
         monomer_poly_index=2, monomer_mw_g_mol=repeat_mass,
         end_group_mw_g_mol=end_mass, shared_mass_accounting=True, k_unzip=1.0,
+        linear_homopolymer_spec=spec,
     )
     unzip = _solver(unzip_core, unzip_config, (1.0, 1.0, 1.0), gas_indices=(2,))
     end_slot = int(unzip.end_inventory_slot[0])
@@ -858,10 +930,11 @@ def test_shared_scission_and_spawn_intent_daughters_fail_closed():
 
 
 def test_live_explicit_species_mass_uses_its_molecular_graph_once():
+    spec = _shared_pe_spec()
     repeat_mass = Composition.from_mapping({"C": 2, "H": 4}).molar_mass_g_mol()
     end_mass = Composition.from_mapping({"H": 2}).molar_mass_g_mol()
     explicit = Species(
-        label="defective_dp2", molecule=[Molecule().from_smiles("[CH2]CCC")]
+        label="capped_dp2", molecule=[Molecule().from_smiles("CCCC")]
     )
     explicit_mw = explicit.molecule[0].get_molecular_weight() * 1000.0
     core = [Species(label="PE"), explicit] + [
@@ -870,8 +943,10 @@ def test_live_explicit_species_mass_uses_its_molecular_graph_once():
     config = PolymerPoolConfig(
         label="PE", xs=2, explicit_dp_to_species_index={2: 1},
         explicit_dp_mw_g_mol={2: explicit_mw}, mu_indices=(2, 3, 4),
+        shared_expected_explicit_dp_molecules={2: (explicit.molecule[0],)},
         monomer_mw_g_mol=repeat_mass, end_group_mw_g_mol=end_mass,
         shared_mass_accounting=True,
+        linear_homopolymer_spec=spec,
     )
     system = _solver(
         core, config, (1.0, 3.0, 9.0),
@@ -888,7 +963,7 @@ def test_live_explicit_species_mass_uses_its_molecular_graph_once():
         + (tail_mu0 + 0.4) * end_mass
     )
     assert system.get_total_polymer_condensed_mass_g() == pytest.approx(expected)
-    assert expected != pytest.approx(reconstructed)
+    assert expected == pytest.approx(reconstructed)
 
 
 def test_mobile_declarations_bind_by_graph_and_reject_undeclared_inventory():
@@ -925,6 +1000,7 @@ def test_mobile_declarations_bind_by_graph_and_reject_undeclared_inventory():
 
 def test_shared_solver_routes_real_explicit_destination_and_gate_boundaries():
     """Production handshake/deprop operations agree with independent atoms."""
+    spec = _shared_pe_spec()
     repeat_mass = Composition.from_mapping({"C": 2, "H": 4}).molar_mass_g_mol()
     end_mass = Composition.from_mapping({"H": 2}).molar_mass_g_mol()
     explicit = Species(label="capped_dp2", molecule=[Molecule().from_smiles("CCCC")])
@@ -944,6 +1020,7 @@ def test_shared_solver_routes_real_explicit_destination_and_gate_boundaries():
         },
         monomer_poly_index=3, monomer_mw_g_mol=repeat_mass,
         end_group_mw_g_mol=end_mass, shared_mass_accounting=True, k_unzip=1.0,
+        linear_homopolymer_spec=spec,
     )
     system = _solver(
         core, config, (1.0, 3.0, 9.0), volume=2.5, gas_indices=(3,)
@@ -969,6 +1046,7 @@ def test_shared_solver_routes_real_explicit_destination_and_gate_boundaries():
         shared_expected_explicit_dp_molecules={1: (dp1.molecule[0],)},
         mu_indices=(3, 4, 5), monomer_poly_index=2, monomer_mw_g_mol=repeat_mass,
         end_group_mw_g_mol=end_mass, shared_mass_accounting=True, k_unzip=1.0,
+        linear_homopolymer_spec=spec,
     )
     active = _solver(
         active_core, active_config, (1.0, 1.0, 1.0), volume=2.5,
@@ -995,6 +1073,7 @@ def test_shared_solver_routes_real_explicit_destination_and_gate_boundaries():
 
 
 def test_real_sgh_z_and_gas_accounting_matches_independent_composition():
+    spec = _brominated_spec()
     bromine = Species(label="Br", molecule=[Molecule().from_smiles("[Br]")])
     core = [Species(label="P")] + [Species(label=f"P_mu{i}") for i in range(3)] + [bromine]
     br_mass = Composition.from_mapping({"Br": 1}).molar_mass_g_mol()
@@ -1006,10 +1085,12 @@ def test_real_sgh_z_and_gas_accounting_matches_independent_composition():
         sites_per_unit=1.0, gas_product="[Br]",
     )
     config = PolymerPoolConfig(
-        label="P", xs=2, explicit_dp_to_species_index={}, mu_indices=(1, 2, 3),
+        label="P", xs=2, explicit_dp_to_species_index={},
+        mu_indices=(1, 2, 3),
         monomer_mw_g_mol=repeat_mass, end_group_mw_g_mol=end_mass,
         shared_mass_accounting=True, side_group_homolysis=[channel],
         side_group_gas_indices=(4,), chain_mass_defect_g_mol=defect_mass,
+        linear_homopolymer_spec=spec,
     )
     system = _solver(
         core, config, (1.0, 3.0, 11.0), volume=2.5, gas_indices=(4,)
@@ -1039,13 +1120,16 @@ def test_real_sgh_z_and_gas_accounting_matches_independent_composition():
 
 
 def test_spawn_gate_snapshot_uses_live_end_share_in_shared_event_mass():
+    spec = _shared_pe_spec()
     repeat_mass = Composition.from_mapping({"C": 2, "H": 4}).molar_mass_g_mol()
     end_mass = Composition.from_mapping({"H": 2}).molar_mass_g_mol()
     core = [Species(label="P")] + [Species(label=f"P_mu{i}") for i in range(3)]
     config = PolymerPoolConfig(
-        label="P", xs=2, explicit_dp_to_species_index={}, mu_indices=(1, 2, 3),
+        label="P", xs=2, explicit_dp_to_species_index={},
+        mu_indices=(1, 2, 3),
         monomer_mw_g_mol=repeat_mass, end_group_mw_g_mol=end_mass,
         shared_mass_accounting=True,
+        linear_homopolymer_spec=spec,
     )
     system = _solver(core, config, (2.0, 6.0, 20.0), volume=2.5)
     system.core_species_production_rates[0] = 4.0
@@ -1171,6 +1255,263 @@ def test_legacy_positional_pool_config_order_is_unchanged():
     assert config.end_group_mw_g_mol == pytest.approx(0.0)
 
 
+@pytest.mark.parametrize("binding", ["mass_transfer", "constant_species"])
+def test_shared_moment_slots_refuse_non_kernel_writes(binding):
+    spec = _shared_pe_spec()
+    core = [
+        Species(label="P"),
+        Species(label="P_mu0"),
+        Species(label="P_mu1"),
+        Species(label="P_mu2"),
+        Species(label="G", molecule=[Molecule().from_smiles("C")]),
+    ]
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={},
+        mu_indices=(1, 2, 3),
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True,
+    ), spec)
+    system = HybridPolymerSystem(
+        T=800.0, P=1.0e5, initial_mole_fractions={core[4]: 0.0}, V_poly=1.0,
+        polymer_pools=[config],
+        mass_transfer=(
+            [MassTransferConfig(gas_index=4, poly_index=2, K=1.0, kLa=1.0)]
+            if binding == "mass_transfer" else []
+        ),
+        gas_species_mask=np.array([False, False, False, False, True]),
+        constant_gas_volume=False,
+        initial_polymer_moments={"P": (1.0, 3.0, 10.0)},
+        const_spc_names=["P_mu1"] if binding == "constant_species" else [],
+        termination=[],
+    )
+    with pytest.raises(
+            ValueError, match="shared.*moment.*(mass transfer|constant)"):
+        system.initialize_model(core, [], [], [])
+
+
+def test_spec_bearing_pool_cannot_disable_shared_mass_accounting():
+    spec = _shared_pe_spec()
+    with pytest.raises(ValueError, match="spec.*shared_mass_accounting"):
+        PolymerPoolConfig(
+            label="P", xs=2, explicit_dp_to_species_index={},
+            mu_indices=(1, 2, 3),
+            monomer_mw_g_mol=(
+                spec.repeat_unit.composition.molar_mass_g_mol()),
+            end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+            shared_mass_accounting=False,
+            linear_homopolymer_spec=spec,
+        )
+
+
+@pytest.mark.parametrize(
+    "destination",
+    ["C", "[13CH2]=C"],
+    ids=["wrong-composition", "isotope-mismatch"],
+)
+def test_shared_unzip_refuses_wrong_monomer_destination_graph(destination):
+    spec = _shared_pe_spec()
+    dp1 = Species(label="DP1", molecule=[Molecule().from_smiles("CC")])
+    product = Species(
+        label="product", molecule=[Molecule().from_smiles(destination)]
+    )
+    core = [Species(label="P"), dp1, product] + [
+        Species(label=f"P_mu{i}") for i in range(3)
+    ]
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={1: 1},
+        explicit_dp_mw_g_mol={
+            1: dp1.molecule[0].get_molecular_weight() * 1000.0,
+        },
+        shared_expected_explicit_dp_molecules={1: (dp1.molecule[0],)},
+        mu_indices=(3, 4, 5), monomer_poly_index=2,
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True, k_unzip=1.0,
+    ), spec)
+    with pytest.raises(
+            ValueError, match="unzip.*destination.*declared monomer"):
+        _solver(core, config, (1.0, 3.0, 10.0), gas_indices=(2,))
+
+
+def test_shared_unzip_admits_declared_monomer_destination_graph():
+    spec = _shared_pe_spec()
+    dp1 = Species(label="DP1", molecule=[Molecule().from_smiles("CC")])
+    product = Species(
+        label="product", molecule=[Molecule().from_smiles("C=C")]
+    )
+    core = [Species(label="P"), dp1, product] + [
+        Species(label=f"P_mu{i}") for i in range(3)
+    ]
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={1: 1},
+        explicit_dp_mw_g_mol={
+            1: dp1.molecule[0].get_molecular_weight() * 1000.0,
+        },
+        shared_expected_explicit_dp_molecules={1: (dp1.molecule[0],)},
+        mu_indices=(3, 4, 5), monomer_poly_index=2,
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True, k_unzip=1.0,
+    ), spec)
+    _solver(core, config, (1.0, 3.0, 10.0), gas_indices=(2,))
+
+
+@pytest.mark.parametrize(
+    "sites,selector,destination",
+    [
+        (2.0, "aliphatic", "[Br]"),
+        (1.0, "aryl", "[Br]"),
+        (1.0, "aliphatic", "[Cl]"),
+    ],
+    ids=["excessive-inventory", "nonexistent-inventory", "wrong-destination"],
+)
+def test_shared_sgh_refuses_inventory_or_destination_mismatch(
+        sites, selector, destination):
+    spec = _brominated_spec()
+    gas = Species(label="X", molecule=[Molecule().from_smiles(destination)])
+    core = (
+        [Species(label="P")]
+        + [Species(label=f"P_mu{i}") for i in range(3)]
+        + [gas]
+    )
+    channel = dict(
+        label="C-Br", A=1.0, n=0.0, Ea=0.0,
+        site_selector=selector, sites_per_unit=sites, gas_product="[Br]",
+    )
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={},
+        mu_indices=(1, 2, 3),
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True, side_group_homolysis=[channel],
+        side_group_gas_indices=(4,),
+    ), spec)
+    with pytest.raises(
+            ValueError,
+            match="side_group_homolysis.*(site|destination)"):
+        _solver(core, config, (1.0, 3.0, 10.0), gas_indices=(4,))
+
+
+def test_shared_sgh_admits_authoritative_inventory_and_destination():
+    spec = _brominated_spec()
+    bromine = Species(label="Br", molecule=[Molecule().from_smiles("[Br]")])
+    core = (
+        [Species(label="P")]
+        + [Species(label=f"P_mu{i}") for i in range(3)]
+        + [bromine]
+    )
+    channel = dict(
+        label="C-Br", A=1.0, n=0.0, Ea=0.0,
+        site_selector="aliphatic", sites_per_unit=1.0, gas_product="[Br]",
+    )
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={}, mu_indices=(1, 2, 3),
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True, side_group_homolysis=[channel],
+        side_group_gas_indices=(4,),
+    ), spec)
+    _solver(core, config, (1.0, 3.0, 10.0), gas_indices=(4,))
+
+
+def test_shared_sgh_refuses_source_destination_isotope_mismatch():
+    spec = _deuterated_spec()
+    hydrogen = Species(label="H", molecule=[Molecule().from_smiles("[H]")])
+    core = (
+        [Species(label="P")]
+        + [Species(label=f"P_mu{i}") for i in range(3)]
+        + [hydrogen]
+    )
+    channel = dict(
+        label="C-D", A=1.0, n=0.0, Ea=0.0,
+        site_selector="aliphatic", sites_per_unit=4.0, gas_product="[H]",
+    )
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={}, mu_indices=(1, 2, 3),
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True, side_group_homolysis=[channel],
+        side_group_gas_indices=(4,),
+    ), spec)
+    with pytest.raises(ValueError, match="side_group_homolysis.*isotope"):
+        _solver(core, config, (1.0, 3.0, 10.0), gas_indices=(4,))
+
+
+def test_shared_explicit_dp_mass_is_validated_against_actual_graph():
+    spec = _shared_pe_spec()
+    dp1 = Species(label="DP1", molecule=[Molecule().from_smiles("CC")])
+    product = Species(
+        label="product", molecule=[Molecule().from_smiles("C=C")]
+    )
+    core = [Species(label="P"), dp1, product] + [
+        Species(label=f"P_mu{i}") for i in range(3)
+    ]
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={1: 1},
+        explicit_dp_mw_g_mol={1: 100.0},
+        shared_expected_explicit_dp_molecules={1: (dp1.molecule[0],)},
+        mu_indices=(3, 4, 5), monomer_poly_index=2,
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True, k_unzip=1.0,
+    ), spec)
+    with pytest.raises(ValueError, match="explicit DP=1.*mass.*graph"):
+        _solver(core, config, (1.0, 3.0, 10.0), gas_indices=(2,))
+
+
+@pytest.mark.parametrize("field", ["repeat", "end"])
+def test_shared_repeat_and_end_masses_are_validated_against_declaration(
+        field):
+    spec = _shared_pe_spec()
+    repeat_mass = spec.repeat_unit.composition.molar_mass_g_mol()
+    end_mass = spec.end_composition.molar_mass_g_mol()
+    if field == "repeat":
+        repeat_mass += 1.0
+    else:
+        end_mass += 1.0
+    core = (
+        [Species(label="P")]
+        + [Species(label=f"P_mu{i}") for i in range(3)]
+    )
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={},
+        mu_indices=(1, 2, 3),
+        monomer_mw_g_mol=repeat_mass, end_group_mw_g_mol=end_mass,
+        shared_mass_accounting=True,
+    ), spec)
+    with pytest.raises(
+            ValueError,
+            match=rf"shared {field} mass.*authoritative graph"):
+        _solver(core, config, (1.0, 3.0, 10.0))
+
+
+def test_shared_expected_explicit_graph_is_validated_against_declaration():
+    spec = _shared_pe_spec()
+    wrong_dp1 = Species(label="DP1", molecule=[Molecule().from_smiles("C")])
+    product = Species(
+        label="product", molecule=[Molecule().from_smiles("C=C")]
+    )
+    core = [Species(label="P"), wrong_dp1, product] + [
+        Species(label=f"P_mu{i}") for i in range(3)
+    ]
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={1: 1},
+        explicit_dp_mw_g_mol={
+            1: wrong_dp1.molecule[0].get_molecular_weight() * 1000.0,
+        },
+        shared_expected_explicit_dp_molecules={1: (wrong_dp1.molecule[0],)},
+        mu_indices=(3, 4, 5), monomer_poly_index=2,
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True, k_unzip=1.0,
+    ), spec)
+    with pytest.raises(
+            ValueError,
+            match="expected explicit DP=1 graph.*declaration"):
+        _solver(core, config, (1.0, 3.0, 10.0), gas_indices=(2,))
+
+
 def test_shared_allowlist_covers_every_kernel_and_route_with_named_proof():
     """Fail closed: every configurable mover is either proved or refused."""
     from rmgpy.polymer_shared_support import (
@@ -1257,6 +1598,7 @@ def test_shared_pool_config_refuses_kernel_combinations_and_asserted_graph_flags
 
 
 def test_shared_handshake_uses_actual_graph_isomorphism_and_rejects_defect():
+    spec = _shared_pe_spec()
     dp1 = Species(label="dp1", molecule=[Molecule().from_smiles("CC")])
     isomeric_dp2 = Species(
         label="isomeric_dp2", molecule=[Molecule().from_smiles("CC(C)C")]
@@ -1277,7 +1619,10 @@ def test_shared_handshake_uses_actual_graph_isomorphism_and_rejects_defect():
         explicit_dp_pristine={1: True, 2: True},
         shared_expected_explicit_dp_molecules=expected,
         mu_indices=(4, 5, 6), monomer_poly_index=3, k_unzip=1.0,
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
         shared_mass_accounting=True,
+        linear_homopolymer_spec=spec,
     )
     with pytest.raises(ValueError, match="graph-isomorphic.*pristine"):
         _solver(core, config, (1.0, 3.0, 9.0), gas_indices=(3,))
@@ -1381,11 +1726,14 @@ def test_shared_fragment_routing_is_refused():
 
 
 def test_shared_explicit_to_pool_credit_that_changes_e_is_refused():
+    spec = _shared_pe_spec()
     core = [Species(label="P")] + [Species(label=f"P_mu{i}") for i in range(3)]
     config = PolymerPoolConfig(
         label="P", xs=2, explicit_dp_to_species_index={}, mu_indices=(1, 2, 3),
-        monomer_mw_g_mol=28.0, end_group_mw_g_mol=2.0,
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
         shared_mass_accounting=True,
+        linear_homopolymer_spec=spec,
     )
     system = _solver(core, config, (1.0, 3.0, 10.0))
     system._shared_validation_route_records_by_pool = {
@@ -1407,6 +1755,7 @@ def test_shared_asymmetric_end_homolysis_is_refused():
 
 
 def test_shared_handshake_to_nonpristine_explicit_graph_is_refused():
+    spec = _shared_pe_spec()
     monomer = Species(label="M", molecule=[Molecule().from_smiles("C=C")])
     dp1 = Species(label="DP1", molecule=[Molecule().from_smiles("CC")])
     defective_dp2 = Species(label="DP2", molecule=[Molecule().from_smiles("[CH2]CCC")])
@@ -1423,8 +1772,11 @@ def test_shared_handshake_to_nonpristine_explicit_graph_is_refused():
             1: (dp1.molecule[0],),
             2: (Molecule().from_smiles("CCCC"),),
         },
-        monomer_poly_index=3, monomer_mw_g_mol=28.0,
-        end_group_mw_g_mol=2.0, shared_mass_accounting=True, k_unzip=1.0,
+        monomer_poly_index=3,
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True, k_unzip=1.0,
+        linear_homopolymer_spec=spec,
     )
     with pytest.raises(ValueError, match="graph-isomorphic.*pristine"):
         _solver(core, config, (1.0, 3.0, 9.0), gas_indices=(3,))

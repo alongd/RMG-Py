@@ -1730,6 +1730,7 @@ class PolymerPool(object):
             explicit_dp_pristine=explicit_dp_pristine,
             shared_expected_explicit_dp_molecules=(
                 shared_expected_explicit_dp_molecules or None),
+            linear_homopolymer_spec=shared_spec,
             mu_indices=mu_idxs,
             monomer_poly_index=monomer_idx,
             monomer_mw_g_mol=monomer_mw_g_mol,
@@ -1965,6 +1966,8 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
             shared_mass_accounting=(
                 getattr(spc, "linear_homopolymer_spec", None) is not None
             ),
+            linear_homopolymer_spec=getattr(
+                spc, "linear_homopolymer_spec", None),
             shared_end_groups_symmetric=(
                 getattr(spc, "linear_homopolymer_spec", None) is None
                 or spc.linear_homopolymer_spec.head_end_group.composition
