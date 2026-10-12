@@ -1927,6 +1927,21 @@ class KineticsFamily(Database):
             specified reactants and products within this family.
             Degenerate reactions are returned as separate reactions.
         """
+        # Family recipes operate on Molecule graphs.  A Polymer is a Species
+        # wrapper around such a graph, so direct callers need the same
+        # unwrap/rewrap boundary that CoreEdgeReactionModel provides.
+        from rmgpy.polymer import (
+            Polymer, PolymerCrosslinkError, compute_h_loss_shape_evidence,
+        )
+
+        polymer_reactants = [reactant for reactant in reactants
+                             if isinstance(reactant, Polymer)]
+        if polymer_reactants:
+            reactants = [(
+                reactant.get_proxy_species().molecule
+                if isinstance(reactant, Polymer) else reactant
+            ) for reactant in reactants]
+
         reaction_list = []
 
         # Forward direction (the direction in which kinetics is defined)
@@ -1949,7 +1964,33 @@ class KineticsFamily(Database):
                                          delete_labels=delete_labels,
                                          relabel_atoms=relabel_atoms,
                                          ))
-        return reaction_list
+        if not polymer_reactants:
+            return reaction_list
+
+        kept_reactions = []
+        for reaction in reaction_list:
+            try:
+                # A family may generate the same chemical transformation in
+                # reverse orientation, so test both sides against the source
+                # polymer.  The H-loss verdict is necessarily relative to the
+                # opposite side of that orientation.
+                _handshake_structures(
+                    reaction.products, polymer_reactants,
+                    h_loss_verdicts=compute_h_loss_shape_evidence(
+                        reaction.reactants, reaction.products,
+                        polymer_reactants),
+                )
+                _handshake_structures(
+                    reaction.reactants, polymer_reactants,
+                    h_loss_verdicts=compute_h_loss_shape_evidence(
+                        reaction.products, reaction.reactants,
+                        polymer_reactants),
+                )
+            except PolymerCrosslinkError:
+                continue
+            reaction.pairs = None
+            kept_reactions.append(reaction)
+        return kept_reactions
 
     def add_reverse_attribute(self, rxn, react_non_reactive=True):
         """

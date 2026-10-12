@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 import yaml
 
+from rmgpy import constants
 from rmgpy.cantera import generate_cantera_data
 from rmgpy.kinetics import Arrhenius
 from rmgpy.molecule import Molecule
@@ -42,6 +43,19 @@ def _spc(smiles, label, index=-1, thermo=True):
                 for tmin, tmax in ((200.0, 1000.0), (1000.0, 6000.0))]
         s.thermo = NASA(polynomials=rows, Tmin=(200.0, "K"), Tmax=(6000.0, "K"))
     return s
+
+
+def _species_mw_g_mol(species):
+    """Convert the Species Mass quantity's kg/molecule SI value to g/mol."""
+    return float(species.molecular_weight.value_si) * constants.Na * 1000.0
+
+
+def _closed_inventory_g(rs, core, y):
+    """Gas molecular mass plus defect-adjusted condensed mass, in grams."""
+    gas = np.flatnonzero(np.asarray(rs.gas_species_mask, dtype=bool))
+    mw_g_mol = np.asarray([_species_mw_g_mol(species) for species in core])
+    gas_g = float(np.dot(np.asarray(y)[gas], mw_g_mol[gas]))
+    return gas_g + float(rs.get_total_polymer_condensed_mass_g(y))
 
 
 def _mu(label):
@@ -2047,7 +2061,8 @@ class TestExplicitDpArtifactLoader:
         system with an active k_unzip arm and an explicit-DP target must,
         at the RHS level, deposit F*V_poly into the explicit species and
         drain the moments by exactly (F, xs*F, xs^2*F) on top of the unzip
-        channel's own (0, r, k_u*(2*mu1-mu0)) drain."""
+        channel's own (r*p1, r, k_u*(2*mu1-mu0)) drain, where p1 is the
+        I-055 DP=1 chain fraction (fddb9f7084)."""
         n2 = _spc("N#N", "N2", index=1)
         dp3 = _spc("CCC", "poly_dp3", index=2)
         mono = _spc("C=C", "C2H4", index=3)
@@ -2082,8 +2097,12 @@ class TestExplicitDpArtifactLoader:
         # V_poly = 1, mu(conc) = (1, 5, 30), xs = 3, k_u = 0.1:
         F = float(dn_dt[dp_idx])
         assert F > 0.0  # boundary flux is live
-        # only the handshake touches mu0 (k_scission = 0)
-        assert -float(dn_dt[p.mu_indices[0]]) == pytest.approx(F)
+        # I-055 chain termination also touches mu0.  Independently evaluate
+        # the gamma-bin DP=1 fraction for mean=5, PDI=1.2 (shape=5, scale=1).
+        from scipy.special import gammainc
+        p1 = ((float(gammainc(5.0, 1.5)) - float(gammainc(5.0, 0.5)))
+              / (1.0 - float(gammainc(5.0, 0.5))))
+        assert -float(dn_dt[p.mu_indices[0]]) == pytest.approx(F + 0.1 * p1)
         # unzip drain r = k_u*mu0 = 0.1 stacks on the handshake's xs*F
         assert -float(dn_dt[p.mu_indices[1]]) == pytest.approx(3.0 * F + 0.1)
         # unzip mu2 drain k_u*(2*mu1 - mu0) = 0.9 stacks on xs^2*F
@@ -3211,6 +3230,35 @@ def _build_deprop(deck, artifact=None, initial_moles=None):
 class TestEndRadicalDepropagationConsumer:
     """Schema 2.8 end_radical_depropagation contract, consumer side."""
 
+    def test_closed_inventory_oracle_one_mole_ethylene(self):
+        """Species.value_si is kg/molecule; the oracle must report g/mol."""
+        ethylene = _spc("C=C", "ethylene")
+        assert _species_mw_g_mol(ethylene) == pytest.approx(
+            28.05, abs=0.01)
+
+    def test_closed_inventory_oracle_one_depropagation_step(
+            self, deprop_deck):
+        """One live polymer-to-gas Euler step preserves closed mass."""
+        rs, core, _ = _build_deprop(deprop_deck)
+        # Isolate one end-radical carrier: disable its parent's homolysis
+        # feed, then seed a realizable live carrier for one deprop step.
+        rs.khom_enabled[0] = 0
+        carrier = rs.polymer_pools[1]
+        y0 = np.asarray(rs.y).copy()
+        y0[list(carrier.mu_indices)] = (0.1, 1.0, 20.0)
+        dn = rs.residual(0.0, y0, np.zeros_like(y0))[0]
+        gas = np.flatnonzero(np.asarray(rs.gas_species_mask, dtype=bool))
+        gas_mass_rate = sum(
+            dn[i] * _species_mw_g_mol(core[i]) for i in gas)
+        assert gas_mass_rate > 0.0, "depropagation must transfer mass to gas"
+
+        dt = 1.0e-12
+        before = _closed_inventory_g(rs, core, y0)
+        after = _closed_inventory_g(rs, core, y0 + dt * dn)
+        transferred_g = dt * gas_mass_rate
+        assert after - before == pytest.approx(
+            0.0, abs=transferred_g * 1.0e-7)
+
     def test_round_trip_kernel_flattened_on_daughters(self, deprop_deck):
         """RED pin (full round trip, truthful 2.8 acceptance): a real
         kernel-enabled deck serialized by the emitter loads GREEN, wires
@@ -3613,6 +3661,120 @@ class TestAtolReplayParity:
 # Requires the READ-ONLY forensic run dir; skipped wherever it is absent.
 # ---------------------------------------------------------------------------
 _POLY102_RUN = "/home/alon/runs/RMG/poly_102_conduit3"
+# Closed-inventory regression ceiling for the saved replay. This is about
+# 1,500 times its measured 6.76e-13 maximum drift, tight enough to reject the
+# old apparent 2e-5 leak while remaining independent of solver tolerances.
+CLOSED_REPLAY_REL_INVENTORY_CEILING = 1.0e-9
+
+
+def _run_prestress_fromdeck_rtol_1e6(result):
+    """Run the saved-deck replay and check every accepted solver state."""
+    try:
+        with open(os.path.join(
+                _POLY102_RUN, "chemkin/polymer_pools.json")) as fh:
+            artifact = json.load(fh)
+        species, reactions = load_chem_yaml(
+            os.path.join(_POLY102_RUN, "cantera/chem0079.yaml"))
+        rs, core, _ = build_system_from_artifact(
+            artifact, species, reactions,
+            T0=1100.0, P=1.0e5, V_poly=1.0 / 1050.0,
+            initial_moles={"N2": 0.90, "H(1)": 0.001},
+            mass_transfer_spec=[], initial_moments=None,
+            allow_stale=True, atol=1e-12, rtol=1e-6)
+        y0 = np.array(rs.y, dtype=float).copy()
+        dn0 = rs.residual(0.0, y0, np.zeros_like(y0))[0]
+        rs.initialize(0.0, y0.copy(), dn0, atol=1e-12, rtol=1e-6)
+
+        # This is a closed, adiabatic-free replay: its material inventory is
+        # the solver's defect-adjusted condensed-polymer mass plus the gas
+        # species' molecular mass. With gas Mass quantities correctly
+        # converted from kg/molecule to g/mol, the measured fixed-law maximum
+        # is 6.76e-13 over 1,314 accepted steps. This closed-replay regression
+        # uses its own named conservation ceiling, independent of solver
+        # tolerances; no chemistry tolerance or floor changes here.
+        gas = np.flatnonzero(np.asarray(rs.gas_species_mask, dtype=bool))
+        mw_g_mol = np.asarray(
+            [_species_mw_g_mol(spc) for spc in core])
+
+        def closed_inventory_g(y):
+            gas_g = float(np.dot(y[gas], mw_g_mol[gas]))
+            return gas_g + float(rs.get_total_polymer_condensed_mass_g(y))
+
+        def relative_rhs_mass_balance(y):
+            """Mass-weight the independent gas and pool RHS contributions."""
+            assert not any(pool.explicit_dp_to_species_index
+                           for pool in rs.polymer_pools)
+            assert not any(np.asarray(rs.sgh_enabled, dtype=bool))
+            dn = rs.residual(rs.t, y, np.zeros_like(y))[0]
+            terms = [float(np.dot(dn[gas], mw_g_mol[gas]))]
+            for pool in rs.polymer_pools:
+                i0, i1, _i2 = pool.mu_indices
+                terms.append(
+                    dn[i1] * pool.monomer_mw_g_mol
+                    - dn[i0] * pool.chain_mass_defect_g_mol)
+            gross = sum(abs(term) for term in terms)
+            return abs(sum(terms)) / gross if gross else 0.0
+
+        def assert_accepted_pool_state(y):
+            # The production hook hard-fails beyond-floor negatives but keeps
+            # realizability as a warn-only census. This regression promotes
+            # both realizability inequalities to trajectory assertions using
+            # exactly the hook's first-order floor propagation.
+            rs._assert_pool_moments_accepted()
+            floors = np.asarray(rs._pool_mu_floors)
+            for p, pool in enumerate(rs.polymer_pools):
+                i0, i1, i2 = pool.mu_indices
+                mu0, mu1, mu2 = y[i0], y[i1], y[i2]
+                f0, f1, f2 = floors[p]
+                assert mu1 >= mu0 - (f0 + f1), (
+                    rs.t, pool.label, "cone", mu0, mu1, f0 + f1)
+                variance_tol = (
+                    f0 * abs(mu2) + f2 * abs(mu0)
+                    + 2.0 * f1 * abs(mu1) + f0 * f2 + f1 * f1)
+                assert mu0 * mu2 >= mu1 * mu1 - variance_tol, (
+                    rs.t, pool.label, "variance", mu0, mu1, mu2,
+                    variance_tol)
+
+        inventory0 = closed_inventory_g(np.asarray(rs.y))
+        max_rel_inventory_drift = 0.0
+        max_rel_rhs_mass_balance = 0.0
+        accepted = 0
+        for target in (13.0, 14.0, 14.5):
+            while rs.t < target:
+                rs.step(target)
+                accepted += 1
+                y = np.asarray(rs.y)
+                assert np.all(np.isfinite(y)), rs.t
+                # Pins every accepted state against the existing per-slot
+                # floors and the complete realizability cone, not just the
+                # three reporting checkpoints.
+                assert_accepted_pool_state(y)
+                rel_inventory_drift = (
+                    abs(closed_inventory_g(y) - inventory0) / inventory0)
+                max_rel_inventory_drift = max(
+                    max_rel_inventory_drift, rel_inventory_drift)
+                assert rel_inventory_drift <= (
+                    CLOSED_REPLAY_REL_INVENTORY_CEILING
+                ), (rs.t, rel_inventory_drift)
+                if accepted == 1 or accepted % 100 == 0 or rs.t >= target:
+                    rel_rhs_balance = relative_rhs_mass_balance(y)
+                    max_rel_rhs_mass_balance = max(
+                        max_rel_rhs_mass_balance, rel_rhs_balance)
+                    # Independent instantaneous evidence: mass-weighted RHS
+                    # cancellation is eleven-digit relative in the measured
+                    # replay; 1e-9 retains ample floating-point margin.
+                    assert rel_rhs_balance <= 1.0e-9, (
+                        rs.t, rel_rhs_balance)
+            result.put(("progress", target))
+        assert rs.t >= 14.5 - 1e-9
+    except BaseException as exc:
+        result.put(("error", repr(exc)))
+    else:
+        result.put(("finished", {
+            "accepted": accepted,
+            "max_rel_inventory_drift": max_rel_inventory_drift,
+            "max_rel_rhs_mass_balance": max_rel_rhs_mass_balance,
+        }))
 
 
 @pytest.mark.functional
@@ -3772,51 +3934,47 @@ class TestRegen3SavedCoreReplay:
         # a grind-class regression blows this loudly)
         assert time.monotonic() - wall < 300.0
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="round-35 pre-regen stress gate 5b, RED (round-36 "
-               "finding): the from-deck 79/82 window at rtol=1e-6 "
-               "(atol=1e-12; NO regen tolerance is certified -- "
-               "round-37 policy) GRINDS worse "
-               "than at the convicted rtol=1e-4 -- 0 -> 13 s took "
-               "202.3 s wall (1e-4: 16.5 s) and 13 -> 14 took 1765.8 s "
-               "(29.4 min per sim-second; 1e-4 pre-gate law: ~16 min "
-               "then IDID=-7 at t = 14.2445). Worse, mod_5 is STILL "
-               "dragged sub-floor at 1e-6 (accepted 1.82e-11 mol at "
-               "t = 14 vs the 1e-10 floor -- the H1 signature the "
-               "tolerance conviction was expected to remove). "
-               "Tightening rtol does NOT resolve the multi-daughter "
-               "near-floor regime on the full system; combined with the "
-               "crash-state replay's 1e-6 death at t = 24.639 (see the "
-               "prestress canary), the tolerance interaction is a "
-               "round-36 P1. This xfail asserts a 120 s budget at the "
-               "t = 13 checkpoint so it burns ~3.5 min, not the full "
-               "grind; a law/tolerance combination that traverses the "
-               "window flips it loudly.")
     def test_prestress_fromdeck_window_rtol_1e6(self):
-        with open(os.path.join(_POLY102_RUN,
-                               "chemkin/polymer_pools.json")) as fh:
-            artifact = json.load(fh)
-        species, reactions = load_chem_yaml(
-            os.path.join(_POLY102_RUN, "cantera/chem0079.yaml"))
-        rs, core, _ = build_system_from_artifact(
-            artifact, species, reactions,
-            T0=1100.0, P=1.0e5, V_poly=1.0 / 1050.0,
-            initial_moles={"N2": 0.90, "H(1)": 0.001},
-            mass_transfer_spec=[], initial_moments=None,
-            allow_stale=True, atol=1e-12, rtol=1e-6)
-        y0 = np.array(rs.y, dtype=float).copy()
-        dn0 = rs.residual(0.0, y0, np.zeros_like(y0))[0]
-        rs.initialize(0.0, y0.copy(), dn0, atol=1e-12, rtol=1e-6)
-        wall = time.monotonic()
-        budgets = {13.0: 120.0, 14.0: 400.0, 14.5: 500.0}
-        for t, budget in budgets.items():
-            rs.advance(t)
-            assert time.monotonic() - wall < budget, (t, "wall budget")
-            y = np.asarray(rs.y)
-            assert np.all(np.isfinite(y)), t
-            rs._assert_pool_moments_accepted()
-        assert rs.t >= 14.5 - 1e-9    # crossed the old death locus
+        """The from-deck rtol=1e-6 replay crosses its full stress window."""
+        import multiprocessing
+        import queue
+
+        context = multiprocessing.get_context()
+        result = context.Queue()
+        process = context.Process(
+            target=_run_prestress_fromdeck_rtol_1e6, args=(result,))
+        started = time.monotonic()
+        process.start()
+        try:
+            for target, budget in ((13.0, 120.0), (14.0, 400.0),
+                                   (14.5, 500.0)):
+                remaining = max(0.0, budget - (time.monotonic() - started))
+                try:
+                    status, detail = result.get(timeout=remaining)
+                except queue.Empty:
+                    pytest.fail(
+                        f"from-deck rtol=1e-6 replay exceeded {budget:g} s "
+                        f"before t={target:g}")
+                assert status == "progress", detail
+                assert detail == target
+            status, detail = result.get(timeout=10.0)
+            assert status == "finished", detail
+            assert detail["accepted"] > 0
+            assert detail["max_rel_inventory_drift"] <= (
+                CLOSED_REPLAY_REL_INVENTORY_CEILING)
+            assert detail["max_rel_rhs_mass_balance"] <= 1.0e-9
+            process.join(timeout=10.0)
+            assert not process.is_alive(), "replay child did not exit"
+            assert process.exitcode == 0, process.exitcode
+        finally:
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=10.0)
+                if process.is_alive():
+                    process.kill()
+                    process.join()
+            result.close()
+            result.join_thread()
 
     def test_death_configuration_replay_through_crash_window(self):
         rs, core = self._reconstruct()

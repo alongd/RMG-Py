@@ -56,6 +56,7 @@ from rmgpy.solver.polymer import (
     BUNDLE_LIMITER_SOFTMIN_P,
     CONE_B1_NOISE_REL_FLOOR,
     CONE_MARGIN_M_HI,
+    CONE_MARGIN_M_INNER,
     CONE_MARGIN_M_LO,
     EXHAUSTION_FLOOR_K,
     SMALL_EPS,
@@ -146,7 +147,7 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
     non-end-group, length-biased cone-shrinking debits b1 > b0 = 1):
         Q10 = mu1 - mu0 <= 0        -> 0 REGARDLESS of E
         M = Q10[mol]/floor >= M_hi  -> S_free EXACTLY (margin safely bulk)
-        M <= M_lo                   -> NARROWED dead band (I-090), on the
+        M <= M_inner                -> NARROWED dead band (I-090), on the
                                        b1 axis: 0 EXACTLY once b1 - 1 has
                                        left the RELATIVE width the state
                                        cannot resolve,
@@ -156,8 +157,12 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
                                        C1 smoothstep to softmin_p(S_free,
                                        S_cone) as b1 -> 1+, where S_cone
                                        DIVERGES and so bounds nothing
-        between                     -> C1 v-smoothstep blend of S_free and
-                                       softmin_p(S_free, S_cone)
+        M_inner < M < M_lo          -> C1 ramp from the narrowed completion
+                                       completion to softmin_p(S_free, S_cone)
+        M = M_lo                    -> continuous soft-min edge cap
+        M_lo < M < M_hi             -> original C1 v-smoothstep blend of the
+                                       soft-min cap into S_free, bit-identical
+                                       to 039153297
     End-group rows (round-62 N5b adjudicated fix) SKIP stage 2 entirely
     and return S_free unconditionally after stage 1: the end-group
     uniform-pick debit (dmu0, dmu1) = (1, mu1/mu0)*rate makes Q10 =
@@ -223,7 +228,8 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
     m_dist = q10 * v_poly / floor     # margin in MOLES vs the mol floor
     if m_dist >= CONE_MARGIN_M_HI:
         return s_free
-    # N5b round-62 DASSL-hang dead band, as NARROWED by I-090 (keep in sync
+    # N5b round-62 DASSL-hang dead band, as narrowed by I-090 and conditioned
+    # at sub-floor bundle amplitude by I-067 (keep in sync
     # with HybridPolymerSystem._bundle_limited_site and the numpy oracle
     # consumer -- three copies, one law). Below M_lo q10 is itself
     # sub-floor-scale cancellation noise, so the exact hard zero beats
@@ -235,26 +241,42 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
     # the same exact zero, C1 at both ends. The neighbourhood is the RELATIVE
     # width the accepted state cannot resolve, (ewt(mu1) + ewt(mu2))/mu1 with
     # the integrator's own error weight ewt(mu_k) = rtol*mu_k + floor,
-    # floored at sqrt(machine eps). Moments here are per-volume while `floor`
-    # is in moles, so the band is formed on the MOLE basis (b1 is
-    # basis-invariant). Derivation in the solver's I-090 block comment.
-    if m_dist <= CONE_MARGIN_M_LO:
-        b1_band = ((rtol * (mu1 + mu2) * v_poly + floor + floor)
-                   / (mu1 * v_poly))
-        b1_band = max(b1_band, CONE_B1_NOISE_REL_FLOOR)
-        b1_n = (b1c - 1.0) / b1_band
-        if b1_n >= 1.0:
-            return 0.0
-        s_cone = q10 / (b1c - 1.0)
-        if s_free <= 0.0:
-            return s_free
-        cap = _softmin_p([s_free, s_cone])
-        u = 1.0 - b1_n * b1_n * (3.0 - 2.0 * b1_n)
-        return u * cap
+    # floored at sqrt(machine eps).  Below E_lo, I-067 continuously blends
+    # that band toward softmin(band, Q10/(mu0+mu1+mu2)); the second term is the
+    # scale-free fraction of the complete moment bundle held in the cone
+    # reserve, so absolute floors cannot reopen a resolved fixed-shape drain
+    # merely because the whole bundle is sub-floor.  The E weight meets the
+    # old law with matching value and slope at E_lo, while the later hard
+    # floor can introduce a derivative kink; the complete floored law is
+    # therefore continuous, not generally C1.  The u completion itself has
+    # zero endpoint slopes at its b1 handoffs. Moments here are per-volume
+    # while `floor` is in moles, so the band is formed on the MOLE basis (b1
+    # is basis-invariant). Derivation in the solver's I-090 block comment.
+    b1_band = ((rtol * (mu1 + mu2) * v_poly + floor + floor)
+               / (mu1 * v_poly))
+    if e_dist < BUNDLE_LIMITER_E_LO:
+        e_n = e_dist / BUNDLE_LIMITER_E_LO
+        w = e_n * e_n * (3.0 - 2.0 * e_n)
+        cone_band = _softmin_p([b1_band, q10 / (mu0 + mu1 + mu2)])
+        b1_band = w * b1_band + (1.0 - w) * cone_band
+    b1_band = max(b1_band, CONE_B1_NOISE_REL_FLOOR)
+    b1_n = (b1c - 1.0) / b1_band
     s_cone = q10 / (b1c - 1.0)
     if s_free <= 0.0:
         return s_free
     cap = _softmin_p([s_free, s_cone])
+    if b1_n >= 1.0:
+        narrowed = 0.0
+    else:
+        u = 1.0 - b1_n * b1_n * (3.0 - 2.0 * b1_n)
+        narrowed = u * cap
+    if m_dist <= CONE_MARGIN_M_INNER:
+        return narrowed
+    if m_dist < CONE_MARGIN_M_LO:
+        z_n = ((m_dist - CONE_MARGIN_M_INNER)
+               / (CONE_MARGIN_M_LO - CONE_MARGIN_M_INNER))
+        z = z_n * z_n * (3.0 - 2.0 * z_n)
+        return z * cap + (1.0 - z) * narrowed
     v_n = ((m_dist - CONE_MARGIN_M_LO)
            / (CONE_MARGIN_M_HI - CONE_MARGIN_M_LO))
     v = v_n * v_n * (3.0 - 2.0 * v_n)
@@ -2455,6 +2477,24 @@ class TestHybridPolymerReactor:
         assert len(rs.atol_array) == 7
         assert len(rs.rtol_array) == 7
 
+    def test_initial_derivative_satisfies_residual(self):
+        """The y-prime handed to DASPK must satisfy G(t0, y0, y-prime)=0.
+
+        This pins the sign convention for every differential state, including
+        the appended weak-link U slot.  A sign-reversed initial derivative is
+        an inconsistent initial condition; initially empty produced states
+        then dominate DASPK's weighted error and can collapse the first step.
+        """
+        rs = self._qssa_m2_system(
+            self._qssa_m2_pool(_weaklink_exact_channel(
+                ki_A=1.0e-3, kdp_A=1.0e-3, kia_A=1.0e-9,
+                ktrec_A=50.0, ktdisp_A=50.0)),
+            moments=(1.0, 5.0, 30.0))
+
+        residual = rs.residual(
+            rs.t0, rs.y0.copy(), rs.dydt0.copy())[0]
+        assert np.array_equal(residual, np.zeros(rs.neq))
+
     def test_weaklink_sensitivity_layout_not_supported(self):
         """The DASPK sensitivity layout interleaves per-species blocks; a
         trailing U slot does not fit it. Refuse loudly instead of silently
@@ -4002,12 +4042,11 @@ class TestHybridPolymerReactor:
 
     def test_cross_pool_reverse_flux_vanishes_continuously(self):
         """
-        Continuity: as the debited pool's moments -> 0 (fixed distribution
-        shape, amplitudes spanning the healthy bulk, the limiter band and
-        the census band under the 1e-14 mol floor) the outbound mu2 drain
-        decreases monotonically toward 0 with no step at any threshold and
-        no cliff at the floor (r86 re-adjudication; the run-9d H-early
-        wake-up shape must see a continuous RHS across the floor crossing).
+        Sub-floor correction to the I-090 cone dead band (ec597591ff) as
+        the debited pool's moments approach the error-weight floor.
+        Resolved b1 > 1 signal is hard zeroed in the tail at every
+        amplitude; an absolute error-weight must not make every ratio
+        unresolved merely because the inventory itself is sub-floor.
         Round-27 P1-A two-regime law: LINEAR in s at the plain S_base law
         in bulk (E >= 1e4 floors), LINEAR in s at the hard-capped law in
         the tail (E <= 1e2 floors), C1-blended in between. Pre-fix the
@@ -4032,28 +4071,21 @@ class TestHybridPolymerReactor:
             rs.kb[0] = 0.6
             dn_dt = rs.residual(0.0, rs.y, np.zeros_like(rs.y))[0]
             drains.append(-dn_dt[7])
-        # Monotone decrease toward 0, all finite and positive (still live --
-        # INCLUDING the sub-floor amplitude s = 1e-18: census only, no
-        # projected-to-zero cliff at the floor).
-        assert (drains[0] > drains[1] > drains[2] > drains[3]
-                > drains[4] > 0.0)
+        # Bulk and transition-band points decrease monotonically.  At s=1e-15
+        # b1 - 1 is resolved at both tail amplitudes, so the cone dead band
+        # is exact zero.  The sub-floor amplitude must not reopen the drain.
+        assert drains[0] > drains[1] > drains[2] > 0.0
+        assert drains[3] == 0.0
+        assert drains[4] == 0.0
         # Bulk regime: linear in s at the UNCAPPED S_base law -- the
         # limiter is exactly inactive.
         assert drains[1] / drains[0] == pytest.approx(1.0e-3, rel=1e-9)
         mu3_b = 1.9 * (610.0 / 26.0) ** 3
         bB2 = mu3_b / 26.0
         assert drains[0] == pytest.approx(0.6 * 26.0e-6 * bB2, rel=1e-9)
-        # Tail regime: linear in s at the hard-capped law (every moment's
-        # drain vanishes linearly near exhaustion), THROUGH the floor.
-        assert drains[4] / drains[3] == pytest.approx(1.0e-3, rel=1e-9)
-        assert drains[3] == pytest.approx(
-            0.6 * _s_eff((1.9e-15, 26.0e-15, 610.0e-15)) * bB2, rel=1e-9,
-            abs=0.0)
         # The in-band point interpolates strictly between the two lines:
         # below the bulk line, above the tail line (both scaled to s).
         assert drains[2] < 0.6 * 26.0e-12 * bB2
-        assert drains[2] > 0.6 * _s_eff((1.9e-18, 26.0e-18, 610.0e-18)) \
-            * bB2 * 1.0e6
         # And matches the two-regime law mirror exactly.
         assert drains[2] == pytest.approx(
             0.6 * _s_eff((1.9e-12, 26.0e-12, 610.0e-12)) * bB2, rel=1e-9,
@@ -4283,26 +4315,18 @@ class TestHybridPolymerReactor:
         # mu1 residue is a pure A<->B transfer (conserved); mu2 is not.
         assert dn_dt[2] + dn_dt[6] == pytest.approx(0.0, abs=1e-12)
 
-    def test_cross_pool_ve_detailed_balance_in_depletion_band(self):
+    def test_cross_pool_ve_directional_gate_in_depletion_handoff(self):
         """
-        Round-27 P1-A DEPLETION-BAND companion to the bulk detailed-balance
-        pin, re-pinned round-30 to the SOFT law: the SAME closure-matched
+        I-072 DEPLETION-HANDOFF companion to the bulk detailed-balance pin:
+        the SAME closure-matched
         unequal-PDI construction scaled by 1e-10 puts both pools inside
         the limiter tail (E_A ~ 7.3, E_B ~ 4 floors, both <= E_lo = 1e2)
-        AND inside the cone-margin band (M_A ~ 93, M_B ~ 46 floors, both
-        <= M_lo = 1e2), where each leg runs at the fully active SOFT cap
-        (round-29 N2 softmin_p + round-30 N1 cone gate) of the pool it
-        debits. Only here does the balance point move off the advertised
-        law to C_G* = Keq * S_eff(A)/S_eff(B), with the regularized S_eff
-        strictly below S_base on both sides. The soft-law pin is
-        TIE-SENSITIVE (round-30 P2: the old hard-min assertion was
-        vacuous at this 1e-14 scale -- pytest.approx's default abs=1e-12
-        swallowed a ~9% deviation): S_eff must sit measurably BELOW the
-        hard min of its own terms (the softmin tie bias, >= 2% here) and
-        match the two-stage serial-fold mirror to rel 1e-12 with abs=0.
-        At the soft-law C_G* every affected row is zero to rtol 1e-9 (the
-        bundle matching bA1 = bB1 + a, bA2 = bB2 + 2*a*bB1 + a^2 is
-        scale-invariant).
+        with M_A ~ 93 in the widened handoff and M_B ~ 46 in the retained
+        dead band. Both b1 - 1 signals are resolved relative to the I-090
+        noise band, so the A debit is live and the B debit stays exactly off.
+        The pin checks that this direction-aware boundary changes only the
+        intended one-way event rate, at magnitudes already below the accepted
+        moment floors.
         """
         a = 1.135
         scale = 1.0e-10
@@ -4315,41 +4339,19 @@ class TestHybridPolymerReactor:
         mu_a = (mu1_a * bA2 / bA1 ** 3, mu1_a, bA1 * mu1_a)
         rxn, rs = self._detailed_balance_rs(mu_a, mu_b, a)
 
-        # Tail + cone-band regime on both sides: S_eff is the fully
-        # active SOFT cap, strictly below the plain site (the defining
-        # contrast with the bulk pin above).
+        # I-072 keeps M <= 50 in the dead band and ramps M=50..100.
         s_a, s_b = _s_eff(mu_a), _s_eff(mu_b)
-        assert s_a < mu_a[1] * (1.0 - 1e-9)
-        assert s_b < mu_b[1] * (1.0 - 1e-9)
+        assert s_a > 0.0
+        assert s_b == 0.0
 
-        def soft_mirror(mu, b1, b2):
-            # independent serial-fold recompute: stage 1 fold of
-            # (s_base, softmin over per-moment caps), then stage 2 fold
-            # with the cone-margin cap (M < M_lo on both pools here).
-            s_free = _softmin_p([mu[1],
-                                 _softmin_p([mu[0], mu[1] / b1,
-                                             mu[2] / b2])])
-            return _softmin_p([s_free, (mu[1] - mu[0]) / (b1 - 1.0)])
-
-        for s_eff, mu, b1, b2 in ((s_a, mu_a, bA1, bA2),
-                                  (s_b, mu_b, bB1, bB2)):
-            hard = min(mu[1], mu[0], mu[1] / b1, mu[2] / b2,
-                       (mu[1] - mu[0]) / (b1 - 1.0))
-            # tie-sensitive: measurably BELOW the hard min (abs=0!)...
-            assert s_eff < hard * 0.98
-            # ... and exactly the soft two-stage law, to rel 1e-12.
-            assert s_eff == pytest.approx(soft_mirror(mu, b1, b2),
-                                          rel=1e-12, abs=0.0)
-
-        c_g_star = (rs.kf[0] / rs.kb[0]) * (s_a / s_b)
         y = rs.y.copy()
-        y[8] = c_g_star
+        y[8] = 1.0
         dn_dt = rs.residual(0.0, y, np.zeros_like(y))[0]
         ev = rs.kf[0] * s_a
-        assert ev > 0.0
-        refs = ev * np.array([1.0, bA1, bA2, 1.0, bA1, bA2, 1.0])
-        for row, ref in zip((1, 2, 3, 5, 6, 7, 8), refs):
-            assert abs(dn_dt[row]) <= 1e-9 * ref
+        expected = ev * np.array(
+            [-1.0, -bA1, -bA2, 1.0, bB1, bB2, 1.0])
+        assert dn_dt[[1, 2, 3, 5, 6, 7, 8]] == pytest.approx(
+            expected, rel=1e-12, abs=0.0)
 
     def test_bundle_limiter_two_regime_unit_pins(self):
         """
@@ -4361,8 +4363,8 @@ class TestHybridPolymerReactor:
         * BULK (E >= E_hi AND M >= M_hi): returns s_base EXACTLY (bitwise
           ==, not approx) -- healthy pools never feel the limiter, even
           when the bundle cap sits far below s_base (PDI > 1 shape).
-        * TAIL (E <= E_lo AND M <= M_lo): stage 1's soft cap is fully
-          active (fold(s_base, cap)), but stage 2's M <= M_lo dead band
+        * TAIL (E <= E_lo AND M <= M_inner): stage 1's soft cap is fully
+          active (fold(s_base, cap)), but stage 2's M <= M_inner dead band
           (round-62 N5b DASSL-hang fix) returns the EXACT hard zero
           instead of trusting cap/s_cone's noise-scale magnitude down
           there -- q10 itself is sub-floor-scale cancellation noise in
@@ -4410,7 +4412,7 @@ class TestHybridPolymerReactor:
         assert rs._bundle_availability_cap(1, y, 1.0, False) < 0.05 * s_base
 
         # TAIL: E = 0.19, M = 2.41 floors -> stage 1's soft cap is fully
-        # active, but M <= M_lo (round-62 N5b dead band) hard-zeroes the
+        # active, but M <= M_inner (round-62 N5b dead band) hard-zeroes the
         # row EXACTLY rather than folding in cap/s_cone's noise-scale
         # magnitude.
         s_base, s_eff = solver_s_eff(1.0e-15)
@@ -4444,8 +4446,9 @@ class TestHybridPolymerReactor:
         assert fold(s_base, cap) < s_eff < s_base
 
         # DUAL-BAND (s = 1e-12: E = 190, M = 2410, both mid-band): the
-        # full serial law -- stage 1 blend, then stage 2 v-blend against
-        # fold(s_free, s_cone).
+        # full serial law -- stage 1 blend, then the original stage 2
+        # v-blend against fold(s_free, s_cone). I-069 rework restores this
+        # pin because every M > M_LO value is bit-identical to 039153297.
         s_base, s_eff = solver_s_eff(1.0e-12)
         cap = rs._bundle_availability_cap(1, y, 1.0, False)
         s_free = stage1(s_base, cap)
@@ -4603,12 +4606,9 @@ class TestHybridPolymerReactor:
         Round-62 N5b DASSL-hang fix, requirement (d): sweeping q10 (via
         mu1, holding mu0 fixed and bulk) across BOTH the M_lo and M_hi
         cone-margin band edges must show exactly ONE admissible
-        discontinuity -- the accepted jump from 0 (sub-M_lo dead band) up
-        to softmin_p(s_free, s_cone) AT the M_lo edge (documented in
-        _bundle_limited_site's N5b comment) -- with NO sign-dependent
-        toggling (no zero samples above the jump, no repeated
-        zero/nonzero alternation) and non-decreasing values from the edge
-        onward through the v-blend into the M_hi bulk region.
+        transition from the M <= M_inner dead band through the widened ramp
+        and original M blend, with NO sign-dependent toggling and
+        non-decreasing values onward into the M_hi bulk region.
         """
         sp, core, mask = _two_pool_species()
         rxn = Reaction(reactants=[sp["A"]], products=[sp["B"]], **_KIN)
@@ -4631,17 +4631,122 @@ class TestHybridPolymerReactor:
         vals = np.array(vals)
         m_dist_grid = q10_grid / floor
 
-        below = vals[m_dist_grid <= 1.0e2]
-        above = vals[m_dist_grid > 1.0e2]
-        assert np.all(below == 0.0)
-        assert np.all(above > 0.0)  # no toggling back to zero past the edge
+        dead = vals[m_dist_grid <= CONE_MARGIN_M_INNER]
+        above = vals[m_dist_grid > CONE_MARGIN_M_INNER]
+        assert np.all(dead == 0.0)
+        assert np.all(above > 0.0)  # no toggling back to zero past inner edge
         assert np.all(np.diff(above) >= -1e-12 * np.max(above))  # monotone
-        # Exactly one contiguous zero -> nonzero transition (single jump).
+        # Exactly one contiguous zero -> nonzero transition.
         nonzero_mask = vals > 0.0
         assert np.sum(np.diff(nonzero_mask.astype(int)) == 1) == 1
         # Above M_hi: bulk s_free (== s_base) exactly.
         bulk = vals[m_dist_grid >= 1.0e4]
         assert np.all(bulk == mu0 + q10_grid[m_dist_grid >= 1.0e4])
+
+    @pytest.mark.parametrize("b1_n", [0.2, 0.5, 0.8])
+    def test_bundle_limiter_m_lo_handoff_is_continuous(self, b1_n):
+        """The widened inner ramp must meet the original M-band cap at M_LO."""
+        sp, core, mask = _two_pool_species()
+        rxn = Reaction(reactants=[sp["A"]], products=[sp["B"]], **_KIN)
+        rxn.polymer_flux_archetype = 6
+        rxn.polymer_eject_units = 1.135
+        rs = _two_pool_rs(rxn, core, mask, (1.0, 5.0, 30.0),
+                          (1.0, 5.0, 30.0))
+        y = rs.y.copy()
+        floor = 1.0e-14
+        mu0 = 1.0e6 * floor
+
+        def site_at(m_dist):
+            mu1 = mu0 + m_dist * floor
+            # Solve b1_n = (b1c - 1) / b1_band for b1c, using the
+            # bulk-E band law b1_band = rtol*(1 + b1c) + 2*floor/mu1.
+            delta = (b1_n * (2.0 * rs._cone_b1_rtol + 2.0 * floor / mu1)
+                     / (1.0 - b1_n * rs._cone_b1_rtol))
+            mu2 = mu1 * (1.0 + delta)
+            y[5], y[6], y[7] = mu0, mu1, mu2
+            actual_m = (y[6] - y[5]) / floor
+            actual_band = (rs._cone_b1_rtol * (y[6] + y[7])
+                           + 2.0 * floor) / y[6]
+            actual_b1_n = (y[7] / y[6] - 1.0) / actual_band
+            assert actual_b1_n == pytest.approx(b1_n, rel=1e-8)
+            s_cone = (mu1 - mu0) / (mu2 / mu1 - 1.0)
+            edge_value = _softmin_p([mu1, s_cone])
+            return (actual_m,
+                    rs._bundle_limited_site(1, y, 1.0, False, mu1),
+                    edge_value)
+
+        left_m, left, left_edge = site_at(
+            CONE_MARGIN_M_LO * (1.0 - 1.0e-6))
+        right_m, right, right_edge = site_at(
+            CONE_MARGIN_M_LO * (1.0 + 1.0e-6))
+        assert left_m < CONE_MARGIN_M_LO < right_m
+        assert left > 0.0
+        assert left == pytest.approx(right, rel=5.0e-6)
+        assert left == pytest.approx(left_edge, rel=5.0e-6)
+        assert right == pytest.approx(right_edge, rel=5.0e-6)
+
+    @pytest.mark.parametrize(
+        "moments, expected",
+        [
+            ((0.001, 0.0010005, 0.0010015),
+             float.fromhex("0x1.875c62dc5ecccp-11")),
+            ((0.001, 0.00100002, 0.00100052001),
+             float.fromhex("0x1.51fe247717a35p-15")),
+            ((0.001, 0.0010009, 0.00100100009),
+             float.fromhex("0x1.0661431098b06p-10")),
+            ((0.001, 0.0010004, 0.001000410004),
+             float.fromhex("0x1.063fb521b558ep-10")),
+        ],
+    )
+    def test_bundle_limiter_preserves_original_law_above_m_lo(
+            self, moments, expected):
+        """M-band values above M_LO stay bit-identical to 039153297."""
+        sp, core, mask = _two_pool_species()
+        rxn = Reaction(reactants=[sp["A"]], products=[sp["B"]], **_KIN)
+        rxn.polymer_flux_archetype = 6
+        rxn.polymer_eject_units = 1.135
+        rs = _two_pool_rs(rxn, core, mask, (1.0, 5.0, 30.0), moments)
+        rs.initialize_model(core, [rxn], [], [], atol=1e-12, rtol=1e-4)
+        y = rs.y.copy()
+        m_dist = (y[6] - y[5]) / 1.0e-10
+        assert CONE_MARGIN_M_LO < m_dist < CONE_MARGIN_M_HI
+        actual = rs._bundle_limited_site(1, y, 1.0, False, y[6])
+        assert actual == expected
+
+    def test_bundle_limiter_inner_edge_is_c1(self):
+        """The hard-zero dead band hands into the M ramp continuously."""
+        sp, core, mask = _two_pool_species()
+        rxn = Reaction(reactants=[sp["A"]], products=[sp["B"]], **_KIN)
+        rxn.polymer_flux_archetype = 6
+        rxn.polymer_eject_units = 1.135
+        rs = _two_pool_rs(rxn, core, mask, (1.0, 5.0, 30.0),
+                          (1.0, 5.0, 30.0))
+        y = rs.y.copy()
+        floor = 1.0e-14
+        mu0 = 1.0e6 * floor
+
+        def site_at(m_dist):
+            mu1 = mu0 + m_dist * floor
+            # Decimal floor counts need not survive the subtraction exactly.
+            # Keep the nominal inner-edge sample on the dead-band side.
+            if m_dist == CONE_MARGIN_M_INNER:
+                while (mu1 - mu0) / floor > m_dist:
+                    mu1 = np.nextafter(mu1, mu0)
+            # A resolved b1 shape lies outside the I-090 completion band,
+            # so the deep endpoint is exactly zero.
+            mu2 = 2.0 * mu1
+            y[5], y[6], y[7] = mu0, mu1, mu2
+            return rs._bundle_limited_site(1, y, 1.0, False, mu1)
+
+        inner = CONE_MARGIN_M_INNER
+        eps = 1.0e-3
+        below = site_at(inner - eps)
+        edge = site_at(inner)
+        above = site_at(inner + eps)
+        assert below == edge == 0.0
+        assert above > 0.0
+        # The smoothstep leaves the inner edge with zero derivative.
+        assert above < 1.0e-5 * site_at(inner + 0.5)
 
     def test_regen2_born_empty_daughter_conduit_integration_repro(self):
         """
@@ -4786,9 +4891,9 @@ class TestHybridPolymerReactor:
           state (E >= E_hi, where the round-29 folded form slipped
           through the early return and the in-band form kept w*s_base
           alive: BOTH rejected round-30);
-        * Q10 > 0 with M = Q10/max(f0, f1) mid-band: the v-smoothstep
-          blend toward fold(S_free, S_cone), strictly below S_free,
-          pinned against a hand mirror;
+        * Q10 > 0 with M = Q10/max(f0, f1) mid-band: the original
+          v-smoothstep blend toward softmin(S_free, S_cone), strictly below
+          S_free, pinned against a hand mirror;
         * Q10 > 0 with M >= M_hi: S_eff == s_base bitwise (margin safely
           bulk, both gates exactly inactive).
         """
@@ -4824,8 +4929,9 @@ class TestHybridPolymerReactor:
         # independent cone gate zeroes it.
         assert rs._bundle_availability_cap(1, y, 1.0, False) > 0.0
 
-        # (c) Q10 > 0, M mid-band, E bulk: v-blend toward
-        # fold(S_free = s_base, S_cone), strictly below s_base.
+        # (c) Q10 > 0, M mid-band, E bulk: the original v-blend toward the
+        # soft cone cap. I-069 rework restores this pin because the narrower
+        # fix changes only the M=50..100 interval immediately below M_LO.
         q10 = 5.0e-7                        # M = 5e3, mid-band
         y[5], y[6], y[7] = 1.0e-3, 1.0e-3 + q10, 1.8e-3
         assert rs._pool_floor_distance(1, y) >= 1.0e4   # E bulk
@@ -4836,11 +4942,12 @@ class TestHybridPolymerReactor:
         q10y = y[6] - y[5]
         m_dist = q10y / floor
         assert 1.0e2 < m_dist < 1.0e4
-        s_cone = q10y / (b1c - 1.0)
         v_n = (m_dist - 1.0e2) / (1.0e4 - 1.0e2)
         v = v_n * v_n * (3.0 - 2.0 * v_n)
+        s_cone = q10y / (b1c - 1.0)
         m = min(s_base, s_cone)
-        fold2 = m * ((m / s_base) ** 8.0 + (m / s_cone) ** 8.0) ** (-1.0 / 8.0)
+        fold2 = m * ((m / s_base) ** 8.0
+                     + (m / s_cone) ** 8.0) ** (-1.0 / 8.0)
         assert s_eff == pytest.approx(v * s_base + (1.0 - v) * fold2,
                                       rel=1e-12, abs=0.0)
         assert 0.0 < s_eff < s_base
@@ -13478,14 +13585,11 @@ class TestSubatolExportClamp:
 
 
 class TestRtolNearFloorConviction:
-    """Round-35 K2 conviction of deck rtol=1e-4 for pool moments near the
-    r81 floors (pre-regen P1 of record; format doc section 4b). Post
-    round-37 policy: rtol=1e-6 fixes THIS minimal fixture but is NOT
-    full-system safe (IDID=-7 at t = 24.639 on the exact-crash replay;
-    grind + sub-floor drag on the from-deck window) -- NO regen deck
-    tolerance is currently certified; regen attempts before the
-    solver-conditioning fix are forensic-only at rtol=1e-4 with an
-    abort-on-H1/IDID protocol.
+    """Near-floor tolerance canaries after I-061 (74df5e84df) floored the
+    DASPK error weight on structural moment slots.  Both rtol=1e-6 and
+    rtol=1e-4 must follow this minimal fixture's RHS faithfully through
+    exhaustion.  This local canary does not certify either tolerance for
+    every full-system replay.
 
     Minimal two-pool fixture: pool C (1e-8 mol, 100 floors at atol=1e-12)
     drained by a single irreversible end-group VE conduit
@@ -13493,20 +13597,11 @@ class TestRtolNearFloorConviction:
     transferring to gas G2 chain-by-chain. Ground truth: the RHS drains C
     at ~1e-7 mol/s -- C empties within ~0.5 s of integrated flux.
 
-    Measured (round-35, no-F-gate law): at rtol=1e-6 DASPK follows the
-    RHS faithfully (C fully drained by t = 50, final |C| ~ 3.6e-14 mol,
-    sub-atol; G2 receives the exact initial inventory; dn -> 0). At
-    rtol=1e-4 the ACCEPTED trajectory decouples from the RHS by ~4
-    decades: C retains ~90% of its inventory at t = 100 while its own
-    RHS says -9.6e-8 mol/s throughout (books between C and G2 stay
-    consistent -- the corruption is trajectory-vs-RHS, not
-    book-vs-book on this fixture; the gated rounds-33/34 laws showed
-    the harder signature, sign-violating climbs with G2 driven
-    negative). NOTE (spec conflict pinned, round-35): the adjudication
-    described the clean 1e-6 endpoint as "parks ~1.18 floors with
-    dn -> 0" -- that park was an artifact of the (reverted) sub-floor
-    F-gate; under the reverted law the correct 1e-6 behavior is a FULL
-    drain through the floor to ~0, which is what this pin asserts."""
+    Before 74df5e84df, rtol=1e-4 accepted a trajectory that decoupled from
+    the RHS by about four decades and retained about 90% of C at t=100.
+    With the structural-slot error-weight floor, both tolerances drain C
+    to a sub-atol remnant, transfer the complete inventory to G2, and end
+    with a quiescent RHS."""
 
     def _fixture(self, rtol):
         sp = {
@@ -13575,22 +13670,19 @@ class TestRtolNearFloorConviction:
         assert abs(dn[2]) <= 1.0e-12
 
     def test_rtol_1e4_near_floor_conviction_canary(self):
-        """DOCUMENTED CANARY (loose by design; round-35 K2 conviction):
-        at rtol=1e-4 the accepted trajectory decouples from the RHS by
-        decades -- C retains most of its inventory at t = 100 while the
-        RHS at every accepted state drains it ~1e4x faster than the
-        realized rate. If DASPK behavior changes and this starts
-        tracking the RHS, the canary fails LOUDLY: re-measure, update
-        the format doc section 4b conviction, and report."""
+        """I-061 conviction: the moment error-weight floor keeps the loose
+        rtol=1e-4 trajectory faithful through exhaustion.  C drains to a
+        sub-atol remnant, G2 receives its inventory, and the terminal RHS is
+        quiescent, just as in the tighter-tolerance sibling above."""
         rs = self._fixture(rtol=1e-4)
         rs.advance(100.0)
         y = np.asarray(rs.y)
         dn = np.asarray(rs.residual(100.0, y.copy(),
                                     np.zeros_like(y))[0])
-        # C should be EMPTY by now per its own RHS; it is not even close.
-        assert y[2] > 0.3 * 1.0e-8            # observed ~0.90e-8
-        realized = (1.0e-8 - y[2]) / 100.0    # average realized drain
-        assert abs(dn[2]) > 100.0 * realized  # observed ~1.2e4x
+        assert abs(y[1]) <= 1.0e-12 and abs(y[2]) <= 1.0e-12
+        assert y[1] + y[9] == pytest.approx(1.0e-8, rel=2e-5)
+        assert y[9] == pytest.approx(1.0e-8, rel=2e-5, abs=0.0)
+        assert abs(dn[2]) <= 1.0e-12
 
 
 class TestSpawnGateDefectAwareMass:

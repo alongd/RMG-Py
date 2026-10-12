@@ -44,6 +44,8 @@ from rmgpy.chemkin import (
     save_chemkin_surface_file,
     save_species_dictionary,
     save_transport_file,
+    read_reactions_block,
+    write_kinetics_entry,
     write_thermo_entry,
 )
 from rmgpy.chemkin import _remove_line_breaks, _process_duplicate_reactions
@@ -1044,6 +1046,30 @@ class TestLongLabelSpeciesIdentifier:
     def test_short_labels_unchanged(self):
         spc = self._mu_dummy("epdm_mu0")
         assert get_species_identifier(spc) == "epdm_mu0"
+
+    def test_long_non_polymer_label_roundtrips_through_reaction_block(self, tmpdir):
+        """Long ordinary labels must agree between the reaction writer and reader."""
+        from rmgpy.molecule import Molecule
+
+        reactant = Species(label="hydroperoxylvinoxy", reactive=True)
+        reactant.molecule = [Molecule().from_smiles("[CH2]C(=O)OO")]
+        product = Species(label="acetylperoxy", reactive=True)
+        product.molecule = [Molecule().from_smiles("CC(=O)O[O]")]
+        reaction = Reaction(
+            reactants=[reactant], products=[product],
+            kinetics=Arrhenius(A=(1.0, "s^-1"), n=0, Ea=(0, "kcal/mol")),
+        )
+        chem_path = os.path.join(str(tmpdir), "chem.inp")
+        with open(chem_path, "w") as chemkin_file:
+            chemkin_file.write("REACTIONS\n")
+            chemkin_file.write(write_kinetics_entry(reaction, [reactant, product], verbose=False))
+            chemkin_file.write("END\n")
+
+        with open(chem_path) as chemkin_file:
+            loaded_reactions = read_reactions_block(
+                chemkin_file, {reactant.label: reactant, product.label: product}
+            )
+        assert loaded_reactions[0].reactants == [reactant]
 
     def test_distinct_long_labels_get_distinct_identifiers(self):
         labels = ["epdm_scission_tail_mu0", "epdm_scission_head_mu0",

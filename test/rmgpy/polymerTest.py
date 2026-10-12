@@ -2691,8 +2691,9 @@ class TestPolymerThermo:
             Tmin=(298, 'K'), Tmax=(3000, 'K'), Cp0=(30, 'J/(mol*K)'), CpInf=(100, 'J/(mol*K)'))
         self.proxy.thermo = self.dummy_thermo
 
-    def test_get_thermo_data_modes(self):
+    def test_get_thermo_data_modes(self, monkeypatch):
         """Verify 'baseline' vs 'feature' mode selection in thermo retrieval."""
+        monkeypatch.setattr('rmgpy.data.rmg.database', None)  # no global thermo DB, whatever ran earlier
         assert self.pe_polymer.get_thermo_data(mode='auto') is self.dummy_thermo
         with pytest.raises(RuntimeError):
             self.pe_feat.get_thermo_data(mode='feature')
@@ -2704,8 +2705,9 @@ class TestPolymerThermo:
         G_exp = self.dummy_thermo.get_free_energy(T)
         assert G_pol == G_exp
 
-    def test_get_thermo_data_runtime_error_on_none(self):
+    def test_get_thermo_data_runtime_error_on_none(self, monkeypatch):
         """Ensure clear error if proxy exists but thermo generation fails."""
+        monkeypatch.setattr('rmgpy.data.rmg.database', None)  # no global thermo DB, whatever ran earlier
         self.proxy.thermo = None
         with pytest.raises(RuntimeError) as excinfo:
             self.pe_polymer.get_thermo_data()
@@ -3174,7 +3176,7 @@ class TestPolymerAdditionalCoverage:
         assert len(result_mixed) == 2
         assert all(not isinstance(x, (str, int)) for x in result_mixed)
 
-    def test_stitch_trimer_copolymer_san(self):
+    def test_stitch_trimer_copolymer_san(self, monkeypatch):
         """
         Tests stitching a copolymer trimer (Styrene-Acrylonitrile-Styrene).
         Verifies that the feature_monomer is correctly placed in the center
@@ -3196,6 +3198,8 @@ multiplicity 3
         san_copoly = self.p.copy()
         san_copoly.label = "SAN_Copolymer"
         san_copoly.feature_monomer = Molecule().from_adjacency_list(an_adj)
+
+        monkeypatch.setattr('rmgpy.data.rmg.database', None)  # no global thermo DB, whatever ran earlier
 
         # 3. Stitch the 'Feature' Trimer: [PS]--[AN]--[PS]
         # Calling get_thermo_data(mode='feature') triggers the feature_proxy creation
@@ -4827,6 +4831,116 @@ def test_gas_radical_association_into_condensed_proxy_refused_conduit_deferred()
     stamp_gas_association_refusal(rxn_rev)
     assert rxn_rev.polymer_refused is True
     assert rxn_rev.polymer_refused_accumulating is False
+
+
+def test_gas_carbene_insertion_into_pe_proxy_refused_conduit_deferred():
+    """A featureless PE proxy exposes the same reference-state bridge through
+    1,2_Insertion_carbene: singlet methylene + pentane folds exactly onto the
+    condensed stitched proxy.  Both written orientations must be refused
+    conduit-deferred instead of reaching the solver as unstamped proxy rows.
+    """
+    from rmgpy.polymer import Polymer, stamp_gas_association_refusal
+    from rmgpy.species import Species
+    from rmgpy.molecule import Molecule
+    from rmgpy.reaction import Reaction
+
+    pe = Polymer(label="PE", monomer="[CH2][CH2]",
+                 end_groups=["[H]", "[H]"],
+                 Mn=5000.0, Mw=6000.0, initial_mass=0.05)
+    methylene = Species(molecule=[Molecule().from_adjacency_list("""
+1 C u0 p1 c0 {2,S} {3,S}
+2 H u0 p0 c0 {1,S}
+3 H u0 p0 c0 {1,S}
+""")])
+    pentane = Species(molecule=[Molecule().from_smiles("CCCCC")])
+    assert methylene.molecule[0].get_singlet_carbene_count() == 1
+
+    association = Reaction(reactants=[methylene, pentane], products=[pe],
+                           reversible=True)
+    stamp_gas_association_refusal(association)
+    assert association.polymer_refused is True
+    assert association.polymer_refused_accumulating is False
+
+    dissociation = Reaction(reactants=[pe], products=[methylene, pentane],
+                            reversible=True)
+    stamp_gas_association_refusal(dissociation)
+    assert dissociation.polymer_refused is True
+    assert dissociation.polymer_refused_accumulating is False
+
+
+def test_gas_carbon_monoxide_with_nonradical_against_pe_proxy_not_refused():
+    """A carbon lone pair alone is not a neutral singlet carbene.
+
+    Carbon monoxide has a lone pair on its negatively charged carbon, but CO
+    plus a closed-shell gas molecule is not the gas-carbene association bridge
+    guarded above.  It must remain available to the ordinary adjudication path.
+    """
+    from rmgpy.polymer import Polymer, stamp_gas_association_refusal
+    from rmgpy.species import Species
+    from rmgpy.molecule import Molecule
+    from rmgpy.reaction import Reaction
+
+    pe = Polymer(label="PE", monomer="[CH2][CH2]",
+                 end_groups=["[H]", "[H]"],
+                 Mn=5000.0, Mw=6000.0, initial_mass=0.05)
+    carbon_monoxide = Species(molecule=[Molecule().from_adjacency_list("""
+1 C u0 p1 c-1 {2,T}
+2 O u0 p1 c+1 {1,T}
+""")])
+    pentane = Species(molecule=[Molecule().from_smiles("CCCCC")])
+    assert carbon_monoxide.molecule[0].get_singlet_carbene_count() == 1
+
+    association = Reaction(reactants=[carbon_monoxide, pentane], products=[pe],
+                           reversible=True)
+    stamp_gas_association_refusal(association)
+    assert association.polymer_refused is False
+    assert association.polymer_refused_accumulating is False
+
+    dissociation = Reaction(reactants=[pe],
+                            products=[carbon_monoxide, pentane],
+                            reversible=True)
+    stamp_gas_association_refusal(dissociation)
+    assert dissociation.polymer_refused is False
+    assert dissociation.polymer_refused_accumulating is False
+
+
+def test_gas_carbanion_with_nonradical_against_pe_proxy_not_refused():
+    """A carbanion lone pair alone is not a neutral singlet carbene.
+
+    Methyl anion is counted by the molecule-level singlet-carbene helper, but
+    its charged carbon must not activate the gas-carbene proxy-bridge refusal.
+    Both written orientations stay available to ordinary adjudication.
+    """
+    from rmgpy.polymer import Polymer, stamp_gas_association_refusal
+    from rmgpy.species import Species
+    from rmgpy.molecule import Molecule
+    from rmgpy.reaction import Reaction
+
+    pe = Polymer(label="PE", monomer="[CH2][CH2]",
+                 end_groups=["[H]", "[H]"],
+                 Mn=5000.0, Mw=6000.0, initial_mass=0.05)
+    methyl_anion = Species(molecule=[Molecule().from_adjacency_list("""
+1 C u0 p1 c-1 {2,S} {3,S} {4,S}
+2 H u0 p0 c0 {1,S}
+3 H u0 p0 c0 {1,S}
+4 H u0 p0 c0 {1,S}
+""")])
+    pentane = Species(molecule=[Molecule().from_smiles("CCCCC")])
+    assert methyl_anion.molecule[0].get_singlet_carbene_count() == 1
+    assert methyl_anion.molecule[0].get_net_charge() == -1
+
+    association = Reaction(reactants=[methyl_anion, pentane], products=[pe],
+                           reversible=True)
+    stamp_gas_association_refusal(association)
+    assert association.polymer_refused is False
+    assert association.polymer_refused_accumulating is False
+
+    dissociation = Reaction(reactants=[pe],
+                            products=[methyl_anion, pentane],
+                            reversible=True)
+    stamp_gas_association_refusal(dissociation)
+    assert dissociation.polymer_refused is False
+    assert dissociation.polymer_refused_accumulating is False
 
 
 def test_gas_gas_gas_recombination_termination_not_refused():
