@@ -2691,8 +2691,9 @@ class TestPolymerThermo:
             Tmin=(298, 'K'), Tmax=(3000, 'K'), Cp0=(30, 'J/(mol*K)'), CpInf=(100, 'J/(mol*K)'))
         self.proxy.thermo = self.dummy_thermo
 
-    def test_get_thermo_data_modes(self):
+    def test_get_thermo_data_modes(self, monkeypatch):
         """Verify 'baseline' vs 'feature' mode selection in thermo retrieval."""
+        monkeypatch.setattr('rmgpy.data.rmg.database', None)  # no global thermo DB, whatever ran earlier
         assert self.pe_polymer.get_thermo_data(mode='auto') is self.dummy_thermo
         with pytest.raises(RuntimeError):
             self.pe_feat.get_thermo_data(mode='feature')
@@ -2704,8 +2705,9 @@ class TestPolymerThermo:
         G_exp = self.dummy_thermo.get_free_energy(T)
         assert G_pol == G_exp
 
-    def test_get_thermo_data_runtime_error_on_none(self):
+    def test_get_thermo_data_runtime_error_on_none(self, monkeypatch):
         """Ensure clear error if proxy exists but thermo generation fails."""
+        monkeypatch.setattr('rmgpy.data.rmg.database', None)  # no global thermo DB, whatever ran earlier
         self.proxy.thermo = None
         with pytest.raises(RuntimeError) as excinfo:
             self.pe_polymer.get_thermo_data()
@@ -3174,7 +3176,7 @@ class TestPolymerAdditionalCoverage:
         assert len(result_mixed) == 2
         assert all(not isinstance(x, (str, int)) for x in result_mixed)
 
-    def test_stitch_trimer_copolymer_san(self):
+    def test_stitch_trimer_copolymer_san(self, monkeypatch):
         """
         Tests stitching a copolymer trimer (Styrene-Acrylonitrile-Styrene).
         Verifies that the feature_monomer is correctly placed in the center
@@ -3196,6 +3198,8 @@ multiplicity 3
         san_copoly = self.p.copy()
         san_copoly.label = "SAN_Copolymer"
         san_copoly.feature_monomer = Molecule().from_adjacency_list(an_adj)
+
+        monkeypatch.setattr('rmgpy.data.rmg.database', None)  # no global thermo DB, whatever ran earlier
 
         # 3. Stitch the 'Feature' Trimer: [PS]--[AN]--[PS]
         # Calling get_thermo_data(mode='feature') triggers the feature_proxy creation
