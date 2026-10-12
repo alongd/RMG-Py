@@ -29,21 +29,30 @@ def digest(path):
 
 
 def structural_key(record):
-    from rmgpy.kmc.event_record import _canonical_link_handles
-
-    # Provenance, rates and corrected site classifications change event IDs,
-    # while the mapped chemical rewrite remains the same.
-    omitted = {"event_id", "canonical_index", "provenance", "rate_source", "k_table",
-               "reverse_of", "thermo_provenance", "status", "status_reason",
-               "site_type", "participant_site_types", "reactant_multiplicities"}
-    payload = json.dumps(_canonical_link_handles(
-        {k: v for k, v in record.items() if k not in omitted}), sort_keys=True)
+    # This comparison deliberately has no opinion about publication metadata.
+    # Keep only the mapped chemical rewrite, so a new operational field cannot
+    # make an unchanged reaction look missing.
+    payload = json.dumps(
+        {key: record.get(key) for key in (
+            "family", "reactant_graphs", "product_graphs", "atom_map",
+            "template", "degeneracy",
+        )} | {"junction_ops": [
+            {key: value for key, value in operation.items()
+             if key not in {"reverse_event_handle", "event_id"}}
+            for operation in (record.get("junction_ops") or [])
+        ]},
+        sort_keys=True,
+    )
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def index(artifact):
-    result = {structural_key(record): record for record in artifact["records"]}
-    assert len(result) == len(artifact["records"]), "ambiguous chemical rewrite identity"
+    # Multiple publication records may share a chemical rewrite while differing
+    # only in deliberately ignored operational metadata.  Any representative
+    # is sufficient for the structural comparisons below.
+    result = {}
+    for record in artifact["records"]:
+        result.setdefault(structural_key(record), record)
     return result
 
 
@@ -84,9 +93,15 @@ def representative(old, new, family):
         record = next(record for record in old["records"] if record["event_id"] == selected)
         return index(new)[structural_key(record)]
     # Freeze the representative against the old artifact, before seeing new rates.
-    record = next(record for record in old["records"] if record["family"] == family
-                  and record["rate_source"].get("kind") == "RMG family estimate")
-    return index(new)[structural_key(record)]
+    current = index(new)
+    # An applicability refusal may deliberately withhold an old representative.
+    # Retain the first old training-derived chemistry that remains published.
+    for record in old["records"]:
+        if (record["family"] == family
+                and record["rate_source"].get("kind") == "RMG family estimate"
+                and structural_key(record) in current):
+            return current[structural_key(record)]
+    raise AssertionError((family, "no published training-derived representative"))
 
 
 def _without_database_provenance(value):
