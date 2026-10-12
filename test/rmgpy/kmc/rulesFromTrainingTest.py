@@ -172,6 +172,18 @@ def cached_artifacts():
 ])
 def test_compiled_representative_selects_training_derived_rules(cached_artifacts, family, root):
     probe, old, new = cached_artifacts
+    original = next(
+        record for record in old["records"]
+        if record["family"] == family
+        and record["rate_source"].get("kind") == "RMG family estimate"
+    )
+    if family == "H_Abstraction" and probe.structural_key(original) not in probe.index(new):
+        assert any(
+            refusal.get("disposition") == "refused-unsupported-transfer"
+            and refusal.get("family") == original["family"]
+            and refusal.get("template") == original["template"]
+            for refusal in new.get("applicability_refusals", [])
+        )
     record = probe.representative(old, new, family)
     source = record["rate_source"]
     assert probe.has_training(source), (family, source)
@@ -199,7 +211,11 @@ def test_tree_family_structures_and_source_nodes_survive_rate_correction(
             new_source = after[key]["rate_source"]
             for field in ("kind", "source", "entry", "rank"):
                 assert old_source.get(field) == new_source.get(field), (family, field)
-        counts[family] = len(old_keys)
+        # Chemical identities can legitimately collapse when operational
+        # fields are excluded from structural_key; retain the record census.
+        counts[family] = sum(
+            record["family"] == family for record in old["records"]
+        )
 
     # I-070: the former bit-identical k_table pin preserved the erroneous
     # ArrheniusBM dHrxn=0 evaluation. Rates and conversion provenance must now

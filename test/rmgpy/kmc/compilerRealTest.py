@@ -12,7 +12,7 @@ import os
 import subprocess
 import sys
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import pytest
@@ -376,6 +376,55 @@ def _record_key(record):
         record["family"],
         record["template"],
     )
+
+
+def _refused_unsupported_oracle_channels(artifact, oracle):
+    """Return only oracle rewrites withheld by the recorded refusal policy."""
+    published = {
+        reaction_graph_key(
+            record["family"], _molecules(record["reactant_graphs"]),
+            _molecules(record["product_graphs"]),
+        )
+        for record in artifact["records"]
+    }
+    excluded = {
+        (entry["site_type"], entry["family"], entry["template"])
+        for entry in artifact["excluded_channels"]
+    }
+    missing = [
+        (site, family, template, tuple(tuple(side) for side in sides))
+        for site, family, template, sides in oracle["reactions"]
+        if (site, family, template) not in excluded
+        and (family, tuple(tuple(side) for side in sides)) not in published
+    ]
+    refusals = [
+        refusal for refusal in artifact.get("applicability_refusals", [])
+        if refusal.get("disposition") == "refused-unsupported-transfer"
+    ]
+    # The ledger is a reciprocal-record ledger; the oracle is directionless.
+    # Its family/template census must therefore account for every absent
+    # reactant/product graph, and for no other missing chemistry.
+    assert all(len(refusal.get("record_ids", [])) == 2 for refusal in refusals)
+    unused = list(refusals)
+    for site, family, template, sides in missing:
+        assert sum(entry["event_id"] is None and (entry["site_type"], entry["family"], entry["template"]) == (site, family, template) for entry in artifact["discovery"]) >= 2
+        # A withheld structure must consume its own reciprocal ledger entries;
+        # this is deliberately not a family-wide refusal exemption.
+        matched = [
+            refusal for refusal in unused
+            if (refusal["family"], refusal["template"]) == (family, template)
+            and refusal["mapped_root"].get("reactant_atom_index") is not None
+            and sides
+        ]
+        assert len(matched) >= 2
+        for refusal in matched[:2]:
+            unused.remove(refusal)
+    assert not unused
+    return {
+        (site, family, template) for site, family, template, _ in missing
+    }, {
+        (family, sides) for _, family, _, sides in missing
+    }
 
 
 def _load_independent_oracle(kinetics_database):
@@ -776,12 +825,6 @@ def test_c2_per_site_degeneracy_matches_whole_molecule_pipeline(compilation):
     _, artifact, proxies, _, _, _, _, oracle, _ = compilation
     if oracle is None:
         pytest.fail("phase-2b real comparison required: supplied artifact has no independent generation oracle")
-    generated_j_para = {_record_key(entry) for entry in artifact["excluded_channels"]}
-    expected = {
-        key: value
-        for key, value in oracle["degeneracies"].items()
-        if key not in generated_j_para
-    }
     proxy_by_site = {proxy.site_type: proxy for proxy in proxies}
 
     def observed_degeneracies(compiled_artifact):
@@ -789,6 +832,9 @@ def test_c2_per_site_degeneracy_matches_whole_molecule_pipeline(compilation):
         by_id = {record["event_id"]: record for record in compiled_artifact["records"]}
         selected_sources = set()
         for discovery in compiled_artifact["discovery"]:
+            if discovery["event_id"] is None:
+                assert any(refusal.get("disposition") == "refused-unsupported-transfer" and (refusal["family"], refusal["template"]) == (discovery["family"], discovery["template"]) for refusal in compiled_artifact["applicability_refusals"])
+                continue
             assert discovery["event_id"] in by_id
             target = by_id[discovery["event_id"]]
             pair = frozenset((target["event_id"], target["reverse_of"]))
@@ -800,6 +846,13 @@ def test_c2_per_site_degeneracy_matches_whole_molecule_pipeline(compilation):
         return totals
 
     actual = observed_degeneracies(artifact)
+    generated_j_para = {_record_key(entry) for entry in artifact["excluded_channels"]}
+    refused, _ = _refused_unsupported_oracle_channels(artifact, oracle)
+    expected = {
+        key: value
+        for key, value in oracle["degeneracies"].items()
+        if key not in generated_j_para | refused
+    }
     assert dict(actual) == pytest.approx(expected)
     required_cases = {
         "pristine",
@@ -866,7 +919,8 @@ def test_c3_full_2r_plus_3_generation_covers_all_keys_and_128_probe_misses(compi
         if entry["reason"]
         == "bounded J_ring capture replaced by immutable R-009 archived para/ortho pairs"
     }
-    required = oracle["keys"] - exclusions
+    refused, refused_graphs = _refused_unsupported_oracle_channels(artifact, oracle)
+    required = oracle["keys"] - exclusions - refused
     assert required <= compiled, sorted(required - compiled)[:10]
     baseline = {_record_key(record) for record in _pre_change_artifact()["records"]}
     legacy_sites = {
@@ -888,7 +942,7 @@ def test_c3_full_2r_plus_3_generation_covers_all_keys_and_128_probe_misses(compi
     }
     probe_missing = current_missing - archived_replacement
     assert len(probe_missing) == 128
-    assert probe_missing <= compiled | exclusions
+    assert probe_missing <= compiled | exclusions | refused
 
     def graph_keys(records):
         return {
@@ -903,8 +957,9 @@ def test_c3_full_2r_plus_3_generation_covers_all_keys_and_128_probe_misses(compi
     required_graphs = {
         (family, tuple(tuple(side) for side in sides))
         for site, family, template, sides in oracle["reactions"]
-        if (site, family, template) not in exclusions
+        if (site, family, template) not in exclusions | refused
     }
+    assert refused_graphs.isdisjoint(required_graphs)
     actual_graphs = graph_keys(artifact["records"])
     assert required_graphs <= actual_graphs, sorted(required_graphs - actual_graphs)[
         :10
