@@ -1,17 +1,23 @@
 """Acceptance tests for observational RMG merge accounting."""
 
 import copy
+from fractions import Fraction
 import os
 from pathlib import Path
 
 import pytest
 
 from rmgpy.data.kinetics.database import KineticsDatabase
+from rmgpy.data.kinetics.family import KineticsFamily
 from rmgpy.kmc.merge_accounting import (
     MergeAccountingError,
-    RootAtomV1,
-    RootedPathV1,
+    RecipeEditV2,
+    RootBindingV2,
+    RootedPathV2,
+    _assert_no_reaction_aliases,
+    _corrected_divisor,
     _root_weights,
+    _trace_base_degeneracy,
     generate_reactions_with_merge_accounting,
 )
 from rmgpy.molecule.molecule import Molecule
@@ -50,17 +56,18 @@ def test_full_species_identity_controls_identical_reactant_divisor(
     kinetics_database,
 ):
     identical = _records(kinetics_database, ["[CH3]", "[CH3]"])
-    distinct_same_site_class = _records(
-        kinetics_database, ["[CH3]", "C[CH2]"]
-    )
+    distinct_same_site_class = _records(kinetics_database, ["[CH3]", "C[CH2]"])
 
     assert {record.same_reactants for record in identical} == {2}
     assert {record.identical_reactant_divisor for record in identical} == {2.0}
     assert all(record.full_species_reactants_identical for record in identical)
 
-    assert {record.same_reactants for record in distinct_same_site_class} == {0}
+    assert {record.same_reactants for record in distinct_same_site_class} == {
+        0
+    }
     assert {
-        record.identical_reactant_divisor for record in distinct_same_site_class
+        record.identical_reactant_divisor
+        for record in distinct_same_site_class
     } == {1.0}
     assert not any(
         record.full_species_reactants_identical
@@ -76,9 +83,18 @@ def test_root_weights_close_exactly_and_preserve_distinct_roots(
     # RMG generates both swapped embeddings, then rejects one as an exact
     # duplicate of the same mapped root.
     assert len(identical.raw_paths) == 2
-    assert sum(path.contributes_to_pre_correction_sum for path in identical.raw_paths) == 1
+    assert (
+        sum(
+            path.contributes_to_pre_correction_sum
+            for path in identical.raw_paths
+        )
+        == 1
+    )
     assert len(identical.root_weights) == 1
-    assert sum(weight.weight for weight in identical.root_weights) == identical.G_final
+    assert (
+        sum(weight.weight for weight in identical.root_weights)
+        == identical.G_final
+    )
 
     records = generate_reactions_with_merge_accounting(
         kinetics_database,
@@ -93,7 +109,10 @@ def test_root_weights_close_exactly_and_preserve_distinct_roots(
         assert len({weight.root for weight in record.root_weights}) == len(
             record.root_weights
         )
-        assert sum(weight.weight for weight in record.root_weights) == record.G_final
+        assert (
+            sum(weight.weight for weight in record.root_weights)
+            == record.G_final
+        )
         assert {
             atom_id
             for graph in record.reactant_graphs
@@ -106,14 +125,115 @@ def test_root_weights_close_exactly_and_preserve_distinct_roots(
 
 
 def test_inconsistent_root_decomposition_is_refused():
-    root = (RootAtomV1(participant_index=0, atom_id=1),)
+    root = (RootBindingV2("*1", participant_index=0, atom_id=1),)
+    recipe = (RecipeEditV2("GAIN_RADICAL", ("*1", 1)),)
     paths = (
-        RootedPathV1("raw-000000", 1.0, root),
-        RootedPathV1("raw-000001", 1.0, root),
+        RootedPathV2("raw-000000", 1.0, root, recipe),
+        RootedPathV2("raw-000001", 1.0, root, recipe),
     )
 
     with pytest.raises(MergeAccountingError, match="does not match G_final"):
         _root_weights(paths, divisor=1.0, final_degeneracy=1.0)
+
+
+def test_divisor_is_derived_from_rmg_branch_not_observed_ratio():
+    class DistinctReactant:
+        def is_isomorphic(self, other):
+            return False
+
+    class ReactionStub:
+        is_forward = True
+        reactants = [DistinctReactant(), DistinctReactant()]
+
+    with pytest.raises(MergeAccountingError, match="derived divisor"):
+        _corrected_divisor(
+            ReactionStub(),
+            same_reactants=0,
+            pre_correction_degeneracy=2.0,
+            final_degeneracy=1.0,
+        )
+
+
+def test_role_distinct_paths_with_same_atom_set_remain_distinct_roots():
+    recipe = (RecipeEditV2("BREAK_BOND", ("*1", 1, "*2")),)
+    paths = (
+        RootedPathV2(
+            "raw-000000",
+            1.0,
+            (
+                RootBindingV2("*1", 0, 1),
+                RootBindingV2("*2", 0, 2),
+            ),
+            recipe,
+        ),
+        RootedPathV2(
+            "raw-000001",
+            1.0,
+            (
+                RootBindingV2("*1", 0, 2),
+                RootBindingV2("*2", 0, 1),
+            ),
+            recipe,
+        ),
+    )
+
+    weights = _root_weights(paths, divisor=1, final_degeneracy=2)
+
+    assert len(weights) == 2
+    assert weights[0].root != weights[1].root
+
+
+def test_fractional_root_allocation_closes_exactly():
+    recipe = (RecipeEditV2("GAIN_RADICAL", ("*1", 1)),)
+    paths = tuple(
+        RootedPathV2(
+            "raw-{0:06d}".format(index),
+            1.0,
+            (RootBindingV2("*1", 0, index),),
+            recipe,
+        )
+        for index in range(6)
+    )
+
+    weights = _root_weights(paths, divisor=6, final_degeneracy=1.0)
+
+    assert {weight.weight for weight in weights} == {Fraction(1, 6)}
+    assert sum(weight.weight for weight in weights) == Fraction(1, 1)
+
+
+def test_repeated_reference_raw_paths_are_refused():
+    reaction = object()
+
+    with pytest.raises(
+        MergeAccountingError, match="aliases an earlier occurrence"
+    ):
+        _assert_no_reaction_aliases([reaction, reaction])
+
+
+def test_reverse_recalculation_refuses_unrooted_special_implementations():
+    class ChargeTransferReaction:
+        def is_charge_transfer_reaction(self):
+            return True
+
+    with pytest.raises(MergeAccountingError, match="charge-transfer"):
+        _trace_base_degeneracy(
+            object(), ChargeTransferReaction(), resonance=True
+        )
+
+    class OverriddenFamily(KineticsFamily):
+        def calculate_degeneracy(self, reaction, resonance=True):
+            return 999
+
+    class OrdinaryReaction:
+        def is_charge_transfer_reaction(self):
+            return False
+
+    with pytest.raises(MergeAccountingError, match="override"):
+        _trace_base_degeneracy(
+            OverriddenFamily(label="override"),
+            OrdinaryReaction(),
+            resonance=True,
+        )
 
 
 def _reaction_signature(reaction):
@@ -150,6 +270,108 @@ def _reaction_signature(reaction):
         repr(reaction.kinetics),
         reverse_signature,
     )
+
+
+def _cold_reaction_signature(reaction):
+    def side(participants):
+        return tuple(
+            participant.molecule[0].to_adjacency_list(remove_h=False)
+            for participant in participants
+        )
+
+    return (
+        side(reaction.reactants),
+        side(reaction.products),
+        tuple(reaction.template),
+        reaction.degeneracy,
+        reaction.family,
+        reaction.is_forward,
+    )
+
+
+def _load_database(*families):
+    database = KineticsDatabase()
+    database.load_families(
+        str(DATABASE / "input/kinetics/families"), families=list(families)
+    )
+    return database
+
+
+@pytest.mark.parametrize("traced_first", [True, False])
+def test_cold_tracing_parity_in_both_orders_with_resonance_and_failure(
+    traced_first,
+):
+    order = (True, False) if traced_first else (False, True)
+    results = {}
+    for trace in order:
+        database = _load_database("H_Abstraction")
+        results[trace] = generate_reactions_with_merge_accounting(
+            database,
+            [Molecule(smiles="[CH2]C=C"), Molecule(smiles="C")],
+            only_families=["H_Abstraction"],
+            resonance=True,
+            trace=trace,
+        )
+
+    assert [
+        _cold_reaction_signature(item) for item in results[True].reactions
+    ] == [_cold_reaction_signature(item) for item in results[False].reactions]
+    assert results[True].records
+    assert results[False].records == ()
+
+    failures = {}
+    for trace in order:
+        database = _load_database("R_Recombination")
+        with pytest.raises(AttributeError) as error:
+            generate_reactions_with_merge_accounting(
+                database,
+                [Molecule(smiles="[CH3]"), Molecule(smiles="[CH3]")],
+                products=[object()],
+                only_families=["R_Recombination"],
+                resonance=True,
+                trace=trace,
+            )
+        failures[trace] = str(error.value)
+    assert failures[True] == failures[False]
+
+
+def test_resonant_bimolecular_paths_map_into_serialized_graphs(
+    kinetics_database,
+):
+    result = generate_reactions_with_merge_accounting(
+        kinetics_database,
+        [Molecule(smiles="[CH2]C=C"), Molecule(smiles="C")],
+        only_families=["H_Abstraction"],
+        resonance=True,
+    )
+
+    assert result.records
+    assert any(len(record.raw_paths) > 1 for record in result.records)
+    for record in result.records:
+        target_atoms = {
+            (graph.participant_index, atom_index, atom_id)
+            for graph in record.reactant_graphs
+            for atom_index, atom_id in enumerate(graph.atom_ids)
+        }
+        for path in record.raw_paths:
+            mapped_targets = {
+                (
+                    item.serialized_participant_index,
+                    item.serialized_atom_index,
+                    item.serialized_atom_id,
+                )
+                for item in path.atom_map
+            }
+            assert mapped_targets == target_atoms
+            assert all(
+                (item.raw_element, item.raw_isotope)
+                == (item.serialized_element, item.serialized_isotope)
+                for item in path.atom_map
+            )
+        assert (
+            sum(weight.weight for weight in record.root_weights)
+            == record.G_final
+        )
 
 
 def test_tracing_on_and_off_matches_native_generation_and_failures(
@@ -228,7 +450,10 @@ def test_backward_non_own_reverse_uses_only_recalculated_rooted_paths(
         }
         assert allocated <= recalculated
         assert allocated.isdisjoint(superseded)
-        assert sum(weight.weight for weight in record.root_weights) == record.G_final
+        assert (
+            sum(weight.weight for weight in record.root_weights)
+            == record.G_final
+        )
 
 
 def test_small_ps_proxy_witness_is_accounted_without_special_case_logic(
@@ -249,7 +474,9 @@ def test_small_ps_proxy_witness_is_accounted_without_special_case_logic(
     )
 
     assert result.records
-    assert all(record.schema == "RMGMergeAccountingV1" for record in result.records)
+    assert all(
+        record.schema == "RMGMergeAccountingV2" for record in result.records
+    )
     assert all(
         sum(weight.weight for weight in record.root_weights) == record.G_final
         for record in result.records
