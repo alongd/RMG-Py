@@ -1,0 +1,20 @@
+{
+  "allowed_atom_stereo": ["R", "S"],
+  "allowed_bond_orders": [1.0, 1.5, 2.0, 3.0],
+  "allowed_bond_stereo": ["E", "Z"],
+  "allowed_charges": [-1, 0, 1],
+  "allowed_elements": ["H", "C", "N", "O"],
+  "allowed_isotopes": [-1, 1, 2, 12, 13, 14, 15, 16, 17, 18],
+  "allowed_lone_pairs": [0, 1, 2, 3],
+  "allowed_multiplicities": [1, 2, 3],
+  "allowed_radicals": [0, 1, 2],
+  "canonicalizer_version": "site-class-canonicalizer-v1",
+  "max_degree": 4,
+  "max_explicit_h": 4,
+  "max_heavy_atoms": 32,
+  "max_radius": 4,
+  "max_root_size": 4,
+  "orientation": "participant-0",
+  "policy_id": "site-class-test-policy-v1",
+  "radius": 2
+}
