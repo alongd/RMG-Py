@@ -35,6 +35,7 @@ _REQUIRED_POLICY_FIELDS = {
     "max_heavy_atoms",
     "max_radius",
     "max_root_size",
+    "max_search_nodes",
     "max_valence_by_element",
     "orientation",
     "policy_id",
@@ -112,6 +113,7 @@ def _normalize_policy(locality_policy: Mapping[str, Any]) -> dict[str, Any]:
         "max_heavy_atoms",
         "max_radius",
         "max_root_size",
+        "max_search_nodes",
         "radius",
     ):
         value = policy[name]
@@ -372,8 +374,8 @@ def _refine(
             value: index for index, value in enumerate(sorted(set(signatures)))
         }
         next_colors = [next_palette[value] for value in signatures]
-        if next_colors == colors:
-            return colors
+        if len(set(next_colors)) == len(set(colors)):
+            return next_colors
         tokens = signatures
 
 
@@ -381,13 +383,51 @@ def _canonical_order(
     node_seeds: Sequence[Any],
     adjacency: Sequence[list[tuple[str, int]]],
     serialize,
+    max_search_nodes: int,
 ) -> tuple[list[int], dict[str, Any]]:
     best_text: str | None = None
     best_order: list[int] | None = None
     best_pattern: dict[str, Any] | None = None
+    search_nodes = 0
+    leaf_orders: dict[str, list[int]] = {}
+    automorphisms: list[tuple[int, ...]] = []
+    known_automorphisms: set[tuple[int, ...]] = set()
 
-    def search(seed: Sequence[Any]) -> None:
-        nonlocal best_text, best_order, best_pattern
+    def record_automorphism(text: str, order: Sequence[int]) -> None:
+        reference = leaf_orders.get(text)
+        if reference is None:
+            leaf_orders[text] = list(order)
+            return
+        permutation = [0] * len(order)
+        for source, target in zip(reference, order):
+            permutation[source] = target
+        value = tuple(permutation)
+        if value != tuple(range(len(order))) and value not in known_automorphisms:
+            known_automorphisms.add(value)
+            automorphisms.append(value)
+
+    def orbit(start: int, fixed: Sequence[int]) -> set[int]:
+        generators = [
+            permutation
+            for permutation in automorphisms
+            if all(permutation[index] == index for index in fixed)
+        ]
+        reached = {start}
+        pending = [start]
+        while pending:
+            vertex = pending.pop()
+            for permutation in generators:
+                image = permutation[vertex]
+                if image not in reached:
+                    reached.add(image)
+                    pending.append(image)
+        return reached
+
+    def search(seed: Sequence[Any], fixed: tuple[int, ...]) -> None:
+        nonlocal best_text, best_order, best_pattern, search_nodes
+        search_nodes += 1
+        if search_nodes > max_search_nodes:
+            _fail("domain_exceeded", "canonical search exceeds max_search_nodes")
         colors = _refine(seed, adjacency)
         cells: dict[int, list[int]] = {}
         for index, color in enumerate(colors):
@@ -397,6 +437,7 @@ def _canonical_order(
             order = sorted(range(len(colors)), key=colors.__getitem__)
             pattern = serialize(order)
             text = _canonical_json(pattern)
+            record_automorphism(text, order)
             if (
                 best_text is None
                 or text < best_text
@@ -407,14 +448,18 @@ def _canonical_order(
                 best_pattern = pattern
             return
         cell = min(unresolved, key=lambda value: (len(value), colors[value[0]]))
+        covered: set[int] = set()
         for chosen in cell:
+            if chosen in covered:
+                continue
             individualized = [
                 [colors[index], 0 if index == chosen else 1]
                 for index in range(len(colors))
             ]
-            search(individualized)
+            search(individualized, fixed + (chosen,))
+            covered.update(orbit(chosen, fixed).intersection(cell))
 
-    search(node_seeds)
+    search(node_seeds, ())
     assert best_order is not None and best_pattern is not None
     return best_order, best_pattern
 
@@ -613,7 +658,9 @@ def extract_site_class(
             "schema": "RootedPortPatternV1",
         }
 
-    order, pattern = _canonical_order(node_seeds, adjacency, serialize)
+    order, pattern = _canonical_order(
+        node_seeds, adjacency, serialize, policy["max_search_nodes"]
+    )
     key_document = {
         "canonicalizer_version": policy["canonicalizer_version"],
         "pattern": pattern,

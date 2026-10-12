@@ -1,15 +1,34 @@
 import json
 from pathlib import Path
+import random
+import signal
+import time
 
 import pytest
 
 from rmgpy.kmc.site_class import extract_site_class
 from rmgpy.kmc.site_class import SiteClassError
 from rmgpy.molecule.element import get_element
+from rmgpy.molecule.molecule import Atom
+from rmgpy.molecule.molecule import Bond
 from rmgpy.molecule.molecule import Molecule
 
 
 FIXTURE_DIR = Path(__file__).with_name("fixtures") / "site_class_v1"
+
+
+@pytest.fixture(autouse=True)
+def canonicalization_test_deadline():
+    def timeout_handler(_signum, _frame):
+        raise AssertionError("site-class test exceeded its 20 second deadline")
+
+    previous_handler = signal.signal(signal.SIGALRM, timeout_handler)
+    signal.setitimer(signal.ITIMER_REAL, 20.0)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0.0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def policy(**changes):
@@ -25,6 +44,14 @@ def heavy_atoms(molecule):
 def middle_atom(molecule):
     heavy = heavy_atoms(molecule)
     return heavy[len(heavy) // 2]
+
+
+def timed_site_class(graph, ordered_root, selected_policy):
+    started = time.perf_counter()
+    result = extract_site_class(graph, ordered_root, selected_policy)
+    elapsed = time.perf_counter() - started
+    assert elapsed < 2.0, f"canonicalization took {elapsed:.3f}s"
+    return result, elapsed
 
 
 def test_instance_metadata_and_insertion_order_do_not_change_key_or_mapping():
@@ -232,6 +259,7 @@ def test_invalid_inputs_and_every_finite_policy_bound_fail_without_mutation():
         ((("site", root),), policy(allowed_bond_orders=[2.0]), "domain_exceeded"),
         ((("site", root),), policy(allowed_multiplicities=[2]), "domain_exceeded"),
         ((("site", root),), policy(instance_uuid="run-specific"), "invalid_policy"),
+        ((("site", root),), policy(max_search_nodes=0), "domain_exceeded"),
         (
             (("site", root),),
             policy(max_valence_by_element={}),
@@ -378,7 +406,7 @@ def test_methyl_branched_alkane_site_classes_are_length_stable_and_distinct():
         )
 
 
-def aromatic_substituted_chain_roots(molecule):
+def aromatic_substituted_chain_root_sets(molecule):
     def aromatic(atom):
         return atom.props.get("inRing") is True
 
@@ -397,6 +425,11 @@ def aromatic_substituted_chain_roots(molecule):
         if atom not in benzylic
         and sum(neighbor in backbone_set for neighbor in atom.bonds) == 2
     ]
+    return methylene, benzylic
+
+
+def aromatic_substituted_chain_roots(molecule):
+    methylene, benzylic = aromatic_substituted_chain_root_sets(molecule)
     return methylene[len(methylene) // 2], benzylic[len(benzylic) // 2]
 
 
@@ -414,6 +447,154 @@ def test_aromatic_substituted_oligomer_backbone_classes_are_length_stable():
             extract_site_class(short, (("site", short_root),), policy(radius=2))[0]
             == extract_site_class(long, (("site", long_root),), policy(radius=2))[0]
         )
+
+
+def test_large_aromatic_substituted_contexts_finish_and_are_length_stable():
+    five_mer = Molecule(
+        smiles="CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)C"
+    )
+    seven_mer = Molecule(
+        smiles="CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)C"
+    )
+    five_roots = [roots[1] for roots in aromatic_substituted_chain_root_sets(five_mer)]
+    seven_roots = [
+        roots[1] for roots in aromatic_substituted_chain_root_sets(seven_mer)
+    ]
+    for radius in (3, 4):
+        for five_root, seven_root in zip(five_roots, seven_roots):
+            five_result, _ = timed_site_class(
+                five_mer, (("site", five_root),), policy(radius=radius)
+            )
+            seven_result, _ = timed_site_class(
+                seven_mer, (("site", seven_root),), policy(radius=radius)
+            )
+            assert five_result[0] == seven_result[0]
+
+
+def test_large_methyl_branched_contexts_finish_and_are_length_stable():
+    seven_mer = Molecule(smiles="CC(C)CC(C)CC(C)CC(C)CC(C)CC(C)CC(C)C")
+    nine_mer = Molecule(smiles="CC(C)CC(C)CC(C)CC(C)CC(C)CC(C)CC(C)CC(C)CC(C)C")
+    seven_root = methyl_branched_roots(seven_mer)[1]
+    nine_root = methyl_branched_roots(nine_mer)[1]
+    seven_result, _ = timed_site_class(
+        seven_mer, (("site", seven_root),), policy(radius=4)
+    )
+    nine_result, _ = timed_site_class(
+        nine_mer, (("site", nine_root),), policy(radius=4)
+    )
+    assert seven_result[0] == nine_result[0]
+
+
+def test_symmetric_neopentane_and_tert_butyl_biphenyl_finish_with_small_budget():
+    neopentane = Molecule(smiles="CC(C)(C)C")
+    neopentane_root = next(
+        atom
+        for atom in heavy_atoms(neopentane)
+        if sum(neighbor.symbol != "H" for neighbor in atom.bonds) == 4
+    )
+    timed_site_class(
+        neopentane,
+        (("site", neopentane_root),),
+        policy(radius=4, max_search_nodes=20),
+    )
+
+    molecule = Molecule(smiles="CC(C)(C)c1ccccc1-c1ccccc1C(C)(C)C")
+    aromatic = [atom for atom in heavy_atoms(molecule) if atom.props.get("inRing")]
+    root_bond = next(
+        atom.bonds[neighbor]
+        for atom in aromatic
+        for neighbor in atom.bonds
+        if neighbor in aromatic
+        and atom.props.get("inRing")
+        and neighbor.props.get("inRing")
+        and not atom.bonds[neighbor].is_benzene()
+    )
+    timed_site_class(
+        molecule,
+        (("axis", root_bond),),
+        policy(radius=4, max_search_nodes=500),
+    )
+
+
+def one_wl_hard_graph(seed):
+    vertices = list(range(10))
+    edges = [
+        (0, 2),
+        (0, 9),
+        (1, 2),
+        (1, 5),
+        (1, 8),
+        (2, 9),
+        (3, 7),
+        (3, 8),
+        (4, 5),
+        (4, 6),
+        (5, 7),
+        (6, 8),
+    ]
+    generator = random.Random(seed)
+    generator.shuffle(vertices)
+    generator.shuffle(edges)
+    atoms = {
+        vertex: Atom(
+            element=get_element("C"),
+            radical_electrons=0,
+            charge=0,
+            lone_pairs=0,
+        )
+        for vertex in vertices
+    }
+    molecule = Molecule(atoms=list(atoms.values()), multiplicity=1)
+    for left, right in edges:
+        molecule.add_bond(Bond(atoms[left], atoms[right], 1.0))
+    return molecule, atoms
+
+
+def one_dimensional_colors(molecule, root):
+    colors = {atom: int(atom is root) for atom in molecule.atoms}
+    while True:
+        signatures = {
+            atom: (
+                colors[atom],
+                tuple(sorted(colors[neighbor] for neighbor in atom.bonds)),
+            )
+            for atom in molecule.atoms
+        }
+        palette = {
+            signature: color
+            for color, signature in enumerate(sorted(set(signatures.values())))
+        }
+        refined = {atom: palette[signatures[atom]] for atom in molecule.atoms}
+        if refined == colors:
+            return colors
+        colors = refined
+
+
+def test_nonautomorphic_one_wl_tie_is_canonical_across_input_orders():
+    forward, forward_atoms = one_wl_hard_graph(seed=0)
+    reverse, reverse_atoms = one_wl_hard_graph(seed=1)
+    forward_root = forward_atoms[1]
+    tied_left = forward_atoms[2]
+    tied_right = forward_atoms[5]
+    colors = one_dimensional_colors(forward, forward_root)
+
+    assert colors[tied_left] == colors[tied_right]
+    assert not forward.is_isomorphic(
+        forward,
+        initial_map={forward_root: forward_root, tied_left: tied_right},
+    )
+
+    selected_policy = policy(
+        radius=4,
+        max_search_nodes=1000,
+    )
+    forward_result, _ = timed_site_class(
+        forward, (("site", forward_root),), selected_policy
+    )
+    reverse_result, _ = timed_site_class(
+        reverse, (("site", reverse_atoms[1]),), selected_policy
+    )
+    assert forward_result[0] == reverse_result[0]
 
 
 def test_bond_roots_and_boundary_signatures_are_canonical_pattern_data():
