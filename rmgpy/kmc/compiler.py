@@ -1045,6 +1045,10 @@ def _generated_forward_transitions(family, data, forms, generation_cache, genera
     started = time.perf_counter()
     error = None
     try:
+        # Deliberately NOT routed through the compiler's generation hook: this
+        # is the attribution check on one family, it replays id-tracked stored
+        # forms and relies on the identity of the objects it passes in, which
+        # the public ``generate_reactions_from_families`` pipeline copies.
         generated = family._generate_reactions(
             forms,
             forward=True,
@@ -2036,14 +2040,29 @@ def _padding_exclusion(reason: str) -> dict[str, str]:
     return {"status": "excluded_unchanged", "reason": reason}
 
 
-def _production_padded_root(kinetics_database, reaction):
-    """Re-derive one exact padded reaction through RMG's production generator."""
+def _resolve_generator(kinetics_database, generation_provider):
+    """The explicit generation hook, or else the database's own generator."""
+    if generation_provider is not None:
+        return generation_provider
+    return kinetics_database.generate_reactions_from_families
+
+
+def _production_padded_root(
+    kinetics_database, reaction, generation_provider=None
+):
+    """Re-derive one exact padded reaction through RMG's production generator.
+
+    ``generation_provider`` has the signature of ``generate_reactions_from_families``
+    and defaults to the database's own method.
+    """
     from rmgpy.species import Species
 
-    if not hasattr(kinetics_database, "generate_reactions_from_families"):
-        raise ReactionNotPaddable("production family generator is unavailable")
+    if generation_provider is None:
+        if not hasattr(kinetics_database, "generate_reactions_from_families"):
+            raise ReactionNotPaddable("production family generator is unavailable")
+        generation_provider = kinetics_database.generate_reactions_from_families
 
-    generated = kinetics_database.generate_reactions_from_families(
+    generated = generation_provider(
         [
             Species(molecule=[_molecule(item).copy(deep=True)])
             for item in reaction.reactants
@@ -4020,7 +4039,13 @@ class EventSetCompiler:
         proxy_padding_tolerance_log10: float = PROXY_PADDING_TOLERANCE_LOG10,
         proxy_padding_max_heavy_atoms: int = PROXY_PADDING_MAX_HEAVY_ATOMS,
         barrier_e0_provider: FixedBBarrierE0Provider | None = None,
+        generation_provider=None,
     ):
+        # ``generation_provider`` has the signature of
+        # ``generate_reactions_from_families``; every reaction generation of a
+        # compile (``_generate``, padded-root regeneration) goes through it.
+        # Default: the database's own method.
+        self.generation_provider = generation_provider
         # Constructor selection takes precedence over the environment. Invalid
         # values must fail rather than silently selecting a sensitivity arm.
         if use_plpsec_library is None:
@@ -4116,7 +4141,9 @@ class EventSetCompiler:
         reactions = []
         for family in self.families:
             reactions.extend(
-                self.kinetics_database.generate_reactions_from_families(
+                _resolve_generator(
+                    self.kinetics_database, self.generation_provider
+                )(
                     [_copy_participant(item) for item in proxy.reactants],
                     only_families=[family],
                     resonance=True,
@@ -4547,7 +4574,9 @@ class EventSetCompiler:
                     max_heavy_atoms=self.proxy_padding_max_heavy_atoms,
                 )
                 derived, generated_count = _production_padded_root(
-                    self.kinetics_database, padded.reaction
+                    self.kinetics_database,
+                    padded.reaction,
+                    self.generation_provider,
                 )
                 if _template(derived) != _template(estimate):
                     raise ReactionNotPaddable(
@@ -5169,8 +5198,13 @@ class EventSetCompiler:
         proxies: Iterable[SiteProxy],
         candidate_families: Iterable[str] = PS_FAMILY_CANDIDATES,
         family_universe: Iterable[str] | None = None,
+        generation_provider=None,
     ) -> tuple[list[str], dict[str, str], dict[str, Sequence[Any]]]:
         """Account for every database family, generating only the loaded PS filter.
+
+        ``generation_provider`` has the signature of
+        ``generate_reactions_from_families`` and defaults to the database's
+        own method; all generation here goes through it.
 
         A family is active only if the public merged-path pipeline produces a
         reaction on the bounded proxy set.  Loaded families outside the explicit
@@ -5204,7 +5238,9 @@ class EventSetCompiler:
                 logging.getLogger(__name__).info(
                     "generating %s on %s", family, proxy.site_type
                 )
-                generated = kinetics_database.generate_reactions_from_families(
+                generated = _resolve_generator(
+                    kinetics_database, generation_provider
+                )(
                     [_copy_participant(item) for item in proxy.reactants],
                     only_families=[family],
                     resonance=True,
