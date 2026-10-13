@@ -3920,6 +3920,43 @@ def stamp_gas_association_refusal(forward, pool_registry=None) -> None:
             forward.polymer_refused_accumulating = False  # "conduit-deferred"
             return
 
+    # SIXTH refused shape (I-103): PRODUCT-ONLY proxy on a mixed gas row,
+    # e.g. the H transfer ``CC1CC1 + CC[CH]CCC <=> C[C]1CC1 + PE`` (a gas
+    # radical takes an H from a gas closed-shell and the pristine proxy
+    # appears as a PRODUCT). The row has no Polymer REACTANT, so the
+    # polymer_reactants stamping block in make_new_reaction never classified
+    # it, and none of the refusals above matched (the reactant side is not
+    # all-gas-radicals, nothing is polymer-sized): it reached the solver
+    # rebuild with neither an archetype nor a refusal (UNSTAMPED PROXY ROW
+    # abort). The flux classifier has no rule for it either (zero reactant
+    # pools -> "chain appears in a pool with no source to debit",
+    # UNRESOLVED), and its reverse (proxy reactant, no polymer product) is
+    # likewise the item-18 chain-radical-lost-to-gas shape. Same
+    # reference-state bridge as the shapes above: refuse conduit-deferred
+    # (stamp-but-keep, both orientations). SHAPE-narrow by design: the
+    # radical is TRANSFERRED (a gas radical on each side, the abstraction
+    # signature); other product-only-proxy rows (closed-shell partners, no
+    # radical transfer: CO/Br2 + closed-shell -> proxy) keep their pinned
+    # ordinary adjudication. A row already carrying an archetype stamp is
+    # never touched.
+    def _has_gas_radical(side):
+        for s in side:
+            if isinstance(s, Polymer):
+                continue
+            mol_list = getattr(s, "molecule", None)
+            mol = mol_list[0] if mol_list else (
+                s if isinstance(s, Molecule) else None)
+            if mol is not None and mol.get_radical_count() >= 1:
+                return True
+        return False
+
+    if (p_condensed and not r_condensed
+            and _has_gas_radical(reactants) and _has_gas_radical(products)
+            and not int(getattr(forward, "polymer_flux_archetype", 0) or 0)):
+        forward.polymer_refused = True
+        forward.polymer_refused_accumulating = False  # "conduit-deferred"
+        return
+
 
 def _heavy_atom_count(mol) -> int:
     """Number of non-hydrogen atoms in ``mol`` (0 when structureless)."""

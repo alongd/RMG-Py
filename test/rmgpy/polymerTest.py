@@ -4997,6 +4997,48 @@ def test_gas_association_refusal_leaves_abstraction_and_scission_alone():
     assert scission.polymer_refused is False
 
 
+def test_gas_h_transfer_into_pristine_proxy_is_stamped_or_refused():
+    """I-103: ``gas radical + gas closed-shell <=> pristine proxy + gas
+    radical`` (e.g. ``CC1CC1 + CC[CH]CCC <=> C[C]1CC1 + PE``) carries the
+    Polymer ONLY as a product, so make_new_reaction's polymer_reactants
+    stamping block never sees it, and the row is neither all-gas-radicals
+    nor impostor-sized -- it used to reach the solver rebuild with neither
+    an archetype stamp nor a refusal (UNSTAMPED PROXY ROW abort). It must
+    now be refused conduit-deferred (no pool source to debit), in the
+    generated orientation; the reverse orientation (proxy reactant) must
+    reach the rebuild stamped or refused too. Generic across polymers."""
+    import rmgpy.polymer as polymer_mod
+    polymer_mod._flux_archetype_warned.clear()
+    from rmgpy.polymer import (Polymer, PolymerFluxArchetype,
+                               stamp_gas_association_refusal,
+                               stamp_polymer_flux_archetype)
+    from rmgpy.species import Species
+    from rmgpy.molecule import Molecule
+    from rmgpy.reaction import Reaction
+    for label, monomer in (("PE", "[CH2][CH2]"),
+                           ("polypropylene", "[CH2][CH]C")):
+        pool = Polymer(label=label, monomer=monomer,
+                       Mn=5000.0, Mw=8000.0, initial_mass=1.0)
+        closed = Species(molecule=[Molecule().from_smiles("CC1CC1")])
+        rad_in = Species(molecule=[Molecule().from_smiles("CC[CH]CCC")])
+        rad_out = Species(molecule=[Molecule().from_smiles("C[C]1CC1")])
+        fwd = Reaction(reactants=[closed, rad_in], products=[rad_out, pool],
+                       reversible=True)
+        assert not [r for r in fwd.reactants if isinstance(r, Polymer)]
+        stamp_gas_association_refusal(fwd)
+        assert fwd.polymer_refused is True
+        assert fwd.polymer_refused_accumulating is False  # conduit-deferred
+        # reverse orientation: proxy reactant goes through the archetype stamp
+        rev = Reaction(reactants=[rad_out, pool], products=[closed, rad_in],
+                       reversible=True)
+        stamp_polymer_flux_archetype(
+            rev, rev.reactants, [r for r in rev.reactants if isinstance(r, Polymer)])
+        stamp_gas_association_refusal(rev)
+        assert (getattr(rev, "polymer_flux_archetype", 0)
+                != int(PolymerFluxArchetype.NONE)
+                or getattr(rev, "polymer_refused", False))
+
+
 def test_gas_association_refusal_does_not_overwrite_existing_refusal_reason():
     """A row already refused by the item-18 detector (e.g. qssa-invalid,
     ``polymer_refused_accumulating is True``) that ALSO matches the
