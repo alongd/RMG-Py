@@ -1991,3 +1991,69 @@ def test_legacy_explicit_species_without_molecular_weight_is_accepted():
     assert config.shared_mass_accounting is False
     assert config.explicit_dp_to_species_index == {2: 0}
     assert 2 not in (config.explicit_dp_mw_g_mol or {})
+
+
+def _deck_shared_pe_solver(cutoff=4):
+    """Drive a shared PE declaration with k_unzip>0 through the deck path.
+
+    polymer() deck block -> compile_polymer_phase -> HybridPolymerReactor ->
+    to_solver_object, with core species taken from what the deck registered.
+    """
+    from unittest.mock import MagicMock
+    from rmgpy.rmg import input as rmg_input
+    from rmgpy.rmg.polymer_input import (
+        HybridPolymerReactor, PolymerPhase, PolymerPhaseBlueprint,
+    )
+
+    def _make_new_species(obj, **kwargs):
+        if isinstance(obj, Species):
+            return obj, True
+        return Species(label="monomer_product", molecule=[obj]), True
+
+    mock_rmg = MagicMock()
+    mock_rmg.initial_species = []
+    mock_rmg.reaction_model.iteration_num = 0
+    mock_rmg.reaction_model.new_species_list = []
+    mock_rmg.reaction_model.make_new_species.side_effect = _make_new_species
+
+    spec = _shared_pe_spec()
+    old_rmg, old_sd = rmg_input.rmg, rmg_input.species_dict
+    rmg_input.rmg, rmg_input.species_dict = mock_rmg, {}
+    try:
+        pool = rmg_input.polymer(
+            label="PE", linear_homopolymer_spec=spec, cutoff=cutoff,
+            k_unzip=1.0)
+        species_dict = dict(rmg_input.species_dict)
+    finally:
+        rmg_input.rmg, rmg_input.species_dict = old_rmg, old_sd
+
+    dummies = [Species(label=f"PE_mu{index}") for index in range(3)]
+    species_dict["PE"] = pool
+    species_dict.update({s.label: s for s in dummies})
+    blueprint = PolymerPhaseBlueprint(
+        "phase", ["PE"], "", density=(900.0, "kg/m^3"))
+    initial_moles = {pool: spec.macroscopic_moments_mol[0]}
+    phase = compile_polymer_phase(blueprint, initial_moles, species_dict)
+    registered = [
+        s for s in mock_rmg.initial_species if s not in (pool, *dummies)
+    ]
+    core = [pool, *dummies, *registered]
+    reactor = HybridPolymerReactor(
+        temperature=(800.0, "K"), pressure=(1.0e5, "Pa"), initialMoles={},
+        polymerPhase=phase, terminationTime=(1.0, "s"))
+    return reactor, core, pool, registered
+
+
+def test_normal_deck_enables_shared_unzip_through_the_deck_path():
+    """Item 5: a valid shared PE deck with k_unzip>0 builds end to end."""
+    reactor, core, pool, registered = _deck_shared_pe_solver()
+    solver = reactor.to_solver_object(core, [], [], [])
+    solver.initialize_model(core, [], [], [])
+    config = solver.polymer_pools[0]
+    assert config.k_unzip == 1.0
+    assert config.shared_mass_accounting is True
+    dp1_index = config.explicit_dp_to_species_index[1]
+    assert core[dp1_index].molecule[0].is_isomorphic(
+        Molecule().from_smiles("CC"))
+    assert core[config.monomer_poly_index].molecule[0].is_isomorphic(
+        Molecule().from_smiles("C=C"))
