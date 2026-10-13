@@ -19,7 +19,7 @@ import sys
 from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 import networkx
 import numpy as np
@@ -1333,6 +1333,48 @@ def environment_pins():
         "platform": platform.platform(),
         "byteorder": sys.byteorder,
     }
+
+
+def _has_commit(root: Path, commit: str) -> bool:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(root), "cat-file", "-e", f"{commit}^{{commit}}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        ).returncode == 0
+    except OSError:
+        return False
+
+
+def baseline_skip_reason(manifest: Mapping[str, Any]) -> Optional[str]:
+    """Why the frozen baseline cannot be checked here, or ``None``.
+
+    The baseline pins absolute paths, historical commits and the exact
+    interpreter environment of the machine that froze it.  When any of those
+    inputs is ABSENT (or the environment differs) there is nothing to verify
+    against, so the tests skip with this reason.  When every input is present
+    the verification itself stays strict: a present-but-different input is a
+    failure, never a skip.
+    """
+    for name, path in (
+        ("frozen artifact", ARTIFACT),
+        ("frozen artifact (manifest path)", Path(manifest["artifact"]["path"])),
+        ("frozen design document", Path(manifest["design"]["path"])),
+    ):
+        if not path.is_file():
+            return f"{name} is absent: {path}"
+    if not DATABASE.is_dir():
+        return f"frozen RMG database is absent: {DATABASE}"
+    for label, commit in (
+        ("RMG-Py pin", RMG_PY_PIN), ("Step-1 freeze", STEP1_FREEZE_COMMIT),
+    ):
+        if not _has_commit(ROOT, commit):
+            return f"historical commit for the {label} is absent: {commit}"
+    if manifest["environment"] != environment_pins():
+        return (
+            "the frozen environment differs from this interpreter "
+            "(python/numpy/scipy/networkx/platform pins)"
+        )
+    return None
 
 
 def verify_manifest(manifest: Mapping[str, Any]) -> None:
