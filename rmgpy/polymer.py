@@ -5904,6 +5904,11 @@ def process_polymer_candidates_multipool(
     spawn_intents: List[SpawnIntent] = []
 
     for cand in candidates:
+        # A durably gas-vetoed species (a genuine gas volatile, e.g. a
+        # gas-origin product, I-113) is never a pool candidate: it is neither
+        # classified, nor proxy-tagged, nor spawned.
+        if has_polymer_gas_veto(cand):
+            continue
         # Phase A: classify against every existing pool, take the first non-trivial hit.
         matched_pool: Optional['Polymer'] = None
         matched_class: Optional[PolymerClass] = None

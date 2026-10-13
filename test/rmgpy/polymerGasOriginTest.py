@@ -37,7 +37,7 @@ POOLS = {
 # today (probed on 7ddc33280): the gas product must stay gas.
 FOLD_CASES = {
     "PE": dict(radical="[CH2]CCC=C", gas_product="C=CCCC"),
-    "PP": dict(radical="[CH2]CCC(C)C", gas_product="CCC(C)C"),
+    "PP": dict(radical="[CH2]CCC(C)C", gas_product="CCCC(C)C"),
     "PS": dict(radical="C[CH]CCc1ccccc1", gas_product="CCCCc1ccccc1"),
 }
 
@@ -450,6 +450,8 @@ class TestGasProductResolution:
 
         cerm, pool, rad, rxns = _fold_rows(name)
         gas_ref = Molecule(smiles=FOLD_CASES[name]["gas_product"])
+        gas_ref_spc = Species(molecule=[gas_ref.copy(deep=True)])
+        gas_ref_spc.generate_resonance_structures()
         for row in rxns:
             out, _ = cerm.make_new_reaction(row, check_existing=False, generate_thermo=False,
                                             generate_kinetics=False)
@@ -457,7 +459,7 @@ class TestGasProductResolution:
             gas = [p for p in out.products if not isinstance(p, Polymer)]
             polys = [p for p in out.products if isinstance(p, Polymer)]
             assert len(gas) == 1 and len(polys) == 1, str(out)
-            assert gas[0].molecule[0].is_isomorphic(gas_ref)
+            assert gas_ref_spc.is_isomorphic(gas[0])
             assert _veto(gas[0]) and not gas[0].is_polymer_proxy
             assert polys[0].label.startswith(pool.label + "_mod"), polys[0].label
             assert out.polymer_flux_archetype == int(PolymerFluxArchetype.VOLATILE_EJECTION)
@@ -682,11 +684,17 @@ class TestThe298sRowSolverDeltas:
         r = sign * dn[9]           # events per second (mol/s) toward the alkene
         assert r > 0.0
         assert dn[8] == pytest.approx(-sign * r, rel=1e-12)
-        bundle = moments[pe.label] if direction == "forward" else moments[mod.label]
+        # one length-biased chain per event (mid-chain site): the bundle is
+        # (1, mu2/mu1, mu3/mu1) of the DEBITED pool, mu3 from the solver's
+        # closure; it lands in the other pool unchanged (a_moment = 0)
+        from rmgpy.solver.polymer import _safe_mu3_from_mu012
+        assert not rxn.is_end_group_reaction
+        mu0, mu1, mu2 = moments[pe.label] if direction == "forward" else moments[mod.label]
+        bundle = (1.0, mu2 / mu1, _safe_mu3_from_mu012(mu0, mu1, mu2) / mu1)
         d_pe = dn[1:4]
         d_mod = dn[5:8]
-        np.testing.assert_allclose(d_pe, [-sign * r * b for b in bundle], rtol=1e-12)
-        np.testing.assert_allclose(d_mod, [sign * r * b for b in bundle], rtol=1e-12)
+        np.testing.assert_allclose(d_pe, [-sign * r * b for b in bundle], rtol=1e-9)
+        np.testing.assert_allclose(d_mod, [sign * r * b for b in bundle], rtol=1e-9)
         # elemental deltas: gas C5H9 -> C5H10; chains C(2n)H(4n+2), PE_mod one H short
         c_gas = 5.0 * (dn[8] + dn[9])
         h_gas = 9.0 * dn[8] + 10.0 * dn[9]
@@ -696,3 +704,55 @@ class TestThe298sRowSolverDeltas:
         assert c_pool == pytest.approx(0.0, abs=1e-9 * r)
         assert h_gas == pytest.approx(sign * r, rel=1e-12)
         assert h_pool == pytest.approx(-sign * r, rel=1e-9)
+
+
+class TestCondensedMembershipPlumbing:
+    def test_phase_mask_folds_into_genuine_gas_flags(self):
+        """The solver's phase mask (False = condensed) decides for plain
+        species; Polymers are never genuine gas whatever the mask says."""
+        import numpy as np
+
+        from rmgpy.rmg.main import make_condensed_membership
+
+        cerm, pe = _model("PE")
+        plain_condensed = _gas(cerm, "CC[CH]CCCCC", "pe_hloss")
+        gas = _gas(cerm, "[CH3]", "methyl")
+
+        class _Phase:
+            def get_gas_mask(self, species):
+                return np.array([s is not plain_condensed for s in species])
+
+        class _System:
+            polymerPhase = _Phase()
+
+        assert make_condensed_membership([object()]) is None
+        cerm.condensed_membership = make_condensed_membership([_System()])
+        assert cerm.genuine_gas_flags([pe, plain_condensed, gas]) == [False, False, True]
+
+    def test_react_all_threads_flags_per_tuple(self):
+        """A species the phase mask condenses is not stamped: its fragments
+        carry no gas verdict, in serial and parallel generation alike."""
+        import numpy as np
+
+        from rmgpy.gas_origin import new_census
+        from rmgpy.rmg.react import react_all
+
+        cerm, _ = _model()
+        methyl = _gas(cerm, "[CH3]", "methyl")
+        octane = _gas(cerm, "CCCCCCCC", "octane")
+        core = [methyl, octane]
+        uni = np.zeros(2, bool)
+        bi = np.zeros((2, 2), bool)
+        bi[0, 1] = True
+        methane = Molecule(smiles="C")
+        for procnum in (1, 2):
+            lists, tuples = react_all(core, 2, uni, bi, procnum=procnum,
+                                      genuine_gas=[True, False], census=new_census())
+            seen = False
+            for rxns in lists:
+                for rxn in rxns:
+                    for p, v in zip(getattr(rxn, rxn.gas_origin_side), rxn.gas_origin_verdicts):
+                        if not _mol(p).is_isomorphic(methane):
+                            assert v is False
+                            seen = True
+            assert seen

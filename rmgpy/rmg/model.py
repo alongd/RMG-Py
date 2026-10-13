@@ -53,7 +53,11 @@ from rmgpy.data.kinetics.family import (
     get_wasted_build_profile,
     _handshake_structures,
 )
-from rmgpy.gas_origin import flip_gas_origin_metadata
+from rmgpy.gas_origin import (CENSUS_GAS_FOLD_BYPASSED, CENSUS_GAS_LOOKUP_UNPOOLED,
+                              CENSUS_ROWS_CHANGED_CLASS, CENSUS_SUPPLIED_RELOOKUP_DIFFERS,
+                              capture_gas_origin_alignment, flip_gas_origin_metadata,
+                              format_census, has_gas_origin_metadata, is_genuine_gas_reactant,
+                              merge_census, new_census, restore_gas_origin_alignment)
 from rmgpy.polymer import MassFluxAccumulator, Polymer, PolymerCrosslinkError, PolymerFluxArchetype, collect_polymer_pool_registry, compute_concerted_loss_evidence, compute_h_loss_shape_evidence, is_end_group_reaction, merge_polymer_adjudication_stamps, readjudicate_conduit_admission, restamp_flipped_polymer_archetype, stamp_gas_association_refusal, stamp_polymer_flux_archetype
 from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
 from rmgpy.data.rmg import get_db
@@ -231,6 +235,15 @@ class CoreEdgeReactionModel:
         self.species_dict = {}
         self.reaction_dict = {}
         self.species_cache = [None for i in range(4)]
+        # Gas-origin provenance (I-113, rmgpy.gas_origin). condensed_membership
+        # is an optional callable f(species_list) -> sequence of bool (True =
+        # condensed), the solver's own phase classification, installed by
+        # RMG.initialize for polymer reactors; react_all folds it into the
+        # per-species genuine-gas flags. gas_origin_census accumulates the
+        # whole-run counts (collapse refusals, identity-filter drops, rows
+        # whose resolution changed class).
+        self.condensed_membership = None
+        self.gas_origin_census = new_census()
         self.species_counter = 0
         self.reaction_counter = 0
         self.new_species_list = []
@@ -343,6 +356,84 @@ class CoreEdgeReactionModel:
         # At this point we can conclude that the species is new
         return None
 
+    def _gas_census(self):
+        """The run's gas-origin census (created on first use, so a model
+        object built before I-113 still works)."""
+        census = getattr(self, "gas_origin_census", None)
+        if census is None:
+            census = self.gas_origin_census = new_census()
+        return census
+
+    def genuine_gas_flags(self, species_list):
+        """Per-species genuine-gas flags (I-113) for ``species_list``:
+        :func:`rmgpy.gas_origin.is_genuine_gas_reactant` with the installed
+        condensed-membership predicate (the solver's phase mask) folded in.
+        A raising predicate propagates: a condensed species must never be
+        silently stamped gas."""
+        condensed = [False] * len(species_list)
+        predicate = getattr(self, "condensed_membership", None)
+        if predicate is not None and species_list:
+            condensed = [bool(c) for c in predicate(list(species_list))]
+            if len(condensed) != len(species_list):
+                raise ValueError("condensed_membership returned {0} flags for {1} species".format(
+                    len(condensed), len(species_list)))
+        return [is_genuine_gas_reactant(spc, condensed=c) for spc, c in zip(species_list, condensed)]
+
+    def check_for_existing_gas_species(self, molecule):
+        """
+        Gas-only variant of :meth:`check_for_existing_species` (I-113) for a
+        molecule whose heavy atoms all came from genuine gas reactants: the
+        same MRU-cache-then-formula scan, but a condensed candidate (a
+        :class:`Polymer`, a moment dummy or an explicit-DP oligomer -- see
+        :func:`rmgpy.gas_origin.is_genuine_gas_reactant`) is never returned,
+        neither from ``species_cache`` nor from ``species_dict``.
+
+        When the structural lookup would have returned a condensed candidate
+        the census counts it (``gas_lookup_unpooled``).
+        """
+        legacy_condensed = None  # what check_for_existing_species would have returned
+        for i, spec in enumerate(self.species_cache):
+            if spec is None or not spec.is_isomorphic(molecule, strict=False):
+                continue
+            eligible = is_genuine_gas_reactant(spec)
+            if legacy_condensed is None:
+                legacy_condensed = not eligible
+            if eligible:
+                self.species_cache.pop(i)
+                self.species_cache.insert(0, spec)
+                if legacy_condensed:
+                    self._gas_census()[CENSUS_GAS_LOOKUP_UNPOOLED] += 1
+                return spec
+
+        formula = molecule.get_formula()
+        for spec in self.species_dict.get(formula, []):
+            if not spec.is_isomorphic(molecule, strict=False):
+                continue
+            eligible = is_genuine_gas_reactant(spec)
+            if legacy_condensed is None:
+                legacy_condensed = not eligible
+            if eligible:
+                self.species_cache.pop()
+                self.species_cache.insert(0, spec)
+                if legacy_condensed:
+                    self._gas_census()[CENSUS_GAS_LOOKUP_UNPOOLED] += 1
+                return spec
+
+        if legacy_condensed:
+            self._gas_census()[CENSUS_GAS_LOOKUP_UNPOOLED] += 1
+        return None
+
+    def _peek_existing_species(self, molecule):
+        """Non-mutating emulation of :meth:`check_for_existing_species` (the
+        MRU cache is left untouched); used only for census comparisons."""
+        for spec in self.species_cache:
+            if spec is not None and spec.is_isomorphic(molecule, strict=False):
+                return spec
+        for spec in self.species_dict.get(molecule.get_formula(), []):
+            if spec.is_isomorphic(molecule, strict=False):
+                return spec
+        return None
+
     def _register_polymer(self, poly, generate_thermo=True):
         """
         Register a new :class:`Polymer` species in the model, checking for
@@ -447,9 +538,13 @@ class CoreEdgeReactionModel:
         from rmgpy.polymer import (
             apply_spawn_intents,
             collect_polymer_pool_registry,
+            has_polymer_gas_veto,
             process_polymer_candidates_multipool,
         )
-        proxy = [c for c in candidates if getattr(c, "is_polymer_proxy", False)]
+        # A durably gas-vetoed species is a genuine gas volatile (I-113): it
+        # is never a spawn candidate, whatever its sticky proxy flag says.
+        proxy = [c for c in candidates
+                 if getattr(c, "is_polymer_proxy", False) and not has_polymer_gas_veto(c)]
         if not proxy:
             return
         # Identity-deduped: a freshly-promoted daughter Polymer sits in BOTH
@@ -472,12 +567,20 @@ class CoreEdgeReactionModel:
             existing_pools=pool_registry,
         )
 
-    def make_new_species(self, object, label="", reactive=True, check_existing=True, generate_thermo=True, check_decay=False, check_cut=False):
+    def make_new_species(self, object, label="", reactive=True, check_existing=True, generate_thermo=True, check_decay=False, check_cut=False,
+                         gas_origin=False):
         """
         Formally create a new species from the specified `object`, which can be
         either a :class:`Molecule` object or an :class:`rmgpy.species.Species`
         object. It is emphasized that `reactive` relates to the :Class:`Species` attribute, while `reactive_structure`
         relates to the :Class:`Molecule` attribute.
+
+        ``gas_origin=True`` (I-113) marks a molecule whose heavy atoms all came
+        from genuine gas reactants: it is resolved with
+        :meth:`check_for_existing_gas_species` (never onto a condensed
+        species), the resolved Species gets the durable gas veto and its proxy
+        flags cleared, and every cut fragment / decay product inherits the
+        verdict.
         """
 
         # Polymer objects must be registered via their own path (fingerprint-based
@@ -502,19 +605,27 @@ class CoreEdgeReactionModel:
         # transfer it below -- onto BOTH a newly created Species AND an existing
         # (deduped) Species, since dedup short-circuits before the proxy logic
         # (first-write-wins would otherwise drop the verdict).
-        from rmgpy.polymer import (has_polymer_gas_veto,
+        from rmgpy.polymer import (clear_polymer_proxy, has_polymer_gas_veto,
                                    POLYMER_REFERENCE_STATE_GAS_VETO_KEY)
-        _gas_veto = has_polymer_gas_veto(object) or has_polymer_gas_veto(molecule)
+        _gas_veto = gas_origin or has_polymer_gas_veto(object) or has_polymer_gas_veto(molecule)
+        if gas_origin:
+            # the blanket generation-time proxy stamp is stale on a gas molecule
+            molecule.is_polymer_proxy = False
 
         # If desired, check to ensure that the species is new; return the
         # existing species if not new
         if check_existing:
-            spec = self.check_for_existing_species(molecule)
+            if gas_origin:
+                spec = self.check_for_existing_gas_species(molecule)
+            else:
+                spec = self.check_for_existing_species(molecule)
             if spec is not None:
                 if _gas_veto:
                     if not isinstance(getattr(spec, "props", None), dict):
                         spec.props = {}
                     spec.props[POLYMER_REFERENCE_STATE_GAS_VETO_KEY] = True
+                if gas_origin:
+                    clear_polymer_proxy(spec)
                 return spec, False
 
         # If we're here then we're ready to make the new species
@@ -528,22 +639,24 @@ class CoreEdgeReactionModel:
             if len(mols) == 1:
                 molecule = mols[0]
             else:
-                return [self.make_new_species(mol, check_decay=check_decay) for mol in mols]
+                return [self.make_new_species(mol, check_decay=check_decay, gas_origin=gas_origin) for mol in mols]
 
         thermo, transport = getattr(object, 'thermo', None), getattr(object, 'transport_data', None)
         spec = Species(label=label, molecule=[molecule], reactive=reactive, thermo=thermo, transport_data=transport)
-        if molecule.is_polymer_proxy or object.is_polymer_proxy:
+        if not gas_origin and (molecule.is_polymer_proxy or object.is_polymer_proxy):
             spec.is_polymer_proxy = True
         if _gas_veto:
             spec.props[POLYMER_REFERENCE_STATE_GAS_VETO_KEY] = True
         spec.generate_resonance_structures()
+        if gas_origin:
+            clear_polymer_proxy(spec)
 
         if check_decay:
             spcs = decay_species(spec)
             if len(spcs) == 1:
                 spec = spcs[0]
             else:
-                return [self.make_new_species(spc) for spc in spcs]
+                return [self.make_new_species(spc, gas_origin=gas_origin) for spc in spcs]
 
         if reactive:
             self.species_counter += 1  # count only reactive species
@@ -609,8 +722,11 @@ class CoreEdgeReactionModel:
         """
 
         # Make sure the reactant and product lists are sorted before performing the check
+        # (the gas-origin metadata, I-113, is realigned to the new order)
+        gas_origin_alignment = capture_gas_origin_alignment(rxn)
         rxn.reactants.sort()
         rxn.products.sort()
+        restore_gas_origin_alignment(rxn, gas_origin_alignment)
 
         # If reactants and products are identical, then something weird happened along
         # the way and we got a symmetrical reaction.
@@ -667,7 +783,89 @@ class CoreEdgeReactionModel:
 
         return False, None
 
-    def make_new_reaction(self, forward, check_existing=True, generate_thermo=True, generate_kinetics=True, perform_cut=True):
+    def _gas_origin_plan(self, forward, supplied_species):
+        """Read a family-generated row's gas-origin metadata (I-113) into a
+        resolution plan, or return None when the row carries none (legacy
+        structural resolution).
+
+        Supplied participants with a valid source index are replaced IN
+        PLACE by the canonical registered objects of ``supplied_species``
+        (never re-looked-up structurally). Returns ``(gas_ids, restored)``:
+        the ids of the generated participant objects with a gas verdict, and
+        ``{id(canonical): source index}`` for the restored objects. Identity
+        keys survive any later in-place reordering or replacement of the
+        participant lists (handshake, chip surgery, sorting)."""
+        if not forward.family or not has_gas_origin_metadata(forward):
+            return None
+        gen_side = forward.gas_origin_side
+        sup_side = "reactants" if gen_side == "products" else "products"
+        gas_ids = {id(p) for p, verdict in zip(getattr(forward, gen_side), forward.gas_origin_verdicts)
+                   if verdict}
+        restored = {}
+        if supplied_species is not None:
+            supplied = list(getattr(forward, sup_side))
+            replaced = {}
+            for j, src in enumerate(forward.gas_origin_sources):
+                if src is None or not 0 <= src < len(supplied_species):
+                    continue
+                canonical = supplied_species[src]
+                if getattr(supplied[j], "molecule", None):
+                    peek = self._peek_existing_species(supplied[j].molecule[0])
+                    if peek is not None and peek is not canonical:
+                        self._gas_census()[CENSUS_SUPPLIED_RELOOKUP_DIFFERS] += 1
+                replaced[id(supplied[j])] = canonical
+                supplied[j] = canonical
+                restored.setdefault(id(canonical), []).append(src)
+            setattr(forward, sup_side, supplied)
+            if forward.pairs:
+                # pairs referenced the replaced objects: point them at the
+                # canonical ones (the pairing itself is unchanged)
+                forward.pairs = [type(pair)((replaced.get(id(pair[0]), pair[0]),
+                                             replaced.get(id(pair[1]), pair[1])))
+                                 for pair in forward.pairs]
+        return gas_ids, restored
+
+    def _resolve_participant(self, obj, plan, generate_thermo, **kwargs):
+        """Resolve one participant under a gas-origin plan: a restored
+        canonical object is returned as-is, a gas-verdict participant goes
+        through the gas-only path, anything else through the structural
+        path. Returns the raw :meth:`make_new_species` result shape."""
+        if plan is not None:
+            gas_ids, restored = plan
+            if id(obj) in restored:
+                return obj, False
+            if id(obj) in gas_ids:
+                return self.make_new_species(obj, generate_thermo=generate_thermo, gas_origin=True, **kwargs)
+        return self.make_new_species(obj, generate_thermo=generate_thermo, **kwargs)
+
+    @staticmethod
+    def _handshake_masks(structure_list, plan):
+        """Per-index (gas_verdicts, skip) lists for _handshake_structures."""
+        if plan is None:
+            return None, None
+        gas_ids, restored = plan
+        return ([id(x) in gas_ids for x in structure_list],
+                [id(x) in restored for x in structure_list])
+
+    @staticmethod
+    def _record_resolved_metadata(forward, plan, gas_resolved_ids):
+        """Re-express the gas-origin metadata on the RESOLVED participant
+        lists: a resolved generated participant is gas iff it was resolved
+        through the gas-only path (cut fragments / decay products inherit
+        their parent's verdict); supplied participants keep their source
+        index."""
+        if plan is None:
+            return
+        _gas_ids, restored = plan
+        gen_side = forward.gas_origin_side
+        sup_side = "reactants" if gen_side == "products" else "products"
+        forward.gas_origin_verdicts = tuple(id(p) in gas_resolved_ids for p in getattr(forward, gen_side))
+        pending = {key: list(srcs) for key, srcs in restored.items()}
+        forward.gas_origin_sources = tuple(pending[id(p)].pop(0) if pending.get(id(p)) else None
+                                           for p in getattr(forward, sup_side))
+
+    def make_new_reaction(self, forward, check_existing=True, generate_thermo=True, generate_kinetics=True, perform_cut=True,
+                          supplied_species=None):
         """
         Make a new reaction given a :class:`Reaction` object `forward`.
         The reaction is added to the global list of reactions.
@@ -680,7 +878,27 @@ class CoreEdgeReactionModel:
         made such that the forward reaction is exothermic at 298K.
 
         The forward reaction is appended to self.new_reaction_list if it is new.
+
+        ``supplied_species`` (I-113) is the tuple of registered species the
+        row was generated from. With it, a row carrying gas-origin metadata
+        has its supplied participants restored by source index to those
+        canonical objects; generated participants with a gas verdict are
+        resolved gas-only and bypass every handshake fold.
         """
+
+        # Gas-origin resolution plan (None = legacy structural resolution)
+        census = self._gas_census()
+        census_before = (census[CENSUS_GAS_FOLD_BYPASSED], census[CENSUS_GAS_LOOKUP_UNPOOLED],
+                         census[CENSUS_SUPPLIED_RELOOKUP_DIFFERS])
+        plan = self._gas_origin_plan(forward, supplied_species)
+        gas_resolved_ids = set()
+
+        def _resolve(obj, **kwargs):
+            out = self._resolve_participant(obj, plan, generate_thermo, **kwargs)
+            if plan is not None and id(obj) in plan[0]:
+                for spc, _ in ([out] if type(out) == tuple else out):
+                    gas_resolved_ids.add(id(spc))
+            return out
 
         # Determine the proper species objects for all reactants and products
         real_products_snapshot = None
@@ -688,7 +906,7 @@ class CoreEdgeReactionModel:
         polymer_ea_pre = None
         polymer_real_H0 = None
         if forward.family and forward.is_forward:
-            reactants = [self.make_new_species(reactant, generate_thermo=generate_thermo)[0] for reactant in forward.reactants]
+            reactants = [_resolve(reactant)[0] for reactant in forward.reactants]
 
             # Polymer handshake: if any reactant is a Polymer, attempt to
             # convert product Molecule fragments into new Polymer objects
@@ -718,10 +936,13 @@ class CoreEdgeReactionModel:
                 # instead of misbooking it as a scission tail.
                 concerted_loss_gases = compute_concerted_loss_evidence(
                     reactants, forward.products, polymer_reactants)
+                gas_mask, skip_mask = self._handshake_masks(forward.products, plan)
                 try:
                     relabeled = _handshake_structures(forward.products, polymer_reactants,
                                                       h_loss_verdicts=h_loss_verdicts,
-                                                      concerted_loss_gases=concerted_loss_gases)
+                                                      concerted_loss_gases=concerted_loss_gases,
+                                                      gas_verdicts=gas_mask, skip=skip_mask,
+                                                      census=census)
                 except PolymerCrosslinkError as e:
                     # Chain-chain coupling is not representable in the method-of-
                     # moments model; discard the reaction rather than leak the
@@ -758,7 +979,7 @@ class CoreEdgeReactionModel:
             else:
                 check_cut = False
             for product in forward.products:
-                spcs = self.make_new_species(product, generate_thermo=generate_thermo, check_decay=True, check_cut=check_cut)
+                spcs = _resolve(product, check_decay=True, check_cut=check_cut)
                 if type(spcs) == tuple:
                     products.append(spcs[0])
                 elif type(spcs) == list:
@@ -768,7 +989,7 @@ class CoreEdgeReactionModel:
                 forward.reversible = False
         else:
             try:
-                reactants = [self.make_new_species(reactant, generate_thermo=generate_thermo)[0] for reactant in forward.reactants]
+                reactants = [_resolve(reactant)[0] for reactant in forward.reactants]
 
                 # Polymer handshake (same logic as the is_forward branch):
                 # resolve reactants first so we can detect Polymer objects,
@@ -787,15 +1008,18 @@ class CoreEdgeReactionModel:
                     # unimolecular concerted-elimination channels.
                     concerted_loss_gases = compute_concerted_loss_evidence(
                         reactants, forward.products, polymer_reactants)
+                    gas_mask, skip_mask = self._handshake_masks(forward.products, plan)
                     relabeled = _handshake_structures(forward.products, polymer_reactants,
                                                       h_loss_verdicts=h_loss_verdicts,
-                                                      concerted_loss_gases=concerted_loss_gases)
+                                                      concerted_loss_gases=concerted_loss_gases,
+                                                      gas_verdicts=gas_mask, skip=skip_mask,
+                                                      census=census)
                     forward.is_end_group_reaction = is_end_group_reaction(forward.products)
                     # Same surgery + stamping as the is_forward branch.
                     stamp_polymer_flux_archetype(forward, reactants, polymer_reactants)
                     forward.pairs = None
 
-                products = [self.make_new_species(product, generate_thermo=generate_thermo)[0] for product in forward.products]
+                products = [_resolve(product)[0] for product in forward.products]
             except PolymerCrosslinkError as e:
                 # Chain-chain coupling is not representable in the method-of-
                 # moments model; discard the reaction rather than leak the
@@ -819,6 +1043,11 @@ class CoreEdgeReactionModel:
                         forward.reverse.pairs[pairIndex] = (products[product_index], reactants[reactant_index])
         forward.reactants = reactants
         forward.products = products
+        if plan is not None:
+            self._record_resolved_metadata(forward, plan, gas_resolved_ids)
+            if (census[CENSUS_GAS_FOLD_BYPASSED], census[CENSUS_GAS_LOOKUP_UNPOOLED],
+                    census[CENSUS_SUPPLIED_RELOOKUP_DIFFERS]) != census_before:
+                census[CENSUS_ROWS_CHANGED_CLASS] += 1
 
         # PP v1 campaign refusal (adjudicated round 63): a row bridging PURE
         # gas-phase radicals into a condensed pool proxy (association, either
@@ -1137,7 +1366,9 @@ class CoreEdgeReactionModel:
                 pdep_network, new_species = new_object
                 new_reactions.extend(pdep_network.explore_isomer(new_species))
 
-                self.process_new_reactions(new_reactions, new_species, pdep_network, requires_rms=requires_rms)
+                # explore_isomer reacts the isomer alone: it is the supplied tuple
+                self.process_new_reactions(new_reactions, new_species, pdep_network, requires_rms=requires_rms,
+                                           supplied_species=(new_species,))
 
             else:
                 raise TypeError(
@@ -1161,7 +1392,8 @@ class CoreEdgeReactionModel:
                         if len(products) == 1 and products[0] == species:
                             new_reactions = network.explore_isomer(species)
 
-                            self.process_new_reactions(new_reactions, species, network, requires_rms=requires_rms)
+                            self.process_new_reactions(new_reactions, species, network, requires_rms=requires_rms,
+                                                       supplied_species=(species,))
                             network.update_configurations(self)
                             index = 0
                             break
@@ -1177,16 +1409,28 @@ class CoreEdgeReactionModel:
         else:
             # Generate reactions between all core species which have not been
             # reacted yet and exceed the reaction filter thresholds
+            # Gas-origin provenance (I-113): one genuine-gas flag per core
+            # species (the solver's condensed-membership verdict folded in),
+            # and an explicit census returned by every generation task.
+            census_before = dict(self._gas_census())
+            generation_census = new_census()
             rxn_lists, spcs_tuples = react_all(
-                self.core.species, num_old_core_species, unimolecular_react, bimolecular_react, trimolecular_react=trimolecular_react, procnum=procnum
+                self.core.species, num_old_core_species, unimolecular_react, bimolecular_react, trimolecular_react=trimolecular_react, procnum=procnum,
+                genuine_gas=self.genuine_gas_flags(self.core.species), census=generation_census,
             )
+            merge_census(self.gas_origin_census, generation_census)
 
             for rxnList, spcTuple in zip(rxn_lists, spcs_tuples):
                 if rxnList:
                     # Identify a core species which was used to generate the reaction
                     # This is only used to determine the reaction direction for processing
                     spc = spcTuple[0]
-                    self.process_new_reactions(rxnList, spc, requires_rms=requires_rms)
+                    self.process_new_reactions(rxnList, spc, requires_rms=requires_rms,
+                                               supplied_species=spcTuple)
+            step = {k: self.gas_origin_census[k] - census_before.get(k, 0)
+                    for k in self.gas_origin_census}
+            logging.info("Gas-origin census (this enlarge): %s", format_census(step))
+            logging.info("Gas-origin census (run total): %s", format_census(self.gas_origin_census))
 
         ################################################################
         # Begin processing the new species and reactions
@@ -1365,16 +1609,21 @@ class CoreEdgeReactionModel:
         self.new_surface_spcs_loss = set()
         self.new_surface_rxns_loss = set()
 
-    def process_new_reactions(self, new_reactions, new_species, pdep_network=None, generate_thermo=True, generate_kinetics=True, requires_rms=False):
+    def process_new_reactions(self, new_reactions, new_species, pdep_network=None, generate_thermo=True, generate_kinetics=True, requires_rms=False,
+                              supplied_species=None):
         """
         Process a list of newly-generated reactions involving the new core
         species or explored isomer `new_species` in network `pdep_network`.
 
         Makes a reaction and decides where to put it: core, edge, or PDepNetwork.
+
+        ``supplied_species`` is the species tuple the reactions were
+        generated from (see :meth:`make_new_reaction`).
         """
         for rxn in new_reactions:
             try:
-                rxn, is_new = self.make_new_reaction(rxn, generate_thermo=generate_thermo, generate_kinetics=generate_kinetics)
+                rxn, is_new = self.make_new_reaction(rxn, generate_thermo=generate_thermo, generate_kinetics=generate_kinetics,
+                                                     supplied_species=supplied_species)
             except Exception as e:
                 logging.error(f"Error when making reaction {rxn} from {rxn.family}")
                 raise e

@@ -891,6 +891,13 @@ class RMG(util.Subject):
 
         self.rmg_memories = []
 
+        # Gas-origin provenance (I-113): the condensed-membership predicate
+        # reaction generation folds into each core species' genuine-gas flag
+        # is the solver's OWN phase classification -- the polymer phase gas
+        # mask (configured condensed proxies, explicit-DP members, condensed
+        # H-loss daughters, every pool-booked species) -- never a size rule.
+        self.reaction_model.condensed_membership = make_condensed_membership(self.reaction_systems)
+
         logging.info("Initialization complete. Starting model generation.\n")
 
         # Initiate first reaction discovery step after adding all core species
@@ -2553,6 +2560,25 @@ def determine_procnum_from_ram():
 
     # Return the maximal number of processes for multiprocessing
     return procnum
+
+
+def make_condensed_membership(reaction_systems):
+    """Return a callable ``f(species_list) -> list of bool`` (True =
+    condensed) built from every reaction system's polymer phase
+    (``PolymerPhase.get_gas_mask``, False = condensed), or None when no
+    reaction system has a polymer phase."""
+    phases = [getattr(system, "polymerPhase", None) for system in reaction_systems or []]
+    phases = [phase for phase in phases if phase is not None and hasattr(phase, "get_gas_mask")]
+    if not phases:
+        return None
+
+    def condensed_membership(species_list):
+        condensed = np.zeros(len(species_list), dtype=bool)
+        for phase in phases:
+            condensed |= ~np.asarray(phase.get_gas_mask(species_list), dtype=bool)
+        return condensed.tolist()
+
+    return condensed_membership
 
 
 def initialize_log(verbose, log_file_name):

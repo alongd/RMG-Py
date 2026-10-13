@@ -130,7 +130,8 @@ def react_species(species_tuple, only_families=None, genuine_gas=None, census=No
     return reactions
 
 
-def react_all(core_spc_list, num_old_core_species, unimolecular_react, bimolecular_react, trimolecular_react=None, procnum=1):
+def react_all(core_spc_list, num_old_core_species, unimolecular_react, bimolecular_react, trimolecular_react=None, procnum=1,
+              genuine_gas=None, census=None):
     """
     Reacts the core species list via uni-, bi-, and trimolecular reactions.
 
@@ -144,6 +145,10 @@ def react_all(core_spc_list, num_old_core_species, unimolecular_react, bimolecul
         bimolecular_react (np.ndarray): reaction filter flags indicating which species to react bimolecularly
         trimolecular_react (np.ndarray, optional): reaction filter flags indicating which species to react trimolecularly
         procnum (int, optional): number of processors used for reaction generation
+        genuine_gas (sequence, optional): per-core-species genuine-gas flags
+            (I-113), aligned with ``core_spc_list``; each task receives the
+            flags of its own species tuple
+        census (dict, optional): gas-origin census accumulator (see :func:`react`)
 
     Returns:
         a list of lists of reactions generated from each species tuple
@@ -170,9 +175,18 @@ def react_all(core_spc_list, num_old_core_species, unimolecular_react, bimolecul
                         if core_spc_list[i].reactive and core_spc_list[j].reactive and core_spc_list[k].reactive:
                             spc_tuples.append((core_spc_list[i], core_spc_list[j], core_spc_list[k]))
 
+    if genuine_gas is not None:
+        index_of = {id(spc): i for i, spc in enumerate(core_spc_list)}
+
+        def _flags(spc_tuple):
+            return tuple(bool(genuine_gas[index_of[id(spc)]]) for spc in spc_tuple)
+
     if procnum == 1:
         # React all families like normal (provide empty argument for only_families)
-        spc_fam_tuples = list(zip(spc_tuples))
+        if genuine_gas is None:
+            spc_fam_tuples = list(zip(spc_tuples))
+        else:
+            spc_fam_tuples = [(spc_tuple, None, _flags(spc_tuple)) for spc_tuple in spc_tuples]
     else:
         # Identify and split families that are prone to generate many reactions into sublists.
         family_list = list(get_db('kinetics').families.keys())
@@ -197,10 +211,11 @@ def react_all(core_spc_list, num_old_core_species, unimolecular_react, bimolecul
         min_atoms = 10
         spc_fam_tuples = []
         for i, spc_tuple in enumerate(spc_tuples):
+            flags = () if genuine_gas is None else (_flags(spc_tuple),)
             if any([len(spc.molecule[0].atoms) > min_atoms for spc in spc_tuple]):
                 for item in split_list:
-                    spc_fam_tuples.append((spc_tuple, item))
+                    spc_fam_tuples.append((spc_tuple, item) + flags)
             else:
-                spc_fam_tuples.append((spc_tuple,))
+                spc_fam_tuples.append((spc_tuple, None) + flags if flags else (spc_tuple,))
 
-    return react(spc_fam_tuples, procnum), [fam_tuple[0] for fam_tuple in spc_fam_tuples]
+    return react(spc_fam_tuples, procnum, census=census), [fam_tuple[0] for fam_tuple in spc_fam_tuples]

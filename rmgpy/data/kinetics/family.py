@@ -5187,8 +5187,27 @@ def _h_loss_daughter_veto_exempt(mol, polymer_reactants):
     return False
 
 
+def _structural_fold_would_apply(mol, polymer_reactants, h_loss_feature, concerted_loss_gas):
+    """Census-only replay of the handshake fold on a throwaway copy: True if
+    some polymer reactant would have converted ``mol`` into a Polymer, or
+    rejected the row as a crosslink."""
+    from rmgpy.polymer import PolymerCrosslinkError
+    for polymer_obj in polymer_reactants:
+        try:
+            if polymer_obj.create_reacted_copy(
+                    mol.copy(deep=True), h_loss_feature=h_loss_feature,
+                    concerted_loss_gas=concerted_loss_gas):
+                return True
+        except PolymerCrosslinkError:
+            return True
+        except Exception:
+            pass
+    return False
+
+
 def _handshake_structures(structure_list, polymer_reactants, h_loss_verdicts=None,
-                          concerted_loss_gases=None):
+                          concerted_loss_gases=None, gas_verdicts=None, skip=None,
+                          census=None):
     """
     Helper to scan a list of Molecules or Species (reactants or products) and
     convert them to Polymer objects if they match an input polymer structure.
@@ -5219,11 +5238,25 @@ def _handshake_structures(structure_list, polymer_reactants, h_loss_verdicts=Non
     channel-keyed ``{label}_loss{gas}`` feature pool instead of the
     single-wing scission misbooking. ``None`` (legacy callers) means
     all-None.
+
+    ``gas_verdicts`` (I-113 gas-origin provenance) is an optional list of
+    bools parallel to ``structure_list``: a True entry is a molecule whose
+    heavy atoms all came from genuine gas reactants. It is gas by
+    provenance, so it bypasses every fold (wing, BASELINE/feature, H-loss
+    and concerted-loss producer paths) and the H-loss veto exemption: its
+    proxy stamp is cleared and the durable gas veto set. With a ``census``
+    dict the fold the structural path WOULD have made is replayed on a
+    throwaway copy and counted (``gas_fold_bypassed``); nothing else is
+    affected. ``skip`` (parallel bools) leaves an entry untouched -- the
+    canonical registered objects restored for supplied participants.
     """
+    from rmgpy.gas_origin import CENSUS_GAS_FOLD_BYPASSED
     from rmgpy.polymer import clear_polymer_proxy, set_polymer_gas_veto
     replaced = False
     for i, item in enumerate(structure_list):
         if hasattr(item, 'is_polymer') and item.is_polymer:
+            continue
+        if skip is not None and i < len(skip) and skip[i]:
             continue
         if isinstance(item, Molecule):
             mol = item
@@ -5236,6 +5269,13 @@ def _handshake_structures(structure_list, polymer_reactants, h_loss_verdicts=Non
         concerted_loss_gas = (concerted_loss_gases[i]
                               if (concerted_loss_gases is not None
                                   and i < len(concerted_loss_gases)) else None)
+        if gas_verdicts is not None and i < len(gas_verdicts) and gas_verdicts[i]:
+            if census is not None and _structural_fold_would_apply(
+                    mol, polymer_reactants, h_loss_feature, concerted_loss_gas):
+                census[CENSUS_GAS_FOLD_BYPASSED] = census.get(CENSUS_GAS_FOLD_BYPASSED, 0) + 1
+            clear_polymer_proxy(item)
+            set_polymer_gas_veto(item)
+            continue
         for polymer_obj in polymer_reactants:
             try:
                 new_polymer = polymer_obj.create_reacted_copy(
