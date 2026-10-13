@@ -756,3 +756,83 @@ class TestCondensedMembershipPlumbing:
                             assert v is False
                             seen = True
             assert seen
+
+
+################################################################################
+# Items 8-9: twins downstream, identity-filter counter
+################################################################################
+
+def _twin_core():
+    cerm = CoreEdgeReactionModel()
+    pe, _ = cerm._register_polymer(Polymer(**POOLS["PE"]), generate_thermo=False)
+    twin = Species(molecule=[Molecule(smiles="CCCCCC")], label="hexane")
+    twin.index = 7
+    return pe, twin
+
+
+class TestTwinTieBreak:
+    def test_restart_reorder_keeps_gas_and_polymer_twins_apart(self):
+        """(g) A restart map listing gas n-hexane before PE (both hexane
+        adjacency lists) must reorder the live core by role, not by the
+        first structural match."""
+        from rmgpy.rmg.main import reorder_restart_core_species, restart_species_role
+
+        pe, twin = _twin_core()
+        assert restart_species_role(pe) == "polymer"
+        assert restart_species_role(twin) == "gas"
+        restart = [Species().from_adjacency_list(s.molecule[0].to_adjacency_list())
+                   for s in (twin, pe)]
+        core = [pe, twin]
+        reordered = reorder_restart_core_species(restart, ["gas", "polymer"], core)
+        assert reordered[0] is twin and reordered[1] is pe
+        assert core == []
+
+    def test_restart_map_round_trip_writes_roles(self, tmp_path):
+        from rmgpy.rmg.main import load_restart_species_roles, write_restart_species_map
+
+        pe, twin = _twin_core()
+        write_restart_species_map(str(tmp_path), [twin, pe])
+        roles = load_restart_species_roles(str(tmp_path / "species_map.yml"), 2)
+        assert roles == ["gas", "polymer"]
+        assert load_restart_species_roles(str(tmp_path / "missing.yml"), 2) is None
+
+    def test_cantera_fallback_label_prefers_same_role(self):
+        """(g) Cantera's structural fallback must not swap twins."""
+        from rmgpy.cantera import get_label
+
+        pe, twin = _twin_core()
+        species_list = [pe, twin]
+        gas_copy = Species(molecule=[Molecule(smiles="CCCCCC")], label="other")
+        assert get_label(gas_copy, species_list) == "hexane(7)"
+        poly_copy = pe.copy(deep=True)
+        assert get_label(poly_copy, species_list).startswith(pe.label)
+        species_list = [twin, pe]
+        assert get_label(poly_copy, species_list).startswith(pe.label)
+        assert get_label(gas_copy, species_list) == "hexane(7)"
+
+
+class TestIdentityFilterCounter:
+    def test_gas_hexyl_plus_pe_identity_drop_is_counted(self):
+        """Item 9 (measured, not fixed): gas 1-hexyl + PE <=> gas hexane +
+        chain 1-hexyl has identical participant multisets and is dropped by
+        the identity filter; the census counts it as a gas/pool drop."""
+        from rmgpy.gas_origin import new_census
+
+        cerm, pe = _model("PE")
+        hexyl = _gas(cerm, "[CH2]CCCCC", "hexyl1")
+        census = new_census()
+        _kinetics().generate_reactions_from_families(
+            [hexyl, pe], only_families=["H_Abstraction"], census=census)
+        assert census["identity_filter_drops_gas_mixed"] >= 1
+        assert census["identity_filter_drops"] >= census["identity_filter_drops_gas_mixed"]
+
+    def test_pure_gas_identity_drop_is_not_gas_mixed(self):
+        from rmgpy.gas_origin import new_census
+
+        cerm, _ = _model()
+        census = new_census()
+        _kinetics().generate_reactions_from_families(
+            [_gas(cerm, "[CH3]", "methyl"), _gas(cerm, "C", "methane")],
+            only_families=["H_Abstraction"], census=census)
+        assert census["identity_filter_drops"] >= 1
+        assert census["identity_filter_drops_gas_mixed"] == 0
