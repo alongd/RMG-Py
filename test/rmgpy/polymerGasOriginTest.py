@@ -891,3 +891,162 @@ class TestRestoredPoolRowsAreNeverUnstamped:
             assert cerm.gas_origin_census["restored_pool_refusals"] == refused
         finally:
             setup_module(sys.modules[__name__])
+
+
+################################################################################
+# Round 2: pool-origin products booked as gas fail closed
+################################################################################
+
+MOD_DAUGHTERS = {"PE": "CC[CH]CCC", "PP": "CCC[C](C)CC(C)C"}
+
+
+def _pool_mod(name):
+    cerm, pool = _model(name)
+    mod = pool.create_reacted_copy(Molecule(smiles=MOD_DAUGHTERS[name]), h_loss_feature=True)
+    mod, _ = cerm._register_polymer(mod, generate_thermo=False)
+    return cerm, pool, mod
+
+
+def _resolved_pool_pool_rows(name, families=("Disproportionation",)):
+    cerm, pool, mod = _pool_mod(name)
+    rows = _kinetics().generate_reactions_from_families([mod, mod], only_families=list(families))
+    assert rows, "liveness: pool + pool rows expected"
+    out = []
+    for row in rows:
+        res, _ = cerm.make_new_reaction(row, check_existing=False, generate_thermo=False,
+                                        generate_kinetics=False, supplied_species=(mod, mod))
+        if res is not None:
+            out.append(res)
+    return cerm, pool, mod, out
+
+
+class TestPoolOriginGasProduct:
+    def test_verdicts_mark_whole_chain_pool_products(self):
+        """The pool-origin verdict rides the gas-origin metadata channel: on
+        PE_mod + PE_mod disproportionation both C6 products are made of one
+        whole chain proxy each."""
+        cerm, pool, mod = _pool_mod("PE")
+        rows = _kinetics().generate_reactions_from_families(
+            [mod, mod], only_families=["Disproportionation"])
+        assert rows
+        for row in rows:
+            side = getattr(row, row.gas_origin_side)
+            assert row.pool_origin_verdicts == tuple(True for _ in side), str(row)
+            assert not any(row.gas_origin_verdicts)
+            for mol in _all_molecules(row):
+                assert all("pool_origin" not in a.props for a in mol.atoms)
+
+    @pytest.mark.parametrize("name", ["PE", "PP"])
+    def test_pool_pool_disproportionation_is_refused(self, name):
+        """A chain-radical disproportionation product made only of one
+        chain's heavy atoms (the vinyl-ended chain) must never be booked as
+        a gas volatile: the row is refused, named and counted."""
+        cerm, pool, mod, rows = _resolved_pool_pool_rows(name)
+        refused = 0
+        for res in rows:
+            gas = [p for p in res.products + res.reactants if not isinstance(p, Polymer)]
+            assert gas, "liveness: the alkene resolves to a gas Species"
+            assert res.polymer_refused is True, str(res)
+            assert res.polymer_refused_accumulating is False
+            assert res.polymer_refused_detail == "pool-origin-gas-product"
+            refused += 1
+        assert cerm.gas_origin_census["pool_origin_gas_refusals"] == refused
+
+    def test_pool_pool_h_abstraction_diradical_is_refused(self):
+        cerm, pool, mod, rows = _resolved_pool_pool_rows("PE", families=("H_Abstraction",))
+        assert rows
+        for res in rows:
+            assert res.polymer_refused_detail == "pool-origin-gas-product", str(res)
+
+    def test_298s_shape_is_unaffected(self):
+        """Gas pentenyl + PE: the pool-only product (the chain radical) lands
+        in PE_mod, the gas-origin pentene stays gas -- nothing refused."""
+        cerm, pool, rad, rxns = _fold_rows("PE")
+        for row in rxns:
+            res, _ = cerm.make_new_reaction(row, check_existing=False, generate_thermo=False,
+                                            generate_kinetics=False, supplied_species=(rad, pool))
+            assert res.polymer_refused is False
+            assert res.polymer_refused_detail is None
+        assert cerm.gas_origin_census["pool_origin_gas_refusals"] == 0
+
+    def test_refused_row_contributes_zero_flux(self):
+        import numpy as np
+
+        from rmgpy.kinetics import Arrhenius
+        from rmgpy.reaction import Reaction
+        from rmgpy.solver.polymer import HybridPolymerSystem, PolymerPoolConfig
+
+        cerm, pool, mod, rows = _resolved_pool_pool_rows("PE")
+        res = rows[0]
+        assert res.polymer_refused
+        gas = next(p for p in res.reactants + res.products if not isinstance(p, Polymer))
+        rxn = Reaction(reactants=list(res.reactants), products=list(res.products),
+                       kinetics=Arrhenius(A=(1.0e3, "m^3/(mol*s)"), n=0.0,
+                                          Ea=(0.0, "kcal/mol"), T0=(298.15, "K")),
+                       reversible=False)
+        rxn.is_end_group_reaction = bool(res.is_end_group_reaction)
+        rxn.polymer_flux_archetype = res.polymer_flux_archetype
+        rxn.polymer_eject_units = res.polymer_eject_units
+        rxn.polymer_refused = res.polymer_refused
+        rxn.polymer_refused_accumulating = res.polymer_refused_accumulating
+        dummies = []
+        for k, smi in enumerate(("CO", "C=O", "C#N")):
+            s = Species(molecule=[Molecule(smiles=smi)], label="%s_mu%d" % (mod.label, k))
+            s.is_moment_dummy = True
+            dummies.append(s)
+        core = [mod] + dummies + [gas]
+        pools = [PolymerPoolConfig(label=mod.label, xs=3, explicit_dp_to_species_index={},
+                                   mu_indices=(1, 2, 3), monomer_poly_index=None,
+                                   k_scission=0.0, k_unzip=0.0, tail_kinetics=None,
+                                   monomer_mw_g_mol=pool.monomer_mw_g_mol,
+                                   chain_mass_defect_g_mol=mod.chain_mass_defect_g_mol)]
+        rs = HybridPolymerSystem(
+            T=1000.0, P=1.0e5, initial_mole_fractions={gas: 1.0}, V_poly=1.0,
+            polymer_pools=pools, mass_transfer=[],
+            gas_species_mask=np.array([False] * 4 + [True], dtype=bool),
+            constant_gas_volume=False,
+            initial_polymer_moments={mod.label: (1.0, 50.0, 3000.0)}, termination=[])
+        rs.initialize_model(core, [rxn], [], [])
+        dn = rs.residual(0.0, rs.y, np.zeros_like(rs.y))[0]
+        assert rs.reaction_refused[0] == 1
+        assert np.all(dn == 0.0)
+
+    def test_refusal_survives_pickle_dedupe_and_flip(self):
+        import pickle
+
+        from rmgpy.data.kinetics.family import TemplateReaction
+        from rmgpy.polymer import (merge_polymer_adjudication_stamps,
+                                   restamp_flipped_polymer_archetype)
+
+        cerm, pool, mod, rows = _resolved_pool_pool_rows("PE")
+        res = rows[0]
+        back = pickle.loads(pickle.dumps(res))
+        assert back.polymer_refused and back.polymer_refused_detail == "pool-origin-gas-product"
+        assert back.pool_origin_verdicts == res.pool_origin_verdicts
+        canonical = TemplateReaction(reactants=list(res.reactants), products=list(res.products),
+                                     family=res.family, is_forward=True)
+        merge_polymer_adjudication_stamps(back, canonical)
+        assert canonical.polymer_refused
+        assert canonical.polymer_refused_detail == "pool-origin-gas-product"
+        assert canonical.pool_origin_verdicts == res.pool_origin_verdicts
+        res.reactants, res.products = res.products, res.reactants
+        restamp_flipped_polymer_archetype(res)
+        assert res.polymer_refused is True
+        assert res.polymer_refused_detail == "pool-origin-gas-product"
+
+    def test_pool_fragment_is_not_a_whole_chain(self):
+        """Only a product carrying a supplied pool's ENTIRE proxy is a chain;
+        a pool-only fragment (an ejected monomer) is not, and keeps today's
+        behaviour."""
+        from rmgpy.gas_origin import molecule_is_whole_pool_chain, stamp_origin_copy
+
+        hexene = stamp_origin_copy(Molecule(smiles="CCC=CCC"), "pool_origin", 1)
+        ethylene = stamp_origin_copy(Molecule(smiles="C=C"), "pool_origin", 1)
+        assert molecule_is_whole_pool_chain(hexene, {1: 6}) is True
+        assert molecule_is_whole_pool_chain(ethylene, {1: 6}) is False
+        # stamp value 0 is a valid occurrence index: key presence, not truthiness
+        hexene0 = stamp_origin_copy(Molecule(smiles="CCC=CCC"), "pool_origin", 0)
+        assert molecule_is_whole_pool_chain(hexene0, {0: 6}) is True
+        mixed = stamp_origin_copy(Molecule(smiles="CCC=CCC"), "pool_origin", 0)
+        mixed.atoms[0].props.pop("pool_origin")
+        assert molecule_is_whole_pool_chain(mixed, {0: 6}) is False
