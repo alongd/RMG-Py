@@ -29,14 +29,17 @@
 
 import logging
 
+import pytest
+
 from copy import deepcopy
 
+from rmgpy.exceptions import PressureDependenceError
 from rmgpy.kinetics import Arrhenius, Chebyshev
 from rmgpy.pdep.collision import SingleExponentialDown
 from rmgpy.pdep.configuration import Configuration
 from rmgpy.pdep.network import Network
 from rmgpy.reaction import Reaction
-from rmgpy.rmg.pdep import PDepNetwork, PDepReaction
+from rmgpy.rmg.pdep import PDepNetwork, PDepReaction, select_bath_gas
 from rmgpy.species import Species, TransitionState
 from rmgpy.statmech.conformer import Conformer
 from rmgpy.statmech.rotation import NonlinearRotor
@@ -389,3 +392,34 @@ class TestPdep:
         assert copy_pdep_reaction.label == self.pdep_reaction.label
         assert copy_pdep_reaction.kinetics.is_identical_to(self.pdep_reaction.kinetics)
         assert copy_pdep_reaction.reversible == self.pdep_reaction.reversible
+
+
+class TestSelectBathGas:
+    """Bath-gas selection for pressure-dependent networks in polymer decks."""
+
+    @staticmethod
+    def _inert(label):
+        return Species(label=label, reactive=False)
+
+    @staticmethod
+    def _moment_dummies(base):
+        dummies = []
+        for k in range(3):
+            spc = Species(label=f'{base}_mu{k}', reactive=False)
+            spc.is_moment_dummy = True
+            dummies.append(spc)
+        return dummies
+
+    def test_moment_pseudo_species_excluded(self):
+        """Moment pseudo-species are bookkeeping, not colliders; real inert gases stay."""
+        reactive = Species(label='C2H4', smiles='C=C')
+        gases = [self._inert(x) for x in ('N2', 'Ar', 'He')]
+        core = [reactive, gases[0]] + self._moment_dummies('PS') + gases[1:] + self._moment_dummies('PE')
+        bath = select_bath_gas(core)
+        assert [s.label for s in bath] == ['N2', 'Ar', 'He']
+
+    def test_no_real_collider_raises(self):
+        """With only moment pseudo-species left unreactive, fail rather than fall back to them."""
+        core = [Species(label='C2H4', smiles='C=C')] + self._moment_dummies('PS')
+        with pytest.raises(PressureDependenceError):
+            select_bath_gas(core)

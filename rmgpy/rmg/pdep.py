@@ -52,6 +52,15 @@ from rmgpy.statmech import Conformer
 
 ################################################################################
 
+def select_bath_gas(core_species):
+    """
+    Return the species that make up a pressure-dependent network's bath gas.
+    """
+    bath_gas = [spec for spec in core_species if not spec.reactive]
+    assert len(bath_gas) > 0, 'No unreactive species to identify as bath gas'
+    return bath_gas
+
+
 class PDepReaction(rmgpy.reaction.Reaction):
 
     def __init__(self,
@@ -854,8 +863,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
             rxn.transition_state = rmgpy.species.TransitionState(conformer=Conformer(E0=(E0 * 0.001, "kJ/mol")))
 
         # Set collision model
-        bath_gas = [spec for spec in reaction_model.core.species if not spec.reactive]
-        assert len(bath_gas) > 0, 'No unreactive species to identify as bath gas'
+        bath_gas = select_bath_gas(reaction_model.core.species)
 
         self.bath_gas = {}
         for spec in bath_gas:
