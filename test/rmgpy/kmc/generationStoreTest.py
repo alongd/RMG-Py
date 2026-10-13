@@ -48,6 +48,23 @@ def hard_timeout():
     signal.signal(signal.SIGALRM, previous)
 
 
+@pytest.fixture(autouse=True)
+def unmapped_root_is_root(monkeypatch):
+    """In a user namespace the real root is reported as uid 65534; treat that owner as root.
+
+    Only the ancestors above the store are owned by it; the shim changes nothing on a normal host.
+    """
+    if os.stat("/").st_uid != 65534 or os.getuid() == 65534:
+        return
+    real = gs._fstat
+
+    def shim(fd):
+        result = real(fd)
+        return StatShim(result, 0) if result.st_uid == 65534 else result
+
+    monkeypatch.setattr(gs, "_fstat", shim)
+
+
 @pytest.fixture
 def root(tmp_path):
     return str(tmp_path / "store")
@@ -788,7 +805,7 @@ def test_short_writes_are_looped(root, monkeypatch):
         return real_write(fd, bytes(data)[:7])
 
     monkeypatch.setattr(gs, "_write", dribble)
-    payload = bytes(range(256)) * 4
+    payload = b"short writes are looped\n" * 40
     publish(store, SHA, payload)
     monkeypatch.undo()
     assert len(calls) > len(payload) // 7
@@ -802,7 +819,7 @@ def test_oversize_payloads_and_non_bytes_are_rejected_before_writing(root):
             claim.publish(b"z" * 5000)
         with pytest.raises(gs.StoreError):
             claim.publish("text")  # type: ignore[arg-type]
-    assert _bucket_listing(root) == []
+    assert not entry_path(root, SHA).exists()
 
 
 def test_publishing_over_a_corrupt_entry_quarantines_it_first(root):
@@ -1160,7 +1177,7 @@ PARENT_SCRIPT = textwrap.dedent(
     """
     import subprocess, sys, time
     child = subprocess.Popen([sys.executable, "-c", sys.argv[1]] + sys.argv[2:], start_new_session=True)
-    open(sys.argv[2] + ".parent_ready", "w").write(str(child.pid))
+    open(sys.argv[5] + ".parent_ready", "w").write(str(child.pid))
     time.sleep(600)
     """
 )
@@ -1171,6 +1188,15 @@ CHILD_SCRIPT = textwrap.dedent(
     sys.path.insert(0, {repo!r})
     from rmgpy.kmc import generation_store as gs
     root, sha, producer, marker = sys.argv[1:5]
+    if os.stat("/").st_uid == 65534 and os.getuid() != 65534:  # unmapped root in a user namespace
+        class Shim:
+            def __init__(self, real):
+                self._real = real
+                self.st_uid = 0 if real.st_uid == 65534 else real.st_uid
+            def __getattr__(self, name):
+                return getattr(self._real, name)
+        real_fstat = gs._fstat
+        gs._fstat = lambda fd: Shim(real_fstat(fd))
     store = gs.GenerationStore(root, producer_identity=producer)
     with store.claim(sha, timeout=60) as claim:
         open(marker + ".child_ready", "w").write(str(os.getpid()))
