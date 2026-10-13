@@ -871,6 +871,8 @@ class _Validator:
                     self.fail("atom.props", f"unsupported value for {key!r}")
                 if type(value) is str:
                     self.string(value, "atom.props value")
+                if type(value) is float and not math.isfinite(value):
+                    self.fail("atom.props", f"non-finite value for {key!r}")
             mine: dict[int, int] = {}
             for edge in self.seq(item["edges"], "atom.edges"):
                 if type(edge) is not list or len(edge) != 2:

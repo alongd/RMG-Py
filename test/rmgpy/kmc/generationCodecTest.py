@@ -627,8 +627,10 @@ def test_out_of_range_float_inside_a_valid_document_is_rejected(good_payload, mo
     text = good_payload.decode()
     marker = '"degeneracy":2.0'
     assert marker in text
-    with pytest.raises(DecodeError):
+    with pytest.raises(DecodeError, match="out-of-range float"):
         decode_generated_reactions(text.replace(marker, '"degeneracy":1e400').encode(), limits=DEFAULT_LIMITS)
+    with pytest.raises(DecodeError, match="out-of-range float"):
+        decode_generated_reactions(text.replace('"props":{}', '"props":{"x":-1e999}', 1).encode(), limits=DEFAULT_LIMITS)
     with pytest.raises(DecodeError):
         decode_generated_reactions(text.replace(marker, '"degeneracy":NaN').encode(), limits=DEFAULT_LIMITS)
 
