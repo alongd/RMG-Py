@@ -1310,7 +1310,7 @@ class Group(Graph):
         """
         A helper function used when pickling an object.
         """
-        return (Group, (self.vertices, self.props))
+        return (Group, (self.vertices, self.props, self.multiplicity, self.metal, self.facet))
 
     def _repr_png_(self):
         """

@@ -1658,7 +1658,8 @@ multiplicity 2
         assert mol2.reactive is False
         assert mol2.multiplicity == mol.multiplicity
         assert mol2.symmetry_number == mol.symmetry_number
-        assert [a.props for a in mol2.atoms] == [{"port": "artificial"}] * 2 + [{}] * (len(mol.atoms) - 2)
+        assert [a.props for a in mol2.atoms] == [a.props for a in mol.atoms]
+        assert mol2.atoms[0].props["port"] == mol2.atoms[1].props["port"] == "artificial"
 
     def test_radical_ch(self):
         """

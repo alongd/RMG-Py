@@ -151,6 +151,7 @@ class Atom(Vertex):
             'lone_pairs': self.lone_pairs,
             'site': self.site,
             'morphology': self.morphology,
+            'props': self.props,
         }
         if self.element.isotope == -1:
             element2pickle = self.element.symbol
@@ -171,6 +172,7 @@ class Atom(Vertex):
         self.lone_pairs = d['lone_pairs']
         self.site = d['site']
         self.morphology = d['morphology']
+        self.props = d['props']
 
     def __hash__(self):
         """
@@ -1111,7 +1113,8 @@ class Molecule(Graph):
         """
         A helper function used when pickling an object.
         """
-        return (Molecule, (self.vertices, self.symmetry_number, self.multiplicity, self.reactive, self.props, self.metal, self.facet))
+        return (Molecule, (self.vertices, self.symmetry_number, self.multiplicity, self.reactive, self.is_polymer_proxy,
+                           self.props, '', '', self.metal, self.facet))
 
     @property
     def atoms(self):

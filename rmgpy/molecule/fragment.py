@@ -80,6 +80,31 @@ class CuttingLabel(Atom):
     def symbol(self):
         return self.name
 
+    def __reduce__(self):
+        """
+        A helper function used when pickling an object.
+        """
+        d = {
+            'edges': self.edges,
+            'connectivity1': self.connectivity1,
+            'connectivity2': self.connectivity2,
+            'connectivity3': self.connectivity3,
+            'sorting_label': self.sorting_label,
+            'props': self.props,
+        }
+        return (CuttingLabel, (self.name, self.label, self.id), d)
+
+    def __setstate__(self, d):
+        """
+        A helper function used when unpickling an object. The atom type is rebuilt by the constructor.
+        """
+        self.edges = d['edges']
+        self.connectivity1 = d['connectivity1']
+        self.connectivity2 = d['connectivity2']
+        self.connectivity3 = d['connectivity3']
+        self.sorting_label = d['sorting_label']
+        self.props = d['props']
+
     def is_specific_case_of(self, other):
         """
         Return ``True`` if `self` is a specific case of `other`, or ``False``
@@ -154,6 +179,24 @@ class Fragment(Molecule):
         self.index = -1
         self.label = label
         self.species_repr = species_repr
+
+    def __reduce__(self):
+        """
+        A helper function used when pickling an object.
+        """
+        d = {
+            'index': self.index,
+            'is_polymer_proxy': self.is_polymer_proxy,
+        }
+        return (Fragment, (self.label, self.species_repr, self.vertices, self.symmetry_number, self.multiplicity,
+                           self.reactive, self.props), d)
+
+    def __setstate__(self, d):
+        """
+        A helper function used when unpickling an object.
+        """
+        self.index = d['index']
+        self.is_polymer_proxy = d['is_polymer_proxy']
 
     def __str__(self):
         """
