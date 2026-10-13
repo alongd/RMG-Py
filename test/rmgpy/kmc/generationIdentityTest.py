@@ -502,7 +502,8 @@ def test_compile_environment_switches_are_hashed(tmp_path, monkeypatch):
     monkeypatch.setenv("RMG_KMC_PLPSEC_LIBRARY", "2")
     with pytest.raises(ValueError):
         compile_sha(compile_request(database))
-    assert "RMG_KMC_PLPSEC_LIBRARY" in gi.compile_environment_switches()
+    monkeypatch.setenv("RMG_KMC_PLPSEC_LIBRARY", "0")
+    assert gi.compile_environment_switches() == {"RMG_KMC_PLPSEC_LIBRARY": "0"}
 
 
 def test_database_content_edits_additions_and_removals_change_the_identity(tmp_path):
@@ -532,17 +533,15 @@ def test_database_git_identity_fields_embedded_in_artifacts_are_hashed(tmp_path)
     database = make_database(tmp_path / "db")
     base = compile_sha(compile_request(database))
     git(database, "init", "-q")
-    with_git = compile_sha(compile_request(database))
-    assert with_git != base  # git presence is an embedded field
     git(database, "add", "-A")
     git(database, "commit", "-q", "-m", "one")
     clean = compile_sha(compile_request(database))
-    assert clean != with_git
+    assert clean != base  # git presence, revision and cleanliness are embedded fields
     (database / "input/thermo/library.py").write_text("x = 1\n")  # identical bytes: still clean
     assert compile_sha(compile_request(database)) == clean
     git(database, "commit", "-q", "--allow-empty", "-m", "two")
-    assert compile_sha(compile_request(database)) != clean  # revision changed, content did not
     revised = compile_sha(compile_request(database))
+    assert revised != clean  # revision changed, content did not
     (database / "untracked.txt").write_text("dirty")
     assert compile_sha(compile_request(database)) != revised  # cleanliness changed, content did not
 
@@ -550,13 +549,16 @@ def test_database_git_identity_fields_embedded_in_artifacts_are_hashed(tmp_path)
 def test_producer_metadata_embedded_in_artifacts_is_hashed(tmp_path, monkeypatch):
     database = make_database(tmp_path / "db")
     base = compile_sha(compile_request(database))
-    monkeypatch.setattr(compiler, "_LOADED_SOURCE_HASH", "0" * 64)
-    assert compile_sha(compile_request(database)) != base
-    monkeypatch.undo()
-    monkeypatch.setenv("PYTHONHASHSEED", "0")
+    with monkeypatch.context() as patch:
+        patch.setattr(compiler, "_LOADED_SOURCE_HASH", "0" * 64)
+        assert compile_sha(compile_request(database)) != base
+    with monkeypatch.context() as patch:
+        patch.setattr(compiler, "_LOADED_COMPILER_HASH", "0" * 64)
+        assert compile_sha(compile_request(database)) != base
     assert compile_sha(compile_request(database)) == base
-    monkeypatch.setattr(compiler, "_git_sha", lambda path: "d" * 40)
-    assert compile_sha(compile_request(database)) != base
+    with monkeypatch.context() as patch:
+        patch.setattr(compiler, "_git_sha", lambda path: "d" * 40)
+        assert compile_sha(compile_request(database)) != base
 
 
 def test_compilation_identity_binds_the_compilation_manifest(tmp_path, monkeypatch):
