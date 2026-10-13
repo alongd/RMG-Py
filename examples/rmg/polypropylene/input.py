@@ -146,7 +146,8 @@ pressureDependence(
     method='modified strong collision',
     maximumGrainSize=(2.0, 'kJ/mol'),
     minimumNumberOfGrains=250,
-    temperatures=(300, 2500, 'K', 10),
+    # pdep fit range matches the reactor regime and the rate rules' validity; above it the inverse-Laplace k(E) of high-n fits truncates at the energy-grid ceiling
+    temperatures=(300, 1500, 'K', 10),
     pressures=(0.1, 100, 'bar', 10),
     interpolation=('Chebyshev', 6, 4),
     maximumAtoms=16,
