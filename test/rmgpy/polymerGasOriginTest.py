@@ -9,6 +9,7 @@ atoms from the gas radical) was booked into a scission-tail pool by the wing
 fold. These tests pin the provenance machinery that keeps it gas.
 """
 import os
+import sys
 
 import pytest
 
@@ -843,3 +844,44 @@ class TestIdentityFilterCounter:
             only_families=["H_Abstraction"], census=census)
         assert census["identity_filter_drops"] >= 1
         assert census["identity_filter_drops_gas_mixed"] == 0
+
+
+class TestRestoredPoolRowsAreNeverUnstamped:
+    def test_reverse_written_pool_rows_are_classified_or_refused(self):
+        """Restoring a supplied pool by source index puts the Polymer on the
+        products side of its reverse-written rows (PE_mod beta-scission:
+        H + hexene <=> PE_mod), where no handshake or archetype stamp runs.
+        The structural lookup used to hand such rows to a gas twin; now they
+        reach the pool, so every one must be stamped or refused -- the
+        solver's unstamped-proxy-row invariant -- and counted."""
+        import rmgpy.gas_origin as gas_origin
+        RESTORED_POOL_UNCLASSIFIED = getattr(gas_origin, "RESTORED_POOL_UNCLASSIFIED",
+                                             "restored-pool-unclassified")
+
+        db = RMGDatabase()
+        path = os.path.join(settings["test_data.directory"], "testing_database")
+        db.load_kinetics(os.path.join(path, "kinetics"),
+                         kinetics_families=["R_Addition_MultipleBond"], reaction_libraries=[])
+        for family in db.kinetics.families.values():
+            family.forbidden = ForbiddenStructures()
+        try:
+            cerm, pe = _model("PE")
+            pe_mod = _pe_mod(cerm, pe)
+            rows = db.kinetics.generate_reactions_from_families([pe_mod])
+            rev = [r for r in rows if not r.is_forward]
+            assert rev, "liveness: reverse-written beta-scission rows expected"
+            refused = 0
+            for row in rows:
+                out, _ = cerm.make_new_reaction(row, check_existing=False, generate_thermo=False,
+                                                generate_kinetics=False, supplied_species=(pe_mod,))
+                if out is None:
+                    continue
+                parts = out.reactants + out.products
+                if any(isinstance(s, Polymer) for s in parts):
+                    assert out.polymer_flux_archetype != 0 or out.polymer_refused, str(out)
+                if out.polymer_refused_detail == RESTORED_POOL_UNCLASSIFIED:
+                    refused += 1
+            assert refused >= 1
+            assert cerm.gas_origin_census["restored_pool_refusals"] == refused
+        finally:
+            setup_module(sys.modules[__name__])
