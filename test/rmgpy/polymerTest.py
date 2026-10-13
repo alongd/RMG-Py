@@ -48,6 +48,11 @@ from rmgpy.thermo import NASA, NASAPolynomial
 from rmgpy.transport import TransportData
 
 
+def _pool_identity(obj):
+    """Module-level so multiprocessing can pickle it."""
+    return obj
+
+
 class TestPolymer:
     """
     Contains unit tests for the Polymer class.
@@ -355,6 +360,30 @@ PS_1
         assert q.molecule[0].is_polymer_proxy is True
         assert q.baseline_proxy.molecule[0].is_isomorphic(proxy.molecule[0])
         assert q.baseline_proxy.molecule[0].is_polymer_proxy == proxy.molecule[0].is_polymer_proxy
+
+    def test_pool_round_trip(self):
+        """
+        An actual multiprocessing.Pool round-trip (2 workers) keeps a Polymer's class and a
+        proxy Molecule's is_polymer_proxy flag and atom props.
+        """
+        import multiprocessing
+
+        p = Polymer(label='PE_pool', monomer='[CH2][CH2]', end_groups=['[CH3]', '[H]'],
+                    cutoff=3, Mn=5000.0, Mw=6000.0, initial_mass=1.0)
+        mol = Molecule().from_smiles('CC')
+        mol.is_polymer_proxy = True
+        mol.atoms[0].props['port'] = 'artificial'
+        mol.atoms[1].props['port'] = 'artificial'
+
+        ctx = multiprocessing.get_context('fork')
+        with ctx.Pool(2) as pool:
+            res = pool.map_async(_pool_identity, [p, mol])
+            q, m2 = res.get(timeout=120)
+        assert type(q) is Polymer
+        assert q.label == 'PE_pool' and q.fingerprint == p.fingerprint
+        assert type(m2) is Molecule
+        assert m2.is_polymer_proxy is True
+        assert [a.props.get('port') for a in m2.atoms[:2]] == ['artificial', 'artificial']
 
     def test_fingerprint_property(self):
         """Test that the fingerprint property works"""

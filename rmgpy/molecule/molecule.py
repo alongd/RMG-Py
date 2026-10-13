@@ -1425,7 +1425,6 @@ class Molecule(Graph):
         other.is_polymer_proxy = self.is_polymer_proxy
         other.metal = self.metal
         other.facet = self.facet
-        other.props = deepcopy(self.props)
         return other
 
     def merge(self, other):
