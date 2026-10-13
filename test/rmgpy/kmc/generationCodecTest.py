@@ -742,3 +742,26 @@ def test_roundtrip_provider_returns_equal_results_and_new_objects(real_generatio
     assert all(a is not b for a, b in zip(captured, wrapped))
     assert_same(captured, wrapped)
     assert_consumers_agree(captured, wrapped)
+
+
+def test_discovery_through_the_roundtrip_provider_matches_cold_generation(real_generation):
+    """Small-family-set variant of the full-compile parity proof (generation + discovery only)."""
+    kinetics_database = real_generation.database.kinetics
+    proxies = compiler.ps_proxy_set()[:3]
+    cold = compiler.EventSetCompiler.discover_family_reactions(
+        kinetics_database, proxies, ("R_Recombination",), family_universe=("R_Recombination",)
+    )
+    provider = roundtrip_generation_provider_factory()(kinetics_database.generate_reactions_from_families)
+    wrapped = compiler.EventSetCompiler.discover_family_reactions(
+        kinetics_database, proxies, ("R_Recombination",), family_universe=("R_Recombination",),
+        generation_provider=provider,
+    )
+    assert cold[:2] == wrapped[:2]
+    assert set(cold[2]) == set(wrapped[2])
+    total = 0
+    for site in cold[2]:
+        assert len(cold[2][site]) == len(wrapped[2][site])
+        total += len(cold[2][site])
+        assert_same(list(cold[2][site]), list(wrapped[2][site]))
+        assert_consumers_agree(cold[2][site], wrapped[2][site])
+    assert total > 0
