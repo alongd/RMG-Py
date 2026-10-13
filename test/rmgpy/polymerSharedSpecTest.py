@@ -1847,3 +1847,61 @@ def test_shared_unzip_refuses_monomer_product_that_destroys_elemental_mass():
     ), spec)
     with pytest.raises(ValueError, match="monomer_product.*composition.*repeat"):
         _solver(core, config, (1.0, 2.0, 4.0), gas_indices=(2,))
+
+
+def test_shared_constant_species_label_duplicated_in_core_is_refused():
+    """Item 2: validation and execution must not resolve a label differently."""
+    spec = _shared_pe_spec()
+    core = [
+        Species(label="P"),
+        Species(label="hold"),  # the shared mu1 slot
+        Species(label="P_mu0"),
+        Species(label="P_mu2"),
+        Species(label="hold"),  # an ordinary species with the same label
+        Species(label="G", molecule=[Molecule().from_smiles("C")]),
+    ]
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={},
+        mu_indices=(2, 1, 3),
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True,
+    ), spec)
+    system = HybridPolymerSystem(
+        T=800.0, P=1.0e5, initial_mole_fractions={core[5]: 0.0}, V_poly=1.0,
+        polymer_pools=[config], mass_transfer=[],
+        gas_species_mask=np.array([False] * 5 + [True]),
+        constant_gas_volume=False,
+        initial_polymer_moments={"P": (1.0, 3.0, 10.0)},
+        const_spc_names=["hold"], termination=[],
+    )
+    with pytest.raises(ValueError, match="shared.*duplicate.*label|ambiguous"):
+        system.initialize_model(core, [], [], [])
+
+
+def test_shared_destination_with_mixed_molecule_list_is_refused():
+    """Item 3: every member of a species' molecule list must match."""
+    spec = _shared_pe_spec()
+    dp1 = Species(
+        label="DP1",
+        molecule=[Molecule().from_smiles("C"), Molecule().from_smiles("CC")],
+    )
+    product = Species(
+        label="product", molecule=[Molecule().from_smiles("C=C")]
+    )
+    core = [Species(label="P"), dp1, product] + [
+        Species(label=f"P_mu{i}") for i in range(3)
+    ]
+    ethane = Molecule().from_smiles("CC")
+    methane_mass = Molecule().from_smiles("C").get_molecular_weight() * 1000.0
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={1: 1},
+        explicit_dp_mw_g_mol={1: methane_mass},
+        shared_expected_explicit_dp_molecules={1: (ethane,)},
+        mu_indices=(3, 4, 5), monomer_poly_index=2,
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True, k_unzip=1.0,
+    ), spec)
+    with pytest.raises(ValueError, match="every.*molecule|graph-isomorphic"):
+        _solver(core, config, (1.0, 3.0, 10.0), gas_indices=(2,))
