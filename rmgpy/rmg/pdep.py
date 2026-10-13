@@ -54,10 +54,14 @@ from rmgpy.statmech import Conformer
 
 def select_bath_gas(core_species):
     """
-    Return the species that make up a pressure-dependent network's bath gas.
+    Return the species that make up a pressure-dependent network's bath gas:
+    the non-reactive core species, excluding the method-of-moments pseudo-species
+    (``is_moment_dummy``), which are bookkeeping placeholders and not gas molecules.
     """
-    bath_gas = [spec for spec in core_species if not spec.reactive]
-    assert len(bath_gas) > 0, 'No unreactive species to identify as bath gas'
+    bath_gas = [spec for spec in core_species
+                if not spec.reactive and not getattr(spec, 'is_moment_dummy', False)]
+    if not bath_gas:
+        raise PressureDependenceError('No unreactive non-moment species to identify as bath gas')
     return bath_gas
 
 
