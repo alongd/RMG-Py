@@ -5107,9 +5107,10 @@ def _h_loss_daughter_veto_exempt(mol, polymer_reactants):
 
       * radical-bearing and neutral,
       * same non-H element composition as the polymer reactant proxy,
-      * H_proxy - H_product == radical_count
-        (the shared structural core, rmgpy.polymer.is_h_loss_radical_daughter
-        -- ONE predicate with the qualifier, never duplicated), and
+      * H_proxy - H_product == radical_count, and the product saturated
+        with one H per radical site is isomorphic to the proxy (the shared
+        structural core, rmgpy.polymer.is_h_loss_radical_daughter -- ONE
+        predicate with the qualifier, never duplicated), and
       * MW >= monomer_mw + slack (chain-scale window conjunct; same slack
         constant as the solver's reference-state window)
 
@@ -5140,11 +5141,7 @@ def _h_loss_daughter_veto_exempt(mol, polymer_reactants):
         proxy_mols = getattr(polymer_obj, 'molecule', None) or []
         if not proxy_mols or proxy_mols[0] is None:
             continue
-        try:
-            proxy_comp = proxy_mols[0].get_element_count()
-        except Exception:
-            continue
-        if is_h_loss_radical_daughter(mol, [proxy_comp]):
+        if is_h_loss_radical_daughter(mol, [proxy_mols[0]]):
             return True
     return False
 
