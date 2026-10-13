@@ -146,6 +146,11 @@ class PolymerCrosslinkError(Exception):
     pass
 
 
+def _new_polymer():
+    """Unpickling constructor for :class:`Polymer` (bypasses ``__init__``)."""
+    return Polymer.__new__(Polymer)
+
+
 class Polymer(Species):
     """
     A class representing a polymer distribution (Polymer Pool).
@@ -653,6 +658,30 @@ class Polymer(Species):
 
         self._cached_backbone_group = group
         return group
+
+    # Species slots (cdef attributes) that live outside ``__dict__`` and must be
+    # carried explicitly through pickling.
+    _PICKLE_BASE_SLOTS = (
+        'index', 'label', 'thermo', 'conformer', 'transport_data', 'molecule', '_molecular_weight',
+        'reactive', 'energy_transfer_model', 'props', 'aug_inchi', 'symmetry_number', 'is_solvent',
+        'is_moment_dummy', '_is_polymer_proxy', 'creation_iteration', 'explicitly_allowed',
+        'liquid_volumetric_mass_transfer_coefficient_data', 'henry_law_constant_data',
+    )
+
+    def __reduce__(self):
+        """
+        Lossless pickling. The inherited ``Species.__reduce__`` would rebuild a plain
+        ``Species`` and drop every Polymer attribute, so rebuild via ``__new__`` and restore
+        both the Species slots and the Polymer ``__dict__``.
+        """
+        base = {name: getattr(self, name) for name in self._PICKLE_BASE_SLOTS}
+        return (_new_polymer, (), (base, dict(self.__dict__)))
+
+    def __setstate__(self, state):
+        base, attrs = state
+        for name, value in base.items():
+            setattr(self, name, value)
+        self.__dict__.update(attrs)
 
     def copy(self, deep=True):
         """
