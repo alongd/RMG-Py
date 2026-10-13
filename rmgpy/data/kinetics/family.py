@@ -1879,6 +1879,13 @@ class KineticsFamily(Database):
 
         # Make sure the products are in fact different than the reactants
         if same_species_lists(reactants, products, save_order=self.save_order):
+            # I-113 item 9: a known loss, measured not fixed -- count it, and
+            # separately when gas-stamped and non-gas provenance meet (gas
+            # hexyl + PE <=> gas hexane + chain hexyl).
+            identity_filter_census['identity_filter_drops'] += 1
+            from rmgpy.gas_origin import participants_mix_gas_origin
+            if participants_mix_gas_origin(reactants):
+                identity_filter_census['identity_filter_drops_gas_mixed'] += 1
             return None
 
         # Create and return template reaction object

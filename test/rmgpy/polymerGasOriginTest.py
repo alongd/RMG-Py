@@ -794,7 +794,11 @@ class TestTwinTieBreak:
         write_restart_species_map(str(tmp_path), [twin, pe])
         roles = load_restart_species_roles(str(tmp_path / "species_map.yml"), 2)
         assert roles == ["gas", "polymer"]
-        assert load_restart_species_roles(str(tmp_path / "missing.yml"), 2) is None
+        # restart files written before the roles existed: legacy first match
+        (tmp_path / "legacy").mkdir()
+        assert load_restart_species_roles(str(tmp_path / "legacy" / "species_map.yml"), 2) is None
+        # a roles file inconsistent with the map is ignored
+        assert load_restart_species_roles(str(tmp_path / "species_map.yml"), 3) is None
 
     def test_cantera_fallback_label_prefers_same_role(self):
         """(g) Cantera's structural fallback must not swap twins."""

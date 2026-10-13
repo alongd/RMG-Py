@@ -651,7 +651,18 @@ def get_label(obj: Union['Species', 'Molecule'], species_list: list['Species']):
                 return f'{sp.label}({sp.index})' if sp.index > 0 else sp.label
         # Fall back to structural isomorphism for Molecule objects or
         # species not found by identity (e.g. from a different model copy).
-        for sp in species_list:
-            if sp.is_isomorphic(obj):
-                return f'{sp.label}({sp.index})' if sp.index > 0 else sp.label
+        # A gas species and a Polymer pool can be structural twins (gas
+        # n-hexane and the PE proxy): among isomorphic candidates prefer one
+        # of the same type/role, so the fallback never swaps them.
+        matches = [sp for sp in species_list if sp.is_isomorphic(obj)]
+        if matches:
+            role = _species_role(obj)
+            sp = next((m for m in matches if _species_role(m) == role), matches[0])
+            return f'{sp.label}({sp.index})' if sp.index > 0 else sp.label
     return None
+
+
+def _species_role(obj):
+    """'polymer' for a Polymer pool, 'gas' for everything else (twin tie-break)."""
+    from rmgpy.polymer import Polymer
+    return "polymer" if isinstance(obj, Polymer) or getattr(obj, "is_polymer", False) else "gas"

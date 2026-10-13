@@ -1804,11 +1804,10 @@ class RMG(util.Subject):
                 if self.trimolecular_threshold is not None:
                     f.create_dataset("trimolecular_threshold", data=self.trimolecular_threshold)
 
-            # Save a map of species indices
-            spcs_map = [spc.molecule[0].to_adjacency_list() for spc in self.reaction_model.core.species]
-
-            with open(os.path.join(filter_dir, "species_map.yml"), "w") as f:
-                yaml.dump(data=spcs_map, stream=f)
+            # Save a map of species indices (plus each species' role, so a
+            # restart can tell structural twins such as gas n-hexane and the
+            # PE pool apart)
+            write_restart_species_map(filter_dir, self.reaction_model.core.species)
 
             # Also, save the seed to the previous_seeds directory on specified iterations
             if self.save_seed_modulus != -1 and self.reaction_model.iteration_num % self.save_seed_modulus == 0:
@@ -2008,6 +2007,7 @@ class RMG(util.Subject):
 
                 num_restart_spcs = len(restart_species_list)
                 restart_species_list = [Species().from_adjacency_list(adj_list) for adj_list in restart_species_list]
+                restart_species_roles = load_restart_species_roles(self.species_map_path, num_restart_spcs)
 
                 # Load in the restart filter tensors
                 with h5py.File(self.filters_path, "r") as f:
@@ -2046,14 +2046,8 @@ class RMG(util.Subject):
                         filters_found = False
 
                 # Reorder the core species to match the indices of the restart filter tensors
-                reordered_core_species = []
-                for spc in restart_species_list:
-                    for j, oldCoreSpc in enumerate(self.reaction_model.core.species):
-                        if oldCoreSpc.is_isomorphic(spc, strict=False):
-                            reordered_core_species.append(self.reaction_model.core.species.pop(j))
-                            break
-                    else:
-                        raise RuntimeError("Species {0} was defined in the restart file, but was not included in the" "core.".format(spc))
+                reordered_core_species = reorder_restart_core_species(
+                    restart_species_list, restart_species_roles, self.reaction_model.core.species)
 
                 # Append the remaining species left in the core to the very end
                 self.reaction_model.core.species = reordered_core_species + self.reaction_model.core.species
@@ -2560,6 +2554,68 @@ def determine_procnum_from_ram():
 
     # Return the maximal number of processes for multiprocessing
     return procnum
+
+
+RESTART_SPECIES_ROLES_FILENAME = "species_roles.yml"
+
+
+def restart_species_role(spc):
+    """Type/role of a core species for the restart twin tie-break:
+    'polymer' for a Polymer pool, 'moment_dummy' for a moment placeholder,
+    'gas' otherwise."""
+    from rmgpy.polymer import Polymer
+    if isinstance(spc, Polymer) or getattr(spc, "is_polymer", False):
+        return "polymer"
+    if getattr(spc, "is_moment_dummy", False):
+        return "moment_dummy"
+    return "gas"
+
+
+def write_restart_species_map(filter_dir, core_species):
+    """Write ``species_map.yml`` (one adjacency list per core species, the
+    established format) and, alongside it, ``species_roles.yml`` (one
+    :func:`restart_species_role` per entry)."""
+    spcs_map = [spc.molecule[0].to_adjacency_list() for spc in core_species]
+    with open(os.path.join(filter_dir, "species_map.yml"), "w") as f:
+        yaml.dump(data=spcs_map, stream=f)
+    with open(os.path.join(filter_dir, RESTART_SPECIES_ROLES_FILENAME), "w") as f:
+        yaml.dump(data=[restart_species_role(spc) for spc in core_species], stream=f)
+
+
+def load_restart_species_roles(species_map_path, num_species):
+    """Roles saved next to ``species_map_path`` by
+    :func:`write_restart_species_map`, or None when absent (restart files
+    from before the roles existed) or inconsistent in length."""
+    path = os.path.join(os.path.dirname(species_map_path), RESTART_SPECIES_ROLES_FILENAME)
+    if not os.path.exists(path):
+        return None
+    with open(path, "r") as f:
+        roles = yaml.safe_load(stream=f)
+    if not isinstance(roles, list) or len(roles) != num_species:
+        logging.warning("Ignoring restart species roles in %s: %s entries for %d species.",
+                        path, len(roles) if isinstance(roles, list) else "unreadable", num_species)
+        return None
+    return roles
+
+
+def reorder_restart_core_species(restart_species, restart_roles, core_species):
+    """Pop ``core_species`` into the order of ``restart_species`` (structural
+    match). Among isomorphic candidates the one whose
+    :func:`restart_species_role` matches the saved role wins, so structural
+    twins (gas n-hexane vs the PE pool) are never swapped; without saved
+    roles the first isomorphic species is taken, as before. Returns the
+    reordered list; matched species are removed from ``core_species``."""
+    reordered = []
+    for i, spc in enumerate(restart_species):
+        role = restart_roles[i] if restart_roles is not None else None
+        candidates = [j for j, core_spc in enumerate(core_species) if core_spc.is_isomorphic(spc, strict=False)]
+        if not candidates:
+            raise RuntimeError("Species {0} was defined in the restart file, but was not included in the" "core.".format(spc))
+        pick = candidates[0]
+        if role is not None:
+            pick = next((j for j in candidates if restart_species_role(core_species[j]) == role), pick)
+        reordered.append(core_species.pop(pick))
+    return reordered
 
 
 def make_condensed_membership(reaction_systems):
