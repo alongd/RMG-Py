@@ -496,15 +496,21 @@ class TestGasProductResolution:
 
     @pytest.mark.parametrize("order", ["pool_first", "gas_first"])
     @pytest.mark.parametrize("cache", ["cold", "warm"])
-    def test_gas_only_recombination_yields_gas_species(self, order, cache):
-        """(b) isobutyl + 2-pentyl recombine to the PP 3-mer proxy structure.
-        Both radicals are gas, so the product is a gas Species whatever the
-        MRU cache holds and whichever twin was registered first."""
+    @pytest.mark.parametrize("pool_name,twin_smiles,rad_a,rad_b", [
+        ("PP", "CCCC(C)CC(C)C", "[CH2]C(C)C", "C[CH]CCC"),   # isobutyl + 2-pentyl
+        ("PE", "CCCCCC", "[CH2]CC", "[CH2]CC"),              # n-propyl + n-propyl
+    ])
+    def test_gas_only_recombination_yields_gas_species(self, order, cache, pool_name,
+                                                       twin_smiles, rad_a, rad_b):
+        """(b) Two gas radicals recombine to the pool's 3-mer proxy
+        structure. Both radicals are gas, so the product is a gas Species
+        whatever the MRU cache holds and whichever twin was registered
+        first."""
         cerm = CoreEdgeReactionModel()
-        twin = _gas(cerm, "CCCC(C)CC(C)C", "dmh") if order == "gas_first" else None
-        pp, _ = cerm._register_polymer(Polymer(**POOLS["PP"]), generate_thermo=False)
-        ib = _gas(cerm, "[CH2]C(C)C", "isobutyl")
-        pt = _gas(cerm, "C[CH]CCC", "pentyl")
+        twin = _gas(cerm, twin_smiles, "twin") if order == "gas_first" else None
+        pp, _ = cerm._register_polymer(Polymer(**POOLS[pool_name]), generate_thermo=False)
+        ib = _gas(cerm, rad_a, "rad_a")
+        pt = ib if rad_b == rad_a else _gas(cerm, rad_b, "rad_b")
         if cache == "warm":
             cerm.species_cache.insert(0, pp)
             cerm.species_cache.pop()
