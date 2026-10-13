@@ -2057,3 +2057,20 @@ def test_normal_deck_enables_shared_unzip_through_the_deck_path():
         Molecule().from_smiles("CC"))
     assert core[config.monomer_poly_index].molecule[0].is_isomorphic(
         Molecule().from_smiles("C=C"))
+
+
+def test_shared_masses_within_tolerance_are_replaced_by_graph_derived_values():
+    spec = _shared_pe_spec()
+    repeat, _ends = spec.legacy_molecules()
+    graph_repeat = repeat.get_molecular_weight() * 1000.0
+    core = [Species(label="P")] + [Species(label=f"P_mu{i}") for i in range(3)]
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={},
+        mu_indices=(1, 2, 3),
+        monomer_mw_g_mol=graph_repeat * (1.0 + 1.0e-10),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True,
+    ), spec)
+    assert config.monomer_mw_g_mol != graph_repeat
+    _solver(core, config, (1.0, 3.0, 10.0))
+    assert config.monomer_mw_g_mol == graph_repeat
