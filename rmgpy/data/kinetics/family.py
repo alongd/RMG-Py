@@ -245,6 +245,7 @@ class TemplateReaction(Reaction):
         # (legacy structural resolution).
         self.gas_origin_side = None
         self.gas_origin_verdicts = None
+        self.pool_origin_verdicts = None
         self.gas_origin_sources = None
 
     def __reduce__(self):
@@ -263,6 +264,7 @@ class TemplateReaction(Reaction):
             'polymer_refused_detail': self.polymer_refused_detail,
             'gas_origin_side': getattr(self, 'gas_origin_side', None),
             'gas_origin_verdicts': getattr(self, 'gas_origin_verdicts', None),
+            'pool_origin_verdicts': getattr(self, 'pool_origin_verdicts', None),
             'gas_origin_sources': getattr(self, 'gas_origin_sources', None),
         }
         return (TemplateReaction, (self.index,
@@ -351,6 +353,7 @@ class TemplateReaction(Reaction):
         other.is_forward = self.is_forward
         other.gas_origin_side = getattr(self, 'gas_origin_side', None)
         other.gas_origin_verdicts = getattr(self, 'gas_origin_verdicts', None)
+        other.pool_origin_verdicts = getattr(self, 'pool_origin_verdicts', None)
         other.gas_origin_sources = getattr(self, 'gas_origin_sources', None)
 
         return other

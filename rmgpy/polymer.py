@@ -3608,11 +3608,13 @@ def restamp_flipped_polymer_archetype(forward) -> None:
     # A generation-time origin-ambiguous-collapse refusal (I-113) is not
     # direction-bound: the merged rows disagreed on provenance whichever way
     # the kinetics are written. Keep its detail across the flip.
-    from rmgpy.gas_origin import ORIGIN_AMBIGUOUS_COLLAPSE
-    kept_detail = (ORIGIN_AMBIGUOUS_COLLAPSE
+    # Same for pool-origin-gas-product: a whole chain booked as gas is wrong
+    # in either direction.
+    from rmgpy.gas_origin import ORIGIN_AMBIGUOUS_COLLAPSE, POOL_ORIGIN_GAS_PRODUCT
+    _detail = getattr(forward, 'polymer_refused_detail', None)
+    kept_detail = (_detail
                    if (getattr(forward, 'polymer_refused', False)
-                       and getattr(forward, 'polymer_refused_detail', None)
-                       == ORIGIN_AMBIGUOUS_COLLAPSE)
+                       and _detail in (ORIGIN_AMBIGUOUS_COLLAPSE, POOL_ORIGIN_GAS_PRODUCT))
                    else None)
     # CLEAR the stale direction-bound archetype fields (written for the
     # pre-flip direction) before re-classifying. polymer_refused_reason is

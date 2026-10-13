@@ -55,6 +55,8 @@ from rmgpy.data.kinetics.family import (
 )
 from rmgpy.gas_origin import (CENSUS_GAS_FOLD_BYPASSED, CENSUS_GAS_LOOKUP_UNPOOLED,
                               CENSUS_RESTORED_POOL_REFUSALS, RESTORED_POOL_UNCLASSIFIED,
+                              CENSUS_POOL_ORIGIN_GAS_REFUSALS, POOL_ORIGIN_GAS_PRODUCT,
+                              pool_origin_verdicts_of,
                               CENSUS_ROWS_CHANGED_CLASS, CENSUS_SUPPLIED_RELOOKUP_DIFFERS,
                               capture_gas_origin_alignment, flip_gas_origin_metadata,
                               format_census, has_gas_origin_metadata, is_genuine_gas_reactant,
@@ -849,7 +851,7 @@ class CoreEdgeReactionModel:
                 [id(x) in restored for x in structure_list])
 
     @staticmethod
-    def _record_resolved_metadata(forward, plan, gas_resolved_ids):
+    def _record_resolved_metadata(forward, plan, gas_resolved_ids, pool_resolved_ids=frozenset()):
         """Re-express the gas-origin metadata on the RESOLVED participant
         lists: a resolved generated participant is gas iff it was resolved
         through the gas-only path (cut fragments / decay products inherit
@@ -861,6 +863,7 @@ class CoreEdgeReactionModel:
         gen_side = forward.gas_origin_side
         sup_side = "reactants" if gen_side == "products" else "products"
         forward.gas_origin_verdicts = tuple(id(p) in gas_resolved_ids for p in getattr(forward, gen_side))
+        forward.pool_origin_verdicts = tuple(id(p) in pool_resolved_ids for p in getattr(forward, gen_side))
         pending = {key: list(srcs) for key, srcs in restored.items()}
         forward.gas_origin_sources = tuple(pending[id(p)].pop(0) if pending.get(id(p)) else None
                                            for p in getattr(forward, sup_side))
@@ -891,15 +894,36 @@ class CoreEdgeReactionModel:
         census = self._gas_census()
         census_before = (census[CENSUS_GAS_FOLD_BYPASSED], census[CENSUS_GAS_LOOKUP_UNPOOLED],
                          census[CENSUS_SUPPLIED_RELOOKUP_DIFFERS])
+        # Whole-chain pool-origin participants (round 2): generated objects
+        # made of one supplied pool's entire proxy. Captured before the plan
+        # touches the supplied side; the generated side is not replaced.
+        pool_ids = set()
+        if forward.family and has_gas_origin_metadata(forward):
+            pool_ids = {id(p) for p, verdict in zip(getattr(forward, forward.gas_origin_side),
+                                                     pool_origin_verdicts_of(forward)) if verdict}
         plan = self._gas_origin_plan(forward, supplied_species)
         gas_resolved_ids = set()
+        pool_resolved_ids = set()
+        pool_gas_hits = []
 
         def _resolve(obj, **kwargs):
             out = self._resolve_participant(obj, plan, generate_thermo, **kwargs)
             if plan is not None and id(obj) in plan[0]:
                 for spc, _ in ([out] if type(out) == tuple else out):
                     gas_resolved_ids.add(id(spc))
+            if plan is not None and id(obj) in pool_ids:
+                for spc, _ in ([out] if type(out) == tuple else out):
+                    pool_resolved_ids.add(id(spc))
+                    if not isinstance(spc, Polymer):
+                        pool_gas_hits.append(spc)
             return out
+
+        def _carry_pool_ids(before, after):
+            # the handshake / chip surgery replace list entries in place: a
+            # whole-chain participant converted into a Polymer stays tracked
+            for a, b in zip(before, after):
+                if id(a) in pool_ids:
+                    pool_ids.add(id(b))
 
         # Determine the proper species objects for all reactants and products
         real_products_snapshot = None
@@ -938,6 +962,7 @@ class CoreEdgeReactionModel:
                 concerted_loss_gases = compute_concerted_loss_evidence(
                     reactants, forward.products, polymer_reactants)
                 gas_mask, skip_mask = self._handshake_masks(forward.products, plan)
+                products_before_handshake = list(forward.products)
                 try:
                     relabeled = _handshake_structures(forward.products, polymer_reactants,
                                                       h_loss_verdicts=h_loss_verdicts,
@@ -959,6 +984,7 @@ class CoreEdgeReactionModel:
                 # SCISSION daughter is replaced before any spawn-candidate or
                 # registration pass can see it (never-queue).
                 stamp_polymer_flux_archetype(forward, reactants, polymer_reactants)
+                _carry_pool_ids(products_before_handshake, forward.products)
                 # Handshake replaced some Molecule objects in forward.products
                 # with Polymer objects (and chip surgery may have swapped them
                 # again), so forward.pairs references stale objects.
@@ -1010,6 +1036,7 @@ class CoreEdgeReactionModel:
                     concerted_loss_gases = compute_concerted_loss_evidence(
                         reactants, forward.products, polymer_reactants)
                     gas_mask, skip_mask = self._handshake_masks(forward.products, plan)
+                    products_before_handshake = list(forward.products)
                     relabeled = _handshake_structures(forward.products, polymer_reactants,
                                                       h_loss_verdicts=h_loss_verdicts,
                                                       concerted_loss_gases=concerted_loss_gases,
@@ -1018,6 +1045,7 @@ class CoreEdgeReactionModel:
                     forward.is_end_group_reaction = is_end_group_reaction(forward.products)
                     # Same surgery + stamping as the is_forward branch.
                     stamp_polymer_flux_archetype(forward, reactants, polymer_reactants)
+                    _carry_pool_ids(products_before_handshake, forward.products)
                     forward.pairs = None
 
                 products = [_resolve(product)[0] for product in forward.products]
@@ -1045,9 +1073,25 @@ class CoreEdgeReactionModel:
         forward.reactants = reactants
         forward.products = products
         if plan is not None:
-            self._record_resolved_metadata(forward, plan, gas_resolved_ids)
+            self._record_resolved_metadata(forward, plan, gas_resolved_ids, pool_resolved_ids)
+            # Round 2 (fail closed, measured): a whole supplied-pool chain
+            # resolved to anything but a Polymer pool (a gas Species, a gas
+            # twin, a volatile-ejection gas product) is wrong flux whatever
+            # the archetype says. Refuse the row conduit-deferred, named and
+            # counted. Rows whose whole-chain products all resolve to pools,
+            # and pool-only FRAGMENTS (monomer, chip, concerted-loss gas),
+            # keep today's behaviour.
+            if pool_gas_hits:
+                if not forward.polymer_refused:
+                    forward.polymer_refused_accumulating = False  # -> "conduit-deferred"
+                forward.polymer_refused = True
+                if forward.polymer_refused_detail is None:
+                    forward.polymer_refused_detail = POOL_ORIGIN_GAS_PRODUCT
+                census[CENSUS_POOL_ORIGIN_GAS_REFUSALS] += 1
+                logging.debug("Refusing %s: whole pool chain resolved to gas %s (%s)", forward,
+                              ", ".join(str(s) for s in pool_gas_hits), POOL_ORIGIN_GAS_PRODUCT)
             if (census[CENSUS_GAS_FOLD_BYPASSED], census[CENSUS_GAS_LOOKUP_UNPOOLED],
-                    census[CENSUS_SUPPLIED_RELOOKUP_DIFFERS]) != census_before:
+                    census[CENSUS_SUPPLIED_RELOOKUP_DIFFERS]) != census_before or pool_gas_hits:
                 census[CENSUS_ROWS_CHANGED_CLASS] += 1
 
         # PP v1 campaign refusal (adjudicated round 63): a row bridging PURE

@@ -63,6 +63,12 @@ from collections import Counter
 #: ``generate_reactions_from_families``.
 GAS_ORIGIN_KEY = "gas_origin"
 
+#: Mirror key: occurrence index of the supplied POOL reactant (a Polymer
+#: participant) an atom came from. Same transient discipline as
+#: :data:`GAS_ORIGIN_KEY`: stamped on copies, tested by key presence, stripped
+#: before the rows leave generation.
+POOL_ORIGIN_KEY = "pool_origin"
+
 #: ``polymer_refused_detail`` of a degeneracy-collapse representative whose
 #: merged rows disagreed on which participants are gas.
 ORIGIN_AMBIGUOUS_COLLAPSE = "origin-ambiguous-collapse"
@@ -72,6 +78,12 @@ ORIGIN_AMBIGUOUS_COLLAPSE = "origin-ambiguous-collapse"
 #: products of the pool's own reverse-written beta-scission rows).
 RESTORED_POOL_UNCLASSIFIED = "restored-pool-unclassified"
 
+#: ``polymer_refused_detail`` of a row in which a generated product made of
+#: one supplied pool's WHOLE proxy (a chain) resolves to anything but a
+#: Polymer pool -- e.g. the vinyl-ended chain of chain-radical
+#: disproportionation booked as a gas alkene.
+POOL_ORIGIN_GAS_PRODUCT = "pool-origin-gas-product"
+
 #: Census keys, one place so every producer and consumer agrees.
 CENSUS_COLLAPSE_REFUSALS = "collapse_refusals"
 CENSUS_IDENTITY_DROPS = "identity_filter_drops"
@@ -80,6 +92,7 @@ CENSUS_GAS_FOLD_BYPASSED = "gas_fold_bypassed"
 CENSUS_GAS_LOOKUP_UNPOOLED = "gas_lookup_unpooled"
 CENSUS_SUPPLIED_RELOOKUP_DIFFERS = "supplied_relookup_differs"
 CENSUS_RESTORED_POOL_REFUSALS = "restored_pool_refusals"
+CENSUS_POOL_ORIGIN_GAS_REFUSALS = "pool_origin_gas_refusals"
 CENSUS_ROWS_CHANGED_CLASS = "rows_changed_class"
 
 CENSUS_KEYS = (
@@ -90,6 +103,7 @@ CENSUS_KEYS = (
     CENSUS_GAS_LOOKUP_UNPOOLED,
     CENSUS_SUPPLIED_RELOOKUP_DIFFERS,
     CENSUS_RESTORED_POOL_REFUSALS,
+    CENSUS_POOL_ORIGIN_GAS_REFUSALS,
     CENSUS_ROWS_CHANGED_CLASS,
 )
 
@@ -150,15 +164,25 @@ def is_genuine_gas_reactant(species, condensed=False):
 # 2. Stamp
 ################################################################################
 
-def stamp_gas_origin_copy(molecule, k):
+def stamp_origin_copy(molecule, key, k):
     """Return a deep copy of ``molecule`` whose heavy atoms carry
-    ``props[GAS_ORIGIN_KEY] = k``. Atom ids are preserved by the copy, so the
+    ``props[key] = k``. Atom ids are preserved by the copy, so the
     degeneracy bookkeeping (identical-reaction detection) is unaffected."""
     stamped = molecule.copy(deep=True)
     for atom in stamped.atoms:
         if not atom.is_hydrogen():
-            atom.props[GAS_ORIGIN_KEY] = k
+            atom.props[key] = k
     return stamped
+
+
+def stamp_gas_origin_copy(molecule, k):
+    """:func:`stamp_origin_copy` with :data:`GAS_ORIGIN_KEY`."""
+    return stamp_origin_copy(molecule, GAS_ORIGIN_KEY, k)
+
+
+def heavy_atom_count(molecule):
+    """Number of non-hydrogen atoms of ``molecule``."""
+    return sum(1 for a in molecule.atoms if not a.is_hydrogen())
 
 
 def _participant_molecules(participant):
@@ -188,6 +212,22 @@ def molecule_is_gas_origin(molecule):
     return all(GAS_ORIGIN_KEY in a.props for a in heavy)
 
 
+def molecule_is_whole_pool_chain(molecule, pool_heavy_counts):
+    """True iff EVERY heavy atom of ``molecule`` carries a pool-origin stamp
+    (key presence) AND, for some supplied pool k, the molecule carries all
+    ``pool_heavy_counts[k]`` heavy atoms of that pool's proxy -- i.e. the
+    product is a whole chain, not a fragment shed from one. Pool-only
+    fragments (an ejected monomer, a concerted-loss gas, a chip) are not
+    whole chains and keep the structural behaviour."""
+    if molecule is None or not pool_heavy_counts:
+        return False
+    heavy = [a for a in molecule.atoms if not a.is_hydrogen()]
+    if not heavy or not all(POOL_ORIGIN_KEY in a.props for a in heavy):
+        return False
+    counts = Counter(a.props[POOL_ORIGIN_KEY] for a in heavy)
+    return any(counts.get(k, 0) == n for k, n in pool_heavy_counts.items())
+
+
 ################################################################################
 # 3. Verdict metadata
 ################################################################################
@@ -205,13 +245,16 @@ def _other_side(side):
     return "reactants" if side == "products" else "products"
 
 
-def assign_gas_origin_metadata(rxn, combo):
+def assign_gas_origin_metadata(rxn, combo, pool_heavy_counts=None):
     """Stamp explicit gas-origin metadata onto a freshly generated reaction
     whose participants are still the raw Molecule objects of ``combo`` (the
     supplied side) and the generated product structures.
 
     * ``rxn.gas_origin_side`` -- the generated side name.
     * ``rxn.gas_origin_verdicts`` -- one bool per participant on that side.
+    * ``rxn.pool_origin_verdicts`` -- one bool per participant on that side:
+      the participant is a whole supplied-pool chain
+      (:func:`molecule_is_whole_pool_chain`).
     * ``rxn.gas_origin_sources`` -- one supplied-reactant index (or None when
       the participant is not one of the combo objects) per participant on
       the other side.
@@ -222,6 +265,8 @@ def assign_gas_origin_metadata(rxn, combo):
     rxn.gas_origin_side = side
     rxn.gas_origin_verdicts = tuple(
         molecule_is_gas_origin(_first_molecule(p)) for p in generated)
+    rxn.pool_origin_verdicts = tuple(
+        molecule_is_whole_pool_chain(_first_molecule(p), pool_heavy_counts) for p in generated)
     sources = []
     for participant in supplied:
         src = None
@@ -255,14 +300,27 @@ def has_gas_origin_metadata(rxn):
     sources = getattr(rxn, "gas_origin_sources", None)
     if side not in ("reactants", "products") or verdicts is None or sources is None:
         return False
+    pool_verdicts = getattr(rxn, "pool_origin_verdicts", None)
+    if pool_verdicts is not None and len(pool_verdicts) != len(verdicts):
+        return False
     return (len(verdicts) == len(getattr(rxn, side))
             and len(sources) == len(getattr(rxn, _other_side(side))))
+
+
+def pool_origin_verdicts_of(rxn):
+    """The pool-origin verdict tuple, all-False when absent (rows generated
+    before the pool stamp existed)."""
+    pool_verdicts = getattr(rxn, "pool_origin_verdicts", None)
+    if pool_verdicts is None:
+        return tuple(False for _ in rxn.gas_origin_verdicts)
+    return pool_verdicts
 
 
 def copy_gas_origin_metadata(source, target):
     """Copy the metadata attributes from ``source`` onto ``target``."""
     target.gas_origin_side = getattr(source, "gas_origin_side", None)
     target.gas_origin_verdicts = getattr(source, "gas_origin_verdicts", None)
+    target.pool_origin_verdicts = getattr(source, "pool_origin_verdicts", None)
     target.gas_origin_sources = getattr(source, "gas_origin_sources", None)
 
 
@@ -283,7 +341,7 @@ def capture_gas_origin_alignment(rxn):
         return None
     side = rxn.gas_origin_side
     return (side,
-            list(zip(getattr(rxn, side), rxn.gas_origin_verdicts)),
+            list(zip(getattr(rxn, side), zip(rxn.gas_origin_verdicts, pool_origin_verdicts_of(rxn)))),
             list(zip(getattr(rxn, _other_side(side)), rxn.gas_origin_sources)))
 
 
@@ -312,7 +370,8 @@ def restore_gas_origin_alignment(rxn, snapshot):
     if verdicts is None or sources is None:
         return
     rxn.gas_origin_side = side
-    rxn.gas_origin_verdicts = verdicts
+    rxn.gas_origin_verdicts = tuple(v for v, _ in verdicts)
+    rxn.pool_origin_verdicts = tuple(pv for _, pv in verdicts)
     rxn.gas_origin_sources = sources
 
 
@@ -331,6 +390,7 @@ def strip_gas_origin(rxn):
             for mol in _participant_molecules(participant):
                 for atom in mol.atoms:
                     atom.props.pop(GAS_ORIGIN_KEY, None)
+                    atom.props.pop(POOL_ORIGIN_KEY, None)
 
 
 def any_gas_origin_stamp(rxn):
@@ -341,7 +401,8 @@ def any_gas_origin_stamp(rxn):
             continue
         for participant in list(reaction.reactants or []) + list(reaction.products or []):
             for mol in _participant_molecules(participant):
-                if any(GAS_ORIGIN_KEY in atom.props for atom in mol.atoms):
+                if any(GAS_ORIGIN_KEY in atom.props or POOL_ORIGIN_KEY in atom.props
+                       for atom in mol.atoms):
                     return True
     return False
 

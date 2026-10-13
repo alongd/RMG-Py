@@ -529,7 +529,8 @@ and immediately used in input files without any additional changes.
         from rmgpy.data.kinetics import family as family_module
         from rmgpy.gas_origin import (CENSUS_IDENTITY_DROPS, CENSUS_IDENTITY_DROPS_GAS_MIXED,
                                       assign_gas_origin_metadata, is_genuine_gas_reactant,
-                                      restore_supplied_originals,
+                                      restore_supplied_originals, POOL_ORIGIN_KEY,
+                                      heavy_atom_count, stamp_origin_copy,
                                       stamp_gas_origin_copy, strip_gas_origin)
 
         if isinstance(reactants, tuple):
@@ -551,16 +552,28 @@ and immediately used in input files without any additional changes.
         elif len(genuine_gas) != len(reactants):
             raise ValueError("genuine_gas has {0} flags for {1} reactants".format(
                 len(genuine_gas), len(reactants)))
+        # Mirror stamp (round 2): heavy atoms of copies of supplied POOL
+        # reactants (Polymer participants, i.e. their proxy molecules) carry
+        # pool_origin = k, so a generated product made of a whole chain can be
+        # recognised however it is later resolved.
+        from rmgpy.polymer import Polymer
         molecule_lists = []
         originals = {}
+        pool_heavy_counts = {}
         for k, (spc, is_gas) in enumerate(zip(reactants, genuine_gas)):
-            if is_gas:
+            is_pool = isinstance(spc, Polymer) and not is_gas
+            if is_gas or is_pool:
                 copies = []
                 for mol in spc.molecule:
-                    stamped = stamp_gas_origin_copy(mol, k)
+                    if is_gas:
+                        stamped = stamp_gas_origin_copy(mol, k)
+                    else:
+                        stamped = stamp_origin_copy(mol, POOL_ORIGIN_KEY, k)
                     originals[id(stamped)] = mol
                     copies.append(stamped)
                 molecule_lists.append(copies)
+                if is_pool and spc.molecule:
+                    pool_heavy_counts[k] = heavy_atom_count(spc.molecule[0])
             else:
                 molecule_lists.append(list(spc.molecule))
         if not 1 <= len(molecule_lists) <= 3:
@@ -586,7 +599,7 @@ and immediately used in input files without any additional changes.
             # The stamped copies then leave the supplied side: the row keeps
             # the original molecule objects exactly as before provenance.
             for rxn in combo_reactions:
-                assign_gas_origin_metadata(rxn, combo)
+                assign_gas_origin_metadata(rxn, combo, pool_heavy_counts)
                 restore_supplied_originals(rxn, originals)
             reaction_list.extend(combo_reactions)
 
