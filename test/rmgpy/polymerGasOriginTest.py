@@ -46,7 +46,8 @@ def setup_module(module):
     db = RMGDatabase()
     path = os.path.join(settings["test_data.directory"], "testing_database")
     db.load_kinetics(os.path.join(path, "kinetics"),
-                     kinetics_families=["H_Abstraction", "R_Recombination"],
+                     kinetics_families=["H_Abstraction", "R_Recombination",
+                                        "Disproportionation"],
                      reaction_libraries=[])
     for family in db.kinetics.families.values():
         family.forbidden = ForbiddenStructures()
@@ -121,7 +122,8 @@ class TestStampAndVerdict:
         never truthiness), pool at index 1."""
         cerm, pe = _model("PE")
         rad = _gas(cerm, "[CH2]CCC=C", "pentenyl")
-        rxns = _kinetics().generate_reactions_from_families([rad, pe])
+        rxns = _kinetics().generate_reactions_from_families(
+            [rad, pe], only_families=["H_Abstraction"])
         assert rxns, "liveness: H-abstraction rows expected"
         pentene = Molecule(smiles="C=CCCC")
         for rxn in rxns:
@@ -222,3 +224,195 @@ class TestStampAndVerdict:
             for mol in spc.molecule:
                 for atom in mol.atoms:
                     assert GAS_ORIGIN_KEY not in atom.props
+
+
+################################################################################
+# Items 4-5: origin-aware collapse, transport, census aggregation
+################################################################################
+
+def _constructed_row(products, verdicts):
+    from rmgpy.data.kinetics.family import TemplateReaction
+
+    rxn = TemplateReaction(
+        reactants=[Molecule(smiles="CC[CH]CCC"), Molecule(smiles="CC[CH]CCC")],
+        products=products, family="Disproportionation", template=["a", "b"],
+        is_forward=True, degeneracy=1)
+    rxn.gas_origin_side = "products"
+    rxn.gas_origin_verdicts = tuple(verdicts)
+    rxn.gas_origin_sources = (0, 1)
+    return rxn
+
+
+def _merge_pair(swap_verdicts, identical):
+    hexene, hexane = Molecule(smiles="CCC=CCC"), Molecule(smiles="CCCCCC")
+    hexene.assign_atom_ids()
+    hexane.assign_atom_ids()
+    first = _constructed_row([hexene, hexane], (True, False))
+    if identical:
+        products = [hexene.copy(deep=True), hexane.copy(deep=True)]
+    else:
+        products = [Molecule(smiles="CCC=CCC"), Molecule(smiles="CCCCCC")]
+        for m in products:
+            m.assign_atom_ids()
+    second = _constructed_row(products, (False, True) if swap_verdicts else (True, False))
+    return first, second
+
+
+class TestOriginAwareCollapse:
+    @pytest.mark.parametrize("identical", [True, False])
+    def test_origin_ambiguous_merge_refuses_retained_row(self, identical):
+        """(d) Two isomorphic rows whose (structure, verdict) multisets differ
+        (gas hexene + pool hexane vs pool hexene + gas hexane) still merge,
+        but the RETAINED representative is refused and the census counts it."""
+        from rmgpy.data.kinetics.common import find_degenerate_reactions
+        from rmgpy.gas_origin import ORIGIN_AMBIGUOUS_COLLAPSE, new_census
+
+        first, second = _merge_pair(swap_verdicts=True, identical=identical)
+        census = new_census()
+        out = find_degenerate_reactions([first, second], same_reactants=0, census=census)
+        assert len(out) == 1 and out[0] is first
+        assert first.polymer_refused is True
+        assert first.polymer_refused_accumulating is False
+        assert first.polymer_refused_detail == ORIGIN_AMBIGUOUS_COLLAPSE
+        assert census["collapse_refusals"] == 1
+
+    @pytest.mark.parametrize("identical", [True, False])
+    def test_same_provenance_merge_is_not_refused(self, identical):
+        from rmgpy.data.kinetics.common import find_degenerate_reactions
+        from rmgpy.gas_origin import new_census
+
+        first, second = _merge_pair(swap_verdicts=False, identical=identical)
+        census = new_census()
+        out = find_degenerate_reactions([first, second], same_reactants=0, census=census)
+        assert len(out) == 1
+        assert out[0].polymer_refused is False
+        assert out[0].polymer_refused_detail is None
+        assert census["collapse_refusals"] == 0
+
+    def _refused_row(self):
+        from rmgpy.data.kinetics.common import find_degenerate_reactions
+
+        first, second = _merge_pair(swap_verdicts=True, identical=False)
+        out = find_degenerate_reactions([first, second], same_reactants=0)
+        return out[0]
+
+    def test_refusal_and_verdicts_survive_pickle(self):
+        import pickle
+
+        from rmgpy.gas_origin import ORIGIN_AMBIGUOUS_COLLAPSE
+
+        row = self._refused_row()
+        back = pickle.loads(pickle.dumps(row))
+        assert back.polymer_refused is True
+        assert back.polymer_refused_accumulating is False
+        assert back.polymer_refused_detail == ORIGIN_AMBIGUOUS_COLLAPSE
+        assert back.gas_origin_side == "products"
+        assert back.gas_origin_verdicts == (True, False)
+        assert back.gas_origin_sources == (0, 1)
+        assert back.degeneracy == row.degeneracy
+
+    def test_canonical_dedupe_preserves_refusal_detail_and_verdicts(self):
+        """The canonical-dedupe merge (polymer.py) fills the canonical row's
+        refusal detail and gas-origin metadata from the discarded candidate."""
+        import pickle
+
+        from rmgpy.data.kinetics.family import TemplateReaction
+        from rmgpy.gas_origin import ORIGIN_AMBIGUOUS_COLLAPSE
+        from rmgpy.polymer import merge_polymer_adjudication_stamps
+
+        source = pickle.loads(pickle.dumps(self._refused_row()))
+        canonical = TemplateReaction(reactants=list(source.reactants),
+                                     products=list(source.products),
+                                     family="Disproportionation", is_forward=True)
+        merge_polymer_adjudication_stamps(source, canonical)
+        assert canonical.polymer_refused is True
+        assert canonical.polymer_refused_detail == ORIGIN_AMBIGUOUS_COLLAPSE
+        assert canonical.gas_origin_side == "products"
+        assert canonical.gas_origin_verdicts == (True, False)
+        assert canonical.gas_origin_sources == (0, 1)
+
+    def test_kinetics_flip_preserves_refusal_detail_and_verdicts(self, monkeypatch):
+        import rmgpy.data.rmg as rmg_data
+        from rmgpy.data.kinetics.family import TemplateReaction
+        from rmgpy.gas_origin import ORIGIN_AMBIGUOUS_COLLAPSE
+        from rmgpy.kinetics import Arrhenius
+
+        pool = Polymer(**POOLS["PE"])
+        gas = Species().from_smiles("CC")
+        rxn = TemplateReaction(reactants=[pool], products=[gas],
+                               pairs=[(pool, gas)], family="fake_family",
+                               is_forward=True)
+        rxn.polymer_refused = True
+        rxn.polymer_refused_detail = ORIGIN_AMBIGUOUS_COLLAPSE
+        rxn.gas_origin_side = "products"
+        rxn.gas_origin_verdicts = (True,)
+        rxn.gas_origin_sources = (0,)
+        kin = Arrhenius(A=(1.0, "s^-1"), n=0.0, Ea=(0.0, "J/mol"), T0=(1.0, "K"))
+        cerm = CoreEdgeReactionModel()
+        monkeypatch.setattr(cerm, "generate_kinetics",
+                            lambda reaction: (kin, "test", None, False), raising=False)
+
+        class _FakeFamily:
+            own_reverse = False
+
+        class _FakeDb:
+            families = {"fake_family": _FakeFamily()}
+
+        monkeypatch.setattr(rmg_data, "get_db", lambda name: _FakeDb())
+        cerm.apply_kinetics_to_reaction(rxn)
+        assert rxn.reactants == [gas] and rxn.products == [pool]   # flipped
+        assert rxn.polymer_refused is True
+        assert rxn.polymer_refused_detail == ORIGIN_AMBIGUOUS_COLLAPSE
+        assert rxn.gas_origin_side == "reactants"
+        assert rxn.gas_origin_verdicts == (True,)
+        assert rxn.gas_origin_sources == (0,)
+
+
+def _pe_mod(cerm, pe):
+    daughter = pe.create_reacted_copy(Molecule(smiles="CC[CH]CCC"), h_loss_feature=True)
+    daughter, _ = cerm._register_polymer(daughter, generate_thermo=False)
+    return daughter
+
+
+class TestGeneratedCollapseAndProcnum:
+    def test_generated_origin_ambiguous_collapse(self):
+        """Gas 3-hexyl + the PE_mod pool (3-hexyl proxy): either side can
+        donate the H, so isomorphic rows disagree on which hexane is gas."""
+        from rmgpy.gas_origin import ORIGIN_AMBIGUOUS_COLLAPSE, new_census
+
+        cerm, pe = _model("PE")
+        pe_mod = _pe_mod(cerm, pe)
+        hexyl = _gas(cerm, "CC[CH]CCC", "hexyl3")
+        census = new_census()
+        rxns = _kinetics().generate_reactions_from_families([hexyl, pe_mod], census=census)
+        refused = [r for r in rxns if r.polymer_refused]
+        assert census["collapse_refusals"] >= 1
+        assert len(refused) >= 1
+        assert all(r.polymer_refused_detail == ORIGIN_AMBIGUOUS_COLLAPSE for r in refused)
+
+    def test_procnum_2_matches_procnum_1(self):
+        """(e) Same rows, same verdicts, same census from the worker pool."""
+        from rmgpy.gas_origin import new_census
+        from rmgpy.rmg.react import react
+
+        cerm, pe = _model("PE")
+        pe_mod = _pe_mod(cerm, pe)
+        tuples = [((_gas(cerm, "[CH2]CCC=C", "pentenyl"), pe),),
+                  ((_gas(cerm, "[CH2]CCCCC", "hexyl1"), pe),),
+                  ((_gas(cerm, "CC[CH]CCC", "hexyl3"), pe_mod),),
+                  ((_gas(cerm, "CCCC", "butane"),),)]
+
+        def run(procnum):
+            census = new_census()
+            out = react(tuples, procnum=procnum, census=census)
+            rows = [sorted((str(r), r.gas_origin_side, r.gas_origin_verdicts,
+                            r.gas_origin_sources, bool(r.polymer_refused),
+                            r.polymer_refused_detail, r.degeneracy) for r in rxns)
+                    for rxns in out]
+            return rows, dict(census)
+
+        rows1, census1 = run(1)
+        rows2, census2 = run(2)
+        assert rows1 == rows2
+        assert census1 == census2
+        assert census1["collapse_refusals"] >= 1
