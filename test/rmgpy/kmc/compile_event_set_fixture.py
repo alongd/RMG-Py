@@ -24,15 +24,12 @@ from portable_cache import (
     validate_artifact_cache_entry,
 )
 
-from rmgpy.data.rmg import RMGDatabase
 from rmgpy.kmc.barrier_e0 import FixedBBarrierE0Provider
+from rmgpy.kmc.compile import CompileRequest, compile_artifact
 from rmgpy.kmc.compiler import (
     DEFAULT_T_GRID,
-    EventSetCompiler,
     PS_FAMILY_CANDIDATES,
     PS_PROXY_UNITS,
-    prepare_rate_rules,
-    ps_proxy_set,
 )
 from rmgpy.kmc.database_provenance import (
     database_content_digest,
@@ -98,22 +95,6 @@ def main() -> None:
     if args.family_universe:
         family_universe = json.loads(args.family_universe.read_text())
 
-    database = RMGDatabase()
-    print("loading pinned RMG families", flush=True)
-    database.load_kinetics(
-        str(database_path / "input/kinetics"),
-        reaction_libraries=[],
-        seed_mechanisms=None,
-        kinetics_families=list(PS_FAMILY_CANDIDATES),
-        kinetics_depositories=["training"],
-    )
-    database.load_thermo(
-        str(database_path / "input/thermo"),
-        thermo_libraries=["primaryThermoLibrary"],
-        depository=True,
-    )
-    print("preparing non-auto-generated rate rules from training", flush=True)
-    prepare_rate_rules(database.kinetics, database.thermo, verbose=True)
     database_commit = resolve_database_declaration(args.database_sha)
     database_content_sha, _ = database_content_digest(database_path)
     cache_root = Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(Path.cwd() / ".kmc-cache")))
@@ -164,69 +145,61 @@ def main() -> None:
         except (FileNotFoundError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
             if artifact_manifest.exists():
                 print(f"rejecting invalid artifact cache: {error}", flush=True)
-    generate = database.kinetics.generate_reactions_from_families
-    generation_source = hashlib.sha256(inspect.getsource(generate).encode()).hexdigest()
 
-    def cached_generate(reactants, products=None, only_families=None, resonance=True):
-        parameters = {
-            "cache_schema": 1,
-            "generator_source": generation_source,
-            "reactants": [
-                [
-                    molecule.to_adjacency_list(remove_h=False)
-                    for molecule in species.molecule
-                ]
-                for species in reactants
-            ],
-            "products": (
-                None if products is None else [str(species) for species in products]
-            ),
-            "families": only_families,
-            "resonance": resonance,
-        }
-        key = hashlib.sha256(
-            json.dumps(parameters, sort_keys=True).encode()
-        ).hexdigest()
-        path = generated_cache / (key + ".pickle")
-        was_cached = cacheable_seed and path.is_file()
-        reactions = load_or_generate(
-            path,
-            lambda: generate(reactants, products, only_families, resonance),
-            dump_generated_reactions,
-            load_generated_reactions,
-            read_cache=cacheable_seed,
-        )
-        if was_cached:
-            print(f"cached public RMG generation: {only_families}", flush=True)
-        return reactions
+    def cache_provider(generate):
+        """Wrap the database's generator with the pickle cache (test-only)."""
+        generation_source = hashlib.sha256(inspect.getsource(generate).encode()).hexdigest()
 
-    database.kinetics.generate_reactions_from_families = cached_generate
-    print("discovering PS chemistry", flush=True)
-    proxies = ps_proxy_set(PS_PROXY_UNITS)
-    active, excluded, reactions = EventSetCompiler.discover_family_reactions(
-        database.kinetics,
-        proxies,
-        PS_FAMILY_CANDIDATES,
-        family_universe=family_universe,
-    )
-    compiler = EventSetCompiler(
-        database.kinetics,
-        proxies,
-        active,
-        excluded_families=excluded,
-        database_path=database_path,
-        thermo_database=database.thermo,
-        reaction_cache=reactions,
-        rmg_database_sha=database_commit,
-        barrier_e0_provider=barrier_e0_provider,
-    )
-    print(
-        f"compiling {sum(len(value) for value in reactions.values())} generated reactions",
-        flush=True,
-    )
+        def cached_generate(reactants, products=None, only_families=None, resonance=True):
+            parameters = {
+                "cache_schema": 1,
+                "generator_source": generation_source,
+                "reactants": [
+                    [
+                        molecule.to_adjacency_list(remove_h=False)
+                        for molecule in species.molecule
+                    ]
+                    for species in reactants
+                ],
+                "products": (
+                    None if products is None else [str(species) for species in products]
+                ),
+                "families": only_families,
+                "resonance": resonance,
+            }
+            key = hashlib.sha256(
+                json.dumps(parameters, sort_keys=True).encode()
+            ).hexdigest()
+            path = generated_cache / (key + ".pickle")
+            was_cached = cacheable_seed and path.is_file()
+            reactions = load_or_generate(
+                path,
+                lambda: generate(reactants, products, only_families, resonance),
+                dump_generated_reactions,
+                load_generated_reactions,
+                read_cache=cacheable_seed,
+            )
+            if was_cached:
+                print(f"cached public RMG generation: {only_families}", flush=True)
+            return reactions
+
+        return cached_generate
+
     artifact_cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=artifact_cache.parent) as temporary:
-        path, _ = compiler.write_artifact(temporary)
+        # The one product cold-compile procedure; only the cache is ours.
+        path, _ = compile_artifact(
+            CompileRequest(
+                database_path=str(database_path),
+                output_dir=temporary,
+                families=tuple(PS_FAMILY_CANDIDATES),
+                family_universe=tuple(family_universe),
+                database_sha=args.database_sha,
+                barrier_e0_fixed_b=args.barrier_e0_fixed_b,
+                proxy_units=PS_PROXY_UNITS,
+            ),
+            generation_provider_factory=cache_provider,
+        )
         final_path = artifact_cache / path.name
         os.replace(path, final_path)
     path = final_path

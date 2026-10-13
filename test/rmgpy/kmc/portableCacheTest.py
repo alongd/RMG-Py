@@ -383,6 +383,7 @@ def test_artifact_hit_checks_hash_before_json_validation(tmp_path, monkeypatch):
 
 def test_driver_main_cold_hit_and_generation_only_modes(tmp_path, monkeypatch, capsys):
     import compile_event_set_fixture as driver
+    import rmgpy.kmc.compile as product
 
     database_path = _make_database(tmp_path / "db")
     (database_path / "input/kinetics/families/stub").mkdir(parents=True)
@@ -408,8 +409,10 @@ def test_driver_main_cold_hit_and_generation_only_modes(tmp_path, monkeypatch, c
 
     class FakeCompiler:
         @staticmethod
-        def discover_family_reactions(kinetics, proxies, families, family_universe=None):
-            return {}, set(), {"stub": kinetics.generate_reactions_from_families([], [])}
+        def discover_family_reactions(
+            kinetics, proxies, families, family_universe=None, generation_provider=None
+        ):
+            return {}, set(), {"stub": generation_provider([], [])}
 
         def __init__(self, *args, **kwargs):
             pass
@@ -421,10 +424,10 @@ def test_driver_main_cold_hit_and_generation_only_modes(tmp_path, monkeypatch, c
 
     monkeypatch.setenv("PYTHONHASHSEED", "0")
     monkeypatch.setenv("RMG_KMC_CACHE_ROOT", str(cache_root))
-    monkeypatch.setattr(driver, "RMGDatabase", FakeDatabase)
-    monkeypatch.setattr(driver, "EventSetCompiler", FakeCompiler)
-    monkeypatch.setattr(driver, "prepare_rate_rules", lambda *args, **kwargs: None)
-    monkeypatch.setattr(driver, "ps_proxy_set", lambda units: ())
+    monkeypatch.setattr(product, "RMGDatabase", FakeDatabase)
+    monkeypatch.setattr(product, "EventSetCompiler", FakeCompiler)
+    monkeypatch.setattr(product, "prepare_rate_rules", lambda *args, **kwargs: None)
+    monkeypatch.setattr(product, "ps_proxy_set", lambda units: ())
     monkeypatch.setattr(driver, "resolve_database_declaration", lambda value: value)
     monkeypatch.setattr(driver, "database_content_digest", lambda path: ("database", {}))
     monkeypatch.setattr(driver, "identity", lambda repo, db: {"identity": "generation"})
@@ -494,6 +497,7 @@ def test_driver_main_publishes_database_policy_and_provider_provenance(
     tmp_path, monkeypatch
 ):
     import compile_event_set_fixture as driver
+    import rmgpy.kmc.compile as product
     from rmgpy.kmc.barrier_e0 import FixedBBarrierE0Provider
 
     database_path = _make_database(tmp_path / "db")
@@ -535,10 +539,10 @@ def test_driver_main_publishes_database_policy_and_provider_provenance(
             }))
             return path, None
 
-    monkeypatch.setattr(driver, "RMGDatabase", FakeDatabase)
-    monkeypatch.setattr(driver, "EventSetCompiler", FakeCompiler)
-    monkeypatch.setattr(driver, "prepare_rate_rules", lambda *args, **kwargs: None)
-    monkeypatch.setattr(driver, "ps_proxy_set", lambda units: ())
+    monkeypatch.setattr(product, "RMGDatabase", FakeDatabase)
+    monkeypatch.setattr(product, "EventSetCompiler", FakeCompiler)
+    monkeypatch.setattr(product, "prepare_rate_rules", lambda *args, **kwargs: None)
+    monkeypatch.setattr(product, "ps_proxy_set", lambda units: ())
     monkeypatch.setattr(driver, "resolve_database_declaration", lambda value: value)
     monkeypatch.setattr(driver, "database_content_digest", lambda path: ("content", {}))
     monkeypatch.setattr(driver, "identity", lambda repo, db: {"identity": "driver"})

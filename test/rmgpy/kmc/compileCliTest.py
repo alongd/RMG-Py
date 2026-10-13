@@ -161,18 +161,19 @@ def test_real_compile_hook_receives_calls_and_its_error_aborts(tmp_path):
 # --- CLI versus CE ------------------------------------------------------------
 
 
-def _run_cli(tmp_path, output, families):
-    return subprocess.run(
+def _start_cli(output, families):
+    return subprocess.Popen(
         [
             sys.executable, "-m", "rmgpy.kmc.compile", str(DATABASE), str(output),
             "--families", str(families), "--family-universe", str(families),
             "--database-sha", "parity-sha",
         ],
-        cwd=REPOSITORY, env=_environment(), capture_output=True, text=True,
+        cwd=REPOSITORY, env=_environment(), stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True,
     )
 
 
-def _run_ce(tmp_path, output, families, cache_root):
+def _start_ce(tmp_path, output, families, cache_root):
     script = tmp_path / "run_ce.py"
     script.write_text(textwrap.dedent(f"""
         import json, sys
@@ -184,10 +185,11 @@ def _run_ce(tmp_path, output, families, cache_root):
                     "--database-sha", "parity-sha"]
         driver.main()
     """))
-    return subprocess.run(
-        [sys.executable, str(script)], cwd=tmp_path,
+    # The fixture derives its cache identity from the working repository.
+    return subprocess.Popen(
+        [sys.executable, str(script)], cwd=REPOSITORY,
         env=_environment(RMG_KMC_CACHE_ROOT=str(cache_root)),
-        capture_output=True, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
 
 
@@ -198,21 +200,25 @@ def _run_ce(tmp_path, output, families, cache_root):
 def test_cli_and_ce_cold_compile_are_byte_identical(tmp_path):
     families = _write_request_files(tmp_path)
     cli_out, ce_out = tmp_path / "cli", tmp_path / "ce"
-    cli = _run_cli(tmp_path, cli_out, families)
-    assert cli.returncode == 0, cli.stderr[-3000:]
-    ce = _run_ce(tmp_path, ce_out, families, tmp_path / "empty-cache")
-    assert ce.returncode == 0, ce.stderr[-3000:]
+    cli = _start_cli(cli_out, families)
+    ce = _start_ce(tmp_path, ce_out, families, tmp_path / "empty-cache")
+    cli_stdout, cli_stderr = cli.communicate()
+    ce_stdout, ce_stderr = ce.communicate()
+    assert cli.returncode == 0, cli_stderr[-3000:]
+    assert ce.returncode == 0, ce_stderr[-3000:]
     cli_artifact = next(cli_out.glob("*.json"))
     ce_artifact = next(ce_out.glob("*.json"))
+    print(f"artifact ids: cli={cli_artifact.stem} ce={ce_artifact.stem}")
     assert cli_artifact.name == ce_artifact.name
     assert cli_artifact.read_bytes() == ce_artifact.read_bytes()
-    assert cli_artifact.stem in cli.stdout
+    assert cli_artifact.stem in cli_stdout
 
 
 # --- process isolation --------------------------------------------------------
 
 
 def _children_of(pid):
+    """Direct children that are spawned compile children (not the tracker)."""
     children = []
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
@@ -222,7 +228,11 @@ def _children_of(pid):
         except OSError:
             continue
         fields = stat[stat.rindex(")") + 2:].split()
-        if int(fields[1]) == pid:
+        try:
+            command = (entry / "cmdline").read_bytes()
+        except OSError:
+            continue
+        if int(fields[1]) == pid and b"spawn_main" in command:
             children.append(int(entry.name))
     return children
 
