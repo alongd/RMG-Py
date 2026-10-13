@@ -186,7 +186,7 @@ def test_padded_root_degeneracy_is_derived_by_production_generation():
             assert kwargs["resonance"] is False
             return [derived]
 
-    matched, generated_count = _production_padded_root(Database(), expected)
+    matched, generated_count = _production_padded_root(Database(), expected, None)
     assert generated_count == 1
     assert matched.degeneracy == 7.0
 

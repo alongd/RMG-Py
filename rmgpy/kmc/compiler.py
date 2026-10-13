@@ -2047,13 +2047,12 @@ def _resolve_generator(kinetics_database, generation_provider):
     return kinetics_database.generate_reactions_from_families
 
 
-def _production_padded_root(
-    kinetics_database, reaction, generation_provider=None
-):
+def _production_padded_root(kinetics_database, reaction, generation_provider):
     """Re-derive one exact padded reaction through RMG's production generator.
 
-    ``generation_provider`` has the signature of ``generate_reactions_from_families``
-    and defaults to the database's own method.
+    ``generation_provider`` is required so a caller cannot silently omit the
+    hook: it has the signature of ``generate_reactions_from_families``; pass
+    None explicitly to use the database's own method.
     """
     from rmgpy.species import Species
 

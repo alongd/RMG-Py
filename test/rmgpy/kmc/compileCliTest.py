@@ -14,6 +14,7 @@ import pytest
 
 from rmgpy.kmc.compiler import (
     EventSetCompiler,
+    SiteProxy,
     _production_padded_root,
     ps_proxy_set,
 )
@@ -325,3 +326,50 @@ def test_import_loads_no_database_and_mutates_no_global(tmp_path):
     )
     assert result.returncode == 0, result.stderr[-2000:]
     assert result.stdout.strip().endswith("clean")
+
+
+def test_compiler_padded_root_call_site_passes_its_hook(monkeypatch):
+    """The compiler itself, not just the helper, hands its hook to the padded root."""
+    from types import SimpleNamespace
+
+    from rmgpy.kmc import compiler as compiler_module
+
+    hook = object()
+    seen = []
+
+    def spy(kinetics_database, reaction, generation_provider):
+        seen.append(generation_provider)
+        raise compiler_module.ReactionNotPaddable("spy")
+
+    instance = object.__new__(EventSetCompiler)
+    instance.kinetics_database = SimpleNamespace(families={"fake": object()})
+    instance.generation_provider = hook
+    instance.proxy_padding_distance = 1
+    instance.proxy_padding_max_heavy_atoms = 10
+    instance.use_plpsec_library = False
+    instance._applicability_source_cache = {}
+    instance._applicability_refusals = []
+    instance._direction_proxy = lambda proxy, reaction: proxy
+    instance._record = lambda *args, **kwargs: SimpleNamespace(
+        status="published", proxy_padding={}
+    )
+    instance._rate_table = lambda reaction: ({}, {})
+    monkeypatch.setattr(compiler_module, "_reverse_view", lambda reaction: reaction)
+    monkeypatch.setattr(
+        compiler_module, "_map_proxy_boundaries_to_reaction", lambda proxy, r: proxy
+    )
+    monkeypatch.setattr(
+        compiler_module, "pad_reaction_witness",
+        lambda *args, **kwargs: SimpleNamespace(reaction="padded"),
+    )
+    monkeypatch.setattr(compiler_module, "_production_padded_root", spy)
+    proxy = SiteProxy("synthetic", [])
+    proxy = proxy.__class__(**{**proxy.__dict__, "artificial_boundaries": ["b"], "repeat_unit": "u"})
+    reaction = SimpleNamespace(
+        family="fake", kinetics=object(), template=["Root"], reactants=[], products=[]
+    )
+    try:
+        instance._build_linked_family_pair(proxy, reaction, {})
+    except Exception:
+        pass  # only the call into the padded-root helper matters here
+    assert seen == [hook]
