@@ -2463,6 +2463,13 @@ class RMG(util.Subject):
             logging.info(textwrap.fill(quote, subsequent_indent=" "))
             logging.info("             ---Quote-generating neural network, {}".format(datetime.datetime.now().strftime("%B %Y")))
 
+        # One-block conduit census + admission tally summary (logging only).
+        try:
+            from rmgpy.polymer_conduit import log_census_summary
+            log_census_summary()
+        except Exception as exc:  # pragma: no cover - never break finish()
+            logging.warning("conduit census summary failed: %s", exc)
+
         # Log end timestamp
         logging.info("")
         logging.info("RMG execution terminated at " + time.asctime())

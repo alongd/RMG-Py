@@ -542,6 +542,7 @@ def reset_conduit_state():
     keeps its no-module-level-RMG-imports contract."""
     CENSUS_REGISTRY.reset()
     _CONDUIT_FLUX_TOTALS.clear()
+    _ADMISSION_TALLY.clear()
     try:
         import rmgpy.polymer as _polymer
         _polymer._refused_census_warned.clear()
@@ -570,10 +571,78 @@ def census_summary():
             f"{parts}")
 
 
+#: I-102 sizing tally of ``stage=final`` admission rows, keyed by reaction
+#: family: ``{family: {"final": n, "would_admit": n, "deny": {reason: n}}}``.
+#: Logging only -- nothing reads it to decide admission. Cleared by
+#: :func:`reset_conduit_state`.
+_ADMISSION_TALLY = {}
+
+
+def tally_admission_row(verdict, family):
+    """Count one emitted admission line in the sizing tally. Only rows that
+    print ``stage=final`` are counted (provisional denies are re-adjudicated
+    and would double-count); the stage rule mirrors
+    :func:`admission_census_suffix`. NEVER raises."""
+    try:
+        if verdict is None:
+            return
+        if (not verdict.admitted
+                and verdict.deny_reason in PROVISIONAL_DENY_REASONS):
+            return
+        fam = str(family) if family else "unknown"
+        rec = _ADMISSION_TALLY.setdefault(
+            fam, {"final": 0, "would_admit": 0, "deny": {}})
+        rec["final"] += 1
+        if verdict.admitted:
+            rec["would_admit"] += 1
+        else:
+            reason = str(verdict.deny_reason)
+            rec["deny"][reason] = rec["deny"].get(reason, 0) + 1
+    except Exception:  # pragma: no cover - census must never break a run
+        pass
+
+
+def admission_tally():
+    """Deep copy of the per-family ``stage=final`` admission tally."""
+    return {f: {"final": r["final"], "would_admit": r["would_admit"],
+                "deny": dict(r["deny"])}
+            for f, r in _ADMISSION_TALLY.items()}
+
+
+def admission_tally_lines():
+    """Summary lines: one TOTAL line, then one line per family, sorted for
+    determinism."""
+    t = admission_tally()
+    total = sum(r["final"] for r in t.values())
+    admit = sum(r["would_admit"] for r in t.values())
+    reasons = {}
+    for r in t.values():
+        for k, v in r["deny"].items():
+            reasons[k] = reasons.get(k, 0) + v
+    lines = ["conduit-admission-tally/1 summary (stage=final rows): "
+             f"final={total} would_admit={admit} "
+             + " ".join(f"deny[{k}]={reasons[k]}" for k in sorted(reasons))]
+    for fam in sorted(t):
+        r = t[fam]
+        lines.append(
+            f"conduit-admission-tally/1 family={fam} final={r['final']} "
+            f"would_admit={r['would_admit']} "
+            + " ".join(f"{k}={r['deny'][k]}" for k in sorted(r["deny"])))
+    return lines
+
+
 def log_census_summary():
-    """Census-log the summary (warning level, like the refusal censuses)."""
+    """Census-log the summary (warning level, like the refusal censuses),
+    followed by the I-102 per-family admission tally as ONE block."""
     logging.warning("MOMENT-CREDIT CONDUIT CENSUS (M18.2, census-only): %s",
                     census_summary())
+    logging.warning("MOMENT-CREDIT CONDUIT ADMISSION TALLY (I-102, "
+                    "census-only):\n%s", "\n".join(admission_tally_lines()))
+
+
+def _row_family(forward):
+    fam = getattr(forward, "family", None)
+    return fam if fam else "unknown"
 
 
 def census_suffix(result, entry):
@@ -786,6 +855,7 @@ def annotate_refused_row(forward, row_pools, census="r93_general",
                 and "feature_radical" in entry["censuses"]):
             verdict = _deny(verdict.candidate_key or result["candidate_key"],
                             "feature-radical-overlap")
+        tally_admission_row(verdict, _row_family(forward))
         return census_suffix(result, entry) + admission_census_suffix(verdict)
     except Exception as exc:  # pragma: no cover - defensive fail-open
         logging.warning(
@@ -802,12 +872,15 @@ def annotate_refused_row(forward, row_pools, census="r93_general",
 #: MASTER admission switch. M18.3 lands the admission gates + stamping arm as
 #: fail-closed DEAD CODE behind the census: every row still refuses exactly
 #: as M18.2 left it while the census logs the would-be verdict (WOULD-ADMIT /
-#: deny reason) for sizing. Flipping this to True is M18.4, gated on THREE
-#: open items (BUILD_SPEC / OPEN_QUESTIONS):
+#: deny reason) for sizing. Flipping this to True is M18.4, gated on ONE
+#: open item (BUILD_SPEC / OPEN_QUESTIONS):
 #:   OQ-1  sizing of the deferred populations (FR-overlap +
-#:         direction-requires-flip-rewrite denial counts),
-#:   OQ-2  the .reversible in-place-mutation safety audit,
-#:   OQ-10 TA's cert-path answer (sidecar rows vs classic-Cantera-only).
+#:         direction-requires-flip-rewrite denial counts); the end-of-run
+#:         admission tally (:func:`log_census_summary`) supplies the counts.
+#: Closed 2026-07-23: OQ-2 (the .reversible in-place-mutation audit; the
+#: admit-stamp + rewrite moved to the post-dedup G6 seam, 7420379b2) and
+#: OQ-10 (TA's cert path; the moment-replay runner got a live dispatch arm,
+#: c1498587c).
 CONDUIT_ADMISSION_ENABLED = False
 
 #: In-band caveat serialized beside every candidate_key (DESIGN §2.1):
@@ -1146,8 +1219,10 @@ def annotate_feature_radical(reaction_label, genuine_feature_radical=True):
         # registered (the line above), any admission evaluation of this key
         # denies deterministically -- printed here so the census line and
         # the ledger can never disagree.
+        fr_verdict = _deny(key, deny_reason)
+        tally_admission_row(fr_verdict, "feature-radical-census")
         return (census_suffix(result, entry)
-                + admission_census_suffix(_deny(key, deny_reason)))
+                + admission_census_suffix(fr_verdict))
     except Exception as exc:  # pragma: no cover - defensive fail-open
         logging.warning(
             "MOMENT-CREDIT CONDUIT CENSUS (M18.2): feature-radical "

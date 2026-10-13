@@ -2461,8 +2461,12 @@ class TestAdmissionTally:
         from rmgpy.polymer_conduit import (admission_tally,
                                            annotate_refused_row,
                                            evaluate_conduit_admission)
-        rxn, pf = _admissible_fixture(reversible=True)
-        rxn.family = "Fam_X"
+        from rmgpy.data.kinetics.family import TemplateReaction
+        base, pf = _admissible_fixture(reversible=True)
+        rxn = TemplateReaction(reactants=base.reactants,
+                               products=base.products,
+                               reversible=True, kinetics=base.kinetics,
+                               family="Fam_X")
         verdict = evaluate_conduit_admission(rxn, [pf])
         assert verdict.admitted
         suffix = annotate_refused_row(rxn, [pf], census="r93_general",
@@ -2506,3 +2510,53 @@ class TestAdmissionTally:
         assert sum("conduit-admission-tally/1 summary" in m
                    for m in msgs) == 1
         assert sum("conduit-census/1 summary" in m for m in msgs) == 1
+
+
+class TestOptInOffOutputsByteIdentical:
+    """I-102: with ``polymerConduitAdmission`` off, the census/tally change is
+    logging only -- a short real run (examples/rmg/polyethylene, ~30 s) writes
+    byte-identical chemkin/YAML outputs to a baseline run of the base commit.
+
+    Opt-in: set ``I102_BASELINE_DIR`` to the output directory of a baseline
+    run (the directory holding ``chemkin/`` and ``cantera/``); optionally
+    ``I102_DATABASE_DIR`` (the RMG-database ``input`` directory). Skipped
+    otherwise. ``generated_at`` in polymer_pools.json is a wall-clock stamp
+    and is excluded."""
+
+    def test_off_outputs_match_baseline(self, tmp_path):
+        import json
+        import os
+        import subprocess
+        import sys
+
+        baseline = os.environ.get("I102_BASELINE_DIR")
+        if not baseline:
+            pytest.skip("I102_BASELINE_DIR not set")
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+        deck = os.path.join(repo, "examples", "rmg", "polyethylene",
+                            "input.py")
+        (tmp_path / "input.py").write_text(open(deck).read())
+        db = os.environ.get("I102_DATABASE_DIR")
+        if db:
+            (tmp_path / "rmgrc").write_text(f"database.directory : {db}\n")
+        env = dict(os.environ, PYTHONHASHSEED="0")
+        subprocess.run([sys.executable, os.path.join(repo, "rmg.py"),
+                        "input.py"], cwd=tmp_path, env=env, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        def read(root, rel):
+            data = open(os.path.join(root, rel), "rb").read()
+            if rel.endswith("polymer_pools.json"):
+                d = json.loads(data)
+                d.pop("generated_at", None)
+                return json.dumps(d, sort_keys=True)
+            return data
+
+        compared = 0
+        for sub in ("chemkin", "cantera"):
+            for name in sorted(os.listdir(os.path.join(baseline, sub))):
+                rel = os.path.join(sub, name)
+                assert read(baseline, rel) == read(str(tmp_path), rel), rel
+                compared += 1
+        assert compared >= 10
