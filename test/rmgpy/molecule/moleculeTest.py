@@ -32,6 +32,8 @@ from rmgpy.exceptions import InchiException
 from rmgpy.molecule.element import get_element, element_list
 from rmgpy.molecule.group import Group, ActionError
 from rmgpy.molecule.molecule import Atom, Bond, Molecule
+import copy as copy_module
+
 import pytest
 
 
@@ -1660,6 +1662,20 @@ multiplicity 2
         assert mol2.symmetry_number == mol.symmetry_number
         assert [a.props for a in mol2.atoms] == [a.props for a in mol.atoms]
         assert mol2.atoms[0].props["port"] == mol2.atoms[1].props["port"] == "artificial"
+
+    def test_copy_deep_carries_props(self):
+        """
+        Test that Molecule.copy(deep=True) carries a deep copy of Molecule.props.
+        """
+        mol = Molecule().from_smiles("CC")
+        mol.props = {"chain": "A", "nested": {"k": [1, 2]}}
+        for other in (mol.copy(deep=True), mol.copy(), copy_module.deepcopy(mol)):
+            assert other.props == mol.props
+            assert other.props is not mol.props
+            assert other.props["nested"] is not mol.props["nested"]
+        other = mol.copy(deep=True)
+        other.props["nested"]["k"].append(3)
+        assert mol.props["nested"]["k"] == [1, 2]
 
     def test_radical_ch(self):
         """

@@ -315,6 +315,47 @@ PS_1
             assert c.k_scission == 2.5
             assert c.k_unzip == 0.7
 
+    def test_pickle_round_trip_is_lossless(self):
+        """
+        Pickling a Polymer (multiprocessing.Pool in rmg/react.py) must return a Polymer,
+        not a plain Species, carrying the state the moment/handshake code reads.
+        """
+        import pickle
+
+        p = Polymer(
+            label='PE_pickle', monomer='[CH2][CH2]', end_groups=['[CH3]', '[H]'],
+            cutoff=3, Mn=5000.0, Mw=6000.0, initial_mass=1.0,
+            k_scission=2.5, k_unzip=0.7, moments=[1.0, 2.0, 3.0],
+        )
+        p.index = 42
+        proxy = p.baseline_proxy  # force proxy construction
+        p.molecule[0].is_polymer_proxy = True
+        p.props['marker'] = 'x'
+
+        q = pickle.loads(pickle.dumps(p))
+
+        assert type(q) is Polymer
+        assert q.is_polymer is True
+        assert q.label == 'PE_pickle'
+        assert q.index == 42
+        assert q.cutoff == 3
+        assert q.k_scission == 2.5 and q.k_unzip == 0.7
+        assert q.initial_mass_g == p.initial_mass_g
+        assert q.monomer_mw_g_mol == p.monomer_mw_g_mol
+        assert list(q.moments) == [1.0, 2.0, 3.0]
+        assert q.Mn == p.Mn and q.Mw == p.Mw
+        assert q.monomer.is_isomorphic(p.monomer)
+        assert q.feature_monomer is None
+        assert len(q.end_groups) == len(p.end_groups)
+        for e0, e1 in zip(p.end_groups, q.end_groups):
+            assert e0.is_isomorphic(e1)
+        assert q.fingerprint == p.fingerprint
+        assert q.props == p.props
+        assert q.reactive == p.reactive
+        assert q.molecule[0].is_polymer_proxy is True
+        assert q.baseline_proxy.molecule[0].is_isomorphic(proxy.molecule[0])
+        assert q.baseline_proxy.molecule[0].is_polymer_proxy == proxy.molecule[0].is_polymer_proxy
+
     def test_fingerprint_property(self):
         """Test that the fingerprint property works"""
         assert self.polymer_1.fingerprint == "Polymer_C08H08N00O00S00_EG-C01H03N00O00S00_C00H01N00O00S00_3"
