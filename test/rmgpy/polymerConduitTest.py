@@ -2520,8 +2520,8 @@ class TestOptInOffOutputsByteIdentical:
     Opt-in: set ``I102_BASELINE_DIR`` to the output directory of a baseline
     run (the directory holding ``chemkin/`` and ``cantera/``); optionally
     ``I102_DATABASE_DIR`` (the RMG-database ``input`` directory). Skipped
-    otherwise. ``generated_at`` in polymer_pools.json is a wall-clock stamp
-    and is excluded."""
+    otherwise. ``generated_at`` / ``rmg_commit`` in polymer_pools.json are
+    run provenance stamps and are excluded."""
 
     def test_off_outputs_match_baseline(self, tmp_path):
         import json
@@ -2550,6 +2550,7 @@ class TestOptInOffOutputsByteIdentical:
             if rel.endswith("polymer_pools.json"):
                 d = json.loads(data)
                 d.pop("generated_at", None)
+                d.pop("rmg_commit", None)
                 return json.dumps(d, sort_keys=True)
             return data
 
