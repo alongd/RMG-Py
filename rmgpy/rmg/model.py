@@ -54,6 +54,7 @@ from rmgpy.data.kinetics.family import (
     _handshake_structures,
 )
 from rmgpy.gas_origin import (CENSUS_GAS_FOLD_BYPASSED, CENSUS_GAS_LOOKUP_UNPOOLED,
+                              CENSUS_RESTORED_POOL_REFUSALS, RESTORED_POOL_UNCLASSIFIED,
                               CENSUS_ROWS_CHANGED_CLASS, CENSUS_SUPPLIED_RELOOKUP_DIFFERS,
                               capture_gas_origin_alignment, flip_gas_origin_metadata,
                               format_census, has_gas_origin_metadata, is_genuine_gas_reactant,
@@ -1067,6 +1068,25 @@ class CoreEdgeReactionModel:
             forward,
             pool_registry=lambda: collect_polymer_pool_registry(
                 self.core.species, self.edge.species, self.new_species_list))
+
+        # I-113: restoring a supplied pool by source index can leave it on a
+        # side no handshake/archetype stamp ever sees -- the products of its
+        # own reverse-written rows (pool radical beta-scission written as
+        # X + alkene <=> pool). The structural lookup used to hand such rows
+        # to a gas twin; now they reach the pool, and an unclassified pool
+        # row must never run live: refuse it conduit-deferred, named, counted.
+        if plan is not None and not forward.polymer_refused \
+                and int(getattr(forward, "polymer_flux_archetype", 0) or 0) == 0:
+            restored_pools = [p for p in forward.reactants + forward.products
+                              if isinstance(p, Polymer) and id(p) in plan[1]]
+            if restored_pools:
+                forward.polymer_refused = True
+                forward.polymer_refused_accumulating = False  # -> "conduit-deferred"
+                if forward.polymer_refused_detail is None:
+                    forward.polymer_refused_detail = RESTORED_POOL_UNCLASSIFIED
+                census[CENSUS_RESTORED_POOL_REFUSALS] += 1
+                logging.debug("Refusing unclassified restored-pool row %s (%s)",
+                              forward, RESTORED_POOL_UNCLASSIFIED)
 
         if check_existing:
             found, rxn = self.check_for_existing_reaction(forward)

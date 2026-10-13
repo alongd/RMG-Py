@@ -67,6 +67,11 @@ GAS_ORIGIN_KEY = "gas_origin"
 #: merged rows disagreed on which participants are gas.
 ORIGIN_AMBIGUOUS_COLLAPSE = "origin-ambiguous-collapse"
 
+#: ``polymer_refused_detail`` of a row whose supplied pool, restored by source
+#: index, sits where no handshake or archetype stamp classified it (e.g. the
+#: products of the pool's own reverse-written beta-scission rows).
+RESTORED_POOL_UNCLASSIFIED = "restored-pool-unclassified"
+
 #: Census keys, one place so every producer and consumer agrees.
 CENSUS_COLLAPSE_REFUSALS = "collapse_refusals"
 CENSUS_IDENTITY_DROPS = "identity_filter_drops"
@@ -74,6 +79,7 @@ CENSUS_IDENTITY_DROPS_GAS_MIXED = "identity_filter_drops_gas_mixed"
 CENSUS_GAS_FOLD_BYPASSED = "gas_fold_bypassed"
 CENSUS_GAS_LOOKUP_UNPOOLED = "gas_lookup_unpooled"
 CENSUS_SUPPLIED_RELOOKUP_DIFFERS = "supplied_relookup_differs"
+CENSUS_RESTORED_POOL_REFUSALS = "restored_pool_refusals"
 CENSUS_ROWS_CHANGED_CLASS = "rows_changed_class"
 
 CENSUS_KEYS = (
@@ -83,6 +89,7 @@ CENSUS_KEYS = (
     CENSUS_GAS_FOLD_BYPASSED,
     CENSUS_GAS_LOOKUP_UNPOOLED,
     CENSUS_SUPPLIED_RELOOKUP_DIFFERS,
+    CENSUS_RESTORED_POOL_REFUSALS,
     CENSUS_ROWS_CHANGED_CLASS,
 )
 
