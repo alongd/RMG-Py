@@ -2417,3 +2417,92 @@ class TestChainScaleThresholdsForPools:
             [self._pool(134.178, 10)])
         assert cs_mw == pytest.approx(CHAIN_SCALE_MW)
         assert cs_heavy == pytest.approx(CHAIN_SCALE_HEAVY)
+
+
+class TestAdmissionTally:
+    """I-102: per-reason, per-family tally of ``stage=final`` admission rows
+    and the one-block end-of-run summary. Logging only."""
+
+    @staticmethod
+    def _synthetic_rows():
+        # (family, admitted, deny_reason) -- includes provisional rows,
+        # which must NOT be tallied.
+        return [
+            ("R_Recombination", False, "direction-requires-flip-rewrite"),
+            ("R_Recombination", False, "direction-requires-flip-rewrite"),
+            ("R_Recombination", False, "kinetics-not-yet-assigned"),
+            ("R_Recombination", False, "gas-product-count"),
+            ("Disproportionation", False, "gas-product-count"),
+            ("Disproportionation", True, None),
+            ("Disproportionation", False, "kinetics-not-yet-assigned"),
+            ("Disproportionation", True, None),
+        ]
+
+    def _feed(self, rows):
+        from rmgpy.polymer_conduit import AdmissionVerdict, tally_admission_row
+        for family, admitted, reason in rows:
+            tally_admission_row(
+                AdmissionVerdict(admitted=admitted, deny_reason=reason,
+                                 candidate_key="k"), family)
+
+    def test_tally_equals_hand_count_final_rows_only(self, clean_registry):
+        from rmgpy.polymer_conduit import admission_tally
+        self._feed(self._synthetic_rows())
+        t = admission_tally()
+        assert t == {
+            "R_Recombination": {"final": 3, "would_admit": 0, "deny": {
+                "direction-requires-flip-rewrite": 2,
+                "gas-product-count": 1}},
+            "Disproportionation": {"final": 3, "would_admit": 2, "deny": {
+                "gas-product-count": 1}},
+        }
+
+    def test_annotate_refused_row_tallies_by_family(self, clean_registry):
+        from rmgpy.polymer_conduit import (admission_tally,
+                                           annotate_refused_row,
+                                           evaluate_conduit_admission)
+        rxn, pf = _admissible_fixture(reversible=True)
+        rxn.family = "Fam_X"
+        verdict = evaluate_conduit_admission(rxn, [pf])
+        assert verdict.admitted
+        suffix = annotate_refused_row(rxn, [pf], census="r93_general",
+                                      verdict=verdict)
+        assert "would_admit=1" in suffix
+        assert admission_tally()["Fam_X"]["would_admit"] == 1
+
+    def test_reset_clears_tally(self, clean_registry):
+        from rmgpy.polymer_conduit import admission_tally
+        self._feed(self._synthetic_rows())
+        reset_census_registry()
+        assert admission_tally() == {}
+
+    def test_summary_block_contains_tally(self, clean_registry):
+        from rmgpy.polymer_conduit import admission_tally_lines
+        self._feed(self._synthetic_rows())
+        text = "\n".join(admission_tally_lines())
+        assert "R_Recombination" in text
+        assert "direction-requires-flip-rewrite=2" in text
+        assert "final=6" in text          # total over families
+        assert "would_admit=2" in text
+
+    def test_log_census_summary_single_block(self, caplog, clean_registry):
+        import logging as _logging
+        from rmgpy.polymer_conduit import log_census_summary
+        self._feed(self._synthetic_rows())
+        with caplog.at_level(_logging.WARNING):
+            log_census_summary()
+        msgs = [r.getMessage() for r in caplog.records]
+        assert sum("conduit-admission-tally/1 summary" in m
+                   for m in msgs) == 1
+
+    def test_rmg_finish_emits_summary_exactly_once(self, caplog,
+                                                   clean_registry):
+        import logging as _logging
+        from rmgpy.rmg.main import RMG
+        self._feed(self._synthetic_rows())
+        with caplog.at_level(_logging.INFO):
+            RMG().finish()
+        msgs = [r.getMessage() for r in caplog.records]
+        assert sum("conduit-admission-tally/1 summary" in m
+                   for m in msgs) == 1
+        assert sum("conduit-census/1 summary" in m for m in msgs) == 1
