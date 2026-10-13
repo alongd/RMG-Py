@@ -1905,3 +1905,73 @@ def test_shared_destination_with_mixed_molecule_list_is_refused():
     ), spec)
     with pytest.raises(ValueError, match="every.*molecule|graph-isomorphic"):
         _solver(core, config, (1.0, 3.0, 10.0), gas_indices=(2,))
+
+
+def _cl_head_pp_spec():
+    """PP repeat (head CH2, tail CH(CH3)) with an asymmetric Cl/H cap pair."""
+    value = _spec_mapping(label="PP", repeat=_pp_repeat())
+    value["end_groups"]["head"] = _graph(
+        [_atom("x", "Cl", lone_pairs=3)],
+        ports={"cap": {"atom": "x", "bond_order": 1}},
+    )
+    value["locality_policy"]["bounds"]["elements"].append("Cl")
+    value["locality_policy"]["bounds"]["lone_pairs"].append(3)
+    return LinearHomopolymerSpec.from_mapping(value)
+
+
+@pytest.mark.parametrize(
+    "dp,smiles",
+    [(1, "ClCCC"), (2, "ClCC(C)CCC"), (3, "ClCC(C)CC(C)CCC")],
+)
+def test_asymmetric_repeat_and_caps_build_the_declared_isomer(dp, smiles):
+    """Item 4: the head cap joins the repeat HEAD, the tail cap the TAIL."""
+    from rmgpy.polymer_shared_support import _authoritative_capped_graph
+
+    spec = _cl_head_pp_spec()
+    expected = Molecule().from_smiles(smiles)
+    assert _authoritative_capped_graph(spec, dp).is_isomorphic(expected)
+
+    monomer, ends = spec.legacy_molecules()
+    chain = ends[0].copy(deep=True)
+    for _ in range(dp):
+        chain = stitch_molecules_by_labeled_atoms(chain, monomer.copy(deep=True))
+    chain = stitch_molecules_by_labeled_atoms(chain, ends[1].copy(deep=True))
+    chain.update()
+    assert chain.is_isomorphic(expected)
+
+
+def test_asymmetric_repeat_proxy_and_validator_agree_with_declared_isomer():
+    spec = _cl_head_pp_spec()
+    monomer, ends = spec.legacy_molecules()
+    pool = Polymer(
+        label="PP", monomer=monomer, end_groups=ends,
+        moments=spec.macroscopic_moments_mol,
+        initial_mass=spec.initial_mass_kg, linear_homopolymer_spec=spec,
+    )
+    proxy = pool._stitch_trimer(pool.monomer)
+    assert proxy.molecule[0].is_isomorphic(
+        Molecule().from_smiles("ClCC(C)CC(C)CCC"))
+
+    # The validator accepts exactly the declared 1-chloropropane as DP1.
+    good = Molecule().from_smiles("ClCCC")
+    wrong = Molecule().from_smiles("CC(C)Cl")
+    product = Species(label="product", molecule=[Molecule().from_smiles("C=CC")])
+    for destination, accepted in ((good, True), (wrong, False)):
+        dp1 = Species(label="DP1", molecule=[destination])
+        core = [Species(label="P"), dp1, product] + [
+            Species(label=f"P_mu{i}") for i in range(3)
+        ]
+        config = _attach_shared_spec(PolymerPoolConfig(
+            label="P", xs=2, explicit_dp_to_species_index={1: 1},
+            explicit_dp_mw_g_mol={1: good.get_molecular_weight() * 1000.0},
+            shared_expected_explicit_dp_molecules={1: (good,)},
+            mu_indices=(3, 4, 5),
+            monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+            end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+            shared_mass_accounting=True,
+        ), spec)
+        if accepted:
+            _solver(core, config, (1.0, 3.0, 10.0))
+        else:
+            with pytest.raises(ValueError, match="graph-isomorphic"):
+                _solver(core, config, (1.0, 3.0, 10.0))
