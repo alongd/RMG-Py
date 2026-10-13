@@ -1506,9 +1506,14 @@ class PolymerPool(object):
                         # Preserve the pre-shared-spec adapter contract: a
                         # legacy explicit Species may be structureless when
                         # it supplies molecular_weight.
-                        explicit_mw_g_mol[dp] = (
-                            spc.molecular_weight.value_si * constants.Na * 1000.0
-                        )
+                        # The value is unused by legacy accounting, so a
+                        # species with neither a graph nor a molecular
+                        # weight simply contributes no entry.
+                        legacy_mw = getattr(spc, "molecular_weight", None)
+                        if legacy_mw is not None:
+                            explicit_mw_g_mol[dp] = (
+                                legacy_mw.value_si * constants.Na * 1000.0
+                            )
                 else:
                     raise ValueError(f"Pool {self.label}: Explicit species for DP={dp} ({spc}) not in core species.")
 
