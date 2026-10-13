@@ -36,9 +36,12 @@ POOLS = {
 # Gas radicals whose H-abstraction product the wing fold books into a pool
 # today (probed on 7ddc33280): the gas product must stay gas.
 FOLD_CASES = {
-    "PE": dict(radical="[CH2]CCC=C", gas_product="C=CCCC"),
-    "PP": dict(radical="[CH2]CCC(C)C", gas_product="CCCC(C)C"),
-    "PS": dict(radical="C[CH]CCc1ccccc1", gas_product="CCCCc1ccccc1"),
+    "PE": dict(pool="PE", radical="[CH2]CCC=C", gas_product="C=CCCC"),
+    "PP": dict(pool="PP", radical="[CH2]CCC(C)C", gas_product="CCCC(C)C"),
+    "PS": dict(pool="PS", radical="C[CH]CCc1ccccc1", gas_product="CCCCc1ccccc1"),
+    # the proxy-identity-collision shape: gas hexane is the PE proxy's twin,
+    # folded back onto PE (refused UNRESOLVED) before provenance existed
+    "PE-collision": dict(pool="PE", radical="[CH2]CCCCC", gas_product="CCCCCC"),
 }
 
 
@@ -431,7 +434,7 @@ def _veto(spc):
 
 def _fold_rows(name):
     case = FOLD_CASES[name]
-    cerm, pool = _model(name)
+    cerm, pool = _model(case["pool"])
     rad = _gas(cerm, case["radical"], "rad")
     rxns = _kinetics().generate_reactions_from_families(
         [rad, pool], only_families=["H_Abstraction"])
