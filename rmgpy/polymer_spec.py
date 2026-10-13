@@ -920,7 +920,12 @@ class LinearHomopolymerSpec:
             raise ValueError("the legacy MoM stitch adapter only supports single-bond ports")
         if self.head_end_group.ports[0][1].bond_order != 1.0 or self.tail_end_group.ports[0][1].bond_order != 1.0:
             raise ValueError("the legacy MoM stitch adapter only supports single-bond end ports")
-        repeat = self.repeat_unit.to_legacy_molecule({"head": "*1", "tail": "*2"})
+        # The legacy stitcher joins the open *1 of the chain built so far to
+        # the *2 of the next piece.  The physical joins are head cap -> repeat
+        # head, repeat tail -> next repeat head, repeat tail -> tail cap, so a
+        # repeat unit enters through its HEAD (*2) and leaves through its
+        # TAIL (*1); the head cap offers *1 and the tail cap receives *2.
+        repeat = self.repeat_unit.to_legacy_molecule({"head": "*2", "tail": "*1"})
         head_port_name = self.head_end_group.ports[0][0]
         tail_port_name = self.tail_end_group.ports[0][0]
         head = self.head_end_group.to_legacy_molecule({head_port_name: "*1"})
