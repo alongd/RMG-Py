@@ -46,6 +46,19 @@ class TestCuttingLabel:
     def test_symbol(self):
         assert "R" == self.cutting_label_R.symbol
 
+    def test_pickle(self):
+        """
+        Test that a CuttingLabel stays a CuttingLabel through pickling, keeping name and label.
+        """
+        import pickle
+
+        cl = rmgpy.molecule.fragment.CuttingLabel("R", label="lbl")
+        cl2 = pickle.loads(pickle.dumps(cl))
+        assert isinstance(cl2, rmgpy.molecule.fragment.CuttingLabel)
+        assert cl2.name == "R"
+        assert cl2.symbol == "R"
+        assert cl2.label == "lbl"
+
     def test_copy(self):
         cutting_label_R_copy = self.cutting_label_R.copy()
 
@@ -778,3 +791,27 @@ class TestFragment:
                     assert frag.is_bond_in_cycle(bond)
                 else:
                     assert not frag.is_bond_in_cycle(bond)
+
+    def test_pickle_preserves_fragment_class_and_fields(self):
+        """
+        Test that a Fragment stays a Fragment through pickling, keeping label, species_repr,
+        index, polymer-proxy flag, props and atom-level props.
+        """
+        import pickle
+
+        frag = rmgpy.molecule.fragment.Fragment().from_smiles_like_string("CCR")
+        frag.label = "frag"
+        frag.index = 7
+        frag.is_polymer_proxy = True
+        frag.props = {"chain": "A"}
+        frag.atoms[0].props["port"] = "artificial"
+
+        frag2 = pickle.loads(pickle.dumps(frag))
+
+        assert isinstance(frag2, rmgpy.molecule.fragment.Fragment)
+        assert frag2.label == "frag"
+        assert frag2.index == 7
+        assert frag2.is_polymer_proxy is True
+        assert frag2.props == {"chain": "A"}
+        assert frag2.atoms[0].props == {"port": "artificial"}
+        assert len(frag2.vertices) == len(frag.vertices)

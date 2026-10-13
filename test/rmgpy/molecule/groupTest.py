@@ -1216,6 +1216,21 @@ class TestGroup:
         assert self.group.is_isomorphic(group)
         assert group.is_isomorphic(self.group)
 
+    def test_pickle_preserves_multiplicity_metal_facet(self):
+        """
+        Test that Group.multiplicity, metal and facet survive a pickle round-trip.
+        """
+        import pickle
+
+        group = Group().from_adjacency_list("multiplicity [2]\n1 C u1 {2,S}\n2 C u0 {1,S}\n")
+        group.metal = ["Pt"]
+        group.facet = ["111"]
+        group2 = pickle.loads(pickle.dumps(group))
+        assert group2.multiplicity == [2]
+        assert group2.metal == ["Pt"]
+        assert group2.facet == ["111"]
+        assert group2.props == group.props
+
     def test_create_and_connect_atom(self):
         """
         Tests create_and_connect_atom method

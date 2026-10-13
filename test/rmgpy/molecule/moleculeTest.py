@@ -528,6 +528,18 @@ class TestAtom:
         assert self.atom.charge == atom.charge
         assert self.atom.label == atom.label
 
+    def test_pickle_preserves_props(self):
+        """
+        Test that Atom.props survive a pickle round-trip.
+        """
+        import pickle
+
+        atom = Atom(element=get_element("C"), radical_electrons=1, charge=0, label="*1")
+        atom.props["port"] = "artificial"
+        atom2 = pickle.loads(pickle.dumps(atom))
+        assert atom2.props == {"port": "artificial"}
+        assert atom2.label == "*1"
+
     def test_isotope_equivalent(self):
         """
         Test the Atom.equivalent() method for non-normal isotopes
@@ -1618,6 +1630,35 @@ multiplicity 2
         assert molecule0.get_formula() == molecule.get_formula()
         assert molecule0.is_isomorphic(molecule)
         assert molecule.is_isomorphic(molecule0)
+
+    @pytest.mark.parametrize("proxy", [True, False])
+    @pytest.mark.parametrize("with_props", [True, False])
+    def test_pickle_preserves_polymer_fields(self, proxy, with_props):
+        """
+        Test that a pickle round-trip preserves is_polymer_proxy, props, metal, facet,
+        multiplicity, reactive, symmetry number and atom-level props.
+        """
+        import pickle
+
+        mol = Molecule().from_smiles("CC")
+        mol.is_polymer_proxy = proxy
+        mol.props = {"chain": "A", "n": 3} if with_props else {}
+        mol.metal = "Pt"
+        mol.facet = "111"
+        mol.reactive = False
+        mol.atoms[0].props["port"] = "artificial"
+        mol.atoms[1].props["port"] = "artificial"
+
+        mol2 = pickle.loads(pickle.dumps(mol))
+
+        assert mol2.is_polymer_proxy is proxy
+        assert mol2.props == mol.props
+        assert mol2.metal == "Pt"
+        assert mol2.facet == "111"
+        assert mol2.reactive is False
+        assert mol2.multiplicity == mol.multiplicity
+        assert mol2.symmetry_number == mol.symmetry_number
+        assert [a.props for a in mol2.atoms] == [{"port": "artificial"}] * 2 + [{}] * (len(mol.atoms) - 2)
 
     def test_radical_ch(self):
         """
