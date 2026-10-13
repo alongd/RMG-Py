@@ -7240,8 +7240,11 @@ class HybridPolymerSystem(ReactionSystem):
             if s1 != -1: rate *= C_gas[s1]
             if s2 != -1: rate *= C_gas[s2]
 
+            # Record only: the leak rate drives model enlargement (a network
+            # whose leak flux is large gets expanded) and is NOT a sink. This
+            # matches simple.pyx, which never debits the core balance; a
+            # debit here removed core gas species and broke carbon closure.
             self.network_leak_rates[j] = rate
-            dn_dt[s0] -= rate * V_gas
 
         # 8. Polymer Tail & Handshake
         for pool_i, pool in enumerate(self.polymer_pools):
