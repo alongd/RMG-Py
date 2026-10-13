@@ -40,7 +40,7 @@ from rmgpy.data.rmg import get_db
 ################################################################################
 
 
-def react(spc_fam_tuples, procnum=1):
+def react(spc_fam_tuples, procnum=1, census=None):
     """
     Generate reactions between the species in the list of species-family tuples
     for the optionally specified reaction families.
@@ -52,9 +52,15 @@ def react(spc_fam_tuples, procnum=1):
 
     If no family list is provided, all of the loaded families are considered.
 
+    Each tuple may carry a third element: the per-species genuine-gas flags
+    (see :func:`react_species`).
+
     Args:
         spc_fam_tuples (list): list of tuples for reaction generation
         procnum (int, optional): number of processors used for reaction generation
+        census (dict, optional): gas-origin census accumulator. Each task
+            returns its own census next to its reactions and the parent sums
+            them here, so counts made in worker processes are never lost.
 
     Returns:
         list of lists of reactions generated from each species tuple (note: empty lists are possible)
@@ -67,16 +73,24 @@ def react(spc_fam_tuples, procnum=1):
     # the profile reports itself as invalid rather than reporting a near-zero fraction.
     note_generation_procnum(procnum)
 
+    worker = _react_species_star if census is None else _react_species_census_star
     if procnum == 1:
         logging.info('For reaction generation {0} process is used.'.format(procnum))
-        reactions = list(map(_react_species_star, spc_fam_tuples))
+        results = list(map(worker, spc_fam_tuples))
     else:
         logging.info('For reaction generation {0} processes are used.'.format(procnum))
         p = Pool(processes=procnum)
-        reactions = p.map(_react_species_star, spc_fam_tuples)
+        results = p.map(worker, spc_fam_tuples)
         p.close()
         p.join()
 
+    if census is None:
+        return results
+    from rmgpy.gas_origin import merge_census
+    reactions = []
+    for rxns, task_census in results:
+        reactions.append(rxns)
+        merge_census(census, task_census)
     return reactions
 
 
@@ -85,7 +99,16 @@ def _react_species_star(args):
     return react_species(*args)
 
 
-def react_species(species_tuple, only_families=None):
+def _react_species_census_star(args):
+    """Like :func:`_react_species_star`, but returns ``(reactions, census)``
+    with the gas-origin census of this task made explicit."""
+    from rmgpy.gas_origin import new_census
+    census = new_census()
+    reactions = react_species(*args, census=census)
+    return reactions, dict(census)
+
+
+def react_species(species_tuple, only_families=None, genuine_gas=None, census=None):
     """
     Given a tuple of Species objects, generates all possible reactions
     from the loaded reaction families and combines degenerate reactions.
@@ -93,11 +116,16 @@ def react_species(species_tuple, only_families=None):
     Args:
         species_tuple (tuple): tuple of 1-3 Species objects to react together
         only_families (list, optional): list of reaction families to consider
+        genuine_gas (tuple, optional): per-species genuine-gas flags aligned
+            with ``species_tuple`` (the caller's condensed-membership
+            verdicts folded in); None classifies each species intrinsically
+        census (dict, optional): gas-origin census accumulator
 
     Returns:
         list of generated reactions
     """
-    reactions = get_db('kinetics').generate_reactions_from_families(species_tuple, only_families=only_families)
+    reactions = get_db('kinetics').generate_reactions_from_families(
+        species_tuple, only_families=only_families, genuine_gas=genuine_gas, census=census)
 
     return reactions
 

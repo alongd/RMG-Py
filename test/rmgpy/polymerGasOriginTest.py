@@ -382,7 +382,9 @@ class TestGeneratedCollapseAndProcnum:
 
         cerm, pe = _model("PE")
         pe_mod = _pe_mod(cerm, pe)
-        hexyl = _gas(cerm, "CC[CH]CCC", "hexyl3")
+        # a gas twin of the PE_mod proxy: structural registration would
+        # resolve it onto the pool, so it is supplied unregistered
+        hexyl = Species(molecule=[Molecule(smiles="CC[CH]CCC")], label="hexyl3")
         census = new_census()
         rxns = _kinetics().generate_reactions_from_families([hexyl, pe_mod], census=census)
         refused = [r for r in rxns if r.polymer_refused]
@@ -399,7 +401,7 @@ class TestGeneratedCollapseAndProcnum:
         pe_mod = _pe_mod(cerm, pe)
         tuples = [((_gas(cerm, "[CH2]CCC=C", "pentenyl"), pe),),
                   ((_gas(cerm, "[CH2]CCCCC", "hexyl1"), pe),),
-                  ((_gas(cerm, "CC[CH]CCC", "hexyl3"), pe_mod),),
+                  ((Species(molecule=[Molecule(smiles="CC[CH]CCC")], label="hexyl3"), pe_mod),),
                   ((_gas(cerm, "CCCC", "butane"),),)]
 
         def run(procnum):

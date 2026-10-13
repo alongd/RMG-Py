@@ -36,6 +36,8 @@ import logging
 
 from rmgpy.data.base import LogicNode
 from rmgpy.exceptions import DatabaseError
+from rmgpy.gas_origin import (CENSUS_COLLAPSE_REFUSALS, gas_origin_multisets_differ,
+                              mark_origin_ambiguous_collapse)
 from rmgpy.molecule import Group, Molecule
 from rmgpy.molecule.fragment import Fragment
 from rmgpy.reaction import Reaction
@@ -316,6 +318,14 @@ def find_degenerate_reactions(rxn_list, same_reactants=None, template=None, kine
     else:
         selected_rxns = rxn_list
 
+    def _refuse_origin_ambiguous(representative):
+        # I-113: the merged rows disagree on WHICH participants are gas. Keep
+        # the representative (the merge is structural) but refuse it, on the
+        # RETAINED row, and count the event.
+        mark_origin_ambiguous_collapse(representative)
+        if census is not None:
+            census[CENSUS_COLLAPSE_REFUSALS] = census.get(CENSUS_COLLAPSE_REFUSALS, 0) + 1
+
     # We want to sort all the reactions into sublists composed of isomorphic reactions
     # with degenerate transition states
     sorted_rxns = []
@@ -331,10 +341,16 @@ def find_degenerate_reactions(rxn_list, same_reactants=None, template=None, kine
                 isomorphic = False
                 identical = False
                 same_template = True
+                origin_differs = False
                 for rxn in sub_list:
                     isomorphic = rxn0.is_isomorphic(rxn, check_identical=False, strict=False,
                                                     check_template_rxn_products=True, save_order=save_order)
                     if isomorphic:
+                        # Gas-origin multiset of (participant structure, gas
+                        # verdict), compared BEFORE the identical-reaction
+                        # shortcut can discard rxn0.
+                        if gas_origin_multisets_differ(rxn0, rxn):
+                            origin_differs = True
                         identical = rxn0.is_isomorphic(rxn, check_identical=True, strict=False,
                                                        check_template_rxn_products=True, save_order=save_order)
                         if identical:
@@ -348,11 +364,15 @@ def find_degenerate_reactions(rxn_list, same_reactants=None, template=None, kine
                 # Process the reaction depending on the results of the comparisons
                 if identical:
                     # This reaction does not contribute to degeneracy
+                    if origin_differs:
+                        _refuse_origin_ambiguous(sub_list[0])
                     break
                 elif isomorphic:
                     if same_template:
                         # We found the right sublist, and there is no identical reaction
                         # We should add rxn0 to the sublist as a degenerate rxn, and move on to the next rxn
+                        if origin_differs:
+                            _refuse_origin_ambiguous(sub_list[0])
                         sub_list.append(rxn0)
                         break
                     else:

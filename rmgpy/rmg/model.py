@@ -53,6 +53,7 @@ from rmgpy.data.kinetics.family import (
     get_wasted_build_profile,
     _handshake_structures,
 )
+from rmgpy.gas_origin import flip_gas_origin_metadata
 from rmgpy.polymer import MassFluxAccumulator, Polymer, PolymerCrosslinkError, PolymerFluxArchetype, collect_polymer_pool_registry, compute_concerted_loss_evidence, compute_h_loss_shape_evidence, is_end_group_reaction, merge_polymer_adjudication_stamps, readjudicate_conduit_admission, restamp_flipped_polymer_archetype, stamp_gas_association_refusal, stamp_polymer_flux_archetype
 from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
 from rmgpy.data.rmg import get_db
@@ -1517,6 +1518,9 @@ class CoreEdgeReactionModel:
             family = get_db("kinetics").families[reaction.family]
             reaction.reactants, reaction.products = reaction.products, reaction.reactants
             reaction.pairs = [(p, r) for r, p in reaction.pairs]
+            # Gas-origin metadata (I-113) moves with its lists: only the
+            # generated-side name changes.
+            flip_gas_origin_metadata(reaction)
             # The polymer flux archetype is orientation-bound (parent/daughter
             # roles, eject sign), so the stamp written for the generation
             # direction is stale after the swap. r92 (PP run-10): re-run the

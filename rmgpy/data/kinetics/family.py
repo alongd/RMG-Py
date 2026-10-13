@@ -250,7 +250,21 @@ class TemplateReaction(Reaction):
     def __reduce__(self):
         """
         A helper function used when pickling an object.
+
+        The third element carries generation-time state that has no
+        constructor slot and must survive the worker-process boundary of
+        parallel reaction generation (``rmgpy/rmg/react.py``): the polymer
+        refusal (flag, accumulating bit, named detail) and the gas-origin
+        metadata (I-113).
         """
+        state = {
+            'polymer_refused': bool(self.polymer_refused),
+            'polymer_refused_accumulating': bool(self.polymer_refused_accumulating),
+            'polymer_refused_detail': self.polymer_refused_detail,
+            'gas_origin_side': getattr(self, 'gas_origin_side', None),
+            'gas_origin_verdicts': getattr(self, 'gas_origin_verdicts', None),
+            'gas_origin_sources': getattr(self, 'gas_origin_sources', None),
+        }
         return (TemplateReaction, (self.index,
                                    self.reactants,
                                    self.products,
@@ -267,7 +281,12 @@ class TemplateReaction(Reaction):
                                    self.reverse,
                                    self.is_forward,
                                    self.electrons
-                                   ))
+                                   ), state)
+
+    def __setstate__(self, state):
+        """Restore the state carried by :meth:`__reduce__`."""
+        for key, value in (state or {}).items():
+            setattr(self, key, value)
 
     def __repr__(self):
         """
@@ -330,6 +349,9 @@ class TemplateReaction(Reaction):
         other.estimator = self.estimator
         other.reverse = self.reverse
         other.is_forward = self.is_forward
+        other.gas_origin_side = getattr(self, 'gas_origin_side', None)
+        other.gas_origin_verdicts = getattr(self, 'gas_origin_verdicts', None)
+        other.gas_origin_sources = getattr(self, 'gas_origin_sources', None)
 
         return other
 

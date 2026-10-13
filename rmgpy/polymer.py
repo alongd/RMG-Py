@@ -3605,6 +3605,15 @@ def restamp_flipped_polymer_archetype(forward) -> None:
         return
 
     before = int(getattr(forward, 'polymer_flux_archetype', 0))
+    # A generation-time origin-ambiguous-collapse refusal (I-113) is not
+    # direction-bound: the merged rows disagreed on provenance whichever way
+    # the kinetics are written. Keep its detail across the flip.
+    from rmgpy.gas_origin import ORIGIN_AMBIGUOUS_COLLAPSE
+    kept_detail = (ORIGIN_AMBIGUOUS_COLLAPSE
+                   if (getattr(forward, 'polymer_refused', False)
+                       and getattr(forward, 'polymer_refused_detail', None)
+                       == ORIGIN_AMBIGUOUS_COLLAPSE)
+                   else None)
     # CLEAR the stale direction-bound archetype fields (written for the
     # pre-flip direction) before re-classifying. polymer_refused_reason is
     # a rebuild-census product of the OLD direction too: clear it so the
@@ -3614,7 +3623,7 @@ def restamp_flipped_polymer_archetype(forward) -> None:
     forward.polymer_chip_units = 0
     forward.polymer_eject_units = 0.0
     forward.polymer_refused_reason = None
-    forward.polymer_refused_detail = None
+    forward.polymer_refused_detail = kept_detail
 
     new_arch = classify_reaction_flux_archetype(
         forward.reactants or [], forward.products or [],
@@ -4581,6 +4590,19 @@ def merge_polymer_adjudication_stamps(source, target) -> None:
         target.polymer_refused_accumulating = bool(
             getattr(target, "polymer_refused_accumulating", False)
             or getattr(source, "polymer_refused_accumulating", False))
+        # The named generation-time cause FILLS an empty canonical slot
+        # (e.g. origin-ambiguous-collapse, I-113); a canonical detail is kept.
+        if (getattr(target, "polymer_refused_detail", None) is None
+                and getattr(source, "polymer_refused_detail", None) is not None):
+            target.polymer_refused_detail = source.polymer_refused_detail
+    # Gas-origin metadata (I-113) FILLS a canonical row that has none.
+    if (getattr(target, "gas_origin_side", None) is None
+            and getattr(source, "gas_origin_side", None) is not None):
+        from rmgpy.gas_origin import copy_gas_origin_metadata
+        try:
+            copy_gas_origin_metadata(source, target)
+        except AttributeError:
+            pass  # cdef Reaction without a __dict__: no metadata slot
     if (int(getattr(target, "polymer_flux_archetype", 0) or 0) == 0
             and int(getattr(source, "polymer_flux_archetype", 0) or 0) != 0):
         target.polymer_flux_archetype = int(source.polymer_flux_archetype)
