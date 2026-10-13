@@ -418,3 +418,281 @@ class TestGeneratedCollapseAndProcnum:
         assert rows1 == rows2
         assert census1 == census2
         assert census1["collapse_refusals"] >= 1
+
+
+################################################################################
+# Items 6-7: resolution, handshake bypass, spawn
+################################################################################
+
+def _veto(spc):
+    from rmgpy.polymer import has_polymer_gas_veto
+    return has_polymer_gas_veto(spc)
+
+
+def _fold_rows(name):
+    case = FOLD_CASES[name]
+    cerm, pool = _model(name)
+    rad = _gas(cerm, case["radical"], "rad")
+    rxns = _kinetics().generate_reactions_from_families(
+        [rad, pool], only_families=["H_Abstraction"])
+    assert rxns
+    return cerm, pool, rad, rxns
+
+
+class TestGasProductResolution:
+    @pytest.mark.parametrize("name", sorted(FOLD_CASES))
+    def test_gas_product_never_folds_into_a_pool(self, name):
+        """(a) The 298 s shape: the H-abstraction co-product made of gas
+        atoms stays a gas Species; the chain radical lands in the pool's
+        _mod daughter; the row is a live cross-pool VOLATILE_EJECTION whose
+        eject units are the net non-polymer mass over the repeat-unit MW."""
+        from rmgpy.polymer import PolymerFluxArchetype
+
+        cerm, pool, rad, rxns = _fold_rows(name)
+        gas_ref = Molecule(smiles=FOLD_CASES[name]["gas_product"])
+        for row in rxns:
+            out, _ = cerm.make_new_reaction(row, check_existing=False, generate_thermo=False,
+                                            generate_kinetics=False)
+            assert out is not None
+            gas = [p for p in out.products if not isinstance(p, Polymer)]
+            polys = [p for p in out.products if isinstance(p, Polymer)]
+            assert len(gas) == 1 and len(polys) == 1, str(out)
+            assert gas[0].molecule[0].is_isomorphic(gas_ref)
+            assert _veto(gas[0]) and not gas[0].is_polymer_proxy
+            assert polys[0].label.startswith(pool.label + "_mod"), polys[0].label
+            assert out.polymer_flux_archetype == int(PolymerFluxArchetype.VOLATILE_EJECTION)
+            assert out.polymer_refused is False
+            net = gas_ref.get_molecular_weight() - rad.molecule[0].get_molecular_weight()
+            assert out.polymer_eject_units == pytest.approx(
+                net * 1000.0 / pool.monomer_mw_g_mol, rel=1e-9)
+        assert cerm.gas_origin_census["gas_fold_bypassed"] >= 1
+        assert cerm.gas_origin_census["rows_changed_class"] >= 1
+
+    def test_supplied_participants_restored_by_source_index(self):
+        """A supplied gas twin of the PE proxy (n-hexane) is restored by
+        source index, never re-looked-up structurally onto the PE pool --
+        even with the pool hot at the front of the MRU cache."""
+        cerm = CoreEdgeReactionModel()
+        twin = _gas(cerm, "CCCCCC", "hexane")
+        pe, _ = cerm._register_polymer(Polymer(**POOLS["PE"]), generate_thermo=False)
+        methyl = _gas(cerm, "[CH3]", "methyl")
+        cerm.species_cache.insert(0, pe)
+        cerm.species_cache.pop()
+        rxns = _kinetics().generate_reactions_from_families(
+            [methyl, twin], only_families=["H_Abstraction"])
+        assert rxns
+        for row in rxns:
+            out, _ = cerm.make_new_reaction(row, check_existing=False, generate_thermo=False,
+                                            generate_kinetics=False,
+                                            supplied_species=(methyl, twin))
+            assert any(r is twin for r in out.reactants), str(out)
+            assert not any(isinstance(s, Polymer) for s in out.reactants + out.products)
+
+    @pytest.mark.parametrize("order", ["pool_first", "gas_first"])
+    @pytest.mark.parametrize("cache", ["cold", "warm"])
+    def test_gas_only_recombination_yields_gas_species(self, order, cache):
+        """(b) isobutyl + 2-pentyl recombine to the PP 3-mer proxy structure.
+        Both radicals are gas, so the product is a gas Species whatever the
+        MRU cache holds and whichever twin was registered first."""
+        cerm = CoreEdgeReactionModel()
+        twin = _gas(cerm, "CCCC(C)CC(C)C", "dmh") if order == "gas_first" else None
+        pp, _ = cerm._register_polymer(Polymer(**POOLS["PP"]), generate_thermo=False)
+        ib = _gas(cerm, "[CH2]C(C)C", "isobutyl")
+        pt = _gas(cerm, "C[CH]CCC", "pentyl")
+        if cache == "warm":
+            cerm.species_cache.insert(0, pp)
+            cerm.species_cache.pop()
+        else:
+            cerm.species_cache = [None] * 4
+        proxy = pp.molecule[0]
+        rows = [r for r in _kinetics().generate_reactions_from_families(
+                    [ib, pt], only_families=["R_Recombination"])
+                if r.is_forward and len(r.products) == 1
+                and r.products[0].is_isomorphic(proxy)]
+        assert rows, "liveness: proxy-isomorphic recombination row expected"
+        for row in rows:
+            out, _ = cerm.make_new_reaction(row, check_existing=False, generate_thermo=False,
+                                            generate_kinetics=False,
+                                            supplied_species=(ib, pt))
+            product = out.products[0]
+            assert not isinstance(product, Polymer)
+            assert _veto(product) and not product.is_polymer_proxy
+            if twin is not None:
+                assert product is twin
+            assert out.polymer_refused is False
+        if order == "pool_first" and cache == "warm":
+            assert cerm.gas_origin_census["gas_lookup_unpooled"] >= 1
+
+    def test_decay_registration_inherits_gas_verdict(self, monkeypatch):
+        import rmgpy.rmg.model as model_module
+
+        cerm = CoreEdgeReactionModel()
+
+        def fake_decay(spc):
+            return [Species(molecule=[Molecule(smiles="C=C")]),
+                    Species(molecule=[Molecule(smiles="CC")])]
+
+        monkeypatch.setattr(model_module, "decay_species", fake_decay)
+        mol = Molecule(smiles="CCCC")
+        mol.is_polymer_proxy = True
+        out = cerm.make_new_species(mol, generate_thermo=False, check_decay=True,
+                                    gas_origin=True)
+        assert isinstance(out, list) and len(out) == 2
+        for spc, _new in out:
+            assert _veto(spc)
+            assert not spc.is_polymer_proxy
+
+
+class TestHandshakeBypass:
+    def test_gas_verdict_bypasses_fold(self):
+        from rmgpy.data.kinetics.family import _handshake_structures
+        from rmgpy.polymer import compute_h_loss_shape_evidence
+
+        pool = Polymer(**POOLS["PE"])
+        rad = Species(molecule=[Molecule(smiles="[CH2]CCCCC")], label="rad")
+        prods = [Molecule(smiles="CCCCCC"), Molecule(smiles="CC[CH]CCC")]
+        verdicts = compute_h_loss_shape_evidence([rad, pool], prods, [pool])
+        _handshake_structures(prods, [pool], h_loss_verdicts=verdicts,
+                              gas_verdicts=[True, False])
+        assert isinstance(prods[0], Molecule)
+        assert _veto(prods[0]) and not prods[0].is_polymer_proxy
+        assert isinstance(prods[1], Polymer) and prods[1].label.startswith("PE_mod")
+
+    def test_gas_verdict_bypasses_h_loss_exemption(self):
+        """An H-loss-daughter-shaped molecule made of gas atoms is gas: it is
+        neither folded into PE_mod nor exempted from the durable veto."""
+        from rmgpy.data.kinetics.family import _handshake_structures
+
+        pool = Polymer(**POOLS["PE"])
+        prods = [Molecule(smiles="CC[CH]CCC"), Molecule(smiles="CCCCCC")]
+        _handshake_structures(prods, [pool], h_loss_verdicts=[True, False],
+                              gas_verdicts=[True, False])
+        assert isinstance(prods[0], Molecule)
+        assert _veto(prods[0])
+
+
+class TestSpawnIgnoresVetoedGas:
+    def _vetoed_proxy_hexane(self):
+        from rmgpy.polymer import set_polymer_gas_veto
+
+        cand = Species(molecule=[Molecule(smiles="CCCCCC")], label="hexane")
+        cand.is_polymer_proxy = True
+        set_polymer_gas_veto(cand)
+        return cand
+
+    def test_multipool_classifier_skips_vetoed_candidate(self):
+        """(f) polymer.py: a vetoed gas species is never a spawn/proxy candidate."""
+        from rmgpy.polymer import process_polymer_candidates_multipool
+
+        pe = Polymer(**POOLS["PE"])
+        cand = self._vetoed_proxy_hexane()
+        processed, intents = process_polymer_candidates_multipool(
+            candidates=[cand], reaction_model=None, pool_registry=[pe])
+        assert processed == [] and intents == []
+
+    def test_model_spawn_pass_skips_vetoed_candidate(self, monkeypatch):
+        """(f) model.py: the iteration-boundary spawn pass filters the veto
+        before classification."""
+        import rmgpy.polymer as polymer_module
+
+        seen = []
+
+        def record(candidates, **kwargs):
+            seen.extend(candidates)
+            return [], []
+
+        monkeypatch.setattr(polymer_module, "process_polymer_candidates_multipool", record)
+        cerm, _pe = _model("PE")
+        cerm._apply_multipool_spawn_pass([self._vetoed_proxy_hexane()])
+        assert seen == []
+
+
+class TestThe298sRowSolverDeltas:
+    @pytest.mark.parametrize("direction", ["forward", "reverse"])
+    def test_moment_and_element_deltas(self, direction):
+        """(a) pentenyl + PE -> gas 1-pentene + PE_mod through the real
+        solver residual, in the generated and in the kinetics-flipped
+        direction. Per event: the gas side gains (forward) or loses
+        (reverse) exactly one H; the source pool loses one whole chain
+        bundle and the destination gains the SAME bundle (a_moment = 0:
+        the H mass rides on PE_mod's per-chain defect); C and H close."""
+        import numpy as np
+
+        from rmgpy.kinetics import Arrhenius
+        from rmgpy.polymer import PolymerFluxArchetype, restamp_flipped_polymer_archetype
+        from rmgpy.reaction import Reaction
+        from rmgpy.solver.polymer import HybridPolymerSystem, PolymerPoolConfig
+
+        cerm, pe, rad, rxns = _fold_rows("PE")
+        out, _ = cerm.make_new_reaction(rxns[0], check_existing=False, generate_thermo=False,
+                                        generate_kinetics=False, supplied_species=(rad, pe))
+        gas = next(p for p in out.products if not isinstance(p, Polymer))
+        mod = next(p for p in out.products if isinstance(p, Polymer))
+        assert mod.chain_mass_defect_g_mol == pytest.approx(1.00794, abs=1e-3)
+        reactants, products = list(out.reactants), list(out.products)
+        if direction == "reverse":
+            flipped = Reaction(reactants=products, products=reactants)
+            flipped.polymer_flux_archetype = out.polymer_flux_archetype
+            restamp_flipped_polymer_archetype(flipped)
+            src = flipped
+            reactants, products = products, reactants
+        else:
+            src = out
+        assert src.polymer_flux_archetype == int(PolymerFluxArchetype.VOLATILE_EJECTION)
+        assert src.polymer_refused is False
+
+        rxn = Reaction(reactants=reactants, products=products,
+                       kinetics=Arrhenius(A=(1.0e3, "m^3/(mol*s)"), n=0.0,
+                                          Ea=(0.0, "kcal/mol"), T0=(298.15, "K")),
+                       reversible=False)
+        rxn.is_end_group_reaction = bool(src.is_end_group_reaction)
+        rxn.polymer_flux_archetype = src.polymer_flux_archetype
+        rxn.polymer_eject_units = src.polymer_eject_units
+
+        def dummies(label):
+            out = []
+            for k, smi in enumerate(("CO", "C=O", "C#N")):
+                s = Species(molecule=[Molecule(smiles=smi)], label="%s_mu%d" % (label, k))
+                s.is_moment_dummy = True
+                out.append(s)
+            return out
+
+        core = [pe] + dummies(pe.label) + [mod] + dummies(mod.label) + [rad, gas]
+        mask = np.array([False] * 8 + [True, True], dtype=bool)
+        pools = [PolymerPoolConfig(label=pe.label, xs=3, explicit_dp_to_species_index={},
+                                   mu_indices=(1, 2, 3), monomer_poly_index=None,
+                                   k_scission=0.0, k_unzip=0.0, tail_kinetics=None,
+                                   monomer_mw_g_mol=pe.monomer_mw_g_mol),
+                 PolymerPoolConfig(label=mod.label, xs=3, explicit_dp_to_species_index={},
+                                   mu_indices=(5, 6, 7), monomer_poly_index=None,
+                                   k_scission=0.0, k_unzip=0.0, tail_kinetics=None,
+                                   monomer_mw_g_mol=pe.monomer_mw_g_mol,
+                                   chain_mass_defect_g_mol=mod.chain_mass_defect_g_mol)]
+        moments = {pe.label: (1.0, 50.0, 3000.0), mod.label: (1.0, 40.0, 2000.0)}
+        feed = rad if direction == "forward" else gas
+        rs = HybridPolymerSystem(
+            T=1000.0, P=1.0e5, initial_mole_fractions={feed: 2.0}, V_poly=1.0,
+            polymer_pools=pools, mass_transfer=[], gas_species_mask=mask.copy(),
+            constant_gas_volume=False, initial_polymer_moments=moments, termination=[])
+        rs.initialize_model(core, [rxn], [], [])
+        dn = rs.residual(0.0, rs.y, np.zeros_like(rs.y))[0]
+        assert rs.reaction_refused[0] == 0
+
+        sign = 1.0 if direction == "forward" else -1.0
+        r = sign * dn[9]           # events per second (mol/s) toward the alkene
+        assert r > 0.0
+        assert dn[8] == pytest.approx(-sign * r, rel=1e-12)
+        bundle = moments[pe.label] if direction == "forward" else moments[mod.label]
+        d_pe = dn[1:4]
+        d_mod = dn[5:8]
+        np.testing.assert_allclose(d_pe, [-sign * r * b for b in bundle], rtol=1e-12)
+        np.testing.assert_allclose(d_mod, [sign * r * b for b in bundle], rtol=1e-12)
+        # elemental deltas: gas C5H9 -> C5H10; chains C(2n)H(4n+2), PE_mod one H short
+        c_gas = 5.0 * (dn[8] + dn[9])
+        h_gas = 9.0 * dn[8] + 10.0 * dn[9]
+        c_pool = 2.0 * (d_pe[1] + d_mod[1])
+        h_pool = (4.0 * d_pe[1] + 2.0 * d_pe[0]) + (4.0 * d_mod[1] + 2.0 * d_mod[0] - d_mod[0])
+        assert c_gas == pytest.approx(0.0, abs=1e-12 * r)
+        assert c_pool == pytest.approx(0.0, abs=1e-9 * r)
+        assert h_gas == pytest.approx(sign * r, rel=1e-12)
+        assert h_pool == pytest.approx(-sign * r, rel=1e-9)
