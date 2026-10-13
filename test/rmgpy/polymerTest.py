@@ -10012,3 +10012,88 @@ def test_hybrid_polymer_reactor_reader_half_ranged_keeps_sweep():
         temperature=[(750.0, 'K'), (4000.0, 'K')],
         pressure=(1.0, 'bar'))
     assert system.n_sims == 6
+
+
+class TestHLossDaughterIsStructural:
+    """I-105: the H-loss radical-daughter qualifier must be STRUCTURAL.
+
+    The composition-only predicate (same heavy skeleton counts, H lower by the
+    radical count) condensed the branched 2-methylpentyl radical
+    [CH2]C(C)CCC as an "H-loss daughter" of the linear C6H14 PE proxy while
+    its saturated partner CCCC(C)C is a gas-vetoed alkane -- two species of
+    one skeleton on opposite sides of the phase boundary, so the reference-
+    state tripwire saw an unpaired melt term (U = 10.98 decades) on the main
+    chain-transfer row of every polyolefin. A true H-loss daughter, saturated
+    by one H per radical site, must be isomorphic (any resonance structure)
+    to the proxy.
+    """
+
+    @staticmethod
+    def _phase(label, monomer):
+        from rmgpy.quantity import Quantity
+        from rmgpy.rmg.polymer_input import PolymerPhase, PolymerPool
+        p = Polymer(label=label, monomer=monomer, end_groups=['[H]', '[H]'],
+                    cutoff=3, Mn=1500.0, Mw=1800.0, initial_mass=0.1)
+        proxy = Species(molecule=[p.molecule[0].copy(deep=True)], label=label)
+        pool = PolymerPool(label=label, xs=3, monomer=proxy, explicit_map={},
+                           mu_species=[])
+        phase = PolymerPhase(density=Quantity(900.0, 'kg/m^3'),
+                             initial_moments={}, initial_explicit={},
+                             pools=[pool])
+        return phase, proxy
+
+    @staticmethod
+    def _true_daughters(proxy):
+        """Every single-H-loss radical of the proxy, built by construction."""
+        out = []
+        base = proxy.molecule[0]
+        for idx, atom in enumerate(base.atoms):
+            if atom.symbol != 'H':
+                continue
+            m = base.copy(deep=True)
+            h = m.atoms[idx]
+            nbr = list(h.bonds.keys())[0]
+            m.remove_atom(h)
+            nbr.radical_electrons += 1
+            m.update()
+            if any(m.is_isomorphic(s) for s in out):
+                continue
+            out.append(m)
+        return out
+
+    def _bases(self, phase, proxy, mols):
+        spcs = [Species(molecule=[m], label=f'D{i}') for i, m in enumerate(mols)]
+        return phase.get_h_loss_radical_daughter_bases([proxy] + spcs), len(spcs)
+
+    @pytest.mark.parametrize("label,monomer,negative", [
+        ('PE', '[CH2][CH2]', '[CH2]C(C)CCC'),
+        ('polypropylene', '[CH2][CH](C)', '[CH2]CCCCCCCC'),
+        ('PS', '[CH2][CH]c1ccccc1',
+         '[CH2]C(c1ccccc1)C(CC(c1ccccc1)C)c1ccccc1'),
+    ])
+    def test_true_daughters_stay_and_non_isomorphic_composition_match_does_not(
+            self, label, monomer, negative):
+        from rmgpy.molecule import Molecule
+        phase, proxy = self._phase(label, monomer)
+        daughters = self._true_daughters(proxy)
+        assert len(daughters) >= 3
+        bases, n = self._bases(phase, proxy, daughters)
+        assert bases == {f'D{i}' for i in range(n)}, (
+            f"every true H-loss daughter of the {label} proxy must qualify")
+        neg = Molecule(smiles=negative)
+        # liveness pin: the negative passes the composition pre-filter
+        pc = proxy.molecule[0].get_element_count()
+        nc = neg.get_element_count()
+        assert nc['C'] == pc['C'] and pc['H'] - nc['H'] == 1
+        bases, _ = self._bases(phase, proxy, [neg])
+        assert bases == set(), (
+            f"{negative} is composition-compatible but not an H-loss "
+            f"daughter of the {label} proxy skeleton; it must not be condensed")
+
+    def test_pe_linear_hexyl_isomers_stay_daughters(self):
+        from rmgpy.molecule import Molecule
+        phase, proxy = self._phase('PE', '[CH2][CH2]')
+        mols = [Molecule(smiles=s) for s in
+                ('[CH2]CCCCC', 'C[CH]CCCC', 'CC[CH]CCC')]
+        bases, n = self._bases(phase, proxy, mols)
+        assert bases == {f'D{i}' for i in range(n)}

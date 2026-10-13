@@ -886,14 +886,11 @@ class PolymerPhase(object):
 
         static_pool_labels = {p.label for p in self.pools}
 
-        def _element_counts(spc):
+        def _proxy_mol(spc):
             mols = getattr(spc, "molecule", None) or []
             if not mols or mols[0] is None:
                 return None
-            try:
-                return mols[0].get_element_count()
-            except Exception:
-                return None
+            return mols[0]
 
         # Composition universe of the CONFIGURED condensed pool proxies:
         # the live core proxy carrying the pool's base label (exactly the
@@ -905,12 +902,12 @@ class PolymerPhase(object):
                 continue
             label = getattr(spc, "label", None)
             if label and _base_label(label) in static_pool_labels:
-                comp = _element_counts(spc)
-                if comp:
+                comp = _proxy_mol(spc)
+                if comp is not None:
                     proxy_comps.append(comp)
         for pool in self.pools:
-            comp = _element_counts(getattr(pool, "proxy_species", None))
-            if comp:
+            comp = _proxy_mol(getattr(pool, "proxy_species", None))
+            if comp is not None:
                 proxy_comps.append(comp)
 
         qualifying = set()

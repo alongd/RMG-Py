@@ -9883,20 +9883,31 @@ def strip_rmg_index_suffix(label: str) -> str:
     return label
 
 
-def is_h_loss_radical_daughter(molecule: Molecule, proxy_element_counts) -> bool:
+def is_h_loss_radical_daughter(molecule: Molecule, proxy_molecules) -> bool:
     """Structural core of the H-loss radical-daughter qualifier (ratified
-    2026-07-03; veto-scoping extraction 2026-07-04). Returns True iff
-    ``molecule`` is an H-loss radical daughter of a proxy whose element
-    counts appear in ``proxy_element_counts`` (an iterable of
-    ``Molecule.get_element_count()`` dicts):
+    2026-07-03; veto-scoping extraction 2026-07-04; made STRUCTURAL for I-105).
+    Returns True iff ``molecule`` is an H-loss radical daughter of one of
+    ``proxy_molecules`` (an iterable of proxy ``Molecule`` objects):
 
       (ii)  radical-bearing and neutral;
       (iii) same non-H element composition (heavy-atom skeleton) as a proxy;
       (iv)  differs from that proxy by H-loss only
             (H_proxy - H_daughter == its radical count >= 1,
-            e.g. C9H20 -> C9H19*).
+            e.g. C9H20 -> C9H19*);
+      (vi)  STRUCTURAL: the daughter, saturated with one H at each radical
+            site (on a copy), is isomorphic to that proxy under ANY
+            resonance structure of either side (an aromatic proxy such as
+            PS has more than one Kekule form).
 
-    ONE predicate, never duplicated -- shared by BOTH consumers:
+    (iii)+(iv) are a cheap composition pre-filter; (vi) is what makes the
+    verdict structural. Composition alone condensed the branched
+    2-methylpentyl radical [CH2]C(C)CCC as an "H-loss daughter" of the
+    LINEAR C6H14 PE proxy while its saturated partner CCCC(C)C is a gas
+    alkane: one skeleton class split across the phase boundary, which the
+    reference-state tripwire reported as an unpaired melt term (10.98
+    decades) on the main chain-transfer row of every polyolefin.
+
+    ONE predicate, never duplicated -- shared by ALL consumers:
 
     * ``PolymerPhase.get_h_loss_radical_daughter_bases``
       (rmgpy/rmg/polymer_input.py), which adds condition (v)
@@ -9906,9 +9917,10 @@ def is_h_loss_radical_daughter(molecule: Molecule, proxy_element_counts) -> bool
       conjunct (MW >= monomer_mw + slack) before EXEMPTING a refused
       product from the durable gas veto -- without that exemption the veto
       defeats condition (v) of the very qualifier above (the PP run-2
-      self-defeat loop, gate/conduit diagnosis Phenomenon 1).
+      self-defeat loop, gate/conduit diagnosis Phenomenon 1);
+    * ``compute_h_loss_shape_evidence``.
 
-    Conditions (ii)-(iv) fail closed on any structure query error.
+    Conditions (ii)-(vi) fail closed on any structure query error.
     """
     try:
         n_rad = molecule.get_radical_count()
@@ -9920,11 +9932,32 @@ def is_h_loss_radical_daughter(molecule: Molecule, proxy_element_counts) -> bool
         return False
     heavy = {el: n for el, n in comp.items() if el != 'H'}
     n_h = comp.get('H', 0)
-    for pcomp in proxy_element_counts:
+    saturated_resonance = None
+    for proxy in proxy_molecules:
+        if proxy is None:
+            continue
+        try:
+            pcomp = proxy.get_element_count()
+        except Exception:
+            continue
         p_heavy = {el: n for el, n in pcomp.items() if el != 'H'}
         # (iii) same heavy skeleton + (iv) H-loss only, one H per radical site
-        if p_heavy == heavy and pcomp.get('H', 0) - n_h == n_rad:
-            return True
+        if p_heavy != heavy or pcomp.get('H', 0) - n_h != n_rad:
+            continue
+        # (vi) structural identity of the saturated daughter and the proxy
+        try:
+            if saturated_resonance is None:
+                sat = molecule.copy(deep=True)
+                sat.saturate_radicals()
+                sat.update()
+                saturated_resonance = sat.generate_resonance_structures() or []
+                saturated_resonance = [sat] + list(saturated_resonance)
+            proxy_forms = [proxy] + list(proxy.generate_resonance_structures() or [])
+            if any(a.is_isomorphic(b)
+                   for a in saturated_resonance for b in proxy_forms):
+                return True
+        except Exception:
+            return False
     return False
 
 
@@ -9979,10 +10012,7 @@ def compute_h_loss_shape_evidence(reactants, products, polymer_reactants):
     proxy_mols = getattr(polymer_reactants[0], 'molecule', None) or []
     if not proxy_mols or proxy_mols[0] is None:
         return verdicts
-    try:
-        proxy_comp = proxy_mols[0].get_element_count()
-    except Exception:
-        return verdicts
+    proxy_mol = proxy_mols[0]
 
     for i, item in enumerate(products):
         try:
@@ -9996,7 +10026,7 @@ def compute_h_loss_shape_evidence(reactants, products, polymer_reactants):
                 continue
         except Exception:
             continue
-        if not is_h_loss_radical_daughter(mol, [proxy_comp]):
+        if not is_h_loss_radical_daughter(mol, [proxy_mol]):
             continue
         # Abstraction co-product evidence: net element delta of the
         # NON-POLYMER side excluding this daughter must be exactly +1 H.

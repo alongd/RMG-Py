@@ -15075,3 +15075,70 @@ class TestHybridPolymerReactorRangedTP:
         assert reactor.solver.T.value_si == pytest.approx(800.0)
         assert reactor.solver.P.value_si == pytest.approx(1.0e5)
         assert reactor.n_sims == 1
+
+
+class TestPeChainTransferRowReferenceState:
+    """I-105: PE gas-radical H abstraction from the chain,
+    ``[CH2]C(C)CCC + PE <=> CCCC(C)C + PE_mod``. The branched radical was
+    condensed by the composition-only H-loss qualifier while its saturated
+    partner is a gas-vetoed alkane, so U = 10.98 decades refused the build.
+    The mask here is the REAL PolymerPhase.get_gas_mask, not a hand mask."""
+
+    def _build(self, radical_smiles, force_radical_condensed=False):
+        from rmgpy.quantity import Quantity
+        from rmgpy.rmg.polymer_input import PolymerPhase, PolymerPool
+        from rmgpy.polymer import POLYMER_REFERENCE_STATE_GAS_VETO_KEY as VETO
+        pe = _spc("CCCCCC", "PE")
+        mu0, mu1, mu2 = (_spc("CO", "PE_mu0"), _spc("C=O", "PE_mu1"),
+                         _spc("C#N", "PE_mu2"))
+        for m in (mu0, mu1, mu2):
+            m.is_moment_dummy = True
+        rad = _spc(radical_smiles, "RAD")
+        alkane = _spc("CCCC(C)C", "ALK")
+        alkane.props[VETO] = True
+        pe_mod = _spc("CC[CH]CCC", "PE_mod")
+        for s in (pe, mu0, mu1, mu2, rad, alkane, pe_mod):
+            s.thermo = _trivial_nasa(_GAV_COMMENT)
+            if s not in (mu0, mu1, mu2):
+                s.is_polymer_proxy = True
+        n2 = _spc("N#N", "N2")
+        n2.thermo = _trivial_nasa(_GAV_COMMENT)
+        core = [pe, mu0, mu1, mu2, rad, alkane, pe_mod, n2]
+        pool = PolymerPool(label="PE", xs=3, monomer=pe, explicit_map={},
+                           mu_species=[mu0, mu1, mu2], proxy_species=pe)
+        phase = PolymerPhase(density=Quantity(900.0, "kg/m^3"),
+                             initial_moments={"PE": (1.0, 5.0, 30.0)},
+                             initial_explicit={}, pools=[pool])
+        mask = phase.get_gas_mask(core)
+        if force_radical_condensed:
+            mask[4] = False
+        rxn = Reaction(reactants=[rad, pe], products=[alkane, pe_mod], **_REV_KIN)
+        cfg = _gate_pool_config(monomer_mw_g_mol=28.05, monomer_heavy_atoms=2)
+        return mask, _refstate_rs(core, [rxn], mask, [cfg], {"PE": (1.0, 5.0, 30.0)})
+
+    def test_branched_radical_row_below_census_after_fix(self):
+        from rmgpy.solver.polymer import REFERENCE_STATE_CENSUS_DECADES
+        mask, rs = self._build("[CH2]C(C)CCC")
+        assert bool(mask[4]), "branched C6H13 radical is a gas species"
+        assert rs.reference_state_max_decades < REFERENCE_STATE_CENSUS_DECADES
+
+    def test_same_row_with_misclassified_radical_still_trips(self):
+        """Liveness/control: the SAME row with the radical forced condensed
+        (the pre-fix classification) is genuinely unpaired and must refuse."""
+        with pytest.raises(ValueError, match="unpaired reference-state"):
+            self._build("[CH2]C(C)CCC", force_radical_condensed=True)
+
+    def test_linear_hexyl_row_is_paired(self):
+        """A true chain-radical (linear hexyl) stays condensed (mask only:
+        its real abstraction partner is the proxy itself, not the branched
+        fixture alkane)."""
+        from rmgpy.quantity import Quantity
+        from rmgpy.rmg.polymer_input import PolymerPhase, PolymerPool
+        pe = _spc("CCCCCC", "PE")
+        rad = _spc("[CH2]CCCCC", "RAD")
+        pool = PolymerPool(label="PE", xs=3, monomer=pe, explicit_map={},
+                           mu_species=[], proxy_species=pe)
+        phase = PolymerPhase(density=Quantity(900.0, "kg/m^3"),
+                             initial_moments={}, initial_explicit={},
+                             pools=[pool])
+        assert not bool(phase.get_gas_mask([pe, rad])[1])
