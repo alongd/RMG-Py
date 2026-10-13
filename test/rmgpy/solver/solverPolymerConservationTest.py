@@ -48,3 +48,57 @@ def test_network_leak_is_recorded_but_not_subtracted_from_core():
     conc = rs.y[0] / rs.V_gas
     assert np.isclose(rs.network_leak_rates[0], k_leak * conc)
     assert rs.network_leak_rates[0] > 0.0
+
+
+def test_deck_shape_carbon_closure_with_leak_and_proxy_collision_row():
+    """
+    Reduced-deck carbon closure: the generation-stamped proxy-collision row
+    (hexyl + PE <=> PE + PE_mod) plus a pdep leak off the gas radical, run
+    through the real solver residual. dC/dt over every carbon-bearing state
+    (gas species plus 2 C per mu1 unit) must vanish. On the pre-fix code the
+    leak debits the gas radical and the row injects mu1-only PE_mod inventory.
+    """
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from polymerProxyCollisionTest import CASES, _stamped
+    from rmgpy.solver.polymer import PolymerPoolConfig
+    from rmgpy.molecule import Molecule
+
+    _pool, stamped, _prods = _stamped(CASES["PE"])
+
+    def sp(smi, label):
+        s = Species(molecule=[Molecule(smiles=smi)])
+        s.label = label
+        return s
+
+    pe, pe_mod = sp("CCCCCC", "PE"), sp("CC[CH]CCC", "PE_mod")
+    hexyl = sp("[CH2]CCCCC", "hexyl")
+    mu = {k: [sp("CO", k + "_mu0"), sp("C=O", k + "_mu1"), sp("C#N", k + "_mu2")]
+          for k in ("PE", "PE_mod")}
+    core = [pe] + mu["PE"] + [pe_mod] + mu["PE_mod"] + [hexyl]
+    mask = np.array([False] * 8 + [True], dtype=bool)
+    rxn = Reaction(reactants=[hexyl, pe], products=[pe, pe_mod],
+                   kinetics=Arrhenius(A=(1.0e3, "m^3/(mol*s)"), n=0.0,
+                                      Ea=(0.0, "kcal/mol"), T0=(298.15, "K")),
+                   reversible=False)
+    rxn.is_end_group_reaction = False
+    rxn.polymer_flux_archetype = stamped.polymer_flux_archetype
+    rxn.polymer_refused = stamped.polymer_refused
+    rxn.polymer_refused_accumulating = stamped.polymer_refused_accumulating
+    pools = [PolymerPoolConfig(label=l, xs=3, explicit_dp_to_species_index={},
+                               mu_indices=m, monomer_poly_index=None,
+                               k_scission=0.0, k_unzip=0.0, tail_kinetics=None,
+                               monomer_mw_g_mol=28.05)
+             for l, m in (("PE", (1, 2, 3)), ("PE_mod", (5, 6, 7)))]
+    rs = HybridPolymerSystem(
+        T=1000.0, P=1.0e5, initial_mole_fractions={hexyl: 2.0}, V_poly=1.0,
+        polymer_pools=pools, mass_transfer=[], gas_species_mask=mask.copy(),
+        constant_gas_volume=False,
+        initial_polymer_moments={"PE": (1.0, 50.0, 3000.0),
+                                 "PE_mod": (1.0, 50.0, 3000.0)},
+        termination=[])
+    rs.initialize_model(core, [rxn], [], [], pdep_networks=[_FakeNetwork([hexyl], 0.7)])
+    dn = rs.residual(0.0, rs.y, np.zeros_like(rs.y))[0]
+    dC = 6.0 * dn[8] + 2.0 * dn[2] + 2.0 * dn[6]
+    assert abs(dC) < 1e-12, f"carbon not conserved: dC/dt = {dC:.3e} mol C/s"
+    assert rs.reaction_refused[0] == 1
