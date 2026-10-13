@@ -1975,3 +1975,19 @@ def test_asymmetric_repeat_proxy_and_validator_agree_with_declared_isomer():
         else:
             with pytest.raises(ValueError, match="graph-isomorphic"):
                 _solver(core, config, (1.0, 3.0, 10.0))
+
+
+def test_legacy_explicit_species_without_molecular_weight_is_accepted():
+    """Item 6: the legacy mass is unused, so its absence must not raise."""
+    explicit = Species(label="legacy_dp2")
+    proxy = Species(label="legacy_pool")
+    dummies = [Species(label=f"legacy_mu{i}") for i in range(3)]
+    pool = PolymerPool(
+        label="legacy", xs=2, monomer=Molecule().from_smiles("[CH2][CH2]"),
+        explicit_map={2: explicit}, mu_species=dummies, proxy_species=proxy,
+    )
+    core = [explicit] + dummies
+    config = pool.to_config({species: index for index, species in enumerate(core)})
+    assert config.shared_mass_accounting is False
+    assert config.explicit_dp_to_species_index == {2: 0}
+    assert 2 not in (config.explicit_dp_mw_g_mol or {})
