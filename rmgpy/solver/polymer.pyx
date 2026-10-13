@@ -2310,20 +2310,33 @@ class HybridPolymerSystem(ReactionSystem):
                         "without updating the complete moment/end bundle")
 
         if self.const_spc_names:
-            _labels_by_index = {
-                getattr(species, "label", None): index
-                for index, species in enumerate(_core_species or ())
-            }
+            # Execution (get_const_spc_indices) resolves the FIRST core
+            # species with a label, so validation must see every match: a
+            # duplicated label is ambiguous, and with a shared-spec pool
+            # present it could hide a constant moment slot. Refuse it.
+            _any_shared = any(p.shared_mass_accounting
+                              for p in self.polymer_pools)
             for _name in self.const_spc_names:
-                _idx = _labels_by_index.get(_name)
-                for pool in self.polymer_pools:
-                    if (pool.shared_mass_accounting
-                            and _idx in pool.mu_indices):
-                        raise ValueError(
-                            f"Pool {pool.label}: shared moment slot {_idx} "
-                            f"('{_name}') cannot be constant; zeroing its "
-                            "derivative would discard a debit while keeping "
-                            "the corresponding credit")
+                _matches = [
+                    index for index, species in enumerate(_core_species or ())
+                    if getattr(species, "label", None) == _name
+                ]
+                if _any_shared and len(_matches) > 1:
+                    raise ValueError(
+                        f"Shared-spec configs refuse duplicate core species "
+                        f"label '{_name}' in const_spc_names (core indices "
+                        f"{_matches}): validation and execution would "
+                        "resolve it ambiguously")
+                for _idx in _matches:
+                    for pool in self.polymer_pools:
+                        if (pool.shared_mass_accounting
+                                and _idx in pool.mu_indices):
+                            raise ValueError(
+                                f"Pool {pool.label}: shared moment slot "
+                                f"{_idx} ('{_name}') cannot be constant; "
+                                "zeroing its derivative would discard a "
+                                "debit while keeping the corresponding "
+                                "credit")
 
         # Moment isolation check
         ir = self.reactant_indices
