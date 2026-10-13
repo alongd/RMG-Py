@@ -352,6 +352,18 @@ def validate_shared_spec_allowlist(
                 f"Pool {pool.label}: shared k_unzip requires real declared "
                 f"pristine capped destination graph(s) for DP={missing}"
             )
+        spec_for_product = getattr(pool, "linear_homopolymer_spec", None)
+        if (spec_for_product is not None
+                and spec_for_product.monomer_product is not None
+                and spec_for_product.monomer_product.composition
+                != spec_for_product.repeat_unit.composition):
+            raise ValueError(
+                f"Pool {pool.label}: declared monomer_product composition "
+                f"{spec_for_product.monomer_product.composition.as_mapping()!r}"
+                " differs from the repeat unit composition "
+                f"{spec_for_product.repeat_unit.composition.as_mapping()!r}; "
+                "unzip would not conserve elemental mass"
+            )
         if core_species is not None:
             spec = _authoritative_spec(pool)
             for dp in sorted(required_dp):
