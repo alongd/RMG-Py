@@ -377,6 +377,25 @@ def _object_state(value: Any) -> Any:
         return {"$set": sorted(json.dumps(_object_state(item), sort_keys=True) for item in value)}
     if hasattr(value, "item") and type(value).__module__ == "numpy":
         return _object_state(value.item())
+    if hasattr(value, "reactants") and hasattr(value, "products"):
+        return {
+            "$reaction": {
+                "family": getattr(value, "family", None),
+                "kinetics": _object_state(getattr(value, "kinetics", None)),
+                "label": getattr(value, "label", None),
+                "products": [_object_state(item) for item in value.products],
+                "reactants": [_object_state(item) for item in value.reactants],
+                "reversible": getattr(value, "reversible", None),
+                "template": _object_state(getattr(value, "template", None)),
+            },
+            "$type": type(value).__name__,
+        }
+    if hasattr(value, "molecule") and isinstance(getattr(value, "molecule"), list):
+        return {
+            "$species": [m.to_adjacency_list() for m in value.molecule],
+            "label": getattr(value, "label", None),
+            "$type": type(value).__name__,
+        }
     if hasattr(value, "to_adjacency_list"):
         return {"$adjacency_list": value.to_adjacency_list(), "$type": type(value).__name__}
     text = str(value) if type(value).__name__.startswith("Logic") else repr(value)

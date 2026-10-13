@@ -714,3 +714,15 @@ def test_envelope_builder_requires_full_hex_shas_and_bytes():
 def test_producer_identities_come_from_the_manifests():
     assert gi.generation_producer_identity() == gi.manifest_sha(gi.generation_dependency_manifest())
     assert gi.compilation_producer_identity() == gi.manifest_sha(gi.compilation_dependency_manifest())
+
+
+def test_rules_holding_reactions_after_rate_rule_preparation_are_fingerprintable(kinetics):
+    from rmgpy.reaction import Reaction
+
+    family = copy.deepcopy(kinetics.families["R_Recombination"])
+    entry = next(e for rules in family.rules.entries.values() for e in rules)
+    entry.item = Reaction(reactants=[species("C[CH2]")], products=[species("CC")], reversible=True)
+    first = gi.family_content_fingerprint(family)
+    assert first == gi.family_content_fingerprint(family)
+    entry.item.products = [species("CCC")]
+    assert gi.family_content_fingerprint(family) != first
