@@ -800,7 +800,10 @@ def verify_database_snapshot(manifest: dict[str, Any], database_path: str | Path
 
 _ENVELOPE_KEYS = {"schema_version", "request_sha", "producer_identity", "payload_sha256", "payload"}
 _HEX64 = re.compile(r"[0-9a-f]{64}")
-MAX_ENVELOPE_BYTES = 1 << 30
+DEFAULT_MAX_ENVELOPE_BYTES = 64 << 20
+_ENVELOPE_MAX_DEPTH = 2
+_ENVELOPE_MAX_KEYS = 16
+_ENVELOPE_TOKEN = re.compile(rb'(?s)"[^"\\]*(?:\\.[^"\\]*)*"|[\[\]{}:,]|"')
 
 
 def _require_hex(value: Any, name: str) -> str:
@@ -848,7 +851,10 @@ def verify_envelope(
         _require_hex(producer_identity, "expected producer_identity")
         if envelope["producer_identity"] != producer_identity:
             raise EnvelopeError("envelope was produced by a different producer")
-    payload = envelope["payload"].encode("utf-8")
+    try:
+        payload = envelope["payload"].encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise EnvelopeError("payload is not valid UTF-8 text") from error
     if hashlib.sha256(payload).hexdigest() != envelope["payload_sha256"]:
         raise EnvelopeError("payload does not match its digest")
     return payload
@@ -867,16 +873,47 @@ def _no_duplicates(pairs: list) -> dict:
     return result
 
 
-def envelope_from_bytes(data: bytes, *, max_bytes: int = MAX_ENVELOPE_BYTES) -> dict[str, Any]:
-    """Parse envelope bytes strictly (duplicate keys, non-finite numbers and non-objects refused)."""
+def _preflight_envelope(data: bytes) -> None:
+    """Bound nesting depth and key count by a token scan, before ``json.loads`` allocates anything."""
+    depth = 0
+    keys = 0
+    for match in _ENVELOPE_TOKEN.finditer(data):
+        token = match.group()
+        first = token[:1]
+        if first == b'"':
+            if len(token) < 2:
+                raise EnvelopeError("unterminated string")
+        elif first == b"[" or first == b"{":
+            depth += 1
+            if depth > _ENVELOPE_MAX_DEPTH:
+                raise EnvelopeError("envelope nesting depth exceeds the limit")
+        elif first == b"]" or first == b"}":
+            depth -= 1
+            if depth < 0:
+                raise EnvelopeError("unbalanced brackets")
+        elif first == b":":
+            keys += 1
+            if keys > _ENVELOPE_MAX_KEYS:
+                raise EnvelopeError("envelope key count exceeds the limit")
+    if depth != 0:
+        raise EnvelopeError("unbalanced brackets")
+
+
+def envelope_from_bytes(data: bytes, *, max_bytes: int = DEFAULT_MAX_ENVELOPE_BYTES) -> dict[str, Any]:
+    """Parse envelope bytes strictly (duplicate keys, non-finite numbers and non-objects refused).
+
+    The size, nesting depth and key count are bounded before ``json.loads`` runs.
+    """
     if not isinstance(data, (bytes, bytearray)) or len(data) > max_bytes:
         raise EnvelopeError("envelope bytes missing or too large")
+    data = bytes(data)
+    _preflight_envelope(data)
 
     def reject_constant(token):
         raise EnvelopeError(f"non-finite constant {token}")
 
     try:
-        value = json.loads(bytes(data).decode("utf-8"), object_pairs_hook=_no_duplicates, parse_constant=reject_constant)
+        value = json.loads(data.decode("utf-8"), object_pairs_hook=_no_duplicates, parse_constant=reject_constant)
     except EnvelopeError:
         raise
     except (ValueError, RecursionError) as error:
