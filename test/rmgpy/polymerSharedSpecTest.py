@@ -1821,3 +1821,29 @@ def test_legacy_homolysis_residual_does_not_scan_shared_end_slots():
     system.end_inventory_slot = None
     rates = np.asarray(system.residual(0.0, system.y, np.zeros_like(system.y))[0])
     assert np.all(np.isfinite(rates))
+
+
+def test_shared_unzip_refuses_monomer_product_that_destroys_elemental_mass():
+    """Item 1: the declared product must carry the repeat unit's composition."""
+    methane = _graph([_atom("c", hydrogens=4)])
+    spec = _spec(monomer_product=methane)
+    dp1 = Species(label="DP1", molecule=[Molecule().from_smiles("CC")])
+    product = Species(
+        label="product", molecule=[Molecule().from_smiles("C")]
+    )
+    core = [Species(label="P"), dp1, product] + [
+        Species(label=f"P_mu{i}") for i in range(3)
+    ]
+    config = _attach_shared_spec(PolymerPoolConfig(
+        label="P", xs=2, explicit_dp_to_species_index={1: 1},
+        explicit_dp_mw_g_mol={
+            1: dp1.molecule[0].get_molecular_weight() * 1000.0,
+        },
+        shared_expected_explicit_dp_molecules={1: (dp1.molecule[0],)},
+        mu_indices=(3, 4, 5), monomer_poly_index=2,
+        monomer_mw_g_mol=spec.repeat_unit.composition.molar_mass_g_mol(),
+        end_group_mw_g_mol=spec.end_composition.molar_mass_g_mol(),
+        shared_mass_accounting=True, k_unzip=1.0,
+    ), spec)
+    with pytest.raises(ValueError, match="monomer_product.*composition.*repeat"):
+        _solver(core, config, (1.0, 2.0, 4.0), gas_indices=(2,))
