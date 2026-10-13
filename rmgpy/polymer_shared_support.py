@@ -75,16 +75,40 @@ def _expected_graphs(pool) -> Mapping[int, Sequence[object]]:
     return getattr(pool, "shared_expected_explicit_dp_molecules", None) or {}
 
 
-def _graphs_match(
-    actual: Sequence[object], expected: Sequence[object]
-) -> bool:
-    """Graph identity including isotope and electronic multiplicity."""
-    return any(
+def _same_graph(candidate, reference) -> bool:
+    return (
         candidate.is_isomorphic(reference)
         and int(getattr(candidate, "multiplicity", 1))
         == int(getattr(reference, "multiplicity", 1))
+    )
+
+
+def _is_form_of(candidate, reference) -> bool:
+    """True if ``candidate`` is ``reference`` or one of its resonance forms."""
+    if _same_graph(candidate, reference):
+        return True
+    try:
+        forms = reference.copy(deep=True).generate_resonance_structures()
+    except Exception:
+        return False
+    return any(_same_graph(candidate, form) for form in forms)
+
+
+def _graphs_match(
+    actual: Sequence[object], expected: Sequence[object]
+) -> bool:
+    """Graph identity including isotope and electronic multiplicity.
+
+    Every member of ``actual`` must be a resonance form of some expected
+    graph: one matching member must not launder the rest of the list.
+    """
+    actual = tuple(actual)
+    expected = tuple(expected)
+    if not actual or not expected:
+        return False
+    return all(
+        any(_is_form_of(candidate, reference) for reference in expected)
         for candidate in actual
-        for reference in expected
     )
 
 
@@ -165,6 +189,9 @@ def _validate_authoritative_masses_and_graphs(
             f"mass {repeat_mass:.12g} g/mol (rtol={SHARED_MASS_REL_TOL:g}, "
             f"atol={SHARED_MASS_ABS_TOL_G_MOL:g} g/mol)"
         )
+    # Within tolerance the graph value, not the supplied approximation, is
+    # what the live mass law must use.
+    object.__setattr__(pool, "monomer_mw_g_mol", repeat_mass)
     end_mass = spec.end_composition.molar_mass_g_mol()
     if not _mass_matches(pool.end_group_mw_g_mol, end_mass):
         raise ValueError(
@@ -173,6 +200,7 @@ def _validate_authoritative_masses_and_graphs(
             f"mass {end_mass:.12g} g/mol (rtol={SHARED_MASS_REL_TOL:g}, "
             f"atol={SHARED_MASS_ABS_TOL_G_MOL:g} g/mol)"
         )
+    object.__setattr__(pool, "end_group_mw_g_mol", end_mass)
 
     explicit = getattr(pool, "explicit_dp_to_species_index", None) or {}
     supplied_masses = getattr(pool, "explicit_dp_mw_g_mol", None) or {}
@@ -189,10 +217,7 @@ def _validate_authoritative_masses_and_graphs(
             pool, core_species, int(index), (authoritative,),
             f"shared explicit DP={dp} destination",
         )
-        actual = tuple(
-            getattr(core_species[int(index)], "molecule", ()) or ()
-        )
-        graph_mass = actual[0].get_molecular_weight() * 1000.0
+        graph_mass = authoritative.get_molecular_weight() * 1000.0
         supplied = supplied_masses.get(dp)
         if supplied is None or not _mass_matches(supplied, graph_mass):
             raise ValueError(
@@ -201,6 +226,7 @@ def _validate_authoritative_masses_and_graphs(
                 f"{graph_mass:.12g} g/mol (rtol={SHARED_MASS_REL_TOL:g}, "
                 f"atol={SHARED_MASS_ABS_TOL_G_MOL:g} g/mol)"
             )
+        supplied_masses[dp] = graph_mass
 
 
 def _verify_explicit_graph(pool, dp: int, core_species: Sequence[object]) -> None:
