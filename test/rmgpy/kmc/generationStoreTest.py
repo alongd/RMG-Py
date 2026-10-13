@@ -123,15 +123,30 @@ class StatShim:
 # ---------------------------------------------------------------------------
 
 
+class _ForbiddenOs:
+    """Stands in for the ``os`` name inside the store module only; the named calls fail the test."""
+
+    def __init__(self, forbidden):
+        self._forbidden = set(forbidden)
+
+    def __getattr__(self, name):
+        if name in self._forbidden:
+
+            def spy(*args, **kwargs):
+                raise AssertionError(f"os.{name} called before identity validation")
+
+            return spy
+        return getattr(os, name)
+
+
+FS_CALLS = ("open", "mkdir", "stat", "lstat", "listdir", "scandir", "rename", "replace", "unlink", "fsync", "fstat")
+
+
 @pytest.mark.parametrize("bad", ["../x", "A" * 64, "a" * 63, "a" * 65, "", "g" * 64, None, 5, b"a" * 64])
 def test_invalid_request_sha_is_refused_before_any_filesystem_call(root, monkeypatch, bad):
     store = make_store(root)
 
-    def spy(*args, **kwargs):
-        raise AssertionError("filesystem touched before request_sha validation")
-
-    for name in ("open", "mkdir", "stat", "lstat", "listdir", "scandir", "rename", "replace", "unlink", "fsync"):
-        monkeypatch.setattr(os, name, spy)
+    monkeypatch.setattr(gs, "os", _ForbiddenOs(FS_CALLS))
     with pytest.raises(gs.InvalidIdentityError):
         store.peek(bad)
     with pytest.raises(gs.InvalidIdentityError):
@@ -143,10 +158,7 @@ def test_producer_identity_is_mandatory_and_validated_without_touching_the_files
     with pytest.raises(TypeError):
         gs.GenerationStore(root)  # type: ignore[call-arg]
 
-    def spy(*args, **kwargs):
-        raise AssertionError("filesystem touched while validating the producer identity")
-
-    monkeypatch.setattr(os, "open", spy)
+    monkeypatch.setattr(gs, "os", _ForbiddenOs(FS_CALLS))
     with pytest.raises(gs.InvalidIdentityError):
         gs.GenerationStore(root, producer_identity=bad)
 
