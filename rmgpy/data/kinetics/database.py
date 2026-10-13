@@ -28,6 +28,7 @@
 ###############################################################################
 
 
+import itertools
 import logging
 import os.path
 from copy import deepcopy
@@ -498,7 +499,8 @@ and immediately used in input files without any additional changes.
 
         return reaction_list
 
-    def generate_reactions_from_families(self, reactants, products=None, only_families=None, resonance=True):
+    def generate_reactions_from_families(self, reactants, products=None, only_families=None, resonance=True,
+                                         genuine_gas=None, census=None):
         """
         Generate all reactions between the provided list or tuple of one or two
         `reactants`, which can be either :class:`Molecule` objects or :class:`Species`
@@ -511,10 +513,25 @@ and immediately used in input files without any additional changes.
                             Default is to generate reactions from all families
             resonance:      Flag to generate resonance structures for reactants and products (optional)
                             Default is True, resonance structures will be generated
+            genuine_gas:    Per-reactant gas classification, aligned with `reactants` (optional).
+                            None classifies each reactant with
+                            :func:`rmgpy.gas_origin.is_genuine_gas_reactant`; a caller that knows the
+                            solver's condensed-membership verdicts passes the combined flags here.
+            census:         dict-like accumulator for the gas-origin census (optional): collapse
+                            refusals and identity-filter drops of THIS call are added to it, so a
+                            worker process can return them explicitly.
 
         Returns:
             List of reactions containing Species objects with the specified reactants and products.
+            Family-generated reactions carry gas-origin metadata (``gas_origin_side``,
+            ``gas_origin_verdicts``, ``gas_origin_sources``; see :mod:`rmgpy.gas_origin`).
         """
+        from rmgpy.data.kinetics import family as family_module
+        from rmgpy.gas_origin import (CENSUS_IDENTITY_DROPS, CENSUS_IDENTITY_DROPS_GAS_MIXED,
+                                      assign_gas_origin_metadata, is_genuine_gas_reactant,
+                                      restore_supplied_originals,
+                                      stamp_gas_origin_copy, strip_gas_origin)
+
         if isinstance(reactants, tuple):
             reactants = list(reactants)
 
@@ -523,16 +540,59 @@ and immediately used in input files without any additional changes.
         # Label reactant atoms for proper degeneracy calculation (cannot be in tuple)
         ensure_independent_atom_ids(reactants, resonance=resonance)
 
-        combos = generate_molecule_combos(reactants)
+        # Gas-origin stamp (I-113): heavy atoms of COPIES of the genuine gas
+        # reactants' molecules carry their occurrence index k. The originals
+        # are registered model species and are never touched. Every combo
+        # member is either a stamped copy or the original molecule object, so
+        # a generated row's supplied participants map back to their supplied
+        # reactant by identity (assign_gas_origin_metadata).
+        if genuine_gas is None:
+            genuine_gas = [is_genuine_gas_reactant(spc) for spc in reactants]
+        elif len(genuine_gas) != len(reactants):
+            raise ValueError("genuine_gas has {0} flags for {1} reactants".format(
+                len(genuine_gas), len(reactants)))
+        molecule_lists = []
+        originals = {}
+        for k, (spc, is_gas) in enumerate(zip(reactants, genuine_gas)):
+            if is_gas:
+                copies = []
+                for mol in spc.molecule:
+                    stamped = stamp_gas_origin_copy(mol, k)
+                    originals[id(stamped)] = mol
+                    copies.append(stamped)
+                molecule_lists.append(copies)
+            else:
+                molecule_lists.append(list(spc.molecule))
+        if not 1 <= len(molecule_lists) <= 3:
+            raise ValueError('Reaction generation can be done for 1, 2, or 3 species, not {0}.'.format(
+                len(molecule_lists)))
+        combos = itertools.product(*molecule_lists)
 
+        identity_census = family_module.identity_filter_census
         reaction_list = []
         for combo in combos:
-            reaction_list.extend(self.react_molecules(combo, products=products, only_families=only_families,
-                                                      prod_resonance=resonance))
+            drops0 = identity_census[CENSUS_IDENTITY_DROPS]
+            mixed0 = identity_census[CENSUS_IDENTITY_DROPS_GAS_MIXED]
+            combo_reactions = self.react_molecules(combo, products=products, only_families=only_families,
+                                                   prod_resonance=resonance)
+            if census is not None:
+                census[CENSUS_IDENTITY_DROPS] = (census.get(CENSUS_IDENTITY_DROPS, 0)
+                                                 + identity_census[CENSUS_IDENTITY_DROPS] - drops0)
+                census[CENSUS_IDENTITY_DROPS_GAS_MIXED] = (
+                    census.get(CENSUS_IDENTITY_DROPS_GAS_MIXED, 0)
+                    + identity_census[CENSUS_IDENTITY_DROPS_GAS_MIXED] - mixed0)
+            # Verdicts BEFORE the degeneracy collapse, while participants are
+            # still the raw combo / product Molecule objects.
+            # The stamped copies then leave the supplied side: the row keeps
+            # the original molecule objects exactly as before provenance.
+            for rxn in combo_reactions:
+                assign_gas_origin_metadata(rxn, combo)
+                restore_supplied_originals(rxn, originals)
+            reaction_list.extend(combo_reactions)
 
         # Calculate reaction degeneracy
         reaction_list = find_degenerate_reactions(reaction_list, same_reactants, kinetics_database=self,
-                                                  resonance=resonance)
+                                                  resonance=resonance, census=census)
         # Add reverse attribute to families with ownReverse
         to_delete = []
         for i, rxn in enumerate(reaction_list):
@@ -544,6 +604,12 @@ and immediately used in input files without any additional changes.
         # Delete reactions which we could not find a reverse reaction for
         for i in reversed(to_delete):
             del reaction_list[i]
+
+        # Strip every gas-origin stamp before the rows leave this call: both
+        # sides, every resonance structure, and the reverse reactions that
+        # add_reverse_attribute regenerated from (stamped) products.
+        for rxn in reaction_list:
+            strip_gas_origin(rxn)
 
         return reaction_list
 

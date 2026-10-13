@@ -270,7 +270,7 @@ def check_for_same_reactants(reactants):
     return reactants, same_reactants
 
 def find_degenerate_reactions(rxn_list, same_reactants=None, template=None, kinetics_database=None,
-                              kinetics_family=None, save_order=False, resonance=True):
+                              kinetics_family=None, save_order=False, resonance=True, census=None):
     """
     Given a list of Reaction objects, this method combines degenerate
     reactions and increments the reaction degeneracy value. For multiple
@@ -297,6 +297,7 @@ def find_degenerate_reactions(rxn_list, same_reactants=None, template=None, kine
         kinetics_family (KineticsFamily, optional):     provide a KineticsFamily instance for calculating degeneracy
         save_order (bool, optional):                    reset atom order after performing atom isomorphism
         resonance (bool, optional):                     whether to consider resonance when computing degeneracy 
+        census (dict, optional):                        gas-origin census accumulator (collapse refusals)
 
     Returns:
         Reaction list with degenerate reactions combined with proper degeneracy values

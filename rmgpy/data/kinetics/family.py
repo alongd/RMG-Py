@@ -171,6 +171,16 @@ def note_generation_procnum(procnum):
         _wasted_build_profile['procnum'] = max(_wasted_build_profile.get('procnum', 1), int(procnum))
 
 
+#: Identity-filter accounting (I-113 item 9, measured, not fixed): every row
+#: `_create_reaction` drops because its reactant and product multisets are
+#: structurally identical, and the subset where gas-stamped and non-gas
+#: provenance meet (gas hexyl + PE <=> gas hexane + chain hexyl). A process-local
+#: running total: KineticsDatabase.generate_reactions_from_families reads the
+#: delta around its own family calls (same process) and returns it explicitly in
+#: its census, so worker processes never lose counts in a discarded global.
+identity_filter_census = {'identity_filter_drops': 0, 'identity_filter_drops_gas_mixed': 0}
+
+
 class TemplateReaction(Reaction):
     """
     A Reaction object generated from a reaction family template. In addition
@@ -227,6 +237,15 @@ class TemplateReaction(Reaction):
         self.estimator = estimator
         self.reverse = reverse
         self.labeled_atoms = {'reactants': dict(), 'products': dict()}
+        # Gas-origin metadata (I-113, rmgpy.gas_origin), stamped by
+        # KineticsDatabase.generate_reactions_from_families: the name of the
+        # side holding the GENERATED participants, one gas verdict per
+        # participant on that side, and one supplied-reactant index per
+        # participant on the other side. None = no provenance recorded
+        # (legacy structural resolution).
+        self.gas_origin_side = None
+        self.gas_origin_verdicts = None
+        self.gas_origin_sources = None
 
     def __reduce__(self):
         """

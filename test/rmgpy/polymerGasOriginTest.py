@@ -145,7 +145,10 @@ class TestStampAndVerdict:
         assert rev, "liveness: reverse-written fission rows expected"
         for rxn in rev:
             assert rxn.gas_origin_side == "reactants"
-            assert rxn.gas_origin_verdicts == tuple(True for _ in rxn.reactants)
+            # heavy-atom-free fragments ([H]) carry no provenance: False
+            expected = tuple(any(not a.is_hydrogen() for a in _mol(r).atoms)
+                             for r in rxn.reactants)
+            assert rxn.gas_origin_verdicts == expected
             assert rxn.gas_origin_sources == (0,)
 
     def test_pool_fragments_are_not_gas(self):
