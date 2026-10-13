@@ -174,6 +174,9 @@ class Reaction:
         # siblings it is NOT serialized in __reduce__; the solver re-derives
         # it at initialize_model.
         self.polymer_refused_reason = None
+        # Named generation-time refusal cause (e.g. 'proxy-identity-collision');
+        # None for rows refused by the other gates. Not serialized.
+        self.polymer_refused_detail = None
         # Pool moment-flux archetype (int values of
         # rmgpy.polymer.PolymerFluxArchetype), stamped by the polymer handshake
         # in rmgpy.rmg.model.make_new_reaction. 0 = NONE. Like

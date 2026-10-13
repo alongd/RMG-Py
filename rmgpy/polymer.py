@@ -3401,6 +3401,47 @@ def surge_chip_products(products, parent: 'Polymer') -> Optional[int]:
     return int(round(chip_mw_g / parent.monomer_mw_g_mol))
 
 
+PROXY_IDENTITY_COLLISION = "proxy-identity-collision"
+_proxy_collision_census = {"count": 0}
+
+
+def _is_proxy_identity_collision(forward, polymer_reactants) -> bool:
+    """
+    True for an H-abstraction-shaped row whose saturated co-product is
+    isomorphic to the reactant pool's own baseline proxy (e.g. hexane for PE
+    at cutoff 3). The handshake folds that co-product into the reactant pool
+    as a BASELINE Polymer, so the products are [pool BASELINE fold-back,
+    same-pool feature daughter] and the classifier cannot place the row.
+    Matches this shape ONLY: exactly one reactant pool L, exactly one product
+    Polymer labelled L stamped BASELINE, and at least one other product
+    Polymer stamped FEATURE or DISCARD (the positional centre/cap split of
+    the proxy, not chemistry) -- every other UNRESOLVED shape is untouched.
+    """
+    pools = {r.label for r in polymer_reactants}
+    if len(pools) != 1:
+        return False
+    label = next(iter(pools))
+    prod_polys = [p for p in forward.products if isinstance(p, Polymer)]
+    baseline = [p for p in prod_polys if p.label == label
+                and getattr(p, '_reacted_class', None) == PolymerClass.BASELINE]
+    daughters = [p for p in prod_polys if p.label != label
+                 and getattr(p, '_reacted_class', None) in (
+                     PolymerClass.FEATURE, PolymerClass.DISCARD)]
+    return len(baseline) == 1 and len(daughters) >= 1 \
+        and len(prod_polys) == 1 + len(daughters)
+
+
+def _warn_proxy_identity_collision(forward) -> None:
+    c = _proxy_collision_census
+    c["count"] += 1
+    logging.warning(
+        "REFUSED (%s): %d row(s) whose saturated co-product is the reactant "
+        "pool's own baseline proxy cannot be apportioned (the C6-class proxy "
+        "carbon is the pool species itself); refused conduit-deferred, zero "
+        "whole-row flux, never legacy mu1-only. Latest: %s",
+        PROXY_IDENTITY_COLLISION, c["count"], _reaction_census_label(forward))
+
+
 def stamp_polymer_flux_archetype(forward, reactants, polymer_reactants) -> None:
     """
     Stamp ``forward.polymer_flux_archetype`` (and ``polymer_chip_units``)
@@ -3453,6 +3494,15 @@ def stamp_polymer_flux_archetype(forward, reactants, polymer_reactants) -> None:
     # trigger the discard path. The infeasible-chip-surgery UNRESOLVED above
     # returns early and never reaches this check (correct: that is an
     # end-scission shape, not a FEATURE-radical-lost-to-gas).
+    if (forward.polymer_flux_archetype == int(PolymerFluxArchetype.UNRESOLVED)
+            and _is_proxy_identity_collision(forward, polymer_reactants)):
+        # Proxy-identity collision: refuse conduit-deferred (zero flux) before
+        # the legacy mu1-only fallback can fabricate daughter-pool inventory.
+        forward.polymer_refused = True
+        forward.polymer_refused_accumulating = False
+        forward.polymer_refused_detail = PROXY_IDENTITY_COLLISION
+        _warn_proxy_identity_collision(forward)
+        return
     if forward.polymer_flux_archetype == int(PolymerFluxArchetype.UNRESOLVED):
         lost = _chain_radical_lost_to_gas(forward, polymer_reactants)
         if lost is not None:
@@ -3535,6 +3585,7 @@ def restamp_flipped_polymer_archetype(forward) -> None:
     forward.polymer_chip_units = 0
     forward.polymer_eject_units = 0.0
     forward.polymer_refused_reason = None
+    forward.polymer_refused_detail = None
 
     new_arch = classify_reaction_flux_archetype(
         forward.reactants or [], forward.products or [],
