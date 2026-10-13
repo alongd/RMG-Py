@@ -1329,6 +1329,11 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
                         f"explicit_dp=True; a pool cannot enable the flag "
                         f"without it.")
                 explicit_map = {int(spc.cutoff): dp_spc}
+            # Shared-spec unzip: the declared pristine capped DP=1 chain is the
+            # handshake destination (registered by the polymer() deck block).
+            shared_dp1 = getattr(spc, 'shared_unzip_dp1_species', None)
+            if shared_dp1 is not None:
+                explicit_map[1] = shared_dp1
 
             # Create Pool Config
             pool = PolymerPool(

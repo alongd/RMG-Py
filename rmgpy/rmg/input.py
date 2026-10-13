@@ -783,6 +783,27 @@ def polymer(label: str,
         species_dict[dp_spc.label] = dp_spc
         poly_obj.explicit_dp_species = dp_spc
 
+    # 4c'. Shared-spec unzip DP1 destination. The shared k_unzip handshake
+    #     deposits into the declared pristine capped DP=1 chain, which the
+    #     deck never writes: derive it from the declaration (the same
+    #     stitched recipe the validator checks it against) and register it
+    #     through the SAME path as the explicit-DP oligomer above.
+    poly_obj.shared_unzip_dp1_species = None
+    if shared_spec is not None and k_unzip > 0.0:
+        dp1_seed = poly_obj._capped_chain_species(1)
+        if dp1_seed is None:
+            raise InputError(
+                f"Polymer pool '{label}': could not construct the declared "
+                f"capped DP=1 chain required as the shared k_unzip "
+                f"destination.")
+        dp1_seed.label = f"{poly_obj.label}_dp1"
+        dp1_spc, _ = rmg.reaction_model.make_new_species(dp1_seed, reactive=True)
+        dp1_spc.props['explicit_dp_origin'] = (poly_obj.label, 1)
+        if dp1_spc not in rmg.initial_species:
+            rmg.initial_species.append(dp1_spc)
+        species_dict[dp1_spc.label] = dp1_spc
+        poly_obj.shared_unzip_dp1_species = dp1_spc
+
     # 4d. Radical-homolysis end-radical daughter pools (Stage 1, adjudicated
     #     round 66): when the k_homolysis kernel is enabled, BOTH daughter
     #     pools ({label}_rad_primary_end / {label}_rad_secondary_end) are
