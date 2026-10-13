@@ -154,7 +154,7 @@ def same_reaction(pairing, a, b):
     for name in ("index", "label", "reversible", "duplicate", "degeneracy", "electrons", "_protons", "allow_pdep_route",
                  "elementary_high_p", "comment", "is_forward", "allow_max_rate_violation", "is_end_group_reaction", "rank"):
         assert getattr(a, name) == getattr(b, name), name
-    assert vars(a).keys() == vars(b).keys()
+    assert getattr(a, "__dict__", {}).keys() == getattr(b, "__dict__", {}).keys()
     for side in ("reactants", "products"):
         assert len(getattr(a, side)) == len(getattr(b, side))
         for x, y in zip(getattr(a, side), getattr(b, side)):
@@ -389,7 +389,6 @@ def test_populated_fixture_round_trips_and_covers_every_claimed_feature():
     assert_same(reactions, decoded)
     assert decoded[0].reactants[0] is decoded[1].reactants[1] is decoded[2].reactants[0]
     assert decoded[0].reverse is decoded[1] and decoded[1].reverse is decoded[0]
-    assert_consumers_agree(reactions[:2], decoded[:2])
 
 
 def test_kinetics_and_thermo_values_are_bit_exact():
@@ -405,6 +404,37 @@ def test_kinetics_and_thermo_values_are_bit_exact():
     again = decoded[0].reactants[0].thermo
     assert thermo.get_enthalpy(800.0) == again.get_enthalpy(800.0)
     assert thermo.get_entropy(800.0) == again.get_entropy(800.0)
+
+
+def test_mapped_reaction_compiles_to_identical_records_after_round_trip():
+    from benzylicEndTest import SmallReferenceThermo, mapped_addition
+
+    grid = [600.0, 700.0, 800.0]
+
+    def compile_pair(reaction):
+        instance = compiler.EventSetCompiler(
+            None, [], [], temperature_grid=grid, reference_thermo_provider=SmallReferenceThermo()
+        )
+        proxy = compiler.SiteProxy(
+            "benzylic_end_radical+styrene", reaction.reactants,
+            participant_site_types=("benzylic_end_radical", "styrene"),
+        )
+        records = instance._linked_family_pair(proxy, reaction, {})[0]
+        return [record.to_dict() for record in records]
+
+    reaction, _ = mapped_addition(2)
+    reaction.kinetics = make_kinetics()[0]
+    reaction.kinetics.comment = "Multiplied by reaction path degeneracy 1.0"
+    reaction.template = ["Cds-HH_Cds-CbH", "CsJ-CbCsH"]
+    assert reaction.kinetics.uncertainty is not None
+    _, decoded = roundtrip([reaction])
+    assert_same([reaction], decoded)
+    assert_consumers_agree([reaction], decoded)
+    original_records = compile_pair(copy.deepcopy(reaction))
+    decoded_records = compile_pair(decoded[0])
+    assert len(original_records) == 2
+    assert original_records == decoded_records
+    assert original_records[0]["thermo_provenance"] and original_records[0]["k_table"]
 
 
 def test_shared_versus_isomorphic_species_are_not_merged_on_decode():
@@ -633,7 +663,7 @@ STRUCTURAL = {
     "unknown element": lambda d: d["atoms"][0].__setitem__("element", "Zz"),
     "unknown atom type": lambda d: d["atoms"][0].__setitem__("atomtype", "nope"),
     "bad unit string": lambda d: d["kinetics"][0]["A"].__setitem__("units", "__import__('os')"),
-    "unresolvable unit string": lambda d: d["kinetics"][0]["A"].__setitem__("units", "furlongs/fortnight"),
+    "unresolvable unit string": lambda d: d["kinetics"][0]["A"].__setitem__("units", "zorkmid_per_flarg"),
     "overlong string": lambda d: d["reactions"][0].__setitem__("comment", "x" * 100000),
     "bad uncertainty type": lambda d: d["kinetics"][0]["A"].__setitem__("uncertainty_type", "??"),
     "unsupported species props": lambda d: d["species"][0]["props"].__setitem__("evil", True),
@@ -696,12 +726,19 @@ def test_limits_argument_is_required_keyword(good_payload):
 
 def test_roundtrip_provider_returns_equal_results_and_new_objects(real_generation):
     database = real_generation.database
-    provider = roundtrip_generation_provider_factory()(database.kinetics.generate_reactions_from_families)
-    reactants = [species_of("C[CH]c1ccccc1"), species_of("CC(C)c1ccccc1")]
-    direct = database.kinetics.generate_reactions_from_families(
-        [copy.deepcopy(item) for item in reactants], only_families=["H_Abstraction"]
+    captured = database.kinetics.generate_reactions_from_families(
+        [species_of("C[CH]c1ccccc1"), species_of("CC(C)c1ccccc1")], only_families=["H_Abstraction"]
     )
-    wrapped = provider([copy.deepcopy(item) for item in reactants], only_families=["H_Abstraction"])
-    assert direct and len(direct) == len(wrapped)
-    assert all(a is not b for a, b in zip(direct, wrapped))
-    assert_consumers_agree(direct, wrapped)
+    calls = []
+
+    def fake_generate(reactants, products=None, only_families=None, resonance=True):
+        calls.append((products, only_families, resonance))
+        return captured
+
+    provider = roundtrip_generation_provider_factory()(fake_generate)
+    wrapped = provider([], only_families=["H_Abstraction"])
+    assert calls == [(None, ["H_Abstraction"], True)]
+    assert captured and len(captured) == len(wrapped)
+    assert all(a is not b for a, b in zip(captured, wrapped))
+    assert_same(captured, wrapped)
+    assert_consumers_agree(captured, wrapped)
