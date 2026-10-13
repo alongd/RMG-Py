@@ -15,7 +15,15 @@ from pathlib import Path
 
 from rmgpy.kmc.compile import CompileRequest, compile_artifact
 from rmgpy.kmc.compiler import PS_FAMILY_CANDIDATES, PS_PROXY_UNITS
-from rmgpy.kmc.generation_codec import roundtrip_generation_provider_factory
+from rmgpy.kmc.generation_codec import DecodeLimits, roundtrip_generation_provider_factory
+
+# Padded @5 contexts yield single-call payloads of hundreds of MB (about 150 KB
+# per reaction); the library default (256 MiB) is deliberately smaller.
+LIMITS = DecodeLimits(
+    max_bytes=8 << 30, max_tokens=10**10, max_atoms=10**9, max_bonds=10**9,
+    max_molecules=10**8, max_species=10**8, max_reactions=10**8, max_references=10**11,
+    max_kinetics=10**8, max_thermo=10**8,
+)
 
 
 def main() -> None:
@@ -37,7 +45,7 @@ def main() -> None:
             proxy_units=PS_PROXY_UNITS,
         ),
         generation_provider_factory=(
-            roundtrip_generation_provider_factory() if args.mode == "roundtrip" else None
+            roundtrip_generation_provider_factory(LIMITS) if args.mode == "roundtrip" else None
         ),
     )
     print(f"mode={args.mode} artifact={path}")
