@@ -5039,6 +5039,39 @@ def test_gas_h_transfer_into_pristine_proxy_is_stamped_or_refused():
                 or getattr(rev, "polymer_refused", False))
 
 
+def test_product_only_proxy_h_transfer_keeps_existing_archetype_stamp():
+    """I-103 sixth refused shape, pinned guard: a product-only-proxy row with a
+    gas radical on each side that ALREADY carries a nonzero
+    ``polymer_flux_archetype`` is never touched by
+    ``stamp_gas_association_refusal`` (an archetype stamp is a resolved
+    adjudication; the refusal must not overwrite it). The unstamped twin is
+    refused, so the shape really matches and only the stamp spares the row."""
+    from rmgpy.polymer import (Polymer, PolymerFluxArchetype,
+                               stamp_gas_association_refusal)
+    from rmgpy.species import Species
+    from rmgpy.molecule import Molecule
+    from rmgpy.reaction import Reaction
+    pool = Polymer(label="PE", monomer="[CH2][CH2]",
+                   Mn=5000.0, Mw=8000.0, initial_mass=1.0)
+
+    def _row():
+        closed = Species(molecule=[Molecule().from_smiles("CC1CC1")])
+        rad_in = Species(molecule=[Molecule().from_smiles("CC[CH]CCC")])
+        rad_out = Species(molecule=[Molecule().from_smiles("C[C]1CC1")])
+        return Reaction(reactants=[closed, rad_in], products=[rad_out, pool],
+                        reversible=True)
+
+    unstamped = _row()
+    stamp_gas_association_refusal(unstamped)
+    assert unstamped.polymer_refused is True       # shape matches
+
+    stamped = _row()
+    stamped.polymer_flux_archetype = int(PolymerFluxArchetype.SAME_POOL)
+    stamp_gas_association_refusal(stamped)
+    assert not getattr(stamped, "polymer_refused", False)
+    assert stamped.polymer_flux_archetype == int(PolymerFluxArchetype.SAME_POOL)
+
+
 def test_gas_association_refusal_does_not_overwrite_existing_refusal_reason():
     """A row already refused by the item-18 detector (e.g. qssa-invalid,
     ``polymer_refused_accumulating is True``) that ALSO matches the
@@ -10097,3 +10130,48 @@ class TestHLossDaughterIsStructural:
                 ('[CH2]CCCCC', 'C[CH]CCCC', 'CC[CH]CCC')]
         bases, n = self._bases(phase, proxy, mols)
         assert bases == {f'D{i}' for i in range(n)}
+
+
+def _flip_kekule(mol):
+    """Copy of ``mol`` with every ring bond order toggled 1<->2 (the other
+    Kekule form of each aromatic ring)."""
+    flipped = mol.copy(deep=True)
+    for ring in flipped.get_smallest_set_of_smallest_rings():
+        for i in range(len(ring)):
+            bond = flipped.get_bond(ring[i], ring[(i + 1) % len(ring)])
+            bond.order = 2.0 if bond.order == 1.0 else 1.0
+    flipped.update()
+    return flipped
+
+
+def test_h_loss_daughter_structural_check_spans_kekule_forms():
+    """``is_h_loss_radical_daughter`` compares the saturated daughter and the
+    proxy across resonance structures of BOTH. A daughter drawn in the other
+    Kekule form of an ortho-disubstituted ring saturates to a graph that is
+    NOT isomorphic to the proxy's stored form (checked below), so only the
+    resonance lists make it a daughter. The negative control (different
+    skeleton) stays False.
+
+    Polystyrene: monosubstituted rings are Kekule-symmetric under ring
+    reflection, so the flipped PS daughter is plain-isomorphic to the proxy
+    and the resonance step is not load-bearing for PS; it is asserted for
+    completeness. The ortho case is what actually pins the resonance step."""
+    from rmgpy.molecule import Molecule
+    from rmgpy.polymer import is_h_loss_radical_daughter
+
+    # PS: still a daughter (does not exercise the resonance lists).
+    ps_proxy = Molecule().from_smiles("CC(C1=CC=CC=C1)CC(C)C1=CC=CC=C1")
+    ps_daughter = Molecule().from_smiles("C[C](C1=CC=CC=C1)CC(C)C1=CC=CC=C1")
+    assert is_h_loss_radical_daughter(_flip_kekule(ps_daughter), [ps_proxy])
+
+    # Ortho-disubstituted aromatic proxy: the flipped Kekule form differs.
+    proxy = Molecule().from_smiles("CCC1=CC=CC=C1CC")
+    daughter = _flip_kekule(Molecule().from_smiles("C[CH]C1=CC=CC=C1CC"))
+    sat = daughter.copy(deep=True)
+    sat.saturate_radicals()
+    sat.update()
+    assert not sat.is_isomorphic(proxy)   # premise: resonance is required
+    assert is_h_loss_radical_daughter(daughter, [proxy])
+    # negative control: same composition class but a different skeleton
+    other = Molecule().from_smiles("C[CH]CC1=CC=CC=C1C")
+    assert not is_h_loss_radical_daughter(other, [proxy])

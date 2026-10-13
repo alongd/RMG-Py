@@ -423,3 +423,48 @@ class TestSelectBathGas:
         core = [Species(label='C2H4', smiles='C=C')] + self._moment_dummies('PS')
         with pytest.raises(PressureDependenceError):
             select_bath_gas(core)
+
+
+class TestPDepNetworkBathGasSelection:
+    """``PDepNetwork.update`` must build ``bath_gas`` through ``select_bath_gas``."""
+
+    def test_update_excludes_moment_pseudo_species_from_bath_gas(self, monkeypatch):
+        from types import SimpleNamespace
+        from rmgpy.quantity import Quantity
+
+        reactive = Species(label='H', smiles='[H]')  # atomic: no modes needed
+        reactive.conformer = Conformer(E0=(0.0, 'kJ/mol'))
+        n2 = Species(label='N2', reactive=False)
+        ar = Species(label='Ar', reactive=False)
+        dummy = Species(label='PS_mu0', reactive=False)
+        dummy.is_moment_dummy = True
+        core = [reactive, dummy, n2, ar]
+
+        network = PDepNetwork(index=1, source=[reactive])
+        network.isomers = [Configuration(reactive)]
+        network.path_reactions = []
+        network.explored = []
+        network.valid = False
+
+        class _Stop(Exception):
+            pass
+
+        def _stop(*args, **kwargs):
+            raise _Stop
+
+        monkeypatch.setattr(network, 'update_configurations', lambda rm: None)
+        monkeypatch.setattr(network, 'initialize', _stop)
+        job = SimpleNamespace(
+            Tmin=Quantity(300.0, 'K'), Tmax=Quantity(2000.0, 'K'),
+            Pmin=Quantity(0.01, 'bar'), Pmax=Quantity(100.0, 'bar'),
+            Tlist=Quantity([300.0, 2000.0], 'K'), Plist=Quantity([0.01, 100.0], 'bar'),
+            maximum_grain_size=None, minimum_grain_count=0, method='modified strong collision',
+            interpolation_model=('chebyshev', 6, 4), active_j_rotor=True,
+            active_k_rotor=True, rmgmode=True, output_file=None)
+        reaction_model = SimpleNamespace(core=SimpleNamespace(species=core))
+
+        with pytest.raises(_Stop):
+            network.update(reaction_model, job)
+        assert set(network.bath_gas) == {n2, ar}
+        assert dummy not in network.bath_gas
+        assert all(w == pytest.approx(0.5) for w in network.bath_gas.values())
