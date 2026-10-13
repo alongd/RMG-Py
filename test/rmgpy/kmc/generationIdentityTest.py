@@ -726,3 +726,45 @@ def test_rules_holding_reactions_after_rate_rule_preparation_are_fingerprintable
     assert first == gi.family_content_fingerprint(family)
     entry.item.products = [species("CCC")]
     assert gi.family_content_fingerprint(family) != first
+
+
+def _raw_envelope(payload_literal=b'"p"', digest=b"0" * 64):
+    return (
+        b'{"payload":' + payload_literal + b',"payload_sha256":"' + digest + b'","producer_identity":"'
+        + PRODUCER.encode() + b'","request_sha":"' + REQUEST_A.encode() + b'","schema_version":1}'
+    )
+
+
+def test_envelope_bytes_default_cap_is_a_named_64_mib_constant():
+    assert gi.DEFAULT_MAX_ENVELOPE_BYTES == 64 << 20
+    assert gi.envelope_from_bytes.__kwdefaults__["max_bytes"] == gi.DEFAULT_MAX_ENVELOPE_BYTES
+    with pytest.raises(gi.EnvelopeError):
+        gi.envelope_from_bytes(b" " * 100, max_bytes=50)
+
+
+def test_envelope_bytes_are_bounded_before_json_loads_allocates(monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("json.loads reached with an unbounded document")
+
+    monkeypatch.setattr(gi.json, "loads", forbidden)
+    deep = b"[" * 100000 + b"]" * 100000
+    nested_object = b'{"payload":' + b'{"a":' * 50 + b"1" + b"}" * 50 + b"}"
+    many_keys = b"{" + b",".join(b'"k%d":1' % i for i in range(5000)) + b"}"
+    for bad in (deep, nested_object, many_keys):
+        with pytest.raises(gi.EnvelopeError):
+            gi.envelope_from_bytes(bad)
+
+
+def test_a_well_formed_envelope_still_passes_the_preflight():
+    envelope = gi.build_envelope(REQUEST_A, PRODUCER, b"x" * 100000)
+    assert gi.envelope_from_bytes(gi.envelope_to_bytes(envelope)) == envelope
+
+
+def test_lone_surrogate_in_an_envelope_string_raises_envelope_error_not_unicode_error():
+    parsed = gi.envelope_from_bytes(_raw_envelope(b'"\\ud800"'))
+    with pytest.raises(gi.EnvelopeError):
+        gi.verify_envelope(parsed, request_sha=REQUEST_A, producer_identity=PRODUCER)
+    for field in ("request_sha", "producer_identity", "payload_sha256"):
+        bad = dict(gi.build_envelope(REQUEST_A, PRODUCER, b"p"), **{field: "\ud800" * 64})
+        with pytest.raises(gi.EnvelopeError):
+            gi.verify_envelope(bad, request_sha=REQUEST_A, producer_identity=PRODUCER)
