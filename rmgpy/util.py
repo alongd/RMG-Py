@@ -28,12 +28,14 @@
 ###############################################################################
 
 import argparse
+import errno
 import logging
 import os.path
 import re
+import secrets
 import shutil
+import stat
 import time
-import tempfile
 from functools import wraps
 
 
@@ -400,8 +402,14 @@ def write_files_atomically(entries):
     split detectable by readers; this function does not lock other writers.
     Only this invocation's temporary files and backups are removed on failure.
     """
-    entries = list(entries)
-    destinations = [os.path.realpath(os.path.abspath(path)) for path, _ in entries]
+    with _AtomicTemporaryFiles() as owned_temporaries:
+        _write_files_atomically_owned(entries, owned_temporaries)
+
+
+def _write_files_atomically_owned(entries, owned_temporaries):
+    """Implement atomic writes inside a scope which owns all temporary names."""
+    entries = [(_resolve_atomic_destination(path), content) for path, content in entries]
+    destinations = [path for path, _ in entries]
     from rmgpy.exceptions import SpeciesIdentityError
     if len(set(destinations)) != len(destinations):
         raise SpeciesIdentityError('Output destinations alias the same file: {0}.'.format(destinations))
@@ -412,44 +420,174 @@ def write_files_atomically(entries):
     staged, backups, replaced = [], {}, []
     try:
         for path, content in entries:
-            path = os.path.abspath(path)
             directory = os.path.dirname(path)
             os.makedirs(directory, exist_ok=True)
-            fd, temporary = tempfile.mkstemp(prefix='.' + os.path.basename(path) + '.', suffix='.tmp', dir=directory)
-            # Recreate our reserved random path using the kernel's normal umask.
-            # O_EXCL prevents overwriting anything created in the intervening window.
-            os.close(fd)
-            os.unlink(temporary)
-            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+            target_stat = _validate_atomic_destination(path)
+            rendered = content.encode('utf-8')
+            temporary = owned_temporaries.new_path(directory, '.tmp')
             staged.append((temporary, path, content))
-            with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-                stream.write(content)
-            if os.path.exists(path):
-                fd, backup = tempfile.mkstemp(prefix='.' + os.path.basename(path) + '.', suffix='.bak', dir=directory)
-                os.close(fd)
+            _write_staged_bytes(temporary, rendered, target_stat is not None)
+            if target_stat is not None:
+                _copy_file_metadata(path, temporary, target_stat)
+                backup = owned_temporaries.new_path(directory, '.bak')
                 backups[path] = backup
                 shutil.copy2(path, backup)
-                shutil.copymode(path, temporary)
+                _copy_file_metadata(path, backup, target_stat)
         for temporary, path, content in staged:
-            os.replace(temporary, path)
             replaced.append((path, content))
+            os.replace(temporary, path)
     except BaseException:
         for path, content in reversed(replaced):
             # Do not overwrite another writer's completed generation during rollback.
-            with open(path, encoding='utf-8') as stream:
-                still_ours = stream.read() == content
+            try:
+                with open(path, encoding='utf-8') as stream:
+                    still_ours = stream.read() == content
+            except BaseException:
+                continue
             if not still_ours:
                 continue
-            if path in backups:
-                os.replace(backups[path], path)
-                del backups[path]
-            else:
-                os.unlink(path)
+            try:
+                if path in backups:
+                    os.replace(backups[path], path)
+                    del backups[path]
+                else:
+                    os.unlink(path)
+            except BaseException:
+                pass
         raise
-    finally:
-        for temporary in [item[0] for item in staged] + list(backups.values()):
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+
+
+class _AtomicTemporaryFiles:
+    """Own staging names from allocation until installation or cleanup."""
+
+    def __init__(self):
+        self.paths = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception, traceback):
+        self.cleanup()
+
+    def new_path(self, directory, suffix):
+        path = _new_atomic_path(directory, suffix)
+        self.paths.append(path)
+        return path
+
+    def cleanup(self):
+        for path in self.paths:
+            _unlink_atomic_temporary(path)
+        self.paths.clear()
+
+    def __del__(self):
+        self.cleanup()
+
+
+def _new_atomic_path(directory, suffix):
+    """Return a short, absent staging name without touching the filesystem."""
+    for _ in range(100):
+        path = os.path.join(directory, '.rmg-' + secrets.token_hex(8) + suffix)
+        if not os.path.lexists(path):
+            return path
+    raise FileExistsError(errno.EEXIST, "Could not allocate an atomic output name", directory)
+
+
+def _write_staged_bytes(path, rendered, preserve_metadata):
+    """Create and completely close one staging file, preserving write errors."""
+    stream = None
+
+    def create_with_private_mode(name, flags):
+        return os.open(name, flags | os.O_EXCL, 0o600)
+
+    try:
+        opener = create_with_private_mode if preserve_metadata else None
+        stream = open(path, 'xb', opener=opener)
+        written = stream.write(rendered)
+        if written != len(rendered):
+            raise OSError(errno.EIO, "Incomplete write to staged output", path)
+        closing_stream = stream
+        stream = None
+        closing_stream.close()
+    except BaseException:
+        if stream is not None:
+            try:
+                stream.close()
+            except BaseException:
+                pass
+        raise
+
+
+def _unlink_atomic_temporary(path):
+    """Best-effort cleanup which cannot replace the active exception."""
+    try:
+        os.unlink(path)
+    except (FileNotFoundError, TypeError):
+        pass
+    except BaseException:
+        pass
+
+
+def _copy_file_metadata(source, destination, source_stat=None):
+    """Copy ownership, mode, ACL, and extended attributes to a staged file."""
+    source_stat = source_stat or os.stat(source)
+    try:
+        os.chown(destination, source_stat.st_uid, source_stat.st_gid)
+    except PermissionError:
+        destination_stat = os.stat(destination)
+        if (destination_stat.st_uid, destination_stat.st_gid) != (source_stat.st_uid, source_stat.st_gid):
+            raise
+
+    source_attributes = {
+        name: os.getxattr(source, name)
+        for name in os.listxattr(source)
+    }
+    for name in os.listxattr(destination):
+        if name not in source_attributes:
+            os.removexattr(destination, name)
+    for name, value in source_attributes.items():
+        os.setxattr(destination, name, value)
+    os.chmod(destination, stat.S_IMODE(source_stat.st_mode))
+
+    destination_stat = os.stat(destination)
+    destination_attributes = {
+        name: os.getxattr(destination, name)
+        for name in os.listxattr(destination)
+    }
+    if (
+        (destination_stat.st_uid, destination_stat.st_gid) != (source_stat.st_uid, source_stat.st_gid)
+        or stat.S_IMODE(destination_stat.st_mode) != stat.S_IMODE(source_stat.st_mode)
+        or destination_attributes != source_attributes
+    ):
+        raise OSError(errno.EIO, "Staged output did not retain required filesystem metadata", destination)
+
+
+def _validate_atomic_destination(path):
+    """Return metadata for a replaceable regular file, or ``None`` if absent."""
+    if not os.path.exists(path):
+        return None
+    target_stat = os.stat(path)
+    if not stat.S_ISREG(target_stat.st_mode):
+        raise OSError(errno.EINVAL, "Existing output is not a regular file", path)
+    if target_stat.st_nlink > 1:
+        raise OSError(errno.EMLINK, "Existing output has multiple hard links", path)
+    if not os.access(path, os.W_OK):
+        raise PermissionError(errno.EACCES, "Existing output file is not writable", path)
+    return target_stat
+
+
+def _resolve_atomic_destination(path):
+    """Resolve every symlink, permitting only an absent final destination."""
+    if os.path.basename(path) == "":
+        raise NotADirectoryError(errno.ENOTDIR, "Invalid file path", path)
+    absolute = os.path.abspath(path)
+    try:
+        return os.path.realpath(absolute, strict=True)
+    except FileNotFoundError:
+        return os.path.realpath(absolute, strict=False)
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise OSError(errno.ELOOP, "Destination contains an unresolved symbolic-link loop", path) from error
+        raise
 
 
 _GENERATION_MARKER = 'RMG-PAIR-GENERATION'

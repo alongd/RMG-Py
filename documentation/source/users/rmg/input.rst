@@ -170,6 +170,11 @@ is not the default.::
 
 	kineticsDepositories = 'all'
 
+Each kinetics depository list entry must be a non-empty string. The special
+values ``'all'`` and ``'default'`` are whole-field directives and are refused
+inside lists. ``adsorptionGroups`` must be a non-empty string naming the
+adsorption group library to load.
+
 If two independently sourced depository entries provide kinetics for the same
 oriented reaction, including both is a fatal ambiguity: RMG refuses to rank the
 sources by name, load order, rank, uncertainty, or numerical value.  Resolve

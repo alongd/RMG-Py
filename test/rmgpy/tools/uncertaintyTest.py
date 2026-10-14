@@ -31,10 +31,58 @@ import os
 import copy
 
 import numpy as np
+import pytest
 
 import rmgpy
 from rmgpy.data.rmg import RMGDatabase
+from rmgpy.exceptions import InputError
 from rmgpy.tools.uncertainty import Uncertainty
+
+
+def _record_uncertainty_database_load(monkeypatch, tmp_path, mutate=False):
+    class RecordingDatabase:
+        def load(self, *args, **kwargs):
+            self.load_kwargs = kwargs
+            if mutate:
+                kwargs["kinetics_depositories"].append("training")
+
+        kinetics = type("Kinetics", (), {"families": {}})()
+        thermo = object()
+
+    database = RecordingDatabase()
+    monkeypatch.setattr("rmgpy.data.rmg.RMGDatabase", lambda: database)
+    monkeypatch.setitem(rmgpy.settings, "database.directory", str(tmp_path))
+    uncertainty = Uncertainty(output_directory=str(tmp_path))
+    return uncertainty, database
+
+
+def test_load_database_does_not_mutate_depository_selection(monkeypatch, tmp_path):
+    """The uncertainty API protects its caller from loader-side list mutation."""
+    uncertainty, database = _record_uncertainty_database_load(monkeypatch, tmp_path, mutate=True)
+    selection = ["NIST"]
+
+    uncertainty.load_database(kinetics_depositories=selection)
+
+    assert selection == ["NIST"]
+    assert database.load_kwargs["kinetics_depositories"] == ["NIST", "training"]
+
+
+@pytest.mark.parametrize("value", [["all"], ["default"], [None], [[]], [1], [""]])
+def test_load_database_rejects_invalid_depository_lists(value, monkeypatch, tmp_path):
+    """The uncertainty API uses the same list validation as input readers."""
+    uncertainty, _ = _record_uncertainty_database_load(monkeypatch, tmp_path)
+
+    with pytest.raises(InputError):
+        uncertainty.load_database(kinetics_depositories=value)
+
+
+def test_load_database_keeps_none_as_training_default(monkeypatch, tmp_path):
+    """None remains the public shorthand for the training depository."""
+    uncertainty, database = _record_uncertainty_database_load(monkeypatch, tmp_path)
+
+    uncertainty.load_database()
+
+    assert database.load_kwargs["kinetics_depositories"] == ["training"]
 
 
 class TestUncertainty:

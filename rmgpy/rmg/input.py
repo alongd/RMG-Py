@@ -27,6 +27,8 @@
 #                                                                             #
 ###############################################################################
 
+import errno
+import io
 import logging
 import os
 from collections.abc import Mapping
@@ -70,13 +72,56 @@ from rmgpy.solver.termination import (
     TerminationTime,
 )
 from rmgpy.data.auto_database import AUTO, PAH_LIBS
-from rmgpy.util import as_list
+from rmgpy.util import (
+    _AtomicTemporaryFiles,
+    _copy_file_metadata,
+    _resolve_atomic_destination,
+    _validate_atomic_destination,
+    _write_staged_bytes,
+    as_list,
+)
 
 ################################################################################
 
 rmg = None
 species_dict = {}
 _input_file_directory = None
+
+
+def _write_input_file_atomically(path, rendered):
+    """Replace an input deck only after its complete byte payload is staged."""
+    with _AtomicTemporaryFiles() as owned_temporaries:
+        if os.path.basename(path) == "":
+            raise NotADirectoryError(errno.ENOTDIR, "Invalid file path", path)
+        target = _resolve_atomic_destination(path)
+        target_stat = _validate_atomic_destination(target)
+        target_exists = target_stat is not None
+
+        directory = os.path.dirname(target)
+        temporary = owned_temporaries.new_path(directory, ".tmp")
+        _write_staged_bytes(temporary, rendered, target_exists)
+        if target_exists:
+            _copy_file_metadata(target, temporary, target_stat)
+        os.replace(temporary, target)
+
+
+def normalize_kinetics_depositories(kinetics_depositories):
+    """Validate the input-file depository directive shared by RMG and Arkane."""
+    if isinstance(kinetics_depositories, str):
+        if kinetics_depositories == "default":
+            return ["training"]
+        if kinetics_depositories == "all":
+            return "all"
+    if not isinstance(kinetics_depositories, list):
+        raise InputError("kineticsDepositories should be either 'default', 'all', or a list of names eg. "
+                         "['training','PrIMe'].")
+    reserved = [name for name in ("all", "default") if name in kinetics_depositories]
+    if reserved:
+        raise InputError("kineticsDepositories may not contain {} inside a list; use it as a whole-field value."
+                         .format(reserved))
+    if any(not isinstance(name, str) or not name for name in kinetics_depositories):
+        raise InputError("kineticsDepositories list entries must be non-empty strings.")
+    return kinetics_depositories
 
 
 def database(
@@ -90,6 +135,10 @@ def database(
         kineticsEstimator='rate rules',
         adsorptionGroups='adsorptionPt111'
 ):
+    if not isinstance(adsorptionGroups, str) or not adsorptionGroups:
+        raise InputError("adsorptionGroups should be a non-empty string naming an adsorption groups database. "
+                         "Got {!r}.".format(adsorptionGroups))
+
     # This function just stores the information about the database to be loaded
     # We don't actually load the database until after we're finished reading
     # the input file.
@@ -153,17 +202,7 @@ def database(
     rmg.statmech_libraries = as_list(frequenciesLibraries, default=[])
     rmg.kinetics_estimator = kineticsEstimator
 
-    if kineticsDepositories == 'default':
-        rmg.kinetics_depositories = ['training']
-    elif kineticsDepositories == 'all':
-        # None is the legacy spelling for the training-only default.  Preserve
-        # the public 'all' directive through to KineticsFamily.load instead.
-        rmg.kinetics_depositories = 'all'
-    else:
-        if not isinstance(kineticsDepositories, list):
-            raise InputError("kinetics_depositories should be either 'default', 'all', or a list of names eg. "
-                             "['training','PrIMe'].")
-        rmg.kinetics_depositories = kineticsDepositories
+    rmg.kinetics_depositories = normalize_kinetics_depositories(kineticsDepositories)
 
     if kineticsFamilies in ('default', 'all', 'none', 'auto'):
         rmg.kinetics_families = kineticsFamilies
@@ -3410,7 +3449,9 @@ def save_input_file(path, rmg):
         references.extend(getattr(system, 'sensitive_species', None) or [])
         refuse_resolved_species(references, 'RMG saved input references', allow_manifold=True)
 
-    f = open(path, 'w')
+    # Render the complete deck before opening the destination. Any validation or
+    # serialization refusal must leave an existing input file untouched.
+    f = io.StringIO()
 
     # Databases
     f.write('database(\n')
@@ -3421,7 +3462,11 @@ def save_input_file(path, rmg):
     # database() takes kineticsDepositories (camelCase).  None is the legacy internal
     # spelling for the training-only default; writing it as 'all' would broaden the
     # scientific inputs when the saved deck is reloaded.
-    kinetics_depositories = 'default' if rmg.kinetics_depositories is None else rmg.kinetics_depositories
+    kinetics_depositories = rmg.kinetics_depositories
+    if kinetics_depositories is None:
+        kinetics_depositories = 'default'
+    else:
+        kinetics_depositories = normalize_kinetics_depositories(kinetics_depositories)
     f.write('    kineticsDepositories = {0!r},\n'.format(kinetics_depositories))
     f.write('    kineticsFamilies = {0!r},\n'.format(rmg.kinetics_families))
     f.write('    kineticsEstimator = {0!r},\n'.format(rmg.kinetics_estimator))
@@ -3673,7 +3718,8 @@ def save_input_file(path, rmg):
         f.write('    generateCanteraYAML2 = {0},\n'.format(_writer_config_to_input(rmg.cantera2_writer_config)))
     f.write(')\n\n')
 
-    f.close()
+    rendered = f.getvalue().encode('utf-8')
+    _write_input_file_atomically(path, rendered)
 
 
 def get_input(name):

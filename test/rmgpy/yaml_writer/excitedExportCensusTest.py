@@ -913,6 +913,10 @@ class TestExcitedExportSiteCensus:
     def test_complete_static_census(self):
         assert not violations(ROOT,POLICY)
 
+    def test_kinetics_family_load_locator_matches_source(self):
+        key = 'rmgpy/data/kinetics/family.py:KineticsFamily.load'
+        assert POLICY['search_exclusions'][key]['line'] == FOUND[key]['line']
+
     def test_wall_manifest_with_resolved_species_is_written_after_identity_resolution(self, tmp_path):
         from rmgpy.rmg.listener import SimulationProfileWriter
 

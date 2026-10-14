@@ -2375,7 +2375,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "2d51ebc3ddedba33a75bb28c646565ea553ad512822129f69d9b299d2de1321e"
+      "source_sha256": "c61e0a7b0a86e9415037f50d20a06ec7ae3003c689c8817e50fe1779cb89dab1"
     },
     "arkane/input.py:explorer": {
       "verdict": "carried",
@@ -22354,7 +22354,7 @@
       "evidence": [
         "test/rmgpy/rmg/inputTest.py"
       ],
-      "source_sha256": "991e6ab7d2de2519ea82f36515ff05d1e2f9228982c7b7e6799d4d86b99814ab"
+      "source_sha256": "ef806daf1ce6dbe5223a32ea5702e1cacf9c706a3e3750e0d0263b1a502b4328"
     },
     "rmgpy/rmg/input.py:forbidden": {
       "verdict": "carried",
@@ -22452,6 +22452,23 @@
       ],
       "source_sha256": "7126f714f3e019573381aa36d1b0a5139a95d6874dc148835940d6d5561a9b28"
     },
+    "rmgpy/rmg/input.py:_write_input_file_atomically": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages already-rendered input bytes and preserves destination filesystem metadata; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmg/mainTest.py"
+      ],
+      "source_sha256": "55dff804c6ee60096ec88f0a134a0ea64ac6bdba3a0ec3a5fb381576ecaea3c2"
+    },
+    "rmgpy/rmg/input.py:normalize_kinetics_depositories": {
+      "verdict": "carried",
+      "reason": "Validates and normalizes configuration tokens only; it does not acquire or transform scientific state data.",
+      "evidence": [
+        "test/rmgpy/rmg/inputTest.py",
+        "test/arkane/arkaneInputTest.py"
+      ],
+      "source_sha256": "40669fcc649c5e3772b025a369fd63765c02b885a962bda1b39388b63b53ae33"
+    },
     "rmgpy/rmg/input.py:options": {
       "verdict": "carried",
       "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
@@ -22519,7 +22536,7 @@
       "source_sha256": "2dc96bde4e914e19e62a59794054a21b03cbe5106311f347db0542a0041e1d1f"
     },
     "rmgpy/rmg/input.py:save_input_file": {
-      "source_sha256": "d23454d3c37424f1771f7ce3c5d5fbbca97e53d80a2b4232ec801f3f2d039c13",
+      "source_sha256": "580a588133667c80c57f19d4ca7838f9288f5c4868f81ea70c5f3da2eef8e76c",
       "verdict": "carried",
       "reason": "The existing supported header-free declaration keeps its original graph and vibrationalManifold DSL line by stripping the marker only from the serialization copy; explicit resolved input remains refused.",
       "evidence": [
@@ -22826,7 +22843,7 @@
       "evidence": [
         "test/rmgpy/rmg/mainTest.py"
       ],
-      "source_sha256": "fdced119b57484cea385c1fedef0b0295a13ba416df06a4c23acebd2265e5c31"
+      "source_sha256": "57089a548c9ec06dde71a0fc852c05b178d4c88c86dbc00ff192d875858118d2"
     },
     "rmgpy/rmg/main.py:RMG.load_input": {
       "verdict": "carried",
@@ -22946,7 +22963,7 @@
       "evidence": [
         "test/rmgpy/rmg/mainTest.py"
       ],
-      "source_sha256": "830b692b72544b677a5889ab09c49abdb7fce4ec41fc1471458e56b1095d6320"
+      "source_sha256": "8e844414a72fc9cc52b5fb08b090e0258d19bad97fe10b349650f389378e1221"
     },
     "rmgpy/rmg/main.py:RMG.save_everything": {
       "verdict": "carried",
@@ -31351,7 +31368,7 @@
       "evidence": [
         "test/rmgpy/tools/uncertaintyTest.py"
       ],
-      "source_sha256": "4a90ec0ada9c585fce23d2a181a7602815a7b8a1613051147e95eb43ddd38764"
+      "source_sha256": "018196cf3621de32d866b4c8d1d7ab9d55438347d7ff538011193df91ba41abb"
     },
     "rmgpy/tools/uncertainty.py:Uncertainty.load_model": {
       "verdict": "carried",
@@ -31647,7 +31664,119 @@
       "evidence": [
         "test/rmgpy/data/kinetics/kineticsTest.py"
       ],
-      "source_sha256": "457eb8bf075ea925bb17d9d16356b2ab25848277dbb5dd4402e445da6bf55a01"
+      "source_sha256": "c6b5c36548870813ae7b68f79851da9de21409c259a5ccf9353577359b7d4abe"
+    },
+    "rmgpy/util.py:_AtomicTemporaryFiles.__del__": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "637f4c1ff8a202c322dfb6013b9fa7da72f21618551deae675ec8f0a0aff6863"
+    },
+    "rmgpy/util.py:_AtomicTemporaryFiles.__enter__": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "15f5a50880cb50e25c084938d8285ecad59f828d50e4b7841da0e275a57fd210"
+    },
+    "rmgpy/util.py:_AtomicTemporaryFiles.__exit__": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "009bb6304081e320ba99967779aa8bfd090a9444a3e4e6fb40de07a9f11beea6"
+    },
+    "rmgpy/util.py:_AtomicTemporaryFiles.__init__": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "bd5a013163879e9a618e9a5e8e83bb51f528e961e46cec6e84cd94ef1c27b2ff"
+    },
+    "rmgpy/util.py:_AtomicTemporaryFiles.cleanup": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "4cccd1f71e386b79e92b84fb14947713f11aba10962773352d773691171aa5b0"
+    },
+    "rmgpy/util.py:_AtomicTemporaryFiles.new_path": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "c1f8cd7aaa6866ae64f6b683a91aff20dcfc46bf469471980ca04ad24b9fa214"
+    },
+    "rmgpy/util.py:_copy_file_metadata": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "8a49483d74ffc5ecb701309d5c3e697cdf36860ad1de2bd1899a148a988a319f"
+    },
+    "rmgpy/util.py:_new_atomic_path": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "a5a1d3a9105fc4353b77fbe895865616b1c1c28fd21e5bf11f6010a970b22670"
+    },
+    "rmgpy/util.py:_resolve_atomic_destination": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "217f5964827de6dbf987fe4d7c72c1e130b396dfa673d9ff234a112f0a2dba04"
+    },
+    "rmgpy/util.py:_unlink_atomic_temporary": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "f65c0077d94a0d0789033ebb535b6ae2098eb9969095b73a2b56d7379f883453"
+    },
+    "rmgpy/util.py:_validate_atomic_destination": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "9c2df24a30118b054454d4ac300581e1a1ba92ed3ff8a64a3bcc319ca14b99b1"
+    },
+    "rmgpy/util.py:_write_files_atomically_owned": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "a9e84aa7f7f95ab28f5aaff8acf5ddd985cfbcf3b65017b246f3fb849d1f9c0d"
+    },
+    "rmgpy/util.py:_write_staged_bytes": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "6c43dfad543397d29a904b67061f7ee0ab2c70bb4502cdeb738310e0a36977a0"
+    },
+    "rmgpy/util.py:_write_staged_bytes.create_with_private_mode": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages, validates, or preserves filesystem metadata for caller-rendered bytes; scientific validation and serialization occur before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/rmgUtilTest.py"
+      ],
+      "source_sha256": "d99cc4293473402d240b81276868b5e16a3ef734374a0a45e6bf573b03ba4327"
     },
     "rmgpy/yaml_cantera1.py:CanteraWriter1.__init__": {
       "verdict": "carried",
