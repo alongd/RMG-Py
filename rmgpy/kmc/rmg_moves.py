@@ -60,7 +60,7 @@ Pinned policies
 ``generate_reactions_from_families`` pipeline) for comparison only.
 """
 
-from collections import Counter, defaultdict
+from collections import Counter, OrderedDict, defaultdict
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, Optional, Sequence, Tuple
 
@@ -229,7 +229,8 @@ class Move:
     ``forms[k]`` the resonance-form index of input reactant ``k``;
     ``labels`` the reacting atoms ``(slot, label, atom id)``; ``mapped`` every
     mapped atom ``(slot, template structure index, template atom index, atom
-    id)``; ``template`` the matched tree node labels (kept moves only);
+    id)``; ``template`` the matched tree node labels (kept and
+    ``unchanged_species`` moves; RMG never reads them for the latter);
     ``products`` the mapped product graph ``((atom id, row), ...)`` in the
     reactant atom-id namespace (None unless the recipe ran; a move forbidden
     on its reactant still carries the product the recipe makes, for
@@ -481,8 +482,12 @@ def _one_move(family, forward, order, form_idx, molecules, structs, maps, struct
     # species / model-growth constraints are OFF (never consulted)
     # -- as _create_reaction
     if same_species_lists(list(structs), products, save_order=family.save_order):
-        return done("unchanged_species", "products are the reactants", products=product_rows,
-                    product_labels=product_labels)
+        # RMG drops the move here (its _create_reaction returns None).  The
+        # template labels are read first, on the reaction _create_reaction
+        # would have built, so a caller can rate the move by its template.
+        template, why = _unchanged_species_template(family, structs, products, forward)
+        return done("unchanged_species", "products are the reactants" + why, template=template,
+                    products=product_rows, product_labels=product_labels)
     rxn = family._create_reaction(list(structs), products, forward)
     if rxn is None:
         if not family.allow_charged_species and any(
@@ -507,6 +512,38 @@ def _one_move(family, forward, order, form_idx, molecules, structs, maps, struct
                 product_labels=product_labels)
 
 
+def _unchanged_species_template(family, structs, products, forward):
+    """Template labels of a move whose products are its reactants: the
+    reaction ``_create_reaction`` builds, minus its same-species refusal, and
+    the label restore + ``get_reaction_template_labels`` of the kept path.
+    Returns (labels or None, reason suffix)."""
+    from rmgpy.data.kinetics.family import TemplateReaction
+    from rmgpy.exceptions import UndeterminableKineticsError
+    rxn = TemplateReaction(reactants=list(structs) if forward else list(products),
+                           products=list(products) if forward else list(structs),
+                           degeneracy=1, reversible=family.reversible, family=family.label,
+                           is_forward=forward, electrons=family.electrons)
+    for key, species_list in zip(["reactants", "products"], [rxn.reactants, rxn.products]):
+        for species in species_list:
+            rxn.labeled_atoms[key] = dict(rxn.labeled_atoms[key], **species.get_all_labeled_atoms())
+    for reactant in rxn.reactants:
+        reactant.clear_labeled_atoms()
+    for lab, atom in rxn.labeled_atoms["reactants"].items():
+        if isinstance(atom, list):
+            for a in atom:
+                a.label = lab
+        else:
+            atom.label = lab
+    try:
+        template = tuple(family.get_reaction_template_labels(rxn))
+    except UndeterminableKineticsError as exc:
+        return None, f"; template undeterminable: {exc}"
+    finally:
+        for struct in structs:
+            struct.clear_labeled_atoms()
+    return template, ""
+
+
 def status_counts(moves: Iterable[Move]) -> Dict[str, int]:
     counts = Counter(m.status for m in moves)
     return {s: counts.get(s, 0) for s in STATUSES}
@@ -515,19 +552,39 @@ def status_counts(moves: Iterable[Move]) -> Dict[str, int]:
 # ---------------------------------------------------------------------------
 # bridge: product identity modulo resonance (RMG resonance + isomorphism)
 # ---------------------------------------------------------------------------
+DEFAULT_KEY_CACHE_ENTRIES = 4096
+
+
+def _aromatic_bonds(molecule) -> int:
+    return sum(1 for bond in molecule.get_all_edges() if bond.is_benzene())
+
+
 class ProductKeys:
-    """Product identity modulo resonance, with a cache.
+    """Product identity modulo resonance, with a bounded cache.
 
     A product component's key is the least integer-keyed signature over the
     reactive forms ``generate_resonance_structures(keep_isomorphic=True)``
-    returns for it (all forms if none is reactive).  Every form generated is
-    cached under the same key (resonance generation is closed over its forms);
-    ``cache=False`` recomputes every time."""
+    returns for it (all forms if none is reactive), generated from its most
+    aromatic form (see ``component``).  Every form generated is cached under
+    the same key; ``cache=False`` recomputes every time.  The cache holds at most
+    ``max_entries`` signatures, least recently used evicted first (a miss only
+    recomputes, so eviction never changes a key)."""
 
-    def __init__(self, cache: bool = True):
+    def __init__(self, cache: bool = True, max_entries: int = DEFAULT_KEY_CACHE_ENTRIES):
+        if isinstance(max_entries, bool) or not isinstance(max_entries, int) or max_entries < 1:
+            raise RmgMovesError(f"max_entries must be a positive integer, got {max_entries!r}")
         self.cache = cache
-        self._known = {}
+        self.max_entries = max_entries
+        self._known = OrderedDict()
         self.computed = 0
+
+    def _remember(self, sig, key):
+        known = self._known
+        if sig in known:
+            known.move_to_end(sig)
+        known[sig] = key
+        while len(known) > self.max_entries:
+            known.popitem(last=False)
 
     def forms(self, rows: Dict[int, Tuple]) -> Tuple[Molecule, ...]:
         mol = molecule_from_rows(rows)
@@ -544,16 +601,31 @@ class ProductKeys:
     def component(self, rows: Dict[int, Tuple]) -> Tuple:
         sig = _signature(rows)
         if self.cache and sig in self._known:
+            self._known.move_to_end(sig)
             return self._known[sig]
         self.computed += 1
         forms = self.forms(rows)
         sigs = [(_signature(molecule_rows(f)), bool(f.reactive)) for f in forms]
+        # Re-root at the most aromatic form.  RMG can return a Kekule input as
+        # a REACTIVE form beside the aromatic one (seen on PS chains: the ring
+        # of a recombined benzylic radical, written in either Kekule pattern),
+        # so the set generated from the input depends on the input; the set
+        # generated from the most aromatic form (least signature among those
+        # with the most 1.5-order bonds) does not.
+        aromatic = max(_aromatic_bonds(f) for f in forms)
+        root = min(s for (s, _r), f in zip(sigs, forms) if _aromatic_bonds(f) == aromatic)
+        seen = list(sigs)
+        if root != sig:
+            rooted = self.forms(dict((r[0], r[1:]) for r in root))
+            sigs = [(_signature(molecule_rows(f)), bool(f.reactive)) for f in rooted]
+            seen += sigs
         reactive = [s for s, r in sigs if r] or [s for s, _r in sigs]
         key = min(reactive)
         if self.cache:
-            self._known[sig] = key
-            for s, _r in sigs:
-                self._known.setdefault(s, key)
+            for s, _r in seen:
+                if s != sig:
+                    self._remember(s, key)
+            self._remember(sig, key)
         return key
 
     def __call__(self, item) -> Tuple:
