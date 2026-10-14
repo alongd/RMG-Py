@@ -370,13 +370,11 @@ def member_weights(channel: Channel, k_record, ssa_multiplier=None, *,
     if channel.size < 1:
         raise ChannelError("a channel without members has no weight")
     ssa = _ssa(channel, ssa_multiplier)
-    out = {}
-    for m in channel.members:
-        # transitions whose mapped product equals this one
-        same = sum(1 for o in channel.members if o == m)
-        out[m] = (Fraction(ssa) * Fraction(k_record) / same if exact
-                  else float(ssa) * float(k_record) / same)
-    return out
+    if exact:
+        w = Fraction(ssa) * Fraction(k_record) / channel.size
+    else:
+        w = float(ssa) * float(k_record) / channel.size
+    return {m: w for m in channel.members}
 
 
 def transition_weight(channel: Channel, k_record, ssa_multiplier=None) -> float:
