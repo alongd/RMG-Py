@@ -411,6 +411,8 @@ def test_padding_off_identity_covers_library_archived_and_ordinary_records(
     ]
     assert ordinary
     assert all("proxy_padding" not in record for record in records)
+    # I-122: bond rewrites are listed by artifact index pair, not by raw atom
+    # id; only the order of bond_ops entries (and so event ids) changed here.
     assert hashlib.sha256(compiler.canonical_json_bytes(artifact)).hexdigest() == (
-        "7d91d831856ef458d1182f8f833f3ba8cfada113784d7d9034e553d9a3f734eb"
+        "83a6c1a0dca10b2bc3c2f1a7a93eb86f1c003d7df8aeb86379186af5cd351829"
     )

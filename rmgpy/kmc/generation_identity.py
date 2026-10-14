@@ -66,6 +66,22 @@ Items the manifests do not (or cannot) pin robustly:
   (``rmgpy.data.rmg.get_db('kinetics')``, ``rmgpy/data/kinetics/common.py``)
   in one path; the family fingerprint covers the database object passed to
   the call, so a different global database is not detected.
+* RMG's process-global atom-id counter.  Ids a request already carries are
+  hashed; ids the generator assigns itself (identical participants, invalid
+  ids) come from the counter and are not.  A replayed result can therefore
+  carry different ids than a fresh run; the compiled artifact does not depend
+  on raw ids (I-122 probe: counter positioned to wrap inside and between
+  participants leaves the artifact bytes unchanged).
+* Heap layout and object addresses (I-122 probe: allocation noise between
+  generator calls leaves the artifact bytes unchanged).
+* Atom ``mapping`` (VF2 scratch): not hashed; the codec refuses a populated
+  one.  ``sorting_label`` and ``terminal`` are hashed although the probe saw no
+  output change from them (over-invalidation over a guess).
+* The order RMG's degeneracy collapse sees its own candidate paths in is a
+  function of the hashed request; it decides which template a mixed-template
+  duplicate set reports and whether the kept path retains reaction labels, so
+  the generator's output (and the artifact) depend on it.  The identity binds
+  the request, so a stored result is the result of that same order.
 """
 
 
@@ -496,6 +512,13 @@ def _atom_state(atom: Any, index: dict[int, int], numbering: _Numbering) -> list
         atom.site,
         atom.morphology,
         _object_state(dict(atom.props)),
+        # Scratch vertex state RMG's matching reads instead of recomputing
+        # (I-122 probe: a stale connectivity value or ignore flag changes or
+        # aborts generation; sorting labels and terminal flags are hashed too).
+        [atom.connectivity1, atom.connectivity2, atom.connectivity3],
+        atom.sorting_label,
+        bool(atom.ignore),
+        bool(atom.terminal),
         [
             [index[id(neighbour)], _object_state(bond.order), index[id(bond.vertex1)]]
             for neighbour, bond in atom.edges.items()
@@ -537,6 +560,9 @@ def participant_state(participant: Any, numbering: Optional[_Numbering] = None) 
             "has_transport_data": participant.transport_data is not None,
             "index": participant.index,
             "is_moment_dummy": participant.is_moment_dummy,
+            # The raw Species flag, not the property (whose getter mutates);
+            # generation propagates it to products (I-122 probe).
+            "is_polymer_proxy": bool(participant._is_polymer_proxy),
             "is_solvent": participant.is_solvent,
             "kind": "Species",
             "label": participant.label,

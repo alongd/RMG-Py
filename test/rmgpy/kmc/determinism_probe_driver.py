@@ -3,7 +3,7 @@
 Run in a fresh interpreter per perturbation; the artifact lands in OUTPUT.
 
     python determinism_probe_driver.py DATABASE OUTPUT PERTURBATION \
-        --families F1,F2 --proxies P1,P2
+        --families F1,F2 --proxies P1,P2      # or --proxies all (full PS set)
 
 Perturbations
 -------------
@@ -78,7 +78,7 @@ def main() -> None:
     args = parser.parse_args()
     perturbation = args.perturbation
     families = tuple(args.families.split(","))
-    wanted = set(args.proxies.split(","))
+    wanted = None if args.proxies == "all" else set(args.proxies.split(","))
     rng = random.Random(args.seed)
     heap = []
 
@@ -89,7 +89,7 @@ def main() -> None:
             set_counter(int(perturbation.split(":")[1]))
         return tuple(
             proxy for proxy in original_proxy_set(*options, **keywords)
-            if proxy.site_type in wanted
+            if wanted is None or proxy.site_type in wanted
         )
 
     compile_module.ps_proxy_set = proxy_set

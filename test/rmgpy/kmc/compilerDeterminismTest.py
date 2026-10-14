@@ -359,16 +359,29 @@ def baseline(tmp_path_factory):
     return _compile(tmp_path_factory.mktemp("baseline"), "baseline", "baseline")
 
 
+def _record_key(record):
+    return (
+        record["family"],
+        record["template"],
+        tuple(record["reactant_graphs"]),
+        tuple(record["product_graphs"]),
+        record["orientation"],
+    )
+
+
 def _differences(expected: bytes, actual: bytes) -> str:
-    first, second = json.loads(expected), json.loads(actual)
+    """Summarize two artifacts by chemistry-keyed records, not by position."""
+    first = {_record_key(record): record for record in json.loads(expected)["records"]}
+    second = {_record_key(record): record for record in json.loads(actual)["records"]}
     fields = {}
-    for record_a, record_b in zip(first["records"], second["records"]):
-        for key in sorted(set(record_a) | set(record_b)):
-            if record_a.get(key) != record_b.get(key):
-                fields[key] = fields.get(key, 0) + 1
+    for key in set(first) & set(second):
+        for name in sorted(set(first[key]) | set(second[key])):
+            if first[key].get(name) != second[key].get(name):
+                fields[name] = fields.get(name, 0) + 1
     return (
         f"sha {hashlib.sha256(expected).hexdigest()[:12]} != "
-        f"{hashlib.sha256(actual).hexdigest()[:12]}; differing record fields {fields}"
+        f"{hashlib.sha256(actual).hexdigest()[:12]}; records only in one: "
+        f"{len(set(first) ^ set(second))}; differing fields of shared records {fields}"
     )
 
 
@@ -420,14 +433,7 @@ def test_reshuffled_degenerate_paths_change_only_what_rmg_itself_returns(baselin
     def keyed(payload):
         records = {}
         for record in json.loads(payload)["records"]:
-            key = (
-                record["family"],
-                record["template"],
-                tuple(record["reactant_graphs"]),
-                tuple(record["product_graphs"]),
-                record["orientation"],
-            )
-            records.setdefault(key, []).append(
+            records.setdefault(_record_key(record), []).append(
                 {name: value for name, value in record.items() if name != "canonical_index"}
             )
         return records
