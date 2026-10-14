@@ -18,6 +18,16 @@ journaled, the edits are written, the components of the union of touched
 components are recomputed, and postconditions (valence per element, symmetric
 adjacency, unchanged atom-id set, canonical component ids) are verified.  Any
 failure replays the journal and leaves the state byte-identical.
+
+Several applies can share one public transaction (``state.transaction()``);
+the journal then accumulates, an exception or ``rollback()`` restores the state
+byte-identically, and ``commit()`` finalizes and bumps ``state.revision`` once.
+
+Identity for caches: ``state_hash()`` is the graph identity (atoms and edges);
+``full_hash()`` also covers the immutable ancestry (origin), which determines
+backbone counts and chain-length observables.  Key caches on ``full_hash()``;
+``revision`` is a monotone commit counter (never decremented, never bumped by
+a rollback) for ordering and staleness checks.
 """
 
 import hashlib
@@ -31,6 +41,9 @@ from rmgpy.molecule.element import PeriodicSystem, get_element
 
 # Stages at which a fault can be injected (test seam of ``MeltState.apply``).
 STAGES = ("after_apply", "after_components", "after_postcheck")
+# Fault stage inside the component install, after the old records are removed
+# and before the new ones are added (so the indexes are half-written).
+INSTALL_STAGE = "during_install"
 
 # Elements whose valence is a closed shell: bond orders + radical electrons +
 # 2 * lone pairs == valence electrons - charge.  Hypervalent elements are not
@@ -149,6 +162,11 @@ class Origin:
         if self.kind not in ("chain", "mobile"):
             raise MeltStateError(f"origin kind must be chain or mobile, got {self.kind!r}")
 
+    @property
+    def is_mobile(self) -> bool:
+        """True for atoms of an initially mobile molecule (``kind == "mobile"``)."""
+        return self.kind == "mobile"
+
 
 def _check_valence(atom_id: int, node: Node):
     if node.element not in SUPPORTED_ELEMENTS:
@@ -226,17 +244,27 @@ class ComponentIndex:
     def radical_count(self, cid: int) -> int:
         return self._rec[cid].radicals
 
-    def mass(self, cid: int) -> Fraction:
-        """Exact molecular mass (kg/mol) from the isotope-aware composition."""
+    def mass_kg_per_mol(self, cid: int) -> Fraction:
+        """Exact molecular mass in kg/mol (RMG's element-mass unit), isotope-aware."""
         return self._rec[cid].mass
+
+    def molar_mass_g_mol(self, cid: int) -> Fraction:
+        """Exact molar mass in g/mol (the unit downstream polymer code uses)."""
+        return self._rec[cid].mass * 1000
+
+    def mass(self, cid: int) -> Fraction:
+        """Alias of ``mass_kg_per_mol`` (kg/mol); prefer the explicit names."""
+        return self.mass_kg_per_mol(cid)
 
     def backbone_count(self, cid: int) -> int:
         return self._rec[cid].backbone
 
     # mutation (internal)
-    def _install(self, remove: Iterable[int], records: Iterable[_Record]):
+    def _install(self, remove: Iterable[int], records: Iterable[_Record], fault=None):
         for cid in remove:
             del self._rec[cid]
+        if fault:
+            fault(INSTALL_STAGE)
         for record in records:
             cid = record.atoms[0]
             self._rec[cid] = record
@@ -314,15 +342,97 @@ _FIELD_OPS = {SetRadical: "radical", SetCharge: "charge", SetLonePairs: "lone_pa
 
 
 class Journal:
-    """Record of one transaction: the full mutation support and old membership."""
+    """Record of a transaction: the full mutation support and old membership.
 
-    def __init__(self, edits):
-        self.edits = edits
+    ``status`` is ``open``, ``committed`` or ``rolled_back``.  A committed or
+    rolled-back journal can never be rolled back again.
+    """
+
+    def __init__(self, edits=(), state=None):
+        self.edits = tuple(edits)
         self.old_nodes: Dict[int, Node] = {}
         self.old_components: Tuple[Tuple[int, Tuple[int, ...]], ...] = ()
         self.new_components: Tuple[Tuple[int, Tuple[int, ...]], ...] = ()
+        self.status = "open"
+        self.revision: Optional[int] = None  # state revision after the commit
+        self.radical_delta = 0
+        self._state = state
         self._old_records: Dict[int, _Record] = {}
-        self._installed = False
+        self._affected: set = set()
+        self._installing = False  # set BEFORE the component indexes are mutated
+
+
+class Transaction:
+    """Several applies sharing one journal; commit finalizes, rollback undoes all.
+
+    Use ``with state.transaction() as tx:`` (commit on success, rollback on any
+    exception) or ``tx = state.begin()`` with explicit ``commit()`` /
+    ``rollback()``.  Nested transactions are refused.
+    """
+
+    def __init__(self, state, expected_radical_delta=None):
+        self.state = state
+        self.expected_radical_delta = expected_radical_delta
+        self.journal = Journal((), state)
+        self.journal.base_revision = state._revision
+        self.open = True
+
+    def _require_open(self):
+        if not self.open:
+            raise MeltStateError(f"transaction is {self.journal.status}, not open")
+
+    def apply(self, edits, *, fault=None, expected_radical_delta=None) -> Journal:
+        """Apply an edit set inside the transaction (atomic on its own: a failed
+        apply undoes only itself and raises; the transaction stays open)."""
+        self._require_open()
+        return self.state._run(edits, fault, expected_radical_delta, self)
+
+    def _absorb(self, call: Journal):
+        j = self.journal
+        for i, node in call.old_nodes.items():
+            j.old_nodes.setdefault(i, node)
+        for cid, record in call._old_records.items():
+            if record.atoms[0] not in j._affected:
+                j._old_records[cid] = record
+        j._affected |= call._affected
+        j._installing = True
+        j.edits += call.edits
+        j.radical_delta += call.radical_delta
+        j.old_components = tuple((c, r.atoms) for c, r in sorted(j._old_records.items()))
+        rec = self.state.components._rec
+        j.new_components = tuple((a, rec[a].atoms) for a in sorted(j._affected) if a in rec)
+
+    def commit(self) -> Journal:
+        self._require_open()
+        j = self.journal
+        if self.expected_radical_delta is not None and j.radical_delta != self.expected_radical_delta:
+            self.rollback()
+            raise PostconditionError(
+                f"transaction radical delta {j.radical_delta} != expected {self.expected_radical_delta}")
+        self.state._revision += 1
+        j.status, j.revision = "committed", self.state._revision
+        self.state._tx = None
+        self.open = False
+        return j
+
+    def rollback(self):
+        self._require_open()
+        self.state._undo(self.journal)
+        self.journal.status = "rolled_back"
+        self.state._tx = None
+        self.open = False
+
+    def __enter__(self):
+        self._require_open()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.open:
+            if exc_type is None:
+                self.commit()
+            else:
+                self.rollback()
+        return False
 
 
 def _is_int(value) -> bool:
@@ -352,6 +462,8 @@ class MeltState:
         self._ids = frozenset(self._atoms)
         for i, node in self._atoms.items():
             self._check_node(i, node)
+        self._revision = 0
+        self._tx = None
         self.components = ComponentIndex()
         parts = _partition(self._atoms, self._atoms)
         self.components._install((), (_make_record(p, self._atoms, self._origin) for p in parts))
@@ -364,6 +476,16 @@ class MeltState:
     @property
     def origin(self) -> Mapping[int, Origin]:
         return MappingProxyType(self._origin)
+
+    @property
+    def revision(self) -> int:
+        """Monotone commit counter: +1 per committed transaction (or one-shot
+        apply), unchanged by rollback and by failed applies."""
+        return self._revision
+
+    def origin_kinds(self, cid: int) -> frozenset:
+        """Origin kinds ("chain" / "mobile") present in a component."""
+        return frozenset(self._origin[a].kind for a in self.components.atoms(cid))
 
     # -- validation --------------------------------------------------------
     def _check_node(self, i: int, node: Node):
@@ -391,17 +513,39 @@ class MeltState:
                 .encode("ascii"))
         return digest.hexdigest()
 
+    def full_hash(self) -> str:
+        """SHA-256 over atoms, edges AND origin (ancestry).  Use this, not
+        ``state_hash()``, as the cache key: backbone counts and chain-length
+        observables depend on origin."""
+        digest = hashlib.sha256(self.state_hash().encode("ascii"))
+        for i in sorted(self._origin):
+            o = self._origin[i]
+            digest.update(
+                f"\n{i}|{o.kind}|{o.ordinal}|{o.segment}|{o.key}|{int(o.is_backbone)}"
+                .encode("utf-8"))
+        return digest.hexdigest()
+
     def backbone_count(self, cid: int) -> int:
-        """Number of atoms of the component whose origin is_backbone (an integer)."""
+        """Number of atoms of the component whose origin is_backbone (an integer).
+
+        Ancestry for initially mobile molecules (monomer, solvent, ...) is
+        undefined in v1 and reported as 0: consumers must not read zero as "not
+        polymer-derived"; test ``origin[a].is_mobile`` / ``origin_kinds(cid)``
+        for that.  No DP or comparison basis is defined here.
+        """
         return self.components.backbone_count(cid)
 
-    def mass_moments(self, population: Callable[[int], bool]):
+    def mass_moments(self, population: Callable[[int], bool], unit: str = "kg_per_mol"):
         """(count, sum m, sum m^2, sum m^3) over the components for which
-        ``population(component id)`` is true; masses are exact Fractions."""
+        ``population(component id)`` is true; masses are exact Fractions in
+        ``unit`` (``kg_per_mol`` or ``g_per_mol``)."""
+        if unit not in ("kg_per_mol", "g_per_mol"):
+            raise MeltStateError(f"unknown mass unit {unit!r}")
         count, m1, m2, m3 = 0, Fraction(0), Fraction(0), Fraction(0)
         for cid in self.components.ids():
             if population(cid):
-                m = self.components.mass(cid)
+                m = (self.components.mass_kg_per_mol(cid) if unit == "kg_per_mol"
+                     else self.components.molar_mass_g_mol(cid))
                 count += 1
                 m1 += m
                 m2 += m * m
@@ -412,41 +556,93 @@ class MeltState:
     def __getstate__(self):
         return (tuple(sorted(self._atoms.items())),
                 tuple(sorted(self._origin.items())),
-                self.components)
+                self.components, self._revision)
 
     def __setstate__(self, state):
-        atoms, origin, components = state
+        atoms, origin, components, revision = state
+        self._revision = revision
+        self._tx = None
         self._atoms = dict(atoms)
         self._origin = dict(origin)
         self._ids = frozenset(self._atoms)
         self.components = components
 
-    # -- edits -------------------------------------------------------------
-    def apply(self, edits, *, fault: Optional[Callable[[str], None]] = None) -> Journal:
-        """Apply an edit set atomically.  ``fault(stage)`` is a test seam called
-        at each stage of ``STAGES``; anything it raises triggers the rollback."""
+    # -- transactions and edits ---------------------------------------------
+    def begin(self, expected_radical_delta: Optional[int] = None) -> Transaction:
+        """Open a transaction (refused while another is open).  If given, the
+        net radical-count change of the whole transaction must equal
+        ``expected_radical_delta`` at commit."""
+        if self._tx is not None:
+            raise MeltStateError("a transaction is already open (nested transactions are refused)")
+        self._tx = Transaction(self, expected_radical_delta)
+        return self._tx
+
+    transaction = begin
+
+    def rollback(self, journal: Journal):
+        """Roll back an OPEN transaction through its journal.  Refused for a
+        journal of another state, of a committed or already rolled-back
+        transaction, or of anything but the currently open transaction."""
+        if journal._state is not self:
+            raise MeltStateError("this journal belongs to a different state")
+        if journal.status != "open":
+            raise MeltStateError(f"journal is {journal.status}; only an open transaction can be rolled back")
+        tx = self._tx
+        if tx is None or tx.journal is not journal or journal.base_revision != self._revision:
+            raise MeltStateError("journal is not the open transaction of this state")
+        tx.rollback()
+
+    def apply(self, edits, *, fault: Optional[Callable[[str], None]] = None,
+              expected_radical_delta: Optional[int] = None) -> Journal:
+        """Apply an edit set atomically.  Outside a transaction this is a one-shot
+        transaction (commits on return, +1 revision).  Inside one it accumulates
+        into the transaction.  ``fault(stage)`` is a test seam called at each
+        stage of ``STAGES`` and at ``INSTALL_STAGE``; anything it raises triggers
+        the rollback.  ``expected_radical_delta`` (optional) must equal the net
+        change in radical electrons of the touched atoms."""
+        if self._tx is not None:
+            return self._tx.apply(edits, fault=fault, expected_radical_delta=expected_radical_delta)
+        return self._run(edits, fault, expected_radical_delta, None)
+
+    def _run(self, edits, fault, expected, tx) -> Journal:
         edits = tuple(edits)
         plan = self._validate(edits)
-        journal = Journal(edits)
+        call = Journal(edits, self)
+        support = sorted(plan["support"])
+        charge_before = sum(self._atoms[a].charge for a in support)
+        radical_before = sum(self._atoms[a].radical for a in support)
         try:
-            support = sorted(plan["support"])
-            self._journal_nodes(journal, support)
+            self._journal_nodes(call, support)
             touched = sorted({self.components.component_of(a) for a in support})
-            journal._old_records = {c: self.components._rec[c] for c in touched}
-            journal.old_components = tuple((c, self.components.atoms(c)) for c in touched)
+            call._old_records = {c: self.components._rec[c] for c in touched}
+            call._affected = {a for c in touched for a in self.components.atoms(c)}
+            call.old_components = tuple((c, self.components.atoms(c)) for c in touched)
             self._write(plan)
             if fault:
                 fault("after_apply")
-            self._recompute(journal, touched)
+            self._recompute(call, touched, fault)
             if fault:
                 fault("after_components")
-            self._postcheck(journal, support, touched)
+            self._postcheck(call, support, touched)
+            if sum(self._atoms[a].charge for a in support) != charge_before:
+                raise PostconditionError(
+                    "total charge of the touched atoms is not conserved "
+                    f"({charge_before} -> {sum(self._atoms[a].charge for a in support)})")
+            call.radical_delta = sum(self._atoms[a].radical for a in support) - radical_before
+            if expected is not None and call.radical_delta != expected:
+                raise PostconditionError(
+                    f"radical delta {call.radical_delta} != expected {expected}")
             if fault:
                 fault("after_postcheck")
         except BaseException:
-            self._rollback(journal)
+            self._undo(call)
             raise
-        return journal
+        if tx is not None:
+            tx._absorb(call)
+        else:
+            self._revision += 1
+            call.status, call.revision = "committed", self._revision
+        return call
 
     def _validate(self, edits):
         bonds, fields, support = {}, {}, set()
@@ -514,12 +710,12 @@ class MeltState:
             changes = {name: value for (name, atom), value in plan["fields"].items() if atom == a}
             self._atoms[a] = replace(node, edges=_Edges(edges[a]), **changes)
 
-    def _recompute(self, journal: Journal, touched):
+    def _recompute(self, journal: Journal, touched, fault=None):
         universe = [a for c in touched for a in self.components.atoms(c)]
         parts = _partition(universe, self._atoms)
         records = [_make_record(p, self._atoms, self._origin) for p in parts]
-        self.components._install(touched, records)
-        journal._installed = True
+        journal._installing = True  # before the first mutation of the indexes
+        self.components._install(touched, records, fault)
         journal.new_components = tuple((r.atoms[0], r.atoms) for r in records)
 
     def _postcheck(self, journal: Journal, support, touched):
@@ -535,13 +731,18 @@ class MeltState:
             if cid != min(atoms) or any(self.components.component_of(a) != cid for a in atoms):
                 raise PostconditionError(f"component {cid} is not indexed by its minimum atom id")
 
-    def _rollback(self, journal: Journal):
+    def _undo(self, journal: Journal):
+        """Replay a journal: old nodes back, and (if the indexes may have been
+        touched) every component inside the affected region replaced by its old
+        record.  Idempotent, and valid for a half-written install."""
         for i, node in journal.old_nodes.items():
             self._atoms[i] = node
-        if journal._installed:
-            self.components._install(
-                [c for c, _ in journal.new_components], journal._old_records.values())
-            journal._installed = False
+        if journal._installing:
+            rec = self.components._rec
+            for a in journal._affected:
+                rec.pop(a, None)  # component ids are atom ids of their own region
+            self.components._install((), journal._old_records.values())
+            journal._installing = False
 
 
 # --------------------------------------------------------------------------

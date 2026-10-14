@@ -23,6 +23,7 @@ from rmgpy.kmc.melt_state import (
     MeltState,
     MeltStateError,
     Node,
+    PostconditionError,
     Origin,
     SetBond,
     SetCharge,
@@ -782,7 +783,7 @@ def test_transaction_guards_and_revision(state, spec):
     with pytest.raises(MeltStateError):
         state.rollback(journal)  # already committed
     with pytest.raises(MeltStateError):
-        journal.rollback_into(state) if hasattr(journal, "rollback_into") else state.rollback(journal)
+        state.rollback(journal)
     # one revision per commit, however many applies it holds
     with state.transaction() as tx:
         tx.apply(_h_move_edits(state))
@@ -808,23 +809,24 @@ def test_transaction_guards_and_revision(state, spec):
     with pytest.raises(MeltStateError):
         state.rollback(foreign.journal)
     foreign.rollback()
+    fresh = homolysis_edits(state, chain=2, unit=3)[2]
     # an open transaction's journal can be rolled back through the state
     snap = snapshot(state)
     tx = state.transaction()
-    tx.apply(edits)
+    tx.apply(fresh)
     state.rollback(tx.journal)
     assert snapshot(state) == snap
     with pytest.raises(MeltStateError):
         state.rollback(tx.journal)  # already rolled back
     # an explicit commit finalizes; the transaction is then closed
     tx = state.transaction()
-    tx.apply(edits)
+    tx.apply(fresh)
     tx.commit()
     assert state.revision == 4
     with pytest.raises(MeltStateError):
         tx.rollback()
     with pytest.raises(MeltStateError):
-        tx.apply(edits)
+        tx.apply(fresh)
 
 
 def test_charge_creation_is_refused(state):
