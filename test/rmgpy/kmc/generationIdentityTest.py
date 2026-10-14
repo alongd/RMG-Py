@@ -203,6 +203,17 @@ def mutated(edit):
         "species label": lambda r: setattr(r[0], "label", "named"),
         "species index": lambda r: setattr(r[0], "index", 7),
         "atom props": lambda r: r[0].molecule[0].atoms[0].props.update({"extra": True}),
+        # Scratch vertex fields RMG reads while matching (I-122 probe: a pre-set
+        # connectivity value or ignore flag changes, or aborts, generation).
+        "connectivity1": lambda r: setattr(r[0].molecule[0].atoms[0], "connectivity1", 7),
+        "connectivity2": lambda r: setattr(r[0].molecule[0].atoms[0], "connectivity2", 7),
+        "connectivity3": lambda r: setattr(r[0].molecule[0].atoms[0], "connectivity3", 7),
+        "ignore flag": lambda r: setattr(r[0].molecule[0].atoms[0], "ignore", True),
+        "sorting label": lambda r: setattr(r[0].molecule[0].atoms[0], "sorting_label", 7),
+        "terminal flag": lambda r: setattr(r[0].molecule[0].atoms[0], "terminal", True),
+        # The Species-level proxy flag alone: generation propagates it to the
+        # products although no input molecule carries it.
+        "species proxy flag": lambda r: setattr(r[0], "_is_polymer_proxy", True),
         "added resonance structure": lambda r: (
             r[0].molecule.append(Molecule(smiles="C[C](C)c1ccccc1")),
         ),
