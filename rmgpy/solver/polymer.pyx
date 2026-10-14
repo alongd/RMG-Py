@@ -41,6 +41,14 @@ Hybrid Representation:
 - Moment Tail: Statistical moments (mu0, mu1, mu2) for chains with DP > xs.
 - Hybrid Handshake: Dynamic flux from Tail -> Explicit at boundary xs.
 
+Shared-spec end inventory boundary:
+- A number-average E share may move only under uniform chain selection and
+  only when head and tail compositions are identical.
+- Length/site-conditioned selection, asymmetric homolysis, fragment routing,
+  E-changing explicit-to-pool credit, and non-pristine explicit handshakes
+  are refused at configuration time. The three moments do not encode the
+  end/length correlation needed to approximate those routes exactly.
+
 Units:
 - Time: s
 - Residual: mol/s (dn/dt - dydt)
@@ -1185,17 +1193,64 @@ class PolymerPoolConfig:
     tail_kinetics: Optional[Callable[[float, float, float, float, float, float],
                                      Tuple[float, float, float, Dict[int, float]]]] = None
 
-    def condensed_mass_g(self, mu0_mol, mu1_mol):
+    # Step-2 shared-spec extensions are deliberately appended after every
+    # legacy field so positional construction of PolymerPoolConfig retains
+    # its exact historical argument order.
+    # Physical end-group mass [g/mol of chains].
+    end_group_mw_g_mol: float = 0.0
+
+    # Exact graph-derived molar mass for every explicit-DP core species.
+    explicit_dp_mw_g_mol: Optional[Dict[int, float]] = None
+
+    # True only for pools originating from a LinearHomopolymerSpec. This
+    # gates every new state/mass path so no-spec decks retain their exact
+    # historical layout and arithmetic.
+    shared_mass_accounting: bool = False
+
+    # Exact representability metadata supplied by the shared-spec adapter.
+    # Number-average E transfer is valid only for identical head/tail
+    # compositions, and an explicit handshake may consume one complete end
+    # bundle only when its graph is the declared pristine capped DP.
+    shared_end_groups_symmetric: bool = True
+    explicit_dp_pristine: Optional[Dict[int, bool]] = None
+
+    # Authoritative pristine graphs generated from the shared declaration.
+    # The old boolean above is retained only for positional compatibility;
+    # it is never trusted by the fail-closed validator.
+    shared_expected_explicit_dp_molecules: Optional[Dict[int, tuple]] = None
+
+    # The one authoritative declaration behind every shared-spec graph and
+    # mass check. Appended for positional compatibility with legacy configs.
+    linear_homopolymer_spec: Optional[object] = None
+
+    def __post_init__(self):
+        # Construction is the first of three shared-spec validation seams.
+        # HybridPolymerSystem repeats this check with live core graphs/routes,
+        # and spawned-daughter derivation repeats it at the lineage boundary.
+        from rmgpy.polymer_shared_support import validate_shared_spec_allowlist
+        validate_shared_spec_allowlist(self, context="PolymerPoolConfig")
+
+    def condensed_mass_g(self, mu0_mol, mu1_mol, stationary_depletion_g=0.0,
+                         end_inventory_mol=None):
         """EXACT condensed mass [g] of this pool at the given extensive
-        moments [mol] (FR1-K1 mass contract): mu1*monomer_mw_g_mol minus the
-        per-chain X-loss defect mu0*chain_mass_defect_g_mol. For ordinary
-        pools (defect 0) this is the plain moment-derived mass; for X-loss
+        moments [mol]: repeat mass plus physical end-group mass, minus the
+        per-chain X-loss defect and stationary depleted inventory. For legacy
+        ordinary pools both corrections default to zero; for X-loss
         feature pools it carries the one-lost-X-per-chain correction so that
         d(condensed mass)/dt + d(gas X mass)/dt = 0 holds exactly on the
         side-group kernel's contributions (pinned by test). Also works on
         rates: feeding d(mu)/dt returns d(mass)/dt."""
+        if self.shared_mass_accounting and end_inventory_mol is None:
+            raise ValueError(
+                f"Pool {self.label}: shared condensed mass requires its live "
+                "end_inventory_mol state"
+            )
+        end_mass = (float(end_inventory_mol) * self.end_group_mw_g_mol
+                    if self.shared_mass_accounting else 0.0)
         return (mu1_mol * self.monomer_mw_g_mol
-                - mu0_mol * self.chain_mass_defect_g_mol)
+                + end_mass
+                - mu0_mol * self.chain_mass_defect_g_mol
+                - stationary_depletion_g)
 
     def __repr__(self):
         return f"<PolymerPool '{self.label}' xs={self.xs}>"
@@ -1828,6 +1883,13 @@ class HybridPolymerSystem(ReactionSystem):
         # num_sgh_z == 0 and the residual path is bit-for-bit unchanged.
         self.num_sgh_z = 0
         self._scratch_dz_dt = None
+        # Shared-spec live end inventory E [mol of declared head+tail
+        # bundles]. Appended only for shared pools; legacy/no-spec systems
+        # retain the exact historical state layout.
+        self.num_end_inventories = 0
+        self._scratch_dend_dt = None
+        self.end_inventory_slot = np.full(
+            len(self.polymer_pools), -1, dtype=np.int32)
 
         self.pool_mu0_indices = np.full(len(self.polymer_pools), -1, dtype=np.int32)
         self.pool_mu1_indices = np.full(len(polymer_pools), -1, dtype=np.int32)
@@ -1893,12 +1955,17 @@ class HybridPolymerSystem(ReactionSystem):
             if channels:
                 n_sgh_z += len(channels)
         self.num_sgh_z = n_sgh_z
-        if n_weak == 0 and n_sgh_z == 0:
+        n_end = sum(
+            1 for pool in self.polymer_pools if pool.shared_mass_accounting
+        )
+        self.num_end_inventories = n_end
+        if n_weak == 0 and n_sgh_z == 0 and n_end == 0:
             return
         if sensitivity:
             raise ValueError(
                 f"{n_weak} weak-link allyl/U-state pool(s) and {n_sgh_z} "
-                f"side-group-homolysis Z aux-state slot(s) configured with "
+                f"side-group-homolysis Z aux-state slot(s) and {n_end} "
+                f"shared end-inventory slot(s) configured with "
                 f"sensitivity analysis enabled: the DASPK sensitivity state "
                 f"layout interleaves per-species blocks and has no room for "
                 f"the appended trailing U/Z slots. Disable sensitivity or "
@@ -1915,6 +1982,12 @@ class HybridPolymerSystem(ReactionSystem):
                 [self.atol_array, np.full(n_sgh_z, atol, dtype=float)])
             self.rtol_array = np.concatenate(
                 [self.rtol_array, np.full(n_sgh_z, rtol, dtype=float)])
+        if n_end > 0:
+            self.neq += n_end
+            self.atol_array = np.concatenate(
+                [self.atol_array, np.full(n_end, atol, dtype=float)])
+            self.rtol_array = np.concatenate(
+                [self.rtol_array, np.full(n_end, rtol, dtype=float)])
 
     def validate_configuration(self):
         """Strict validation of indices and masks."""
@@ -1925,6 +1998,24 @@ class HybridPolymerSystem(ReactionSystem):
 
         if len(self.gas_species_mask) != n_core:
             raise ValueError(f"Gas mask len {len(self.gas_species_mask)} != num_core {n_core}")
+
+        # I-066 Step 2: one fail-closed support boundary owns every shared-
+        # spec admission decision.  Run it again here even though the config
+        # constructor already ran it: only the assembled system knows which
+        # generated, refused, or solver-demoted routes touch each pool and it
+        # is the first boundary with the actual core molecular graphs.
+        from rmgpy.polymer_shared_support import validate_shared_spec_allowlist
+        _route_records = getattr(
+            self, "_shared_validation_route_records_by_pool", {})
+        _core_species = getattr(
+            self, "_shared_validation_core_species", None)
+        for _p_idx, _pool in enumerate(self.polymer_pools):
+            validate_shared_spec_allowlist(
+                _pool,
+                context="HybridPolymerSystem",
+                core_species=_core_species,
+                route_records=_route_records.get(_p_idx, ()),
+            )
 
         moment_indices = set()
 
@@ -2146,6 +2237,11 @@ class HybridPolymerSystem(ReactionSystem):
             # which inventory-depletion SGH forbids -- refused by the §1h
             # build guard). It MAY coexist only with k_scission, which acts on
             # backbone C-C bonds and is verified mu1-preserving.
+            if (not math.isfinite(pool.end_group_mw_g_mol)
+                    or pool.end_group_mw_g_mol < 0.0):
+                raise ValueError(
+                    f"Pool {pool.label}: end_group_mw_g_mol="
+                    f"{pool.end_group_mw_g_mol!r} must be a finite value >= 0 [g/mol].")
             if (not math.isfinite(pool.chain_mass_defect_g_mol)
                     or pool.chain_mass_defect_g_mol < 0.0):
                 raise ValueError(
@@ -2221,6 +2317,44 @@ class HybridPolymerSystem(ReactionSystem):
             if not self.gas_species_mask[mt.gas_index]:
                 raise ValueError(f"Mass transfer gas_index {mt.gas_index} is NOT masked as GAS.")
 
+            for pool in self.polymer_pools:
+                if (pool.shared_mass_accounting
+                        and mt.poly_index in pool.mu_indices):
+                    raise ValueError(
+                        f"Pool {pool.label}: shared moment slot "
+                        f"{mt.poly_index} cannot be a mass transfer "
+                        "poly_index; generic transfer debits one slot "
+                        "without updating the complete moment/end bundle")
+
+        if self.const_spc_names:
+            # Execution (get_const_spc_indices) resolves the FIRST core
+            # species with a label, so validation must see every match: a
+            # duplicated label is ambiguous, and with a shared-spec pool
+            # present it could hide a constant moment slot. Refuse it.
+            _any_shared = any(p.shared_mass_accounting
+                              for p in self.polymer_pools)
+            for _name in self.const_spc_names:
+                _matches = [
+                    index for index, species in enumerate(_core_species or ())
+                    if getattr(species, "label", None) == _name
+                ]
+                if _any_shared and len(_matches) > 1:
+                    raise ValueError(
+                        f"Shared-spec configs refuse duplicate core species "
+                        f"label '{_name}' in const_spc_names (core indices "
+                        f"{_matches}): validation and execution would "
+                        "resolve it ambiguously")
+                for _idx in _matches:
+                    for pool in self.polymer_pools:
+                        if (pool.shared_mass_accounting
+                                and _idx in pool.mu_indices):
+                            raise ValueError(
+                                f"Pool {pool.label}: shared moment slot "
+                                f"{_idx} ('{_name}') cannot be constant; "
+                                "zeroing its derivative would discard a "
+                                "debit while keeping the corresponding "
+                                "credit")
+
         # Moment isolation check
         ir = self.reactant_indices
         ip = self.product_indices
@@ -2247,10 +2381,51 @@ class HybridPolymerSystem(ReactionSystem):
         # daughter. Same timing contract.
         self._flatten_side_group_state()
 
+        # Bind the shared-spec live end inventories after U and Z so every
+        # no-spec layout (including direct SGH configs) remains unchanged.
+        self._flatten_end_inventory_state()
+
         # Flatten the (now validated + normalized) k_depropagation kernels
         # and resolve each enabled pool's released-monomer gas destination
         # (r74 SS2). Same timing contract.
         self._flatten_depropagation_state()
+
+    def _flatten_end_inventory_state(self):
+        """Bind E slots in pool order for shared-spec pools only."""
+        slots = np.full(len(self.polymer_pools), -1, dtype=np.int32)
+        base = (self.num_core_species + int(self.num_qssa_u)
+                + int(self.num_sgh_z))
+        count = 0
+        for i, pool in enumerate(self.polymer_pools):
+            if not pool.shared_mass_accounting:
+                continue
+            if not np.isfinite(pool.end_group_mw_g_mol) \
+                    or pool.end_group_mw_g_mol < 0.0:
+                raise ValueError(
+                    f"Pool {pool.label}: shared end-group mass must be finite "
+                    "and nonnegative"
+                )
+            explicit_mw = pool.explicit_dp_mw_g_mol or {}
+            missing = set(pool.explicit_dp_to_species_index) - set(explicit_mw)
+            if missing:
+                raise ValueError(
+                    f"Pool {pool.label}: shared explicit species DP(s) "
+                    f"{sorted(missing)} lack exact graph molecular masses"
+                )
+            if any((not np.isfinite(value) or value <= 0.0)
+                   for value in explicit_mw.values()):
+                raise ValueError(
+                    f"Pool {pool.label}: shared explicit graph molecular "
+                    "masses must be finite and positive"
+                )
+            slots[i] = base + count
+            count += 1
+        if count != self.num_end_inventories:
+            raise ValueError(
+                "shared end-inventory state layout drifted between tolerance "
+                "allocation and configuration validation"
+            )
+        self.end_inventory_slot = slots
 
     def _flatten_depropagation_state(self):
         """Flatten each pool's validated+normalized k_depropagation triplet
@@ -4006,6 +4181,44 @@ class HybridPolymerSystem(ReactionSystem):
                     r_i, str(combined_rxns[r_i]))
                     for r_i in live_unresolved_rows[:5]))
 
+        # Preserve both generation-time and final solver classifications in
+        # the shared validation record.  A refused or demoted row is still a
+        # route the shared pool was asked to carry and therefore cannot be
+        # hidden by rewriting its final archetype to NONE/UNRESOLVED.
+        from rmgpy.polymer_shared_support import SHARED_ROUTE_FLAGS
+        self._shared_validation_core_species = tuple(core_species)
+        self._shared_validation_route_records_by_pool = {
+            p: [] for p in range(len(self.polymer_pools))}
+        for _r in range(n_rxn):
+            _pre = int(self.reaction_pre_demotion_archetype[_r])
+            _final = int(self.reaction_flux_archetype[_r])
+            _pre_name = SHARED_ROUTE_FLAGS.get(_pre, str(_pre))
+            _final_name = SHARED_ROUTE_FLAGS.get(_final, str(_final))
+            _route_name = (_pre_name if _pre == _final else
+                           "%s->%s" % (_pre_name, _final_name))
+            _touched = set()
+            for _p in (int(self.reaction_src_pool[_r]),
+                       int(self.reaction_dst_pool[_r])):
+                if _p >= 0:
+                    _touched.add(_p)
+            # Refused or malformed rows can lose their src/dst stamp.  Scan
+            # their actual participants as the fail-closed fallback.
+            for _slot in range(3):
+                for _sp_idx in (int(ir_arr[_r, _slot]),
+                                int(ip_arr[_r, _slot])):
+                    if 0 <= _sp_idx < n_core:
+                        _p = int(self.species_to_pool_indices[_sp_idx])
+                        if _p >= 0:
+                            _touched.add(_p)
+            for _p in _touched:
+                for _flag in ((_pre, _final)
+                              if _pre != _final else (_pre,)):
+                    self._shared_validation_route_records_by_pool[_p].append({
+                        "flag": _flag,
+                        "name": _route_name,
+                        "row": _r,
+                    })
+
         # P1-2 (atom-transfer mass defect): per-row MOMENT-space eject units.
         # reaction_eject_units stores the MASS defect a_mass = (net
         # non-polymer mass)/monomer_mw. For an atom-transfer conduit
@@ -4117,6 +4330,7 @@ class HybridPolymerSystem(ReactionSystem):
                          "overlap": "generated_scission_ve"}
                 self.qssa_double_count_census.append(entry)
                 warn_once_qssa_double_count(entry)
+
             # QSSA + the pool's own k_scission: BOTH are random backbone
             # homolysis -- the most direct initiation double-count of all
             # (unlike generated scission, k_scission cannot claim to cover
@@ -4182,6 +4396,7 @@ class HybridPolymerSystem(ReactionSystem):
         self._scratch_dn_dt = np.zeros(n_core, float)
         self._scratch_du_dt = np.zeros(self.num_qssa_u, float)
         self._scratch_dz_dt = np.zeros(self.num_sgh_z, float)
+        self._scratch_dend_dt = np.zeros(self.num_end_inventories, float)
         self._scratch_proxy_activity = np.zeros(n_core, float)
 
         # RIDER R2 dynamic half (item 17, spec 2026-06-12 SS3(e)): the edge
@@ -4688,6 +4903,17 @@ class HybridPolymerSystem(ReactionSystem):
                     z_slot = int(z_slots[sgh_row])
                     self.y0[z_slot] = self.sgh_sites[sgh_row] * mu1_amount
 
+        # 9. Shared-spec live end inventory E(0): one declared head+tail
+        # bundle per TAIL chain. Explicit-DP chains were subtracted in step 6
+        # and carry their end atoms in their exact molecular graphs instead.
+        end_slots = getattr(self, "end_inventory_slot", None)
+        if end_slots is not None:
+            for i, pool in enumerate(self.polymer_pools):
+                end_slot = int(end_slots[i])
+                if end_slot >= 0:
+                    self.y0[end_slot] = max(
+                        0.0, self.y0[pool.mu_indices[0]])
+
     def generate_rate_coefficients(self, core_reactions, edge_reactions):
         for rxn in itertools.chain(core_reactions, edge_reactions):
             j = self.reaction_index[rxn]
@@ -5136,6 +5362,7 @@ class HybridPolymerSystem(ReactionSystem):
         # SMALL_EPS (pre-floor behavior, honest).
         n_pools = len(self.polymer_pools)
         e_n_by_pool = [0.0] * n_pools
+        end_per_chain_by_pool = [0.0] * n_pools
         # i061: the attribution trust band is a CHEMISTRY noise floor and must
         # stay anchored to the deck atol, so read the PRE-floor copy. The moment
         # error-weight floor (initialize_model) raised atol_array on the mu-slots
@@ -5185,6 +5412,9 @@ class HybridPolymerSystem(ReactionSystem):
                     f"a silent 0.0).")
             if mu0 > trust:
                 e_n_by_pool[p] = mu1 / mu0
+                if self.polymer_pools[p].shared_mass_accounting:
+                    end_slot = int(self.end_inventory_slot[p])
+                    end_per_chain_by_pool[p] = max(0.0, y[end_slot]) / mu0
             elif mu0 > SMALL_EPS:
                 # The distrust band (SMALL_EPS, trust]: integrator-noise-
                 # scale mu0. Zero-out is the honest measurement ("this pool
@@ -5281,8 +5511,14 @@ class HybridPolymerSystem(ReactionSystem):
                         f"through the Z inventory and pins the carrier defect "
                         f"to 0.0, so a nonzero defect would double-book Br "
                         f"into both Z and the spawn-gate event mass.")
-                proxy_event_mass_total += g * max(
-                    0.0, pool.condensed_mass_g(1.0, e_n))
+                if pool.shared_mass_accounting:
+                    event_mass = pool.condensed_mass_g(
+                        1.0, e_n,
+                        end_inventory_mol=end_per_chain_by_pool[p]
+                    )
+                else:
+                    event_mass = pool.condensed_mass_g(1.0, e_n)
+                proxy_event_mass_total += g * max(0.0, event_mass)
         return gross, pool_stats, proxy_event_mass_total
 
     def _update_pool_exhaustion(self, y):
@@ -5713,7 +5949,7 @@ class HybridPolymerSystem(ReactionSystem):
         moments are never clamped. Returns grams; reads self.y when no
         state vector is passed."""
         cdef int p, i0, i1
-        cdef double total, mu0_mol, mu1_mol, V_poly
+        cdef double total, mu0_mol, mu1_mol, V_poly, explicit_mass
         if y is None:
             y = self.y
         if self.polymer_pools is None or len(self.polymer_pools) == 0:
@@ -5729,11 +5965,17 @@ class HybridPolymerSystem(ReactionSystem):
                 i0, i1 = pool.mu_indices[0], pool.mu_indices[1]
             mu0_mol = y[i0]
             mu1_mol = y[i1]
-            if pool.explicit_dp_to_species_index:
+            if pool.explicit_dp_to_species_index and not pool.shared_mass_accounting:
                 e0, e1, _e2 = _explicit_moment_contributions(
                     V_poly, y, pool.explicit_dp_to_species_index)
                 mu0_mol += e0 * V_poly
                 mu1_mol += e1 * V_poly
+            explicit_mass = 0.0
+            if pool.shared_mass_accounting:
+                for dp, explicit_index in pool.explicit_dp_to_species_index.items():
+                    explicit_mass += (
+                        y[explicit_index] * pool.explicit_dp_mw_g_mol[dp]
+                    )
             sgh_en = getattr(self, "sgh_enabled", None)
             if sgh_en is not None and p < len(sgh_en) and sgh_en[p]:
                 # SGH kernel-v2 (§1e): Br leaves the melt through the
@@ -5755,10 +5997,35 @@ class HybridPolymerSystem(ReactionSystem):
                     z_val = y[int(self.sgh_z_slot[sgh_row])]
                     lost_x += max(0.0, self.sgh_sites[sgh_row] * tail_mu1
                                   - z_val) * self.sgh_mw_X[sgh_row]
-                total += max(0.0, mu1_mol * pool.monomer_mw_g_mol - lost_x)
+                if pool.shared_mass_accounting:
+                    total += max(0.0, pool.condensed_mass_g(
+                        mu0_mol, mu1_mol, lost_x,
+                        y[int(self.end_inventory_slot[p])]) + explicit_mass)
+                else:
+                    # Exact pre-shared-spec SGH arithmetic: direct legacy
+                    # configs historically ignored chain_mass_defect here.
+                    total += max(
+                        0.0, mu1_mol * pool.monomer_mw_g_mol - lost_x
+                    )
             else:
-                total += max(0.0, pool.condensed_mass_g(mu0_mol, mu1_mol))
+                if pool.shared_mass_accounting:
+                    total += max(0.0, pool.condensed_mass_g(
+                        mu0_mol, mu1_mol,
+                        end_inventory_mol=y[int(self.end_inventory_slot[p])]
+                    ) + explicit_mass)
+                else:
+                    total += max(0.0, pool.condensed_mass_g(mu0_mol, mu1_mol))
         return total
+
+    def get_total_polymer_condensed_volume_m3(self, density_kg_m3, y=None):
+        """Live condensed polymer volume from the production mass getter."""
+        density = float(density_kg_m3)
+        if not np.isfinite(density) or density <= 0.0:
+            raise ValueError("polymer density must be finite and positive")
+        mass_g = self.get_total_polymer_condensed_mass_g(y)
+        if mass_g is None:
+            return None
+        return mass_g / 1000.0 / density
 
     def _chain_bundle(self, int pool_idx, y, double V_poly, bint end_group):
         """
@@ -5784,6 +6051,31 @@ class HybridPolymerSystem(ReactionSystem):
         if np.isfinite(mu3):
             return 1.0, mu2 / mu1, mu3 / mu1, True
         return 1.0, mu2 / mu1, 0.0, False
+
+    def _transfer_shared_end_inventory(self, dend_dt, y, int from_pool,
+                                       int to_pool, double chain_amount):
+        """Move the source chains' mean live end share between pools."""
+        if chain_amount <= 0.0:
+            return
+        from_slot = int(self.end_inventory_slot[from_pool])
+        to_slot = int(self.end_inventory_slot[to_pool])
+        if from_slot < 0 and to_slot < 0:
+            return
+        if from_slot < 0 or to_slot < 0:
+            raise ValueError(
+                "a chain transfer crosses the shared-spec mass boundary; "
+                "both source and destination pools must inherit the shared "
+                "declaration"
+            )
+        source_mu0 = max(
+            0.0, y[self.polymer_pools[from_pool].mu_indices[0]]
+        )
+        if source_mu0 <= SMALL_EPS:
+            return
+        moved = chain_amount * max(0.0, y[from_slot]) / source_mu0
+        base = self.num_core_species + self.num_qssa_u + self.num_sgh_z
+        dend_dt[from_slot - base] -= moved
+        dend_dt[to_slot - base] += moved
 
     def _bundle_availability_cap(self, int pool_idx, y, double V_poly,
                                  bint end_group):
@@ -6192,12 +6484,13 @@ class HybridPolymerSystem(ReactionSystem):
 
         problems = []
         n_core = self.num_core_species
-        neq_expected = n_core + self.num_qssa_u + self.num_sgh_z
+        neq_expected = (n_core + self.num_qssa_u + self.num_sgh_z
+                        + self.num_end_inventories)
         # Guard 3 baseline: appended U/Z slots must exactly close the
         # state vector (initiate_tolerances extended neq by ITS count).
         if self.neq != neq_expected:
             problems.append(
-                f"neq {self.neq} != n_core+U+Z {neq_expected}")
+                f"neq {self.neq} != n_core+U+Z+E {neq_expected}")
         # DDAWTS weights need the full tolerance arrays.
         if (self.atol_array is None or self.rtol_array is None
                 or len(self.atol_array) != self.neq
@@ -6272,7 +6565,8 @@ class HybridPolymerSystem(ReactionSystem):
         # appended-U/Z state layout EXACTLY; a drifted layout must never
         # produce a silently wrong-shaped/misaligned J.
         if (neq != self.neq
-                or neq != n_core + self.num_qssa_u + self.num_sgh_z
+                or neq != (n_core + self.num_qssa_u + self.num_sgh_z
+                           + self.num_end_inventories)
                 or len(dydt) != neq
                 or self._jac_wt_atol is None
                 or len(self._jac_wt_atol) != neq
@@ -6280,7 +6574,7 @@ class HybridPolymerSystem(ReactionSystem):
             raise RuntimeError(
                 "18.2e scoped Jacobian: state layout drifted from armed "
                 f"assumptions (len(y)={neq}, self.neq={self.neq}, "
-                f"n_core+U+Z={n_core + self.num_qssa_u + self.num_sgh_z})"
+                f"n_core+U+Z+E={n_core + self.num_qssa_u + self.num_sgh_z + self.num_end_inventories})"
                 " -- refusing to return a misaligned J.")
         if cj == 0.0:
             raise RuntimeError("18.2e scoped Jacobian: cj == 0")
@@ -6385,6 +6679,9 @@ class HybridPolymerSystem(ReactionSystem):
         if (self._scratch_dz_dt is None
                 or len(self._scratch_dz_dt) != self.num_sgh_z):
             self._scratch_dz_dt = np.zeros(self.num_sgh_z, float)
+        if (self._scratch_dend_dt is None
+                or len(self._scratch_dend_dt) != self.num_end_inventories):
+            self._scratch_dend_dt = np.zeros(self.num_end_inventories, float)
 
         # 2. Update Volumes
         if self.constant_gas_volume:
@@ -6435,6 +6732,9 @@ class HybridPolymerSystem(ReactionSystem):
 
         dz_dt = self._scratch_dz_dt
         dz_dt[:] = 0.0
+
+        dend_dt = self._scratch_dend_dt
+        dend_dt[:] = 0.0
 
         proxy_activity = self._scratch_proxy_activity
         proxy_activity[:] = 0.0
@@ -7003,6 +7303,8 @@ class HybridPolymerSystem(ReactionSystem):
                             dn_dt[f_idx[1]] -= ev_mol * b1
                             dn_dt[t_idx[0]] += ev_mol * b0
                             dn_dt[t_idx[1]] += ev_mol * b1
+                            self._transfer_shared_end_inventory(
+                                dend_dt, y, from_pool, to_pool, ev_mol * b0)
                             if mu2_ok:
                                 dn_dt[f_idx[2]] -= ev_mol * b2
                                 dn_dt[t_idx[2]] += ev_mol * b2
@@ -7045,6 +7347,8 @@ class HybridPolymerSystem(ReactionSystem):
                             # to-leg gains the a-SHIFTED bundle
                             dn_dt[t_idx[0]] += ev_mol * b0
                             dn_dt[t_idx[1]] += ev_mol * (b1 + sa * b0)
+                            self._transfer_shared_end_inventory(
+                                dend_dt, y, from_pool, to_pool, ev_mol * b0)
                             if mu2_ok:
                                 dn_dt[f_idx[2]] -= ev_mol * b2
                                 dn_dt[t_idx[2]] += ev_mol * (
@@ -7365,7 +7669,8 @@ class HybridPolymerSystem(ReactionSystem):
                     dmu1_dt -= r_release
                     dmu2_dt -= (pool.k_unzip * (2.0 * mu1 - mu0)
                                 * _release_units_gate(mu0, mu1))
-                    dmu0_dt -= r_events * _deprop_dp1_fraction(mu0, mu1, mu2)
+                    r_dp1 = r_events * _deprop_dp1_fraction(mu0, mu1, mu2)
+                    dmu0_dt -= r_dp1
                     if pool.monomer_poly_index is not None:
                         # Released monomer is emitted to the GAS species
                         # amount basis (incident 2026-07-03, design B-prime):
@@ -7373,7 +7678,26 @@ class HybridPolymerSystem(ReactionSystem):
                         # dn_dt += r*V_poly [mol/s] on the gas-masked
                         # monomer_poly_index. Mass conservation: one gas
                         # monomer mole per drained mu1 repeat unit.
-                        small_src[pool.monomer_poly_index] = r_release
+                        if pool.shared_mass_accounting:
+                            # A DP=1 chain cannot emit a bare repeat and leave
+                            # its cap atoms behind. Transfer that complete
+                            # chain into the exact capped-DP1 graph; only the
+                            # non-DP1 events release monomer gas.
+                            # The legacy off-cone healing debit on mu0 stays
+                            # ungated, but it is not a physical unit-release
+                            # event and must not fabricate a capped DP1 graph.
+                            r_dp1_transfer = min(r_dp1, r_release)
+                            small_src[pool.monomer_poly_index] = max(
+                                0.0, r_release - r_dp1_transfer
+                            )
+                            dp1_idx = pool.explicit_dp_to_species_index[1]
+                            dn_dt[dp1_idx] += r_dp1_transfer * V_poly
+                            end_slot = int(self.end_inventory_slot[pool_i])
+                            end_base = (n_core + self.num_qssa_u
+                                        + self.num_sgh_z)
+                            dend_dt[end_slot - end_base] -= r_dp1_transfer * V_poly
+                        else:
+                            small_src[pool.monomer_poly_index] = r_release
 
             # Radical-homolysis initiation kernel (Stage 1, adjudicated round
             # 66). Independent of tail_kinetics (a custom tail closure does
@@ -7474,6 +7798,19 @@ class HybridPolymerSystem(ReactionSystem):
                         dn_dt[self.khom_sec_mu0[pool_i]] += frag_mu0
                         dn_dt[self.khom_sec_mu1[pool_i]] += frag_mu1
                         dn_dt[self.khom_sec_mu2[pool_i]] += frag_mu2
+                        if self.num_end_inventories > 0:
+                            prim_pool = -1
+                            sec_pool = -1
+                            for daughter_i, daughter_pool in enumerate(self.polymer_pools):
+                                if daughter_pool.mu_indices[0] == self.khom_prim_mu0[pool_i]:
+                                    prim_pool = daughter_i
+                                if daughter_pool.mu_indices[0] == self.khom_sec_mu0[pool_i]:
+                                    sec_pool = daughter_i
+                            if prim_pool >= 0 and sec_pool >= 0:
+                                self._transfer_shared_end_inventory(
+                                    dend_dt, y, pool_i, prim_pool, 0.5 * frag_mu0)
+                                self._transfer_shared_end_inventory(
+                                    dend_dt, y, pool_i, sec_pool, 0.5 * frag_mu0)
 
             # Side-group homolysis initiation kernel (SGH kernel-v2, explicit
             # Br-inventory depletion; adjudicated spar r103 / plan r104).
@@ -8158,10 +8495,25 @@ class HybridPolymerSystem(ReactionSystem):
                     if N_boundary < 0.0:
                         N_boundary = 0.0
 
+                    # A shared explicit molecule carries one complete
+                    # declared head+tail bundle in its graph. Never route
+                    # more boundary chains than the live E inventory can
+                    # supply (scission may have increased mu0 without
+                    # creating cap atoms).
+                    end_slot = int(self.end_inventory_slot[pool_i])
+                    if end_slot >= 0:
+                        N_boundary = min(
+                            N_boundary, max(0.0, y[end_slot]) / V_poly
+                        )
+
                     F = k_chain_handshake * N_boundary
 
                     if F > 0.0:
                         dn_dt[explicit_xs_idx] += F * V_poly
+                        if end_slot >= 0:
+                            end_base = (n_core + self.num_qssa_u
+                                        + self.num_sgh_z)
+                            dend_dt[end_slot - end_base] -= F * V_poly
                         dmu0_dt -= F
                         dmu1_dt -= xs * F
                         dmu2_dt -= (xs * xs) * F
@@ -8216,7 +8568,8 @@ class HybridPolymerSystem(ReactionSystem):
                 for bi in bad[:10]:
                     print(f"[POLY-DBG]     idx {bi}: y={y[bi]:.4e} gas={bool(mask[bi])}")
 
-        if self.num_qssa_u > 0 or self.num_sgh_z > 0:
+        if (self.num_qssa_u > 0 or self.num_sgh_z > 0
+                or self.num_end_inventories > 0):
             # Appended-state layout: y = [core species | U slots | Z slots].
             # The residual vector follows the SAME layout, so the blocks are
             # concatenated in slot-index order (core | U | Z) to match the
@@ -8225,7 +8578,7 @@ class HybridPolymerSystem(ReactionSystem):
             # (num_qssa_u == 0 AND num_sgh_z == 0) return below stays the
             # bit-for-bit pre-milestone expression -- a golden bitwise-RHS
             # test depends on it.
-            return (np.concatenate((dn_dt, du_dt, dz_dt)) - dydt), 1
+            return (np.concatenate((dn_dt, du_dt, dz_dt, dend_dt)) - dydt), 1
         return (dn_dt - dydt), 1
 
     def get_reaction_rates(self, y_in):
