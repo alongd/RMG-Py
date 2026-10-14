@@ -106,6 +106,7 @@ def _state():
 
 
 def _engine(seed, *, reversible=True, rng=None, **kwargs):
+    kwargs.setdefault("inventory", "R1")
     return IsothermalSSA(
         _state(),
         _records(reversible),
@@ -330,6 +331,7 @@ def _thinning_engine(seed):
         temperature=700.0,
         volume=1.0,
         rng=np.random.default_rng(seed),
+        inventory="R1",
     )
 
 
