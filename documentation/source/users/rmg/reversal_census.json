@@ -180,7 +180,7 @@
   {
     "site": "arkane/input.py::load_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 597,
+    "line": 591,
     "source": "def load_input_file(path):",
     "verdict": "guarded",
     "reason": "Reaction objects retain declarations on input; kinetics execution checks original kinetics before conversion, and library output delegates to checked save_entry.",
@@ -192,7 +192,7 @@
   {
     "site": "arkane/input.py::reaction::Reaction#1",
     "kind": "builder",
-    "line": 312,
+    "line": 306,
     "source": "rxn = Reaction(label=label, reactants=reactants, products=products, transition_state=transitionState,",
     "verdict": "guarded",
     "reason": "Reaction objects retain declarations on input; kinetics execution checks original kinetics before conversion, and library output delegates to checked save_entry.",
@@ -5125,7 +5125,7 @@
   {
     "site": "rmgpy/rmg/input.py::read_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3117,
+    "line": 3130,
     "source": "def read_input_file(path, rmg0):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Job input reads/writes settings, species, reactor conditions and library references, without building or serializing executable Reaction rates. Actual library resolution is separately guarded.",
@@ -5136,7 +5136,7 @@
   {
     "site": "rmgpy/rmg/input.py::read_thermo_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3226,
+    "line": 3239,
     "source": "def read_thermo_input_file(path, rmg0):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Job input reads/writes settings, species, reactor conditions and library references, without building or serializing executable Reaction rates. Actual library resolution is separately guarded.",
@@ -5147,7 +5147,7 @@
   {
     "site": "rmgpy/rmg/input.py::save_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3397,
+    "line": 3410,
     "source": "def save_input_file(path, rmg):",
     "verdict": "refused",
     "reason": "The job-input writer refuses resolved species identities before creating its state-blind settings file; it never serializes executable Reaction rates.",
@@ -5158,7 +5158,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.check_model::is_isomorphic#1",
     "kind": "direction",
-    "line": 1896,
+    "line": 1909,
     "source": "if spc.is_isomorphic(spc2):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5170,7 +5170,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.check_model::is_isomorphic#2",
     "kind": "direction",
-    "line": 1906,
+    "line": 1919,
     "source": "if spc.is_isomorphic(spc2):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5182,7 +5182,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.check_model::to_chemkin#1",
     "kind": "reader-exporter",
-    "line": 1948,
+    "line": 1961,
     "source": "rxn_string = violator[0].to_chemkin(self.reaction_model.core.species)",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5194,7 +5194,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.generate_end_of_run_cantera_files::to_chemkin#1",
     "kind": "reader-exporter",
-    "line": 1542,
+    "line": 1548,
     "source": "s_name = s.to_chemkin()",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5206,7 +5206,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.initialize::is_isomorphic#1",
     "kind": "direction",
-    "line": 851,
+    "line": 857,
     "source": "if spec.is_isomorphic(O2Singlet):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5254,7 +5254,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.save_everything::reaction-io",
     "kind": "reader-exporter",
-    "line": 2566,
+    "line": 2579,
     "source": "def save_everything(self):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -7635,7 +7635,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#1",
     "kind": "reader-exporter",
-    "line": 1188,
+    "line": 1193,
     "source": "entry_copy['Surface_Library'] = self.species_list[entry_copy['Surface_Library']].to_chemkin()",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7647,7 +7647,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#10",
     "kind": "reader-exporter",
-    "line": 1271,
+    "line": 1276,
     "source": "label = 'PDep {}'.format(reaction.to_chemkin(self.species_list, kinetics=False))",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7659,7 +7659,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#11",
     "kind": "reader-exporter",
-    "line": 1275,
+    "line": 1280,
     "source": "label = 'Library {}'.format(reaction.to_chemkin(self.species_list, kinetics=False))",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7671,7 +7671,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#12",
     "kind": "reader-exporter",
-    "line": 1279,
+    "line": 1284,
     "source": "label = 'Surface_Library {}'.format(reaction.to_chemkin(self.species_list, kinetics=False))",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7683,7 +7683,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#13",
     "kind": "reader-exporter",
-    "line": 1287,
+    "line": 1292,
     "source": "label = '{}Training {} {}'.format(surface_prefix, family, reaction.to_chemkin(self.species_list, kinetics=False))",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7695,7 +7695,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#2",
     "kind": "reader-exporter",
-    "line": 1200,
+    "line": 1205,
     "source": "label = 'Library {}'.format(self.species_list[source['Library']].to_chemkin())",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7707,7 +7707,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#3",
     "kind": "reader-exporter",
-    "line": 1202,
+    "line": 1207,
     "source": "label = 'Library {}'.format(self.extra_species[source['Library'] - len(self.species_list)].to_chemkin())",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7719,7 +7719,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#4",
     "kind": "reader-exporter",
-    "line": 1206,
+    "line": 1211,
     "source": "label = 'Surface_Library {}'.format(self.species_list[source['Surface_Library']].to_chemkin())",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7731,7 +7731,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#5",
     "kind": "reader-exporter",
-    "line": 1208,
+    "line": 1213,
     "source": "label = 'Surface_Library {}'.format(self.extra_species[source['Surface_Library'] - len(self.species_list)].to_chemkin())",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7743,7 +7743,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#6",
     "kind": "reader-exporter",
-    "line": 1213,
+    "line": 1218,
     "source": "label = 'QM {}'.format(self.species_list[source['QM']].to_chemkin())",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7755,7 +7755,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#7",
     "kind": "reader-exporter",
-    "line": 1228,
+    "line": 1233,
     "source": "label = 'Estimation {}'.format(species.to_chemkin())",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7767,7 +7767,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#8",
     "kind": "reader-exporter",
-    "line": 1261,
+    "line": 1266,
     "source": "label = 'Estimation Family {}'.format(reaction.to_chemkin(self.species_list, kinetics=False))",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7779,7 +7779,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_intermediate_uncertainties::to_chemkin#9",
     "kind": "reader-exporter",
-    "line": 1267,
+    "line": 1272,
     "source": "label = 'Estimation Nonexact {}'.format(reaction.to_chemkin(self.species_list, kinetics=False))",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7791,7 +7791,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#1",
     "kind": "reader-exporter",
-    "line": 1039,
+    "line": 1044,
     "source": "entry_copy['Surface_Library'] = self.species_list[entry_copy['Surface_Library']].to_chemkin()",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7803,7 +7803,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#10",
     "kind": "reader-exporter",
-    "line": 1127,
+    "line": 1132,
     "source": "label = 'PDep {}'.format(reaction.to_chemkin(self.species_list, kinetics=False))",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7815,7 +7815,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#11",
     "kind": "reader-exporter",
-    "line": 1132,
+    "line": 1137,
     "source": "label = 'Library {}'.format(reaction.to_chemkin(self.species_list, kinetics=False))",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7827,7 +7827,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#12",
     "kind": "reader-exporter",
-    "line": 1137,
+    "line": 1142,
     "source": "label = 'Surface_Library {}'.format(reaction.to_chemkin(self.species_list, kinetics=False))",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7839,7 +7839,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#13",
     "kind": "reader-exporter",
-    "line": 1143,
+    "line": 1148,
     "source": "label = 'Training {} {}'.format(family, reaction.to_chemkin(self.species_list, kinetics=False))",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7851,7 +7851,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#2",
     "kind": "reader-exporter",
-    "line": 1052,
+    "line": 1057,
     "source": "label = 'Library {}'.format(self.species_list[source['Library']].to_chemkin())",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7863,7 +7863,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#3",
     "kind": "reader-exporter",
-    "line": 1054,
+    "line": 1059,
     "source": "label = 'Library {}'.format(self.extra_species[source['Library'] - len(self.species_list)].to_chemkin())",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7875,7 +7875,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#4",
     "kind": "reader-exporter",
-    "line": 1059,
+    "line": 1064,
     "source": "label = 'Surface_Library {}'.format(self.species_list[source['Surface_Library']].to_chemkin())",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7887,7 +7887,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#5",
     "kind": "reader-exporter",
-    "line": 1061,
+    "line": 1066,
     "source": "label = 'Surface_Library {}'.format(self.extra_species[source['Surface_Library'] - len(self.species_list)].to_chemkin())",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7899,7 +7899,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#6",
     "kind": "reader-exporter",
-    "line": 1065,
+    "line": 1070,
     "source": "label = 'QM {}'.format(self.species_list[source['QM']].to_chemkin())",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7911,7 +7911,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#7",
     "kind": "reader-exporter",
-    "line": 1082,
+    "line": 1087,
     "source": "label = 'Estimation {}'.format(species.to_chemkin())",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7923,7 +7923,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#8",
     "kind": "reader-exporter",
-    "line": 1117,
+    "line": 1122,
     "source": "label = 'Estimation Nonexact {}'.format(reaction.to_chemkin(self.species_list, kinetics=False))",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7935,7 +7935,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.assign_parameter_uncertainties::to_chemkin#9",
     "kind": "reader-exporter",
-    "line": 1122,
+    "line": 1127,
     "source": "label = 'Estimation Family {}'.format(reaction.to_chemkin(self.species_list, kinetics=False))",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7947,7 +7947,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.extract_sources_from_model::is_isomorphic#1",
     "kind": "direction",
-    "line": 843,
+    "line": 848,
     "source": "if spc.is_isomorphic(dummy_gas_species):",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7959,7 +7959,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.load_database::reaction-io",
     "kind": "reader-exporter",
-    "line": 462,
+    "line": 463,
     "source": "def load_database(self, kinetics_families='all', kinetics_depositories=None, thermo_libraries=None, reaction_libraries=None):",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7971,7 +7971,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.load_model::load_chemkin_file#1",
     "kind": "reader-exporter",
-    "line": 508,
+    "line": 513,
     "source": "self.species_list, self.reaction_list = load_chemkin_file(chemkin_path,",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7983,7 +7983,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.load_model::reaction-io",
     "kind": "reader-exporter",
-    "line": 495,
+    "line": 500,
     "source": "def load_model(self, chemkin_path, dictionary_path, transport_path=None, surface_path=None):",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -7995,7 +7995,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.local_analysis::to_chemkin#1",
     "kind": "reader-exporter",
-    "line": 1398,
+    "line": 1403,
     "source": "if species.to_chemkin() == data.species:",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -8007,7 +8007,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.local_analysis::to_chemkin#2",
     "kind": "reader-exporter",
-    "line": 1458,
+    "line": 1463,
     "source": "r_path = os.path.join(folder, 'kineticsLocalUncertainty_{0}'.format(sens_species.to_chemkin()) + fileformat)",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -8019,7 +8019,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.local_analysis::to_chemkin#3",
     "kind": "reader-exporter",
-    "line": 1459,
+    "line": 1464,
     "source": "t_path = os.path.join(folder, 'thermoLocalUncertainty_{0}'.format(sens_species.to_chemkin()) + fileformat)",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -8031,7 +8031,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.local_analysis_intermediate::to_chemkin#1",
     "kind": "reader-exporter",
-    "line": 1515,
+    "line": 1520,
     "source": "if species.to_chemkin() == data.species:",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -8043,7 +8043,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.local_analysis_intermediate::to_chemkin#2",
     "kind": "reader-exporter",
-    "line": 1569,
+    "line": 1574,
     "source": "self.all_kinetics_intermediates = ['k' + str(self.reaction_list[rxn_idx].index) + ': ' + self.reaction_list[rxn_idx].to_chemkin(species_list=self.species_list, kinetics=False) for rxn_idx in reactions_used]",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -8055,7 +8055,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::Uncertainty.retrieve_saturated_species_from_list::is_isomorphic#1",
     "kind": "direction",
-    "line": 524,
+    "line": 529,
     "source": "if otherSpecies.is_isomorphic(saturated_struct):",
     "verdict": "guarded",
     "reason": "Reaction imports delegate to checked Chemkin reader; model matching delegates to shared direction-aware identity; species/plot-only operations do not produce reverse rates.",
@@ -8067,7 +8067,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::get_i_thing::is_isomorphic#1",
     "kind": "direction",
-    "line": 1831,
+    "line": 1836,
     "source": "else thing.is_isomorphic(thing_list[i])):",
     "verdict": "guarded",
     "reason": "Reaction branch uses is_same_reaction; structural object branch does not manipulate rates.",
@@ -8078,7 +8078,7 @@
   {
     "site": "rmgpy/tools/uncertainty.py::get_i_thing::is_same_reaction#1",
     "kind": "direction",
-    "line": 1830,
+    "line": 1835,
     "source": "if (thing.is_same_reaction(thing_list[i]) if isinstance(thing, Reaction)",
     "verdict": "guarded",
     "reason": "Reaction branch uses is_same_reaction; structural object branch does not manipulate rates.",

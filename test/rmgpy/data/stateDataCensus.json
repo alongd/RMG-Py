@@ -2375,7 +2375,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "2d51ebc3ddedba33a75bb28c646565ea553ad512822129f69d9b299d2de1321e"
+      "source_sha256": "c61e0a7b0a86e9415037f50d20a06ec7ae3003c689c8817e50fe1779cb89dab1"
     },
     "arkane/input.py:explorer": {
       "verdict": "carried",
@@ -22354,7 +22354,7 @@
       "evidence": [
         "test/rmgpy/rmg/inputTest.py"
       ],
-      "source_sha256": "991e6ab7d2de2519ea82f36515ff05d1e2f9228982c7b7e6799d4d86b99814ab"
+      "source_sha256": "ef806daf1ce6dbe5223a32ea5702e1cacf9c706a3e3750e0d0263b1a502b4328"
     },
     "rmgpy/rmg/input.py:forbidden": {
       "verdict": "carried",
@@ -22452,6 +22452,15 @@
       ],
       "source_sha256": "7126f714f3e019573381aa36d1b0a5139a95d6874dc148835940d6d5561a9b28"
     },
+    "rmgpy/rmg/input.py:normalize_kinetics_depositories": {
+      "verdict": "carried",
+      "reason": "Validates and normalizes configuration tokens only; it does not acquire or transform scientific state data.",
+      "evidence": [
+        "test/rmgpy/rmg/inputTest.py",
+        "test/arkane/arkaneInputTest.py"
+      ],
+      "source_sha256": "e3a2a8959e744636eb4e47557e20b63abd732b02b80a5f9362a4ca935fb30bac"
+    },
     "rmgpy/rmg/input.py:options": {
       "verdict": "carried",
       "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
@@ -22519,7 +22528,7 @@
       "source_sha256": "2dc96bde4e914e19e62a59794054a21b03cbe5106311f347db0542a0041e1d1f"
     },
     "rmgpy/rmg/input.py:save_input_file": {
-      "source_sha256": "d23454d3c37424f1771f7ce3c5d5fbbca97e53d80a2b4232ec801f3f2d039c13",
+      "source_sha256": "4a21c8f132a2b162b65ace097eb89a3530298af56254943109d7b335b98f47bd",
       "verdict": "carried",
       "reason": "The existing supported header-free declaration keeps its original graph and vibrationalManifold DSL line by stripping the marker only from the serialization copy; explicit resolved input remains refused.",
       "evidence": [
@@ -22826,7 +22835,7 @@
       "evidence": [
         "test/rmgpy/rmg/mainTest.py"
       ],
-      "source_sha256": "fdced119b57484cea385c1fedef0b0295a13ba416df06a4c23acebd2265e5c31"
+      "source_sha256": "57089a548c9ec06dde71a0fc852c05b178d4c88c86dbc00ff192d875858118d2"
     },
     "rmgpy/rmg/main.py:RMG.load_input": {
       "verdict": "carried",
@@ -22946,7 +22955,7 @@
       "evidence": [
         "test/rmgpy/rmg/mainTest.py"
       ],
-      "source_sha256": "830b692b72544b677a5889ab09c49abdb7fce4ec41fc1471458e56b1095d6320"
+      "source_sha256": "8e844414a72fc9cc52b5fb08b090e0258d19bad97fe10b349650f389378e1221"
     },
     "rmgpy/rmg/main.py:RMG.save_everything": {
       "verdict": "carried",
@@ -31351,7 +31360,7 @@
       "evidence": [
         "test/rmgpy/tools/uncertaintyTest.py"
       ],
-      "source_sha256": "4a90ec0ada9c585fce23d2a181a7602815a7b8a1613051147e95eb43ddd38764"
+      "source_sha256": "018196cf3621de32d866b4c8d1d7ab9d55438347d7ff538011193df91ba41abb"
     },
     "rmgpy/tools/uncertainty.py:Uncertainty.load_model": {
       "verdict": "carried",

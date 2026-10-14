@@ -39,10 +39,288 @@ import pytest
 
 from rmgpy import get_path, settings
 from rmgpy.data.rmg import RMGDatabase
+from rmgpy.exceptions import InputError
+from rmgpy.rmg import input as rmg_input
 from rmgpy.rmg.main import RMG, RMG_Memory, initialize_log, make_profile_graph
 from rmgpy.rmg.model import CoreEdgeReactionModel
+from rmgpy.rmg.settings import ModelSettings, SimulatorSettings
 
 originalPath = get_path()
+
+
+PROGRAMMATIC_INVALID_DEPOSITORIES = [["all"], ["default"], [""], [None], [[]]]
+
+
+def _minimal_programmatic_rmg(tmp_path, kinetics_depositories):
+    rmg = RMG(output_directory=str(tmp_path))
+    rmg.database_directory = str(tmp_path)
+    rmg.thermo_libraries = []
+    rmg.transport_libraries = []
+    rmg.reaction_libraries = []
+    rmg.statmech_libraries = []
+    rmg.seed_mechanisms = []
+    rmg.kinetics_families = []
+    rmg.kinetics_depositories = kinetics_depositories
+    rmg.adsorption_groups = "adsorptionPt111"
+    rmg.initial_species = []
+    rmg.reaction_systems = []
+    rmg.reaction_model = type("Model", (), {"vibrational_manifolds": []})()
+    rmg.simulator_settings_list = [SimulatorSettings()]
+    rmg.model_settings_list = [ModelSettings(tol_move_to_core=0.1)]
+    return rmg
+
+
+@pytest.mark.parametrize("selection", PROGRAMMATIC_INVALID_DEPOSITORIES)
+def test_load_database_validates_programmatic_depositories(monkeypatch, tmp_path, selection):
+    """Directly configured depository lists obey the same contract as input decks."""
+    class Database:
+        def load(self, **kwargs):
+            raise AssertionError("invalid depositories reached the database loader")
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "RMGDatabase", Database)
+    rmg = _minimal_programmatic_rmg(tmp_path, selection)
+
+    with pytest.raises(InputError):
+        rmg.load_database()
+
+
+@pytest.mark.parametrize("selection", [["NIST"], "all", None])
+def test_load_database_accepts_programmatic_depositories(monkeypatch, tmp_path, selection):
+    """Documented programmatic selections still reach the database unchanged."""
+    class Database:
+        def load(self, **kwargs):
+            self.load_kwargs = kwargs
+
+        kinetics = type("Kinetics", (), {"families": {}, "libraries": {}})()
+        thermo = type("Thermo", (), {"libraries": {}, "adsorption_groups": None})()
+        forbidden_structures = type("Forbidden", (), {"entries": {}})()
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "RMGDatabase", Database)
+    rmg = _minimal_programmatic_rmg(tmp_path, selection)
+
+    rmg.load_database()
+
+    assert rmg.database.load_kwargs["kinetics_depositories"] == selection
+    assert rmg.kinetics_depositories == selection
+    if isinstance(selection, list):
+        assert rmg.database.load_kwargs["kinetics_depositories"] is not selection
+
+
+@pytest.mark.parametrize("selection", PROGRAMMATIC_INVALID_DEPOSITORIES)
+def test_uncertainty_reload_validates_programmatic_depositories(monkeypatch, tmp_path, selection):
+    """The uncertainty family reload refuses malformed programmatic selections."""
+    class Kinetics:
+        families = {}
+
+        def load_families(self, path, families, depositories):
+            raise AssertionError("invalid depositories reached the family loader")
+
+    class Uncertainty:
+        def __init__(self, output_directory):
+            pass
+
+        def extract_sources_from_model(self):
+            pass
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "Uncertainty", Uncertainty)
+    rmg = _minimal_programmatic_rmg(tmp_path, selection)
+    rmg.database = type("Database", (), {"kinetics": Kinetics(), "thermo": object()})()
+    rmg.reaction_model.core = type("Core", (), {"species": [], "reactions": []})()
+    rmg.uncertainty = {"global": False, "local": True, "uncorrelated": False, "correlated": False}
+
+    with pytest.raises(InputError):
+        rmg.run_uncertainty_analysis()
+
+
+@pytest.mark.parametrize("selection", [["NIST"], "all", None])
+def test_uncertainty_reload_accepts_programmatic_depositories(monkeypatch, tmp_path, selection):
+    """The uncertainty reload preserves valid programmatic selections and list ownership."""
+    class Kinetics:
+        families = {}
+        forwarded = None
+
+        def load_families(self, path, families, depositories):
+            self.forwarded = depositories
+
+    class Uncertainty:
+        def __init__(self, output_directory):
+            pass
+
+        def extract_sources_from_model(self):
+            pass
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "Uncertainty", Uncertainty)
+    rmg = _minimal_programmatic_rmg(tmp_path, selection)
+    rmg.database = type("Database", (), {"kinetics": Kinetics(), "thermo": object()})()
+    rmg.reaction_model.core = type("Core", (), {"species": [], "reactions": []})()
+    rmg.uncertainty = {"global": False, "local": True, "uncorrelated": False, "correlated": False}
+
+    rmg.run_uncertainty_analysis()
+
+    assert rmg.database.kinetics.forwarded == selection
+    assert rmg.kinetics_depositories == selection
+    if isinstance(selection, list):
+        assert rmg.database.kinetics.forwarded is not selection
+
+
+@pytest.mark.parametrize("selection", PROGRAMMATIC_INVALID_DEPOSITORIES)
+def test_save_input_validates_programmatic_depositories(tmp_path, selection):
+    """A refused programmatic selection cannot damage an existing input deck."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "existing.py"
+    rmg.save_input(str(output))
+    original = output.read_bytes()
+    rmg.kinetics_depositories = selection
+
+    with pytest.raises(InputError):
+        rmg.save_input(str(output))
+
+    assert output.read_bytes() == original
+
+
+def test_programmatic_default_depositories_save_and_reread(monkeypatch, tmp_path):
+    """A validated programmatic directive saves a deck accepted by the input reader."""
+    class Database:
+        def load(self, **kwargs):
+            assert kwargs["kinetics_depositories"] == ["training"]
+
+        kinetics = type("Kinetics", (), {"families": {}, "libraries": {}})()
+        thermo = type("Thermo", (), {"libraries": {}, "adsorption_groups": None})()
+        forbidden_structures = type("Forbidden", (), {"entries": {}})()
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "RMGDatabase", Database)
+    rmg = _minimal_programmatic_rmg(tmp_path, "default")
+    rmg.load_database()
+    saved = tmp_path / "saved.py"
+    rmg.save_input(str(saved))
+
+    reread = RMG(input_file=str(saved), output_directory=str(tmp_path / "reread"))
+    rmg_input.read_input_file(str(saved), reread)
+
+    assert reread.kinetics_depositories == ["training"]
+
+
+def test_load_database_does_not_allow_database_to_mutate_depositories(monkeypatch, tmp_path):
+    """The database loader may append training, but never to the run's own list."""
+    class Database:
+        def load(self, **kwargs):
+            kwargs["kinetics_depositories"].append("training")
+        kinetics = type("Kinetics", (), {"families": {}, "libraries": {}})()
+        thermo = type("Thermo", (), {"libraries": {}})()
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "RMGDatabase", Database)
+    rmg = RMG()
+    rmg.database_directory = str(tmp_path)
+    rmg.reaction_libraries = []
+    rmg.initial_species = []
+    rmg.reaction_systems = []
+    rmg.reaction_model = type("Model", (), {"vibrational_manifolds": []})()
+    rmg.simulator_settings_list = [SimulatorSettings()]
+    rmg.model_settings_list = [ModelSettings(tol_move_to_core=0.1)]
+    rmg.kinetics_depositories = ["NIST"]
+    rmg.adsorption_groups = "adsorptionPt111"
+    rmg.load_database()
+    assert rmg.kinetics_depositories == ["NIST"]
+    output = tmp_path / "input.py"
+    rmg.save_input(str(output))
+    assert "kineticsDepositories = ['NIST']" in output.read_text()
+
+
+def test_load_database_treats_unset_depositories_as_training_enabled(monkeypatch, tmp_path):
+    """An untouched RMG object keeps the historical training-rule default."""
+    class Family:
+        auto_generated = False
+        forward_template = type("Template", (), {"reactants": [], "products": []})()
+        training_calls = 0
+
+        def add_rules_from_training(self, thermo_database):
+            self.training_calls += 1
+
+        def fill_rules_by_averaging_up(self, verbose=False):
+            pass
+
+    family = Family()
+
+    class Database:
+        def load(self, **kwargs):
+            self.load_kwargs = kwargs
+
+        kinetics = type("Kinetics", (), {"families": {"test": family}, "libraries": {}})()
+        thermo = type("Thermo", (), {"libraries": {}, "adsorption_groups": None})()
+        forbidden_structures = type("Forbidden", (), {"entries": {}})()
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "RMGDatabase", Database)
+    rmg = RMG()
+    rmg.database_directory = str(tmp_path)
+    rmg.reaction_libraries = []
+    rmg.initial_species = []
+    rmg.reaction_systems = []
+    rmg.reaction_model = type("Model", (), {"vibrational_manifolds": []})()
+    rmg.simulator_settings_list = [SimulatorSettings()]
+    rmg.model_settings_list = [ModelSettings(tol_move_to_core=0.1)]
+    rmg.adsorption_groups = "adsorptionPt111"
+
+    assert rmg.kinetics_depositories is None
+    rmg.load_database()
+
+    assert rmg.database.load_kwargs["kinetics_depositories"] is None
+    assert family.training_calls == 1
+
+
+def test_uncertainty_reload_does_not_allow_database_to_mutate_depositories(monkeypatch, tmp_path):
+    """The uncertainty reload receives a copy of the run's depository list."""
+    class Kinetics:
+        families = {}
+
+        def load_families(self, path, families, depositories):
+            depositories.append("training")
+
+    class Uncertainty:
+        def __init__(self, output_directory):
+            pass
+
+        def extract_sources_from_model(self):
+            pass
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "Uncertainty", Uncertainty)
+    rmg = RMG(output_directory=str(tmp_path))
+    rmg.database_directory = str(tmp_path)
+    rmg.database = type("Database", (), {
+        "kinetics": Kinetics(),
+        "thermo": object(),
+    })()
+    rmg.reaction_model = type("Model", (), {
+        "core": type("Core", (), {"species": [], "reactions": []})(),
+        "vibrational_manifolds": [],
+    })()
+    rmg.initial_species = []
+    rmg.reaction_systems = []
+    rmg.simulator_settings_list = [SimulatorSettings()]
+    rmg.model_settings_list = [ModelSettings(tol_move_to_core=0.1)]
+    rmg.kinetics_families = ["H_Abstraction"]
+    rmg.kinetics_depositories = ["NIST"]
+    rmg.adsorption_groups = "adsorptionPt111"
+    rmg.uncertainty = {
+        "global": False,
+        "local": True,
+        "uncorrelated": False,
+        "correlated": False,
+    }
+
+    rmg.run_uncertainty_analysis()
+
+    assert rmg.kinetics_depositories == ["NIST"]
+    output = tmp_path / "input.py"
+    rmg.save_input(str(output))
+    assert "kineticsDepositories = ['NIST']" in output.read_text()
 
 
 @pytest.mark.functional

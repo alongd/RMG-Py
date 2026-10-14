@@ -2271,8 +2271,8 @@
     "rmgpy/rmg/input.py:save_input_file": {
       "file": "rmgpy/rmg/input.py",
       "function": "save_input_file",
-      "line": 3397,
-      "signature": "97db92e67466d66e4e022afeb5b72ffa4276d9b274de398a6cc77b7e02350ba6",
+      "line": 3410,
+      "signature": "3a44b7e5ea04254ef5edc90df146e7e07293b2a166749617cb5e64e9e13590fb",
       "verdict": "N",
       "reason": "The existing supported header-free declaration keeps its original graph and vibrationalManifold DSL line by stripping the marker only from the serialization copy; explicit resolved input remains refused.",
       "evidence": [
@@ -2317,7 +2317,7 @@
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.load_database",
       "line": 513,
-      "signature": "9fc6c052b56287083d3ba5c1c76abc619f6bbf2bbd136feb392d99e2f489cad0",
+      "signature": "9d88752eebaaddd2af40d2967c92d6838aebbbd2192a998ee46ae59ce16686a0",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmg/main.py:RMG.load_database]",
       "manifold": {
@@ -5313,7 +5313,7 @@
       "reason": "Family schema, group-pattern and rate-rule loading delegates molecular training records to the separately guarded KineticsDepository.load boundary.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.load",
-      "line": 1619,
+      "line": 1486,
       "signature": "502f7a3906be1b4434b12eda0e7d8c9c698bc982f401e213a17dae8cb73e0fec"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.generate_product_template": {

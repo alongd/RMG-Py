@@ -27,6 +27,7 @@
 #                                                                             #
 ###############################################################################
 
+import copy
 import os
 
 import pandas as pd
@@ -469,9 +470,13 @@ class Uncertainty(object):
         """
         from rmgpy.data.rmg import RMGDatabase
         from rmgpy import settings
+        from rmgpy.rmg.input import normalize_kinetics_depositories
 
-        if not kinetics_depositories:
+        if kinetics_depositories is None:
             kinetics_depositories = ['training']
+        else:
+            kinetics_depositories = normalize_kinetics_depositories(kinetics_depositories)
+        kinetics_depositories = copy.copy(kinetics_depositories)
         if not thermo_libraries:
             thermo_libraries = ['primaryThermoLibrary']
         if not reaction_libraries:

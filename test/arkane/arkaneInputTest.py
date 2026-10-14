@@ -34,6 +34,7 @@ This module contains unit tests of the :mod:`arkane.input` module.
 import os
 
 from rmgpy.species import Species, TransitionState
+from rmgpy.exceptions import InputError
 
 from arkane import input
 from arkane.input import job_list
@@ -68,6 +69,48 @@ def test_database_all_forwards_all_kinetics_depositories(monkeypatch):
     input.database(kineticsDepositories='all')
 
     assert database.load_kwargs['kinetics_depositories'] == 'all'
+
+
+def test_database_does_not_mutate_depository_selection(monkeypatch):
+    """Arkane protects a caller-owned list from database-loader mutation."""
+    class RecordingDatabase:
+        kinetics = type("Kinetics", (), {"families": {}})()
+
+        def load(self, **kwargs):
+            kwargs["kinetics_depositories"].append("training")
+
+    monkeypatch.setattr(input, "get_db", lambda: RecordingDatabase())
+    selection = ["NIST"]
+
+    input.database(kineticsDepositories=selection)
+
+    assert selection == ["NIST"]
+
+
+@pytest.mark.parametrize("value", [["all"], ["default"], ["default", {}]])
+def test_database_rejects_reserved_depositories_inside_list(value, monkeypatch):
+    class Database:
+        kinetics = type("Kinetics", (), {"families": {}})()
+
+        def load(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(input, "get_db", lambda: Database())
+    with pytest.raises(InputError, match="may not contain"):
+        input.database(kineticsDepositories=value)
+
+
+@pytest.mark.parametrize("value", [[None], [[]], [1], [""]])
+def test_database_rejects_invalid_depository_names(value, monkeypatch):
+    class Database:
+        kinetics = type("Kinetics", (), {"families": {}})()
+
+        def load(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(input, "get_db", lambda: Database())
+    with pytest.raises(InputError, match="non-empty strings"):
+        input.database(kineticsDepositories=value)
 
 
 @pytest.mark.skip(reason=ADMONITION)

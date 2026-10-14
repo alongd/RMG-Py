@@ -28,6 +28,7 @@
 ###############################################################################
 
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -73,6 +74,36 @@ class TestInputDatabase:
         # remove the reactionLibraries value
         global rmg
         rmg.reaction_libraries = None
+
+    @pytest.mark.parametrize("value", [
+        ["all"],
+        ["default"],
+        ["training", "all"],
+        ["all", []],
+    ])
+    def test_rejects_reserved_depository_tokens_inside_list(self, value, monkeypatch):
+        monkeypatch.setattr(inp.settings, "require_database_directory", lambda: "/tmp")
+        with pytest.raises(InputError, match="may not contain"):
+            inp.database(kineticsDepositories=value)
+
+    @pytest.mark.parametrize("value", [[None], [[]], [1], [""]])
+    def test_rejects_invalid_depository_names(self, value, monkeypatch):
+        monkeypatch.setattr(inp.settings, "require_database_directory", lambda: "/tmp")
+        with pytest.raises(InputError, match="non-empty strings"):
+            inp.database(kineticsDepositories=value)
+
+    @pytest.mark.parametrize("value", [None, [], 1])
+    def test_rejects_non_string_adsorption_groups(self, value, monkeypatch):
+        monkeypatch.setattr(inp.settings, "require_database_directory", lambda: "/tmp")
+        with pytest.raises(InputError, match="adsorptionGroups"):
+            inp.database(adsorptionGroups=value)
+
+    def test_user_guide_documents_database_refusals(self):
+        guide = Path(__file__).resolve().parents[3] / "documentation/source/users/rmg/input.rst"
+        text = " ".join(guide.read_text().split())
+        assert "Each kinetics depository list entry must be a non-empty string." in text
+        assert "whole-field directives and are refused inside lists" in text
+        assert "``adsorptionGroups`` must be a non-empty string" in text
 
     def test_importing_database_reaction_libraries_from_string(self):
         """
