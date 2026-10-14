@@ -722,10 +722,14 @@ def _ring_atoms(adj, ids):
 
 
 class _View:
-    """Read-only matching data of one state revision."""
+    """Read-only matching data of one state revision.
+
+    The view refers to its state only weakly: ``_VIEWS`` is keyed weakly by
+    the state, so a strong reference from the cached value back to its key
+    would keep every matched state (and its view) alive forever."""
 
     def __init__(self, state):
-        self.state = state
+        self._state = weakref.ref(state)
         self.revision = state.revision
         nodes = state.atoms
         self.ids = tuple(sorted(nodes))
@@ -759,6 +763,13 @@ class _View:
     def _value(self, a):
         n = self.node[a]
         return n.element, n.charge, n.lone_pairs, n.radical, n.edges
+
+    @property
+    def state(self):
+        state = self._state()
+        if state is None:
+            raise WindowMatcherError("the state of this view was released")
+        return state
 
     def full_hash(self):
         if self._hash is None:
