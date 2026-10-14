@@ -723,3 +723,200 @@ def test_state_hash_distinguishes_each_field(field):
         value = {"isotope": 13, "charge": 1, "radical": 1, "lone_pairs": 1}[field]
         s._atoms[c] = melt_state.replace(s.atoms[c], **{field: value})
     assert s.state_hash() != base
+
+
+# --------------------------------------------------------------------------
+# hardening: public transactions, conservation, install atomicity, identity
+# --------------------------------------------------------------------------
+def _h_move_edits(state):
+    donor = chain_atom(state, 0, 5, "c2")
+    hy = hydrogens(state, donor)[0]
+    target = chain_atom(state, 2, 6, "c1")
+    h2 = hydrogens(state, target)[0]
+    return [SetBond(donor, hy, 1.0, 0.0), SetRadical(donor, 0, 1),
+            SetBond(target, h2, 1.0, 0.0), SetRadical(target, 0, 1),
+            SetBond(hy, h2, 0.0, 1.0)]
+
+
+def test_multi_apply_transaction_rolls_back_on_exception(state):
+    _a, _b, backbone_cut = homolysis_edits(state)
+    snap = snapshot(state)
+    with pytest.raises(RuntimeError, match="later stage"):
+        with state.transaction() as tx:
+            tx.apply(backbone_cut)
+            assert state.state_hash() != snap[0]  # visible inside the transaction
+            state.apply(_h_move_edits(state))      # state.apply accumulates too
+            assert len(tx.journal.edits) == len(backbone_cut) + 5
+            raise RuntimeError("later stage failed")
+    assert snapshot(state) == snap
+    assert state.revision == 0
+    assert_canonical_ids(state)
+    # explicit rollback and explicit commit
+    tx = state.transaction()
+    tx.apply(backbone_cut)
+    tx.rollback()
+    assert snapshot(state) == snap
+    with state.transaction() as tx:
+        tx.apply(backbone_cut)
+    assert state.state_hash() != snap[0]
+
+
+def test_failed_apply_inside_transaction_undoes_only_itself(state):
+    _a, _b, backbone_cut = homolysis_edits(state)
+    snap = snapshot(state)
+    with state.transaction() as tx:
+        tx.apply(backbone_cut)
+        mid = snapshot(state)
+        with pytest.raises(EditError):
+            tx.apply([SetBond(0, 1, 2.0, 0.0)])
+        assert snapshot(state) == mid
+        tx.rollback()
+    assert snapshot(state) == snap
+
+
+def test_transaction_guards_and_revision(state, spec):
+    a, b, edits = homolysis_edits(state)
+    assert state.revision == 0
+    journal = state.apply(edits)
+    assert state.revision == 1
+    with pytest.raises(MeltStateError):
+        state.rollback(journal)  # already committed
+    with pytest.raises(MeltStateError):
+        journal.rollback_into(state) if hasattr(journal, "rollback_into") else state.rollback(journal)
+    # one revision per commit, however many applies it holds
+    with state.transaction() as tx:
+        tx.apply(_h_move_edits(state))
+        tx.apply([SetRadical(chain_atom(state, 0, 1, "c1"), 0, 0)])
+    assert state.revision == 2
+    # nested transactions are refused
+    with state.transaction() as tx:
+        with pytest.raises(MeltStateError):
+            state.transaction()
+        with pytest.raises(MeltStateError):
+            state.begin()
+    assert state.revision == 3
+    # rollback never bumps, failed one-shot apply never bumps
+    with pytest.raises(EditError):
+        state.apply([SetBond(a, b, 1.0, 0.0)])
+    with pytest.raises(RuntimeError):
+        with state.transaction():
+            raise RuntimeError("x")
+    assert state.revision == 3
+    # a journal belongs to the state that made it
+    other = materialize(spec)
+    foreign = other.transaction()
+    with pytest.raises(MeltStateError):
+        state.rollback(foreign.journal)
+    foreign.rollback()
+    # an open transaction's journal can be rolled back through the state
+    snap = snapshot(state)
+    tx = state.transaction()
+    tx.apply(edits)
+    state.rollback(tx.journal)
+    assert snapshot(state) == snap
+    with pytest.raises(MeltStateError):
+        state.rollback(tx.journal)  # already rolled back
+    # an explicit commit finalizes; the transaction is then closed
+    tx = state.transaction()
+    tx.apply(edits)
+    tx.commit()
+    assert state.revision == 4
+    with pytest.raises(MeltStateError):
+        tx.rollback()
+    with pytest.raises(MeltStateError):
+        tx.apply(edits)
+
+
+def test_charge_creation_is_refused(state):
+    carbon = chain_atom(state, 0, 2, "c2")
+    h = hydrogens(state, carbon)[0]
+    snap = snapshot(state)
+    # both local valence equations hold (C+: 3 bonds, charge +1; H.: radical 1)
+    with pytest.raises(PostconditionError, match="charge"):
+        state.apply([SetBond(carbon, h, 1.0, 0.0), SetCharge(carbon, 0, 1), SetRadical(h, 0, 1)])
+    assert snapshot(state) == snap
+    # a conserving heterolysis is still accepted
+    state.apply([SetBond(carbon, h, 1.0, 0.0), SetCharge(carbon, 0, 1),
+                 SetCharge(h, 0, -1), SetLonePairs(h, 0, 1)])
+
+
+def test_expected_radical_delta(state):
+    a, b, edits = homolysis_edits(state)
+    snap = snapshot(state)
+    with pytest.raises(PostconditionError, match="radical"):
+        state.apply(edits, expected_radical_delta=0)
+    assert snapshot(state) == snap
+    state.apply(edits, expected_radical_delta=2)
+    snap = snapshot(state)
+    with pytest.raises(PostconditionError, match="radical"):
+        with state.transaction(expected_radical_delta=0) as tx:
+            tx.apply(_h_move_edits(state))  # +2 radicals, expected 0
+    assert snapshot(state) == snap
+    with state.transaction(expected_radical_delta=2) as tx:
+        tx.apply(_h_move_edits(state))
+
+
+def test_install_is_atomic_with_respect_to_rollback(state):
+    a, b, edits = homolysis_edits(state)
+    snap = snapshot(state)
+
+    def fault(name):
+        if name == melt_state.INSTALL_STAGE:
+            raise RuntimeError("inside install")
+
+    with pytest.raises(RuntimeError, match="inside install"):
+        state.apply(edits, fault=fault)
+    assert snapshot(state) == snap
+    assert_canonical_ids(state)
+    with pytest.raises(RuntimeError, match="inside install"):
+        with state.transaction() as tx:
+            tx.apply(_h_move_edits(state))
+            tx.apply(edits, fault=fault)
+    assert snapshot(state) == snap
+    assert state.revision == 0
+
+
+def test_full_hash_covers_origin_and_revision_is_separate(spec):
+    nodes = {0: Node("H", None, 0, 0, 0, {1: 1.0}), 1: Node("H", None, 0, 0, 0, {0: 1.0})}
+    mobile = {i: Origin("mobile", 0, "H2", f"h{i}", False) for i in nodes}
+    chain = {0: Origin("chain", 0, "unit 1", "c1", True), 1: Origin("chain", 0, "unit 1", "c2", False)}
+    s1, s2 = MeltState(nodes, mobile), MeltState(nodes, chain)
+    assert s1.state_hash() == s2.state_hash()  # graph identity only
+    assert s1.full_hash() != s2.full_hash()    # cache identity includes ancestry
+    flipped = {0: chain[0], 1: Origin("chain", 0, "unit 1", "c2", True)}
+    assert MeltState(nodes, flipped).full_hash() != s2.full_hash()
+    s = materialize(spec)
+    f0 = s.full_hash()
+    assert f0 == materialize(spec).full_hash()
+    a, b, edits = homolysis_edits(s)
+    s.apply(edits)
+    assert s.full_hash() != f0
+    s.apply([SetBond(a, b, 0.0, 1.0), SetRadical(a, 1, 0), SetRadical(b, 1, 0)])
+    assert s.state_hash() == materialize(spec).state_hash()
+    assert s.revision == 2  # the hash is back, the revision is not
+
+
+def test_mass_units_are_explicit(state):
+    for cid in state.components.ids():
+        kg = state.components.mass_kg_per_mol(cid)
+        g = state.components.molar_mass_g_mol(cid)
+        assert isinstance(kg, Fraction) and isinstance(g, Fraction)
+        assert g == kg * 1000
+        assert kg == independent_mass(comp_counter(state, cid))
+    styrene = next(c for c in state.components.ids() if state.origin[c].kind == "mobile")
+    assert abs(float(state.components.molar_mass_g_mol(styrene)) - 104.15) < 0.01
+    n, m1, _m2, _m3 = state.mass_moments(lambda c: True, unit="g_per_mol")
+    assert m1 == sum(state.components.molar_mass_g_mol(c) for c in state.components.ids())
+    with pytest.raises(MeltStateError):
+        state.mass_moments(lambda c: True, unit="lb")
+
+
+def test_mobile_origin_query_and_zero_ancestry(state):
+    mobile = [c for c in state.components.ids() if state.origin[c].is_mobile]
+    assert len(mobile) == 2
+    for c in mobile:
+        assert state.origin_kinds(c) == frozenset({"mobile"})
+        assert state.backbone_count(c) == 0  # undefined in v1, not "not polymer-derived"
+    chains = [c for c in state.components.ids() if not state.origin[c].is_mobile]
+    assert all(state.origin_kinds(c) == frozenset({"chain"}) for c in chains)
+    assert "undefined" in MeltState.backbone_count.__doc__
