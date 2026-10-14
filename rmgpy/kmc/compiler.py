@@ -39,6 +39,7 @@ from rmgpy.kmc.proxy_padding import (
     ReactionNotPaddable,
     RepeatUnitGraph,
     pad_reaction_witness,
+    pad_reaction_witness_verified,
 )
 from rmgpy.kmc.reference_thermo import (
     FROZEN_THERMO_PROPERTY,
@@ -2353,7 +2354,17 @@ def _orient_to_proxy(proxy, reaction):
 
 
 def _map_proxy_boundaries_to_reaction(proxy, reaction):
-    """Carry annotated proxy ports onto the generated reaction's atom IDs."""
+    """Carry annotated proxy ports onto the generated reaction's atom IDs.
+
+    The participant assignment is found on the port atoms (unique up to the
+    ports it implies, else ``ambiguous``).  Construction metadata (ports,
+    declared caps, repeat coordinates) is then transported through a FULL
+    explicit-H isomorphism of each source participant onto its generated
+    participant (RMG ``find_isomorphism``, hydrogens included, ports pinned):
+    a cap is never kept because its id survived, and a remapped port never
+    drops its cap.  Construction-sourced ports whose metadata cannot be
+    transported are refused (``ValueError``), never demoted to inference.
+    Legacy (inferred) ports keep the old behaviour: no caps."""
     if not proxy.artificial_boundaries:
         return proxy
     initiated, _ = _orient_to_proxy(proxy, reaction)
@@ -2463,29 +2474,76 @@ def _map_proxy_boundaries_to_reaction(proxy, reaction):
     choose(0, set(), [])
     if not assignments:
         raise ValueError("annotated proxy cannot be mapped onto generated reaction")
-    mapped_options = set()
+    port_options = {}
     for assignment in assignments:
-        mapped = []
-        for boundary in proxy.artificial_boundaries:
-            target_index, mapping = assignment[boundary.participant_index]
-            # declared caps travel only when the generated reaction kept the
-            # port's atom id; otherwise the port falls back to inference
-            same_id = mapping[boundary.atom_id] == boundary.atom_id
-            mapped.append(
+        option = tuple(
+            sorted(
                 (
-                    target_index,
-                    mapping[boundary.atom_id],
+                    assignment[boundary.participant_index][0],
+                    assignment[boundary.participant_index][1][boundary.atom_id],
                     boundary.orientation,
                     boundary.kind,
-                    tuple(boundary.cap_atom_ids) if same_id else (),
-                    boundary.source
-                    if same_id and boundary.cap_atom_ids
-                    else "inferred",
+                )
+                for boundary in proxy.artificial_boundaries
+            )
+        )
+        port_options.setdefault(option, assignment)
+    if len(port_options) != 1:
+        raise ValueError("artificial boundary mapping is ambiguous")
+    (assignment,) = port_options.values()
+    construction = any(
+        getattr(boundary, "source", None) == "construction"
+        for boundary in proxy.artificial_boundaries
+    )
+    builds = tuple(getattr(proxy, "boundary_builds", ()) or ())
+    if construction and len(builds) != len(proxy.reactants):
+        raise ValueError(
+            "construction boundary metadata lost: the proxy carries no build per participant"
+        )
+    explicit = {}
+    participants = []
+    if construction:
+        from rmgpy.kmc.boundaries import Participant
+
+        for source_index, source_participant in enumerate(proxy.reactants):
+            target_index, port_map = assignment[source_index]
+            source_molecule = _molecule(source_participant)
+            target_molecule = _molecule(targets[target_index])
+            full = _explicit_h_map(source_molecule, target_molecule, port_map)
+            metadata = builds[source_index].metadata
+            missing = sorted(metadata.atom_ids() - set(full))
+            if missing:
+                raise ValueError(
+                    f"construction boundary metadata lost: atoms {missing} of participant "
+                    f"{source_index} are not in the proxy molecule"
+                )
+            explicit[source_index] = full
+            participants.append(
+                Participant(
+                    target_index,
+                    metadata.relabel(full),
+                    tuple(atom.id for atom in target_molecule.atoms),
                 )
             )
-        mapped_options.add(tuple(sorted(mapped)))
-    if len(mapped_options) != 1:
-        raise ValueError("artificial boundary mapping is ambiguous")
+    mapped = []
+    for boundary in proxy.artificial_boundaries:
+        target_index, port_map = assignment[boundary.participant_index]
+        if boundary.source == "construction":
+            full = explicit[boundary.participant_index]
+            caps = tuple(sorted(full[cap] for cap in boundary.cap_atom_ids))
+            source = "construction"
+        else:
+            caps, source = (), "inferred"
+        mapped.append(
+            (
+                target_index,
+                port_map[boundary.atom_id],
+                boundary.orientation,
+                boundary.kind,
+                caps,
+                source,
+            )
+        )
     boundaries = tuple(
         BoundaryPort(
             atom_id=atom_id,
@@ -2495,15 +2553,53 @@ def _map_proxy_boundaries_to_reaction(proxy, reaction):
             cap_atom_ids=cap_atom_ids,
             source=source,
         )
-        for participant_index, atom_id, orientation, kind, cap_atom_ids, source in next(
-            iter(mapped_options)
+        for participant_index, atom_id, orientation, kind, cap_atom_ids, source in sorted(
+            mapped
         )
     )
     return replace(
         proxy,
         reactants=tuple(initiated.reactants),
         artificial_boundaries=boundaries,
+        boundary_participants=tuple(sorted(participants, key=lambda p: p.index)),
     )
+
+
+def _pad_production_witness(reaction, proxy, distance, max_heavy_atoms):
+    """Production padding of a construction-annotated proxy: the verified
+    explicit-H extension path (``proxy_padding.pad_reaction_witness_verified``
+    over ``rmgpy.kmc.boundaries``) with the metadata transported by
+    ``_map_proxy_boundaries_to_reaction``."""
+    return pad_reaction_witness_verified(
+        reaction,
+        proxy.artificial_boundaries,
+        tuple(getattr(proxy, "boundary_participants", ()) or ()),
+        distance,
+        max_heavy_atoms=max_heavy_atoms,
+        providers=BOUNDARY_PROVIDERS,
+    )
+
+
+def _explicit_h_map(source_molecule, target_molecule, port_map) -> dict[int, int]:
+    """Source atom id -> target atom id over EVERY atom (hydrogens included):
+    an RMG isomorphism with the port atoms pinned (``port_map``: source port
+    id -> target port id).  Deterministic: RMG's first isomorphism with the
+    atom order kept."""
+    by_id = {atom.id: atom for atom in target_molecule.atoms}
+    source_by_id = {atom.id: atom for atom in source_molecule.atoms}
+    initial = {source_by_id[a]: by_id[b] for a, b in port_map.items()}
+    maps = source_molecule.find_isomorphism(
+        target_molecule, initial_map=initial, save_order=True, strict=False
+    )
+    if not maps:
+        raise ValueError(
+            "construction boundary metadata lost: no explicit-H isomorphism of the proxy "
+            "participant onto the generated participant"
+        )
+    full = {a.id: b.id for a, b in maps[0].items()}
+    if len(full) != len(source_molecule.atoms) or len(set(full.values())) != len(full):
+        raise ValueError("construction boundary metadata lost: the explicit-H map is partial")
+    return full
 
 
 def ps_repeat_unit() -> RepeatUnitGraph:
@@ -3362,15 +3458,10 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
             partner_operation = partner_operations[0]
             if partner_operation.get("action") != inverse_action:
                 raise ValueError("R1 J_ring linked actions are not inverse")
-    certificates = artifact.get("rate_certificates")
-    for record in records:
-        reference = record.get("rate_certificate")
-        if reference is None:
-            continue
-        if not isinstance(certificates, dict) or reference.get("sha256") not in certificates:
-            raise ValueError("record rate certificate reference does not resolve")
-        if sha256_json(certificates[reference["sha256"]]) != reference["sha256"]:
-            raise ValueError("record rate certificate digest mismatch")
+    # rate certificates: declared mode, coverage, ownership, derived summary
+    from rmgpy.kmc.certificates import validate_certification
+
+    validate_certification(artifact)
     linked_records = [record for record in records if record.get("reverse_of") in by_id]
     duplicates = duplicate_transition_groups(linked_records)
     if duplicates:
@@ -4060,6 +4151,10 @@ class SiteProxy:
     # per participant: the provider ``ProxyBuild`` (molecule + boundary
     # metadata); not part of any fingerprint or record
     boundary_builds: Sequence[Any] = field(default_factory=tuple)
+    # after ``_map_proxy_boundaries_to_reaction``: the construction metadata
+    # transported onto the generated reaction's atom ids (``boundaries.
+    # Participant`` per participant, explicit-H); not part of any fingerprint
+    boundary_participants: Sequence[Any] = field(default_factory=tuple)
 
 
 class EventSetCompiler:
@@ -4637,13 +4732,24 @@ class EventSetCompiler:
             and proxy.repeat_unit is not None
         ):
             try:
-                padded = pad_reaction_witness(
-                    estimate,
-                    proxy.artificial_boundaries,
-                    proxy.repeat_unit,
-                    padding_distance,
-                    max_heavy_atoms=self.proxy_padding_max_heavy_atoms,
-                )
+                if any(
+                    getattr(port, "source", None) == "construction"
+                    for port in proxy.artificial_boundaries
+                ):
+                    padded = _pad_production_witness(
+                        estimate,
+                        proxy,
+                        padding_distance,
+                        self.proxy_padding_max_heavy_atoms,
+                    )
+                else:
+                    padded = pad_reaction_witness(
+                        estimate,
+                        proxy.artificial_boundaries,
+                        proxy.repeat_unit,
+                        padding_distance,
+                        max_heavy_atoms=self.proxy_padding_max_heavy_atoms,
+                    )
                 derived, generated_count = _production_padded_root(
                     self.kinetics_database,
                     padded.reaction,
@@ -5527,7 +5633,10 @@ class EventSetCompiler:
         )
         rate_certificates = None
         if getattr(self, "certify_rates", False):
-            from rmgpy.kmc.certificates import attach_rate_certificates
+            from rmgpy.kmc.certificates import (
+                attach_rate_certificates,
+                certification_declaration,
+            )
 
             records, rate_certificates = attach_rate_certificates(
                 records, getattr(self.kinetics_database, "families", {})
@@ -5580,7 +5689,10 @@ class EventSetCompiler:
             "short_molecule_catalogue": short_ps_molecule_catalogue(self.span_radius),
             "ps_ceiling_temperature_K": None,
             **(
-                {"rate_certificates": rate_certificates}
+                {
+                    "rate_certificates": rate_certificates,
+                    "rate_certification": certification_declaration(),
+                }
                 if rate_certificates is not None
                 else {}
             ),

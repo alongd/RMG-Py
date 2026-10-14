@@ -635,20 +635,23 @@ def test_certification_mode_requires_coverage_of_every_record():
 
 
 def test_record_certificate_binds_the_production_selection(fam, certifier):
-    """CH3* + propane, primary H (an averaged rule: its training contributor
-    and weight).  The record certificate names its owner, the members its
-    heavy-atom map selects and RMG's production selection, which must equal
-    the record's serialized rate source.  A changed weight, a changed source
-    or entry, or an atom map of another event refuses the binding (the rate
-    is never silently re-estimated)."""
-    reactants = [mol("[CH3]", 0), mol("CCC", 10)]
+    """1-phenylethyl* abstracting a head-CH3 H of closed PS DP3 (an averaged
+    rule: its training contributor and weight; depository excluded by size).
+    The record certificate names its owner, the members its heavy-atom map
+    selects and RMG's production selection, which must equal the record's
+    serialized rate source.  A changed weight, a changed source or entry, or
+    an atom map of another event refuses the binding (the rate is never
+    silently re-estimated)."""
+    reactants = [mol("C[CH]c1ccccc1", 0), mol(ct.ps(3), 17)]
     forward, reverse, _cs, ch = _record_pair(fam, "H_Abstraction", reactants,
-                                             ("C/H3/Cs\\H2\\Cs", "C_methyl"))
+                                             ("C/H3/Cs", "C_rad/H/CbCs"))
     rc = certifier.certify_record(forward)
     assert rc["owner"]["event_id"] == forward.event_id
     assert rc["binding"]["status"] == "bound", rc["binding"]
     assert rc["complete"] and rc["eligible"] and rc["certified"], rc["gaps"]
-    assert 1 <= len(rc["binding"]["members"]) < ch.size
+    # the heavy-atom map pins the donor carbon; the three methyl H members
+    # (equivalent up to H identity) all correspond to the record's event
+    assert 1 <= len(rc["binding"]["members"]) <= ch.size
     assert forward.rate_source["training"] or forward.rate_source["rules"]
     tampered = copy.deepcopy(forward.rate_source)
     (tampered["training"] or tampered["rules"])[0]["weight"] += 0.25
@@ -853,8 +856,8 @@ def test_domain_checks_the_multiplicity_convention_before_normalizing(fam, certi
     singlet.multiplicity = 1
     v = dom.check(singlet)
     assert not v.accepted and "multiplicity" in v.reason
-    cert = certifier.certify(fam["H_Abstraction"], [singlet, mol("[CH3]", 500)])
-    assert not cert["eligible"]
+    cert = certifier.certify(fam["R_Recombination"], [singlet, mol("[H]", 500)])
+    assert cert["input_refusals"] and not cert["eligible"]
 
 
 def test_domain_styryl_end_checks_both_alkene_carbons():

@@ -219,17 +219,41 @@ def heavy_atom_distance(molecule, first_id: int, second_id: int) -> int:
     raise ValueError("distance endpoints are disconnected")
 
 
-def _remove_cap_hydrogen(molecule, atom, cap_atom_ids=()) -> None:
+def _remove_cap_hydrogen(molecule, atom, cap_atom_ids=(), support=None) -> None:
+    """Remove the cap of continuation port ``atom``: the declared cap atoms
+    (each must be a hydrogen bonded to the port by a single bond and only to
+    it) or, without a declaration, the first hydrogen of the port.  A cap in
+    the reaction's edit ``support`` (atom ids whose attributes or bonds
+    change, hydrogens included) is never removed."""
+    support = set(support or ())
     if cap_atom_ids:
-        caps = [neighbor for neighbor in atom.edges if neighbor.id in set(cap_atom_ids)]
-        if len(caps) != len(cap_atom_ids):
+        wanted = set(cap_atom_ids)
+        caps = [neighbor for neighbor in atom.edges if neighbor.id in wanted]
+        if len(caps) != len(wanted):
             raise ReactionNotPaddable(
                 "declared cap atom is not bonded to its continuation port"
             )
         for cap in caps:
+            if cap.element.number != 1:
+                raise ReactionNotPaddable(
+                    f"declared cap atom {cap.id} is not a hydrogen"
+                )
+            if len(cap.edges) != 1 or float(cap.edges[atom].order) != 1.0:
+                raise ReactionNotPaddable(
+                    f"declared cap hydrogen {cap.id} is not singly bonded to its port only"
+                )
+            if cap.id in support:
+                raise ReactionNotPaddable(
+                    f"declared cap hydrogen {cap.id} is in the reaction's edit support"
+                )
+        for cap in caps:
             molecule.remove_atom(cap)
         return
-    hydrogens = [neighbor for neighbor in atom.edges if neighbor.element.number == 1]
+    hydrogens = [
+        neighbor
+        for neighbor in atom.edges
+        if neighbor.element.number == 1 and neighbor.id not in support
+    ]
     if not hydrogens:
         raise ValueError("continuation port has no hydrogen cap to replace")
     molecule.remove_atom(hydrogens[0])
@@ -241,6 +265,7 @@ def _append_repeat(
     repeat_unit: RepeatUnitGraph,
     *,
     atom_ids: Sequence[int] | None = None,
+    support=None,
 ) -> tuple[Any, BoundaryPort]:
     from rmgpy.molecule.molecule import Bond
 
@@ -289,7 +314,7 @@ def _append_repeat(
     for atom, atom_id in zip(unit.atoms, assigned_ids):
         atom.id = atom_id
 
-    _remove_cap_hydrogen(molecule, old_port, boundary.cap_atom_ids)
+    _remove_cap_hydrogen(molecule, old_port, boundary.cap_atom_ids, support)
     _remove_cap_hydrogen(unit, attach)
     new_caps = ()
     if boundary.cap_atom_ids:
@@ -442,8 +467,23 @@ def pad_reaction_witness(
     *,
     reacting_atom_ids: Iterable[int] | None = None,
     max_heavy_atoms: int = 512,
+    allow_unverified: bool = False,
 ) -> PaddedReactionWitness:
-    """Pad a reaction bijectively while keeping its executable counterpart separate."""
+    """Pad a reaction bijectively while keeping its executable counterpart separate.
+
+    Legacy (unverified) path for inferred ports.  Construction-annotated
+    ports carry declared caps and metadata and must be padded through the
+    verified explicit-H extension (``pad_reaction_witness_verified``);
+    they are refused here unless ``allow_unverified`` (unit tests of this
+    helper only).  Caps in the reaction's edit support are never removed."""
+    if not allow_unverified and any(
+        getattr(boundary, "source", "inferred") == "construction" for boundary in boundaries
+    ):
+        raise ReactionNotPaddable(
+            "construction-annotated ports require the verified extension path "
+            "(pad_reaction_witness_verified)"
+        )
+    support = _edit_support_ids(reaction)
     witness = copy.deepcopy(reaction)
     centers = tuple(
         sorted(
@@ -546,6 +586,7 @@ def pad_reaction_witness(
                     current,
                     repeat_unit,
                     atom_ids=assigned_ids,
+                    support=support,
                 )
                 product_molecule, product_port = _append_repeat(
                     product_molecule,
@@ -559,6 +600,7 @@ def pad_reaction_witness(
                     ),
                     repeat_unit,
                     atom_ids=assigned_ids,
+                    support=support,
                 )
                 if (reactant_port.atom_id, reactant_port.cap_atom_ids) != (
                     product_port.atom_id, product_port.cap_atom_ids
@@ -592,4 +634,225 @@ def pad_reaction_witness(
         original_heavy_atoms,
         padded_heavy_atoms,
         _projection(reaction, witness),
+    )
+
+
+def _edit_support_ids(reaction) -> frozenset:
+    """Atom ids (hydrogens included) whose attributes or bonds differ across
+    the reaction (one id namespace on both sides); empty when the sides do
+    not share ids."""
+    from rmgpy.kmc.rmg_moves import molecule_rows
+
+    def rows(side):
+        out = {}
+        for participant in side:
+            out.update(molecule_rows(_molecule(participant)))
+        return out
+
+    try:
+        before, after = rows(reaction.reactants), rows(reaction.products)
+    except Exception:
+        return frozenset()
+    if set(before) != set(after):
+        return frozenset()
+    return frozenset(a for a in before if before[a] != after[a])
+
+
+@dataclass(frozen=True)
+class VerifiedPaddedReactionWitness(PaddedReactionWitness):
+    """A padded witness built by the verified explicit-H extension path:
+    ``extension_map`` is the composite ``boundaries.ExtensionMap`` and
+    ``verified`` records that ``boundaries.verify_extension`` (history,
+    bookkeeping, replay of every step) accepted it."""
+
+    extension_map: Any = None
+    verified: bool = False
+
+    def provenance(
+        self, repeat_unit: RepeatUnitGraph, min_distance: int, tolerance_log10: float
+    ) -> dict[str, Any]:
+        out = super().provenance(repeat_unit, min_distance, tolerance_log10)
+        record = self.extension_map
+        out["extension"] = {
+            "method": "rmgpy.kmc.boundaries ExtensionMap (explicit H), verify_extension",
+            "verified": bool(self.verified),
+            "steps": [
+                [step.port_key[0], step.port_key[1], step.depth, step.provider]
+                for step in record.steps
+            ],
+            "deleted_caps": len(record.deleted),
+            "fresh_atoms": len(record.fresh_atoms),
+        }
+        return out
+
+
+def pad_reaction_witness_verified(
+    reaction,
+    boundaries: Sequence[BoundaryPort],
+    participants: Sequence[Any],
+    min_distance: int,
+    *,
+    max_heavy_atoms: int = 512,
+    providers=None,
+) -> VerifiedPaddedReactionWitness:
+    """Pad a reaction through ``rmgpy.kmc.boundaries``: the reaction is read
+    as an explicit-H witness (both sides one id namespace) carrying the
+    transported construction metadata (``participants``); each artificial
+    port is extended one verified step at a time (declared caps deleted on
+    both sides, edit support protected) until it is ``min_distance`` heavy
+    bonds from every reacting heavy atom on both sides; the composite map is
+    re-verified from scratch (``verify_extension``) and the witness is
+    converted back onto the reaction's participants."""
+    from rmgpy.kmc import boundaries as bnd
+    from rmgpy.kmc.rmg_moves import molecule_from_rows, molecule_rows, split_rows
+
+    if min_distance < 0:
+        raise ValueError("minimum boundary distance must be non-negative")
+    if not participants:
+        raise ReactionNotPaddable(
+            "construction metadata was not transported: the verified extension path "
+            "needs boundary participants"
+        )
+    witness_reaction = copy.deepcopy(reaction)
+    sides = {
+        "reactants": list(witness_reaction.reactants),
+        "products": list(witness_reaction.products),
+    }
+    rows = {
+        name: [molecule_rows(_molecule(p)) for p in side] for name, side in sides.items()
+    }
+    owned = {p.index: frozenset(p.atom_ids) for p in participants}
+    side_a = None
+    for name in ("reactants", "products"):
+        sets = [frozenset(r) for r in rows[name]]
+        if sorted(sets, key=sorted) == sorted(owned.values(), key=sorted):
+            side_a = name
+            break
+    if side_a is None:
+        raise ReactionNotPaddable(
+            "the transported construction participants do not match a reaction side"
+        )
+    side_b = "products" if side_a == "reactants" else "reactants"
+    flat_a = {a: r for part in rows[side_a] for a, r in part.items()}
+    flat_b = {a: r for part in rows[side_b] for a, r in part.items()}
+    if set(flat_a) != set(flat_b):
+        raise ReactionNotPaddable(
+            "explicit-H witness: the reaction sides do not share one atom-id namespace"
+        )
+    try:
+        original = bnd.make_witness(
+            tuple(sorted(flat_a.items())), tuple(sorted(flat_b.items())),
+            participants, label="production padding", where="production padding",
+        )
+    except bnd.BoundaryError as error:
+        raise ReactionNotPaddable(f"explicit-H witness refused: {error}") from error
+    centers = tuple(sorted(reaction_center_atom_ids(witness_reaction)))
+    original_heavy = original.heavy_count()
+    if original_heavy > max_heavy_atoms:
+        raise PaddingLimitExceeded("unpadded witness exceeds maximum graph size")
+    by_atom = {}
+    for key in original.artificial_port_keys():
+        by_atom[original.port(key).atom_id] = key
+    if set(by_atom) & set(centers):
+        raise ReactionNotPaddable("artificial continuation port is a reacting atom")
+    ports = {
+        (boundary.atom_id): boundary
+        for boundary in boundaries
+        if boundary.kind == "artificial"
+    }
+    if set(ports) != set(by_atom):
+        raise ReactionNotPaddable(
+            "the artificial ports do not match the transported construction metadata"
+        )
+
+    def heavy_distance(side_rows, source):
+        distance = {source: 0}
+        frontier = deque([source])
+        while frontier:
+            atom = frontier.popleft()
+            for neighbour, _order in side_rows[atom][5]:
+                if neighbour not in distance and side_rows[neighbour][0] != "H":
+                    distance[neighbour] = distance[atom] + 1
+                    frontier.append(neighbour)
+        return distance
+
+    def too_close(witness, key):
+        port_atom = witness.port(key).atom_id
+        for side_rows in (witness.reactant_rows(), witness.product_rows()):
+            distance = heavy_distance(side_rows, port_atom)
+            reach = [distance[c] for c in centers if c in distance]
+            if reach and min(reach) < min_distance:
+                return True
+        return False
+
+    current = original
+    steps = []
+    final_ports = {}
+    for key in original.artificial_port_keys():
+        while too_close(current, key):
+            try:
+                current, record = bnd.extend(
+                    current, key, providers, ceiling=max_heavy_atoms, verify=True
+                )
+            except bnd.CeilingExceeded as error:
+                raise PaddingLimitExceeded(
+                    f"padding did not converge within maximum graph size: {error}"
+                ) from error
+            except bnd.BoundaryError as error:
+                raise ReactionNotPaddable(f"verified extension refused: {error}") from error
+            steps.append(record)
+        final_ports[key] = current.port(key)
+    composite = bnd.identity_map(original)
+    for record in steps:
+        composite = record if not composite.steps else bnd.compose(composite, record)
+    try:
+        bnd.verify_extension(original, composite, current, providers)
+    except bnd.BoundaryError as error:
+        raise ReactionNotPaddable(f"extension map verification failed: {error}") from error
+
+    def rebuild(name, side_rows):
+        components = split_rows(dict(side_rows))
+        used = set()
+        for position, participant in enumerate(sides[name]):
+            molecule = _molecule(participant)
+            ids = {atom.id for atom in molecule.atoms}
+            hits = [k for k, component in enumerate(components) if ids & set(component)]
+            if len(hits) != 1 or hits[0] in used:
+                raise ReactionNotPaddable("padded witness does not split onto the participants")
+            used.add(hits[0])
+            rebuilt = molecule_from_rows(components[hits[0]])
+            rebuilt.multiplicity = molecule.multiplicity
+            sides[name][position] = _set_molecule(participant, rebuilt)
+        if len(used) != len(components):
+            raise ReactionNotPaddable("padded witness has a component without a participant")
+
+    rebuild(side_a, current.reactant_rows())
+    rebuild(side_b, current.product_rows())
+    witness_reaction.reactants = sides["reactants"]
+    witness_reaction.products = sides["products"]
+    updated = []
+    for key in original.artificial_port_keys():
+        boundary = ports[original.port(key).atom_id]
+        port = final_ports[key]
+        position = _participant_containing(witness_reaction.reactants, port.atom_id)
+        updated.append(
+            BoundaryPort(
+                port.atom_id, boundary.orientation, position, boundary.kind,
+                tuple(port.cap_atom_ids), boundary.source,
+            )
+        )
+    if set(_side_atoms(witness_reaction.reactants)) != set(
+        _side_atoms(witness_reaction.products)
+    ):
+        raise ValueError("padding did not preserve the heavy-atom bijection")
+    return VerifiedPaddedReactionWitness(
+        witness_reaction,
+        tuple(updated),
+        centers,
+        len(steps),
+        original_heavy,
+        current.heavy_count(),
+        _projection(reaction, witness_reaction),
+        extension_map=composite,
+        verified=True,
     )

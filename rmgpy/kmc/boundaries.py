@@ -88,6 +88,10 @@ class ExtensionRefused(BoundaryError):
     """A port may not be extended in this witness (structured refusal)."""
 
 
+class BudgetExceeded(BoundaryError):
+    """An enumeration would build more vectors than its budget allows."""
+
+
 class CeilingExceeded(ExtensionRefused):
     """An extension would exceed the hard heavy-atom ceiling."""
 
@@ -722,6 +726,8 @@ def verify_extension(original: Witness, record: ExtensionMap, extended: Witness,
     providers = PROVIDERS if providers is None else providers
     support = edit_support(original)
     _forbid_support_deletion(support, record.deleted, "verify")
+    _verify_history(original, record)
+    _verify_bookkeeping(original, record, extended)
     deleted = set(record.deleted)
     fresh = [a for a, _attrs in record.fresh_atoms]
     if len(set(fresh)) != len(fresh):
@@ -794,6 +800,7 @@ def verify_extension(original: Witness, record: ExtensionMap, extended: Witness,
             diff = sorted(set(ext_fresh.items()) ^ set(record_bonds.items()))
             raise MapCheckError(f"{name}: bonds of fresh atoms differ from the map {diff[:4]}")
     _verify_steps(original, record, extended, providers)
+    _verify_replay(original, record, extended, providers)
     # Implied by the checks above (kept as defence in depth): survivors keep
     # their per-side attributes and bonds, fresh atoms and their bonds equal
     # the map on BOTH sides (so carry no edit), and deleted caps lie outside
@@ -801,6 +808,67 @@ def verify_extension(original: Witness, record: ExtensionMap, extended: Witness,
     # The cases it would catch are tested through those checks.
     if edits(extended) != edits(original):
         raise MapCheckError("the edit difference is not transported unchanged")
+
+
+def _verify_history(original: Witness, record: ExtensionMap) -> None:
+    """Every id any step ever introduced (including ids a later step deletes)
+    is new: not an original atom, not another step's, never a recycled one."""
+    used = set(original.reactant_rows()) | set(original.product_rows())
+    for step in sorted(record.steps, key=ExtensionStep.sort_key):
+        for atom_id in step.fresh_ids:
+            if atom_id in used:
+                raise MapCheckError(f"step {step.port_key} depth {step.depth} reuses "
+                                    f"historical atom id {atom_id}")
+            used.add(atom_id)
+
+
+def _verify_bookkeeping(original: Witness, record: ExtensionMap, extended: Witness) -> None:
+    """Provider, id base, extension counts and label are carried exactly."""
+    if [p.index for p in extended.participants] != [p.index for p in original.participants]:
+        raise MapCheckError("the participants of the extended witness differ")
+    for before, after in zip(original.participants, extended.participants):
+        if after.metadata.provider != before.metadata.provider:
+            raise MapCheckError(f"participant {before.index}: provider "
+                                f"{after.metadata.provider!r} is not the original "
+                                f"{before.metadata.provider!r}")
+    if extended.id_base != original.id_base:
+        raise MapCheckError("id_base is not preserved by the extension")
+    expected = dict(original.extension_counts)
+    for step in record.steps:
+        expected[step.port_key] = expected.get(step.port_key, 0) + 1
+    expected = {k: v for k, v in expected.items() if v}
+    if {k: v for k, v in extended.extension_counts if v} != expected:
+        raise MapCheckError("extension count is not original plus the steps' ports "
+                            f"(expected {sorted(expected.items())}, "
+                            f"got {list(extended.extension_counts)})")
+    if extended.label != original.label:
+        raise MapCheckError("the witness label changed")
+
+
+def _verify_replay(original: Witness, record: ExtensionMap, extended: Witness,
+                   providers) -> None:
+    """Replay every step from the original witness: each must be exactly what
+    ``plan_extension`` produces on the intermediate witness."""
+    current, maps = original, []
+    for step in sorted(record.steps, key=ExtensionStep.sort_key):
+        try:
+            provider = providers[step.provider]
+            planned = plan_extension(current, step.port_key, provider)
+        except (KeyError, BoundaryError) as error:
+            raise MapCheckError(f"replay of step {step.port_key} depth {step.depth} "
+                                f"failed: {error!r}") from error
+        if planned.steps != (step,):
+            raise MapCheckError(f"replay: step {step.port_key} depth {step.depth} differs "
+                                "from the planned step on the intermediate witness")
+        current = apply_map(current, planned)
+        maps.append(planned)
+    if current != extended:
+        raise MapCheckError("replay: the replayed witness differs from the extended witness")
+    replayed = identity_map(original)
+    for planned in maps:
+        replayed = compose(replayed, planned)
+    if replayed != record:
+        raise MapCheckError("replay: the composed single-step maps differ from the record")
 
 
 def _verify_steps(original, record, extended, providers) -> None:
@@ -1062,43 +1130,110 @@ def evaluate_vector(witness: Witness, vector: Sequence[int], providers=None, *,
     return VectorResult(vector, "ok", "", extended, record)
 
 
-def enumerate_vectors(witness: Witness, box, providers=None, *, ceiling=None,
-                      check_order: bool = True, verify: bool = True) -> tuple:
-    """``evaluate_vector`` on every vector of the box ``0..box[i]`` (an int
-    applies to every port), in lexicographic order."""
+def iter_vectors(witness: Witness, box, providers=None, *, ceiling=None,
+                 check_order: bool = True, verify: bool = True, budget=None,
+                 prune_ceiling: bool = False, stats=None):
+    """Generator of ``evaluate_vector`` over the box ``0..box[i]`` (an int
+    applies to every port), in lexicographic order.  ``budget`` caps the
+    number of vectors built (``extend_vector`` called); one more raises
+    ``BudgetExceeded``.  With ``prune_ceiling`` sub-boxes whose projected heavy
+    count already exceeds the ceiling are skipped without building or
+    yielding (per-step increments are non-negative, so every extension of
+    such a prefix exceeds it too).
+    ``stats`` receives the counts ``yielded``, ``built`` and ``pruned``."""
     ports = vector_ports(witness)
     bounds = (box,) * len(ports) if isinstance(box, int) else tuple(box)
     if len(bounds) != len(ports) or any(bound < 0 for bound in bounds):
         raise BoundaryError("box must give a non-negative bound per port")
+    stats = {} if stats is None else stats
+    for name in ("yielded", "built", "pruned"):
+        stats.setdefault(name, 0)
+    limit = _ceiling(ceiling)
     plan = _vector_plan(witness, providers)
-    return tuple(
-        evaluate_vector(witness, vector, providers, ceiling=ceiling, check_order=check_order,
-                        verify=verify, plan=plan)
-        for vector in itertools.product(*(range(bound + 1) for bound in bounds)))
+    refusals, per_step = plan
+    base = witness.heavy_count()
+
+    def leaf(vector):
+        refused = any(v and p in refusals for p, v in enumerate(vector))
+        projected = base + sum(v * per_step[p] for p, v in enumerate(vector)
+                               if v and p in per_step)
+        if not refused and projected <= limit:
+            if budget is not None and stats["built"] >= budget:
+                raise BudgetExceeded(f"vector {vector}: more than {budget} vectors to build")
+            stats["built"] += 1
+        stats["yielded"] += 1
+        return evaluate_vector(witness, vector, providers, ceiling=limit,
+                               check_order=check_order, verify=verify, plan=plan)
+
+    if not prune_ceiling:
+        for vector in itertools.product(*(range(bound + 1) for bound in bounds)):
+            yield leaf(vector)
+        return
+
+    below = [1] * (len(bounds) + 1)  # vectors under a prefix of each length
+    for p in range(len(bounds) - 1, -1, -1):
+        below[p] = below[p + 1] * (bounds[p] + 1)
+
+    def walk(position, prefix, projected):
+        if position == len(bounds):
+            yield leaf(tuple(prefix))
+            return
+        for v in range(bounds[position] + 1):
+            added = projected + v * per_step.get(position, 0)
+            if added > limit:  # increments are non-negative: so is every extension
+                stats["pruned"] += below[position + 1]
+                continue
+            yield from walk(position + 1, prefix + [v], added)
+
+    yield from walk(0, [], base)
+
+
+def enumerate_vectors(witness: Witness, box, providers=None, *, ceiling=None,
+                      check_order: bool = True, verify: bool = True, budget=None,
+                      prune_ceiling: bool = False) -> tuple:
+    """``evaluate_vector`` on every vector of the box (see ``iter_vectors``)."""
+    return tuple(iter_vectors(witness, box, providers, ceiling=ceiling,
+                              check_order=check_order, verify=verify, budget=budget,
+                              prune_ceiling=prune_ceiling))
+
+
+def _roles(witness: Witness) -> dict:
+    return {a: p.index for p in witness.participants for a in p.atom_ids}
 
 
 def marks(witness: Witness) -> dict:
-    """Pinned marks: reacting atoms by atom id, ports by port key."""
+    """Pinned marks: reacting atoms by atom id, port atoms by (participant,
+    port id, tag, physicality, provider), declared cap atoms by (participant,
+    port id)."""
     labels = {a: (f"r{a}",) for a in edit_support(witness)}
-    for key in witness.port_keys():
-        port = witness.port(key)
-        labels[port.atom_id] = labels.get(port.atom_id, ()) + (f"p{key[0]}:{key[1]}",)
+    for participant in witness.participants:
+        metadata = participant.metadata
+        for port in metadata.ports:
+            labels[port.atom_id] = labels.get(port.atom_id, ()) + (
+                f"p{participant.index}:{port.port_id}:{port.tag}:{port.physicality}:"
+                f"{metadata.provider}",)
+            for cap in port.cap_atom_ids:
+                labels[cap] = labels.get(cap, ()) + (f"c{participant.index}:{port.port_id}",)
     return {a: "|".join(sorted(v)) for a, v in labels.items()}
 
 
 def marked_graph(witness: Witness):
     """networkx graph of the whole witness: node label (element, isotope,
-    attributes on both sides, mark), edge label (order before, order after)."""
+    attributes on both sides, mark), edge label (order before, order after).
+    The mark of a node is its participant role plus its pinned marks; the
+    node's ``mark`` attribute holds the pinned marks only."""
     import networkx as nx
 
     before, after = witness.reactant_rows(), witness.product_rows()
-    bonds_before, bonds_after = witness.reactant_bonds(), witness.product_bonds()
     pinned = marks(witness)
+    roles = _roles(witness)
     graph = nx.Graph()
     for atom_id in sorted(before):
-        mark = pinned.get(atom_id, "")
-        graph.add_node(atom_id, mark=mark, label=repr((_attrs(before[atom_id]),
-                                                        _attrs(after[atom_id]), mark)))
+        pin = pinned.get(atom_id, "")
+        mark = "|".join(sorted(filter(None, (f"q{roles.get(atom_id, -1)}", pin))))
+        graph.add_node(atom_id, mark=pin, label=repr((_attrs(before[atom_id]),
+                                                       _attrs(after[atom_id]), mark)))
+    bonds_before, bonds_after = witness.reactant_bonds(), witness.product_bonds()
     for pair in sorted(set(bonds_before) | set(bonds_after)):
         graph.add_edge(*pair, label=repr((bonds_before.get(pair, 0.0),
                                           bonds_after.get(pair, 0.0))))

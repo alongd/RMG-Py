@@ -20,7 +20,19 @@ On a chain it requires
   interior CH without phenyl), methyl (CH3, a one-carbon chain); never on a
   ring carbon, a double-bonded carbon or next to one; one electron per site;
 * at most ``MAX_RADICAL_SITES`` (R) sites per chain, every pair farther apart
-  than ``RADICAL_SEPARATION`` (S) heavy-atom bonds and not in one pi system.
+  than ``RADICAL_SEPARATION`` (S) heavy-atom bonds and not in one pi system;
+* the declared multiplicity convention (``MULTIPLICITY_CONVENTION``: maximum)
+  on the input AS GIVEN, before any normalization: a separated biradical
+  given as a singlet is refused, never silently rebuilt as a triplet.
+
+An unsaturated end is read on both alkene carbons: styryl ``PhCH=CH-`` is a
+terminal CH(Ph) double-bonded to a CH without phenyl; vinylidene
+``CH2=C(Ph)-`` a terminal CH2 double-bonded to a phenyl-bearing carbon
+(H counts and no radical on either carbon).
+
+``check`` is a verdict on one species.  Certificates consume it as the
+channel's ``eligibility`` disposition (``rmgpy.kmc.certificates``), distinct
+from the spin/pathway ``support`` of ``rmgpy.kmc.channels``.
 
 Everything else is ``refused(reason)``.  The chain is read on the given form
 and, if that is refused, on its most aromatic reactive resonance form (RMG's
@@ -289,6 +301,15 @@ def check(molecule, separation: int = RADICAL_SEPARATION,
         return refused("an atom with a lone pair")
     if any(a.radical_electrons >= 2 for a in atoms):
         return refused("an atom with two unpaired electrons (u2)")
+    # the declared convention is checked on the input as given, BEFORE any
+    # normalization (canonical_form, molecule_from_rows) rebuilds it at
+    # maximum multiplicity and so could change what RMG reads
+    unpaired = sum(int(a.radical_electrons) for a in atoms)
+    if int(molecule.multiplicity) != unpaired + 1:
+        return refused(f"multiplicity convention violated: multiplicity "
+                       f"{molecule.multiplicity} with {unpaired} unpaired electrons "
+                       f"(declared: {MULTIPLICITY_CONVENTION.split(':')[0]}, "
+                       f"{unpaired + 1})", multiplicity=int(molecule.multiplicity))
     if all(a.is_hydrogen() for a in atoms):
         if len(atoms) == 1 and atoms[0].radical_electrons == 1:
             return _accepted("small:H", radical_sites=[(_key(atoms[0]), "h_atom")])
@@ -400,10 +421,17 @@ def _end_group(t, bb, pendant) -> Optional[str]:
     (n,) = bb[t]
     order = t.bonds[n].order
     if order == 2.0:
-        if pendant[t] and h == 1 and not rad:
-            return "styryl"
-        if not pendant[t] and h == 2 and not rad and pendant[n]:
-            return "vinylidene"
+        # both alkene carbons are checked: the neighbour's substituents, H
+        # count (by valence: one double bond, its other backbone bond, a
+        # phenyl if declared) and that it is no radical
+        n_h = sum(1 for b in n.bonds if b.is_hydrogen())
+        n_other = len(bb[n]) - 1          # backbone neighbours of n other than t
+        if n.radical_electrons or rad:
+            return None
+        if pendant[t] and h == 1 and not pendant[n] and n_h == 2 - n_other:
+            return "styryl"               # PhCH=CH-
+        if not pendant[t] and h == 2 and pendant[n] and n_h == 1 - n_other:
+            return "vinylidene"           # CH2=C(Ph)-
         return None
     if pendant[t]:
         if h == 2 and not rad:

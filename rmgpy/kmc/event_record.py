@@ -197,7 +197,7 @@ class EventRecord:
             raise ValueError("event_id does not match canonical semantic content")
 
 
-CERTIFICATE_REFERENCE_SCHEMA = "kmc-rate-certificate-ref/1"
+CERTIFICATE_REFERENCE_SCHEMA = "kmc-rate-certificate-ref/2"
 
 
 def _validate_certificate_reference(reference: Any) -> None:
@@ -212,8 +212,12 @@ def _validate_certificate_reference(reference: Any) -> None:
         character not in "0123456789abcdef" for character in digest
     ):
         raise ValueError("rate_certificate sha256 must be a full hex digest")
-    if not isinstance(reference.get("complete"), bool):
-        raise ValueError("rate_certificate must state completeness")
+    for key in ("complete", "eligible", "bound", "certified"):
+        if not isinstance(reference.get(key), bool):
+            raise ValueError(f"rate_certificate must state {key}")
+    owner = reference.get("owner_event_id")
+    if owner is not None and not _is_full_event_id(owner):
+        raise ValueError("rate_certificate owner_event_id must be a full event id")
 
 
 def _validate_padding_projection(record: EventRecord) -> None:

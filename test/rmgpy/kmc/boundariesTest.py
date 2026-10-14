@@ -763,7 +763,7 @@ def test_padding_path_removes_the_declared_cap_on_both_sides():
     repeat = RepeatUnitGraph.from_smiles("PE", "CC", head_atom_index=0, tail_atom_index=1)
     padded = pad_reaction_witness(
         reaction, [BoundaryPort(tail.id, "tail", cap_atom_ids=(declared,), source="construction")],
-        repeat, min_distance=4, reacting_atom_ids=[head.id])
+        repeat, min_distance=4, reacting_atom_ids=[head.id], allow_unverified=True)
     for side in (padded.reaction.reactants, padded.reaction.products):
         ids = {a.id for a in side[0].atoms}
         assert declared not in ids

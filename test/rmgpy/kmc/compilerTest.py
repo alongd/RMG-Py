@@ -1506,6 +1506,7 @@ def test_cap_removal_checks_chemistry_and_edit_support():
         _remove_cap_hydrogen(molecule, port, (hydrogens[0],), support={hydrogens[0]})
     molecule = propane()
     port = molecule.atoms[0]
+    hydrogens = sorted(n.id for n in port.edges if n.is_hydrogen())
     _remove_cap_hydrogen(molecule, port, (), support=set(hydrogens[:2]))
     remaining = {n.id for n in port.edges if n.is_hydrogen()}
     assert set(hydrogens[:2]) <= remaining and len(remaining) == 2
