@@ -86,13 +86,14 @@ class Disposition:
     reason: str
 
 
-_DISPROPORTIONATION = ("an H taken from an atom bonded to a radical centre makes a "
-                       "1,2-biradical: physically the alkene of Disproportionation, which "
-                       "rates it; including it would count that outcome twice")
+_DISPROPORTIONATION = ("the H leaves an atom bonded to a radical centre (directly, or through "
+                       "a conjugated path in the resonance form the rule fires on), so the "
+                       "product pairs into a closed shell: the outcome of Disproportionation, "
+                       "which rates it; counting it here too would count it twice")
 FORBIDDEN_DISPOSITIONS = {
-    ("H_Abstraction", "disprop1_base_case"): Disposition(
-        "H_Abstraction", "disprop1_base_case", "exclude", "Disproportionation",
-        _DISPROPORTIONATION),
+    ("H_Abstraction", rule): Disposition("H_Abstraction", rule, "exclude", "Disproportionation",
+                                         _DISPROPORTIONATION)
+    for rule in ("disprop1_base_case", "disprop2", "disprop4", "disprop5")
 }
 
 
@@ -122,9 +123,13 @@ def _radical_count(mol) -> int:
 class SpeciesKeys:
     """Species identity of molecules: RMG isomorphism modulo resonance.
 
-    The key is the least canonical SMILES over the forms
-    ``generate_resonance_structures(keep_isomorphic=False)`` returns (the same
-    set from any starting form, so isomorphic molecules share a key).  Every
+    The key is the least canonical SMILES among the most aromatic (most
+    1.5-order bonds) of the reactive forms
+    ``generate_resonance_structures(keep_isomorphic=False)`` returns.  The
+    form set depends on the starting form (a Kekule ring in the input comes
+    back as an extra form, sometimes marked reactive), but RMG's aromatic
+    forms are generated from every start, so the most aromatic forms are the
+    same and isomorphic molecules share a key.  Every
     key's first molecule is kept and later molecules with the same key are
     checked isomorphic to it (``Molecule.is_isomorphic`` over its forms), so
     a key collision of two different species raises.  Scoped to one owner (a
@@ -140,18 +145,20 @@ class SpeciesKeys:
         base = mol.copy(deep=True)
         if len(base.atoms) == 1:
             return [base]
-        return generate_resonance_structures(base, keep_isomorphic=False, filter_structures=True)
+        forms = generate_resonance_structures(base, keep_isomorphic=False, filter_structures=True)
+        return [f for f in forms if f.reactive] or list(forms)
 
     def __call__(self, mol) -> str:
         sig = rm._signature(rm.molecule_rows(mol))
         if sig in self._by_sig:
             return self._by_sig[sig]
         forms = self._forms(mol)
-        key = min(f.to_smiles() for f in forms)
+        key = min((-sum(1 for b in f.get_all_edges() if b.is_benzene()), f.to_smiles())
+                  for f in forms)[1]
         first = self._first.get(key)
         if first is None:
             self._first[key] = forms
-        elif not any(f.is_isomorphic(g) for f in forms[:1] for g in first):
+        elif not any(f.is_isomorphic(g) for f in forms for g in first):
             raise ChannelError(f"two non-isomorphic species share the key {key!r}")
         self._by_sig[sig] = key
         return key
