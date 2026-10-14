@@ -3313,6 +3313,15 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
             partner_operation = partner_operations[0]
             if partner_operation.get("action") != inverse_action:
                 raise ValueError("R1 J_ring linked actions are not inverse")
+    certificates = artifact.get("rate_certificates")
+    for record in records:
+        reference = record.get("rate_certificate")
+        if reference is None:
+            continue
+        if not isinstance(certificates, dict) or reference.get("sha256") not in certificates:
+            raise ValueError("record rate certificate reference does not resolve")
+        if sha256_json(certificates[reference["sha256"]]) != reference["sha256"]:
+            raise ValueError("record rate certificate digest mismatch")
     linked_records = [record for record in records if record.get("reverse_of") in by_id]
     duplicates = duplicate_transition_groups(linked_records)
     if duplicates:
@@ -3943,7 +3952,12 @@ def _pair_relative_record(record: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+# family and template are part of the shape: two reciprocal pathways of
+# different templates (or families) with equal species sides are distinct
+# transitions (the compiler's pair key keeps both), never duplicates.
 _TRANSITION_SHAPE_FIELDS = {
+    "family",
+    "template",
     "reactant_graphs",
     "bond_ops",
     "inventory_class",
@@ -4039,7 +4053,13 @@ class EventSetCompiler:
         proxy_padding_max_heavy_atoms: int = PROXY_PADDING_MAX_HEAVY_ATOMS,
         barrier_e0_provider: FixedBBarrierE0Provider | None = None,
         generation_provider=None,
+        certify_rates: bool = False,
     ):
+        # ``certify_rates``: attach a rate-selection certificate reference to
+        # every published record (rmgpy.kmc.certificates), certified from the
+        # record's actual rate source (the padded rate witness when padded),
+        # and publish the certificates as ``artifact["rate_certificates"]``.
+        self.certify_rates = bool(certify_rates)
         # ``generation_provider`` has the signature of
         # ``generate_reactions_from_families``; every reaction generation of a
         # compile (``_generate``, padded-root regeneration) goes through it.
@@ -5453,6 +5473,13 @@ class EventSetCompiler:
             replace(record, canonical_index=first_ortho_index + index)
             for index, record in enumerate(ortho_records)
         )
+        rate_certificates = None
+        if getattr(self, "certify_rates", False):
+            from rmgpy.kmc.certificates import attach_rate_certificates
+
+            records, rate_certificates = attach_rate_certificates(
+                records, getattr(self.kinetics_database, "families", {})
+            )
         artifact = {
             "schema_version": SCHEMA_VERSION,
             "families": list(self.families),
@@ -5500,6 +5527,11 @@ class EventSetCompiler:
             ],
             "short_molecule_catalogue": short_ps_molecule_catalogue(self.span_radius),
             "ps_ceiling_temperature_K": None,
+            **(
+                {"rate_certificates": rate_certificates}
+                if rate_certificates is not None
+                else {}
+            ),
         }
         by_id = {record.event_id: record for record in records}
         pair_fields = {

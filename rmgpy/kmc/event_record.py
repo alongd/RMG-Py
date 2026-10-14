@@ -58,6 +58,15 @@ class EventRecord:
     rate_witness_reactant_graphs: list[str] = field(default_factory=list)
     rate_witness_product_graphs: list[str] = field(default_factory=list)
     proxy_padding: dict[str, Any] = field(default_factory=dict)
+    # Optional reference to the record's rate-selection certificate
+    # (rmgpy.kmc.certificates.certificate_reference): the sha256 of the record
+    # certificate held in the artifact's ``rate_certificates`` store, plus a
+    # summary.  Additive: absent (None) on old records and not serialized then.
+    # Hashing rule: NOT part of the event id.  The certificate is evidence of
+    # how RMG selected the rate (it is re-derivable from the record's own
+    # graphs, template and rate source), not event semantics, so attaching or
+    # refreshing it never renames an event or its reverse link.
+    rate_certificate: Optional[dict[str, Any]] = None
 
     # Strand-specific placeholders (null until compiler defines them)
     cut_offset: Optional[int] = None
@@ -80,7 +89,8 @@ class EventRecord:
         payload = {
             item.name: _canonical_link_handles(getattr(self, item.name), item.name)
             for item in fields(self)
-            if item.name not in {"event_id", "canonical_index", "_KNOWN_FIELDS"}
+            if item.name not in {"event_id", "canonical_index", "_KNOWN_FIELDS",
+                                 "rate_certificate"}
             and not (
                 item.name
                 in {
@@ -106,6 +116,8 @@ class EventRecord:
         ):
             if not d[field_name]:
                 d.pop(field_name)
+        if d.get("rate_certificate") is None:
+            d.pop("rate_certificate", None)
         return d
 
     def to_json(self, indent: int = 2) -> str:
@@ -172,6 +184,8 @@ class EventRecord:
         if self.proxy_padding.get("status") == "padded":
             _validate_padding_projection(self)
             _validate_padding_distance(self)
+        if self.rate_certificate is not None:
+            _validate_certificate_reference(self.rate_certificate)
         if self.status != "enabled" and not self.status_reason:
             raise ValueError("non-enabled records require a status reason")
         if not _is_full_event_id(self.event_id):
@@ -181,6 +195,25 @@ class EventRecord:
         expected = self._compute_event_id()
         if self.event_id != expected:
             raise ValueError("event_id does not match canonical semantic content")
+
+
+CERTIFICATE_REFERENCE_SCHEMA = "kmc-rate-certificate-ref/1"
+
+
+def _validate_certificate_reference(reference: Any) -> None:
+    """Shape of ``EventRecord.rate_certificate`` (the store is checked by the
+    artifact owner)."""
+    if not isinstance(reference, dict):
+        raise ValueError("rate_certificate must be a mapping")
+    if reference.get("schema") != CERTIFICATE_REFERENCE_SCHEMA:
+        raise ValueError("rate_certificate has an unknown schema")
+    digest = reference.get("sha256")
+    if not isinstance(digest, str) or len(digest) != 64 or any(
+        character not in "0123456789abcdef" for character in digest
+    ):
+        raise ValueError("rate_certificate sha256 must be a full hex digest")
+    if not isinstance(reference.get("complete"), bool):
+        raise ValueError("rate_certificate must state completeness")
 
 
 def _validate_padding_projection(record: EventRecord) -> None:
@@ -448,4 +481,5 @@ _LEGACY_REQUIRED_FIELDS = _KNOWN_FIELDS_CLASS - {
     "rate_witness_reactant_graphs",
     "rate_witness_product_graphs",
     "proxy_padding",
+    "rate_certificate",
 }

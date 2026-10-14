@@ -541,80 +541,125 @@ def _reacting(cert):
 
 
 def recert_row(certifier, family, cert, mols):
+    """Recertification on +1 repeat unit: outcome ``same`` / ``changed`` /
+    ``unmapped`` (a reacting atom was removed by the extension) / ``not
+    extended``, keyed by the channel support, with the bond distance from the
+    extension point to the nearest reacting atom."""
+    support = ",".join(sorted({c.get("support", "?") for c in cert["channels"]})) or "none"
     ext, amap, info = cm.extend_witness(mols, _reacting(cert))
     if not any(i["extended"] for i in info):
-        return {"extended": False}
+        return {"extended": False, "outcome": f"{support}:not extended"}
+    distance = min((i["distance_to_protected"] for i in info
+                    if i.get("extended") and i.get("distance_to_protected") is not None),
+                   default=None)
     new = certifier.recertify_certificate(family, cert, ext, amap)
-    return {"extended": True, "same": new["same_selection"],
+    if new.get("certificate") is None:
+        outcome = "unmapped"
+    else:
+        outcome = "same" if new["same_selection"] else "changed"
+    return {"extended": True, "same": new["same_selection"], "distance": distance,
+            "outcome": f"{support}:{outcome}",
             "flips": sorted({f["node"] for f in new["flips"]}),
             "new_complete": (new["certificate"] or {}).get("complete")}
 
 
+# Rate selection runs in the family TEMPLATE direction only, so the forward
+# channel sets certify what RMG reads on the references; reverse channels are
+# certified on their products (certify_reverse_channel) for the unimolecular
+# decompositions (homolysis, beta-scission).  Disproportionation reverse
+# (alkene + H donor) is not certified on the references: its template-side
+# witnesses are radical pairs that are not reference species, and its mappings
+# on Kekule ring "alkenes" of two PS chains run > 10 min per pair.
+REFERENCE_SETS = {"H_Abstraction": ("forward",), "Disproportionation": ("forward",),
+                  "R_Recombination": ("forward", "reverse"),
+                  "R_Addition_MultipleBond": ("forward", "reverse"),
+                  "intra_H_migration": ("forward",)}
+
+
+def reference_table(certifier, fam, label, mols, out):
+    t0 = time.perf_counter()
+    kinds, whole, incomplete = Counter(), set(), []
+    spin_before, spin_after = Counter(), Counter()
+    domain, recert, flips, ambiguous = {}, Counter(), Counter(), []
+    changed_distance = Counter()
+    n = 0
+    keys = chm.SpeciesKeys()
+    for name, directions in sorted(REFERENCE_SETS.items()):
+        for direction in directions:
+            family = fam[name]
+            groups = [[m] for m in mols] + [[mols[i], mols[j]] for i in range(len(mols))
+                                            for j in range(i + 1, len(mols))]
+            for group in groups:
+                t1 = time.perf_counter()
+                cs = chm.build_channels(family, group, direction, species=keys)
+                if not cs.channels:
+                    continue
+                for ch in cs.channels:
+                    n += 1
+                    species = _species_of(cs, ch)
+                    spin_before[_old_spin(species)] += 1
+                    spin_after[ch.support] += 1
+                    if ch.support == chm.PATHWAY_AMBIGUOUS:
+                        ambiguous.append((name, direction, ch.pathway, ch.ambiguous_with))
+                    for m in species:
+                        v = dom.check(m)
+                        domain[keys(m)] = (v.accepted, v.reason)
+                    if direction == "forward":
+                        certs = [(certifier.certify_channel(family, cs, ch), list(cs.reactants))]
+                    else:
+                        certs = certifier.certify_reverse_channel(family, cs, ch)
+                    for cert, tmols in certs:
+                        for c in cert["channels"]:
+                            kinds[c.get("source_kind")] += 1
+                            if c.get("whole_species"):
+                                whole.add((name, ";".join(c["pathway"])))
+                        if not cert["complete"]:
+                            incomplete.append((name, direction, ch.pathway, cert["gaps"][:3]))
+                        row = recert_row(certifier, family, cert, tmols)
+                        recert[row["outcome"]] += 1
+                        if row["outcome"].endswith(":changed"):
+                            changed_distance[(row["outcome"], row["distance"])] += 1
+                            for node in row["flips"]:
+                                flips[(name, node)] += 1
+                print(f"PROGRESS {label} {name} {direction} {[len(m.atoms) for m in group]} "
+                      f"channels {len(cs.channels)} {time.perf_counter() - t1:.0f} s", flush=True)
+    refused = {k: r for k, (ok, r) in domain.items() if not ok}
+    table = {"reference": label, "channels": n, "certificate_source_kinds": dict(kinds),
+             "incomplete": len(incomplete), "whole_species": sorted(whole),
+             "spin_before": dict(spin_before), "spin_after": dict(spin_after),
+             "pathway_ambiguous": [list(map(str, x)) for x in ambiguous],
+             "domain_accepted": len(domain) - len(refused),
+             "domain_refused": sorted([k, r] for k, r in refused.items()),
+             "recertification": dict(recert),
+             "changed_by_distance": sorted([o, d, c] for (o, d), c in changed_distance.items()),
+             "flips": sorted([f, node, c] for (f, node), c in flips.items()),
+             "incomplete_detail": [list(map(str, x)) for x in incomplete],
+             "seconds": round(time.perf_counter() - t0)}
+    out.append(table)
+    print("ACCEPTTABLE", json.dumps(table), flush=True)
+    return table
+
+
 @pytest.mark.slow
 @pytest.mark.skipif(not SLOW, reason="set RMG_KMC_SLOW=1")
-def test_reference_acceptance_tables(fam, certifier):
-    """Per PS reference: every channel's certificate (forward channels on the
+@pytest.mark.parametrize("label", ["DP3", "DP8 head radical", "DP4 + 1-phenylethyl"])
+def test_reference_acceptance_tables(fam, certifier, label):
+    """Per PS reference: every channel certified (forward channels on the
     reference, reverse channels on each member's family-template reactants),
-    completeness, source kinds, whole-species list, domain verdicts of every
-    species, spin verdicts before/after, recertification on +1 repeat."""
-    total_incomplete = 0
-    for label, mols in ct.ps_references().items():
-        t0 = time.perf_counter()
-        sets = ct.reference_channel_sets(fam, mols)
-        kinds, whole, incomplete = Counter(), [], []
-        spin_before, spin_after = Counter(), Counter()
-        domain = {}
-        recert = Counter()
-        flips = Counter()
-        n = 0
-        for cs in sets:
-            family = fam[cs.family]
-            for ch in cs.channels:
-                n += 1
-                species = _species_of(cs, ch)
-                spin_before[_old_spin(species)] += 1
-                spin_after[ch.support] += 1
-                keys = chm.SpeciesKeys()
-                for m in species:
-                    v = dom.check(m)
-                    domain[keys(m)] = (v.accepted, v.reason)
-                if cs.direction == "forward":
-                    certs = [(certifier.certify_channel(family, cs, ch), list(cs.reactants))]
-                else:
-                    certs = certifier.certify_reverse_channel(family, cs, ch)
-                for cert, tmols in certs:
-                    for c in cert["channels"]:
-                        kinds[c.get("source_kind")] += 1
-                        if c.get("whole_species"):
-                            whole.append((cs.family, ch.pathway))
-                    if not cert["complete"]:
-                        incomplete.append((cs.family, cs.direction, ch.pathway, cert["gaps"][:3]))
-                    row = recert_row(certifier, family, cert, tmols)
-                    if row["extended"]:
-                        recert["same" if row["same"] else "changed"] += 1
-                        for node in row["flips"]:
-                            flips[(cs.family, node)] += 1
-                    else:
-                        recert["not extended"] += 1
-        dt = time.perf_counter() - t0
-        print(f"ACCEPT {label}: channels {n} certificates by kind {dict(kinds)} "
-              f"incomplete {len(incomplete)} time {dt:.0f} s")
-        print(f"ACCEPT {label}: whole_species {sorted(set(whole))}")
-        print(f"ACCEPT {label}: spin before {dict(spin_before)} after {dict(spin_after)}")
-        refused = {k: r for k, (ok, r) in domain.items() if not ok}
-        print(f"ACCEPT {label}: domain {len(domain) - len(refused)} accepted, "
-              f"{len(refused)} refused")
-        for k, r in sorted(refused.items()):
-            print(f"ACCEPT {label}: refused {k} | {r}")
-        print(f"ACCEPT {label}: recertification {dict(recert)}")
-        for (f, node), c in sorted(flips.items()):
-            print(f"ACCEPT {label}: flip {f} {node} x{c}")
-        for x in incomplete:
-            print(f"ACCEPT {label}: INCOMPLETE {x}")
-        total_incomplete += len(incomplete)
-        for m in mols:
-            assert dom.check(m).accepted, (label, dom.check(m).reason)
-    assert total_incomplete == 0
+    completeness, source kinds, whole-species list, domain verdict of every
+    species, spin verdicts before/after the separated-radical policy, and
+    recertification on +1 repeat unit.  The reference species themselves
+    must be in the domain (gate)."""
+    mols = ct.ps_references()[label]
+    tables = []
+    table = reference_table(certifier, fam, label, mols, tables)
+    out = os.environ.get("RMG_KMC_I135_TABLES")
+    if out:
+        with open(out, "a") as stream:
+            stream.write(json.dumps(table) + "\n")
+    for m in mols:
+        assert dom.check(m).accepted, (label, dom.check(m).reason)
+    assert table["incomplete"] == 0
 
 
 @pytest.mark.slow
@@ -658,12 +703,10 @@ def test_dp8_closed_compile_certificates(fam, certifier, tmp_path):
             v = dom.check(m)
             domain[keys(m)] = (v.accepted, v.reason)
         row = recert_row(certifier, fam[record["family"]], cert, mols)
-        if row["extended"]:
-            recert["same" if row["same"] else "changed"] += 1
+        recert[row["outcome"]] += 1
+        if row["outcome"].endswith(":changed"):
             for node in row["flips"]:
                 flips[node] += 1
-        else:
-            recert["not extended"] += 1
     t2 = time.perf_counter()
     print(f"DP8CERT table {t2 - t1:.0f} s")
     print("DP8CERT by site/kind/complete", dict(by_site))
@@ -679,5 +722,20 @@ def test_dp8_closed_compile_certificates(fam, certifier, tmp_path):
         print("DP8CERT flip", node, c)
     for x in incomplete:
         print("DP8CERT INCOMPLETE", x)
+    out = os.environ.get("RMG_KMC_I135_TABLES")
+    if out:
+        with open(out, "a") as stream:
+            stream.write(json.dumps({
+                "reference": "DP8 closed compile", "records": len(records),
+                "by_site_kind_complete": [[list(k), v] for k, v in sorted(by_site.items())],
+                "certificate_source_kinds": dict(kinds), "whole_species_records": whole,
+                "spin_before": dict(spin_before), "spin_after": dict(spin_after),
+                "domain_accepted": len(domain) - len(refused),
+                "domain_refused": sorted([k, r] for k, r in refused.items()),
+                "recertification": dict(recert),
+                "flips": sorted([n, c] for n, c in flips.items()),
+                "incomplete": [list(map(str, x)) for x in incomplete],
+                "compile_and_certify_s": round(t1 - t0), "table_s": round(t2 - t1),
+                "store_bytes": len(cm.canonical_json(store))}) + "\n")
     assert not incomplete
     assert dom.check(ct.mol(ct.ps(8), 0)).accepted
