@@ -1,7 +1,6 @@
 """One inventory choice (R0 or R1) must drive the whole SSA engine, both ways."""
 
 import hashlib
-import inspect
 import json
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -131,9 +130,6 @@ def _table(inventory, records, ids):
 
 
 def _engine(records, *, inventory, table=None, incremental=True, state=None, seed=1):
-    kwargs = {}
-    if "inventory" in inspect.signature(IsothermalSSA).parameters:
-        kwargs["inventory"] = inventory
     return IsothermalSSA(
         state if state is not None else _state(),
         records,
@@ -142,7 +138,7 @@ def _engine(records, *, inventory, table=None, incremental=True, state=None, see
         rng=np.random.default_rng(seed),
         termination_table=table,
         incremental=incremental,
-        **kwargs,
+        inventory=inventory,
     )
 
 
@@ -345,16 +341,13 @@ def _digest(result):
 
 def _leak_trace(inventory):
     state = KMCState((_radical_strand("strand", "strand-C", 5),))
-    kwargs = {}
-    if "inventory" in inspect.signature(IsothermalSSA).parameters:
-        kwargs["inventory"] = inventory
     engine = IsothermalSSA(
         state,
         _leak_records(1.0, 0.2),
         temperature=700.0,
         volume=1.0,
         rng=np.random.default_rng(6_013_700),
-        **kwargs,
+        inventory=inventory,
     )
     result = engine.run(until=2.0)
     return result, _digest(result)

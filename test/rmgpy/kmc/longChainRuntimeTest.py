@@ -79,7 +79,8 @@ def test_c2_backbone_cut_inside_a_reaction_window_splits_a_dp20_chain():
 def test_c3_closed_long_chain_melt_has_initiation_propensity(records):
     state = probe.build_state(probe.closed_melt_chains({10: 1, 20: 1, 30: 1}))
     engine = IsothermalSSA(state, records, temperature=700.0, volume=1e-24,
-                           rng=np.random.default_rng(1))
+                           rng=np.random.default_rng(1),
+                           inventory="R1")
     assert engine.channel_propensities().total_enabled > 0.0
 
 

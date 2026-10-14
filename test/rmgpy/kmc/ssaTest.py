@@ -268,6 +268,7 @@ def _run_leak(k1, k2, horizon, seed):
         temperature=700.0,
         volume=1.0,
         rng=np.random.default_rng(seed),
+        inventory="R1",
     )
     result = engine.run(until=horizon)
     fired_at = result.events[0].time if result.events else None
@@ -670,6 +671,7 @@ def test_met_ssa_exact_real_r1_evolving_trajectory(
         temperature=700.0,
         volume=volume,
         rng=np.random.default_rng(seed),
+        inventory="R1",
         termination_table=table,
         spin_factor=1.0,
     )
@@ -734,6 +736,7 @@ def test_met_ssa_exact_real_r1_evolving_trajectory(
             temperature=700.0,
             volume=volume,
             rng=np.random.default_rng(seed),
+            inventory="R0",
             termination_table=table,
             spin_factor=1.0,
         )
@@ -912,6 +915,7 @@ def test_r0_pristine_chain_smoke_fires_10000_events_and_reports_irreversibility(
         temperature=800.0,
         volume=1e-50,
         rng=np.random.default_rng(35_000_001),
+        inventory="R1",
     )
     result = engine.run(max_events=10_000)
     assert len(result.events) == 10_000
@@ -1036,6 +1040,7 @@ def _assert_identical_ssa_trace(
             temperature=temperature,
             volume=volume,
             rng=np.random.default_rng(seed),
+            inventory=table.inventory if table is not None else "R1",
             termination_table=table,
             incremental=incremental,
         )
@@ -1152,6 +1157,7 @@ def test_incremental_rates_are_lazy_and_invalidated_by_temperature(monkeypatch):
         temperature=700.0,
         volume=1.0,
         rng=np.random.default_rng(38),
+        inventory="R1",
     )
     original = ssa.record_rate
     calls = []
@@ -1181,6 +1187,7 @@ def test_incremental_reports_keep_zero_leaves_and_earlier_values():
         temperature=700.0,
         volume=1.0,
         rng=np.random.default_rng(38),
+        inventory="R1",
     )
     before = engine.channel_propensities()
     assert tuple(before.propensities) == tuple(
@@ -1252,6 +1259,7 @@ def test_site_population_revision_tracks_strand_lengths_with_fixed_component_len
         temperature=700.0,
         volume=1.0,
         rng=np.random.default_rng(38),
+        inventory="R0",
         termination_table=table,
     )
     index = engine.index
@@ -1274,6 +1282,7 @@ def test_site_population_revision_tracks_strand_lengths_with_fixed_component_len
         temperature=700.0,
         volume=1.0,
         rng=np.random.default_rng(38),
+        inventory="R0",
         termination_table=table,
         incremental=False,
     )
@@ -1349,6 +1358,7 @@ def test_r0_melt_density_mixed_pristine_chains_fire_non_inverse_chemistry(
         temperature=800.0,
         volume=volume_m3,
         rng=np.random.default_rng(35_000_002),
+        inventory="R1",
     )
     by_id = {record.event_id: record for record in records}
     histogram = Counter()

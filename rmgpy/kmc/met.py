@@ -1102,6 +1102,43 @@ def _validate_inventory(inventory: str) -> None:
         raise ValueError("inventory must be 'R0' or 'R1'")
 
 
+R0_EXCLUDED_INVENTORY_CLASSES = frozenset(
+    {"R1:J_ring", "R1:quinoid_disproportionation"}
+)
+
+
+def inventory_excluded_event_ids(records: Iterable[Any], inventory: str) -> frozenset[str]:
+    """Event ids the inventory removes: tagged records plus reciprocal partners.
+
+    R1 removes nothing.  R0 removes every record tagged with an R1-only class
+    and, closing over reciprocal ``reverse_of`` links, the partner of each
+    removed record, so the tag need not be present on both directions.  A
+    one-way link is never followed: it is inconsistent input for the caller
+    to refuse, not a licence to widen the removal.
+    """
+    _validate_inventory(inventory)
+    if inventory == "R1":
+        return frozenset()
+    by_id = {str(_field(record, "event_id", "")): record for record in records}
+    excluded = {
+        key
+        for key, record in by_id.items()
+        if _field(record, "inventory_class") in R0_EXCLUDED_INVENTORY_CLASSES
+    }
+    frontier = list(excluded)
+    while frontier:
+        key = frontier.pop()
+        partner = _field(by_id[key], "reverse_of")
+        if (
+            partner in by_id
+            and partner not in excluded
+            and _field(by_id[partner], "reverse_of") == key
+        ):
+            excluded.add(partner)
+            frontier.append(partner)
+    return frozenset(excluded)
+
+
 def _rewrite_signature(record: Any, channel_id: str) -> tuple[Any, ...]:
     return (
         _freeze(_field(record, "atom_map", {})),
@@ -1267,7 +1304,10 @@ def _is_forward_met_record(record: Any, inventory: str) -> bool:
         "Disproportionation",
     }:
         return False
-    if inventory == "R0" and _field(record, "inventory_class") == "R1:J_ring":
+    if (
+        inventory == "R0"
+        and _field(record, "inventory_class") in R0_EXCLUDED_INVENTORY_CLASSES
+    ):
         return False
     return bool(_field(record, "k_table"))
 
@@ -1688,6 +1728,8 @@ def solve_cage(
 
 
 __all__ = [
+    "R0_EXCLUDED_INVENTORY_CLASSES",
+    "inventory_excluded_event_ids",
     "ARCHIVED_JUNCTION_RATES",
     "ARCHIVED_CHANNEL_RATES",
     "ArrheniusRate",

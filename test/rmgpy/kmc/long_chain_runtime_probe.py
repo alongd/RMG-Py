@@ -690,7 +690,8 @@ def c3_run(records, counts, temperature=700.0, volume=1e-24, max_events=5, seed=
 
     state = build_state(closed_melt_chains(counts))
     engine = IsothermalSSA(state, records, temperature=temperature, volume=volume,
-                           rng=np.random.default_rng(seed))
+                           rng=np.random.default_rng(seed),
+                           inventory="R1")
     report = engine.channel_propensities()
     before = {"chains": len(state.strands) - 1, "radicals": state.total_radicals}
     positive = {k: v for k, v in report.propensities.items() if v > 0}
@@ -807,7 +808,8 @@ def run_trajectory(records, mode, seed, schedule="single", horizon=5.0e-5, label
     else:
         state = _melt_for_trajectory()
     engine = IsothermalSSA(state, records, temperature=700.0, volume=1e-24,
-                           rng=np.random.default_rng(seed))
+                           rng=np.random.default_rng(seed),
+                           inventory="R1")
     if schedule == "single":
         engine.run(until=horizon)
     else:

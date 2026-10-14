@@ -27,9 +27,11 @@ from rmgpy.kmc.met import (
     CompiledTerminationTable,
     RateTable,
     TransportArm,
+    _validate_inventory,
     collins_kimball,
     diffusion_rate,
     draw_ortho_attack_site,
+    inventory_excluded_event_ids,
 )
 
 
@@ -1883,6 +1885,10 @@ class _IncrementalPropensities:
             for record in engine.records
             if str(_field(record, "event_id", "")) not in met_ids
         }
+        removed = engine.excluded_event_ids
+        assert not removed & set(self.records)
+        assert self.layout is None or not removed & set(self.layout.records)
+        assert not set(self.records) & met_ids
         self.enabled = {
             key: 0.0
             for key, record in self.records.items()
@@ -1999,6 +2005,92 @@ class _IncrementalPropensities:
         )
 
 
+def _filter_records_for_inventory(
+    records: Sequence[Any],
+    inventory: str,
+    table: CompiledTerminationTable | None,
+) -> tuple[tuple[Any, ...], frozenset[str]]:
+    """Apply the one inventory choice to the record set, once, and audit it.
+
+    Returns the retained records (input order preserved) and the removed ids.
+    Refuses, never repairs: a table row on a removed or absent record, or a
+    retained ``reverse_of`` that no longer resolves.
+    """
+    _validate_inventory(inventory)
+    records = tuple(records)
+    if table is not None and table.inventory != inventory:
+        raise ValueError(
+            f"inventory mismatch: engine is {inventory} but the termination "
+            f"table was compiled for {table.inventory}"
+        )
+    excluded = inventory_excluded_event_ids(records, inventory)
+    retained = tuple(
+        record
+        for record in records
+        if str(_field(record, "event_id", "")) not in excluded
+    )
+    retained_ids = {str(_field(record, "event_id", "")) for record in retained}
+    if table is not None:
+        all_ids = retained_ids | excluded
+        for channel in table.channels:
+            owners = (
+                [
+                    str(_field(record, "event_id", ""))
+                    for record in records
+                    if _ortho_label(record) is not None
+                ]
+                if channel.channel_id == "J_ortho"
+                else [channel.event_id]
+            )
+            for owner in owners:
+                if owner in excluded:
+                    raise ValueError(
+                        f"table channel {channel.channel_id} references record "
+                        f"{owner}, which {inventory} removed"
+                    )
+                if owner not in all_ids:
+                    raise ValueError(
+                        f"table channel {channel.channel_id} references record "
+                        f"{owner}, which is absent from the supplied records"
+                    )
+    for record in retained:
+        partner = _field(record, "reverse_of")
+        if partner is not None and str(partner) not in retained_ids:
+            raise ValueError(
+                f"record {_field(record, 'event_id', '')} has reverse_of "
+                f"{partner}, which is "
+                f"{'removed by ' + inventory if partner in excluded else 'missing'}"
+            )
+    _assert_partition(retained, excluded, table)
+    return retained, excluded
+
+
+def _assert_partition(
+    retained: Sequence[Any],
+    excluded: frozenset[str],
+    table: CompiledTerminationTable | None,
+) -> None:
+    retained_ids = {str(_field(record, "event_id", "")) for record in retained}
+    if retained_ids & excluded:
+        raise AssertionError("a removed record remains in the engine")
+    channel_owned: set[str] = set()
+    if table is not None:
+        for channel in table.channels:
+            if channel.channel_id == "J_ortho":
+                channel_owned.update(
+                    str(_field(record, "event_id", ""))
+                    for record in retained
+                    if _ortho_label(record) is not None
+                )
+            else:
+                channel_owned.add(channel.event_id)
+    pool = retained_ids - channel_owned
+    if channel_owned - retained_ids or channel_owned & pool:
+        raise AssertionError("termination record ownership is not a partition")
+    if channel_owned | pool != retained_ids:
+        raise AssertionError("a retained record has no owner")
+
+
 class IsothermalSSA:
     """Direct-method isothermal SSA with MET thinning and exact leak clocks."""
 
@@ -2012,13 +2104,17 @@ class IsothermalSSA:
         temperature: float,
         volume: float,
         rng: Any,
+        inventory: str,
         termination_table: CompiledTerminationTable | None = None,
         spin_factor: float = 1.0,
         bound_temperature: float | None = None,
         incremental: bool = True,
     ):
         self.state = state
-        self.records = tuple(records)
+        self.inventory = inventory
+        self.records, self.excluded_event_ids = _filter_records_for_inventory(
+            records, inventory, termination_table
+        )
         self.temperature = float(temperature)
         self.volume = float(volume)
         if not math.isfinite(self.volume) or self.volume <= 0.0:
