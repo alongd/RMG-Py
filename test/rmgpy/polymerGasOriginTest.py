@@ -1050,3 +1050,74 @@ class TestPoolOriginGasProduct:
         mixed = stamp_origin_copy(Molecule(smiles="CCC=CCC"), "pool_origin", 0)
         mixed.atoms[0].props.pop("pool_origin")
         assert molecule_is_whole_pool_chain(mixed, {0: 6}) is False
+
+
+class TestWholeChainBoundary:
+    """Pins the boundary of molecule_is_whole_pool_chain: a whole chain
+    carries EVERY heavy atom of one supplied pool occurrence's proxy; one
+    heavy atom short is a fragment (today's behaviour)."""
+
+    @pytest.mark.parametrize("name", ["PE", "PP"])
+    def test_predicate_full_count_vs_all_but_one(self, name):
+        from rmgpy.gas_origin import (heavy_atom_count, molecule_is_whole_pool_chain,
+                                      stamp_origin_copy)
+
+        proxy = Polymer(**POOLS[name]).molecule[0]
+        n = heavy_atom_count(proxy)
+        whole = stamp_origin_copy(proxy, "pool_origin", 0)
+        assert molecule_is_whole_pool_chain(whole, {0: n}) is True
+        # drop one terminal heavy atom (with its hydrogens): n - 1 heavy atoms
+        short = whole.copy(deep=True)
+        end = next(a for a in short.atoms if not a.is_hydrogen()
+                   and sum(1 for b in a.bonds if not b.is_hydrogen()) == 1)
+        for h in [b for b in end.bonds if b.is_hydrogen()]:
+            short.remove_atom(h)
+        short.remove_atom(end)
+        assert heavy_atom_count(short) == n - 1
+        assert all("pool_origin" in a.props for a in short.atoms if not a.is_hydrogen())
+        assert molecule_is_whole_pool_chain(short, {0: n}) is False
+
+    @pytest.mark.parametrize("name", ["PE", "PP"])
+    def test_rows_full_chain_refused_near_whole_fragment_not(self, name):
+        """Pool C-H and C-CH3 homolysis rows (reverse-written recombination):
+        H + (whole chain radical) is refused by rule 2; CH3 + (chain minus
+        one heavy atom) is a fragment and is not -- whatever else may refuse
+        it, its detail is never pool-origin-gas-product."""
+        from rmgpy.gas_origin import heavy_atom_count
+
+        cerm, pool = _model(name)
+        n = heavy_atom_count(pool.molecule[0])
+        rows = _kinetics().generate_reactions_from_families([pool], only_families=["R_Recombination"])
+        seen_whole = seen_short = False
+        for row in rows:
+            gen = getattr(row, row.gas_origin_side)
+            sizes = [heavy_atom_count(_mol(p)) for p in gen]
+            res, _ = cerm.make_new_reaction(row, check_existing=False, generate_thermo=False,
+                                            generate_kinetics=False, supplied_species=(pool,))
+            if res is None:
+                continue
+            if n in sizes:
+                seen_whole = True
+                assert res.polymer_refused_detail == "pool-origin-gas-product", str(res)
+            elif n - 1 in sizes and 1 in sizes:
+                seen_short = True
+                assert res.polymer_refused_detail != "pool-origin-gas-product", str(res)
+        assert seen_whole and seen_short, "liveness: both row shapes expected"
+
+    def test_two_pool_occurrences_count_per_occurrence(self):
+        """Two supplied pools (occurrences 0 and 1): a product whose heavy
+        atoms add up to a full proxy count but are drawn from BOTH
+        occurrences is not a whole chain; one complete occurrence is."""
+        from rmgpy.gas_origin import molecule_is_whole_pool_chain
+
+        counts = {0: 6, 1: 6}
+        split = Molecule(smiles="CCCCCC")
+        heavy = [a for a in split.atoms if not a.is_hydrogen()]
+        for i, atom in enumerate(heavy):
+            atom.props["pool_origin"] = 0 if i < 3 else 1
+        assert molecule_is_whole_pool_chain(split, counts) is False
+        one_complete = Molecule(smiles="CCCCCCC")
+        heavy = [a for a in one_complete.atoms if not a.is_hydrogen()]
+        for i, atom in enumerate(heavy):
+            atom.props["pool_origin"] = 1 if i < 6 else 0
+        assert molecule_is_whole_pool_chain(one_complete, counts) is True
