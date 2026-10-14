@@ -593,23 +593,195 @@ def test_forbidden_is_applied_after_quotienting_mappings(fam):
 # item 7: spin scope
 # --------------------------------------------------------------------------
 def test_spin_scope_marks_biradical_channels(fam):
-    """A channel with a reactant or product of two or more unpaired electrons
-    is unsupported:spin (MeltState has no multiplicity).  On DP3: every
-    H_Abstraction channel of H* + the radical chain (biradical products);
-    none of the closed chain + radical chain channels.  A biradical reactant
-    (but-1,4-diyl) marks its channels too."""
+    """Separated-radical policy (I-135): a channel is unsupported:spin when a
+    species has a u2 atom or two radical sites within RADICAL_SEPARATION
+    heavy bonds or in one pi system.  On DP3, H* + the radical chain: the
+    biradical products whose new site is close to (or conjugated with) the
+    benzylic centre stay unsupported, the far ones are supported.  None of
+    the closed chain + radical chain channels.  But-1,4-diyl (sites 3 heavy
+    bonds apart) marks its channels."""
+    from rmgpy.kmc import domain
     radical, closed, h_atom = dp3_molecules()
     ha = chm.build_channels(fam["H_Abstraction"], [radical, h_atom])
-    assert ha.channels and {ch.support for ch in ha.channels} == {chm.SPIN_UNSUPPORTED}
+    supports = Counter(ch.support for ch in ha.channels)
+    assert supports[chm.SPIN_UNSUPPORTED] > 0 and supports["supported"] > 0, supports
+    for ch in ha.channels:
+        move = ch.representatives[0]
+        chain = max(rm.split_rows(move.product_rows()), key=len)
+        verdict = domain.spin_verdict(rm.molecule_from_rows(chain))
+        assert (ch.support == chm.SPIN_UNSUPPORTED) == (not verdict.supported), (ch.key, verdict)
     pair = chm.build_channels(fam["H_Abstraction"], [radical, closed])
     assert {ch.support for ch in pair.channels} == {"supported"}
     birad = chm.build_channels(fam["H_Abstraction"], [mol("[CH3]", 0), mol("[CH2]CC[CH2]", 10)])
     assert birad.channels and {ch.support for ch in birad.channels} == {chm.SPIN_UNSUPPORTED}
     listed = chm.spin_unsupported([ha, pair, birad])
-    assert len(listed) == len(ha.channels) + len(birad.channels)
+    assert len(listed) == supports[chm.SPIN_UNSUPPORTED] + len(birad.channels)
+    print("SPIN DP3 H*+radical before: all", len(ha.channels), "unsupported; after:",
+          dict(supports))
     for key in listed:
         print("SPIN", key[0], key[1], ";".join(key[2]), "|", " + ".join(key[3]), "->",
               " + ".join(key[4]))
+
+
+def test_separated_radical_policy_per_species(fam):
+    """domain.spin_verdict: far, non-conjugated sites are supported with the
+    maximum-multiplicity convention; close sites, sites in one pi system and
+    any u2 atom are unsupported:spin.  The verdict is per species: two
+    doublets on different participants are never refused for spin."""
+    from rmgpy.kmc import domain
+    far = domain.spin_verdict(mol("C[C](c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)C[CH]c1ccccc1", 0))
+    assert far.supported and far.convention == domain.MULTIPLICITY_CONVENTION
+    assert all(d > domain.RADICAL_SEPARATION and not pi for _a, _b, d, pi in far.pairs)
+    close = domain.spin_verdict(mol("[CH2]CC[CH2]", 0))
+    assert not close.supported and "heavy bonds" in close.reason
+    conjugated = domain.spin_verdict(mol("[CH2]c1ccc([CH2])cc1", 0))
+    assert not conjugated.supported and "pi system" in conjugated.reason
+    carbene = domain.spin_verdict(mol("[CH2]", 0))
+    assert not carbene.supported and "u2" in carbene.reason
+    assert domain.spin_verdict(mol("C[CH2]", 0)).supported
+    rec = chm.build_channels(fam["R_Recombination"], [mol("[CH3]", 0), mol("C[CH2]", 10)])
+    assert rec.channels and {ch.support for ch in rec.channels} == {"supported"}
+    m = mol("C[C](c1ccccc1)CC(c1ccccc1)CC(c1ccccc1)C[CH]c1ccccc1", 0)
+    assert m.multiplicity == 3  # the bridge's convention: maximum multiplicity
+
+
+def remote_benzylic_pair():
+    """The I-134 counterexample, reduced: a PS chain with a primary head
+    radical and a benzylic tail radical five heavy bonds apart (separated:
+    spin supported under the I-135 policy), recombining at the head with
+    ethyl.  RMG reads a different R_Recombination leaf from the form whose
+    remote benzylic electron sits in the ring, so one outcome is a member of
+    two pathways."""
+    return [mol("[CH2]C(c1ccccc1)CC(c1ccccc1)C[CH]c1ccccc1", 0), mol("C[CH2]", 1000)]
+
+
+def test_remote_benzylic_recombination_is_pathway_ambiguous(fam):
+    """Mandatory (I-135 item 6): the remote-benzylic counterexample is
+    reported pathway_ambiguous, never silently supported, on the reduced
+    witness and on the DP8 S2 acceptance state molecules it was found on."""
+    from rmgpy.kmc import domain
+    family = fam["R_Recombination"]
+    for label, mols in (("reduced", remote_benzylic_pair()), ("DP8 state", dp8_remote_pair())):
+        assert domain.spin_verdict(mols[0]).supported, label
+        cs = chm.build_channels(family, mols)
+        multi = {o: chs for o, chs in cs.by_outcome().items() if len(chs) > 1}
+        assert multi, label
+        for o, chs in multi.items():
+            assert len({ch.pathway for ch in chs}) == len(chs) > 1
+            for ch in chs:
+                assert ch.support == chm.PATHWAY_AMBIGUOUS, (label, ch.support)
+                assert set(ch.ambiguous_with) == {c.pathway for c in chs} - {ch.pathway}
+        for ch in cs.channels:
+            if ch.support == chm.SUPPORTED:
+                assert all(len(cs.by_outcome()[o]) == 1 for o in ch.members)
+        print("AMBIGUOUS", label, len(multi), "outcomes;",
+              Counter(ch.support for ch in cs.channels))
+
+
+def dp8_remote_pair():
+    """The two DP8 acceptance-state molecules of the I-134 multi-pathway
+    outcome: chain 1 (DP7, primary head radical + benzylic tail radical) and
+    the first fragment of the cut chain 3."""
+    import windowMatcherTest as wmt
+    mols = rm.molecules_from_state(wmt.state_at(8))
+    a = next(m for m in mols if len(m.atoms) == 112)
+    b = next(m for m in mols if len(m.atoms) == 81)
+    return [a, b]
+
+
+# --------------------------------------------------------------------------
+# I-135 item 7: defect fixes
+# --------------------------------------------------------------------------
+class _Entry:
+    def __init__(self, label, parent, data_mean, mu, var):
+        from types import SimpleNamespace
+        self.label, self.parent = label, parent
+        self.short_desc, self.index, self.rank = "", 0, None
+        self.data = SimpleNamespace(uncertainty=SimpleNamespace(data_mean=data_mean, mu=mu,
+                                                                var=var))
+
+
+class _WalkFamily:
+    """A synthetic auto-generated tree with parent links."""
+    auto_generated = True
+
+    def __init__(self, leaf):
+        from types import SimpleNamespace
+        self.leaf = leaf
+        self.rules = SimpleNamespace(get_rule=lambda template: leaf)
+
+    def retrieve_template(self, labels):
+        return list(labels)
+
+
+def _alarm(seconds):
+    import signal
+
+    def handler(*_a):
+        raise TimeoutError("the auto-generated walk did not terminate")
+    signal.signal(signal.SIGALRM, handler)
+    signal.alarm(seconds)
+
+
+def test_autogenerated_walk_terminates_with_parent_links():
+    """The uncertainty walk stops at the first step that does not move (RMG's
+    own loop would spin forever there) and reports it; a walk that moves at
+    every step ends at the root."""
+    import signal
+    from types import SimpleNamespace
+    root = _Entry("Root", None, 0.0, 0.0, 0.01)
+    mid = _Entry("Mid", root, 0.0, 5.0, 4.0)          # worse than root: moves
+    leaf = _Entry("Leaf", mid, 0.0, 9.0, 9.0)          # worse than mid: moves
+    _alarm(10)
+    try:
+        walk = chm.autogenerated_walk(_WalkFamily(leaf), ("Leaf",))
+        assert [w["moved"] for w in walk["walk"]] == [True, True]
+        assert walk["supplying"] is root and walk["rmg_terminates"]
+        good = _Entry("Good", mid, 0.0, 0.0, 0.0001)   # better than mid: stays
+        stop = chm.autogenerated_walk(_WalkFamily(good), ("Good",))
+        assert [w["moved"] for w in stop["walk"]] == [False]
+        assert stop["supplying"] is good and not stop["rmg_terminates"]
+        with pytest.raises(chm.UnsupportedSelection, match="does not terminate"):
+            chm._autogenerated_selection(_WalkFamily(good), ("Good",),
+                                         SimpleNamespace(comment="Estimated from node Good"))
+        sel = chm._autogenerated_selection(_WalkFamily(leaf), ("Leaf",),
+                                           SimpleNamespace(comment="Estimated from node Root"))
+        assert sel["supplying_node"] == "Root" and sel["returned_entry_is_none"]
+    finally:
+        signal.alarm(0)
+
+
+def _pair_records(template, family="R_Recombination"):
+    """Two reciprocal record dicts of one pathway (synthetic graphs)."""
+    from rmgpy.kmc.event_record import EventRecord
+    common = dict(family=family, template=template, participant_site_types=["s"],
+                  reactant_multiplicities=[1], arity=1)
+    a = EventRecord(**common, reactant_graphs=["G1"], product_graphs=["G2", "G3"],
+                    bond_ops=[{"action": "break", "atoms": [0, 1]}]).to_dict()
+    b = EventRecord(**dict(common, participant_site_types=["s", "t"],
+                           reactant_multiplicities=[1, 1], arity=2),
+                    reactant_graphs=["G2", "G3"], product_graphs=["G1"],
+                    orientation="reversed",
+                    bond_ops=[{"action": "form", "atoms": [0, 1]}]).to_dict()
+    a["reverse_of"], b["reverse_of"] = b["event_id"], a["event_id"]
+    return [a, b]
+
+
+def test_duplicate_validation_keeps_two_reciprocal_pathways():
+    """Two reciprocal pairs with equal species sides and bond operations but
+    different templates are distinct transitions (the pair key keeps both),
+    not duplicates; the same template twice still is one."""
+    from rmgpy.kmc.compiler import duplicate_transition_groups
+    first, second = _pair_records("pathway_A"), _pair_records("pathway_B")
+    assert first[0]["event_id"] != second[0]["event_id"]
+    assert duplicate_transition_groups(first + second) == []
+    other_family = _pair_records("pathway_A", family="H_Abstraction")
+    assert duplicate_transition_groups(first + other_family) == []
+    again = _pair_records("pathway_A")
+    for r in again:
+        r["event_id"] = r["event_id"][:-4] + "beef"
+    again[0]["reverse_of"], again[1]["reverse_of"] = again[1]["event_id"], again[0]["event_id"]
+    assert len(duplicate_transition_groups(first + again)) == 1
 
 
 @pytest.mark.slow
@@ -946,7 +1118,7 @@ def channel_agreement(fam, state, case, label):
            "matcher_only": sum(1 for x in one_sided if x[0] == "matcher-only"),
            "multi_pathway_outcomes": len(multi),
            "multi_pathway_outcomes_spin_supported": sum(
-               1 for _o, chs in multi if any(ch.support != chm.SPIN_UNSUPPORTED for ch in chs)),
+               1 for _o, chs in multi if any(ch.support == chm.SUPPORTED for ch in chs)),
            "rmg_only": sum(1 for x in one_sided if x[0] == "rmg-only"),
            "matcher_excluded_by_disposition": dict(
                (f"{d}: {'+'.join(sorted({r for _w, r in rules}))}", n)
@@ -1035,12 +1207,17 @@ def test_matcher_agreement_s2_states(fam, case, dp):
 # --------------------------------------------------------------------------
 # acceptance: the closed PS DP8 homolysis reference compile
 # --------------------------------------------------------------------------
-def compile_dp8_closed(out_dir):
-    """The I-127 closed PS DP8 reference compile (R_Recombination; ~50 s)."""
+def compile_dp8_closed(out_dir, certify_rates=False):
+    """The I-127 closed PS DP8 reference compile (R_Recombination; ~50 s);
+    ``certify_rates`` attaches rate-selection certificates (I-135)."""
     from rmgpy.kmc import compile as compile_module
     from rmgpy.kmc.compile import CompileRequest, compile_artifact
-    from rmgpy.kmc.compiler import SiteProxy
+    from rmgpy.kmc.compiler import EventSetCompiler, SiteProxy
     from rmgpy.species import Species
+
+    class Certifying(EventSetCompiler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, certify_rates=certify_rates, **kwargs)
 
     def proxy_set(*_a, **_k):
         m = Molecule(smiles=ps(8))
@@ -1050,15 +1227,16 @@ def compile_dp8_closed(out_dir):
                           participant_site_types=("ref0",),
                           metadata={"centred": True, "context_class": "reference",
                                     "proxy_units": 0, "family_candidates": ["R_Recombination"]}),)
-    original = compile_module.ps_proxy_set
+    original = compile_module.ps_proxy_set, compile_module.EventSetCompiler
     compile_module.ps_proxy_set = proxy_set
+    compile_module.EventSetCompiler = Certifying
     try:
         path, _ = compile_artifact(CompileRequest(
             database_path=str(harness.DATABASE), output_dir=str(out_dir),
             families=("R_Recombination",), family_universe=("R_Recombination",),
             database_sha="i134-reference"))
     finally:
-        compile_module.ps_proxy_set = original
+        compile_module.ps_proxy_set, compile_module.EventSetCompiler = original
     return json.loads(Path(path).read_bytes())
 
 
