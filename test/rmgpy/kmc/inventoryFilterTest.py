@@ -129,7 +129,16 @@ def _table(inventory, records, ids):
     return CompiledTerminationTable("bulk", ARM, inventory, channels)
 
 
-def _engine(records, *, inventory, table=None, incremental=True, state=None, seed=1):
+def _engine(
+    records,
+    *,
+    inventory,
+    table=None,
+    incremental=True,
+    state=None,
+    seed=1,
+    **extra,
+):
     return IsothermalSSA(
         state if state is not None else _state(),
         records,
@@ -139,6 +148,7 @@ def _engine(records, *, inventory, table=None, incremental=True, state=None, see
         termination_table=table,
         incremental=incremental,
         inventory=inventory,
+        **extra,
     )
 
 
@@ -329,6 +339,29 @@ def test_non_reciprocal_tag_does_not_pull_in_a_third_record():
     records = (_termination("K-f", None, "J-f"), *_records()[1:])
     with pytest.raises(ValueError):
         _engine(records, inventory="R0")
+
+
+def test_absent_partner_is_refused_by_default_and_admitted_with_partial_flag():
+    records = (_termination("K-f", None, "outside"), *_records(None, None)[1:])
+    with pytest.raises(ValueError, match="missing"):
+        _engine(records, inventory="R0")
+    engine = _engine(records, inventory="R0", partial_record_set=True)
+    assert engine.external_reverse_ids == frozenset({"outside"})
+    assert "K-f" in _retained(engine)
+    assert _engine(_records(None, None), inventory="R0").external_reverse_ids == frozenset()
+
+
+def test_removed_partner_is_refused_even_with_partial_flag():
+    records = (_termination("K-f", None, "J-f"), *_records()[1:])
+    with pytest.raises(ValueError, match="removed"):
+        _engine(records, inventory="R0", partial_record_set=True)
+
+
+def test_excluded_record_with_absent_partner_is_removed_under_partial_flag():
+    records = (_termination("K-f"), _termination("J-f", J_RING, "outside"))
+    engine = _engine(records, inventory="R0", partial_record_set=True)
+    assert _retained(engine) == {"K-f"}
+    assert engine.external_reverse_ids == frozenset()
 
 
 def _digest(result):

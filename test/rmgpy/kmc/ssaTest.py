@@ -915,7 +915,7 @@ def test_r0_pristine_chain_smoke_fires_10000_events_and_reports_irreversibility(
         temperature=800.0,
         volume=1e-50,
         rng=np.random.default_rng(35_000_001),
-        inventory="R1",
+        inventory="R0",
     )
     result = engine.run(max_events=10_000)
     assert len(result.events) == 10_000
@@ -1358,7 +1358,7 @@ def test_r0_melt_density_mixed_pristine_chains_fire_non_inverse_chemistry(
         temperature=800.0,
         volume=volume_m3,
         rng=np.random.default_rng(35_000_002),
-        inventory="R1",
+        inventory="R0",
     )
     by_id = {record.event_id: record for record in records}
     histogram = Counter()

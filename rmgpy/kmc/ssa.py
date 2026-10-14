@@ -2009,10 +2009,13 @@ def _filter_records_for_inventory(
     records: Sequence[Any],
     inventory: str,
     table: CompiledTerminationTable | None,
-) -> tuple[tuple[Any, ...], frozenset[str]]:
+    partial_record_set: bool = False,
+) -> tuple[tuple[Any, ...], frozenset[str], frozenset[str]]:
     """Apply the one inventory choice to the record set, once, and audit it.
 
-    Returns the retained records (input order preserved) and the removed ids.
+    Returns the retained records (input order preserved), the removed ids and
+    the ``reverse_of`` ids that are absent from the input (non-empty only with
+    ``partial_record_set``, which admits absent partners but never removed ones).
     Refuses, never repairs: a table row on a removed or absent record, or a
     retained ``reverse_of`` that no longer resolves.
     """
@@ -2053,16 +2056,22 @@ def _filter_records_for_inventory(
                         f"table channel {channel.channel_id} references record "
                         f"{owner}, which is absent from the supplied records"
                     )
+    external: set[str] = set()
     for record in retained:
         partner = _field(record, "reverse_of")
-        if partner is not None and str(partner) not in retained_ids:
-            raise ValueError(
-                f"record {_field(record, 'event_id', '')} has reverse_of "
-                f"{partner}, which is "
-                f"{'removed by ' + inventory if partner in excluded else 'missing'}"
-            )
+        if partner is None or str(partner) in retained_ids:
+            continue
+        partner = str(partner)
+        if partner not in excluded and partial_record_set:
+            external.add(partner)
+            continue
+        raise ValueError(
+            f"record {_field(record, 'event_id', '')} has reverse_of "
+            f"{partner}, which is "
+            f"{'removed by ' + inventory if partner in excluded else 'missing'}"
+        )
     _assert_partition(retained, excluded, table)
-    return retained, excluded
+    return retained, excluded, frozenset(external)
 
 
 def _assert_partition(
@@ -2106,14 +2115,19 @@ class IsothermalSSA:
         rng: Any,
         inventory: str,
         termination_table: CompiledTerminationTable | None = None,
+        partial_record_set: bool = False,
         spin_factor: float = 1.0,
         bound_temperature: float | None = None,
         incremental: bool = True,
     ):
         self.state = state
         self.inventory = inventory
-        self.records, self.excluded_event_ids = _filter_records_for_inventory(
-            records, inventory, termination_table
+        (
+            self.records,
+            self.excluded_event_ids,
+            self.external_reverse_ids,
+        ) = _filter_records_for_inventory(
+            records, inventory, termination_table, partial_record_set
         )
         self.temperature = float(temperature)
         self.volume = float(volume)
