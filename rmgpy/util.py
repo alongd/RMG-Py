@@ -28,12 +28,16 @@
 ###############################################################################
 
 import argparse
+import errno
 import logging
 import os.path
 import re
+import secrets
 import shutil
+import signal
+import stat
+import threading
 import time
-import tempfile
 from functools import wraps
 
 
@@ -394,14 +398,20 @@ def get_reaction_collider(side):
 
 
 def write_files_atomically(entries):
-    """Stage complete files, preserve modes and roll back recoverable failures.
+    """Back up existing files, rewrite their inodes, and roll back failures.
 
-    Individual renames are atomic. Generation stamps make a crash or concurrent
-    split detectable by readers; this function does not lock other writers.
-    Only this invocation's temporary files and backups are removed on failure.
+    Generation stamps make a crash or concurrent split detectable by readers;
+    this function does not lock other writers. Existing paths retain inode and
+    link identity plus metadata unaffected by an ordinary write; timestamps may
+    change and the operating system may clear set-ID bits.
+
+    Caught failures restore the backup. Process death or power loss can instead
+    leave the backup beside a partial original; recovery from it is manual.
+    If an initially absent destination appears during the save, raise
+    FileExistsError (EEXIST) without overwriting that file.
     """
-    entries = list(entries)
-    destinations = [os.path.realpath(os.path.abspath(path)) for path, _ in entries]
+    rendered_entries = [(os.fspath(path), content, content.encode('utf-8')) for path, content in entries]
+    destinations = [path for path, _, _ in rendered_entries]
     from rmgpy.exceptions import SpeciesIdentityError
     if len(set(destinations)) != len(destinations):
         raise SpeciesIdentityError('Output destinations alias the same file: {0}.'.format(destinations))
@@ -409,47 +419,280 @@ def write_files_atomically(entries):
         for other in destinations[:index]:
             if os.path.exists(path) and os.path.exists(other) and os.path.samefile(path, other):
                 raise SpeciesIdentityError('Output destinations alias the same file: {0}, {1}.'.format(path, other))
-    staged, backups, replaced = [], {}, []
+    _write_files_with_backups(rendered_entries, create_parents=True)
+
+
+def write_file_with_backup(path, rendered):
+    """Rewrite one path after backup, restoring caught failures.
+
+    Process death or power loss may leave the backup beside a partial original;
+    no automatic recovery is attempted.
+    If an initially absent destination appears during the save, raise
+    FileExistsError (EEXIST) without overwriting that file.
+    """
+    _write_files_with_backups([(os.fspath(path), None, rendered)], create_parents=False)
+
+
+class _DeferredFileSignals:
+    """Delay SIGINT/SIGTERM until save resources and backups are settled."""
+
+    def __init__(self):
+        self.handlers = {}
+        self.pending = []
+        self.active_exception = None
+
+    def _defer(self, signum, frame):
+        self.pending.append((signum, frame))
+
+    def _restore_handlers(self):
+        """Restore every outstanding caller handler, retrying after interruption."""
+        interruptions = []
+        while self.handlers:
+            try:
+                for signum, handler in tuple(self.handlers.items()):
+                    signal.signal(signum, handler)
+                    del self.handlers[signum]
+            except BaseException as error:
+                interruptions.append(error)
+        return interruptions
+
+    def _deliver_pending(self, preserve_error):
+        for signum, frame in self.pending:
+            handler = signal.getsignal(signum)
+            if callable(handler):
+                handler(signum, frame)
+            elif handler == signal.SIG_DFL:
+                if preserve_error:
+                    raise InterruptedError(errno.EINTR, "Signal deferred during failed save", signum)
+                signal.raise_signal(signum)
+
+    def __enter__(self):
+        if threading.current_thread() is threading.main_thread():
+            try:
+                for signum in (signal.SIGINT, signal.SIGTERM):
+                    self.handlers[signum] = signal.getsignal(signum)
+                    signal.signal(signum, self._defer)
+            except BaseException as error:
+                interruptions = self._restore_handlers()
+                if interruptions:
+                    raise error from interruptions[0]
+                raise
+        return self
+
+    def __exit__(self, exception_type, exception, traceback):
+        self.active_exception = exception
+        interruptions = self._restore_handlers()
+        try:
+            self._deliver_pending(exception is not None)
+        except BaseException as error:
+            interruptions.append(error)
+        if exception is not None and interruptions:
+            raise exception from interruptions[0]
+        if interruptions:
+            raise interruptions[0]
+
+
+def _open_backup(path):
+    """Create a private, exclusive sibling backup and return it open."""
+    directory = os.path.dirname(path) or "."
+    for _ in range(100):
+        backup = os.path.join(directory, ".rmg-backup-" + secrets.token_hex(8))
+        try:
+            descriptor = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            return backup, os.fdopen(descriptor, "wb")
+        except BaseException:
+            os.close(descriptor)
+            os.unlink(backup)
+            raise
+    raise FileExistsError(errno.EEXIST, "Could not allocate a save backup", directory)
+
+
+def _missing_target_path(path, seen=None):
+    """Return the absent endpoint reached by following final symbolic links."""
+    seen = set() if seen is None else seen
     try:
-        for path, content in entries:
-            path = os.path.abspath(path)
-            directory = os.path.dirname(path)
-            os.makedirs(directory, exist_ok=True)
-            fd, temporary = tempfile.mkstemp(prefix='.' + os.path.basename(path) + '.', suffix='.tmp', dir=directory)
-            # Recreate our reserved random path using the kernel's normal umask.
-            # O_EXCL prevents overwriting anything created in the intervening window.
-            os.close(fd)
-            os.unlink(temporary)
-            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
-            staged.append((temporary, path, content))
-            with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-                stream.write(content)
-            if os.path.exists(path):
-                fd, backup = tempfile.mkstemp(prefix='.' + os.path.basename(path) + '.', suffix='.bak', dir=directory)
-                os.close(fd)
-                backups[path] = backup
-                shutil.copy2(path, backup)
-                shutil.copymode(path, temporary)
-        for temporary, path, content in staged:
-            os.replace(temporary, path)
-            replaced.append((path, content))
+        link_stat = os.lstat(path)
+    except FileNotFoundError:
+        return path
+    if not stat.S_ISLNK(link_stat.st_mode):
+        return path
+    identity = (link_stat.st_dev, link_stat.st_ino)
+    if identity in seen:
+        raise OSError(errno.ELOOP, "Too many levels of symbolic links", path)
+    seen.add(identity)
+    target = os.readlink(path)
+    if not os.path.isabs(target):
+        target = os.path.join(os.path.dirname(path), target)
+    return _missing_target_path(target, seen)
+
+
+def _absent_destination_identity(path):
+    """Identify an absent endpoint using its kernel-resolved parent directory."""
+    target = _missing_target_path(path)
+    parent = os.path.dirname(target) or "."
+    parent_stat = os.stat(parent)
+    return (parent_stat.st_dev, parent_stat.st_ino, os.path.basename(target)), target
+
+
+def _prepare_save(path, create_parents):
+    """Validate a path and durably back up an existing regular file."""
+    if os.path.basename(path) == "":
+        raise NotADirectoryError(errno.ENOTDIR, "Invalid file path", path)
+    directory = os.path.dirname(path)
+    if create_parents and directory:
+        os.makedirs(directory, exist_ok=True)
+    try:
+        target_stat = os.stat(path)
+    except FileNotFoundError:
+        destination_identity, remove_path = _absent_destination_identity(path)
+        return {
+            "path": path,
+            "backup": None,
+            "target_stat": None,
+            "destination_identity": ("absent",) + destination_identity,
+            "remove_on_failure": True,
+            "remove_path": remove_path,
+            "changed": False,
+        }
+    if not stat.S_ISREG(target_stat.st_mode):
+        raise OSError(errno.EINVAL, "Existing output is not a regular file", path)
+    if not os.access(path, os.W_OK):
+        raise PermissionError(errno.EACCES, "Existing output file is not writable", path)
+
+    backup, backup_stream = _open_backup(path)
+    try:
+        with backup_stream:
+            with open(path, "rb") as source:
+                shutil.copyfileobj(source, backup_stream)
+            backup_stream.flush()
+            os.fsync(backup_stream.fileno())
+        os.utime(path, ns=(target_stat.st_atime_ns, target_stat.st_mtime_ns))
     except BaseException:
-        for path, content in reversed(replaced):
-            # Do not overwrite another writer's completed generation during rollback.
-            with open(path, encoding='utf-8') as stream:
-                still_ours = stream.read() == content
-            if not still_ours:
-                continue
-            if path in backups:
-                os.replace(backups[path], path)
-                del backups[path]
-            else:
-                os.unlink(path)
+        try:
+            backup_stream.close()
+        finally:
+            try:
+                os.unlink(backup)
+            finally:
+                os.utime(path, ns=(target_stat.st_atime_ns, target_stat.st_mtime_ns))
         raise
-    finally:
-        for temporary in [item[0] for item in staged] + list(backups.values()):
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+    return {
+        "path": path,
+        "backup": backup,
+        "target_stat": target_stat,
+        "destination_identity": ("existing", target_stat.st_dev, target_stat.st_ino),
+        "remove_on_failure": False,
+        "remove_path": None,
+        "changed": False,
+    }
+
+
+def _rewrite_save(record, rendered):
+    """Open and durably write one prepared destination."""
+    if record["target_stat"] is None:
+        try:
+            stream = open(record["remove_path"], "xb")
+        except FileExistsError as error:
+            raise FileExistsError(
+                errno.EEXIST, "Output destination appeared during save", record["path"]
+            ) from error
+    else:
+        stream = open(record["path"], "wb")
+    record["changed"] = True
+    with stream:
+        written = stream.write(rendered)
+        if written != len(rendered):
+            raise OSError(errno.EIO, "Incomplete write to output", record["path"])
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _restore_save(record):
+    """Restore an original file from its durable backup."""
+    with open(record["backup"], "rb") as source:
+        with open(record["path"], "wb") as destination:
+            shutil.copyfileobj(source, destination)
+            destination.flush()
+            os.fsync(destination.fileno())
+    target_stat = record["target_stat"]
+    os.utime(record["path"], ns=(target_stat.st_atime_ns, target_stat.st_mtime_ns))
+    record["changed"] = False
+
+
+def _remove_backup(record):
+    if record["backup"] is not None:
+        os.unlink(record["backup"])
+        record["backup"] = None
+
+
+def _write_files_with_backups(entries, create_parents):
+    """Rewrite prepared byte payloads and restore every changed file on failure."""
+    signals = _DeferredFileSignals()
+    try:
+        with signals:
+            records = []
+            try:
+                for path, _, rendered in entries:
+                    records.append(_prepare_save(path, create_parents))
+                identities = {}
+                for record in records:
+                    identity = record["destination_identity"]
+                    if identity in identities:
+                        from rmgpy.exceptions import SpeciesIdentityError
+                        raise SpeciesIdentityError(
+                            "Output destinations alias the same file: {0}, {1}.".format(
+                                identities[identity], record["path"]
+                            )
+                        )
+                    identities[identity] = record["path"]
+                for record, (_, _, rendered) in zip(records, entries):
+                    _rewrite_save(record, rendered)
+            except BaseException as original_error:
+                restore_failures = []
+                for record in reversed(records):
+                    if not record["changed"]:
+                        continue
+                    try:
+                        if record["backup"] is not None:
+                            _restore_save(record)
+                        elif record["remove_on_failure"]:
+                            os.unlink(record["remove_path"])
+                            record["changed"] = False
+                    except BaseException as restore_error:
+                        restore_failures.append((record, restore_error))
+                failed_records = {id(record) for record, _ in restore_failures}
+                for record in records:
+                    if id(record) in failed_records:
+                        continue
+                    try:
+                        _remove_backup(record)
+                    except BaseException as cleanup_error:
+                        restore_failures.append((record, cleanup_error))
+                if restore_failures:
+                    details = "; ".join(
+                        "backup {!r}: {!r}".format(record["backup"], error)
+                        for record, error in restore_failures
+                    )
+                    raise OSError(
+                        errno.EIO,
+                        "Save failed with {!r}; restoration failed and backup was retained: {}".format(
+                            original_error, details
+                        ),
+                    ) from original_error
+                raise
+            for record in records:
+                _remove_backup(record)
+    except BaseException as observed_error:
+        interruptions = signals._restore_handlers()
+        original_error = signals.active_exception
+        if original_error is not None and observed_error is not original_error:
+            raise original_error from observed_error
+        if interruptions:
+            raise observed_error from interruptions[0]
+        raise
 
 
 _GENERATION_MARKER = 'RMG-PAIR-GENERATION'

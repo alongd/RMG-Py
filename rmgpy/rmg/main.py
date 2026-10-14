@@ -505,6 +505,8 @@ class RMG(util.Subject):
     def save_input(self, path=None):
         """
         Save an RMG job to the input file located at `path`.
+        If an initially absent destination appears during the save, raise
+        FileExistsError (EEXIST) without overwriting that file.
         """
         from rmgpy.rmg.input import save_input_file
 
@@ -515,6 +517,12 @@ class RMG(util.Subject):
             Pt111_adsorption = "adsorptionSIDTPt111"
         else:
             Pt111_adsorption = "adsorptionPt111"
+        kinetics_depositories = self.kinetics_depositories
+        if kinetics_depositories is not None:
+            from rmgpy.rmg.input import normalize_kinetics_depositories
+
+            kinetics_depositories = normalize_kinetics_depositories(kinetics_depositories)
+        kinetics_depositories = copy.copy(kinetics_depositories)
         self.database = RMGDatabase()
         self.database.load(
             path=self.database_directory,
@@ -523,7 +531,7 @@ class RMG(util.Subject):
             reaction_libraries=[library for library, option in self.reaction_libraries],
             seed_mechanisms=self.seed_mechanisms,
             kinetics_families=self.kinetics_families,
-            kinetics_depositories=self.kinetics_depositories,
+            kinetics_depositories=kinetics_depositories,
             statmech_libraries = self.statmech_libraries,
             adsorption_groups=Pt111_adsorption, # use Pt111 groups for training reactions
             # frequenciesLibraries = self.statmech_libraries,
@@ -581,7 +589,7 @@ class RMG(util.Subject):
             self.database.forbidden_structures.entries[label] = forbidden_structure_entry
 
         if self.kinetics_estimator == "rate rules":
-            if "!training" not in self.kinetics_depositories:
+            if not isinstance(self.kinetics_depositories, list) or "!training" not in self.kinetics_depositories:
                 logging.info("Adding rate rules from training set in kinetics families...")
                 # Temporarily remove species constraints for the training reactions
                 copy_species_constraints = copy.copy(self.species_constraints)
@@ -1748,8 +1756,15 @@ class RMG(util.Subject):
             # Reload reaction families with verbose comments if necessary
             if not self.verbose_comments:
                 logging.info("Reloading kinetics families with verbose comments for uncertainty analysis...")
+                kinetics_depositories = self.kinetics_depositories
+                if kinetics_depositories is not None:
+                    from rmgpy.rmg.input import normalize_kinetics_depositories
+
+                    kinetics_depositories = normalize_kinetics_depositories(kinetics_depositories)
+                kinetics_depositories = copy.copy(kinetics_depositories)
                 self.database.kinetics.load_families(
-                    os.path.join(self.database_directory, "kinetics", "families"), self.kinetics_families, self.kinetics_depositories
+                    os.path.join(self.database_directory, "kinetics", "families"), self.kinetics_families,
+                    kinetics_depositories,
                 )
                 # Temporarily remove species constraints for the training reactions
                 self.species_constraints, speciesConstraintsCopy = {}, self.species_constraints

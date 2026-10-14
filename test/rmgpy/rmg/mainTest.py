@@ -27,22 +27,798 @@
 #                                                                             #
 ###############################################################################
 
+import array
+import builtins
+import errno
+import fcntl
 import logging
 import os
+import resource
 import shutil
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
 import textwrap
 from unittest.mock import patch
-import tempfile
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from rmgpy import get_path, settings
+import rmgpy.util as util_module
 from rmgpy.data.rmg import RMGDatabase
+from rmgpy.exceptions import InputError
+from rmgpy.rmg import input as rmg_input
 from rmgpy.rmg.main import RMG, RMG_Memory, initialize_log, make_profile_graph
 from rmgpy.rmg.model import CoreEdgeReactionModel
+from rmgpy.rmg.settings import ModelSettings, SimulatorSettings
+from rmgpy.species import Species
 
 originalPath = get_path()
+
+
+PROGRAMMATIC_INVALID_DEPOSITORIES = [["all"], ["default"], [""], [None], [[]]]
+NUMPY_INVALID_DEPOSITORIES = [
+    np.array(["all"]),
+    np.array(["default"]),
+    np.array([""]),
+    np.array([None]),
+    np.array([[]]),
+]
+
+
+def _minimal_programmatic_rmg(tmp_path, kinetics_depositories):
+    rmg = RMG(output_directory=str(tmp_path))
+    rmg.database_directory = str(tmp_path)
+    rmg.thermo_libraries = []
+    rmg.transport_libraries = []
+    rmg.reaction_libraries = []
+    rmg.statmech_libraries = []
+    rmg.seed_mechanisms = []
+    rmg.kinetics_families = []
+    rmg.kinetics_depositories = kinetics_depositories
+    rmg.adsorption_groups = "adsorptionPt111"
+    rmg.initial_species = []
+    rmg.reaction_systems = []
+    rmg.reaction_model = type("Model", (), {"vibrational_manifolds": []})()
+    rmg.simulator_settings_list = [SimulatorSettings()]
+    rmg.model_settings_list = [ModelSettings(tol_move_to_core=0.1)]
+    return rmg
+
+
+@pytest.mark.parametrize("selection", PROGRAMMATIC_INVALID_DEPOSITORIES)
+def test_load_database_validates_programmatic_depositories(monkeypatch, tmp_path, selection):
+    """Directly configured depository lists obey the same contract as input decks."""
+    class Database:
+        def load(self, **kwargs):
+            raise AssertionError("invalid depositories reached the database loader")
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "RMGDatabase", Database)
+    rmg = _minimal_programmatic_rmg(tmp_path, selection)
+
+    with pytest.raises(InputError):
+        rmg.load_database()
+
+
+@pytest.mark.parametrize("selection", NUMPY_INVALID_DEPOSITORIES)
+def test_depository_directives_reject_numpy_arrays(monkeypatch, tmp_path, selection):
+    """Array equality cannot turn a non-string value into a directive."""
+    class Database:
+        def load(self, **kwargs):
+            raise AssertionError("invalid depositories reached the database loader")
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "RMGDatabase", Database)
+    rmg = _minimal_programmatic_rmg(tmp_path, selection)
+
+    with pytest.raises(InputError):
+        rmg_input.normalize_kinetics_depositories(selection)
+    with pytest.raises(InputError):
+        rmg.load_database()
+
+    output = tmp_path / "invalid-array.py"
+    with pytest.raises(InputError):
+        rmg.save_input(str(output))
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("selection", [["NIST"], "all", None])
+def test_load_database_accepts_programmatic_depositories(monkeypatch, tmp_path, selection):
+    """Documented programmatic selections still reach the database unchanged."""
+    class Database:
+        def load(self, **kwargs):
+            self.load_kwargs = kwargs
+
+        kinetics = type("Kinetics", (), {"families": {}, "libraries": {}})()
+        thermo = type("Thermo", (), {"libraries": {}, "adsorption_groups": None})()
+        forbidden_structures = type("Forbidden", (), {"entries": {}})()
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "RMGDatabase", Database)
+    rmg = _minimal_programmatic_rmg(tmp_path, selection)
+
+    rmg.load_database()
+
+    assert rmg.database.load_kwargs["kinetics_depositories"] == selection
+    assert rmg.kinetics_depositories == selection
+    if isinstance(selection, list):
+        assert rmg.database.load_kwargs["kinetics_depositories"] is not selection
+
+
+@pytest.mark.parametrize("selection", PROGRAMMATIC_INVALID_DEPOSITORIES)
+def test_uncertainty_reload_validates_programmatic_depositories(monkeypatch, tmp_path, selection):
+    """The uncertainty family reload refuses malformed programmatic selections."""
+    class Kinetics:
+        families = {}
+
+        def load_families(self, path, families, depositories):
+            raise AssertionError("invalid depositories reached the family loader")
+
+    class Uncertainty:
+        def __init__(self, output_directory):
+            pass
+
+        def extract_sources_from_model(self):
+            pass
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "Uncertainty", Uncertainty)
+    rmg = _minimal_programmatic_rmg(tmp_path, selection)
+    rmg.database = type("Database", (), {"kinetics": Kinetics(), "thermo": object()})()
+    rmg.reaction_model.core = type("Core", (), {"species": [], "reactions": []})()
+    rmg.uncertainty = {"global": False, "local": True, "uncorrelated": False, "correlated": False}
+
+    with pytest.raises(InputError):
+        rmg.run_uncertainty_analysis()
+
+
+@pytest.mark.parametrize("selection", [["NIST"], "all", None])
+def test_uncertainty_reload_accepts_programmatic_depositories(monkeypatch, tmp_path, selection):
+    """The uncertainty reload preserves valid programmatic selections and list ownership."""
+    class Kinetics:
+        families = {}
+        forwarded = None
+
+        def load_families(self, path, families, depositories):
+            self.forwarded = depositories
+
+    class Uncertainty:
+        def __init__(self, output_directory):
+            pass
+
+        def extract_sources_from_model(self):
+            pass
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "Uncertainty", Uncertainty)
+    rmg = _minimal_programmatic_rmg(tmp_path, selection)
+    rmg.database = type("Database", (), {"kinetics": Kinetics(), "thermo": object()})()
+    rmg.reaction_model.core = type("Core", (), {"species": [], "reactions": []})()
+    rmg.uncertainty = {"global": False, "local": True, "uncorrelated": False, "correlated": False}
+
+    rmg.run_uncertainty_analysis()
+
+    assert rmg.database.kinetics.forwarded == selection
+    assert rmg.kinetics_depositories == selection
+    if isinstance(selection, list):
+        assert rmg.database.kinetics.forwarded is not selection
+
+
+@pytest.mark.parametrize("selection", PROGRAMMATIC_INVALID_DEPOSITORIES)
+def test_save_input_validates_programmatic_depositories(tmp_path, selection):
+    """A refused programmatic selection cannot damage an existing input deck."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "existing.py"
+    rmg.save_input(str(output))
+    original = output.read_bytes()
+    rmg.kinetics_depositories = selection
+
+    with pytest.raises(InputError):
+        rmg.save_input(str(output))
+
+    assert output.read_bytes() == original
+
+
+def test_save_input_encoding_refusal_preserves_existing_deck(tmp_path):
+    """A UTF-8 encoding refusal cannot damage an existing input deck."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    species = Species(label="N2").from_smiles("N#N")
+    rmg.initial_species = [species]
+    output = tmp_path / "existing.py"
+    rmg.save_input(str(output))
+    original = output.read_bytes()
+    species.label = "\ud835\udc41\u2082"
+
+    with pytest.raises(UnicodeEncodeError):
+        rmg.save_input(str(output))
+
+    assert output.read_bytes() == original
+
+
+@pytest.mark.parametrize(("species_count", "failure_phase"), [(1, "close"), (12, "write")])
+def test_save_input_io_failure_preserves_destinations(tmp_path, species_count, failure_phase):
+    """Real close and write failures cannot replace or create an input deck."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    rmg.initial_species = [
+        Species(label=f"alkane_{index}").from_smiles("C" * index)
+        for index in range(1, species_count + 1)
+    ]
+    existing = tmp_path / "existing.py"
+    absent = tmp_path / "absent.py"
+    rmg.save_input(str(existing))
+    original = existing.read_bytes()
+    assert len(original) < 8192 if failure_phase == "close" else len(original) > 8192
+    original_files = set(tmp_path.iterdir())
+
+    def fail_save(target):
+        old_limit = resource.getrlimit(resource.RLIMIT_FSIZE)
+        old_signal = signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+
+        try:
+            resource.setrlimit(resource.RLIMIT_FSIZE, (512, old_limit[1]))
+            with pytest.raises(OSError) as raised:
+                rmg.save_input(str(target))
+            assert raised.value.errno == errno.EFBIG
+        finally:
+            resource.setrlimit(resource.RLIMIT_FSIZE, old_limit)
+            signal.signal(signal.SIGXFSZ, old_signal)
+
+    fail_save(existing)
+    assert existing.read_bytes() == original
+
+    fail_save(absent)
+    assert not absent.exists()
+    assert set(tmp_path.iterdir()) == original_files
+
+
+def test_save_input_removes_failed_dangling_symlink_target(tmp_path):
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    link = tmp_path / "input.py"
+    target = tmp_path / "target.py"
+    link.symlink_to(target.name)
+    old_limit = resource.getrlimit(resource.RLIMIT_FSIZE)
+    old_signal = signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+    try:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (4, old_limit[1]))
+        with pytest.raises(OSError) as raised:
+            rmg.save_input(str(link))
+        assert raised.value.errno == errno.EFBIG
+    finally:
+        resource.setrlimit(resource.RLIMIT_FSIZE, old_limit)
+        signal.signal(signal.SIGXFSZ, old_signal)
+
+    assert link.is_symlink()
+    assert not target.exists()
+    assert list(tmp_path.glob(".rmg-*")) == []
+
+
+@pytest.mark.parametrize("link_kind", ["relative", "absolute", "dangling"])
+def test_save_input_preserves_symlink_and_updates_target(tmp_path, link_kind):
+    """Saving through a symlink updates its target without replacing the link."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    target = tmp_path / "target.py"
+    link = tmp_path / "input.py"
+    if link_kind != "dangling":
+        target.write_bytes(b"old target\n")
+    link_target = str(target) if link_kind == "absolute" else target.name
+    os.symlink(link_target, link)
+
+    rmg.save_input(str(link))
+
+    assert link.is_symlink()
+    assert target.exists()
+    assert b"kineticsDepositories = ['NIST']" in target.read_bytes()
+
+
+@pytest.mark.parametrize("mode", [0o644, 0o664, 0o600, 0o755])
+def test_save_input_preserves_existing_mode_and_owner(tmp_path, mode):
+    """In-place rewriting retains the destination's mode and owner."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "input.py"
+    output.write_bytes(b"old deck\n")
+    os.chmod(output, mode)
+    original_owner = (output.stat().st_uid, output.stat().st_gid)
+
+    rmg.save_input(str(output))
+
+    assert output.stat().st_mode & 0o777 == mode
+    assert (output.stat().st_uid, output.stat().st_gid) == original_owner
+
+
+def test_save_input_preserves_access_acl_and_extended_attributes(tmp_path):
+    """In-place rewriting preserves access ACLs and extended attributes."""
+    if not hasattr(os, "setxattr") or not shutil.which("setfacl") or not shutil.which("getfacl"):
+        pytest.skip("filesystem xattrs or ACL command-line tools are unavailable")
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "input.py"
+    output.write_bytes(b"old deck\n")
+    os.setxattr(output, "user.rmg-provenance", b"calibration-v1")
+    subprocess.run(["setfacl", "-m", f"u:{os.getuid()}:rw", str(output)], check=True)
+    attributes = {name: os.getxattr(output, name) for name in os.listxattr(output)}
+    access_acl = subprocess.check_output(["getfacl", "-cp", str(output)])
+
+    rmg.save_input(str(output))
+
+    assert {name: os.getxattr(output, name) for name in os.listxattr(output)} == attributes
+    assert subprocess.check_output(["getfacl", "-cp", str(output)]) == access_acl
+
+
+@pytest.mark.parametrize("file_umask", [0o022, 0o002])
+def test_save_input_new_file_obeys_umask(tmp_path, file_umask):
+    """A newly saved deck gets the normal create mode, not forced 0600."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "input.py"
+    previous_umask = os.umask(file_umask)
+    try:
+        rmg.save_input(str(output))
+    finally:
+        os.umask(previous_umask)
+
+    assert output.stat().st_mode & 0o777 == 0o666 & ~file_umask
+
+
+def test_save_input_refuses_read_only_existing_target(tmp_path):
+    """A writable directory cannot authorize replacing a read-only deck."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "input.py"
+    output.write_bytes(b"old deck\n")
+    os.chmod(output, 0o444)
+    original = output.read_bytes()
+
+    with pytest.raises(PermissionError, match="not writable"):
+        rmg.save_input(str(output))
+
+    assert output.read_bytes() == original
+    assert output.stat().st_mode & 0o777 == 0o444
+    assert set(tmp_path.iterdir()) == {output}
+
+
+def test_save_input_updates_every_hard_link(tmp_path):
+    """Saving rewrites the existing inode shared by every hard link."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "input.py"
+    alias = tmp_path / "canonical.py"
+    output.write_bytes(b"old deck\n")
+    os.link(output, alias)
+    rmg.save_input(str(output))
+
+    assert os.path.samefile(output, alias)
+    assert output.read_bytes() == alias.read_bytes()
+    assert b"kineticsDepositories = ['NIST']" in alias.read_bytes()
+
+
+def test_save_input_follows_symlink_parent_before_dotdot(tmp_path):
+    """The kernel, not lexical normalization, determines symlink/.. traversal."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    outside = tmp_path / "outside"
+    child = outside / "child"
+    child.mkdir(parents=True)
+    canonical = outside / "input.py"
+    canonical.write_bytes(b"old canonical\n")
+    sibling = tmp_path / "input.py"
+    sibling.write_bytes(b"old sibling\n")
+    link = tmp_path / "link"
+    link.symlink_to(outside.name + "/child")
+
+    rmg.save_input(str(link / ".." / "input.py"))
+
+    assert b"kineticsDepositories = ['NIST']" in canonical.read_bytes()
+    assert sibling.read_bytes() == b"old sibling\n"
+
+
+@pytest.mark.parametrize("flag", ["d", "A", "S"])
+def test_save_input_preserves_inode_flags_and_atime(tmp_path, flag):
+    """In-place saves retain inode policy and the pre-save access time."""
+    if shutil.which("chattr") is None:
+        pytest.skip("chattr is unavailable on this platform")
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "input.py"
+    output.write_bytes(b"old deck\n")
+    result = subprocess.run(["chattr", "+" + flag, str(output)], capture_output=True, text=True)
+    if result.returncode:
+        pytest.skip("filesystem refused chattr +{}: {}".format(flag, result.stderr.strip()))
+    old_time = 946684800000000000
+    os.utime(output, ns=(old_time, old_time))
+
+    def inode_flags():
+        value = array.array("L", [0])
+        with output.open("rb") as stream:
+            fcntl.ioctl(stream.fileno(), 0x80086601, value, True)
+        return value[0]
+
+    before_flags = inode_flags()
+    before_atime = output.stat().st_atime_ns
+    try:
+        rmg.save_input(str(output))
+        assert inode_flags() == before_flags
+        assert output.stat().st_atime_ns == before_atime
+    finally:
+        subprocess.run(["chattr", "-" + flag, str(output)], check=True)
+
+
+def test_save_input_restores_existing_bytes_after_midwrite_enospc(monkeypatch, tmp_path):
+    """A partial write to the original is restored from its durable backup."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "input.py"
+    rmg.save_input(str(output))
+    original = output.read_bytes()
+    real_open = builtins.open
+    failed = False
+
+    class FullDiskWriter:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exception_type, exception, traceback):
+            self.stream.close()
+
+        def __getattr__(self, name):
+            return getattr(self.stream, name)
+
+        def write(self, data):
+            nonlocal failed
+            failed = True
+            self.stream.write(data[: max(1, len(data) // 2)])
+            self.stream.flush()
+            raise OSError(errno.ENOSPC, "simulated full disk")
+
+    def open_with_full_disk(path, mode="r", *args, **kwargs):
+        nonlocal failed
+        stream = real_open(path, mode, *args, **kwargs)
+        if not failed and mode == "wb" and os.fspath(path) == str(output):
+            return FullDiskWriter(stream)
+        return stream
+
+    monkeypatch.setattr(builtins, "open", open_with_full_disk)
+    with pytest.raises(OSError) as raised:
+        rmg.save_input(str(output))
+
+    assert raised.value.errno == errno.ENOSPC
+    assert failed
+    assert output.read_bytes() == original
+    assert set(tmp_path.iterdir()) == {output}
+
+
+def test_save_input_retains_backup_when_restore_fails(monkeypatch, tmp_path):
+    """A failed restoration reports and retains the durable backup."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "input.py"
+    rmg.save_input(str(output))
+    original = output.read_bytes()
+    real_open = builtins.open
+    write_attempts = 0
+
+    class FailingWriter:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exception_type, exception, traceback):
+            self.stream.close()
+
+        def __getattr__(self, name):
+            return getattr(self.stream, name)
+
+        def write(self, data):
+            self.stream.write(data[:1])
+            self.stream.flush()
+            raise OSError(errno.ENOSPC, "simulated full disk")
+
+    def open_with_failed_restore(path, mode="r", *args, **kwargs):
+        nonlocal write_attempts
+        if mode == "wb" and os.fspath(path) == str(output):
+            write_attempts += 1
+            if write_attempts == 2:
+                raise OSError(errno.EIO, "simulated restore failure")
+            return FailingWriter(real_open(path, mode, *args, **kwargs))
+        return real_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", open_with_failed_restore)
+    with pytest.raises(OSError, match="backup was retained") as raised:
+        rmg.save_input(str(output))
+
+    backups = list(tmp_path.glob(".rmg-backup-*"))
+    assert write_attempts == 2
+    assert len(backups) == 1
+    assert str(backups[0]) in str(raised.value)
+    assert backups[0].read_bytes() == original
+
+
+@pytest.mark.parametrize("kind", ["directory", "fifo", "self-loop", "two-loop"])
+def test_save_input_refuses_nonregular_and_unresolved_destinations(tmp_path, kind):
+    """Saving cannot destroy special files or unresolved symbolic-link cycles."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "input.py"
+    if kind == "directory":
+        output.mkdir()
+    elif kind == "fifo":
+        os.mkfifo(output)
+    elif kind == "self-loop":
+        output.symlink_to(output.name)
+    else:
+        other = tmp_path / "other.py"
+        output.symlink_to(other.name)
+        other.symlink_to(output.name)
+    original_entries = {path.name: path.lstat().st_mode for path in tmp_path.iterdir()}
+
+    with pytest.raises(OSError):
+        rmg.save_input(str(output))
+
+    assert {path.name: path.lstat().st_mode for path in tmp_path.iterdir()} == original_entries
+    if kind == "fifo":
+        assert stat.S_ISFIFO(output.lstat().st_mode)
+    if "loop" in kind:
+        assert output.is_symlink()
+
+
+@pytest.mark.parametrize("kind", ["self-loop", "two-loop"])
+def test_save_input_refuses_loop_hidden_behind_dotdot_path(tmp_path, kind):
+    """A dangling spelling that reaches a loop is not mistaken for a new file."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "input.py"
+    if kind == "self-loop":
+        output.symlink_to(output.name)
+    else:
+        other = tmp_path / "other.py"
+        output.symlink_to(other.name)
+        other.symlink_to(output.name)
+    alias = tmp_path / "alias.py"
+    alias.symlink_to("missing/../input.py")
+    before = {path.name: os.readlink(path) for path in tmp_path.iterdir()}
+
+    with pytest.raises(OSError):
+        rmg.save_input(str(alias))
+
+    assert {path.name: os.readlink(path) for path in tmp_path.iterdir()} == before
+
+
+def test_save_input_refuses_trailing_separator_without_changing_target(tmp_path):
+    """Canonicalizing a symlink target must not erase an invalid path suffix."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / "input.py"
+    output.write_bytes(b"old deck\n")
+    original = output.read_bytes()
+
+    with pytest.raises(OSError):
+        rmg.save_input(str(output) + os.sep)
+
+    assert output.read_bytes() == original
+    assert set(tmp_path.iterdir()) == {output}
+
+
+def test_save_input_accepts_maximum_length_basename(tmp_path):
+    """Temporary names must not extend an already maximum-length basename."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    output = tmp_path / ("x" * 252 + ".py")
+
+    rmg.save_input(str(output))
+
+    assert b"kineticsDepositories = ['NIST']" in output.read_bytes()
+
+
+@pytest.mark.parametrize("signum", [signal.SIGINT, signal.SIGTERM])
+def test_save_input_signal_sweep_preserves_complete_destination(tmp_path, signum):
+    """Every save statement settles handles and backups before delivering signals."""
+    rmg = _minimal_programmatic_rmg(tmp_path, ["NIST"])
+    save_names = {
+        "_write_input_file_atomically",
+        "write_file_with_backup",
+        "_write_files_with_backups",
+        "_prepare_save",
+        "_open_backup",
+        "_rewrite_save",
+        "_restore_save",
+        "_remove_backup",
+        "__enter__",
+        "__exit__",
+    }
+    reached = set()
+
+    def collect(frame, event, arg):
+        if event == "line" and frame.f_code.co_name in save_names:
+            reached.add((frame.f_code, frame.f_lineno))
+        return collect
+
+    seed = tmp_path / "seed.py"
+    seed.write_bytes(b"old deck\n")
+    try:
+        sys.settrace(collect)
+        rmg.save_input(str(seed))
+    finally:
+        sys.settrace(None)
+
+    class SaveSignal(BaseException):
+        pass
+
+    for code, line in sorted(reached, key=lambda item: (item[0].co_name, item[1])):
+        directory = tmp_path / (code.co_name + "-" + str(line))
+        directory.mkdir()
+        output = directory / "input.py"
+        original = b"old deck\n"
+        output.write_bytes(original)
+        fired = False
+        error = None
+
+        def interrupt_at_line(frame, event, arg):
+            nonlocal fired
+            if not fired and frame.f_code is code and event == "line" and frame.f_lineno == line:
+                fired = True
+                os.kill(os.getpid(), signum)
+            return interrupt_at_line
+
+        previous_handler = signal.signal(signum, lambda caught, frame: (_ for _ in ()).throw(SaveSignal(caught)))
+        try:
+            sys.settrace(interrupt_at_line)
+            rmg.save_input(str(output))
+        except BaseException as caught:
+            error = caught
+        finally:
+            sys.settrace(None)
+            signal.signal(signum, previous_handler)
+
+        assert fired
+        assert isinstance(error, SaveSignal)
+        assert set(directory.iterdir()) <= {output}
+        assert output.read_bytes() == original or b"kineticsDepositories = ['NIST']" in output.read_bytes()
+        descriptor_root = "/proc/self/fd"
+        if os.path.isdir(descriptor_root):
+            open_paths = []
+            for descriptor in os.listdir(descriptor_root):
+                try:
+                    open_paths.append(os.readlink(os.path.join(descriptor_root, descriptor)))
+                except OSError:
+                    pass
+            assert not any(str(directory) in path for path in open_paths)
+
+
+def test_programmatic_default_depositories_save_and_reread(monkeypatch, tmp_path):
+    """A validated programmatic directive saves a deck accepted by the input reader."""
+    class Database:
+        def load(self, **kwargs):
+            assert kwargs["kinetics_depositories"] == ["training"]
+
+        kinetics = type("Kinetics", (), {"families": {}, "libraries": {}})()
+        thermo = type("Thermo", (), {"libraries": {}, "adsorption_groups": None})()
+        forbidden_structures = type("Forbidden", (), {"entries": {}})()
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "RMGDatabase", Database)
+    rmg = _minimal_programmatic_rmg(tmp_path, "default")
+    rmg.load_database()
+    saved = tmp_path / "saved.py"
+    rmg.save_input(str(saved))
+
+    reread = RMG(input_file=str(saved), output_directory=str(tmp_path / "reread"))
+    rmg_input.read_input_file(str(saved), reread)
+
+    assert reread.kinetics_depositories == ["training"]
+
+
+def test_load_database_does_not_allow_database_to_mutate_depositories(monkeypatch, tmp_path):
+    """The database loader may append training, but never to the run's own list."""
+    class Database:
+        def load(self, **kwargs):
+            kwargs["kinetics_depositories"].append("training")
+        kinetics = type("Kinetics", (), {"families": {}, "libraries": {}})()
+        thermo = type("Thermo", (), {"libraries": {}})()
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "RMGDatabase", Database)
+    rmg = RMG()
+    rmg.database_directory = str(tmp_path)
+    rmg.reaction_libraries = []
+    rmg.initial_species = []
+    rmg.reaction_systems = []
+    rmg.reaction_model = type("Model", (), {"vibrational_manifolds": []})()
+    rmg.simulator_settings_list = [SimulatorSettings()]
+    rmg.model_settings_list = [ModelSettings(tol_move_to_core=0.1)]
+    rmg.kinetics_depositories = ["NIST"]
+    rmg.adsorption_groups = "adsorptionPt111"
+    rmg.load_database()
+    assert rmg.kinetics_depositories == ["NIST"]
+    output = tmp_path / "input.py"
+    rmg.save_input(str(output))
+    assert "kineticsDepositories = ['NIST']" in output.read_text()
+
+
+def test_load_database_treats_unset_depositories_as_training_enabled(monkeypatch, tmp_path):
+    """An untouched RMG object keeps the historical training-rule default."""
+    class Family:
+        auto_generated = False
+        forward_template = type("Template", (), {"reactants": [], "products": []})()
+        training_calls = 0
+
+        def add_rules_from_training(self, thermo_database):
+            self.training_calls += 1
+
+        def fill_rules_by_averaging_up(self, verbose=False):
+            pass
+
+    family = Family()
+
+    class Database:
+        def load(self, **kwargs):
+            self.load_kwargs = kwargs
+
+        kinetics = type("Kinetics", (), {"families": {"test": family}, "libraries": {}})()
+        thermo = type("Thermo", (), {"libraries": {}, "adsorption_groups": None})()
+        forbidden_structures = type("Forbidden", (), {"entries": {}})()
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "RMGDatabase", Database)
+    rmg = RMG()
+    rmg.database_directory = str(tmp_path)
+    rmg.reaction_libraries = []
+    rmg.initial_species = []
+    rmg.reaction_systems = []
+    rmg.reaction_model = type("Model", (), {"vibrational_manifolds": []})()
+    rmg.simulator_settings_list = [SimulatorSettings()]
+    rmg.model_settings_list = [ModelSettings(tol_move_to_core=0.1)]
+    rmg.adsorption_groups = "adsorptionPt111"
+
+    assert rmg.kinetics_depositories is None
+    rmg.load_database()
+
+    assert rmg.database.load_kwargs["kinetics_depositories"] is None
+    assert family.training_calls == 1
+
+
+def test_uncertainty_reload_does_not_allow_database_to_mutate_depositories(monkeypatch, tmp_path):
+    """The uncertainty reload receives a copy of the run's depository list."""
+    class Kinetics:
+        families = {}
+
+        def load_families(self, path, families, depositories):
+            depositories.append("training")
+
+    class Uncertainty:
+        def __init__(self, output_directory):
+            pass
+
+        def extract_sources_from_model(self):
+            pass
+
+    import rmgpy.rmg.main as main
+    monkeypatch.setattr(main, "Uncertainty", Uncertainty)
+    rmg = RMG(output_directory=str(tmp_path))
+    rmg.database_directory = str(tmp_path)
+    rmg.database = type("Database", (), {
+        "kinetics": Kinetics(),
+        "thermo": object(),
+    })()
+    rmg.reaction_model = type("Model", (), {
+        "core": type("Core", (), {"species": [], "reactions": []})(),
+        "vibrational_manifolds": [],
+    })()
+    rmg.initial_species = []
+    rmg.reaction_systems = []
+    rmg.simulator_settings_list = [SimulatorSettings()]
+    rmg.model_settings_list = [ModelSettings(tol_move_to_core=0.1)]
+    rmg.kinetics_families = ["H_Abstraction"]
+    rmg.kinetics_depositories = ["NIST"]
+    rmg.adsorption_groups = "adsorptionPt111"
+    rmg.uncertainty = {
+        "global": False,
+        "local": True,
+        "uncorrelated": False,
+        "correlated": False,
+    }
+
+    rmg.run_uncertainty_analysis()
+
+    assert rmg.kinetics_depositories == ["NIST"]
+    output = tmp_path / "input.py"
+    rmg.save_input(str(output))
+    assert "kineticsDepositories = ['NIST']" in output.read_text()
 
 
 @pytest.mark.functional

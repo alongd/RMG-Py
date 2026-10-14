@@ -913,6 +913,14 @@ class TestExcitedExportSiteCensus:
     def test_complete_static_census(self):
         assert not violations(ROOT,POLICY)
 
+    def test_all_policy_locators_match_source(self):
+        stale = {}
+        for section in ('sites', 'search_exclusions'):
+            for key, row in POLICY[section].items():
+                if key in FOUND and row['line'] != FOUND[key]['line']:
+                    stale[key] = (row['line'], FOUND[key]['line'])
+        assert not stale
+
     def test_wall_manifest_with_resolved_species_is_written_after_identity_resolution(self, tmp_path):
         from rmgpy.rmg.listener import SimulationProfileWriter
 

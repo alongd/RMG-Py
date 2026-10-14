@@ -31,6 +31,7 @@
 This module contains functionality for parsing Arkane input files.
 """
 
+import copy
 import logging
 import os.path
 
@@ -48,6 +49,7 @@ from rmgpy.pdep.collision import SingleExponentialDown
 from rmgpy.pdep.configuration import Configuration
 from rmgpy.pdep.network import Network
 from rmgpy.reaction import Reaction
+from rmgpy.rmg.input import normalize_kinetics_depositories
 from rmgpy.rmg.model import CoreEdgeReactionModel
 from rmgpy.species import Species, TransitionState
 from rmgpy.statmech.conformer import Conformer
@@ -89,15 +91,7 @@ def database(thermoLibraries=None, transportLibraries=None, reactionLibraries=No
 
     database_directory = settings['database.directory']
 
-    if kineticsDepositories == 'default':
-        kinetics_depositories = ['training']
-    elif kineticsDepositories == 'all':
-        kinetics_depositories = 'all'
-    else:
-        if not isinstance(kineticsDepositories, list):
-            raise InputError(
-                "kinetics_depositories should be either 'default', 'all', or a list of names eg. ['training','PrIMe'].")
-        kinetics_depositories = kineticsDepositories
+    kinetics_depositories = normalize_kinetics_depositories(kineticsDepositories)
 
     if kineticsFamilies in ('default', 'all', 'none'):
         kinetics_families = kineticsFamilies
@@ -117,7 +111,7 @@ def database(thermoLibraries=None, transportLibraries=None, reactionLibraries=No
         reaction_libraries=reaction_libraries,
         seed_mechanisms=[],
         kinetics_families=kinetics_families,
-        kinetics_depositories=kinetics_depositories,
+        kinetics_depositories=copy.copy(kinetics_depositories),
         depository=False,  # Don't bother loading the depository information, as we don't use it
     )
 

@@ -170,6 +170,11 @@ is not the default.::
 
 	kineticsDepositories = 'all'
 
+Each kinetics depository list entry must be a non-empty string. The special
+values ``'all'`` and ``'default'`` are whole-field directives and are refused
+inside lists. ``adsorptionGroups`` must be a non-empty string naming the
+adsorption group library to load.
+
 If two independently sourced depository entries provide kinetics for the same
 oriented reaction, including both is a fatal ambiguity: RMG refuses to rank the
 sources by name, load order, rank, uncertainty, or numerical value.  Resolve
@@ -186,6 +191,16 @@ Within a single loaded depository, multiple matching entries are not a source
 conflict. RMG keeps its existing local quality rule: it selects the lowest
 non-zero rank, breaking a tie with the lowest entry index. A second depository
 object is a distinct source even if it carries the same label.
+
+When RMG saves an input file over an existing regular file, it first writes and
+syncs an exclusive sibling backup and then rewrites the original inode. A caught
+write failure restores the old bytes. Process death or power loss can instead
+leave a ``.rmg-backup-*`` file beside a partial original; RMG does not recover it
+automatically, so retain that backup and restore it manually. Ordinary writes
+can update timestamps and can clear set-user-ID or set-group-ID mode bits even
+though the original inode, links, ownership, ACLs and extended attributes remain.
+If an initially absent destination appears during the save, RMG raises
+``FileExistsError`` (``EEXIST``) without overwriting that file.
 
 
 .. _kineticsfamilies:
