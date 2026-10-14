@@ -683,3 +683,43 @@ def test_state_hash_is_deterministic_and_content_sensitive(spec):
     a, b, edits = homolysis_edits(s2)
     s2.apply(edits)
     assert s1.state_hash() != s2.state_hash()
+
+
+# --------------------------------------------------------------------------
+# state_hash sensitivity, one field at a time
+# --------------------------------------------------------------------------
+def _h2(isotope):
+    nodes = {0: Node("H", isotope, 0, 0, 0, {1: 1.0}), 1: Node("H", None, 0, 0, 0, {0: 1.0})}
+    origin = {i: Origin("mobile", 0, "H2", f"h{i}", False) for i in nodes}
+    return MeltState(nodes, origin)
+
+
+def test_isotope_changes_hash_composition_and_mass():
+    plain, deuterated = _h2(None), _h2(2)
+    assert plain.state_hash() != deuterated.state_hash()
+    assert plain.components.composition(0) != deuterated.components.composition(0)
+    assert plain.components.mass(0) != deuterated.components.mass(0)
+    assert plain.components.mass(0) == 2 * element_mass("H")
+    assert deuterated.components.mass(0) == element_mass("H", 2) + element_mass("H")
+    carbon13 = materialize(ps_spec({2: 1}, {}))
+    c = next(i for i, n in carbon13.atoms.items() if n.element == "C")
+    base = carbon13.state_hash()
+    carbon13._atoms[c] = melt_state.replace(carbon13.atoms[c], isotope=13)
+    assert carbon13.state_hash() != base
+
+
+@pytest.mark.parametrize("field", ["isotope", "charge", "radical", "lone_pairs", "bond_order"])
+def test_state_hash_distinguishes_each_field(field):
+    s = materialize(ps_spec({2: 1}, {}))
+    base = s.state_hash()
+    c = next(i for i, n in s.atoms.items() if n.element == "C")
+    if field == "bond_order":
+        j = next(iter(s.atoms[c].edges))
+        for x, y in ((c, j), (j, c)):
+            edges = dict(s.atoms[x].edges)
+            edges[y] = 2.0
+            s._atoms[x] = melt_state.replace(s.atoms[x], edges=edges)
+    else:
+        value = {"isotope": 13, "charge": 1, "radical": 1, "lone_pairs": 1}[field]
+        s._atoms[c] = melt_state.replace(s.atoms[c], **{field: value})
+    assert s.state_hash() != base
