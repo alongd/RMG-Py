@@ -294,6 +294,60 @@ def test_same_product_is_strict_and_resonance_aware():
     assert rm.same_product(rows[0], rows[1]) and rm.product_key(rows[0]) == rm.product_key(rows[1])
 
 
+def _benzyl_start_rows():
+    """Atom-id rows of benzyl written in four starting forms (aromatic,
+    ortho- and para-quinoid, Kekule benzylic)."""
+    import windowMatcherTest as wmt
+    ring = [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 1)]
+    kekule = wmt.with_h([("C", 1)] + [("C", 0)] * 6,
+                        [(0, 1, 1)] + [(a, b, 2 if k % 2 == 0 else 1)
+                                       for k, (a, b) in enumerate(ring)],
+                        [2, 0, 1, 1, 1, 1, 1])
+    out = []
+    for spec in [wmt.benzyl(), wmt.benzyl("ortho"), wmt.benzyl("para"), kekule]:
+        (m,) = rm.molecules_from_state(wmt.molecules(spec))
+        out.append(rm.molecule_rows(m))
+    return out
+
+
+def _all_form_rows(start_rows):
+    """Every starting rows mapping plus the rows of every reactive RMG form."""
+    rows = list(start_rows)
+    for start in start_rows:
+        rows.extend(rm.molecule_rows(f) for f in rm.reactant_forms(rm.molecule_from_rows(start)))
+    return rows
+
+
+def _check_form_independent(rows):
+    distinct = {rm._signature(r) for r in rows}
+    assert len(distinct) >= 4  # the forms really are written differently
+    fresh = {rm.ProductKeys(cache=False)(r) for r in rows}
+    assert len(fresh) == 1
+    forward, backward = rm.ProductKeys(cache=True), rm.ProductKeys(cache=True)
+    keys = {forward(r) for r in rows} | {backward(r) for r in reversed(rows)}
+    assert keys == fresh
+    return fresh.pop()
+
+
+def test_product_key_is_independent_of_the_form_the_rows_arrive_in():
+    """No generation.  Benzyl from four starting forms, and a mid-chain
+    1-phenylethyl-type radical (CC[C](CC)c1ccccc1) in atom-id rows: every
+    reactive RMG form gives one key, with fresh uncached ProductKeys and with
+    cached ones fed in two orders.  Moving the radical to the beta carbon of
+    the same heavy skeleton (not a resonance move) changes the key."""
+    _check_form_independent(_all_form_rows(_benzyl_start_rows()))
+    chain = rm.molecule_rows(mol("CC[C](CC)c1ccccc1", 0))
+    chain_forms = [rm.molecule_rows(f) for f in rm.reactant_forms(rm.molecule_from_rows(chain))]
+    assert len(chain_forms) == 4
+    key = _check_form_independent(_all_form_rows([chain] + chain_forms))
+    beta = rm.molecule_rows(mol("C[CH]C(CC)c1ccccc1", 0))
+    heavy = lambda rows: sorted((a, r[0], tuple(b for b, _o in r[5] if rows[b][0] != "H"))
+                                for a, r in rows.items() if r[0] != "H")
+    assert heavy(beta) == heavy(chain)
+    assert rm.ProductKeys(cache=False)(beta) != key
+    assert rm.product_key(beta) != rm.product_key(chain)
+
+
 def test_converter_uses_rmg_resonance_only():
     """No import of the matcher or its oracle (static and at run time), and a
     nine-ring conjugated radical the matcher refuses is keyed by RMG."""
