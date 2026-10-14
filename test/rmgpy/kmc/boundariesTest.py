@@ -745,6 +745,78 @@ def test_vector_enumeration_streams_prunes_and_budgets(fam):
         list(b.iter_vectors(w, 1, budget=3, check_order=False, verify=False))
 
 
+def test_cap_moves_only_along_a_two_sided_marked_automorphism(fam):
+    """A cap declared on another H of its port is the same marked witness
+    only when a full two-sided marked automorphism (ports, participant
+    roles and edit-support atoms fixed) maps one cap onto the other: an H
+    of the port that the reaction edits is pinned and never equivalent."""
+    w = homolysis(fam, 8, (3, 4))
+    head = w.port((0, "head"))
+    cap = head.cap_atom_ids[0]
+    other = [h for h in hydrogens_of(w.reactants, head.atom_id) if h != cap][0]
+    # make ``other`` an edit-support atom without touching the port's bonds
+    edited = replace(w, products=with_attr(w.products, other, 2, 1))
+    assert other in b.edit_support(edited) and head.atom_id not in b.edit_support(edited)
+    rest = tuple(p for p in edited.participants[0].metadata.ports if p.port_id != "head")
+    moved = _with_meta(edited, ports=rest + (replace(head, cap_atom_ids=(other,)),))
+    assert not b.marked_isomorphic(edited, moved)
+    third = [h for h in hydrogens_of(w.reactants, head.atom_id) if h not in (cap, other)][0]
+    symmetric = _with_meta(edited, ports=rest + (replace(head, cap_atom_ids=(third,)),))
+    assert b.marked_isomorphic(edited, symmetric)
+
+
+def test_vector_enumeration_is_lazy_and_bounds_visits(fam):
+    """The odometer is lazy (no range is pooled before the first vector) and
+    ``budget`` bounds every visited vector (refusals included), not only
+    the built ones."""
+    import tracemalloc
+
+    w = homolysis(fam, 8, (3, 4))
+    b._vector_plan(w)
+    tracemalloc.start()
+    try:
+        gen = b.iter_vectors(w, (100_000, 100_000), check_order=False, verify=False)
+        first = next(gen)
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert first.vector == (0, 0)
+    assert peak < 1_000_000, peak
+    edge = homolysis(fam, 8, (0, 1))  # the head port atom reacts: head refused
+    plan = b._vector_plan(edge)
+    assert 0 in plan[0]
+    stats = {}
+    with pytest.raises(b.BudgetExceeded):
+        list(b.iter_vectors(edge, (3, 0), budget=1, check_order=False, verify=False,
+                            stats=stats))
+    assert stats["yielded"] == 1 and stats["visited"] == 1
+    # a huge pruned box: the walk stops at the ceiling instead of scanning it
+    stats = {}
+    out = list(b.iter_vectors(w, (10 ** 9, 10 ** 9), ceiling=10, prune_ceiling=True,
+                              check_order=False, verify=False, stats=stats))
+    assert len(out) == 6 and stats["visited"] == 6
+
+
+def test_acceptance_checks_every_resonance_variant(fam):
+    """The acceptance sweep never skips a witness because its connectivity
+    equals its class representative's: every distinct witness of a mapped
+    reaction (resonance variants included) is checked; only identical
+    witness graphs are deduplicated; a connectivity split is a failure."""
+    sys.path.insert(0, str(TEST_DIR))
+    import boundaries_acceptance as ba
+
+    w = homolysis(fam, 8, (3, 4))
+    variant = replace(w, reactants=with_bond(w.reactants, 0, 1, 2.0),
+                      products=with_bond(w.products, 0, 1, 2.0))
+    assert ba._connectivity(variant) == ba._connectivity(w)
+    key = ("labels",)
+    checked, splits, duplicates = ba.select_witnesses([(key, w), (key, variant), (key, w)])
+    assert checked == [w, variant] and duplicates == 1 and splits == []
+    broken = replace(w, products=w.reactants)  # same labels, another bond change
+    _checked, splits, _d = ba.select_witnesses([(key, w), (key, broken)])
+    assert splits
+
+
 # --------------------------------------------------------------------------
 # item 5: compiler wiring (padding path reads the declared cap)
 # --------------------------------------------------------------------------

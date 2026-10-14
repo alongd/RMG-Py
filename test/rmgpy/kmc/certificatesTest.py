@@ -265,26 +265,51 @@ def _heavy_positions(molecules):
 def production_rate_source(family, cs, move):
     """The rate source the compiler serializes for an RMG family estimate
     (compiler._rate_table + _build_linked_family_pair): RMG's get_kinetics
-    on the move's template reaction, its source/entry/rank, and for a
-    hand-built tree compiler._rate_rule_source (rules, training, weights)."""
+    on the move's template reaction, its source/entry/rank/uncertainty, the
+    selection direction, and for a hand-built tree compiler._rate_rule_source
+    on the reaction AFTER production's normalization (swapped when RMG
+    selected the rate for the opposite direction).  Returns (rate source,
+    is_forward)."""
     from rmgpy.kmc import compiler as cmp
     rxn, _r, _p = chm.template_reaction(family, cs, move)
-    kinetics, source, entry, _fwd = family.get_kinetics(
+    kinetics, source, entry, fwd = family.get_kinetics(
         rxn, template_labels=list(move.template), degeneracy=1, return_all_kinetics=False)
     rxn.kinetics = kinetics
+    if not fwd:
+        rxn.reactants, rxn.products = rxn.products, rxn.reactants
     out = {"kind": "RMG family estimate", "available": True, "source": str(source),
            "entry": str(entry) if entry else None, "rank": getattr(entry, "rank", None),
-           "family_template_direction": "forward"}
+           "uncertainty": str(getattr(kinetics, "uncertainty", None) or "UNKNOWN"),
+           "family_template_direction": "forward" if fwd else "reverse"}
     if not family.auto_generated:
         out.update(cmp._rate_rule_source(family, rxn))
-    return out
+    return out, bool(fwd)
+
+
+def _production_record(family_name, template, reaction, orientation, rate_source, reverse_of):
+    """An EventRecord shaped exactly as the compiler writes it: canonical
+    explicit-H graphs, canonical heavy-atom map and the executable bond_ops
+    of ``reaction`` (reactants and products sharing atom ids)."""
+    from rmgpy.kmc import compiler as cmp
+    return EventRecord(family=family_name, template=template, arity=len(reaction.reactants),
+                       participant_site_types=["s"] * len(reaction.reactants),
+                       reactant_multiplicities=[1] * len(reaction.reactants),
+                       orientation=orientation, rate_source=rate_source,
+                       reactant_graphs=cmp._graph_adjacencies(reaction.reactants),
+                       product_graphs=cmp._graph_adjacencies(reaction.products),
+                       atom_map=cmp._canonical_atom_map(reaction),
+                       bond_ops=cmp._bond_ops(reaction), reverse_of=reverse_of)
 
 
 def _record_pair(fam, family_name, reactants, pathway=None, products=None, member=0):
-    """A forward (as_generated, RMG family estimate) and reversed
-    (reference-thermo reverse) EventRecord of one channel member on
-    ``reactants``, shaped as the compiler publishes them: production rate
-    source, heavy-atom ``atom_map``, reciprocal ``reverse_of`` links."""
+    """The rate-owning (RMG family estimate) and the linked (reference-thermo
+    reverse) EventRecord of one channel member on ``reactants``, shaped as the
+    compiler publishes them: production rate source, canonical graphs, heavy
+    ``atom_map``, ``bond_ops``, reciprocal ``reverse_of`` links.  As in
+    production the rate owner is the record in the direction RMG selected the
+    rate for: as_generated when RMG's get_kinetics is forward, else the
+    reversed record.  Returns (rate owner, partner, channel set, channel)."""
+    from types import SimpleNamespace
     from rmgpy.kmc.compiler import LINK_PLACEHOLDER
     family = fam[family_name]
     cs = chm.build_channels(family, reactants)
@@ -292,27 +317,21 @@ def _record_pair(fam, family_name, reactants, pathway=None, products=None, membe
     ch = chs[0]
     move = ch.representatives[member]
     prods = [rm.molecule_from_rows(p) for p in rm.split_rows(move.product_rows())]
-    rg = [m.to_adjacency_list() for m in reactants]
-    pg = [m.to_adjacency_list() for m in prods]
-    rpos, ppos = _heavy_positions(reactants), _heavy_positions(prods)
-    amap = {rpos[a]: ppos[a] for a in rpos}
-    common = dict(family=family_name, template=";".join(ch.pathway))
-    forward = EventRecord(**common, arity=len(reactants),
-                          participant_site_types=["s"] * len(reactants),
-                          reactant_multiplicities=[1] * len(reactants),
-                          orientation="as_generated",
-                          rate_source=production_rate_source(family, cs, move),
-                          reactant_graphs=rg, product_graphs=pg, atom_map=amap,
-                          reverse_of=LINK_PLACEHOLDER)
-    reverse = EventRecord(**common, arity=len(prods), participant_site_types=["s"] * len(prods),
-                          reactant_multiplicities=[1] * len(prods), orientation="reversed",
-                          rate_source={"kind": "reference-thermo reverse", "available": True,
-                                       "reference": "k_family / Kc"},
-                          reactant_graphs=pg, product_graphs=rg,
-                          atom_map={v: k for k, v in amap.items()},
-                          reverse_of=forward.event_id)
-    forward = replace(forward, reverse_of=reverse.event_id)
-    return forward, reverse, cs, ch
+    as_generated = SimpleNamespace(reactants=list(reactants), products=prods)
+    reversed_view = SimpleNamespace(reactants=prods, products=list(reactants))
+    rate_source, fwd = production_rate_source(family, cs, move)
+    template = ";".join(ch.pathway)
+    reverse_rs = {"kind": "reference-thermo reverse", "available": True,
+                  "reference": "k_family / Kc"}
+    owner_view, owner_orientation, partner_view, partner_orientation = (
+        (as_generated, "as_generated", reversed_view, "reversed") if fwd else
+        (reversed_view, "reversed", as_generated, "as_generated"))
+    owner = _production_record(family_name, template, owner_view, owner_orientation,
+                               rate_source, LINK_PLACEHOLDER)
+    partner = _production_record(family_name, template, partner_view, partner_orientation,
+                                 reverse_rs, owner.event_id)
+    owner = replace(owner, reverse_of=partner.event_id)
+    return owner, partner, cs, ch
 
 
 def test_event_record_certificate_reference_is_additive():
@@ -363,17 +382,33 @@ def test_attach_certificates_from_the_records_rate_source(fam):
 
 def test_compiler_attaches_certificates_when_asked():
     """EventSetCompiler(certify_rates=True) attaches a reference to every
-    record and publishes the store; ids and records are those of a compile
-    without certificates."""
+    record and publishes the store.  Certification is required: a record of
+    the required population (enabled, an RMG family selection) whose
+    certification failed (here: the fake family has no certifiable tree) is
+    never published enabled; it is refused by status, with its reason, and
+    otherwise equals the record of a compile without certificates."""
     plain, _db, _p = ct._fake_compiler(["pathway_A", "pathway_B"])
     base = plain.compile()
     certified, _db, _p = ct._fake_compiler(["pathway_A", "pathway_B"])
     certified.certify_rates = True
     art = certified.compile()
-    assert [r["event_id"] for r in art["records"]] == [r["event_id"] for r in base["records"]]
     assert "rate_certificates" not in base
+    assert len(art["records"]) == len(base["records"])
+    store = art["rate_certificates"]
     for r in art["records"]:
-        assert r["rate_certificate"]["sha256"] in art["rate_certificates"]
+        assert r["rate_certificate"]["sha256"] in store
+        rc = store[r["rate_certificate"]["sha256"]]
+        assert not rc["certified"]
+        assert r["status"] != "enabled", r["status"]
+    refused = [r for r in art["records"] if r["status"] == "refused"]
+    assert refused and all("rate certification" in r["status_reason"] for r in refused)
+    plain_by_template = {(r["template"], r["orientation"]): r for r in base["records"]}
+    for r in art["records"]:
+        twin = plain_by_template[(r["template"], r["orientation"])]
+        same = {k: v for k, v in r.items() if k not in (
+            "event_id", "status", "status_reason", "rate_certificate", "reverse_of",
+            "canonical_index")}
+        assert same == {k: v for k, v in twin.items() if k in same}
 
 
 # --------------------------------------------------------------------------
@@ -441,15 +476,16 @@ def test_recertify_a_reversed_record_on_its_template_reactants(fam, certifier):
     cs = chm.build_channels(family, [pe, closed])
     head = next(c for c in cs.channels if c.pathway[0].startswith("C/H3/Cs")
                 and c.pathway[1].startswith("C_rad/H/CbCs"))
-    _f, reverse, _cs, _ch = _record_pair(fam, "H_Abstraction", [pe, closed], head.pathway)
-    rc = certifier.certify_record(reverse)
+    forward, reverse, _cs, _ch = _record_pair(fam, "H_Abstraction", [pe, closed], head.pathway)
+    rc = certifier.certify_record(reverse, rate_owner=forward)
     assert rc["template_side"] == "product_graphs" and rc["complete"], rc["gaps"]
+    assert rc["certified"], rc["binding"]
     _side, mols, _o = certifier.template_side(reverse)
     reacting = {a for ch in rc["certificate"]["channels"] for m in ch["members"]
                 for mp in m["mappings"] for _s, _l, a in mp["labels"]}
     ext, amap, _info = cm.extend_witness(mols, reacting)
-    res = certifier.recertify(reverse, ext, amap, certificate=rc)
-    assert res["same_selection"], res["flips"]
+    res = certifier.recertify(reverse, ext, amap, certificate=rc, rate_owner=forward)
+    assert res["same_selection"], (res["flips"], res["refusals"])
 
 
 # --------------------------------------------------------------------------
@@ -667,7 +703,8 @@ def test_record_certificate_binds_the_production_selection(fam, certifier):
     amap[0], amap[1] = amap[1], amap[0]     # the methyl radical carbon ends up in the propyl
     foreign = certifier.certify_record(replace(forward, atom_map=amap, event_id=""))
     assert foreign["binding"]["status"] == "refused" and not foreign["certified"]
-    assert any("member" in m for m in foreign["binding"]["mismatches"]), foreign["binding"]
+    assert any("member" in m or "rewrite" in m for m in foreign["binding"]["mismatches"]), \
+        foreign["binding"]
     owned = certifier.certify_record(reverse, rate_owner=forward)
     assert owned["binding"]["status"] == "bound", owned["binding"]
     assert owned["owner"]["rate_owner_event_id"] == forward.event_id
@@ -912,6 +949,328 @@ def test_certifier_caches_are_bounded(fam):
 
 
 # --------------------------------------------------------------------------
+# rework 2: forged claims, executable rewrite, reverse-selected training,
+# supplier identity, record-level recertification, fixed points, transport,
+# hydrogen-only records, required population, acceptance gate
+# --------------------------------------------------------------------------
+def _mini_artifact(records, fam, required=True):
+    """A certified record set as the compiler publishes it (certification
+    gate included), as the dict validate_certification reads."""
+    records, store, _replacements = cm.certify_records(records, fam, required=required)
+    return {"records": [r.to_dict() for r in records], "rate_certificates": store,
+            "rate_certification": cm.certification_declaration()}
+
+
+def _forge(art, index, body_changes=None, record_changes=None, reown=True):
+    """A forger's edit of record ``index`` and its stored certificate: the
+    record fields are changed (event id recomputed, links kept), the body is
+    edited, its owner block regenerated from the changed record, re-hashed,
+    and the reference regenerated from the forged body."""
+    art = copy.deepcopy(art)
+    data = art["records"][index]
+    ref = data.pop("rate_certificate")
+    body = art["rate_certificates"].pop(ref["sha256"])
+    old_id = data["event_id"]
+    if record_changes:
+        data.update(record_changes)
+        data["event_id"] = ""
+        data = EventRecord.from_dict(data).to_dict()
+        for k, other in enumerate(art["records"]):
+            if k == index or other.get("reverse_of") != old_id:
+                continue
+            other["reverse_of"] = data["event_id"]
+            oref = other["rate_certificate"]
+            obody = art["rate_certificates"].pop(oref["sha256"])
+            if obody["owner"].get("rate_owner_event_id") == old_id:
+                obody["owner"]["rate_owner_event_id"] = data["event_id"]
+            other["rate_certificate"] = cm.certificate_reference(obody)
+            art["rate_certificates"][cm.certificate_sha256(obody)] = obody
+    for key, value in (body_changes or {}).items():
+        body[key] = value
+    if reown:
+        owner = cm.record_owner(data)
+        owner.update({k: body["owner"].get(k) for k in ("rate_owner_event_id",
+                                                        "rate_source_sha256")})
+        if body["owner"].get("rate_owner_event_id") == old_id:
+            owner["rate_owner_event_id"] = data["event_id"]
+        body["owner"] = owner
+        body["event_id"] = data["event_id"]
+    data["rate_certificate"] = cm.certificate_reference(body)
+    art["rate_certificates"][cm.certificate_sha256(body)] = body
+    art["records"][index] = data
+    return art
+
+
+def test_forged_certificate_claims_are_refused(fam):
+    """Rehashed wrapper claims do not validate: the validator checks the
+    schema, the inner ownership and witness consistency and the binding
+    coverage, and recomputes every flag from the stored derivation
+    (certified=True over a refused binding, certificate None, a bound
+    binding without members, a bogus schema)."""
+    owner, partner, _cs, _ch = _record_pair(fam, "H_Abstraction",
+                                            [mol("[CH3]", 0), mol("CC", 10)])
+    art = _mini_artifact([owner, partner], fam)
+    cm.validate_certification(art)
+    k = next(i for i, r in enumerate(art["records"]) if r["event_id"] == owner.event_id)
+    body = art["rate_certificates"][art["records"][k]["rate_certificate"]["sha256"]]
+    assert body["certified"] and body["binding"]["status"] == "bound"
+    refused = dict(body["binding"], status="refused", mismatches=["source: wrong rate source"])
+    with pytest.raises(ValueError, match="derived"):
+        cm.validate_certification(_forge(art, k, {"binding": refused}))
+    with pytest.raises(ValueError, match="schema"):
+        cm.validate_certification(_forge(art, k, {"schema": "bogus/9"}))
+    with pytest.raises(ValueError, match="derived|certificate"):
+        cm.validate_certification(_forge(art, k, {"certificate": None}))
+    hollow = dict(body["binding"], members=[], mismatches=[])
+    with pytest.raises(ValueError, match="binding"):
+        cm.validate_certification(_forge(art, k, {"binding": hollow}))
+    lying_witness = copy.deepcopy(body["certificate"])
+    lying_witness["witness"]["atoms"][0][1] = "O"
+    with pytest.raises(ValueError, match="witness"):
+        cm.validate_certification(_forge(art, k, {"certificate": lying_witness}))
+
+
+def test_owner_binding_covers_the_rewrite_and_degeneracy(fam):
+    """A record whose rewrite (bond_ops) or degeneracy changed, its event id
+    recomputed and the certificate re-owned and re-hashed, is refused: the
+    binding evidence names the rewrite and degeneracy it verified."""
+    owner, partner, _cs, _ch = _record_pair(fam, "H_Abstraction",
+                                            [mol("[CH3]", 0), mol("CC", 10)])
+    art = _mini_artifact([owner, partner], fam)
+    k = next(i for i, r in enumerate(art["records"]) if r["event_id"] == owner.event_id)
+    with pytest.raises(ValueError, match="rewrite|bond_ops"):
+        cm.validate_certification(_forge(art, k, record_changes={"bond_ops": []}))
+    with pytest.raises(ValueError, match="degeneracy"):
+        cm.validate_certification(_forge(art, k, record_changes={"degeneracy": 7.0}))
+
+
+def test_required_population_must_be_certified(fam):
+    """With certification required, a firing record (enabled or
+    irreversible) whose rate is an RMG family selection must carry a
+    certified certificate; the certification gate refuses a failed record
+    and its linked partner by status (with the reason) instead."""
+    owner, partner, _cs, _ch = _record_pair(fam, "H_Abstraction",
+                                            [mol("[CH3]", 0), mol("CC", 10)])
+    tampered = copy.deepcopy(owner.rate_source)
+    tampered["entry"] = "not the entry RMG selected"
+    bad = replace(owner, rate_source=tampered, event_id="")
+    bad_partner = replace(partner, reverse_of=bad.event_id, event_id="")
+    bad = replace(bad, reverse_of=bad_partner.event_id)
+    loose = _mini_artifact([bad, bad_partner], fam, required=False)
+    with pytest.raises(ValueError, match="required"):
+        cm.validate_certification(loose)
+    gated = _mini_artifact([bad, bad_partner], fam, required=True)
+    cm.validate_certification(gated)
+    assert {r["status"] for r in gated["records"]} == {"refused"}
+    assert all("rate certification" in r["status_reason"] for r in gated["records"])
+    by_id = {r["event_id"]: r for r in gated["records"]}
+    for r in gated["records"]:
+        assert by_id[r["reverse_of"]]["reverse_of"] == r["event_id"]
+
+
+def test_binding_replays_the_executable_rewrite(fam, certifier):
+    """Binding replays the record's explicit-H bond_ops against its declared
+    products under a COMPLETE canonical heavy-atom map: cleared or foreign
+    operations and a one-pin map for two carbons refuse; an equivalent
+    methyl H (same products under the heavy map) still binds."""
+    owner, _p, _cs, _ch = _record_pair(fam, "H_Abstraction", [mol("[CH3]", 0), mol("CC", 10)])
+    rc = certifier.certify_record(owner)
+    assert rc["certified"], rc["binding"]
+    cleared = certifier.certify_record(replace(owner, bond_ops=[], event_id=""))
+    assert cleared["binding"]["status"] == "refused" and not cleared["certified"]
+    assert any("rewrite" in m for m in cleared["binding"]["mismatches"]), cleared["binding"]
+    # the abstracted H moved to an equivalent H of the same methyl: same
+    # products under the heavy map
+    ops = copy.deepcopy(owner.bond_ops)
+    broken = next(op for op in ops if op["action"] == "break")
+    graphs = cm.witness_molecules(owner.reactant_graphs)
+    atoms = {a.id: a for m in graphs for a in m.atoms}
+    carbon, hydrogen = (broken["atoms"] if atoms[broken["atoms"][0]].is_carbon()
+                        else broken["atoms"][::-1])
+    twin = next(n.id for n in atoms[carbon].edges if n.is_hydrogen() and n.id != hydrogen)
+    for op in ops:
+        if "atoms" in op:
+            op["atoms"] = [twin if a == hydrogen else a for a in op["atoms"]]
+        if op.get("atom") == hydrogen:
+            op["atom"] = twin
+    equivalent = certifier.certify_record(replace(owner, bond_ops=ops, event_id=""))
+    assert equivalent["binding"]["status"] == "bound", equivalent["binding"]
+    rec, _p2, _cs2, _ch2 = _record_pair(fam, "R_Recombination", [mol("[CH3]", 0), mol("[CH3]", 10)])
+    assert len(rec.atom_map) == 2
+    one_pin = dict(list(rec.atom_map.items())[:1])
+    partial = certifier.certify_record(replace(rec, atom_map=one_pin, event_id=""))
+    assert partial["binding"]["status"] == "refused" and not partial["certified"]
+    assert any("heavy" in m for m in partial["binding"]["mismatches"]), partial["binding"]
+
+
+def test_reverse_selected_training_rates_bind(fam, certifier):
+    """CH2CH3* + CH4 on (C_methane, C_rad/H2/Cs\\H3): RMG selects training
+    entry C2H6 + CH3 <=> C2H5 + CH4 for the OPPOSITE direction
+    (is_forward False).  Production swaps the reaction before extracting
+    its contributors (training reverse False) and the rate owner is the
+    reversed record; the certifier mirrors that normalization and binds."""
+    owner, partner, _cs, ch = _record_pair(fam, "H_Abstraction", [mol("[CH2]C", 0), mol("C", 10)],
+                                           ("C_methane", "C_rad/H2/Cs\\H3"))
+    assert owner.orientation == "reversed"
+    assert owner.rate_source["family_template_direction"] == "reverse"
+    assert owner.rate_source["training"][0]["reverse"] is False
+    rc = certifier.certify_record(owner)
+    assert rc["binding"]["status"] == "bound", rc["binding"]
+    assert rc["certified"], rc["gaps"]
+    linked = certifier.certify_record(partner, rate_owner=owner)
+    assert linked["binding"]["status"] == "bound", linked["binding"]
+    flipped = dict(owner.rate_source, family_template_direction="forward")
+    wrong = certifier.certify_record(replace(owner, rate_source=flipped, event_id=""))
+    assert any("direction" in m for m in wrong["binding"]["mismatches"]), wrong["binding"]
+
+
+def test_autogenerated_supplier_identity_is_bound(fam, certifier):
+    """An auto-generated tree rate is bound to its SUPPLYING node (RMG's
+    'Estimated from node' and the walk), which production serializes as the
+    rate's uncertainty correlation; a stated supplier that differs refuses
+    even when source, entry and rank agree (a non-exact selection returns
+    entry None, so nothing else names the supplier)."""
+    owner, _p, _cs, ch = _record_pair(fam, "R_Recombination",
+                                      [mol("[CH3]", 0), mol("[CH2]CC", 10)])
+    rc = certifier.certify_record(owner)
+    assert rc["binding"]["status"] == "bound", rc["binding"]
+    (c,) = [c for c in rc["certificate"]["channels"]]
+    supplier = c["selection"]["supplying_node"]
+    assert rc["binding"]["supplier"] == supplier
+    assert f"correlation='{supplier}'" in owner.rate_source["uncertainty"]
+    lying = dict(owner.rate_source, uncertainty=owner.rate_source["uncertainty"].replace(
+        f"correlation='{supplier}'", "correlation='Root'"))
+    bad = certifier.certify_record(replace(owner, rate_source=lying, event_id=""))
+    assert any("supplier" in m for m in bad["binding"]["mismatches"]), bad["binding"]
+    # a non-exact selection: entry None, the supplier is named only by RMG's
+    # comment and the record's uncertainty correlation
+    rmg = {"source": "rate rules", "entry": None, "rank": None, "is_forward": True,
+           "sources": None, "supplier": "Root_parent"}
+    prs = {"available": True, "source": "rate rules", "entry": None, "rank": None,
+           "family_template_direction": "forward",
+           "uncertainty": "RateUncertainty(mu=0.0, var=1.0, Tref=1000.0, N=1, "
+                          "data_mean=0.0, correlation='Root_parent',)"}
+    assert cm.production_mismatches(prs, rmg, "leaf", supplier="Root_parent") == []
+    other = dict(prs, uncertainty=prs["uncertainty"].replace("Root_parent", "Root_other"))
+    assert any("supplier" in m for m in cm.production_mismatches(
+        other, rmg, "leaf", supplier="Root_parent"))
+    assert any("supplier" in m for m in cm.production_mismatches(
+        prs, rmg, "leaf", supplier="Root_walked_elsewhere"))
+    undirected = {k: v for k, v in prs.items() if k != "family_template_direction"}
+    assert any("direction" in m for m in cm.production_mismatches(
+        undirected, rmg, "leaf", supplier="Root_parent"))
+
+
+def test_record_recertification_requires_a_certified_owned_wrapper(fam, certifier):
+    """Record-level recertification refuses a wrapper that is not certified
+    (binding refused), and a wrapper owned by another record, instead of
+    unwrapping its inner certificate."""
+    closed, pe = mol(ct.ps(3), 17), mol("C[CH]c1ccccc1", 0)
+    family = fam["H_Abstraction"]
+    cs = chm.build_channels(family, [pe, closed])
+    head = next(c for c in cs.channels if c.pathway[0].startswith("C/H3/Cs")
+                and c.pathway[1].startswith("C_rad/H/CbCs"))
+    owner, partner, _cs, _ch = _record_pair(fam, "H_Abstraction", [pe, closed], head.pathway)
+    rc = certifier.certify_record(owner)
+    assert rc["certified"]
+    _side, mols, _o = certifier.template_side(owner)
+    ext, amap, _info = cm.extend_witness(mols, _reacting(rc["certificate"]))
+    ok = certifier.recertify(owner, ext, amap, certificate=rc)
+    assert ok["same_selection"] and not ok["refusals"], ok["refusals"]
+    uncertified = dict(rc, certified=False, binding=dict(
+        rc["binding"], status="refused", mismatches=["source: wrong rate source"]))
+    res = certifier.recertify(owner, ext, amap, certificate=uncertified)
+    assert res["same_selection"] is False and not res["fixed_point"]
+    assert any("certified" in r for r in res["refusals"]), res["refusals"]
+    other = certifier.certify_record(partner, rate_owner=owner)
+    res = certifier.recertify(owner, ext, amap, certificate=other)
+    assert res["same_selection"] is False and any("owner" in r for r in res["refusals"])
+    res = certifier.recertify(owner, ext, amap, certificate=rc["certificate"])
+    assert res["same_selection"] is False and res["refusals"]
+
+
+def test_fixed_point_reports_added_mappings(fam, certifier):
+    """A mapping that appears on the extension within the recertified cohort
+    is reported and is not a fixed point."""
+    family = fam["H_Abstraction"]
+    reactants = [mol("[CH3]", 0), mol("CC", 10)]
+    cs = chm.build_channels(family, reactants)
+    cert = certifier.certify_channel(family, cs, only(cs.channels))
+    ident = {a.id: a.id for m in cs.reactants for a in m.atoms}
+    assert cm.compare_certificates(cert, cert, ident)["fixed_point"]
+    grown = copy.deepcopy(cert)
+    member = grown["channels"][0]["members"][0]
+    extra = copy.deepcopy(member["mappings"][0])
+    extra["labels"] = [[s, lab, 999 if lab == "*2" else a] for s, lab, a in extra["labels"]]
+    member["mappings"].append(extra)
+    out = cm.compare_certificates(cert, grown, ident)
+    assert out["added_mappings"] and not out["fixed_point"], out
+
+
+def test_equivalent_hydrogen_renumbering_is_a_fixed_point(fam, certifier):
+    """Swapping the ids of two equivalent methyl H (an automorphism of the
+    witness) keeps the selection AND the transported support: embeddings
+    are compared independently of the id order."""
+    family = fam["H_Abstraction"]
+    cs = chm.build_channels(family, [mol("[CH3]", 0), mol("CC", 10)])
+    cert = certifier.certify_channel(family, cs, only(cs.channels))
+    ethane = cs.reactants[1]
+    carbon = next(a for a in ethane.atoms if a.is_carbon())
+    h1, h2 = sorted(n.id for n in carbon.edges if n.is_hydrogen())[:2]
+    swap = {a.id: a.id for m in cs.reactants for a in m.atoms}
+    swap[h1], swap[h2] = h2, h1
+    res = certifier.recertify_certificate(family, cert, list(cs.reactants), swap)
+    assert res["same_selection"], res
+    assert res["same_support"] and res["fixed_point"], res["support_changes"][:2]
+
+
+def test_transport_refuses_isotope_and_attribute_changes(fam, certifier):
+    """C -> 13C (or any change of a surviving atom's isotope, charge, lone
+    pairs or bond orders) is not a transport."""
+    family = fam["H_Abstraction"]
+    cs = chm.build_channels(family, [mol("[CH3]", 0), mol("CC", 10)])
+    cert = certifier.certify_channel(family, cs, only(cs.channels))
+    ident = {a.id: a.id for m in cs.reactants for a in m.atoms}
+    rows = rm.molecule_rows(cs.reactants[1])
+    carbon = next(i for i, r in sorted(rows.items()) if r[0] == "C")
+    rows[carbon] = (rows[carbon][0], 13) + tuple(rows[carbon][2:])
+    labelled = rm.molecule_from_rows(rows)
+    assert any(rm._isotope(a) == 13 for a in labelled.atoms)
+    problems = cm.transport_problems(cert, [cs.reactants[0], labelled], ident)
+    assert any("isotope" in p for p in problems), problems
+    res = certifier.recertify_certificate(family, cert, [cs.reactants[0], labelled], ident)
+    assert res["same_selection"] is False and any("isotope" in r for r in res["refusals"])
+
+
+def test_hydrogen_only_records_bind(fam, certifier):
+    """H* + H* -> H2: both sides have zero heavy atoms, so the complete
+    canonical heavy map is empty; the binding accepts it and validates the
+    explicit-H rewrite instead."""
+    owner, partner, _cs, _ch = _record_pair(fam, "R_Recombination",
+                                            [mol("[H]", 0), mol("[H]", 10)])
+    assert owner.atom_map == {}
+    rc = certifier.certify_record(owner)
+    assert rc["binding"]["status"] == "bound", rc["binding"]
+    assert rc["certified"], rc["gaps"]
+    broken = certifier.certify_record(replace(owner, bond_ops=[], event_id=""))
+    assert broken["binding"]["status"] == "refused"
+
+
+def test_acceptance_gate_fails_on_supported_selection_changes():
+    """The reference acceptance gate fails on an incomplete certificate AND
+    on any supported channel whose recertification changed its selection;
+    unsupported changes and explicit refusals are accounted, not failed."""
+    ok = {"incomplete": 0, "recertification": {"supported:same": 4,
+                                               "unsupported:spin:changed": 3,
+                                               "supported:unmapped": 1,
+                                               "pathway_ambiguous:changed": 2}}
+    assert acceptance_failures(ok) == []
+    assert acceptance_failures(dict(ok, incomplete=1))
+    changed = dict(ok, recertification=dict(ok["recertification"], **{"supported:changed": 1}))
+    assert any("supported" in f for f in acceptance_failures(changed))
+
+
+# --------------------------------------------------------------------------
 # acceptance (slow): the PS references and the closed DP8 compile
 # --------------------------------------------------------------------------
 def _old_spin(mols):
@@ -927,6 +1286,14 @@ def _species_of(channel_set, ch):
 def _reacting(cert):
     return {a for ch in cert["channels"] for m in ch.get("members", [])
             for mp in m["mappings"] for _s, _l, a in mp["labels"]}
+
+
+def acceptance_failures(table) -> list:
+    """Why a reference acceptance table fails the gate (empty: passes)."""
+    out = []
+    if table["incomplete"]:
+        out.append(f"{table['incomplete']} incomplete certificates")
+    return out
 
 
 def recert_row(certifier, family, cert, mols):
@@ -1048,7 +1415,7 @@ def test_reference_acceptance_tables(fam, certifier, label):
             stream.write(json.dumps(table) + "\n")
     for m in mols:
         assert dom.check(m).accepted, (label, dom.check(m).reason)
-    assert table["incomplete"] == 0
+    assert not acceptance_failures(table), acceptance_failures(table)
 
 
 @pytest.mark.slow

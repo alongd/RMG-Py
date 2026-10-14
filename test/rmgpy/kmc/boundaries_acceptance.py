@@ -88,6 +88,41 @@ def vectors_for(witness, full_box):
     return vectors, False
 
 
+class WitnessSelector:
+    """Which witnesses of a stream the sweep checks.  Witnesses are grouped
+    by mapped reaction (``key``: the move's labels); within a group the
+    connectivity change (bonds made or broken) must equal the first
+    member's, else the group is split (a failure)."""
+
+    def __init__(self):
+        self.classes = {}
+        self.seen_graphs = set()
+        self.splits = []
+        self.duplicates = 0
+
+    def add(self, key, witness):
+        """True if ``witness`` is to be checked."""
+        connectivity = _connectivity(witness)
+        if key in self.classes:
+            if self.classes[key] != connectivity:
+                self.splits.append(witness.label)
+            return False
+        self.classes[key] = connectivity
+        graph_key = (witness.reactants, witness.products)
+        if graph_key in self.seen_graphs:
+            self.duplicates += 1
+            return False
+        self.seen_graphs.add(graph_key)
+        return True
+
+
+def select_witnesses(items):
+    """(checked witnesses, splits, exact duplicates) of ``(key, witness)``."""
+    selector = WitnessSelector()
+    checked = [witness for key, witness in items if selector.add(key, witness)]
+    return checked, selector.splits, selector.duplicates
+
+
 def check_witness(witness, tally, full_box=False):
     """Evaluate the vector set of one witness into ``tally``."""
     from rmgpy.kmc import boundaries as b
@@ -145,7 +180,7 @@ def run_task(task):
     try:
         molecules, participants = b.witness_reactants(proxy.boundary_builds)
         forms = [rm.reactant_forms(m) for m in molecules]
-        classes, seen_graphs = {}, set()
+        selector = WitnessSelector()
         first = True
         streamed = []
         for combo in product(*(range(len(f)) for f in forms)):
@@ -165,19 +200,13 @@ def run_task(task):
                     tally["metadata_failures"].append(f"{family_name}/{direction}: {error}")
                     continue
                 tally["witnesses_metadata_ok"] += 1
-                key = move.labels
-                connectivity = _connectivity(witness)
-                if key in classes:
-                    if classes[key] != connectivity:
-                        tally["class_splits"].append(f"{witness.label}")
+                new_class = move.labels not in selector.classes
+                check = selector.add(move.labels, witness)
+                tally["classes"] += int(new_class)
+                tally["class_splits"] = list(selector.splits)
+                tally["exact_duplicate_witnesses"] = selector.duplicates
+                if not check:
                     continue
-                classes[key] = connectivity
-                tally["classes"] += 1
-                graph_key = (witness.reactants, witness.products)
-                if graph_key in seen_graphs:
-                    tally["exact_duplicate_witnesses"] += 1
-                    continue
-                seen_graphs.add(graph_key)
                 tally["checked_witnesses"] += 1
                 check_witness(witness, tally, full_box=first)
                 first = False

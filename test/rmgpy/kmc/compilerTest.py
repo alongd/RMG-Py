@@ -1510,3 +1510,67 @@ def test_cap_removal_checks_chemistry_and_edit_support():
     _remove_cap_hydrogen(molecule, port, (), support=set(hydrogens[:2]))
     remaining = {n.id for n in port.edges if n.is_hydrogen()}
     assert set(hydrogens[:2]) <= remaining and len(remaining) == 2
+
+
+# --------------------------------------------------------------------------
+# I-135 rework 2: the declared repeat chemistry, orientation and caps of a
+# verified padding must agree with the transported construction metadata
+# --------------------------------------------------------------------------
+def _verified_padding_case():
+    from rmgpy.kmc.proxy_padding import reaction_center_atom_ids
+
+    proxy = _proxy_named("interior_radical")
+    ports = {port.atom_id for port in proxy.artificial_boundaries}
+    reaction = next(
+        r for r in _generated_reactions(proxy, ["intra_H_migration"])
+        if not set(reaction_center_atom_ids(r)) & ports
+    )
+    return reaction, compiler_module._map_proxy_boundaries_to_reaction(proxy, reaction)
+
+
+def test_verified_padding_refuses_contradicting_declarations():
+    """Declaring a PE repeat unit on a PS proxy (whose metadata provider
+    extends by C8H8), flipping a port's orientation or moving its cap away
+    from the transported metadata refuses the padding instead of padding
+    with the provider's chemistry under the declared name."""
+    from rmgpy.kmc.proxy_padding import ReactionNotPaddable, RepeatUnitGraph
+
+    reaction, mapped = _verified_padding_case()
+    padded = compiler_module._pad_production_witness(reaction, mapped, 6, 200)
+    assert padded.verified
+    pe = RepeatUnitGraph.from_smiles("PE", "CC", head_atom_index=0, tail_atom_index=1)
+    with pytest.raises(ReactionNotPaddable, match="repeat unit"):
+        compiler_module._pad_production_witness(
+            reaction, replace(mapped, repeat_unit=pe), 6, 200
+        )
+    reversed_unit = RepeatUnitGraph.from_smiles(
+        "polystyrene", "CC(c1ccccc1)", head_atom_index=1, tail_atom_index=0
+    )
+    with pytest.raises(ReactionNotPaddable, match="repeat unit"):
+        compiler_module._pad_production_witness(
+            reaction, replace(mapped, repeat_unit=reversed_unit), 6, 200
+        )
+    first, *rest = mapped.artificial_boundaries
+    flipped = replace(
+        first, orientation="tail" if first.orientation == "head" else "head"
+    )
+    with pytest.raises(ReactionNotPaddable, match="orientation"):
+        compiler_module._pad_production_witness(
+            reaction, replace(mapped, artificial_boundaries=(flipped, *rest)), 6, 200
+        )
+    for index, port in enumerate(mapped.artificial_boundaries):
+        molecule = _participant_molecule(mapped.reactants[port.participant_index])
+        port_atom = next(a for a in molecule.atoms if a.id == port.atom_id)
+        others = [
+            n.id for n in port_atom.edges
+            if n.is_hydrogen() and n.id not in port.cap_atom_ids
+        ]
+        if others:
+            break
+    assert others
+    ports = list(mapped.artificial_boundaries)
+    ports[index] = replace(port, cap_atom_ids=(others[0],))
+    with pytest.raises(ReactionNotPaddable, match="cap"):
+        compiler_module._pad_production_witness(
+            reaction, replace(mapped, artificial_boundaries=tuple(ports)), 6, 200
+        )
