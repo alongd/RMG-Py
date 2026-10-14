@@ -107,12 +107,6 @@ def test_c5_state_moments_are_the_declared_dp_moments():
     assert result["state_moments"] == result["declared_dp_moments"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="C6: run(until=T) draws a waiting time and discards it at the horizon, so "
-    "ten snapshot calls consume a different random stream than one call",
-)
 def test_c6_trajectory_is_independent_of_the_snapshot_schedule(records):
     single = probe.run_trajectory(records, "named", 1, "single")
     piecewise = probe.run_trajectory(records, "named", 1, "ten")

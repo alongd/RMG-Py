@@ -12,9 +12,9 @@ import copy
 from collections import Counter
 from collections import OrderedDict
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import product
-from typing import Any, Hashable, Iterable, Sequence
+from typing import Any, ClassVar, Hashable, Iterable, Sequence
 
 from rmgpy.kmc.state import AtomRef, KMCState, Site, _parse_adjacency
 from rmgpy.kmc.met import (
@@ -1864,6 +1864,34 @@ class SSARunResult:
     irreversible_fraction: float
     bound_checks: int
     bound_violations: int
+    # Deliberately not dataclass fields: ``asdict(result)`` is frozen in the I-052
+    # baseline, so the field set must not grow.  ``run`` sets these per instance.
+    # stop_reason: "horizon", "max_events" (per-call cap, which wins when both
+    # hold) or "absorbing" (zero total propensity; the clock still advances to the
+    # horizon).  total_events counts events over the engine's whole life.
+    stop_reason: ClassVar[str] = "horizon"
+    total_events: ClassVar[int] = 0
+
+
+@dataclass(frozen=True)
+class _PendingDraw:
+    """A waiting time drawn but not yet consumed because it crossed a horizon.
+
+    Validity rule: the draw is reusable only while ``token`` and the propensity
+    totals are unchanged and the clock still sits at ``horizon_time``.  The token
+    is (state hash, rng/index/records/termination-table identities, index revision,
+    temperature, volume, spin factor, bound temperature).  Anything else forces
+    discard-and-redraw from the current time, integrating the stale interval with
+    the rates it was drawn under.
+    """
+
+    elapsed: float  # waiting time relative to the segment start (inf: absorbing)
+    absorbing: bool
+    enabled: float
+    refused: float
+    total: float
+    horizon_time: float
+    token: tuple[Any, ...]
 
 
 class _IncrementalPropensities:
@@ -2034,6 +2062,16 @@ class IsothermalSSA:
         self.time = 0.0
         self.leak_num = 0.0
         self.leak_den = 0.0
+        # Clock bookkeeping: ``time``/``leak_*`` are views that may sit at a horizon
+        # inside the open segment [_segment_start, next firing); the ``_c`` values
+        # are committed at the last firing, so one segment is always integrated by a
+        # single multiplication whatever the horizon schedule.
+        self._segment_start = 0.0
+        self._leak_num_c = 0.0
+        self._leak_den_c = 0.0
+        self._pending: _PendingDraw | None = None
+        self._stop = "horizon"
+        self.events_fired = 0
         self.events: list[SSAEvent] = []
         self.irreversible_fired = 0
         self.bound_checks = 0
@@ -2091,9 +2129,48 @@ class IsothermalSSA:
         return self._maintenance
 
     def _integrate(self, elapsed: float, enabled: float, refused: float) -> None:
-        self.leak_num += refused * elapsed
-        self.leak_den += (enabled + refused) * elapsed
-        self.time += elapsed
+        """Close the open segment at a firing and commit it."""
+        self.leak_num = self._leak_num_c + refused * elapsed
+        self.leak_den = self._leak_den_c + (enabled + refused) * elapsed
+        self.time = self._segment_start + elapsed
+        self._commit()
+
+    def _commit(self) -> None:
+        self._segment_start = self.time
+        self._leak_num_c = self.leak_num
+        self._leak_den_c = self.leak_den
+        self._pending = None
+
+    def _view_to_horizon(self, until: float, enabled: float, refused: float) -> None:
+        """Report the open segment up to ``until`` without committing it."""
+        elapsed = until - self._segment_start
+        self.leak_num = self._leak_num_c + refused * elapsed
+        self.leak_den = self._leak_den_c + (enabled + refused) * elapsed
+        self.time = self._segment_start + elapsed
+
+    def _clock_token(self) -> tuple[Any, ...]:
+        return (
+            self.state.state_hash(),
+            id(self.rng),
+            id(self.index),
+            self.index.revision,
+            id(self.records),
+            id(self.termination_table),
+            self.temperature,
+            self.volume,
+            self.spin_factor,
+            self.bound_temperature,
+        )
+
+    def _pending_is_valid(
+        self, pending: _PendingDraw, total: float, enabled: float, refused: float
+    ) -> bool:
+        return (
+            self.time == pending.horizon_time
+            and (total, enabled, refused)
+            == (pending.total, pending.enabled, pending.refused)
+            and self._clock_token() == pending.token
+        )
 
     def _record_event(self, record: Any) -> SSAEvent:
         irreversible = _field(record, "status", "enabled") == "irreversible"
@@ -2106,6 +2183,7 @@ class IsothermalSSA:
             irreversible,
         )
         self.events.append(event)
+        self.events_fired += 1
         return event
 
     def _fire_non_met(self, event_id: str) -> SSAEvent:
@@ -2212,18 +2290,44 @@ class IsothermalSSA:
                     )
                 vector = canonical_propensities(leaves)
                 enabled, refused = report.total_enabled, report.total_refused
-            if vector.absorbing:
-                if until is not None:
-                    self._integrate(
-                        until - self.time,
+            pending = self._pending
+            if pending is not None and not self._pending_is_valid(
+                pending, vector.total, enabled, refused
+            ):
+                # Stale draw: keep the interval already reported to the horizon
+                # (integrated with the rates it was drawn under) and redraw.
+                self._commit()
+                pending = None
+            if pending is None:
+                if vector.absorbing:
+                    pending = _PendingDraw(
+                        math.inf, True, enabled, refused, vector.total, self.time, ()
+                    )
+                else:
+                    pending = _PendingDraw(
+                        float(self.rng.exponential(1.0 / vector.total)),
+                        False,
                         enabled,
                         refused,
+                        vector.total,
+                        self.time,
+                        (),
                     )
+            if pending.absorbing or (
+                until is not None and self._segment_start + pending.elapsed > until
+            ):
+                if pending.absorbing:
+                    self._stop = "absorbing"
+                    if until is None:
+                        return None
+                else:
+                    self._stop = "horizon"
+                self._view_to_horizon(until, enabled, refused)
+                self._pending = replace(
+                    pending, horizon_time=self.time, token=self._clock_token()
+                )
                 return None
-            elapsed = float(self.rng.exponential(1.0 / vector.total))
-            if until is not None and self.time + elapsed > until:
-                self._integrate(until - self.time, enabled, refused)
-                return None
+            elapsed = pending.elapsed
             self._integrate(elapsed, enabled, refused)
             selected = vector.draw(self.rng)
             if selected != self._MET_LEAF:
@@ -2250,17 +2354,22 @@ class IsothermalSSA:
         if until is None and max_events is None:
             raise ValueError("run needs a time or event limit")
         start_events = len(self.events)
+        stop_reason = "horizon"
         while (until is None or self.time < until) and (
             max_events is None or len(self.events) - start_events < max_events
         ):
             event = self.step(until=until)
             if event is None:
+                stop_reason = self._stop
                 break
+        else:
+            if max_events is not None and len(self.events) - start_events >= max_events:
+                stop_reason = "max_events"
         leak = self.leak_num / self.leak_den if self.leak_den else 0.0
         irreversible_fraction = (
             self.irreversible_fired / len(self.events) if self.events else 0.0
         )
-        return SSARunResult(
+        result = SSARunResult(
             self.time,
             tuple(self.events),
             self.leak_num,
@@ -2270,6 +2379,9 @@ class IsothermalSSA:
             self.bound_checks,
             self.bound_violations,
         )
+        object.__setattr__(result, "stop_reason", stop_reason)
+        object.__setattr__(result, "total_events", self.events_fired)
+        return result
 
 
 __all__ = [
