@@ -1349,3 +1349,163 @@ def test_c1_rewrite_application_reproduces_product_and_detects_corruption():
     }
     with pytest.raises(ValueError, match="invalid molecular graph"):
         apply_record(bad_record, [ethane])
+
+
+# --------------------------------------------------------------------------
+# I-135 rework 1: explicit-H cap transport and verified production padding
+# --------------------------------------------------------------------------
+def _rework_database():
+    import rmg_moves_harness as harness
+
+    if not harness.DATABASE.is_dir():
+        pytest.skip(f"needs the RMG database at {harness.DATABASE}")
+    import channelsTest as cht
+
+    return cht.database()
+
+
+def _proxy_named(site_type):
+    return next(
+        proxy for proxy in compiler_module.ps_proxy_set(3) if proxy.site_type == site_type
+    )
+
+
+def _generated_reactions(proxy, families):
+    database = _rework_database()
+    # copies: RMG renumbers identical reactants in place
+    reactants = [
+        (species.molecule[0] if hasattr(species, "molecule") else species).copy(deep=True)
+        for species in proxy.reactants
+    ]
+    return database.kinetics.generate_reactions_from_families(
+        list(reactants), only_families=families, resonance=True
+    )
+
+
+def _participant_molecule(participant):
+    return participant.molecule[0] if hasattr(participant, "molecule") else participant
+
+
+def _assert_caps_bonded_to_ports(mapped):
+    for port in mapped.artificial_boundaries:
+        assert port.source == "construction" and len(port.cap_atom_ids) == 1, port
+        molecule = _participant_molecule(mapped.reactants[port.participant_index])
+        by_id = {atom.id: atom for atom in molecule.atoms}
+        cap = by_id[port.cap_atom_ids[0]]
+        assert cap.is_hydrogen() and by_id[port.atom_id] in cap.edges
+
+
+def test_remapped_ports_transport_declared_caps_through_an_explicit_h_map():
+    """end_radical + end_radical: RMG renumbers the two identical proxies, so
+    no port keeps its id.  The declared caps (and the whole construction
+    metadata) are transported through a full explicit-H isomorphism instead
+    of being dropped to inference."""
+    from rmgpy.kmc import rmg_moves as rm
+
+    proxy = _proxy_named("end_radical+end_radical")
+    reactions = _generated_reactions(proxy, ["R_Recombination"])
+    assert reactions
+    for reaction in reactions[:4]:
+        mapped = compiler_module._map_proxy_boundaries_to_reaction(proxy, reaction)
+        assert mapped.artificial_boundaries
+        _assert_caps_bonded_to_ports(mapped)
+        assert len(mapped.boundary_participants) == len(proxy.reactants)
+        for participant in mapped.boundary_participants:
+            molecule = _participant_molecule(mapped.reactants[participant.index])
+            participant.metadata.check(
+                rm.molecule_rows(molecule), "mapped", participant.atom_ids
+            )
+
+
+def test_unchanged_port_ids_prove_their_cap_correspondence():
+    """A port whose id survived is not evidence that its cap id did: with the
+    cap's id exchanged for that of a hydrogen on another carbon, the cap is
+    transported to a hydrogen of the port (through the explicit-H map), not
+    kept by id."""
+    proxy = _proxy_named("interior_radical")
+    reaction = copy.deepcopy(_generated_reactions(proxy, ["intra_H_migration"])[0])
+    port = proxy.artificial_boundaries[0]
+    cap = port.cap_atom_ids[0]
+    molecule = _participant_molecule(reaction.reactants[0])
+    other = next(
+        atom.id
+        for atom in molecule.atoms
+        if atom.is_hydrogen()
+        and atom.id != cap
+        and port.atom_id not in {n.id for n in atom.edges}
+    )
+    for side in (reaction.reactants, reaction.products):
+        for participant in side:
+            for form in getattr(participant, "molecule", [participant]):
+                for atom in form.atoms:
+                    if atom.id == cap:
+                        atom.id = other
+                    elif atom.id == other:
+                        atom.id = cap
+    mapped = compiler_module._map_proxy_boundaries_to_reaction(proxy, reaction)
+    _assert_caps_bonded_to_ports(mapped)
+
+
+def test_production_padding_takes_the_verified_extension_path():
+    """Production padding of a construction-annotated proxy runs through the
+    boundaries ExtensionMap (explicit-H, verified, edit support protected):
+    the declared caps are deleted on both sides and the edits are carried
+    unchanged.  Construction ports without their transported metadata are
+    refused, never padded by inference."""
+    from rmgpy.kmc import boundaries as bnd
+    from rmgpy.kmc.proxy_padding import ReactionNotPaddable, pad_reaction_witness
+
+    from rmgpy.kmc.proxy_padding import reaction_center_atom_ids
+
+    proxy = _proxy_named("interior_radical")
+    ports = {port.atom_id for port in proxy.artificial_boundaries}
+    reaction = next(
+        r for r in _generated_reactions(proxy, ["intra_H_migration"])
+        if not set(reaction_center_atom_ids(r)) & ports
+    )
+    mapped = compiler_module._map_proxy_boundaries_to_reaction(proxy, reaction)
+    padded = compiler_module._pad_production_witness(reaction, mapped, 6, 200)
+    assert padded.verified and padded.extensions >= 1
+    record = padded.extension_map
+    assert isinstance(record, bnd.ExtensionMap) and record.steps
+    declared = {c for port in mapped.artificial_boundaries for c in port.cap_atom_ids}
+    for side in (padded.reaction.reactants, padded.reaction.products):
+        ids = {a.id for p in side for a in _participant_molecule(p).atoms}
+        assert not (set(record.deleted) & ids)
+        assert set(record.deleted) <= declared
+        assert set(record.fresh_ids) <= ids
+    provenance = padded.provenance(mapped.repeat_unit, 6, 0.0)
+    assert provenance["extension"]["verified"] is True
+    with pytest.raises(ReactionNotPaddable, match="verified"):
+        pad_reaction_witness(
+            reaction, mapped.artificial_boundaries, mapped.repeat_unit, 6,
+            max_heavy_atoms=200,
+        )
+
+
+def test_cap_removal_checks_chemistry_and_edit_support():
+    """The legacy cap helper refuses a declared cap that is not a hydrogen of
+    the port, and any cap in the reaction's edit support."""
+    from rmgpy.kmc.proxy_padding import ReactionNotPaddable, _remove_cap_hydrogen
+    from rmgpy.molecule.molecule import Molecule
+
+    def propane():
+        molecule = Molecule(smiles="CCC")
+        molecule.assign_atom_ids()
+        return molecule
+
+    molecule = propane()
+    port = molecule.atoms[0]
+    carbon = next(n for n in port.edges if n.is_carbon())
+    with pytest.raises(ReactionNotPaddable, match="hydrogen"):
+        _remove_cap_hydrogen(molecule, port, (carbon.id,))
+    molecule = propane()
+    port = molecule.atoms[0]
+    hydrogens = sorted(n.id for n in port.edges if n.is_hydrogen())
+    with pytest.raises(ReactionNotPaddable, match="edit support"):
+        _remove_cap_hydrogen(molecule, port, (hydrogens[0],), support={hydrogens[0]})
+    molecule = propane()
+    port = molecule.atoms[0]
+    _remove_cap_hydrogen(molecule, port, (), support=set(hydrogens[:2]))
+    remaining = {n.id for n in port.edges if n.is_hydrogen()}
+    assert set(hydrogens[:2]) <= remaining and len(remaining) == 2

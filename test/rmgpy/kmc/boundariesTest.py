@@ -608,6 +608,144 @@ def test_marked_distinctness(fam):
 
 
 # --------------------------------------------------------------------------
+# rework 1 (part B): composite history, provider/bookkeeping, marks, bounds
+# --------------------------------------------------------------------------
+def test_composite_refuses_recycled_historical_ids(fam):
+    w = homolysis(fam, 8, (3, 4))
+    key = (0, "head")
+    cap = w.port(key).cap_atom_ids[0]
+    e1, r1 = b.extend(w, key)
+    _e2, r2 = b.extend(e1, key)
+    n1 = r1.steps[0].new_port.cap_atom_ids[0]
+    assert r2.deleted == (n1,)
+    honest = b.compose(r1, r2)
+    # forge: step 1's fresh cap takes the ORIGINAL cap id, step 2 deletes it again;
+    # the set arithmetic then cancels the original deletion
+    s1 = r1.steps[0]
+    s1 = replace(s1, fresh_ids=tuple(cap if a == n1 else a for a in s1.fresh_ids),
+                 new_port=replace(s1.new_port, cap_atom_ids=(cap,)))
+    s2 = r2.steps[0]
+    s2 = replace(s2, old_port=replace(s2.old_port, cap_atom_ids=(cap,)), deleted=(cap,))
+    forged = replace(honest, steps=(s1, s2), deleted=(),
+                     surviving=b.identity_map(w).surviving)
+    forged_ext = b.apply_map(w, forged)
+    port_atom = w.port(key).atom_id
+    assert len(rows(forged_ext.reactants)[port_atom][5]) == 5  # the five-bond carbon
+    with pytest.raises(b.MapCheckError, match="reuses"):
+        b.verify_extension(w, forged, forged_ext)
+    # the honest composite still verifies (replay included)
+    b.verify_extension(w, honest, b.apply_map(w, honest))
+    # a fresh id colliding with an original atom, and one step reusing another's id
+    other = next(a for a in rows(w.reactants) if a not in w.port(key).cap_atom_ids
+                 and a != port_atom)
+    clash = replace(r1.steps[0], fresh_ids=(other,) + r1.steps[0].fresh_ids[1:])
+    with pytest.raises(b.MapCheckError, match="reuses"):
+        b.verify_extension(w, replace(r1, steps=(clash,)), e1)
+    dup = replace(r2.steps[0], fresh_ids=(r1.steps[0].fresh_ids[0],) + r2.steps[0].fresh_ids[1:])
+    with pytest.raises(b.MapCheckError, match="reuses"):
+        b.verify_extension(w, replace(honest, steps=(r1.steps[0], dup)), _e2)
+
+
+def test_verify_refuses_provider_swap_and_bookkeeping_changes(fam):
+    w = homolysis(fam, 8, (3, 4))
+    ext, rec = b.extend(w, (0, "head"))
+    b.verify_extension(w, rec, ext)
+    meta = ext.participants[0].metadata
+    swapped = replace(ext.participants[0], metadata=b.BoundaryMetadata(
+        "polystyrene", meta.ports, meta.coordinates))
+    with pytest.raises(b.MapCheckError, match="provider"):
+        b.verify_extension(w, rec, replace(ext, participants=(swapped,)))
+    with pytest.raises(b.MapCheckError, match="id_base"):
+        b.verify_extension(w, rec, replace(ext, id_base=ext.id_base + 1))
+    # an untouched port's extension count changed
+    counts = dict(ext.extension_counts)
+    counts[(0, "tail")] = counts.get((0, "tail"), 0) + 1
+    with pytest.raises(b.MapCheckError, match="extension count"):
+        b.verify_extension(w, rec, replace(ext, extension_counts=tuple(sorted(counts.items()))))
+    # the touched port's count is off by one
+    counts = dict(ext.extension_counts)
+    counts[(0, "head")] += 1
+    with pytest.raises(b.MapCheckError, match="extension count"):
+        b.verify_extension(w, rec, replace(ext, extension_counts=tuple(sorted(counts.items()))))
+    with pytest.raises(b.MapCheckError, match="label"):
+        b.verify_extension(w, rec, replace(ext, label="renamed"))
+
+
+def _with_meta(witness, *, provider=None, ports=None):
+    meta = witness.participants[0].metadata
+    meta = b.BoundaryMetadata(provider or meta.provider, meta.ports if ports is None else ports,
+                              meta.coordinates)
+    return replace(witness, participants=(replace(witness.participants[0], metadata=meta),)
+                   + witness.participants[1:])
+
+
+def test_marked_equality_keeps_boundary_semantics(fam):
+    w = homolysis(fam, 8, (3, 4))
+    assert b.marked_isomorphic(w, w)
+    tail = w.port((0, "tail"))
+    head = w.port((0, "head"))
+    others = [p for p in w.participants[0].metadata.ports if p.port_id != "tail"]
+    # artificial (with cap) versus physical (same atom, no cap), identical row graphs
+    physical = _with_meta(w, ports=tuple(others) + (replace(
+        tail, cap_atom_ids=(), physicality="physical"),))
+    assert physical.reactants == w.reactants and physical.products == w.products
+    assert not b.marked_isomorphic(w, physical)
+    # provider-only difference
+    assert not b.marked_isomorphic(w, _with_meta(w, provider="polystyrene"))
+    # tag-only difference
+    retagged = _with_meta(w, ports=tuple(p for p in w.participants[0].metadata.ports
+                                         if p.port_id != "tail") + (replace(tail, tag="other"),))
+    assert not b.marked_isomorphic(w, retagged)
+    # the cap declared on another, symmetry-equivalent H of the same carbon is the same
+    # marked graph (an automorphism maps one cap onto the other)
+    other_h = [h for h in hydrogens_of(w.reactants, head.atom_id) if h not in head.cap_atom_ids]
+    moved = _with_meta(w, ports=tuple(p for p in w.participants[0].metadata.ports
+                                      if p.port_id != "head") + (
+        replace(head, cap_atom_ids=(other_h[0],)),))
+    assert moved.reactants == w.reactants
+    assert b.marked_isomorphic(w, moved)
+    assert b.marked_duplicates([("a", w), ("b", physical), ("c", retagged)]) == ()
+    # a true twin (unmarked H ids permuted) stays a duplicate
+    h5, h6 = hydrogens_of(w.reactants, 5), hydrogens_of(w.reactants, 6)
+    swap = {h5[0]: h6[0], h6[0]: h5[0]}
+    twin = replace(w, reactants=relabel_side(w.reactants, swap),
+                   products=relabel_side(w.products, swap))
+    assert twin != w and b.marked_isomorphic(w, twin)
+
+
+def test_vector_enumeration_streams_prunes_and_budgets(fam):
+    import inspect
+
+    w = homolysis(fam, 8, (3, 4))
+    # a tight ceiling on a huge box: only the in-ceiling vectors are built
+    stats = {}
+    results = tuple(b.iter_vectors(w, (40, 40), ceiling=10, prune_ceiling=True, stats=stats,
+                                   check_order=False, verify=False))
+    assert {r.vector for r in results} == {(i, j) for i in range(3) for j in range(3 - i)}
+    assert all(r.status == "ok" for r in results)
+    assert stats["yielded"] == stats["built"] == len(results) == 6
+    assert stats["pruned"] == 41 * 41 - 6
+    # the pruned enumeration equals the unpruned one minus the ceiling statuses
+    small = b.enumerate_vectors(w, (4, 4), ceiling=10, check_order=False, verify=False)
+    pruned = b.enumerate_vectors(w, (4, 4), ceiling=10, check_order=False, verify=False,
+                                 prune_ceiling=True)
+    assert pruned == tuple(r for r in small if r.status != "ceiling_exceeded")
+    # a generator: one item builds at most one vector
+    stats = {}
+    gen = b.iter_vectors(w, (40, 40), stats=stats, check_order=False, verify=False)
+    assert inspect.isgenerator(gen)
+    assert next(gen).vector == (0, 0) and stats["built"] == 1
+    assert next(gen).vector == (0, 1) and stats["built"] == 2
+    # a budget on built vectors
+    assert issubclass(b.BudgetExceeded, b.BoundaryError)
+    with pytest.raises(b.BudgetExceeded):
+        b.enumerate_vectors(w, 1, budget=1, check_order=False, verify=False)
+    assert len(b.enumerate_vectors(w, 1, budget=4, check_order=False, verify=False)) == 4
+    with pytest.raises(b.BudgetExceeded):
+        list(b.iter_vectors(w, 1, budget=3, check_order=False, verify=False))
+
+
+# --------------------------------------------------------------------------
 # item 5: compiler wiring (padding path reads the declared cap)
 # --------------------------------------------------------------------------
 def test_padding_path_removes_the_declared_cap_on_both_sides():
