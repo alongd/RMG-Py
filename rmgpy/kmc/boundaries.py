@@ -794,6 +794,11 @@ def verify_extension(original: Witness, record: ExtensionMap, extended: Witness,
             diff = sorted(set(ext_fresh.items()) ^ set(record_bonds.items()))
             raise MapCheckError(f"{name}: bonds of fresh atoms differ from the map {diff[:4]}")
     _verify_steps(original, record, extended, providers)
+    # Implied by the checks above (kept as defence in depth): survivors keep
+    # their per-side attributes and bonds, fresh atoms and their bonds equal
+    # the map on BOTH sides (so carry no edit), and deleted caps lie outside
+    # the edit support (so carried none); hence the edits are transported.
+    # The cases it would catch are tested through those checks.
     if edits(extended) != edits(original):
         raise MapCheckError("the edit difference is not transported unchanged")
 

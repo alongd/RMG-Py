@@ -78,6 +78,29 @@ def relabel_side(side, mapping):
     return b._side_from(atoms, bonds)
 
 
+def with_attr(side, atom_id, index, value):
+    """The side with field ``index`` (0 element .. 4 lone pairs) of one atom set."""
+    out = []
+    for a, row in side:
+        if a == atom_id:
+            row = row[:index] + (value,) + row[index + 1:]
+        out.append((a, row))
+    return tuple(out)
+
+
+def with_bond(side, i, j, order):
+    """The side with the existing bond i-j set to ``order`` on both endpoints."""
+    out = []
+    for a, row in side:
+        if a in (i, j):
+            other = j if a == i else i
+            assert any(n == other for n, _o in row[5])
+            row = row[:5] + (tuple(sorted((n, order if n == other else o)
+                                          for n, o in row[5])),)
+        out.append((a, row))
+    return tuple(out)
+
+
 def hydrogens_of(side, atom_id):
     r = rows(side)
     return sorted(n for n, _o in r[atom_id][5] if r[n][0] == "H")
@@ -343,12 +366,38 @@ def _corrupt_cases(w, key):
     cases["fresh_wrong_atom"] = (wrong_bond, b.apply_map(w, replace(
         wrong_bond, deleted=wrong_bond.deleted)))
     cases["fresh_wrong_atom_graph_only"] = (rec, b.apply_map(w, wrong_bond))
+    # attribute corruptions of the extended witness
+    survivor_c = 5
+    fresh_c = rec.steps[0].fresh_ids[0]
+    cases["radical_product_only"] = (rec, replace(
+        ext, products=with_attr(ext.products, survivor_c, 3, 1)))
+    cases["charge_both_sides"] = (rec, replace(
+        ext, reactants=with_attr(ext.reactants, survivor_c, 2, 1),
+        products=with_attr(ext.products, survivor_c, 2, 1)))
+    cases["isotope_one_side"] = (rec, replace(
+        ext, reactants=with_attr(ext.reactants, survivor_c, 1, 13)))
+    cases["element_both_sides"] = (rec, replace(
+        ext, reactants=with_attr(ext.reactants, survivor_h, 0, "D"),
+        products=with_attr(ext.products, survivor_h, 0, "D")))
+    cases["fresh_radical_one_side"] = (rec, replace(
+        ext, products=with_attr(ext.products, fresh_c, 3, 1)))
+    cases["fresh_lone_pairs_one_side"] = (rec, replace(
+        ext, reactants=with_attr(ext.reactants, fresh_c, 4, 1)))
+    # implied edit-transport cases: a product-only bond change on survivors
+    # and on a fresh bond would each alter the edit difference
+    cases["edit_survivor_bond_product_only"] = (rec, replace(
+        ext, products=with_bond(ext.products, 5, 6, 2.0)))
+    cases["edit_fresh_bond_product_only"] = (rec, replace(
+        ext, products=with_bond(ext.products, port.atom_id, fresh0, 2.0)))
     return ext, rec, cases
 
 
 CORRUPTIONS = ["dropped_h", "duplicated_id", "duplicated_row", "cap_one_side",
                "wrong_h_both_sides", "wrong_h_graph_only", "h_swapped_both",
-               "h_swapped_one_side", "fresh_wrong_atom", "fresh_wrong_atom_graph_only"]
+               "h_swapped_one_side", "fresh_wrong_atom", "fresh_wrong_atom_graph_only",
+               "radical_product_only", "charge_both_sides", "isotope_one_side",
+               "element_both_sides", "fresh_radical_one_side", "fresh_lone_pairs_one_side",
+               "edit_survivor_bond_product_only", "edit_fresh_bond_product_only"]
 
 
 @pytest.mark.parametrize("corruption", CORRUPTIONS)
