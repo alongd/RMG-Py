@@ -1,0 +1,1362 @@
+"""Polymer boundary providers: construction-carried port identity, exact
+explicit-H cap/continuation maps, and per-port extension vectors.
+
+A finite proxy molecule stands in for a piece of an infinite polymer.  Where
+the proxy was cut out of the chain it carries an *artificial* port: a heavy
+atom whose declared cap atom(s) (usually one H) stand in for the rest of the
+chain.  Where the proxy ends because the polymer really ends (a chain-end
+radical, a monomer) the port is *physical* and is never extended.
+
+Pinned policies
+---------------
+* **Identity by construction.**  A provider builds a proxy together with its
+  ``BoundaryMetadata``: per port a stable ``port_id``, the port atom id, the
+  exact cap atom id(s), a tag (``backbone_head | backbone_tail | pendant |
+  other``) and ``physical | artificial``; per heavy atom its repeat
+  coordinate (unit, position in the unit).  Nothing is inferred later from
+  graph symmetry, phenyl attachment or proxy names.
+* **Witnesses are explicit-H row graphs** (``rmg_moves`` rows: element,
+  isotope, charge, radical electrons, lone pairs, sorted edges) with one atom
+  id namespace for both reaction sides.  ``witness_from_move`` takes a move
+  from ``rmg_moves.generate_moves`` and asserts that every metadata id
+  survived RMG generation (``MetadataLostError`` names the family).
+* **One core, many chemistries.**  The core never assumes two ports, one
+  repeat chemistry, a unique backbone path, carbon-only continuation or an H
+  cap.  A provider supplies one ``Fragment`` per extension step (fresh atoms,
+  their bonds, the attachment bonds to the old port atom, the new port and
+  its cap); the core deletes the old port's DECLARED caps and adds the
+  fragment identically on both reaction sides.
+* **Exact maps.**  Every extension returns an ``ExtensionMap``: surviving
+  atoms (identity map, element and isotope recorded), deleted declared caps
+  (one set for both sides), fresh atoms with new ids and their bonds, the new
+  port with its new cap, and the fresh repeat coordinates.  Deleting any atom
+  of the edit support (atoms whose attributes or incident bonds, H included,
+  differ across the reaction) is forbidden.  ``verify_extension`` re-checks a
+  record against the original and extended witnesses from scratch: full
+  bijection between the two sides, survivors unchanged, fresh atoms exactly
+  as recorded, caps exactly the declared ones on both sides, edits
+  transported unchanged, every step equal to its provider fragment.
+* **Order independence.**  Fresh ids are a function of (port rank, depth,
+  fragment position) only, so applying one extension vector in any port
+  order yields the same witness and the same map; composite maps keep their
+  steps sorted by (port, depth).
+* **Vectors.**  One integer per artificial port, ports ordered by
+  (participant index, port id).  ``enumerate_vectors`` walks a stated box
+  under a hard heavy-atom ceiling (``PROXY_PADDING_MAX_HEAVY_ATOMS`` unless
+  given) and reports ``ok | refused | ceiling_exceeded`` per vector.
+* **Marked distinctness.**  Reacting atoms (the edit support, pinned by atom
+  id) and ports (pinned by port key) are marks; two extended witnesses are
+  duplicates only if isomorphic by a map that fixes every mark.
+* **Determinism.**  No object identity, set order or hash seed reaches an
+  output; inputs are keyed by atom id, never by atom list order.
+"""
+
+from __future__ import annotations
+
+import itertools
+from collections import deque
+from dataclasses import dataclass, field, replace
+from types import MappingProxyType
+from typing import Any, Iterable, Mapping, Optional, Sequence
+
+TAGS = ("backbone_head", "backbone_tail", "pendant", "other")
+PHYSICALITIES = ("physical", "artificial")
+VECTOR_STATUSES = ("ok", "refused", "ceiling_exceeded")
+# Fresh ids: id_base + port_rank * PORT_STRIDE + depth * FRAGMENT_STRIDE + local.
+FRAGMENT_STRIDE = 1_000
+PORT_STRIDE = 1_000_000
+MAX_PORTS = 1_000
+
+
+class BoundaryError(ValueError):
+    """Base class for every refusal of this module."""
+
+
+class MetadataError(BoundaryError):
+    """Boundary metadata is malformed or does not fit its graph."""
+
+
+class MetadataLostError(MetadataError):
+    """RMG generation did not preserve a metadata atom id."""
+
+
+class MapCheckError(BoundaryError):
+    """An extension map failed an exactness check."""
+
+
+class ExtensionRefused(BoundaryError):
+    """A port may not be extended in this witness (structured refusal)."""
+
+
+class CeilingExceeded(ExtensionRefused):
+    """An extension would exceed the hard heavy-atom ceiling."""
+
+
+# ---------------------------------------------------------------------------
+# metadata
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Port:
+    """One boundary of a proxy, declared at construction."""
+
+    port_id: str
+    atom_id: int
+    cap_atom_ids: tuple[int, ...]
+    tag: str
+    physicality: str
+
+    def __post_init__(self):
+        if not isinstance(self.port_id, str) or not self.port_id:
+            raise MetadataError("a port needs a non-empty string port_id")
+        if self.tag not in TAGS:
+            raise MetadataError(f"port tag must be one of {TAGS}, got {self.tag!r}")
+        if self.physicality not in PHYSICALITIES:
+            raise MetadataError(
+                f"port physicality must be one of {PHYSICALITIES}, got {self.physicality!r}")
+        caps = tuple(int(a) for a in self.cap_atom_ids)
+        if len(set(caps)) != len(caps) or self.atom_id in caps:
+            raise MetadataError(f"port {self.port_id}: cap atom ids must be distinct "
+                                "and differ from the port atom")
+        if self.physicality == "artificial" and not caps:
+            raise MetadataError(f"artificial port {self.port_id} has no declared cap")
+        if self.physicality == "physical" and caps:
+            raise MetadataError(f"physical port {self.port_id} cannot carry a cap")
+        object.__setattr__(self, "cap_atom_ids", tuple(sorted(caps)))
+        object.__setattr__(self, "atom_id", int(self.atom_id))
+
+    @property
+    def artificial(self) -> bool:
+        return self.physicality == "artificial"
+
+    def relabel(self, mapping: Mapping[int, int]) -> "Port":
+        return replace(self, atom_id=mapping[self.atom_id],
+                       cap_atom_ids=tuple(mapping[a] for a in self.cap_atom_ids))
+
+
+@dataclass(frozen=True)
+class BoundaryMetadata:
+    """Ports and repeat coordinates of one participant graph.
+
+    ``coordinates`` holds ``(atom id, unit, position)`` for every heavy atom
+    (sorted by atom id); ``ports`` is sorted by ``port_id``."""
+
+    provider: str
+    ports: tuple[Port, ...]
+    coordinates: tuple[tuple[int, int, int], ...]
+
+    def __post_init__(self):
+        ports = tuple(sorted(self.ports, key=lambda p: p.port_id))
+        if len({p.port_id for p in ports}) != len(ports):
+            raise MetadataError("port ids must be unique within a participant")
+        coords = tuple(sorted((int(a), int(u), int(k)) for a, u, k in self.coordinates))
+        if len({a for a, _u, _k in coords}) != len(coords):
+            raise MetadataError("an atom has two repeat coordinates")
+        object.__setattr__(self, "ports", ports)
+        object.__setattr__(self, "coordinates", coords)
+
+    def port(self, port_id: str) -> Port:
+        for port in self.ports:
+            if port.port_id == port_id:
+                return port
+        raise KeyError(port_id)
+
+    def coordinate(self, atom_id: int) -> tuple[int, int]:
+        for a, unit, position in self.coordinates:
+            if a == atom_id:
+                return unit, position
+        raise KeyError(atom_id)
+
+    def atom_ids(self) -> frozenset:
+        ids = {a for a, _u, _k in self.coordinates}
+        for port in self.ports:
+            ids.add(port.atom_id)
+            ids.update(port.cap_atom_ids)
+        return frozenset(ids)
+
+    def relabel(self, mapping: Mapping[int, int]) -> "BoundaryMetadata":
+        return BoundaryMetadata(
+            self.provider,
+            tuple(p.relabel(mapping) for p in self.ports),
+            tuple((mapping[a], u, k) for a, u, k in self.coordinates))
+
+    def check(self, rows: Mapping[int, tuple], where: str = "graph",
+              atom_ids: Optional[Iterable[int]] = None) -> None:
+        """The metadata fits ``rows`` (atom id -> rmg_moves row); ``atom_ids``
+        restricts the heavy-atom coverage check to one participant."""
+        owned = set(rows) if atom_ids is None else set(atom_ids)
+        heavy = {a for a, row in rows.items() if row[0] != "H" and a in owned}
+        coords = {a for a, _u, _k in self.coordinates}
+        missing = sorted(self.atom_ids() - set(rows))
+        if missing:
+            raise MetadataLostError(f"{where}: metadata atom ids {missing} are absent")
+        if not self.atom_ids() <= owned:
+            raise MetadataError(f"{where}: metadata names atoms outside its participant")
+        if coords != heavy:
+            raise MetadataError(f"{where}: repeat coordinates do not cover exactly the "
+                                f"heavy atoms (extra {sorted(coords - heavy)}, "
+                                f"missing {sorted(heavy - coords)})")
+        seen = set()
+        for a, unit, position in self.coordinates:
+            if (unit, position) in seen:
+                raise MetadataError(f"{where}: repeat coordinate {(unit, position)} is reused")
+            seen.add((unit, position))
+        for port in self.ports:
+            if rows[port.atom_id][0] == "H":
+                raise MetadataError(f"{where}: port {port.port_id} is a hydrogen")
+            _check_cap_group(rows, port, where)
+
+
+def _check_cap_group(rows, port: Port, where: str) -> None:
+    """The cap atoms are bonded to the rest of the graph only through the port."""
+    caps = set(port.cap_atom_ids)
+    attachment = []
+    for cap in sorted(caps):
+        for neighbour, order in rows[cap][5]:
+            if neighbour in caps:
+                continue
+            if neighbour != port.atom_id:
+                raise MetadataError(f"{where}: cap {cap} of port {port.port_id} is bonded "
+                                    f"to {neighbour}, not only to the port")
+            attachment.append(order)
+    if port.cap_atom_ids and not attachment:
+        raise MetadataError(f"{where}: cap of port {port.port_id} is not bonded to its port")
+
+
+@dataclass(frozen=True)
+class ProxyBuild:
+    """A provider-built proxy: the RMG molecule, its metadata, and every atom
+    id in construction order (the stable relabelling key)."""
+
+    name: str
+    molecule: Any
+    metadata: BoundaryMetadata
+    construction_order: tuple[int, ...]
+
+    def canonical_metadata(self) -> BoundaryMetadata:
+        """The metadata with atom ids replaced by construction indices (free
+        of RMG's process-global ``assign_atom_ids`` counter)."""
+        return self.metadata.relabel({a: k for k, a in enumerate(self.construction_order)})
+
+
+@dataclass(frozen=True)
+class Fragment:
+    """One repeat added at a port, in local indices.
+
+    ``atoms``: (element, isotope, charge, radical, lone pairs) per local atom;
+    ``bonds``: (i, j, order) inside the fragment; ``attachments``: (local
+    index, order) bonded to the OLD port atom; ``new_port`` and ``new_caps``:
+    local indices; ``coordinates``: (local index, unit, position) per heavy
+    fragment atom."""
+
+    atoms: tuple[tuple, ...]
+    bonds: tuple[tuple[int, int, float], ...]
+    attachments: tuple[tuple[int, float], ...]
+    new_port: int
+    new_caps: tuple[int, ...]
+    coordinates: tuple[tuple[int, int, int], ...]
+
+    def heavy_count(self) -> int:
+        return sum(1 for atom in self.atoms if atom[0] != "H")
+
+
+class BoundaryProvider:
+    """One polymer chemistry: build proxies with metadata; extend one
+    artificial port by one repeat (``fragment``)."""
+
+    name = "abstract"
+
+    def build(self, *args, **kwargs) -> ProxyBuild:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def fragment(self, port: Port, coordinate: tuple[int, int]) -> Fragment:  # pragma: no cover
+        raise NotImplementedError
+
+
+# ---------------------------------------------------------------------------
+# rows
+# ---------------------------------------------------------------------------
+def _attrs(row) -> tuple:
+    return tuple(row[:5])
+
+
+def _row_map(side) -> dict:
+    """Atom id -> row from a sorted ((id, row), ...) side; duplicates refused."""
+    rows = {}
+    for atom_id, row in side:
+        if atom_id in rows:
+            raise MapCheckError(f"atom id {atom_id} occurs twice on one reaction side")
+        rows[atom_id] = row
+    return rows
+
+
+def _bonds(rows) -> dict:
+    """(i, j) -> order with i < j; asymmetric or dangling edges refused."""
+    directed = {}
+    for a, row in rows.items():
+        for b, order in row[5]:
+            if (a, b) in directed:
+                raise MapCheckError(f"atom {a} lists neighbour {b} twice")
+            directed[(a, b)] = order
+    bonds = {}
+    for (a, b), order in directed.items():
+        if b not in rows:
+            raise MapCheckError(f"atom {a} is bonded to absent atom {b}")
+        if directed.get((b, a)) != order:
+            raise MapCheckError(f"bond {a}-{b} is not symmetric")
+        if a < b:
+            bonds[(a, b)] = float(order)
+    return bonds
+
+
+def _side_from(atoms: Mapping[int, tuple], bonds: Mapping[tuple, float]) -> tuple:
+    edges = {a: [] for a in atoms}
+    for (a, b), order in bonds.items():
+        edges[a].append((b, float(order)))
+        edges[b].append((a, float(order)))
+    return tuple((a, tuple(atoms[a]) + (tuple(sorted(edges[a])),)) for a in sorted(atoms))
+
+
+def rows_of_molecule(molecule) -> tuple:
+    """Sorted ((atom id, row), ...) of an RMG molecule (keyed by atom id)."""
+    from rmgpy.kmc.rmg_moves import molecule_rows
+
+    return tuple(sorted(molecule_rows(molecule).items()))
+
+
+# ---------------------------------------------------------------------------
+# witnesses
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Participant:
+    """Boundary metadata of one reactant participant, in witness ids, and the
+    participant's atom ids (sorted)."""
+
+    index: int
+    metadata: BoundaryMetadata
+    atom_ids: tuple[int, ...]
+
+    def __post_init__(self):
+        object.__setattr__(self, "atom_ids", tuple(sorted(int(a) for a in self.atom_ids)))
+
+
+@dataclass(frozen=True)
+class Witness:
+    """A mapped reaction witness on explicit-H rows plus its boundaries."""
+
+    reactants: tuple
+    products: tuple
+    participants: tuple[Participant, ...]
+    id_base: int
+    extension_counts: tuple[tuple[tuple[int, str], int], ...] = ()
+    label: str = ""
+
+    def _memo(self, name, compute):
+        # derived views are cached on the (immutable) instance; they are not
+        # fields, so equality, hashing and repr ignore them
+        cached = self.__dict__.get(name)
+        if cached is None:
+            cached = compute()
+            object.__setattr__(self, name, cached)
+        return cached
+
+    def reactant_rows(self) -> Mapping:
+        """Atom id -> row of the reactant side (read-only view)."""
+        return self._memo("_reactant_rows",
+                          lambda: MappingProxyType(_row_map(self.reactants)))
+
+    def product_rows(self) -> Mapping:
+        return self._memo("_product_rows", lambda: MappingProxyType(_row_map(self.products)))
+
+    def reactant_bonds(self) -> Mapping:
+        """(i, j) -> bond order (i < j) of the reactant side (read-only view)."""
+        return self._memo("_reactant_bonds",
+                          lambda: MappingProxyType(_bonds(self.reactant_rows())))
+
+    def product_bonds(self) -> Mapping:
+        return self._memo("_product_bonds",
+                          lambda: MappingProxyType(_bonds(self.product_rows())))
+
+    def port_keys(self) -> tuple[tuple[int, str], ...]:
+        return tuple(sorted((p.index, port.port_id) for p in self.participants
+                            for port in p.metadata.ports))
+
+    def artificial_port_keys(self) -> tuple[tuple[int, str], ...]:
+        return tuple(key for key in self.port_keys() if self.port(key).artificial)
+
+    def participant(self, index: int) -> Participant:
+        for participant in self.participants:
+            if participant.index == index:
+                return participant
+        raise KeyError(index)
+
+    def port(self, key: tuple[int, str]) -> Port:
+        return self.participant(key[0]).metadata.port(key[1])
+
+    def depth(self, key) -> int:
+        return dict(self.extension_counts).get(tuple(key), 0)
+
+    def heavy_count(self) -> int:
+        return sum(1 for _a, row in self.reactants if row[0] != "H")
+
+
+def edit_support(witness: Witness) -> frozenset:
+    """Atoms whose attributes or incident bonds (H included) differ across sides."""
+    return witness._memo("_edit_support", lambda: _edit_support(witness))
+
+
+def _edit_support(witness: Witness) -> frozenset:
+    before, after = witness.reactant_rows(), witness.product_rows()
+    support = set()
+    for atom_id in set(before) | set(after):
+        if atom_id not in before or atom_id not in after:
+            raise MapCheckError(f"atom {atom_id} is on one reaction side only")
+        if before[atom_id] != after[atom_id]:
+            support.add(atom_id)
+    return frozenset(support)
+
+
+def edits(witness: Witness) -> tuple:
+    """The reaction's edits: changed atom attributes and changed bonds."""
+    return witness._memo("_edits", lambda: _edits(witness))
+
+
+def _edits(witness: Witness) -> tuple:
+    before, after = witness.reactant_rows(), witness.product_rows()
+    bonds_before, bonds_after = witness.reactant_bonds(), witness.product_bonds()
+    atoms = tuple(sorted((a, _attrs(before[a]), _attrs(after[a])) for a in before
+                         if _attrs(before[a]) != _attrs(after[a])))
+    bonds = tuple(sorted((pair, bonds_before.get(pair, 0.0), bonds_after.get(pair, 0.0))
+                         for pair in set(bonds_before) | set(bonds_after)
+                         if bonds_before.get(pair, 0.0) != bonds_after.get(pair, 0.0)))
+    return atoms, bonds
+
+
+def make_witness(reactant_side, product_side, participants: Sequence[Participant],
+                 label: str = "", where: str = "witness") -> Witness:
+    """A witness from sorted row sides; checks the bijection and metadata."""
+    reactants, products = tuple(reactant_side), tuple(product_side)
+    before, after = _row_map(reactants), _row_map(products)
+    _bonds(before), _bonds(after)
+    if set(before) != set(after):
+        raise MapCheckError(f"{where}: reactant and product atom ids differ")
+    for atom_id in before:
+        if before[atom_id][:2] != after[atom_id][:2]:
+            raise MapCheckError(f"{where}: atom {atom_id} changes element or isotope")
+    participants = tuple(sorted(participants, key=lambda p: p.index))
+    if len({p.index for p in participants}) != len(participants):
+        raise MetadataError(f"{where}: two participants share an index")
+    owned = set()
+    for participant in participants:
+        ids = set(participant.atom_ids)
+        if owned & ids:
+            raise MetadataError(f"{where}: two participants claim one atom id")
+        owned |= ids
+        missing = sorted(participant.metadata.atom_ids() - set(after))
+        if missing:
+            raise MetadataLostError(f"{where}: metadata atoms {missing} are absent from "
+                                    "the products")
+        participant.metadata.check(before, f"{where} reactants (participant "
+                                   f"{participant.index})", participant.atom_ids)
+    if participants and owned != set(before):
+        raise MetadataError(f"{where}: participants do not cover the witness atoms")
+    if len(_port_rank_keys(participants)) > MAX_PORTS:
+        raise MetadataError("too many ports")
+    id_base = max(before, default=-1) + 1
+    return Witness(reactants, products, participants, id_base, (), label)
+
+
+def _port_rank_keys(participants) -> tuple:
+    return tuple(sorted((p.index, port.port_id) for p in participants
+                        for port in p.metadata.ports))
+
+
+def relabel_build(build: ProxyBuild, offset: int):
+    """A copy of the proxy molecule with ids ``offset + construction index``
+    and the metadata relabelled by the same map."""
+    mapping = {old: offset + k for k, old in enumerate(build.construction_order)}
+    if len(mapping) != len(build.construction_order):
+        raise MetadataError(f"{build.name}: construction order repeats an atom id")
+    molecule = build.molecule.copy(deep=True)
+    ids = [atom.id for atom in build.molecule.atoms]
+    if sorted(ids) != sorted(mapping):
+        raise MetadataError(f"{build.name}: construction order does not cover the molecule")
+    for atom, old in zip(molecule.atoms, ids):
+        atom.id = mapping[old]
+    return molecule, build.metadata.relabel(mapping)
+
+
+def witness_reactants(builds: Sequence[ProxyBuild]):
+    """Relabelled reactant molecules (disjoint ids) and their participants."""
+    molecules, participants, offset = [], [], 0
+    for index, build in enumerate(builds):
+        molecule, metadata = relabel_build(build, offset)
+        offset += len(build.construction_order)
+        molecules.append(molecule)
+        participants.append(Participant(index, metadata,
+                                        tuple(atom.id for atom in molecule.atoms)))
+    return tuple(molecules), tuple(participants)
+
+
+def witness_from_move(move, reactant_molecules, participants, *, resonance: str = "all",
+                      forms=None) -> Witness:
+    """The witness of one ``rmg_moves`` move.  The reactant side is the
+    resonance form the move used; metadata survival is asserted."""
+    from rmgpy.kmc import rmg_moves as rm
+
+    if move.products is None:
+        raise BoundaryError(f"a {move.status} move has no product")
+    if forms is None:
+        forms = [rm.reactant_forms(m, resonance) for m in reactant_molecules]
+    reactant_rows = {}
+    for k, molecule_forms in enumerate(forms):
+        reactant_rows.update(rm.molecule_rows(molecule_forms[move.forms[k]]))
+    label = f"{move.family}/{move.direction}/{move.order}/{move.forms}/{move.labels}"
+    where = f"{move.family} ({move.direction})"
+    product_rows = dict(move.products)
+    if set(product_rows) != set(reactant_rows):
+        raise MetadataLostError(f"{where}: RMG generation did not preserve the atom ids")
+    try:
+        return make_witness(tuple(sorted(reactant_rows.items())),
+                            tuple(sorted(product_rows.items())), participants, label, where)
+    except MetadataLostError as error:
+        raise MetadataLostError(f"{where}: {error}") from error
+
+
+# ---------------------------------------------------------------------------
+# extension maps
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ExtensionStep:
+    """One repeat added at one port."""
+
+    port_key: tuple[int, str]
+    depth: int
+    provider: str
+    old_port: Port
+    new_port: Port
+    deleted: tuple[int, ...]
+    fresh_ids: tuple[int, ...]  # in fragment-local order
+
+    def sort_key(self):
+        return (self.port_key, self.depth)
+
+
+@dataclass(frozen=True)
+class ExtensionMap:
+    """Exact record of an extension of a witness (one or several steps)."""
+
+    steps: tuple[ExtensionStep, ...]
+    surviving: tuple[tuple[int, str, Optional[int]], ...]
+    deleted: tuple[int, ...]
+    fresh_atoms: tuple[tuple[int, tuple], ...]
+    fresh_bonds: tuple[tuple[int, int, float], ...]
+    fresh_coordinates: tuple[tuple[int, int, int, int], ...]  # (atom, participant, unit, pos)
+    ports: tuple[tuple[tuple[int, str], Port], ...]
+
+    @property
+    def fresh_ids(self) -> tuple[int, ...]:
+        return tuple(a for a, _attrs in self.fresh_atoms)
+
+
+def _fresh_ids(witness: Witness, port_key, depth: int, size: int) -> tuple[int, ...]:
+    """Order-independent fresh ids: a function of (port rank, depth, local index)."""
+    if size > FRAGMENT_STRIDE:
+        raise BoundaryError("fragment is larger than the fresh-id stride")
+    if depth * FRAGMENT_STRIDE + size > PORT_STRIDE:
+        raise BoundaryError("extension depth exceeds the fresh-id stride")
+    rank = witness.port_keys().index(tuple(port_key))
+    start = witness.id_base + rank * PORT_STRIDE + depth * FRAGMENT_STRIDE
+    return tuple(range(start, start + size))
+
+
+def _forbid_support_deletion(support, deleted, where: str) -> None:
+    hit = sorted(set(deleted) & set(support))
+    if hit:
+        raise MapCheckError(f"{where}: deleting edit-support atoms {hit} is forbidden")
+
+
+def plan_extension(witness: Witness, port_key, provider: BoundaryProvider,
+                   support=None) -> ExtensionMap:
+    """The map that extends ``port_key`` by one repeat (not yet applied)."""
+    port_key = tuple(port_key)
+    if port_key not in witness.port_keys():
+        raise BoundaryError(f"unknown port {port_key}")
+    port = witness.port(port_key)
+    if not port.artificial:
+        raise ExtensionRefused(f"port {port_key} is physical")
+    metadata = witness.participant(port_key[0]).metadata
+    if provider.name != metadata.provider:
+        raise BoundaryError(f"port {port_key} belongs to provider {metadata.provider!r}, "
+                            f"not {provider.name!r}")
+    if support is None:
+        support = edit_support(witness)
+    if port.atom_id in support:
+        raise ExtensionRefused(f"port {port_key} atom {port.atom_id} is a reacting atom")
+    caps = tuple(port.cap_atom_ids)
+    reactant_rows = witness.reactant_rows()
+    _forbid_support_deletion(support, caps, f"port {port_key}")
+    fragment = provider.fragment(port, metadata.coordinate(port.atom_id))
+    depth = witness.depth(port_key)
+    ids = _fresh_ids(witness, port_key, depth, len(fragment.atoms))
+    bonds = [(ids[i], ids[j], float(o)) for i, j, o in fragment.bonds]
+    bonds += [(port.atom_id, ids[i], float(o)) for i, o in fragment.attachments]
+    bonds = tuple(sorted((min(a, b), max(a, b), o) for a, b, o in bonds))
+    new_port = Port(port.port_id, ids[fragment.new_port],
+                    tuple(ids[i] for i in fragment.new_caps), port.tag, port.physicality)
+    step = ExtensionStep(port_key, depth, provider.name, port, new_port, caps, ids)
+    deleted = set(caps)
+    return ExtensionMap(
+        steps=(step,),
+        surviving=tuple((a, row[0], row[1]) for a, row in sorted(reactant_rows.items())
+                        if a not in deleted),
+        deleted=tuple(sorted(caps)),
+        fresh_atoms=tuple((ids[i], tuple(atom)) for i, atom in enumerate(fragment.atoms)),
+        fresh_bonds=bonds,
+        fresh_coordinates=tuple(sorted((ids[i], port_key[0], u, k)
+                                       for i, u, k in fragment.coordinates)),
+        ports=((port_key, new_port),),
+    )
+
+
+def _apply_side(side, deleted, fresh_atoms, fresh_bonds, where, rows=None, side_bonds=None):
+    rows = _row_map(side) if rows is None else rows
+    side_bonds = _bonds(rows) if side_bonds is None else side_bonds
+    missing = sorted(set(deleted) - set(rows))
+    if missing:
+        raise MapCheckError(f"{where}: atoms to delete {missing} are absent")
+    atoms = {a: _attrs(row) for a, row in rows.items() if a not in deleted}
+    bonds = {pair: o for pair, o in side_bonds.items()
+             if pair[0] not in deleted and pair[1] not in deleted}
+    for atom_id, attrs in fresh_atoms:
+        if atom_id in atoms or atom_id in rows:
+            raise MapCheckError(f"{where}: fresh atom id {atom_id} is already in use")
+        atoms[atom_id] = tuple(attrs)
+    for a, b, order in fresh_bonds:
+        if a not in atoms or b not in atoms:
+            raise MapCheckError(f"{where}: fresh bond {a}-{b} has an absent endpoint")
+        pair = (min(a, b), max(a, b))
+        if pair in bonds:
+            raise MapCheckError(f"{where}: fresh bond {a}-{b} already exists")
+        bonds[pair] = float(order)
+    return _side_from(atoms, bonds)
+
+
+def apply_map(witness: Witness, record: ExtensionMap, *, support=None) -> Witness:
+    """Apply an extension map to both sides of a witness identically."""
+    if support is None:
+        support = edit_support(witness)
+    _forbid_support_deletion(support, record.deleted, "apply")
+    fresh = [a for a, _attrs in record.fresh_atoms]
+    if len(set(fresh)) != len(fresh):
+        raise MapCheckError("apply: a fresh atom id is duplicated")
+    reactants = _apply_side(witness.reactants, set(record.deleted), record.fresh_atoms,
+                            record.fresh_bonds, "apply reactants", witness.reactant_rows(),
+                            witness.reactant_bonds())
+    products = _apply_side(witness.products, set(record.deleted), record.fresh_atoms,
+                           record.fresh_bonds, "apply products", witness.product_rows(),
+                           witness.product_bonds())
+    ports = dict(record.ports)
+    coordinates = {}
+    for atom_id, participant, unit, position in record.fresh_coordinates:
+        coordinates.setdefault(participant, []).append((atom_id, unit, position))
+    deleted = set(record.deleted)
+    members = {}
+    for step in record.steps:
+        members.setdefault(step.port_key[0], []).extend(step.fresh_ids)
+    fresh_set = set(fresh)
+    members = {k: [a for a in v if a in fresh_set] for k, v in members.items()}
+    participants = []
+    for participant in witness.participants:
+        metadata = participant.metadata
+        new_ports = tuple(ports.get((participant.index, p.port_id), p) for p in metadata.ports)
+        new_coords = tuple(c for c in metadata.coordinates if c[0] not in deleted) + tuple(
+            coordinates.get(participant.index, ()))
+        new_atoms = tuple(a for a in participant.atom_ids if a not in deleted) + tuple(
+            members.get(participant.index, ()))
+        participants.append(Participant(participant.index, BoundaryMetadata(
+            metadata.provider, new_ports, new_coords), new_atoms))
+    counts = dict(witness.extension_counts)
+    for step in record.steps:
+        counts[step.port_key] = counts.get(step.port_key, 0) + 1
+    return Witness(reactants, products, tuple(participants), witness.id_base,
+                   tuple(sorted(counts.items())), witness.label)
+
+
+def compose(first: ExtensionMap, second: ExtensionMap) -> ExtensionMap:
+    """The single map equal to applying ``first`` then ``second``."""
+    fresh_first = {a for a, _attrs in first.fresh_atoms}
+    removed = set(second.deleted)
+    deleted = set(first.deleted) | (removed - fresh_first)
+    fresh_atoms = [item for item in first.fresh_atoms if item[0] not in removed]
+    fresh_atoms += list(second.fresh_atoms)
+    bonds = [b for b in first.fresh_bonds if b[0] not in removed and b[1] not in removed]
+    bonds += list(second.fresh_bonds)
+    coordinates = [c for c in first.fresh_coordinates if c[0] not in removed]
+    coordinates += list(second.fresh_coordinates)
+    ports = dict(first.ports)
+    ports.update(dict(second.ports))
+    return ExtensionMap(
+        steps=tuple(sorted(first.steps + second.steps, key=ExtensionStep.sort_key)),
+        surviving=tuple(s for s in first.surviving if s[0] not in removed),
+        deleted=tuple(sorted(deleted)),
+        fresh_atoms=tuple(sorted(fresh_atoms)),
+        fresh_bonds=tuple(sorted(bonds)),
+        fresh_coordinates=tuple(sorted(coordinates)),
+        ports=tuple(sorted(ports.items())),
+    )
+
+
+def identity_map(witness: Witness) -> ExtensionMap:
+    """The empty extension of ``witness`` (every atom survives)."""
+    rows = witness.reactant_rows()
+    return ExtensionMap((), tuple((a, row[0], row[1]) for a, row in sorted(rows.items())),
+                        (), (), (), (), ())
+
+
+# ---------------------------------------------------------------------------
+# verification
+# ---------------------------------------------------------------------------
+def verify_extension(original: Witness, record: ExtensionMap, extended: Witness,
+                     providers: Optional[Mapping[str, BoundaryProvider]] = None) -> None:
+    """Re-check an extension map from scratch; raise ``MapCheckError``."""
+    providers = PROVIDERS if providers is None else providers
+    support = edit_support(original)
+    _forbid_support_deletion(support, record.deleted, "verify")
+    deleted = set(record.deleted)
+    fresh = [a for a, _attrs in record.fresh_atoms]
+    if len(set(fresh)) != len(fresh):
+        raise MapCheckError("a fresh atom id is duplicated in the map")
+    fresh_set = set(fresh)
+    fresh_attrs = dict(record.fresh_atoms)
+    surviving = {a: (element, isotope) for a, element, isotope in record.surviving}
+    if len(surviving) != len(record.surviving):
+        raise MapCheckError("a surviving atom is listed twice")
+    attach_ports = {step.old_port.atom_id for step in record.steps}
+    record_bonds = {}
+    for a, b, order in record.fresh_bonds:
+        pair = (min(a, b), max(a, b))
+        if pair in record_bonds:
+            raise MapCheckError(f"fresh bond {pair} is listed twice")
+        if a not in fresh_set and b not in fresh_set:
+            raise MapCheckError(f"fresh bond {pair} touches no fresh atom")
+        for end in pair:
+            if end not in fresh_set and end not in attach_ports:
+                raise MapCheckError(f"fresh bond {pair} attaches to {end}, which is not "
+                                    "an extended port atom")
+        record_bonds[pair] = float(order)
+    # full bijection between the extended sides
+    ext_before, ext_after = extended.reactant_rows(), extended.product_rows()
+    if set(ext_before) != set(ext_after):
+        raise MapCheckError("extended sides do not share one atom-id set")
+    for atom_id in ext_before:
+        if ext_before[atom_id][:2] != ext_after[atom_id][:2]:
+            raise MapCheckError(f"atom {atom_id} changes element or isotope across sides")
+    views = {"reactants": (original.reactant_rows, original.reactant_bonds,
+                           extended.reactant_rows, extended.reactant_bonds),
+             "products": (original.product_rows, original.product_bonds,
+                          extended.product_rows, extended.product_bonds)}
+    for name, (orig_rows, orig_bonds_of, ext_rows, ext_bonds_of) in views.items():
+        orig, ext = orig_rows(), ext_rows()
+        if not deleted <= set(orig):
+            raise MapCheckError(f"{name}: deleted atoms {sorted(deleted - set(orig))} "
+                                "were never there")
+        if deleted & set(ext):
+            raise MapCheckError(f"{name}: deleted atoms {sorted(deleted & set(ext))} "
+                                "are still present")
+        if fresh_set & set(orig):
+            raise MapCheckError(f"{name}: fresh ids {sorted(fresh_set & set(orig))} "
+                                "collide with original atoms")
+        if set(surviving) != set(orig) - deleted:
+            raise MapCheckError(f"{name}: the surviving set is not original minus deleted")
+        if set(ext) != set(surviving) | fresh_set:
+            raise MapCheckError(f"{name}: extended atoms are not survivors plus fresh atoms "
+                                f"(missing {sorted((set(surviving) | fresh_set) - set(ext))}, "
+                                f"extra {sorted(set(ext) - set(surviving) - fresh_set)})")
+        for atom_id, (element, isotope) in surviving.items():
+            if orig[atom_id][:2] != (element, isotope) or ext[atom_id][:2] != (element, isotope):
+                raise MapCheckError(f"{name}: surviving atom {atom_id} changed element "
+                                    "or isotope")
+            if _attrs(orig[atom_id]) != _attrs(ext[atom_id]):
+                raise MapCheckError(f"{name}: surviving atom {atom_id} changed attributes")
+        for atom_id in fresh_set:
+            if _attrs(ext[atom_id]) != tuple(fresh_attrs[atom_id]):
+                raise MapCheckError(f"{name}: fresh atom {atom_id} differs from the map")
+        orig_bonds, ext_bonds = orig_bonds_of(), ext_bonds_of()
+        kept = {p: o for p, o in orig_bonds.items() if p[0] not in deleted and p[1] not in deleted}
+        ext_kept = {p: o for p, o in ext_bonds.items()
+                    if p[0] not in fresh_set and p[1] not in fresh_set}
+        if kept != ext_kept:
+            diff = sorted(set(kept.items()) ^ set(ext_kept.items()))
+            raise MapCheckError(f"{name}: bonds among surviving atoms changed {diff[:4]}")
+        ext_fresh = {p: o for p, o in ext_bonds.items()
+                     if p[0] in fresh_set or p[1] in fresh_set}
+        if ext_fresh != record_bonds:
+            diff = sorted(set(ext_fresh.items()) ^ set(record_bonds.items()))
+            raise MapCheckError(f"{name}: bonds of fresh atoms differ from the map {diff[:4]}")
+    _verify_steps(original, record, extended, providers)
+    # Implied by the checks above (kept as defence in depth): survivors keep
+    # their per-side attributes and bonds, fresh atoms and their bonds equal
+    # the map on BOTH sides (so carry no edit), and deleted caps lie outside
+    # the edit support (so carried none); hence the edits are transported.
+    # The cases it would catch are tested through those checks.
+    if edits(extended) != edits(original):
+        raise MapCheckError("the edit difference is not transported unchanged")
+
+
+def _verify_steps(original, record, extended, providers) -> None:
+    deleted = set(record.deleted)
+    fresh_set = set(record.fresh_ids)
+    fresh_attrs = dict(record.fresh_atoms)
+    record_bonds = {(min(a, b), max(a, b)): o for a, b, o in record.fresh_bonds}
+    by_port = {}
+    for step in record.steps:
+        by_port.setdefault(step.port_key, []).append(step)
+    ext_coords = {}
+    for participant in extended.participants:
+        for a, unit, position in participant.metadata.coordinates:
+            ext_coords[a] = (participant.index, unit, position)
+    orig_coords = {}
+    for participant in original.participants:
+        for a, unit, position in participant.metadata.coordinates:
+            orig_coords[a] = (participant.index, unit, position)
+    recorded_coords = {a: (p, u, k) for a, p, u, k in record.fresh_coordinates}
+    final_ports = dict(record.ports)
+    claimed, stepped, step_deleted = [], [], set()
+    for step in record.steps:
+        step_deleted.update(step.deleted)
+    for port_key, steps in sorted(by_port.items()):
+        steps = sorted(steps, key=ExtensionStep.sort_key)
+        current = original.port(port_key)
+        depth = original.depth(port_key)
+        for step in steps:
+            if step.old_port != current:
+                raise MapCheckError(f"port {port_key}: step starts from {step.old_port}, "
+                                    f"not the declared {current}")
+            if step.depth != depth:
+                raise MapCheckError(f"port {port_key}: step depth {step.depth} != {depth}")
+            if tuple(step.deleted) != tuple(current.cap_atom_ids):
+                raise MapCheckError(f"port {port_key}: deleted {step.deleted} are not the "
+                                    f"declared caps {current.cap_atom_ids}")
+            provider = providers[step.provider]
+            participant = original.participant(port_key[0]).metadata.provider
+            if step.provider != participant:
+                raise MapCheckError(f"port {port_key}: step provider {step.provider!r} "
+                                    f"is not the participant's {participant!r}")
+            coord = orig_coords.get(current.atom_id) or recorded_coords.get(current.atom_id)
+            if coord is None:
+                raise MapCheckError(f"port {port_key}: port atom has no repeat coordinate")
+            fragment = provider.fragment(current, coord[1:])
+            ids = tuple(step.fresh_ids)
+            if len(ids) != len(fragment.atoms):
+                raise MapCheckError(f"port {port_key}: step size differs from its fragment")
+            for i, j, o in fragment.bonds:
+                claimed.append(((min(ids[i], ids[j]), max(ids[i], ids[j])), float(o)))
+            for i, o in fragment.attachments:
+                claimed.append(((min(current.atom_id, ids[i]), max(current.atom_id, ids[i])),
+                                float(o)))
+            for k, atom_id in enumerate(ids):
+                stepped.append(atom_id)
+                if atom_id in fresh_set and tuple(fresh_attrs[atom_id]) != tuple(
+                        fragment.atoms[k]):
+                    raise MapCheckError(f"port {port_key}: fresh atom {atom_id} is not "
+                                        "the fragment atom")
+            expected_port = Port(current.port_id, ids[fragment.new_port],
+                                 tuple(ids[i] for i in fragment.new_caps), current.tag,
+                                 current.physicality)
+            if step.new_port != expected_port:
+                raise MapCheckError(f"port {port_key}: new port {step.new_port} is not the "
+                                    f"fragment's {expected_port}")
+            for local, unit, position in fragment.coordinates:
+                atom_id = ids[local]
+                if atom_id in fresh_set and recorded_coords.get(atom_id) != (
+                        port_key[0], unit, position):
+                    raise MapCheckError(f"port {port_key}: fresh atom {atom_id} has the "
+                                        "wrong repeat coordinate")
+            current = step.new_port
+            depth += 1
+        if final_ports.get(port_key) != current:
+            raise MapCheckError(f"port {port_key}: the map's final port is not the last step's")
+        if extended.port(port_key) != current:
+            raise MapCheckError(f"port {port_key}: extended metadata does not carry the new port")
+        if extended.depth(port_key) != depth:
+            raise MapCheckError(f"port {port_key}: extension count is not carried")
+    for port_key in original.port_keys():
+        if port_key not in by_port and extended.port(port_key) != original.port(port_key):
+            raise MapCheckError(f"port {port_key}: an unextended port changed")
+    if set(final_ports) != set(by_port):
+        raise MapCheckError("the map lists a port it never extended")
+    if len(set(stepped)) != len(stepped):
+        raise MapCheckError("two steps share a fresh atom id")
+    if fresh_set != set(stepped) - step_deleted:
+        raise MapCheckError("fresh atoms are not the steps' atoms minus later-deleted caps")
+    if deleted != step_deleted - set(stepped):
+        raise MapCheckError("deleted atoms are not the steps' declared original caps")
+    expected_bonds = {pair: order for pair, order in claimed
+                      if pair[0] not in step_deleted and pair[1] not in step_deleted}
+    if len(expected_bonds) != len([c for c in claimed if c[0][0] not in step_deleted
+                                   and c[0][1] not in step_deleted]):
+        raise MapCheckError("two steps claim one bond")
+    if expected_bonds != record_bonds:
+        diff = sorted(set(expected_bonds.items()) ^ set(record_bonds.items()))
+        raise MapCheckError(f"map bonds are not the steps' fragment bonds {diff[:4]}")
+    expected_coords = {a: c for a, c in orig_coords.items() if a not in deleted}
+    expected_coords.update(recorded_coords)
+    if ext_coords != expected_coords:
+        raise MapCheckError("extended repeat coordinates differ from original plus fresh")
+    fresh_owner = {}
+    for step in record.steps:
+        for atom_id in step.fresh_ids:
+            fresh_owner[atom_id] = step.port_key[0]
+    for participant in extended.participants:
+        original_atoms = set(original.participant(participant.index).atom_ids)
+        expected = (original_atoms - deleted) | {a for a in fresh_set
+                                                 if fresh_owner.get(a) == participant.index}
+        if set(participant.atom_ids) != expected:
+            raise MapCheckError(f"participant {participant.index}: atom set is not original "
+                                "minus deleted plus its fresh atoms")
+        participant.metadata.check(extended.reactant_rows(),
+                                   f"extended reactants (participant {participant.index})",
+                                   participant.atom_ids)
+
+
+# ---------------------------------------------------------------------------
+# extension, vectors, distinctness
+# ---------------------------------------------------------------------------
+def _ceiling(ceiling):
+    if ceiling is None:
+        from rmgpy.kmc.compiler import PROXY_PADDING_MAX_HEAVY_ATOMS
+
+        return PROXY_PADDING_MAX_HEAVY_ATOMS
+    return int(ceiling)
+
+
+def _provider_for(witness, port_key, providers):
+    providers = PROVIDERS if providers is None else providers
+    name = witness.participant(port_key[0]).metadata.provider
+    try:
+        return providers[name]
+    except KeyError as error:
+        raise BoundaryError(f"no provider registered as {name!r}") from error
+
+
+def extend(witness: Witness, port_key, providers=None, *, ceiling=None, verify: bool = True,
+           support=None):
+    """Extend one artificial port by one repeat; returns (witness, map)."""
+    provider = _provider_for(witness, tuple(port_key), providers)
+    if support is None:
+        support = edit_support(witness)
+    record = plan_extension(witness, port_key, provider, support)
+    limit = _ceiling(ceiling)
+    heavy = witness.heavy_count() + sum(
+        1 for _a, attrs in record.fresh_atoms if attrs[0] != "H") - sum(
+        1 for a in record.deleted if witness.reactant_rows()[a][0] != "H")
+    if heavy > limit:
+        raise CeilingExceeded(f"extension reaches {heavy} heavy atoms > ceiling {limit}")
+    extended = apply_map(witness, record, support=support)
+    if verify:
+        verify_extension(witness, record, extended, providers)
+    return extended, record
+
+
+def vector_ports(witness: Witness) -> tuple[tuple[int, str], ...]:
+    """The vector coordinates: artificial ports ordered by (participant, port id)."""
+    return witness.artificial_port_keys()
+
+
+def extend_vector(witness: Witness, vector: Sequence[int], providers=None, *,
+                  order: Optional[Sequence[int]] = None, ceiling=None, verify: bool = True,
+                  verify_steps: bool = False):
+    """Apply an extension vector port by port (in ``order``, default
+    ascending); returns (witness, composite map).  With ``verify`` the
+    composite map is verified against the original witness (which re-checks
+    every step against its provider fragment) and must equal the sequential
+    application; ``verify_steps`` also verifies each single step."""
+    ports = vector_ports(witness)
+    if len(vector) != len(ports):
+        raise BoundaryError(f"vector has {len(vector)} entries for {len(ports)} ports")
+    if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in vector):
+        raise BoundaryError("vector entries must be non-negative integers")
+    order = tuple(range(len(ports))) if order is None else tuple(order)
+    if sorted(order) != list(range(len(ports))):
+        raise BoundaryError("order must be a permutation of the port positions")
+    # extension never touches the edit support (fresh atoms are identical on
+    # both sides), so the original support holds for every intermediate
+    support = edit_support(witness)
+    current, record = witness, identity_map(witness)
+    for position in order:
+        for _ in range(vector[position]):
+            current, step = extend(current, ports[position], providers, ceiling=ceiling,
+                                   verify=verify_steps, support=support)
+            record = compose(record, step)
+    if verify and any(vector):
+        once = apply_map(witness, record, support=support)
+        if once != current:
+            raise MapCheckError("composite map differs from sequential application")
+        verify_extension(witness, record, current, providers)
+    return current, record
+
+
+@dataclass(frozen=True)
+class VectorResult:
+    vector: tuple[int, ...]
+    status: str
+    reason: str
+    witness: Optional[Witness] = field(default=None, compare=False)
+    record: Optional[ExtensionMap] = field(default=None, compare=False)
+
+
+def _vector_plan(witness: Witness, providers=None) -> tuple[dict, dict]:
+    """Per vector position: the refusal reason, or the heavy atoms one step adds."""
+    support = edit_support(witness)
+    rows = witness.reactant_rows()
+    refusals, per_step = {}, {}
+    for position, key in enumerate(vector_ports(witness)):
+        port = witness.port(key)
+        if port.atom_id in support:
+            refusals[position] = f"port {key} atom {port.atom_id} is a reacting atom"
+            continue
+        provider = _provider_for(witness, key, providers)
+        coordinate = witness.participant(key[0]).metadata.coordinate(port.atom_id)
+        try:
+            fragment = provider.fragment(port, coordinate)
+        except ExtensionRefused as error:
+            refusals[position] = str(error)
+            continue
+        per_step[position] = fragment.heavy_count() - sum(
+            1 for a in port.cap_atom_ids if rows[a][0] != "H")
+    return refusals, per_step
+
+
+def evaluate_vector(witness: Witness, vector: Sequence[int], providers=None, *,
+                    ceiling=None, check_order: bool = True, verify: bool = True,
+                    plan=None) -> VectorResult:
+    """Status of one vector: ``refused`` (a non-zero entry on a port that may
+    not be extended), ``ceiling_exceeded`` (the hard heavy-atom ceiling,
+    projected before building and enforced per step) or ``ok``.  For an
+    ``ok`` vector with several extended ports the reversed port order is
+    applied too and must give the same witness and map."""
+    vector = tuple(vector)
+    ports = vector_ports(witness)
+    if len(vector) != len(ports):
+        raise BoundaryError(f"vector has {len(vector)} entries for {len(ports)} ports")
+    limit = _ceiling(ceiling)
+    refusals, per_step = _vector_plan(witness, providers) if plan is None else plan
+    refused = [refusals[p] for p, v in enumerate(vector) if v and p in refusals]
+    if refused:
+        return VectorResult(vector, "refused", "; ".join(refused))
+    projected = witness.heavy_count() + sum(v * per_step[p] for p, v in enumerate(vector) if v)
+    if projected > limit:
+        return VectorResult(vector, "ceiling_exceeded",
+                            f"{projected} heavy atoms > ceiling {limit}")
+    try:
+        extended, record = extend_vector(witness, vector, providers, ceiling=limit,
+                                         verify=verify)
+    except CeilingExceeded as error:
+        return VectorResult(vector, "ceiling_exceeded", str(error))
+    if check_order and sum(1 for v in vector if v) > 1:
+        other, other_record = extend_vector(
+            witness, vector, providers, order=tuple(reversed(range(len(ports)))),
+            ceiling=limit, verify=False)
+        if other != extended or other_record != record:
+            raise MapCheckError(f"vector {vector}: port order changes the extension")
+    return VectorResult(vector, "ok", "", extended, record)
+
+
+def enumerate_vectors(witness: Witness, box, providers=None, *, ceiling=None,
+                      check_order: bool = True, verify: bool = True) -> tuple:
+    """``evaluate_vector`` on every vector of the box ``0..box[i]`` (an int
+    applies to every port), in lexicographic order."""
+    ports = vector_ports(witness)
+    bounds = (box,) * len(ports) if isinstance(box, int) else tuple(box)
+    if len(bounds) != len(ports) or any(bound < 0 for bound in bounds):
+        raise BoundaryError("box must give a non-negative bound per port")
+    plan = _vector_plan(witness, providers)
+    return tuple(
+        evaluate_vector(witness, vector, providers, ceiling=ceiling, check_order=check_order,
+                        verify=verify, plan=plan)
+        for vector in itertools.product(*(range(bound + 1) for bound in bounds)))
+
+
+def marks(witness: Witness) -> dict:
+    """Pinned marks: reacting atoms by atom id, ports by port key."""
+    labels = {a: (f"r{a}",) for a in edit_support(witness)}
+    for key in witness.port_keys():
+        port = witness.port(key)
+        labels[port.atom_id] = labels.get(port.atom_id, ()) + (f"p{key[0]}:{key[1]}",)
+    return {a: "|".join(sorted(v)) for a, v in labels.items()}
+
+
+def marked_graph(witness: Witness):
+    """networkx graph of the whole witness: node label (element, isotope,
+    attributes on both sides, mark), edge label (order before, order after)."""
+    import networkx as nx
+
+    before, after = witness.reactant_rows(), witness.product_rows()
+    bonds_before, bonds_after = witness.reactant_bonds(), witness.product_bonds()
+    pinned = marks(witness)
+    graph = nx.Graph()
+    for atom_id in sorted(before):
+        mark = pinned.get(atom_id, "")
+        graph.add_node(atom_id, mark=mark, label=repr((_attrs(before[atom_id]),
+                                                        _attrs(after[atom_id]), mark)))
+    for pair in sorted(set(bonds_before) | set(bonds_after)):
+        graph.add_edge(*pair, label=repr((bonds_before.get(pair, 0.0),
+                                          bonds_after.get(pair, 0.0))))
+    return graph
+
+
+def _invariant(graph) -> tuple:
+    labels = tuple(sorted(data["label"] for _n, data in graph.nodes(data=True)))
+    marked = sorted((data["label"], n) for n, data in graph.nodes(data=True) if data["mark"])
+    distances = []
+    for label, node in marked:
+        seen = {node: 0}
+        frontier = deque([node])
+        while frontier:
+            current = frontier.popleft()
+            for neighbour in graph[current]:
+                if neighbour not in seen:
+                    seen[neighbour] = seen[current] + 1
+                    frontier.append(neighbour)
+        distances.append((label, tuple(sorted(
+            (graph.nodes[m]["label"], seen.get(m, -1)) for _l, m in marked))))
+    return labels, tuple(distances)
+
+
+def marked_isomorphic(first: Witness, second: Witness) -> bool:
+    """Isomorphic by a map that fixes every mark (reacting atoms, ports)."""
+    import networkx as nx
+    from networkx.algorithms import isomorphism
+
+    g1, g2 = marked_graph(first), marked_graph(second)
+    if _invariant(g1) != _invariant(g2):
+        return False
+    if nx.weisfeiler_lehman_graph_hash(g1, node_attr="label", edge_attr="label") != \
+            nx.weisfeiler_lehman_graph_hash(g2, node_attr="label", edge_attr="label"):
+        return False
+    matcher = isomorphism.GraphMatcher(
+        g1, g2, node_match=lambda a, b: a["label"] == b["label"],
+        edge_match=lambda a, b: a["label"] == b["label"])
+    return matcher.is_isomorphic()
+
+
+def marked_duplicates(items: Sequence[tuple[Any, Witness]]) -> tuple:
+    """Pairs ``(key_a, key_b)`` (first occurrence first) of marked-isomorphic
+    witnesses; every item is compared with the first member of each class."""
+    classes = []
+    duplicates = []
+    # only witnesses with equal atom-label multisets can be isomorphic
+    composition = {}
+    for key, witness in items:
+        signature = tuple(sorted(
+            (row[:5], row[5] and len(row[5])) for row in witness.reactant_rows().values()))
+        composition.setdefault(signature, []).append(key)
+    shared = {key for keys in composition.values() if len(keys) > 1 for key in keys}
+    for key, witness in items:
+        if key not in shared:
+            continue
+        graph = marked_graph(witness)
+        invariant = _invariant(graph)
+        for representative_key, representative, rep_invariant in classes:
+            if rep_invariant == invariant and marked_isomorphic(representative, witness):
+                duplicates.append((representative_key, key))
+                break
+        else:
+            classes.append((key, witness, invariant))
+    return tuple(duplicates)
+
+
+def vector_duplicates(results: Sequence[VectorResult]) -> tuple:
+    """Marked duplicates among the ``ok`` vectors of one enumeration."""
+    return marked_duplicates([(r.vector, r.witness) for r in results if r.status == "ok"])
+
+
+# ---------------------------------------------------------------------------
+# providers
+# ---------------------------------------------------------------------------
+def _construction_metadata(provider, objects, roles, ports, name):
+    """Metadata from atom objects recorded at construction.
+
+    ``objects``: atoms in construction order (heavy atoms in declaration
+    order, then H); ``roles``: heavy declaration index -> (unit, position);
+    ``ports``: (port_id, heavy declaration index, tag, physicality)."""
+    heavy = [atom for atom in objects if atom.element.number != 1]
+    if len(heavy) != len(roles):
+        raise MetadataError(f"{name}: {len(heavy)} heavy atoms for {len(roles)} roles")
+    coordinates = tuple((atom.id, *roles[k]) for k, atom in enumerate(heavy))
+    built = []
+    for port_id, index, tag, physicality in ports:
+        atom = heavy[index]
+        caps = ()
+        if physicality == "artificial":
+            hydrogens = [h for h in objects if h.element.number == 1 and atom in h.edges]
+            if not hydrogens:
+                raise MetadataError(f"{name}: artificial port {port_id} has no hydrogen to "
+                                    "declare as its cap")
+            caps = (hydrogens[-1].id,)  # the last H added at construction
+        built.append(Port(port_id, atom.id, caps, tag, physicality))
+    return BoundaryMetadata(provider, tuple(built), coordinates)
+
+
+@dataclass(frozen=True)
+class PsChainSpec:
+    """A linear head-to-tail PS proxy, declared unit by unit."""
+
+    units: int
+    radical_units: tuple[int, ...] = ()
+    radical_end: bool = False
+    benzylic_end: bool = False
+    ring_radical_unit: Optional[int] = None
+    monomer: bool = False
+
+
+PS_UNIT_HEAVY = 8  # backbone CH2 (0), backbone CH(Ph) (1), ring carbons (2..7)
+
+
+class PolystyreneProvider(BoundaryProvider):
+    """Head-to-tail PS.  Unit u: position 0 the backbone CH2 (head side),
+    position 1 the phenyl-bearing CH (tail side), positions 2..7 the ring
+    (ipso first, in ring order).  Head port: unit 0 position 0; tail port:
+    last unit position 1."""
+
+    name = "polystyrene"
+
+    @staticmethod
+    def smiles(spec: PsChainSpec) -> str:
+        if spec.monomer:
+            return "C=Cc1ccccc1"
+        if spec.units < 1:
+            raise MetadataError("a PS chain needs at least one unit")
+        pieces = []
+        for u in range(spec.units):
+            pieces.append("[CH2]" if spec.radical_end and u == 0 else "C")
+            ring = "c1cc[c]cc1" if spec.ring_radical_unit == u else "c1ccccc1"
+            if spec.benzylic_end and u == spec.units - 1:
+                pieces.append(f"[CH]({ring})")
+            elif u in spec.radical_units:
+                pieces.append(f"[C]({ring})")
+            else:
+                pieces.append(f"C({ring})")
+        return "".join(pieces)
+
+    def build(self, name: str, spec: PsChainSpec) -> ProxyBuild:
+        """Build exactly as ``ps_proxy_set`` always has (SMILES, ``update``,
+        ``assign_atom_ids``) while recording each atom's role from the
+        declaration: RMG keeps SMILES heavy-atom order, then the hydrogens."""
+        from rmgpy.molecule.molecule import Molecule
+
+        molecule = Molecule(smiles=self.smiles(spec))
+        objects = list(molecule.atoms)
+        molecule.update()
+        molecule.assign_atom_ids()
+        units = 1 if spec.monomer else spec.units
+        roles = [(u, k) for u in range(units) for k in range(PS_UNIT_HEAVY)]
+        ports = []
+        if not spec.monomer:
+            ports.append(("head", 0, "backbone_head",
+                          "physical" if spec.radical_end else "artificial"))
+            ports.append(("tail", (units - 1) * PS_UNIT_HEAVY + 1, "backbone_tail",
+                          "physical" if spec.benzylic_end else "artificial"))
+        metadata = _construction_metadata(self.name, objects, roles, ports, name)
+        build = ProxyBuild(name, molecule, metadata, tuple(atom.id for atom in objects))
+        metadata.check(dict(rows_of_molecule(molecule)), name)
+        return build
+
+    def fragment(self, port: Port, coordinate: tuple[int, int]) -> Fragment:
+        unit, position = coordinate
+        carbon = ("C", None, 0, 0, 0)
+        hydrogen = ("H", None, 0, 0, 0)
+        ring = [(2 + k, 2 + (k + 1) % 6, 1.5) for k in range(6)]
+        if port.tag == "backbone_tail" and position == 1:
+            # 0 CH2, 1 CH(Ph)+cap, 2..7 ring; H: 8, 9 on 0; 10 on 1; 11 cap on 1; 12..16 ring
+            atoms = (carbon,) * 8 + (hydrogen,) * 9
+            bonds = [(0, 1, 1.0), (1, 2, 1.0)] + ring + [
+                (0, 8, 1.0), (0, 9, 1.0), (1, 10, 1.0), (1, 11, 1.0)] + [
+                (3 + k, 12 + k, 1.0) for k in range(5)]
+            return Fragment(atoms, tuple(bonds), ((0, 1.0),), 1, (11,),
+                            tuple((k, unit + 1, k) for k in range(8)))
+        if port.tag == "backbone_head" and position == 0:
+            # 0 CH2+cap, 1 CH(Ph), 2..7 ring; H: 8, 9 on 0; 10 cap on 0; 11 on 1; 12..16 ring
+            atoms = (carbon,) * 8 + (hydrogen,) * 9
+            bonds = [(0, 1, 1.0), (1, 2, 1.0)] + ring + [
+                (0, 8, 1.0), (0, 9, 1.0), (0, 10, 1.0), (1, 11, 1.0)] + [
+                (3 + k, 12 + k, 1.0) for k in range(5)]
+            return Fragment(atoms, tuple(bonds), ((1, 1.0),), 0, (10,),
+                            tuple((k, unit - 1, k) for k in range(8)))
+        raise ExtensionRefused(f"polystyrene has no extension path for a {port.tag} port "
+                               f"at unit position {position}")
+
+
+# The PS proxy structures of ``compiler.ps_proxy_set`` (name -> spec builder).
+def ps_structure_specs(units: int) -> dict:
+    return {
+        "pristine": PsChainSpec(units),
+        "interior_radical": PsChainSpec(units, radical_units=(units // 2,)),
+        "doubly_featured": PsChainSpec(units, radical_units=(0, 1)),
+        "end_radical": PsChainSpec(units, radical_end=True),
+        "end_radical_short": PsChainSpec(units - 1, radical_end=True),
+        "benzylic_end_radical": PsChainSpec(units, benzylic_end=True),
+        "benzylic_end_radical_short": PsChainSpec(units - 1, benzylic_end=True),
+        "junction_radical": PsChainSpec(units, ring_radical_unit=0),
+        "styrene": PsChainSpec(1, monomer=True),
+    }
+
+
+class LinearAlkaneProvider(BoundaryProvider):
+    """Unbranched CnH2n+2 as an explicit graph, one-carbon CH2 repeat, methyl
+    ends.  Ids: carbons 0..n-1 along the chain, then each carbon's H in
+    carbon order (the last H of each end carbon is its declared cap).  Head
+    port carbon 0, tail port carbon n-1; carbon i has coordinate (i, 0)."""
+
+    name = "linear_alkane"
+
+    def build(self, carbons: int, name: Optional[str] = None) -> ProxyBuild:
+        from rmgpy.kmc.rmg_moves import molecule_from_rows
+
+        if carbons < 2:
+            raise MetadataError("a linear alkane proxy needs at least two carbons")
+        name = name or f"C{carbons}"
+        neighbours = {i: [] for i in range(carbons)}
+        for i in range(carbons - 1):
+            neighbours[i].append(i + 1)
+            neighbours[i + 1].append(i)
+        h_of, next_id = {}, carbons
+        for i in range(carbons):
+            count = 4 - len(neighbours[i])
+            h_of[i] = tuple(range(next_id, next_id + count))
+            next_id += count
+        rows = {}
+        for i in range(carbons):
+            edges = [(j, 1.0) for j in neighbours[i]] + [(h, 1.0) for h in h_of[i]]
+            rows[i] = ("C", None, 0, 0, 0, tuple(sorted(edges)))
+            for h in h_of[i]:
+                rows[h] = ("H", None, 0, 0, 0, ((i, 1.0),))
+        molecule = molecule_from_rows(rows)
+        ports = (Port("head", 0, (h_of[0][-1],), "backbone_head", "artificial"),
+                 Port("tail", carbons - 1, (h_of[carbons - 1][-1],), "backbone_tail",
+                      "artificial"))
+        metadata = BoundaryMetadata(self.name, ports, tuple((i, i, 0) for i in range(carbons)))
+        metadata.check(rows, name)
+        return ProxyBuild(name, molecule, metadata, tuple(range(next_id)))
+
+    def fragment(self, port: Port, coordinate: tuple[int, int]) -> Fragment:
+        """One-atom repeat: the attached carbon IS the new port (head and tail
+        coincide), so it carries the new cap itself."""
+        unit, _position = coordinate
+        step = {"backbone_head": -1, "backbone_tail": 1}.get(port.tag)
+        if step is None:
+            raise ExtensionRefused(f"linear alkane has no extension path for a {port.tag} port")
+        atoms = (("C", None, 0, 0, 0),) + (("H", None, 0, 0, 0),) * 3
+        bonds = ((0, 1, 1.0), (0, 2, 1.0), (0, 3, 1.0))
+        return Fragment(atoms, bonds, ((0, 1.0),), 0, (3,), ((0, unit + step, 0),))
+
+
+PROVIDERS = {
+    PolystyreneProvider.name: PolystyreneProvider(),
+    LinearAlkaneProvider.name: LinearAlkaneProvider(),
+}
+
+
+def ps_build(name: str, units: int) -> ProxyBuild:
+    """Build one named ``ps_proxy_set`` structure with its metadata."""
+    return PROVIDERS["polystyrene"].build(name, ps_structure_specs(units)[name])

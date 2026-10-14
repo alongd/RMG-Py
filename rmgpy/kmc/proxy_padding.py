@@ -41,12 +41,19 @@ class RepeatUnitGraph:
 
 @dataclass(frozen=True)
 class BoundaryPort:
-    """One annotated artificial continuation point on a participant graph."""
+    """One annotated artificial continuation point on a participant graph.
+
+    ``cap_atom_ids`` are the cap atoms declared at construction (see
+    ``rmgpy.kmc.boundaries``); empty means the legacy first-neighbouring-H
+    choice.  ``source`` flags where the port came from: ``construction``
+    (provider metadata) or ``inferred`` (legacy graph/name inference)."""
 
     atom_id: int
     orientation: str
     participant_index: int = 0
     kind: str = "artificial"
+    cap_atom_ids: tuple = ()
+    source: str = "inferred"
 
 
 @dataclass(frozen=True)
@@ -212,7 +219,16 @@ def heavy_atom_distance(molecule, first_id: int, second_id: int) -> int:
     raise ValueError("distance endpoints are disconnected")
 
 
-def _remove_cap_hydrogen(molecule, atom) -> None:
+def _remove_cap_hydrogen(molecule, atom, cap_atom_ids=()) -> None:
+    if cap_atom_ids:
+        caps = [neighbor for neighbor in atom.edges if neighbor.id in set(cap_atom_ids)]
+        if len(caps) != len(cap_atom_ids):
+            raise ReactionNotPaddable(
+                "declared cap atom is not bonded to its continuation port"
+            )
+        for cap in caps:
+            molecule.remove_atom(cap)
+        return
     hydrogens = [neighbor for neighbor in atom.edges if neighbor.element.number == 1]
     if not hydrogens:
         raise ValueError("continuation port has no hydrogen cap to replace")
@@ -273,8 +289,18 @@ def _append_repeat(
     for atom, atom_id in zip(unit.atoms, assigned_ids):
         atom.id = atom_id
 
-    _remove_cap_hydrogen(molecule, old_port)
+    _remove_cap_hydrogen(molecule, old_port, boundary.cap_atom_ids)
     _remove_cap_hydrogen(unit, attach)
+    new_caps = ()
+    if boundary.cap_atom_ids:
+        # declared caps continue as declared: the last H of the new port in
+        # repeat-unit atom order (identical on both reaction sides)
+        unit_hydrogens = [
+            neighbor.id for neighbor in new_port.edges if neighbor.element.number == 1
+        ]
+        if not unit_hydrogens:
+            raise ReactionNotPaddable("new continuation port has no hydrogen cap")
+        new_caps = (unit_hydrogens[-1],)
     multiplicity = molecule.multiplicity
     molecule = molecule.merge(unit)
     molecule.multiplicity = multiplicity
@@ -286,6 +312,8 @@ def _append_repeat(
         orientation=boundary.orientation,
         participant_index=boundary.participant_index,
         kind=boundary.kind,
+        cap_atom_ids=new_caps,
+        source=boundary.source,
     )
 
 
@@ -471,6 +499,8 @@ def pad_reaction_witness(
             boundary.orientation,
             reactant_index,
             boundary.kind,
+            boundary.cap_atom_ids,
+            boundary.source,
         )
         if current.kind == "artificial" and (
             reactant_centers or product_centers
@@ -524,11 +554,15 @@ def pad_reaction_witness(
                         current.orientation,
                         product_index,
                         current.kind,
+                        current.cap_atom_ids,
+                        current.source,
                     ),
                     repeat_unit,
                     atom_ids=assigned_ids,
                 )
-                if reactant_port.atom_id != product_port.atom_id:
+                if (reactant_port.atom_id, reactant_port.cap_atom_ids) != (
+                    product_port.atom_id, product_port.cap_atom_ids
+                ):
                     raise ValueError("padded atom correspondence diverged")
                 witness.reactants[reactant_index] = _set_molecule(
                     witness.reactants[reactant_index], reactant_molecule
@@ -541,6 +575,8 @@ def pad_reaction_witness(
                     current.orientation,
                     reactant_index,
                     current.kind,
+                    reactant_port.cap_atom_ids,
+                    current.source,
                 )
                 extensions += 1
         updated.append(current)
