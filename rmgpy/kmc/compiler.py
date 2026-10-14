@@ -4758,7 +4758,7 @@ class EventSetCompiler:
             **({"applicability": applicability} if applicability is not None else {}),
         }
         if family is not None and getattr(family, "auto_generated", True) is False:
-            rate_source.update(_rate_rule_source(family, estimate))
+            rate_source.update(_rate_rule_source(family, rate_reaction))
         forward = replace(
             forward,
             k_table=forward_table,
@@ -5401,7 +5401,7 @@ class EventSetCompiler:
                         }
                     )
                     continue
-                pair_key = (reaction.family, proxy.frontier, sides)
+                pair_key = (reaction.family, _template(reaction), proxy.frontier, sides)
                 if pair_key not in pairs:
                     pair_records, initiating = self._linked_family_pair(
                         proxy, reaction, provenance
