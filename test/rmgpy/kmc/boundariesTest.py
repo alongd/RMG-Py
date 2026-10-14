@@ -527,7 +527,6 @@ def test_extension_order_does_not_matter(fam):
 
 
 def _unmarked(witness):
-    import networkx as nx
     g = b.marked_graph(witness)
     for _n, data in g.nodes(data=True):
         data["label"] = data["label"].rsplit(",", 1)[0]
@@ -535,7 +534,6 @@ def _unmarked(witness):
 
 
 def test_marked_distinctness(fam):
-    import networkx as nx
     from networkx.algorithms import isomorphism
 
     w = homolysis(fam, 8, (3, 4))  # symmetric: C0..C3 | C4..C7

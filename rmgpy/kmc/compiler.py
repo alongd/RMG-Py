@@ -26,6 +26,7 @@ from types import SimpleNamespace
 
 from rmgpy.kmc.atom_map import extract_atom_map
 from rmgpy.kmc.barrier_e0 import BarrierE0Error, FixedBBarrierE0Provider
+from rmgpy.kmc.boundaries import PROVIDERS as BOUNDARY_PROVIDERS, ps_structure_specs
 from rmgpy.kmc.event_record import EventRecord, ssa_multiplier_for
 from rmgpy.kmc.kinetics_library import (
     load_plpsec_entry,
@@ -2467,12 +2468,19 @@ def _map_proxy_boundaries_to_reaction(proxy, reaction):
         mapped = []
         for boundary in proxy.artificial_boundaries:
             target_index, mapping = assignment[boundary.participant_index]
+            # declared caps travel only when the generated reaction kept the
+            # port's atom id; otherwise the port falls back to inference
+            same_id = mapping[boundary.atom_id] == boundary.atom_id
             mapped.append(
                 (
                     target_index,
                     mapping[boundary.atom_id],
                     boundary.orientation,
                     boundary.kind,
+                    tuple(boundary.cap_atom_ids) if same_id else (),
+                    boundary.source
+                    if same_id and boundary.cap_atom_ids
+                    else "inferred",
                 )
             )
         mapped_options.add(tuple(sorted(mapped)))
@@ -2484,8 +2492,10 @@ def _map_proxy_boundaries_to_reaction(proxy, reaction):
             orientation=orientation,
             participant_index=participant_index,
             kind=kind,
+            cap_atom_ids=cap_atom_ids,
+            source=source,
         )
-        for participant_index, atom_id, orientation, kind in next(
+        for participant_index, atom_id, orientation, kind, cap_atom_ids, source in next(
             iter(mapped_options)
         )
     )
@@ -2506,8 +2516,37 @@ def ps_repeat_unit() -> RepeatUnitGraph:
     )
 
 
-def _ps_artificial_ports(name: str, molecule, participant_index: int):
-    """Annotate truncation ports; chemical end radicals remain physical."""
+_ORIENTATION_OF_TAG = {"backbone_head": "head", "backbone_tail": "tail"}
+
+
+def _ps_artificial_ports(
+    name: str, molecule, participant_index: int, metadata=None
+):
+    """Annotate truncation ports; chemical end radicals remain physical.
+
+    With construction ``metadata`` (``rmgpy.kmc.boundaries``) the artificial
+    ports, their orientation and their declared caps are read from it, in the
+    molecule's atom order (the legacy port order).  Without metadata the old
+    inference from phenyl attachment and proxy names is used, and every port
+    it returns is flagged ``source="inferred"``."""
+    if metadata is not None:
+        position = {atom.id: index for index, atom in enumerate(molecule.atoms)}
+        ports = []
+        for port in metadata.ports:
+            if not port.artificial:
+                continue
+            if port.tag not in _ORIENTATION_OF_TAG:
+                raise ValueError(f"{name} port {port.port_id} has no PS orientation")
+            ports.append(
+                BoundaryPort(
+                    atom_id=port.atom_id,
+                    orientation=_ORIENTATION_OF_TAG[port.tag],
+                    participant_index=participant_index,
+                    cap_atom_ids=tuple(port.cap_atom_ids),
+                    source="construction",
+                )
+            )
+        return tuple(sorted(ports, key=lambda port: position[port.atom_id]))
     if name == "styrene":
         return ()
     backbone = [
@@ -2569,11 +2608,17 @@ def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
         "styrene": "C=Cc1ccccc1",
     }
     species = {}
+    builds = {}
+    specs = ps_structure_specs(units)
+    provider = BOUNDARY_PROVIDERS["polystyrene"]
     for name, smiles in structures.items():
-        molecule = Molecule(smiles=smiles)
-        molecule.update()
-        molecule.assign_atom_ids()
-        species[name] = Species(molecule=[molecule])
+        # the provider builds exactly this molecule (SMILES, update,
+        # assign_atom_ids) and records its boundary metadata on the way
+        if provider.smiles(specs[name]) != smiles:
+            raise ValueError(f"PS boundary provider would change the {name} proxy")
+        build = provider.build(name, specs[name])
+        builds[name] = build
+        species[name] = Species(molecule=[build.molecule])
     unimolecular_candidates = PS_FAMILY_CANDIDATES
     radical_pair_candidates = PS_FAMILY_CANDIDATES
     declarations = (
@@ -2707,7 +2752,10 @@ def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
             boundary
             for participant_index, name in enumerate(participants)
             for boundary in _ps_artificial_ports(
-                name, species[name].molecule[0], participant_index
+                name,
+                species[name].molecule[0],
+                participant_index,
+                metadata=builds[name].metadata,
             )
         )
         proxies.append(
@@ -2717,6 +2765,7 @@ def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
                 participant_site_types=participant_site_types,
                 artificial_boundaries=boundaries,
                 repeat_unit=repeat_unit if boundaries else None,
+                boundary_builds=tuple(builds[name] for name in participants),
                 metadata={
                     "centred": True,
                     "context_class": context_class,
@@ -3994,6 +4043,9 @@ class SiteProxy:
     participant_site_types: Sequence[str] = field(default_factory=tuple)
     artificial_boundaries: Sequence[BoundaryPort] = field(default_factory=tuple)
     repeat_unit: RepeatUnitGraph | None = None
+    # per participant: the provider ``ProxyBuild`` (molecule + boundary
+    # metadata); not part of any fingerprint or record
+    boundary_builds: Sequence[Any] = field(default_factory=tuple)
 
 
 class EventSetCompiler:
