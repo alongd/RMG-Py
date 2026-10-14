@@ -247,8 +247,7 @@ def test_valid_pending_draw_is_reused_without_redrawing():
     engine, rng, first_event = _engine_with_pending_draw()
     engine.run(until=first_event)
     assert engine.events[0].time == first_event
-    # one draw for the first proposal, then one for the proposal after the event
-    assert rng.exponentials == 2
+    assert rng.exponentials == 1  # the pending draw was consumed, not replaced
 
 
 def test_state_mutation_between_runs_discards_the_pending_draw():
