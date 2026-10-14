@@ -14,7 +14,6 @@ states (DP 6, 7, 9).  Isomorphic windows are one class.  The acceptance states
 from short witnesses to long chains as well as the matcher itself.
 """
 
-import itertools
 import os
 import pickle
 import subprocess
@@ -62,7 +61,6 @@ from rmgpy.polymer_spec import LinearHomopolymerSpec
 
 TEST_DIR = Path(__file__).resolve().parent
 ROOT = TEST_DIR.parents[2]
-SLOW = os.environ.get("RMG_KMC_SLOW") == "1"
 
 HA = "h_abstraction_benzylic"
 BS = "beta_scission_midchain"
@@ -488,14 +486,23 @@ def compare(family, n, state, label):
            round(t1 - t0, 2), round(t2 - t1, 2), round(t3 - t2, 2))
     REPORT.append(row)
     print("WMROW", *row)
-    duplicates = [k for k, v in got.items() if v != 1]
-    assert not duplicates, f"{len(duplicates)} oracle moves found more than once"
-    assert set(got) == set(expected), (
-        f"matcher-only {len(set(got) - set(expected))}, oracle-only {len(set(expected) - set(got))}")
+    # counts only in the assertions: pytest's diff of these keys is very slow
+    duplicates = sum(1 for v in got.values() if v != 1)
+    matcher_only = len(set(got) - set(expected))
+    oracle_only = len(set(expected) - set(got))
+    assert (duplicates, matcher_only, oracle_only) == (0, 0, 0)
     for name, s in stats.items():
         if s.pair_count is not None:
             assert s.pair_count == s.transitions, (name, s.pair_count, s.transitions)
     return result
+
+
+def first_difference(a, b):
+    """None if the row mappings are equal, else the first differing atom."""
+    if a == b:
+        return None
+    keys = sorted(set(a) | set(b))
+    return next(k for k in keys if a.get(k) != b.get(k))
 
 
 # --------------------------------------------------------------------------
@@ -547,7 +554,6 @@ def test_ch3_abstraction_gives_three_transitions_per_methyl():
     assert stats.transitions == 6 == len(result.transitions)
     moved = Counter(tr.mapping[4] for tr in result.transitions)
     assert sorted(moved.values()) == [3, 3]
-    oracle = Oracle(state)
     assert len({canonical(oracle_record(product_rows(state, t))) for t in result.transitions}) == 6
     assert stats.sites[0] == {0: ((0,),)}
     assert stats.pair_count == 6
@@ -568,13 +574,18 @@ def test_closed_atoms_and_ports_respect_termini():
     assert len(match([ch3], molecules(methyl(), ethane())).transitions) == 6
     # in propane the port's exterior is (C, H, H), not (H, H, H): no site
     assert len(match([ch3], molecules(methyl(), propane())).transitions) == 0
-    # a closed carbon whose window degree is 3 never matches a 4-coordinate carbon
-    atoms = [a for k, a in enumerate(ch3.atoms) if k != 7]
+    # a closed carbon whose window degree is 3 matches only 3-coordinate carbons
+    atoms = [WindowAtom("C", radical=1)] + [WindowAtom("H")] * 3 + [
+        WindowAtom("C", radical=1, participant=1), WindowAtom("H", participant=1),
+        WindowAtom("H", participant=1),
+        WindowAtom("C", participant=1, kind="port", exterior=((1.0, "H", False),) * 3)]
     bonds = [(0, 1, 1.0), (0, 2, 1.0), (0, 3, 1.0), (4, 5, 1.0), (4, 6, 1.0), (4, 7, 1.0)]
-    short = Template("short", HA, atoms, bonds, ch3.edits, weight=1.0)
-    assert len(match([short], molecules(methyl(), ethane())).transitions) == 0
+    edits = [AtomEdit(0, radical=0), AtomEdit(4, radical=0), BondEdit(0, 4, 1.0)]
+    ethyl_end = Template("ethyl_end", RC, atoms, bonds, edits, weight=1.0)
     ethyl = with_h([("C", 1), ("C", 0)], [(0, 1, 1)], [2, 3])
-    assert len(match([short], molecules(methyl(), ethyl)).transitions) == 0  # radical differs
+    assert len(match([ethyl_end], molecules(methyl(), ethane())).transitions) == 0
+    assert len(match([ethyl_end], molecules(methyl(), ethyl)).transitions) == 1
+    assert len(match([ethyl_end], molecules(methyl(), propane())).transitions) == 0
 
 
 # --------------------------------------------------------------------------
@@ -644,6 +655,54 @@ def test_cross_form_matching_gives_one_transition_per_outcome():
     assert results["aromatic"] == results["ortho"] == results["para"]
 
 
+def _methyl_donor_on(exterior):
+    """Methyl radical acceptor + a CH3 donor whose single heavy neighbour is a
+    port with the given exterior."""
+    base = methyl_acceptor_ethane_donor()
+    atoms = list(base.atoms[:8]) + [WindowAtom("C", participant=1, kind="port", exterior=exterior)]
+    return Template("methyl_on_port", HA, atoms, base.bonds, base.edits, weight=1.0)
+
+
+def test_template_written_in_a_quinoid_form_matches_every_consistent_form_once():
+    """m-methylbenzyl radical: the ring carbon carrying CH3 has ring bonds
+    {1, 2} in the ortho, ortho' and para quinoid forms.  A donor window written
+    in that quinoid form matches all three; the products (the m-xylylene
+    diradical written three ways) are one outcome per moved H."""
+    ring = [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 1)]
+    heavy = [("C", 1)] + [("C", 0)] * 6 + [("C", 0)]
+    bonds = [(0, 1, 1)] + [(a, b, 1.5) for a, b in ring] + [(3, 7, 1)]
+    state = molecules(methyl(), with_h(heavy, bonds, [2, 0, 1, 0, 1, 1, 1, 3]))
+    template = _methyl_donor_on(((1.0, "C", True), (2.0, "C", True)))
+    result = match([template], state)
+    stats = result.classes["methyl_on_port"]
+    assert len(result.transitions) == 3
+    # acceptor 3! x donor (3 moved H x 2 spectator orders) x 3 consistent forms
+    assert stats.embeddings == stats.evaluated == 6 * 6 * 3
+    keys = {canonical(oracle_record(product_rows(state, t))) for t in result.transitions}
+    assert len(keys) == 3
+    aromatic = _methyl_donor_on(((1.5, "C", True), (1.5, "C", True)))
+    plain = match([aromatic], state)
+    assert {canonical(oracle_record(product_rows(state, t))) for t in plain.transitions} == keys
+    for tr in result.transitions:
+        moved = pickle.loads(pickle.dumps(state))
+        predicted = product_rows(moved, tr)
+        apply_transition(moved, tr)
+        assert first_difference(_component_rows(moved, list(predicted)), predicted) is None
+
+
+def test_port_exterior_distinguishes_ring_from_chain_neighbours():
+    """The CH3 of methylcyclohexane sits on a ring CH; isobutane's CH3 on a
+    chain CH with the same elements and orders.  in_ring tells them apart."""
+    ring = [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 1)]
+    mch = with_h([("C", 0)] * 7, [(0, 1, 1)] + [(a, b, 1) for a, b in ring], [3, 1, 2, 2, 2, 2, 2])
+    isobutane = with_h([("C", 0)] * 4, [(0, 1, 1), (0, 2, 1), (0, 3, 1)], [1, 3, 3, 3])
+    state = molecules(methyl(), mch, isobutane)
+    ring_port = _methyl_donor_on(((1.0, "C", True), (1.0, "C", True), (1.0, "H", False)))
+    chain_port = _methyl_donor_on(((1.0, "C", False), (1.0, "C", False), (1.0, "H", False)))
+    assert len(match([ring_port], state).transitions) == 3
+    assert len(match([chain_port], state).transitions) == 9
+
+
 def _polyenyl(n_carbons):
     heavy = [("C", 1 if i == n_carbons - 1 else 0) for i in range(n_carbons)]
     bonds = [(i, i + 1, 2 if i % 2 == 0 and i + 1 < n_carbons - 1 else 1)
@@ -684,7 +743,57 @@ def test_dp30_radical_component_form_counts():
     print("WMFORMS", sorted(counts.values()))
     assert sorted(counts.values()) == [1, 1, 4, 4, 16]
     two = max(counts, key=counts.get)
-    assert_forms_equal_oracle(state, two)
+    forms = assert_forms_equal_oracle(state, two)
+    reference = [form_rows(state, two, f) for f in forms]
+    for k in (1, 6, 15):  # restart from other stored forms: identical form list
+        moved = pickle.loads(pickle.dumps(state))
+        edits = [SetBond(a, b, float(moved.atoms[a].edges[b]), o) for a, b, o in forms[k].bonds
+                 if float(moved.atoms[a].edges[b]) != o]
+        edits += [SetRadical(a, moved.atoms[a].radical, r) for a, r in forms[k].radicals
+                  if moved.atoms[a].radical != r]
+        moved.apply(edits)
+        again = [form_rows(moved, two, f) for f in component_forms(moved, two)]
+        assert all(first_difference(x, y) is None for x, y in zip(again, reference))
+        assert len(again) == len(reference)
+
+
+def _alkyl_shift(minimum, maximum):
+    """1,n H shift on a 1-alkyl radical: X = *CH2- (closed, port C(H,H,C)),
+    Y = -CH2- (closed, two ports C(H,H,C)); disconnected window, path [min, max]."""
+    chh = ((1.0, "C", False), (1.0, "H", False), (1.0, "H", False))
+    atoms = [WindowAtom("C", radical=1), WindowAtom("H"), WindowAtom("H"),
+             WindowAtom("C", kind="port", exterior=chh),
+             WindowAtom("C"), WindowAtom("H"), WindowAtom("H"),
+             WindowAtom("C", kind="port", exterior=chh), WindowAtom("C", kind="port", exterior=chh)]
+    bonds = [(0, 1, 1.0), (0, 2, 1.0), (0, 3, 1.0), (4, 5, 1.0), (4, 6, 1.0), (4, 7, 1.0),
+             (4, 8, 1.0)]
+    edits = [AtomEdit(0, radical=0), BondEdit(0, 5, 1.0), BondEdit(4, 5, 0.0),
+             AtomEdit(4, radical=1)]
+    return Template(f"alkyl_shift_{minimum}_{maximum}", HS, atoms, bonds, edits, weight=1.0,
+                    paths=(PathPredicate(0, 4, minimum, maximum),))
+
+
+def test_path_predicate_boundaries_on_an_alkyl_radical():
+    """Decyl radical: every interior CH2 has the same window, so only the path
+    predicate decides which carbon donates (distances 4, 5, 6 = n-1, n, n+1
+    for a 1,6 shift)."""
+    n = 10
+    decyl = with_h([("C", 1 if i == 0 else 0) for i in range(n)],
+                   [(i, i + 1, 1) for i in range(n - 1)], [2] + [2] * (n - 2) + [3])
+    state = molecules(decyl)
+    graph = nx.path_graph(n)
+    for low, high in [(4, 4), (5, 5), (6, 6), (4, 6)]:
+        result = match([_alkyl_shift(low, high)], state)
+        donors = Counter(t.mapping[4] for t in result.transitions)
+        expected = [c for c in range(n) if low <= nx.shortest_path_length(graph, 0, c) <= high]
+        assert sorted(donors) == expected and set(donors.values()) == {2}, (low, high, donors)
+
+
+def test_h_shift_windows_are_disconnected_beyond_1_4():
+    pieces = {n: sorted({len(t.pieces[0]) for t in templates_for(HS, n)}) for n in (4, 5, 6)}
+    assert pieces == {4: [1], 5: [2], 6: [2]}
+    assert all(t.paths and t.paths[0].minimum == t.paths[0].maximum == n - 1
+               for n in (4, 5, 6) for t in templates_for(HS, n))
 
 
 def test_identity_distinguishes_charge_allocation():
@@ -702,10 +811,8 @@ def test_identity_distinguishes_charge_allocation():
 # acceptance against the oracle
 # --------------------------------------------------------------------------
 @pytest.mark.parametrize("family,n", CASES, ids=[f"{f}{n or ''}" for f, n in CASES])
-@pytest.mark.parametrize("dp", [8, 12, 21, pytest.param(30, marks=pytest.mark.slow)])
+@pytest.mark.parametrize("dp", [8, 12, 21, 30])
 def test_transition_sets_equal_the_oracle(family, n, dp):
-    if dp == 30 and not SLOW and os.environ.get("RMG_KMC_DP30") != "1":
-        pytest.skip("DP30: set RMG_KMC_SLOW=1 (or RMG_KMC_DP30=1)")
     compare(family, n, state_at(dp), f"DP{dp}")
 
 
@@ -825,8 +932,8 @@ def test_pair_sampler_exact_probabilities_ordered():
     assert sampler.total == len(pairs) == total0 * total1 - sum(n0[c] * n1[c] for c in n0)
     dist = exact_distribution(sampler.draw)
     assert dist == {p: Fraction(1, len(pairs)) for p in pairs}
-    sampler.update(5, 2, 1)
     n0[5] = 2
+    sampler.update(5, _sites(n0)[5], _sites(n1)[5])
     pairs = [(s0, s1) for c0, v0 in _sites(n0).items() for s0 in v0
              for c1, v1 in _sites(n1).items() if c1 != c0 for s1 in v1]
     assert exact_distribution(sampler.draw) == {p: Fraction(1, len(pairs)) for p in pairs}
@@ -855,6 +962,56 @@ def test_pair_sampler_on_matched_sites():
         assert set(dist.values()) == {Fraction(1, stats.pair_count)}
 
 
+def ethylene_plus_h2():
+    """C=C + H-H -> H-C-C-H: swapping both carbons and both H together is a
+    participant-preserving symmetry that moves edited atoms."""
+    atoms = [WindowAtom("C"), WindowAtom("C")] + [WindowAtom("H")] * 4 + [
+        WindowAtom("H", participant=1), WindowAtom("H", participant=1)]
+    bonds = [(0, 1, 2.0), (0, 2, 1.0), (0, 3, 1.0), (1, 4, 1.0), (1, 5, 1.0), (6, 7, 1.0)]
+    edits = [BondEdit(0, 1, 1.0), BondEdit(6, 7, 0.0), BondEdit(0, 6, 1.0), BondEdit(1, 7, 1.0)]
+    return Template("ethylene_h2", "addition", atoms, bonds, edits, weight=1.0)
+
+
+def h2_exchange():
+    """H-H + H-H -> 2 H-H (four-centre exchange): role swap plus a joint
+    symmetry inside both participants."""
+    atoms = [WindowAtom("H"), WindowAtom("H"), WindowAtom("H", participant=1),
+             WindowAtom("H", participant=1)]
+    edits = [BondEdit(0, 1, 0.0), BondEdit(2, 3, 0.0), BondEdit(0, 2, 1.0), BondEdit(1, 3, 1.0)]
+    return Template("h2_exchange", "exchange", atoms, [(0, 1, 1.0), (2, 3, 1.0)], edits,
+                    weight=1.0)
+
+
+def test_quotient_divides_by_symmetries_that_move_edited_atoms():
+    ethylene = with_h([("C", 0), ("C", 0)], [(0, 1, 2)], [2, 2])
+    h2 = ([("H", 0), ("H", 0)], [(0, 1, 1)])
+    cases = [(ethylene_plus_h2(), molecules(ethylene, h2, ethylene, h2), 2, False, 8),
+             (h2_exchange(), molecules(h2, h2, h2), 2, True, 6)]
+    for template, state, symmetry, swap, expected in cases:
+        assert len(template.edit_symmetry) == symmetry and template.role_swap is swap
+        result = match([template], state)
+        stats = result.classes[template.name]
+        oracle_keys = {canonical(oracle_record(product_rows(state, t))) for t in result.transitions}
+        assert stats.pair_count == stats.transitions == len(oracle_keys) == expected
+        dist = exact_distribution(result.sampler(template.name).draw)
+        assert len(dist) == expected and set(dist.values()) == {Fraction(1, expected)}
+
+
+def test_equal_outcomes_from_different_classes_stay_separate_pathways():
+    port = methyl_acceptor_ethane_donor()
+    atoms = list(port.atoms[:8]) + [WindowAtom("C", participant=1)] + [
+        WindowAtom("H", participant=1)] * 3
+    bonds = list(port.bonds) + [(8, 9, 1.0), (8, 10, 1.0), (8, 11, 1.0)]
+    closed = Template("ch3_abstraction_closed", HA, atoms, bonds, port.edits, weight=2.0)
+    state = molecules(methyl(), ethane())
+    result = match([port, closed], state)
+    by_class = Counter(t.template for t in result.transitions)
+    assert by_class == {"ch3_abstraction": 6, "ch3_abstraction_closed": 6}
+    keys = Counter(canonical(oracle_record(product_rows(state, t))) for t in result.transitions)
+    assert len(keys) == 6 and set(keys.values()) == {2}
+    assert {t.weight for t in result.transitions} == {1.0, 2.0}
+
+
 # --------------------------------------------------------------------------
 # apply
 # --------------------------------------------------------------------------
@@ -880,11 +1037,11 @@ def test_apply_reaches_the_predicted_and_oracle_product(family, n):
         apply_transition(state, tr)
         assert state.revision == revision + 1
         rows = _component_rows(state, list(predicted))
-        assert rows == predicted
+        assert first_difference(rows, predicted) is None
         assert (family, canonical(oracle_record(rows))) in expected
         for cid in sorted({state.components.component_of(a) for a in predicted}):
-            assert form_rows(state, cid, component_forms(state, cid)[0]) == {
-                a: rows[a] for a in state.components.atoms(cid)}
+            first = form_rows(state, cid, component_forms(state, cid)[0])
+            assert first_difference(first, {a: rows[a] for a in state.components.atoms(cid)}) is None
 
 
 def test_apply_from_a_quinoid_start_form():
@@ -892,7 +1049,7 @@ def test_apply_from_a_quinoid_start_form():
     tr = match([benzyl_acceptor_ethane_donor()], state).transitions[0]
     predicted = product_rows(state, tr)
     apply_transition(state, tr)
-    assert _component_rows(state, list(predicted)) == predicted
+    assert first_difference(_component_rows(state, list(predicted)), predicted) is None
 
 
 def test_apply_rolls_back_and_refuses_stale_and_pure_pi():
