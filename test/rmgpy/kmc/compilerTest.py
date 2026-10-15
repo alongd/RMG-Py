@@ -1528,6 +1528,29 @@ def _verified_padding_case():
     return reaction, compiler_module._map_proxy_boundaries_to_reaction(proxy, reaction)
 
 
+def test_padding_check_keeps_the_shared_repeat_unit_order():
+    """Production shares one RepeatUnitGraph across proxies, and its head and
+    tail are atom INDICES: checking the declarations must never reorder its
+    atoms.  N identical checks give identical verdicts, and the unit's atom
+    order (and serialized provenance) is unchanged."""
+    from rmgpy.kmc.proxy_padding import ReactionNotPaddable
+
+    reaction, mapped = _verified_padding_case()
+    unit = mapped.repeat_unit
+    order = list(unit.molecule.atoms)
+    provenance = unit.provenance()
+    verdicts = []
+    for _ in range(4):
+        try:
+            padded = compiler_module._pad_production_witness(reaction, mapped, 6, 200)
+            verdicts.append(padded.verified)
+        except ReactionNotPaddable as error:
+            verdicts.append(f"refused: {error}")
+        assert list(unit.molecule.atoms) == order, verdicts
+    assert verdicts == [True] * 4, verdicts
+    assert unit.provenance() == provenance
+
+
 def test_verified_padding_refuses_contradicting_declarations():
     """Declaring a PE repeat unit on a PS proxy (whose metadata provider
     extends by C8H8), flipping a port's orientation or moving its cap away

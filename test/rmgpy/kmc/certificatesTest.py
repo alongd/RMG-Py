@@ -291,6 +291,7 @@ def _production_record(family_name, template, reaction, orientation, rate_source
     explicit-H graphs, canonical heavy-atom map and the executable bond_ops
     of ``reaction`` (reactants and products sharing atom ids)."""
     from rmgpy.kmc import compiler as cmp
+    ops = cmp._bond_ops(reaction)
     return EventRecord(family=family_name, template=template, arity=len(reaction.reactants),
                        participant_site_types=["s"] * len(reaction.reactants),
                        reactant_multiplicities=[1] * len(reaction.reactants),
@@ -298,7 +299,9 @@ def _production_record(family_name, template, reaction, orientation, rate_source
                        reactant_graphs=cmp._graph_adjacencies(reaction.reactants),
                        product_graphs=cmp._graph_adjacencies(reaction.products),
                        atom_map=cmp._canonical_atom_map(reaction),
-                       bond_ops=cmp._bond_ops(reaction), reverse_of=reverse_of)
+                       bond_ops=ops, reverse_of=reverse_of,
+                       # as production: the set_* subset of the bond_ops
+                       feature_ops=[op for op in ops if op["action"].startswith("set_")])
 
 
 def _record_pair(fam, family_name, reactants, pathway=None, products=None, member=0):
@@ -601,9 +604,11 @@ def test_domain_refuses_everything_else():
 # averaged contributors, domain eligibility, bounded caches
 # --------------------------------------------------------------------------
 def _certified_fake_artifact():
-    compiler, _db, _p = ct._fake_compiler(["pathway_A", "pathway_B"])
+    """(artifact, families): the families the compile certified with are the
+    database validation re-derives every certificate against."""
+    compiler, db, _p = ct._fake_compiler(["pathway_A", "pathway_B"])
     compiler.certify_rates = True
-    return compiler.compile()
+    return compiler.compile(), db.families
 
 
 def test_certificate_references_are_owned_by_their_record():
@@ -612,8 +617,8 @@ def test_certificate_references_are_owned_by_their_record():
     references, a summary contradicting the certificate, a corrupted body and
     a re-hashed body naming another owner each refuse the artifact."""
     from rmgpy.kmc.compiler import validate_artifact
-    art = _certified_fake_artifact()
-    validate_artifact(art)
+    art, families = _certified_fake_artifact()
+    validate_artifact(art, families=families)
     first, second = art["records"][0], art["records"][1]
     assert first["rate_certificate"]["sha256"] != second["rate_certificate"]["sha256"]
     assert first["rate_certificate"]["owner_event_id"] == first["event_id"]
@@ -621,17 +626,17 @@ def test_certificate_references_are_owned_by_their_record():
     r0, r1 = swapped["records"][0], swapped["records"][1]
     r0["rate_certificate"], r1["rate_certificate"] = r1["rate_certificate"], r0["rate_certificate"]
     with pytest.raises(ValueError, match="owner"):
-        validate_artifact(swapped)
+        validate_artifact(swapped, families=families)
     lying = copy.deepcopy(art)
     ref = lying["records"][0]["rate_certificate"]
     ref["whole_species"] = not ref["whole_species"]
     with pytest.raises(ValueError, match="summary"):
-        validate_artifact(lying)
+        validate_artifact(lying, families=families)
     corrupt = copy.deepcopy(art)
     sha = corrupt["records"][0]["rate_certificate"]["sha256"]
     corrupt["rate_certificates"][sha]["gaps"].append("tampered after hashing")
     with pytest.raises(ValueError, match="digest"):
-        validate_artifact(corrupt)
+        validate_artifact(corrupt, families=families)
     stolen = copy.deepcopy(art)
     ref = stolen["records"][0]["rate_certificate"]
     body = stolen["rate_certificates"].pop(ref["sha256"])
@@ -639,7 +644,7 @@ def test_certificate_references_are_owned_by_their_record():
     stolen["rate_certificates"][cm.certificate_sha256(body)] = body
     ref.update(cm.certificate_reference(body))
     with pytest.raises(ValueError, match="owner"):
-        validate_artifact(stolen)
+        validate_artifact(stolen, families=families)
 
 
 def test_certification_mode_requires_coverage_of_every_record():
@@ -648,22 +653,22 @@ def test_certification_mode_requires_coverage_of_every_record():
     declared mode, and an unreferenced stored certificate are refused.  An
     uncertified compile declares nothing and validates."""
     from rmgpy.kmc.compiler import validate_artifact
-    art = _certified_fake_artifact()
+    art, families = _certified_fake_artifact()
     assert art["rate_certification"]["mode"] == "required"
     assert art["rate_certification"]["coverage"] == "every record"
     removed = copy.deepcopy(art)
     del removed["records"][1]["rate_certificate"]
     with pytest.raises(ValueError, match="coverage"):
-        validate_artifact(removed)
+        validate_artifact(removed, families=families)
     undeclared = copy.deepcopy(art)
     del undeclared["rate_certification"]
     with pytest.raises(ValueError, match="certification mode"):
-        validate_artifact(undeclared)
+        validate_artifact(undeclared, families=families)
     orphan = copy.deepcopy(art)
     body = {"orphan": True}
     orphan["rate_certificates"][cm.certificate_sha256(body)] = body
     with pytest.raises(ValueError, match="unreferenced"):
-        validate_artifact(orphan)
+        validate_artifact(orphan, families=families)
     plain, _db, _p = ct._fake_compiler(["pathway_A"])
     base = plain.compile()
     assert "rate_certification" not in base
@@ -961,11 +966,12 @@ def _mini_artifact(records, fam, required=True):
             "rate_certification": cm.certification_declaration()}
 
 
-def _forge(art, index, body_changes=None, record_changes=None, reown=True):
+def _forge(art, index, body_changes=None, record_changes=None, reown=True, rebind=False):
     """A forger's edit of record ``index`` and its stored certificate: the
     record fields are changed (event id recomputed, links kept), the body is
-    edited, its owner block regenerated from the changed record, re-hashed,
-    and the reference regenerated from the forged body."""
+    edited, its owner block regenerated from the changed record (``rebind``:
+    and its binding evidence), re-hashed, and the reference regenerated from
+    the forged body."""
     art = copy.deepcopy(art)
     data = art["records"][index]
     ref = data.pop("rate_certificate")
@@ -987,6 +993,8 @@ def _forge(art, index, body_changes=None, record_changes=None, reown=True):
             art["rate_certificates"][cm.certificate_sha256(obody)] = obody
     for key, value in (body_changes or {}).items():
         body[key] = value
+    if rebind:
+        body["binding"] = dict(body["binding"], evidence=cm.binding_evidence(data))
     if reown:
         owner = cm.record_owner(data)
         owner.update({k: body["owner"].get(k) for k in ("rate_owner_event_id",
@@ -1010,24 +1018,24 @@ def test_forged_certificate_claims_are_refused(fam):
     owner, partner, _cs, _ch = _record_pair(fam, "H_Abstraction",
                                             [mol("[CH3]", 0), mol("CC", 10)])
     art = _mini_artifact([owner, partner], fam)
-    cm.validate_certification(art)
+    cm.validate_certification(art, families=fam)
     k = next(i for i, r in enumerate(art["records"]) if r["event_id"] == owner.event_id)
     body = art["rate_certificates"][art["records"][k]["rate_certificate"]["sha256"]]
     assert body["certified"] and body["binding"]["status"] == "bound"
     refused = dict(body["binding"], status="refused", mismatches=["source: wrong rate source"])
     with pytest.raises(ValueError, match="derived"):
-        cm.validate_certification(_forge(art, k, {"binding": refused}))
+        cm.validate_certification(_forge(art, k, {"binding": refused}), families=fam)
     with pytest.raises(ValueError, match="schema"):
-        cm.validate_certification(_forge(art, k, {"schema": "bogus/9"}))
+        cm.validate_certification(_forge(art, k, {"schema": "bogus/9"}), families=fam)
     with pytest.raises(ValueError, match="derived|certificate"):
-        cm.validate_certification(_forge(art, k, {"certificate": None}))
+        cm.validate_certification(_forge(art, k, {"certificate": None}), families=fam)
     hollow = dict(body["binding"], members=[], mismatches=[])
     with pytest.raises(ValueError, match="binding"):
-        cm.validate_certification(_forge(art, k, {"binding": hollow}))
+        cm.validate_certification(_forge(art, k, {"binding": hollow}), families=fam)
     lying_witness = copy.deepcopy(body["certificate"])
     lying_witness["witness"]["atoms"][0][1] = "O"
     with pytest.raises(ValueError, match="witness"):
-        cm.validate_certification(_forge(art, k, {"certificate": lying_witness}))
+        cm.validate_certification(_forge(art, k, {"certificate": lying_witness}), families=fam)
 
 
 def test_owner_binding_covers_the_rewrite_and_degeneracy(fam):
@@ -1039,9 +1047,10 @@ def test_owner_binding_covers_the_rewrite_and_degeneracy(fam):
     art = _mini_artifact([owner, partner], fam)
     k = next(i for i, r in enumerate(art["records"]) if r["event_id"] == owner.event_id)
     with pytest.raises(ValueError, match="rewrite|bond_ops"):
-        cm.validate_certification(_forge(art, k, record_changes={"bond_ops": []}))
+        cm.validate_certification(_forge(art, k, record_changes={"bond_ops": []}), families=fam)
     with pytest.raises(ValueError, match="degeneracy"):
-        cm.validate_certification(_forge(art, k, record_changes={"degeneracy": 7.0}))
+        cm.validate_certification(_forge(art, k, record_changes={"degeneracy": 7.0}),
+                                  families=fam)
 
 
 def test_required_population_must_be_certified(fam):
@@ -1058,9 +1067,9 @@ def test_required_population_must_be_certified(fam):
     bad = replace(bad, reverse_of=bad_partner.event_id)
     loose = _mini_artifact([bad, bad_partner], fam, required=False)
     with pytest.raises(ValueError, match="required"):
-        cm.validate_certification(loose)
+        cm.validate_certification(loose, families=fam)
     gated = _mini_artifact([bad, bad_partner], fam, required=True)
-    cm.validate_certification(gated)
+    cm.validate_certification(gated, families=fam)
     assert {r["status"] for r in gated["records"]} == {"refused"}
     assert all("rate certification" in r["status_reason"] for r in gated["records"])
     by_id = {r["event_id"]: r for r in gated["records"]}
@@ -1256,23 +1265,244 @@ def test_hydrogen_only_records_bind(fam, certifier):
     assert broken["binding"]["status"] == "refused"
 
 
+# --------------------------------------------------------------------------
+# rework 3: validation re-derives (never trusts stored assertions), the
+# runtime operation stream, the rate owner of a supplied certificate,
+# acceptance of the in-domain supported population
+# --------------------------------------------------------------------------
+def _owner_index(art, record):
+    return next(i for i, r in enumerate(art["records"]) if r["event_id"] == record.event_id)
+
+
+def _stored(art, k):
+    return art["rate_certificates"][art["records"][k]["rate_certificate"]["sha256"]]
+
+
+def _retemplated(body, labels):
+    """The inner certificate with every channel pathway and mapping leaf
+    renamed to ``labels`` (self-consistent: completeness and flags hold)."""
+    cert = copy.deepcopy(body["certificate"])
+    for ch in cert["channels"]:
+        ch["pathway"] = list(labels)
+        for mem in ch.get("members", []):
+            for mp in mem["mappings"]:
+                mp["leaves"] = list(labels)
+    return cert
+
+
+def test_fabricated_certificates_are_never_valid(fam):
+    """Validation never turns stored assertions into a verdict: a certificate
+    is valid only if its derivation is re-established against the loaded RMG
+    database and the record.  A self-consistent fabrication (nonexistent
+    template, no operations, no node semantics, an empty descent, invented
+    bound members) is refused; so are a nonexistent template alone and stored
+    descents that are not chains of the family tree.  Without a database the
+    verdict is unverified, which refuses publication in required mode."""
+    owner, partner, _cs, _ch = _record_pair(fam, "H_Abstraction",
+                                            [mol("[CH3]", 0), mol("C", 10)])
+    art = _mini_artifact([owner, partner], fam)
+    k = _owner_index(art, owner)
+    body = _stored(art, k)
+    assert body["certified"]
+    # the probe's fabrication, every stored claim consistent with every other
+    fake = ("Nonexistent_A", "Nonexistent_B")
+    cert = _retemplated(body, fake)
+    cert["nodes"] = {}
+    cert["descents"] = {"d": []}
+    for ch in cert["channels"]:
+        for mem in ch["members"]:
+            for mp in mem["mappings"]:
+                mp["descent"] = "d"
+    binding = dict(body["binding"], members=[{"channel": 0, "member": 0, "mappings": [0]}])
+    fabricated = _forge(art, k, {"certificate": cert, "template": ";".join(fake),
+                                 "binding": binding},
+                        record_changes={"template": ";".join(fake), "bond_ops": [],
+                                        "feature_ops": []}, rebind=True)
+    with pytest.raises(ValueError, match="unverified"):
+        cm.validate_certification(fabricated)
+    with pytest.raises(ValueError, match="unverified"):
+        cm.validate_certification(art)
+    cm.validate_certification(art, families=fam)
+    with pytest.raises(ValueError):
+        cm.validate_certification(fabricated, families=fam)
+    # a nonexistent template, everything else authentic
+    renamed = _forge(art, k, {"certificate": _retemplated(body, fake),
+                              "template": ";".join(fake)},
+                     record_changes={"template": ";".join(fake)})
+    with pytest.raises(ValueError, match="does not exist"):
+        cm.validate_certification(renamed, families=fam)
+    # stored descents that are not chains of the family tree
+    empty = copy.deepcopy(body["certificate"])
+    empty["descents"] = {"d": []}
+    for ch in empty["channels"]:
+        for mem in ch["members"]:
+            for mp in mem["mappings"]:
+                mp["descent"] = "d"
+    with pytest.raises(ValueError, match="family tree"):
+        cm.validate_certification(_forge(art, k, {"certificate": empty}), families=fam)
+    unresolved = copy.deepcopy(body["certificate"])
+    group = next(lab for lab, sem in unresolved["nodes"].items() if sem["kind"] == "group")
+    unresolved["nodes"][group]["atoms"][0]["atomtypes"] = ["O2s"]
+    with pytest.raises(ValueError, match="family tree"):
+        cm.validate_certification(_forge(art, k, {"certificate": unresolved}), families=fam)
+
+
+def test_rewrite_replay_is_the_runtime_operation_stream(fam, certifier):
+    """The binding replays the complete executable operation stream the
+    runtime applies (bond_ops AND feature_ops, every field: radical, charge,
+    lone pairs, implicit hydrogens) with the runtime's semantics and compares
+    it to the declared products BEFORE any chemistry normalisation: a lone
+    pair Molecule.update() would erase, a feature operation the compiler
+    replay ignored and an implicit-hydrogen count are problems."""
+    owner, _p, _cs, _ch = _record_pair(fam, "H_Abstraction", [mol("[CH3]", 0), mol("CC", 10)])
+    assert owner.feature_ops
+    assert cm.rewrite_problems(owner) == []
+    graphs = cm.witness_molecules(owner.reactant_graphs)
+    atoms = [a for m in graphs for a in m.atoms]
+    touched = {i for op in owner.bond_ops for i in op.get("atoms", [op.get("atom")])}
+    spectator = next(i for i, a in enumerate(atoms) if a.is_hydrogen() and i not in touched)
+    extra = {"action": "set_radical", "atom": spectator, "value": 1}
+    featured = replace(owner, feature_ops=list(owner.feature_ops) + [extra], event_id="")
+    assert cm.rewrite_problems(featured), "feature_ops are executed by the runtime"
+    bad = certifier.certify_record(featured)
+    assert bad["binding"]["status"] == "refused" and not bad["certified"]
+    carbon = next(i for i, a in enumerate(atoms) if a.is_carbon() and i not in touched)
+    implicit = {"action": "set_implicit_hydrogens", "atom": carbon, "value": 1}
+    assert cm.rewrite_problems(replace(owner, feature_ops=list(owner.feature_ops) + [implicit],
+                                       event_id=""))
+    hh, _p2, _cs2, _ch2 = _record_pair(fam, "R_Recombination", [mol("[H]", 0), mol("[H]", 10)])
+    assert cm.rewrite_problems(hh) == []
+    lone = list(hh.bond_ops) + [{"action": "set_lone_pairs", "atom": 0, "value": 1}]
+    paired = replace(hh, bond_ops=lone, event_id="")
+    problems = cm.rewrite_problems(paired)
+    assert problems, "Molecule.update() would erase the requested lone pair"
+    assert not certifier.certify_record(paired)["certified"]
+
+
+def test_recertification_checks_the_rate_owner(fam, certifier):
+    """A supplied record certificate undergoes the artifact's ownership and
+    derivation validation against the SUPPLIED rate owner (one code path):
+    after the owner's rate source changed, the relinked reverse record keeps
+    its event id, but its old certificate (bound to the previous owner) is
+    refused; without the rate owner it cannot be checked and is refused."""
+    owner, partner, _cs, _ch = _record_pair(fam, "H_Abstraction",
+                                            [mol("[CH3]", 0), mol("CC", 10)])
+    rc = certifier.certify_record(partner, rate_owner=owner)
+    assert rc["certified"], rc["gaps"]
+    _side, mols, _o = certifier.template_side(partner)
+    ident = {a.id: a.id for m in mols for a in m.atoms}
+    ok = certifier.recertify(partner, mols, ident, certificate=rc, rate_owner=owner)
+    assert not ok["refusals"] and ok["same_selection"], ok["refusals"]
+    moved = dict(owner.rate_source, rank=(owner.rate_source.get("rank") or 0) + 1)
+    new_owner = replace(owner, rate_source=moved, event_id="")
+    relinked = replace(partner, reverse_of=new_owner.event_id, event_id="")
+    assert relinked.event_id == partner.event_id      # links are outside the event hash
+    new_owner = replace(new_owner, reverse_of=relinked.event_id)
+    res = certifier.recertify(relinked, mols, ident, certificate=rc, rate_owner=new_owner)
+    assert res["certificate"] is None and not res["same_selection"]
+    assert any("rate-owning record" in r for r in res["refusals"]), res["refusals"]
+    assert cm.record_certificate_refusals(relinked, rc, rate_owner=new_owner)
+    unchecked = certifier.recertify(partner, mols, ident, certificate=rc)
+    assert unchecked["certificate"] is None
+    assert any("rate-owning record" in r for r in unchecked["refusals"]), unchecked["refusals"]
+
+
+def _synthetic(support="supported", disposition="eligible", eligible=True):
+    """A complete certificate with one channel and a binding bound to it."""
+    cert = {"complete": True, "eligible": eligible, "depository_exclusion_refused": [],
+            "channels": [{"pathway": ["a", "b"], "support": support,
+                          "eligibility": {"disposition": disposition}}]}
+    binding = {"status": "bound", "members": [{"channel": 0, "member": 0, "mappings": [0]}],
+               "mismatches": []}
+    return cert, binding
+
+
+def test_certified_requires_eligibility_and_publishable_bound_channels():
+    """``certified`` needs the certificate domain-eligible (an input refusal
+    makes it ineligible even when the bound channel is publishable) and every
+    BOUND channel publishable (supported spin/pathway status and domain
+    eligible): a pathway-ambiguous bound channel blocks certification."""
+    cert, binding = _synthetic()
+    assert cm.derived_certified(cert, binding)
+    ineligible, _b = _synthetic(eligible=False)
+    assert not cm.derived_certified(ineligible, binding)
+    ambiguous, _b = _synthetic(support=chm.PATHWAY_AMBIGUOUS)
+    assert not cm.derived_certified(ambiguous, binding)
+    refused, _b = _synthetic(disposition="refused:domain")
+    assert not cm.derived_certified(refused, binding)
+
+
+def test_recertification_refuses_an_incomplete_or_ineligible_extension(fam, certifier,
+                                                                        monkeypatch):
+    """CH3* + propane (secondary H) recertified on CH3* + propan-1-ol (a far
+    methyl H replaced by OH; every certified atom transported): the extended
+    certificate is outside the declared domain, so recertification is
+    refused (``extension:``) instead of compared; an extended certificate
+    that is incomplete is refused the same way."""
+    family = fam["H_Abstraction"]
+    propane = mol("CCC", 10)
+    cs = chm.build_channels(family, [mol("[CH3]", 0), propane])
+    ch = only(cs.find(pathway=("C/H2/Cs\\H3/Cs\\H3", "C_methyl")))
+    cert = certifier.certify_channel(family, cs, ch)
+    assert cert["complete"] and cert["eligible"], cert["gaps"]
+    ident = {a.id: a.id for m in cs.reactants for a in m.atoms}
+    same = certifier.recertify_certificate(family, cert, list(cs.reactants), ident)
+    assert same["fixed_point"] and not same["refusals"], same["refusals"]
+    rows = rm.molecule_rows(propane)
+    rows.pop(18)
+    rows[12] = rows[12][:5] + (((11, 1.0), (19, 1.0), (20, 1.0), (21, 1.0)),)
+    rows[21] = ("O", None, 0, 0, 0, ((12, 1.0), (22, 1.0)))
+    rows[22] = ("H", None, 0, 0, 0, ((21, 1.0),))
+    propanol = rm.molecule_from_rows(rows)
+    amap = {a.id: a.id for m in cs.reactants for a in m.atoms if a.id != 18}
+    res = certifier.recertify_certificate(family, cert, [mol("[CH3]", 0), propanol], amap)
+    assert res["certificate"] is not None and not res["certificate"]["eligible"]
+    assert not res["same_selection"] and not res["fixed_point"]
+    assert any(r.startswith("extension:") and "domain" in r for r in res["refusals"]), \
+        res["refusals"]
+    real = certifier.certify
+
+    def incomplete(*args, **kwargs):
+        out = dict(real(*args, **kwargs))
+        out.update(complete=False, gaps=["forced gap of the extended certificate"])
+        return out
+    monkeypatch.setattr(certifier, "certify", incomplete)
+    res = certifier.recertify_certificate(family, cert, list(cs.reactants), ident)
+    assert not res["same_selection"] and not res["fixed_point"]
+    assert any(r.startswith("extension:") and "complete" in r for r in res["refusals"]), \
+        res["refusals"]
+
+
 def test_acceptance_gate_fails_on_supported_selection_changes():
-    """The reference acceptance gate fails on an incomplete certificate AND
-    on any supported channel whose recertification changed its selection;
-    unsupported changes and explicit refusals are accounted, not failed."""
-    ok = {"incomplete": 0, "recertification": {"supported:same": 4,
-                                               "unsupported:spin:changed": 3,
-                                               "supported:unmapped": 1,
-                                               "pathway_ambiguous:changed": 2}}
+    """The reference acceptance gate fails on an incomplete certificate, on
+    any supported channel whose recertification changed its selection, and
+    on ANY non-success of the in-domain supported population (support
+    ``supported`` from the channel enumeration, every species accepted by
+    ``domain.check``: both computed independently of the certificate):
+    a refusal or an unmapped extension there fails.  Out-of-domain or
+    unsupported refusals and witnesses without a +1 analogue are accounted,
+    not failed; a row without its domain token is unaccounted."""
+    ok = {"incomplete": 0, "recertification": {"supported;in-domain:same": 4,
+                                               "supported;out-of-domain:refused": 100,
+                                               "supported;in-domain:not extended": 2,
+                                               "unsupported:spin;in-domain:changed": 3,
+                                               "unsupported:spin;out-of-domain:refused": 5,
+                                               "pathway_ambiguous;in-domain:refused": 2}}
     assert acceptance_failures(ok) == []
     assert acceptance_failures(dict(ok, incomplete=1))
-    changed = dict(ok, recertification=dict(ok["recertification"], **{"supported:changed": 1}))
+    for bad in ("supported;in-domain:refused", "supported;in-domain:unmapped",
+                "pathway_ambiguous,supported;in-domain:refused"):
+        refused = dict(ok, recertification=dict(ok["recertification"], **{bad: 1}))
+        assert any("in-domain supported" in f for f in acceptance_failures(refused)), bad
+    changed = dict(ok, recertification=dict(ok["recertification"],
+                                            **{"supported;out-of-domain:changed": 1}))
     assert any("supported" in f for f in acceptance_failures(changed))
-    mixed = dict(ok, recertification={"pathway_ambiguous,supported:changed": 1})
+    mixed = dict(ok, recertification={"pathway_ambiguous,supported;out-of-domain:changed": 1})
     assert acceptance_failures(mixed)
-    grown = dict(ok, recertification={"supported:cohort changed": 1})
+    grown = dict(ok, recertification={"supported;in-domain:cohort changed": 1})
     assert acceptance_failures(grown)
-    assert acceptance_failures(dict(ok, recertification={"supported:vanished": 1}))
+    assert acceptance_failures(dict(ok, recertification={"supported;in-domain:vanished": 1}))
+    assert acceptance_failures(dict(ok, recertification={"supported:refused": 1}))
 
 
 # --------------------------------------------------------------------------
