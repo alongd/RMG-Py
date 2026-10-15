@@ -1354,7 +1354,21 @@ def _construction_metadata(provider, objects, roles, ports, name):
 
 @dataclass(frozen=True)
 class PsChainSpec:
-    """A linear head-to-tail PS proxy, declared unit by unit."""
+    """A linear head-to-tail PS proxy, declared unit by unit.
+
+    Declared ends (additive, I-137; ``declared``): ``head_end`` / ``tail_end``
+    build a PHYSICAL end with that end chemistry (``None``: the artificial,
+    H-capped cut point).  In phase the head is a unit position 0 terminal
+    (``HEAD_ENDS``) and the tail a position 1 terminal (``TAIL_ENDS``);
+    ``head_shift`` starts the chain at position 1 of unit 0 (the head then
+    carries a position-1 chemistry, ``TAIL_ENDS``) and ``tail_shift`` ends it
+    at position 0 of an extra half unit ``units`` (a ``HEAD_ENDS``
+    chemistry): the two phases a backbone cut leaves.  A shifted end is
+    always physical.  ``secondary_radical_units`` put a radical on position 0
+    of those interior units; ``pendant_loss_units`` drop the phenyl of
+    position 1 and leave a radical there (the chain fragment of a pendant
+    loss).  ``radical_units`` keeps its meaning (a benzylic radical on
+    position 1)."""
 
     units: int
     radical_units: tuple[int, ...] = ()
@@ -1362,9 +1376,81 @@ class PsChainSpec:
     benzylic_end: bool = False
     ring_radical_unit: Optional[int] = None
     monomer: bool = False
+    head_end: Optional[str] = None
+    tail_end: Optional[str] = None
+    head_shift: bool = False
+    tail_shift: bool = False
+    secondary_radical_units: tuple[int, ...] = ()
+    pendant_loss_units: tuple[int, ...] = ()
+
+    @property
+    def declared(self) -> bool:
+        """Whether the spec uses the declared-end fields (I-137)."""
+        return bool(self.head_end or self.tail_end or self.head_shift or self.tail_shift
+                    or self.secondary_radical_units or self.pendant_loss_units)
 
 
 PS_UNIT_HEAVY = 8  # backbone CH2 (0), backbone CH(Ph) (1), ring carbons (2..7)
+# declared PS end chemistries (``domain.END_GROUPS``) by the unit position of
+# the terminal backbone carbon: position 0 (CH2-type) and position 1 (the
+# phenyl-bearing carbon)
+HEAD_ENDS = ("methyl", "primary_radical", "vinylidene")
+TAIL_ENDS = ("benzyl", "benzylic_radical", "styryl")
+RADICAL_ENDS = ("primary_radical", "benzylic_radical")
+ALKENE_ENDS = ("vinylidene", "styryl")
+# the end-reconstruction fresh-id slot of a port (the last fragment slot of
+# its stride: never reached by an extension under any heavy-atom ceiling the
+# stride admits, and checked)
+END_SLOT = PORT_STRIDE // FRAGMENT_STRIDE - 1
+
+
+class EndConflict(ExtensionRefused):
+    """A declared end cannot be built without touching the reaction."""
+
+
+@dataclass(frozen=True)
+class EndEdit:
+    """One declared end chemistry at a port, in witness ids: ``deleted`` (the
+    port's declared caps and, for an alkene end, one H of the partner carbon),
+    ``fresh_atoms`` (attributes, in local order) bonded by ``fresh_bonds``
+    ((local index, witness atom, order)), ``radicals`` ((atom, radical
+    electrons)) and ``bonds`` ((atom, atom, new order))."""
+
+    end: str
+    deleted: tuple[int, ...]
+    fresh_atoms: tuple[tuple, ...] = ()
+    fresh_bonds: tuple[tuple[int, int, float], ...] = ()
+    radicals: tuple[tuple[int, int], ...] = ()
+    bonds: tuple[tuple[int, int, float], ...] = ()
+
+
+def _free_hydrogen(rows, atom, protected) -> int:
+    hydrogens = sorted(n for n, _o in rows[atom][5] if rows[n][0] == "H")
+    free = [h for h in hydrogens if h not in protected]
+    if not free:
+        raise EndConflict(f"atom {atom} has no hydrogen outside the reaction's edit support")
+    return free[0]
+
+
+def standard_end_edit(port: Port, end: str, partner: Optional[int], rows,
+                      protected) -> EndEdit:
+    """The edit of one declared end on a CH-capped carbon chain: saturated ends
+    (methyl, benzyl) replace the cap by a FRESH end hydrogen; radical ends
+    remove the cap and put the unpaired electron on the port atom; alkene ends
+    remove the cap and one partner H and make the port-partner bond double."""
+    caps = tuple(port.cap_atom_ids)
+    if end in ("methyl", "benzyl"):
+        return EndEdit(end, caps, (("H", None, 0, 0, 0),), ((0, port.atom_id, 1.0),))
+    if end in RADICAL_ENDS:
+        return EndEdit(end, caps, radicals=((port.atom_id, 1),))
+    if end in ALKENE_ENDS:
+        if partner is None:
+            raise ExtensionRefused(f"{end}: the port atom has no backbone partner")
+        if partner in protected:
+            raise EndConflict(f"{end}: the alkene partner {partner} is a reacting atom")
+        h = _free_hydrogen(rows, partner, protected)
+        return EndEdit(end, caps + (h,), bonds=((port.atom_id, partner, 2.0),))
+    raise ExtensionRefused(f"undeclared end chemistry {end!r}")
 
 
 class PolystyreneProvider(BoundaryProvider):
@@ -1374,9 +1460,117 @@ class PolystyreneProvider(BoundaryProvider):
     last unit position 1."""
 
     name = "polystyrene"
+    # declared end chemistries per port tag (additive, I-137)
+    END_CHEMISTRIES = {"backbone_head": HEAD_ENDS, "backbone_tail": TAIL_ENDS}
+
+    @staticmethod
+    def declared_layout(spec: PsChainSpec):
+        """(SMILES, heavy roles in SMILES order, ports) of a declared-end spec.
+        Each backbone carbon is followed by its ring (ipso first)."""
+        if spec.monomer or spec.radical_end or spec.benzylic_end or \
+                spec.ring_radical_unit is not None:
+            raise MetadataError("declared ends do not combine with the legacy end flags")
+        if spec.units < 1:
+            raise MetadataError("a PS chain needs at least one unit")
+        if spec.head_shift and spec.head_end not in TAIL_ENDS:
+            raise MetadataError(f"a shifted head needs one of {TAIL_ENDS}, got {spec.head_end!r}")
+        if not spec.head_shift and spec.head_end not in (None,) + HEAD_ENDS:
+            raise MetadataError(f"an in-phase head needs one of {HEAD_ENDS}, got "
+                                f"{spec.head_end!r}")
+        if spec.tail_shift and spec.tail_end not in HEAD_ENDS:
+            raise MetadataError(f"a shifted tail needs one of {HEAD_ENDS}, got {spec.tail_end!r}")
+        if not spec.tail_shift and spec.tail_end not in (None,) + TAIL_ENDS:
+            raise MetadataError(f"an in-phase tail needs one of {TAIL_ENDS}, got "
+                                f"{spec.tail_end!r}")
+        backbone = []
+        for u in range(spec.units):
+            if not (u == 0 and spec.head_shift):
+                backbone.append((u, 0))
+            backbone.append((u, 1))
+        if spec.tail_shift:
+            backbone.append((spec.units, 0))
+        last = len(backbone) - 1
+        if last < 1:
+            raise MetadataError("a declared chain needs at least two backbone carbons")
+        double = set()   # i: the bond i-(i+1) is double
+        if spec.head_end in ALKENE_ENDS:
+            double.add(0)
+        if spec.tail_end in ALKENE_ENDS:
+            double.add(last - 1)
+        if len(double) == 2 and max(double) - min(double) < 2 or \
+                spec.head_end in ALKENE_ENDS and spec.tail_end in ALKENE_ENDS and last < 3:
+            raise MetadataError("two alkene ends share a backbone carbon")
+        interior = set(range(1, last))
+        ring, radical = {}, {}
+        for i, (u, k) in enumerate(backbone):
+            ring[i] = k == 1 and u not in spec.pendant_loss_units
+            flagged = (k == 1 and (u in spec.radical_units or u in spec.pendant_loss_units)) or \
+                (k == 0 and u in spec.secondary_radical_units)
+            if flagged and i not in interior:
+                raise MetadataError(f"a mid-chain radical flag names the terminal {(u, k)}")
+            radical[i] = int(flagged)
+        for flag in (spec.radical_units, spec.pendant_loss_units, spec.secondary_radical_units):
+            if any(not 0 <= u < spec.units + 1 for u in flag):
+                raise MetadataError("a unit flag is outside the chain")
+        if spec.head_end in RADICAL_ENDS:
+            radical[0] = 1
+        if spec.tail_end in RADICAL_ENDS:
+            radical[last] = 1
+        tokens, roles = [], []
+        for i, (u, k) in enumerate(backbone):
+            heavy = (i > 0) + (i < last) + ring[i]
+            pi = (i in double) + (i - 1 in double)
+            h = 4 - heavy - pi - radical[i]
+            if h < 0:
+                raise MetadataError(f"backbone carbon {(u, k)} has no valence left")
+            token = ("[C]" if h == 0 else "[CH]" if h == 1 else f"[CH{h}]") if radical[i] else "C"
+            if ring[i]:
+                token += "(c1ccccc1)"
+            if i in double:
+                token += "="
+            tokens.append(token)
+            roles.append((u, k))
+            if ring[i]:
+                roles.extend((u, 2 + r) for r in range(6))
+        tail_index = len(roles) - (7 if ring[last] else 1)
+        ports = [("head", 0, "backbone_head", "physical" if spec.head_end else "artificial"),
+                 ("tail", tail_index, "backbone_tail",
+                  "physical" if spec.tail_end else "artificial")]
+        return "".join(tokens), tuple(roles), tuple(ports)
+
+    @staticmethod
+    def backbone_partner(metadata: BoundaryMetadata, atom_id: int) -> Optional[int]:
+        """The backbone carbon bonded to ``atom_id`` in its own repeat unit
+        (positions 0 and 1 of one unit), or None."""
+        unit, position = metadata.coordinate(atom_id)
+        if position not in (0, 1):
+            return None
+        for a, u, k in metadata.coordinates:
+            if u == unit and k == 1 - position:
+                return a
+        return None
+
+    def end_edit(self, metadata: BoundaryMetadata, port: Port, end: str, rows,
+                 protected) -> EndEdit:
+        """The declared end chemistry ``end`` built at ``port`` (see
+        ``standard_end_edit``); only the chemistries of the port's tag in its
+        unit phase (``END_CHEMISTRIES``)."""
+        _unit, position = metadata.coordinate(port.atom_id)
+        allowed = HEAD_ENDS if position == 0 else TAIL_ENDS if position == 1 else ()
+        if end not in allowed:
+            raise ExtensionRefused(f"polystyrene: {end!r} is not a declared end of a unit "
+                                   f"position {position} terminal (declared: {allowed})")
+        partner = self.backbone_partner(metadata, port.atom_id)
+        if end in ALKENE_ENDS and partner is not None:
+            bonded = {n for n, _o in rows[port.atom_id][5]}
+            if partner not in bonded:
+                partner = None
+        return standard_end_edit(port, end, partner, rows, protected)
 
     @staticmethod
     def smiles(spec: PsChainSpec) -> str:
+        if getattr(spec, "declared", False):
+            return PolystyreneProvider.declared_layout(spec)[0]
         if spec.monomer:
             return "C=Cc1ccccc1"
         if spec.units < 1:
@@ -1406,7 +1600,9 @@ class PolystyreneProvider(BoundaryProvider):
         units = 1 if spec.monomer else spec.units
         roles = [(u, k) for u in range(units) for k in range(PS_UNIT_HEAVY)]
         ports = []
-        if not spec.monomer:
+        if spec.declared:
+            _smiles, roles, ports = self.declared_layout(spec)
+        elif not spec.monomer:
             ports.append(("head", 0, "backbone_head",
                           "physical" if spec.radical_end else "artificial"))
             ports.append(("tail", (units - 1) * PS_UNIT_HEAVY + 1, "backbone_tail",
@@ -1463,6 +1659,17 @@ class LinearAlkaneProvider(BoundaryProvider):
     port carbon 0, tail port carbon n-1; carbon i has coordinate (i, 0)."""
 
     name = "linear_alkane"
+    # declared end chemistries (additive, I-137): the saturated methyl end and
+    # the primary end radical (both in the declared domain for an unbranched
+    # chain)
+    END_CHEMISTRIES = {"backbone_head": ("methyl", "primary_radical"),
+                       "backbone_tail": ("methyl", "primary_radical")}
+
+    def end_edit(self, metadata: BoundaryMetadata, port: Port, end: str, rows,
+                 protected) -> EndEdit:
+        if end not in self.END_CHEMISTRIES.get(port.tag, ()):
+            raise ExtensionRefused(f"linear alkane: {end!r} is not a declared end")
+        return standard_end_edit(port, end, None, rows, protected)
 
     def build(self, carbons: int, name: Optional[str] = None) -> ProxyBuild:
         from rmgpy.kmc.rmg_moves import molecule_from_rows
@@ -1509,6 +1716,153 @@ PROVIDERS = {
     PolystyreneProvider.name: PolystyreneProvider(),
     LinearAlkaneProvider.name: LinearAlkaneProvider(),
 }
+
+
+# ---------------------------------------------------------------------------
+# physical ends (additive, I-137)
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class EndMap:
+    """Exact record of one end reconstruction: the port made physical, the
+    deleted atoms (declared caps plus any H the end chemistry removes), the
+    fresh atoms with their bonds, the radical increments and the bond orders
+    set (identically on both reaction sides)."""
+
+    port_key: tuple[int, str]
+    end: str
+    old_port: Port
+    new_port: Port
+    deleted: tuple[int, ...]
+    fresh_atoms: tuple[tuple[int, tuple], ...]
+    fresh_bonds: tuple[tuple[int, int, float], ...]
+    radicals: tuple[tuple[int, int], ...]
+    bonds: tuple[tuple[int, int, float], ...]
+
+    @property
+    def fresh_ids(self) -> tuple[int, ...]:
+        return tuple(a for a, _attrs in self.fresh_atoms)
+
+
+def end_chemistries(witness: Witness, port_key, providers=None) -> tuple:
+    """The declared end chemistries a port can be reconstructed with."""
+    provider = _provider_for(witness, tuple(port_key), providers)
+    return tuple(getattr(provider, "END_CHEMISTRIES", {}).get(witness.port(port_key).tag, ()))
+
+
+def reconstruct_end(witness: Witness, port_key, end: str, providers=None):
+    """Make an artificial port PHYSICAL by building the declared end
+    chemistry ``end`` with the participant's provider (``end_edit``): its
+    declared caps are DELETED, fresh atoms (e.g. the end H of a methyl) get
+    new ids from the port's end slot, radicals and bond orders are set, all
+    identically on both reaction sides.  Never a relabelled cap.  Refused
+    (``EndConflict``) when an atom to delete or a bond to set belongs to the
+    reaction's edit support.  Returns (witness, ``EndMap``)."""
+    port_key = tuple(port_key)
+    port = witness.port(port_key)
+    if not port.artificial:
+        raise ExtensionRefused(f"port {port_key} is already physical")
+    provider = _provider_for(witness, port_key, providers)
+    if not hasattr(provider, "end_edit"):
+        raise ExtensionRefused(f"provider {provider.name!r} declares no end chemistry")
+    metadata = witness.participant(port_key[0]).metadata
+    support = edit_support(witness)
+    rows = witness.reactant_rows()
+    edit = provider.end_edit(metadata, port, end, rows, support)
+    hit = sorted(set(edit.deleted) & support)
+    if hit:
+        raise EndConflict(f"{end} at {port_key}: deleting reacting atoms {hit}")
+    hit = sorted({a for a, _r in edit.radicals} & support)
+    if hit:
+        raise EndConflict(f"{end} at {port_key}: the end radical would sit on reacting atoms "
+                          f"{hit} (a different event: build that end on the reactants)")
+    before, after = witness.reactant_bonds(), witness.product_bonds()
+    for a, b, _order in edit.bonds:
+        pair = (min(a, b), max(a, b))
+        if before.get(pair) != after.get(pair):
+            raise EndConflict(f"{end} at {port_key}: the bond {pair} is edited by the reaction")
+    rank = witness.port_keys().index(port_key)
+    start = witness.id_base + rank * PORT_STRIDE + END_SLOT * FRAGMENT_STRIDE
+    ids = tuple(range(start, start + len(edit.fresh_atoms)))
+    if len(ids) > FRAGMENT_STRIDE:
+        raise BoundaryError("end fragment is larger than the fresh-id stride")
+    fresh_atoms = tuple((ids[k], tuple(attrs)) for k, attrs in enumerate(edit.fresh_atoms))
+    fresh_bonds = tuple(sorted((min(ids[k], a), max(ids[k], a), float(o))
+                               for k, a, o in edit.fresh_bonds))
+    deleted = set(edit.deleted)
+    radicals = dict(edit.radicals)
+    orders = {(min(a, b), max(a, b)): float(o) for a, b, o in edit.bonds}
+
+    def side(rows_, bonds_):
+        atoms = {}
+        for a, row in rows_.items():
+            if a in deleted:
+                continue
+            attrs = list(row[:5])
+            attrs[3] = attrs[3] + radicals.get(a, 0)
+            atoms[a] = tuple(attrs)
+        bonds = {p: o for p, o in bonds_.items() if p[0] not in deleted and p[1] not in deleted}
+        for pair, order in orders.items():
+            if pair not in bonds:
+                raise MapCheckError(f"end {end}: bond {pair} to set is absent")
+            bonds[pair] = order
+        for a, attrs in fresh_atoms:
+            atoms[a] = attrs
+        for a, b, order in fresh_bonds:
+            bonds[(a, b)] = order
+        return _side_from(atoms, bonds)
+
+    reactants = side(witness.reactant_rows(), before)
+    products = side(witness.product_rows(), after)
+    new_port = replace(port, cap_atom_ids=(), physicality="physical")
+    participants = []
+    for participant in witness.participants:
+        if participant.index != port_key[0]:
+            participants.append(participant)
+            continue
+        meta = participant.metadata
+        ports = tuple(new_port if p.port_id == port.port_id else p for p in meta.ports)
+        atoms = tuple(a for a in participant.atom_ids if a not in deleted) + ids
+        participants.append(Participant(participant.index,
+                                        BoundaryMetadata(meta.provider, ports, meta.coordinates),
+                                        atoms))
+    extended = Witness(reactants, products, tuple(participants), witness.id_base,
+                       witness.extension_counts, witness.label)
+    record = EndMap(port_key, end, port, new_port, tuple(sorted(deleted)), fresh_atoms,
+                    fresh_bonds, tuple(sorted(radicals.items())), tuple(sorted(
+                        (a, b, o) for (a, b), o in orders.items())))
+    verify_end(witness, record, extended)
+    return extended, record
+
+
+def verify_end(original: Witness, record: EndMap, built: Witness) -> None:
+    """Re-check an end reconstruction from scratch: survivors keep their ids,
+    elements and bonds (except the bonds set), the deleted atoms are the
+    port's declared caps plus atoms outside the edit support, fresh atoms are
+    new ids bonded as recorded, the edits are transported unchanged and the
+    metadata fits."""
+    deleted = set(record.deleted)
+    if not set(record.old_port.cap_atom_ids) <= deleted:
+        raise MapCheckError("an end reconstruction must delete the port's declared caps")
+    if deleted & edit_support(original):
+        raise MapCheckError("an end reconstruction deleted a reacting atom")
+    fresh = set(record.fresh_ids)
+    for name, orig, new in (("reactants", original.reactant_rows(), built.reactant_rows()),
+                            ("products", original.product_rows(), built.product_rows())):
+        if fresh & set(orig):
+            raise MapCheckError(f"{name}: fresh end ids collide with original atoms")
+        if set(new) != (set(orig) - deleted) | fresh:
+            raise MapCheckError(f"{name}: atoms are not survivors plus fresh end atoms")
+        for a in set(orig) - deleted:
+            if orig[a][:2] != new[a][:2]:
+                raise MapCheckError(f"{name}: atom {a} changed element or isotope")
+    if edits(built) != edits(original):
+        raise MapCheckError("the end reconstruction changed the reaction's edits")
+    for participant in built.participants:
+        participant.metadata.check(built.reactant_rows(),
+                                   f"end reconstruction (participant {participant.index})",
+                                   participant.atom_ids)
+    if built.port(record.port_key) != record.new_port or record.new_port.artificial:
+        raise MapCheckError("the reconstructed port is not the recorded physical port")
 
 
 def ps_build(name: str, units: int) -> ProxyBuild:

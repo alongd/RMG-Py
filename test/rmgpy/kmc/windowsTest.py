@@ -144,6 +144,15 @@ def ps_witness(units=3, **kw):
     return b.make_witness(rows, rows, parts, label="ps")
 
 
+def ps_pair():
+    builds = [b.PROVIDERS["polystyrene"].build("pe", b.PsChainSpec(1, tail_end="benzylic_radical")),
+              b.PROVIDERS["polystyrene"].build("dp3", b.PsChainSpec(3))]
+    _mols, parts = b.witness_reactants(builds)
+    rows = tuple(sorted(rm.molecule_rows(_mols[0]).items()) + sorted(
+        rm.molecule_rows(_mols[1]).items()))
+    return b.make_witness(rows, rows, parts, label="pair")
+
+
 def _partner(witness, key):
     """The backbone neighbour of a port atom in its own unit."""
     meta = witness.participant(key[0]).metadata
@@ -191,10 +200,22 @@ def test_physical_end_is_reconstructed_not_relabelled(key, end, expect):
     assert expect in verdict.details["ends"]
 
 
-def test_end_reconstruction_never_deletes_a_reacting_atom():
+def test_end_reconstruction_never_touches_a_reacting_atom():
     w = toy(centre=0)  # the head port atom itself is edited
-    with pytest.raises(b.ExtensionRefused):
-        b.reconstruct_end(w, HEAD, "methyl")
+    with pytest.raises(b.EndConflict):
+        b.reconstruct_end(w, HEAD, "primary_radical")
+    # a methyl end only replaces the (unreacting) cap by a fresh end H
+    built, record = b.reconstruct_end(w, HEAD, "methyl")
+    assert b.edits(built) == b.edits(w) and record.fresh_ids
+    # a reacting cap is never deleted
+    capped = toy(centre=2)
+    (cap,) = capped.port(HEAD).cap_atom_ids
+    product = dict(capped.product_rows())
+    product[cap] = product[cap][:3] + (1,) + product[cap][4:]
+    edited = b.make_witness(capped.reactants, tuple(sorted(product.items())),
+                            capped.participants)
+    with pytest.raises(b.EndConflict):
+        b.reconstruct_end(edited, HEAD, "methyl")
 
 
 def test_context_assignments_policy():
@@ -202,13 +223,28 @@ def test_context_assignments_policy():
     alone = win.context_assignments(w, near_ports=())
     assert alone[0] == ((HEAD, None), (TAIL, None))
     singles = [a for a in alone if sum(e is not None for _k, e in a) == 1]
-    assert len(singles) == 6
+    # far ports: their radical ends only (read whole-species)
+    assert sorted(e for a in singles for _k, e in a if e) == ["benzylic_radical",
+                                                             "primary_radical"]
     # radical end chemistries interact through the radical inventory: their
     # combinations are always enumerated
     assert ((HEAD, "primary_radical"), (TAIL, "benzylic_radical")) in alone
-    assert len(alone) == 8
+    assert len(alone) == 4
+    one = win.context_assignments(w, near_ports=(HEAD,))
+    assert len([a for a in one if sum(e is not None for _k, e in a) == 1]) == 4
     near = win.context_assignments(w, near_ports=(HEAD, TAIL))
     assert len(near) == 16 and len(set(near)) == 16
+    assert win.context_assignments(w) == near
+    # two participants: per-participant products, cross products only on request
+    pair = ps_pair()
+    per = win.context_assignments(pair, cross=False)
+    crossed = win.context_assignments(pair, cross=True)
+    # base, 9 singles, 4 radical combinations, the 3x3 product of the DP3 ends
+    # less its radical pair (already a radical combination)
+    assert len(per) == 1 + 9 + 4 + (9 - 1) and len(crossed) == 4 * 4 * 4
+    mixed = [a for a in per if sum(e is not None for _k, e in a) > 1
+             and len({k[0] for k, e in a if e is not None}) > 1]
+    assert mixed and all(e in b.RADICAL_ENDS for a in mixed for _k, e in a if e)
     physical_head = ps_witness(radical_end=True)
     only_tail = win.context_assignments(physical_head, near_ports=(TAIL,))
     assert {k for a in only_tail for k, _e in a} == {TAIL}
@@ -241,10 +277,13 @@ def test_contexts_with_equal_windows_but_unequal_certificates_do_not_merge():
 def test_span_bound_formula():
     c = win.FamilyConstants("X", radius=4, reacting_distance=1, free_label_search=True)
     bound = win.span_bound(c)
-    assert bound.reach == 5
-    assert bound.backbone_atoms == 1 + 2 * 5 + 1 + (2 * 5 + 1)
-    assert bound.repeats == math.ceil((bound.backbone_atoms + 1) / 2)
-    assert bound.L == (bound.backbone_atoms + 1) // 2
+    assert win.CLOSURE_EXTENSION == 1
+    assert bound.reach == 5   # predicate radius + one closure bond
+    # a free-label search adds no extent: its candidates are reacting atoms
+    # (otherwise the member is refused)
+    assert bound.backbone_atoms == 1 + 2 * 5 + 1 == 12
+    assert bound.repeats == math.ceil((bound.backbone_atoms + 1) / 2) == 7
+    assert bound.L == (bound.backbone_atoms + 1) // 2 == 6
     anchored = win.span_bound(win.FamilyConstants("Y", radius=2, reacting_distance=0,
                                                   free_label_search=False))
     assert anchored.backbone_atoms == 0 + 2 * 3 + 1 and anchored.L == 4
@@ -272,7 +311,7 @@ def test_ladder_covers_cut_phases_and_controls():
     assert max(i.dp for i in items) == bound.L + 1
     assert all(i.control for i in items if i.dp == bound.L + 1)
     assert not any(i.control for i in items if i.dp <= bound.L)
-    kinds = {i.kind for i in items}
+    kinds = {k for i in items for k in i.kinds}
     for kind in ("intact", "scission:phase_A", "scission:phase_B", "pendant_loss",
                  "ch_cleavage:benzylic", "ch_cleavage:secondary", "pair:short_short",
                  "pair:short_long"):
@@ -280,7 +319,8 @@ def test_ladder_covers_cut_phases_and_controls():
     specs = [s for i in items for s in i.specs]
     assert any(s.head_shift for s in specs) and any(s.tail_shift for s in specs)
     # every declared end chemistry at every DP 1..L+1 of the intact chains
-    intact = {(i.dp, i.specs[0].head_end, i.specs[0].tail_end) for i in items if i.kind == "intact"}
+    intact = {(i.dp, i.specs[0].head_end, i.specs[0].tail_end) for i in items
+              if "intact" in i.kinds}
     for dp in range(1, bound.L + 2):
         for head in ("methyl", "primary_radical", "vinylidene"):
             for tail in ("benzyl", "benzylic_radical", "styryl"):
@@ -289,8 +329,185 @@ def test_ladder_covers_cut_phases_and_controls():
     # with its domain reason, never silently dropped)
     for item in items:
         for spec in item.specs:
-            if item.kind == "pair:short_long" and spec is item.specs[-1]:
-                continue
             build = b.PROVIDERS["polystyrene"].build("x", spec)
             assert dom.check(build.molecule).accepted, (item.label, dom.check(build.molecule).reason)
     assert all(reason for _key, reason in plan.excluded)
+
+
+# --------------------------------------------------------------------------
+# item 2: closure (no database)
+# --------------------------------------------------------------------------
+def test_closure_runs_on_both_reaction_sides():
+    """The product side makes a 3=4 double bond: the pi system {3, 4} exists
+    on the product side only, so atom 4 (and its H) is in the window only if
+    the products are closed too."""
+    w = toy()
+    product = dict(w.product_rows())
+    for a, n in ((3, 4), (4, 3)):
+        row = product[a]
+        edges = tuple(sorted(((x, 2.0 if x == n else o) for x, o in row[5])))
+        product[a] = row[:3] + (0,) + row[4:5] + (edges,)
+    w2 = b.make_witness(w.reactants, tuple(sorted(product.items())), w.participants)
+    window = win.close(w2, win.Support(atoms=frozenset({3}), reacting=frozenset({3, 4})))
+    assert window.refusal is None
+    assert 4 in window.atoms
+    h4 = {n for n, _o in w2.reactant_rows()[4][5] if w2.reactant_rows()[n][0] == "H"}
+    assert h4 <= window.atoms
+    reactant_only = win.close(w2, win.Support(atoms=frozenset({3}), reacting=frozenset({3})),
+                              sides=("reactants",))
+    assert 4 not in reactant_only.atoms
+
+
+def ring_witness(size, centre=0):
+    from rmgpy.molecule import Molecule
+    m = Molecule(smiles="C1" + "C" * (size - 1) + "1")
+    for k, atom in enumerate(m.atoms):
+        atom.id = k
+    rows = rm.molecule_rows(m)
+    product = dict(rows)
+    product[centre] = rows[centre][:3] + (1,) + rows[centre][4:]
+    return b.make_witness(tuple(sorted(rows.items())), tuple(sorted(product.items())), ())
+
+
+def test_ring_closure_and_refusals():
+    eight = win.close(ring_witness(8), win.Support(atoms=frozenset({0}),
+                                                   reacting=frozenset({0})))
+    assert eight.refusal is None and set(range(8)) <= eight.atoms
+    nine = win.close(ring_witness(9), win.Support(atoms=frozenset({0}),
+                                                  reacting=frozenset({0})))
+    assert nine.refusal and nine.refusal.startswith("refused:ring")
+    assert nine.atoms == frozenset({0})       # refused, never truncated to a partial ring
+    touching = win.close(ring_witness(9), win.Support(atoms=frozenset({0, 1}),
+                                                      reacting=frozenset({20})))
+    assert touching.refusal and touching.refusal.startswith("refused:large_ring")
+
+
+def test_fixed_point_reports_observation_refusals():
+    """A domain (or any certificate) refusal stops the loop by name, without
+    a window: never a truncated one."""
+    def observe(witness):
+        return win.Observation(win.Support(frozenset()), lambda inside: None, None,
+                               "refused:domain: an aryl radical product")
+    res = win.fixed_point(toy(), observe)
+    assert res.status == "refused:domain: an aryl radical product"
+    assert res.window is None
+
+
+# --------------------------------------------------------------------------
+# items 1, 3, 5 on real certificates (RMG database)
+# --------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def rmg():
+    import rmg_moves_harness as harness
+    if not harness.DATABASE.is_dir():
+        pytest.skip(f"needs the RMG database at {harness.DATABASE}")
+    import channelsTest as ct
+    from rmgpy.kmc import certificates as cm
+    fam = ct.database().kinetics.families
+    return fam, cm.Certifier(fam, max_channel_sets=16)
+
+
+@pytest.fixture(scope="module")
+def habs_cases(rmg):
+    fam, certifier = rmg
+    builds = [b.PROVIDERS["polystyrene"].build("pe", b.PsChainSpec(1, tail_end="benzylic_radical")),
+              b.PROVIDERS["polystyrene"].build("dp3", b.PsChainSpec(3))]
+    return win.member_cases(certifier, fam["H_Abstraction"], builds, "forward", label="PE+DP3")
+
+
+def _interior(case, unit=1, position=0):
+    coords = {a: (p.index, u, k) for p in case.witness.participants
+              for a, u, k in p.metadata.coordinates}
+    return coords.get(case.moves[0].atom("*1")) == (1, unit, position) and \
+        coords.get(case.moves[0].atom("*3")) == (0, 0, 1)
+
+
+def test_failed_predicate_outside_the_ball_pulls_its_atoms_into_the_window(rmg, habs_cases):
+    fam, certifier = rmg
+    case = next(c for c in habs_cases if _interior(c))
+    cert = certifier.certify(fam["H_Abstraction"], win.template_molecules(case.witness,
+                                                                         "forward"),
+                             member_labels=case.wanted)
+    full = win.certificate_support(cert, case.wanted, classifier=win.SearchClassifier(
+        fam["H_Abstraction"]))
+    matched = win.certificate_support(cert, case.wanted, include_failed=False,
+                                      classifier=win.SearchClassifier(fam["H_Abstraction"]))
+    assert full.refusal is None
+    extra = set(full.atoms) - set(matched.atoms)
+    assert extra, "no failed predicate reaches beyond the matched balls"
+    rows = case.witness.reactant_rows()
+    beyond = {a for a in extra if any(n in matched.atoms for n, _o in rows[a][5])}
+    assert beyond      # one bond outside the matched predicates' support
+    failed_only = {a for node, result, atoms in full.sources if result == "failed"
+                   for a in atoms} - set(matched.atoms)
+    assert beyond <= failed_only
+    window = win.close(case.witness, full)
+    assert beyond <= window.atoms
+    observed = win.MemberObserver(certifier, fam["H_Abstraction"], "forward", case.wanted)
+    assert beyond <= set(observed(case.witness).support.atoms)
+
+
+def test_real_member_reaches_a_recertified_fixed_point(rmg, habs_cases):
+    fam, certifier = rmg
+    case = next(c for c in habs_cases if _interior(c))
+    bound = win.span_bound(win.family_constants(fam["H_Abstraction"]))
+    res = win.run_member(certifier, fam["H_Abstraction"], case, bound=bound, contexts=False)
+    assert res["status"] == "fixed_point", res
+    assert res["span_bound_held"] and not res["mapping_problems"]
+    assert not res["boundary_bond_problems"]
+    assert res["observations"] >= 1 + len(b.vector_ports(case.witness))
+    for index, span in res["span"].items():
+        assert span["backbone_atoms"] <= bound.backbone_atoms
+
+
+def test_domain_refused_member_is_refused_not_truncated(rmg, habs_cases):
+    fam, certifier = rmg
+    builds = [b.PROVIDERS["polystyrene"].build("pe", b.PsChainSpec(1, tail_end="benzylic_radical")),
+              b.PROVIDERS["polystyrene"].build("dp3", b.PsChainSpec(3))]
+    stats = {}
+    every = win.member_cases(certifier, fam["H_Abstraction"], builds, "forward",
+                             skip_ring_changes=False)
+    win.member_cases(certifier, fam["H_Abstraction"], builds, "forward", stats=stats)
+    ring = win.ring_atoms(every[0].reactants)
+    family = fam["H_Abstraction"]
+
+    def touches_ring(case):
+        change = win.connectivity_change(family, next(iter(case.wanted)))
+        return any(a in ring for _k, pair in change for a in pair)
+    aryls = [c for c in every if touches_ring(c)]
+    assert all(win.species_domain_refusal(c.witness) for c in aryls)
+    # the ring-change mappings the enumeration skips are exactly these members'
+    assert stats["ring_change_mappings"] == sum(len(c.moves) for c in aryls) > 0
+    assert len(every) - len(aryls) == len(habs_cases)
+    aryl = next(c for c in aryls if c.moves[0].atom("*1") in ring)
+    res = win.run_member(certifier, fam["H_Abstraction"], aryl, contexts=False)
+    assert res["status"] == "refused:domain", res
+    assert "window_atoms" not in res
+    # the certificate path refuses it too (eligibility)
+    observer = win.MemberObserver(certifier, fam["H_Abstraction"], "forward", aryl.wanted)
+    obs = observer(aryl.witness)
+    assert obs.refusal and obs.refusal.startswith("refused:domain")
+    assert win.fixed_point(aryl.witness, observer).window is None
+
+
+def test_scoped_certificate_equals_the_full_one_on_the_member(rmg, habs_cases):
+    """The scoped certifier keeps every mapping of the member and of any other
+    pathway with its outcome; its view of the member equals the full
+    certificate's."""
+    fam, certifier = rmg
+    family = fam["H_Abstraction"]
+    for case in [c for c in habs_cases if _interior(c)][:2]:
+        mols = win.template_molecules(case.witness, "forward")
+        full = certifier.certify(family, mols, member_labels=case.wanted)
+        scoped = win.scoped_certifier(certifier, family, case.wanted).certify(
+            family, mols, member_labels=case.wanted)
+        inside = frozenset(case.witness.reactant_rows())
+        assert scoped["complete"] and scoped["eligible"]
+        assert win.certificate_view(full, case.wanted, inside) == \
+            win.certificate_view(scoped, case.wanted, inside)
+        assert win.member_entries(full, case.wanted)[0][1]["mappings"] == \
+            win.member_entries(scoped, case.wanted)[0][1]["mappings"]
+        def ran(cs):
+            return sum(1 for m in cs.moves if m.status != "excluded")
+        assert ran(certifier.channel_set(family, mols)) > ran(
+            win.scoped_certifier(certifier, family, case.wanted).channel_set(family, mols))
