@@ -17,9 +17,16 @@ Parts (each its own run, both streams persisted by the caller):
 * ``refs``: the DP8 head-radical and DP4 + 1-phenylethyl witnesses (the I-135
   reference families and directions, single molecules and pairs); contexts
   near the window (radical ends everywhere).
-* ``ladder:<family>``: the family's ladder (``windows.ladder_plan``): the
-  unimolecular directions on every single-chain item, the bimolecular ones on
-  every pair; contexts near the window.
+* ``ladder:<family>``: the family's ladder (``windows.ladder_plan`` with the
+  roster of ``windows.pair_roster``): the unimolecular directions on every
+  single-chain item, each pair in the directions its kinds are rostered for;
+  coverage checked per direction (``windows.ladder_direction_gaps``), the
+  L + 1 control per participant.
+
+Every reacting-port refusal carries its covering witnesses (the witness specs
+are passed to ``run_member``); an uncovered one fails the run.  ``--sample K``
+runs every K-th task only (a timing projection: ``projection`` in the
+summary).
 
 Every member row goes to ``rows.jsonl``; ``summary.json`` holds the tables and
 the gate failures (non-empty: exit 1).  A span-bound violation fails the run.
@@ -94,14 +101,8 @@ def spec_from(d):
 
 
 def builds_of(specs):
-    from rmgpy.kmc import boundaries as b
-    out = []
-    for k, spec in enumerate(specs):
-        if isinstance(spec, tuple) and spec[0] == "alkane":
-            out.append(b.PROVIDERS["linear_alkane"].build(spec[1]))
-        else:
-            out.append(b.PROVIDERS["polystyrene"].build(f"p{k}", spec))
-    return out
+    from rmgpy.kmc import windows as win
+    return win.builds_of(specs)
 
 
 def cases_for(specs, family_name, direction):
@@ -196,9 +197,10 @@ def select(name, case):
 # tasks
 # --------------------------------------------------------------------------
 def run_cases_task(task):
-    """(part, label, specs, family, direction, selection, contexts, near, chunk, of)."""
+    """(part, label, specs, family, direction, selection, contexts, meta, chunk, of);
+    ``meta``: ladder fields copied to every row (dps, pair_kinds, long_index)."""
     from rmgpy.kmc import windows as win
-    part, label, specs, family_name, direction, selection, contexts, near, chunk, of = task
+    part, label, specs, family_name, direction, selection, contexts, meta, chunk, of = task
     specs = [spec_from(s) for s in specs]
     start = time.time()
     rows, failures = [], []
@@ -211,13 +213,12 @@ def run_cases_task(task):
             try:
                 res = win.run_member(_S["certifier"], _S["fam"][family_name], case,
                                      bound=_S["bounds"][family_name], contexts=contexts,
-                                     near_only=near)
+                                     specs=specs)
             except win.SpanBoundError as error:
                 failures.append(f"SPAN BOUND: {case.label}: {error}")
                 res = {"label": case.label, "status": "span_bound_violation",
                        "reason": str(error)}
-            res.update(part=part, case=label, kind=case.kind,
-                       ladder_dp=None)
+            res.update(part=part, case=label, kind=case.kind, **(meta or {}))
             rows.append(res)
     except Exception:   # reported, never hidden
         failures.append(f"{label} {family_name} {direction}: {traceback.format_exc()[-1500:]}")
@@ -297,7 +298,7 @@ def run_dp8_task(task):
                 if ck not in done:
                     done[ck] = win.run_member(certifier, family, case,
                                               bound=_S["bounds"]["R_Recombination"],
-                                              contexts=True, near_only=False)
+                                              contexts=True, specs=[b.PsChainSpec(8)])
                 results.append(done[ck])
             row["members"] = results
             row["status"] = ",".join(sorted({r["status"] for r in results}))
@@ -346,7 +347,7 @@ def required_tasks(workers):
         of = 2 if family in ("H_Abstraction", "R_Recombination") else 1
         for chunk in range(of):
             tasks.append(("required", label, [spec_dict(s) for s in specs], family, direction,
-                          selection, True, False, chunk, of))
+                          selection, True, None, chunk, of))
     return tasks
 
 
@@ -364,26 +365,39 @@ def ref_tasks():
                     of = 4 if len(group) == 2 else 2
                     for chunk in range(of):
                         tasks.append(("refs", label, [spec_dict(s) for s in group], family,
-                                      direction, None, True, True, chunk, of))
+                                      direction, None, True, None, chunk, of))
     return tasks
 
 
 def ladder_tasks(family_name):
+    from dataclasses import replace
     from rmgpy.kmc import windows as win
     fam = _S["fam"]
-    constants = win.family_constants(fam[family_name])
+    family = fam[family_name]
+    constants = win.family_constants(family)
+    t = time.time()
+    roster = win.pair_roster(_S["certifier"], family)
+    constants = replace(constants, pair_kinds=roster)
     bound = win.span_bound(constants)
     plan = win.ladder_plan(constants, bound)
+    _S["roster_s"] = round(time.time() - t, 1)
     molecularity = dict(constants.directions)
     tasks = []
     for item in plan.items:
-        for direction, n in sorted(molecularity.items()):
-            if n != len(item.specs):
-                continue
-            tasks.append(("ladder", f"{item.label}|{'/'.join(item.kinds)}|dp{item.dp}"
-                          f"{'|control' if item.control else ''}",
-                          [spec_dict(s) for s in item.specs], family_name, direction, None,
-                          True, True, 0, 1))
+        if len(item.specs) == 1:
+            directions = [d for d, n in sorted(molecularity.items()) if n == 1]
+        else:
+            directions = list(item.directions)
+        dps = list(item.dps) + ([None] if item.long_index is not None else [])
+        meta = {"dps": dps, "pair_kinds": list(item.pair_kinds) or None,
+                "long_index": item.long_index, "ladder_kinds": list(item.kinds)}
+        of = 2 if item.long_index is not None else 1
+        for direction in directions:
+            for chunk in range(of):
+                tasks.append(("ladder", f"{item.label}|{'/'.join(item.kinds)}|dp{item.dp}"
+                              f"{'|control' if item.control else ''}",
+                              [spec_dict(s) for s in item.specs], family_name, direction, None,
+                              True, meta, chunk, of))
     return tasks, plan, bound
 
 
@@ -456,23 +470,32 @@ def required_gates(rows):
 
 
 def ladder_gates(rows, plan, bound):
-    out = []
+    """Per direction coverage (``windows.ladder_direction_gaps``) and the
+    L + 1 control per participant: no window holds both ends of a short
+    participant above L."""
+    from rmgpy.kmc import windows as win
+    out = list(win.ladder_direction_gaps(plan, rows))
     per_dp = defaultdict(Counter)
+    per_pair = defaultdict(Counter)
     for r in rows:
-        dp = int(r["case"].split("|dp")[1].split("|")[0])
-        per_dp[dp]["members"] += 1
-        per_dp[dp][r.get("status")] += 1
+        dps = r.get("dps") or []
+        top = max([d for d in dps if d is not None] or [0])
+        per_dp[top]["members"] += 1
+        per_dp[top][r.get("status")] += 1
+        kinds = "+".join(r["pair_kinds"]) if r.get("pair_kinds") else "single"
+        group = f"{r.get('direction')}|{kinds}|{'long' if r.get('long_index') else 'short'}"
+        per_pair[group]["members"] += 1
+        per_pair[group][r.get("status")] += 1
         if r.get("status") == "fixed_point":
-            both = any(v.get("both_ends") for v in r.get("span", {}).values())
-            per_dp[dp]["both_ends"] += int(both)
-            if both and dp > bound.L:
-                out.append(f"control DP{dp} > L={bound.L}: a window holds both ends: "
-                           f"{r['label'][-80:]}")
-    for dp in (bound.L, bound.L + 1):
-        # the L+1 control (and L itself) is vacuous without a fixed point
-        if not per_dp[dp].get("fixed_point"):
-            out.append(f"DP{dp} (L={bound.L}): no member reached a fixed point")
-    return out, {str(k): dict(v) for k, v in sorted(per_dp.items())}
+            span = r.get("span", {})
+            both = any(v.get("both_ends") for v in span.values())
+            per_dp[top]["both_ends"] += int(both)
+            for index, dp in enumerate(dps):
+                if dp is not None and dp > bound.L and span.get(str(index), {}).get("both_ends"):
+                    out.append(f"control DP{dp} > L={bound.L}: a window holds both ends of "
+                               f"participant {index}: {r['label'][-80:]}")
+    return out, {str(k): dict(v) for k, v in sorted(per_dp.items())}, \
+        {k: dict(v) for k, v in sorted(per_pair.items())}
 
 
 # --------------------------------------------------------------------------
@@ -514,6 +537,7 @@ def main():
     parser.add_argument("part")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--artifact", default=None)
+    parser.add_argument("--sample", type=int, default=1)
     args = parser.parse_args()
     out = Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
@@ -522,21 +546,29 @@ def main():
     extra = {}
     with open(out / f"rows.{args.part.replace(':', '_')}.jsonl", "w") as log:
         if args.part == "required":
-            results = run_pool(required_tasks(args.workers), args.workers, run_cases_task, log)
+            results = run_pool(required_tasks(args.workers)[::args.sample], args.workers,
+                               run_cases_task, log)
         elif args.part == "refs":
-            results = run_pool(ref_tasks(), args.workers, run_cases_task, log)
+            results = run_pool(ref_tasks()[::args.sample], args.workers, run_cases_task, log)
         elif args.part.startswith("ladder:"):
             _init()
             tasks, plan, bound = ladder_tasks(args.part.split(":", 1)[1])
+            pairs = Counter((d, "+".join(i.pair_kinds), "long" if i.long_index else "short")
+                            for i in plan.items for d in i.directions)
             extra = {"L": bound.L, "L_plus_1": bound.L + 1, "span_bound": bound.__dict__,
+                     "roster": [[d, list(k)] for d, k in plan.pair_kinds],
+                     "roster_s": _S.get("roster_s"),
+                     "single_directions": list(plan.single_directions),
                      "ladder_items": len(plan.items),
                      "ladder_kinds": dict(Counter(k for i in plan.items for k in i.kinds)),
+                     "pair_items": {"|".join(k): v for k, v in sorted(pairs.items())},
                      "ladder_excluded": len(plan.excluded),
                      "excluded_reasons": dict(Counter(r.split(":")[0]
                                                       for _k, r in plan.excluded)),
-                     "tasks": len(tasks)}
+                     "tasks": len(tasks), "sample": args.sample}
+            _S["plan"] = plan
             print("LADDER", json.dumps(extra, default=str), flush=True)
-            results = run_pool(tasks, args.workers, run_cases_task, log)
+            results = run_pool(tasks[::args.sample], args.workers, run_cases_task, log)
         elif args.part == "dp8":
             results = dp8(out, args, log)
             extra = _S.get("dp8_extra", {})
@@ -549,13 +581,30 @@ def main():
         failures += gates
         extra["required"] = table
     if args.part.startswith("ladder:"):
-        gates, per_dp = ladder_gates(rows, None, _S["bounds"][args.part.split(":", 1)[1]])
-        failures += gates
+        gates, per_dp, per_pair = ladder_gates(rows, _S["plan"],
+                                               _S["bounds"][args.part.split(":", 1)[1]])
+        if args.sample == 1:
+            failures += gates
+        else:
+            extra["sampled_gates"] = gates
         extra["per_dp"] = per_dp
+        extra["per_direction_kind"] = per_pair
         Ls = [int(k) for k, v in per_dp.items() if v.get("both_ends")]
         extra["largest_dp_with_both_ends_in_a_window"] = max(Ls) if Ls else None
+    from rmgpy.kmc import windows as win
+    failures += win.reacting_port_gaps(list(member_rows(rows)))
+    covers = [r for r in member_rows(rows) if r.get("status") == "refused:reacting_port"]
+    extra["reacting_port_covers"] = [
+        {"label": r["label"][-110:], "covered": win.cover_verdict(r.get("covers") or []),
+         "covers": [[c["kind"], c.get("port"), c.get("end"), c["status"],
+                     c.get("window_atoms")] for c in r.get("covers") or []]} for r in covers]
     summary = summarize(args.part, rows, failures, extra)
     summary["wall_s"] = round(time.time() - t0)
+    task_s = sum(res["seconds"] for res in results)
+    summary["task_seconds"] = round(task_s)
+    summary["projection"] = {"sample": args.sample, "task_seconds_full": round(
+        task_s * args.sample), "wall_s_full_at_workers": round(
+        task_s * args.sample / max(1, args.workers)), "workers": args.workers}
     (out / f"summary.{args.part.replace(':', '_')}.json").write_text(
         json.dumps(summary, indent=1, default=str))
     print("SUMMARY", json.dumps(summary, default=str)[:6000], flush=True)
@@ -584,7 +633,7 @@ def dp8(out, args, log):
     store_path.write_text(json.dumps(store, default=str))
     of = max(1, args.workers * 3)
     tasks = [(k, of, str(records_path), str(store_path)) for k in range(of)]
-    return run_pool(tasks, args.workers, run_dp8_task, log)
+    return run_pool(tasks[::args.sample], args.workers, run_dp8_task, log)
 
 
 if __name__ == "__main__":

@@ -1368,7 +1368,15 @@ class PsChainSpec:
     of those interior units; ``pendant_loss_units`` drop the phenyl of
     position 1 and leave a radical there (the chain fragment of a pendant
     loss).  ``radical_units`` keeps its meaning (a benzylic radical on
-    position 1)."""
+    position 1).  A requested site must exist on the declared backbone
+    (refused otherwise, never silently dropped).
+
+    One-carbon chains (both ends on one backbone carbon): ``units=1,
+    head_shift=True`` is a lone position-1 carbon (toluene, benzyl radical:
+    ``TAIL_ENDS`` at both ends); ``units=0, tail_shift=True`` a lone
+    position-0 carbon (methane, methyl radical: ``HEAD_ENDS``).  Two radical
+    ends on one carbon build its u2 form (the domain refuses it); an alkene
+    end needs two backbone carbons (refused)."""
 
     units: int
     radical_units: tuple[int, ...] = ()
@@ -1470,8 +1478,10 @@ class PolystyreneProvider(BoundaryProvider):
         if spec.monomer or spec.radical_end or spec.benzylic_end or \
                 spec.ring_radical_unit is not None:
             raise MetadataError("declared ends do not combine with the legacy end flags")
-        if spec.units < 1:
-            raise MetadataError("a PS chain needs at least one unit")
+        if spec.units < 1 and not (spec.units == 0 and spec.tail_shift and
+                                   not spec.head_shift):
+            raise MetadataError("a PS chain needs at least one unit (units=0 only as the "
+                                "lone position-0 carbon of a tail-shifted spec)")
         if spec.head_shift and spec.head_end not in TAIL_ENDS:
             raise MetadataError(f"a shifted head needs one of {TAIL_ENDS}, got {spec.head_end!r}")
         if not spec.head_shift and spec.head_end not in (None,) + HEAD_ENDS:
@@ -1490,8 +1500,17 @@ class PolystyreneProvider(BoundaryProvider):
         if spec.tail_shift:
             backbone.append((spec.units, 0))
         last = len(backbone) - 1
-        if last < 1:
-            raise MetadataError("a declared chain needs at least two backbone carbons")
+        if last < 0:
+            raise MetadataError("a declared chain needs a backbone carbon")
+        if last == 0 and (spec.head_end in ALKENE_ENDS or spec.tail_end in ALKENE_ENDS):
+            raise MetadataError("an alkene end needs two backbone carbons")
+        sites = set(backbone)
+        for flag, position in ((spec.radical_units, 1), (spec.pendant_loss_units, 1),
+                               (spec.secondary_radical_units, 0)):
+            missing = sorted((u, position) for u in flag if (u, position) not in sites)
+            if missing:
+                raise MetadataError(f"requested sites {missing} are not on the declared "
+                                    "backbone")
         double = set()   # i: the bond i-(i+1) is double
         if spec.head_end in ALKENE_ENDS:
             double.add(0)
@@ -1513,9 +1532,9 @@ class PolystyreneProvider(BoundaryProvider):
             if any(not 0 <= u < spec.units + 1 for u in flag):
                 raise MetadataError("a unit flag is outside the chain")
         if spec.head_end in RADICAL_ENDS:
-            radical[0] = 1
+            radical[0] += 1
         if spec.tail_end in RADICAL_ENDS:
-            radical[last] = 1
+            radical[last] += 1
         tokens, roles = [], []
         for i, (u, k) in enumerate(backbone):
             heavy = (i > 0) + (i < last) + ring[i]
@@ -1836,10 +1855,12 @@ def reconstruct_end(witness: Witness, port_key, end: str, providers=None):
 
 def verify_end(original: Witness, record: EndMap, built: Witness) -> None:
     """Re-check an end reconstruction from scratch: survivors keep their ids,
-    elements and bonds (except the bonds set), the deleted atoms are the
-    port's declared caps plus atoms outside the edit support, fresh atoms are
-    new ids bonded as recorded, the edits are transported unchanged and the
-    metadata fits."""
+    elements, electrons (charge, radical, lone pairs: only the recorded
+    radical increments) and bonds (only the recorded orders set; no other
+    bond appears or vanishes), the deleted atoms are the port's declared caps
+    plus atoms outside the edit support, fresh atoms are new ids with the
+    recorded attributes, bonded as recorded, the edits are transported
+    unchanged and the metadata fits."""
     deleted = set(record.deleted)
     if not set(record.old_port.cap_atom_ids) <= deleted:
         raise MapCheckError("an end reconstruction must delete the port's declared caps")
@@ -1852,9 +1873,29 @@ def verify_end(original: Witness, record: EndMap, built: Witness) -> None:
             raise MapCheckError(f"{name}: fresh end ids collide with original atoms")
         if set(new) != (set(orig) - deleted) | fresh:
             raise MapCheckError(f"{name}: atoms are not survivors plus fresh end atoms")
+        radicals = dict(record.radicals)
         for a in set(orig) - deleted:
             if orig[a][:2] != new[a][:2]:
                 raise MapCheckError(f"{name}: atom {a} changed element or isotope")
+            want = list(_attrs(orig[a]))
+            want[3] += radicals.get(a, 0)
+            if tuple(want) != _attrs(new[a]):
+                raise MapCheckError(f"{name}: surviving atom {a} changed its electrons "
+                                    f"(charge, radical, lone pairs) beyond the recorded end")
+        for a, attrs in record.fresh_atoms:
+            if _attrs(new[a]) != tuple(attrs):
+                raise MapCheckError(f"{name}: fresh end atom {a} is not as recorded")
+        set_orders = {(min(a, c), max(a, c)): float(o) for a, c, o in record.bonds}
+        old_bonds, new_bonds = _bonds(orig), _bonds(new)
+        want_bonds = {pair: set_orders.get(pair, o) for pair, o in old_bonds.items()
+                      if pair[0] not in deleted and pair[1] not in deleted}
+        if set(set_orders) - set(want_bonds):
+            raise MapCheckError(f"{name}: a bond the end sets is absent")
+        want_bonds.update({(min(a, c), max(a, c)): float(o) for a, c, o in record.fresh_bonds})
+        if new_bonds != want_bonds:
+            changed = sorted(set(new_bonds.items()) ^ set(want_bonds.items()))[:4]
+            raise MapCheckError(f"{name}: bonds differ from the survivors' plus the recorded "
+                                f"end bonds: {changed}")
     if edits(built) != edits(original):
         raise MapCheckError("the end reconstruction changed the reaction's edits")
     for participant in built.participants:

@@ -172,7 +172,10 @@ def test_fixed_point_keeps_the_independent_checks_beside_the_joint_one():
     res = win.fixed_point(toy(), stub(lambda w: "x" if (w.depth(HEAD), w.depth(TAIL)) == (1, 0)
                                       else "s"))
     assert res.status == "fixed_point", res.reason
-    assert dict(res.depths) == {HEAD: 2, TAIL: 0}
+    # (1, 0) differs from both of its +1 neighbours: the head and the tail
+    # grow once more
+    assert dict(res.depths) == {HEAD: 2, TAIL: 1}
+    assert not res.checks[0][0]["same_certificate"] and res.checks[0][0]["ports"] == (HEAD,)
 
 
 def test_fixed_point_has_no_switch_for_its_checks():
@@ -515,7 +518,11 @@ def test_one_carbon_species_are_in_the_ladder():
     from rmgpy.molecule import Molecule
     for smiles in ("Cc1ccccc1", "[CH2]c1ccccc1", "C", "[CH3]"):
         assert chm.SpeciesKeys()(Molecule(smiles=smiles)) in keys, smiles
-    assert not any("two backbone carbons" in reason for _k, reason in plan.excluded)
+    # only the alkene ends of a one-carbon chain are not constructible
+    one = [(k, reason) for k, reason in plan.excluded if k[0] in ("C0", "C1")]
+    assert one and all("alkene end needs two backbone carbons" in reason or
+                       "outside the declared domain" in reason or "duplicate" in reason
+                       for _k, reason in one), one
     with pytest.raises(b.MetadataError):
         b.PROVIDERS["polystyrene"].build("x", b.PsChainSpec(1, head_shift=True,
                                                           head_end="styryl",

@@ -85,12 +85,15 @@ Recertified fixed point (item 3)
 --------------------------------
 ``fixed_point``: observe (certify, support, close); while an artificial port
 (port atom or a declared cap) lies in the window, extend every such port by
-one repeat (``boundaries.extend``), recertify and re-close.  Then the
-independent check: for EVERY artificial port alone, +1 repeat, recertify and
-close; the fixed point needs every check to leave the window's marked graph
-(identity correspondence: surviving atoms keep their ids) and the
-certificate view (``certificate_view``) unchanged.  Failed checks extend
-their ports by one and the round repeats.  Pins: ports in vector order
+one repeat (``boundaries.extend``), recertify and re-close.  Then the checks
+of the round (``check_groups``, every round, no option turns one off): EVERY
+artificial port alone at +1 and at +2 repeats (``CHECK_STEPS``), and all
+artificial ports jointly at +1 and at +2; each recertified and closed.  The
+fixed point needs every check to leave the window's marked graph (identity
+correspondence: surviving atoms keep their ids) and the certificate view
+(``certificate_view``) unchanged.  A failed independent check extends its
+port by one; a failure seen only jointly extends every port by one; the
+round repeats.  Pins: ports in vector order
 (participant, port id); ``PORT_DEPTH_LIMIT`` repeats per port; at most
 ``FIXED_POINT_RETRIES`` re-extensions after failed checks; the heavy-atom
 ceiling ``PROXY_PADDING_MAX_HEAVY_ATOMS``.  Statuses: ``fixed_point``,
@@ -113,8 +116,11 @@ the ring atom), radical pi systems are a backbone carbon plus its pendant ring
 (allylic radicals are outside the domain), and the only backbone pi system
 is an end alkene (two carbons).  Hence a window spans at most
 ``A = D + 2(r + 1) + 1`` backbone atoms of one chain, i.e. at most
-``ceil((A + 1) / 2)`` repeat units (two backbone carbons per repeat, any
-phase).  A window exceeding its bound fails the run (``SpanBoundError``).
+``ceil((A + 1) / 2)`` PS repeat units (two backbone carbons per repeat, any
+phase); the bound on units is in each provider's own units
+(``repeats_bound``: a provider with ``k`` backbone atoms per repeat,
+``ceil((A + k - 1) / k)``; the alkane's one-carbon repeat: ``A``).  A
+window exceeding its bound fails the run (``SpanBoundError``).
 
 Ladder (item 6)
 ---------------
@@ -125,7 +131,13 @@ of a chain iff the chain's backbone fits its span: ``L = floor((A + 1) / 2)``
 (the largest n with 2n - 1 <= A; in-phase chains need 2n <= A, so the
 repeat phase and the end groups decide which chains of DP L reach).  DP
 ``L + 1`` (``2L + 1 > A`` backbone carbons in every phase) is the
-non-overlap control.
+non-overlap control.  DP 1 includes the one-carbon species (toluene, benzyl
+radical, methane, methyl radical).  Bimolecular directions: the participant
+kinds (radical, closed shell, alkene) each direction needs come from the
+family's own templates (``pair_roster``); every DP pair (a, b) with
+1 <= a, b <= L + 1 is planned for every kind combination in its direction
+(``ladder_plan``) and coverage is checked per direction
+(``ladder_direction_gaps``).
 
 Contexts (item 5)
 -----------------
@@ -133,10 +145,31 @@ Per artificial port: artificial, or physical with a declared end chemistry
 built by the provider (``boundaries.reconstruct_end``: caps deleted, fresh
 end atoms, never a relabelled cap); the event is rematched on the context
 by ``rmg_moves`` (same labels, same mapped outcome), recertified and closed.
-Two contexts merge only if their closed windows are equal as marked graphs
-(both sides, participant roles, reacting atoms, physical ends, oriented
-exterior bonds) and their certificate views are equal under that
-correspondence.
+The assignments (``context_assignments``) are the full product over all
+artificial ports of all participants, whatever the certificate reads.  A
+port farther than ``reach + 1`` heavy bonds from every reacting atom
+(``member_near_ports``) cannot lie in any context's window (every window
+atom is within ``reach`` bonds of a reacting atom, item 4), so it can act
+only through whole-species reads: the radical inventory (its radical ends
+stay in the product) and the element-count guards.  Its non-radical ends are
+reduced to one single each, and that reduction is a checked claim: every
+such single must merge with the all-artificial context (equal window, equal
+certificate view: ``far_port_verdicts``), otherwise the port is promoted to
+near and the product rebuilt (``far_port_promotions``).  Two contexts merge
+only if their closed windows are equal as marked graphs (both sides,
+participant roles, reacting atoms, physical ends, oriented exterior bonds)
+and their certificate views are equal under that correspondence.
+
+Reacting ports (policy a)
+-------------------------
+A member whose reacting atom sits on an artificial port is refused
+(``refused:reacting_port``) and carries its covering witnesses
+(``reacting_port_covers``): the same mapped event with every declared end
+built at that port, and the same mapped event on the witness one repeat
+longer there (the atom interior; ``event_signatures`` by repeat
+coordinates).  It is covered iff a cover reaches a fixed point or the
+interior event is refused for a named non-port reason (``cover_verdict``);
+an uncovered one is a gap (``reacting_port_gaps``).
 """
 
 from __future__ import annotations
@@ -153,6 +186,7 @@ from rmgpy.kmc import domain as dom
 RING_LIMIT = 8
 PORT_DEPTH_LIMIT = 6
 FIXED_POINT_RETRIES = 3
+CHECK_STEPS = (1, 2)
 CLOSURE_EXTENSION = 1
 ISOMORPHISM_LIMIT = 256
 LOOP_STATUSES = ("fixed_point", "no_fixed_point", "ceiling_exceeded", "certificate_unstable")
@@ -221,6 +255,7 @@ class FamilyConstants:
     free_label_search: bool
     bimolecular: bool = False
     directions: tuple = ()
+    pair_kinds: tuple = ()    # ((direction, (kind, kind)), ...): ``pair_roster``
 
 
 @dataclass(frozen=True)
@@ -1042,12 +1077,22 @@ def _key(witness):
     return tuple(sorted((k, v) for k, v in witness.extension_counts if v))
 
 
+def check_groups(ports) -> tuple:
+    """The checks of one round: (ports, step, joint) for every artificial port
+    alone at every step of ``CHECK_STEPS``, then all ports jointly at every
+    step.  No option removes any of them."""
+    ports = tuple(ports)
+    out = [((p,), step, False) for p in ports for step in CHECK_STEPS]
+    if ports:
+        out += [(ports, step, True) for step in CHECK_STEPS]
+    return tuple(out)
+
+
 def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PORT_DEPTH_LIMIT,
-                retries=FIXED_POINT_RETRIES, closure=None, check_ports: bool = True,
-                joint_check: bool = False) -> FixedPointResult:
+                retries=FIXED_POINT_RETRIES, closure=None) -> FixedPointResult:
     """The recertified fixed point of ``witness`` under ``observe`` (see the
-    module docstring).  ``check_ports``/``joint_check`` exist for the
-    mutation tests only."""
+    module docstring): every round checks every artificial port alone at +1
+    and +2 repeats and all ports jointly at +1 and +2 (``check_groups``)."""
     closure = closure or close
     limit = b._ceiling(ceiling)
     ports = b.vector_ports(witness)
@@ -1072,14 +1117,17 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
                                 tuple(checks), used, tuple(history),
                                 tuple(getattr(observe, "flips", ())))
 
-    def grow(w, keys):
+    def grow(w, keys, steps=1, slack=0):
+        # ``slack``: a check witness may reach one repeat past the per-port
+        # limit (its +2 step), the fixed point itself never
         for p in keys:
-            if w.depth(p) >= port_limit:
+            if w.depth(p) + steps > port_limit + slack:
                 return None, stop("no_fixed_point", f"port {p} reached the per-port limit "
                                   f"{port_limit} without a fixed point", w)
         try:
-            for p in keys:
-                w, _record = b.extend(w, p, providers, ceiling=limit)
+            for _step in range(steps):
+                for p in keys:
+                    w, _record = b.extend(w, p, providers, ceiling=limit)
         except b.CeilingExceeded as error:
             return None, stop("ceiling_exceeded", f"{error} (never truncated)", w)
         except b.ExtensionRefused as error:
@@ -1110,24 +1158,20 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
             inside = [p for p in ports if port_inside(current, p, win.atoms)]
         view = obs.view(win.atoms)
         checks = []
-        groups = [list(ports)] if joint_check and ports else [[p] for p in ports]
-        if not check_ports:
-            groups = groups[:1]
-        for group in groups:
-            other, failure = grow(current, group)
+        for group, step, joint in check_groups(ports):
+            other, failure = grow(current, group, step, slack=step - 1)
             if failure:
                 if failure.status == "ceiling_exceeded":
                     return failure
                 return stop(failure.status, failure.reason, current, None, obs, rounds, used)
             o2, w2 = look(other)
             if o2.refusal or w2.refusal:
-                return stop("certificate_unstable", f"+1 at {group}: "
+                return stop("certificate_unstable", f"+{step} at {list(group)}: "
                             f"{o2.refusal or w2.refusal}", current, None, obs, rounds, used)
-            same_w = same_window(current, win.atoms, other, w2.atoms)
-            same_c = view == o2.view(w2.atoms)
-            for p in group:
-                checks.append({"port": p, "same_window": same_w, "same_certificate": same_c,
-                               "window_atoms": len(w2.atoms)})
+            checks.append({"ports": tuple(group), "step": step, "joint": joint,
+                           "same_window": same_window(current, win.atoms, other, w2.atoms),
+                           "same_certificate": view == o2.view(w2.atoms),
+                           "window_atoms": len(w2.atoms)})
         rounds.append(tuple(checks))
         failed = [c for c in checks if not (c["same_window"] and c["same_certificate"])]
         if not failed:
@@ -1136,9 +1180,13 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
             unstable = any(not c["same_certificate"] for c in failed)
             return stop("certificate_unstable" if unstable else "no_fixed_point",
                         f"checks still fail after {used} re-extensions: "
-                        f"{[c['port'] for c in failed]}", current, None, obs, rounds, used)
+                        f"{[(list(c['ports']), c['step']) for c in failed]}", current, None,
+                        obs, rounds, used)
         used += 1
-        current, failure = grow(current, sorted({c["port"] for c in failed}))
+        # failed independent checks extend their own port; a failure seen only
+        # jointly extends every port
+        alone = sorted({p for c in failed if not c["joint"] for p in c["ports"]})
+        current, failure = grow(current, alone or sorted(ports))
         if failure:
             return failure
         obs, win = look(current)
@@ -1150,47 +1198,57 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
 # ---------------------------------------------------------------------------
 # contexts (item 5)
 # ---------------------------------------------------------------------------
-def context_assignments(witness, near_ports=None, providers=None, *, cross: bool = True) -> tuple:
+def context_assignments(witness, near_ports=None, providers=None) -> tuple:
     """Assignments ((port, end chemistry or None), ...) over the artificial
-    ports, in this order: all artificial; each port alone with each declared
-    end; every combination of radical ends over two or more ports (the
-    radical inventory is read whole-species, across a merged structure too);
-    per participant, the full product over its ``near_ports`` (default: every
-    artificial port); with ``cross``, the full product over the near ports of
-    all participants (needed when one predicate reads several participants:
-    a merged-structure descent)."""
+    ports (vector order).  The full product over ALL ports, across
+    participants, whatever the certificate reads: a near port (``near_ports``;
+    default every artificial port) takes the artificial cut or any declared
+    end; a far port the artificial cut or a radical end (the radical
+    inventory is read whole-species).  Then, per far port, one single per
+    non-radical end: the check of the far reduction (``far_port_verdicts``).
+    The first assignment is all artificial."""
     ports = list(b.vector_ports(witness))
-    chem = {p: b.end_chemistries(witness, p, providers) for p in ports}
-    near = ports if near_ports is None else [p for p in ports if p in set(near_ports)]
+    chem = {p: tuple(b.end_chemistries(witness, p, providers)) for p in ports}
+    near = set(ports) if near_ports is None else set(near_ports) & set(ports)
+    choices = [(None,) + chem[p] if p in near else
+               (None,) + tuple(e for e in chem[p] if e in b.RADICAL_ENDS) for p in ports]
     seen, out = set(), []
 
-    def add(choice):
-        assignment = tuple((p, choice.get(p)) for p in ports)
+    def add(assignment):
         if assignment not in seen:
             seen.add(assignment)
             out.append(assignment)
-
-    def full(group):
-        for size in range(2, len(group) + 1):
-            for subset in combinations(group, size):
-                for combo in product(*(chem[p] for p in subset)):
-                    add(dict(zip(subset, combo)))
-
-    add({})
+    for combo in product(*choices):
+        add(tuple(zip(ports, combo)))
     for p in ports:
+        if p in near:
+            continue
         for e in chem[p]:
-            if p in near or e in b.RADICAL_ENDS:
-                add({p: e})
-    radical = {p: [e for e in chem[p] if e in b.RADICAL_ENDS] for p in ports}
-    for size in range(2, len(ports) + 1):
-        for subset in combinations(ports, size):
-            for combo in product(*(radical[p] for p in subset)):
-                add(dict(zip(subset, combo)))
-    for index in sorted({p[0] for p in near}):
-        full([p for p in near if p[0] == index])
-    if cross:
-        full(near)
+            if e not in b.RADICAL_ENDS:
+                add(tuple((q, e if q == p else None) for q in ports))
     return tuple(out)
+
+
+def far_port_verdicts(results, far) -> dict:
+    """{(far port, non-radical end): whether its single context merges with the
+    all-artificial context ``results[0]``} (``contexts_merge``: equal closed
+    windows as marked graphs and equal certificate views).  A refused or
+    unmerged single is False: the far reduction does not hold there."""
+    far = set(far)
+    out = {}
+    for r in results[1:]:
+        set_ = [(p, e) for p, e in r.assignment if e is not None]
+        if len(set_) != 1:
+            continue
+        (port, end), = set_
+        if port in far and end not in b.RADICAL_ENDS:
+            out[(port, end)] = contexts_merge(results[0], r)
+    return out
+
+
+def far_port_promotions(verdicts) -> tuple:
+    """Far ports whose reduction failed its check: they become near."""
+    return tuple(sorted({port for (port, _end), ok in verdicts.items() if not ok}))
 
 
 def reconstruct(witness, assignment, providers=None):
@@ -1389,6 +1447,7 @@ def window_span(witness, atoms) -> dict:
                             if not port.artificial and port.atom_id in atoms))
         all_ends = tuple(sorted(port.port_id for port in meta.ports if not port.artificial))
         out[participant.index] = {
+            "provider": meta.provider,
             "backbone_atoms": (max(idx) - min(idx) + 1) if idx else 0,
             "units": (max(units) - min(units) + 1) if units else 0,
             "physical_ends_inside": ends, "physical_ends": all_ends,
@@ -1396,15 +1455,31 @@ def window_span(witness, atoms) -> dict:
     return out
 
 
+REPEAT_BACKBONE_ATOMS = {"polystyrene": 2, "linear_alkane": 1}
+
+
+def repeats_bound(bound: SpanBound, provider: str) -> int:
+    """The bound in the provider's own repeat units: ``A`` backbone atoms touch
+    at most ``ceil((A + k - 1) / k)`` repeats of ``k`` backbone atoms (any
+    phase): PS (k = 2) ``ceil((A + 1) / 2)``, the alkane (k = 1) ``A``."""
+    k = REPEAT_BACKBONE_ATOMS.get(provider)
+    if k is None:
+        raise WindowError(f"no repeat size declared for provider {provider!r}")
+    return -(-(bound.backbone_atoms + k - 1) // k)
+
+
 def check_span(witness, atoms, bound: SpanBound) -> dict:
     """``window_span`` with the bound verdict; raises ``SpanBoundError`` when
-    a participant's window exceeds the bound."""
+    a participant's window exceeds the bound: backbone atoms against ``A``,
+    repeat units against ``repeats_bound`` in that participant's provider
+    units."""
     span = window_span(witness, atoms)
     for index, s in span.items():
-        if s["backbone_atoms"] > bound.backbone_atoms or s["units"] > bound.repeats:
-            raise SpanBoundError(f"{bound.family}: participant {index} window spans "
-                                 f"{s['backbone_atoms']} backbone atoms / {s['units']} units "
-                                 f"> bound {bound.backbone_atoms} / {bound.repeats}")
+        limit = repeats_bound(bound, s["provider"])
+        if s["backbone_atoms"] > bound.backbone_atoms or s["units"] > limit:
+            raise SpanBoundError(f"{bound.family}: participant {index} ({s['provider']}) window "
+                                 f"spans {s['backbone_atoms']} backbone atoms / {s['units']} "
+                                 f"units > bound {bound.backbone_atoms} / {limit}")
     return span
 
 
@@ -1416,6 +1491,9 @@ class LadderItem:
     specs: tuple
     control: bool = False
     long_index: Optional[int] = None   # the artificial (long) participant of a pair
+    dps: tuple = ()                    # the DP of each short participant
+    directions: tuple = ()             # pairs: the directions their kinds are run in
+    pair_kinds: tuple = ()             # pairs: the participant kinds (sorted)
 
 
 @dataclass(frozen=True)
@@ -1424,6 +1502,8 @@ class LadderPlan:
     L: int
     items: tuple
     excluded: tuple
+    pair_kinds: tuple = ()
+    single_directions: tuple = ()
 
     @property
     def excluded_keys(self) -> set:
@@ -1431,6 +1511,73 @@ class LadderPlan:
 
 
 LONG_UNITS = 4
+PARTICIPANT_KINDS = ("alkene", "closed", "radical")
+
+
+def kind_specs(kind: str, dp: int) -> tuple:
+    """Representative chains of one participant kind at DP ``dp`` (physical
+    ends): ``radical`` a benzylic or a primary end radical, ``closed`` the
+    saturated chain, ``alkene`` a vinylidene or a styryl end; at DP 1 also the
+    one-carbon species of the kind (benzyl and methyl radicals; toluene and
+    methane)."""
+    S = b.PsChainSpec
+    if kind == "radical":
+        out = [S(dp, head_end="methyl", tail_end="benzylic_radical"),
+               S(dp, head_end="primary_radical", tail_end="benzyl")]
+        if dp == 1:
+            out += [S(1, head_shift=True, head_end="benzyl", tail_end="benzylic_radical"),
+                    S(0, tail_shift=True, head_end="primary_radical", tail_end="methyl")]
+    elif kind == "closed":
+        out = [S(dp, head_end="methyl", tail_end="benzyl")]
+        if dp == 1:
+            out += [S(1, head_shift=True, head_end="benzyl", tail_end="benzyl"),
+                    S(0, tail_shift=True, head_end="methyl", tail_end="methyl")]
+    elif kind == "alkene":
+        out = [S(dp, head_end="vinylidene", tail_end="benzyl"),
+               S(dp, head_end="methyl", tail_end="styryl")]
+    else:
+        raise WindowError(f"unknown participant kind {kind!r}")
+    return tuple(out)
+
+
+LONG_SPECS = {"closed": lambda: b.PsChainSpec(LONG_UNITS),
+              "radical": lambda: b.PsChainSpec(LONG_UNITS, radical_units=(LONG_UNITS // 2,)),
+              "alkene": lambda: b.PsChainSpec(LONG_UNITS, head_end="vinylidene")}
+
+
+def pair_roster(certifier, family, probe_dps=(2, 3)) -> tuple:
+    """The participant-kind combinations a bimolecular direction needs, from
+    the family's own reactant templates: RMG applies them (``member_cases``,
+    both slot orders) to the representative chains of every kind pair at the
+    probe DPs; a pair is in the roster of that direction iff some member has
+    every species in the declared domain.  ((direction, (kind, kind)), ...),
+    kinds sorted."""
+    from itertools import combinations_with_replacement
+    constants = family_constants(family)
+    P = b.PROVIDERS["polystyrene"]
+    out = []
+    for direction, molecularity in constants.directions:
+        if molecularity != 2:
+            continue
+        for kinds in combinations_with_replacement(PARTICIPANT_KINDS, 2):
+            found = False
+            for dp in probe_dps:
+                for first in kind_specs(kinds[0], dp)[:2]:
+                    for second in kind_specs(kinds[1], dp)[:2]:
+                        builds = [P.build("k0", first), P.build("k1", second)]
+                        if not all(dom.check(x.molecule).accepted for x in builds):
+                            continue
+                        cases = member_cases(certifier, family, builds, direction)
+                        if any(not species_domain_refusal(c.witness) for c in cases):
+                            found = True
+                            break
+                    if found:
+                        break
+                if found:
+                    break
+            if found:
+                out.append((direction, tuple(kinds)))
+    return tuple(out)
 
 
 def _ends_label(spec):
@@ -1449,120 +1596,179 @@ def _ends_label(spec):
 
 
 def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -> LadderPlan:
-    """The short-chain ladder of a family up to L, plus the DP L + 1 control:
-    intact in-phase chains in every declared end chemistry; scission
-    fragments of both backbone cut phases (phase A: in-phase fragments with
-    the cut end radical or alkene; phase B: shifted fragments); pendant loss
-    and C-H cleavage products (one per interior unit position, saturated
-    ends); for a bimolecular family, short/short and short/long pairs (one
-    representative per local environment: the reacting end chemistry and the
-    DP).  Species outside the declared domain are excluded with the
-    domain's reason; species built twice are merged (their kinds joined)."""
+    """The short-chain ladder of a family up to L, plus the DP L + 1 controls:
+    intact in-phase chains in every declared end chemistry and the one-carbon
+    species (DP 1); scission fragments of both backbone cut phases (phase A:
+    in-phase fragments with the cut end radical or alkene; phase B: shifted
+    fragments); pendant loss and C-H cleavage products (one per interior unit
+    position, saturated ends).  For every bimolecular direction, every kind
+    combination of its roster (``constants.pair_kinds``, ``pair_roster``):
+    short/short pairs at EVERY DP pair (a, b), 1 <= a, b <= L + 1 (any DP
+    above L is a control), each kind's representative chains
+    (``kind_specs``), and short/long pairs (each short kind against the
+    other kind's long artificial chain, ``LONG_SPECS``).  Species outside the
+    declared domain are excluded with the domain's reason; species built
+    twice, and pairs of the same two species, are merged (kinds and
+    directions joined)."""
     bound = bound or span_bound(constants)
     L = bound.L
     P = b.PROVIDERS["polystyrene"]
     items, excluded = {}, []
     by_species = {}
+    keys = {}
 
     def species_key(spec):
         from rmgpy.kmc import channels as chm
-        build = P.build("ladder", spec)
-        verdict = dom.check(build.molecule)
-        return build, verdict, chm.SpeciesKeys()(build.molecule)
+        r = repr(spec)
+        if r not in keys:
+            try:
+                build = P.build("ladder", spec)
+            except b.BoundaryError as error:
+                keys[r] = (None, f"not constructible: {error}")
+            else:
+                verdict = dom.check(build.molecule)
+                keys[r] = (chm.SpeciesKeys()(build.molecule), None) if verdict.accepted else \
+                    (None, f"outside the declared domain: {verdict.reason}")
+        return keys[r]
 
     def add(key, kind, spec, dp):
-        try:
-            _build, verdict, skey = species_key(spec)
-        except b.BoundaryError as error:
-            excluded.append((key, f"not constructible: {error}"))
-            return
-        if not verdict.accepted:
-            excluded.append((key, f"outside the declared domain: {verdict.reason}"))
+        skey, why = species_key(spec)
+        if why:
+            excluded.append((key, why))
             return
         if skey in by_species:
             label = by_species[skey]
             item = items[label]
             if kind not in item.kinds:
                 items[label] = LadderItem(item.label, item.kinds + (kind,), item.dp, item.specs,
-                                          item.control)
+                                          item.control, dps=item.dps)
             if key[0] != item.label:
                 excluded.append((key, f"duplicate species of {label}"))
             return
         label = _ends_label(spec)
         by_species[skey] = label
-        items[label] = LadderItem(label, (kind,), dp, (spec,), dp > L)
+        items[label] = LadderItem(label, (kind,), dp, (spec,), dp > L, dps=(dp,))
 
+    S = b.PsChainSpec
     for dp in range(1, L + 2):
         for head in b.HEAD_ENDS:
             for tail in b.TAIL_ENDS:
-                spec = b.PsChainSpec(dp, head_end=head, tail_end=tail)
+                spec = S(dp, head_end=head, tail_end=tail)
                 add((dp, head, tail), "intact", spec, dp)
+        if dp == 1:      # one-carbon chains: a lone position-1 or position-0 carbon
+            for head in b.TAIL_ENDS:
+                for tail in b.TAIL_ENDS:
+                    add(("C1", head, tail), "intact",
+                        S(1, head_shift=True, head_end=head, tail_end=tail), 1)
+            for head in b.HEAD_ENDS:
+                for tail in b.HEAD_ENDS:
+                    add(("C0", head, tail), "intact",
+                        S(0, tail_shift=True, head_end=head, tail_end=tail), 1)
         for head in b.HEAD_ENDS:     # phase A: a cut between repeats
             for tail in ("benzylic_radical", "styryl"):
                 add(("A", dp, head, tail), "scission:phase_A",
-                    b.PsChainSpec(dp, head_end=head, tail_end=tail), dp)
+                    S(dp, head_end=head, tail_end=tail), dp)
         for head in ("primary_radical", "vinylidene"):
             for tail in b.TAIL_ENDS:
                 add(("A", dp, head, tail), "scission:phase_A",
-                    b.PsChainSpec(dp, head_end=head, tail_end=tail), dp)
+                    S(dp, head_end=head, tail_end=tail), dp)
         for head in b.HEAD_ENDS:     # phase B: a cut inside a repeat
             for tail in b.HEAD_ENDS:
                 add(("B", dp, head, tail), "scission:phase_B",
-                    b.PsChainSpec(dp, head_end=head, tail_end=tail, tail_shift=True), dp)
+                    S(dp, head_end=head, tail_end=tail, tail_shift=True), dp)
         for head in b.TAIL_ENDS:
             for tail in b.TAIL_ENDS:
                 add(("B", dp, head, tail), "scission:phase_B",
-                    b.PsChainSpec(dp, head_end=head, tail_end=tail, head_shift=True), dp)
+                    S(dp, head_end=head, tail_end=tail, head_shift=True), dp)
         for u in range(dp):
             if 2 * u + 1 < 2 * dp - 1:
                 add(("pl", dp, u), "pendant_loss",
-                    b.PsChainSpec(dp, head_end="methyl", tail_end="benzyl",
-                                  pendant_loss_units=(u,)), dp)
+                    S(dp, head_end="methyl", tail_end="benzyl", pendant_loss_units=(u,)), dp)
                 add(("bz", dp, u), "ch_cleavage:benzylic",
-                    b.PsChainSpec(dp, head_end="methyl", tail_end="benzyl", radical_units=(u,)),
-                    dp)
+                    S(dp, head_end="methyl", tail_end="benzyl", radical_units=(u,)), dp)
             if u >= 1:
                 add(("sec", dp, u), "ch_cleavage:secondary",
-                    b.PsChainSpec(dp, head_end="methyl", tail_end="benzyl",
-                                  secondary_radical_units=(u,)), dp)
+                    S(dp, head_end="methyl", tail_end="benzyl", secondary_radical_units=(u,)),
+                    dp)
     out = list(items.values())
-    if constants.bimolecular:
-        radical = [("benzylic_radical", lambda d: b.PsChainSpec(d, head_end="methyl",
-                                                                tail_end="benzylic_radical")),
-                   ("primary_radical", lambda d: b.PsChainSpec(d, head_end="primary_radical",
-                                                               tail_end="benzyl"))]
-        partners = [("closed", lambda d: b.PsChainSpec(d, head_end="methyl", tail_end="benzyl")),
-                    ("vinylidene", lambda d: b.PsChainSpec(d, head_end="vinylidene",
-                                                           tail_end="benzyl")),
-                    ("styryl", lambda d: b.PsChainSpec(d, head_end="methyl", tail_end="styryl"))]
-        partners += radical
-        long_closed = b.PsChainSpec(LONG_UNITS)
-        long_radical = b.PsChainSpec(LONG_UNITS, radical_units=(LONG_UNITS // 2,))
-        for dp in sorted({1, L, L + 1}):
-            for rname, rspec in radical:
-                for pname, pspec in partners:
-                    a, c = rspec(dp), pspec(dp)
-                    if not (dom.check(P.build("x", a).molecule).accepted and
-                            dom.check(P.build("x", c).molecule).accepted):
-                        excluded.append((("pair", dp, rname, pname), "outside the declared "
-                                         "domain"))
+    molecularity = dict(constants.directions)
+    roster = tuple((d, tuple(sorted(k))) for d, k in constants.pair_kinds
+                   if molecularity.get(d, 2) == 2)
+    pairs, long_pairs = {}, {}
+
+    def label_of(kind, spec):
+        return f"{kind}:{_ends_label(spec)}"
+    for direction, kinds in roster:
+        for a in range(1, L + 2):
+            for c in range(1, L + 2):
+                for first in kind_specs(kinds[0], a):
+                    for second in kind_specs(kinds[1], c):
+                        k1, why1 = species_key(first)
+                        k2, why2 = species_key(second)
+                        if why1 or why2:
+                            excluded.append((("pair", direction, kinds, a, c, repr(first),
+                                              repr(second)), why1 or why2))
+                            continue
+                        key = tuple(sorted((k1, k2)))
+                        item = pairs.get(key)
+                        if item is None:
+                            pairs[key] = LadderItem(
+                                f"pair DP{a}+DP{c} {label_of(kinds[0], first)}+"
+                                f"{label_of(kinds[1], second)}", ("pair:short_short",),
+                                max(a, c), (first, second), max(a, c) > L, None, (a, c),
+                                (direction,), kinds)
+                        elif direction not in item.directions:
+                            pairs[key] = LadderItem(item.label, item.kinds, item.dp, item.specs,
+                                                    item.control, None, item.dps,
+                                                    item.directions + (direction,),
+                                                    item.pair_kinds)
+        for short, long_ in {(kinds[0], kinds[1]), (kinds[1], kinds[0])}:
+            partner = LONG_SPECS[long_]()
+            for a in range(1, L + 2):
+                for first in kind_specs(short, a):
+                    k1, why = species_key(first)
+                    if why or not species_key(partner)[0]:
+                        excluded.append((("long", direction, short, long_, a, repr(first)),
+                                         why or species_key(partner)[1]))
                         continue
-                    out.append(LadderItem(f"pair DP{dp} {rname}+{pname}", ("pair:short_short",),
-                                          dp, (a, c), dp > L))
-        for dp in range(1, L + 2):
-            for rname, rspec in radical:
-                a = rspec(dp)
-                if not dom.check(P.build("x", a).molecule).accepted:
-                    excluded.append((("long", dp, rname), "outside the declared domain"))
-                    continue
-                out.append(LadderItem(f"pair DP{dp} {rname}+long closed", ("pair:short_long",),
-                                      dp, (a, long_closed), dp > L, 1))
-                out.append(LadderItem(f"pair DP{dp} {rname}+long radical",
-                                      ("pair:short_long",), dp, (a, long_radical), dp > L, 1))
-            closed = b.PsChainSpec(dp, head_end="methyl", tail_end="benzyl")
-            out.append(LadderItem(f"pair DP{dp} closed+long radical", ("pair:short_long",), dp,
-                                  (closed, long_radical), dp > L, 1))
-    return LadderPlan(constants.family, L, tuple(out), tuple(excluded))
+                    key = (k1, long_)
+                    item = long_pairs.get(key)
+                    if item is None:
+                        long_pairs[key] = LadderItem(
+                            f"pair DP{a} {label_of(short, first)}+long {long_}",
+                            ("pair:short_long",), a, (first, partner), a > L, 1, (a,),
+                            (direction,), tuple(sorted((short, long_))))
+                    elif direction not in item.directions:
+                        long_pairs[key] = LadderItem(item.label, item.kinds, item.dp, item.specs,
+                                                     item.control, 1, item.dps,
+                                                     item.directions + (direction,),
+                                                     item.pair_kinds)
+    out += list(pairs.values()) + list(long_pairs.values())
+    singles = tuple(d for d, n in constants.directions if n == 1)
+    return LadderPlan(constants.family, L, tuple(out), tuple(excluded), roster, singles)
+
+
+def ladder_direction_gaps(plan: LadderPlan, rows) -> list:
+    """Coverage per direction: for every bimolecular direction and kind
+    combination of the roster, and every unimolecular direction (single
+    chains), some member at DP L and at DP L + 1 (the largest short DP of its
+    pair) reached a fixed point.  ``rows``: run_member rows with
+    ``direction``, ``pair_kinds`` (pairs) and ``dps``."""
+    have = set()
+    for r in rows:
+        if r.get("status") != "fixed_point" or not r.get("dps"):
+            continue
+        kinds = tuple(r["pair_kinds"]) if r.get("pair_kinds") else None
+        have.add((r.get("direction"), kinds, max(d for d in r["dps"] if d is not None)))
+    need = [(d, tuple(k)) for d, k in plan.pair_kinds] + [(d, None) for d in
+                                                          plan.single_directions]
+    gaps = []
+    for direction, kinds in need:
+        for dp in (plan.L, plan.L + 1):
+            if (direction, kinds, dp) not in have:
+                gaps.append(f"{direction} {'+'.join(kinds) if kinds else 'single chain'} "
+                            f"DP{dp} (L={plan.L}): no member reached a fixed point")
+    return gaps
 
 
 # ---------------------------------------------------------------------------
@@ -1818,10 +2024,16 @@ def run_context(certifier, family, case: MemberCase, assignment, *, bound=None,
 
 
 def near_ports(witness, atoms, bound) -> tuple:
-    """Artificial ports within ``bound.reach + 1`` backbone bonds of the window."""
+    """Artificial ports whose port atom lies within ``bound.reach + 1`` heavy
+    bonds of ``atoms`` (all ports without a bound)."""
+    if bound is None:
+        return tuple(b.vector_ports(witness))
     rows = witness.reactant_rows()
     heavy = {a for a, row in rows.items() if row[0] != "H"}
-    dist = {a: 0 for a in atoms if a in heavy}
+    start = {a for a in atoms if a in heavy}
+    start |= {n for a in atoms if a in rows and a not in heavy for n, _o in rows[a][5]
+              if n in heavy}
+    dist = {a: 0 for a in start}
     frontier = list(dist)
     depth = 0
     while frontier and depth < bound.reach + 1:
@@ -1836,11 +2048,185 @@ def near_ports(witness, atoms, bound) -> tuple:
     return tuple(p for p in b.vector_ports(witness) if witness.port(p).atom_id in dist)
 
 
+def reacting_atoms(case) -> set:
+    """The member's reacting atoms on its witness: the edit support and every
+    labelled or mapped atom of every mapping."""
+    out = set(b.edit_support(case.witness))
+    for move in case.moves:
+        out |= {a for _s, _l, a in move.labels}
+        out |= {a for _s, _i, _j, a in move.mapped}
+    return out
+
+
+def member_near_ports(case, bound) -> tuple:
+    """Ports that can lie within the span bound of the member's reacting atoms
+    (``near_ports`` around ``reacting_atoms``): the window of any context
+    holds atoms within ``bound.reach`` bonds of a reacting atom only, so a
+    port farther than ``reach + 1`` heavy bonds (its end atoms, caps and the
+    alkene partner included) is outside every window."""
+    return near_ports(case.witness, reacting_atoms(case), bound)
+
+
+# ---------------------------------------------------------------------------
+# reacting-port covers (policy a)
+# ---------------------------------------------------------------------------
+PORT_REFUSALS = ("refused:reacting_port", "refused:extension", "refused:end",
+                 "refused:rematch")
+
+
+def reacting_ports(witness) -> tuple:
+    """Artificial ports whose port atom is a reacting atom (edit support)."""
+    support = b.edit_support(witness)
+    return tuple(p for p in b.vector_ports(witness) if witness.port(p).atom_id in support)
+
+
+def builds_of(specs):
+    """Provider builds of witness specs (``PsChainSpec`` or ("alkane", n))."""
+    out = []
+    for k, spec in enumerate(specs):
+        if isinstance(spec, tuple) and spec[0] == "alkane":
+            out.append(b.PROVIDERS["linear_alkane"].build(spec[1]))
+        else:
+            out.append(b.PROVIDERS["polystyrene"].build(f"p{k}", spec))
+    return out
+
+
+def longer_specs(specs, ports, k: int = 1):
+    """``specs`` with every port in ``ports`` (participant, port id) moved
+    ``k`` repeats outward (the chain is longer there; the port atom becomes
+    interior), and the unit shift of each participant's old coordinates."""
+    from dataclasses import replace
+    specs, shift = list(specs), defaultdict(int)
+    for index, port_id in ports:
+        spec = specs[index]
+        head = port_id == "head"
+        if isinstance(spec, tuple) and spec[0] == "alkane":
+            specs[index] = ("alkane", spec[1] + k)
+        else:
+            moved = {"units": spec.units + k}
+            if head:
+                for name in ("radical_units", "secondary_radical_units", "pendant_loss_units"):
+                    moved[name] = tuple(u + k for u in getattr(spec, name))
+                if spec.ring_radical_unit is not None:
+                    moved["ring_radical_unit"] = spec.ring_radical_unit + k
+            specs[index] = replace(spec, **moved)
+        if head:
+            shift[index] += k
+    return specs, dict(shift)
+
+
+def event_signatures(case, shift=None) -> set:
+    """Per mapping: {(label, coordinate)} with each labelled atom named by its
+    repeat coordinate (participant, unit + shift, position) and a hydrogen by
+    its heavy neighbour's coordinate.  The rate rule (pathway) is not part of
+    the event: the same mapped event away from the cut point may descend to
+    another node (e.g. a methyl H becomes a methylene H)."""
+    shift = shift or {}
+    coords = {a: (p.index, u + shift.get(p.index, 0), k) for p in case.witness.participants
+              for a, u, k in p.metadata.coordinates}
+    rows = case.witness.reactant_rows()
+
+    def name(a):
+        if a in coords:
+            return coords[a]
+        heavy = [n for n, _o in rows[a][5] if n in coords]
+        return ("H", coords[heavy[0]]) if heavy else ("?", a)
+    return {frozenset((lab, name(a)) for _s, lab, a in move.labels) for move in case.moves}
+
+
+_COVER_CASES = {}
+
+
+def _cover_cases(certifier, family, specs, direction):
+    key = (family.label, direction, repr(specs))
+    if key not in _COVER_CASES:
+        if len(_COVER_CASES) > 4:
+            _COVER_CASES.clear()
+        _COVER_CASES[key] = member_cases(certifier, family, builds_of(specs), direction,
+                                         label="cover")
+    return _COVER_CASES[key]
+
+
+def reacting_port_covers(certifier, family, case, *, bound=None, providers=None, specs=None,
+                         **loop) -> list:
+    """Covering witnesses of a member refused because a reacting atom sits on
+    an artificial port: per reacting port (and all of them together when
+    several), (physical) every declared end built there by
+    ``reconstruct_end`` (the event rematched, ``run_context``) and
+    (interior, needs ``specs``) the same mapped event on the witness whose
+    chain is one repeat longer at that port (``longer_specs``; the reacting
+    atom is interior), each run to its own fixed point."""
+    ports = list(b.vector_ports(case.witness))
+    reacting = list(reacting_ports(case.witness))
+    groups = [(p,) for p in reacting] + ([tuple(reacting)] if len(reacting) > 1 else [])
+    covers = []
+    for group in groups:
+        chem = [b.end_chemistries(case.witness, p, providers) for p in group]
+        for ends in product(*chem):
+            choice = dict(zip(group, ends))
+            r = run_context(certifier, family, case, tuple((p, choice.get(p)) for p in ports),
+                            bound=bound, providers=providers, **loop)
+            covers.append({"kind": "physical", "port": [list(p) for p in group]
+                           if len(group) > 1 else list(group[0]),
+                           "end": list(ends) if len(group) > 1 else ends[0],
+                           "status": r.status, "reason": r.reason[:200],
+                           "window_atoms": len(r.window.atoms) if r.status == "fixed_point"
+                           else None})
+        if specs is None:
+            continue
+        longer, shift = longer_specs(specs, group)
+        wanted = event_signatures(case, shift)
+        matches = [c for c in _cover_cases(certifier, family, longer, case.direction)
+                   if event_signatures(c) & wanted]
+        port = [list(p) for p in group] if len(group) > 1 else list(group[0])
+        if not matches:
+            covers.append({"kind": "interior", "port": port, "status": "unmatched",
+                           "reason": "no member of the longer witness has the mapped event"})
+        for c in matches:
+            res = run_member(certifier, family, c, bound=bound, contexts=False,
+                             providers=providers, **loop)
+            covers.append({"kind": "interior", "port": port, "label": c.label[-120:],
+                           "status": res["status"], "reason": str(res.get("reason", ""))[:200],
+                           "window_atoms": res.get("window_atoms"),
+                           "specs": [repr(x) for x in longer]})
+    return covers
+
+
+def cover_verdict(covers) -> bool:
+    """A reacting-port member is covered iff some covering witness reaches a
+    fixed point, or the interior witness (the same event away from any port)
+    is refused for a named non-port reason (accounted)."""
+    for c in covers:
+        status = c.get("status") or ""
+        if status == "fixed_point":
+            return True
+        if c.get("kind") == "interior" and status.startswith("refused:") and \
+                not status.startswith(PORT_REFUSALS):
+            return True
+    return False
+
+
+def reacting_port_gaps(rows) -> list:
+    """Every reacting-port member without a cover (``cover_verdict`` on its
+    ``covers``; a member without a cover search is a gap)."""
+    out = []
+    for r in rows:
+        if r.get("status") != "refused:reacting_port":
+            continue
+        covers = r.get("covers") or []
+        if not cover_verdict(covers):
+            out.append(f"{r.get('label', '?')[-90:]}: reacting port without a cover "
+                       f"({sorted({c.get('status') for c in covers})})")
+    return out
+
+
 def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: bool = True,
-               near_only: bool = False, providers=None, **loop) -> dict:
+               providers=None, specs=None, **loop) -> dict:
     """Items 1-5 and 7 for one member: refusal by status, or the fixed point
     (window, span against ``bound``, per-mapping edit checks, diagnostics,
-    recertification flips) and the context list with merges."""
+    recertification flips) and the context list with merges.  A
+    reacting-port refusal carries its covering witnesses (``covers``,
+    ``covered``; the interior cover needs the witness ``specs``)."""
     import time
     start = time.perf_counter()
     out = {"label": case.label, "family": case.family, "direction": case.direction,
@@ -1861,8 +2247,10 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
                flips=sorted({(n, o, w) for _k, n, o, w in fp.flips}),
                check_rounds=len(fp.checks))
     if not fp.reached:
-        if contexts and fp.status == "refused:reacting_port":
-            _contexts(out, certifier, family, case, fp, None, bound, providers, loop)
+        if fp.status == "refused:reacting_port":
+            out["covers"] = reacting_port_covers(certifier, family, case, bound=bound,
+                                                 providers=providers, specs=specs, **loop)
+            out["covered"] = cover_verdict(out["covers"])
         out["seconds"] = round(time.perf_counter() - start, 1)
         return out
     window = fp.window
@@ -1878,30 +2266,44 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
     out["dispositions"] = sorted({(str(k[0]), d) for k, d, _a in window.support.dispositions})
     out["diagnostics"] = diagnostics(fp.witness, window.atoms)
     if contexts:
-        near = near_ports(case.witness, window.atoms, bound) if (near_only and bound) else None
-        _contexts(out, certifier, family, case, fp, near, bound, providers, loop)
+        _contexts(out, certifier, family, case, fp, bound, providers, loop)
     out["seconds"] = round(time.perf_counter() - start, 1)
     return out
 
 
-def merged_structure(certificate) -> bool:
-    """Whether some descent reads the merged reactants (one predicate can see
-    several participants)."""
-    if not certificate:
-        return True
-    return any(d.get("structure") == "merged reactants"
-               for ds in certificate.get("descents", {}).values() for d in ds)
-
-
-def _contexts(out, certifier, family, case, fp, near, bound, providers, loop):
-    results = [ContextResult(tuple((p, None) for p in b.vector_ports(case.witness)),
-                             fp.status, fp.reason, fp.witness, fp.window, fp.observation, fp)]
-    cross = merged_structure(fp.observation.certificate if fp.observation else None)
-    out["context_policy"] = {"near_ports": None if near is None else [list(p) for p in near],
-                             "cross_participant": cross}
-    for assignment in context_assignments(case.witness, near, cross=cross)[1:]:
-        results.append(run_context(certifier, family, case, assignment, bound=bound,
-                                   providers=providers, start_depths=fp.depths, **loop))
+def _contexts(out, certifier, family, case, fp, bound, providers, loop):
+    """Every context of ``context_assignments`` over the member's near ports
+    (``member_near_ports``), run from the base fixed point's depths; far
+    ports are reduced to their radical ends, and the reduction is checked:
+    each far non-radical end single must merge with the all-artificial
+    context, otherwise that port becomes near and the product is rebuilt
+    (``far_port_promotions``)."""
+    ports = list(b.vector_ports(case.witness))
+    base = ContextResult(tuple((p, None) for p in ports), fp.status, fp.reason, fp.witness,
+                         fp.window, fp.observation, fp)
+    near = set(member_near_ports(case, bound))
+    done = {base.assignment: base}
+    promoted = []
+    while True:
+        assignments = context_assignments(case.witness, near, providers)
+        for assignment in assignments[1:]:
+            if assignment not in done:
+                done[assignment] = run_context(certifier, family, case, assignment, bound=bound,
+                                               providers=providers, start_depths=fp.depths,
+                                               **loop)
+        results = [done[a] for a in assignments]
+        far = [p for p in ports if p not in near]
+        verdicts = far_port_verdicts(results, far)
+        more = far_port_promotions(verdicts)
+        if not more:
+            break
+        promoted.extend(more)
+        near |= set(more)
+    out["context_policy"] = {
+        "near_ports": [list(p) for p in ports if p in near],
+        "far_ports": [list(p) for p in ports if p not in near],
+        "promoted": [list(p) for p in promoted],
+        "far_checks": [[list(p), e, ok] for (p, e), ok in sorted(verdicts.items())]}
     merges = merge_contexts(results)
     merged = {j for _i, j in merges}
     rows = []
