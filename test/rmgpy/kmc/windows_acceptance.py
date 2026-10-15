@@ -589,7 +589,9 @@ def main():
             extra["sampled_gates"] = gates
         extra["per_dp"] = per_dp
         extra["per_direction_kind"] = per_pair
-        Ls = [int(k) for k, v in per_dp.items() if v.get("both_ends")]
+        Ls = [dp for r in rows if r.get("status") == "fixed_point"
+              for index, dp in enumerate(r.get("dps") or [])
+              if dp is not None and r.get("span", {}).get(str(index), {}).get("both_ends")]
         extra["largest_dp_with_both_ends_in_a_window"] = max(Ls) if Ls else None
     from rmgpy.kmc import windows as win
     failures += win.reacting_port_gaps(list(member_rows(rows)))
