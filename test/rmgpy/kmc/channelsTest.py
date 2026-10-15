@@ -1369,3 +1369,47 @@ def test_benzylic_recombination_from_two_kekule_forms_is_one_member(fam):
         naive.add(min(rm._signature(rm.molecule_rows(f)) for f in forms if f.reactive))
     assert len(naive) > 1
     assert len({rm.ProductKeys(cache=False)(m) for m in moves}) == 1
+
+
+# --------------------------------------------------------------------------
+# I-137 rework 3: a role swap RMG files as kept on some resonance forms
+# --------------------------------------------------------------------------
+def test_role_swap_kept_on_another_resonance_form_is_one_synthetic_channel(fam):
+    """H abstraction between DP4[benzyl|methyl|hs,ts,bz3] and
+    DP4[benzylic_radical|methyl|hs,ts,bz3] (both in the declared domain): the
+    benzylic CH2 H next to the interior radical going to the terminal benzylic
+    radical swaps the two species.  RMG's same-species test is strict on the
+    mapping's resonance forms: the swap is ``unchanged_species`` on some forms
+    and ``kept`` on others.  The channel key is species identity, so it is one
+    ``synthetic:unchanged_species`` channel holding every mapping (it raised
+    ``ChannelError``: "mixes synthetic:unchanged_species and kept outcomes");
+    channels whose products differ from the reactants stay ``kept``."""
+    from rmgpy.kmc import boundaries as b
+    from rmgpy.kmc import certificates as cm
+    from rmgpy.kmc import domain as dom
+    from rmgpy.kmc import windows as win
+    S = b.PsChainSpec
+    family = fam["H_Abstraction"]
+    builds = win.builds_of([
+        S(4, head_end="benzyl", tail_end="methyl", head_shift=True, tail_shift=True,
+          radical_units=(3,)),
+        S(4, head_end="benzylic_radical", tail_end="methyl", head_shift=True,
+          tail_shift=True, radical_units=(3,))])
+    assert all(dom.check(x.molecule).accepted for x in builds)
+    molecules, _participants = b.witness_reactants(builds)
+    roots = [cm.aromatic_root(m) for m in molecules]
+    cs = chm.build_channels(family, roots, "forward", resonance="all",
+                            select=win.ring_change_select(family, roots))
+    pathway = ("C/H2/CbCs", "C_rad/H/CbCs")
+    swaps = [ch for ch in cs.channels if ch.pathway == pathway and
+             sorted(ch.products) == sorted(ch.reactants)]
+    assert len(swaps) == 1, [(ch.kind, ch.products) for ch in cs.channels if
+                             ch.pathway == pathway]
+    (swap,) = swaps
+    assert swap.kind == "synthetic:unchanged_species"
+    statuses = {m.status for m in cs.moves if m.template is not None and
+                tuple(m.template) == pathway and m.products is not None and
+                rm.product_key(m) in swap.members}
+    assert statuses == {"kept", "unchanged_species"}, statuses
+    assert all(ch.kind == "kept" for ch in cs.channels
+               if sorted(ch.products) != sorted(ch.reactants))

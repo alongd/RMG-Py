@@ -853,6 +853,245 @@ def test_ladder_takes_the_product_of_the_slot_classes():
 
 
 # --------------------------------------------------------------------------
+# rework 3: class equivalence, per-reactant reduction, pre-filter, covers
+# --------------------------------------------------------------------------
+def _cctx(witness, atoms, view, status="fixed_point", centre=3):
+    """A closed class member on a toy witness (a stub certificate view that
+    ignores the transport)."""
+    support = win.Support(atoms=frozenset(atoms), reacting=frozenset({centre}))
+    window = win.Window(atoms=frozenset(atoms), support=support)
+    obs = win.Observation(support=support, viewer=lambda inside, transport=None, v=view: v)
+    return win.ContextResult((), status, "", witness, window, obs)
+
+
+def _closure(label, results, pathways, *, slot=0, partner="p", direction="forward",
+             unpaired=0, elements=(), training=False):
+    return win.ClassClosure(label, direction, slot, partner, tuple(results),
+                            tuple(sorted(set(pathways))),
+                            tuple(sorted({win.own_leaf(p, slot) for p in pathways})),
+                            tuple(sorted({r.status for r in results})), unpaired, elements,
+                            training)
+
+
+def test_class_equivalence_merges_beyond_the_window_never_across_leaves():
+    """Two classes whose closed windows and certificate views are equal (here
+    two chains differing only beyond the window) merge; different leaves
+    never merge, even with equal windows and views; unequal views, windows,
+    member statuses or partners, a member without a partner in the other
+    class, or no fixed point at all: no merge.  A merged-root tree compares
+    the windows widened to the span bound (``reach``) and the whole-species
+    reads too."""
+    near, far = toy(8, 3), toy(12, 3)
+    a = _closure("A", [_cctx(near, ball(near, 3, 1), "v")], [("L1", "Y")])
+    same = _closure("B", [_cctx(far, ball(far, 3, 1), "v")], [("L1", "Y")])
+    assert win.classes_merge(a, same) and win.classes_merge(same, a)
+    leaf = _closure("C", [_cctx(far, ball(far, 3, 1), "v")], [("L2", "Y")])
+    assert not win.classes_merge(a, leaf)
+    assert not win.classes_merge(a, _closure("D", [_cctx(far, ball(far, 3, 1), "w")],
+                                             [("L1", "Y")]))
+    assert not win.classes_merge(a, _closure("E", [_cctx(far, ball(far, 3, 2), "v")],
+                                             [("L1", "Y")]))
+    refused = win.ContextResult((), "refused:domain")
+    assert not win.classes_merge(a, _closure("F", [_cctx(far, ball(far, 3, 1), "v"), refused],
+                                             [("L1", "Y")]))
+    assert not win.classes_merge(a, _closure("G", [_cctx(far, ball(far, 3, 1), "v")],
+                                             [("L1", "Y")], partner="q"))
+    assert not win.classes_merge(a, _closure("H", [_cctx(far, ball(far, 3, 1), "v")],
+                                             [("L1", "Y")], slot=1))
+    nothing = _closure("R", [refused], [])
+    assert not win.classes_merge(nothing, nothing)
+    two = _closure("T", [_cctx(near, ball(near, 3, 1), "v"), _cctx(near, ball(near, 3, 2), "v")],
+                   [("L1", "Y")])
+    assert not win.classes_merge(a, two) and not win.classes_merge(two, a)
+    # a merged root: the windows widened to the span bound decide (``reach``)
+    assert win.classes_merge(a, same, reach=2)
+    assert not win.classes_merge(a, same, reach=4)       # toy(8)'s end lies within 4 bonds
+    assert not win.classes_merge(a, _closure("U", [_cctx(far, ball(far, 3, 1), "v")],
+                                             [("L1", "Y")], unpaired=1), reach=2)
+
+
+def test_merge_classes_maps_each_class_to_its_cheapest_equivalent():
+    """Classes merge per direction and slot into the cheapest equivalent class
+    (smallest DP first); a class with another leaf, in another slot or
+    without a closing stays its own representative; the summary names the
+    map."""
+    S = b.PsChainSpec
+    near, far = toy(8, 3), toy(12, 3)
+    eb3 = _class("forward", 0, (("*1", "end_methyl"),), P("chain", ("benzyl", "methyl"), ()), 3,
+                 S(3, head_end="methyl", tail_end="benzyl"))
+    st2 = _class("forward", 0, (("*1", "end_methyl"),), P("chain", ("methyl", "styryl"), ()), 2,
+                 S(2, head_end="methyl", tail_end="styryl"))
+    ch2 = _class("forward", 0, (("*1", "backbone_ch2"),), P("chain", ("benzyl", "methyl"), ()),
+                 3, S(3, head_end="methyl", tail_end="benzyl"))
+    other = _class("forward", 1, (("*3", "terminal_benzylic"),),
+                   P("chain", ("benzylic_radical", "methyl"), ()), 1,
+                   S(1, head_end="methyl", tail_end="benzylic_radical"))
+    lone = _class("forward", 0, (("*1", "end_benzyl"),), P("chain", ("benzyl", "methyl"), ()), 3,
+                  S(3, head_end="methyl", tail_end="benzyl"))
+    L = win.class_label
+    closures = [_closure(L(eb3), [_cctx(far, ball(far, 3, 1), "v")], [("C/H3/Cs", "Y")]),
+                _closure(L(st2), [_cctx(near, ball(near, 3, 1), "v")], [("C/H3/Cs", "Y")]),
+                _closure(L(ch2), [_cctx(far, ball(far, 3, 1), "v")], [("C/H2/NonDeC", "Y")]),
+                _closure(L(other), [_cctx(near, ball(near, 3, 1), "v")], [("X", "C_rad")],
+                         slot=1)]
+    merge = win.merge_classes([eb3, st2, ch2, other, lone], closures)
+    assert merge.rep(L(eb3)) == L(st2) and merge.rep(L(st2)) == L(st2)
+    assert merge.rep(L(ch2)) == L(ch2) and merge.rep(L(other)) == L(other)
+    assert merge.rep(L(lone)) == L(lone) and L(lone) not in merge.closed
+    assert win.closure_gaps([eb3, st2, ch2, other, lone], merge) == \
+        [f"class {L(lone)}: no closing"]
+    table = win.merge_summary([eb3, st2, ch2, other, lone], merge)
+    assert table["forward|slot0"]["classes"] == 4
+    assert table["forward|slot0"]["representatives"] == 3
+    assert sorted(table["forward|slot0"]["map"][L(st2)]) == sorted([L(eb3), L(st2)])
+
+
+def _reduced_constants(per_reactant):
+    """Toy H_Abstraction roster: slot 0 spec s1 carries two representative
+    classes (leaves A, B) and one merged class; spec s2 leaf B; slot 1 spec
+    t1 leaves P, Q; spec t2 leaf Q."""
+    S = b.PsChainSpec
+    s1, s2 = S(2, head_end="methyl", tail_end="benzyl"), S(1, head_end="methyl", tail_end="benzyl")
+    s3 = S(3, head_end="methyl", tail_end="benzyl")
+    t1 = S(1, head_end="methyl", tail_end="benzylic_radical")
+    t2 = S(1, head_end="primary_radical", tail_end="benzyl")
+    eb = P("chain", ("benzyl", "methyl"), ())
+    x1 = _class("forward", 0, (("*1", "end_methyl"),), eb, 2, s1)
+    x2 = _class("forward", 0, (("*1", "backbone_ch2"),), eb, 2, s1)
+    x3 = _class("forward", 0, (("*1", "end_benzyl"),), eb, 1, s2)
+    xm = _class("forward", 0, (("*1", "backbone_chph"),), eb, 3, s3)
+    y1 = _class("forward", 1, (("*3", "terminal_benzylic"),),
+                P("chain", ("benzylic_radical", "methyl"), ()), 1, t1)
+    y2 = _class("forward", 1, (("*3", "interior_benzylic"),),
+                P("chain", ("benzylic_radical", "methyl"), ()), 1, t1)
+    y3 = _class("forward", 1, (("*3", "terminal_primary"),),
+                P("chain", ("benzyl", "primary_radical"), ()), 1, t2)
+    L = win.class_label
+    classes = (x1, x2, x3, xm, y1, y2, y3)
+    leaves = {L(x1): ("A",), L(x2): ("B",), L(x3): ("B",), L(xm): ("A",), L(y1): ("P",),
+              L(y2): ("Q",), L(y3): ("Q",)}
+    merge = win.ClassMerge(tuple(sorted((L(c), L(x1) if c is xm else L(c)) for c in classes)),
+                           tuple(sorted(leaves.items())), frozenset(leaves), frozenset(),
+                           frozenset(leaves))
+    c = win.FamilyConstants("H_Abstraction", radius=4, reacting_distance=0,
+                            free_label_search=False, bimolecular=True,
+                            directions=(("forward", 2),),
+                            pair_kinds=(("forward", ("closed", "radical")),), classes=classes,
+                            per_reactant=per_reactant, merge=merge)
+    return c, classes, (s1, s2, s3, t1, t2)
+
+
+def test_per_reactant_plan_covers_leaf_tuples_merged_root_keeps_the_product():
+    """Per-reactant tree: no class product; the classes are covered by their
+    closings, and pairs of representative specs cover every leaf tuple that
+    occurs (A, B x P, Q: one pair here, s1 + t1).  The same roster on a
+    merged-root direction (not in ``per_reactant``) keeps the product of the
+    representative specs (s1, s2 x t1, t2) and never expands a merged-away
+    class's spec (s3)."""
+    from dataclasses import replace
+    c, classes, (s1, s2, s3, t1, t2) = _reduced_constants(("forward",))
+    plan = win.ladder_plan(c)
+    leaf = [i for i in plan.items if "pair:leaf" in i.kinds]
+    assert {t for i in leaf for t in i.leaf_tuples} == {("A", "P"), ("A", "Q"), ("B", "P"),
+                                                        ("B", "Q")}
+    assert len(leaf) == 1 and {_species(x) for x in leaf[0].specs} == {_species(s1),
+                                                                       _species(t1)}
+    assert not [i for i in plan.items if "pair:class" in i.kinds]
+    assert win.ladder_class_gaps(plan, classes) == []
+    assert {label for label, _how in plan.class_cover} == {win.class_label(x) for x in classes}
+    merged_root = win.ladder_plan(replace(c, per_reactant=()))
+    product = [i for i in merged_root.items if "pair:class" in i.kinds]
+    got = {tuple(sorted(_species(x) for x in i.specs)) for i in product}
+    want = {tuple(sorted((_species(x), _species(y)))) for x in (s1, s2) for y in (t1, t2)}
+    assert got == want
+    assert not [i for i in merged_root.items if "pair:leaf" in i.kinds]
+    assert not any(_species(s3) in {_species(x) for x in i.specs} for i in product)
+    assert win.ladder_class_gaps(merged_root, classes) == []
+    # a class pair expands the members carrying a representative site in each
+    # slot (the merged-away class's site, backbone_chph, is not one of them);
+    # merged with a grid pair of the same species it runs every member
+    entries, _excluded = win._class_plan(replace(c, per_reactant=()))
+    s1_t1 = next(e for e in entries if e[3] == "pair:class" and
+                 [repr(x) for x, _dp in e[1]] == [repr(s1), repr(t1)])
+    assert all(not i.sites for i in product if "pair:short_short" in i.kinds)
+    assert {(slot, site) for _k, slot, site in s1_t1[5]} == {
+        (0, (("*1", "end_methyl"),)), (0, (("*1", "backbone_ch2"),)),
+        (1, (("*3", "terminal_benzylic"),)), (1, (("*3", "interior_benzylic"),))}
+    # without closings the per-reactant direction keeps the unreduced product
+    unreduced = win.ladder_plan(replace(c, merge=None))
+    assert len([i for i in unreduced.items if "pair:class" in i.kinds]) == 3 * 2
+
+
+def test_leaf_tuple_coverage_check_needs_a_fixed_point_per_tuple():
+    """Every planned leaf tuple needs a fixed-point member with that pathway
+    in the item's direction; a refused member, another direction or a
+    missing tuple is a gap."""
+    item = win.LadderItem("p", ("pair:leaf",), 1, (), directions=("forward",),
+                          leaf_tuples=(("A", "P"), ("B", "P")))
+    plan = win.LadderPlan("F", 4, (item,), ())
+    ok = {"status": "fixed_point", "direction": "forward", "pathway": ["A", "P"]}
+    refused = {"status": "refused:domain", "direction": "forward", "pathway": ["B", "P"]}
+    gaps = win.leaf_tuple_gaps(plan, [ok, refused])
+    assert len(gaps) == 1 and "B;P" in gaps[0]
+    assert win.leaf_tuple_gaps(plan, [ok, dict(refused, status="fixed_point")]) == []
+    assert len(win.leaf_tuple_gaps(plan, [ok, dict(refused, status="fixed_point",
+                                                   direction="reverse")])) == 1
+    assert len(win.leaf_tuple_gaps(plan, [])) == 2
+    chosen, left = win.leaf_cover(({"s1": {"A", "B"}, "s2": {"B"}}, {"t1": {"P"}, "t2": {"Q"}}))
+    assert {t for _x, _y, ts in chosen for t in ts} == {("A", "P"), ("A", "Q"), ("B", "P"),
+                                                        ("B", "Q")} and left == ()
+    assert len(chosen) == 2
+    _chosen, left = win.leaf_cover(({"s1": {"A"}}, {"t1": {"P"}}), lambda k0, k1: "dropped")
+    assert left == (("A", "P"),)
+
+
+def test_pair_prefilter_drops_only_proved_refusals():
+    """One-product templates: the product carries both reactants' unpaired
+    electrons plus the recipe's delta; more than MAX_RADICAL_SITES drops the
+    pair, exactly MAX keeps it; two-product templates never drop."""
+    S = b.PsChainSpec
+    c = win.FamilyConstants("R_Addition_MultipleBond", 5, 2, False, True,
+                            (("forward", 2), ("reverse", 1)), joined=(("forward", 0),))
+    alkene_radical, = win.pattern_specs(P("chain", ("benzylic_radical", "vinylidene"), ()), 2)
+    styrene = S(1, head_end="vinylidene", tail_end="styryl")
+    biradical = S(3, head_end="primary_radical", tail_end="benzylic_radical")
+    methyl = win.ONE_CARBON["methyl_radical"]()
+    assert win.unpaired_electrons(alkene_radical) == 1 and win.unpaired_electrons(biradical) == 2
+    assert win.pair_prefilter(c, "forward", alkene_radical, biradical)
+    assert win.pair_prefilter(c, "forward", styrene, biradical) is None
+    assert win.pair_prefilter(c, "forward", alkene_radical, methyl) is None
+    assert win.pair_prefilter(c, "reverse", alkene_radical, biradical) is None
+    two = win.FamilyConstants("H_Abstraction", 4, 0, False, True, (("forward", 2),))
+    assert win.pair_prefilter(two, "forward", biradical, biradical) is None
+
+
+def test_no_event_only_when_no_mapping_touches_the_event_atoms():
+    """Manager ruling (round 2): ``no_event`` is accepted when RMG generates no
+    mapping on the event's atoms under any labels; the atoms mapped under
+    other labels, or a heavy atom missing from the witness, stay a gap.  A
+    product-side domain refusal is out of domain (covered)."""
+    event = {frozenset({("*1", (1, 2, 0)), ("*2", ("H", (1, 2, 0))), ("*3", (0, 0, 1))})}
+    present = {(1, 2, 0), (0, 0, 1), (1, 1, 1)}
+    elsewhere = [("m0", {frozenset({("*1", (1, 1, 1)), ("*2", ("H", (1, 1, 1))),
+                                    ("*3", (0, 0, 1))})})]
+    status, _why = win.unmatched_event(event, elsewhere, present)
+    assert status == "not_generated" and win.cover_status_verdict(status) == "no_event"
+    relabelled = [("m1", {frozenset({("*3", (1, 2, 0)), ("*2", ("H", (1, 2, 0))),
+                                     ("*1", (0, 0, 1))})})]
+    status, why = win.unmatched_event(event, elsewhere + relabelled, present)
+    assert status == "unmatched" and "1 map its atoms under other labels" in why
+    assert win.cover_status_verdict(status) == "gap"
+    status, _why = win.unmatched_event(event, elsewhere, {(0, 0, 1)})
+    assert status == "unmatched"
+    assert win.cover_verdict([{"event": "e", "status": "not_generated"}])
+    assert not win.cover_verdict([{"event": "e", "status": "unmatched"}])
+    products = {"status": "refused:domain",
+                "reason": "refused:domain: products species at atom 3: a u2 site"}
+    assert win.cover_verdict([{"event": "e", "members": [products]}])
+    assert win._event_verdict([products["status"]]) == "out_of_domain"
+
+
+# --------------------------------------------------------------------------
 # boundaries: declared sites, end verification
 # --------------------------------------------------------------------------
 @pytest.mark.parametrize("flags", [dict(secondary_radical_units=(3,)),
@@ -1210,6 +1449,8 @@ def test_reacting_port_member_has_a_covering_witness(rmg):
         assert events["methyl@1:head"]["verdict"] == "covered"
         assert events["primary_radical@1:head"]["verdict"] == "out_of_domain"
         assert "u2" in events["primary_radical@1:head"]["reason"]
+        # a product-side domain refusal is out of domain (manager ruling, round 2)
+        assert "products species" in events["primary_radical@1:head"]["reason"]
         assert events["vinylidene@1:head"]["verdict"] == "out_of_domain"
     # a ceiling hit on the interior event is a gap the physical covers never hide
     capped = win.run_member(certifier, family, cases[0], bound=bound, contexts=False,
@@ -1278,6 +1519,187 @@ def _mixed_index(item, pattern):
                 sorted(e for e in (spec.head_end, spec.tail_end)) == sorted(pattern.ends):
             return k
     raise AssertionError(item)
+
+
+# --------------------------------------------------------------------------
+# rework 3 on the real families: per-reactant trees, closings, the
+# full-vs-reduced comparison, the pre-filter
+# --------------------------------------------------------------------------
+def test_per_reactant_tree_and_joined_templates_are_read_from_the_loaded_family(rmg):
+    """H_Abstraction and R_Addition_MultipleBond have one tree per reactant
+    (two roots in ``groups.top``, not auto-generated): their forward
+    direction is per-reactant.  Disproportionation and R_Recombination are
+    auto-generated with one merged ``Root``: never.  One-product templates:
+    R_Recombination forward (two radicals lost) and R_Addition_MultipleBond
+    forward (net zero)."""
+    fam, _certifier = rmg
+    got = {name: win.family_constants(fam[name]) for name in
+           ("H_Abstraction", "R_Addition_MultipleBond", "Disproportionation",
+            "R_Recombination", "intra_H_migration")}
+    assert got["H_Abstraction"].per_reactant == ("forward",)
+    assert got["R_Addition_MultipleBond"].per_reactant == ("forward",)
+    for name in ("Disproportionation", "R_Recombination", "intra_H_migration"):
+        assert got[name].per_reactant == (), name
+    for name in ("Disproportionation", "R_Recombination"):
+        assert [e.label for e in fam[name].groups.top] == ["Root"]
+        assert not win.per_reactant_tree(fam[name], "forward")
+        assert not win.per_reactant_tree(fam[name], "reverse")
+    assert len(fam["H_Abstraction"].groups.top) == 2
+    assert not win.per_reactant_tree(fam["H_Abstraction"], "reverse")
+    assert dict(got["R_Recombination"].joined) == {"forward": -2}
+    assert dict(got["R_Addition_MultipleBond"].joined) == {"forward": 0}
+    assert got["H_Abstraction"].joined == () and got["Disproportionation"].joined == ()
+
+
+@pytest.fixture(scope="module")
+def habs_closing(rmg):
+    fam, certifier = rmg
+    family = fam["H_Abstraction"]
+    constants = win.family_constants(family)
+    return family, constants, win.span_bound(constants), \
+        win.closing_partners(certifier, family, constants)
+
+
+def test_class_closings_merge_beyond_the_span_bound_and_split_leaves(rmg, habs_closing):
+    """Real H_Abstraction closings against the closing partner: abstraction
+    from the methyl end of two DP4 chains whose other ends differ (benzyl /
+    styryl, seven backbone bonds away, beyond the span bound) merge; the
+    methylene class of the same chain (leaf ``C/H2/NonDeC``, not
+    ``C/H3/Cs``) does not; the windows widened to the span bound (``reach``)
+    still merge, widened past the far end they do not."""
+    fam, certifier = rmg
+    family, constants, bound, partners = habs_closing
+    assert partners["forward"][1][0] not in ("H", "methyl_radical")
+    eb = P("chain", ("benzyl", "methyl"), ())
+    st = P("chain", ("methyl", "styryl"), ())
+    (spec_eb,), (spec_st,) = win.pattern_specs(eb, 4), win.pattern_specs(st, 4)
+    methyl_eb = _class("forward", 0, (("*1", "end_methyl"),), eb, 4, spec_eb)
+    ch2_eb = _class("forward", 0, (("*1", "backbone_ch2"),), eb, 4, spec_eb)
+    methyl_st = _class("forward", 0, (("*1", "end_methyl"),), st, 4, spec_st)
+    first, rows = win.close_classes(certifier, family, [methyl_eb, ch2_eb], partners["forward"][1],
+                                    bound=bound)
+    second, _rows = win.close_classes(certifier, family, [methyl_st], partners["forward"][1],
+                                      bound=bound)
+    by = {c.label: c for c in first + second}
+    a, ch2, b_ = (by[win.class_label(x)] for x in (methyl_eb, ch2_eb, methyl_st))
+    assert a.leaves == ("C/H3/Cs",) and b_.leaves == ("C/H3/Cs",)
+    assert ch2.leaves == ("C/H2/NonDeC",)
+    assert a.fixed and b_.fixed and ch2.fixed and all(r["status"] == "fixed_point" for r in rows)
+    assert win.classes_merge(a, b_) and win.classes_merge(b_, a)
+    assert not win.classes_merge(a, ch2)
+    assert win.classes_merge(a, b_, reach=bound.reach)
+    assert not win.classes_merge(a, b_, reach=8)
+    merge = win.merge_classes([methyl_eb, ch2_eb, methyl_st], first + second)
+    assert merge.rep(win.class_label(methyl_st)) == merge.rep(win.class_label(methyl_eb))
+    assert merge.rep(win.class_label(ch2_eb)) == win.class_label(ch2_eb)
+
+
+def _grid_classes(certifier, family, specs, slot, partner):
+    """The classes ``specs`` carry in ``slot`` against ``partner`` (a probe on
+    the given specs only; one pattern per spec, so labels stay unique)."""
+    out = []
+    for spec in specs:
+        pattern = P("chain", (win._spec_name(spec), "grid"), ())
+        for site in win.probe_slots(certifier, family, [spec, partner[1]],
+                                    "forward").get(slot, ()):
+            out.append(win.SiteClass("forward", slot, site, pattern, spec.units, spec,
+                                     partner[0]))
+    return out
+
+
+def test_reduced_per_reactant_plan_covers_every_leaf_tuple_of_the_full_plan(rmg, habs_closing):
+    """H_Abstraction (per-reactant) on a small grid (closed donors DP1-3,
+    radicals DP1-2): the full plan is the product of every class spec per
+    slot; its leaf tuples are the pathways of its supported in-domain
+    members.  The reduced plan (closings, merge, one pair per leaf tuple)
+    has fewer pairs, its closings carry exactly the full plan's leaves per
+    slot, and its pairs reach a fixed point on every leaf tuple of the full
+    plan."""
+    from dataclasses import replace
+    fam, certifier = rmg
+    family, constants, bound, partners = habs_closing
+    S = b.PsChainSpec
+    donors = [S(1, head_end="methyl", tail_end="benzyl"), S(2, head_end="methyl", tail_end="benzyl"),
+              S(3, head_end="methyl", tail_end="benzyl")]
+    radicals = [S(1, head_end="methyl", tail_end="benzylic_radical"),
+                S(2, head_end="primary_radical", tail_end="benzyl")]
+    classes = _grid_classes(certifier, family, donors, 0, partners["forward"][1]) + \
+        _grid_classes(certifier, family, radicals, 1, partners["forward"][0])
+    full = set()
+    for x in donors:
+        for y in radicals:
+            for case in win.member_cases(certifier, family, win.builds_of([x, y]), "forward"):
+                if case.support == "supported" and not win.species_domain_refusal(case.witness):
+                    full.add(case.pathway)
+    assert len({p[0] for p in full}) >= 3 and len({p[1] for p in full}) >= 2
+    groups = defaultdict(list)
+    for c in classes:
+        groups[(c.slot, repr(c.spec))].append(c)
+    closures = []
+    for (slot, _key), cs in sorted(groups.items()):
+        got, _rows = win.close_classes(certifier, family, cs, partners["forward"][1 - slot],
+                                       bound=bound)
+        closures += got
+    merge = win.merge_classes(classes, closures)
+    for slot in (0, 1):
+        closed = {leaf for c in closures if c.slot == slot for leaf in c.leaves}
+        assert closed == {p[slot] for p in full}, (slot, closed)
+    plan = win.ladder_plan(replace(constants, pair_kinds=(("forward", ("closed", "radical")),),
+                                   classes=tuple(classes), merge=merge))
+    leaf = [i for i in plan.items if "pair:leaf" in i.kinds]
+    assert leaf and len(leaf) < len(donors) * len(radicals)
+    assert not [i for i in plan.items if "pair:class" in i.kinds]
+    assert {tuple(t) for i in leaf for t in i.leaf_tuples} >= full
+    reached = set()
+    for item in leaf:
+        todo = {tuple(t) for t in item.leaf_tuples} - reached
+        for case in win.member_cases(certifier, family, win.builds_of(item.specs), "forward"):
+            if case.pathway in todo and case.support == "supported" and \
+                    not win.species_domain_refusal(case.witness):
+                res = win.run_member(certifier, family, case, bound=bound, contexts=False)
+                if res["status"] == "fixed_point":
+                    reached.add(case.pathway)
+                    todo.discard(case.pathway)
+    assert full <= reached, sorted(full - reached)
+    print("GRID full pairs", len(donors) * len(radicals), "reduced pairs", len(leaf),
+          "classes", len(classes), "representatives",
+          len({merge.rep(win.class_label(c)) for c in classes}), "leaf tuples", sorted(full))
+    assert win.leaf_tuple_gaps(plan, [{"status": "fixed_point", "direction": "forward",
+                                       "pathway": list(p)} for p in reached]) == []
+
+
+def test_prefilter_never_drops_a_pair_with_a_fixed_point_member(rmg):
+    """R_Addition_MultipleBond forward (one product): on a small grid of
+    alkenes (styrene; a DP2 chain with a vinylidene end and a benzylic end
+    radical) and radicals (methyl; a DP3 biradical), every pair the
+    pre-filter drops has no supported in-domain member (so none can reach a
+    fixed point), and the pairs it keeps at exactly MAX_RADICAL_SITES
+    product electrons have a fixed-point member."""
+    fam, certifier = rmg
+    family = fam["R_Addition_MultipleBond"]
+    constants = win.family_constants(family)
+    bound = win.span_bound(constants)
+    S = b.PsChainSpec
+    styrene = S(1, head_end="vinylidene", tail_end="styryl")
+    alkene_radical, = win.pattern_specs(P("chain", ("benzylic_radical", "vinylidene"), ()), 2)
+    methyl = win.ONE_CARBON["methyl_radical"]()
+    biradical = S(3, head_end="primary_radical", tail_end="benzylic_radical")
+    dropped, at_max = 0, []
+    for x in (styrene, alkene_radical):
+        for y in (methyl, biradical):
+            why = win.pair_prefilter(constants, "forward", x, y)
+            cases = [c for c in win.member_cases(certifier, family, win.builds_of([x, y]),
+                                                 "forward")
+                     if c.support == "supported" and not win.species_domain_refusal(c.witness)]
+            if why:
+                dropped += 1
+                assert not cases, (why, [c.label for c in cases])
+                continue
+            if win.unpaired_electrons(x) + win.unpaired_electrons(y) == dom.MAX_RADICAL_SITES:
+                at_max.append(any(win.run_member(certifier, family, c, bound=bound,
+                                                 contexts=False)["status"] == "fixed_point"
+                                  for c in cases[:4]))
+    assert dropped == 1 and len(at_max) == 2 and any(at_max), at_max
 
 
 # --------------------------------------------------------------------------
