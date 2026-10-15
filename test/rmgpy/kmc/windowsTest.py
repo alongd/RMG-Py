@@ -292,7 +292,8 @@ def test_context_assignments_policy():
     singles = [a for a in alone if sum(e is not None for _k, e in a) == 1]
     assert sorted(e for a in singles for _k, e in a if e) == sorted(
         ["primary_radical", "benzylic_radical", "methyl", "vinylidene", "benzyl", "styryl"])
-    assert len(alone) == 4 + 4 and len(set(alone)) == len(alone)
+    # + the 2 x 2 joint combinations of the far non-radical ends
+    assert len(alone) == 4 + 4 + 4 and len(set(alone)) == len(alone)
     one = win.context_assignments(w, near_ports=(HEAD,))
     assert len(one) == 4 * 2 + 2
     assert ((HEAD, "methyl"), (TAIL, "benzylic_radical")) in one
@@ -409,7 +410,8 @@ def _species(spec):
 def test_ladder_covers_cut_phases_and_controls():
     c = win.FamilyConstants("Disproportionation", radius=2, reacting_distance=1,
                             free_label_search=False, bimolecular=True,
-                            directions=(("forward", 2), ("reverse", 2)), pair_kinds=ROSTER)
+                            directions=(("forward", 2), ("reverse", 2)), pair_kinds=ROSTER,
+                            classes=())
     bound = win.span_bound(c)
     plan = win.ladder_plan(c, bound)
     items = plan.items
@@ -447,7 +449,8 @@ def test_ladder_pairs_cover_every_dp_pair_kind_and_direction():
     chain with an alkene (ethylbenzene + styrene at DP 1)."""
     c = win.FamilyConstants("Disproportionation", radius=2, reacting_distance=1,
                             free_label_search=False, bimolecular=True,
-                            directions=(("forward", 2), ("reverse", 2)), pair_kinds=ROSTER)
+                            directions=(("forward", 2), ("reverse", 2)), pair_kinds=ROSTER,
+                            classes=())
     bound = win.span_bound(c)
     L = bound.L
     pairs = [i for i in win.ladder_plan(c, bound).items if "pair:short_short" in i.kinds]
@@ -484,7 +487,8 @@ def test_ladder_pairs_cover_every_dp_pair_kind_and_direction():
 def test_ladder_coverage_is_checked_per_direction():
     c = win.FamilyConstants("Disproportionation", radius=2, reacting_distance=1,
                             free_label_search=False, bimolecular=True,
-                            directions=(("forward", 2), ("reverse", 2)), pair_kinds=ROSTER)
+                            directions=(("forward", 2), ("reverse", 2)), pair_kinds=ROSTER,
+                            classes=())
     bound = win.span_bound(c)
     plan = win.ladder_plan(c, bound)
     fwd = [{"direction": "forward", "status": "fixed_point", "pair_kinds": ["radical", "radical"],
@@ -511,7 +515,8 @@ def test_one_carbon_chains_are_built(spec, smiles):
 
 
 def test_one_carbon_species_are_in_the_ladder():
-    c = win.FamilyConstants("X", radius=2, reacting_distance=1, free_label_search=False)
+    c = win.FamilyConstants("X", radius=2, reacting_distance=1, free_label_search=False,
+                            classes=())
     plan = win.ladder_plan(c, win.span_bound(c))
     keys = {_species(s) for i in plan.items for s in i.specs if i.dp == 1}
     from rmgpy.kmc import channels as chm
@@ -556,21 +561,295 @@ def test_span_bound_is_in_each_providers_own_units():
 
 
 def test_uncovered_reacting_port_member_fails_the_gate():
+    """Every event a refused member stands for needs its own cover: a fixed
+    point or a domain refusal.  Certificate failures, ceiling hits, incomplete
+    descents and port or end refusals are gaps, never cover, and a covered
+    event never stands in for another."""
     fixed = {"kind": "interior", "status": "fixed_point"}
     port = {"kind": "physical", "status": "refused:reacting_port"}
-    end = {"kind": "physical", "status": "refused:end"}
-    assert win.cover_verdict([fixed, end])
+    end = {"kind": "physical", "port": [1, "head"], "end": "vinylidene", "status": "refused:end"}
+    assert win.cover_verdict([fixed])
+    assert not win.cover_verdict([fixed, end])
     assert not win.cover_verdict([end, port])
     assert not win.cover_verdict([])
-    rows = [{"label": "a", "status": "refused:reacting_port", "covers": [end],
-             "covered": win.cover_verdict([end])},
+    assert not win.cover_verdict([{"kind": "interior", "status": "refused:incomplete"}])
+    for status in ("refused:incomplete", "ceiling_exceeded", "certificate_unstable",
+                   "no_fixed_point", "refused:recertification: x", "refused:extension",
+                   "refused:rematch", "refused:unsupported:spin", "unmatched", "no_witness",
+                   "refused:guard: element_count C", None):
+        assert win.cover_status_verdict(status) == "gap", status
+        assert not win.cover_verdict([{"kind": "interior", "status": status}]), status
+    assert win.cover_status_verdict("refused:domain") == "out_of_domain"
+    # the family generates no mapping on the event's atoms: no such reaction
+    assert win.cover_status_verdict("not_generated") == "no_event"
+    assert win.cover_verdict([fixed, {"kind": "physical", "port": [1, "head"],
+                                      "end": "vinylidene", "status": "not_generated"}])
+    # a physical cover never hides a failed interior event, nor the reverse
+    methyl = {"kind": "physical", "port": [1, "head"], "end": "methyl", "status": "fixed_point"}
+    assert not win.cover_verdict([methyl, {"kind": "interior", "status": "ceiling_exceeded"}])
+    assert not win.cover_verdict([fixed, dict(methyl, status="refused:incomplete")])
+    # an event outside the declared domain needs no rate
+    outside = dict(end, status="refused:domain")
+    assert win.cover_verdict([fixed, methyl, outside])
+    # event-keyed rows: every matching member of an event must be covered
+    rows = [{"event": "interior@1:head", "status": "fixed_point"},
+            {"event": "methyl@1:head", "status": "fixed_point,ceiling_exceeded",
+             "members": [{"status": "fixed_point"}, {"status": "ceiling_exceeded"}]}]
+    assert not win.cover_verdict(rows)
+    assert win.cover_gaps(rows) == ["methyl@1:head: ceiling_exceeded,fixed_point"]
+    rows[1]["members"][1]["status"] = "refused:domain"
+    assert win.cover_verdict(rows)
+    rows = [{"label": "a", "status": "refused:reacting_port", "covers": [fixed, end],
+             "covered": win.cover_verdict([fixed, end])},
             {"label": "b", "status": "refused:reacting_port", "covers": [fixed],
              "covered": win.cover_verdict([fixed])},
             {"label": "c", "status": "fixed_point"}]
     gaps = win.reacting_port_gaps(rows)
-    assert len(gaps) == 1 and "a" in gaps[0]
+    assert len(gaps) == 1 and "a" in gaps[0] and "refused:end" in gaps[0]
     # a row without a cover search is a gap too
     assert win.reacting_port_gaps([{"label": "d", "status": "refused:reacting_port"}])
+
+
+def test_far_port_joint_reduction_is_checked():
+    """Single far ends merging with the all-artificial context does not imply
+    that their combinations merge: every combination of far non-radical ends
+    per participant and across participants is a context, checked, and a
+    failed joint check promotes those ports to near."""
+    w = ps_witness()
+    alone = win.context_assignments(w, near_ports=())
+    joint = [a for a in alone if sum(e is not None for _k, e in a) == 2 and
+             not any(e in b.RADICAL_ENDS for _k, e in a)]
+    assert sorted(joint) == sorted(((HEAD, h), (TAIL, t)) for h in ("methyl", "vinylidene")
+                                   for t in ("benzyl", "styryl"))
+    pair = ps_pair()
+    ports = b.vector_ports(pair)
+    assert win.far_port_groups(ports, ()) == (((1, "head"), (1, "tail")), ports)
+    across = win.context_assignments(pair, near_ports=())
+    assert (((0, "head"), "methyl"), ((1, "head"), "vinylidene"), ((1, "tail"), "styryl")) \
+        in across
+    toyw = toy()
+    atoms = ball(toyw, 3, 1)
+
+    def at(assignment, view):
+        r = _ctx(toyw, atoms, view)
+        return win.ContextResult(assignment, "fixed_point", "", r.witness, r.window,
+                                 r.observation)
+    base = at(((HEAD, None), (TAIL, None)), "a")
+    first = at(((HEAD, "methyl"), (TAIL, None)), "a")
+    second = at(((HEAD, None), (TAIL, "methyl")), "a")
+    both = at(((HEAD, "methyl"), (TAIL, "methyl")), "b")
+    assert win.contexts_merge(base, first) and win.contexts_merge(base, second)
+    assert not win.contexts_merge(base, both)
+    verdicts = win.far_port_verdicts([base, first, second, both], far=(HEAD, TAIL))
+    assert verdicts[(HEAD, "methyl")] and verdicts[(TAIL, "methyl")]
+    assert verdicts[((HEAD, "methyl"), (TAIL, "methyl"))] is False
+    assert win.far_port_promotions(verdicts) == (HEAD, TAIL)
+    merged = win.far_port_verdicts([base, first, second, at(both.assignment, "a")],
+                                   far=(HEAD, TAIL))
+    assert all(merged.values()) and win.far_port_promotions(merged) == ()
+
+
+def test_port_at_reach_plus_one_is_near_and_takes_every_end():
+    """A port whose atom is exactly reach + 1 heavy bonds from a reacting atom
+    is near (it can lie in a context's window) and takes every declared end;
+    one bond farther it is far."""
+    w = ps_witness(units=8)
+    bound = win.span_bound(win.FamilyConstants("X", radius=2, reacting_distance=0,
+                                               free_label_search=False))
+    assert bound.reach == 3
+    coords = {(u, k): a for a, u, k in w.participants[0].metadata.coordinates}
+    edge = coords[(2, 0)]       # backbone index 4 = reach + 1 bonds from the head port
+    beyond = coords[(2, 1)]     # index 5
+    assert win.near_ports(w, {edge}, bound) == (HEAD,)
+    assert win.near_ports(w, {beyond}, bound) == ()
+    near = win.near_ports(w, {edge}, bound)
+    assignments = win.context_assignments(w, near)
+    assert {e for a in assignments for k, e in a if k == HEAD and e} == set(b.HEAD_ENDS)
+    # every declared head end combined with the far tail's radical ends
+    for end in b.HEAD_ENDS:
+        assert ((HEAD, end), (TAIL, "benzylic_radical")) in assignments, end
+
+
+def test_dp1_styrene_is_built_from_both_alkene_ends():
+    """Styrene is vinylidene at one end and styryl at the other: the DP1
+    declaration with both alkene ends builds it (and the ladder merges it
+    with the other declaration that builds styrene)."""
+    from rmgpy.molecule import Molecule
+    build = b.PROVIDERS["polystyrene"].build("st", b.PsChainSpec(1, head_end="vinylidene",
+                                                               tail_end="styryl"))
+    assert build.molecule.is_isomorphic(Molecule(smiles="C=Cc1ccccc1"))
+    assert dom.check(build.molecule).details["ends"] == ["styryl", "vinylidene"]
+    c = win.FamilyConstants("X", radius=2, reacting_distance=1, free_label_search=False,
+                            classes=())
+    plan = win.ladder_plan(c, win.span_bound(c))
+    assert not any("not constructible" in reason for key, reason in plan.excluded
+                   if key[:1] == (1,) and "vinylidene" in key and "styryl" in key)
+    with pytest.raises(b.MetadataError):     # a shared carbon of two double bonds
+        b.PROVIDERS["polystyrene"].build("x", b.PsChainSpec(2, head_shift=True,
+                                                          head_end="styryl",
+                                                          tail_end="styryl"))
+
+
+def test_alkane_proxy_builds_declared_physical_ends():
+    """An alkane event at a reacting port needs its physical-end witnesses
+    too: the alkane proxy builds a declared end (methyl, primary radical) as
+    a physical port, and the event specs carry it."""
+    from rmgpy.molecule import Molecule
+    build = win.build_spec(("alkane", 5, "primary_radical", "methyl"))
+    assert build.molecule.is_isomorphic(Molecule(smiles="[CH2]CCCC"))
+    assert all(not p.artificial and not p.cap_atom_ids for p in build.metadata.ports)
+    half = win.build_spec(("alkane", 5, "methyl", None))
+    assert [p.artificial for p in half.metadata.ports] == [False, True]
+    assert win.event_specs([("alkane", 16)], (((0, "head"), "primary_radical"),)) == \
+        ([("alkane", 16, "primary_radical", None)], {})
+    assert win.event_specs([("alkane", 16, None, "methyl")], (((0, "head"), "interior"),)) == \
+        ([("alkane", 17, None, "methyl")], {0: 1})
+    with pytest.raises(b.MetadataError):
+        win.build_spec(("alkane", 5, "vinylidene", None))
+
+
+# --------------------------------------------------------------------------
+# the generated roster (reacting-site environment classes)
+# --------------------------------------------------------------------------
+def P(*args):
+    return win.Pattern(*args)
+
+
+def test_site_classes_derive_from_the_domain_declarations(monkeypatch):
+    """The class set is derived from domain.py's declarations: every end group,
+    radical kind and small species maps to reacting-site kinds, every site kind
+    is carried by some class, the patterns pair every end group with every
+    other and add interior radicals up to MAX_RADICAL_SITES; a new declared
+    feature without a mapping fails the derivation."""
+    kinds = win.declared_site_kinds()
+    for end in dom.END_GROUPS:
+        assert set(win.END_SITE_KINDS[end]) <= set(kinds), end
+    for kind in dom.RADICAL_KINDS:
+        assert set(win.RADICAL_SITE_KINDS[kind]) <= set(kinds), kind
+    for name in dom.SMALL_SPECIES:
+        assert set(win.SMALL_SITE_KINDS[name]) <= set(kinds), name
+    for site in ("terminal_primary", "terminal_benzylic", "interior_benzylic",
+                 "interior_secondary", "methyl_radical", "benzyl_radical", "h_atom",
+                 "backbone_ch2", "backbone_chph", "end_methyl", "end_benzyl",
+                 "vinylidene_terminal", "styryl_terminal", "h2"):
+        assert site in kinds, site
+    patterns = win.participant_patterns()
+    chains = [p for p in patterns if p.kind == "chain"]
+    assert {e for p in chains for e in p.ends} == set(dom.END_GROUPS)
+    assert {tuple(sorted(p.ends)) for p in chains} == {
+        tuple(sorted((x, y))) for x in dom.END_GROUPS for y in dom.END_GROUPS}
+    assert {k for p in chains for k in p.interior} == set(win.INTERIOR_RADICALS)
+    assert all(p.radical_sites <= dom.MAX_RADICAL_SITES for p in patterns)
+    assert max(p.radical_sites for p in chains) == dom.MAX_RADICAL_SITES
+    assert P("chain", ("benzyl", "methyl"), ("secondary_backbone",)) in patterns
+    # mixed species: an unsaturated end and a radical on one chain
+    assert P("chain", ("benzylic_radical", "vinylidene"), ()) in patterns
+    assert P("chain", ("methyl", "vinylidene"), ("benzylic",)) in patterns
+    assert {p.ends[0] for p in patterns if p.kind == "small"} == set(dom.SMALL_SPECIES)
+    classes = win.site_classes()
+    realized = {k for c in classes for k in c.site}
+    assert set(kinds) <= realized, sorted(set(kinds) - realized)
+    for c in classes:
+        assert c.dp == win.pattern_min_dp(c.pattern)
+    secondary = [c for c in classes if c.site == ("interior_secondary",)]
+    assert {c.pattern for c in secondary} >= {
+        P("chain", ("benzyl", "methyl"), ("secondary_backbone",)),
+        P("chain", ("methyl", "vinylidene"), ("secondary_backbone",)),
+        P("chain", ("benzylic_radical", "methyl"), ("secondary_backbone",))}
+    mixed = [c for c in classes if c.pattern.radical_sites and
+             any(e in b.ALKENE_ENDS for e in c.pattern.ends)]
+    assert {c.site[0] for c in mixed} >= {"terminal_benzylic", "interior_benzylic",
+                                          "interior_secondary", "backbone_chph",
+                                          "vinylidene_terminal"}
+    monkeypatch.setitem(dom.END_GROUPS, "allyl", "CH2=CH-CH2- (undeclared here)")
+    with pytest.raises(win.WindowError):
+        win.declared_site_kinds()
+    with pytest.raises(win.WindowError):
+        win.participant_patterns()
+    monkeypatch.delitem(dom.END_GROUPS, "allyl")
+    monkeypatch.setattr(dom, "RADICAL_KINDS", dom.RADICAL_KINDS + ("vinylic",))
+    with pytest.raises(win.WindowError):
+        win.declared_site_kinds()
+    monkeypatch.undo()
+    monkeypatch.setattr(dom, "SMALL_SPECIES", dom.SMALL_SPECIES + ("CH4",))
+    with pytest.raises(win.WindowError):
+        win.declared_site_kinds()
+
+
+def test_pattern_min_dp_is_the_smallest_in_domain_dp():
+    S = b.PsChainSpec
+    sec = P("chain", ("benzyl", "methyl"), ("secondary_backbone",))
+    assert win.pattern_specs(sec, 1) == ()
+    assert win.pattern_min_dp(sec) == 2
+    for spec in win.pattern_specs(sec, 2):
+        assert "interior_secondary" in win.pattern_site_kinds(sec, spec)
+    mixed = P("chain", ("benzylic_radical", "vinylidene"), ())
+    assert win.pattern_min_dp(mixed) == 2
+    assert win.pattern_specs(mixed, 5) == (S(5, head_end="benzylic_radical", head_shift=True,
+                                             tail_end="vinylidene", tail_shift=True),)
+    two = P("chain", ("methyl", "methyl"), ("benzylic", "benzylic"))
+    for spec in win.pattern_specs(two, win.pattern_min_dp(two)):
+        verdict = dom.check(b.PROVIDERS["polystyrene"].build("x", spec).molecule)
+        assert verdict.accepted and len(verdict.details["radical_sites"]) == 2
+    assert win.pattern_specs(P("small", ("H",)), 1) == (("small", "H"),)
+    assert dom.check(win.small_build("H").molecule).kind == "small:H"
+    assert dom.check(win.small_build("H2").molecule).kind == "small:H2"
+
+
+def _class(direction, slot, site, pattern, dp, spec):
+    return win.SiteClass(direction, slot, site, pattern, dp, spec)
+
+
+def test_ladder_takes_the_product_of_the_slot_classes():
+    """Generated pairs: the product of the slot-0 and slot-1 class
+    representatives of a bimolecular direction, each at its smallest DP;
+    unimolecular classes alone; every class reaches the plan.  A plan without
+    its rosters raises."""
+    S = b.PsChainSpec
+    sec = _class("forward", 1, (("*3", "interior_secondary"),),
+                 P("chain", ("benzyl", "methyl"), ("secondary_backbone",)), 2,
+                 S(2, head_end="methyl", tail_end="benzyl", secondary_radical_units=(1,)))
+    pe = _class("forward", 1, (("*3", "terminal_benzylic"),),
+                P("chain", ("benzylic_radical", "methyl"), ()), 1,
+                S(1, head_end="methyl", tail_end="benzylic_radical"))
+    eb = _class("forward", 0, (("*1", "end_benzyl"),), P("chain", ("benzyl", "methyl"), ()), 1,
+                S(1, head_end="methyl", tail_end="benzyl"))
+    mixed = _class("forward", 0, (("*1", "backbone_chph"),),
+                   P("chain", ("benzylic_radical", "vinylidene"), ()), 5,
+                   S(5, head_end="vinylidene", tail_end="benzylic_radical"))
+    c = win.FamilyConstants("H_Abstraction", radius=4, reacting_distance=0,
+                            free_label_search=False, bimolecular=True,
+                            directions=(("forward", 2),),
+                            pair_kinds=(("forward", ("closed", "radical")),),
+                            classes=(sec, pe, eb, mixed))
+    plan = win.ladder_plan(c)
+    generated = [i for i in plan.items if "pair:class" in i.kinds]
+    got = {tuple(sorted(_species(x) for x in i.specs)) for i in generated}
+    want = {tuple(sorted((_species(x.spec), _species(y.spec)))) for x in (eb, mixed)
+            for y in (sec, pe)}
+    assert want <= got and len(generated) == len(got)
+    item = next(i for i in generated if {repr(x) for x in i.specs} ==
+                {repr(mixed.spec), repr(sec.spec)})
+    assert sorted(item.dps) == [2, 5] and item.directions == ("forward",)
+    assert win.ladder_class_gaps(plan, c.classes) == []
+    # the long artificial chains carry every interior site kind with no
+    # feature within the span bound: an interior secondary radical too
+    longs = [i.specs[1] for i in plan.items if "pair:short_long" in i.kinds]
+    assert any(x.secondary_radical_units and not x.head_end and not x.tail_end
+               for x in longs)
+    assert any(x.radical_units and not x.head_end and not x.tail_end for x in longs)
+    assert win.ladder_class_gaps(plan, c.classes + (
+        _class("forward", 0, (("*1", "end_methyl"),), P("chain", ("methyl", "methyl"), ()), 1,
+               S(1, head_end="methyl", tail_end="methyl", tail_shift=True)),))
+    uni = _class("reverse", 0, (("*1", "interior_secondary"),), sec.pattern, 2, sec.spec)
+    plan2 = win.ladder_plan(win.FamilyConstants("R", 2, 1, False, False, (("reverse", 1),),
+                                                classes=(uni,)))
+    assert any(win.class_label(uni) in i.classes and len(i.specs) == 1 for i in plan2.items)
+    with pytest.raises(win.WindowError):
+        win.ladder_plan(win.FamilyConstants("H_Abstraction", 4, 0, False, True,
+                                            (("forward", 2),), classes=(sec,)))
+    with pytest.raises(win.WindowError):
+        win.ladder_plan(win.FamilyConstants("X", 2, 1, False))
 
 
 # --------------------------------------------------------------------------
@@ -911,9 +1190,10 @@ def test_reverse_disproportionation_of_ethylbenzene_and_styrene(rmg):
 
 def test_reacting_port_member_has_a_covering_witness(rmg):
     """Abstraction from the DP2 head carbon (an artificial port atom): refused
-    as a reacting port; a covering witness (the same mapped event with that
-    atom interior on DP3, or at a reconstructed physical end) reaches a fixed
-    point."""
+    as a reacting port; it stands for the interior event (the chain goes on:
+    a methylene H, ``C/H2/NonDeC``) and one event per declared head end, each
+    covered by its own witness: interior and methyl reach fixed points, the
+    primary-radical and vinylidene ends make species the domain refuses."""
     fam, certifier = rmg
     family = fam["H_Abstraction"]
     bound = win.span_bound(win.family_constants(family))
@@ -922,9 +1202,82 @@ def test_reacting_port_member_has_a_covering_witness(rmg):
         res = win.run_member(certifier, family, case, bound=bound, contexts=False, specs=specs)
         assert res["status"] == "refused:reacting_port", res
         assert res["covered"], res["covers"]
-        interior = [c for c in res["covers"] if c["kind"] == "interior"]
-        assert interior and any(c["status"] == "fixed_point" for c in interior), res["covers"]
-        assert all(c["port"] == [1, "head"] for c in res["covers"])
+        events = {c["event"]: c for c in res["covers"]}
+        assert set(events) == {f"{e}@1:head" for e in ("interior",) + b.HEAD_ENDS}
+        assert events["interior@1:head"]["verdict"] == "covered"
+        assert {tuple(m["pathway"]) for m in events["interior@1:head"]["members"]} == {
+            ("C/H2/NonDeC", "C_rad/H/CbCs")}
+        assert events["methyl@1:head"]["verdict"] == "covered"
+        assert events["primary_radical@1:head"]["verdict"] == "out_of_domain"
+        assert "u2" in events["primary_radical@1:head"]["reason"]
+        assert events["vinylidene@1:head"]["verdict"] == "out_of_domain"
+    # a ceiling hit on the interior event is a gap the physical covers never hide
+    capped = win.run_member(certifier, family, cases[0], bound=bound, contexts=False,
+                            specs=specs, ceiling=80)
+    events = {c["event"]: c for c in capped["covers"]}
+    assert events["interior@1:head"]["status"] == "ceiling_exceeded"
+    assert events["methyl@1:head"]["verdict"] == "covered"
+    assert capped["covered"] is False
+    assert win.reacting_port_gaps([capped])
+
+
+def test_generated_roster_carries_the_reproduced_classes(rmg):
+    """The two environments no round-1 ladder pair produced: an interior
+    secondary radical abstracting from ethylbenzene (RMG leaf
+    ``C/H2/CbCs;C_rad/H/NonDeC``), and 1-phenylethyl abstracting a benzylic H
+    from a chain with a vinylidene end and a benzylic end radical (in domain
+    from DP5: at DP4 the product radicals sit four bonds apart).  Both classes
+    come out of the family's probe with those smallest DPs, and the ladder's
+    product pairs carry them to fixed points."""
+    from dataclasses import replace
+    fam, certifier = rmg
+    family = fam["H_Abstraction"]
+    constants = win.family_constants(family)
+    S = b.PsChainSpec
+    sec = P("chain", ("benzyl", "methyl"), ("secondary_backbone",))
+    mixed = P("chain", ("benzylic_radical", "vinylidene"), ())
+    eb, pe = P("chain", ("benzyl", "methyl"), ()), P("chain", ("benzylic_radical", "methyl"), ())
+    classes = win.class_roster(certifier, family, patterns=[sec, mixed, eb, pe],
+                               constants=constants)
+    radical = [c for c in classes if c.pattern == sec and
+               ("*3", "interior_secondary") in c.site]
+    assert radical and min(c.dp for c in radical) == 2, radical
+    donor = [c for c in classes if c.pattern == mixed and ("*1", "backbone_chph") in c.site]
+    assert donor and min(c.dp for c in donor) == 5, donor
+    plan = win.ladder_plan(replace(constants, pair_kinds=(("forward", ("closed", "radical")),),
+                                   classes=classes))
+    assert win.ladder_class_gaps(plan, classes) == []
+    generated = [i for i in plan.items if "pair:class" in i.kinds]
+
+    def item_of(*specs):
+        want = sorted(_species(x) for x in specs)
+        return next(i for i in generated if sorted(_species(x) for x in i.specs) == want)
+    bound = win.span_bound(constants)
+    first = item_of(min(radical, key=lambda c: c.dp).spec, S(1, head_end="methyl",
+                                                           tail_end="benzyl"))
+    rows = [win.run_member(certifier, family, c, bound=bound, contexts=False)
+            for c in win.member_cases(certifier, family, win.builds_of(first.specs), "forward")
+            if c.pathway == ("C/H2/CbCs", "C_rad/H/NonDeC")]
+    assert rows and all(r["status"] == "fixed_point" for r in rows), rows
+    second = item_of(min(donor, key=lambda c: c.dp).spec, S(1, head_end="methyl",
+                                                           tail_end="benzylic_radical"))
+    cases = [c for c in win.member_cases(certifier, family, win.builds_of(second.specs),
+                                         "forward")
+             if not win.species_domain_refusal(c.witness) and
+             any(("*1", "backbone_chph") in sites
+                 for k, v in win._slot_sites(c, _mixed_index(second, mixed)).items()
+                 for sites in v)]
+    assert cases
+    res = win.run_member(certifier, family, cases[0], bound=bound, contexts=False)
+    assert res["status"] == "fixed_point", res
+
+
+def _mixed_index(item, pattern):
+    for k, spec in enumerate(item.specs):
+        if isinstance(spec, b.PsChainSpec) and \
+                sorted(e for e in (spec.head_end, spec.tail_end)) == sorted(pattern.ends):
+            return k
+    raise AssertionError(item)
 
 
 # --------------------------------------------------------------------------
