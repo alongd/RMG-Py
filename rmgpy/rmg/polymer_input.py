@@ -182,6 +182,10 @@ class HybridPolymerReactor(ReactionSystem):
         # 2. Build the Solver Engine (using the updated T/P from step 1)
         self.solver = self.to_solver_object(core_species, core_reactions, edge_species, edge_reactions)
         self.solver.listeners = self.listeners
+        # Share (not copy) the observer list: the engine is the one that calls
+        # notify() inside simulate(), so observers attached to this wrapper,
+        # now or later, must be the engine's observers.
+        self.solver._observers = self._observers
 
         # 3. Delegate ALL numerical initialization to the Solver Engine
         result = self.solver.initialize_model(core_species=core_species, core_reactions=core_reactions,
