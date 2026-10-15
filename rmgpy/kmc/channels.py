@@ -41,7 +41,11 @@ Filtered moves
   synthetic channel; ``channel_kinetics`` rates it by RMG's own family
   kinetics for its template (``KineticsFamily.get_kinetics``, the call the
   compiler makes for a kept reaction) with provenance
-  ``synthetic:unchanged_species``.
+  ``synthetic:unchanged_species``.  A channel
+  whose product species are its reactant species and whose mappings RMG
+  files as ``unchanged_species`` on some resonance forms and ``kept`` on
+  others (its identity test is strict on the forms) is one synthetic
+  channel; any other mix of the two statuses raises ``ChannelError``.
 * Outcomes whose every mapping is ``forbidden`` are excluded with the fired
   rule names and their disposition (``FORBIDDEN_DISPOSITIONS``).
 
@@ -345,7 +349,14 @@ def channels_from_moves(family_label, direction, reactants, moves, *, resonance=
             ckey = (family_label, direction, tuple(m.template), tuple(sorted(reactant_keys)), prods)
             previous = meta.setdefault(ckey, (kind, prod_spin, set()))
             if previous[0] != kind:
-                raise ChannelError(f"channel {ckey} mixes {previous[0]} and {kind} outcomes")
+                if prods != tuple(sorted(reactant_keys)):
+                    raise ChannelError(f"channel {ckey} mixes {previous[0]} and {kind} outcomes")
+                # the products ARE the reactant species: RMG's strict identity test
+                # reads the mapping's resonance forms, so one role swap is
+                # ``unchanged_species`` on some forms and ``kept`` on others;
+                # species identity decides the channel: synthetic
+                previous = (KINDS[1], previous[1], previous[2])
+                meta[ckey] = previous
             groups[ckey][outcome].append(m)
             previous[2].add((outcome, n_forbidden))
     pathways_of = defaultdict(set)

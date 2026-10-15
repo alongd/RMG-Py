@@ -22,10 +22,15 @@ Parts (each its own run, both streams persisted by the caller):
   class table per direction and slot, class and generated item counts.
 * ``ladder:<family>``: the family's ladder (``windows.ladder_plan`` with the
   kind roster of ``windows.pair_roster`` and the class roster, probed first
-  through the pool): the unimolecular directions on every single-chain
-  item, each pair in the directions its kinds or classes are rostered for;
-  coverage checked per direction (``windows.ladder_direction_gaps``) and per
-  class (``windows.ladder_class_gaps``), the L + 1 control per participant.
+  through the pool): the class closings first (``windows.close_classes``,
+  one task per direction, slot and spec, against ``windows.closing_partners``;
+  ``--closures`` reuses saved ones, ``--close-chunk i/n`` runs one chunk of
+  them and stops), the merge (``windows.merge_classes``), then the unimolecular
+  directions on every single-chain item, each pair in the directions its
+  kinds or classes are rostered for; coverage checked per direction
+  (``windows.ladder_direction_gaps``), per class (``windows.ladder_class_gaps``,
+  ``windows.closure_gaps``) and per planned leaf tuple
+  (``windows.leaf_tuple_gaps``), the L + 1 control per participant.
 
 Every reacting-port refusal carries one cover per event it stands for (the
 witness specs are passed to ``run_member``); a member with an uncovered event
@@ -37,7 +42,11 @@ Every member row goes to ``rows.jsonl``; ``summary.json`` holds the tables and
 the gate failures (non-empty: exit 1).  A span-bound violation fails the run.
 
 Usage: python windows_acceptance.py OUTDIR PART [--workers N] [--artifact PATH]
-       [--sample K] [--roster classes.<family>.pkl]
+       [--sample K] [--roster classes.<family>.pkl] [--closures closures.<family>*.pkl ...]
+       [--close-chunk i/n]
+
+Task times: ``seconds`` (wall) and ``cpu`` (the worker's process time; the
+projection under a loaded machine).
 """
 
 import argparse
@@ -57,6 +66,10 @@ REFERENCE_SETS = {"H_Abstraction": ("forward",), "Disproportionation": ("forward
                   "R_Recombination": ("forward", "reverse"),
                   "R_Addition_MultipleBond": ("forward", "reverse"),
                   "intra_H_migration": ("forward",)}
+
+
+def _cpu():
+    return time.process_time()
 
 
 def _init():
@@ -212,11 +225,13 @@ def run_cases_task(task):
     from rmgpy.kmc import windows as win
     part, label, specs, family_name, direction, selection, contexts, meta, chunk, of = task
     specs = [spec_from(s) for s in specs]
-    start = time.time()
+    start, cpu = time.time(), _cpu()
     rows, failures = [], []
     try:
         cases = cases_for(specs, family_name, direction)
         picked = [c for c in cases if selection is None or select(selection, c)]
+        if meta and meta.get("sites"):
+            picked = [c for c in picked if win.site_select(c, specs, meta["sites"])]
         for k, case in enumerate(picked):
             if k % of != chunk:
                 continue
@@ -228,13 +243,14 @@ def run_cases_task(task):
                 failures.append(f"SPAN BOUND: {case.label}: {error}")
                 res = {"label": case.label, "status": "span_bound_violation",
                        "reason": str(error)}
-            res.update(part=part, case=label, kind=case.kind, **(meta or {}))
+            res.update(part=part, case=label, kind=case.kind,
+                       **{k: v for k, v in (meta or {}).items() if k != "sites"})
             rows.append(res)
     except Exception:   # reported, never hidden
         failures.append(f"{label} {family_name} {direction}: {traceback.format_exc()[-1500:]}")
     return {"task": [part, label, family_name, direction, chunk, of], "rows": rows,
             "failures": failures, "seconds": round(time.time() - start, 1),
-            "rss_mb": _rss_mb()}
+            "cpu": round(_cpu() - cpu, 1), "rss_mb": _rss_mb()}
 
 
 def run_dp8_task(task):
@@ -424,7 +440,80 @@ def class_roster(family_name, workers, log):
                                                   for d, v in partners.items()}}
 
 
-def ladder_tasks(family_name, classes=()):
+def run_close_task(task):
+    """(family, classes of one direction, slot and spec, partner (name, spec)
+    or None): ``windows.close_classes``."""
+    from rmgpy.kmc import windows as win
+    family_name, classes, partner = task
+    start, cpu = time.time(), _cpu()
+    rows, failures, closures = [], [], ()
+    first = classes[0]
+    try:
+        closures, rows = win.close_classes(_S["certifier"], _S["fam"][family_name], list(classes),
+                                           partner, bound=_S["bounds"][family_name])
+        for r in rows:
+            r.update(part="ladder", case=f"close|{first.direction}|slot{first.slot}|"
+                                         f"{win._spec_name(first.spec)}",
+                     kind=r.get("kind", "kept"), dps=[first.dp], pair_kinds=None,
+                     long_index=None, ladder_kinds=["class:close"],
+                     closing_partner=partner[0] if partner else None)
+    except Exception:   # reported, never hidden
+        failures.append(f"close {family_name} {win.class_label(first)}: "
+                        f"{traceback.format_exc()[-1500:]}")
+    return {"task": ["close", family_name, first.direction, first.slot,
+                     win._spec_name(first.spec), partner[0] if partner else None],
+            "rows": rows, "closures": closures, "failures": failures,
+            "seconds": round(time.time() - start, 1), "cpu": round(_cpu() - cpu, 1),
+            "rss_mb": _rss_mb()}
+
+
+def class_closings(family_name, classes, workers, log, chunk=None):
+    """Every class closed once (one task per direction, slot and spec,
+    against the closing partner of the other slot)."""
+    from rmgpy.kmc import windows as win
+    _init()
+    family = _S["fam"][family_name]
+    constants = win.family_constants(family)
+    t = time.time()
+    partners = win.closing_partners(_S["certifier"], family, constants)
+    partner_s = round(time.time() - t, 1)
+    print("CLOSING PARTNERS", {d: {s: n for s, (n, _x) in v.items()} for d, v in
+                               partners.items()}, partner_s, "s", flush=True)
+    molecularity = dict(constants.directions)
+    fallback = dict(win.CLOSING_CANDIDATES)
+    groups = defaultdict(list)
+    for c in classes:
+        if molecularity.get(c.direction) == 2:     # unimolecular classes run once, alone
+            groups[(c.direction, c.slot, repr(c.spec))].append(c)
+    tasks, failures = [], []
+    for key in sorted(groups):
+        direction, slot, _spec = key
+        partner = None
+        if molecularity.get(direction) == 2:
+            partner = partners.get(direction, {}).get(1 - slot)
+            if partner is None:
+                name = groups[key][0].partner
+                partner = (name, fallback[name]()) if name in fallback else None
+                failures.append(f"no closing partner for {direction} slot {1 - slot}; "
+                                f"probe partner {name}")
+        tasks.append((family_name, tuple(groups[key]), partner))
+    if chunk:
+        k, n = chunk
+        tasks = tasks[k::n]
+    results = run_pool(tasks, workers, run_close_task, log)
+    closures = [c for res in results for c in res.get("closures", ())]
+    for res in results:
+        res.pop("closures", None)
+    timing = {"closing_partners": {d: {str(s): n for s, (n, _x) in v.items()}
+                                   for d, v in partners.items()},
+              "closing_partner_s": partner_s, "closing_tasks": len(tasks),
+              "closing_task_s": round(sum(r["seconds"] for r in results)),
+              "closing_cpu_s": round(sum(r.get("cpu", 0) for r in results))}
+    results.append({"rows": [], "failures": failures, "seconds": 0, "cpu": 0})
+    return closures, results, timing
+
+
+def ladder_tasks(family_name, classes=(), merge=None):
     from dataclasses import replace
     from rmgpy.kmc import windows as win
     fam = _S["fam"]
@@ -432,7 +521,7 @@ def ladder_tasks(family_name, classes=()):
     constants = win.family_constants(family)
     t = time.time()
     roster = win.pair_roster(_S["certifier"], family)
-    constants = replace(constants, pair_kinds=roster, classes=tuple(classes))
+    constants = replace(constants, pair_kinds=roster, classes=tuple(classes), merge=merge)
     bound = win.span_bound(constants)
     plan = win.ladder_plan(constants, bound)
     _S["roster_s"] = round(time.time() - t, 1)
@@ -446,6 +535,8 @@ def ladder_tasks(family_name, classes=()):
         dps = list(item.dps) + ([None] if item.long_index is not None else [])
         meta = {"dps": dps, "pair_kinds": list(item.pair_kinds) or None,
                 "long_index": item.long_index, "ladder_kinds": list(item.kinds)}
+        if item.sites:
+            meta["sites"] = [[k, s, [list(x) for x in site]] for k, s, site in item.sites]
         of = 2 if item.long_index is not None else 1
         for direction in directions:
             for chunk in range(of):
@@ -531,6 +622,9 @@ def ladder_gates(rows, plan, bound):
     from rmgpy.kmc import windows as win
     out = list(win.ladder_direction_gaps(plan, rows))
     out += win.ladder_class_gaps(plan, _S.get("classes", ()))
+    out += win.closure_gaps(_S.get("classes", ()), _S.get("merge"),
+                            {d for d, n in plan.pair_kinds} | set(_S.get("closed_directions", ())))
+    out += win.leaf_tuple_gaps(plan, rows)
     per_dp = defaultdict(Counter)
     per_pair = defaultdict(Counter)
     for r in rows:
@@ -582,7 +676,8 @@ def _log(res, log, started):
         log.write(json.dumps(row, default=str) + "\n")
     log.flush()
     print(f"[{time.time() - started:6.0f}s] {res['task']} rows={len(res['rows'])} "
-          f"fail={len(res['failures'])} t={res['seconds']}s rss={res['rss_mb']}MB", flush=True)
+          f"fail={len(res['failures'])} t={res['seconds']}s cpu={res.get('cpu')}s "
+          f"rss={res['rss_mb']}MB", flush=True)
     for f in res["failures"]:
         print("FAILURE", f[:600], flush=True)
 
@@ -596,12 +691,19 @@ def main():
     parser.add_argument("--sample", type=int, default=1)
     parser.add_argument("--roster", default=None,
                         help="classes.<family>.pkl of a roster:<family> run (else probed)")
+    parser.add_argument("--closures", nargs="*", default=None,
+                        help="closures.<family>*.pkl of earlier closing runs (else closed)")
+    parser.add_argument("--task-chunk", default=None,
+                        help="i/n: run chunk i of n of the (sampled) plan tasks")
+    parser.add_argument("--close-chunk", default=None,
+                        help="i/n: run closing chunk i of n, save it and stop")
     args = parser.parse_args()
     out = Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("MPLCONFIGDIR", str(out / "mpl"))
     t0 = time.time()
     extra = {}
+    close_results = []
     with open(out / f"rows.{args.part.replace(':', '_')}.jsonl", "w") as log:
         if args.part == "required":
             results = run_pool(required_tasks(args.workers)[::args.sample], args.workers,
@@ -629,27 +731,72 @@ def main():
                 classes, failures0, timing = class_roster(name, args.workers, log)
                 import pickle
                 (out / f"classes.{name}.pkl").write_bytes(pickle.dumps(classes))
-            tasks, plan, bound = ladder_tasks(name, classes)
-            _S["classes"] = classes
-            pairs = Counter((d, "+".join(i.pair_kinds), "long" if i.long_index else "short")
-                            for i in plan.items for d in i.directions)
-            extra = {"L": bound.L, "L_plus_1": bound.L + 1, "span_bound": bound.__dict__,
-                     "roster": [[d, list(k)] for d, k in plan.pair_kinds],
-                     "roster_s": _S.get("roster_s"),
-                     "single_directions": list(plan.single_directions),
-                     "ladder_items": len(plan.items),
-                     "ladder_kinds": dict(Counter(k for i in plan.items for k in i.kinds)),
-                     "pair_items": {"|".join(k): v for k, v in sorted(pairs.items())},
-                     "ladder_excluded": len(plan.excluded),
-                     "excluded_reasons": dict(Counter(r.split(":")[0]
-                                                      for _k, r in plan.excluded)),
-                     "tasks": len(tasks), "sample": args.sample}
-            extra.update(timing)
-            extra.update(win.class_summary(classes, win.family_constants(_S["fam"][name])))
-            _S["plan"] = plan
-            print("LADDER", json.dumps(extra, default=str), flush=True)
-            results = run_pool(tasks[::args.sample], args.workers, run_cases_task, log)
-            results.append({"rows": [], "failures": failures0, "seconds": 0})
+            import pickle
+            family = _S["fam"][name]
+            constants = win.family_constants(family)
+            chunk = tuple(int(x) for x in args.close_chunk.split("/")) if args.close_chunk \
+                else None
+            close_results = []
+            _S["plan"] = None
+            if args.closures:
+                closures = [c for path in args.closures
+                            for c in pickle.loads(Path(path).read_bytes())]
+                timing["closures_from"] = args.closures
+            else:
+                closures, close_results, ctiming = class_closings(name, classes, args.workers,
+                                                                  log, chunk)
+                timing.update(ctiming)
+                suffix = f".{chunk[0]}of{chunk[1]}" if chunk else ""
+                (out / f"closures.{name}{suffix}.pkl").write_bytes(pickle.dumps(closures))
+            if chunk:
+                results = close_results
+                extra.update(timing)
+                _S["plan"] = None
+            else:
+                t = time.time()
+                merged_root = tuple(d for d, n in constants.directions
+                                    if n == 2 and d not in constants.per_reactant)
+                # merged roots: every predicate of any descent reads within r bonds
+                # of the labelled atoms (the tree's largest predicate radius)
+                merge = win.merge_classes(classes, closures, merged_root=merged_root,
+                                          reach=constants.radius)
+                timing["merge_s"] = round(time.time() - t, 1)
+                timing["merge"] = win.merge_summary(classes, merge)
+                timing["per_reactant"] = list(constants.per_reactant)
+                timing["merged_root"] = list(merged_root)
+                timing["joined"] = [list(x) for x in constants.joined]
+                _S["merge"] = merge
+                _S["closed_directions"] = tuple(d for d, n in constants.directions if n == 2)
+            if not chunk:
+                tasks, plan, bound = ladder_tasks(name, classes, _S["merge"])
+                _S["classes"] = classes
+                pairs = Counter((d, "+".join(i.pair_kinds), "long" if i.long_index else "short")
+                                for i in plan.items for d in i.directions)
+                extra = {"L": bound.L, "L_plus_1": bound.L + 1, "span_bound": bound.__dict__,
+                         "roster": [[d, list(k)] for d, k in plan.pair_kinds],
+                         "roster_s": _S.get("roster_s"),
+                         "single_directions": list(plan.single_directions),
+                         "ladder_items": len(plan.items),
+                         "ladder_kinds": dict(Counter(k for i in plan.items for k in i.kinds)),
+                         "pair_items": {"|".join(k): v for k, v in sorted(pairs.items())},
+                         "ladder_excluded": len(plan.excluded),
+                         "excluded_reasons": dict(Counter(r.split(":")[0]
+                                                          for _k, r in plan.excluded)),
+                         "tasks": len(tasks), "sample": args.sample}
+                extra.update(timing)
+                extra.update(win.class_summary(classes, win.family_constants(_S["fam"][name])))
+                _S["plan"] = plan
+                print("LADDER", json.dumps(extra, default=str), flush=True)
+                picked = tasks[::args.sample]
+                if args.task_chunk:
+                    k, n = (int(x) for x in args.task_chunk.split("/"))
+                    picked = picked[k::n]
+                    extra["task_chunk"] = args.task_chunk
+                results = run_pool(picked, args.workers, run_cases_task, log)
+                _S["plan_task_s"] = sum(r["seconds"] for r in results)
+                _S["plan_cpu_s"] = sum(r.get("cpu", 0) for r in results)
+                results += close_results
+                results.append({"rows": [], "failures": failures0, "seconds": 0})
         elif args.part == "dp8":
             results = dp8(out, args, log)
             extra = _S.get("dp8_extra", {})
@@ -661,7 +808,7 @@ def main():
         gates, table = required_gates(rows)
         failures += gates
         extra["required"] = table
-    if args.part.startswith("ladder:"):
+    if args.part.startswith("ladder:") and _S.get("plan") is not None:
         gates, per_dp, per_pair = ladder_gates(rows, _S["plan"],
                                                _S["bounds"][args.part.split(":", 1)[1]])
         if args.sample == 1:
@@ -692,6 +839,17 @@ def main():
     summary["projection"] = {"sample": args.sample, "task_seconds_full": round(
         task_s * args.sample), "wall_s_full_at_workers": round(
         task_s * args.sample / max(1, args.workers)), "workers": args.workers}
+    if args.part.startswith("ladder:"):
+        # closings run whole (never sampled); the plan's tasks are sampled
+        close_s = sum(r["seconds"] for r in close_results)
+        close_cpu = sum(r.get("cpu", 0) for r in close_results)
+        plan_s, plan_cpu = _S.get("plan_task_s", 0), _S.get("plan_cpu_s", 0)
+        summary["projection"].update(
+            closing_task_s=round(close_s), closing_cpu_s=round(close_cpu),
+            plan_task_s_full=round(plan_s * args.sample),
+            plan_cpu_s_full=round(plan_cpu * args.sample),
+            task_seconds_full=round(close_s + plan_s * args.sample),
+            cpu_seconds_full=round(close_cpu + plan_cpu * args.sample))
     (out / f"summary.{args.part.replace(':', '_')}.json").write_text(
         json.dumps(summary, indent=1, default=str))
     print("SUMMARY", json.dumps(summary, default=str)[:6000], flush=True)

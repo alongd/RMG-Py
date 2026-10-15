@@ -201,6 +201,76 @@ slot-0 and slot-1 class representatives, each at its smallest DP; every class
 must reach the plan (``ladder_class_gaps``).  ``ladder_plan`` raises when a
 family's class roster or (bimolecular) pair roster was not computed.
 
+Class equivalence and the reduced class plan (rework 3)
+-------------------------------------------------------
+The class product duplicates rate-selection environments; the plan expands
+distinct ones only, and each reduction is a checked claim.
+
+* Closing (``close_classes``): each class is closed ONCE against its
+  closing partner (``closing_partners``: per slot the cheapest declared
+  species filling the other slot whose member reaches a fixed point; the
+  probe partner H / H2 ends ``refused:guard: element_count``): every member
+  whose slot carries the class's site on the class's spec runs through
+  ``run_member``.  The closing records the members' results, pathways, own
+  leaves and statuses.
+* Equivalence (``classes_merge``, ``merge_classes``): two classes of one
+  direction and slot merge iff they were closed against the same partner,
+  have the same pathways (leaves, checked explicitly), the same member
+  statuses, at least one fixed point, and every fixed-point member of each
+  has a member of the other whose closed window is the same marked graph
+  (``class_window_isomorphisms``: id-free reacting marks, the windows sit on
+  different witnesses) with an equal certificate view under that
+  correspondence (reacting atoms transported).  Windows are bounded by the
+  span bound, so classes differing only beyond it merge; a different leaf
+  never merges.  Each class maps to the cheapest class it equals (smallest
+  DP, fewest heavy atoms): the representative (``ClassMerge``).
+* Merged-root trees (Disproportionation, R_Recombination: one
+  auto-generated ``Root`` whose predicates read both reactants): the
+  closing partner's descent decides which predicates read the class's
+  participant, so the window seen with one partner does not bound what
+  another partner's descent reads.  Every predicate of any descent reads
+  within ``r`` bonds of the labelled atoms, so these directions also
+  require the windows widened to ``r`` heavy bonds around the participant's
+  reacting atoms and closed (``ball_window``) to be equal, and equal
+  whole-species
+  reads (unpaired electrons; element counts capped at the family's largest
+  guard minimum).  They keep the PAIR PRODUCT over the representatives.
+* Per-reactant trees (``per_reactant_tree``, read from the loaded family:
+  not auto-generated, every forward-template reactant group its own
+  top-level node; H_Abstraction and R_Addition_MultipleBond forward): RMG
+  descends each reactant's tree on the reactant that carries its labels
+  alone (``get_reaction_template`` matches each template group to one
+  reactant), so a participant's descent, support, window and leaf do not
+  depend on its partner; the rate is then looked up by the tuple of leaves
+  (rule, averaging, parent walk: functions of the tuple).  Whole-species
+  reads of a group (multiplicity, radical and element counts) read the
+  group's own reactant.  Two reads see both species: the depository match
+  (a whole-reaction isomorphism) and the channel kind (whole-species
+  identity, a disposition outside the view).  Hence the cover: every class
+  is closed (its representative's closing reached a fixed point, or it is
+  expanded unreduced: a class whose closing reached none, every member
+  refused by status, pairs with every representative of the other slot);
+  one pair of representative specs per leaf tuple that occurs (slot-0
+  leaves x slot-1 leaves, ``leaf_cover``; each pair item names its tuples
+  and ``leaf_tuple_gaps`` needs a fixed-point member on each); and the
+  product of the classes whose species is a training-reaction species
+  (``training_keys``: the only pairs a depository match can read).
+  Unimolecular directions have no pair product and are not closed: each
+  class's own run (every representative spec alone) is its one closing.
+* Expansion over representatives (``site_select``, ``LadderItem.sites``): a
+  class pair expands only the members carrying one of its specs'
+  representative sites in each slot, and a unimolecular class run only the
+  members carrying one of its spec's own classes; every other member of the
+  same species carries a class run on its own (smallest-DP) spec or merged
+  into a representative.  A class item on the species pair of a grid item
+  runs every member.
+* Pre-filter (``pair_prefilter``): a pair is dropped before expansion only
+  when a one-product template (``joined_templates``) puts more than
+  ``MAX_RADICAL_SITES`` unpaired electrons on its single product in every
+  mapping (both reactants' electrons plus the recipe's delta): ``domain``
+  refuses every member.  Two-product templates split the electrons per
+  participant, where the closings already put each class in domain.
+
 Contexts (item 5)
 -----------------
 Per artificial port: artificial, or physical with a declared end chemistry
@@ -334,6 +404,9 @@ class FamilyConstants:
     directions: tuple = ()
     pair_kinds: tuple = ()    # ((direction, (kind, kind)), ...): ``pair_roster``
     classes: Optional[tuple] = None   # SiteClass, ...: ``class_roster`` (None: not computed)
+    per_reactant: tuple = ()  # directions RMG rates from one tree per reactant (``per_reactant_tree``)
+    joined: tuple = ()        # ((direction, unpaired delta), ...): one-product bimolecular templates
+    merge: Any = None         # ClassMerge (``merge_classes``; None: every class its own representative)
 
 
 @dataclass(frozen=True)
@@ -923,14 +996,16 @@ def member_refusal(cert, wanted) -> Optional[str]:
     return None
 
 
-def certificate_view(cert, wanted, inside, transport=None):
+def certificate_view(cert, wanted, inside, transport=None, *, transport_reacting=False):
     """The member's certificate, correspondence-aware, restricted to the
     window ``inside``: per mapping (identity with ids through the map) its
     channel selection and status, descent signature (every predicate tried,
     verdicts, choices, leaves) and every predicate's local support (anchors,
     candidates, ball, embeddings, ignored atoms) and guard verdicts, and the
     atom-table rows of window atoms.  Non-reacting H are named by their heavy
-    neighbour; atoms outside the window are ``out``."""
+    neighbour; atoms outside the window are ``out``.  Reacting atoms keep
+    their ids (contexts of one witness) unless ``transport_reacting`` (class
+    equivalence across witnesses: they go through ``transport`` too)."""
     from rmgpy.kmc import certificates as cm
     inside = set(inside)
     entries = member_entries(cert, wanted)
@@ -943,7 +1018,7 @@ def certificate_view(cert, wanted, inside, transport=None):
 
     def t(a):
         if a in reacting:
-            return ("r", a)
+            return ("r", base(a) if transport_reacting else a)
         if a not in inside:
             return "out"
         row = witness_atoms.get(a)
@@ -1511,9 +1586,11 @@ def family_constants(family) -> FamilyConstants:
             _group_graph(root))
     reverse_mol = len(family.forward_template.products)
     bimolecular = molecularity == 2 or (family.reverse_template is not None and reverse_mol == 2)
-    return FamilyConstants(family.label, radius, distance, free, bimolecular,
-                           tuple((d, molecularity if d == "forward" else reverse_mol)
-                                 for d in directions))
+    dirs = tuple((d, molecularity if d == "forward" else reverse_mol) for d in directions)
+    return FamilyConstants(family.label, radius, distance, free, bimolecular, dirs,
+                           per_reactant=tuple(d for d, n in dirs
+                                              if n == 2 and per_reactant_tree(family, d)),
+                           joined=joined_templates(family, dirs))
 
 
 def _group_graph(group):
@@ -1601,6 +1678,8 @@ class LadderItem:
     directions: tuple = ()             # pairs: the directions their kinds are run in
     pair_kinds: tuple = ()             # pairs: the participant kinds (sorted)
     classes: tuple = ()                # generated items: the site classes they represent
+    leaf_tuples: tuple = ()            # per-reactant pairs: the leaf tuples they must cover
+    sites: tuple = ()                  # class pairs: ((spec repr, slot, site), ...) expanded
 
 
 @dataclass(frozen=True)
@@ -1611,6 +1690,7 @@ class LadderPlan:
     excluded: tuple
     pair_kinds: tuple = ()
     single_directions: tuple = ()
+    class_cover: tuple = ()   # ((class label, how), ...): classes covered by their closing
 
     @property
     def excluded_keys(self) -> set:
@@ -1768,6 +1848,18 @@ PROBE_CANDIDATES = (
     ("1-phenylethyl", lambda: b.PsChainSpec(1, head_end="methyl", tail_end="benzylic_radical")),
 )
 PATTERN_DP_LIMIT = 8
+# closing partners (``closing_partners``): the probe candidates, then DP2
+# chains of every kind (R_Addition_MultipleBond's one-carbon and DP1 radicals
+# all end refused against styrene: an element-count guard, a depository match
+# or an unknown depository exclusion)
+CLOSING_CANDIDATES = PROBE_CANDIDATES + (
+    ("DP2 primary radical", lambda: b.PsChainSpec(2, head_end="primary_radical",
+                                                  tail_end="benzyl")),
+    ("DP2 closed", lambda: b.PsChainSpec(2, head_end="methyl", tail_end="benzyl")),
+    ("DP2 vinylidene", lambda: b.PsChainSpec(2, head_end="vinylidene", tail_end="benzyl")),
+    ("DP2 benzylic radical", lambda: b.PsChainSpec(2, head_end="methyl",
+                                                   tail_end="benzylic_radical")),
+)
 
 
 def declared_site_kinds() -> dict:
@@ -2268,6 +2360,8 @@ def ladder_class_gaps(plan, classes) -> list:
     for item in plan.items:
         for label in item.classes:
             have[label].update(item.directions or ("*",))
+    for label, _how in getattr(plan, "class_cover", ()):   # covered by its closing
+        have[label].add("*")
     out = []
     for c in classes:
         label = class_label(c)
@@ -2294,6 +2388,592 @@ def class_items(classes, molecularity: dict) -> tuple:
             for y in slots.get(1, {}).values():
                 out.append((direction, (x, y)))
     return tuple(out)
+
+
+# ---------------------------------------------------------------------------
+# class equivalence, per-reactant trees and the pair pre-filter (rework 3)
+# ---------------------------------------------------------------------------
+def per_reactant_tree(family, direction: str = "forward") -> bool:
+    """True iff RMG rates ``direction`` of ``family`` from one tree per
+    reactant, read from the loaded family: the tree is not auto-generated (an
+    auto-generated family has one merged ``Root`` whose predicates read every
+    reactant together) and every reactant group of the forward template is
+    its own top-level node (``family.groups.top``).  RMG then descends each
+    reactant's tree on the reactant that carries its labels alone and looks
+    the rate up by the tuple of leaves.  Forward only: a reverse member's rate
+    is the forward rule's, read on the forward template's reactants (the
+    member's products), so a reverse pair is never reduced."""
+    if direction != "forward" or getattr(family, "auto_generated", True):
+        return False
+    reactants = [e.label for e in family.forward_template.reactants]
+    tops = {e.label for e in family.groups.top}
+    return len(reactants) >= 2 and len(set(reactants)) == len(reactants) and \
+        set(reactants) <= tops
+
+
+def joined_templates(family, directions) -> tuple:
+    """((direction, unpaired delta), ...) of the bimolecular directions whose
+    template products form ONE species (every reactant atom ends in it: the
+    product groups have one connected component in all), with the net
+    unpaired-electron change of the direction's recipe (``GAIN_RADICAL`` -
+    ``LOSE_RADICAL``, times the template atoms carrying the action's label:
+    R_Recombination's one ``LOSE_RADICAL *`` acts on both ``*`` atoms; bond
+    actions move no unpaired electron)."""
+    import networkx as nx
+    from rmgpy.kmc import channels as chm
+
+    def first(entry):
+        try:
+            groups = chm._group_atoms(family.groups, entry)
+        except Exception:    # an unexpandable logic node: not proved joined
+            return None
+        return groups[0] if groups else None
+    out = []
+    for direction, molecularity in directions:
+        if molecularity != 2:
+            continue
+        template = family.forward_template if direction == "forward" else \
+            family.reverse_template
+        recipe = family.forward_recipe if direction == "forward" else \
+            getattr(family, "reverse_recipe", None)
+        if template is None or recipe is None:
+            continue
+        products = [first(e) for e in template.products]
+        if any(g is None for g in products) or \
+                sum(nx.number_connected_components(_group_graph(g)) for g in products) != 1:
+            continue
+        reactants = [first(e) for e in template.reactants]
+        counts = defaultdict(int)
+        for g in reactants:
+            for a in (g.atoms if g is not None else ()):
+                if a.label:
+                    counts[a.label] += 1
+        delta = 0
+        for action in recipe.actions:
+            if action[0] in ("GAIN_RADICAL", "LOSE_RADICAL"):
+                n = int(action[2]) * max(1, counts.get(action[1], 1))
+                delta += n if action[0] == "GAIN_RADICAL" else -n
+        out.append((direction, delta))
+    return tuple(out)
+
+
+_UNPAIRED = {}
+
+
+def unpaired_electrons(spec) -> int:
+    """Unpaired electrons of a spec's built species (any resonance form)."""
+    key = repr(spec)
+    if key not in _UNPAIRED:
+        _UNPAIRED[key] = sum(int(a.radical_electrons) for a in build_spec(spec).molecule.atoms)
+    return _UNPAIRED[key]
+
+
+def pair_prefilter(constants: FamilyConstants, direction: str, first, second) -> Optional[str]:
+    """Why EVERY member of the pair (``first``, ``second``) is refused, proved
+    without expanding it, or None.  The one proof used: a one-product template
+    (``joined_templates``) puts all unpaired electrons of both reactants, plus
+    the recipe's delta, on one species in every mapping and every resonance
+    form, and ``domain`` refuses a species with more than
+    ``MAX_RADICAL_SITES`` unpaired electrons (more sites than allowed, or a
+    ``u2`` site).  Two-product templates (H abstraction, disproportionation)
+    split the electrons per participant, where the class closings already
+    showed each class in domain, so no pair of them is dropped."""
+    delta = dict(constants.joined).get(direction)
+    if delta is None:
+        return None
+    n = unpaired_electrons(first) + unpaired_electrons(second) + delta
+    if n > dom.MAX_RADICAL_SITES:
+        return (f"prefilter:domain: every member's single product species carries {n} "
+                f"unpaired electrons > MAX_RADICAL_SITES = {dom.MAX_RADICAL_SITES}")
+    return None
+
+
+def closing_partners(certifier, family, constants: FamilyConstants) -> dict:
+    """{bimolecular direction: {slot: (name, spec)}}: per template slot the
+    cheapest ``CLOSING_CANDIDATES`` species that fills it in an in-domain member
+    reaching a fixed point (the closing partner of every class of the OTHER
+    slot).  The probe partner H / H2 is the cheapest filler but its members
+    end ``refused:guard: element_count`` (a failed carbon-count guard that a
+    provider extension could flip), so the closing partner is the first
+    candidate whose member closes."""
+    out = {}
+    cands = [(name, make()) for name, make in CLOSING_CANDIDATES]
+    for direction, molecularity in constants.directions:
+        if molecularity != 2:
+            continue
+        fills = {}
+        for name, spec in cands:
+            for _other, spec2 in cands:
+                for slot, case in _closing_cases(certifier, family, [spec2, spec], direction):
+                    if slot in fills:
+                        continue
+                    observer = MemberObserver(certifier, family, direction, case.wanted)
+                    if fixed_point(case.witness, observer).reached:
+                        fills[slot] = (name, spec)
+            if len(fills) == 2:
+                break
+        out[direction] = fills
+    return out
+
+
+def _closing_cases(certifier, family, specs, direction):
+    """(slot participant 1 fills, member) of the in-domain supported members."""
+    try:
+        cases = member_cases(certifier, family, builds_of(specs), direction)
+    except b.BoundaryError:
+        return []
+    out = []
+    for case in cases:
+        if case.support != "supported" or species_domain_refusal(case.witness):
+            continue
+        for slot in _slot_sites(case, 1):
+            out.append((slot, case))
+    return out
+
+
+@dataclass(frozen=True)
+class ClassClosure:
+    """A class closed once against its closing partner: every member whose
+    slot carries the class's site on participant 0 (``results``: fixed points
+    or refusals), the pathways (leaf tuples) and own leaves of its
+    fixed-point members, the member statuses, participant 0's unpaired
+    electrons and guard-capped element counts (whole-species reads), and
+    whether participant 0 is a species of a training reaction (RMG's
+    depository match reads both species whole)."""
+
+    label: str
+    direction: str
+    slot: int
+    partner: Optional[str]
+    results: tuple = field(default=(), compare=False)
+    pathways: tuple = ()
+    leaves: tuple = ()
+    statuses: tuple = ()
+    unpaired: int = 0
+    elements: tuple = ()
+    training: bool = False
+
+    @property
+    def fixed(self) -> tuple:
+        return tuple(r for r in self.results if r.status == "fixed_point")
+
+
+def own_leaf(pathway, slot: int) -> str:
+    """The leaf of one template slot (per-reactant trees: one leaf per slot;
+    a merged root: the single leaf)."""
+    pathway = tuple(pathway)
+    return pathway[slot] if len(pathway) > 1 and slot < len(pathway) else pathway[0]
+
+
+_GUARD_MINIMA = {}
+
+
+def guard_minima(family) -> dict:
+    """{element: the largest element-count minimum of any group of the
+    family's tree}: counts at or above it pass every element guard."""
+    if family.label not in _GUARD_MINIMA:
+        from rmgpy.data.base import LogicNode
+        from rmgpy.kmc import channels as chm
+        out = defaultdict(int)
+        for entry in family.groups.entries.values():
+            if isinstance(entry.item, LogicNode):
+                continue
+            for group in chm._group_atoms(family.groups, entry):
+                for el, n in (getattr(group, "elementCount", None) or {}).items():
+                    out[str(el)] = max(out[str(el)], int(n))
+        _GUARD_MINIMA[family.label] = dict(out)
+    return _GUARD_MINIMA[family.label]
+
+
+_TRAINING = {}
+
+
+def training_keys(family) -> frozenset:
+    """Species keys (modulo resonance) of every species of the family's
+    training reactions, both sides (RMG's depository match is a reaction
+    isomorphism in either direction)."""
+    if family.label not in _TRAINING:
+        from rmgpy.kmc import channels as chm
+        species = chm.SpeciesKeys()
+        out = set()
+        try:
+            depository = family.get_training_depository()
+        except Exception:     # no training depository: nothing can match
+            depository = None
+        for entry in (depository.entries.values() if depository else ()):
+            for s in list(entry.item.reactants) + list(entry.item.products):
+                mol = s.molecule[0] if hasattr(s, "molecule") else s
+                out.add(species(mol))
+        _TRAINING[family.label] = frozenset(out)
+    return _TRAINING[family.label]
+
+
+def _snapshot(case, row, keep):
+    """A picklable ContextResult of a closed member (the observation's viewer
+    a module-level partial, reacting atoms transported)."""
+    from dataclasses import replace
+    from functools import partial
+    if not keep or not keep[0].reached:
+        return ContextResult((), row["status"], row.get("reason", ""))
+    fp = keep[0]
+    obs = fp.observation
+    viewer = partial(certificate_view, obs.certificate, frozenset(case.wanted),
+                     transport_reacting=True)
+    # a fresh witness (its cached read-only row views do not pickle)
+    return ContextResult((), fp.status, fp.reason, replace(fp.witness), fp.window,
+                         Observation(obs.support, viewer, obs.certificate))
+
+
+def close_classes(certifier, family, classes, partner=None, *, bound=None,
+                  providers=None) -> tuple:
+    """Close every class of ``classes`` (one direction, slot and spec) once
+    against ``partner`` ((name, spec) filling the other slot; None in a
+    unimolecular direction): RMG's members of the spec (and partner), each
+    member whose slot carries a class's site on participant 0 run once
+    (``run_member``, contexts and all).  (closures, rows)."""
+    from rmgpy.kmc import channels as chm
+    first = classes[0]
+    if any((c.direction, c.slot, repr(c.spec)) != (first.direction, first.slot, repr(first.spec))
+           for c in classes):
+        raise WindowError("close_classes: one direction, slot and spec per call")
+    specs = [first.spec] + ([partner[1]] if partner else [])
+    label = "close " + "+".join(_ends_label(x) if isinstance(x, b.PsChainSpec) else str(x)
+                                for x in specs)
+    cases = member_cases(certifier, family, builds_of(specs), first.direction, label=label)
+    got, rows = defaultdict(list), []
+    for case in cases:
+        sites = _slot_sites(case, 0).get(first.slot, set())
+        mine = [c for c in classes if c.site in sites]
+        if not mine:
+            continue
+        keep = []
+        row = run_member(certifier, family, case, bound=bound, providers=providers,
+                         contexts=True, specs=specs, keep=keep)
+        row["closes"] = sorted(class_label(c) for c in mine)
+        rows.append(row)
+        snap = _snapshot(case, row, keep)
+        for c in mine:
+            got[class_label(c)].append((case.pathway, snap))
+    molecule = builds_of([first.spec])[0].molecule
+    unpaired = sum(int(a.radical_electrons) for a in molecule.atoms)
+    minima = guard_minima(family)
+    counts = defaultdict(int)
+    for a in molecule.atoms:
+        counts[a.element.symbol] += 1
+    elements = tuple(sorted((el, min(n, minima.get(el, 0))) for el, n in counts.items()))
+    training = chm.SpeciesKeys()(molecule) in training_keys(family)
+    out = []
+    for c in classes:
+        mine = got.get(class_label(c), [])
+        fixed = [p for p, s in mine if s.status == "fixed_point"]
+        out.append(ClassClosure(class_label(c), c.direction, c.slot,
+                                partner[0] if partner else None,
+                                tuple(s for _p, s in mine), tuple(sorted(set(fixed))),
+                                tuple(sorted({own_leaf(p, c.slot) for p in fixed})),
+                                tuple(sorted({s.status for _p, s in mine})), unpaired, elements,
+                                training))
+    return tuple(out), rows
+
+
+def _class_graph(witness, atoms):
+    """The window's marked graph for class equivalence across witnesses
+    (``_collapsed_graph``'s, made witness-free): a reacting atom is marked
+    reacting (its labels are compared by the certificate view under the
+    isomorphism, ``transport_reacting``), and a chain's orientation is not a
+    mark: a physical end is marked physical and an exterior bond names how
+    many artificial / physical ports lie beyond it, not which (the same end
+    chemistry at a spec's head or tail is the same environment)."""
+    import networkx as nx
+    nodes, edges = window_labels(witness, atoms)
+    rows = witness.reactant_rows()
+    support = b.edit_support(witness)
+    kind = {(p.index, port.port_id): (p.index, "artificial" if port.artificial else "physical")
+            for p in witness.participants for port in p.metadata.ports}
+
+    def norm(label):
+        before, after, role, reacting, physical, exterior = label
+        physical = None if physical is None else (physical[0], "physical")
+        exterior = tuple(sorted(((o1, o2, tuple(sorted(kind.get(k, k) for k in reach)))
+                                 for o1, o2, reach in exterior), key=repr))
+        return (before, after, role, reacting, physical, exterior)
+    kept = {a for a in nodes if rows[a][0] != "H" or a in support}
+    folded = defaultdict(list)
+    for a in nodes:
+        if a in kept:
+            continue
+        heavy = [n for n, _o in rows[a][5] if n in kept]
+        folded[heavy[0] if heavy else None].append(repr(norm(nodes[a])))
+    graph = nx.Graph()
+    for a in kept:
+        graph.add_node(a, label=repr((norm(nodes[a]), "r" if a in support else "",
+                                      tuple(sorted(folded.get(a, ()))))))
+    graph.graph["orphans"] = tuple(sorted(folded.get(None, ())))
+    for (x, y), label in edges.items():
+        if x in kept and y in kept:
+            graph.add_edge(x, y, label=repr(label))
+    return graph
+
+
+def class_window_isomorphisms(first, atoms_first, second, atoms_second,
+                              limit=ISOMORPHISM_LIMIT):
+    """Mark-preserving isomorphisms (second -> first) of two windows on
+    different witnesses (``_class_graph``)."""
+    from networkx.algorithms import isomorphism
+    g1, g2 = _class_graph(first, atoms_first), _class_graph(second, atoms_second)
+    if g1.graph["orphans"] != g2.graph["orphans"] or len(g1) != len(g2) or \
+            sorted(d["label"] for _a, d in g1.nodes(data=True)) != \
+            sorted(d["label"] for _a, d in g2.nodes(data=True)):
+        return []
+    matcher = isomorphism.GraphMatcher(
+        g2, g1, node_match=lambda x, y: x["label"] == y["label"],
+        edge_match=lambda x, y: x["label"] == y["label"])
+    out = []
+    for mapping in matcher.isomorphisms_iter():
+        out.append(dict(mapping))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def ball_window(result, participant: int, reach: int) -> frozenset:
+    """The closed window of ``result`` widened by every atom of
+    ``participant`` within ``reach`` heavy bonds of its reacting atoms (the
+    span bound when ``reach`` is the tree's largest predicate radius ``r``:
+    no predicate of any descent, whatever the partner, reads beyond it),
+    closed again (rings, pi systems, hydrogens)."""
+    witness = result.witness
+    rows = witness.reactant_rows()
+    owned = set(witness.participants[participant].atom_ids)
+    reacting = set(result.window.support.reacting) & owned
+    seen, frontier, depth = set(reacting), set(reacting), 0
+    while frontier and depth < reach:
+        nxt = set()
+        for a in frontier:
+            for n, _o in rows[a][5]:
+                if n in owned and n not in seen and rows[n][0] != "H":
+                    nxt.add(n)
+        seen |= nxt
+        frontier = nxt
+        depth += 1
+    window = close(witness, Support(frozenset(set(result.window.atoms) | seen),
+                                    frozenset(result.window.support.reacting)))
+    if window.refusal:
+        raise WindowError(f"ball window: {window.refusal}")
+    return window.atoms
+
+
+def class_results_merge(first: ContextResult, second: ContextResult, *, reach=None,
+                        participant: int = 0) -> bool:
+    """Two class members' closed windows are equal marked graphs (across
+    witnesses) and their certificate views are equal under that
+    correspondence; with ``reach`` (a merged-root tree) the windows widened to
+    the span bound around participant 0's reacting atoms must be equal too
+    (``ball_window``)."""
+    if first.status != "fixed_point" or second.status != "fixed_point":
+        return False
+    windows = [(first.window.atoms, second.window.atoms)]
+    if reach is not None:
+        windows.append((ball_window(first, participant, reach),
+                        ball_window(second, participant, reach)))
+    for w1, w2 in windows:
+        ok = False
+        for mapping in class_window_isomorphisms(first.witness, w1, second.witness, w2):
+            if first.observation.view(w1, {a: a for a in w1}) == \
+                    second.observation.view(w2, mapping):
+                ok = True
+                break
+        if not ok:
+            return False
+    return True
+
+
+def classes_merge(first: ClassClosure, second: ClassClosure, *, reach=None) -> bool:
+    """Two classes of one direction and slot are the same rate-selection
+    environment: closed against the same partner, the same leaves (pathways
+    of their fixed-point members, checked explicitly), the same member
+    statuses, and every fixed-point member of each merges with one of the
+    other (``class_results_merge``).  A class without a fixed-point member
+    never merges.  With ``reach`` (merged-root tree): also equal unpaired
+    electrons and guard-capped element counts (whole-species reads)."""
+    if (first.direction, first.slot, first.partner) != \
+            (second.direction, second.slot, second.partner):
+        return False
+    if first.pathways != second.pathways:
+        return False
+    if first.statuses != second.statuses:
+        return False
+    if reach is not None and (first.unpaired, first.elements) != \
+            (second.unpaired, second.elements):
+        return False
+    fixed1, fixed2 = first.fixed, second.fixed
+    if not fixed1 or not fixed2:
+        return False
+    for xs, ys, flip in ((fixed1, fixed2, False), (fixed2, fixed1, True)):
+        for x in xs:
+            if not any(class_results_merge(y, x, reach=reach) if flip else
+                       class_results_merge(x, y, reach=reach) for y in ys):
+                return False
+    return True
+
+
+@dataclass(frozen=True)
+class ClassMerge:
+    """The class -> representative map of a family's roster (``merge_classes``)
+    and what the plan needs of each class: its own leaves, whether its
+    closing reached a fixed point, whether its participant is a training
+    species."""
+
+    representative: tuple = ()      # ((class label, representative label), ...)
+    leaves: tuple = ()              # ((class label, (leaf, ...)), ...)
+    fixed: frozenset = frozenset()  # class labels whose closing reached a fixed point
+    training: frozenset = frozenset()
+    closed: frozenset = frozenset()  # class labels with a closing
+    statuses: tuple = ()             # ((class label, (member status, ...)), ...)
+
+    def rep(self, label: str) -> str:
+        return dict(self.representative).get(label, label)
+
+    def leaves_of(self, label: str) -> tuple:
+        return dict(self.leaves).get(label, ())
+
+
+def _class_cost(c) -> tuple:
+    try:
+        heavy = sum(1 for a in build_spec(c.spec).molecule.atoms if a.element.symbol != "H")
+    except b.BoundaryError:
+        heavy = 10 ** 6
+    return (c.dp, heavy, repr(c.spec), class_label(c))
+
+
+def merge_classes(classes, closures, *, merged_root=(), reach=None) -> ClassMerge:
+    """Merge the classes of each direction and slot whose closings are the
+    same rate-selection environment (``classes_merge``): a class merges into
+    the first representative (cheapest first: smallest DP, fewest heavy
+    atoms) it equals, else it is a representative.  ``merged_root``: the
+    directions whose tree reads every reactant together (compared with the
+    windows widened to ``reach``).  A class without a closing is its own
+    representative."""
+    by = {c.label: c for c in closures}
+    reps = defaultdict(list)
+    pairs = []
+    for c in sorted(classes, key=_class_cost):
+        label = class_label(c)
+        mine = by.get(label)
+        rep = label
+        if mine is not None:
+            r = reach if c.direction in merged_root else None
+            for other in reps[(c.direction, c.slot)]:
+                if classes_merge(by[other], mine, reach=r):
+                    rep = other
+                    break
+            else:
+                reps[(c.direction, c.slot)].append(label)
+        pairs.append((label, rep))
+    return ClassMerge(tuple(sorted(pairs)),
+                      tuple(sorted((c.label, c.leaves) for c in closures)),
+                      frozenset(c.label for c in closures if c.fixed),
+                      frozenset(c.label for c in closures if c.training),
+                      frozenset(c.label for c in closures),
+                      tuple(sorted((c.label, c.statuses) for c in closures)))
+
+
+def merge_summary(classes, merge) -> dict:
+    """Per direction and slot: class and representative counts, the
+    representatives' distinct specs, and the map representative -> classes."""
+    by_label = {class_label(c): c for c in classes}
+    table = defaultdict(lambda: defaultdict(list))
+    for c in classes:
+        label = class_label(c)
+        table[f"{c.direction}|slot{c.slot}"][merge.rep(label) if merge else label].append(label)
+    out = {}
+    for key, reps in sorted(table.items()):
+        out[key] = {"classes": sum(len(v) for v in reps.values()),
+                    "representatives": len(reps),
+                    "representative_specs": len({repr(by_label[r].spec) for r in reps
+                                                 if r in by_label}),
+                    "fixed": sum(1 for r in reps if merge and r in merge.fixed),
+                    "map": {r: sorted(v) for r, v in sorted(reps.items())}}
+    return out
+
+
+def leaf_cover(slot_specs, prefilter=None) -> tuple:
+    """Spec pairs covering every leaf tuple that occurs: ``slot_specs`` is
+    ({spec key: leaves} of slot 0, {spec key: leaves} of slot 1); the tuples
+    are slot-0 leaves x slot-1 leaves; pairs are picked greedily (most
+    uncovered tuples first, then the cheapest key order), skipping pairs
+    ``prefilter(k0, k1)`` drops.  (((k0, k1, tuples), ...), uncovered
+    tuples)."""
+    first, second = slot_specs
+    want = {(x, y) for v in first.values() for x in v for w in second.values() for y in w}
+    keys0, keys1 = list(first), list(second)
+    chosen, left = [], set(want)
+    while left:
+        best, gain = None, set()
+        for k0 in keys0:
+            for k1 in keys1:
+                got = {(x, y) for x in first[k0] for y in second[k1]} & left
+                if len(got) > len(gain) and not (prefilter and prefilter(k0, k1)):
+                    best, gain = (k0, k1), got
+        if best is None:
+            break
+        chosen.append((best[0], best[1], tuple(sorted(gain))))
+        left -= gain
+    return tuple(chosen), tuple(sorted(left))
+
+
+def site_select(case, specs, sites) -> bool:
+    """A class-pair member is expanded iff, in every slot the pair constrains,
+    some participant carries one of the planned representative sites
+    (``sites``: (spec repr, slot, site), ``LadderItem.sites``); the other
+    members of the two species belong to other classes, each expanded with
+    its own representative."""
+    allowed = defaultdict(set)
+    for key, slot, site in sites:
+        allowed[int(slot)].add((key, tuple(tuple(x) for x in site)))
+    keys = [repr(s) for s in specs]
+    for slot, want in allowed.items():
+        if not any((key, site) in want for p, key in enumerate(keys)
+                   for site in _slot_sites(case, p).get(slot, ())):
+            return False
+    return True
+
+
+def leaf_tuple_gaps(plan, rows) -> list:
+    """Every leaf tuple a per-reactant pair item was planned for (``leaf_tuples``)
+    needs a fixed-point member with that pathway in its direction."""
+    have = defaultdict(set)
+    for r in rows:
+        if r.get("status") == "fixed_point" and r.get("pathway"):
+            have[r.get("direction")].add(tuple(r["pathway"]))
+    out = []
+    for item in plan.items:
+        for direction in item.directions:
+            for leaves in item.leaf_tuples:
+                if tuple(leaves) not in have[direction]:
+                    out.append(f"{direction} leaf tuple {';'.join(leaves)} ({item.label}): no "
+                               "fixed-point member")
+    return out
+
+
+def closure_gaps(classes, merge, directions=None) -> list:
+    """Every class must have a closing with at least one member carrying its
+    site (the probe found it there; ``directions``: the closed directions,
+    default all).  A class whose closing reached no fixed
+    point (every member refused by status) is accounted, not a gap: it is
+    its own representative and is expanded unreduced (``class_plan``)."""
+    out = []
+    if merge is None:
+        return out
+    members = dict(merge.statuses)
+    for c in classes:
+        if directions is not None and c.direction not in directions:
+            continue
+        label = class_label(c)
+        if label not in merge.closed:
+            out.append(f"class {label}: no closing")
+        elif not members.get(label):
+            out.append(f"class {label}: its closing has no member carrying the site")
+    return out
 
 
 def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -> LadderPlan:
@@ -2337,7 +3017,7 @@ def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -
                     (None, f"outside the declared domain: {verdict.reason}")
         return keys[r]
 
-    def add(key, kind, spec, dp, classes=()):
+    def add(key, kind, spec, dp, classes=(), sites=()):
         skey, why = species_key(spec)
         if why:
             excluded.append((key, why))
@@ -2346,17 +3026,22 @@ def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -
             label = by_species[skey]
             item = items[label]
             if kind not in item.kinds or classes:
+                # site selection only between class entries; a grid item of
+                # the same species runs every member
+                both = set(item.kinds) | {kind} == {"class"}
                 items[label] = LadderItem(item.label, item.kinds + ((kind,) if kind not in
                                                                     item.kinds else ()),
                                           item.dp, item.specs, item.control, dps=item.dps,
-                                          classes=item.classes + tuple(classes))
+                                          classes=item.classes + tuple(classes),
+                                          sites=tuple(sorted(set(item.sites) | set(sites)))
+                                          if both else ())
             if key[0] != item.label and not classes:
                 excluded.append((key, f"duplicate species of {label}"))
             return
         label = _ends_label(spec)
         by_species[skey] = label
         items[label] = LadderItem(label, (kind,), dp, (spec,), dp > L, dps=(dp,),
-                                  classes=tuple(classes))
+                                  classes=tuple(classes), sites=tuple(sorted(sites)))
 
     S = b.PsChainSpec
     for dp in range(1, L + 2):
@@ -2453,17 +3138,24 @@ def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -
                                                          item.specs, item.control, 1, item.dps,
                                                          item.directions + (direction,),
                                                          item.pair_kinds)
-    # the generated roster: every site class at its smallest in-domain DP,
-    # alone per unimolecular direction, the product of the slot classes per
-    # bimolecular direction (``class_items``); merged with the grid's items
-    labels = defaultdict(set)
-    for c in constants.classes:
-        labels[(c.direction, repr(c.spec))].add(class_label(c))
-    for direction, members in class_items(constants.classes, molecularity):
+    # the generated roster (``class_plan``): per unimolecular direction every
+    # representative class alone (none when the closings ran: they are those
+    # runs); per bimolecular direction the product of the slot
+    # representatives, or (per-reactant trees) the leaf-tuple cover and the
+    # training-species product; merged with the grid's items
+    cover = []
+    entries, class_excluded = _class_plan(constants)
+    for entry in entries:
+        direction, members, covered, kind = entry[:4]
+        leaf_tuples = entry[4] if len(entry) > 4 else ()
+        sites = tuple(sorted(entry[5])) if len(entry) > 5 else ()
+        if kind == "cover":
+            cover.extend((label, members) for label in covered)
+            continue
         if len(members) == 1:
             (spec, dp), = members
-            add(("class", direction, repr(spec)), "class", spec, dp,
-                tuple(sorted(labels[(direction, repr(spec))])))
+            add(("class", direction, repr(spec)), "class", spec, dp, tuple(sorted(covered)),
+                sites)
             continue
         (first, a), (second, c) = members
         k1, why1 = species_key(first)
@@ -2472,25 +3164,172 @@ def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -
             excluded.append((("class pair", direction, repr(first), repr(second)), why1 or why2))
             continue
         key = tuple(sorted((k1, k2)))
-        covered = tuple(sorted(labels[(direction, repr(first))] |
-                               labels[(direction, repr(second))]))
         item = pairs.get(key)
         if item is None:
             pairs[key] = LadderItem(f"class pair DP{a}+DP{c} {_ends_label(first)}+"
-                                    f"{_ends_label(second)}", ("pair:class",), max(a, c),
+                                    f"{_ends_label(second)}", (kind,), max(a, c),
                                     (first, second), max(a, c) > L, None, (a, c),
-                                    (direction,), ("class",), covered)
+                                    (direction,), ("class",), tuple(sorted(covered)),
+                                    tuple(leaf_tuples), sites)
         else:
-            pairs[key] = LadderItem(item.label, item.kinds + (("pair:class",) if "pair:class"
-                                                              not in item.kinds else ()),
+            # site selection only between class-product entries; anything else
+            # on the same species pair runs every member
+            both = set(item.kinds) | {kind} == {"pair:class"}
+            pairs[key] = LadderItem(item.label, item.kinds + ((kind,) if kind not in item.kinds
+                                                              else ()),
                                     item.dp, item.specs, item.control, None, item.dps,
                                     item.directions + ((direction,) if direction not in
                                                        item.directions else ()),
-                                    item.pair_kinds, item.classes + covered)
+                                    item.pair_kinds, item.classes + tuple(sorted(covered)),
+                                    item.leaf_tuples + tuple(leaf_tuples),
+                                    tuple(sorted(set(item.sites) | set(sites))) if both else ())
+    excluded.extend(class_excluded)
     out = list(items.values())
     out += list(pairs.values()) + list(long_pairs.values())
     singles = tuple(d for d, n in constants.directions if n == 1)
-    return LadderPlan(constants.family, L, tuple(out), tuple(excluded), roster, singles)
+    return LadderPlan(constants.family, L, tuple(out), tuple(excluded), roster, singles,
+                      tuple(sorted(cover)))
+
+
+def _spec_name(spec) -> str:
+    return _ends_label(spec) if isinstance(spec, b.PsChainSpec) else repr(spec)
+
+
+def class_plan(constants: FamilyConstants) -> list:
+    """The generated ladder entries: (direction, ((spec, dp), ...), covered
+    class labels, kind[, leaf tuples]).  ``constants.merge`` (``merge_classes``)
+    names each class's representative; without it every class is its own.
+
+    * unimolecular direction: every representative's spec alone (``class``);
+      with closings these ARE the runs, so the classes are covered by them
+      (kind ``cover``) and nothing is planned twice;
+    * bimolecular direction whose tree reads every reactant together (not in
+      ``constants.per_reactant``): the product of the slot-0 and slot-1
+      representative specs (``pair:class``), less the pairs
+      ``pair_prefilter`` proves fully refused (``class_plan_excluded``);
+    * bimolecular per-reactant direction with closings: the classes are
+      covered by their representatives' closings (``cover``); one pair per
+      leaf tuple that occurs (``leaf_cover`` over the representatives'
+      leaves: ``pair:leaf``, each item naming the tuples it must reach); and
+      the product of the classes whose species is a training species
+      (``pair:training``: RMG's depository match reads both species whole)."""
+    return _class_plan(constants)[0]
+
+
+def _class_plan(constants):
+    classes = constants.classes or ()
+    merge = constants.merge
+    molecularity = dict(constants.directions)
+    labels = {class_label(c): c for c in classes}
+
+    def rep(c):
+        return labels.get(merge.rep(class_label(c)), c) if merge is not None else c
+    slots = defaultdict(lambda: defaultdict(dict))     # direction -> slot -> spec key -> (spec, dp)
+    covered = defaultdict(set)                         # (direction, slot, spec key) -> labels
+    for c in classes:
+        r = rep(c)
+        slots[c.direction][r.slot].setdefault(repr(r.spec), (r.spec, r.dp))
+        covered[(c.direction, r.slot, repr(r.spec))].add(class_label(c))
+    entries, excluded = [], []
+    for direction in sorted(slots):
+        mine = [c for c in classes if c.direction == direction]
+        closed = merge is not None and all(class_label(c) in merge.closed for c in mine)
+        by = slots[direction]
+        if molecularity.get(direction, 2) == 1:
+            if closed:
+                entries.append((direction, "closing", tuple(class_label(c) for c in mine),
+                                "cover"))
+                continue
+            # a spec runs the members carrying one of its own classes' sites
+            # (``site_select``): its other sites are classes of a smaller DP,
+            # each run on its own spec
+            own = defaultdict(set)
+            for c in mine:
+                own[repr(c.spec)].add(c.site)
+            for key, (spec, dp) in sorted(by.get(0, {}).items()):
+                entries.append((direction, ((spec, dp),), covered[(direction, 0, key)], "class",
+                                (), {(key, 0, site) for site in own[key]}))
+            continue
+        if direction in constants.per_reactant and closed:
+            entries.append((direction, "closing", tuple(class_label(c) for c in mine), "cover"))
+            leaves = ({}, {})
+            for slot in (0, 1):
+                for c in mine:
+                    if c.slot != slot or merge.rep(class_label(c)) != class_label(c) or \
+                            class_label(c) not in merge.fixed:
+                        continue
+                    got = leaves[slot].setdefault(repr(c.spec), set())
+                    got.update(merge.leaves_of(class_label(c)))
+            specs = {(s, k): v for s in (0, 1) for k, v in by.get(s, {}).items()}
+
+            def drop(k0, k1):
+                return pair_prefilter(constants, direction, specs[(0, k0)][0],
+                                      specs[(1, k1)][0])
+            chosen, left = leaf_cover(leaves, drop)
+            for k0, k1, tuples in chosen:
+                entries.append((direction, (specs[(0, k0)], specs[(1, k1)]),
+                                covered[(direction, 0, k0)] | covered[(direction, 1, k1)],
+                                "pair:leaf", tuples))
+            for t in left:
+                excluded.append((("leaf tuple", direction, t), "no representative pair "
+                                 "survives the pre-filter (every member refused)"))
+            # a class whose closing reached no fixed point (every member refused
+            # by status) has no leaf to cover: it stays unreduced, paired with
+            # every representative spec of the other slot
+            seen = set()
+            for c in mine:
+                if merge.rep(class_label(c)) != class_label(c) or class_label(c) in merge.fixed:
+                    continue
+                other = 1 - c.slot
+                for k, y in sorted(by.get(other, {}).items()):
+                    pair = ((c.spec, c.dp), y) if c.slot == 0 else (y, (c.spec, c.dp))
+                    key = (repr(pair[0][0]), repr(pair[1][0]))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    why = pair_prefilter(constants, direction, pair[0][0], pair[1][0])
+                    if why:
+                        excluded.append((("unclosed pair", direction) + key, why))
+                        continue
+                    entries.append((direction, pair, {class_label(c)} |
+                                    covered[(direction, other, k)], "pair:unclosed"))
+            train = [[c for c in mine if c.slot == s and class_label(c) in merge.training]
+                     for s in (0, 1)]
+            seen = set()
+            for x in train[0]:
+                for y in train[1]:
+                    key = (repr(x.spec), repr(y.spec))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    why = pair_prefilter(constants, direction, x.spec, y.spec)
+                    if why:
+                        excluded.append((("training pair", direction) + key, why))
+                        continue
+                    entries.append((direction, ((x.spec, x.dp), (y.spec, y.dp)),
+                                    {class_label(x), class_label(y)}, "pair:training"))
+            continue
+        # the representatives' own sites per slot and spec: a pair expands the
+        # members carrying a representative site in each slot (``site_select``)
+        rep_sites = defaultdict(set)
+        for c in mine:
+            if rep(c) is c or class_label(rep(c)) == class_label(c):
+                rep_sites[(c.slot, repr(c.spec))].add(c.site)
+        for k0, x in sorted(by.get(0, {}).items()):
+            for k1, y in sorted(by.get(1, {}).items()):
+                why = pair_prefilter(constants, direction, x[0], y[0])
+                if why:
+                    # accounted: every member refused, proved (``pair_prefilter``)
+                    excluded.append((("class pair", direction, k0, k1), why))
+                    entries.append((direction, "prefilter", tuple(
+                        covered[(direction, 0, k0)] | covered[(direction, 1, k1)]), "cover"))
+                    continue
+                sites = {(k0, 0, site) for site in rep_sites[(0, k0)]} | \
+                    {(k1, 1, site) for site in rep_sites[(1, k1)]}
+                entries.append((direction, (x, y),
+                                covered[(direction, 0, k0)] | covered[(direction, 1, k1)],
+                                "pair:class", (), sites))
+    return entries, excluded
 
 
 def ladder_direction_gaps(plan: LadderPlan, rows) -> list:
@@ -2941,6 +3780,25 @@ def _event_verdict(statuses) -> str:
     return "no_event"
 
 
+def unmatched_event(wanted, built, present) -> tuple:
+    """(status, reason) of an event whose own witness has no member with its
+    labelled atoms (``wanted``: the event's signatures, ``event_signatures``):
+    ``unmatched`` (a gap) when some member (``built``: (label, signatures))
+    maps the event's atoms under other labels, or a heavy atom of the event
+    is not on the witness (``present``: its repeat coordinates);
+    ``not_generated`` (``no_event``, accepted) only when RMG generates no
+    mapping on those atoms under any labels."""
+    atoms = {frozenset(x for _l, x in sig) for sig in wanted}
+    relabelled = [label for label, sigs in built
+                  if {frozenset(x for _l, x in sig) for sig in sigs} & atoms]
+    heavy = {x for group in atoms for x in group if x[0] != "H"}
+    if relabelled or not heavy <= set(present):
+        return "unmatched", ("no member has the mapped event "
+                             f"({len(relabelled)} map its atoms under other labels)")
+    return "not_generated", ("the family generates no mapping on the event's atoms on this "
+                             "species (no such event)")
+
+
 def reacting_port_covers(certifier, family, case, *, bound=None, providers=None, specs=None,
                          **loop) -> list:
     """One cover row per distinct mapped event the reacting-port member stands
@@ -2988,21 +3846,13 @@ def reacting_port_covers(certifier, family, case, *, bound=None, providers=None,
             wanted = event_signatures(case, shift)
             matches = [c for c in built if event_signatures(c) & wanted]
             if not matches:
-                atoms = {frozenset(x for _l, x in sig) for sig in wanted}
                 present = {(p.index, u, k) for p in built[0].witness.participants
                            for _a, u, k in p.metadata.coordinates} if built else \
                     {(i, u, k) for i, x in enumerate(builds) for _a, u, k in
                      x.metadata.coordinates}
-                relabelled = [c.label for c in built
-                              if {frozenset(x for _l, x in sig) for sig in event_signatures(c)}
-                              & atoms]
-                heavy = {x for group in atoms for x in group if x[0] != "H"}
-                if relabelled or not heavy <= present:
-                    row.update(status="unmatched", reason="no member has the mapped event "
-                               f"({len(relabelled)} map its atoms under other labels)")
-                else:
-                    row.update(status="not_generated", reason="the family generates no "
-                               "mapping on the event's atoms on this species (no such event)")
+                status, reason = unmatched_event(
+                    wanted, [(c.label, event_signatures(c)) for c in built], present)
+                row.update(status=status, reason=reason)
             else:
                 members = []
                 for c in matches:
@@ -3088,7 +3938,7 @@ def reacting_port_gaps(rows) -> list:
 
 
 def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: bool = True,
-               providers=None, specs=None, covers: bool = True, **loop) -> dict:
+               providers=None, specs=None, covers: bool = True, keep=None, **loop) -> dict:
     """Items 1-5 and 7 for one member: refusal by status, or the fixed point
     (window, span against ``bound``, per-mapping edit checks, diagnostics,
     recertification flips) and the context list with merges.  A
@@ -3109,6 +3959,8 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
         return out
     observer = MemberObserver(certifier, family, case.direction, case.wanted)
     fp = fixed_point(case.witness, observer, providers, **loop)
+    if keep is not None:       # the class closings keep the fixed point (``close_classes``)
+        keep.append(fp)
     out.update(status=fp.status, reason=fp.reason, depths=[[list(p), d] for p, d in fp.depths],
                retries=fp.retries, observations=observer.calls,
                flips=sorted({(n, o, w) for _k, n, o, w in fp.flips}),
