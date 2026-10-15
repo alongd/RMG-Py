@@ -47,14 +47,18 @@ REFERENCE_SETS = {"H_Abstraction": ("forward",), "Disproportionation": ("forward
 
 
 def _init():
+    """Load the database once (the parent, before the pool forks) and reset
+    the per-worker state (the pool initializer: bounded caches, recycled
+    workers keep memory bounded)."""
     import channelsTest as ct
     from rmgpy.kmc import certificates as cm
     from rmgpy.kmc import windows as win
-    db = ct.database()
-    _S["fam"] = db.kinetics.families
-    _S["certifier"] = cm.Certifier(_S["fam"], max_channel_sets=16, max_entries=2048)
-    _S["bounds"] = {name: win.span_bound(win.family_constants(f))
-                    for name, f in _S["fam"].items()}
+    if "fam" not in _S:
+        db = ct.database()
+        _S["fam"] = db.kinetics.families
+        _S["bounds"] = {name: win.span_bound(win.family_constants(f))
+                        for name, f in _S["fam"].items()}
+    _S["certifier"] = cm.Certifier(_S["fam"], max_channel_sets=8, max_entries=1024)
     _S["cases"] = {}
 
 
@@ -104,7 +108,7 @@ def cases_for(specs, family_name, direction):
     from rmgpy.kmc import windows as win
     key = (json.dumps([spec_dict(s) for s in specs], sort_keys=True), family_name, direction)
     if key not in _S["cases"]:
-        if len(_S["cases"]) > 8:
+        if len(_S["cases"]) > 2:
             _S["cases"].clear()
         _S["cases"][key] = win.member_cases(_S["certifier"], _S["fam"][family_name],
                                             builds_of(specs), direction,
@@ -253,14 +257,22 @@ def run_dp8_task(task):
                    "orientation": record["orientation"], "record_status": record["status"],
                    "rate_source": record["rate_source"]["kind"],
                    "certified": rc.get("certified"), "template": record["template"][:90]}
+            if record["status"] not in cm.FIRING_STATUSES:
+                # published refused by status (certification failed: e.g. a
+                # domain refusal, an aryl-radical channel)
+                row.update(status="refused:record_status", reason=record.get("status_reason",
+                                                                             "")[:240])
+                rows.append(row)
+                continue
             if not cm.requires_certification(record, by_id):
                 row.update(status="outside the required population",
                            reason=(rc.get("gaps") or [""])[0][:200])
                 rows.append(row)
                 continue
             if not rc.get("certified"):
-                row.update(status="refused:record_status", reason=record.get("status_reason",
-                                                                             "")[:240])
+                row.update(status="uncertified firing record", reason=(rc.get("gaps") or
+                                                                      [""])[0][:200])
+                failures.append(f"dp8 record {record['event_id'][:20]} fires uncertified")
                 rows.append(row)
                 continue
             _side, mols, _others = certifier.template_side(record)
@@ -456,6 +468,10 @@ def ladder_gates(rows, plan, bound):
             if both and dp > bound.L:
                 out.append(f"control DP{dp} > L={bound.L}: a window holds both ends: "
                            f"{r['label'][-80:]}")
+    for dp in (bound.L, bound.L + 1):
+        # the L+1 control (and L itself) is vacuous without a fixed point
+        if not per_dp[dp].get("fixed_point"):
+            out.append(f"DP{dp} (L={bound.L}): no member reached a fixed point")
     return out, {str(k): dict(v) for k, v in sorted(per_dp.items())}
 
 
@@ -468,7 +484,8 @@ def run_pool(tasks, workers, fn, log):
     if workers > 1:
         import multiprocessing as mp
         context = mp.get_context("fork")
-        with context.Pool(workers, initializer=_init, maxtasksperchild=40) as pool:
+        _init()
+        with context.Pool(workers, initializer=_init, maxtasksperchild=3) as pool:
             for res in pool.imap_unordered(fn, tasks):
                 results.append(res)
                 _log(res, log, started)
@@ -549,8 +566,9 @@ def dp8(out, args, log):
     """Certify the probe artifact's records (required) and run the records."""
     from rmgpy.kmc import certificates as cm
     _init()
+    from rmgpy.kmc.event_record import EventRecord
     artifact = json.loads(Path(args.artifact).read_text())
-    records = artifact["records"]
+    records = [EventRecord.from_dict(r) for r in artifact["records"]]
     t = time.time()
     certified, store, replacements = cm.certify_records(records, _S["fam"], _S["certifier"],
                                                          required=True)

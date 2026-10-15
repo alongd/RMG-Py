@@ -511,3 +511,58 @@ def test_scoped_certificate_equals_the_full_one_on_the_member(rmg, habs_cases):
             return sum(1 for m in cs.moves if m.status != "excluded")
         assert ran(certifier.channel_set(family, mols)) > ran(
             win.scoped_certifier(certifier, family, case.wanted).channel_set(family, mols))
+
+
+# --------------------------------------------------------------------------
+# slow: the required supported cases and the R_Recombination ladder control
+# --------------------------------------------------------------------------
+@pytest.mark.slow
+@pytest.mark.skipif(not SLOW, reason="set RMG_KMC_SLOW=1")
+def test_required_supported_cases_reach_recertified_fixed_points(rmg):
+    """Every selected member of every required case reaches a fixed point (a
+    reacting atom on an artificial port is accounted by its status), every
+    mapping's edits lie in the window on both sides, the span bound holds,
+    the A+A recombination member covers both template slot orders."""
+    import windows_acceptance as wa
+    fam, certifier = rmg
+    reached = {}
+    for label, family_name, direction, specs, selection in wa.required_sets():
+        family = fam[family_name]
+        bound = win.span_bound(win.family_constants(family))
+        cases = [c for c in win.member_cases(certifier, family, wa.builds_of(specs), direction)
+                 if wa.select(selection, c)]
+        assert cases, label
+        rows = [win.run_member(certifier, family, c, bound=bound, contexts=False)
+                for c in cases]
+        statuses = {r["status"] for r in rows}
+        assert statuses <= {"fixed_point", "refused:reacting_port"}, (label, statuses)
+        for r in rows:
+            if r["status"] == "fixed_point":
+                assert not r["mapping_problems"] and r["span_bound_held"], (label, r)
+        reached[label] = sum(r["status"] == "fixed_point" for r in rows)
+        if "identical" in label:
+            assert any(len(r["slot_orders"]) == 2 for r in rows)
+        print("REQUIRED", label, len(rows), reached[label])
+    assert all(reached.values()), reached
+    assert len(reached) == 8
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not SLOW, reason="set RMG_KMC_SLOW=1")
+def test_recombination_ladder_control(rmg):
+    """Homolysis of the intact closed chains of DP L and L + 1 (R_Recombination):
+    no window of DP L + 1 holds both physical ends (non-overlap control)."""
+    fam, certifier = rmg
+    family = fam["R_Recombination"]
+    bound = win.span_bound(win.family_constants(family))
+    both = {}
+    for dp in (bound.L, bound.L + 1):
+        spec = b.PsChainSpec(dp, head_end="methyl", tail_end="benzyl")
+        build = b.PROVIDERS["polystyrene"].build("ladder", spec)
+        rows = [win.run_member(certifier, family, c, bound=bound, contexts=False)
+                for c in win.member_cases(certifier, family, [build], "reverse")]
+        reached = [r for r in rows if r["status"] == "fixed_point"]
+        assert reached
+        both[dp] = sum(any(s["both_ends"] for s in r["span"].values()) for r in reached)
+    print("LADDER CONTROL", bound.L, both)
+    assert both[bound.L + 1] == 0
