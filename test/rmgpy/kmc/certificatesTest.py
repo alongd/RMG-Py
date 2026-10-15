@@ -1807,3 +1807,143 @@ def test_dp8_closed_compile_certificates(fam, certifier, tmp_path):
     assert required and all(store[r["rate_certificate"]["sha256"]]["certified"]
                             for r in required)
     assert dom.check(ct.mol(ct.ps(8), 0)).accepted
+
+
+# --------------------------------------------------------------------------
+# hardening: the rate owner's direction, and guards each proven by a test
+# --------------------------------------------------------------------------
+def _opposite_owner_pair(fam):
+    """The reversed record of [CH3] + CC given the forward record's rate source
+    (training entry 215, family_template_direction forward) and a forward rate
+    table, with a reciprocal linked partner: a rate owner that runs opposite to
+    the kinetics RMG selected."""
+    from rmgpy.kmc.compiler import LINK_PLACEHOLDER
+    forward, reverse, _cs, _ch = _record_pair(fam, "H_Abstraction",
+                                              [mol("[CH3]", 0), mol("CC", 10)])
+    assert forward.orientation == "as_generated" and reverse.orientation == "reversed"
+    assert forward.rate_source["entry"].startswith("C2H6 + CH3")
+    assert forward.rate_source["family_template_direction"] == "forward"
+    k_table = {"700": [122.8126400424058]}
+    owner = replace(reverse, rate_source=copy.deepcopy(forward.rate_source), reverse_of=None,
+                    k_table=k_table, event_id="")
+    owner = replace(owner, reverse_of=LINK_PLACEHOLDER, event_id="")
+    partner = replace(forward, rate_source=copy.deepcopy(reverse.rate_source),
+                      reverse_of=owner.event_id, k_table=None, event_id="")
+    owner = replace(owner, reverse_of=partner.event_id)
+    return owner, partner
+
+
+def test_rate_owner_must_run_in_the_direction_rmg_selected(fam, certifier):
+    """The stored source direction was compared with RMG's selection but not
+    with the orientation of the record that owns the rate: the reversed record
+    of [CH3] + CC carrying the FORWARD record's rate source (training entry
+    215, direction forward) was bound and certified, and a reciprocal pair
+    built on it validated.  The owner is the record itself for a family
+    estimate and its reverse_of partner for a thermo reverse; the owner must be
+    as_generated exactly when RMG selected the rate forward."""
+    owner, partner = _opposite_owner_pair(fam)
+    rc = certifier.certify_record(owner)
+    assert rc["binding"]["status"] == "refused" and not rc["certified"], rc["binding"]
+    assert any("direction: rate owner runs opposite to selected kinetics" in m
+               for m in rc["binding"]["mismatches"]), rc["binding"]
+    linked = certifier.certify_record(partner, rate_owner=owner)
+    assert linked["binding"]["status"] == "refused" and not linked["certified"], \
+        linked["binding"]
+    assert any("direction: rate owner runs opposite to selected kinetics" in m
+               for m in linked["binding"]["mismatches"]), linked["binding"]
+    art = _mini_artifact([owner, partner], fam)
+    cm.validate_certification(art, families=fam)
+    assert [r["status"] for r in art["records"]] == ["refused", "refused"], \
+        [r["status"] for r in art["records"]]
+    # a rate owner running the selected way still binds: both orientations
+    for reactants, pathway, selected in (
+            ([mol("[CH3]", 0), mol("CC", 10)], None, "as_generated"),
+            ([mol("[CH2]C", 0), mol("C", 10)], ("C_methane", "C_rad/H2/Cs\\H3"), "reversed")):
+        good, other, _cs, _ch = _record_pair(fam, "H_Abstraction", reactants, pathway)
+        assert good.orientation == selected
+        assert certifier.certify_record(good)["certified"]
+        assert certifier.certify_record(other, rate_owner=good)["certified"]
+
+
+def _forged_binding(art, k, certificate=None, binding=None, **flags):
+    """``art`` with record ``k``'s stored certificate edited (ownership and
+    digests regenerated; the edit is internally consistent)."""
+    changes = dict(flags)
+    if certificate is not None:
+        changes["certificate"] = certificate
+    if binding is not None:
+        changes["binding"] = binding
+    return _forge(art, k, changes)
+
+
+def test_stored_certificate_must_equal_its_rederivation(fam):
+    """A stored certificate whose descents and tree path are genuine and whose
+    claims are consistent with each other (ownership and digests regenerated),
+    but which is not what the production binding re-derives from the record
+    on the loaded database, is refused as not re-derived: fewer binding
+    members, another selected source rank, and the flags complete / eligible
+    (certified follows) each differ from the re-derivation."""
+    owner, partner, _cs, _ch = _record_pair(fam, "H_Abstraction",
+                                            [mol("[CH3]", 0), mol("CC", 10)])
+    art = _mini_artifact([owner, partner], fam)
+    cm.validate_certification(art, families=fam)
+    k = next(i for i, r in enumerate(art["records"]) if r["event_id"] == owner.event_id)
+    body = art["rate_certificates"][art["records"][k]["rate_certificate"]["sha256"]]
+    assert len(body["binding"]["members"]) > 1
+
+    members = copy.deepcopy(body["binding"])
+    members["members"] = members["members"][:-1]
+    rank = copy.deepcopy(body["certificate"])
+    rank["channels"][0]["selection"]["training_entry"]["rank"] += 1
+    incomplete = copy.deepcopy(body["certificate"])
+    incomplete["gaps"] = ["an extra gap the re-derivation does not have"]
+    incomplete["complete"] = False
+    ineligible = copy.deepcopy(body["certificate"])
+    channel = ineligible["channels"][0]
+    channel["eligibility"]["disposition"] = "refused"
+    channel["publishable"] = cm._publishable(channel)
+    ineligible["eligible"] = False
+    for label, forged in (
+            ("binding members", _forged_binding(art, k, binding=members)),
+            ("selected source rank", _forged_binding(art, k, certificate=rank)),
+            ("complete flag", _forged_binding(art, k, certificate=incomplete, complete=False,
+                                              certified=False)),
+            ("eligible flag", _forged_binding(art, k, certificate=ineligible, eligible=False,
+                                              certified=False))):
+        with pytest.raises(ValueError, match="not re-derived"):
+            cm.validate_certification(forged, families=fam)
+        print("refused as not re-derived:", label)
+
+
+def test_rewrite_compares_the_declared_lone_pairs(fam):
+    """The runtime signature of a node includes its lone pairs: a declared
+    product whose lone-pair count differs from the replay (a value
+    Molecule.update() leaves alone on the replayed graph) is a rewrite
+    problem."""
+    hh, _p, _cs, _ch = _record_pair(fam, "R_Recombination", [mol("[H]", 0), mol("[H]", 10)])
+    assert cm.rewrite_problems(hh) == []
+    declared = [g.replace("1 H u0 p0 c0", "1 H u0 p1 c0", 1) for g in hh.product_graphs]
+    assert declared != list(hh.product_graphs)
+    problems = cm.rewrite_problems(replace(hh, product_graphs=declared, event_id=""))
+    assert any("do not reproduce the declared products" in p for p in problems), problems
+
+
+def test_rewrite_compares_the_declared_bond_count(fam):
+    """A declared product with a bond the replay does not have is a rewrite
+    problem (the candidate filter compares edge counts: the exact bond check
+    only walks the replay's own bonds, so an extra declared bond between
+    already matched atoms would pass without it); a missing bond is one too."""
+    owner, _p, _cs, _ch = _record_pair(fam, "H_Abstraction", [mol("[CH3]", 0), mol("CC", 10)])
+    assert cm.rewrite_problems(owner) == []
+    methane = owner.product_graphs[0]
+    assert "1 H u0 p0 c0 {5,S}" in methane
+    extra = methane.replace("1 H u0 p0 c0 {5,S}", "1 H u0 p0 c0 {5,S} {2,S}", 1)
+    problems = cm.rewrite_problems(replace(owner, product_graphs=[extra, owner.product_graphs[1]],
+                                           event_id=""))
+    assert any("do not reproduce the declared products" in p for p in problems), problems
+    missing = methane.replace("1 H u0 p0 c0 {5,S}", "1 H u0 p0 c0", 1).replace(
+        "{1,S} {2,S} {3,S} {4,S}", "{2,S} {3,S} {4,S}", 1)
+    assert missing != methane
+    problems = cm.rewrite_problems(replace(owner, product_graphs=[missing, owner.product_graphs[1]],
+                                           event_id=""))
+    assert any("do not reproduce the declared products" in p for p in problems), problems
