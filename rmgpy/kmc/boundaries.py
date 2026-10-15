@@ -53,7 +53,6 @@ Pinned policies
 
 from __future__ import annotations
 
-import itertools
 from collections import deque
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
@@ -1134,19 +1133,27 @@ def iter_vectors(witness: Witness, box, providers=None, *, ceiling=None,
                  check_order: bool = True, verify: bool = True, budget=None,
                  prune_ceiling: bool = False, stats=None):
     """Generator of ``evaluate_vector`` over the box ``0..box[i]`` (an int
-    applies to every port), in lexicographic order.  ``budget`` caps the
-    number of vectors built (``extend_vector`` called); one more raises
-    ``BudgetExceeded``.  With ``prune_ceiling`` sub-boxes whose projected heavy
-    count already exceeds the ceiling are skipped without building or
-    yielding (per-step increments are non-negative, so every extension of
-    such a prefix exceeds it too).
-    ``stats`` receives the counts ``yielded``, ``built`` and ``pruned``."""
+    applies to every port), in lexicographic order, by a lazy odometer
+    (nothing is pooled: memory is independent of the box).  ``budget``
+    caps every VISITED vector (yielded, whatever its status: refusals and
+    ceiling verdicts count as well as built vectors); the vector after the
+    budget raises ``BudgetExceeded``.  With ``prune_ceiling`` sub-boxes
+    whose projected heavy count already exceeds the ceiling are skipped
+    without visiting them (per-step increments are non-negative, so every
+    extension of such a prefix exceeds it too; a coordinate's scan stops at
+    the first value over the ceiling).  ``stats`` receives the counts
+    ``visited``, ``yielded``, ``built`` and ``pruned``."""
     ports = vector_ports(witness)
     bounds = (box,) * len(ports) if isinstance(box, int) else tuple(box)
-    if len(bounds) != len(ports) or any(bound < 0 for bound in bounds):
-        raise BoundaryError("box must give a non-negative bound per port")
+    if len(bounds) != len(ports) or any(
+            isinstance(bound, bool) or not isinstance(bound, int) or bound < 0
+            for bound in bounds):
+        raise BoundaryError("box must give a non-negative integer bound per port")
+    if budget is not None and (isinstance(budget, bool) or not isinstance(budget, int)
+                               or budget < 0):
+        raise BoundaryError("budget must be a non-negative integer")
     stats = {} if stats is None else stats
-    for name in ("yielded", "built", "pruned"):
+    for name in ("visited", "yielded", "built", "pruned"):
         stats.setdefault(name, 0)
     limit = _ceiling(ceiling)
     plan = _vector_plan(witness, providers)
@@ -1154,35 +1161,46 @@ def iter_vectors(witness: Witness, box, providers=None, *, ceiling=None,
     base = witness.heavy_count()
 
     def leaf(vector):
+        if budget is not None and stats["visited"] >= budget:
+            raise BudgetExceeded(f"vector {vector}: more than {budget} vectors to visit")
+        stats["visited"] += 1
         refused = any(v and p in refusals for p, v in enumerate(vector))
         projected = base + sum(v * per_step[p] for p, v in enumerate(vector)
                                if v and p in per_step)
         if not refused and projected <= limit:
-            if budget is not None and stats["built"] >= budget:
-                raise BudgetExceeded(f"vector {vector}: more than {budget} vectors to build")
             stats["built"] += 1
         stats["yielded"] += 1
         return evaluate_vector(witness, vector, providers, ceiling=limit,
                                check_order=check_order, verify=verify, plan=plan)
 
+    n = len(bounds)
     if not prune_ceiling:
-        for vector in itertools.product(*(range(bound + 1) for bound in bounds)):
-            yield leaf(vector)
-        return
+        vector = [0] * n
+        while True:
+            yield leaf(tuple(vector))
+            position = n - 1
+            while position >= 0 and vector[position] == bounds[position]:
+                vector[position] = 0
+                position -= 1
+            if position < 0:
+                return
+            vector[position] += 1
 
-    below = [1] * (len(bounds) + 1)  # vectors under a prefix of each length
-    for p in range(len(bounds) - 1, -1, -1):
+    # vectors under a prefix of each length (Python ints: exact for any box)
+    below = [1] * (n + 1)
+    for p in range(n - 1, -1, -1):
         below[p] = below[p + 1] * (bounds[p] + 1)
 
     def walk(position, prefix, projected):
-        if position == len(bounds):
+        if position == n:
             yield leaf(tuple(prefix))
             return
+        step = per_step.get(position, 0)
         for v in range(bounds[position] + 1):
-            added = projected + v * per_step.get(position, 0)
-            if added > limit:  # increments are non-negative: so is every extension
-                stats["pruned"] += below[position + 1]
-                continue
+            added = projected + v * step
+            if added > limit:  # increments are non-negative: so is every larger v
+                stats["pruned"] += (bounds[position] + 1 - v) * below[position + 1]
+                break
             yield from walk(position + 1, prefix + [v], added)
 
     yield from walk(0, [], base)
@@ -1191,7 +1209,8 @@ def iter_vectors(witness: Witness, box, providers=None, *, ceiling=None,
 def enumerate_vectors(witness: Witness, box, providers=None, *, ceiling=None,
                       check_order: bool = True, verify: bool = True, budget=None,
                       prune_ceiling: bool = False) -> tuple:
-    """``evaluate_vector`` on every vector of the box (see ``iter_vectors``)."""
+    """``evaluate_vector`` on every vector of the box (see ``iter_vectors``;
+    ``budget`` bounds the visited vectors)."""
     return tuple(iter_vectors(witness, box, providers, ceiling=ceiling,
                               check_order=check_order, verify=verify, budget=budget,
                               prune_ceiling=prune_ceiling))

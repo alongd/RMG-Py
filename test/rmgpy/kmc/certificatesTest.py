@@ -1226,7 +1226,7 @@ def test_equivalent_hydrogen_renumbering_is_a_fixed_point(fam, certifier):
 
 def test_transport_refuses_isotope_and_attribute_changes(fam, certifier):
     """C -> 13C (or any change of a surviving atom's isotope, charge, lone
-    pairs or bond orders) is not a transport."""
+    pairs, radical electrons or explicit-H bonds) is not a transport."""
     family = fam["H_Abstraction"]
     cs = chm.build_channels(family, [mol("[CH3]", 0), mol("CC", 10)])
     cert = certifier.certify_channel(family, cs, only(cs.channels))
@@ -1268,6 +1268,11 @@ def test_acceptance_gate_fails_on_supported_selection_changes():
     assert acceptance_failures(dict(ok, incomplete=1))
     changed = dict(ok, recertification=dict(ok["recertification"], **{"supported:changed": 1}))
     assert any("supported" in f for f in acceptance_failures(changed))
+    mixed = dict(ok, recertification={"pathway_ambiguous,supported:changed": 1})
+    assert acceptance_failures(mixed)
+    grown = dict(ok, recertification={"supported:cohort changed": 1})
+    assert acceptance_failures(grown)
+    assert acceptance_failures(dict(ok, recertification={"supported:vanished": 1}))
 
 
 # --------------------------------------------------------------------------
@@ -1288,19 +1293,38 @@ def _reacting(cert):
             for mp in m["mappings"] for _s, _l, a in mp["labels"]}
 
 
+RECERT_OUTCOMES = ("same", "changed", "cohort changed", "unmapped", "refused", "not extended")
+
+
 def acceptance_failures(table) -> list:
-    """Why a reference acceptance table fails the gate (empty: passes)."""
+    """Why a reference acceptance table fails the gate (empty: passes): an
+    incomplete certificate; a SUPPORTED channel (support token
+    ``supported``) whose recertification on +1 repeat unit changed its
+    selection or its event cohort (an added mapping); an outcome outside the
+    accounted categories (``RECERT_OUTCOMES``).  Unsupported changes and
+    explicit refusals (``unmapped``: the extension removed a reacting atom;
+    ``refused``: recertification refused, e.g. a domain-ineligible channel,
+    with its reason in ``recertification_refusals``; ``not extended``) are
+    accounted, not failed."""
     out = []
     if table["incomplete"]:
         out.append(f"{table['incomplete']} incomplete certificates")
+    for key, count in sorted(table.get("recertification", {}).items()):
+        support, _sep, outcome = key.rpartition(":")
+        if outcome not in RECERT_OUTCOMES:
+            out.append(f"unaccounted recertification outcome {key!r} ({count})")
+        elif outcome in ("changed", "cohort changed") and "supported" in support.split(","):
+            out.append(f"{count} supported channel(s) changed on +1 repeat unit ({key})")
     return out
 
 
 def recert_row(certifier, family, cert, mols):
     """Recertification on +1 repeat unit: outcome ``same`` / ``changed`` /
-    ``unmapped`` (a reacting atom was removed by the extension) / ``not
-    extended``, keyed by the channel support, with the bond distance from the
-    extension point to the nearest reacting atom."""
+    ``cohort changed`` (an added mapping) / ``unmapped`` (a reacting atom was
+    removed by the extension) / ``refused`` (recertification refused, e.g. a
+    domain-ineligible channel; the reason is returned) / ``not extended``,
+    keyed by the channel support, with the bond distance from the extension
+    point to the nearest reacting atom."""
     support = ",".join(sorted({c.get("support", "?") for c in cert["channels"]})) or "none"
     ext, amap, info = cm.extend_witness(mols, _reacting(cert))
     if not any(i["extended"] for i in info):
@@ -1310,12 +1334,17 @@ def recert_row(certifier, family, cert, mols):
                    default=None)
     new = certifier.recertify_certificate(family, cert, ext, amap)
     if new.get("certificate") is None:
-        outcome = "unmapped"
+        refusals = new.get("refusals") or []
+        outcome = "unmapped" if refusals and all(r.startswith("atom map")
+                                                 for r in refusals) else "refused"
+    elif not new["same_selection"]:
+        outcome = "changed"
     else:
-        outcome = "same" if new["same_selection"] else "changed"
+        outcome = "same" if not new.get("added_mappings") else "cohort changed"
     return {"extended": True, "same": new["same_selection"], "distance": distance,
             "outcome": f"{support}:{outcome}",
             "flips": sorted({f["node"] for f in new["flips"]}),
+            "refusal": (new.get("refusals") or [None])[0],
             "new_complete": (new["certificate"] or {}).get("complete")}
 
 
@@ -1338,6 +1367,7 @@ def reference_table(certifier, fam, label, mols, out):
     spin_before, spin_after = Counter(), Counter()
     domain, recert, flips, ambiguous = {}, Counter(), Counter(), []
     changed_distance = Counter()
+    refusals = Counter()
     n = 0
     keys = chm.SpeciesKeys()
     for name, directions in sorted(REFERENCE_SETS.items()):
@@ -1373,6 +1403,8 @@ def reference_table(certifier, fam, label, mols, out):
                             incomplete.append((name, direction, ch.pathway, cert["gaps"][:3]))
                         row = recert_row(certifier, family, cert, tmols)
                         recert[row["outcome"]] += 1
+                        if row.get("refusal"):
+                            refusals[f"{row['outcome']}: {row['refusal'][:120]}"] += 1
                         if row["outcome"].endswith(":changed"):
                             changed_distance[(row["outcome"], row["distance"])] += 1
                             for node in row["flips"]:
@@ -1387,6 +1419,7 @@ def reference_table(certifier, fam, label, mols, out):
              "domain_accepted": len(domain) - len(refused),
              "domain_refused": sorted([k, r] for k, r in refused.items()),
              "recertification": dict(recert),
+             "recertification_refusals": dict(refusals),
              "changed_by_distance": sorted([o, d, c] for (o, d), c in changed_distance.items()),
              "flips": sorted([f, node, c] for (f, node), c in flips.items()),
              "incomplete_detail": [list(map(str, x)) for x in incomplete],
@@ -1435,6 +1468,9 @@ def test_dp8_closed_compile_certificates(fam, certifier, tmp_path):
     assert len(records) == 132
     kinds, whole, incomplete, recert = Counter(), [], [], Counter()
     domain, spin_before, spin_after, flips = {}, Counter(), Counter(), Counter()
+    statuses = Counter((r["status"], store[r["rate_certificate"]["sha256"]]["certified"])
+                       for r in records)
+    print("DP8CERT status/certified", dict(statuses))
     by_site = Counter()
     for record in records:
         ref = record["rate_certificate"]
@@ -1460,6 +1496,8 @@ def test_dp8_closed_compile_certificates(fam, certifier, tmp_path):
             domain[keys(m)] = (v.accepted, v.reason)
         row = recert_row(certifier, fam[record["family"]], cert, mols)
         recert[row["outcome"]] += 1
+        if row.get("refusal"):
+            print("DP8CERT recert refusal", row["outcome"], row["refusal"][:160])
         if row["outcome"].endswith(":changed"):
             for node in row["flips"]:
                 flips[node] += 1
@@ -1489,9 +1527,18 @@ def test_dp8_closed_compile_certificates(fam, certifier, tmp_path):
                 "domain_accepted": len(domain) - len(refused),
                 "domain_refused": sorted([k, r] for k, r in refused.items()),
                 "recertification": dict(recert),
+                "status_certified": [[list(k), v] for k, v in sorted(statuses.items())],
                 "flips": sorted([n, c] for n, c in flips.items()),
                 "incomplete": [list(map(str, x)) for x in incomplete],
                 "compile_and_certify_s": round(t1 - t0), "table_s": round(t2 - t1),
                 "store_bytes": len(cm.canonical_json(store))}) + "\n")
     assert not incomplete
+    gate = acceptance_failures({"incomplete": len(incomplete), "recertification": recert})
+    assert not gate, gate
+    # certification required: no record of the required population (a firing
+    # RMG family selection) is uncertified; library-derived records are not in it
+    by_id = {r["event_id"]: r for r in records}
+    required = [r for r in records if cm.requires_certification(r, by_id)]
+    assert required and all(store[r["rate_certificate"]["sha256"]]["certified"]
+                            for r in required)
     assert dom.check(ct.mol(ct.ps(8), 0)).accepted

@@ -686,6 +686,108 @@ class VerifiedPaddedReactionWitness(PaddedReactionWitness):
         return out
 
 
+_ORIENTATION_OF_TAG = {"backbone_head": "head", "backbone_tail": "tail"}
+
+
+def _fragment_molecule(fragment):
+    """The closed repeat unit one provider step adds: the fragment's atoms
+    and bonds (local ids) with one hydrogen standing in for each attachment
+    bond to the old port."""
+    from rmgpy.kmc.rmg_moves import molecule_from_rows
+
+    edges = {k: [] for k in range(len(fragment.atoms))}
+    for i, j, order in fragment.bonds:
+        edges[i].append((j, float(order)))
+        edges[j].append((i, float(order)))
+    next_id = len(fragment.atoms)
+    extra = {}
+    for local, _order in fragment.attachments:
+        edges[local].append((next_id, 1.0))
+        extra[next_id] = ("H", None, 0, 0, 0, ((local, 1.0),))
+        next_id += 1
+    rows = {k: tuple(atom) + (tuple(sorted(edges[k])),)
+            for k, atom in enumerate(fragment.atoms)}
+    rows.update(extra)
+    return molecule_from_rows(rows)
+
+
+def check_padding_declarations(original, boundaries, repeat_unit, providers) -> None:
+    """The declared padding (``boundaries``: orientation, caps, source;
+    ``repeat_unit``: the repeat chemistry and its head/tail atoms named in
+    the provenance) must be what the transported construction metadata of
+    ``original`` (a ``boundaries.Witness``) and its providers will execute;
+    raise ``ReactionNotPaddable`` on any disagreement.  Per artificial port:
+    a construction-sourced boundary on the port atom, the orientation of the
+    port's tag, exactly the declared caps, and the provider's one-step
+    fragment, closed with a hydrogen on each attachment, isomorphic to the
+    declared repeat unit (constitution, hydrogens explicit) by a map taking
+    the attachment atom to the unit's continuing end and the new port to its
+    other end (tail extension: attachment = head atom, new port = tail atom;
+    head extension: the reverse)."""
+    if repeat_unit is None:
+        raise ReactionNotPaddable("no declared repeat unit to check the providers against")
+    by_atom = {}
+    for key in original.artificial_port_keys():
+        by_atom[original.port(key).atom_id] = key
+    unit = repeat_unit.molecule
+    unit_heavy = [atom for atom in unit.atoms if atom.element.number != 1]
+    try:
+        unit_head = unit_heavy[repeat_unit.head_atom_index]
+        unit_tail = unit_heavy[repeat_unit.tail_atom_index]
+    except IndexError:
+        raise ReactionNotPaddable(
+            f"declared repeat unit {repeat_unit.name!r}: head/tail atom index out of range"
+        ) from None
+    for boundary in boundaries:
+        if boundary.kind != "artificial":
+            continue
+        key = by_atom.get(boundary.atom_id)
+        if key is None:
+            raise ReactionNotPaddable(
+                f"declared port atom {boundary.atom_id} is not a transported artificial port"
+            )
+        port = original.port(key)
+        if getattr(boundary, "source", "inferred") != "construction":
+            raise ReactionNotPaddable(f"port {key}: the declared boundary is not construction-sourced")
+        expected = _ORIENTATION_OF_TAG.get(port.tag)
+        if boundary.orientation != expected:
+            raise ReactionNotPaddable(
+                f"port {key}: declared orientation {boundary.orientation!r} is not the "
+                f"{expected!r} of its transported tag {port.tag!r}"
+            )
+        if tuple(sorted(boundary.cap_atom_ids)) != tuple(port.cap_atom_ids):
+            raise ReactionNotPaddable(
+                f"port {key}: declared cap {tuple(boundary.cap_atom_ids)} is not the transported "
+                f"cap {port.cap_atom_ids}"
+            )
+        metadata = original.participant(key[0]).metadata
+        try:
+            provider = providers[metadata.provider]
+            fragment = provider.fragment(port, metadata.coordinate(port.atom_id))
+        except Exception as error:
+            raise ReactionNotPaddable(f"port {key}: provider fragment unavailable: {error}") \
+                from error
+        if len(fragment.attachments) != 1:
+            raise ReactionNotPaddable(
+                f"port {key}: a repeat unit graph declares one attachment, the provider has "
+                f"{len(fragment.attachments)}"
+            )
+        closed = _fragment_molecule(fragment)
+        attach = closed.atoms[fragment.attachments[0][0]]
+        new_port = closed.atoms[fragment.new_port]
+        if expected == "tail":
+            initial = {attach: unit_head, new_port: unit_tail}
+        else:
+            initial = {attach: unit_tail, new_port: unit_head}
+        if attach is new_port:
+            initial = {attach: unit_head} if unit_head is unit_tail else None
+        if initial is None or not closed.is_isomorphic(unit, initial_map=initial, strict=False):
+            raise ReactionNotPaddable(
+                f"port {key}: declared repeat unit {repeat_unit.name!r} is not the chemistry "
+                f"(or orientation) its provider {metadata.provider!r} adds"
+            )
+
+
 def pad_reaction_witness_verified(
     reaction,
     boundaries: Sequence[BoundaryPort],
@@ -694,6 +796,7 @@ def pad_reaction_witness_verified(
     *,
     max_heavy_atoms: int = 512,
     providers=None,
+    repeat_unit: RepeatUnitGraph | None = None,
 ) -> VerifiedPaddedReactionWitness:
     """Pad a reaction through ``rmgpy.kmc.boundaries``: the reaction is read
     as an explicit-H witness (both sides one id namespace) carrying the
@@ -702,7 +805,10 @@ def pad_reaction_witness_verified(
     both sides, edit support protected) until it is ``min_distance`` heavy
     bonds from every reacting heavy atom on both sides; the composite map is
     re-verified from scratch (``verify_extension``) and the witness is
-    converted back onto the reaction's participants."""
+    converted back onto the reaction's participants.  Before anything is
+    extended the declarations are checked against the transported metadata
+    (``check_padding_declarations``): ``repeat_unit`` (the chemistry the
+    provenance names), every port's orientation and caps."""
     from rmgpy.kmc import boundaries as bnd
     from rmgpy.kmc.rmg_moves import molecule_from_rows, molecule_rows, split_rows
 
@@ -753,6 +859,9 @@ def pad_reaction_witness_verified(
     by_atom = {}
     for key in original.artificial_port_keys():
         by_atom[original.port(key).atom_id] = key
+    if providers is None:
+        providers = bnd.PROVIDERS
+    check_padding_declarations(original, boundaries, repeat_unit, providers)
     if set(by_atom) & set(centers):
         raise ReactionNotPaddable("artificial continuation port is a reacting atom")
     ports = {

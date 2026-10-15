@@ -2569,7 +2569,9 @@ def _pad_production_witness(reaction, proxy, distance, max_heavy_atoms):
     """Production padding of a construction-annotated proxy: the verified
     explicit-H extension path (``proxy_padding.pad_reaction_witness_verified``
     over ``rmgpy.kmc.boundaries``) with the metadata transported by
-    ``_map_proxy_boundaries_to_reaction``."""
+    ``_map_proxy_boundaries_to_reaction``; the declared repeat unit (named in
+    the provenance) and the ports' orientations and caps must agree with
+    what the metadata's providers execute."""
     return pad_reaction_witness_verified(
         reaction,
         proxy.artificial_boundaries,
@@ -2577,6 +2579,7 @@ def _pad_production_witness(reaction, proxy, distance, max_heavy_atoms):
         distance,
         max_heavy_atoms=max_heavy_atoms,
         providers=BOUNDARY_PROVIDERS,
+        repeat_unit=getattr(proxy, "repeat_unit", None),
     )
 
 
@@ -5634,13 +5637,38 @@ class EventSetCompiler:
         rate_certificates = None
         if getattr(self, "certify_rates", False):
             from rmgpy.kmc.certificates import (
-                attach_rate_certificates,
-                certification_declaration,
+                certification_declaration as _certification_declaration,
+                certify_records,
             )
 
-            records, rate_certificates = attach_rate_certificates(
-                records, getattr(self.kinetics_database, "families", {})
+            # certification required: a record of the required population whose
+            # certification failed is published refused (with its partner); the
+            # renamed records take their canonical places again
+            records, rate_certificates, certification_ids = certify_records(
+                records, getattr(self.kinetics_database, "families", {}), required=True
             )
+            if certification_ids:
+
+                def is_ortho(record):
+                    operations = record.junction_ops or []
+                    return bool(operations) and str(
+                        operations[0].get("junction_kind", "")
+                    ).startswith("J_ortho")
+
+                legacy = sorted(
+                    (r for r in records if not is_ortho(r)), key=lambda r: r.event_id
+                )
+                ortho = sorted(
+                    (r for r in records if is_ortho(r)), key=lambda r: r.event_id
+                )
+                records = [
+                    replace(record, canonical_index=index)
+                    for index, record in enumerate(legacy + ortho)
+                ]
+                discovery = _replace_event_ids(discovery, certification_ids)
+                self._applicability_refusals = _replace_event_ids(
+                    self._applicability_refusals, certification_ids
+                )
         artifact = {
             "schema_version": SCHEMA_VERSION,
             "families": list(self.families),
@@ -5691,7 +5719,7 @@ class EventSetCompiler:
             **(
                 {
                     "rate_certificates": rate_certificates,
-                    "rate_certification": certification_declaration(),
+                    "rate_certification": _certification_declaration(),
                 }
                 if rate_certificates is not None
                 else {}

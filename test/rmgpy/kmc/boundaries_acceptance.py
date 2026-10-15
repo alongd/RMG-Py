@@ -11,14 +11,16 @@ keeps memory per task bounded.
 
 * Every kept move becomes a witness; metadata survival is asserted on every
   one (``witness_from_move``).
-* Extension checks run on one representative per mapped reaction: moves that
-  share (family, direction, labelled atom ids) differ only in the resonance
-  form of the reactants; the representative is the move with the least
-  ``sort_key``.  Every member's connectivity change (bonds made or broken,
-  H included) must equal the representative's, else the class is reported
-  as split.  Representatives whose witness graphs are identical (e.g. the
-  two template slot orders of a symmetric recombination) are counted as
-  exact duplicates and checked once.
+* Extension checks run on EVERY distinct witness (``WitnessSelector``):
+  moves that share (family, direction, labelled atom ids) form one mapped
+  reaction and differ only in the resonance form of the reactants; each
+  such resonance variant is checked in its own right (never skipped because
+  its connectivity equals the first member's).  Every member's
+  connectivity change (bonds made or broken, H included) must equal the
+  first member's, else the class is reported as split (a failure).
+  Witnesses whose graphs are identical (e.g. the two template slot orders
+  of a symmetric recombination) are counted as exact duplicates and checked
+  once.
 * Vectors per representative: the full box {0,1,2}^k when k <= 2 artificial
   ports, otherwise +1 and +2 at each port alone plus all ports at +1 and at
   +2 jointly; the first representative of every task gets the full box.
@@ -89,10 +91,12 @@ def vectors_for(witness, full_box):
 
 
 class WitnessSelector:
-    """Which witnesses of a stream the sweep checks.  Witnesses are grouped
-    by mapped reaction (``key``: the move's labels); within a group the
-    connectivity change (bonds made or broken) must equal the first
-    member's, else the group is split (a failure)."""
+    """Which witnesses of a stream the sweep checks: EVERY distinct witness
+    (resonance variants of a mapped reaction included; only identical
+    witness graphs are deduplicated).  Witnesses are grouped by mapped
+    reaction (``key``: the move's labels); within a group the connectivity
+    change (bonds made or broken) must equal the first member's, else the
+    group is split (a failure).  Equal connectivity never excuses a check."""
 
     def __init__(self):
         self.classes = {}
@@ -106,8 +110,8 @@ class WitnessSelector:
         if key in self.classes:
             if self.classes[key] != connectivity:
                 self.splits.append(witness.label)
-            return False
-        self.classes[key] = connectivity
+        else:
+            self.classes[key] = connectivity
         graph_key = (witness.reactants, witness.products)
         if graph_key in self.seen_graphs:
             self.duplicates += 1
@@ -315,7 +319,8 @@ def main():
         for row in alkane_part():
             results.append(row)
             log.write(json.dumps([row[0], row[1], row[2], _jsonable(row[3])]) + "\n")
-    write_table(results, outdir, time.time() - started)
+    failures = write_table(results, outdir, time.time() - started)
+    return 1 if failures else 0
 
 
 def write_table(results, outdir, seconds):
@@ -363,7 +368,8 @@ def write_table(results, outdir, seconds):
         f"\n\nWall time: {seconds:.0f} s\n"
     (outdir / "table.md").write_text(text)
     print(text)
+    return totals["failures"] + totals["metadata_failures"] + totals["class_splits"]
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

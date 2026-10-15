@@ -736,7 +736,7 @@ def test_vector_enumeration_streams_prunes_and_budgets(fam):
     assert inspect.isgenerator(gen)
     assert next(gen).vector == (0, 0) and stats["built"] == 1
     assert next(gen).vector == (0, 1) and stats["built"] == 2
-    # a budget on built vectors
+    # a budget on visited vectors
     assert issubclass(b.BudgetExceeded, b.BoundaryError)
     with pytest.raises(b.BudgetExceeded):
         b.enumerate_vectors(w, 1, budget=1, check_order=False, verify=False)
