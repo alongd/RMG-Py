@@ -138,6 +138,68 @@ family's own templates (``pair_roster``); every DP pair (a, b) with
 1 <= a, b <= L + 1 is planned for every kind combination in its direction
 (``ladder_plan``) and coverage is checked per direction
 (``ladder_direction_gaps``).
+This DP grid runs on one representative per participant kind
+(``kind_specs``); the generated roster below adds every reacting-site
+environment class.
+
+Generated roster (reacting-site environment classes)
+----------------------------------------------------
+A reacting-site environment class is a reacting site (a site kind: every
+radical site kind, every closed-shell carbon, every alkene end carbon) on a
+participant pattern (the declared features the participant carries: its two
+end groups and its interior radicals; a one-carbon or small species), in one
+template slot of one direction, with the smallest DP at which RMG generates
+an in-domain member carrying it.  Why the classes exhaust ``domain.py``'s
+declared features:
+
+* the species ``domain.check`` accepts are linear PS chains (a simple path
+  of backbone carbons, phenyl pendants, every other substituent H), the
+  one-carbon chains and the small species ``SMALL_SPECIES``;
+* a chain's features are its two termini, each one of ``END_GROUPS`` (the
+  only declared end groups; unsaturation is allowed at an end only), and its
+  interior radical sites, each of a ``RADICAL_KINDS`` kind that can sit on an
+  interior backbone carbon (``INTERIOR_RADICALS``: benzylic, secondary; a
+  primary site is a terminus, a methyl site a one-carbon chain, an H atom a
+  small species), at most ``MAX_RADICAL_SITES`` radical sites in all; no
+  other feature is declared (``declared_site_kinds`` maps every declared key
+  to its site kinds and raises on an unmapped one);
+* so ``participant_patterns`` (every unordered pair of end groups, every
+  multiset of interior radical kinds within the radical budget, the
+  one-carbon and small species) is every declared participant up to the
+  placement of its features along the chain;
+* a reacting site is one carbon of such a participant (or the H atom / H2),
+  typed by ``site_kind`` from the same reading as ``domain`` (radical,
+  terminus or interior, phenyl, double bond); the features that can lie
+  within the span bound of it are among the pattern's, so (site kind,
+  pattern) is the class, and the site's template slot (label set) is read
+  from RMG's own mappings (``probe_pattern``);
+* placement: ``pattern_specs`` puts the interior radicals as near the head
+  and as near the tail as the domain allows (the canonical placements), and
+  the probe runs each pattern from its smallest constructible in-domain DP
+  through ``probe_extra`` more repeats (every distance constraint of the
+  domain is a lower bound of at most ``RADICAL_SEPARATION + 1`` bonds between
+  features and the event's atoms, which span at most ``D``), at most L + 1;
+  the class's smallest DP is the first at which an in-domain member carries
+  it (a class can need more repeats than its species: the product radical
+  of an H abstraction must sit more than ``RADICAL_SEPARATION`` bonds from
+  the species' other radical).
+
+What the class product does not vary: the distance of each feature from the
+site beyond the smallest DP.  Those distances are the DP grid's (every DP
+pair up to L + 1 on the kind representatives) and the contexts' (every
+declared end at every near port of the long artificial chains); a feature
+beyond the span bound acts only through whole-species reads (the radical
+inventory), which the far-port radical ends carry.
+
+The probe pairs a pattern, in a bimolecular direction, with the cheapest
+declared species that fills the other slot in an in-domain member
+(``probe_partners``): RMG matches a template slot to one reactant whatever
+fills the other slot, and the partner's own products do not depend on the
+pattern.  Ladder items (``class_items``): per unimolecular direction every
+class representative alone; per bimolecular direction the product of the
+slot-0 and slot-1 class representatives, each at its smallest DP; every class
+must reach the plan (``ladder_class_gaps``).  ``ladder_plan`` raises when a
+family's class roster or (bimolecular) pair roster was not computed.
 
 Contexts (item 5)
 -----------------
@@ -155,7 +217,11 @@ stay in the product) and the element-count guards.  Its non-radical ends are
 reduced to one single each, and that reduction is a checked claim: every
 such single must merge with the all-artificial context (equal window, equal
 certificate view: ``far_port_verdicts``), otherwise the port is promoted to
-near and the product rebuilt (``far_port_promotions``).  Two contexts merge
+near and the product rebuilt (``far_port_promotions``).  Single ends merging
+does not imply that their combinations merge, so the check is also joint:
+every combination of non-radical ends over all far ports of one participant
+and over all far ports (``far_port_groups``) must merge too, else those ports
+are promoted.  Two contexts merge
 only if their closed windows are equal as marked graphs (both sides,
 participant roles, reacting atoms, physical ends, oriented exterior bonds)
 and their certificate views are equal under that correspondence.
@@ -163,13 +229,24 @@ and their certificate views are equal under that correspondence.
 Reacting ports (policy a)
 -------------------------
 A member whose reacting atom sits on an artificial port is refused
-(``refused:reacting_port``) and carries its covering witnesses
-(``reacting_port_covers``): the same mapped event with every declared end
-built at that port, and the same mapped event on the witness one repeat
-longer there (the atom interior; ``event_signatures`` by repeat
-coordinates).  It is covered iff a cover reaches a fixed point or the
-interior event is refused for a named non-port reason (``cover_verdict``);
-an uncovered one is a gap (``reacting_port_gaps``).
+(``refused:reacting_port``): the cut point is not a real event.  It stands for
+one distinct mapped event per assignment of each reacting port to the
+interior (the chain goes on there) or to a declared end chemistry (the chain
+ends there), and each event gets its own witness
+(``reacting_port_covers``): the specs with the interior ports one repeat
+longer and the end ports built physical by the provider, the member
+rematched by its labelled atoms' repeat coordinates (``event_signatures``).
+An event is covered only if every matching member reaches a fixed point or
+is shown outside the declared domain (``domain.check`` refuses one of its
+species, reason stated: first the event's own reactants, then every
+species of each matching member), or if RMG's family generates no mapping on
+the event's atoms of its own witness under any labels (``no_event``: that
+species has no such reaction, so no rate is selected for it); certificate
+failures, ceiling hits, incomplete descents, port or end refusals and a
+rematch that finds the atoms only under other labels are gaps
+(``cover_status_verdict``).  The member is covered iff every event is
+(``cover_verdict``: one event never stands in for another); an uncovered one
+is a gap (``reacting_port_gaps``).
 """
 
 from __future__ import annotations
@@ -177,7 +254,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from dataclasses import dataclass, field
-from itertools import combinations, product
+from itertools import combinations, combinations_with_replacement, permutations, product
 from typing import Any, Callable, Optional, Sequence
 
 from rmgpy.kmc import boundaries as b
@@ -256,6 +333,7 @@ class FamilyConstants:
     bimolecular: bool = False
     directions: tuple = ()
     pair_kinds: tuple = ()    # ((direction, (kind, kind)), ...): ``pair_roster``
+    classes: Optional[tuple] = None   # SiteClass, ...: ``class_roster`` (None: not computed)
 
 
 @dataclass(frozen=True)
@@ -1226,29 +1304,57 @@ def context_assignments(witness, near_ports=None, providers=None) -> tuple:
         for e in chem[p]:
             if e not in b.RADICAL_ENDS:
                 add(tuple((q, e if q == p else None) for q in ports))
+    # the joint check of the far reduction: every combination of non-radical
+    # ends over all far ports of one participant, and over all far ports
+    for group in far_port_groups(ports, near):
+        options = [[e for e in chem[p] if e not in b.RADICAL_ENDS] for p in group]
+        for combo in product(*options):
+            choice = dict(zip(group, combo))
+            add(tuple((q, choice.get(q)) for q in ports))
     return tuple(out)
 
 
+def far_port_groups(ports, near) -> tuple:
+    """The far-port groups whose non-radical ends are checked jointly: the far
+    ports of each participant (two or more) and all far ports (two or more,
+    across participants)."""
+    far = [p for p in ports if p not in set(near)]
+    by_part = defaultdict(list)
+    for p in far:
+        by_part[p[0]].append(p)
+    groups = [tuple(g) for _k, g in sorted(by_part.items()) if len(g) > 1]
+    if len(far) > 1 and tuple(far) not in groups:
+        groups.append(tuple(far))
+    return tuple(groups)
+
+
 def far_port_verdicts(results, far) -> dict:
-    """{(far port, non-radical end): whether its single context merges with the
-    all-artificial context ``results[0]``} (``contexts_merge``: equal closed
-    windows as marked graphs and equal certificate views).  A refused or
-    unmerged single is False: the far reduction does not hold there."""
+    """Whether each far non-radical context merges with the all-artificial
+    context ``results[0]`` (``contexts_merge``: equal closed windows as marked
+    graphs and equal certificate views): singles keyed (far port, end), joint
+    contexts (two or more far ports set, all non-radical: single-end merging
+    does not imply that combinations merge) keyed ((port, end), ...).  A
+    refused or unmerged context is False: the far reduction does not hold
+    there."""
     far = set(far)
     out = {}
     for r in results[1:]:
-        set_ = [(p, e) for p, e in r.assignment if e is not None]
-        if len(set_) != 1:
+        set_ = tuple((p, e) for p, e in r.assignment if e is not None)
+        if not set_ or any(p not in far or e in b.RADICAL_ENDS for p, e in set_):
             continue
-        (port, end), = set_
-        if port in far and end not in b.RADICAL_ENDS:
-            out[(port, end)] = contexts_merge(results[0], r)
+        out[set_[0] if len(set_) == 1 else set_] = contexts_merge(results[0], r)
     return out
 
 
+def _verdict_ports(key) -> tuple:
+    return (key[0],) if isinstance(key[1], str) else tuple(p for p, _e in key)
+
+
 def far_port_promotions(verdicts) -> tuple:
-    """Far ports whose reduction failed its check: they become near."""
-    return tuple(sorted({port for (port, _end), ok in verdicts.items() if not ok}))
+    """Far ports whose reduction failed its check (alone or jointly): they
+    become near."""
+    return tuple(sorted({p for key, ok in verdicts.items() if not ok
+                         for p in _verdict_ports(key)}))
 
 
 def reconstruct(witness, assignment, providers=None):
@@ -1455,7 +1561,7 @@ def window_span(witness, atoms) -> dict:
     return out
 
 
-REPEAT_BACKBONE_ATOMS = {"polystyrene": 2, "linear_alkane": 1}
+REPEAT_BACKBONE_ATOMS = {"polystyrene": 2, "linear_alkane": 1, "small": 1}   # small: no backbone
 
 
 def repeats_bound(bound: SpanBound, provider: str) -> int:
@@ -1494,6 +1600,7 @@ class LadderItem:
     dps: tuple = ()                    # the DP of each short participant
     directions: tuple = ()             # pairs: the directions their kinds are run in
     pair_kinds: tuple = ()             # pairs: the participant kinds (sorted)
+    classes: tuple = ()                # generated items: the site classes they represent
 
 
 @dataclass(frozen=True)
@@ -1540,9 +1647,16 @@ def kind_specs(kind: str, dp: int) -> tuple:
     return tuple(out)
 
 
-LONG_SPECS = {"closed": lambda: b.PsChainSpec(LONG_UNITS),
-              "radical": lambda: b.PsChainSpec(LONG_UNITS, radical_units=(LONG_UNITS // 2,)),
-              "alkene": lambda: b.PsChainSpec(LONG_UNITS, head_end="vinylidene")}
+# the long artificial chains of a kind: every interior reacting-site kind with
+# no declared feature within the span bound (both sides continue; contexts
+# build the ends at near ports): interior CH2 / CH(Ph) on the closed chain,
+# both interior radical kinds (``INTERIOR_RADICALS``: benzylic, secondary),
+# an alkene end
+LONG_SPECS = {"closed": lambda: (b.PsChainSpec(LONG_UNITS),),
+              "radical": lambda: (b.PsChainSpec(LONG_UNITS, radical_units=(LONG_UNITS // 2,)),
+                                  b.PsChainSpec(LONG_UNITS,
+                                                secondary_radical_units=(LONG_UNITS // 2,))),
+              "alkene": lambda: (b.PsChainSpec(LONG_UNITS, head_end="vinylidene"),)}
 
 
 def pair_roster(certifier, family, probe_dps=(2, 3)) -> tuple:
@@ -1581,6 +1695,8 @@ def pair_roster(certifier, family, probe_dps=(2, 3)) -> tuple:
 
 
 def _ends_label(spec):
+    if isinstance(spec, tuple):
+        return f"{spec[0]}:{spec[1]}"
     head = spec.head_end or "cut"
     tail = spec.tail_end or "cut"
     extra = []
@@ -1593,6 +1709,591 @@ def _ends_label(spec):
         if flag:
             extra.append(f"{name}{','.join(map(str, flag))}")
     return f"DP{spec.units}[{head}|{tail}{'|' + ','.join(extra) if extra else ''}]"
+
+
+# ---------------------------------------------------------------------------
+# generated roster: reacting-site environment classes (rework 2)
+# ---------------------------------------------------------------------------
+# Every declared feature of ``domain`` mapped to the site kinds it carries
+# (``declared_site_kinds``).  A declared key missing from these maps fails
+# the derivation: a new declared feature is never silently left out.
+END_SITE_KINDS = {
+    "methyl": ("end_methyl",),
+    "benzyl": ("end_benzyl",),
+    "primary_radical": ("terminal_primary",),
+    "benzylic_radical": ("terminal_benzylic",),
+    "vinylidene": ("vinylidene_terminal", "vinylidene_partner"),
+    "styryl": ("styryl_terminal", "styryl_partner"),
+}
+RADICAL_SITE_KINDS = {
+    "benzylic": ("terminal_benzylic", "interior_benzylic", "benzyl_radical"),
+    "primary_end": ("terminal_primary",),
+    "secondary_backbone": ("interior_secondary",),
+    "methyl": ("methyl_radical",),
+    "h_atom": ("h_atom",),
+}
+# radical kinds that can sit on an interior backbone carbon, and the spec
+# field that places them (benzylic: unit position 1; secondary: position 0)
+INTERIOR_RADICALS = {"benzylic": "radical_units", "secondary_backbone": "secondary_radical_units"}
+SMALL_SITE_KINDS = {"H": ("h_atom",), "H2": ("h2",)}
+# the interior closed-shell carbons of the declared chain (``domain``: a
+# saturated backbone, phenyl pendants, every other substituent H)
+BACKBONE_SITE_KINDS = ("backbone_ch2", "backbone_chph")
+# the one-carbon species ``domain._check_form`` accepts (a lone backbone
+# carbon: ``methane``, ``methyl_radical``, ``benzyl``, ``benzylic_radical``)
+ONE_CARBON = {
+    "methane": lambda: b.PsChainSpec(0, tail_shift=True, head_end="methyl", tail_end="methyl"),
+    "methyl_radical": lambda: b.PsChainSpec(0, tail_shift=True, head_end="primary_radical",
+                                            tail_end="methyl"),
+    "benzyl": lambda: b.PsChainSpec(1, head_shift=True, head_end="benzyl", tail_end="benzyl"),
+    "benzylic_radical": lambda: b.PsChainSpec(1, head_shift=True, head_end="benzyl",
+                                              tail_end="benzylic_radical"),
+}
+ONE_CARBON_SITE_KINDS = {"methane": ("methane",), "methyl_radical": ("methyl_radical",),
+                         "benzyl": ("toluene_methyl",), "benzylic_radical": ("benzyl_radical",)}
+# probe partner candidates of a bimolecular direction, cheapest first (no
+# resonance before the phenyl species): a template slot holds the same
+# reactant whatever fills the other slot, and the partner's own products do
+# not depend on the pattern, so the cheapest declared species that fills a
+# slot with in-domain products (``probe_partners``) probes every pattern in
+# the other slot
+PROBE_CANDIDATES = (
+    ("H", lambda: ("small", "H")),
+    ("H2", lambda: ("small", "H2")),
+    ("methyl_radical", ONE_CARBON["methyl_radical"]),
+    ("methane", ONE_CARBON["methane"]),
+    ("2-phenylethyl", lambda: b.PsChainSpec(1, head_end="primary_radical", tail_end="benzyl")),
+    ("ethylbenzene", lambda: b.PsChainSpec(1, head_end="methyl", tail_end="benzyl")),
+    ("styrene", lambda: b.PsChainSpec(1, head_end="vinylidene", tail_end="styryl")),
+    ("1-phenylethyl", lambda: b.PsChainSpec(1, head_end="methyl", tail_end="benzylic_radical")),
+)
+PATTERN_DP_LIMIT = 8
+
+
+def declared_site_kinds() -> dict:
+    """{site kind: the ``domain`` declaration that carries it}: every end group
+    (``END_GROUPS``), radical kind (``RADICAL_KINDS``), small species
+    (``SMALL_SPECIES``), the backbone's closed-shell carbons and the
+    one-carbon species.  Raises ``WindowError`` for a declared key without a
+    mapping (a new declared feature cannot be silently missed)."""
+    out = {}
+    for decl, table, keys in (("END_GROUPS", END_SITE_KINDS, dom.END_GROUPS),
+                              ("RADICAL_KINDS", RADICAL_SITE_KINDS, dom.RADICAL_KINDS),
+                              ("SMALL_SPECIES", SMALL_SITE_KINDS, dom.SMALL_SPECIES)):
+        for key in keys:
+            if key not in table:
+                raise WindowError(f"domain.{decl} declares {key!r}, which the generated roster "
+                                  "does not map to a reacting-site kind")
+            for kind in table[key]:
+                out.setdefault(kind, f"{decl}[{key}]")
+    for key in INTERIOR_RADICALS:
+        if key not in dom.RADICAL_KINDS:
+            raise WindowError(f"interior radical {key!r} is not a declared radical kind")
+    for kind in BACKBONE_SITE_KINDS:
+        out.setdefault(kind, "backbone")
+    for name, kinds in ONE_CARBON_SITE_KINDS.items():
+        for kind in kinds:
+            out.setdefault(kind, f"one_carbon[{name}]")
+    return out
+
+
+RADICAL_SITES = frozenset(k for v in RADICAL_SITE_KINDS.values() for k in v)
+
+
+@dataclass(frozen=True, order=True)
+class Pattern:
+    """A declared participant pattern: ``chain`` (a PS chain: its two end
+    groups, sorted, and the kinds of its interior radical sites, sorted),
+    ``one_carbon`` or ``small`` (``ends`` holds the species name)."""
+
+    kind: str
+    ends: tuple = ()
+    interior: tuple = ()
+
+    @property
+    def label(self) -> str:
+        if self.kind != "chain":
+            return f"{self.kind}:{self.ends[0]}"
+        extra = f"+{'+'.join(self.interior)}" if self.interior else ""
+        return f"{self.ends[0]}|{self.ends[1]}{extra}"
+
+    @property
+    def radical_sites(self) -> int:
+        if self.kind == "small":
+            return int(self.ends[0] == "H")
+        if self.kind == "one_carbon":
+            return int(any(k in RADICAL_SITES for k in ONE_CARBON_SITE_KINDS[self.ends[0]]))
+        return sum(_end_is_radical(e) for e in self.ends) + len(self.interior)
+
+    @property
+    def features(self) -> tuple:
+        """The declared features of the pattern (end groups, interior radical
+        kinds, the species name of a one-carbon or small species)."""
+        return tuple(self.ends) + tuple(f"interior:{k}" for k in self.interior)
+
+
+def _end_is_radical(end) -> bool:
+    return any(k in RADICAL_SITES for k in END_SITE_KINDS[end])
+
+
+def participant_patterns() -> tuple:
+    """Every declared participant pattern: chains with any two declared end
+    groups and up to ``MAX_RADICAL_SITES`` radical sites in total (radical ends
+    plus interior radicals of each interior kind), the one-carbon species and
+    the small species."""
+    declared_site_kinds()       # every declared key is mapped
+    ends = sorted(dom.END_GROUPS)
+    out = []
+    for pair in combinations_with_replacement(ends, 2):
+        room = dom.MAX_RADICAL_SITES - sum(_end_is_radical(e) for e in pair)
+        for m in range(max(room, -1) + 1):
+            for interior in combinations_with_replacement(sorted(INTERIOR_RADICALS), m):
+                out.append(Pattern("chain", tuple(pair), tuple(interior)))
+    out += [Pattern("one_carbon", (name,)) for name in ONE_CARBON]
+    out += [Pattern("small", (name,)) for name in dom.SMALL_SPECIES]
+    return tuple(out)
+
+
+def small_build(name: str):
+    """A small declared species (``H`` atom, ``H2``) as a provider-free build:
+    no ports, no repeat coordinates (no heavy atom)."""
+    from rmgpy.kmc import rmg_moves as rm
+    if name == "H":
+        rows = {0: ("H", None, 0, 1, 0, ())}
+    elif name == "H2":
+        rows = {0: ("H", None, 0, 0, 0, ((1, 1.0),)), 1: ("H", None, 0, 0, 0, ((0, 1.0),))}
+    else:
+        raise WindowError(f"undeclared small species {name!r}")
+    metadata = b.BoundaryMetadata("small", (), ())
+    metadata.check(rows, name)
+    return b.ProxyBuild(name, rm.molecule_from_rows(rows), metadata, tuple(sorted(rows)))
+
+
+def _chain_spec(head, tail, n, **interior):
+    return b.PsChainSpec(n, head_end=head, tail_end=tail, head_shift=head in b.TAIL_ENDS,
+                         tail_shift=tail in b.HEAD_ENDS, **interior)
+
+
+def _realizes(pattern, spec) -> bool:
+    """The spec builds an in-domain chain whose end groups and radical kinds
+    are the pattern's (``domain.check``'s own reading)."""
+    try:
+        build = b.PROVIDERS["polystyrene"].build("pattern", spec)
+    except b.BoundaryError:
+        return False
+    if chain_backbone_atoms(spec) < 2:
+        return False
+    verdict = dom.check(build.molecule)
+    if not verdict.accepted or verdict.kind != "ps_chain":
+        return False
+    if sorted(verdict.details["ends"]) != sorted(pattern.ends):
+        return False
+    kinds = sorted(k for _a, k in verdict.details["radical_sites"])
+    want = sorted([{"primary_radical": "primary_end", "benzylic_radical": "benzylic"}[e]
+                   for e in pattern.ends if _end_is_radical(e)] + list(pattern.interior))
+    return kinds == want
+
+
+def _backbone_position(spec, unit, position) -> int:
+    return 2 * unit + position - int(bool(spec.head_shift))
+
+
+_PATTERN_SPECS = {}
+
+
+def pattern_specs(pattern, dp: int) -> tuple:
+    """The canonical specs realizing ``pattern`` at DP ``dp`` (constructible and
+    accepted by ``domain.check`` with the pattern's ends and radical kinds).
+    A chain's first end group sits at the head; interior radicals take the
+    in-domain placements nearest the head and nearest the tail (two radicals:
+    the first as near the head, the second as near the tail as the domain
+    allows, both kind orders), so the free stretch beside each feature is as
+    long as the DP allows."""
+    key = (pattern, dp)
+    if key not in _PATTERN_SPECS:
+        _PATTERN_SPECS[key] = _pattern_specs(pattern, dp)
+    return _PATTERN_SPECS[key]
+
+
+def _pattern_specs(pattern, dp: int) -> tuple:
+    if pattern.kind == "small":
+        return (("small", pattern.ends[0]),) if dp == 1 else ()
+    if pattern.kind == "one_carbon":
+        return (ONE_CARBON[pattern.ends[0]](),) if dp == 1 else ()
+    head, tail = pattern.ends
+    if not pattern.interior:
+        spec = _chain_spec(head, tail, dp)
+        return (spec,) if _realizes(pattern, spec) else ()
+    sites = []
+    for kinds in sorted(set(permutations(pattern.interior))):
+        for units in product(range(dp + 1), repeat=len(kinds)):
+            fields = defaultdict(tuple)
+            for kind, u in zip(kinds, units):
+                fields[INTERIOR_RADICALS[kind]] += (u,)
+            spec = _chain_spec(head, tail, dp, **{k: tuple(sorted(v)) for k, v in fields.items()})
+            pos = [_backbone_position(spec, u, 1 if kind == "benzylic" else 0)
+                   for kind, u in zip(kinds, units)]
+            if pos != sorted(set(pos)) or any(y - x <= dom.RADICAL_SEPARATION
+                                              for x, y in zip(pos, pos[1:])):
+                continue    # the domain refuses such a pair (checked again by _realizes)
+            if _realizes(pattern, spec):
+                sites.append((tuple(pos), kinds, spec))
+    if not sites:
+        return ()
+    out = []
+    if len(pattern.interior) == 1:
+        sites.sort(key=lambda s: s[0])
+        picks = [sites[0], sites[-1]]
+    else:
+        picks = []
+        for kinds in sorted({s[1] for s in sites}):
+            mine = [s for s in sites if s[1] == kinds]
+            picks.append(min(mine, key=lambda s: (s[0][0], -s[0][-1])))
+    for _pos, _kinds, spec in picks:
+        if spec not in out:
+            out.append(spec)
+    return tuple(out)
+
+
+def pattern_min_dp(pattern, limit: int = PATTERN_DP_LIMIT) -> Optional[int]:
+    """The smallest DP at which the pattern is constructible and in domain."""
+    for dp in range(1, limit + 1):
+        if pattern_specs(pattern, dp):
+            return dp
+    return None
+
+
+def build_spec(spec, name="p"):
+    """A provider build of a spec (``PsChainSpec``, ("alkane", n[, head end,
+    tail end]) or ("small", name))."""
+    if isinstance(spec, tuple) and spec[0] == "alkane":
+        ends = tuple(spec[2:4]) + (None,) * (4 - len(spec))
+        return b.PROVIDERS["linear_alkane"].build(spec[1], head_end=ends[0], tail_end=ends[1])
+    if isinstance(spec, tuple) and spec[0] == "small":
+        return small_build(spec[1])
+    return b.PROVIDERS["polystyrene"].build(name, spec)
+
+
+def site_kind(rows, atom, cyclic=None) -> str:
+    """The reacting-site kind of a heavy atom (or a hydrogen-only species) of
+    one participant's rows: radical sites (``RADICAL_SITE_KINDS``), alkene end
+    carbons, closed-shell carbons (ends, backbone, one-carbon species) and
+    ``ring``.  A hydrogen bonded to a heavy atom takes that atom's kind."""
+    row = rows[atom]
+    if row[0] == "H":
+        heavy = [n for n, _o in row[5] if rows[n][0] != "H"]
+        if heavy:
+            return site_kind(rows, heavy[0], cyclic)
+        return "h_atom" if row[3] else "h2"
+    cyclic = _cyclic_atoms(rows) if cyclic is None else cyclic
+    if atom in cyclic:
+        return "ring"
+    backbone = [n for n, _o in row[5] if rows[n][0] != "H" and n not in cyclic]
+    pendant = any(n in cyclic for n, _o in row[5])
+    double = any(float(o) == 2.0 for n, o in row[5] if n in backbone)
+    if row[3]:
+        if not backbone:
+            return "benzyl_radical" if pendant else "methyl_radical"
+        if len(backbone) == 1:
+            return "terminal_benzylic" if pendant else "terminal_primary"
+        return "interior_benzylic" if pendant else "interior_secondary"
+    if double:
+        if len(backbone) == 1:
+            return "styryl_terminal" if pendant else "vinylidene_terminal"
+        return "vinylidene_partner" if pendant else "styryl_partner"
+    if not backbone:
+        return "toluene_methyl" if pendant else "methane"
+    if len(backbone) == 1:
+        return "end_benzyl" if pendant else "end_methyl"
+    return "backbone_chph" if pendant else "backbone_ch2"
+
+
+def pattern_site_kinds(pattern, spec) -> frozenset:
+    """Site kinds present on a pattern's spec (ring carbons excluded)."""
+    from rmgpy.kmc import rmg_moves as rm
+    rows = rm.molecule_rows(build_spec(spec).molecule)
+    cyclic = _cyclic_atoms(rows)
+    kinds = {site_kind(rows, a, cyclic) for a in rows
+             if rows[a][0] != "H" or pattern.kind == "small"}
+    return frozenset(kinds - {"ring"})
+
+
+@dataclass(frozen=True)
+class SiteClass:
+    """A reacting-site environment class: the reacting site (``site``: (label,
+    site kind) of the slot's labelled atoms on the participant; RMG-free:
+    one site kind) on a participant ``pattern`` (its declared features), in
+    template ``slot`` of ``direction`` (RMG-free: ``""`` and -1), with the
+    smallest DP at which it is constructible and in domain and the spec
+    realizing it there."""
+
+    direction: str
+    slot: int
+    site: tuple
+    pattern: Pattern
+    dp: int
+    spec: Any = field(compare=False)
+    partner: Any = field(default=None, compare=False)
+
+    @property
+    def key(self) -> tuple:
+        return (self.direction, self.slot, self.site, self.pattern)
+
+
+def site_classes(limit: int = PATTERN_DP_LIMIT) -> tuple:
+    """The RMG-free class table: every (site kind, pattern) carried by a
+    declared pattern at its smallest constructible in-domain DP."""
+    out = []
+    for pattern in participant_patterns():
+        dp = pattern_min_dp(pattern, limit)
+        if dp is None:
+            continue
+        for spec in pattern_specs(pattern, dp):
+            for kind in sorted(pattern_site_kinds(pattern, spec)):
+                cls = SiteClass("", -1, (kind,), pattern, dp, spec)
+                if cls.key not in {c.key for c in out}:
+                    out.append(cls)
+    return tuple(out)
+
+
+def probe_extra(constants: FamilyConstants) -> int:
+    """Repeats probed above a pattern's smallest DP: the domain's distance
+    constraints are lower bounds of at most ``RADICAL_SEPARATION + 1`` heavy
+    bonds between a feature and the event's atoms (which span at most ``D``
+    bonds), so ``ceil((S + 1 + D) / 2)`` more repeats free every placement."""
+    return -(-(dom.RADICAL_SEPARATION + 1 + int(constants.reacting_distance)) // 2)
+
+
+def _slot_sites(case, participant: int) -> dict:
+    """{slot: ((label, site kind), ...)} of the labelled atoms on
+    ``participant`` over every mapping of the member."""
+    owned = set(case.witness.participants[participant].atom_ids)
+    rows = {a: r for a, r in case.witness.reactant_rows().items() if a in owned}
+    cyclic = _cyclic_atoms(rows)
+    out = defaultdict(set)
+    for move in case.moves:
+        per = defaultdict(list)
+        for slot, label, atom in move.labels:
+            if atom in owned:
+                heavy = rows[atom][0] != "H" or not any(rows[n][0] != "H"
+                                                        for n, _o in rows[atom][5])
+                if heavy:
+                    per[slot].append((label, site_kind(rows, atom, cyclic)))
+        for slot, sites in per.items():
+            out[slot].add(tuple(sorted(sites)))
+    return out
+
+
+def _heavy_key(part) -> tuple:
+    """The structure of one species' rows up to its hydrogen ids (heavy atoms
+    keep their ids; H-only species by size and radicals)."""
+    heavy = {a for a, row in part.items() if row[0] != "H"}
+    if not heavy:
+        return ("H-only", len(part), sum(row[3] for row in part.values()))
+    return tuple(sorted((a, part[a][:5], sum(1 for n, _o in part[a][5] if n not in heavy),
+                         tuple(sorted((n, float(o)) for n, o in part[a][5] if n in heavy)))
+                        for a in heavy))
+
+
+_DOMAIN_CACHE = {}
+
+
+def _part_in_domain(part) -> bool:
+    """``domain.check`` of one species' rows, cached by structure; refused
+    first, without the resonance search, when a form-independent condition
+    already fails: more unpaired electrons than ``MAX_RADICAL_SITES`` (an
+    electron count no resonance form changes) or the separated-radical policy
+    (``domain.spin_verdict``, which reads pi systems and so every form
+    alike)."""
+    from rmgpy.kmc import rmg_moves as rm
+    key = _heavy_key(part)
+    if key not in _DOMAIN_CACHE:
+        if len(_DOMAIN_CACHE) > 20000:
+            _DOMAIN_CACHE.clear()
+        electrons = sum(int(row[3]) for row in part.values())
+        if electrons > dom.MAX_RADICAL_SITES:
+            _DOMAIN_CACHE[key] = False
+        else:
+            molecule = rm.molecule_from_rows(part)
+            _DOMAIN_CACHE[key] = (electrons < 2 or dom.spin_verdict(molecule).supported) and \
+                dom.check(molecule).accepted
+    return _DOMAIN_CACHE[key]
+
+
+def probe_slots(certifier, family, specs, direction) -> dict:
+    """{slot: {site, ...}} participant 0 of ``specs`` fills in in-domain moves
+    of ``family`` (``direction``): RMG's own moves (``rmg_moves``, the
+    certifier's resonance, ring-change mappings excluded as in
+    ``member_cases``), every reactant and product species accepted by
+    ``domain.check``; sites typed by ``site_kind`` on the built reactant.
+    Moves, not channels: the probe needs the slot and the domain verdict of
+    each mapping only."""
+    from rmgpy.kmc import certificates as cm
+    from rmgpy.kmc import channels as chm
+    from rmgpy.kmc import rmg_moves as rm
+    try:
+        molecules, participants = b.witness_reactants(builds_of(specs))
+    except b.BoundaryError:
+        return {}
+    if not all(dom.check(m).accepted for m in molecules):
+        return {}
+    roots = [cm.aromatic_root(m) for m in molecules] if direction == "forward" else \
+        list(molecules)
+    moves = rm.generate_moves(family, roots, direction, resonance=certifier.resonance,
+                              select=ring_change_select(family, roots))
+    owned = set(participants[0].atom_ids)
+    rows = rm.molecule_rows(molecules[0])
+    cyclic = _cyclic_atoms(rows)
+    kinds = {}
+    out = defaultdict(set)
+    for move in moves:
+        if move.status not in chm.ALLOWED_STATUSES or move.template is None or \
+                move.products is None:
+            continue
+        if not all(_part_in_domain(p) for p in rm.split_rows(dict(move.products))):
+            continue
+        per = defaultdict(list)
+        for slot, label, atom in move.labels:
+            if atom not in owned:
+                continue
+            heavy = rows[atom][0] != "H" or not any(rows[n][0] != "H" for n, _o in rows[atom][5])
+            if heavy:
+                if atom not in kinds:
+                    kinds[atom] = site_kind(rows, atom, cyclic)
+                per[slot].append((label, kinds[atom]))
+        for slot, sites in per.items():
+            out[slot].add(tuple(sorted(sites)))
+    return out
+
+
+def _in_domain_slots(certifier, family, specs, direction) -> set:
+    """Slots participant 0 fills in an in-domain move of ``specs``."""
+    return set(probe_slots(certifier, family, specs, direction))
+
+
+def probe_partners(certifier, family, constants: FamilyConstants) -> dict:
+    """{bimolecular direction: {slot: (name, spec)}}: per slot the cheapest
+    ``PROBE_CANDIDATES`` species that fills it in an in-domain member with
+    some other candidate.  A slot no candidate fills is absent (reported by
+    ``probe_pattern`` callers)."""
+    out = {}
+    for direction, molecularity in constants.directions:
+        if molecularity != 2:
+            continue
+        fills = {}
+        for name, make in PROBE_CANDIDATES:
+            for _other, make2 in PROBE_CANDIDATES:
+                for slot in _in_domain_slots(certifier, family, [make(), make2()], direction):
+                    fills.setdefault(slot, (name, make()))
+        out[direction] = fills
+    return out
+
+
+def probe_pattern(certifier, family, pattern, constants: FamilyConstants,
+                  bound: Optional[SpanBound] = None, partners=None) -> tuple:
+    """The site classes ``family``'s templates accept for one pattern, per
+    direction and slot, with the smallest DP at which RMG generates an
+    in-domain member carrying them (every species of the member accepted by
+    ``domain.check``): DPs from the pattern's smallest one up to
+    ``probe_extra`` more (at most ``L + 1``), its canonical specs, against the
+    partner filling each other slot (``probe_partners``) in a bimolecular
+    direction."""
+    bound = bound or span_bound(constants)
+    partners = probe_partners(certifier, family, constants) if partners is None else partners
+    start = pattern_min_dp(pattern)
+    if start is None:
+        return ()
+    top = min(bound.L + 1, start + probe_extra(constants)) if pattern.kind == "chain" else 1
+    found = {}
+    for dp in range(start, max(top, start) + 1):
+        for spec in pattern_specs(pattern, dp):
+            for direction, molecularity in constants.directions:
+                fills = partners.get(direction, {})
+                chosen = [None] if molecularity == 1 else \
+                    sorted({v for v in fills.values()}, key=repr)
+                for partner in chosen:
+                    specs = [spec] + ([partner[1]] if partner else [])
+                    for slot, sites in probe_slots(certifier, family, specs,
+                                                   direction).items():
+                        for site in sites:
+                            cls = SiteClass(direction, slot, site, pattern, dp, spec,
+                                            partner[0] if partner else None)
+                            if cls.key not in found:
+                                found[cls.key] = cls
+    return tuple(found.values())
+
+
+def class_roster(certifier, family, patterns=None, constants=None) -> tuple:
+    """Every site class the family's templates accept per direction and slot
+    (``probe_pattern`` over ``patterns``, default every declared pattern)."""
+    constants = constants or family_constants(family)
+    partners = probe_partners(certifier, family, constants)
+    out = []
+    for pattern in (patterns if patterns is not None else participant_patterns()):
+        out.extend(probe_pattern(certifier, family, pattern, constants, partners=partners))
+    return tuple(sorted(out, key=lambda c: (c.direction, c.slot, repr(c.site), c.pattern)))
+
+
+def class_summary(classes, constants: FamilyConstants) -> dict:
+    """The class table per direction and slot (site, pattern, smallest DP),
+    class counts and the generated item counts (``class_items``)."""
+    molecularity = dict(constants.directions)
+    table = defaultdict(list)
+    for c in classes:
+        table[f"{c.direction}|slot{c.slot}"].append(
+            [" ".join(f"{lab}:{kind}" for lab, kind in c.site), c.pattern.label, c.dp,
+             c.partner])
+    items = class_items(classes, molecularity)
+    per = defaultdict(int)
+    for direction, members in items:
+        per[direction] += 1
+    return {"classes": len(classes),
+            "class_counts": {k: len(v) for k, v in sorted(table.items())},
+            "class_table": {k: sorted(v) for k, v in sorted(table.items())},
+            "class_items": dict(per),
+            "class_specs": {k: len({repr(c.spec) for c in classes
+                                    if f"{c.direction}|slot{c.slot}" == k})
+                            for k in sorted(table)}}
+
+
+def class_label(c) -> str:
+    return (f"{c.direction}|slot{c.slot}|{' '.join(f'{lab}:{kind}' for lab, kind in c.site)}"
+            f"|{c.pattern.label}")
+
+
+def ladder_class_gaps(plan, classes) -> list:
+    """Classes no planned item represents in their direction (the generated
+    roster must reach the ladder whole)."""
+    have = defaultdict(set)
+    for item in plan.items:
+        for label in item.classes:
+            have[label].update(item.directions or ("*",))
+    out = []
+    for c in classes:
+        label = class_label(c)
+        if c.direction not in have.get(label, ()) and "*" not in have.get(label, ()):
+            out.append(f"class {label} (DP{c.dp}) has no ladder item")
+    return out
+
+
+def class_items(classes, molecularity: dict) -> tuple:
+    """(direction, specs) of the generated ladder: per unimolecular direction
+    every class representative alone; per bimolecular direction the product of
+    the slot-0 and slot-1 class representatives (distinct specs per slot)."""
+    by = defaultdict(lambda: defaultdict(dict))
+    for c in classes:
+        by[c.direction][c.slot].setdefault(repr(c.spec), (c.spec, c.dp))
+    out = []
+    for direction in sorted(by):
+        slots = by[direction]
+        if molecularity.get(direction, 2) == 1:
+            for spec, dp in slots.get(0, {}).values():
+                out.append((direction, ((spec, dp),)))
+            continue
+        for x in slots.get(0, {}).values():
+            for y in slots.get(1, {}).values():
+                out.append((direction, (x, y)))
+    return tuple(out)
 
 
 def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -> LadderPlan:
@@ -1612,7 +2313,12 @@ def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -
     directions joined)."""
     bound = bound or span_bound(constants)
     L = bound.L
-    P = b.PROVIDERS["polystyrene"]
+    if constants.classes is None:
+        raise WindowError(f"{constants.family}: the generated class roster was not computed "
+                          "(FamilyConstants.classes: class_roster)")
+    if any(n == 2 for _d, n in constants.directions) and not constants.pair_kinds:
+        raise WindowError(f"{constants.family}: a bimolecular family without a pair roster "
+                          "(FamilyConstants.pair_kinds: pair_roster)")
     items, excluded = {}, []
     by_species = {}
     keys = {}
@@ -1622,7 +2328,7 @@ def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -
         r = repr(spec)
         if r not in keys:
             try:
-                build = P.build("ladder", spec)
+                build = build_spec(spec, "ladder")
             except b.BoundaryError as error:
                 keys[r] = (None, f"not constructible: {error}")
             else:
@@ -1631,7 +2337,7 @@ def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -
                     (None, f"outside the declared domain: {verdict.reason}")
         return keys[r]
 
-    def add(key, kind, spec, dp):
+    def add(key, kind, spec, dp, classes=()):
         skey, why = species_key(spec)
         if why:
             excluded.append((key, why))
@@ -1639,15 +2345,18 @@ def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -
         if skey in by_species:
             label = by_species[skey]
             item = items[label]
-            if kind not in item.kinds:
-                items[label] = LadderItem(item.label, item.kinds + (kind,), item.dp, item.specs,
-                                          item.control, dps=item.dps)
-            if key[0] != item.label:
+            if kind not in item.kinds or classes:
+                items[label] = LadderItem(item.label, item.kinds + ((kind,) if kind not in
+                                                                    item.kinds else ()),
+                                          item.dp, item.specs, item.control, dps=item.dps,
+                                          classes=item.classes + tuple(classes))
+            if key[0] != item.label and not classes:
                 excluded.append((key, f"duplicate species of {label}"))
             return
         label = _ends_label(spec)
         by_species[skey] = label
-        items[label] = LadderItem(label, (kind,), dp, (spec,), dp > L, dps=(dp,))
+        items[label] = LadderItem(label, (kind,), dp, (spec,), dp > L, dps=(dp,),
+                                  classes=tuple(classes))
 
     S = b.PsChainSpec
     for dp in range(1, L + 2):
@@ -1722,27 +2431,63 @@ def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -
                                                     item.control, None, item.dps,
                                                     item.directions + (direction,),
                                                     item.pair_kinds)
-        for short, long_ in {(kinds[0], kinds[1]), (kinds[1], kinds[0])}:
-            partner = LONG_SPECS[long_]()
-            for a in range(1, L + 2):
-                for first in kind_specs(short, a):
-                    k1, why = species_key(first)
-                    if why or not species_key(partner)[0]:
-                        excluded.append((("long", direction, short, long_, a, repr(first)),
-                                         why or species_key(partner)[1]))
-                        continue
-                    key = (k1, long_)
-                    item = long_pairs.get(key)
-                    if item is None:
-                        long_pairs[key] = LadderItem(
-                            f"pair DP{a} {label_of(short, first)}+long {long_}",
-                            ("pair:short_long",), a, (first, partner), a > L, 1, (a,),
-                            (direction,), tuple(sorted((short, long_))))
-                    elif direction not in item.directions:
-                        long_pairs[key] = LadderItem(item.label, item.kinds, item.dp, item.specs,
-                                                     item.control, 1, item.dps,
-                                                     item.directions + (direction,),
-                                                     item.pair_kinds)
+        for short, long_ in sorted({(kinds[0], kinds[1]), (kinds[1], kinds[0])}):
+            for partner in LONG_SPECS[long_]():
+                for a in range(1, L + 2):
+                    for first in kind_specs(short, a):
+                        k1, why = species_key(first)
+                        if why or not species_key(partner)[0]:
+                            excluded.append((("long", direction, short, long_, a, repr(first)),
+                                             why or species_key(partner)[1]))
+                            continue
+                        key = (k1, long_, species_key(partner)[0])
+                        item = long_pairs.get(key)
+                        if item is None:
+                            long_pairs[key] = LadderItem(
+                                f"pair DP{a} {label_of(short, first)}+long "
+                                f"{label_of(long_, partner)}",
+                                ("pair:short_long",), a, (first, partner), a > L, 1, (a,),
+                                (direction,), tuple(sorted((short, long_))))
+                        elif direction not in item.directions:
+                            long_pairs[key] = LadderItem(item.label, item.kinds, item.dp,
+                                                         item.specs, item.control, 1, item.dps,
+                                                         item.directions + (direction,),
+                                                         item.pair_kinds)
+    # the generated roster: every site class at its smallest in-domain DP,
+    # alone per unimolecular direction, the product of the slot classes per
+    # bimolecular direction (``class_items``); merged with the grid's items
+    labels = defaultdict(set)
+    for c in constants.classes:
+        labels[(c.direction, repr(c.spec))].add(class_label(c))
+    for direction, members in class_items(constants.classes, molecularity):
+        if len(members) == 1:
+            (spec, dp), = members
+            add(("class", direction, repr(spec)), "class", spec, dp,
+                tuple(sorted(labels[(direction, repr(spec))])))
+            continue
+        (first, a), (second, c) = members
+        k1, why1 = species_key(first)
+        k2, why2 = species_key(second)
+        if why1 or why2:
+            excluded.append((("class pair", direction, repr(first), repr(second)), why1 or why2))
+            continue
+        key = tuple(sorted((k1, k2)))
+        covered = tuple(sorted(labels[(direction, repr(first))] |
+                               labels[(direction, repr(second))]))
+        item = pairs.get(key)
+        if item is None:
+            pairs[key] = LadderItem(f"class pair DP{a}+DP{c} {_ends_label(first)}+"
+                                    f"{_ends_label(second)}", ("pair:class",), max(a, c),
+                                    (first, second), max(a, c) > L, None, (a, c),
+                                    (direction,), ("class",), covered)
+        else:
+            pairs[key] = LadderItem(item.label, item.kinds + (("pair:class",) if "pair:class"
+                                                              not in item.kinds else ()),
+                                    item.dp, item.specs, item.control, None, item.dps,
+                                    item.directions + ((direction,) if direction not in
+                                                       item.directions else ()),
+                                    item.pair_kinds, item.classes + covered)
+    out = list(items.values())
     out += list(pairs.values()) + list(long_pairs.values())
     singles = tuple(d for d, n in constants.directions if n == 1)
     return LadderPlan(constants.family, L, tuple(out), tuple(excluded), roster, singles)
@@ -2070,8 +2815,8 @@ def member_near_ports(case, bound) -> tuple:
 # ---------------------------------------------------------------------------
 # reacting-port covers (policy a)
 # ---------------------------------------------------------------------------
-PORT_REFUSALS = ("refused:reacting_port", "refused:extension", "refused:end",
-                 "refused:rematch")
+INTERIOR = "interior"
+COVER_VERDICTS = ("covered", "out_of_domain", "no_event", "gap")
 
 
 def reacting_ports(witness) -> tuple:
@@ -2081,14 +2826,9 @@ def reacting_ports(witness) -> tuple:
 
 
 def builds_of(specs):
-    """Provider builds of witness specs (``PsChainSpec`` or ("alkane", n))."""
-    out = []
-    for k, spec in enumerate(specs):
-        if isinstance(spec, tuple) and spec[0] == "alkane":
-            out.append(b.PROVIDERS["linear_alkane"].build(spec[1]))
-        else:
-            out.append(b.PROVIDERS["polystyrene"].build(f"p{k}", spec))
-    return out
+    """Provider builds of witness specs (``PsChainSpec``, ("alkane", n) or
+    ("small", name))."""
+    return [build_spec(spec, f"p{k}") for k, spec in enumerate(specs)]
 
 
 def longer_specs(specs, ports, k: int = 1):
@@ -2101,7 +2841,7 @@ def longer_specs(specs, ports, k: int = 1):
         spec = specs[index]
         head = port_id == "head"
         if isinstance(spec, tuple) and spec[0] == "alkane":
-            specs[index] = ("alkane", spec[1] + k)
+            specs[index] = ("alkane", spec[1] + k) + tuple(spec[2:])
         else:
             moved = {"units": spec.units + k}
             if head:
@@ -2113,6 +2853,31 @@ def longer_specs(specs, ports, k: int = 1):
         if head:
             shift[index] += k
     return specs, dict(shift)
+
+
+def event_specs(specs, assignment):
+    """The witness specs of one event a reacting-port member stands for:
+    ``assignment`` gives every reacting port either ``INTERIOR`` (the chain one
+    repeat longer there: ``longer_specs``) or a declared end chemistry (that
+    end built physical there by the provider).  (specs, unit shift); the specs
+    are None when a participant's spec cannot carry the end (the alkane
+    carries them as ("alkane", n, head end, tail end))."""
+    from dataclasses import replace
+    longer, shift = longer_specs(specs, [p for p, c in assignment if c == INTERIOR])
+    for (index, port_id), choice in assignment:
+        if choice == INTERIOR:
+            continue
+        spec = longer[index]
+        if isinstance(spec, tuple) and spec[0] == "alkane":
+            ends = list(spec[2:4]) + [None] * (4 - len(spec))
+            ends[0 if port_id == "head" else 1] = choice
+            longer[index] = ("alkane", spec[1], *ends)
+            continue
+        if not isinstance(spec, b.PsChainSpec):
+            return None, shift
+        longer[index] = replace(spec, **{"head_end" if port_id == "head" else "tail_end":
+                                         choice})
+    return longer, shift
 
 
 def event_signatures(case, shift=None) -> set:
@@ -2147,81 +2912,183 @@ def _cover_cases(certifier, family, specs, direction):
     return _COVER_CASES[key]
 
 
+def cover_status_verdict(status) -> str:
+    """``covered`` (the event's own witness reached a fixed point),
+    ``out_of_domain`` (``domain.check`` refuses a species of the event, reason
+    stated: ``refused:domain``), ``no_event`` (RMG's family generates no
+    mapping on the event's atoms of its own witness, under any labels:
+    ``not_generated``; the species has no such reaction, so no rate) or
+    ``gap`` (anything else: certificate failures, ceiling hits, incomplete
+    descents, port or end refusals, no witness, a rematch that finds the
+    atoms under other labels)."""
+    status = status or ""
+    if status == "fixed_point":
+        return "covered"
+    if status == "refused:domain":
+        return "out_of_domain"
+    if status == "not_generated":
+        return "no_event"
+    return "gap"
+
+
+def _event_verdict(statuses) -> str:
+    verdicts = [cover_status_verdict(s) for s in statuses] or ["gap"]
+    if "gap" in verdicts:
+        return "gap"
+    for verdict in ("covered", "out_of_domain"):
+        if verdict in verdicts:
+            return verdict
+    return "no_event"
+
+
 def reacting_port_covers(certifier, family, case, *, bound=None, providers=None, specs=None,
                          **loop) -> list:
-    """Covering witnesses of a member refused because a reacting atom sits on
-    an artificial port: per reacting port (and all of them together when
-    several), (physical) every declared end built there by
-    ``reconstruct_end`` (the event rematched, ``run_context``) and
-    (interior, needs ``specs``) the same mapped event on the witness whose
-    chain is one repeat longer at that port (``longer_specs``; the reacting
-    atom is interior), each run to its own fixed point."""
+    """One cover row per distinct mapped event the reacting-port member stands
+    for: every assignment of each reacting port to ``INTERIOR`` (the chain
+    continues there) or to a declared end chemistry (the chain ends there).
+    Each event is run on its OWN witness: the specs with the interior ports one
+    repeat longer and the end ports built physical (``event_specs``), the
+    member rematched by its labelled atoms' repeat coordinates
+    (``event_signatures``; every matching member must be covered), or without
+    specs / for an end a spec cannot carry, the end reconstructed on the
+    member's witness (``run_context``).  ``verdict``: ``covered``,
+    ``out_of_domain`` or ``gap`` (``cover_status_verdict``)."""
     ports = list(b.vector_ports(case.witness))
     reacting = list(reacting_ports(case.witness))
-    groups = [(p,) for p in reacting] + ([tuple(reacting)] if len(reacting) > 1 else [])
+    choices = [(INTERIOR,) + tuple(b.end_chemistries(case.witness, p, providers))
+               for p in reacting]
     covers = []
-    for group in groups:
-        chem = [b.end_chemistries(case.witness, p, providers) for p in group]
-        for ends in product(*chem):
-            choice = dict(zip(group, ends))
-            r = run_context(certifier, family, case, tuple((p, choice.get(p)) for p in ports),
+    for combo in product(*choices):
+        assignment = tuple(zip(reacting, combo))
+        interior = [p for p, c in assignment if c == INTERIOR]
+        ends = [c for _p, c in assignment if c != INTERIOR]
+        row = {"event": ", ".join(f"{c}@{p[0]}:{p[1]}" for p, c in assignment),
+               "kind": "interior" if not ends else "physical" if not interior else "mixed",
+               "port": [list(p) for p in reacting] if len(reacting) > 1 else list(reacting[0]),
+               "end": None if not ends else ends[0] if len(ends) == 1 else ends,
+               "assignment": [[list(p), c] for p, c in assignment]}
+        especs, shift = (None, {}) if specs is None else event_specs(specs, assignment)
+        built = None
+        if especs is not None:
+            row.update(route="spec", specs=[repr(x) for x in especs])
+            try:
+                builds = builds_of(especs)
+            except b.BoundaryError as error:
+                row.update(status="refused:end", reason=str(error)[:200])
+            else:
+                refusals = [(k, dom.check(x.molecule)) for k, x in enumerate(builds)]
+                refusals = [(k, v) for k, v in refusals if not v.accepted]
+                if refusals:
+                    # the event's own reactants are outside the declared domain
+                    row.update(status="refused:domain", reason="; ".join(
+                        f"reactants species {k}: {v.reason}" for k, v in refusals)[:300])
+                else:
+                    built = _cover_cases(certifier, family, especs, case.direction)
+        if built is not None:
+            wanted = event_signatures(case, shift)
+            matches = [c for c in built if event_signatures(c) & wanted]
+            if not matches:
+                atoms = {frozenset(x for _l, x in sig) for sig in wanted}
+                present = {(p.index, u, k) for p in built[0].witness.participants
+                           for _a, u, k in p.metadata.coordinates} if built else \
+                    {(i, u, k) for i, x in enumerate(builds) for _a, u, k in
+                     x.metadata.coordinates}
+                relabelled = [c.label for c in built
+                              if {frozenset(x for _l, x in sig) for sig in event_signatures(c)}
+                              & atoms]
+                heavy = {x for group in atoms for x in group if x[0] != "H"}
+                if relabelled or not heavy <= present:
+                    row.update(status="unmatched", reason="no member has the mapped event "
+                               f"({len(relabelled)} map its atoms under other labels)")
+                else:
+                    row.update(status="not_generated", reason="the family generates no "
+                               "mapping on the event's atoms on this species (no such event)")
+            else:
+                members = []
+                for c in matches:
+                    # an event with a species outside the declared domain needs no
+                    # rate (proved by domain.check, reason stated), whatever else
+                    # refuses it first
+                    why = species_domain_refusal(c.witness)
+                    res = {"status": "refused:domain", "reason": why} if why else \
+                        run_member(certifier, family, c, bound=bound, contexts=False,
+                                   providers=providers, covers=False, **loop)
+                    members.append({"label": c.label[-120:], "pathway": list(c.pathway),
+                                    "status": res["status"],
+                                    "reason": str(res.get("reason", ""))[:200],
+                                    "window_atoms": res.get("window_atoms")})
+                row["members"] = members
+                row["status"] = ",".join(sorted({m["status"] for m in members}))
+                row["reason"] = "; ".join(sorted({m["reason"] for m in members
+                                                  if m["reason"]}))[:300]
+                row["window_atoms"] = members[0]["window_atoms"]
+        elif "status" not in row and not interior:
+            r = run_context(certifier, family, case, tuple((p, dict(assignment).get(p))
+                                                           for p in ports),
                             bound=bound, providers=providers, **loop)
-            covers.append({"kind": "physical", "port": [list(p) for p in group]
-                           if len(group) > 1 else list(group[0]),
-                           "end": list(ends) if len(group) > 1 else ends[0],
-                           "status": r.status, "reason": r.reason[:200],
-                           "window_atoms": len(r.window.atoms) if r.status == "fixed_point"
-                           else None})
-        if specs is None:
-            continue
-        longer, shift = longer_specs(specs, group)
-        wanted = event_signatures(case, shift)
-        matches = [c for c in _cover_cases(certifier, family, longer, case.direction)
-                   if event_signatures(c) & wanted]
-        port = [list(p) for p in group] if len(group) > 1 else list(group[0])
-        if not matches:
-            covers.append({"kind": "interior", "port": port, "status": "unmatched",
-                           "reason": "no member of the longer witness has the mapped event"})
-        for c in matches:
-            res = run_member(certifier, family, c, bound=bound, contexts=False,
-                             providers=providers, **loop)
-            covers.append({"kind": "interior", "port": port, "label": c.label[-120:],
-                           "status": res["status"], "reason": str(res.get("reason", ""))[:200],
-                           "window_atoms": res.get("window_atoms"),
-                           "specs": [repr(x) for x in longer]})
+            row.update(route="reconstruct", status=r.status, reason=r.reason[:200],
+                       members=[{"status": r.status, "reason": r.reason[:200]}],
+                       window_atoms=len(r.window.atoms) if r.status == "fixed_point" else None)
+        elif "status" not in row:
+            row.update(status="no_witness", reason="the interior event needs the witness specs")
+        statuses = [m["status"] for m in row.get("members", ())] or [row["status"]]
+        row["verdict"] = _event_verdict(statuses)
+        covers.append(row)
     return covers
 
 
+def _event_key(cover) -> tuple:
+    if cover.get("event") is not None:
+        return (cover["event"],)
+    return (cover.get("kind"), repr(cover.get("port")), repr(cover.get("end")))
+
+
 def cover_verdict(covers) -> bool:
-    """A reacting-port member is covered iff some covering witness reaches a
-    fixed point, or the interior witness (the same event away from any port)
-    is refused for a named non-port reason (accounted)."""
+    """A reacting-port member is covered iff EVERY distinct mapped event it
+    stands for (the interior event and each physical-end event, ``_event_key``)
+    is covered by its own witness reaching a fixed point or shown outside the
+    declared domain (``cover_status_verdict``); a cover of one event never
+    stands in for another, and no event, or any gap, is uncovered."""
+    events = defaultdict(list)
     for c in covers:
-        status = c.get("status") or ""
-        if status == "fixed_point":
-            return True
-        if c.get("kind") == "interior" and status.startswith("refused:") and \
-                not status.startswith(PORT_REFUSALS):
-            return True
-    return False
+        events[_event_key(c)].append(c)
+    if not events:
+        return False
+    for rows in events.values():
+        for c in rows:
+            statuses = [m.get("status") for m in c.get("members", ())] or [c.get("status")]
+            if _event_verdict(statuses) == "gap":
+                return False
+    return True
+
+
+def cover_gaps(covers) -> list:
+    """The events of a cover list that are gaps (``cover_verdict``)."""
+    out = []
+    for c in covers:
+        statuses = [m.get("status") for m in c.get("members", ())] or [c.get("status")]
+        if _event_verdict(statuses) == "gap":
+            out.append(f"{c.get('event') or (c.get('kind'), c.get('port'), c.get('end'))}: "
+                       f"{','.join(sorted({str(s) for s in statuses}))}")
+    return out
 
 
 def reacting_port_gaps(rows) -> list:
-    """Every reacting-port member without a cover (``cover_verdict`` on its
-    ``covers``; a member without a cover search is a gap)."""
+    """Every reacting-port member with an uncovered event (``cover_verdict`` on
+    its ``covers``; a member without a cover search is a gap)."""
     out = []
     for r in rows:
         if r.get("status") != "refused:reacting_port":
             continue
         covers = r.get("covers") or []
         if not cover_verdict(covers):
-            out.append(f"{r.get('label', '?')[-90:]}: reacting port without a cover "
-                       f"({sorted({c.get('status') for c in covers})})")
+            out.append(f"{r.get('label', '?')[-90:]}: reacting port with uncovered events "
+                       f"{cover_gaps(covers) or ['no cover search']}")
     return out
 
 
 def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: bool = True,
-               providers=None, specs=None, **loop) -> dict:
+               providers=None, specs=None, covers: bool = True, **loop) -> dict:
     """Items 1-5 and 7 for one member: refusal by status, or the fixed point
     (window, span against ``bound``, per-mapping edit checks, diagnostics,
     recertification flips) and the context list with merges.  A
@@ -2247,7 +3114,7 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
                flips=sorted({(n, o, w) for _k, n, o, w in fp.flips}),
                check_rounds=len(fp.checks))
     if not fp.reached:
-        if fp.status == "refused:reacting_port":
+        if fp.status == "refused:reacting_port" and covers:
             out["covers"] = reacting_port_covers(certifier, family, case, bound=bound,
                                                  providers=providers, specs=specs, **loop)
             out["covered"] = cover_verdict(out["covers"])
@@ -2303,7 +3170,9 @@ def _contexts(out, certifier, family, case, fp, bound, providers, loop):
         "near_ports": [list(p) for p in ports if p in near],
         "far_ports": [list(p) for p in ports if p not in near],
         "promoted": [list(p) for p in promoted],
-        "far_checks": [[list(p), e, ok] for (p, e), ok in sorted(verdicts.items())]}
+        "far_checks": [[[list(p) for p in _verdict_ports(k)],
+                        [k[1]] if isinstance(k[1], str) else [e for _p, e in k], ok]
+                       for k, ok in sorted(verdicts.items(), key=repr)]}
     merges = merge_contexts(results)
     merged = {j for _i, j in merges}
     rows = []

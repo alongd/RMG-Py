@@ -1516,8 +1516,12 @@ class PolystyreneProvider(BoundaryProvider):
             double.add(0)
         if spec.tail_end in ALKENE_ENDS:
             double.add(last - 1)
+        # two backbone carbons with both ends unsaturated: one double bond read
+        # from either end (styrene is vinylidene at one end, styryl at the other)
+        same_bond = last == 1 and len(double) == 1
         if len(double) == 2 and max(double) - min(double) < 2 or \
-                spec.head_end in ALKENE_ENDS and spec.tail_end in ALKENE_ENDS and last < 3:
+                spec.head_end in ALKENE_ENDS and spec.tail_end in ALKENE_ENDS and last < 3 and \
+                not same_bond:
             raise MetadataError("two alkene ends share a backbone carbon")
         interior = set(range(1, last))
         ring, radical = {}, {}
@@ -1690,31 +1694,45 @@ class LinearAlkaneProvider(BoundaryProvider):
             raise ExtensionRefused(f"linear alkane: {end!r} is not a declared end")
         return standard_end_edit(port, end, None, rows, protected)
 
-    def build(self, carbons: int, name: Optional[str] = None) -> ProxyBuild:
+    def build(self, carbons: int, name: Optional[str] = None, head_end: Optional[str] = None,
+              tail_end: Optional[str] = None) -> ProxyBuild:
+        """``head_end`` / ``tail_end`` (additive, I-137 rework 2): build that end
+        PHYSICAL with a declared end chemistry (``methyl``: the CH3 terminus,
+        no cap; ``primary_radical``: a .CH2 terminus) instead of the
+        artificial H-capped cut point."""
         from rmgpy.kmc.rmg_moves import molecule_from_rows
 
         if carbons < 2:
             raise MetadataError("a linear alkane proxy needs at least two carbons")
+        for end in (head_end, tail_end):
+            if end is not None and end not in self.END_CHEMISTRIES["backbone_head"]:
+                raise MetadataError(f"linear alkane: {end!r} is not a declared end")
         name = name or f"C{carbons}"
         neighbours = {i: [] for i in range(carbons)}
         for i in range(carbons - 1):
             neighbours[i].append(i + 1)
             neighbours[i + 1].append(i)
+        radical = {0: int(head_end == "primary_radical"),
+                   carbons - 1: int(tail_end == "primary_radical")}
         h_of, next_id = {}, carbons
         for i in range(carbons):
-            count = 4 - len(neighbours[i])
+            count = 4 - len(neighbours[i]) - radical.get(i, 0)
             h_of[i] = tuple(range(next_id, next_id + count))
             next_id += count
         rows = {}
         for i in range(carbons):
             edges = [(j, 1.0) for j in neighbours[i]] + [(h, 1.0) for h in h_of[i]]
-            rows[i] = ("C", None, 0, 0, 0, tuple(sorted(edges)))
+            rows[i] = ("C", None, 0, radical.get(i, 0), 0, tuple(sorted(edges)))
             for h in h_of[i]:
                 rows[h] = ("H", None, 0, 0, 0, ((i, 1.0),))
         molecule = molecule_from_rows(rows)
-        ports = (Port("head", 0, (h_of[0][-1],), "backbone_head", "artificial"),
-                 Port("tail", carbons - 1, (h_of[carbons - 1][-1],), "backbone_tail",
-                      "artificial"))
+
+        def port(port_id, atom, tag, end):
+            if end is None:
+                return Port(port_id, atom, (h_of[atom][-1],), tag, "artificial")
+            return Port(port_id, atom, (), tag, "physical")
+        ports = (port("head", 0, "backbone_head", head_end),
+                 port("tail", carbons - 1, "backbone_tail", tail_end))
         metadata = BoundaryMetadata(self.name, ports, tuple((i, i, 0) for i in range(carbons)))
         metadata.check(rows, name)
         return ProxyBuild(name, molecule, metadata, tuple(range(next_id)))

@@ -17,14 +17,19 @@ Parts (each its own run, both streams persisted by the caller):
 * ``refs``: the DP8 head-radical and DP4 + 1-phenylethyl witnesses (the I-135
   reference families and directions, single molecules and pairs); contexts
   near the window (radical ends everywhere).
+* ``roster:<family>``: the family's generated class roster alone
+  (``windows.probe_pattern`` per declared pattern through the pool): the
+  class table per direction and slot, class and generated item counts.
 * ``ladder:<family>``: the family's ladder (``windows.ladder_plan`` with the
-  roster of ``windows.pair_roster``): the unimolecular directions on every
-  single-chain item, each pair in the directions its kinds are rostered for;
-  coverage checked per direction (``windows.ladder_direction_gaps``), the
-  L + 1 control per participant.
+  kind roster of ``windows.pair_roster`` and the class roster, probed first
+  through the pool): the unimolecular directions on every single-chain
+  item, each pair in the directions its kinds or classes are rostered for;
+  coverage checked per direction (``windows.ladder_direction_gaps``) and per
+  class (``windows.ladder_class_gaps``), the L + 1 control per participant.
 
-Every reacting-port refusal carries its covering witnesses (the witness specs
-are passed to ``run_member``); an uncovered one fails the run.  ``--sample K``
+Every reacting-port refusal carries one cover per event it stands for (the
+witness specs are passed to ``run_member``); a member with an uncovered event
+fails the run.  ``--sample K``
 runs every K-th task only (a timing projection: ``projection`` in the
 summary).
 
@@ -32,6 +37,7 @@ Every member row goes to ``rows.jsonl``; ``summary.json`` holds the tables and
 the gate failures (non-empty: exit 1).  A span-bound violation fails the run.
 
 Usage: python windows_acceptance.py OUTDIR PART [--workers N] [--artifact PATH]
+       [--sample K] [--roster classes.<family>.pkl]
 """
 
 import argparse
@@ -86,14 +92,18 @@ def _rss_mb():
 def spec_dict(spec):
     from dataclasses import asdict
     if isinstance(spec, tuple) and spec[0] == "alkane":
-        return {"alkane": spec[1]}
+        return {"alkane": spec[1], "ends": list(spec[2:4])}
+    if isinstance(spec, tuple) and spec[0] == "small":
+        return {"small": spec[1]}
     return asdict(spec)
 
 
 def spec_from(d):
     from rmgpy.kmc import boundaries as b
     if "alkane" in d:
-        return ("alkane", d["alkane"])
+        return ("alkane", d["alkane"]) + tuple(d.get("ends") or ())
+    if "small" in d:
+        return ("small", d["small"])
     d = dict(d)
     for key in ("radical_units", "secondary_radical_units", "pendant_loss_units"):
         d[key] = tuple(d.get(key) or ())
@@ -119,7 +129,7 @@ def cases_for(specs, family_name, direction):
 
 def _label(spec):
     from rmgpy.kmc import windows as win
-    if isinstance(spec, tuple):
+    if isinstance(spec, tuple) and spec[0] == "alkane":
         return f"C{spec[1]}"
     return win._ends_label(spec)
 
@@ -369,7 +379,52 @@ def ref_tasks():
     return tasks
 
 
-def ladder_tasks(family_name):
+def run_probe_task(task):
+    """(family, pattern): the site classes the family's templates accept for
+    one declared pattern (``windows.probe_pattern``)."""
+    from rmgpy.kmc import windows as win
+    family_name, pattern, partners = task
+    start = time.time()
+    failures, classes = [], ()
+    try:
+        family = _S["fam"][family_name]
+        classes = win.probe_pattern(_S["certifier"], family, pattern,
+                                    win.family_constants(family), _S["bounds"][family_name],
+                                    partners=partners)
+    except Exception:   # reported, never hidden
+        failures.append(f"probe {family_name} {pattern.label}: {traceback.format_exc()[-1500:]}")
+    return {"task": ["probe", family_name, pattern.label], "rows": [], "classes": classes,
+            "failures": failures, "seconds": round(time.time() - start, 1),
+            "rss_mb": _rss_mb()}
+
+
+def class_roster(family_name, workers, log):
+    """The family's generated class roster, one probe task per declared
+    pattern through the pool."""
+    from rmgpy.kmc import windows as win
+    t = time.time()
+    _init()
+    family = _S["fam"][family_name]
+    partners = win.probe_partners(_S["certifier"], family, win.family_constants(family))
+    calibrate = round(time.time() - t, 1)
+    print("PROBE PARTNERS", {d: {s: n for s, (n, _x) in v.items()} for d, v in partners.items()},
+          calibrate, "s", flush=True)
+    for pattern in win.participant_patterns():    # cached before the pool forks
+        for dp in range(1, win.PATTERN_DP_LIMIT + 1):
+            win.pattern_specs(pattern, dp)
+    tasks = [(family_name, p, partners) for p in win.participant_patterns()]
+    results = run_pool(tasks, workers, run_probe_task, log)
+    classes = tuple(sorted((c for res in results for c in res["classes"]),
+                           key=lambda c: (c.direction, c.slot, repr(c.site), c.pattern)))
+    failures = [f for res in results for f in res["failures"]]
+    return classes, failures, {"probe_wall_s": round(time.time() - t),
+                               "probe_task_s": round(sum(r["seconds"] for r in results)),
+                               "probe_calibration_s": calibrate,
+                               "probe_partners": {d: {str(s): n for s, (n, _x) in v.items()}
+                                                  for d, v in partners.items()}}
+
+
+def ladder_tasks(family_name, classes=()):
     from dataclasses import replace
     from rmgpy.kmc import windows as win
     fam = _S["fam"]
@@ -377,7 +432,7 @@ def ladder_tasks(family_name):
     constants = win.family_constants(family)
     t = time.time()
     roster = win.pair_roster(_S["certifier"], family)
-    constants = replace(constants, pair_kinds=roster)
+    constants = replace(constants, pair_kinds=roster, classes=tuple(classes))
     bound = win.span_bound(constants)
     plan = win.ladder_plan(constants, bound)
     _S["roster_s"] = round(time.time() - t, 1)
@@ -475,6 +530,7 @@ def ladder_gates(rows, plan, bound):
     participant above L."""
     from rmgpy.kmc import windows as win
     out = list(win.ladder_direction_gaps(plan, rows))
+    out += win.ladder_class_gaps(plan, _S.get("classes", ()))
     per_dp = defaultdict(Counter)
     per_pair = defaultdict(Counter)
     for r in rows:
@@ -538,6 +594,8 @@ def main():
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--artifact", default=None)
     parser.add_argument("--sample", type=int, default=1)
+    parser.add_argument("--roster", default=None,
+                        help="classes.<family>.pkl of a roster:<family> run (else probed)")
     args = parser.parse_args()
     out = Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
@@ -550,9 +608,29 @@ def main():
                                run_cases_task, log)
         elif args.part == "refs":
             results = run_pool(ref_tasks()[::args.sample], args.workers, run_cases_task, log)
+        elif args.part.startswith("roster:"):
+            name = args.part.split(":", 1)[1]
+            classes, failures0, timing = class_roster(name, args.workers, log)
+            import pickle
+            (out / f"classes.{name}.pkl").write_bytes(pickle.dumps(classes))
+            from rmgpy.kmc import windows as win
+            extra = dict(timing, **win.class_summary(classes, win.family_constants(
+                _S["fam"][name])), failures=failures0)
+            results = [{"rows": [], "failures": failures0, "seconds": 0}]
         elif args.part.startswith("ladder:"):
+            from rmgpy.kmc import windows as win
             _init()
-            tasks, plan, bound = ladder_tasks(args.part.split(":", 1)[1])
+            name = args.part.split(":", 1)[1]
+            if args.roster:
+                import pickle
+                classes = pickle.loads(Path(args.roster).read_bytes())
+                failures0, timing = [], {"roster_from": args.roster}
+            else:
+                classes, failures0, timing = class_roster(name, args.workers, log)
+                import pickle
+                (out / f"classes.{name}.pkl").write_bytes(pickle.dumps(classes))
+            tasks, plan, bound = ladder_tasks(name, classes)
+            _S["classes"] = classes
             pairs = Counter((d, "+".join(i.pair_kinds), "long" if i.long_index else "short")
                             for i in plan.items for d in i.directions)
             extra = {"L": bound.L, "L_plus_1": bound.L + 1, "span_bound": bound.__dict__,
@@ -566,9 +644,12 @@ def main():
                      "excluded_reasons": dict(Counter(r.split(":")[0]
                                                       for _k, r in plan.excluded)),
                      "tasks": len(tasks), "sample": args.sample}
+            extra.update(timing)
+            extra.update(win.class_summary(classes, win.family_constants(_S["fam"][name])))
             _S["plan"] = plan
             print("LADDER", json.dumps(extra, default=str), flush=True)
             results = run_pool(tasks[::args.sample], args.workers, run_cases_task, log)
+            results.append({"rows": [], "failures": failures0, "seconds": 0})
         elif args.part == "dp8":
             results = dp8(out, args, log)
             extra = _S.get("dp8_extra", {})
@@ -598,8 +679,12 @@ def main():
     covers = [r for r in member_rows(rows) if r.get("status") == "refused:reacting_port"]
     extra["reacting_port_covers"] = [
         {"label": r["label"][-110:], "covered": win.cover_verdict(r.get("covers") or []),
-         "covers": [[c["kind"], c.get("port"), c.get("end"), c["status"],
-                     c.get("window_atoms")] for c in r.get("covers") or []]} for r in covers]
+         "events": [[c.get("event"), c.get("route"), c.get("verdict"), c.get("status"),
+                     c.get("window_atoms"), (c.get("reason") or "")[:120]]
+                    for c in r.get("covers") or []]} for r in covers]
+    extra["reacting_port_events"] = dict(Counter(
+        (c.get("event") or "").split("@")[0] + ":" + str(c.get("verdict"))
+        for r in covers for c in r.get("covers") or []))
     summary = summarize(args.part, rows, failures, extra)
     summary["wall_s"] = round(time.time() - t0)
     task_s = sum(res["seconds"] for res in results)
