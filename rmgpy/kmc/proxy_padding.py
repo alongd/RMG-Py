@@ -781,7 +781,10 @@ def check_padding_declarations(original, boundaries, repeat_unit, providers) -> 
             initial = {attach: unit_tail, new_port: unit_head}
         if attach is new_port:
             initial = {attach: unit_head} if unit_head is unit_tail else None
-        if initial is None or not closed.is_isomorphic(unit, initial_map=initial, strict=False):
+        # save_order: ``repeat_unit`` is shared across proxies and its head and
+        # tail are atom INDICES; RMG's default sorts both graphs' atoms
+        if initial is None or not closed.is_isomorphic(unit, initial_map=initial, strict=False,
+                                                        save_order=True):
             raise ReactionNotPaddable(
                 f"port {key}: declared repeat unit {repeat_unit.name!r} is not the chemistry "
                 f"(or orientation) its provider {metadata.provider!r} adds"

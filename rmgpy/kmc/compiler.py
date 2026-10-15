@@ -3305,8 +3305,12 @@ def ceiling_temperature(
     return None
 
 
-def validate_artifact(artifact: dict[str, Any]) -> None:
-    """Reject structural corruption in a compiled event-set artifact."""
+def validate_artifact(artifact: dict[str, Any], families=None) -> None:
+    """Reject structural corruption in a compiled event-set artifact.
+
+    ``families``: the loaded RMG kinetics families a certified artifact's
+    rate certificates are re-derived against (without them a certified
+    artifact is unverified and refused)."""
     schema_version = artifact.get("schema_version")
     if schema_version not in {SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}:
         raise ValueError("unknown event-set schema")
@@ -3464,7 +3468,7 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
     # rate certificates: declared mode, coverage, ownership, derived summary
     from rmgpy.kmc.certificates import validate_certification
 
-    validate_certification(artifact)
+    validate_certification(artifact, families=families)
     linked_records = [record for record in records if record.get("reverse_of") in by_id]
     duplicates = duplicate_transition_groups(linked_records)
     if duplicates:
@@ -5852,7 +5856,14 @@ class EventSetCompiler:
         artifact["ps_ceiling_temperature_K"] = (
             anchor["temperature_K"] if anchor else None
         )
-        validate_artifact(artifact)
+        validate_artifact(
+            artifact,
+            families=(
+                getattr(self.kinetics_database, "families", {})
+                if rate_certificates is not None
+                else None
+            ),
+        )
         self._compiled_artifact = artifact
         return artifact
 

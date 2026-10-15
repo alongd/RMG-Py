@@ -1377,6 +1377,13 @@ def test_rewrite_replay_is_the_runtime_operation_stream(fam, certifier):
     problems = cm.rewrite_problems(paired)
     assert problems, "Molecule.update() would erase the requested lone pair"
     assert not certifier.certify_record(paired)["certified"]
+    # declared products carrying the same lone pair: the replay equals them,
+    # but chemistry normalisation would change the requested value
+    declared = [g.replace("1 H u0 p0 c0", "1 H u0 p1 c0", 1) for g in hh.product_graphs]
+    assert declared != list(hh.product_graphs)
+    both = replace(hh, bond_ops=lone, product_graphs=declared, event_id="")
+    assert any("normalisation" in p for p in cm.rewrite_problems(both)), \
+        cm.rewrite_problems(both)
 
 
 def test_recertification_checks_the_rate_owner(fam, certifier):
@@ -1402,6 +1409,16 @@ def test_recertification_checks_the_rate_owner(fam, certifier):
     assert res["certificate"] is None and not res["same_selection"]
     assert any("rate-owning record" in r for r in res["refusals"]), res["refusals"]
     assert cm.record_certificate_refusals(relinked, rc, rate_owner=new_owner)
+    # a rate-source change the selection does not read (RMG's comment): only
+    # the rate-owner check sees that the certificate is the previous owner's
+    commented = dict(owner.rate_source, comment="re-estimated elsewhere")
+    other_owner = replace(owner, rate_source=commented, event_id="")
+    relinked = replace(partner, reverse_of=other_owner.event_id, event_id="")
+    other_owner = replace(other_owner, reverse_of=relinked.event_id)
+    res = certifier.recertify(relinked, mols, ident, certificate=rc, rate_owner=other_owner)
+    assert res["certificate"] is None, res["refusals"]
+    assert any("rate-owning record" in r or "rate source" in r for r in res["refusals"]), \
+        res["refusals"]
     unchecked = certifier.recertify(partner, mols, ident, certificate=rc)
     assert unchecked["certificate"] is None
     assert any("rate-owning record" in r for r in unchecked["refusals"]), unchecked["refusals"]
@@ -1526,36 +1543,54 @@ def _reacting(cert):
 RECERT_OUTCOMES = ("same", "changed", "cohort changed", "unmapped", "refused", "not extended")
 
 
+DOMAIN_TOKENS = ("in-domain", "out-of-domain")
+
+
 def acceptance_failures(table) -> list:
-    """Why a reference acceptance table fails the gate (empty: passes): an
-    incomplete certificate; a SUPPORTED channel (support token
-    ``supported``) whose recertification on +1 repeat unit changed its
-    selection or its event cohort (an added mapping); an outcome outside the
-    accounted categories (``RECERT_OUTCOMES``).  Unsupported changes and
-    explicit refusals (``unmapped``: the extension removed a reacting atom;
-    ``refused``: recertification refused, e.g. a domain-ineligible channel,
-    with its reason in ``recertification_refusals``; ``not extended``) are
-    accounted, not failed."""
+    """Why a reference acceptance table fails the gate (empty: passes).
+
+    Rows are keyed ``<support>;<domain>:<outcome>``: ``support`` the channel
+    support tokens (``chm`` enumeration), ``domain`` ``in-domain`` when every
+    species of the channel is accepted by ``domain.check`` (both independent
+    of the certificate's own verdicts).  Fails on an incomplete certificate;
+    on a SUPPORTED channel whose recertification on +1 repeat unit changed
+    its selection or its cohort (an added mapping); on any outcome of the
+    in-domain supported population other than success (``same``): a
+    refusal (``refused``) or an extension that removed a reacting atom
+    (``unmapped``) fails there.  A witness without a +1 analogue (``not
+    extended``: no chain end to grow) has nothing to recertify and is
+    outside that population.  Out-of-domain and unsupported refusals are
+    accounted, not failed; an outcome outside ``RECERT_OUTCOMES`` or a row
+    without its domain token is unaccounted (fails)."""
     out = []
     if table["incomplete"]:
         out.append(f"{table['incomplete']} incomplete certificates")
     for key, count in sorted(table.get("recertification", {}).items()):
-        support, _sep, outcome = key.rpartition(":")
-        if outcome not in RECERT_OUTCOMES:
+        left, _sep, outcome = key.rpartition(":")
+        support, _sep2, domain = left.rpartition(";")
+        supported = "supported" in support.split(",")
+        if outcome not in RECERT_OUTCOMES or domain not in DOMAIN_TOKENS:
             out.append(f"unaccounted recertification outcome {key!r} ({count})")
-        elif outcome in ("changed", "cohort changed") and "supported" in support.split(","):
+        elif supported and domain == "in-domain" and outcome not in ("same", "not extended"):
+            out.append(f"{count} in-domain supported channel(s) not recertified on +1 repeat "
+                       f"unit ({key})")
+        elif outcome in ("changed", "cohort changed") and supported:
             out.append(f"{count} supported channel(s) changed on +1 repeat unit ({key})")
     return out
 
 
-def recert_row(certifier, family, cert, mols):
+def recert_row(certifier, family, cert, mols, species):
     """Recertification on +1 repeat unit: outcome ``same`` / ``changed`` /
     ``cohort changed`` (an added mapping) / ``unmapped`` (a reacting atom was
     removed by the extension) / ``refused`` (recertification refused, e.g. a
     domain-ineligible channel; the reason is returned) / ``not extended``,
-    keyed by the channel support, with the bond distance from the extension
-    point to the nearest reacting atom."""
+    keyed by the channel support and the domain token of ``species`` (every
+    species of the channel, judged by ``domain.check``, not by the
+    certificate), with the bond distance from the extension point to the
+    nearest reacting atom."""
     support = ",".join(sorted({c.get("support", "?") for c in cert["channels"]})) or "none"
+    in_domain = bool(species) and all(dom.check(m).accepted for m in species)
+    support = f"{support};{'in-domain' if in_domain else 'out-of-domain'}"
     ext, amap, info = cm.extend_witness(mols, _reacting(cert))
     if not any(i["extended"] for i in info):
         return {"extended": False, "outcome": f"{support}:not extended"}
@@ -1631,7 +1666,7 @@ def reference_table(certifier, fam, label, mols, out):
                                 whole.add((name, ";".join(c["pathway"])))
                         if not cert["complete"]:
                             incomplete.append((name, direction, ch.pathway, cert["gaps"][:3]))
-                        row = recert_row(certifier, family, cert, tmols)
+                        row = recert_row(certifier, family, cert, tmols, species)
                         recert[row["outcome"]] += 1
                         if row.get("refusal"):
                             refusals[f"{row['outcome']}: {row['refusal'][:120]}"] += 1
@@ -1724,7 +1759,7 @@ def test_dp8_closed_compile_certificates(fam, certifier, tmp_path):
         for m in mols + others:
             v = dom.check(m)
             domain[keys(m)] = (v.accepted, v.reason)
-        row = recert_row(certifier, fam[record["family"]], cert, mols)
+        row = recert_row(certifier, fam[record["family"]], cert, mols, mols + others)
         recert[row["outcome"]] += 1
         if row.get("refusal"):
             print("DP8CERT recert refusal", row["outcome"], row["refusal"][:160])

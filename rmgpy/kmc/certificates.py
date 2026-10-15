@@ -63,7 +63,7 @@ from rmgpy.kmc import domain as dom
 from rmgpy.kmc import rmg_moves as rm
 
 CERTIFICATE_VERSION = "kmc-rate-certificate/4"
-RECORD_CERTIFICATE_SCHEMA = "kmc-record-rate-certificate/2"
+RECORD_CERTIFICATE_SCHEMA = "kmc-record-rate-certificate/3"
 REFERENCE_SCHEMA = "kmc-rate-certificate-ref/2"
 # record statuses that fire in the simulator (refused records never fire)
 FIRING_STATUSES = ("enabled", "irreversible")
@@ -1059,8 +1059,10 @@ class Certifier:
         direction, the supplying node of an auto-generated tree) equal to the
         rate-owning record's serialized rate source, and (c) the record's
         executable rewrite: a complete canonical heavy-atom map, and its
-        explicit-H ``bond_ops`` replayed on its reactant graphs reproduce its
-        declared products under that map.  A mismatch refuses the binding;
+        complete executable operation stream (``bond_ops`` and
+        ``feature_ops``) replayed on its reactant graphs with the runtime's
+        semantics reproduces its declared products exactly under that map,
+        before any chemistry normalisation (``rewrite_problems``).  A mismatch refuses the binding;
         nothing is re-estimated in its place.  ``certified`` = complete and
         eligible and bound and no refused depository exclusion and every
         bound channel publishable (supported spin/pathway status and domain
@@ -1213,13 +1215,17 @@ class Certifier:
         certificate witness id -> extended witness id.  ``certificate``: the
         record's RECORD certificate (default: certified now, through
         ``rate_owner`` for a reference-thermo reverse).  Refused unless it is
-        a record certificate owned by ``record``, successfully bound and
-        certified (``record_certificate_refusals``); its inner certificate is
-        never unwrapped otherwise.  See ``recertify_certificate``."""
+        a record certificate owned by ``record`` and by the supplied
+        ``rate_owner`` (the record itself for an RMG family estimate),
+        re-derived on this certifier's database, successfully bound and
+        certified (``record_certificate_refusals``: the artifact check, one
+        code path); its inner certificate is never unwrapped otherwise.  See
+        ``recertify_certificate``."""
         record = _as_dict(record)
         old = certificate if certificate is not None else \
             self.certify_record(record, rate_owner=rate_owner)
-        refusals = record_certificate_refusals(record, old)
+        refusals = record_certificate_refusals(record, old, rate_owner=rate_owner,
+                                               certifier=self)
         if refusals:
             return _refused_recertification(refusals)
         return self.recertify_certificate(self.families[record["family"]], old["certificate"],
@@ -1565,43 +1571,239 @@ def heavy_map_problem(amap, reactant_heavy: int, product_heavy: int):
     return None
 
 
-def rewrite_problems(record) -> list:
-    """Replay the record's explicit-H ``bond_ops`` on its reactant graphs
-    (``compiler.apply_record``; graph positions are the operation indices)
-    and require the declared products under the record's heavy-atom map
-    (heavy atoms pinned, hydrogens free, any resonance form; an empty map
-    for hydrogen-only sides).  Empty: the rewrite is the record's."""
-    from rmgpy.kmc.compiler import apply_record
+def runtime_operations(record) -> list:
+    """The executable operation stream the runtime applies to ``record``:
+    its ``bond_ops``, then every ``feature_ops`` entry not already among them
+    (``state.KMCState._record_operations``, called as is)."""
+    from rmgpy.kmc.state import KMCState
+    return KMCState._record_operations(None, record)
+
+
+# the atom fields the runtime's set_* operations write (state.KMCState._rewrite_graph)
+_RUNTIME_FIELDS = {"set_radical": "radical", "set_charge": "charge",
+                   "set_lone_pairs": "lone_pairs", "set_implicit_hydrogens": "implicit_hydrogens"}
+
+
+def _runtime_graph(graphs) -> dict:
+    """One runtime atom graph (``state._parse_adjacency`` nodes: element,
+    radical, charge, lone pairs, implicit hydrogens, edges with their
+    orders) of the concatenated participants; keys are the record's atom
+    positions, the indices of its operations."""
+    from rmgpy.kmc.state import _parse_adjacency
+    graph, offset = {}, 0
+    for text in graphs:
+        part = _parse_adjacency(text)
+        for i, node in part.items():
+            node = dict(node)
+            node["edges"] = {j + offset: o for j, o in node["edges"].items()}
+            graph[i + offset] = node
+        offset += len(part)
+    return graph
+
+
+def runtime_replay(record):
+    """(graph, problems): the record's reactant graphs rewritten by its
+    complete executable operation stream (``runtime_operations``) with the
+    runtime's semantics, an exact mirror of the graph edits of
+    ``state.KMCState._rewrite_graph``: break needs the bond, form needs its
+    absence, change needs the bond, form/change store ``state._order`` of the
+    requested order, set_* stores the requested integer in the runtime field
+    (radical, charge, lone pairs, implicit hydrogens); anything else is
+    refused.  No chemistry normalisation is applied."""
+    from rmgpy.kmc.state import _order
     record = _as_dict(record)
-    reactants = witness_molecules(record.get("reactant_graphs") or [])
-    products = witness_molecules(record.get("product_graphs") or [],
-                                 offset=sum(len(m.atoms) for m in reactants))
-    amap = {int(k): int(v) for k, v in (record.get("atom_map") or {}).items()}
-    r_heavy = [a.id for m in reactants for a in m.atoms if not a.is_hydrogen()]
-    p_heavy = [a.id for m in products for a in m.atoms if not a.is_hydrogen()]
+    graph = _runtime_graph(record.get("reactant_graphs") or [])
+    problems = []
+    for k, op in enumerate(runtime_operations(record)):
+        action = op.get("action")
+        try:
+            if action in ("break", "form", "change"):
+                first, second = (int(index) for index in op["atoms"])
+                if first not in graph or second not in graph:
+                    raise KeyError("an operation atom is not a reactant atom")
+                existing = graph[first]["edges"].get(second)
+                if action == "break":
+                    if existing is None:
+                        problems.append(f"operation {k}: cannot break a missing bond")
+                        continue
+                    graph[first]["edges"].pop(second, None)
+                    graph[second]["edges"].pop(first, None)
+                    continue
+                if action == "form" and existing is not None:
+                    problems.append(f"operation {k}: cannot form an existing bond")
+                    continue
+                if action == "change" and existing is None:
+                    problems.append(f"operation {k}: cannot change a missing bond")
+                    continue
+                order = _order(op["order"])
+                graph[first]["edges"][second] = order
+                graph[second]["edges"][first] = order
+            elif isinstance(action, str) and action.startswith("set_"):
+                field = _RUNTIME_FIELDS.get(action)
+                if field is None:
+                    problems.append(f"operation {k}: unknown feature rewrite {action!r}")
+                    continue
+                atom = int(op["atom"])
+                if atom not in graph:
+                    raise KeyError("the operation atom is not a reactant atom")
+                graph[atom][field] = int(op["value"])
+            else:
+                problems.append(f"operation {k}: unknown rewrite action {action!r}")
+        except (KeyError, TypeError, ValueError) as exc:
+            problems.append(f"operation {k} does not apply to the reactant graphs: {exc}")
+    return graph, problems
+
+
+def _runtime_signature(node):
+    return (node.get("element"), int(node.get("radical", 0)), int(node.get("charge", 0)),
+            int(node.get("lone_pairs", 0)), int(node.get("implicit_hydrogens", 0)))
+
+
+def _runtime_components(graph) -> list:
+    unseen, out = set(graph), []
+    while unseen:
+        stack, members = [min(unseen)], set()
+        while stack:
+            current = stack.pop()
+            if current in members:
+                continue
+            members.add(current)
+            stack.extend(set(graph[current]["edges"]) - members)
+        unseen -= members
+        out.append(members)
+    return out
+
+
+def _exact_component_match(graph, members, product, pins) -> bool:
+    """``graph`` restricted to ``members`` equals runtime graph ``product``
+    exactly (every node field, every edge with its order) by a bijection
+    that sends each pinned atom to its pin (hydrogens free)."""
+    from rmgpy.kmc.state import _order
+    if len(members) != len(product):
+        return False
+    pinned = set(pins.values())
+    candidates = {}
+    for src in members:
+        node = graph[src]
+        options = [pins[src]] if src in pins else [t for t in product if t not in pinned]
+        candidates[src] = [t for t in options if t in product
+                           and _runtime_signature(product[t]) == _runtime_signature(node)
+                           and len(product[t]["edges"]) == len(node["edges"])]
+        if not candidates[src]:
+            return False
+    order = sorted(members, key=lambda a: (len(candidates[a]), a))
+
+    def visit(position, matched, used):
+        if position == len(order):
+            return True
+        src = order[position]
+        for target in candidates[src]:
+            if target in used:
+                continue
+            if all(_order(product[target]["edges"].get(matched[n])) == _order(o)
+                   for n, o in graph[src]["edges"].items() if n in matched):
+                matched[src] = target
+                used.add(target)
+                if visit(position + 1, matched, used):
+                    return True
+                del matched[src]
+                used.discard(target)
+        return False
+
+    return visit(0, {}, set())
+
+
+def _normalisation_problems(graph, members) -> list:
+    """Requested values of a replayed component that RMG's chemistry
+    normalisation (``Molecule.update``: lone pairs and charges recomputed,
+    atom types, multiplicity) would change; an invalid graph is a problem."""
+    from rmgpy.molecule.molecule import Atom, Bond, Molecule
+    mol, atoms = Molecule(), {}
+    try:
+        for i in sorted(members):
+            node = graph[i]
+            atoms[i] = Atom(element=node["element"], radical_electrons=int(node["radical"]),
+                            charge=int(node["charge"]), lone_pairs=int(node["lone_pairs"]))
+            mol.add_atom(atoms[i])
+        for i in sorted(members):
+            for j, order in graph[i]["edges"].items():
+                if i < j:
+                    mol.add_bond(Bond(atoms[i], atoms[j], order=float(order)))
+        normalised = mol.copy(deep=True)
+        normalised.update(log_species=False, sort_atoms=False)
+    except Exception as exc:  # an invalid graph is a problem, never a pass
+        return [f"the replayed graph is not a valid molecule: {type(exc).__name__}: {exc}"]
+    out = []
+    for (i, before), after in zip(atoms.items(), normalised.atoms):
+        for name in ("radical_electrons", "charge", "lone_pairs"):
+            if getattr(before, name) != getattr(after, name):
+                out.append(f"atom {i}: the requested {name} {getattr(before, name)} is changed "
+                           f"to {getattr(after, name)} by chemistry normalisation "
+                           "(Molecule.update)")
+    return out
+
+
+def rewrite_problems(record) -> list:
+    """Replay the record's complete executable operation stream (``bond_ops``
+    and ``feature_ops``, ``runtime_operations``) on its reactant graphs with
+    the runtime's own semantics (``runtime_replay``; graph positions are the
+    operation indices) and require, BEFORE any chemistry normalisation, the
+    declared products exactly (every runtime field: element, radical
+    electrons, charge, lone pairs, implicit hydrogens; every bond with its
+    order) under the record's complete heavy-atom map (heavy atoms pinned,
+    hydrogens free; the empty map for hydrogen-only sides), and that no
+    requested value is one chemistry normalisation would change.  Empty: the
+    rewrite is the record's."""
+    from rmgpy.kmc.state import _parse_adjacency
+    record = _as_dict(record)
+    try:
+        # the runtime's own reading of the graphs (no chemistry perception)
+        graph, problems = runtime_replay(record)
+        targets = [_parse_adjacency(text) for text in record.get("product_graphs") or []]
+        amap = {int(k): int(v) for k, v in (record.get("atom_map") or {}).items()}
+    except Exception as exc:  # unparsable graphs are a problem, never a pass
+        return [f"the record's graphs do not parse: {type(exc).__name__}: {exc}"]
+    r_heavy = [i for i in sorted(graph) if graph[i]["element"] != "H"]
+    p_heavy = [(t, i) for t, part in enumerate(targets) for i in sorted(part)
+               if part[i]["element"] != "H"]
     problem = heavy_map_problem(amap, len(r_heavy), len(p_heavy))
     if problem:
         return [problem]
-    if not record.get("bond_ops"):
-        return ["the record has no executable operations (bond_ops)"]
-    try:
-        rewritten = apply_record(record, reactants)
-    except (ValueError, IndexError, KeyError, TypeError) as exc:
-        return [f"the operations do not apply to the reactant graphs: {exc}"]
+    if not runtime_operations(record):
+        return ["the record has no executable operations (bond_ops, feature_ops)"]
+    if problems:
+        return [f"the operations do not apply to the reactant graphs: {p}" for p in problems]
     pins = {r_heavy[i]: p_heavy[j] for i, j in amap.items()}
-    owner_of = {a.id: k for k, m in enumerate(products) for a in m.atoms}
-    if not _components_match(rewritten, products, owner_of, pins):
-        return ["the replayed operations do not reproduce the declared products under the "
-                "heavy-atom map"]
-    return []
+    used = set()
+    components = _runtime_components(graph)
+    if len(components) != len(targets):
+        return [f"the replayed operations make {len(components)} components, the record "
+                f"declares {len(targets)} products"]
+    for members in sorted(components, key=lambda m: not (set(m) & set(pins))):
+        owners = {pins[a][0] for a in members if a in pins}
+        if len(owners) > 1:
+            return ["the replayed operations join atoms the heavy-atom map sends to different "
+                    "products"]
+        options = list(owners) if owners else [t for t in range(len(targets)) if t not in used]
+        local = {a: pins[a][1] for a in members if a in pins}
+        hit = next((t for t in options if t not in used
+                    and _exact_component_match(graph, members, targets[t], local)), None)
+        if hit is None:
+            return ["the replayed operations (bond_ops + feature_ops, runtime semantics) do not "
+                    "reproduce the declared products exactly under the heavy-atom map (compared "
+                    "before chemistry normalisation)"]
+        used.add(hit)
+        problems.extend(_normalisation_problems(graph, members))
+    return problems
 
 
 def binding_evidence(record) -> dict:
     """The record fields a binding verified, as stored in the binding (the
-    validator requires them equal to the record's): its rewrite, heavy-atom
-    map and degeneracies."""
+    validator requires them equal to the record's): its rewrite (bond and
+    feature operations), heavy-atom map and degeneracies."""
     record = _as_dict(record)
     return {"bond_ops_sha256": _sha(record.get("bond_ops") or []),
+            "feature_ops_sha256": _sha(record.get("feature_ops") or []),
             "atom_map_sha256": _sha(sorted([int(k), int(v)] for k, v in
                                            (record.get("atom_map") or {}).items())),
             "degeneracy": record.get("degeneracy"),
@@ -1887,17 +2089,28 @@ def compare_certificates(old, new, transport) -> dict:
             "flips": flipped_predicates(old, new, transport)}
 
 
-def record_certificate_refusals(record, record_certificate) -> list:
+def record_certificate_refusals(record, record_certificate, rate_owner=None,
+                                certifier=None) -> list:
     """Why ``record_certificate`` cannot stand for ``record`` in a
-    recertification (empty: it can): it must be a record certificate (schema),
-    owned by ``record`` (owner block), successfully bound and certified, with
-    an inner certificate."""
+    recertification (empty: it can).  A supplied certificate undergoes the
+    artifact check (``stored_certificate_problems``, one code path):
+    schema, ownership against ``record`` AND the supplied rate-owning record
+    (``rate_owner``: the record itself for an RMG family estimate, its
+    ``reverse_of`` partner for a reference-thermo reverse; its id and rate
+    source), and re-derivation against ``certifier``'s loaded database
+    (none: unverified, refused); then it must be successfully bound and
+    certified, with an inner certificate."""
     record = _as_dict(record)
     rc = record_certificate if isinstance(record_certificate, dict) else {}
     if rc.get("schema") != RECORD_CERTIFICATE_SCHEMA:
         return ["not a record certificate (schema): record-level recertification needs the "
                 "record's owned, bound and certified record certificate"]
-    out = [f"the record certificate's {p}" for p in owner_problems(record, rc)]
+    by_id = {record.get("event_id"): record}
+    if rate_owner is not None:
+        ro = _as_dict(rate_owner)
+        by_id[ro.get("event_id")] = ro
+    out = [f"the record certificate: {p}"
+           for p in stored_certificate_problems(record, rc, by_id, certifier)]
     binding = rc.get("binding") or {}
     if binding.get("status") != "bound":
         out.append(f"the record certificate is not bound: {binding.get('mismatches', [])[:2]}")
@@ -1934,7 +2147,10 @@ def transport_problems(old_cert, witness, transport) -> list:
     surviving atoms (hydrogens included) added or lost, an unmapped old atom
     that is heavy or belongs to a certified mapping.  Bond orders are not
     compared: with explicit hydrogens and the electrons compared they are a
-    resonance choice, and each certificate enumerates every form."""
+    resonance choice, and each certificate enumerates every form.  That
+    holds inside the declared v1 PS domain (``domain.check``: saturated
+    backbones, phenyls, declared ends); outside it a heavy bond order can
+    change with the electrons unchanged and this check does not see it."""
     problems = []
     old_atoms = {row[0]: row for row in old_cert.get("witness", {}).get("atoms", [])}
     if not old_atoms:
@@ -2087,7 +2303,11 @@ def certification_declaration() -> dict:
             "binding": "owner (event id, family, template, orientation, template side, graph, "
                        "atom-map and rewrite digests, degeneracies, rate-owning record and its "
                        "rate-source digest); binding evidence and every flag re-derived from "
-                       "the stored certificate; reference summary derived from it"}
+                       "the stored certificate; reference summary derived from it",
+            "verification": "valid only when re-derived against the loaded RMG database and "
+                            "the record (family, template and tree descents resolve, the "
+                            "production binding rerun equals the stored certificate); without "
+                            "a database: unverified, refused"}
 
 
 def requires_certification(record: dict, by_id: dict) -> bool:
@@ -2123,28 +2343,40 @@ def owner_problems(record: dict, record_certificate: dict) -> list:
     return out
 
 
-def check_ownership(record: dict, record_certificate: dict, by_id: dict) -> None:
-    """Raise ValueError unless ``record_certificate`` belongs to ``record``."""
+def ownership_problems(record: dict, record_certificate: dict, by_id: dict) -> list:
+    """Why ``record_certificate`` does not belong to ``record`` and to its
+    rate-owning record in ``by_id`` (event id -> record): the owner block,
+    the rate owner's id (the record itself for an RMG family estimate, its
+    ``reverse_of`` partner otherwise) and its rate source digest."""
     problems = owner_problems(record, record_certificate)
     if problems:
-        raise ValueError(f"rate certificate {problems[0]}")
+        return [f"rate certificate {problems[0]}"]
     owner = record_certificate["owner"]
     rate_owner = owner.get("rate_owner_event_id")
     kind = (record.get("rate_source") or {}).get("kind")
     if rate_owner is None:
         if record_certificate.get("certified"):
-            raise ValueError("rate certificate owner mismatch: certified without a rate owner")
-        return
+            return ["rate certificate owner mismatch: certified without a rate owner"]
+        return []
     if kind == "RMG family estimate":
         expected_owner = record.get("event_id")
     else:
         expected_owner = record.get("reverse_of")
     if rate_owner != expected_owner or rate_owner not in by_id:
-        raise ValueError("rate certificate owner mismatch (rate owner): "
-                         f"{rate_owner} is not the record's rate-owning record")
+        return ["rate certificate owner mismatch (rate owner): "
+                f"{rate_owner} is not the record's rate-owning record (or it was not "
+                "supplied)"]
     if owner.get("rate_source_sha256") != _sha(by_id[rate_owner].get("rate_source") or {}):
-        raise ValueError("rate certificate owner mismatch (rate source): the bound production "
-                         "selection is not the rate-owning record's")
+        return ["rate certificate owner mismatch (rate source): the bound production "
+                "selection is not the rate-owning record's"]
+    return []
+
+
+def check_ownership(record: dict, record_certificate: dict, by_id: dict) -> None:
+    """Raise ValueError unless ``record_certificate`` belongs to ``record``."""
+    problems = ownership_problems(record, record_certificate, by_id)
+    if problems:
+        raise ValueError(problems[0])
 
 
 def _derivation_problems(record: dict, body: dict) -> list:
@@ -2239,19 +2471,213 @@ def _derivation_problems(record: dict, body: dict) -> list:
     return out
 
 
-def validate_certification(artifact: dict) -> None:
+def _entry_semantics(entry) -> dict:
+    """The semantics the certifier records for a tree node (``_Recorder``)."""
+    nodes = {}
+    _Recorder(None, None, None, nodes).node_semantics(entry)
+    return nodes[entry.label]
+
+
+def tree_problems(family, cert, template=()) -> list:
+    """Every way ``cert``'s stored derivation is not a derivation in the
+    loaded family (empty: each stored claim resolves there): every label of
+    ``template`` (the record's) and of every channel pathway is a node of the
+    family's tree; every certified mapping's
+    descent is stored and non-empty; every descent starts at a top node of
+    the tree and is a real root-to-selected-node chain of it (each step's
+    children are the node's children in the tree's order, a step continues
+    at the previous step's choice, a matched root has steps and the leaf is
+    where ``descend_tree`` stops); its leaves are the mapping's; and every
+    node it evaluates exists, with the stored semantics equal to the
+    semantics of the loaded node."""
+    groups = getattr(family, "groups", None)
+    entries = getattr(groups, "entries", None)
+    if not isinstance(entries, dict):
+        return [f"family {getattr(family, 'label', family)!r} has no tree in the loaded "
+                "database"]
+    tops = {e.label for e in groups.top}
+    nodes = cert.get("nodes") or {}
+    descents = cert.get("descents") or {}
+    out = []
+
+    def node_problem(label):
+        entry = entries.get(label)
+        if entry is None:
+            return f"node {label!r} does not exist in the family tree of {family.label}"
+        if nodes.get(label) != _entry_semantics(entry):
+            return f"node {label!r}: the stored semantics do not resolve in the family tree"
+        return None
+
+    for ch in [{"pathway": list(template)}] + list(cert.get("channels", [])):
+        for label in ch.get("pathway", []):
+            if label not in entries:
+                out.append(f"template label {label!r} does not exist in family {family.label} "
+                           "(loaded RMG database)")
+        for mem in ch.get("members", []):
+            for mp in mem.get("mappings", []):
+                ref = mp.get("descent")
+                if ref is None:
+                    continue
+                chain = descents.get(ref)
+                if not isinstance(chain, list) or not chain:
+                    out.append(f"descent {ref!r} is empty or missing: not a root-to-node chain "
+                               "of the family tree")
+                    continue
+                if mp.get("leaves") != descent_leaves(chain):
+                    out.append(f"descent {ref!r}: the mapping's leaves are not its descent's "
+                               "(family tree)")
+    for label, semantics in sorted(nodes.items()):
+        # tree nodes by label; anonymous logic components are keyed by their
+        # repr and re-derived with their parents
+        if label in entries and semantics != _entry_semantics(entries[label]):
+            out.append(f"node {label!r}: the stored semantics do not resolve in the family "
+                       "tree")
+    for ref, chain in sorted(descents.items()):
+        for d in chain if isinstance(chain, list) else []:
+            top = d.get("top")
+            if top not in tops:
+                out.append(f"descent {ref!r} starts at {top!r}, not a top node of the family "
+                           "tree")
+                continue
+            if d.get("skipped"):
+                continue
+            root = d.get("root") or {}
+            steps = d.get("steps") or []
+            problem = node_problem(top)
+            if problem:
+                out.append(problem)
+            if root.get("node") != top:
+                out.append(f"descent {ref!r}: the root check is not its top node's (family "
+                           "tree)")
+                continue
+            if root.get("result") != "matched":
+                if steps or d.get("leaf") is not None:
+                    out.append(f"descent {ref!r}: a failed root check descends (family tree)")
+                continue
+            if not steps:
+                out.append(f"descent {ref!r}: a matched root without steps (family tree)")
+                continue
+            current = top
+            for k, step in enumerate(steps):
+                entry = entries.get(step.get("node"))
+                if step.get("node") != current or entry is None:
+                    out.append(f"descent {ref!r} step {k}: {step.get('node')!r} is not the "
+                               f"node the chain reached ({current!r}) in the family tree")
+                    break
+                children = [c.get("node") for c in step.get("children", [])]
+                if children != [c.label for c in entry.children]:
+                    out.append(f"descent {ref!r} step {k}: the children of {current!r} are "
+                               "not the family tree's")
+                    break
+                for label in children:
+                    problem = node_problem(label)
+                    if problem:
+                        out.append(problem)
+                choice = step.get("choice")
+                last = k == len(steps) - 1
+                if choice is not None and choice not in children:
+                    out.append(f"descent {ref!r} step {k}: choice {choice!r} is not a child of "
+                               f"{current!r} in the family tree")
+                    break
+                if not last:
+                    if choice is None:
+                        out.append(f"descent {ref!r} step {k}: the chain continues after "
+                                   "stopping (family tree)")
+                        break
+                    current = choice
+                    continue
+                expected_leaf = choice if choice is not None else current
+                if choice is not None and not choice.startswith("Others-") or \
+                        d.get("leaf") != expected_leaf:
+                    out.append(f"descent {ref!r}: the leaf {d.get('leaf')!r} is not where the "
+                               f"family tree descent stops ({expected_leaf!r})")
+    return sorted(set(out), key=out.index)
+
+
+def rederived_certificate(record: dict, by_id: dict, certifier: "Certifier") -> dict:
+    """The record certificate re-derived from the record and the loaded
+    database: ``certify_record`` (the production binding path, RMG's own tree
+    evaluation and get_kinetics; nothing re-estimated) through the record's
+    rate-owning ``reverse_of`` partner in ``by_id``; an exception gives the
+    owned error certificate, as at compile time."""
+    try:
+        return certifier.certify_record(record, rate_owner=_rate_owner(record, by_id))
+    except Exception as exc:  # the same verdict certify_records stores
+        return _error_certificate(record, exc)
+
+
+def stored_certificate_problems(record: dict, body: dict, by_id: dict,
+                                certifier: Optional["Certifier"]) -> list:
+    """Every reason the stored record certificate ``body`` is not valid for
+    ``record`` (empty: valid).  Shared by the artifact check
+    (``validate_certification``) and recertification
+    (``record_certificate_refusals``).  Stored assertions are never turned
+    into a verdict: after the schema and the ownership (record and rate
+    owner in ``by_id``), the derivation is re-established against the loaded
+    database (``certifier``): the family exists, every template label and
+    every descent resolve in its tree (``tree_problems``), the stored claims
+    are consistent with each other (``_derivation_problems``) and the whole
+    certificate (selection, descents, node semantics, binding members, heavy
+    map and rewrite evidence, flags) equals the one re-derived from the
+    record (``rederived_certificate``; the owner block is the ownership
+    check's).  Without a database the verdict is ``unverified``, a
+    problem."""
+    if not isinstance(body, dict) or body.get("schema") != RECORD_CERTIFICATE_SCHEMA:
+        return [f"rate certificate schema {(body or {}).get('schema')!r} is not "
+                f"{RECORD_CERTIFICATE_SCHEMA!r}"]
+    problems = ownership_problems(record, body, by_id)
+    if problems:
+        return problems
+    if certifier is None:
+        return ["rate certificate unverified: no RMG database is loaded to re-derive it (a "
+                "stored certificate is never valid on its own assertions)"]
+    cert = body.get("certificate")
+    if cert is not None:
+        family = certifier.families.get(record.get("family")) \
+            if hasattr(certifier.families, "get") else None
+        if family is None:
+            return [f"rate certificate family {record.get('family')!r} does not exist in the "
+                    "loaded RMG database"]
+        if not isinstance(cert, dict):
+            return ["rate certificate: the inner certificate is malformed"]
+        labels = [lab for lab in str(record.get("template") or "").split(";") if lab]
+        try:
+            problems = tree_problems(family, cert, labels)
+        except Exception as exc:  # a malformed derivation is a problem, never a pass
+            problems = [f"the stored descents are malformed ({type(exc).__name__}: {exc}): "
+                        "not a chain of the family tree"]
+        if problems:
+            return [f"rate certificate {p}" for p in problems]
+    problems = _derivation_problems(record, body)
+    if problems:
+        return problems
+    fresh = rederived_certificate(record, by_id, certifier)
+    stored = {k: v for k, v in body.items() if k != "owner"}
+    derived = {k: v for k, v in fresh.items() if k != "owner"}
+    derived["event_id"] = record.get("event_id")
+    if canonical_json(stored) != canonical_json(derived):
+        keys = sorted(k for k in set(stored) | set(derived)
+                      if canonical_json(stored.get(k)) != canonical_json(derived.get(k)))
+        return [f"rate certificate is not re-derived: the production binding rerun on the "
+                f"record against the loaded database differs in {keys}"]
+    return []
+
+
+def validate_certification(artifact: dict, families=None) -> None:
     """Artifact-level certification check (``compiler.validate_artifact``).
 
     Without a ``rate_certification`` declaration the artifact must carry no
     certificate store and no reference.  With it (mode ``required``,
     coverage ``every record``): every record carries a reference that
-    resolves, whose stored certificate hashes to it (digest), belongs to the
-    record (``check_ownership``), whose claims are derived from its own
-    stored derivation (``_derivation_problems``: schema, head, witness,
-    binding coverage and evidence, every flag recomputed) and whose summary
+    resolves, whose stored certificate hashes to it (digest) and is VALID
+    for the record (``stored_certificate_problems``: ownership, then the
+    derivation re-established against the loaded database ``families`` and
+    the record itself, never read off the stored assertions), whose summary
     equals the one derived from the stored certificate; every stored
     certificate is referenced; and every record of the required population
-    (``requires_certification``) is certified."""
+    (``requires_certification``) is certified.  Without a loaded database
+    (``families`` None) the verdict is ``unverified``, which refuses
+    publication in required mode."""
     records = artifact.get("records", [])
     store = artifact.get("rate_certificates")
     declaration = artifact.get("rate_certification")
@@ -2264,6 +2690,10 @@ def validate_certification(artifact: dict) -> None:
         raise ValueError("unknown rate certification mode declaration")
     if not isinstance(store, dict):
         raise ValueError("certification mode required but the artifact has no certificate store")
+    if families is None:
+        raise ValueError("rate certification unverified: no RMG database is loaded to "
+                         "re-derive the certificates; mode required refuses publication")
+    certifier = Certifier(families)
     by_id = {r.get("event_id"): r for r in records}
     referenced = set()
     for record in records:
@@ -2277,11 +2707,7 @@ def validate_certification(artifact: dict) -> None:
         body = store[sha]
         if certificate_sha256(body) != sha:
             raise ValueError("record rate certificate digest mismatch")
-        if not isinstance(body, dict) or body.get("schema") != RECORD_CERTIFICATE_SCHEMA:
-            raise ValueError(f"rate certificate schema {(body or {}).get('schema')!r} is not "
-                             f"{RECORD_CERTIFICATE_SCHEMA!r}")
-        check_ownership(record, body, by_id)
-        problems = _derivation_problems(record, body)
+        problems = stored_certificate_problems(record, body, by_id, certifier)
         if problems:
             raise ValueError(problems[0])
         if certificate_reference(body) != reference:
