@@ -1086,8 +1086,10 @@ class Certifier:
 
         problems = []
         prs = None
+        owner_orientation = None
         if kind == "RMG family estimate":
             prs = rs
+            owner_orientation = record.get("orientation", "as_generated")
             owner.update({"rate_owner_event_id": record.get("event_id"),
                           "rate_source_sha256": _sha(rs)})
         elif kind == "reference-thermo reverse":
@@ -1113,6 +1115,7 @@ class Certifier:
                                     "reverse_of partner")
                 else:
                     prs = ro["rate_source"]
+                    owner_orientation = ro.get("orientation", "as_generated")
                     owner.update({"rate_owner_event_id": ro.get("event_id"),
                                   "rate_source_sha256": _sha(prs)})
         else:
@@ -1130,7 +1133,8 @@ class Certifier:
             cert = self.certify(family, mols, pathway=pathway, products=products,
                                 species=species)
             self._records[rkey] = cert
-        binding = self._bind(record, family, side, mols, others, cert, prs, problems)
+        binding = self._bind(record, family, side, mols, others, cert, prs, problems,
+                              owner_orientation)
         padded = (record.get("proxy_padding") or {}).get("status") == "padded"
         gaps = list(cert["gaps"]) + [f"binding: {m}" for m in binding["mismatches"]]
         certified = derived_certified(cert, binding)
@@ -1143,7 +1147,8 @@ class Certifier:
                 "certificate": cert, "complete": cert["complete"], "eligible": cert["eligible"],
                 "binding": binding, "certified": certified, "gaps": gaps}
 
-    def _bind(self, record, family, side, mols, others, cert, prs, problems) -> dict:
+    def _bind(self, record, family, side, mols, others, cert, prs, problems,
+              owner_orientation=None) -> dict:
         mismatches = list(problems)
         members = []
         try:
@@ -1186,6 +1191,12 @@ class Certifier:
                 direction = "forward" if rmg["is_forward"] else "reverse"
                 mismatches.extend(production_mismatches(prs, rmg, ";".join(ch.pathway),
                                                         supplier=supplier))
+                # the rate owner (the record itself for a family estimate, its
+                # reverse_of partner otherwise) runs in the direction RMG
+                # selected the rate for: as_generated iff is_forward
+                if (owner_orientation == "as_generated") != bool(rmg["is_forward"]):
+                    mismatches.append("direction: rate owner runs opposite to selected "
+                                      "kinetics")
         elif prs is None and not problems:
             mismatches.append("rate owner: no production selection to bind")
         if not members and not mismatches:
