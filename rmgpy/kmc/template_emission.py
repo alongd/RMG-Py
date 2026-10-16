@@ -1,0 +1,1212 @@
+"""Executable local window templates from recertified closed windows (I-138).
+
+For every compiled record whose members ``windows.py`` closed at a
+recertified fixed point, this module cuts one executable template per
+distinct context (``windows.run_member`` context representatives: the
+all-artificial base and every context that merged with no earlier one),
+weights it with the record's certified rate over the whole channel, proves
+that weight local over extension vectors, and serializes it on the record
+(``executable_template``, ``rewrite_record/0.2``).  It consumes windows only
+through their public results (closed window and witness of each context,
+the merge pairs, refusal statuses, ladder items): nothing here depends on how
+the window roster is generated.  Every failure is a refusal by name or a
+compile error (``EmissionError``); nothing falls back.
+
+Template from window (item 1)
+-----------------------------
+``cut_template`` cuts the closed window of one context as a marked graph:
+
+* sides: the template direction's reactant and product rows of the
+  context's fixed-point witness (``reverse``: the record runs opposite to the
+  member's direction, so the witness products are the template reactants),
+  each written in the matcher's first resonance form
+  (``window_matcher.component_forms``; the closure holds every pi system
+  touching the window whole, so the edits between the two first forms are
+  window edits);
+* atoms: every window atom; ``closed`` when every neighbour (both sides) is
+  in the window (full degree), else ``port`` with its ``exterior`` multiset
+  (bond order, element, ring membership of the outside neighbour).  The
+  outside neighbours and their bond orders must be equal on both sides (an
+  edit never crosses the cut) and no edit may touch a port
+  (``EmissionError``);
+* port labels come from the witness's construction metadata
+  (``boundaries.BoundaryMetadata``), never from symmetry: a port is
+  ``artificial`` when its exterior reaches an artificial witness port (the
+  chain continues and the fixed point proved the window does not read it),
+  ``physical`` when it reaches only physical witness ports (a declared end
+  just outside the window), ``interior`` when it reaches no witness port (a
+  pendant outside the window).  A window atom that is itself a witness port
+  carries that port (``witness_port``: participant, port id, tag,
+  physicality): a physical end inside the window is a closed atom;
+* participants: the template-direction reactant components the window
+  touches (one or two); participant numbering, atom order and the hash are
+  canonical (individualization-refinement over the marked graph, minimum
+  serialization; interchangeable hydrogen leaves are not branched);
+* predicates: none.  ``window_matcher.PathPredicate`` would replace a guard
+  the window does not hold; ``windows.py`` writes no bound for any such
+  guard, so a participant whose window is disconnected (the only case a path
+  guard would be needed) is refused by name (``refused:path_predicate``), and
+  a context template whose port reaches a physical end outside its window
+  (the context differs from the base by a read beyond the window: a
+  whole-species guard) is refused (``refused:whole_species_guard``).
+
+Count and weight (item 2)
+-------------------------
+On a witness, ``T_ch`` is the number of matcher transitions of the
+template(s) whose mapped product key (``rmg_moves.product_key`` of
+``window_matcher.product_rows``) is a key of the channel; independently
+``rmg_moves.generate_moves`` on the same molecules (participants as separate
+components; an A + A record as two copies) counts the directed moves of the
+channel (allowed status, the record's template, the target's product
+species) and converts them by the slot-order rule (``SLOT_ORDER_RULE``).
+Unequal counts refuse the template with both numbers
+(``refused:count_mismatch``).  On the record's own witness (its reactant
+graphs) the record's base-context templates jointly give ``T_R`` and the
+per-transition weight ``w = ssa_multiplier * k / T_R`` over the whole channel
+with the certified production rate (``k_table``) and its provenance
+(estimate or library).  ``T_R = 0`` or a non-finite or non-positive ``w``
+raises ``EmissionError``.  The calibration identity ``sum(w over the T_R
+transitions) = ssa * k`` is checked at ``CALIBRATION_TEMPERATURES``
+(necessary, not sufficient).
+
+The record's graphs are a proxy whose artificial ends stand for the chain
+beyond.  A base template whose window or port exteriors reach the padding
+the windows added there (``reaches_beyond``: atoms the unextended witness
+lacks) cannot apply to the proxy; the record row and the unextended-context
+row are then ``not_applicable`` (never a zero count), and each template's
+weight and calibration come from its emitted witness (``weight_source:
+emitted_witness``) through the same production path.
+
+Locality (item 3)
+-----------------
+Witnesses (``locality_witnesses``): the emitted one (the context's
+fixed-point witness) plus extension vectors from ``boundaries`` (every
+artificial port alone at +1 and +2, all ports jointly at +1 and +2, the
+ports of each participant at +1 and +2), deduplicated as marked graphs
+(``boundaries.marked_duplicates``; distinctness of the kept ones is
+asserted), plus the context's own unextended witness.  On each the target is
+that witness's own mapped product; ``k`` comes from the production path
+(``ProductionRates``: the compiler's own generation and
+``_linked_family_pair``; the production selection is rebound to the
+record's: source, entry, rank, template direction and reference must match,
+never re-estimated, no fallback); ``T_ch`` is recounted with BOTH the matcher
+and ``rmg_moves``.  The record's own weight is a row too.  A template is
+accepted iff every row is ``ok`` and ``max - min`` of ``log10 w`` over all rows
+is at most ``LOCALITY_TOLERANCE_LOG10`` at every grid temperature; else
+``refused:non_local_kinetics`` with the table.
+
+Ladder (item 4)
+---------------
+``whole_species_cut`` cuts a ladder member's whole species (every atom
+closed); no locality test.  The DP L + 1 control is checked by
+``ladder_control``: its member's template is local (has a port) and covers
+its own event.
+
+Policy for RMG-filtered moves (item 5)
+--------------------------------------
+``compare_reference``: ``forbidden`` moves are excluded (a matcher key RMG
+files only as forbidden fails); ``unchanged_species`` moves are required
+(missing fails) and reported as matcher-only by policy.
+
+Schema (item 6)
+---------------
+``executable_payload`` / ``validate_payload``; ``attach`` sets
+``executable_template`` on an ``EventRecord`` (schema ``rewrite_record/0.2``;
+the template is not part of the event id, it carries its own sha256);
+``matcher_from_payload`` is the temperature-specific projection to
+``window_matcher.Template``.
+
+Determinism (item 7)
+--------------------
+Canonical atom order and participant numbering; JSON with sorted keys;
+witness atom ids appear only in the ``maps`` section, so the executable
+section is byte-identical across processes, hash seeds and permuted input
+atom orders.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional, Sequence
+
+from rmgpy.kmc import boundaries as b
+from rmgpy.kmc import rmg_moves as rm
+from rmgpy.kmc import window_matcher as wm
+
+SCHEMA = "kmc-executable-template/1"
+RECORD_SCHEMA = "rewrite_record/0.2"
+LEGACY_RECORD_SCHEMA = "rewrite_record/0.1"
+LOCALITY_TOLERANCE_LOG10 = 0.01
+CALIBRATION_TEMPERATURES = (600.0, 700.0, 800.0)
+CALIBRATION_RTOL = 1e-9
+EXTENSION_STEPS = (1, 2)
+CANONICAL_LEAF_LIMIT = 20000
+BOUNDARY_LABELS = ("artificial", "physical", "interior")
+TEMPLATE_STATUSES = ("emitted", "refused")
+RECORD_STATUSES = ("emitted", "partial", "refused")
+ESTIMATE_KINDS = ("RMG family estimate", "reference-thermo reverse",
+                  "synthetic:unchanged_species")
+SLOT_ORDER_RULE = (
+    "one transition per distinct mapped outcome (rmg_moves.product_key): every "
+    "directed mapping reaching one mapped product -- both template slot orders of "
+    "a pair when the template is symmetric (identical or unequal radicals "
+    "recombining: one product per site pair), every reactant resonance form, every "
+    "subgraph isomorphism -- is one transition; an ordered template "
+    "(disproportionation: acceptor/donor) keeps the two slot orders apart because "
+    "they give different mapped products; an A + A pair is two separate copies")
+NAMESPACES = {
+    "executable": "template atom index: window_matcher.Template atom order (canonical)",
+    "template": "RMG family template labels of the representative mapping",
+    "witness": "emission witness atom ids (boundaries.Witness, explicit H)",
+    "record": "the record's reactant-graph atom positions (certificates.witness_molecules)",
+}
+
+
+class EmissionError(ValueError):
+    """A compile error: emission cannot proceed (``T_ch = 0``, a non-finite or
+    non-positive weight, an edit on a port, a malformed payload)."""
+
+
+def canonical_json(value) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+                      allow_nan=False)
+
+
+def sha256_json(value) -> str:
+    return hashlib.sha256(canonical_json(value).encode("ascii")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# rows, states, molecules
+# ---------------------------------------------------------------------------
+def template_sides(witness, reverse: bool = False):
+    """(reactant rows, product rows) of the template direction (dicts)."""
+    r, p = dict(witness.reactant_rows()), dict(witness.product_rows())
+    return (p, r) if reverse else (r, p)
+
+
+def melt_state(rows):
+    """A MeltState holding ``rows`` (atom id -> rmg_moves row), one component
+    per connected part, atom ids kept."""
+    from rmgpy.kmc.melt_state import MeltState, Node, Origin
+    nodes, origin = {}, {}
+    for k, part in enumerate(rm.split_rows(dict(rows))):
+        for a, row in part.items():
+            nodes[a] = Node(row[0], row[1], int(row[2]), int(row[3]), int(row[4]),
+                            {n: float(o) for n, o in row[5]})
+            origin[a] = Origin("chain", k, "witness", str(a), False)
+    return MeltState(nodes, origin)
+
+
+def first_form_rows(rows) -> dict:
+    """``rows`` with every component written in the matcher's first resonance
+    form (``window_matcher.component_forms``)."""
+    state = melt_state(rows)
+    out = {}
+    for cid in state.components.ids():
+        out.update(wm.form_rows(state, cid, wm.component_forms(state, cid)[0]))
+    return out
+
+
+def molecules_of(rows) -> list:
+    """RMG molecules (atom ids kept), one per component, by least atom id."""
+    return [rm.molecule_from_rows(part) for part in rm.split_rows(dict(rows))]
+
+
+def _cyclic(rows) -> set:
+    from rmgpy.kmc import windows as win
+    return win._cyclic_atoms(rows)
+
+
+def _witness_ports(witness) -> dict:
+    """atom id -> (participant, port id, tag, physicality) for every witness
+    port atom and declared cap (construction metadata)."""
+    out = {}
+    for participant in witness.participants:
+        for port in participant.metadata.ports:
+            info = (participant.index, port.port_id, port.tag, port.physicality)
+            out[port.atom_id] = info
+            for cap in port.cap_atom_ids:
+                out[cap] = info
+    return out
+
+
+# ---------------------------------------------------------------------------
+# canonical labelling
+# ---------------------------------------------------------------------------
+def _canonical_order(n, exec_labels, meta_labels, edges):
+    """The atom order minimizing (executable serialization, metadata
+    serialization) over individualization-refinement (``edges``:
+    {(i, j): label} with string labels).  Interchangeable hydrogen leaves
+    (degree one, same neighbour and bond, same labels) are automorphic and
+    are not branched."""
+    nbrs = [[] for _ in range(n)]
+    for (i, j), lab in edges.items():
+        nbrs[i].append((j, lab))
+        nbrs[j].append((i, lab))
+
+    def rank(keys):
+        order = {k: r for r, k in enumerate(sorted(set(keys)))}
+        return [order[k] for k in keys]
+
+    def refine(colors):
+        count = len(set(colors))
+        while True:
+            new = rank([(colors[v], tuple(sorted((lab, colors[u]) for u, lab in nbrs[v])))
+                        for v in range(n)])
+            c = len(set(new))
+            if c == count:
+                return new
+            colors, count = new, c
+
+    def serialize(order):
+        pos = {v: k for k, v in enumerate(order)}
+        ex = tuple(exec_labels[v] for v in order)
+        ed = tuple(sorted((min(pos[i], pos[j]), max(pos[i], pos[j]), lab)
+                          for (i, j), lab in edges.items()))
+        me = tuple(meta_labels[v] for v in order)
+        return (ex, ed), me
+
+    best = []
+    leaves = [0]
+
+    def search(colors):
+        cells = defaultdict(list)
+        for v, c in enumerate(colors):
+            cells[c].append(v)
+        target = next((cells[c] for c in sorted(cells) if len(cells[c]) > 1), None)
+        if target is None:
+            leaves[0] += 1
+            if leaves[0] > CANONICAL_LEAF_LIMIT:
+                raise EmissionError(f"canonical labelling exceeds {CANONICAL_LEAF_LIMIT} leaves")
+            order = sorted(range(n), key=lambda v: colors[v])
+            ser = serialize(order)
+            if not best or ser < best[0][0]:
+                best[:] = [(ser, order)]
+            return
+        if all(len(nbrs[v]) == 1 for v in target) and len({nbrs[v][0] for v in target}) == 1:
+            choices = [min(target)]   # automorphic leaves: one branch serializes them all
+        else:
+            choices = sorted(target)
+        for v in choices:
+            search(refine(rank([(c, 0 if u == v else 1) for u, c in enumerate(colors)])))
+
+    search(refine(rank([(exec_labels[v], meta_labels[v]) for v in range(n)])))
+    return best[0][1], best[0][0]
+
+
+# ---------------------------------------------------------------------------
+# item 1: the template cut from a window
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class CutTemplate:
+    """One executable template in canonical atom order.
+
+    ``atoms``: per atom (participant, element, isotope, charge, radical,
+    lone pairs, kind, exterior, final attributes); ``bonds``: (i, j, order
+    before, order after) with i < j (0: absent on that side); ``meta``: per
+    atom (boundary label or None, RMG labels, witness port or None);
+    ``witness_atoms``: the emission witness atom id per atom (the full-H map);
+    ``components``: per participant the least witness atom id of its
+    template-direction reactant component; ``key``: sha256 of the executable
+    content (atoms, bonds)."""
+
+    family: str
+    direction: str
+    pathway: tuple
+    atoms: tuple
+    bonds: tuple
+    meta: tuple
+    witness_atoms: tuple
+    components: tuple
+    context: tuple = ()
+    key: str = ""
+
+    @property
+    def participants(self) -> int:
+        return len(self.components)
+
+    @property
+    def ports(self) -> tuple:
+        return tuple(i for i, a in enumerate(self.atoms) if a[6] == "port")
+
+    @property
+    def whole_species(self) -> bool:
+        return not self.ports
+
+    def boundary_labels(self) -> dict:
+        return {i: self.meta[i][0] for i in self.ports}
+
+    def edited(self) -> tuple:
+        out = {i for i, a in enumerate(self.atoms) if a[8]}
+        out |= {x for i, j, before, after in self.bonds if before != after for x in (i, j)}
+        return tuple(sorted(out))
+
+    def participant_connected(self) -> bool:
+        """Whether every participant's window is one connected piece."""
+        adj = defaultdict(set)
+        for i, j, before, _after in self.bonds:
+            if before:
+                adj[i].add(j)
+                adj[j].add(i)
+        for p in range(self.participants):
+            members = [i for i, a in enumerate(self.atoms) if a[0] == p]
+            seen, stack = {members[0]}, [members[0]]
+            while stack:
+                x = stack.pop()
+                for y in adj[x]:
+                    if y not in seen:
+                        seen.add(y)
+                        stack.append(y)
+            if set(members) - seen:
+                return False
+        return True
+
+    def executable(self) -> dict:
+        """The id-free executable content (what the hash covers)."""
+        return {"atoms": [_atom_json(a) for a in self.atoms],
+                "bonds": [[i, j, before, after] for i, j, before, after in self.bonds],
+                "participants": self.participants}
+
+    def matcher(self, weight: float, name: Optional[str] = None) -> wm.Template:
+        """The ``window_matcher.Template`` of this cut at one weight."""
+        atoms = [wm.WindowAtom(element=a[1], participant=a[0], kind=a[6], exterior=a[7],
+                               isotope=a[2], charge=a[3], radical=a[4], lone_pairs=a[5])
+                 for a in self.atoms]
+        bonds = [(i, j, before) for i, j, before, _after in self.bonds if before]
+        edits = [wm.BondEdit(i, j, after) for i, j, before, after in self.bonds
+                 if before != after]
+        edits += [wm.AtomEdit(i, **dict(a[8])) for i, a in enumerate(self.atoms) if a[8]]
+        return wm.Template(name or self.name, self.family, atoms, bonds, edits, weight=weight)
+
+    @property
+    def name(self) -> str:
+        return f"{self.family}:{self.direction}:{self.key[:16]}"
+
+
+def _atom_json(a) -> dict:
+    return {"participant": a[0], "element": a[1], "isotope": a[2], "charge": a[3],
+            "radical": a[4], "lone_pairs": a[5], "kind": a[6],
+            "exterior": [list(x) for x in a[7]], "final": {k: v for k, v in a[8]}}
+
+
+def cut_template(witness, atoms, *, family: str, pathway, direction: str,
+                 reverse: bool = False, context=(), labels=None) -> CutTemplate:
+    """Cut the window ``atoms`` of ``witness`` as an executable template (see
+    the module docstring, item 1).  ``labels``: witness atom id -> RMG labels
+    (template namespace metadata)."""
+    window = set(atoms)
+    r0, p0 = template_sides(witness, reverse)
+    unknown = sorted(window - set(r0))
+    if unknown:
+        raise EmissionError(f"window atoms {unknown[:5]} are not witness atoms")
+    try:
+        r, p = first_form_rows(r0), first_form_rows(p0)
+    except wm.WindowMatcherError as error:
+        raise EmissionError(f"resonance normalisation of the witness failed: {error}") from None
+    comps = rm.split_rows(r)
+    comp_of = {a: k for k, part in enumerate(comps) for a in part}
+    used = sorted({comp_of[a] for a in window})
+    if len(used) not in (1, 2):
+        raise EmissionError(f"the window touches {len(used)} reactant components (1 or 2)")
+    cyclic = _cyclic(r)
+    ports_of = _witness_ports(witness)
+    labels = labels or {}
+    order_atoms = sorted(window)
+    raw = {}
+    for a in order_atoms:
+        out_r = sorted((n, float(o)) for n, o in r[a][5] if n not in window)
+        out_p = sorted((n, float(o)) for n, o in p[a][5] if n not in window)
+        if out_r != out_p:
+            raise EmissionError(f"an edit crosses the window boundary at atom {a} "
+                                f"({out_r} -> {out_p})")
+        kind = "port" if out_r else "closed"
+        exterior = tuple(sorted((o, r[n][0], n in cyclic) for n, o in out_r))
+        final = tuple((name, p[a][k]) for name, k in (("charge", 2), ("radical", 3),
+                                                      ("lone_pairs", 4)) if r[a][k] != p[a][k])
+        raw[a] = (used.index(comp_of[a]), r[a][0], r[a][1], int(r[a][2]), int(r[a][3]),
+                  int(r[a][4]), kind, exterior, final)
+    bonds = {}
+    for side, rows in ((0, r), (1, p)):
+        for a in order_atoms:
+            for n, o in rows[a][5]:
+                if n in window and a < n:
+                    bonds.setdefault((a, n), [0.0, 0.0])[side] = float(o)
+    edited = {a for a in order_atoms if raw[a][8]} | {
+        x for pair, (before, after) in bonds.items() if before != after for x in pair}
+    on_port = sorted(a for a in edited if raw[a][6] == "port")
+    if on_port:
+        raise EmissionError(f"an edit touches the window port(s) {on_port}: edits never "
+                            "touch a port")
+    # boundary labels from the construction metadata: the witness ports the
+    # exterior of each port atom reaches outside the window
+    reach_cache = {}
+
+    def reach(start):
+        if start in reach_cache:
+            return reach_cache[start]
+        seen, stack, found = {start}, [start], set()
+        while stack:
+            x = stack.pop()
+            if x in ports_of:
+                found.add(ports_of[x])
+            for n, _o in r[x][5]:
+                if n not in window and n not in seen:
+                    seen.add(n)
+                    stack.append(n)
+        value = frozenset(found)
+        for x in seen:
+            reach_cache[x] = value
+        return value
+
+    meta = {}
+    for a in order_atoms:
+        boundary = None
+        if raw[a][6] == "port":
+            found = set()
+            for n, _o in r[a][5]:
+                if n not in window:
+                    found |= reach(n)
+            phys = {x[3] for x in found}
+            boundary = "artificial" if "artificial" in phys else \
+                "physical" if "physical" in phys else "interior"
+        wp = ports_of.get(a)
+        meta[a] = (boundary, tuple(sorted(labels.get(a, ()))),
+                   None if wp is None else (wp[1], wp[2], wp[3]))
+    perms = [(0,), ] if len(used) == 1 else [(0, 1), (1, 0)]
+    edge_labels = {pair: json.dumps(v) for pair, v in bonds.items()}
+    best = None
+    index = {a: k for k, a in enumerate(order_atoms)}
+    n = len(order_atoms)
+    edges = {(index[x], index[y]): lab for (x, y), lab in edge_labels.items()}
+    for perm in perms:
+        exec_labels = [json.dumps(_atom_json((perm[raw[a][0]],) + raw[a][1:]), sort_keys=True)
+                       for a in order_atoms]
+        meta_labels = [json.dumps(meta[a]) for a in order_atoms]
+        order, ser = _canonical_order(n, exec_labels, meta_labels, edges)
+        if best is None or ser < best[0]:
+            best = (ser, perm, order)
+    _ser, perm, order = best
+    ordered = [order_atoms[k] for k in order]
+    pos = {a: k for k, a in enumerate(ordered)}
+    atoms_out = tuple((perm[raw[a][0]],) + raw[a][1:] for a in ordered)
+    bonds_out = tuple(sorted((min(pos[x], pos[y]), max(pos[x], pos[y]), v[0], v[1])
+                             for (x, y), v in bonds.items()))
+    components = [None] * len(used)
+    for k, c in enumerate(used):
+        components[perm[k]] = min(comps[c])
+    cut = CutTemplate(family, direction, tuple(pathway or ()), atoms_out, bonds_out,
+                      tuple(meta[a] for a in ordered), tuple(ordered), tuple(components),
+                      tuple(context))
+    key = sha256_json(cut.executable())
+    return CutTemplate(family, direction, cut.pathway, atoms_out, bonds_out, cut.meta,
+                       cut.witness_atoms, cut.components, cut.context, key)
+
+
+def whole_species_cut(witness, *, family: str, pathway, direction: str, reverse=False,
+                      labels=None) -> CutTemplate:
+    """Item 4: a ladder member's whole species as one template (every atom of
+    the reacting components closed; matches that species only)."""
+    r, _p = template_sides(witness, reverse)
+    return cut_template(witness, set(r), family=family, pathway=pathway, direction=direction,
+                        reverse=reverse, labels=labels)
+
+
+def labels_of(move, reverse: bool = False) -> dict:
+    """witness atom id -> RMG labels of a ``rmg_moves`` move on the template
+    direction's reactant side (the move's reactant labels, or its product
+    labels when the template runs opposite to the move)."""
+    out = defaultdict(set)
+    items = ((lab, a) for lab, a in (move.product_labels or ())) if reverse else \
+        ((lab, a) for _s, lab, a in move.labels)
+    for lab, a in items:
+        out[a].add(lab)
+    return {a: tuple(sorted(v)) for a, v in out.items()}
+
+
+def template_refusal(cut: CutTemplate) -> Optional[str]:
+    """Named refusals of a cut (module docstring, item 1)."""
+    if not cut.participant_connected():
+        return ("refused:path_predicate: a participant's window is disconnected; a path "
+                "guard would replace a read windows.py gives no written bound for")
+    physical = sorted(i for i, label in cut.boundary_labels().items() if label == "physical")
+    if physical:
+        return (f"refused:whole_species_guard: port atom(s) {physical} reach only a physical "
+                "end outside the window (the context differs by a read beyond the window)")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# item 2: counts on one witness
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class RmgChannel:
+    """RMG's channel on one witness: the distinct mapped outcomes (``keys``)
+    of the allowed directed moves with the channel's template and product
+    species; ``directed`` raw mappings; ``slot_orders`` per outcome."""
+
+    keys: tuple
+    directed: int
+    slot_orders: tuple
+    statuses: tuple
+
+    @property
+    def transitions(self) -> int:
+        return len(self.keys)
+
+
+class RmgCounter:
+    """The independent count: ``rmg_moves.generate_moves`` (cached per
+    witness signature) and species keys."""
+
+    def __init__(self, families, resonance: str = "all", max_entries: int = 64):
+        from rmgpy.kmc import channels as chm
+        self.families = families
+        self.resonance = resonance
+        self.species = chm.SpeciesKeys()
+        self._moves = {}
+        self._max = max_entries
+        self._product_species = {}
+
+    def family(self, name):
+        return self.families[name] if isinstance(name, str) else name
+
+    def moves(self, family, molecules, direction):
+        family = self.family(family)
+        if direction == "reverse" and family.reverse_template is None:
+            direction = "forward"
+        key = (family.label, direction, tuple(rm._signature(rm.molecule_rows(m))
+                                              for m in molecules))
+        if key not in self._moves:
+            if len(self._moves) >= self._max:
+                self._moves.pop(next(iter(self._moves)))
+            self._moves[key] = rm.generate_moves(family, list(molecules), direction,
+                                                 resonance=self.resonance)
+        return self._moves[key]
+
+    def species_of_rows(self, rows) -> tuple:
+        sig = rm._signature(dict(rows))
+        if sig not in self._product_species:
+            self._product_species[sig] = tuple(sorted(
+                self.species(rm.molecule_from_rows(part)) for part in rm.split_rows(dict(rows))))
+        return self._product_species[sig]
+
+    def channel(self, family, molecules, direction, pathway, product_species) -> RmgChannel:
+        raise NotImplementedError("I-138 red: RmgCounter.channel")
+
+
+@dataclass(frozen=True)
+class Count:
+    matcher: int
+    rmg: int
+    rmg_directed: int
+    target_found: bool
+    foreign: int
+    rule: str = SLOT_ORDER_RULE
+
+    @property
+    def equal(self) -> bool:
+        return self.matcher == self.rmg
+
+    def as_dict(self) -> dict:
+        return {"matcher": self.matcher, "rmg": self.rmg, "rmg_directed": self.rmg_directed,
+                "target_found": self.target_found, "foreign": self.foreign}
+
+
+def count_pathway(family, pathway, reverse: bool):
+    """The pathway filter of the channel count: the record's template, except
+    for a family that is its own reverse read opposite to its template side
+    (RMG reads another node on those reactants: product species decide)."""
+    fam = family
+    if getattr(fam, "reverse_template", "x") is None and reverse:
+        return None
+    return tuple(pathway) if pathway else None
+
+
+def count_on(templates: Sequence[wm.Template], reactant_rows, product_rows, *, family,
+             direction, pathway, counter, product_species=None, target=True) -> tuple:
+    """(Count, transitions in the channel, channel) of ``templates`` on one
+    witness (template-direction rows; components separate).  ``target``: the
+    product rows are the witness's own mapped product (its key must be one of
+    the transitions)."""
+    raise NotImplementedError("I-138 red: count_on")
+
+
+# ---------------------------------------------------------------------------
+# rates and weights
+# ---------------------------------------------------------------------------
+def rate_kind(rate_source: dict) -> str:
+    """``estimate`` (an RMG selection, or its reference-thermo reverse) or
+    ``library`` (anything else: library, archived or attached rates)."""
+    kind = (rate_source or {}).get("kind")
+    return "estimate" if kind in ESTIMATE_KINDS else "library"
+
+
+def weight_table(temperatures, k, ssa_multiplier, transitions) -> list:
+    """``w = ssa * k / T_ch`` per grid temperature (``EmissionError`` on
+    ``T_ch = 0`` or a non-finite or non-positive weight)."""
+    raise NotImplementedError("I-138 red: weight_table")
+
+
+def calibration(temperatures, k, ssa_multiplier, weights, transitions) -> list:
+    """The identity ``sum(w over T_ch transitions) = ssa * k`` at the
+    calibration temperatures (rows: T, sum, ssa*k, relative error, ok)."""
+    raise NotImplementedError("I-138 red: calibration")
+
+
+@dataclass(frozen=True)
+class RateRequest:
+    """One production-rate question: the channel of ``witness``'s own mapped
+    event, generated on the case-direction reactants (``generation``) with
+    the case-direction products (``products``); the record's ``template``
+    and ``orientation``; the original ``rate_source`` to rebind to."""
+
+    family: str
+    template: str
+    orientation: str
+    generation: Any
+    products: Any
+    witness: Any = None
+    label: str = ""
+    vector: tuple = ()
+    rate_source: Any = None
+    owner_rate_source: Any = None
+
+
+@dataclass(frozen=True)
+class RateResult:
+    temperatures: tuple
+    k: tuple
+    ssa_multiplier: float
+    provenance: dict = field(default_factory=dict)
+    problems: tuple = ()
+
+
+_SELECTION_KEYS = ("kind", "reference", "source", "entry", "rank", "family_template_direction")
+
+
+def _selection(rate_source) -> dict:
+    rs = rate_source or {}
+    out = {k: rs.get(k) for k in _SELECTION_KEYS if k in rs}
+    forward = rs.get("forward_rate_source")
+    if isinstance(forward, dict):
+        out["forward"] = {k: forward.get(k) for k in _SELECTION_KEYS if k in forward}
+    return out
+
+
+def rebind_problems(original, new) -> list:
+    """The production selection on a witness against the record's: every
+    selection field (source, entry, rank, template direction, reference) must
+    match (never re-estimated)."""
+    a, c = _selection(original), _selection(new)
+    out = []
+    for key in sorted(set(a) | set(c)):
+        if a.get(key) != c.get(key):
+            out.append(f"rate source {key}: record {a.get(key)!r} vs witness {c.get(key)!r}")
+    return out
+
+
+class ProductionRates:
+    """``k`` on a witness through the compiler's own production path: RMG's
+    generation (``generate_reactions_from_families`` on the case-direction
+    reactants, restricted to the witness's products), then the compiler's
+    ``_linked_family_pair`` (estimate, thermo conversion, reference-thermo
+    reverse), then the record with the requested orientation and template.
+    The selection is rebound to the record's (``rebind_problems``) and, for
+    a reference-thermo reverse, the pair's estimating record to the record's
+    rate owner.  Cached per (family, generation signature, products,
+    template)."""
+
+    def __init__(self, database, families, *, database_path=None, database_sha=None,
+                 temperature_grid=None, max_entries: int = 256):
+        from rmgpy.kmc.compiler import DEFAULT_T_GRID, EventSetCompiler
+        self.database = database
+        self.compiler = EventSetCompiler(
+            database.kinetics, (), tuple(families), database_path=database_path,
+            thermo_database=database.thermo, rmg_database_sha=database_sha,
+            temperature_grid=tuple(temperature_grid or DEFAULT_T_GRID))
+        self._cache = {}
+        self._max = max_entries
+        self.calls = 0
+        self.generated = 0
+
+    def _pair(self, request):
+        from rmgpy.kmc.compiler import SiteProxy, _resolve_generator, _template
+        from rmgpy.species import Species
+        gen = molecules_of(request.generation)
+        prods = molecules_of(request.products)
+        key = (request.family, tuple(rm._signature(rm.molecule_rows(m)) for m in gen),
+               tuple(sorted(rm._signature(rm.molecule_rows(m)) for m in prods)),
+               request.template)
+        if key in self._cache:
+            return self._cache[key]
+        self.generated += 1
+        species = [Species(molecule=[m]) for m in gen]
+        products = [Species(molecule=[m]) for m in prods]
+        generator = _resolve_generator(self.compiler.kinetics_database,
+                                       self.compiler.generation_provider)
+        reactions = [x for x in generator([s.copy(deep=True) for s in species],
+                                          products=[s.copy(deep=True) for s in products],
+                                          only_families=[request.family], resonance=True)
+                     if _template(x) == request.template]
+        if len(reactions) != 1:
+            value = (None, f"production generation found {len(reactions)} reactions of the "
+                           f"template on the witness (one needed)")
+        else:
+            proxy = SiteProxy("i138_emission_witness", tuple(species),
+                              participant_site_types=tuple(f"w{k}" for k in range(len(species))),
+                              metadata={"centred": True, "context_class": "emission_witness",
+                                        "proxy_units": 0, "family_candidates": [request.family]})
+            try:
+                records, _initiating = self.compiler._linked_family_pair(proxy, reactions[0], {})
+                value = (tuple(records), "")
+            except Exception as error:   # reported, never hidden
+                value = (None, f"production pair failed: {type(error).__name__}: {error}")
+        if len(self._cache) >= self._max:
+            self._cache.pop(next(iter(self._cache)))
+        self._cache[key] = value
+        return value
+
+    def __call__(self, request: RateRequest) -> RateResult:
+        self.calls += 1
+        records, why = self._pair(request)
+        if records is None:
+            return RateResult((), (), 0.0, {}, (why,))
+        hits = [x for x in records if x.orientation == request.orientation and
+                x.template == request.template and x.k_table]
+        if len(hits) != 1:
+            return RateResult((), (), 0.0, {}, (f"production pair has {len(hits)} records of "
+                                                 f"orientation {request.orientation}",))
+        rec = hits[0]
+        problems = list(rebind_problems(request.rate_source, rec.rate_source)) \
+            if request.rate_source is not None else []
+        if request.owner_rate_source is not None:
+            owners = [x for x in records if x is not rec and x.template == request.template
+                      and (x.rate_source or {}).get("kind") == "RMG family estimate"]
+            if len(owners) != 1:
+                problems.append(f"production pair has {len(owners)} estimating records")
+            else:
+                problems += [f"rate owner: {p}" for p in
+                             rebind_problems(request.owner_rate_source, owners[0].rate_source)]
+        problems = tuple(problems)
+        return RateResult(tuple(rec.k_table["T"]), tuple(rec.k_table["k"]),
+                          float(rec.ssa_multiplier),
+                          {"selection": _selection(rec.rate_source), "event_id": rec.event_id,
+                           "status": rec.status}, problems)
+
+
+# ---------------------------------------------------------------------------
+# item 3: locality over extension vectors
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class LocalityWitness:
+    label: str
+    vector: tuple
+    status: str
+    reason: str = ""
+    witness: Any = field(default=None, compare=False)
+
+
+def locality_plan(witness) -> list:
+    """(label, vector) of the extension vectors: every artificial port alone at
+    each step of ``EXTENSION_STEPS``, all ports jointly, the ports of each
+    participant; the zero vector (the emitted witness) first."""
+    raise NotImplementedError("I-138 red: locality_plan")
+
+
+def locality_witnesses(witness, providers=None, *, ceiling=None, plan=None) -> list:
+    """The locality witnesses (``locality_plan`` built by
+    ``boundaries.evaluate_vector``), equal vectors folded, the ok ones
+    deduplicated as marked graphs (``boundaries.marked_duplicates``) with
+    the kept ones asserted distinct."""
+    raise NotImplementedError("I-138 red: locality_witnesses")
+
+
+def spread(rows, temperatures) -> tuple:
+    """(per-temperature max - min of log10 w over the rows, max)."""
+    raise NotImplementedError("I-138 red: spread")
+
+
+# ---------------------------------------------------------------------------
+# one candidate template of a record
+# ---------------------------------------------------------------------------
+def status_of(text: str) -> str:
+    """``refused:<name>`` (or ``error:<name>``) of a refusal text."""
+    parts = (text or "error").split(":")
+    return ":".join(x.strip() for x in parts[:2]) if len(parts) > 1 else parts[0]
+
+
+@dataclass(eq=False)
+class Candidate:
+    """A context representative's cut, with its sources (member label,
+    context index and assignment, witness, window)."""
+
+    cut: Optional[CutTemplate]
+    member: str
+    context_index: int
+    assignment: tuple
+    witness: Any
+    window_atoms: frozenset
+    certificate: Optional[str] = None
+    base: bool = False
+    refusal: Optional[str] = None
+    unextended: Any = None
+    sources: list = field(default_factory=list)
+
+
+def context_candidates(case, results, merges, *, family, pathway, direction, reverse,
+                       providers=None) -> tuple:
+    """(candidates, context rows): one candidate per fixed-point context that
+    merged into no earlier one (the base first), refused ones named; every
+    other context's status reported."""
+    from rmgpy.kmc import certificates as cm
+    from rmgpy.kmc import windows as win
+    merged = {j for _i, j in merges}
+    into = {j: i for i, j in merges}
+    labels = labels_of(case.moves[0], reverse)
+    cands, rows = [], []
+    for k, r in enumerate(results):
+        assignment = tuple((tuple(p), e) for p, e in r.assignment)
+        row = {"index": k, "assignment": [[list(p), e] for p, e in assignment if e],
+               "status": r.status, "reason": (r.reason or "")[:240]}
+        if r.status != "fixed_point":
+            row["emission"] = "refused upstream (context status)"
+            rows.append(row)
+            continue
+        if k in merged:
+            row["emission"] = f"merged into context {into[k]}"
+            rows.append(row)
+            continue
+        cert = None
+        if r.observation is not None and r.observation.certificate is not None:
+            cert = cm.certificate_sha256(r.observation.certificate)
+        context = tuple((list(p), e) for p, e in assignment if e)
+        try:
+            cut = cut_template(r.witness, r.window.atoms, family=family, pathway=pathway,
+                               direction=direction, reverse=reverse,
+                               context=tuple((p[0], p[1], e) for p, e in assignment if e),
+                               labels=labels)
+            refusal = template_refusal(cut)
+        except EmissionError as error:
+            cut, refusal = None, f"error:{error}"
+        unextended = case.witness
+        if k:
+            try:
+                unextended = win.reconstruct(case.witness, assignment, providers)
+            except b.BoundaryError as error:
+                refusal = refusal or f"refused:end: {error}"
+        cands.append(Candidate(cut, case.label, k, assignment, r.witness,
+                               frozenset(r.window.atoms), cert, k == 0, refusal, unextended))
+        row["emission"] = "candidate" if refusal is None else refusal
+        row["context"] = context
+        rows.append(row)
+    return cands, rows
+
+
+def reaches_beyond(cut, witness, unextended) -> bool:
+    """Whether the cut's window atoms or its port exteriors (atoms of
+    ``witness``) reach atoms the ``unextended`` witness lacks: the padding
+    added at its artificial ends.  Such a template cannot apply to the
+    unextended witness (nor to the record's proxy graph)."""
+    raise NotImplementedError("I-138 red: reaches_beyond")
+
+
+def dedupe(cands) -> list:
+    """Candidates with equal executable keys are one template (sources kept)."""
+    out, by = [], {}
+    for c in cands:
+        if c.cut is None:
+            out.append(c)
+            continue
+        if c.cut.key in by:
+            first = by[c.cut.key]
+            first.sources.append((c.member, c.context_index))
+            first.base = first.base or c.base
+            continue
+        c.sources.append((c.member, c.context_index))
+        by[c.cut.key] = c
+        out.append(c)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# records
+# ---------------------------------------------------------------------------
+def record_direction(record, family) -> str:
+    """The family direction a record runs in (its template side is its
+    reactants: forward; else reverse; an own-reverse family: forward)."""
+    from rmgpy.kmc import certificates as cm
+    if getattr(family, "reverse_template", "x") is None:
+        return "forward"
+    side, _a = cm._template_fields(_as_dict(record))
+    return "forward" if side in ("reactant_graphs", "rate_witness_reactant_graphs") else "reverse"
+
+
+def _as_dict(record) -> dict:
+    return record.to_dict() if hasattr(record, "to_dict") else dict(record)
+
+
+def record_graph_rows(record, which: str = "reactant_graphs") -> dict:
+    """atom id -> row of the record's own witness (``witness_molecules`` ids,
+    participants separate; an A + A record whose graphs list one species
+    with multiplicity 2 is two copies)."""
+    from rmgpy.kmc import certificates as cm
+    record = _as_dict(record)
+    graphs = list(record[which])
+    if which == "reactant_graphs":
+        mult = list(record.get("reactant_multiplicities") or [])
+        if len(graphs) == 1 and mult == [2]:
+            graphs = graphs * 2
+    rows = {}
+    for m in cm.witness_molecules(graphs):
+        rows.update(rm.molecule_rows(cm.aromatic_root(m)))
+    return rows
+
+
+def upstream_refusal(record, record_certificate, by_id=None) -> Optional[str]:
+    """The upstream status of a record (None: certified and firing)."""
+    from rmgpy.kmc import certificates as cm
+    record = _as_dict(record)
+    if record.get("status") not in cm.FIRING_STATUSES:
+        return f"refused:record_status: {record.get('status_reason', '')[:200]}"
+    if record_certificate is None:
+        return "refused:certificate: no record certificate"
+    if by_id is not None and not cm.requires_certification(record, by_id):
+        return ("refused:certificate: outside the required population "
+                f"({(record_certificate.get('gaps') or [''])[0][:160]})")
+    if not record_certificate.get("certified"):
+        return f"refused:certificate: {(record_certificate.get('gaps') or [''])[0][:200]}"
+    return None
+
+
+def rate_of(record) -> dict:
+    record = _as_dict(record)
+    table = record.get("k_table") or {}
+    rs = record.get("rate_source") or {}
+    return {"T": list(table.get("T") or ()), "k": list(table.get("k") or ()),
+            "ssa_multiplier": float(record.get("ssa_multiplier", 1.0)),
+            "provenance": {"kind": rs.get("kind"), "class": rate_kind(rs),
+                           "selection": _selection(rs), "event_id": record.get("event_id"),
+                           "orientation": record.get("orientation")}}
+
+
+def emit_record(record, *, family, members, counter, rates, record_certificate=None,
+                by_id=None, providers=None, ceiling=None, check_upstream=True,
+                owner_rate_source=None) -> dict:
+    """The executable-template payload of one record.
+
+    ``members``: [(case, run_member row, (context results, merges))] of the
+    record's channel members on provider witnesses.  Upstream refusals
+    (record status, certificate, window status) are carried through as
+    refused; emission refusals are named per template."""
+    raise NotImplementedError("I-138 red: emit_record")
+
+
+def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, counter,
+                   rates, weights, temperatures, providers=None, ceiling=None,
+                   record_map=None, owner_rate_source=None) -> dict:
+    """Count (item 2, on the context's own witness), locality (item 3) and
+    the payload of one candidate."""
+    raise NotImplementedError("I-138 red: emit_candidate")
+
+
+def witness_row(template, witness, *, label, vector, family, direction, pathway, reverse,
+                counter, rates, record, owner_rate_source=None) -> dict:
+    """One locality row: counts by both counters on the witness's own target,
+    production k, ``w``."""
+    raise NotImplementedError("I-138 red: witness_row")
+
+
+# ---------------------------------------------------------------------------
+# items 6, 7: payload, validation, projection, record attachment
+# ---------------------------------------------------------------------------
+def template_payload(cut: CutTemplate, witness=None, window_atoms=None) -> dict:
+    """The serialized template: executable content (hashed), metadata, maps."""
+    atoms = []
+    for i, a in enumerate(cut.atoms):
+        boundary, labels, wport = cut.meta[i]
+        atoms.append(dict(_atom_json(a), index=i, boundary=boundary, labels=list(labels),
+                          witness_port=list(wport) if wport else None))
+    edits = {"atoms": [[i, {k: v for k, v in a[8]}] for i, a in enumerate(cut.atoms) if a[8]],
+             "bonds": [[i, j, after] for i, j, before, after in cut.bonds if before != after]}
+    participants = [{"index": p, "atoms": [i for i, a in enumerate(cut.atoms) if a[0] == p],
+                     "roles": sorted({lab for i, a in enumerate(cut.atoms) if a[0] == p
+                                      for lab in cut.meta[i][1]})}
+                    for p in range(cut.participants)]
+    ports = [{"atom": i, "exterior": [list(x) for x in cut.atoms[i][7]],
+              "label": cut.meta[i][0]} for i in cut.ports]
+    window, maps = None, {"witness": list(cut.witness_atoms), "components": list(cut.components)}
+    if witness is not None:
+        window = {"atoms": len(window_atoms or ()),
+                  "depths": [[list(k), d] for k, d in witness.extension_counts]}
+        maps["window_id"] = hashlib.sha256(canonical_json(
+            [witness.label, sorted(window_atoms or ())]).encode()).hexdigest()
+        maps["witness_label"] = witness.label[:300]
+    return {"name": cut.name, "key": cut.key, "family": cut.family,
+            "direction": cut.direction, "pathway": list(cut.pathway),
+            "executable": cut.executable(),
+            "atoms": atoms, "bonds": [[i, j, x, y] for i, j, x, y in cut.bonds],
+            "edits": edits, "participants": participants, "ports": ports, "predicates": [],
+            "whole_species": cut.whole_species, "maps": maps, "window": window}
+
+
+def finish(payload: dict) -> dict:
+    """Seal a payload: sha256 over everything but the maps and the hash."""
+    payload = json.loads(canonical_json(payload))
+    payload["sha256"] = payload_sha256(payload)
+    return payload
+
+
+def _strip(payload):
+    out = {k: v for k, v in payload.items() if k != "sha256"}
+    out["templates"] = [{k: v for k, v in t.items() if k != "maps"}
+                        for t in out.get("templates", [])]
+    return out
+
+
+def payload_sha256(payload: dict) -> str:
+    return sha256_json(_strip(payload))
+
+
+def validate_payload(payload: dict) -> None:
+    """Shape and integrity of an ``executable_template`` payload (raises
+    ``EmissionError``)."""
+    if not isinstance(payload, dict) or payload.get("schema") != SCHEMA:
+        raise EmissionError("executable_template has an unknown schema")
+    if payload.get("status") not in RECORD_STATUSES:
+        raise EmissionError(f"executable_template status {payload.get('status')!r}")
+    if payload.get("sha256") != payload_sha256(payload):
+        raise EmissionError("executable_template sha256 does not match its content")
+    if payload["status"] == "refused" and not (payload.get("refusal") or {}).get("status"):
+        raise EmissionError("a refused executable_template needs a refusal status")
+    for t in payload.get("templates", []):
+        if t.get("status") not in TEMPLATE_STATUSES:
+            raise EmissionError(f"template status {t.get('status')!r}")
+        if t["status"] == "refused":
+            if not (t.get("refusal") or {}).get("status"):
+                raise EmissionError("a refused template needs a refusal status")
+            continue
+        ex = t["executable"]
+        if sha256_json(ex) != t["key"]:
+            raise EmissionError("template key does not match its executable content")
+        n = len(ex["atoms"])
+        for i, j, _x, _y in ex["bonds"]:
+            if not (0 <= i < j < n):
+                raise EmissionError("template bond indexes out of range")
+        edited = {i for i, a in enumerate(ex["atoms"]) if a["final"]} | {
+            x for i, j, before, after in ex["bonds"] if before != after for x in (i, j)}
+        if any(ex["atoms"][i]["kind"] == "port" for i in edited):
+            raise EmissionError("an edit touches a port")
+        w = t["weight"]["w"]
+        if not all(math.isfinite(x) and x > 0 for x in w):
+            raise EmissionError("non-finite or non-positive weight")
+        loc = t["locality"]
+        if not loc["accepted"] or loc["max_spread_log10"] > LOCALITY_TOLERANCE_LOG10:
+            raise EmissionError("an emitted template without an accepted locality table")
+        counts = (t.get("counts") or {}).get("context") or {}
+        if counts and counts.get("matcher") != counts.get("rmg"):
+            raise EmissionError("an emitted template with unequal counts")
+        matcher_from_payload(t, t["weight"]["T"][0])
+
+
+def matcher_from_payload(template: dict, temperature: float, *, name=None) -> wm.Template:
+    """The temperature-specific projection of one emitted template to a
+    ``window_matcher.Template`` (``k`` interpolated linearly in ln w on the
+    grid; extrapolation refused)."""
+    ex = template["executable"]
+    ts, ws = template["weight"]["T"], template["weight"]["w"]
+    weight = _interpolate(ts, ws, float(temperature))
+    atoms = [wm.WindowAtom(element=a["element"], participant=a["participant"], kind=a["kind"],
+                           exterior=tuple(tuple(x) for x in a["exterior"]),
+                           isotope=a["isotope"], charge=a["charge"], radical=a["radical"],
+                           lone_pairs=a["lone_pairs"]) for a in ex["atoms"]]
+    bonds = [(i, j, x) for i, j, x, _y in ex["bonds"] if x]
+    edits = [wm.BondEdit(i, j, y) for i, j, x, y in ex["bonds"] if x != y]
+    edits += [wm.AtomEdit(i, **a["final"]) for i, a in enumerate(ex["atoms"]) if a["final"]]
+    return wm.Template(name or template["name"], template.get("family", "") or "", atoms,
+                       bonds, edits, weight=weight)
+
+
+def _interpolate(ts, ws, t):
+    ts = [float(x) for x in ts]
+    if not ts or t < ts[0] or t > ts[-1]:
+        raise EmissionError(f"temperature {t} K outside the weight table (extrapolation refused)")
+    for i in range(len(ts) - 1):
+        if ts[i] <= t <= ts[i + 1]:
+            if ts[i + 1] == ts[i]:
+                return ws[i]
+            f = (t - ts[i]) / (ts[i + 1] - ts[i])
+            return math.exp(math.log(ws[i]) * (1 - f) + math.log(ws[i + 1]) * f)
+    return ws[-1]
+
+
+def attach(record, payload: dict):
+    """An ``EventRecord`` with ``executable_template`` set (schema
+    ``rewrite_record/0.2``; the event id is unchanged: the template is not
+    part of it)."""
+    from dataclasses import replace
+    from rmgpy.kmc.event_record import EventRecord
+    validate_payload(payload)
+    rec = record if isinstance(record, EventRecord) else EventRecord.from_dict(dict(record))
+    return replace(rec, schema_version=RECORD_SCHEMA, executable_template=payload)
+
+
+# ---------------------------------------------------------------------------
+# item 4: ladder
+# ---------------------------------------------------------------------------
+def ladder_member(case, row, *, family, counter, rates, orientation, ssa=None,
+                  certifier=None) -> dict:
+    """A ladder member's whole-species template (no locality test): the rate
+    through the production path on the member's own species, ``T_ch`` by both
+    counters on it."""
+    raise NotImplementedError("I-138 red: ladder_member")
+
+
+def ladder_control(case, row, fp, *, family, counter) -> dict:
+    """The L + 1 control: the member's fixed-point window cut (``fp``: its
+    ``windows.FixedPointResult``) is a LOCAL template (it has a port: not
+    whole-species) and covers its own event."""
+    raise NotImplementedError("I-138 red: ladder_control")
+
+
+# ---------------------------------------------------------------------------
+# item 5 and acceptance: matcher union vs rmg_moves on a reference
+# ---------------------------------------------------------------------------
+def classify_reference(templates, molecules, *, family, directions, counter, owners=None):
+    """Matcher union over ``templates`` (``window_matcher.Template``, unique
+    names) on the reference ``molecules`` (separate components; A + A as two
+    copies) against ``rmg_moves`` on the whole molecules in ``directions``
+    (unimolecular families on each molecule, bimolecular on the pair).
+
+    ``owners(move) -> (status, reason)``: the upstream/emission status of the
+    record owning a kept RMG move (its channel: template and product species);
+    ``BEYOND_PROXY`` explains an RMG-only move whose owner's templates reach
+    beyond the reference's artificial ends.
+
+    Returns a dict with the counts, the per-key overlap multiplicity and the
+    classified one-sided keys; ``failures`` lists what fails (an unexplained
+    RMG-only kept move, a matcher key RMG files only as forbidden, a missing
+    required unchanged_species move, an unclassified matcher-only key)."""
+    raise NotImplementedError("I-138 red: classify_reference")
+
+
+# the owner emitted, but its templates reach beyond the proxy's artificial
+# ends (``reaches_beyond``): on the capped reference they cannot match
+BEYOND_PROXY = "emitted:beyond_proxy"
+
+# emission refusals are named, but an RMG-only move they leave is not an
+# upstream explanation (the acceptance fails on it)
+EMISSION_FAILURE_STATUSES = ("refused:count_mismatch", "refused:non_local_kinetics",
+                             "refused:locality_witness", "refused:base_template",
+                             "refused:no_base_template", "refused:orientation",
+                             "refused:unmapped")
+
+
+def _molecularity(family, direction) -> int:
+    if direction == "forward" or family.reverse_template is None:
+        return len(family.forward_template.reactants)
+    return len(family.reverse_template.reactants)

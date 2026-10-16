@@ -3938,12 +3938,17 @@ def reacting_port_gaps(rows) -> list:
 
 
 def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: bool = True,
-               providers=None, specs=None, covers: bool = True, keep=None, **loop) -> dict:
+               providers=None, specs=None, covers: bool = True, keep=None, contexts_out=None,
+               **loop) -> dict:
     """Items 1-5 and 7 for one member: refusal by status, or the fixed point
     (window, span against ``bound``, per-mapping edit checks, diagnostics,
     recertification flips) and the context list with merges.  A
     reacting-port refusal carries its covering witnesses (``covers``,
-    ``covered``; the interior cover needs the witness ``specs``)."""
+    ``covered``; the interior cover needs the witness ``specs``).
+    ``contexts_out`` (additive, I-138): a list that receives the context
+    results themselves (``ContextResult`` per assignment, first the
+    all-artificial base, and the merge pairs) as one ``(results, merges)``
+    entry; the returned rows are unchanged."""
     import time
     start = time.perf_counter()
     out = {"label": case.label, "family": case.family, "direction": case.direction,
@@ -3985,12 +3990,13 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
     out["dispositions"] = sorted({(str(k[0]), d) for k, d, _a in window.support.dispositions})
     out["diagnostics"] = diagnostics(fp.witness, window.atoms)
     if contexts:
-        _contexts(out, certifier, family, case, fp, bound, providers, loop)
+        _contexts(out, certifier, family, case, fp, bound, providers, loop,
+                  contexts_out=contexts_out)
     out["seconds"] = round(time.perf_counter() - start, 1)
     return out
 
 
-def _contexts(out, certifier, family, case, fp, bound, providers, loop):
+def _contexts(out, certifier, family, case, fp, bound, providers, loop, contexts_out=None):
     """Every context of ``context_assignments`` over the member's near ports
     (``member_near_ports``), run from the base fixed point's depths; far
     ports are reduced to their radical ends, and the reduction is checked:
@@ -4042,3 +4048,5 @@ def _contexts(out, certifier, family, case, fp, bound, providers, loop):
     out["context_classes"] = len([k for k, r in enumerate(results)
                                   if r.status == "fixed_point" and k not in merged])
     out["merges"] = [list(x) for x in merges]
+    if contexts_out is not None:
+        contexts_out.append((tuple(results), tuple(merges)))

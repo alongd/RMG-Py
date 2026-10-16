@@ -1,0 +1,753 @@
+"""Tests for rmgpy/kmc/template_emission.py (I-138): executable local window
+templates cut from recertified closed windows.
+
+Fast part, no database (toy alkane homolysis on the linear-alkane provider,
+a graph oracle for the channel count, stub production rates): the cut
+(closed atoms, ports, edits never on a port, construction-carried port
+labels under permuted atom ids), end and interior templates, the count and
+weight (count mismatch, T_ch = 0, whole-channel normalization and the
+calibration identity), locality over extension vectors (stub rates moving at
+one port step only), upstream refusals, the schema round trip and
+determinism (two subprocesses, two hash seeds, permuted atoms).
+Fast part with the RMG database (``channelsTest.database``): the
+forbidden-move exclusion on the H-atom abstraction reference, the DP3
+chain-to-chain transfer produced, and the bimolecular pair counts on real
+windows (identical and unequal radicals).
+Slow part (``RMG_KMC_SLOW=1``): ``template_emission_acceptance.py`` on the
+reference compiles.
+"""
+
+import json
+import math
+import os
+import subprocess
+import sys
+from collections import namedtuple
+from pathlib import Path
+
+import pytest
+
+from rmgpy.kmc import boundaries as b
+from rmgpy.kmc import rmg_moves as rm
+from rmgpy.kmc import template_emission as te
+from rmgpy.kmc import window_matcher as wm
+from rmgpy.kmc import windows as win
+
+SLOW = os.environ.get("RMG_KMC_SLOW") == "1"
+HERE = Path(__file__).resolve().parent
+GRID = tuple(float(t) for t in range(300, 1001, 25))
+K_RULE = tuple(1.0e9 * math.exp(-15000.0 / t) for t in GRID)
+HEAD, TAIL = (0, "head"), (0, "tail")
+
+
+# --------------------------------------------------------------------------
+# toy chemistry: C-C homolysis / recombination of linear alkanes
+# --------------------------------------------------------------------------
+class ToyFamily:
+    label = "toy_cc"
+    reverse_template = object()
+
+    class forward_template:
+        reactants = (0, 1)
+
+    class reverse_template_:
+        reactants = (0,)
+
+
+def _break(rows, a, c):
+    rows = dict(rows)
+    for x, y in ((a, c), (c, a)):
+        row = rows[x]
+        rows[x] = row[:3] + (row[3] + 1,) + row[4:5] + (tuple(e for e in row[5] if e[0] != y),)
+    return rows
+
+
+def _join(rows, a, c):
+    rows = dict(rows)
+    for x, y in ((a, c), (c, a)):
+        row = rows[x]
+        rows[x] = row[:3] + (row[3] - 1,) + row[4:5] + (tuple(sorted(row[5] + ((y, 1.0),))),)
+    return rows
+
+
+class ToyCounter(te.RmgCounter):
+    """The graph oracle of the toy family: homolysis of every C-C bond
+    (reverse; both orientations are directed mappings) and recombination of
+    every radical pair across two molecules (forward; both slot orders).
+    ``extra`` adds phantom outcomes (the count-mismatch fixture)."""
+
+    def __init__(self, extra=0):
+        from rmgpy.kmc import channels as chm
+        self.species = chm.SpeciesKeys()
+        self._product_species = {}
+        self.extra = extra
+        self.calls = 0
+
+    def family(self, name):
+        return ToyFamily
+
+    def channel(self, family, molecules, direction, pathway, product_species):
+        self.calls += 1
+        rows = {}
+        for m in molecules:
+            rows.update(rm.molecule_rows(m))
+        outcomes = []
+        if direction == "reverse":
+            for a, row in rows.items():
+                for c, _o in row[5]:
+                    if a < c and row[0] == "C" and rows[c][0] == "C":
+                        outcomes.append((_break(rows, a, c), ((0,), (0,))))
+        else:
+            parts = [rm.molecule_rows(m) for m in molecules]
+            rad = [[a for a, r in p.items() if r[3]] for p in parts]
+            if len(parts) == 2:
+                for a in rad[0]:
+                    for c in rad[1]:
+                        outcomes.append((_join(rows, a, c), ((0, 1), (1, 0))))
+        keys, orders, directed = [], [], 0
+        for prod, slot in outcomes:
+            if self.species_of_rows(prod) != tuple(product_species):
+                continue
+            directed += 2
+            keys.append(rm.product_key(prod))
+            orders.append(slot)
+        keys = sorted(set(keys)) + [("phantom", k) for k in range(self.extra)]
+        return te.RmgChannel(tuple(keys), directed, tuple(orders), (("kept", directed),))
+
+
+def alkane(n, head=None, tail=None):
+    build = b.PROVIDERS["linear_alkane"].build(n, head_end=head, tail_end=tail)
+    mols, parts = b.witness_reactants([build])
+    return rm.molecule_rows(mols[0]), parts
+
+
+def homolysis(n, bond, head=None, tail=None):
+    rows, parts = alkane(n, head, tail)
+    return b.make_witness(tuple(sorted(rows.items())), tuple(sorted(_break(rows, *bond).items())),
+                          parts, label=f"C{n}|{bond}")
+
+
+def recombination(n1, n2, head1=None):
+    """Two primary-radical-ended alkanes (tail physical radical, head
+    artificial unless ``head1``) recombining at their tails."""
+    b1 = b.PROVIDERS["linear_alkane"].build(n1, head_end=head1, tail_end="primary_radical")
+    b2 = b.PROVIDERS["linear_alkane"].build(n2, tail_end="primary_radical")
+    mols, parts = b.witness_reactants([b1, b2])
+    rows = {}
+    for m in mols:
+        rows.update(rm.molecule_rows(m))
+    a, c = n1 - 1, len(b1.construction_order) + n2 - 1
+    return b.make_witness(tuple(sorted(rows.items())), tuple(sorted(_join(rows, a, c).items())),
+                          parts, label=f"C{n1}+C{n2}")
+
+
+def heavy_ball(witness, radius):
+    rows = witness.reactant_rows()
+    support = b.edit_support(witness)
+    seen = {a for a in support if rows[a][0] != "H"}
+    frontier = list(seen)
+    for _ in range(radius):
+        nxt = []
+        for a in frontier:
+            for n, _o in rows[a][5]:
+                if rows[n][0] != "H" and n not in seen:
+                    seen.add(n)
+                    nxt.append(n)
+        frontier = nxt
+    return seen
+
+
+def window(witness, radius=2):
+    support = win.Support(atoms=frozenset(heavy_ball(witness, radius)),
+                          reacting=frozenset(b.edit_support(witness)))
+    return win.close(witness, support)
+
+
+def cut(witness, radius=2, direction="reverse", reverse=False):
+    return te.cut_template(witness, window(witness, radius).atoms, family="toy_cc",
+                           pathway=("toy",), direction=direction, reverse=reverse)
+
+
+Move = namedtuple("Move", "labels product_labels")
+
+
+def member(witness, radius=2, direction="reverse"):
+    w = window(witness, radius)
+    pair = sorted(a for a in b.edit_support(witness) if witness.reactant_rows()[a][0] == "C")
+    move = Move(((0, "*1", pair[0]), (0, "*2", pair[1])), (("*1", pair[0]), ("*2", pair[1])))
+    case = win.MemberCase(f"toy|{witness.label}", "toy_cc", direction, ("toy",), witness,
+                          (move,), frozenset())
+    ctx = win.ContextResult(tuple((p, None) for p in b.vector_ports(witness)), "fixed_point", "",
+                            witness, w, None)
+    return case, {"status": "fixed_point"}, ((ctx,), ())
+
+
+def graph(rows):
+    return [m.to_adjacency_list() for m in te.molecules_of(rows)]
+
+
+def toy_record(witness, transitions, *, status="enabled", orientation="reversed"):
+    """The record of the witness's homolysis channel: k = k_rule * (channel
+    members), ssa 1."""
+    r, p = dict(witness.reactant_rows()), dict(witness.product_rows())
+    return {"event_id": "evt_" + "0" * 64, "family": "toy_cc", "template": "toy",
+            "orientation": orientation, "status": status,
+            "status_reason": "" if status == "enabled" else "domain",
+            "reactant_graphs": graph(r), "product_graphs": graph(p),
+            "reactant_multiplicities": [1], "ssa_multiplier": 1.0,
+            "k_table": {"T": list(GRID), "k": [k * transitions for k in K_RULE],
+                        "interpolation": "linear-ln-k", "extrapolation": "refuse"},
+            "rate_source": {"kind": "RMG family estimate", "source": "rate rules",
+                            "entry": "toy", "rank": 11}}
+
+
+def stub_rates(counter, shift=lambda req: 0.0):
+    """Production k on a witness: k_rule times the RMG (oracle) degeneracy of
+    the witness's channel, moved by ``shift(request)`` decades."""
+    def rates(req):
+        species = counter.species_of_rows(req.products)
+        deg = counter.channel(ToyFamily, te.molecules_of(req.generation), "reverse", None,
+                              species).transitions
+        d = shift(req)
+        return te.RateResult(GRID, tuple(k * deg * 10 ** d for k in K_RULE), 1.0,
+                             {"selection": {"kind": "stub"}}, ())
+    return rates
+
+
+def emit(witness, *, radius=2, counter=None, shift=lambda req: 0.0, record=None, **kw):
+    counter = counter or ToyCounter()
+    case, row, ctx = member(witness, radius)
+    if record is None:
+        oracle = ToyCounter().channel(ToyFamily, te.molecules_of(dict(witness.reactant_rows())),
+                                      "reverse", None,
+                                      ToyCounter().species_of_rows(witness.product_rows()))
+        record = toy_record(witness, oracle.transitions)
+    return te.emit_record(record, family=ToyFamily, members=[(case, row, ctx)], counter=counter,
+                          rates=kw.pop("rates", None) or stub_rates(ToyCounter(), shift),
+                          check_upstream=kw.pop("check_upstream", False), **kw)
+
+
+def base_template(payload):
+    return next(t for t in payload["templates"] if t["base"])
+
+
+# --------------------------------------------------------------------------
+# item 1: the cut
+# --------------------------------------------------------------------------
+def test_cut_closed_atoms_ports_and_edits():
+    w = homolysis(8, (3, 4))
+    c = cut(w)
+    rows = w.reactant_rows()
+    heavy = sorted(c.witness_atoms[i] for i, a in enumerate(c.atoms) if a[1] == "C")
+    assert heavy == [1, 2, 3, 4, 5, 6]
+    for i, a in enumerate(c.atoms):
+        x = c.witness_atoms[i]
+        closed = all(n in set(c.witness_atoms) for n, _o in rows[x][5])
+        assert (a[6] == "closed") == closed
+        if a[6] == "port":
+            assert a[7] == ((1.0, "C", False),)
+    edited = {c.witness_atoms[i] for i in c.edited()}
+    assert edited == {3, 4}
+    assert all(c.atoms[i][6] == "closed" for i in c.edited())
+    t = c.matcher(1.0)
+    assert len(t.edits) == 3      # the broken bond, two radicals
+    assert c.participants == 1 and c.participant_connected()
+    assert te.template_refusal(c) is None
+    assert set(c.boundary_labels().values()) == {"artificial"}
+
+
+def test_edit_on_a_port_is_an_error():
+    w = homolysis(8, (3, 4))
+    atoms = {3, 4} | {h for a in (3, 4) for h, _o in w.reactant_rows()[a][5]
+                      if w.reactant_rows()[h][0] == "H"}
+    with pytest.raises(te.EmissionError, match="edit touches the window port"):
+        te.cut_template(w, atoms, family="toy_cc", pathway=("toy",), direction="reverse")
+
+
+def _relabel(witness, perm):
+    rows_r = {perm[a]: r[:5] + (tuple(sorted((perm[n], o) for n, o in r[5])),)
+              for a, r in witness.reactant_rows().items()}
+    rows_p = {perm[a]: r[:5] + (tuple(sorted((perm[n], o) for n, o in r[5])),)
+              for a, r in witness.product_rows().items()}
+    parts = [b.Participant(p.index, p.metadata.relabel(perm), tuple(perm[a] for a in p.atom_ids))
+             for p in witness.participants]
+    return b.make_witness(tuple(sorted(rows_r.items())), tuple(sorted(rows_p.items())), parts,
+                          label=witness.label)
+
+
+def _perm(witness, seed=7):
+    import random
+    ids = sorted(witness.reactant_rows())
+    shuffled = list(ids)
+    random.Random(seed).shuffle(shuffled)
+    return {a: 1000 + x for a, x in zip(ids, shuffled)}
+
+
+def _anchors(witness, ids):
+    """Per mapped atom: itself (heavy) or its heavy neighbour (a hydrogen:
+    interchangeable H leaves map up to their automorphism)."""
+    rows = witness.reactant_rows()
+    return [a if rows[a][0] != "H" else ("H", rows[a][5][0][0]) for a in ids]
+
+
+def test_port_labels_come_from_construction_under_permuted_atoms():
+    """C10 with a PHYSICAL methyl head and an artificial tail: the head-side
+    port reaches only the physical end (``physical``: refused as a
+    whole-species guard), the tail-side one the artificial tail.  Relabelling
+    every atom id changes neither the labels nor the executable key, and the
+    witness map follows the permutation."""
+    w = homolysis(10, (4, 5), head="methyl")
+    c = cut(w)
+    labels = {c.witness_atoms[i]: lab for i, lab in c.boundary_labels().items()}
+    assert labels == {2: "physical", 7: "artificial"}
+    assert te.template_refusal(c).startswith("refused:whole_species_guard")
+    perm = _perm(w)
+    pw = _relabel(w, perm)
+    pc = te.cut_template(pw, {perm[a] for a in window(w).atoms}, family="toy_cc",
+                         pathway=("toy",), direction="reverse")
+    assert pc.key == c.key and pc.meta == c.meta and pc.atoms == c.atoms
+    assert _anchors(pw, pc.witness_atoms) == _anchors(pw, [perm[a] for a in c.witness_atoms])
+    # the same window with an artificial head: both ports artificial
+    a = cut(homolysis(10, (4, 5)))
+    assert set(a.boundary_labels().values()) == {"artificial"}
+    assert te.template_refusal(a) is None
+
+
+def test_end_template_does_not_match_mid_chain():
+    """The window of the bond next to a physical methyl end holds the end
+    (closed CH3): on a long chain it fires only beside a terminus."""
+    w = homolysis(10, (1, 2), head="methyl")
+    c = cut(w)
+    end = c.witness_atoms.index(0)
+    assert c.atoms[end][6] == "closed" and c.meta[end][2] == ("head", "backbone_head", "physical")
+    rows, _parts = alkane(16, head="methyl", tail="methyl")
+    state = te.melt_state(rows)
+    result = wm.match([c.matcher(1.0)], state)
+    broken = sorted(tuple(sorted((e.a, e.b))) for tr in result.transitions for e in tr.edits
+                    if isinstance(e, wm.SetBond))
+    assert broken == [(1, 2), (13, 14)]
+
+
+def test_interior_template_does_not_match_at_a_physical_terminus():
+    c = cut(homolysis(12, (5, 6)))
+    rows, _parts = alkane(10, head="methyl", tail="methyl")
+    state = te.melt_state(rows)
+    result = wm.match([c.matcher(1.0)], state)
+    broken = sorted(tuple(sorted((e.a, e.b))) for tr in result.transitions for e in tr.edits
+                    if isinstance(e, wm.SetBond))
+    assert broken == [(3, 4), (4, 5), (5, 6)]   # never a bond within three of an end
+
+
+def test_disconnected_participant_window_is_refused_by_name():
+    w = homolysis(12, (5, 6))
+    atoms = set(window(w).atoms) | {0} | {h for h, _o in w.reactant_rows()[0][5]
+                                          if w.reactant_rows()[h][0] == "H"}
+    c = te.cut_template(w, atoms, family="toy_cc", pathway=("toy",), direction="reverse")
+    assert te.template_refusal(c).startswith("refused:path_predicate")
+
+
+# --------------------------------------------------------------------------
+# item 2: count and weight
+# --------------------------------------------------------------------------
+def test_whole_channel_weight_and_calibration():
+    """C10 bond 3-4: its mirror bond 5-6 gives the same species, so the channel
+    has two members, T_R = 2, w = k / 2, and the calibration identity holds
+    at 600/700/800 K."""
+    w = homolysis(10, (3, 4))
+    out = emit(w)
+    assert out["status"] == "emitted", out.get("refusal")
+    assert out["counts"]["record"]["matcher"] == out["counts"]["record"]["rmg"] == 2
+    k = out["rate"]["k"]
+    assert out["weight"]["w"] == pytest.approx([x / 2 for x in k], rel=1e-15)
+    assert [c["T"] for c in out["calibration"]] == [600.0, 700.0, 800.0]
+    assert all(c["ok"] and c["relative_error"] <= 1e-9 for c in out["calibration"])
+    t = base_template(out)
+    assert t["status"] == "emitted" and t["locality"]["accepted"]
+    assert t["counts"]["emitted"]["matcher"] == t["counts"]["emitted"]["rmg"] == 2
+
+
+def test_count_mismatch_is_refused_with_both_numbers():
+    w = homolysis(10, (3, 4))
+    out = emit(w, counter=ToyCounter(extra=1))
+    assert out["status"] == "refused"
+    assert out["refusal"]["status"] == "refused:count_mismatch"
+    assert (out["refusal"]["matcher"], out["refusal"]["rmg"]) == (2, 3)
+    assert "matcher 2" in out["refusal"]["reason"] and "rmg_moves 3" in out["refusal"]["reason"]
+
+
+def test_zero_transitions_is_a_compile_error():
+    """The interior template of C10 bond 3-4 under a record whose channel is
+    the methyl loss of C10: RMG has two members, the template none."""
+    w = homolysis(10, (3, 4))
+    record = toy_record(homolysis(10, (0, 1)), 2)
+    with pytest.raises(te.EmissionError, match="T_ch = 0"):
+        emit(w, record=record)
+    with pytest.raises(te.EmissionError, match="T_ch = 0"):
+        te.weight_table(GRID, K_RULE, 1.0, 0)
+    with pytest.raises(te.EmissionError, match="non-finite or non-positive"):
+        te.weight_table(GRID, [0.0] * len(GRID), 1.0, 1)
+
+
+# --------------------------------------------------------------------------
+# item 3: locality over extension vectors
+# --------------------------------------------------------------------------
+def _shift_at(vector, decades):
+    return lambda req: decades if tuple(req.vector) == vector and req.label != "context" else 0.0
+
+
+@pytest.mark.parametrize("vector,decades,accepted", [
+    ((0, 2), 0.02, False),     # only at tail +2
+    ((0, 1), 0.02, False),     # only at tail +1
+    ((0, 2), 0.005, True),
+    ((2, 0), 0.02, False),     # only at head +2
+])
+def test_locality_spread_per_port_step(vector, decades, accepted):
+    out = emit(homolysis(10, (3, 4)), shift=_shift_at(vector, decades))
+    t = base_template(out)
+    assert t["locality"]["accepted"] is accepted
+    if not accepted:
+        assert t["refusal"]["status"] == "refused:non_local_kinetics"
+        assert t["locality"]["max_spread_log10"] == pytest.approx(decades, rel=1e-9)
+    labels = [r["label"] for r in t["locality"]["rows"]]
+    for want in ("record", "context", "emitted", "port 0:head +1", "port 0:head +2",
+                 "port 0:tail +1", "port 0:tail +2", "joint +1", "joint +2"):
+        assert want in labels, (want, labels)
+
+
+def test_locality_needs_the_emitted_witness():
+    shift = lambda req: 0.02 if req.label == "emitted" else 0.0
+    t = base_template(emit(homolysis(10, (3, 4)), shift=shift))
+    assert t["refusal"]["status"] == "refused:non_local_kinetics"
+
+
+def test_locality_recounts_the_channel_on_every_witness():
+    """C8 central bond: one member; one carbon more makes its mirror bond a
+    second member of the same channel (k doubles with RMG's degeneracy).  The
+    weight is local only when T_ch is recounted on every witness."""
+    w = homolysis(8, (3, 4))
+    out = emit(w)
+    t = base_template(out)
+    assert t["status"] == "emitted", t.get("refusal")
+    rows = {r["label"]: r for r in t["locality"]["rows"]}
+    assert rows["emitted"]["counts"]["matcher"] == 1
+    assert rows["port 0:tail +1"]["counts"]["matcher"] == 2
+    assert rows["port 0:tail +1"]["counts"]["rmg"] == 2
+
+
+def test_locality_witnesses_are_distinct_marked_graphs():
+    w = homolysis(10, (3, 4))
+    ws = te.locality_witnesses(w)
+    labels = [x.label for x in ws]
+    assert labels[0] == "emitted"
+    assert "participant 0 +1" not in labels       # equal to the joint vector: folded
+    assert not b.marked_duplicates([(x.label, x.witness) for x in ws if x.status == "ok"])
+
+
+# --------------------------------------------------------------------------
+# upstream refusals, schema, determinism
+# --------------------------------------------------------------------------
+def test_template_reaching_the_padding_weighs_on_its_emitted_witness():
+    """A context whose window sits on the padded witness (C8 (2,3), both
+    artificial ends extended by one unit) with a port exterior on the
+    padding: the template cannot apply to the proxy record, so the record
+    and unextended-context rows are not applicable (never a zero count) and
+    the weight and calibration come from the emitted witness."""
+    w0 = homolysis(8, (2, 3))
+    n = len(list(b.vector_ports(w0)))
+    padded = b.evaluate_vector(w0, (1,) * n).witness
+    win_ = window(padded, 2)
+    case, row, _ctx = member(w0, 2)
+    ctx = win.ContextResult(tuple((p, None) for p in b.vector_ports(w0)), "fixed_point", "",
+                            padded, win_, None)
+    oracle = ToyCounter().channel(ToyFamily, te.molecules_of(dict(w0.reactant_rows())),
+                                  "reverse", None, ToyCounter().species_of_rows(w0.product_rows()))
+    record = toy_record(w0, oracle.transitions)
+    cut_ = te.cut_template(padded, win_.atoms, family="toy_cc", pathway=("toy",),
+                           direction="reverse")
+    assert te.reaches_beyond(cut_, padded, w0)
+    assert not te.reaches_beyond(cut(w0), w0, w0)
+    out = te.emit_record(record, family=ToyFamily, members=[(case, row, ((ctx,), ()))],
+                         counter=ToyCounter(), rates=stub_rates(ToyCounter()),
+                         check_upstream=False)
+    assert out["status"] == "emitted", out.get("refusal")
+    assert out["weight_source"] == "emitted_witness" and out["counts"]["record"] is None
+    t = base_template(out)
+    rows = {r["label"]: r for r in t["locality"]["rows"]}
+    assert rows["record"]["status"] == rows["context"]["status"] == "not_applicable"
+    assert t["weight_source"] == "emitted_witness"
+    assert t["weight"]["w"] == rows["emitted"]["w"]
+    assert [c["ok"] for c in t["calibration"]] == [True] * 3
+    te.validate_payload(out)
+
+
+def test_upstream_refused_records_stay_refused_with_their_status():
+    w = homolysis(10, (3, 4))
+    rec = toy_record(w, 2, status="refused")
+    out = emit(w, record=rec, check_upstream=True, record_certificate={"certified": True})
+    assert out["status"] == "refused" and out["templates"] == []
+    assert out["refusal"]["status"] == "refused:record_status"
+    rec = toy_record(w, 2)
+    out = emit(w, record=rec, check_upstream=True,
+               record_certificate={"certified": False, "gaps": ["binding: no member"]})
+    assert out["refusal"]["status"] == "refused:certificate" and out["templates"] == []
+    case, _row, ctx = member(w)
+    out = te.emit_record(rec, family=ToyFamily,
+                         members=[(case, {"status": "refused:reacting_port", "covered": True},
+                                   ctx)],
+                         counter=ToyCounter(), rates=stub_rates(ToyCounter()),
+                         check_upstream=False)
+    assert out["refusal"]["status"] == "refused:window" and out["templates"] == []
+    assert out["refusal"]["window_status"] == "refused:reacting_port"
+
+
+def _event_record(witness):
+    from rmgpy.kmc.event_record import EventRecord
+    rec = toy_record(witness, 2)
+    return EventRecord(family="toy_cc", template="toy", arity=1,
+                       participant_site_types=["ref0"], reactant_multiplicities=[1],
+                       k_table=rec["k_table"], reactant_graphs=rec["reactant_graphs"],
+                       product_graphs=rec["product_graphs"], rate_source=rec["rate_source"],
+                       orientation="reversed")
+
+
+def test_schema_round_trip_and_hashing():
+    from rmgpy.kmc.event_record import EventRecord
+    w = homolysis(10, (3, 4))
+    payload = emit(w)
+    te.validate_payload(payload)
+    old = _event_record(w)
+    old.validate()
+    assert "executable_template" not in old.to_dict()
+    assert old.to_dict()["schema_version"] == "rewrite_record/0.1"
+    new = te.attach(old, payload)
+    assert new.schema_version == "rewrite_record/0.2"
+    assert new.event_id == old.event_id          # the template is not part of the id
+    new.validate()
+    again = EventRecord.from_json(new.to_json())
+    again.validate()
+    assert again.executable_template == payload and again.event_id == old.event_id
+    assert EventRecord.from_json(old.to_json()).to_dict() == old.to_dict()
+    t = base_template(payload)
+    m = te.matcher_from_payload(dict(t, family="toy_cc"), 650.0)
+    assert isinstance(m, wm.Template) and m.weight > 0
+    lo, hi = t["weight"]["w"][GRID.index(625.0)], t["weight"]["w"][GRID.index(650.0)]
+    assert m.weight == pytest.approx(hi)
+    with pytest.raises(te.EmissionError, match="extrapolation"):
+        te.matcher_from_payload(t, 1200.0)
+    tampered = json.loads(json.dumps(payload))
+    base_template(tampered)["weight"]["w"][0] *= 2
+    with pytest.raises(te.EmissionError, match="sha256"):
+        te.validate_payload(tampered)
+    bad = json.loads(json.dumps(new.to_dict()))
+    bad["executable_template"] = tampered
+    with pytest.raises(ValueError, match="executable_template"):
+        EventRecord.from_dict(bad).validate()
+    lone = json.loads(json.dumps(old.to_dict()))
+    lone["schema_version"] = "rewrite_record/0.2"
+    with pytest.raises(ValueError, match="0.2"):
+        EventRecord.from_dict(lone).validate()
+
+
+_DETERMINISM = r"""
+import sys
+sys.path.insert(0, {here!r})
+import templateEmissionTest as t
+from rmgpy.kmc import template_emission as te
+payload = t.emit(t.homolysis(10, (3, 4)))
+print(te.canonical_json(payload))
+"""
+
+
+def test_determinism_across_processes_hash_seeds_and_permuted_atoms():
+    outs = []
+    for seed in ("0", "12345"):
+        env = dict(os.environ, PYTHONHASHSEED=seed)
+        res = subprocess.run([sys.executable, "-c", _DETERMINISM.format(here=str(HERE))],
+                             capture_output=True, text=True, env=env, timeout=300)
+        assert res.returncode == 0, res.stderr[-2000:]
+        outs.append(res.stdout.strip().splitlines()[-1])
+    assert outs[0] == outs[1]
+    w = homolysis(10, (3, 4))
+    one = emit(w)
+    perm = _perm(w, seed=3)
+    two = emit(_relabel(w, perm), record=toy_record(w, 2))
+    assert te.canonical_json(te._strip(one)) == te.canonical_json(te._strip(two))
+    assert one["sha256"] == two["sha256"]
+    m1, m2 = base_template(one)["maps"], base_template(two)["maps"]
+    pw = _relabel(w, perm)
+    assert _anchors(pw, m2["witness"]) == _anchors(pw, [perm[a] for a in m1["witness"]])
+
+
+# --------------------------------------------------------------------------
+# bimolecular counts (toy): matcher pair count = joint transition count
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize("n1,n2,head1", [(5, 5, None), (3, 6, "methyl")])
+def test_pair_count_equals_joint_transitions(n1, n2, head1):
+    """Identical radicals (five C5 primary radicals: 10 unordered pairs) and
+    unequal ones (a propyl radical whose methyl end is in its window, three
+    copies, against two hexyl radicals: 6 ordered pairs)."""
+    w = recombination(n1, n2, head1)
+    c = cut(w, direction="forward")
+    assert c.participants == 2
+    t = c.matcher(1.0, "rec")
+    assert t.role_swap is (head1 is None)
+    copies = [alkane(n1, head=head1, tail="primary_radical")[0] for _ in range(3)] + \
+        [alkane(n2, tail="primary_radical")[0] for _ in range(2)]
+    rows, offset = {}, 0
+    for r in copies:
+        shift = {a: a + offset for a in r}
+        rows.update({shift[a]: x[:5] + (tuple((shift[n], o) for n, o in x[5]),)
+                     for a, x in r.items()})
+        offset += 1000
+    state = te.melt_state(rows)
+    joint = wm.match([t], state)
+    quotient = wm.match([t], state, joint=False)
+    assert quotient.classes["rec"].pair_count == len(joint.transitions) > 0
+    expected = 10 if head1 is None else 3 * 2
+    assert len(joint.transitions) == expected
+
+
+# --------------------------------------------------------------------------
+# with the RMG database: forbidden moves excluded, the DP3 transfer produced,
+# real bimolecular pair counts
+# --------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def rmg():
+    import rmg_moves_harness as harness
+    if not harness.DATABASE.is_dir():
+        pytest.skip(f"needs the RMG database at {harness.DATABASE}")
+    import channelsTest as ct
+    from rmgpy.kmc import certificates as cm
+    fam = ct.database().kinetics.families
+    return fam, cm.Certifier(fam, max_channel_sets=16), te.RmgCounter(fam)
+
+
+def _real_cut(rmg, family, specs, direction, pick, contexts=False):
+    fam, certifier, _counter = rmg
+    cases = win.member_cases(certifier, fam[family], win.builds_of(specs), direction)
+    for case in cases:
+        if not pick(case) or case.support != "supported" or \
+                win.species_domain_refusal(case.witness):
+            continue
+        keep = []
+        row = win.run_member(certifier, fam[family], case, bound=win.span_bound(
+            win.family_constants(fam[family])), contexts=contexts, specs=specs, keep=keep)
+        if row["status"] != "fixed_point":
+            continue
+        fp = keep[0]
+        cut_ = te.cut_template(fp.witness, fp.window.atoms, family=family,
+                               pathway=case.pathway, direction=direction,
+                               labels=te.labels_of(case.moves[0]))
+        return case, fp, cut_
+    raise AssertionError(f"no supported fixed-point {family} member on {specs}")
+
+
+def _copies(rows, n, offset=0):
+    """``n`` copies of a component's rows, ids shifted by 10**7 per copy."""
+    out = {}
+    for c in range(n):
+        shift = offset + (c + 1) * 10 ** 7
+        out.update({a + shift: x[:5] + (tuple((m + shift, o) for m, o in x[5]),)
+                    for a, x in rows.items()})
+    return out
+
+
+@pytest.fixture(scope="module")
+def dp3(rmg):
+    """The DP3 benzylic radical chain + DP3 pair: the synthetic
+    unchanged_species transfer member and one kept member, each cut from its
+    fixed-point window (whose padding the templates may need)."""
+    S = b.PsChainSpec
+    specs = [S(3, radical_units=(1,)), S(3)]
+    transfer = _real_cut(rmg, "H_Abstraction", specs, "forward",
+                         lambda x: x.kind == "synthetic:unchanged_species")
+    # a kept member on a CH2 donor (the methine donor at the radical's own
+    # position is the transfer again on the symmetric padded pair; the
+    # benzylic CH2 members are refused upstream at a reacting port)
+    kept = _real_cut(rmg, "H_Abstraction", specs, "forward",
+                     lambda x: x.kind == "kept" and x.pathway[0] == "C/H2/NonDeC")
+    return transfer, kept
+
+
+def test_dp3_transfer_is_produced_and_required(rmg, dp3):
+    """H abstraction between a DP3 benzylic radical chain and DP3: the
+    synthetic unchanged_species transfer's template produces the transfer on
+    its witness pair (required, matcher-only by policy); without it the
+    required move is reported missing.  The window reaches the padding, so
+    the template cannot apply to the bare DP3 proxies."""
+    _fam, _certifier, counter = rmg
+    (case, fp, c), _kept = dp3
+    assert te.reaches_beyond(c, fp.witness, case.witness)
+    t = c.matcher(1.0, "transfer")
+    mols = te.molecules_of(te.template_sides(fp.witness)[0])
+    table = te.classify_reference([t], mols, family="H_Abstraction", directions=("forward",),
+                                  counter=counter,
+                                  owners=lambda mv: ("refused:outside_this_test", "one template"))
+    assert table["rmg_unchanged_species"] >= 1 and table["unchanged_produced"] >= 1
+    assert not [f for f in table["failures"] if "forbidden" in f or "unchanged" in f], \
+        table["failures"]
+    empty = te.classify_reference([], mols, family="H_Abstraction", directions=("forward",),
+                                  counter=counter,
+                                  owners=lambda mv: ("emitted", "its record emitted"))
+    assert any("required unchanged_species" in f for f in empty["failures"])
+
+
+def test_forbidden_outcomes_are_never_produced(rmg, dp3):
+    """The kept and transfer templates on the kept member's padded pair plus a
+    second copy of its radical chain: RMG files the beta-H abstractions
+    between the two radicals forbidden (disprop1_base_case); the templates
+    match kept moves and never produce a forbidden-only outcome."""
+    _fam, _certifier, counter = rmg
+    (_c1, _fp1, transfer), (_c2, fp, kept) = dp3
+    r = te.template_sides(fp.witness)[0]
+    parts = rm.split_rows(dict(r))
+    radical = next(x for x in parts if any(row[3] for row in x.values()))
+    rows = dict(r)
+    rows.update(_copies(radical, 1))
+    mols = te.molecules_of(rows)
+    assert len(mols) == 3
+    templates = [kept.matcher(1.0, "kept"), transfer.matcher(1.0, "transfer")]
+    table = te.classify_reference(templates, mols, family="H_Abstraction",
+                                  directions=("forward",), counter=counter,
+                                  owners=lambda mv: ("refused:outside_this_test", ""))
+    assert table["rmg_forbidden"] >= 1 and table["matched"] >= 1
+    assert not [f for f in table["failures"] if "forbidden" in f], table["failures"]
+
+
+@pytest.mark.parametrize("second", ["identical", "unequal"])
+def test_real_recombination_pair_count_equals_joint_transitions(rmg, second):
+    """A real recombination template, cut from its padded fixed-point window,
+    on copies of its witness's reactant species: the quotient pair count
+    equals the joint transition count (3 identical copies: 3 unordered pairs;
+    2 + 2 unequal: 4 ordered pairs), the role swap set by the matcher."""
+    S = b.PsChainSpec
+    first = S(1, tail_end="benzylic_radical")
+    other = first if second == "identical" else S(2, head_end="primary_radical")
+    case, fp, c = _real_cut(rmg, "R_Recombination", [first, other], "forward", lambda x: True)
+    t = c.matcher(1.0, "rec")
+    assert t.role_swap is (second == "identical")
+    parts = rm.split_rows(dict(te.template_sides(fp.witness)[0]))
+    assert len(parts) == 2
+    if second == "identical":
+        assert rmg[2].species_of_rows(parts[0]) == rmg[2].species_of_rows(parts[1])
+        rows = _copies(parts[0], 3)
+    else:
+        rows = _copies(parts[0], 2)
+        rows.update(_copies(parts[1], 2, offset=5 * 10 ** 6))
+    state = te.melt_state(rows)
+    joint = wm.match([t], state)
+    quotient = wm.match([t], state, joint=False)
+    assert quotient.classes["rec"].pair_count == len(joint.transitions) > 0
+    assert len(joint.transitions) == (3 if second == "identical" else 4)
+
+
+# --------------------------------------------------------------------------
+# slow: the acceptance on the reference compiles
+# --------------------------------------------------------------------------
+@pytest.mark.slow
+@pytest.mark.skipif(not SLOW, reason="set RMG_KMC_SLOW=1")
+def test_reference_acceptance():
+    out = Path(os.environ.get("RMG_KMC_I138_OUT", "/tmp/i138_acceptance"))
+    res = subprocess.run([sys.executable, str(HERE / "template_emission_acceptance.py"),
+                          str(out), "c16", "--sample", "1"], capture_output=True, text=True)
+    assert res.returncode == 0, res.stdout[-3000:] + res.stderr[-3000:]

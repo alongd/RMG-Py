@@ -67,6 +67,13 @@ class EventRecord:
     # graphs, template and rate source), not event semantics, so attaching or
     # refreshing it never renames an event or its reverse link.
     rate_certificate: Optional[dict[str, Any]] = None
+    # Optional executable local window templates (rmgpy.kmc.template_emission,
+    # I-138): present only on ``rewrite_record/0.2`` records and absent (not
+    # serialized) otherwise.  Hashing rule: NOT part of the event id, like the
+    # rate certificate; the payload carries its own sha256, and the event id of
+    # a 0.2 record is the id of the same record as 0.1 without the template, so
+    # attaching templates never renames an event or its reverse link.
+    executable_template: Optional[dict[str, Any]] = None
 
     # Strand-specific placeholders (null until compiler defines them)
     cut_offset: Optional[int] = None
@@ -90,7 +97,7 @@ class EventRecord:
             item.name: _canonical_link_handles(getattr(self, item.name), item.name)
             for item in fields(self)
             if item.name not in {"event_id", "canonical_index", "_KNOWN_FIELDS",
-                                 "rate_certificate"}
+                                 "rate_certificate", "executable_template"}
             and not (
                 item.name
                 in {
@@ -101,6 +108,8 @@ class EventRecord:
                 and not getattr(self, item.name)
             )
         }
+        if payload.get("schema_version") == EXECUTABLE_SCHEMA_VERSION:
+            payload["schema_version"] = LEGACY_SCHEMA_VERSION
         canonical = json.dumps(
             payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
         ).encode("utf-8")
@@ -118,6 +127,8 @@ class EventRecord:
                 d.pop(field_name)
         if d.get("rate_certificate") is None:
             d.pop("rate_certificate", None)
+        if d.get("executable_template") is None:
+            d.pop("executable_template", None)
         return d
 
     def to_json(self, indent: int = 2) -> str:
@@ -126,7 +137,7 @@ class EventRecord:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EventRecord:
         version = data.get("schema_version")
-        if version != "rewrite_record/0.1":
+        if version not in (LEGACY_SCHEMA_VERSION, EXECUTABLE_SCHEMA_VERSION):
             raise ValueError(f"Unknown schema version: {version!r}")
 
         unknown = set(data.keys()) - _KNOWN_FIELDS_CLASS
@@ -186,6 +197,18 @@ class EventRecord:
             _validate_padding_distance(self)
         if self.rate_certificate is not None:
             _validate_certificate_reference(self.rate_certificate)
+        if self.executable_template is not None or \
+                self.schema_version == EXECUTABLE_SCHEMA_VERSION:
+            if self.schema_version != EXECUTABLE_SCHEMA_VERSION:
+                raise ValueError("an executable_template needs schema rewrite_record/0.2")
+            if self.executable_template is None:
+                raise ValueError("a rewrite_record/0.2 record needs its executable_template")
+            from rmgpy.kmc.template_emission import EmissionError, validate_payload
+
+            try:
+                validate_payload(self.executable_template)
+            except EmissionError as error:
+                raise ValueError(f"executable_template: {error}") from None
         if self.status != "enabled" and not self.status_reason:
             raise ValueError("non-enabled records require a status reason")
         if not _is_full_event_id(self.event_id):
@@ -198,6 +221,8 @@ class EventRecord:
 
 
 CERTIFICATE_REFERENCE_SCHEMA = "kmc-rate-certificate-ref/2"
+LEGACY_SCHEMA_VERSION = "rewrite_record/0.1"
+EXECUTABLE_SCHEMA_VERSION = "rewrite_record/0.2"
 
 
 def _validate_certificate_reference(reference: Any) -> None:
@@ -486,4 +511,5 @@ _LEGACY_REQUIRED_FIELDS = _KNOWN_FIELDS_CLASS - {
     "rate_witness_product_graphs",
     "proxy_padding",
     "rate_certificate",
+    "executable_template",
 }
