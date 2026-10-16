@@ -2445,6 +2445,26 @@ def _copy_participant(item):
     return item.copy(deep=True) if hasattr(item, "copy") else item
 
 
+def _without_reaction_labels(reaction):
+    """Clear RMG's reaction labels from every form of every participant.
+
+    RMG labels the atoms a family template matched (``*``, ``*1``...) while it
+    generates, and which participants and resonance forms of a returned
+    reaction still carry them is generation state, not chemistry: two
+    identical runs return the same reactions with different subsets labelled.
+    A label picks a participant's canonical atom order, the resonance form the
+    compiler keeps, and the text of its graph, so a surviving label reaches
+    the artifact.  The compiler never reads a generated reaction's labels (its
+    own label-dependent steps relabel stored forms themselves), so the
+    generator's output is cleared once, at the boundary.
+    """
+    for participant in list(reaction.reactants) + list(reaction.products):
+        for molecule in getattr(participant, "molecule", None) or [participant]:
+            if hasattr(molecule, "clear_labeled_atoms"):
+                molecule.clear_labeled_atoms()
+    return reaction
+
+
 def _is_resonance_derived(reaction) -> bool:
     """RMG exposes resonance products as multi-structure Species objects."""
     return any(
@@ -4483,10 +4503,13 @@ class EventSetCompiler:
         self._compiled_artifact: dict[str, Any] | None = None
 
     def _generate(self, proxy: SiteProxy):
-        """Use RMG's public merged-path pipeline (the C2 degeneracy oracle)."""
+        """Use RMG's public merged-path pipeline (the C2 degeneracy oracle).
+
+        Every reaction leaves here without RMG's reaction labels.
+        """
         if proxy.site_type in self.reaction_cache:
             return (
-                reaction
+                _without_reaction_labels(reaction)
                 for reaction in self.reaction_cache[proxy.site_type]
                 if reaction.family in self.families
             )
@@ -4501,7 +4524,7 @@ class EventSetCompiler:
                     resonance=True,
                 )
             )
-        return reactions
+        return [_without_reaction_labels(reaction) for reaction in reactions]
 
     def _rate_table(self, reaction) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         source_reaction = getattr(reaction, "source_reaction", reaction)

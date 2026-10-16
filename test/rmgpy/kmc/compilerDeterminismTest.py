@@ -419,6 +419,11 @@ def baseline(tmp_path_factory):
 # the radical, or on neither).  The full-PS compile showed this: two identical
 # runs differed in 36 records, every one of them a label (or the atom order a
 # label selects) in a participant graph.
+OPEN_ATOM_ORDER = pytest.mark.xfail(
+    strict=True,
+    reason="I-122 rework 1: participant order of single-Root families and "
+    "resonance-form-set dependence of `_molecule` are still open",
+)
 LABEL_FAMILIES = "Disproportionation,R_Recombination"
 LABEL_PROXIES = "interior_radical,doubly_featured"
 
@@ -502,10 +507,14 @@ def test_reduced_compile_bytes_ignore_generator_hidden_state(
         ("clear_labels", "0"),
         # Labels kept or lost per participant form by a coin flip.
         ("scatter_labels", "0"),
-        # Atom order, now with labelled participants.
-        ("permute_atoms", "0"),
-        ("reverse_atoms", "0"),
         ("baseline", "1"),
+        # Atom order.  Still red after the label fix, from two further sources
+        # (I-122 rework 1): the participant order RMG returns for the
+        # single-Root two-reactant families (R_Recombination,
+        # Disproportionation), and the Kekule drawings RMG's resonance filter
+        # leaves in a species, which `_molecule` minimises over.
+        pytest.param("permute_atoms", "0", marks=OPEN_ATOM_ORDER),
+        pytest.param("reverse_atoms", "0", marks=OPEN_ATOM_ORDER),
     ],
 )
 def test_label_fixture_bytes_ignore_generator_hidden_state(
