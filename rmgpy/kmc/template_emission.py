@@ -596,7 +596,26 @@ class RmgCounter:
         return self._product_species[sig]
 
     def channel(self, family, molecules, direction, pathway, product_species) -> RmgChannel:
-        raise NotImplementedError("I-138 red: RmgCounter.channel")
+        keys, orders, statuses = {}, defaultdict(set), Counter()
+        directed = 0
+        for m in self.moves(family, molecules, direction):
+            statuses[m.status] += 1
+            if m.status not in ("kept", "unchanged_species") or m.products is None:
+                continue
+            if m.template is None:
+                continue
+            if pathway is not None and tuple(m.template) != tuple(pathway):
+                continue
+            if self.species_of_rows(m.product_rows()) != tuple(product_species):
+                continue
+            directed += 1
+            k = rm.product_key(m)
+            keys[k] = True
+            orders[k].add(m.order)
+        ordered = tuple(sorted(keys))
+        return RmgChannel(ordered, directed,
+                          tuple(tuple(sorted(orders[k])) for k in ordered),
+                          tuple(sorted(statuses.items())))
 
 
 @dataclass(frozen=True)
@@ -633,7 +652,24 @@ def count_on(templates: Sequence[wm.Template], reactant_rows, product_rows, *, f
     witness (template-direction rows; components separate).  ``target``: the
     product rows are the witness's own mapped product (its key must be one of
     the transitions)."""
-    raise NotImplementedError("I-138 red: count_on")
+    species = product_species if product_species is not None else \
+        counter.species_of_rows(product_rows)
+    channel = counter.channel(family, molecules_of(reactant_rows), direction, pathway, species)
+    state = melt_state(reactant_rows)
+    result = wm.match(list(templates), state)
+    keyset = set(channel.keys)
+    inside, foreign = [], 0
+    for tr in result.transitions:
+        key = rm.product_key(wm.product_rows(state, tr))
+        if key in keyset:
+            inside.append((tr, key))
+        else:
+            foreign += 1
+    found = True
+    if target:
+        found = rm.product_key(dict(product_rows)) in {k for _t, k in inside}
+    return (Count(len(inside), channel.transitions, channel.directed, found, foreign),
+            inside, channel)
 
 
 # ---------------------------------------------------------------------------
@@ -649,13 +685,33 @@ def rate_kind(rate_source: dict) -> str:
 def weight_table(temperatures, k, ssa_multiplier, transitions) -> list:
     """``w = ssa * k / T_ch`` per grid temperature (``EmissionError`` on
     ``T_ch = 0`` or a non-finite or non-positive weight)."""
-    raise NotImplementedError("I-138 red: weight_table")
+    if not transitions or transitions <= 0:
+        raise EmissionError("T_ch = 0: the template makes no transition of its channel")
+    out = []
+    for t, value in zip(temperatures, k):
+        w = float(ssa_multiplier) * float(value) / int(transitions)
+        if not math.isfinite(w) or w <= 0:
+            raise EmissionError(f"non-finite or non-positive weight {w!r} at {t} K")
+        out.append(w)
+    return out
 
 
 def calibration(temperatures, k, ssa_multiplier, weights, transitions) -> list:
     """The identity ``sum(w over T_ch transitions) = ssa * k`` at the
     calibration temperatures (rows: T, sum, ssa*k, relative error, ok)."""
-    raise NotImplementedError("I-138 red: calibration")
+    rows = []
+    at = {float(t): i for i, t in enumerate(temperatures)}
+    for t in CALIBRATION_TEMPERATURES:
+        i = at.get(float(t))
+        if i is None:
+            rows.append({"T": t, "ok": False, "reason": "not a grid temperature"})
+            continue
+        total = math.fsum([weights[i]] * int(transitions))
+        want = float(ssa_multiplier) * float(k[i])
+        err = abs(total - want) / want
+        rows.append({"T": t, "sum_w": total, "ssa_k": want, "relative_error": err,
+                     "ok": err <= CALIBRATION_RTOL})
+    return rows
 
 
 @dataclass(frozen=True)
@@ -815,7 +871,22 @@ def locality_plan(witness) -> list:
     """(label, vector) of the extension vectors: every artificial port alone at
     each step of ``EXTENSION_STEPS``, all ports jointly, the ports of each
     participant; the zero vector (the emitted witness) first."""
-    raise NotImplementedError("I-138 red: locality_plan")
+    ports = list(b.vector_ports(witness))
+    n = len(ports)
+    plan = [("emitted", (0,) * n)]
+    for k, p in enumerate(ports):
+        for s in EXTENSION_STEPS:
+            v = [0] * n
+            v[k] = s
+            plan.append((f"port {p[0]}:{p[1]} +{s}", tuple(v)))
+    if n:
+        for s in EXTENSION_STEPS:
+            plan.append((f"joint +{s}", (s,) * n))
+    for q in sorted({p[0] for p in ports}):
+        for s in EXTENSION_STEPS:
+            plan.append((f"participant {q} +{s}",
+                         tuple(s if p[0] == q else 0 for p in ports)))
+    return plan
 
 
 def locality_witnesses(witness, providers=None, *, ceiling=None, plan=None) -> list:
@@ -823,12 +894,31 @@ def locality_witnesses(witness, providers=None, *, ceiling=None, plan=None) -> l
     ``boundaries.evaluate_vector``), equal vectors folded, the ok ones
     deduplicated as marked graphs (``boundaries.marked_duplicates``) with
     the kept ones asserted distinct."""
-    raise NotImplementedError("I-138 red: locality_witnesses")
+    out, seen = [], {}
+    for label, vector in (plan if plan is not None else locality_plan(witness)):
+        if vector in seen:
+            continue
+        seen[vector] = label
+        if not any(vector):
+            out.append(LocalityWitness(label, vector, "ok", "", witness))
+            continue
+        res = b.evaluate_vector(witness, vector, providers, ceiling=ceiling)
+        out.append(LocalityWitness(label, vector, res.status, res.reason, res.witness))
+    ok = [(x.label, x.witness) for x in out if x.status == "ok"]
+    dropped = {second for _first, second in b.marked_duplicates(ok)}
+    kept = [x for x in out if x.label not in dropped]
+    if b.marked_duplicates([(x.label, x.witness) for x in kept if x.status == "ok"]):
+        raise EmissionError("locality witnesses are not distinct after deduplication")
+    return kept
 
 
 def spread(rows, temperatures) -> tuple:
     """(per-temperature max - min of log10 w over the rows, max)."""
-    raise NotImplementedError("I-138 red: spread")
+    per = []
+    for i, _t in enumerate(temperatures):
+        values = [math.log10(r["w"][i]) for r in rows]
+        per.append(max(values) - min(values) if values else float("inf"))
+    return per, (max(per) if per else float("inf"))
 
 
 # ---------------------------------------------------------------------------
@@ -912,7 +1002,16 @@ def reaches_beyond(cut, witness, unextended) -> bool:
     ``witness``) reach atoms the ``unextended`` witness lacks: the padding
     added at its artificial ends.  Such a template cannot apply to the
     unextended witness (nor to the record's proxy graph)."""
-    raise NotImplementedError("I-138 red: reaches_beyond")
+    if unextended is None or cut is None:
+        return False
+    r, p = dict(witness.reactant_rows()), dict(witness.product_rows())
+    reach = set(cut.witness_atoms)
+    for a in cut.ports:
+        aid = cut.witness_atoms[a]
+        reach.update(n for n, _o in r.get(aid, (None,) * 6)[5])
+        reach.update(n for n, _o in p.get(aid, (None,) * 6)[5])
+    have = set(dict(unextended.reactant_rows())) | set(dict(unextended.product_rows()))
+    return not reach <= have
 
 
 def dedupe(cands) -> list:
@@ -1003,7 +1102,120 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
     record's channel members on provider witnesses.  Upstream refusals
     (record status, certificate, window status) are carried through as
     refused; emission refusals are named per template."""
-    raise NotImplementedError("I-138 red: emit_record")
+    record = _as_dict(record)
+    fam = counter.family(family)
+    direction = record_direction(record, fam)
+    if owner_rate_source is None and by_id is not None and \
+            (record.get("rate_source") or {}).get("kind") == "reference-thermo reverse":
+        owner_rate_source = (by_id.get(record.get("reverse_of")) or {}).get("rate_source")
+    pathway = tuple(record["template"].split(";")) if record.get("template") else ()
+    rate = rate_of(record)
+    head = {"schema": SCHEMA, "family": fam.label, "direction": direction,
+            "pathway": list(pathway), "record_event_id": record.get("event_id"),
+            "orientation": record.get("orientation"), "rate": rate,
+            "certificate": (record.get("rate_certificate") or {}).get("sha256"),
+            "namespaces": NAMESPACES, "slot_order_rule": SLOT_ORDER_RULE,
+            "tolerance_log10": LOCALITY_TOLERANCE_LOG10}
+    if check_upstream:
+        why = upstream_refusal(record, record_certificate, by_id)
+        if why:
+            return finish({**head, "status": "refused",
+                           "refusal": {"by": "upstream", "status": status_of(why),
+                                       "reason": why},
+                           "templates": [], "contexts": []})
+    if not members:
+        return finish({**head, "status": "refused",
+                       "refusal": {"by": "upstream", "status": "refused:unmapped",
+                                   "reason": "no provider member carries the record's channel"},
+                       "templates": [], "contexts": []})
+    for case, row, _ctx in members:
+        if row.get("status") != "fixed_point":
+            return finish({**head, "status": "refused",
+                           "refusal": {"by": "upstream", "status": f"refused:window",
+                                       "reason": f"member {case.label[-80:]}: {row.get('status')}"
+                                                 f" {str(row.get('reason', ''))[:160]}",
+                                       "window_status": row.get("status"),
+                                       "covered": row.get("covered")},
+                           "templates": [], "contexts": []})
+    rec_r = record_graph_rows(record, "reactant_graphs")
+    rec_species = counter.species_of_rows(record_graph_rows(record, "product_graphs"))
+    reverse = None
+    cands, ctx_rows = [], []
+    for case, row, (results, merges) in members:
+        case_species = counter.species_of_rows(dict(case.witness.reactant_rows()))
+        rec_reac = counter.species_of_rows(rec_r)
+        rev = case_species != rec_reac
+        if rev and counter.species_of_rows(dict(case.witness.product_rows())) != rec_reac:
+            return finish({**head, "status": "refused",
+                           "refusal": {"by": "emission", "status": "refused:orientation",
+                                       "reason": "the member's witness carries neither the "
+                                                 "record's reactant nor its product species"},
+                           "templates": [], "contexts": []})
+        reverse = rev
+        c, rows = context_candidates(case, results, merges, family=fam.label, pathway=pathway,
+                                     direction=direction, reverse=rev, providers=providers)
+        cands.extend(c)
+        ctx_rows.extend(dict(r, member=case.label[-120:]) for r in rows)
+    cands = dedupe(cands)
+    cpath = count_pathway(fam, pathway, reverse)
+    # item 2 on the record's own witness: the base templates jointly
+    base = [c for c in cands if c.base and c.refusal is None and c.cut is not None]
+    if not base:
+        return finish({**head, "status": "refused",
+                       "refusal": {"by": "emission", "status": "refused:no_base_template",
+                                   "reason": "; ".join(sorted({c.refusal or "" for c in cands
+                                                               if c.base}))[:300]},
+                       "templates": [], "contexts": ctx_rows})
+    # the record's own witness is a proxy: a base template whose window or
+    # port exteriors reach into the padding beyond the proxy's artificial
+    # ends cannot apply to it (the record row is then not applicable and
+    # each template's weight comes from its emitted witness)
+    beyond = [c for c in base if reaches_beyond(c.cut, c.witness, c.unextended)]
+    record_count, weights, cal, record_map = None, None, None, {}
+    if not beyond:
+        probes = [c.cut.matcher(1.0, f"probe{k}") for k, c in enumerate(base)]
+        count, inside, _ch = count_on(probes, rec_r, None, family=fam, direction=direction,
+                                      pathway=cpath, counter=counter,
+                                      product_species=rec_species, target=False)
+        record_count = count.as_dict()
+        if count.matcher == 0:
+            raise EmissionError(f"T_ch = 0 on the record's own witness: the base template(s) "
+                                f"make no transition of the record's channel (rmg_moves: "
+                                f"{count.rmg})")
+        if not count.equal:
+            return finish({**head, "status": "refused",
+                           "refusal": {"by": "emission", "status": "refused:count_mismatch",
+                                       "reason": f"record witness: matcher {count.matcher} vs "
+                                                 f"rmg_moves {count.rmg} transitions",
+                                       "matcher": count.matcher, "rmg": count.rmg},
+                           "counts": {"record": record_count}, "templates": [],
+                           "contexts": ctx_rows})
+        weights = weight_table(rate["T"], rate["k"], rate["ssa_multiplier"], count.matcher)
+        cal = calibration(rate["T"], rate["k"], rate["ssa_multiplier"], weights,
+                          count.matcher)
+        for tr, _key in inside:
+            record_map.setdefault(tr.template, [list(tr.mapping)])
+    templates = []
+    for k, cand in enumerate(cands):
+        templates.append(emit_candidate(
+            cand, record=record, family=fam, direction=direction, pathway=pathway,
+            cpath=cpath, reverse=reverse, counter=counter, rates=rates, weights=weights,
+            temperatures=rate["T"], providers=providers, ceiling=ceiling,
+            owner_rate_source=owner_rate_source, record_map=next((record_map.get(f"probe{i}") for i, c in enumerate(base)
+                             if c is cand), None)))
+    emitted = [t for t in templates if t["status"] == "emitted"]
+    base_ok = any(t["status"] == "emitted" and t["base"] for t in templates)
+    status = "emitted" if base_ok and len(emitted) == len(templates) else \
+        "partial" if base_ok else "refused"
+    out = {**head, "status": status, "refusal": None if base_ok else
+           {"by": "emission", "status": "refused:base_template",
+            "reason": "; ".join(t["refusal"]["status"] for t in templates
+                                if t["base"] and t["refusal"])[:300]},
+           "counts": {"record": record_count},
+           "weight_source": "record" if weights is not None else "emitted_witness",
+           "weight": {"T": rate["T"], "w": weights} if weights is not None else None,
+           "calibration": cal, "templates": templates, "contexts": ctx_rows}
+    return finish(out)
 
 
 def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, counter,
@@ -1011,14 +1223,135 @@ def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, 
                    record_map=None, owner_rate_source=None) -> dict:
     """Count (item 2, on the context's own witness), locality (item 3) and
     the payload of one candidate."""
-    raise NotImplementedError("I-138 red: emit_candidate")
+    entry = {"member": cand.member[-120:], "context_index": cand.context_index,
+             "context": [[p[0], p[1], e] for p, e in cand.assignment if e],
+             "base": cand.base, "sources": [[m[-120:], i] for m, i in cand.sources],
+             "certificate": cand.certificate}
+    if cand.cut is None or cand.refusal:
+        entry.update(status="refused", refusal={"status": status_of(cand.refusal),
+                                                "reason": cand.refusal})
+        return entry
+    cut = cand.cut
+    entry.update(template_payload(cut, cand.witness, cand.window_atoms))
+    if record_map:
+        entry["maps"]["record"] = record_map
+    template = cut.matcher(1.0, "t")
+    rows = []
+    ok = True
+    reasons = []
+    wset = locality_witnesses(cand.witness, providers, ceiling=ceiling)
+    beyond = reaches_beyond(cut, cand.witness, cand.unextended)
+    jobs = [("context", (), cand.unextended)] + [(x.label, x.vector, x) for x in wset]
+    for label, vector, item in jobs:
+        if label == "context" and beyond:
+            rows.append({"label": label, "vector": [], "status": "not_applicable",
+                         "reason": "the window or a port exterior reaches the padding beyond "
+                                   "the unextended witness's artificial ends"})
+            continue
+        if isinstance(item, LocalityWitness):
+            if item.status != "ok":
+                rows.append({"label": label, "vector": list(vector), "status": item.status,
+                             "reason": item.reason[:200]})
+                ok = False
+                reasons.append(f"{label}: {item.status}")
+                continue
+            witness = item.witness
+        else:
+            witness = item
+        row = witness_row(template, witness, label=label, vector=vector, family=family,
+                          direction=direction, pathway=cpath, reverse=reverse, counter=counter,
+                          rates=rates, record=record, owner_rate_source=owner_rate_source)
+        rows.append(row)
+        if row["status"] != "ok":
+            ok = False
+            reasons.append(f"{label}: {row['status']}: {row.get('reason', '')[:120]}")
+    emitted_row = next((r for r in rows if r["label"] == "emitted"), None)
+    if weights is not None:
+        record_row = {"label": "record", "vector": [], "status": "ok", "w": list(weights),
+                      "source": "record k_table / T_R"}
+        weight_source, cal = "record", None
+    else:
+        record_row = {"label": "record", "vector": [], "status": "not_applicable",
+                      "reason": "a base template reaches beyond the record's proxy graph"}
+        weight_source, cal = "emitted_witness", None
+        if emitted_row is not None and emitted_row["status"] == "ok":
+            weights = list(emitted_row["w"])
+            temperatures = list(emitted_row["T"])
+            cal = calibration(temperatures, emitted_row["k"], emitted_row["ssa"], weights,
+                              emitted_row["counts"]["matcher"])
+    good = [r for r in rows if r["status"] == "ok"] + \
+        ([record_row] if record_row["status"] == "ok" else [])
+    per, worst = spread(good, temperatures)
+    entry["counts"] = {"context": next((r.get("counts") for r in rows
+                                        if r["label"] == "context"), None),
+                       "emitted": next((r.get("counts") for r in rows
+                                        if r["label"] == "emitted"), None)}
+    entry["weight_source"] = weight_source
+    entry["weight"] = {"T": list(temperatures), "w": list(weights)} if weights else None
+    if cal is not None:
+        entry["calibration"] = cal
+    entry["locality"] = {"rows": [record_row] + rows, "spread_log10": per,
+                         "max_spread_log10": worst, "tolerance_log10": LOCALITY_TOLERANCE_LOG10,
+                         "accepted": ok and worst <= LOCALITY_TOLERANCE_LOG10}
+    if not ok:
+        mismatch = [r for r in rows if r["status"] == "refused:count_mismatch"]
+        if mismatch:
+            r0 = mismatch[0]
+            entry.update(status="refused", refusal={
+                "status": "refused:count_mismatch",
+                "reason": f"{r0['label']}: matcher {r0['counts']['matcher']} vs rmg_moves "
+                          f"{r0['counts']['rmg']}", "matcher": r0["counts"]["matcher"],
+                "rmg": r0["counts"]["rmg"]})
+        else:
+            entry.update(status="refused", refusal={"status": "refused:locality_witness",
+                                                    "reason": "; ".join(reasons)[:400]})
+    elif worst > LOCALITY_TOLERANCE_LOG10:
+        entry.update(status="refused", refusal={
+            "status": "refused:non_local_kinetics",
+            "reason": f"log10 w spread {worst:.4g} > {LOCALITY_TOLERANCE_LOG10}"})
+    else:
+        entry.update(status="emitted", refusal=None)
+    return entry
 
 
 def witness_row(template, witness, *, label, vector, family, direction, pathway, reverse,
                 counter, rates, record, owner_rate_source=None) -> dict:
     """One locality row: counts by both counters on the witness's own target,
     production k, ``w``."""
-    raise NotImplementedError("I-138 red: witness_row")
+    r, p = template_sides(witness, reverse)
+    try:
+        count, _inside, _ch = count_on([template], r, p, family=family, direction=direction,
+                                       pathway=pathway, counter=counter)
+    except wm.WindowMatcherError as error:
+        return {"label": label, "vector": list(vector), "status": "refused:matcher",
+                "reason": str(error)[:200]}
+    row = {"label": label, "vector": list(vector), "counts": count.as_dict(),
+           "heavy_atoms": witness.heavy_count()}
+    if count.matcher == 0:
+        raise EmissionError(f"T_ch = 0 on witness {label!r}: the template makes no transition "
+                            f"of the witness's own channel (rmg_moves: {count.rmg})")
+    if not count.equal:
+        row.update(status="refused:count_mismatch",
+                   reason=f"matcher {count.matcher} vs rmg_moves {count.rmg}")
+        return row
+    if not count.target_found:
+        row.update(status="refused:target", reason="the witness's own mapped product is not "
+                                                   "among the template's transitions")
+        return row
+    rs = (record or {}).get("rate_source")
+    result = rates(RateRequest(family.label if hasattr(family, "label") else family,
+                               (record or {}).get("template", ""),
+                               (record or {}).get("orientation", "as_generated"),
+                               dict(witness.reactant_rows()), dict(witness.product_rows()),
+                               witness, label, tuple(vector), rs, owner_rate_source))
+    if result.problems:
+        row.update(status="refused:rebind", reason="; ".join(result.problems)[:300])
+        return row
+    w = weight_table(result.temperatures, result.k, result.ssa_multiplier, count.matcher)
+    row.update(status="ok", T=list(result.temperatures), k=list(result.k),
+               ssa=result.ssa_multiplier, w=w,
+               provenance=result.provenance)
+    return row
 
 
 # ---------------------------------------------------------------------------
@@ -1163,14 +1496,67 @@ def ladder_member(case, row, *, family, counter, rates, orientation, ssa=None,
     """A ladder member's whole-species template (no locality test): the rate
     through the production path on the member's own species, ``T_ch`` by both
     counters on it."""
-    raise NotImplementedError("I-138 red: ladder_member")
+    fam = counter.family(family)
+    entry = {"member": case.label[-120:], "direction": case.direction,
+             "pathway": list(case.pathway), "kind": case.kind}
+    if row.get("status") != "fixed_point":
+        entry.update(status="refused", refusal={"by": "upstream",
+                                                "status": f"refused:window",
+                                                "window_status": row.get("status"),
+                                                "reason": str(row.get("reason", ""))[:200]})
+        return entry
+    labels = labels_of(case.moves[0])
+    cut = whole_species_cut(case.witness, family=fam.label, pathway=case.pathway,
+                            direction=case.direction, labels=labels)
+    entry.update(template_payload(cut, case.witness, set(case.witness.reactant_rows())))
+    template = cut.matcher(1.0, "t")
+    r, p = template_sides(case.witness)
+    count, _inside, _ch = count_on([template], r, p, family=fam, direction=case.direction,
+                                   pathway=tuple(case.pathway), counter=counter)
+    entry["counts"] = {"own": count.as_dict()}
+    if not count.equal:
+        entry.update(status="refused", refusal={
+            "status": "refused:count_mismatch",
+            "reason": f"matcher {count.matcher} vs rmg_moves {count.rmg}",
+            "matcher": count.matcher, "rmg": count.rmg})
+        return entry
+    result = rates(RateRequest(fam.label, ";".join(case.pathway), orientation, r, p,
+                               case.witness, "ladder", ()))
+    if result.problems:
+        entry.update(status="refused", refusal={"status": "refused:rate",
+                                                "reason": "; ".join(result.problems)[:300]})
+        return entry
+    w = weight_table(result.temperatures, result.k, result.ssa_multiplier, count.matcher)
+    entry.update(status="emitted", refusal=None,
+                 weight={"T": list(result.temperatures), "w": w},
+                 rate={"k": list(result.k), "ssa_multiplier": result.ssa_multiplier,
+                       "provenance": result.provenance},
+                 calibration=calibration(result.temperatures, result.k, result.ssa_multiplier,
+                                         w, count.matcher))
+    return entry
 
 
 def ladder_control(case, row, fp, *, family, counter) -> dict:
     """The L + 1 control: the member's fixed-point window cut (``fp``: its
     ``windows.FixedPointResult``) is a LOCAL template (it has a port: not
     whole-species) and covers its own event."""
-    raise NotImplementedError("I-138 red: ladder_control")
+    fam = counter.family(family)
+    out = {"member": case.label[-120:], "status": row.get("status")}
+    if row.get("status") != "fixed_point" or fp is None:
+        out["verdict"] = "refused upstream"
+        return out
+    labels = labels_of(case.moves[0])
+    cut = cut_template(fp.witness, fp.window.atoms, family=fam.label,
+                       pathway=case.pathway, direction=case.direction, labels=labels)
+    r, p = template_sides(case.witness)
+    count, _inside, _ch = count_on([cut.matcher(1.0, "t")], r, p, family=fam,
+                                   direction=case.direction, pathway=tuple(case.pathway),
+                                   counter=counter)
+    out.update(local=not cut.whole_species, ports=len(cut.ports), counts=count.as_dict(),
+               verdict="local template covers it" if (not cut.whole_species and
+                                                       count.target_found and count.equal)
+               else "not covered by a local template")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1191,7 +1577,77 @@ def classify_reference(templates, molecules, *, family, directions, counter, own
     classified one-sided keys; ``failures`` lists what fails (an unexplained
     RMG-only kept move, a matcher key RMG files only as forbidden, a missing
     required unchanged_species move, an unclassified matcher-only key)."""
-    raise NotImplementedError("I-138 red: classify_reference")
+    fam = counter.family(family)
+    rows = {}
+    for m in molecules:
+        rows.update(rm.molecule_rows(m))
+    state = melt_state(rows)
+    result = wm.match(list(templates), state)
+    matcher = defaultdict(list)
+    for tr in result.transitions:
+        matcher[rm.product_key(wm.product_rows(state, tr))].append(tr.template)
+    rmg = defaultdict(lambda: defaultdict(list))
+    n_moves = Counter()
+    for direction in directions:
+        two = _molecularity(fam, direction)
+        groups = [[m] for m in molecules] if two == 1 else \
+            [[molecules[i], molecules[j]] for i in range(len(molecules))
+             for j in range(i + 1, len(molecules))]
+        for group in groups:
+            for mv in counter.moves(fam, group, direction):
+                n_moves[mv.status] += 1
+                if mv.products is None:
+                    continue
+                rmg[rm.product_key(mv)][mv.status].append(mv)
+    kept = {k for k, v in rmg.items() if "kept" in v}
+    unchanged = {k for k, v in rmg.items() if "unchanged_species" in v and "kept" not in v}
+    forbidden = {k for k, v in rmg.items() if set(v) == {"forbidden"}}
+    other = {k for k, v in rmg.items()} - kept - unchanged - forbidden
+    mkeys = set(matcher)
+    failures, rmg_only, matcher_only = [], [], []
+    for k in sorted(kept - mkeys):
+        mv = rmg[k]["kept"][0]
+        status, reason = owners(mv) if owners else ("unowned", "no owner function")
+        explained = (status.startswith("refused") and status not in EMISSION_FAILURE_STATUSES) \
+            or status == BEYOND_PROXY
+        rmg_only.append({"template": list(mv.template or ()), "labels": [list(x) for x in mv.labels],
+                         "owner_status": status, "reason": reason[:200], "explained": explained})
+        if not explained:
+            failures.append(f"RMG-only kept move ({';'.join(mv.template or ())[:60]}): {status}")
+    for k in sorted(mkeys - kept):
+        names = sorted(set(matcher[k]))
+        if k in unchanged:
+            cls = "unchanged_species (matcher-only by policy)"
+        elif k in forbidden:
+            cls = "forbidden (policy: excluded)"
+            failures.append(f"matcher produces a forbidden move ({names[0][:60]})")
+        elif k in other:
+            cls = "rmg filtered: " + ",".join(sorted(rmg[k]))
+            failures.append(f"matcher produces a move RMG files as {sorted(rmg[k])}")
+        else:
+            cls = "unclassified"
+            failures.append(f"unclassified matcher-only move ({names[0][:60]})")
+        matcher_only.append({"templates": names, "class": cls})
+    for k in sorted(unchanged - mkeys):
+        mv = rmg[k]["unchanged_species"][0]
+        status, reason = owners(mv) if owners else ("unowned", "")
+        if not status.startswith("refused") or status in EMISSION_FAILURE_STATUSES:
+            failures.append("required unchanged_species move not produced "
+                            f"({';'.join(mv.template or ())[:60]})")
+    overlap = Counter(len(set(v)) for v in matcher.values())
+    return {"rmg_status_moves": dict(n_moves),
+            "rmg_kept": len(kept), "rmg_forbidden": len(forbidden),
+            "rmg_unchanged_species": len(unchanged), "rmg_other": len(other),
+            "matcher_transitions": sum(len(v) for v in matcher.values()),
+            "matcher_keys": len(mkeys), "matched": len(kept & mkeys),
+            "matcher_only": len(mkeys - kept), "rmg_only": len(kept - mkeys),
+            "rmg_only_beyond_proxy": sum(1 for x in rmg_only if x["owner_status"] == BEYOND_PROXY),
+            "unchanged_produced": len(unchanged & mkeys),
+            "overlap_multiplicity": {str(k): v for k, v in sorted(overlap.items())},
+            "overlap_keys": sum(1 for v in matcher.values() if len(set(v)) > 1),
+            "rmg_directed_per_kept_key": dict(Counter(len(rmg[k]["kept"]) for k in kept)),
+            "rmg_only_moves": rmg_only, "matcher_only_moves": matcher_only,
+            "failures": failures}
 
 
 # the owner emitted, but its templates reach beyond the proxy's artificial
@@ -1207,6 +1663,8 @@ EMISSION_FAILURE_STATUSES = ("refused:count_mismatch", "refused:non_local_kineti
 
 
 def _molecularity(family, direction) -> int:
-    if direction == "forward" or family.reverse_template is None:
-        return len(family.forward_template.reactants)
-    return len(family.reverse_template.reactants)
+    """Reactant count of a family direction (``windows.family_constants``:
+    a family whose template is a single tree root, such as R_Recombination,
+    lists one template reactant for a bimolecular direction)."""
+    from rmgpy.kmc import windows as win
+    return dict(win.family_constants(family).directions)[direction]

@@ -739,6 +739,13 @@ def test_real_recombination_pair_count_equals_joint_transitions(rmg, second):
     quotient = wm.match([t], state, joint=False)
     assert quotient.classes["rec"].pair_count == len(joint.transitions) > 0
     assert len(joint.transitions) == (3 if second == "identical" else 4)
+    # the reference comparison runs RMG on the pair (R_Recombination's
+    # template is one tree root: its forward direction is still bimolecular)
+    assert te._molecularity(rmg[0]["R_Recombination"], "forward") == 2
+    pair = te.molecules_of(dict(te.template_sides(fp.witness)[0]))
+    table = te.classify_reference([t], pair, family="R_Recombination", directions=("forward",),
+                                  counter=rmg[2], owners=lambda mv: ("refused:other_site", ""))
+    assert table["rmg_kept"] >= 1 and table["matched"] == 1 and not table["failures"], table
 
 
 # --------------------------------------------------------------------------
