@@ -327,8 +327,18 @@ def _generating_compiler(reaction, *, cached):
     state = SimpleNamespace(
         reaction_cache={"featured": [reaction]} if cached else {},
         families=("R_Recombination",),
-        kinetics_database=None,
+        kinetics_database=SimpleNamespace(
+            families={
+                "R_Recombination": SimpleNamespace(
+                    forward_template=SimpleNamespace(reactants=["Root"]),
+                    reactant_num=2,
+                )
+            }
+        ),
         generation_provider=lambda reactants, only_families, resonance: [reaction],
+    )
+    state._canonical_participants = lambda item: EventSetCompiler._canonical_participants(
+        state, item
     )
     return state, proxy
 
@@ -367,6 +377,19 @@ def test_labelled_and_unlabelled_generated_reactions_compile_to_one_structure():
         for molecule in participant.molecule:
             molecule.clear_labeled_atoms()
     assert _structure(labelled) == _structure(bare)
+
+
+def test_single_root_bimolecular_family_orders_its_participants_canonically():
+    """A+B and B+A are one reaction: RMG returns either by atom order."""
+    forward = _recombination("C[CH]c1ccccc1", "[CH3]", range(1, 100), range(200, 300))
+    swapped = _recombination("[CH3]", "C[CH]c1ccccc1", range(200, 300), range(1, 100))
+    assert _structure(forward) != _structure(swapped)
+    structures = []
+    for item in (forward, swapped):
+        state, proxy = _generating_compiler(item, cached=False)
+        (generated,) = EventSetCompiler._generate(state, proxy)
+        structures.append(_structure(generated))
+    assert structures[0] == structures[1]
 
 
 # --- reduced real compile, one fresh interpreter per perturbation -----------------
