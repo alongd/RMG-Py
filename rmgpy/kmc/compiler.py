@@ -4509,7 +4509,7 @@ class EventSetCompiler:
         """
         if proxy.site_type in self.reaction_cache:
             return (
-                _without_reaction_labels(reaction)
+                self._canonical_participants(_without_reaction_labels(reaction))
                 for reaction in self.reaction_cache[proxy.site_type]
                 if reaction.family in self.families
             )
@@ -4524,7 +4524,37 @@ class EventSetCompiler:
                     resonance=True,
                 )
             )
-        return [_without_reaction_labels(reaction) for reaction in reactions]
+        return [self._canonical_participants(_without_reaction_labels(reaction)) for reaction in reactions]
+
+    def _canonical_participants(self, reaction):
+        """Order the two participants of a single-Root bimolecular family.
+
+        A family whose template has one Root group and two reactants (R_Recombination,
+        Disproportionation) assigns the two roles only through labels, so RMG
+        returns A+B or B+A by atom order.  Every participant-ordered field of
+        a record follows that order, so each two-member side is sorted by its
+        canonical structure text.  Read from the loaded family, not named.
+        """
+        family = (getattr(self.kinetics_database, "families", None) or {}).get(
+            getattr(reaction, "family", "")
+        )
+        template = getattr(family, "forward_template", None)
+        if (
+            template is None
+            or len(template.reactants) != 1
+            or getattr(family, "reactant_num", None) != 2
+        ):
+            return reaction
+        token = _PAIR_MOLECULE_CACHE.set({})
+        try:
+            for side in ("reactants", "products"):
+                members = list(getattr(reaction, side))
+                if len(members) == 2:
+                    members.sort(key=lambda item: _graph_adjacencies([item])[0])
+                    setattr(reaction, side, members)
+        finally:
+            _PAIR_MOLECULE_CACHE.reset(token)
+        return reaction
 
     def _rate_table(self, reaction) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         source_reaction = getattr(reaction, "source_reaction", reaction)
