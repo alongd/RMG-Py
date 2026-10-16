@@ -570,6 +570,18 @@ def test_label_fixture_bytes_ignore_generator_hidden_state(
 
 
 @needs_database
+@pytest.mark.parametrize("perturbation", ["permute_atoms", "reverse_atoms"])
+def test_thermo_and_kinetics_floats_ignore_atom_order(tmp_path, perturbation):
+    """Group additivity summed in generator atom order left a ~1e-13 relative
+    wobble in H298, Kc and k_table (intra_H_migration on the benzylic end
+    radical, I-122 rework 3): thermo is evaluated on the canonical copy."""
+    kwargs = dict(families="intra_H_migration", proxies="benzylic_end_radical")
+    expected, _ = _compile(tmp_path, "baseline", "baseline", **kwargs)
+    actual, _ = _compile(tmp_path, "perturbed", perturbation, **kwargs)
+    assert actual == expected, _differences(expected, actual)
+
+
+@needs_database
 def test_reshuffled_degenerate_paths_change_only_what_rmg_itself_returns(baseline, tmp_path):
     """RMG's degeneracy collapse keeps the first path of each degenerate set.
 
