@@ -172,12 +172,17 @@ class SharedThermoAssignment:
         if not molecule.__class__.__module__.startswith("rmgpy."):
             reference = copy.deepcopy(species)
         else:
+            # Start from the species' canonical representative in canonical
+            # atom order, so group additivity sums in an order that depends
+            # on the species alone (I-122: a ~1e-13 relative wobble in H298,
+            # Kc and k otherwise follows the generator's atom order).
+            from rmgpy.kmc.compiler import _canonical_adjacency, _molecule
+
+            canonical = _molecule(species)
             reference = Species(
                 label=getattr(species, "label", ""),
                 molecule=[
-                    Molecule().from_adjacency_list(
-                        molecule.to_adjacency_list(remove_h=False)
-                    )
+                    Molecule().from_adjacency_list(_canonical_adjacency(canonical))
                 ],
             )
             reference.generate_resonance_structures()

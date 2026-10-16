@@ -2109,10 +2109,29 @@ def _canonical_adjacency(molecule) -> str:
     return clone.to_adjacency_list(remove_h=False)
 
 
-def _molecule_total_order(molecule) -> tuple[str, str]:
+def _perceived_smiles(molecule) -> str:
+    """RDKit's canonical SMILES of the sanitized (aromaticity-perceived) graph.
+
+    RMG's filtered resonance set depends on the starting atom order, but the
+    sanitized view collapses the Kekule-level differences between its members:
+    the set of these strings is a function of the species alone.
+    """
+    if molecule.__class__.__module__.startswith("rmgpy."):
+        try:
+            from rdkit import Chem
+            from rmgpy.molecule.converter import to_rdkit_mol
+
+            return Chem.MolToSmiles(
+                to_rdkit_mol(molecule, remove_h=False, sanitize=True, save_order=False)
+            )
+        except Exception:
+            pass
     clone = molecule.copy(deep=True)
-    smiles = clone.to_smiles() if hasattr(clone, "to_smiles") else ""
-    return smiles, _canonical_adjacency(molecule)
+    return clone.to_smiles() if hasattr(clone, "to_smiles") else ""
+
+
+def _molecule_total_order(molecule) -> tuple[str, str]:
+    return _perceived_smiles(molecule), _canonical_adjacency(molecule)
 
 
 def _canonical_resonance_representative(molecule):
