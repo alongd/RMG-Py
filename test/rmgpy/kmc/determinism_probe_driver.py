@@ -21,6 +21,9 @@ shuffle_degenerate       the list entering RMG's degeneracy collapse shuffled
 heap_noise               objects allocated and freed around every call
 proxy_flag_on            every participant flagged as a polymer proxy
 species_proxy_flag_only  the Species flag set without its molecules'
+clear_labels             every label cleared on every returned reaction's participants
+scatter_labels           each returned participant form keeps or loses its reaction
+                         labels by a coin flip (RMG leaves a run-dependent subset)
 preset_sorting / preset_connectivity / preset_ignore_h
                          scratch vertex fields pre-set on every participant
 tolerance:N[:M]          missing-reverse tolerance N (M dropped reactions
@@ -147,6 +150,12 @@ def main() -> None:
                         elif perturbation == "preset_ignore_h":
                             atom.ignore = atom.is_hydrogen() and index % 3 == 0
             reactions = default(reactants, products, only_families, resonance)
+            if perturbation in ("clear_labels", "scatter_labels"):
+                for reaction in reactions:
+                    for participant in list(reaction.reactants) + list(reaction.products):
+                        for molecule in getattr(participant, "molecule", [participant]):
+                            if perturbation == "clear_labels" or rng.random() < 0.5:
+                                molecule.clear_labeled_atoms()
             if perturbation == "shuffle_output":
                 reactions = list(reactions)
                 rng.shuffle(reactions)

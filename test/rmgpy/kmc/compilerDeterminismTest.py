@@ -26,6 +26,7 @@ from types import SimpleNamespace
 import pytest
 
 from rmgpy.kmc.compiler import (
+    EventSetCompiler,
     _bond_ops,
     _canonical_adjacency,
     _canonical_atom_map,
@@ -317,6 +318,57 @@ def test_thermo_source_graph_ignores_which_kekule_forms_the_form_set_holds():
     ]
 
 
+# --- generated reactions' RMG label state ----------------------------------------
+
+
+def _generating_compiler(reaction, *, cached):
+    """The part of an EventSetCompiler ``_generate`` reads, around one reaction."""
+    proxy = SimpleNamespace(site_type="featured", reactants=list(reaction.reactants))
+    state = SimpleNamespace(
+        reaction_cache={"featured": [reaction]} if cached else {},
+        families=("R_Recombination",),
+        kinetics_database=None,
+        generation_provider=lambda reactants, only_families, resonance: [reaction],
+    )
+    return state, proxy
+
+
+def _labels(reaction):
+    return sorted(
+        atom.label
+        for participant in list(reaction.reactants) + list(reaction.products)
+        for molecule in participant.molecule
+        for atom in molecule.atoms
+        if atom.label
+    )
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_generated_reactions_reach_the_compiler_without_rmg_labels(cached):
+    """Which RMG participants keep a ``*1`` depends on RMG's generation state.
+
+    The labels pick the atom order, the resonance form and the printed text of
+    a graph, so they may not reach the artifact: the compiler clears them.
+    """
+    reaction = _recombination("C[CH]c1ccccc1", "[CH3]", range(1, 100), range(200, 300))
+    assert _labels(reaction)
+    state, proxy = _generating_compiler(reaction, cached=cached)
+    generated = list(EventSetCompiler._generate(state, proxy))
+    assert generated and all(not _labels(item) for item in generated)
+
+
+def test_labelled_and_unlabelled_generated_reactions_compile_to_one_structure():
+    labelled = _recombination("C[CH]c1ccccc1", "[CH3]", range(1, 100), range(200, 300))
+    bare = _recombination("C[CH]c1ccccc1", "[CH3]", range(1, 100), range(200, 300))
+    for item in (labelled, bare):
+        state, proxy = _generating_compiler(item, cached=False)
+        list(EventSetCompiler._generate(state, proxy))
+    for participant in bare.reactants + bare.products:
+        for molecule in participant.molecule:
+            molecule.clear_labeled_atoms()
+    assert _structure(labelled) == _structure(bare)
+
+
 # --- reduced real compile, one fresh interpreter per perturbation -----------------
 
 DRIVER = HERE / "determinism_probe_driver.py"
@@ -329,7 +381,9 @@ FAMILIES = (
 PROXIES = "end_radical,end_radical+styrene"
 
 
-def _compile(tmp_path, name, perturbation, seed="0"):
+def _compile(
+    tmp_path, name, perturbation, seed="0", families=FAMILIES, proxies=PROXIES
+):
     output = tmp_path / name
     output.mkdir()
     environment = dict(os.environ)
@@ -341,7 +395,7 @@ def _compile(tmp_path, name, perturbation, seed="0"):
     completed = subprocess.run(
         [
             sys.executable, str(DRIVER), str(DATABASE), str(output), perturbation,
-            "--families", FAMILIES, "--proxies", PROXIES,
+            "--families", families, "--proxies", proxies,
         ],
         cwd=REPOSITORY, env=environment, capture_output=True, text=True,
     )
@@ -357,6 +411,29 @@ def baseline(tmp_path_factory):
     if not (DATABASE / "input/kinetics/families").is_dir():
         pytest.skip("RMG_DATABASE_PATH is not a database checkout")
     return _compile(tmp_path_factory.mktemp("baseline"), "baseline", "baseline")
+
+
+# A second reduced fixture, on the proxies whose recombination and
+# disproportionation partners RMG hands back with a run-dependent subset of
+# its reaction labels (a ``*`` on the hydrogen atom, on one resonance form of
+# the radical, or on neither).  The full-PS compile showed this: two identical
+# runs differed in 36 records, every one of them a label (or the atom order a
+# label selects) in a participant graph.
+LABEL_FAMILIES = "Disproportionation,R_Recombination"
+LABEL_PROXIES = "interior_radical,doubly_featured"
+
+
+@pytest.fixture(scope="module")
+def label_baseline(tmp_path_factory):
+    if not (DATABASE / "input/kinetics/families").is_dir():
+        pytest.skip("RMG_DATABASE_PATH is not a database checkout")
+    return _compile(
+        tmp_path_factory.mktemp("label_baseline"),
+        "baseline",
+        "baseline",
+        families=LABEL_FAMILIES,
+        proxies=LABEL_PROXIES,
+    )
 
 
 def _record_key(record):
@@ -412,6 +489,37 @@ def test_reduced_compile_bytes_ignore_generator_hidden_state(
 ):
     expected, _ = baseline
     actual, stdout = _compile(tmp_path, "perturbed", perturbation, seed)
+    assert actual == expected, f"{perturbation} (PYTHONHASHSEED={seed}): " + _differences(
+        expected, actual
+    )
+
+
+@needs_database
+@pytest.mark.parametrize(
+    "perturbation, seed",
+    [
+        # Every reaction label cleared, as RMG sometimes leaves a representative.
+        ("clear_labels", "0"),
+        # Labels kept or lost per participant form by a coin flip.
+        ("scatter_labels", "0"),
+        # Atom order, now with labelled participants.
+        ("permute_atoms", "0"),
+        ("reverse_atoms", "0"),
+        ("baseline", "1"),
+    ],
+)
+def test_label_fixture_bytes_ignore_generator_hidden_state(
+    label_baseline, tmp_path, perturbation, seed
+):
+    expected, _ = label_baseline
+    actual, _ = _compile(
+        tmp_path,
+        "perturbed",
+        perturbation,
+        seed,
+        families=LABEL_FAMILIES,
+        proxies=LABEL_PROXIES,
+    )
     assert actual == expected, f"{perturbation} (PYTHONHASHSEED={seed}): " + _differences(
         expected, actual
     )
