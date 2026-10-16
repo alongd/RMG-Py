@@ -31,6 +31,7 @@ from rmgpy.kmc.compiler import (
     _canonical_adjacency,
     _canonical_atom_map,
     _graph_adjacencies,
+    _molecule,
 )
 from rmgpy.molecule.molecule import Bond, Molecule
 from rmgpy.species import Species
@@ -390,6 +391,27 @@ def test_single_root_bimolecular_family_orders_its_participants_canonically():
         (generated,) = EventSetCompiler._generate(state, proxy)
         structures.append(_structure(generated))
     assert structures[0] == structures[1]
+
+
+def test_species_representative_ignores_which_resonance_forms_rmg_kept():
+    """RMG's filtered resonance set depends on the starting atom order.
+
+    The same radical, generated from three atom orders, kept three form sets
+    (16 forms each) whose Kekule-level members differ.  `_molecule` picked a
+    different representative from each; the choice may depend on the species
+    only.  Forms are RMG adjacency lists recorded from a reduced compile.
+    """
+    sets = json.loads((HERE / "fixtures/i122_resonance_form_sets.json").read_text())
+    texts = {}
+    for name, adjacency_lists in sets.items():
+        species = Species(
+            molecule=[Molecule().from_adjacency_list(text) for text in adjacency_lists]
+        )
+        texts[name] = _canonical_adjacency(_molecule(species))
+    assert len(set(texts.values())) == 1, {
+        name: hashlib.sha256(text.encode()).hexdigest()[:12]
+        for name, text in texts.items()
+    }
 
 
 # --- reduced real compile, one fresh interpreter per perturbation -----------------
