@@ -1223,21 +1223,29 @@ def test_a_class_that_is_not_one_orbit_is_refused_non_transferable():
 KC = tuple(2.0e-3 * math.exp(t / 400.0) for t in GRID)
 
 
+def toy_kc(reactant_rows, product_rows, temperatures):
+    """The toy thermo: Kc of a recombination of two species is ``KC``, of the
+    homolysis it undoes ``1 / KC`` (concentration units)."""
+    assert list(temperatures) == list(GRID)
+    one = len(rm.split_rows(dict(reactant_rows))) == 1
+    return [1.0 / k if one else k for k in KC]
+
+
 def _pair_rates(by_orientation):
     def rates(req):
         return te.RateResult(GRID, by_orientation[req.orientation], 1.0, {}, ())
     return rates
 
 
-def _toy_pair(kc=KC):
+def _toy_pair(hid=None, wid=None, scale=1.0, h_scale=1.0, counter=None):
     """Homolysis H of C12 at (3,4) (reversed record) and the recombination W
     of its two products (as_generated), linked by ``reverse_of``;
-    ``k_W = Kc * k_H``."""
+    ``k_W = Kc * k_H`` times ``scale`` both ways, ``h_scale`` on H alone."""
     h = homolysis(12, (3, 4))
     r = recombination(4, 8)
-    k_h = tuple(k for k in K_RULE)
-    k_w = tuple(a * c for a, c in zip(k_h, kc))
-    hid, wid = _rid(1), _rid(2)
+    k_h = tuple(k * scale * h_scale for k in K_RULE)
+    k_w = tuple(k * scale * c for k, c in zip(K_RULE, KC))
+    hid, wid = hid or _rid(1), wid or _rid(2)
     rec_h = toy_record(h, 1)
     rec_h.update(event_id=hid, reverse_of=wid)
     rec_h["k_table"]["k"] = list(k_h)
@@ -1245,68 +1253,237 @@ def _toy_pair(kc=KC):
     rec_w.update(event_id=wid, reverse_of=hid, reactant_multiplicities=[1, 1])
     rec_w["k_table"]["k"] = list(k_w)
     rates = _pair_rates({"reversed": k_h, "as_generated": k_w})
-    counter = ToyCounter()
+    counter = counter or ToyCounter()
     case_h, row_h, ctx_h = member(h)
     p_h = te.emit_record(rec_h, family=ToyFamily, members=[(case_h, row_h, ctx_h)],
-                         counter=counter, rates=rates, check_upstream=False)
+                         counter=counter, rates=rates, check_upstream=False, kc=toy_kc)
     case_w, row_w, ctx_w = member(r, direction="forward")
     p_w = te.emit_record(rec_w, family=ToyFamily, members=[(case_w, row_w, ctx_w)],
-                         counter=counter, rates=rates, check_upstream=False)
-    return [p_h, p_w], {hid: rec_h, wid: rec_w}, counter
+                         counter=counter, rates=rates, check_upstream=False, kc=toy_kc)
+    return [p_h, p_w], counter
 
 
-def test_toy_reciprocal_pair_satisfies_the_cycle():
-    payloads, records, counter = _toy_pair()
+def _check(payloads, counter, **kw):
+    return te.check_cycles(payloads, counter=counter, kc=toy_kc, **kw)
+
+
+def test_toy_reciprocal_pair_satisfies_the_cycle_against_thermo():
+    """AMENDED (it encoded the circular ratio): the pair passes against the
+    independent thermo Kc, which the table reports."""
+    payloads, counter = _toy_pair()
     assert [p["status"] for p in payloads] == ["emitted", "emitted"]
-    out, table = te.check_cycles(payloads, records, counter=counter)
+    out, table = _check(payloads, counter)
     assert len(table) == 1 and table[0]["status"] == "ok", table
-    assert table[0]["max_ratio_error"] <= 1e-12
-    assert table[0]["bijection"]["forward_to_reverse"] and table[0]["bijection"]["reverse_to_forward"]
+    assert table[0]["max_ratio_error"] <= 1e-12 and table[0]["rows"] >= 4
+    assert table[0]["worst"]["Kc"] in (pytest.approx(1 / KC[GRID.index(table[0]["worst"]["T"])]),
+                                       pytest.approx(KC[GRID.index(table[0]["worst"]["T"])]))
     assert [p["status"] for p in out] == ["emitted", "emitted"]
+    assert te.one_way_problems(out) == [] and te.cycle_gates(table, out) == []
 
 
-def test_perturbing_one_weight_by_1e_6_fails_the_cycle():
-    payloads, records, counter = _toy_pair()
-    t = base_template(payloads[1])
-    t["weight"]["w"][10] *= 1 + 1e-6
+def test_homolysis_rate_and_weight_doubled_is_detected_against_thermo():
+    """k_H and its weights doubled together keep the records' own k_F / k_R
+    self-consistent (and the calibration exact); the independent Kc is
+    unchanged, so the loaded pair fails."""
+    payloads, counter = _toy_pair(h_scale=2.0)
+    assert all(c["ok"] for c in payloads[0]["calibration"])
+    out, table = _check(payloads, counter)
+    assert table[0]["status"] == "refused:cycle"
+    assert table[0]["max_ratio_error"] == pytest.approx(1.0, rel=1e-9)
+    assert "Kc" in table[0]["reason"] and te.cycle_gates(table, out)
+
+
+def test_perturbing_one_weight_by_1e_6_fails_the_cycle_and_is_gated():
+    """AMENDED: perturb the loaded recombination weight at one temperature.
+    Both records are refused, the failure is an acceptance gate, and nothing
+    of the pair stays loaded (no one-way channel)."""
+    payloads, counter = _toy_pair()
+    base_template(payloads[1])["weight"]["w"][10] *= 1 + 1e-6
     payloads[1] = te.finish(payloads[1])
-    out, table = te.check_cycles(payloads, records, counter=counter)
+    out, table = _check(payloads, counter)
     assert table[0]["status"] == "refused:cycle"
     assert table[0]["max_ratio_error"] == pytest.approx(1e-6, rel=1e-3)
     for p in out:
         t = base_template(p)
         assert t["status"] == "refused" and t["refusal"]["status"] == "refused:cycle"
-        assert "ratio" in t["refusal"]["reason"]
         assert p["status"] == "refused"
+    gates = te.cycle_gates(table, out)
+    assert gates and "refused:cycle" in gates[0]
+    assert te.one_way_problems(out) == [] and te.loaded_templates(out, 700.0) == []
 
 
 def test_a_cycle_whose_inverse_edit_is_not_unique_is_refused():
-    """The reverse record carries a second base template making the same
-    cleavage: each forward transition is undone twice (a double count), the
-    bijection fails."""
-    payloads, records, counter = _toy_pair()
+    """AMENDED (signature): the reverse record carries a second base template
+    making the same cleavage: each forward transition is undone twice."""
+    payloads, counter = _toy_pair()
     twin = json.loads(json.dumps(base_template(payloads[1])))
     twin["key"] = "d" * 64
     payloads[1]["templates"].append(twin)
     payloads[1] = te.finish(payloads[1])
-    out, table = te.check_cycles(payloads, records, counter=counter)
-    assert table[0]["status"] == "refused:cycle"
-    assert not table[0]["bijection"]["forward_to_reverse"]
-    assert "inverse edit" in base_template(out[0])["refusal"]["reason"]
+    out, table = _check(payloads, counter)
+    assert table[0]["status"] == "refused:cycle" and table[0]["bijection_failures"] >= 1
+    assert "inverse edit" in table[0]["reason"]
 
 
 def test_a_cycle_without_a_channel_transition_is_refused():
-    """The reverse record's template (radius 4) cannot make its record's own
-    cleavage: named refusal, both records refused."""
-    payloads, records, counter = _toy_pair()
+    """AMENDED (signature): the forward record's template cannot make the
+    reverse record's cleavage on its witness: named refusal of both."""
+    payloads, counter = _toy_pair()
     other = emit(homolysis(12, (5, 6)), radius=4)
     payloads[0] = te.finish(dict(other, record_event_id=payloads[0]["record_event_id"],
                                  reverse_of=payloads[0]["reverse_of"]))
-    out, table = te.check_cycles(payloads, records, counter=counter)
+    out, table = _check(payloads, counter)
     assert table[0]["status"] == "refused:cycle"
     for p in out:
         assert base_template(p)["refusal"]["status"] == "refused:cycle"
-        assert "no transition" in base_template(p)["refusal"]["reason"]
+
+
+def test_a_pair_with_an_emitted_witness_weight_is_checked():
+    """Templates reaching beyond the proxy graph weigh on their emitted
+    witness (``counts.record`` absent): checked there, not skipped."""
+    payloads, counter = _toy_pair()
+    for p in payloads:
+        p["weight_source"], p["counts"] = "emitted_witness", {"record": None}
+    out, table = _check([te.finish(p) for p in payloads], counter)
+    assert table[0]["status"] == "ok" and table[0]["rows"] >= 4
+    base_template(payloads[0])["weight"]["w"][3] *= 1.001
+    out, table = _check([te.finish(p) for p in payloads], counter)
+    assert table[0]["status"] == "refused:cycle"
+
+
+def test_a_pair_of_context_templates_is_checked():
+    """No base template on either side (only context templates load): the
+    pair is still checked, and a bad context weight is caught."""
+    payloads, counter = _toy_pair()
+    for p in payloads:
+        base_template(p)["base"] = False
+    out, table = _check([te.finish(p) for p in payloads], counter)
+    assert table[0]["status"] == "ok" and table[0]["rows"] >= 4
+    base_template(payloads[0])["weight"]["w"][5] *= 1.01
+    out, table = _check([te.finish(p) for p in payloads], counter)
+    assert table[0]["status"] == "refused:cycle" and te.cycle_gates(table, out)
+
+
+def test_a_live_pair_without_its_reverse_record_is_refused_when_complete():
+    payloads, counter = _toy_pair()
+    out, table = _check(payloads[:1], counter)
+    assert table[0]["status"] == "refused:cycle" and "not in the catalog" in table[0]["reason"]
+    assert te.loaded_templates(out, 700.0) == []
+    out, table = _check(payloads[:1], counter, complete=False)
+    assert table[0]["status"] == "not_evaluable" and base_template(out[0])["status"] == "emitted"
+
+
+def _two_pairs(shift_b=0.0, b_first=False):
+    """Pair A (records 1/6) and pair B (2/5), B's rates scaled by
+    10**shift_b both ways (Kc unchanged); the least forward id is A's, the
+    least reverse id is B's: independent least-id representatives come from
+    different pairs."""
+    a, counter = _toy_pair(_rid(1), _rid(6), counter=None)
+    b, _ = _toy_pair(_rid(2), _rid(5), scale=10 ** shift_b, counter=counter)
+    return a + b, counter
+
+
+def test_unit_representatives_come_from_one_source_pair_and_the_loaded_catalog_is_exact():
+    """The C16 repro: scaling a pair both ways by 10**0.004 (Kc, calibration
+    preserved) must not leave a loaded forward weight from one pair and a
+    loaded reverse weight from the other."""
+    payloads, counter = _two_pairs(0.004)
+    out, table = te.resolve_collisions(payloads)
+    assert sorted(r["disposition"] for r in table) == ["merged", "merged"]
+    live = {p["record_event_id"]: base_template(p)["status"] for p in out}
+    assert live == {_rid(1): "emitted", _rid(6): "emitted", _rid(2): "merged", _rid(5): "merged"}
+    assert all(len(r["pair_deviations"]) == 2 for r in table)
+    out2, cycles = _check(out, counter)
+    assert all(c["status"] == "ok" for c in cycles), cycles
+    assert max(c["max_ratio_error"] for c in cycles) <= 1e-12 or \
+        all(c["worst"]["status"] == "merged" for c in cycles if c["max_ratio_error"] > 1e-12)
+    assert te.one_way_problems(out2) == []
+
+
+def test_reciprocal_groups_are_admitted_or_refused_together():
+    """Forward copies agree, reverse copies are 10 % apart: the forward group
+    is not merged alone (and no half-merged unit reaches the catalog)."""
+    payloads, counter = _two_pairs(0.0)
+    base_template(payloads[3])["weight"]["w"] = [w * 1.1 for w in base_template(payloads[3])["weight"]["w"]]
+    payloads[3] = te.finish(payloads[3])
+    out, table = te.resolve_collisions(payloads)
+    assert {r["disposition"] for r in table} == {"refused:collision"}
+    assert len(table) == 2
+    assert [base_template(p)["status"] for p in out] == ["refused"] * 4
+    assert te.loaded_templates(out, 700.0) == []
+
+
+def test_merge_beyond_the_pair_tolerance_is_refused_with_every_deviation_reported():
+    """Each group's diameter is 0.008 (inside), but the second pair's
+    loaded ratio is 0.016 decades off: refused, deviations in the table."""
+    payloads, counter = _two_pairs(0.0)
+    for k, sh in ((1, 0.008), (2, -0.0)):
+        pass
+    base_template(payloads[2])["weight"]["w"] = [w * 10 ** 0.008 for w in base_template(payloads[2])["weight"]["w"]]
+    base_template(payloads[3])["weight"]["w"] = [w * 10 ** -0.008 for w in base_template(payloads[3])["weight"]["w"]]
+    payloads[2], payloads[3] = te.finish(payloads[2]), te.finish(payloads[3])
+    out, table = te.resolve_collisions(payloads)
+    assert {r["disposition"] for r in table} == {"refused:collision"}
+    assert table[0]["max_pair_deviation_log10"] == pytest.approx(0.016, abs=1e-9)
+    assert sorted(d["deviation_log10"] for d in table[0]["pair_deviations"]) == \
+        pytest.approx([0.0, 0.016], abs=1e-9)
+
+
+def test_a_cycle_failure_of_the_representative_refuses_the_merged_partner_too():
+    """A 1e-6 error in the loaded representative of a merged reciprocal unit
+    refuses the representatives AND their merged copies on both sides, is
+    gated, and leaves no loaded reverse link to a non-loaded template."""
+    payloads, counter = _two_pairs(0.0)
+    out, _t = te.resolve_collisions(payloads)
+    rep = next(p for p in out if p["record_event_id"] == _rid(1))
+    base_template(rep)["weight"]["w"][10] *= 1 + 1e-6
+    out = [te.finish(p) for p in out]
+    out2, table = _check(out, counter)
+    assert {p["record_event_id"]: base_template(p)["status"] for p in out2} == \
+        {_rid(k): "refused" for k in (1, 2, 5, 6)}
+    assert te.loaded_templates(out2, 700.0) == [] and te.one_way_problems(out2) == []
+    gates = te.cycle_gates(table, out2)
+    assert gates and all("refused:cycle" in g for g in gates)
+
+
+def test_a_loaded_template_with_a_non_loaded_reverse_is_a_one_way_gate():
+    payloads, counter = _toy_pair()
+    base_template(payloads[1])["status"] = "refused"
+    base_template(payloads[1])["refusal"] = {"status": "refused:window", "reason": "x"}
+    payloads[1] = te.finish(payloads[1])
+    assert [r for r, _w in te.one_way_problems(payloads)] == [payloads[0]["record_event_id"]]
+    out, table = _check(payloads, counter)
+    assert te.loaded_templates(out, 700.0) == []
+    assert te.cycle_gates(table, out)
+
+
+def test_thermo_kc_is_whole_species_rmg_thermo_in_concentration_units(rmg):
+    """ThermoKc on the real thermo path: ethane <-> 2 CH3 against the
+    reaction's own Kc, and the A + A convention ssa ratio 2."""
+    import channelsTest as ct
+    from rmgpy.kmc.reference_thermo import GasPhaseRMGReferenceThermo
+    from rmgpy.molecule import Molecule
+    from rmgpy.reaction import Reaction
+    from rmgpy.species import Species
+    db = ct.database()
+    kc = te.ThermoKc(GasPhaseRMGReferenceThermo(db.thermo, "test-only-database-commit"))
+    ethane = rm.molecule_rows(Molecule().from_smiles("CC"))
+    # the methyl pair: two components of 4 atoms, ids disjoint
+    one = rm.molecule_rows(Molecule().from_smiles("[CH3]"))
+    two = dict(one)
+    two.update({a + 100: (x[0], x[1], x[2], x[3], x[4], tuple((n + 100, o) for n, o in x[5]))
+                for a, x in one.items()})
+    got = kc(ethane, two, [700.0, 800.0])
+    sp = lambda s: Species(molecule=[Molecule().from_smiles(s)])
+    rxn = Reaction(reactants=[sp("CC")], products=[sp("[CH3]"), sp("[CH3]")])
+    rxn_kc = [rxn.get_equilibrium_constant(t, type="Kc") for t in (700.0, 800.0)]
+    assert got == pytest.approx(rxn_kc, rel=1e-9)
+    assert te.ssa_of_rows(two, ToyCounterReal(rmg)) == 2.0
+    assert te.ssa_of_rows(ethane, ToyCounterReal(rmg)) == 1.0
+
+
+def ToyCounterReal(rmg):
+    return rmg[2]
 
 
 # -- class overlap -----------------------------------------------------------
