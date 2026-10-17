@@ -4224,15 +4224,22 @@ def balance_reciprocal_pair(
     ssa_p, ssa_d = float(primary.ssa_multiplier), float(partner.ssa_multiplier)
     derived = []
     for rate, constant in zip(primary.k_table["k"], constants):
-        total_p = ssa_p * rate
-        total_d = total_p / ((ssa_p / ssa_d) * constant)
-        derived.append(total_d / ssa_d)
+        # S_d = S_p/((ssa_p/ssa_d)*Kc) and k_d = S_d/ssa_d: the ssa factors
+        # cancel, so k_d = k_p/Kc (no intermediate can overflow).
+        derived.append(rate / constant)
     if any(not math.isfinite(rate) or rate <= 0 for rate in derived):
         return _refuse_pair(
             primary, partner, "derived reverse rates are not positive and finite"
         )
     for rate_p, rate_d, constant in zip(primary.k_table["k"], derived, constants):
-        if abs((ssa_p * rate_p) / (ssa_d * rate_d) / ((ssa_p / ssa_d) * constant) - 1.0) > PAIR_BALANCE_RTOL:
+        # the convention in logs: ln S_p - ln S_d - (ln ssa_p - ln ssa_d) - ln Kc
+        miss = (
+            (math.log(ssa_p) + math.log(rate_p))
+            - (math.log(ssa_d) + math.log(rate_d))
+            - (math.log(ssa_p) - math.log(ssa_d))
+            - math.log(constant)
+        )
+        if abs(math.expm1(miss)) > PAIR_BALANCE_RTOL:
             raise ValueError("derived pair misses the detailed-balance convention")
     thermo = {
         **provider.provenance,
