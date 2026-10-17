@@ -1947,3 +1947,110 @@ def test_a_template_side_reading_and_other_families_keep_the_plain_filter():
     class Other:
         reverse_template = object()
     assert te.count_pathway(Other, ("a", "b"), True) == ("a", "b")
+
+
+# --------------------------------------------------------------------------
+# I-150 rework 1: the midpoint gate, --event subsets, the boundary's float slack
+# --------------------------------------------------------------------------
+class _ArrheniusRates:
+    """ProductionRates stand-in: k = A exp(-E/T) of the emitted witness's channel
+    (one transition) at the requested grid, or a named failure."""
+    fail = None
+
+    def __init__(self, db, families, *, database_path=None, database_sha=None,
+                 temperature_grid=None, **_kw):
+        self.grid = tuple(temperature_grid)
+
+    def __call__(self, request):
+        if self.fail:
+            return te.RateResult((), (), 0.0, {}, (self.fail,))
+        return te.RateResult(self.grid, tuple(1.0e9 * math.exp(-15000.0 / t) for t in self.grid),
+                             1.0, {}, ())
+
+
+def _midpoint_payload(record_count, witness_count, *, derived=False):
+    """A payload whose emitted witness has ``witness_count`` transitions and
+    whose record has ``record_count`` (a homolysis padded once at the head:
+    the record's witness sees 2 equivalent cleavages, the emitted one 1); the
+    weight table is the emitted witness's rate over its count, an exact
+    Arrhenius interpolant."""
+    rows = te.rows_json(alkane(4)[0])
+    grid = [300.0, 400.0, 500.0, 600.0]
+    w = [1.0e9 * math.exp(-15000.0 / t) / witness_count for t in grid]
+    t = {"status": "emitted", "key": "k" * 64, "base": True, "weight": {"T": grid, "w": w},
+         "maps": {"witnesses": {"emitted": {"r": rows, "p": rows}}},
+         "locality": {"rows": [{"label": "emitted", "status": "ok",
+                                "counts": {"matcher": witness_count}}]}}
+    if derived:
+        t["derived"] = {"primary": {"record": "evt_x", "key": "k"}}
+    record = {"event_id": "evt_" + "a" * 64, "family": "toy_cc", "template": "toy",
+              "orientation": "reversed"}
+    payload = {"record_event_id": record["event_id"], "member_reverse": False,
+               "weight_source": "record", "counts": {"record": {"matcher": record_count}},
+               "templates": [t]}
+    return payload, record
+
+
+@pytest.fixture
+def midpoint_env(monkeypatch):
+    import template_emission_acceptance as acc
+    monkeypatch.setattr(te, "ProductionRates", _ArrheniusRates)
+    monkeypatch.setattr(_ArrheniusRates, "fail", None)
+    monkeypatch.setitem(acc._S, "db", None)
+    monkeypatch.setitem(acc._S, "records", [{"family": "toy_cc"}])
+    return acc
+
+
+def test_the_midpoint_check_divides_by_the_emitted_witness_count(midpoint_env):
+    """C13 homolysis padded once at the head: record count 2, emitted-witness
+    count 1.  The regenerated k is the emitted witness's, so its count (the one
+    the weight was calibrated with) is the denominator: an exact interpolant
+    has no midpoint error."""
+    acc = midpoint_env
+    payload, record = _midpoint_payload(2, 1)
+    acc._S["by_id"] = {record["event_id"]: record}
+    mid = acc.midpoint_table([payload])
+    assert mid["templates"] == 1 and not mid.get("unverified")
+    assert mid["worst"] < 1e-6
+    assert acc.midpoint_gates(mid) == []
+
+
+def test_an_unevaluable_loaded_primary_gates_and_a_derived_one_does_not(midpoint_env,
+                                                                         monkeypatch):
+    acc = midpoint_env
+    payload, record = _midpoint_payload(1, 1)
+    acc._S["by_id"] = {record["event_id"]: record}
+    monkeypatch.setattr(_ArrheniusRates, "fail", "no generated reaction")
+    mid = acc.midpoint_table([payload])
+    assert mid["templates"] == 0 and len(mid["unverified"]) == 1
+    gates = acc.midpoint_gates(mid)
+    assert len(gates) == 1 and "no generated reaction" in gates[0] and "kkkkkkkkkkkk" in gates[0]
+    derived, record = _midpoint_payload(1, 1, derived=True)
+    mid = acc.midpoint_table([derived])
+    assert not mid.get("unverified") and acc.midpoint_gates(mid) == []
+    assert mid["unavailable"] == {"derived": 1}
+
+
+def test_an_event_subset_is_not_a_complete_catalog():
+    import argparse
+    import template_emission_acceptance as acc
+    base = dict(sample=1, chunk=None, limit=None, open_only=False)
+    assert acc.is_complete(argparse.Namespace(**base, event=None)) is True
+    assert acc.is_complete(argparse.Namespace(**base, event=["evt_9c441910"])) is False
+
+
+def test_a_subset_of_a_reciprocal_pair_refuses_nothing_for_the_unselected_partner():
+    payloads, counter = _toy_pair()
+    _out, table = _check(payloads[:1], counter, complete=False)
+    assert [r["status"] for r in table] == ["not_evaluable"]
+
+
+def test_the_boundary_accepts_an_exact_scaling_and_refuses_beyond_it():
+    """A copy scaled by exactly 10**0.01 measures 0.010000000000000675 decades
+    in floating point: inside; 10**0.01001 is outside (float slack 1e-12)."""
+    w = 1.2345e-9
+    for sign in (1, -1):
+        exact = abs(math.log10(w / (w * 10 ** (sign * 0.01))))
+        assert not te.beyond_tolerance(exact)
+        assert te.beyond_tolerance(abs(math.log10(w / (w * 10 ** (sign * 0.01001)))))
+    assert te.beyond_tolerance(0.01 + 1e-9)
