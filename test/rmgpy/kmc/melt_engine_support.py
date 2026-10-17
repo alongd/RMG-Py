@@ -80,7 +80,7 @@ def pe_met(d_ref=1.0e-17):
             "contact_radius_m": 5.0e-10, "spin_factor": 1.0}
 
 
-def pe_mapping(counts, *, transport=True, d_ref=1.0e-17, small=None, mobile=None):
+def pe_mapping(counts, *, transport=True, d_ref=1.0e-17, small=None, mobile=None, met_block=None):
     repeat = {
         "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=2)],
         "bonds": [{"atoms": ["c1", "c2"], "order": 1}],
@@ -112,7 +112,7 @@ def pe_mapping(counts, *, transport=True, d_ref=1.0e-17, small=None, mobile=None
             "maximum_free_small_species_heavy_atoms": 8,
             "attachment_classes": [], "topology_metadata_schema": {}}},
         "family_manifest": {}, "library_manifest": {},
-        "transport_model": {"met": pe_met(d_ref)} if transport else {}, "diagnostics": {},
+        "transport_model": {"met": met_block or pe_met(d_ref)} if transport else {}, "diagnostics": {},
     }
     return mapping
 
@@ -273,3 +273,11 @@ def pe2_two_state(temperature=700.0):
     cat = payloads("i151_pe2_catalog.json")
     state = witness_state([PE2_RADICAL, PE2_RADICAL])
     return me.PayloadCatalog(cat), state, cat
+
+
+CROTYL = {"graph": {"atoms": [_atom("c1", hydrogens=2, radical=1), _atom("c2", hydrogens=1),
+                              _atom("c3", hydrogens=1), _atom("c4", hydrogens=3)],
+                    "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", "c3"], "order": 2},
+                              {"atoms": ["c3", "c4"], "order": 1}],
+                    "electronic_state": {"multiplicity": 2}},
+          "disposition": "mobile"}   # [CH2]C=CC; its isomer [CH2]CC=C is NOT declared

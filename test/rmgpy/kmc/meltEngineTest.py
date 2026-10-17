@@ -449,3 +449,199 @@ def test_non_natural_isotopes_are_refused_at_run_start():
     labelled = MeltState(atoms, state.origin)
     with pytest.raises(me.DeclarationError, match="isotope"):
         me.MeltEngine(spec, S.ToyCatalog(), 700.0, np.random.default_rng(0), state=labelled)
+
+
+# --------------------------------------------------------------------------
+# rework 1
+# --------------------------------------------------------------------------
+def test_declared_species_identity_is_graph_isomorphism_not_an_attribute_multiset():
+    """Crotyl [CH2]C=CC is declared; its isomer [CH2]CC=C (but-3-en-1-yl) is
+    not.  Identity must be exact isomorphism under resonance, on the cached
+    path (crotyl first, then the isomer) and on a fresh identity."""
+    spec = S.pe_spec({6: 1}, small={"crotyl": S.CROTYL}, mobile={"crotyl": 1})
+    crotyl_state = S.witness_state(["[CH2]C=CC", "C=CC[CH2]"])
+    first = crotyl_state.components.ids()
+    assert len(first) == 2
+    cached = me.SpeciesIdentity(spec)
+    assert cached.identify(crotyl_state, first[0]) == "crotyl"
+    assert cached.identify(crotyl_state, first[1]) is None           # the isomer, after a cache fill
+    fresh = me.SpeciesIdentity(spec)
+    assert fresh.identify(crotyl_state, first[1]) is None            # the isomer alone
+    assert fresh.identify(crotyl_state, first[0]) == "crotyl"
+    # the other resonance form of crotyl is crotyl
+    other = S.witness_state(["C=C[CH]C"])
+    assert me.SpeciesIdentity(spec).identify(other, other.components.ids()[0]) == "crotyl"
+    # the engine: only the declared species bypasses MET
+    engine = me.MeltEngine(spec, S.ToyCatalog(names=("homolysis",)), 700.0, np.random.default_rng(0),
+                           state=crotyl_state)
+    assert [engine.entries[c].species for c in first] == ["crotyl", None]
+
+
+def _leak_fraction_state():
+    """PE DP12 with a mid radical and an end radical on one chain (the
+    reviewer's case): proposals of homolysis are thinned hard, the intra
+    mid/end branching class carries the leak; slow declared transport makes
+    phi of the homolysis products small)."""
+    spec = S.pe_spec({12: 1}, d_ref=3.0e-20)
+    engine = me.MeltEngine(spec, S.ToyCatalog(names=("homolysis", "recombination", "intra_mid_end")),
+                           700.0, np.random.default_rng(31))
+    state = engine.state
+    c = S.carbons(state, 0)
+    S.strip_h(state, sorted(c)[len(c) // 2])
+    S.strip_h(state, S.end_carbons(state, 0)[0])
+    engine.rebuild()
+    return engine
+
+
+def _physical_reverse_hazard(engine):
+    """Exact sum over the phi-thinned (radical-increasing) transitions of w * phi
+    of their product pair: each transition applied tentatively and rolled back."""
+    total = 0.0
+    state = engine.state
+    for cls in engine.classes:
+        if not cls.met_reverse or cls.bimolecular:
+            continue
+        for entry in list(engine.entries.values()):
+            for tr in entry.uni.get(cls.index, ((), 0))[0]:
+                view = me._LocalView(state, list(tr.components))
+                tx, products = engine._begin_apply(tr, view)
+                try:
+                    phi = 1.0
+                    if len(products) == 2:
+                        new = engine._scan(products)
+                        rate = engine.pair_rate(new[products[0]], new[products[1]])
+                        phi = 1.0 if rate is None else rate.phi
+                finally:
+                    tx.rollback()
+                total += engine.weights[cls.index] * phi
+    return total
+
+
+def test_leak_fraction_is_measured_against_physical_hazards():
+    engine = _leak_fraction_state()
+    before = engine.state.state_hash()
+    prop = engine.propensities()
+    proposal = prop.enabled
+    physical = _physical_reverse_hazard(engine)
+    assert engine.state.state_hash() == before
+    assert physical < 0.05 * proposal          # the thinning is strong here
+    exact = prop.leak / (prop.leak + physical)
+    naive = prop.leak / (prop.leak + proposal)
+    result = engine.run(until=40.0, max_events=1)
+    assert engine.null_proposals >= 40
+    # the reported fraction estimates the physical one, not the proposal-based one
+    assert abs(result.leak - exact) < 0.03, (result.leak, exact, naive)
+    assert abs(result.leak - naive) > 0.5
+    assert engine.report()["leak_fraction"] == result.leak
+
+
+def test_time_is_monotone_across_a_resync_after_a_horizon():
+    """Observation horizon, then an external edit: the resync redraws from
+    the current time (the reviewer's case: PE DP6 homolysis only, seed 1)."""
+    engine = me.MeltEngine(S.pe_spec({6: 1}), S.ToyCatalog(names=("homolysis",)), 700.0,
+                           np.random.default_rng(1))
+    horizon = 0.5748369784
+    result = engine.run(until=horizon)
+    assert result.events == 0 and engine.time == horizon
+    leak_den = engine.leak_den
+    S.strip_h(engine.state, S.end_carbons(engine.state, 0)[0])
+    event = engine.step()
+    assert event is not None and event.time > horizon
+    assert engine.leak_den >= leak_den
+    times = [e.time for e in engine.events]
+    engine.run(max_events=20)
+    times = [e.time for e in engine.events]
+    assert times == sorted(times) and times[0] > horizon
+
+
+def test_reverse_thinning_is_transactional():
+    """An exception inside the tentative apply / product scan / transport
+    evaluation of a thinned reverse leaves the state byte-identical and no
+    transaction open, and the exception propagates."""
+    for target in ("pair_rate", "_scan"):
+        engine = me.MeltEngine(S.pe_spec({10: 1}), S.ToyCatalog(names=("homolysis", "recombination")),
+                               700.0, np.random.default_rng(2))
+        before = engine.state.state_hash()
+        revision = engine.state.revision
+
+        def boom(*args, **kwargs):
+            raise RuntimeError(f"injected in {target}")
+
+        setattr(engine, target, boom)
+        with pytest.raises(RuntimeError, match="injected"):
+            engine.step()
+        assert engine.state.state_hash() == before
+        assert engine.state.revision == revision
+        assert engine.state._tx is None
+
+
+@pytest.mark.parametrize("arm", ["wlf", "arrhenius_nonfinite"])
+def test_singular_transport_is_refused_at_run_start(arm):
+    if arm == "wlf":
+        # T_wlf - C2 = 714.7 K: the WLF shift is singular between it and the run temperature
+        block = dict(S.ps_met(), segment_diffusivity={"law": "wlf", "D_ref_m2_s": 1e-12, "T_ref_K": 800.0,
+                                                      "C1": 13.39, "C2_K": 45.28, "T_wlf_K": 760.0})
+    else:
+        # exp(Ea/R (1/T_ref - 1/T)) overflows at 700 K
+        block = dict(S.ps_met(), segment_diffusivity={"law": "arrhenius", "D_ref_m2_s": 1e-12,
+                                                      "T_ref_K": 600.0, "Ea_J_mol": 5.0e7})
+    spec = S.ps_spec({10: 1}, met_block=block)
+    with pytest.raises(me.DeclarationError, match="singular|finite"):
+        me.MeltEngine(spec, S.ps_catalog(), 700.0, np.random.default_rng(0))
+
+
+@pytest.mark.parametrize("scaling", [{"law": "rouse"}, {"law": "crossover", "entanglement_units": 10.0}])
+@pytest.mark.parametrize("diffusivity", [
+    {"law": "arrhenius", "D_ref_m2_s": 3.0e-11, "T_ref_K": 650.0, "Ea_J_mol": 4.0e4},
+    {"law": "wlf", "D_ref_m2_s": 2.0e-12, "T_ref_K": 473.0, "C1": 13.39, "C2_K": 45.28, "T_wlf_K": 378.15},
+])
+def test_k_diffusion_is_the_declared_law_for_unequal_lengths(scaling, diffusivity):
+    block = dict(S.pe_met(), segment_diffusivity=diffusivity, chain_scaling=scaling)
+    law = me.TransportLaw.from_spec(S.pe_spec({6: 1}, met_block=block))
+    m0 = law.repeat_unit_molar_mass_g_mol
+    for n1, n2 in ((3, 40), (40, 3), (7, 25), (12, 12)):
+        expected = k_diffusion(block, 700.0, m0, n1, n2)
+        assert law.k_diffusion(700.0, n1, n2) == pytest.approx(expected, rel=1e-12)
+    # the capture radius is set by the SHORTER chain: max-length Rg would give a different value here
+    rg_short = math.sqrt(block["mean_square_end_to_end_per_molar_mass_m2_mol_per_g"] * m0 * 3 / 6)
+    assert 2 * rg_short > block["contact_radius_m"]
+
+
+def test_phi_uses_the_whole_activation_including_leak_site_pairs():
+    """A component pair with an allowed MET site pair (end + end) and a
+    branch-creating one (mid + end): phi = k_D / (k_D + k_act) with k_act over
+    BOTH, and the allowed/leak split is phi * w T / (N_A V) each."""
+    spec = S.pe_spec({14: 2})
+    engine = me.MeltEngine(spec, S.ToyCatalog(names=("recombination", "mid_end_recombination")), 700.0,
+                           np.random.default_rng(9))
+    state = engine.state
+    c0 = S.carbons(state, 0)
+    S.strip_h(state, sorted(c0)[len(c0) // 2])
+    S.strip_h(state, S.end_carbons(state, 0)[0])
+    S.strip_h(state, S.end_carbons(state, 1)[0])
+    engine.rebuild()
+    w = {t.name: t.weight for t in engine.templates}
+    chains = [c for c in state.components.ids() if state.components.backbone_count(c)]
+    (pair,) = [p for k, p in engine.pairs.items() if set(k) == set(chains)]
+    m0 = engine.transport.repeat_unit_molar_mass_g_mol
+    kd = k_diffusion(S.pe_met(), 700.0, m0, 14, 14)
+    k_allowed = w["recombination"] * 1
+    k_leak = w["mid_end_recombination"] * 1
+    k_act = k_allowed + k_leak
+    phi = kd / (kd + k_act)
+    assert pair.k_act == pytest.approx(k_act, rel=1e-12)
+    assert pair.phi == pytest.approx(phi, rel=1e-12)
+    assert abs(pair.phi - kd / (kd + k_allowed)) > 0.05 * pair.phi
+    assert pair.allowed == pytest.approx(phi * k_allowed / engine.nav, rel=1e-12)
+    assert pair.leak == pytest.approx(phi * k_leak / engine.nav, rel=1e-12)
+
+
+def test_hydrogen_order_cache_holds_templates_weakly():
+    import gc
+    templates = S.pe_templates()
+    for t in templates:
+        me._h_order(t)
+    alive = len(me._H_ORDER)
+    del templates, t
+    gc.collect()
+    assert len(me._H_ORDER) <= alive - len(S.PE_WEIGHTS)
