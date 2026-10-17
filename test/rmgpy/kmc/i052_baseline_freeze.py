@@ -912,6 +912,8 @@ def _met_fixture(artifact: Mapping[str, Any], records: dict[str, Any]):
         temperature=TEMPERATURE,
         volume=VOLUME,
         rng=clock_rng,
+        inventory="R0",
+        partial_record_set=True,
         termination_table=table,
         spin_factor=1.0,
         incremental=False,

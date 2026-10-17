@@ -79,7 +79,8 @@ def test_c2_backbone_cut_inside_a_reaction_window_splits_a_dp20_chain():
 def test_c3_closed_long_chain_melt_has_initiation_propensity(records):
     state = probe.build_state(probe.closed_melt_chains({10: 1, 20: 1, 30: 1}))
     engine = IsothermalSSA(state, records, temperature=700.0, volume=1e-24,
-                           rng=np.random.default_rng(1))
+                           rng=np.random.default_rng(1),
+                           inventory="R1")
     assert engine.channel_propensities().total_enabled > 0.0
 
 
@@ -107,12 +108,6 @@ def test_c5_state_moments_are_the_declared_dp_moments():
     assert result["state_moments"] == result["declared_dp_moments"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="C6: run(until=T) draws a waiting time and discards it at the horizon, so "
-    "ten snapshot calls consume a different random stream than one call",
-)
 def test_c6_trajectory_is_independent_of_the_snapshot_schedule(records):
     single = probe.run_trajectory(records, "named", 1, "single")
     piecewise = probe.run_trajectory(records, "named", 1, "ten")
