@@ -172,6 +172,7 @@ def init(ref, artifact, only=None):
     from rmgpy.kmc import template_emission as te
     from rmgpy.kmc import windows as win
     from rmgpy.kmc.event_record import EventRecord
+    from rmgpy.kmc.reference_thermo import GasPhaseRMGReferenceThermo
     art = json.loads(Path(artifact).read_text())
     if only:
         # one family's records (certified among themselves: a reversed
@@ -195,6 +196,7 @@ def init(ref, artifact, only=None):
     _S.update(cases=cases, case_stats=stats, cases_s=round(time.time() - t, 1), species=species,
               bounds={n: win.span_bound(win.family_constants(f)) for n, f in fam.items()},
               counter=te.RmgCounter(fam),
+              kc=te.ThermoKc(GasPhaseRMGReferenceThermo(db.thermo, "i147-reference")),
               rates=te.ProductionRates(db, families, database_path=DATABASE,
                                        database_sha="i138-reference"))
 
@@ -272,7 +274,7 @@ def run_record(record, contexts=True):
             payload = te.emit_record(record, family=family, members=members,
                                      counter=_S["counter"], rates=_S["rates"],
                                      record_certificate=rc, by_id=_S["by_id"],
-                                     check_upstream=False)
+                                     check_upstream=False, kc=_S["kc"])
         row["payload"] = payload
         row["status"] = payload["status"]
         row["refusal"] = (payload.get("refusal") or {}).get("status")
@@ -471,30 +473,30 @@ def collide(rows):
     return table
 
 
-def cycle_gate(rows):
-    """The equilibrium-cycle check of every reciprocal pair among the rows
-    (rows carry the resolved payloads; refusals follow)."""
+def cycle_gate(rows, complete):
+    """The equilibrium-cycle check of the resolved, loaded catalog against
+    independent thermo (``template_emission.check_cycles``); refusals follow
+    into the rows, and every failure is returned as a gate."""
     from rmgpy.kmc import template_emission as te
     have = [k for k, r in enumerate(rows) if r.get("payload")]
     payloads = [rows[k]["payload"] for k in have]
-    full = {p["record_event_id"]: _S["by_id"][p["record_event_id"]] for p in payloads
-            if p.get("record_event_id") in _S["by_id"]}
-    out, table = te.check_cycles(payloads, full, counter=_S["counter"])
+    out, table = te.check_cycles(payloads, counter=_S["counter"], kc=_S["kc"],
+                                 complete=complete)
     for k, payload in zip(have, out):
         rows[k]["payload"] = payload
         rows[k]["status"] = payload["status"]
         rows[k]["refusal"] = (payload.get("refusal") or {}).get("status")
-    worst = max([r["max_ratio_error"] for r in table if r.get("max_ratio_error") is not None]
-                or [None], key=lambda x: -1 if x is None else x)
-    worst_row = max([r for r in table if r.get("max_ratio_error") is not None],
-                    key=lambda r: r["max_ratio_error"], default=None)
-    counts = Counter(r["status"] for r in table)
-    return {"pairs": len(table), "by_status": dict(counts), "worst_ratio_error": worst,
-            "worst_pair": {k: worst_row.get(k) for k in (
-                "forward", "reverse", "T_forward", "T_reverse", "worst_T", "Kc_worst",
-                "k_forward_worst", "k_reverse_worst")} if worst_row else None,
-            "failed": [r for r in table if r["status"] == "refused:cycle"],
-            "table": table}
+    checked = [r for r in table if r["status"] != "not_evaluable"]
+    worst_row = max([r for r in checked if r.get("rows")], key=lambda r: r["max_ratio_error"],
+                    default=None)
+    loaded_pairs = len(table)
+    refused = [r for r in table if r["status"] == "refused:cycle"]
+    return {"pairs": loaded_pairs, "refused": len(refused),
+            "by_status": dict(Counter(r["status"] for r in table)),
+            "worst_ratio_error": worst_row["max_ratio_error"] if worst_row else None,
+            "worst_pair": {"forward": worst_row["forward"], "reverse": worst_row["reverse"],
+                           **(worst_row.get("worst") or {})} if worst_row else None,
+            "gates": te.cycle_gates(table, out, complete), "table": table}
 
 
 def orbit_table(rows):
@@ -524,7 +526,12 @@ def summarize(args, rows, records, picked, wall):
     for c in refused_collisions:
         gates.append(f"{c['disposition']} {c['key'][:16]}: {c['copies']} copies, "
                      f"log10 diameter {c['log10_diameter']} (records {c['records']})")
-    cycles = cycle_gate(rows)
+    complete = args.sample == 1 and not args.chunk and not args.limit and not args.open_only
+    cycles = cycle_gate(rows, complete)
+    gates += cycles["gates"]
+    if cycles["pairs"] and cycles["refused"] > 0.05 * cycles["pairs"]:
+        gates.append(f"more than 5% of the loaded reciprocal pairs are refused by the cycle "
+                     f"check: {cycles['refused']} of {cycles['pairs']}")
     for row in rows:
         fam_key = f"{row['family']}|{row['orientation']}"
         by_family[fam_key][row.get("refusal") or row["status"]] += 1
@@ -586,7 +593,6 @@ def summarize(args, rows, records, picked, wall):
     emitted = sum(1 for r in rows if r["status"] in ("emitted", "partial"))
     if rows and not emitted:
         gates.append("every processed record was refused (a vacuous run)")
-    complete = args.sample == 1 and not args.chunk and not args.limit and not args.open_only
     if complete:
         out["comparison"] = comparison(args.ref, rows)
         for key, table in out["comparison"].items():

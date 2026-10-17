@@ -1356,10 +1356,10 @@ def test_a_pair_of_context_templates_is_checked():
     pair is still checked, and a bad context weight is caught."""
     payloads, counter = _toy_pair()
     for p in payloads:
-        base_template(p)["base"] = False
+        p["templates"][0]["base"] = False
     out, table = _check([te.finish(p) for p in payloads], counter)
     assert table[0]["status"] == "ok" and table[0]["rows"] >= 4
-    base_template(payloads[0])["weight"]["w"][5] *= 1.01
+    payloads[0]["templates"][0]["weight"]["w"][5] *= 1.01
     out, table = _check([te.finish(p) for p in payloads], counter)
     assert table[0]["status"] == "refused:cycle" and te.cycle_gates(table, out)
 
@@ -1417,8 +1417,8 @@ def test_merge_beyond_the_pair_tolerance_is_refused_with_every_deviation_reporte
     """Each group's diameter is 0.008 (inside), but the second pair's
     loaded ratio is 0.016 decades off: refused, deviations in the table."""
     payloads, counter = _two_pairs(0.0)
-    for k, sh in ((1, 0.008), (2, -0.0)):
-        pass
+    for p in payloads:
+        p.pop("thermo")        # legacy payloads: the expectation is each pair's own ratio
     base_template(payloads[2])["weight"]["w"] = [w * 10 ** 0.008 for w in base_template(payloads[2])["weight"]["w"]]
     base_template(payloads[3])["weight"]["w"] = [w * 10 ** -0.008 for w in base_template(payloads[3])["weight"]["w"]]
     payloads[2], payloads[3] = te.finish(payloads[2]), te.finish(payloads[3])
@@ -1466,17 +1466,20 @@ def test_thermo_kc_is_whole_species_rmg_thermo_in_concentration_units(rmg):
     from rmgpy.reaction import Reaction
     from rmgpy.species import Species
     db = ct.database()
-    kc = te.ThermoKc(GasPhaseRMGReferenceThermo(db.thermo, "test-only-database-commit"))
-    ethane = rm.molecule_rows(Molecule().from_smiles("CC"))
-    # the methyl pair: two components of 4 atoms, ids disjoint
-    one = rm.molecule_rows(Molecule().from_smiles("[CH3]"))
-    two = dict(one)
-    two.update({a + 100: (x[0], x[1], x[2], x[3], x[4], tuple((n + 100, o) for n, o in x[5]))
-                for a, x in one.items()})
+    prov = GasPhaseRMGReferenceThermo(db.thermo, "test-only-database-commit")
+    kc = te.ThermoKc(prov)
+    def rows_of(smiles, offset):
+        m = Molecule().from_smiles(smiles)
+        m.assign_atom_ids()
+        return {a + offset: (x[0], x[1], x[2], x[3], x[4], tuple((n + offset, o) for n, o in x[5]))
+                for a, x in rm.molecule_rows(m).items()}
+    ethane = rows_of("CC", 0)
+    two = dict(rows_of("[CH3]", 100))
+    two.update(rows_of("[CH3]", 200))
     got = kc(ethane, two, [700.0, 800.0])
     sp = lambda s: Species(molecule=[Molecule().from_smiles(s)])
     rxn = Reaction(reactants=[sp("CC")], products=[sp("[CH3]"), sp("[CH3]")])
-    rxn_kc = [rxn.get_equilibrium_constant(t, type="Kc") for t in (700.0, 800.0)]
+    rxn_kc = list(prov.evaluate(rxn, [700.0, 800.0]).equilibrium_constants)
     assert got == pytest.approx(rxn_kc, rel=1e-9)
     assert te.ssa_of_rows(two, ToyCounterReal(rmg)) == 2.0
     assert te.ssa_of_rows(ethane, ToyCounterReal(rmg)) == 1.0
