@@ -575,16 +575,16 @@ def test_equal_weight_collision_is_one_template():
 
 
 def test_unequal_weight_collision_is_refused():
-    """The same template with weights 1e-6 apart: no merge, every copy and
-    its record refused ``refused:collision`` with keys, records and weights;
-    nothing of the key is loaded."""
+    """The same template with weights 10 % (0.041 decades) apart: no merge,
+    every copy and its record refused ``refused:collision`` with keys,
+    records and weights; nothing of the key is loaded."""
     payloads = _toy_catalog()
     t = base_template(payloads[1])
-    t["weight"]["w"] = [w * (1 + 1e-6) for w in t["weight"]["w"]]
+    t["weight"]["w"] = [w * 1.1 for w in t["weight"]["w"]]
     payloads[1] = te.finish(payloads[1])
     out, table = te.resolve_collisions(payloads)
     assert [r["disposition"] for r in table] == ["refused:collision"]
-    assert table[0]["rel_spread"] == pytest.approx(1e-6, rel=1e-3)
+    assert table[0]["log10_diameter"] == pytest.approx(math.log10(1.1), rel=1e-9)
     for p in out:
         t = base_template(p)
         assert t["status"] == "refused" and t["refusal"]["status"] == "refused:collision"
@@ -1126,7 +1126,7 @@ def test_catalog_refuses_a_zero_or_unusable_weight_or_channel():
         te.resolve_collisions([p])
 
 
-def _reciprocal(forward_keys, reverse_keys, reverse_shift=(0.0, 0.0)):
+def _reciprocal(forward_keys, reverse_keys, reverse_shift=(0.0, 0.0, 0.0)):
     """Forward records 1.. and their reverse records 5..: ``*_keys`` give
     each record's base template key."""
     base = _toy_catalog()[0]
@@ -1175,9 +1175,7 @@ def test_orbit_problem_on_a_witness():
     rows = dict(w.reactant_rows())
     t = cut(w).matcher(1.0, "t")
     state = te.melt_state(rows)
-    keys = {rm.product_key(wm.product_rows(state, x)): x.edit_key[1:]
-            for x in wm.match([t], state).transitions}
-    edits = sorted(keys.values())
+    edits = [x.edits for x in wm.match([t], state).transitions]
     assert len(edits) >= 4
     assert te.orbit_problem(rows, [edits[0]]) is None
     assert te.orbit_problem(rows, [edits[0], edits[0]]) is None
@@ -1282,18 +1280,33 @@ def test_perturbing_one_weight_by_1e_6_fails_the_cycle():
         assert p["status"] == "refused"
 
 
-def test_a_cycle_whose_inverse_edit_is_missing_is_refused():
-    """The reverse record's template does not undo the forward edit (it cuts
-    another bond): the bijection fails."""
+def test_a_cycle_whose_inverse_edit_is_not_unique_is_refused():
+    """The reverse record carries a second base template making the same
+    cleavage: each forward transition is undone twice (a double count), the
+    bijection fails."""
     payloads, records, counter = _toy_pair()
-    other = emit(homolysis(12, (4, 5)))
-    # the C12 (4,5) template in place of the (3,4) one
+    twin = json.loads(json.dumps(base_template(payloads[1])))
+    twin["key"] = "d" * 64
+    payloads[1]["templates"].append(twin)
+    payloads[1] = te.finish(payloads[1])
+    out, table = te.check_cycles(payloads, records, counter=counter)
+    assert table[0]["status"] == "refused:cycle"
+    assert not table[0]["bijection"]["forward_to_reverse"]
+    assert "inverse edit" in base_template(out[0])["refusal"]["reason"]
+
+
+def test_a_cycle_without_a_channel_transition_is_refused():
+    """The reverse record's template (radius 4) cannot make its record's own
+    cleavage: named refusal, both records refused."""
+    payloads, records, counter = _toy_pair()
+    other = emit(homolysis(12, (5, 6)), radius=4)
     payloads[0] = te.finish(dict(other, record_event_id=payloads[0]["record_event_id"],
                                  reverse_of=payloads[0]["reverse_of"]))
     out, table = te.check_cycles(payloads, records, counter=counter)
     assert table[0]["status"] == "refused:cycle"
-    assert "inverse" in base_template(out[0])["refusal"]["reason"] or \
-        "inverse" in base_template(out[1])["refusal"]["reason"]
+    for p in out:
+        assert base_template(p)["refusal"]["status"] == "refused:cycle"
+        assert "no transition" in base_template(p)["refusal"]["reason"]
 
 
 # -- class overlap -----------------------------------------------------------

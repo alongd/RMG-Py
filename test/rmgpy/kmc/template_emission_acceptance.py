@@ -308,6 +308,12 @@ def comparison(ref, rows, molecules=None, label=None, owners_default=None):
     ref_species = tuple(sorted(species(m) for m in molecules))
     index = defaultdict(list)
     templates = defaultdict(list)
+    loaded = set()
+    # a merged template is carried by the record that names it: loading a
+    # subset of records must not lose a template whose owner is outside it
+    owned = {(row["payload"].get("record_event_id"), t["key"]): t
+             for row in rows for t in (row.get("payload") or {}).get("templates", [])
+             if t.get("status") == "emitted"}
     for row in rows:
         payload = row.get("payload") or {}
         rec = next((r for r in _S["records"] if r["event_id"].startswith(row["event_id"])), None)
@@ -325,9 +331,21 @@ def comparison(ref, rows, molecules=None, label=None, owners_default=None):
         if not set(reac) <= set(ref_species):
             continue
         for t in payload.get("templates", []):
-            if t.get("status") == "emitted":
+            if t.get("status") == "merged":
+                into = t["merged_into"]
+                t = owned.get((into["record"], into["key"]))
+                if t is None:
+                    raise te.EmissionError(f"orphaned merged template of {rec['event_id'][:16]}")
+                owner_id = into["record"]
+            elif t.get("status") == "emitted":
+                owner_id = rec["event_id"]
+            else:
+                continue
+            name = f"{owner_id[4:16]}:{t['key'][:12]}"
+            if name not in loaded:
+                loaded.add(name)
                 templates[(rec["family"], direction)].append(
-                    te.matcher_from_payload(t, 700.0, name=f"{rec['event_id'][4:16]}:{t['key'][:12]}"))
+                    te.matcher_from_payload(t, 700.0, name=name))
     out = {}
     for (name, direction), tlist in sorted(templates.items()):
         family = fam[name]
@@ -352,6 +370,15 @@ def comparison(ref, rows, molecules=None, label=None, owners_default=None):
         table = te.classify_reference(tlist, molecules, family=family, directions=(direction,),
                                       counter=counter, owners=owners)
         table["templates"] = len(tlist)
+        try:
+            te.check_class_overlap(tlist, te.melt_state(
+                {a: r for m in molecules for a, r in te.rm.molecule_rows(m).items()}))
+            table["class_overlaps"] = 0
+        except te.ClassOverlapError as error:
+            found = te.class_overlaps(tlist, te.melt_state(
+                {a: r for m in molecules for a, r in te.rm.molecule_rows(m).items()}))
+            table["class_overlaps"] = len(found)
+            table.setdefault("failures", []).append(f"ClassOverlapError: {error}")
         out[f"{name}|{direction}"] = table
     # families with records on the reference species but no emitted template
     for key, xs in index.items():
@@ -444,16 +471,60 @@ def collide(rows):
     return table
 
 
+def cycle_gate(rows):
+    """The equilibrium-cycle check of every reciprocal pair among the rows
+    (rows carry the resolved payloads; refusals follow)."""
+    from rmgpy.kmc import template_emission as te
+    have = [k for k, r in enumerate(rows) if r.get("payload")]
+    payloads = [rows[k]["payload"] for k in have]
+    full = {p["record_event_id"]: _S["by_id"][p["record_event_id"]] for p in payloads
+            if p.get("record_event_id") in _S["by_id"]}
+    out, table = te.check_cycles(payloads, full, counter=_S["counter"])
+    for k, payload in zip(have, out):
+        rows[k]["payload"] = payload
+        rows[k]["status"] = payload["status"]
+        rows[k]["refusal"] = (payload.get("refusal") or {}).get("status")
+    worst = max([r["max_ratio_error"] for r in table if r.get("max_ratio_error") is not None]
+                or [None], key=lambda x: -1 if x is None else x)
+    worst_row = max([r for r in table if r.get("max_ratio_error") is not None],
+                    key=lambda r: r["max_ratio_error"], default=None)
+    counts = Counter(r["status"] for r in table)
+    return {"pairs": len(table), "by_status": dict(counts), "worst_ratio_error": worst,
+            "worst_pair": {k: worst_row.get(k) for k in (
+                "forward", "reverse", "T_forward", "T_reverse", "worst_T", "Kc_worst",
+                "k_forward_worst", "k_reverse_worst")} if worst_row else None,
+            "failed": [r for r in table if r["status"] == "refused:cycle"],
+            "table": table}
+
+
+def orbit_table(rows):
+    """Templates refused ``refused:non_transferable`` and emitted, per row."""
+    refused = Counter()
+    emitted = 0
+    for row in rows:
+        for t in (row.get("payload") or {}).get("templates", []):
+            if t.get("status") == "emitted":
+                emitted += 1
+            elif (t.get("refusal") or {}).get("status") == "refused:non_transferable":
+                refused["refused:non_transferable"] += 1
+    return {"emitted_templates": emitted, "refused": dict(refused)}
+
+
 def summarize(args, rows, records, picked, wall):
     from rmgpy.kmc import template_emission as te
     gates = []
     by_family = defaultdict(Counter)
     calibration_rows = []
-    collisions = collide(rows)
+    try:
+        collisions = collide(rows)
+    except te.EmissionError as error:      # a split reciprocal pair, a bad weight
+        gates.append(f"catalog consistency: {type(error).__name__}: {error}"[:600])
+        collisions = []
     refused_collisions = [c for c in collisions if c["disposition"] != "merged"]
     for c in refused_collisions:
-        gates.append(f"unequal-weight collision {c['key'][:16]}: {c['copies']} copies, "
-                     f"relative spread {c['rel_spread']:.3g} (records {c['records']})")
+        gates.append(f"{c['disposition']} {c['key'][:16]}: {c['copies']} copies, "
+                     f"log10 diameter {c['log10_diameter']} (records {c['records']})")
+    cycles = cycle_gate(rows)
     for row in rows:
         fam_key = f"{row['family']}|{row['orientation']}"
         by_family[fam_key][row.get("refusal") or row["status"]] += 1
@@ -478,8 +549,11 @@ def summarize(args, rows, records, picked, wall):
                           "merged": len(collisions) - len(refused_collisions),
                           "refused": len(refused_collisions),
                           "copies": sum(c["copies"] for c in collisions),
-                          "max_rel_spread": max([c["rel_spread"] for c in collisions] or [0.0]),
-                          "rtol": te.COLLISION_RTOL, "table": collisions},
+                          "max_log10_diameter": max([c["log10_diameter"] or 0.0
+                                                     for c in collisions] or [0.0]),
+                          "tolerance_log10": te.LOCALITY_TOLERANCE_LOG10, "table": collisions},
+           "cycles": cycles,
+           "orbit": orbit_table(rows),
            "ref": args.ref, "families": args.family or "all", "records": len(records),
            "upstream_all": _S.get("upstream"), "open_only": args.open_only,
            "processed": len(picked),
