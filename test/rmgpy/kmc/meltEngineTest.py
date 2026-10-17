@@ -728,18 +728,24 @@ def _fast_leak_state():
     return engine
 
 
-def test_short_horizon_leak_report_is_not_degenerate():
+def test_short_horizon_leak_report_states_its_bias_and_keeps_the_parts():
+    """No proposal yet: the thinned part of the denominator is 0, so the fraction is
+    biased high (documented); the open-segment hint is reported but not in leak_den."""
     engine = _fast_leak_state()
     prop = engine.propensities()
     exact = prop.leak / (prop.leak + _physical_reverse_hazard(engine))
     result = engine.run(until=1.0e-6)
     assert result.events == 0 and engine.null_proposals == 0
-    assert abs(result.leak - exact) < 0.02 * exact, (result.leak, exact)
+    assert result.leak > exact
+    assert result.leak == pytest.approx(prop.leak / (prop.leak + (prop.enabled - prop.thinned)),
+                                        rel=1e-9)
     parts = engine.report()["leak_estimate"]
-    assert parts["estimate"] is True
+    assert parts["estimate"] is True and parts["estimator"] == me.LEAK_ESTIMATOR
     assert parts["leak_num"] == engine.leak_num and parts["leak_den"] == engine.leak_den
     assert set(parts) >= {"non_thinned_integral", "phi_sum", "thinned_proposals", "open_thinned"}
-    assert "estimate" in me.LEAK_DEFINITION
+    assert parts["open_thinned"] == pytest.approx(
+        _physical_reverse_hazard(engine) * 1.0e-6, rel=1e-9)     # the hint is the exact value here
+    assert "estimate" in me.LEAK_DEFINITION and "biased" in me.LEAK_DEFINITION
 
 
 def test_long_run_leak_estimate_matches_the_physical_fraction():

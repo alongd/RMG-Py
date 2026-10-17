@@ -70,12 +70,16 @@ degree after the participant's own edits); a kind pair is allowed or leak, so
 the leak and allowed pair counts are exact.  Leak propensity accrues to the
 leak integral (``leak_num``) and never fires.
 
-The leak fraction (``LEAK_DEFINITION``) is ``leak_num / leak_den`` with
-``leak_den = leak_num + integral of the PHYSICAL firing hazard``: a
-phi-thinned channel enters as proposal hazard x phi, accumulated as the sum of
-phi over its proposals (an unbiased estimate, Campbell's theorem); every other
-channel enters with its propensity.  A horizon view of an open segment holds
-the non-thinned part only.
+The leak fraction (``LEAK_ESTIMATOR``, ``LEAK_DEFINITION``) is
+``leak_num / leak_den`` with ``leak_den = leak_num + non_thinned + phi_sum``:
+``leak_num`` and ``non_thinned`` are exact integrals to the clock, ``phi_sum``
+(the sum of phi over the proposals of the phi-thinned channels) is unbiased
+for the integral of proposal hazard x phi (Campbell's theorem), so ``leak_den``
+is unbiased and the ratio converges to the exact physical fraction as the run
+lengthens; at short times it is biased (with no proposal yet the thinned part is
+0 and the fraction is high; a ratio of unbiased parts has an O(1/proposals)
+bias).  Nothing else is added: the open segment's thinned hazard estimate
+(``open_thinned``) is reported as a labelled hint only.
 
 Matching cost: structural matches use the matcher's own embedding, finish
 and evaluate steps on a component-local view, with one optimization: hydrogen
@@ -114,14 +118,17 @@ from rmgpy.kmc.melt_state import MeltState, SetBond, SetRadical, materialize, _B
 
 MET_SCHEMA = "kmc-met-transport/1"
 PHI_FALLBACK_LIMIT = 64
+LEAK_ESTIMATOR = "ratio_of_unbiased_integrals"
 LEAK_DEFINITION = (
-    "estimate: leak_num / leak_den; leak_num = int leak hazard dt; leak_den = leak_num + "
-    "non_thinned_integral + phi_sum + open_thinned, where non_thinned_integral = int of the "
-    "propensity of every non-thinned firing channel dt, phi_sum = sum of phi over the proposals of "
-    "the phi-thinned channels (unbiased for int proposal hazard x phi dt), and open_thinned (horizon "
-    "views only, never committed) = the open segment's thinned proposal hazard x the running mean "
-    "phi of each channel (exact mean over current transitions before its first proposal); a ratio "
-    "of estimates, so the fraction is itself an estimate")
+    "estimate (ratio_of_unbiased_integrals): leak_num / leak_den; leak_num = int leak hazard dt; "
+    "leak_den = leak_num + non_thinned_integral + phi_sum, where non_thinned_integral = int of the "
+    "propensity of every non-thinned firing channel dt and phi_sum = sum of phi over the proposals "
+    "of the phi-thinned channels (unbiased for int proposal hazard x phi dt, Campbell); leak_den is "
+    "unbiased and the ratio is consistent as the run lengthens, biased high at short times (O(1/"
+    "proposals); with no proposal yet the thinned part is 0).  open_thinned (horizon views only, "
+    "never committed, NOT part of leak_den) = the open segment's thinned proposal hazard x the "
+    "running mean phi of each channel, a hint whose source is labelled (a sampled mean before a "
+    "channel's first proposal is labelled sampled)")
 SPIN_FACTOR_RANGE = (0.25, 1.0)
 BUILTIN_SPECIES = ("H", "H2")
 
@@ -1294,7 +1301,8 @@ class MeltEngine:
             raise EngineError(f"conservation broken: {old_comp} -> {new_comp}, backbone {old_bb} -> {new_bb}")
         self.conservation_checks += 1
 
-    def _fire(self, tr: EngineTransition, view, channel: str, thinning: bool) -> Optional[Event]:
+    def _fire(self, tr: EngineTransition, view, channel: str, thinning: bool,
+              met_key: Optional[str] = None) -> Optional[Event]:
         if tr.leak:
             raise EngineError(f"{tr.template}: a branching (leak) transition reached the fire step")
         tx, products = self._begin_apply(tr, view)
@@ -1347,6 +1355,8 @@ class MeltEngine:
         self.events_fired += 1
         self.family_counts[tr.family] += 1
         self.template_counts[tr.template] += 1
+        if met_key is not None:
+            self.met_counts[met_key] += 1      # with the log, before any post-commit failure
         try:
             self._conserved(journal)
             self._update(old, added, new)
@@ -1424,8 +1434,11 @@ class MeltEngine:
         segment: each channel's proposal hazard x the running mean phi of its
         class.  A class with no proposal yet uses the exact mean phi over its
         current transitions (unimolecular classes; evaluated by tentative
-        apply and rollback, at most ``PHI_FALLBACK_LIMIT`` transitions taken at
-        an even stride in edit-key order, no random draw); a bimolecular
+        apply and rollback; exhaustive up to ``PHI_FALLBACK_LIMIT`` transitions
+        ("exact_current_transitions"), otherwise a mean over ``PHI_FALLBACK_LIMIT``
+        of them at an even stride in edit-key order, no random draw, labelled
+        "sampled_current_transitions": a sample, aliased with transition order,
+        not the exact mean); a bimolecular
         thinned class with no proposal yet enters with phi = 1 (an upper
         bound), and the source is reported."""
         total, sources = 0.0, set()
@@ -1438,20 +1451,22 @@ class MeltEngine:
                 total += a * self._phi_by_class[ci] / n
                 sources.add("running_mean")
             elif key[0] == "uni":
-                total += a * self._fallback_phi(ci)
-                sources.add("exact_current_transitions")
+                phi, sampled = self._fallback_phi(ci)
+                total += a * phi
+                sources.add("sampled_current_transitions" if sampled else "exact_current_transitions")
             else:
                 total += a
                 sources.add("upper_bound_phi_1")
         self._open_phi_source = "+".join(sorted(sources)) or "none"
         return total
 
-    def _fallback_phi(self, ci) -> float:
+    def _fallback_phi(self, ci) -> Tuple[float, bool]:
         key = (ci, self.state.state_hash(), self.temperature)
         if key in self._phi_fallback:
             return self._phi_fallback[key]
         trs = [tr for c in sorted(self.entries) for tr in self.entries[c].uni.get(ci, ((), 0))[0]]
-        if len(trs) > PHI_FALLBACK_LIMIT:
+        sampled = len(trs) > PHI_FALLBACK_LIMIT
+        if sampled:
             stride = len(trs) / PHI_FALLBACK_LIMIT
             trs = [trs[int(k * stride)] for k in range(PHI_FALLBACK_LIMIT)]
         phis = []
@@ -1466,12 +1481,12 @@ class MeltEngine:
             finally:
                 tx.rollback()
             phis.append(phi)
-        value = math.fsum(phis) / len(phis) if phis else 1.0
+        value = (math.fsum(phis) / len(phis) if phis else 1.0, sampled)
         self._phi_fallback = {key: value}
         return value
 
     def leak_estimate(self) -> dict:
-        return {"estimate": True, "definition": LEAK_DEFINITION,
+        return {"estimate": True, "estimator": LEAK_ESTIMATOR, "definition": LEAK_DEFINITION,
                 "leak_num": self.leak_num, "leak_den": self.leak_den,
                 "fraction": self.leak_num / self.leak_den if self.leak_den else 0.0,
                 "non_thinned_integral": self.non_thinned, "phi_sum": self.phi_sum,
@@ -1488,7 +1503,7 @@ class MeltEngine:
             self.rebuild()
 
     def _set_den(self):
-        self.leak_den = self.leak_num + self.non_thinned + self.phi_sum + self.open_thinned
+        self.leak_den = self.leak_num + self.non_thinned + self.phi_sum
 
     def _integrate(self, elapsed, enabled, leak, thinned=0.0):
         self.leak_num = self._leak_num_c + leak * elapsed
@@ -1502,8 +1517,8 @@ class MeltEngine:
         self._segment_start = self.time
         self._leak_num_c = self.leak_num
         self._non_thinned_c = self.non_thinned
-        self.open_thinned = 0.0   # a view-only estimate, never committed (Campbell: the
-        self._set_den()           # committed thinned part is the sum of phi over proposals)
+        self.open_thinned = 0.0   # a view-only hint, never committed
+        self._set_den()
         self._pending = None
 
     def _view_to_horizon(self, until, enabled, leak, thinned=0.0, prop=None):
@@ -1570,9 +1585,7 @@ class MeltEngine:
             tr, view = self._pair_transition(ci, c0, s0, c1, s1)
             return self._fire(tr, view, "bi", self.classes[ci].met_reverse)
         tr, view, rate = self._draw_met(total)
-        event = self._fire(tr, view, "met", False)
-        self.met_counts["forward_bypass" if rate.bypass else "forward"] += 1
-        return event
+        return self._fire(tr, view, "met", False, "forward_bypass" if rate.bypass else "forward")
 
     def run(self, *, until: Optional[float] = None, max_events: Optional[int] = None,
             check=None) -> RunResult:
@@ -1623,6 +1636,6 @@ class MeltEngine:
 
 __all__ = [
     "ComponentPairSampler", "DeclarationError", "EngineError", "EngineTransition", "Event",
-    "MET_SCHEMA", "MeltEngine", "PairRate", "PayloadCatalog", "Propensities", "RunResult",
+    "LEAK_ESTIMATOR", "MET_SCHEMA", "MeltEngine", "PairRate", "PayloadCatalog", "Propensities", "RunResult",
     "SpeciesIdentity", "TransportLaw", "escape_factor",
 ]
