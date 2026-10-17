@@ -431,8 +431,6 @@ def main():
         artifact = str(base / (base / "artifact.path").read_text().strip())
     t0 = time.time()
     init(args.ref, artifact, only=args.family)
-    print("INIT", {k: _S.get(k) for k in ("load_s", "certify_s", "cases_s", "case_stats")},
-          len(_S["records"]), "records", flush=True)
     records = sorted(_S["records"], key=lambda r: r["event_id"])
     _S["upstream"] = upstream_counts(records)
     print("UPSTREAM", json.dumps(_S["upstream"]), flush=True)
@@ -445,6 +443,11 @@ def main():
         picked = picked[k::n]
     if args.limit:
         picked = picked[:args.limit]
+    print("INIT", {k: _S.get(k) for k in ("load_s", "certify_s", "cases_s", "case_stats")},
+          len(_S["records"]), "records", "selected", len(picked),
+          [r["event_id"][:16] for r in picked], flush=True)
+    for problem in selection_problems(args, records, picked):
+        print("SELECTION", problem, flush=True)
     rows = []
     tag = args.ref + (f".{args.chunk.replace('/', 'of')}" if args.chunk else "") + \
         ("." + "+".join(args.family) if args.family else "")
@@ -639,9 +642,20 @@ def orbit_table(rows):
     return {"emitted_templates": emitted, "refused": dict(refused)}
 
 
+def selection_problems(args, records, picked):
+    """Gate failures of the record selection: an ``--event`` prefix that matches
+    no record (event ids differ between compiles), or a selection that processes
+    nothing (a run that checks nothing must not pass)."""
+    out = [f"--event prefix {e} matches no record" for e in (getattr(args, "event", None) or ())
+           if not any(r["event_id"].startswith(e) for r in records)]
+    if not picked:
+        out.append("the selection processed 0 records (a vacuous run)")
+    return out
+
+
 def summarize(args, rows, records, picked, wall):
     from rmgpy.kmc import template_emission as te
-    gates = []
+    gates = selection_problems(args, records, picked)
     by_family = defaultdict(Counter)
     calibration_rows = []
     try:
