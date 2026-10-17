@@ -607,6 +607,24 @@ def pyridyl_spec(counts):
     return pendant_spec(counts, atoms, bonds, "p1", elements=("C", "H", "N"), lone_pairs=(0, 1))
 
 
+def quinone_spec(counts, exocyclic="O"):
+    """A 2,5-cyclohexadiene-1,4-dione-2-yl pendant (``exocyclic="O"``, a
+    quinone) or its 3,6-dimethylene analogue (``"C"``): the exocyclic
+    partner's element decides RMG's aromaticity of the ring."""
+    keys = [f"k{i}" for i in range(1, 7)]
+    hydrogens = {"k1": 0, "k2": 0, "k3": 1, "k4": 0, "k5": 1, "k6": 1}
+    atoms = [_atom(k, hydrogens=hydrogens[k]) for k in keys]
+    bonds = [("k1", "k2", 1), ("k2", "k3", 2), ("k3", "k4", 1), ("k4", "k5", 1), ("k5", "k6", 2), ("k6", "k1", 1)]
+    if exocyclic == "O":
+        atoms += [{"key": "o1", "element": "O", "lone_pairs": 2}, {"key": "o4", "element": "O", "lone_pairs": 2}]
+        elements, lone_pairs = ("C", "H", "O"), (0, 2)
+    else:
+        atoms += [_atom("o1", hydrogens=2), _atom("o4", hydrogens=2)]
+        elements, lone_pairs = ("C", "H"), (0,)
+    bonds += [("k1", "o1", 2), ("k4", "o4", 2)]
+    return pendant_spec(counts, atoms, bonds, "k2", elements=elements, lone_pairs=lone_pairs)
+
+
 def biphenylyl_bromide_spec(counts):
     """A 4'-bromo-4-biphenylyl pendant: two rings joined by a single bond, Br on the outer ring."""
     a_atoms, a_bonds = _ring6("q", {"q1": 0, "q4": 0})

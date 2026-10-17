@@ -391,19 +391,165 @@ def validate_side_group_channels(spec, channels) -> List[dict]:
     return rows
 
 
+PERCEPTION_STATS = {"calls": 0, "atoms": 0, "ring_system_hits": 0, "whole_fallbacks": 0}
+_RING_SYSTEM_CACHE: Dict[Tuple, frozenset] = {}
+_COMPONENT_MEMO = weakref.WeakKeyDictionary()   # state -> (revision, {cid: atoms})
+_CAPS = {2.0: ("C", 2), 3.0: ("C", 1)}          # a capped multiple bond keeps its order
+
+
+def clear_aromaticity_cache():
+    _RING_SYSTEM_CACHE.clear()
+    _COMPONENT_MEMO.clear()
+
+
+def _perceive(rows) -> frozenset:
+    """Atom keys of ``rows`` on RMG-aromatic rings (``get_aromatic_rings``)."""
+    from rmgpy.kmc.rmg_moves import molecule_from_rows
+    PERCEPTION_STATS["calls"] += 1
+    PERCEPTION_STATS["atoms"] += len(rows)
+    rings, _bonds = molecule_from_rows(rows).get_aromatic_rings()
+    return frozenset(atom.id for ring in rings for atom in ring)
+
+
+def _ring_atoms_and_bridges(state, atoms):
+    """(atoms on a cycle, bridge edges) of one component (iterative Tarjan)."""
+    nodes = state.atoms
+    disc, low, bridges, counter = {}, {}, set(), 0
+    for root in atoms:
+        if root in disc:
+            continue
+        disc[root] = low[root] = counter
+        counter += 1
+        stack = [(root, -1, iter(sorted(nodes[root].edges)))]
+        while stack:
+            v, parent, it = stack[-1]
+            w = next(it, None)
+            if w is None:
+                stack.pop()
+                if stack:
+                    u = stack[-1][0]
+                    low[u] = min(low[u], low[v])
+                    if low[v] > disc[u]:
+                        bridges.add((min(u, v), max(u, v)))
+                continue
+            if w == parent:
+                continue
+            if w in disc:
+                low[v] = min(low[v], disc[w])
+            else:
+                disc[w] = low[w] = counter
+                counter += 1
+                stack.append((w, v, iter(sorted(nodes[w].edges))))
+    ring = {a for a in atoms if any((min(a, b), max(a, b)) not in bridges for b in nodes[a].edges)}
+    return ring, bridges
+
+
+def _ring_system_rows(state, group):
+    """Rows of one ring system (connected ring atoms) and its first shell
+    (direct neighbours), each first-shell bond leaving the system replaced by
+    a cap of the same order (H for single, CH2= for double, CH# for triple):
+    the atoms whose element, charge, electrons and bonds RDKit's aromaticity
+    model reads.  Ids are ranks (sorted atom id); returns (rows, rank -> atom)
+    or None when a leaving bond cannot be capped (falls back to the whole
+    component)."""
+    nodes = state.atoms
+    shell = sorted({b for a in group for b in nodes[a].edges} - set(group))
+    included = sorted(group) + shell
+    rank = {a: k for k, a in enumerate(sorted(included))}
+    rows, extra = {}, len(rank)
+    for a in sorted(included):
+        n = nodes[a]
+        edges = []
+        for b, order in n.edges.items():
+            if b in rank:
+                edges.append((rank[b], float(order)))
+                continue
+            order = float(order)
+            if order == 1.0:
+                rows[extra] = ("H", None, 0, 0, 0, ((rank[a], 1.0),))
+                edges.append((extra, 1.0))
+                extra += 1
+            elif order in _CAPS:
+                element, hydrogens = _CAPS[order]
+                cap = extra
+                cap_edges = [(rank[a], order)]
+                extra += 1
+                for _h in range(hydrogens):
+                    rows[extra] = ("H", None, 0, 0, 0, ((cap, 1.0),))
+                    cap_edges.append((extra, 1.0))
+                    extra += 1
+                rows[cap] = (element, None, 0, 0, 0, tuple(sorted(cap_edges)))
+                edges.append((cap, order))
+            else:
+                return None
+        rows[rank[a]] = (n.element, n.isotope, n.charge, n.radical, n.lone_pairs, tuple(sorted(edges)))
+    return rows, {k: a for a, k in rank.items()}
+
+
 def aromatic_atoms(state, cid) -> frozenset:
     """Atoms of component ``cid`` on an aromatic ring by RMG's perception
     (``Molecule.get_aromatic_rings``: six-membered carbon rings, RDKit
     aromaticity, independent of the Kekule form stored), the perception the
-    solver's site selector uses."""
-    from rmgpy.kmc.rmg_moves import molecule_from_rows
+    solver's site selector uses.  Perceived per ring system (connected ring
+    atoms plus their capped first shell; aromaticity is a property of the
+    ring system and its direct substituents), cached by the ring system's
+    labelled graph across components and events, and memoized per state
+    revision; equal to ``aromatic_atoms_whole``."""
+    memo = None
+    if getattr(state, "_tx", None) is None:            # no open transaction: revision pins the graph
+        held = _COMPONENT_MEMO.get(state)
+        if held is None or held[0] != state.revision:
+            held = _COMPONENT_MEMO[state] = (state.revision, {})
+        memo = held[1]
+        if cid in memo:
+            return memo[cid]
+    atoms = state.components.atoms(cid)
+    ring, _bridges = _ring_atoms_and_bridges(state, atoms)
+    out = set()
+    seen = set()
+    for start in sorted(ring):
+        if start in seen:
+            continue
+        group, stack = [], [start]
+        seen.add(start)
+        while stack:
+            a = stack.pop()
+            group.append(a)
+            for b in state.atoms[a].edges:
+                if b in ring and b not in seen:
+                    seen.add(b)
+                    stack.append(b)
+        if len(group) < 6:
+            continue
+        built = _ring_system_rows(state, group)
+        if built is None:
+            PERCEPTION_STATS["whole_fallbacks"] += 1
+            out = set(aromatic_atoms_whole(state, cid))
+            break
+        rows, back = built
+        graph_key = tuple(sorted(rows.items()))
+        found = _RING_SYSTEM_CACHE.get(graph_key)
+        if found is None:
+            found = _RING_SYSTEM_CACHE[graph_key] = _perceive(rows)
+            if len(_RING_SYSTEM_CACHE) > 20000:
+                _RING_SYSTEM_CACHE.clear()
+        else:
+            PERCEPTION_STATS["ring_system_hits"] += 1
+        out.update(back[k] for k in found if k in back)
+    result = frozenset(out)
+    if memo is not None:
+        memo[cid] = result
+    return result
+
+
+def aromatic_atoms_whole(state, cid) -> frozenset:
+    """Whole-component RMG perception (the reference ``aromatic_atoms`` must equal)."""
     rows = {}
     for a in state.components.atoms(cid):
         n = state.atoms[a]
         rows[a] = (n.element, n.isotope, n.charge, n.radical, n.lone_pairs,
                    tuple(sorted((b, float(o)) for b, o in n.edges.items())))
-    rings, _bonds = molecule_from_rows(rows).get_aromatic_rings()
-    return frozenset(atom.id for ring in rings for atom in ring)
+    return _perceive(rows)
 
 
 def site_class(state, x, aromatic: Optional[frozenset] = None) -> Optional[str]:
@@ -485,6 +631,7 @@ class MeltObserver:
                                 for i, row in enumerate(self.channels)}
         self.channel_elements = {(row["element"], row["isotope"]) for row in self.channels}
         self.gas_signatures = {row["signature"] for row in self.channels}
+        self.declaration = frozenset(channel_identity(row) for row in self.channels)
 
     def category(self, state, cid) -> str:
         """"species", "polymer" or "light": the module's classification of one component."""
@@ -563,8 +710,12 @@ class MeltObserver:
         return {f"{el}{iso or ''}": slot for (el, iso), slot in out.items()}
 
     def release_tracker(self, target) -> "SideGroupReleaseTracker":
-        """A tracker that follows ``target`` (an engine run, or a bare state
-        updated by hand)."""
+        """The tracker that follows ``target``: for an engine, the run's one
+        tracker for this channel declaration (registered, shared with
+        ``write_time_series``); for a bare state, a new tracker updated by
+        hand."""
+        if isinstance(target, MeltEngine):
+            return _run_tracker(target, self)
         return SideGroupReleaseTracker(self, target)
 
     # -- per component ----------------------------------------------------
@@ -671,7 +822,8 @@ class MeltObserver:
         # gas-product atoms of declared channels (those are the channels' releases)
         if releases is not None and engine is not None:
             releases.sync(engine)
-        tracked = releases is not None and releases.continuous
+        tracked = (releases is not None and releases.continuous
+                   and releases.declaration == self.declaration)
         exempt = releases.released_from if tracked else {}
         lost_atoms = Counter()
         for r in records:
@@ -692,18 +844,17 @@ class MeltObserver:
         for i, row in enumerate(self.channels):
             m_x = row["molar_mass_g_mol"]
 
-            def amount(values, scale=1.0):
-                return None if not tracked else u * values[i] * scale
-            gross = releases.counts[i] if tracked else None
-            recaptured = releases.recaptured[i] if tracked else None
+            ident = channel_identity(row)
+            gross = releases.counts[ident] if tracked else None
+            recaptured = releases.recaptured[ident] if tracked else None
             channels.append({"label": row["label"], "site_selector": row["site_selector"],
                              "sites_per_unit": row["sites_per_unit"], "gas_product": row["gas_product"],
                              "molar_mass_g_mol": m_x, "released_tracked": tracked,
                              "released_count": gross, "recaptured_count": recaptured,
                              "released_net_count": None if not tracked else gross - recaptured,
-                             "released_from_other_count": releases.other_counts[i] if tracked else None,
-                             "released_mol": amount(releases.counts) if tracked else None,
-                             "released_mass_g": amount(releases.counts, m_x) if tracked else None,
+                             "released_from_other_count": releases.other_counts[ident] if tracked else None,
+                             "released_mol": u * gross if tracked else None,
+                             "released_mass_g": u * gross * m_x if tracked else None,
                              "released_net_mol": None if not tracked else u * (gross - recaptured),
                              "free_now_mol": u * free_now[row["signature"]],
                              "inventory_tail_mol": u * inventory[i]["tail"],
@@ -828,17 +979,18 @@ class SideGroupReleaseTracker:
     def __init__(self, observer: MeltObserver, target):
         engine = target if isinstance(target, MeltEngine) else None
         state = engine.state if engine is not None else target
-        n = len(observer.channels)
         self.observer = observer
+        self.idents = [channel_identity(row) for row in observer.channels]
+        self.declaration = frozenset(self.idents)
         self.engine = weakref.ref(engine) if engine is not None else None
         self.events_seen = engine.events_fired if engine is not None else 0
         self.continuous = engine is None or engine.events_fired == 0
-        self.counts = [0] * n
-        self.recaptured = [0] * n
-        self.other_counts = [0] * n
+        self.counts = Counter({k: 0 for k in self.idents})          # keyed by channel identity
+        self.recaptured = Counter({k: 0 for k in self.idents})
+        self.other_counts = Counter({k: 0 for k in self.idents})
         self.unattributed = {"polymer": 0, "other": 0}
-        self.attached: Dict[int, Tuple[Optional[int], str]] = {}   # X -> (channel or None, "polymer" / "other")
-        self.released_from: Dict[int, int] = {}                     # X released from a polymer via channel i
+        self.attached: Dict[int, Tuple[Optional[Tuple], str]] = {}  # X -> (channel identity or None, source)
+        self.released_from: Dict[int, Tuple] = {}                   # X released from a polymer via a channel
         self.updates = 0
         self.initial = {}
         for element in observer.channel_elements:
@@ -848,10 +1000,14 @@ class SideGroupReleaseTracker:
         self.updates = 0
 
     def __call__(self, engine, event):
-        missed = engine.events_fired - self.events_seen - 1
+        """One fired event.  Idempotent in ``events_fired``: an event already
+        caught up by ``sync`` is skipped, not treated as missed."""
         if self.engine is None or self.engine() is not engine:
             self.continuous = False
-        if missed == 0:
+        new = engine.events_fired - self.events_seen
+        if new <= 0:
+            return
+        if new == 1:
             self.update(engine.state, event)
         else:
             self.update(engine.state)
@@ -886,7 +1042,7 @@ class SideGroupReleaseTracker:
                     previous = self.attached.pop(x, self._UNSEEN)
                     if previous is self._UNSEEN:
                         continue
-                    channel, source = previous
+                    channel, source = previous           # channel identity or None
                     if source == "polymer":
                         if channel is None:
                             self.unattributed["polymer"] += 1
@@ -905,7 +1061,8 @@ class SideGroupReleaseTracker:
                 source = "polymer" if category == "polymer" else "other"
                 if source == "polymer" and x in self.released_from:
                     self.recaptured[self.released_from.pop(x)] += 1
-                self.attached[x] = (obs.channel_of(state, x, aromatic), source)
+                index = obs.channel_of(state, x, aromatic)
+                self.attached[x] = (None if index is None else self.idents[index], source)
         self.updates += 1
 
 
@@ -1032,11 +1189,16 @@ class InvariantChecker:
 _RUN_TRACKERS = weakref.WeakKeyDictionary()     # engine -> {channel declaration: tracker}
 
 
+def channel_identity(row) -> Tuple:
+    """A channel's identity: (label, site selector, gas product), never its position."""
+    return (row["label"], row["site_selector"], row["gas_product"])
+
+
 def _run_tracker(engine, observer) -> SideGroupReleaseTracker:
     """The release tracker of this engine run for these channels: created
     once (continuous only if the engine has fired no event yet) and reused by
     every later export, so released amounts are cumulative across appends."""
-    key = tuple((row["label"], row["site_selector"], row["gas_product"]) for row in observer.channels)
+    key = observer.declaration
     trackers = _RUN_TRACKERS.setdefault(engine, {})
     tracker = trackers.get(key)
     if tracker is None:
@@ -1062,6 +1224,7 @@ def write_time_series(engine, times: Iterable[float], path, *, xs: int, check: b
     out = []
     with open(path, "a" if append else "w") as handle:
         for t in times:
+            tracker.sync(engine)                 # catch up before advancing
             if t > engine.time:
                 engine.run(until=t, check=hook)
             obs = observer.observe(engine, releases=tracker)
@@ -1168,6 +1331,7 @@ def side_by_side(obs: Mapping, mom: Optional[Mapping] = None) -> List[dict]:
 __all__ = [
     "CONVENTION_DEFINITION", "ComponentRecord", "InvariantChecker", "InvariantError", "MASS_LAW_DEFINITION",
     "SIDE_GROUP_DEFINITION", "BALANCE_DEFINITION", "SideGroupReleaseTracker", "site_class", "aromatic_atoms",
+    "aromatic_atoms_whole", "channel_identity", "clear_aromaticity_cache", "PERCEPTION_STATS",
     "MeltObserver", "OBSERVABLES_SCHEMA", "ObservablesError", "SPECIES_RULE", "TIER1_NOTE", "Totals",
     "backbone_atoms_per_unit", "canonical_key", "declared_species_names", "exact_totals",
     "side_group_site_indices", "validate_side_group_channels",

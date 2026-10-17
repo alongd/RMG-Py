@@ -1166,18 +1166,22 @@ def test_polymer_inventory_excludes_declared_sites_in_small_species():
 
 
 @pytest.mark.parametrize("case", ["naphthyl_b_alternating", "naphthyl_b_not_alternating", "para_bromo_ps",
-                                  "pyridyl", "biphenylyl"])
+                                  "pyridyl", "biphenylyl", "quinone", "quinodimethane"])
 def test_ring_system_aromaticity_equals_whole_molecule_perception(case):
     specs = {"naphthyl_b_alternating": lambda: S.bromonaphthyl_spec({3: 1}, "ring_b_alternating"),
              "naphthyl_b_not_alternating": lambda: S.bromonaphthyl_spec({3: 1}, "ring_b_not_alternating"),
              "para_bromo_ps": lambda: S.para_bromo_ps_spec({4: 1}),
              "pyridyl": lambda: S.pyridyl_spec({3: 1}),
-             "biphenylyl": lambda: S.biphenylyl_bromide_spec({3: 1})}
+             "biphenylyl": lambda: S.biphenylyl_bromide_spec({3: 1}),
+             "quinone": lambda: S.quinone_spec({3: 1}, "O"),              # the first shell decides:
+             "quinodimethane": lambda: S.quinone_spec({3: 1}, "C")}       # C=O vs C=CH2 flips RMG's answer
     state = materialize(specs[case]())
     for cid in state.components.ids():
         assert mo.aromatic_atoms(state, cid) == mo.aromatic_atoms_whole(state, cid)
-    if case != "pyridyl":
+    if case not in ("pyridyl", "quinone"):
         assert mo.aromatic_atoms(state, state.components.ids()[0])
+    if case == "quinone":
+        assert not mo.aromatic_atoms_whole(state, state.components.ids()[0])
     br = [x for x in state.atoms if state.atoms[x].element == "Br"]
     if br:
         homolyse(state, next(iter(state.atoms[br[0]].edges)), br[0])        # an aryl sigma radical
