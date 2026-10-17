@@ -26,7 +26,7 @@ import melt_engine_support as S
 
 from rmgpy.kmc import melt_engine as me
 from rmgpy.kmc import melt_observables as mo
-from rmgpy.kmc.melt_state import AncestryError, SetBond, SetRadical, materialize
+from rmgpy.kmc.melt_state import AncestryError, MeltStateError, SetBond, SetRadical, materialize
 
 PE_LIVE = ("homolysis", "recombination", "h_abstraction", "disproportionation", "beta_scission",
            "mid_end_recombination", "intra_mid_end")
@@ -584,150 +584,210 @@ M_BR = Composition.from_mapping({"Br": 1}).molar_mass_g_mol()
 PVB_CHANNEL = [S.sgh_channel("aliphatic_C-Br", "aliphatic", 1.0)]
 
 
-def test_pendant_bromine_loss_is_booked_on_the_declared_channel():
-    """MoM's depletion-aware law with the declared channel: a mu1 + e E -
-    mu0 defect - sum_channels max(0, sites mu1(0) - Z) M_X (+ explicit).  One
-    Br homolysed off a PVB DP4 chain: Z = 3 sites, one Br lost."""
+def _channel(o, label):
+    (row,) = [r for r in o["side_group_channels"] if r["label"] == label]
+    return row
+
+
+def _observe(spec, xs, channels, edit):
+    """Observer + release tracker on the declared melt; ``edit(state)`` is
+    applied, the tracker updated from the state (rescan), and one
+    observation returned with the state and the per-molecule unit."""
+    state = materialize(spec)
+    observer = mo.MeltObserver(spec, xs=xs, side_group_homolysis=channels)
+    tracker = observer.release_tracker(state)
+    edit(state, tracker)
+    tracker.update(state)
+    u = spec.initialization().scale_factor / constants.Na
+    return observer.observe(state, releases=tracker), state, u
+
+
+def test_a_true_release_on_a_tail_chain_is_counted_once_from_the_event():
     spec = S.pvb_spec({4: 1})
     state = materialize(spec)
+    observer = mo.MeltObserver(spec, xs=0, side_group_homolysis=PVB_CHANNEL)
+    tracker = observer.release_tracker(state)
     path = chain_carbons_in_order(state, 0)
-    _remove_br(state, path[1])
-    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=PVB_CHANNEL).observe(state)
+    cid = state.components.component_of(path[0])
+    br = _remove_br(state, path[1])
+    products = tuple(sorted({cid, state.components.component_of(br)}))
+    tracker.update(state, me.Event(0.0, "hand", "hand", "uni", (cid,), products, state.revision))
+    tracker.update(state, me.Event(0.0, "hand", "hand", "uni", (cid,), products, state.revision))  # replay
+    o = observer.observe(state, releases=tracker)
     u = spec.initialization().scale_factor / constants.Na
+    row = _channel(o, "aliphatic_C-Br")
+    assert row["released_count"] == 1 and rel(row["released_mol"], u) <= REL
+    assert rel(row["released_mass_g"], u * M_BR) <= REL and rel(row["free_now_mol"], u) <= REL
+    assert rel(row["inventory_tail_mol"], 3 * u) <= REL and row["inventory_explicit_mol"] == 0.0
     law = o["mom_mass_law"]
+    assert "side_group_depletion" not in law
+    assert rel(law["value_g"], 1000.0) <= REL                                # the no-depletion law
     kmc = o["tier1"]["polymer_derived"]["mass_g"]
-    assert rel(kmc, 1000.0 - u * M_BR) <= REL and kmc < 0.9 * 1000.0
-    (row,) = law["side_group_depletion"]
-    assert row["label"] == "aliphatic_C-Br" and row["site_selector"] == "aliphatic"
-    assert row["sites_per_unit"] == 1 and rel(row["molar_mass_g_mol"], M_BR) <= REL
-    assert rel(row["Z0_mol"], 4 * u) <= REL
-    assert rel(row["Z_mol"], 3 * u) <= REL and rel(row["lost_mol"], u) <= REL
-    assert law["chain_mass_defect_g_mol"] == 0.0
-    a = spec.repeat_unit.composition.molar_mass_g_mol()
-    e = spec.end_composition.molar_mass_g_mol()
-    hand = a * 4 * u + e * u - (1 * 4 * u - 3 * u) * M_BR
-    assert rel(law["value_g"], hand) <= REL and rel(law["value_g"], kmc) <= REL
-    assert law["difference_g"] == 0.0 and law["bound_g"] == 0.0
-    assert law["undeclared_loss"]["mass_g"] == 0.0
-    q = mo.mom_reported_quantities(o)
-    assert rel(q["polymer_condensed_mass_g"], kmc) <= REL
-    assert rel(q["polymer_conversion"], u * M_BR / 1000.0) <= 1e-9
-    assert rel(q["side_group_Z_mol"]["aliphatic_C-Br"], 3 * u) <= REL
-
-
-def test_no_declared_channel_means_no_depletion_and_the_loss_is_reported_undeclared():
-    """The solver skips absent channels: PVB DP4 minus Br projects 1000 g;
-    the Br that left is an undeclared loss, never folded into the projection."""
-    spec = S.pvb_spec({4: 1})
-    state = materialize(spec)
-    path = chain_carbons_in_order(state, 0)
-    _remove_br(state, path[1])
-    o = mo.MeltObserver(spec, xs=0).observe(state)
-    u = spec.initialization().scale_factor / constants.Na
-    law = o["mom_mass_law"]
-    assert law["side_group_depletion"] == []
-    assert rel(law["value_g"], 1000.0) <= REL
-    assert rel(law["undeclared_loss"]["mass_g"], u * M_BR) <= REL
-    assert law["undeclared_loss"]["atoms"] == {"Br": 1}
+    assert rel(kmc, 1000.0 - u * M_BR) <= REL
     assert rel(law["difference_g"], -u * M_BR) <= 1e-9 and abs(law["difference_g"]) <= law["bound_g"]
+    assert law["undeclared_loss"]["mass_g"] == 0.0                           # Br left through the channel
+    q = mo.mom_reported_quantities(o)
+    assert rel(q["polymer_condensed_mass_g"], kmc) <= REL                    # the physical condensed mass
+    assert rel(q["released_mol"]["aliphatic_C-Br"], u) <= REL
+    assert "side_group_Z_mol" not in q
+
+
+def test_a_true_release_on_an_explicit_chain_is_counted_once():
+    def edit(state, _t):
+        _remove_br(state, chain_carbons_in_order(state, 0)[3])
+    o, _s, u = _observe(S.pvb_spec({4: 1}), 5, PVB_CHANNEL, edit)
+    row = _channel(o, "aliphatic_C-Br")
+    assert row["released_count"] == 1
+    assert row["inventory_tail_mol"] == 0.0 and rel(row["inventory_explicit_mol"], 3 * u) <= REL
+
+
+def test_a_partition_crossing_books_no_release():
+    """PVB DP6 cut into two DP3 at xs = 3: the chains leave the tail, no Br leaves the melt."""
+    def edit(state, _t):
+        path = chain_carbons_in_order(state, 0)
+        homolyse(state, path[5], path[6])
+    o, _s, u = _observe(S.pvb_spec({6: 1}), 3, PVB_CHANNEL, edit)
+    row = _channel(o, "aliphatic_C-Br")
+    assert row["released_count"] == 0 and row["released_mol"] == 0.0
+    assert row["inventory_tail_mol"] == 0.0 and rel(row["inventory_explicit_mol"], 6 * u) <= REL
+    q = mo.mom_reported_quantities(o)
+    assert rel(q["polymer_condensed_mass_g"], 1000.0) <= REL
+
+
+def test_growth_then_a_real_loss_books_exactly_one_release():
+    spec = S.pvb_spec_with_monomer({4: 1}, {"vinyl_bromide": 1})
+
+    def edit(state, tracker):
+        (mob,) = [c for c in state.components.ids() if state.origin_kinds(c) == {"mobile"}]
+        _add_monomer_to_chain_end(state, mob)
+        tracker.update(state)
+        _remove_br(state, chain_carbons_in_order(state, 0)[3])
+    o, _s, u = _observe(spec, 0, PVB_CHANNEL, edit)
+    row = _channel(o, "aliphatic_C-Br")
+    assert row["released_count"] == 1
+    assert rel(row["inventory_tail_mol"], 4 * u) <= REL                       # 4 + 1 grown - 1 released
+
+
+def test_equivalent_br_swap_books_nothing():
+    def edit(state, _t):
+        path = chain_carbons_in_order(state, 0)
+        ca, cb = path[1], path[3]
+        ba = next(x for x in state.atoms[ca].edges if state.atoms[x].element == "Br")
+        bb = next(x for x in state.atoms[cb].edges if state.atoms[x].element == "Br")
+        state.apply([SetBond(ca, ba, 1.0, 0.0), SetBond(cb, bb, 1.0, 0.0),
+                     SetBond(ca, bb, 0.0, 1.0), SetBond(cb, ba, 0.0, 1.0)])
+    o, _s, u = _observe(S.pvb_spec({4: 1}), 0, PVB_CHANNEL, edit)
+    row = _channel(o, "aliphatic_C-Br")
+    assert row["released_count"] == 0 and rel(row["inventory_tail_mol"], 4 * u) <= REL
+
+
+def test_identity_h_transfer_books_nothing():
+    """A C6H13 primary radical takes an H from its own CH3 end: the graph is
+    unchanged (C6H13 primary radical), no H leaves the melt."""
+    channel = [S.sgh_channel("aliphatic_C-H", "aliphatic", 4.0, gas="[H]")]
+    counts = {}
+
+    def edit(state, tracker):
+        path = chain_carbons_in_order(state, 0)
+        homolyse(state, path[5], path[6])
+        tracker.update(state)
+        counts["before"] = _inventory(state, tracker)
+        head, rad = path[0], path[5]
+        h = min(x for x in state.atoms[head].edges if state.atoms[x].element == "H")
+        state.apply([SetBond(head, h, 1.0, 0.0), SetBond(rad, h, 0.0, 1.0),
+                     SetRadical(rad, 1, 0), SetRadical(head, 0, 1)])
+    o, _s, u = _observe(S.pe_spec({6: 1}), 0, channel, edit)
+    row = _channel(o, "aliphatic_C-H")
+    assert row["released_count"] == 0
+    assert rel(row["inventory_tail_mol"], 26 * u) <= REL and counts["before"] == 26
+
+
+def _inventory(state, tracker):
+    return sum(tracker.observer.site_inventory(state).get(0, {}).values())
+
+
+def test_c_h_channel_counts_hydrogen_release_and_inventory_by_current_graph():
+    channel = [S.sgh_channel("aliphatic_C-H", "aliphatic", 4.0, gas="[H]")]
+
+    def edit(state, _t):
+        S.strip_h(state, chain_carbons_in_order(state, 0)[5])
+    o, _s, u = _observe(S.pe_spec({6: 1}), 0, channel, edit)
+    row = _channel(o, "aliphatic_C-H")
+    assert row["released_count"] == 1 and rel(row["inventory_tail_mol"], 25 * u) <= REL
+
+
+def test_aryl_channel_inventory_is_the_br_on_aromatic_carbons():
+    def edit(state, _t):
+        br = next(x for x in state.atoms if state.atoms[x].element == "Br")
+        homolyse(state, next(iter(state.atoms[br].edges)), br)
+    o, _s, u = _observe(S.para_bromo_ps_spec({4: 1}), 0, [S.sgh_channel("aryl_C-Br", "aryl", 1.0)], edit)
+    row = _channel(o, "aryl_C-Br")
+    assert row["released_count"] == 1 and rel(row["inventory_tail_mol"], 3 * u) <= REL
+    assert rel(o["mom_mass_law"]["value_g"], 1250.0) <= REL
+    assert mo.mom_reported_quantities(o)["polymer_condensed_mass_g"] == pytest.approx(1113.960, abs=5e-4)
+
+
+def test_no_declared_channel_reports_the_loss_as_undeclared():
+    def edit(state, _t):
+        _remove_br(state, chain_carbons_in_order(state, 0)[1])
+    o, _s, u = _observe(S.pvb_spec({4: 1}), 0, None, edit)
+    law = o["mom_mass_law"]
+    assert o["side_group_channels"] == [] and rel(law["value_g"], 1000.0) <= REL
+    assert rel(law["undeclared_loss"]["mass_g"], u * M_BR) <= REL and law["undeclared_loss"]["atoms"] == {"Br": 1}
 
 
 def test_pendant_phenyl_loss_has_no_mom_channel_and_is_an_undeclared_loss():
-    spec = S.ps_spec({10: 1})
-    state = materialize(spec)
-    path = chain_carbons_in_order(state, 0)
-    c2 = path[9]                                  # the CH of unit 5
-    ring = next(x for x in state.atoms[c2].edges
-                if state.atoms[x].element == "C" and not state.origin[x].is_backbone)
-    homolyse(state, c2, ring)                     # phenyl radical leaves the chain
-    o = mo.MeltObserver(spec, xs=0).observe(state)
-    u = spec.initialization().scale_factor / constants.Na
+    def edit(state, _t):
+        c2 = chain_carbons_in_order(state, 0)[9]
+        ring = next(x for x in state.atoms[c2].edges
+                    if state.atoms[x].element == "C" and not state.origin[x].is_backbone)
+        homolyse(state, c2, ring)
+    o, _s, u = _observe(S.ps_spec({10: 1}), 0, None, edit)
     m_ph = Composition.from_mapping({"C": 6, "H": 5}).molar_mass_g_mol()
     law = o["mom_mass_law"]
-    kmc = o["tier1"]["polymer_derived"]["mass_g"]
-    assert law["side_group_depletion"] == [] and rel(law["value_g"], 1250.0) <= REL
-    assert rel(kmc, 1250.0 - u * m_ph) <= REL
+    assert o["side_group_channels"] == [] and rel(law["value_g"], 1250.0) <= REL
     assert rel(law["undeclared_loss"]["mass_g"], u * m_ph) <= REL
     assert law["undeclared_loss"]["atoms"] == {"C": 6, "H": 5}
-    assert o["tier1"]["undeclared_light"]["molecules"] == 1
 
 
-def test_channel_z_counts_the_leaving_atom_not_the_pendant_anchor():
-    """Para-brominated PS DP4 with an aryl C-Br channel: the Br leaves, the
-    ring stays; the configured depletion books the Br."""
-    spec = S.para_bromo_ps_spec({4: 1})
-    state = materialize(spec)
-    br = next(x for x in state.atoms if state.atoms[x].element == "Br")
-    ring_c = next(iter(state.atoms[br].edges))
-    homolyse(state, ring_c, br)
-    channel = [S.sgh_channel("aryl_C-Br", "aryl", 1.0)]
-    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=channel).observe(state)
-    u = spec.initialization().scale_factor / constants.Na
-    law = o["mom_mass_law"]
-    (row,) = law["side_group_depletion"]
-    assert rel(row["Z_mol"], 3 * u) <= REL and rel(row["lost_mol"], u) <= REL
-    assert rel(law["value_g"], 1250.0 - u * M_BR) <= REL
-    assert law["value_g"] == pytest.approx(1113.960, abs=5e-4)
-
-
-def test_a_declared_c_h_channel_counts_hydrogen():
-    spec = S.pe_spec({6: 1})
-    state = materialize(spec)
-    path = chain_carbons_in_order(state, 0)
-    S.strip_h(state, path[5])                     # a mid-chain CH2 loses one H
-    channel = [S.sgh_channel("aliphatic_C-H", "aliphatic", 4.0, gas="[H]")]
-    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=channel).observe(state)
-    u = spec.initialization().scale_factor / constants.Na
-    m_h = Composition.from_mapping({"H": 1}).molar_mass_g_mol()
-    law = o["mom_mass_law"]
-    (row,) = law["side_group_depletion"]
-    assert rel(row["Z0_mol"], 24 * u) <= REL and rel(row["Z_mol"], 23 * u) <= REL
-    assert rel(law["value_g"], 1000.0 - u * m_h) <= REL
-    assert rel(law["value_g"], o["tier1"]["polymer_derived"]["mass_g"]) <= REL
-
-
-def test_depletion_baseline_is_the_stationary_initial_inventory():
-    """PVB DP10 x 2: an intra-unit backbone cut on one chain (its fragments
-    carry 10 Br on floor-units summing to 9), then one Br removed from the
-    other chain.  The baseline sites mu1(0) = 20 books the lost Br; a
-    floor-mu1 baseline (19) would let the surplus Br cancel it."""
-    spec = S.pvb_spec({10: 2})
-    state = materialize(spec)
-    a_path = chain_carbons_in_order(state, 0)
-    homolyse(state, a_path[8], a_path[9])         # c1-c2 bond inside unit 5 of chain 0
-    b_path = chain_carbons_in_order(state, 1)
-    _remove_br(state, b_path[1])
-    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=PVB_CHANNEL).observe(state)
-    u = spec.initialization().scale_factor / constants.Na
-    law = o["mom_mass_law"]
-    (row,) = law["side_group_depletion"]
-    assert rel(row["Z0_mol"], 20 * u) <= REL and rel(row["Z_mol"], 19 * u) <= REL
-    assert rel(row["lost_mass_g"], u * M_BR) <= REL
-    assert row["lost_mass_g"] == pytest.approx(37.286, abs=5e-4)
-    a = spec.repeat_unit.composition.molar_mass_g_mol()
-    e = spec.end_composition.molar_mass_g_mol()
-    assert rel(law["value_g"], a * 19 * u + e * 2 * u - u * M_BR) <= REL
-    kmc = o["tier1"]["polymer_derived"]["mass_g"]
-    assert rel(kmc - law["value_g"], law["difference_g"]) <= 1e-9 and abs(law["difference_g"]) <= law["bound_g"]
-
-
-def test_declared_channels_keep_separate_inventories_and_compare_per_label():
-    spec = S.two_bromine_spec({4: 1})
-    state = materialize(spec)
-    path = chain_carbons_in_order(state, 0)
-    _remove_br(state, path[2])                    # the aliphatic Br on the head carbon of unit 2
+def test_declared_channels_are_separate_and_compared_per_label():
     channels = [S.sgh_channel("aliphatic_C-Br", "aliphatic", 1.0), S.sgh_channel("benzylic_C-Br", "benzylic", 1.0)]
-    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=channels).observe(state)
-    u = spec.initialization().scale_factor / constants.Na
-    rows = {r["label"]: r for r in o["mom_mass_law"]["side_group_depletion"]}
-    assert set(rows) == {"aliphatic_C-Br", "benzylic_C-Br"}
-    assert rel(rows["aliphatic_C-Br"]["Z_mol"], 3 * u) <= REL and rel(rows["aliphatic_C-Br"]["lost_mol"], u) <= REL
-    assert rel(rows["benzylic_C-Br"]["Z_mol"], 4 * u) <= REL and rows["benzylic_C-Br"]["lost_mol"] == 0.0
+
+    def edit(state, _t):
+        _remove_br(state, chain_carbons_in_order(state, 0)[2])     # the aliphatic Br of unit 2
+    o, _s, u = _observe(S.two_bromine_spec({4: 1}), 0, channels, edit)
+    ali, ben = _channel(o, "aliphatic_C-Br"), _channel(o, "benzylic_C-Br")
+    assert ali["released_count"] == 1 and ben["released_count"] == 0
+    assert rel(ali["inventory_tail_mol"], 3 * u) <= REL and rel(ben["inventory_tail_mol"], 4 * u) <= REL
     mom = mo.mom_reported_quantities(o)
-    mom["side_group_Z_mol"] = {"aliphatic_C-Br": 3 * u, "benzylic_C-Br": 3 * u}
-    compared = {r["quantity"]: r for r in mo.side_by_side(o, mom)}
-    assert compared["side_group_Z_mol.aliphatic_C-Br"]["agreement"] == "equal"
-    assert compared["side_group_Z_mol.benzylic_C-Br"]["agreement"] == "differs"
+    mom["released_mol"] = {"aliphatic_C-Br": u, "benzylic_C-Br": u}
+    rows = {r["quantity"]: r for r in mo.side_by_side(o, mom)}
+    assert rows["released_mol.aliphatic_C-Br"]["agreement"] == "equal"
+    assert rows["released_mol.benzylic_C-Br"]["agreement"] == "differs"
+
+
+def test_untracked_observation_reports_no_release():
+    spec = S.pvb_spec({4: 1})
+    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=PVB_CHANNEL).observe(materialize(spec))
+    row = _channel(o, "aliphatic_C-Br")
+    assert row["released_tracked"] is False and row["released_count"] is None
+    rows = {r["quantity"]: r for r in mo.side_by_side(o, {"released_mol": {"aliphatic_C-Br": 0.0}})}
+    assert rows["released_mol.aliphatic_C-Br"]["agreement"] == "missing_in_kmc"
+
+
+def test_declared_key_colliding_with_a_generated_hydrogen_key_is_refused():
+    """An explicit H declared with key ``c1.H0`` (bonded to c2) while c1
+    carries implicit hydrogens: the generated key would collide."""
+    mapping = S.pe_mapping({4: 1})
+    repeat = mapping["repeat_unit"]
+    repeat["atoms"] = [S._atom("c1", hydrogens=2), S._atom("c2", hydrogens=1), {"key": "c1.H0", "element": "H"}]
+    repeat["bonds"].append({"atoms": ["c2", "c1.H0"], "order": 1})
+    from rmgpy.polymer_spec import LinearHomopolymerSpec
+    spec = LinearHomopolymerSpec.from_mapping(mapping)
+    with pytest.raises(MeltStateError, match="collide"):
+        materialize(spec)
+    with pytest.raises((MeltStateError, me.DeclarationError), match="collide"):
+        mo.MeltObserver(spec, xs=0)
 
 
 @pytest.mark.parametrize("bad, match", [
@@ -822,24 +882,3 @@ def test_channel_rules_mirror_the_solver():
         except mo.ObservablesError:
             ok_mine = False
         assert ok_solver == ok_mine, channels
-
-
-def test_surplus_sites_are_clamped_per_channel_like_the_solver():
-    """A mobile vinyl bromide joins a PVB DP4 chain: its Br is a channel site
-    (through the monomer's ancestry map), Z = 5 > Z(0) = 4, and the solver's
-    per-row clamp books no negative loss."""
-    spec = S.pvb_spec_with_monomer({4: 1}, {"vinyl_bromide": 1})
-    state = materialize(spec)
-    (mob,) = [c for c in state.components.ids() if state.origin_kinds(c) == {"mobile"}]
-    _add_monomer_to_chain_end(state, mob)
-    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=PVB_CHANNEL).observe(state)
-    u = spec.initialization().scale_factor / constants.Na
-    law = o["mom_mass_law"]
-    (row,) = law["side_group_depletion"]
-    assert rel(row["Z0_mol"], 4 * u) <= REL and rel(row["Z_mol"], 5 * u) <= REL
-    assert row["lost_mol"] == 0.0 and row["lost_mass_g"] == 0.0
-    a = spec.repeat_unit.composition.molar_mass_g_mol()
-    e = spec.end_composition.molar_mass_g_mol()
-    assert rel(law["end_inventory_mol"], u / 2) <= REL      # the head cap H was the one stripped
-    assert rel(law["value_g"], a * 5 * u + e * u / 2) <= REL
-    assert rel(law["value_g"], o["tier1"]["polymer_derived"]["mass_g"]) <= REL
