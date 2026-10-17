@@ -176,3 +176,19 @@ def test_archived_ortho_pairs_emitted_by_the_compiler_are_balanced_without_the_f
     for forward, reverse in (records[0:2], records[2:4]):
         assert _convention_error(forward, reverse) <= 1e-12
         assert forward.degeneracy == 1.0
+
+
+def test_finite_huge_kc_does_not_overflow_the_ssa_scaling():
+    class Huge(_Provider):
+        def evaluate(self, reaction, temperatures):
+            return ReferenceThermoResult(
+                equilibrium_constants=tuple(1e308 for _ in temperatures),
+                reaction_enthalpy_298_J_per_mol=-1.0e5,
+                species_thermo_assignments=(),
+            )
+
+    primary, partner = _pair(["[CH3]", "[CH3]"], ["CC"], [1e7] * 3, [1.0] * 3,
+                             ssa_primary=2.0, ssa_partner=1.0)
+    primary2, partner2 = _balance(primary, partner, Huge())
+    assert partner2.status == "enabled"
+    assert partner2.k_table["k"] == pytest.approx([1e7 / 1e308] * 3, rel=1e-14)
