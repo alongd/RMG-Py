@@ -108,7 +108,10 @@ is exact isomorphism under resonance against the declared species.  A declared
 run start (``declared_mobile_participation`` in the report lists the templates
 each one takes part in); undeclared products are reported by the observables
 layer, never refused.  An initially mobile monomer whose backbone ancestry is
-ambiguous is refused at run start (``melt_state.monomer_backbone_keys``).
+ambiguous is refused at run start (``melt_state.monomer_backbone_keys``), and
+so is a declared species isomorphic to an initial chain
+(``refuse_initial_species_overlap``) or a small-species label equal to a
+built-in label (H, H2, monomer_product).
 
 Not here: observables tiers and the MoM comparison (``melt_observables``),
 captures/J_ring (R0 only), evaporation, volume change.
@@ -786,6 +789,12 @@ class SpeciesIdentity:
 
     def __init__(self, spec):
         declared = [(name, graph) for name, graph, _d in spec.small_species]
+        reserved = set(BUILTIN_SPECIES) | {"monomer_product"}
+        collide = sorted(name for name, _g in declared if name in reserved)
+        if collide:
+            raise DeclarationError(
+                f"declared small species labels {collide} collide with built-in labels {sorted(reserved)}; "
+                "rename them")
         if getattr(spec, "monomer_product", None) is not None:
             declared.append(("monomer_product", spec.monomer_product))
         self.forms = []
@@ -837,6 +846,27 @@ class SpeciesIdentity:
                 break
         bucket.append((g, found))
         return found
+
+
+def refuse_initial_species_overlap(spec, identity: SpeciesIdentity, state=None):
+    """Refuse a declaration one of whose declared species (small species,
+    ``monomer_product``, the built-ins) is isomorphic under resonance to an
+    initial chain: the chain would be counted as that species and the t = 0
+    observables would contradict ``spec.macroscopic_moments_mol``.  ``state``:
+    the declared melt (default: materialized from ``spec``)."""
+    if state is None:
+        try:
+            state = materialize(spec)
+        except AncestryError as error:
+            raise DeclarationError(str(error)) from error
+    for cid in state.components.ids():
+        if state.origin_kinds(cid) != {"chain"}:
+            continue
+        name = identity.identify(state, cid)
+        if name is not None:
+            raise DeclarationError(
+                f"declared species {name!r} is isomorphic to an initial chain (component {cid}); a declared "
+                "species may not be an initial polymer chain")
 
 
 # --------------------------------------------------------------------------
@@ -951,6 +981,7 @@ class MeltEngine:
             raise DeclarationError("the volume must be finite and positive")
         self.nav = constants.Na * self.volume
         self.identity = SpeciesIdentity(spec)
+        refuse_initial_species_overlap(spec, self.identity, self.state if state is None else None)
         self.temperature = None
         self.templates: Tuple[wm.Template, ...] = ()
         self.classes: Tuple[_Class, ...] = ()
@@ -1700,5 +1731,5 @@ class MeltEngine:
 __all__ = [
     "ComponentPairSampler", "DeclarationError", "EngineError", "EngineTransition", "Event",
     "LEAK_ESTIMATOR", "MET_SCHEMA", "MeltEngine", "PairRate", "PayloadCatalog", "Propensities", "RunResult",
-    "SpeciesIdentity", "TransportLaw", "escape_factor", "pooled_leak_fraction",
+    "SpeciesIdentity", "TransportLaw", "escape_factor", "pooled_leak_fraction", "refuse_initial_species_overlap",
 ]

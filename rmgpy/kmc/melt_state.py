@@ -823,21 +823,44 @@ def _backbone_keys(repeat) -> frozenset:
     return frozenset(path)
 
 
-def _declaration_graph(graph, closing=None):
-    """networkx graph of a declaration's heavy atoms (labels: element, isotope,
-    charge, radical electrons, lone pairs, hydrogens; edges: bond order).
-    ``closing = (a, b, order)`` raises the a-b bond order by ``order``."""
+def _normalized_forms(graph, closing: bool = False):
+    """(origin keys by atom id, [labelled networkx graph per resonance form],
+    backbone atom ids) of one declaration materialized like the melt: every
+    hydrogen explicit (declared as atoms or as counts), aromatic rings in
+    every supported form (Kekule and 1.5 declarations give the same forms).
+    ``closing``: ``graph`` is a repeat unit whose head-tail bond is raised by
+    the port bond order (the polymerized C=C restored)."""
     import networkx as nx
-    g = nx.Graph()
-    for atom in graph.atoms:
-        g.add_node(atom.key, label=(atom.element, atom.isotope, atom.charge, atom.radical_electrons,
-                                    atom.lone_pairs, atom.hydrogens))
-    for bond in graph.bonds:
-        g.add_edge(*bond.atoms, order=float(bond.order))
-    if closing is not None:
-        a, b, order = closing
-        g.edges[a, b]["order"] += float(order)
-    return g
+    from rmgpy.kmc import window_matcher as wm
+    builder = _Builder()
+    backbone = _backbone_keys(graph) if closing else frozenset()
+    ids = builder.add_segment(graph, "mobile", 0, "declaration", backbone)
+    if closing:
+        ports = dict(graph.ports)
+        head, tail = ports["head"], ports["tail"]
+        a, b = ids[head.atom], ids[tail.atom]
+        if b not in builder.atoms[a]["edges"] or head.bond_order != tail.bond_order:
+            raise AncestryError(
+                "initial mobile monomer refused: the repeat unit's head and tail atoms are not bonded "
+                "by one bond with equal port orders, so the monomer's C=C has no head-tail bond to map onto")
+        for x, y in ((a, b), (b, a)):
+            builder.atoms[x]["edges"][y] += float(head.bond_order)
+    state = builder.state()
+    if len(state.components) != 1:
+        raise AncestryError("a monomer declaration must be one connected molecule")
+    cid = state.components.ids()[0]
+    graphs = []
+    for form in wm.component_forms(state, cid):
+        g = nx.Graph()
+        for atom, row in wm.form_rows(state, cid, form).items():
+            g.add_node(atom, label=row[:5])
+            for other, order in row[5]:
+                if atom < other:
+                    g.add_edge(atom, other, order=float(order))
+        graphs.append(g)
+    keys = {i: o.key for i, o in state.origin.items()}
+    flagged = frozenset(i for i, o in state.origin.items() if o.is_backbone)
+    return keys, graphs, flagged
 
 
 def _isomorphisms(g, h):
@@ -852,33 +875,30 @@ def monomer_backbone_keys(spec, graph) -> Optional[frozenset]:
     backbone origin, or None when ``graph`` is not the declared
     ``monomer_product`` (or none is declared).
 
-    The repeat unit is closed by raising its head-tail bond by the port bond
-    order (the vinyl C=C polymerized into the head-tail bond); every
-    isomorphism of ``graph`` onto that closed unit sends some atoms onto the
-    head-port -> tail-port path.  The ancestry must be unique: all
-    isomorphisms must flag the same atom keys (automorphisms that leave the
-    flagged set unchanged, such as a ring flip or the two ends of ethylene,
-    are not an ambiguity).  Refused (``AncestryError``) when the head and tail
-    atoms are not bonded, the ports differ in order, no isomorphism exists, or
-    two isomorphisms flag different atoms (ambiguous)."""
+    Both sides are normalized the way species identity is: every hydrogen
+    explicit (declared as atoms or as counts) and resonance forms (a Kekule
+    and an aromatic ring are the same molecule); the species' first form is
+    matched against every form of the other side.  The repeat unit is closed
+    by raising its head-tail bond by the port bond order (the vinyl C=C
+    polymerized into the head-tail bond); every isomorphism of ``graph`` onto
+    that closed unit sends some atoms onto the head-port -> tail-port path.
+    The ancestry must be unique: all isomorphisms must flag the same atoms
+    (automorphisms that leave the flagged set unchanged, such as a ring flip,
+    hydrogen permutations or the two ends of ethylene, are not an ambiguity).
+    Refused (``AncestryError``) when the head and tail atoms are not bonded,
+    the ports differ in order, no isomorphism exists, or two isomorphisms
+    flag different atoms (ambiguous)."""
     monomer = getattr(spec, "monomer_product", None)
     if monomer is None:
         return None
-    species = _declaration_graph(graph)
-    if next(_isomorphisms(species, _declaration_graph(monomer)), None) is None:
+    keys, species_forms, _none = _normalized_forms(graph)
+    query = species_forms[0]
+    _k, monomer_forms, _none = _normalized_forms(monomer)
+    if not any(next(_isomorphisms(query, form), None) is not None for form in monomer_forms):
         return None
-    repeat = spec.repeat_unit
-    ports = dict(repeat.ports)
-    head, tail = ports["head"], ports["tail"]
-    closed = _declaration_graph(repeat)
-    if not closed.has_edge(head.atom, tail.atom) or head.bond_order != tail.bond_order:
-        raise AncestryError(
-            "initial mobile monomer refused: the repeat unit's head and tail atoms are not bonded "
-            "by one bond with equal port orders, so the monomer's C=C has no head-tail bond to map onto")
-    closed.edges[head.atom, tail.atom]["order"] += float(head.bond_order)
-    backbone = _backbone_keys(repeat)
-    flagged = {frozenset(k for k, v in iso.items() if v in backbone)
-               for iso in _isomorphisms(species, closed)}
+    _k, closed_forms, backbone = _normalized_forms(spec.repeat_unit, closing=True)
+    flagged = {frozenset(keys[k] for k, v in iso.items() if v in backbone)
+               for form in closed_forms for iso in _isomorphisms(query, form)}
     if not flagged:
         raise AncestryError(
             "initial mobile monomer refused: the declared monomer_product is not isomorphic to the "

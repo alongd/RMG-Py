@@ -14,39 +14,59 @@ Per component c (exact, from atoms)
 * ``B_c``: atoms whose immutable origin is backbone (the repeat unit's
   head-port -> tail-port path; an initially mobile monomer gets it through its
   unique map onto the repeat unit, ``melt_state.monomer_backbone_keys``);
-* ``n_c = floor(B_c / b)``, an integer.
+* ``n_c = floor(B_c / b)``, an integer;
+* ``caps_c``: the atoms whose origin is a declared end group (head or tail);
+  ``E_c = mass(caps_c) / e`` is the component's physical end-group inventory
+  in end pairs (``e`` = head + tail end-group molar mass).
 
-Classes
--------
-A component identified (exact isomorphism under resonance) as a declared
-species -- ``spec.small_species``, ``monomer_product``, the built-ins H and H2
--- is that species.  Any other component is *polymer-derived* when
-``n_c >= 1`` and an *undeclared light product* when ``n_c = 0``.  The release
-report lists every undeclared component that is not in the tail
+Classes (run-time rule, ``SPECIES_RULE``)
+-----------------------------------------
+A component isomorphic (under resonance, all H explicit) to a declared species
+-- ``spec.small_species``, ``monomer_product``, the built-ins H and H2 -- IS
+that species, whatever its ancestry: a fragment cut from a chain that matches
+a declared species leaves the polymer class.  Any other component is
+*polymer-derived* when ``n_c >= 1`` (it carries at least one whole repeat
+unit's backbone: MoM's chains have DP >= 1, explicit ladder 1..xs, tail
+>= xs+1) and an *undeclared light product* when ``n_c = 0``.  A declaration
+whose declared species is isomorphic to an initial chain, or whose small
+species label equals a built-in label, is refused (``melt_engine``).  The
+release report lists every undeclared component outside the tail
 (``n_c <= xs``) by canonical key (the smallest SMILES over its resonance
-forms); nothing is refused here.
+forms); nothing is refused at run time.
 
 Tiers (design §7)
 -----------------
-1. Total mass per class and the number of polymer-derived molecules.  The MoM
-   definition is rebuilt from the kMC partition with the shared mass law: the
-   tail (``n_c > xs``) is an ``EvolvedPoolMass`` (repeat composition x
-   ``mu1``, one end-group inventory per chain, and the remaining atoms of each
-   chain, ``comp_c - n_c repeat - ends``, as signed defect inventory), the
-   explicit chains (``n_c <= xs``) are explicit inventory, and the molecule
-   count is ``mu0_tail + amount(explicit)``.  Equal by definition (to
-   rounding).
+1. Total mass per class and the number of polymer-derived molecules.  The
+   ``mom_definition`` values are an accounting identity on the kMC partition,
+   not a comparison with a MoM run: the MoM mass law
+   (``EvolvedPoolMass``: repeat x ``mu1`` + end-group inventory ``E`` +
+   signed defect inventory) and the MoM molecule count
+   (``mu0_tail + amount(explicit)``) are rebuilt from the kMC components and
+   must equal the kMC sums (to rounding).  The comparison against MoM output
+   is ``side_by_side`` with the MoM run's numbers.
 2. Mass moments over the polymer-derived molecules, exact
    (``sum amount M_c^k``), beside the MoM convention
    (``observables_from_moments`` of the integer DP moments, which assigns
-   every chain exactly ``a n_c + e``).  The difference is the end-mass
-   convention: ``delta_c = M_c - (a n_c + e)`` is the mass of the defect
-   composition; the report gives the exact differences and the bounds
-   ``sum |delta_c|`` (M1) and ``sum |delta_c| (2 (a n_c + e) + |delta_c|)``
-   (M2), never a silent tolerance.
+   every chain exactly ``a n_c + e``).  ``delta_c = M_c - (a n_c + e)``; the
+   report gives the exact differences and the bounds ``sum |delta_c|`` (M1)
+   and ``sum |delta_c| (2 (a n_c + e) + |delta_c|)`` (M2).
 3. Tail / explicit partition with the integer ``n_c`` (tail iff ``n_c > xs``,
    so the tail support invariant ``mu1 >= (xs + 1) mu0`` holds); diagnostic
    only.
+
+MoM mass law on the exported state (``mom_mass_law``)
+-----------------------------------------------------
+The exported MoM state is the tail moments ``mu``, the PHYSICAL end-group
+inventory of the tail ``E = sum_tail E_c`` (from atom origins: a bridge
+scission creates no end group, so it leaves ``E`` unchanged) and the explicit
+amounts per DP.  MoM's mass law on it is
+``a mu1 + e E + sum_n amount_n (a n + e)`` (explicit DP-n species at the
+capped DP-n molar mass).  Its gap to the kMC polymer-derived mass is exact
+and signed: ``sum_tail mass(comp_c - n_c repeat - caps_c) + sum_explicit
+mass(comp_c - n_c repeat - ends)`` (zero after any bridge scission or
+recombination of whole units; nonzero for a split inside a repeat unit, a
+radical end lacking a cap H in the explicit ladder, a transferred H), bounded
+by the same sum of absolute values (``bound_g``).
 
 Units: ``amount = scale N / N_A`` (mol) with ``scale`` the declaration's
 ``initialization().scale_factor``; the volume is constant
@@ -63,7 +83,8 @@ catches stored-mass drift between the event's components.
 
 Export: ``write_time_series`` writes one JSON line per requested time (the
 engine's horizon API), ``mom_reported_quantities`` maps one observation to the
-quantities the MoM solver reports, ``side_by_side`` gives the comparison rows.
+quantities the MoM solver reports, ``side_by_side`` compares them with a MoM
+run's own numbers.
 """
 
 from __future__ import annotations
@@ -76,19 +97,35 @@ from fractions import Fraction
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
 from rmgpy import constants
-from rmgpy.kmc.melt_engine import MeltEngine, SpeciesIdentity
-from rmgpy.kmc.melt_state import _backbone_keys, _element_mass
+from rmgpy.kmc.melt_engine import (BUILTIN_SPECIES, MeltEngine, SpeciesIdentity,
+                                   refuse_initial_species_overlap)
+from rmgpy.kmc.melt_state import _Builder, _backbone_keys, _element_mass
 from rmgpy.polymer_mass import (Composition, EvolvedPoolMass, ExplicitInventory, InventoryTerm,
                                 observables_from_moments)
 
-OBSERVABLES_SCHEMA = "kmc-melt-observables/1"
+OBSERVABLES_SCHEMA = "kmc-melt-observables/2"
 UNITS = {"amount": "mol (scale N / N_A)", "mass": "g", "molar_mass": "g/mol", "M2": "g^2/mol",
-         "dp_moments": "mol, mol, mol (sum of amount n^k, k = 0, 1, 2)", "time": "s", "volume": "m^3"}
+         "dp_moments": "mol, mol, mol (sum of amount n^k, k = 0, 1, 2)", "time": "s", "volume": "m^3",
+         "end_inventory": "mol of end-group pairs (head + tail)"}
 CONVENTION_DEFINITION = (
     "delta_c = M_c - (a n_c + e) = molar mass of comp_c - n_c repeat - ends (signed); "
     "M1_difference = sum amount delta_c, M1_bound = sum amount |delta_c|; "
     "M2_difference = sum amount delta_c (2 (a n_c + e) + delta_c), "
     "M2_bound = sum amount |delta_c| (2 (a n_c + e) + |delta_c|); exact differences, not tolerances")
+MASS_LAW_DEFINITION = (
+    "value_g = a mu1_tail + e E + sum_n amount_n (a n + e), E = physical end-group inventory of the tail "
+    "(mass of end-group-origin atoms / e); difference_g = kMC polymer-derived mass - value_g = "
+    "amount x [sum_tail mass(comp_c - n_c repeat - caps_c) + sum_explicit mass(comp_c - n_c repeat - ends)]; "
+    "bound_g = the same sum of absolute values")
+TIER1_NOTE = (
+    "mom_definition is an accounting identity on the kMC partition (the MoM mass law and molecule count "
+    "rebuilt from the kMC components), not a comparison with a MoM run; compare MoM output with side_by_side")
+SPECIES_RULE = (
+    "a component isomorphic under resonance (all H explicit) to a declared species (small species, "
+    "monomer_product, built-in H and H2) is that declared species whatever its ancestry; any other component "
+    "is polymer-derived iff n_c >= 1, else an undeclared light product; a declared species isomorphic to an "
+    "initial chain, or a small-species label equal to a built-in label, is refused at run start")
+END_SEGMENTS = ("head_end", "tail_end")
 
 
 class ObservablesError(ValueError):
@@ -112,11 +149,20 @@ def _from_declared(composition: Composition) -> Counter:
                     for symbol, isotope, count in composition.entries})
 
 
+def _minus(counts: Mapping, *parts: Tuple[int, Mapping]) -> Tuple:
+    rest = Counter(counts)
+    for times, part in parts:
+        for k, v in part.items():
+            rest[k] -= times * v
+    return _key(rest)
+
+
 _MASSES: Dict[Tuple, float] = {}
 
 
 def molar_mass_g_mol(composition: Tuple) -> float:
-    """``Composition(comp).molar_mass_g_mol()`` (the shared mass routine), cached."""
+    """``Composition(comp).molar_mass_g_mol()`` (the shared mass routine), cached;
+    signed compositions give signed masses."""
     if composition not in _MASSES:
         _MASSES[composition] = (Composition.from_mapping(dict(composition)).molar_mass_g_mol()
                                 if composition else 0.0)
@@ -150,7 +196,9 @@ class ComponentRecord:
     n: int                    # floor(B_c / b)
     species: Optional[str]    # the declared species it is, or None
     category: str             # "species", "polymer" or "light"
+    caps: Tuple               # composition of the end-group-origin atoms
     defect: Tuple             # polymer: comp - n repeat - ends (signed); else ()
+    law_defect: Tuple         # polymer: comp - n repeat - caps (signed); else ()
 
 
 def _fsum(values) -> float:
@@ -162,13 +210,29 @@ def _rel(a: float, b: float) -> float:
     return abs(a - b) / scale if scale else 0.0
 
 
+def declared_species_names(spec, identity: SpeciesIdentity) -> List[str]:
+    """Every name the identity can return: small species, ``monomer_product``
+    (when it is not also a small species) and the built-ins."""
+    names = [name for name, _g, _d in spec.small_species]
+    monomer = getattr(spec, "monomer_product", None)
+    if monomer is not None:
+        builder = _Builder()
+        builder.add_segment(monomer, "mobile", 0, "monomer_product")
+        alone = builder.state()
+        if identity.identify(alone, alone.components.ids()[0]) == "monomer_product":
+            names.append("monomer_product")
+    return names + list(BUILTIN_SPECIES)
+
+
 # --------------------------------------------------------------------------
 # the observer
 # --------------------------------------------------------------------------
 class MeltObserver:
     """Tier 1-3 observables of a melt declared by ``spec`` with the MoM cutoff
     ``xs`` (chains with ``n_c <= xs`` are the explicit ladder, ``n_c > xs`` the
-    moment tail)."""
+    moment tail).  The declaration is checked like at run start: a declared
+    species isomorphic to an initial chain, or a small-species label equal to
+    a built-in label, is refused (``DeclarationError``)."""
 
     def __init__(self, spec, *, xs: int, identity: Optional[SpeciesIdentity] = None):
         if isinstance(xs, bool) or not isinstance(xs, int) or xs < 0:
@@ -188,16 +252,20 @@ class MeltObserver:
         self.representative_volume_m3 = init.volume_m3
         self.initial_polymer_mass_g = spec.initial_mass_kg * 1000.0
         self.identity = identity if identity is not None else SpeciesIdentity(spec)
+        refuse_initial_species_overlap(spec, self.identity)
+        self.declared = declared_species_names(spec, self.identity)
         declared = {name: graph.composition for name, graph, _d in spec.small_species}
-        if getattr(spec, "monomer_product", None) is not None:
+        if "monomer_product" in self.declared:
             declared["monomer_product"] = spec.monomer_product.composition
         declared["H"] = Composition.from_mapping({"H": 1})
         declared["H2"] = Composition.from_mapping({"H": 2})
-        self.declared_molar_mass = {k: v.molar_mass_g_mol() for k, v in declared.items()}
+        self.declared_molar_mass = {k: declared[k].molar_mass_g_mol() for k in self.declared}
 
     # -- per component ----------------------------------------------------
     def components(self, state, engine: Optional[MeltEngine] = None) -> List[ComponentRecord]:
         comps = state.components
+        origin = state.origin
+        nodes = state.atoms
         synced = (engine is not None and engine.state is state
                   and engine._revision == state.revision and set(engine.entries) == set(comps.ids()))
         out = []
@@ -206,21 +274,23 @@ class MeltObserver:
             composition = _key(counts)
             backbone = comps.backbone_count(cid)
             n = backbone // self.b
+            caps = Counter()
+            for x in comps.atoms(cid):
+                o = origin[x]
+                if o.kind == "chain" and o.segment in END_SEGMENTS:
+                    caps[(nodes[x].element, nodes[x].isotope)] += 1
+            caps = _key(caps)
             species = engine.entries[cid].species if synced else self.identity.identify(state, cid)
             if species is not None:
-                category, defect = "species", ()
+                category, defect, law_defect = "species", (), ()
             elif n >= 1:
                 category = "polymer"
-                rest = Counter(counts)
-                for k, v in self.repeat.items():
-                    rest[k] -= n * v
-                for k, v in self.ends.items():
-                    rest[k] -= v
-                defect = _key(rest)
+                defect = _minus(counts, (n, self.repeat), (1, self.ends))
+                law_defect = _minus(counts, (n, self.repeat), (1, dict(caps)))
             else:
-                category, defect = "light", ()
+                category, defect, law_defect = "light", (), ()
             out.append(ComponentRecord(cid, composition, molar_mass_g_mol(composition), backbone, n,
-                                       species, category, defect))
+                                       species, category, caps, defect, law_defect))
         return out
 
     # -- one observation --------------------------------------------------------
@@ -230,6 +300,7 @@ class MeltObserver:
         state = engine.state if engine is not None else target
         records = self.components(state, engine)
         u = self.unit
+        a, e = self.a, self.e
         polymer = [r for r in records if r.category == "polymer"]
         light = [r for r in records if r.category == "light"]
         tail = [r for r in polymer if r.n > self.xs]
@@ -241,13 +312,15 @@ class MeltObserver:
         rep_all, rep_tail = moments(polymer), moments(tail)
         mol_all = [u * x for x in rep_all]
         mol_tail = [u * x for x in rep_tail]
+        end_pairs = _fsum(molar_mass_g_mol(r.caps) for r in tail) / e if e else 0.0
+        end_mol = u * end_pairs
 
-        # tier 1: MoM definition rebuilt with the shared mass law
-        defects = Counter(r.defect for r in tail if r.defect)
+        # tier 1: accounting identity (MoM mass law and count rebuilt from the kMC partition)
+        defects = Counter(r.law_defect for r in tail if r.law_defect)
         pool = EvolvedPoolMass(
             "polymer", Composition.from_mapping(dict(self.repeat)), tuple(mol_tail),
-            end_inventory=((InventoryTerm("ends", Composition.from_mapping(dict(self.ends)), mol_tail[0], True),)
-                           if tail else ()),
+            end_inventory=((InventoryTerm("ends", Composition.from_mapping(dict(self.ends)), end_mol, True),)
+                           if end_mol else ()),
             defects=tuple(InventoryTerm(f"defect {i}", Composition.from_mapping(dict(d)), u * k)
                           for i, (d, k) in enumerate(sorted(defects.items()))))
         by_comp = Counter(r.composition for r in explicit)
@@ -256,16 +329,18 @@ class MeltObserver:
         mom_mass = _fsum([pool.mass_g] + [x.mass_g for x in explicit_inventory])
         mom_amount = _fsum([mol_tail[0]] + [x.amount_mol for x in explicit_inventory])
         species = {}
-        for name in sorted({r.species for r in records if r.species is not None}):
+        for name in self.declared:
             rs = [r for r in records if r.species == name]
             amount = u * len(rs)
             species[name] = {"molecules": len(rs), "amount_mol": amount,
                              "mass_g": u * _fsum(r.molar_mass_g_mol for r in rs),
                              "mom_definition": {"amount_mol": amount,
                                                 "mass_g": amount * self.declared_molar_mass[name]}}
+        polymer_mass = u * _fsum(r.molar_mass_g_mol for r in polymer)
         tier1 = {
+            "mom_definition_note": TIER1_NOTE,
             "polymer_derived": {"molecules": len(polymer), "amount_mol": u * len(polymer),
-                                "mass_g": u * _fsum(r.molar_mass_g_mol for r in polymer),
+                                "mass_g": polymer_mass,
                                 "mom_definition": {"amount_mol": mom_amount, "mass_g": mom_mass}},
             "species": species,
             "undeclared_light": {"molecules": len(light), "amount_mol": u * len(light),
@@ -273,11 +348,25 @@ class MeltObserver:
             "total_mass_g": u * _fsum(r.molar_mass_g_mol for r in records),
         }
 
+        # MoM mass law on the exported state (mu_tail, physical E, explicit amounts)
+        ladder = Counter(r.n for r in explicit)
+        ladder_mass = Counter()
+        for r in explicit:
+            ladder_mass[r.n] += r.molar_mass_g_mol
+        value = _fsum([a * mol_tail[1], e * end_mol] + [u * k * (a * n + e) for n, k in ladder.items()])
+        gaps = ([molar_mass_g_mol(r.law_defect) for r in tail]
+                + [molar_mass_g_mol(r.defect) for r in explicit])
+        mass_law = {"definition": MASS_LAW_DEFINITION, "end_inventory_mol": end_mol,
+                    "tail_repeat_mass_g": a * mol_tail[1], "tail_end_mass_g": e * end_mol,
+                    "explicit_capped_mass_g": _fsum(u * k * (a * n + e) for n, k in ladder.items()),
+                    "value_g": value, "kmc_mass_g": polymer_mass,
+                    "difference_g": u * _fsum(gaps), "bound_g": u * _fsum(abs(g) for g in gaps)}
+
         # tier 2: mass moments over the polymer-derived molecules
         m = [r.molar_mass_g_mol for r in polymer]
         m1, m2 = _fsum(m), _fsum(x * x for x in m)
-        conv = observables_from_moments(mol_all, self.a, self.e)
-        deltas = [(molar_mass_g_mol(r.defect), self.a * r.n + self.e) for r in polymer]
+        conv = observables_from_moments(mol_all, a, e)
+        deltas = [(molar_mass_g_mol(r.defect), a * r.n + e) for r in polymer]
         tier2 = {
             "M0_mol": u * len(polymer), "M1_g": u * m1, "M2_g2_mol": u * m2,
             "Mn_g_mol": m1 / len(polymer) if polymer else 0.0, "Mw_g_mol": m2 / m1 if m1 else 0.0,
@@ -296,13 +385,10 @@ class MeltObserver:
         }
 
         # tier 3: tail / explicit partition (diagnostic)
-        ladder = Counter(r.n for r in explicit)
-        ladder_mass = Counter()
-        for r in explicit:
-            ladder_mass[r.n] += r.molar_mass_g_mol
         tier3 = {
             "xs": self.xs, "diagnostic_only": True,
             "tail": {"molecules": len(tail), "dp_moments_representative": rep_tail, "dp_moments_mol": mol_tail,
+                     "end_inventory_mol": end_mol,
                      "support_invariant_holds": rep_tail[1] >= (self.xs + 1) * rep_tail[0]},
             "explicit": {"dp_molecules": {str(n): k for n, k in sorted(ladder.items())},
                          "dp_amount_mol": {str(n): u * k for n, k in sorted(ladder.items())},
@@ -339,10 +425,11 @@ class MeltObserver:
             "schema": OBSERVABLES_SCHEMA, "time_s": time_s, "engine_time_s": time_s,
             "temperature_K": temperature, "units": UNITS,
             "scale_factor": self.scale, "avogadro": constants.Na, "xs": self.xs,
-            "backbone_atoms_per_unit": self.b, "repeat_unit_molar_mass_g_mol": self.a,
-            "end_group_molar_mass_g_mol": self.e, "initial_polymer_mass_g": self.initial_polymer_mass_g,
+            "backbone_atoms_per_unit": self.b, "repeat_unit_molar_mass_g_mol": a,
+            "end_group_molar_mass_g_mol": e, "initial_polymer_mass_g": self.initial_polymer_mass_g,
             "representative_volume_m3": rep_volume, "volume_m3": self.scale * rep_volume,
-            "tier1": tier1, "tier2": tier2, "tier3": tier3, "release": release,
+            "declared_species": list(self.declared), "species_rule": SPECIES_RULE,
+            "tier1": tier1, "mom_mass_law": mass_law, "tier2": tier2, "tier3": tier3, "release": release,
             "counts": counts, "leak_estimate": leak,
             "invariants": {"components": len(records), "backbone_atoms": sum(r.backbone for r in records),
                            "composition": {f"{el}{iso or ''}": k for (el, iso), k in _key(total_comp)}},
@@ -486,86 +573,101 @@ def write_time_series(engine, times: Iterable[float], path, *, xs: int, check: b
 
 
 def mom_reported_quantities(obs: Mapping) -> dict:
-    """The quantities the MoM solver reports, from one kMC observation, by the
-    MoM definitions: tail moments (pool moment slots), explicit-ladder
-    amounts, end inventory (one end pair per tail chain), condensed polymer
-    mass (exact mass law: tail pool + explicit), its convention value (no
-    defect inventory), Mn / Mw of the tail moments (``observables_from_moments``),
-    polymer conversion, declared-species amounts, polymer-derived molecules."""
-    t1, t3 = obs["tier1"], obs["tier3"]
+    """The kMC state of one observation expressed in the quantities the MoM
+    solver reports, by the MoM definitions: tail moments (pool moment slots),
+    the physical end-group inventory of the tail, explicit-ladder amounts per
+    DP, the condensed polymer mass by MoM's mass law on those
+    (``mom_mass_law.value_g``), Mn / Mw of the tail moments
+    (``observables_from_moments``), polymer conversion, the amount of every
+    declared species (0 when absent) and the polymer-derived molecules."""
+    t1, t3, law = obs["tier1"], obs["tier3"], obs["mom_mass_law"]
     mu = list(t3["tail"]["dp_moments_mol"])
-    a, e = obs["repeat_unit_molar_mass_g_mol"], obs["end_group_molar_mass_g_mol"]
-    tail = observables_from_moments(mu, a, e)
-    explicit = dict(t3["explicit"]["dp_amount_mol"])
-    explicit_mass = _fsum(t3["explicit"]["dp_mass_g"].values())
-    mass = t1["polymer_derived"]["mom_definition"]["mass_g"]
+    tail = observables_from_moments(mu, obs["repeat_unit_molar_mass_g_mol"], obs["end_group_molar_mass_g_mol"])
     return {
         "mu0_mol": mu[0], "mu1_mol": mu[1], "mu2_mol": mu[2],
-        "explicit_dp_mol": explicit, "end_inventory_mol": mu[0],
-        "polymer_condensed_mass_g": mass,
-        "polymer_condensed_mass_convention_g": tail.mass_g + explicit_mass,
+        "end_inventory_mol": law["end_inventory_mol"],
+        "explicit_dp_mol": dict(t3["explicit"]["dp_amount_mol"]),
+        "polymer_condensed_mass_g": law["value_g"],
         "Mn_g_mol": tail.mn_g_mol, "Mw_g_mol": tail.mw_g_mol,
-        "polymer_conversion": 1.0 - mass / obs["initial_polymer_mass_g"],
+        "polymer_conversion": 1.0 - law["value_g"] / obs["initial_polymer_mass_g"],
         "species_mol": {k: v["amount_mol"] for k, v in t1["species"].items()},
         "polymer_derived_molecules_mol": t1["polymer_derived"]["mom_definition"]["amount_mol"],
     }
 
 
+_TIER1 = ("polymer_condensed_mass_g", "polymer_derived_mass_exact_g", "polymer_derived_molecules_mol",
+          "polymer_conversion")
+_ZERO_WHEN_ABSENT = ("explicit_dp_mol.", "species_mol.")
+EQUAL_RELATIVE = 1.0e-12
+
+
+def _flatten(quantities: Mapping) -> Dict[str, Optional[float]]:
+    out = {}
+    for key, value in quantities.items():
+        if isinstance(value, Mapping):
+            for sub, v in value.items():
+                out[f"{key}.{sub}"] = None if v is None else float(v)
+        else:
+            out[key] = None if value is None else float(value)
+    return out
+
+
 def side_by_side(obs: Mapping, mom: Optional[Mapping] = None) -> List[dict]:
-    """Comparison rows for one observation: the kMC exact value, the value by
-    the MoM definition (rebuilt from the kMC partition), their difference, the
-    bound where conventions differ, and (given ``mom``, a dict keyed like
-    ``mom_reported_quantities``) the MoM run's own value.  ``agreement`` is
-    ``exact`` (tier 1), ``convention`` (tier 2, bounded) or ``diagnostic``
-    (tier 3)."""
-    t1, t2, t3 = obs["tier1"], obs["tier2"], obs["tier3"]
-    q = mom_reported_quantities(obs)
-    conv = t2["end_mass_convention"]
+    """Rows comparing one kMC observation with a MoM run's own numbers
+    (``mom``: a dict keyed like ``mom_reported_quantities``; nested
+    ``explicit_dp_mol`` / ``species_mol`` mappings).
+
+    One row per MoM quantity -- every key of ``mom_reported_quantities``,
+    every declared species, every key ``mom`` supplies (a DP or species the
+    kMC run never produced has kMC value 0) -- plus
+    ``polymer_derived_mass_exact_g``: the exact kMC polymer-derived mass
+    against the MoM condensed mass, with the mass-law gap bound.  Every
+    ``difference`` (kMC - MoM) and ``agreement`` is computed from the
+    supplied MoM value: ``equal`` (relative difference <= 1e-12), ``within_bound``
+    (|difference| <= the stated bound), ``differs``, ``missing_in_mom``,
+    ``missing_in_kmc``; without ``mom`` every row is ``no_mom_values`` and no
+    difference is claimed."""
+    kmc = _flatten(mom_reported_quantities(obs))
+    for name in obs.get("declared_species", ()):
+        kmc.setdefault(f"species_mol.{name}", 0.0)
+    kmc["polymer_derived_mass_exact_g"] = float(obs["tier1"]["polymer_derived"]["mass_g"])
+    bounds = {"polymer_derived_mass_exact_g": float(obs["mom_mass_law"]["bound_g"])}
+    given = _flatten(mom) if mom is not None else {}
+    if mom is not None and "polymer_condensed_mass_g" in given:
+        given["polymer_derived_mass_exact_g"] = given["polymer_condensed_mass_g"]
+    keys = list(kmc) + [k for k in given if k not in kmc]
     rows = []
-
-    def row(tier, quantity, unit, kmc, mom_definition, agreement, bound=None, mom_key=None):
-        rows.append({"tier": tier, "quantity": quantity, "unit": unit, "kmc": kmc,
-                     "mom_definition": mom_definition, "difference": kmc - mom_definition,
-                     "relative_difference": _rel(kmc, mom_definition), "bound": bound,
-                     "agreement": agreement, "mom_key": mom_key,
-                     "mom_run": None if mom is None or mom_key is None else _lookup(mom, mom_key)})
-
-    p = t1["polymer_derived"]
-    row(1, "polymer-derived mass", "g", p["mass_g"], p["mom_definition"]["mass_g"], "exact",
-        mom_key="polymer_condensed_mass_g")
-    row(1, "polymer-derived molecules", "mol", p["amount_mol"], p["mom_definition"]["amount_mol"], "exact",
-        mom_key="polymer_derived_molecules_mol")
-    for name, s in t1["species"].items():
-        row(1, f"{name} amount", "mol", s["amount_mol"], s["mom_definition"]["amount_mol"], "exact",
-            mom_key=f"species_mol.{name}")
-        row(1, f"{name} mass", "g", s["mass_g"], s["mom_definition"]["mass_g"], "exact")
-    mc = t2["mom_convention"]
-    row(2, "M1 (polymer-derived mass)", "g", t2["M1_g"], mc["mass_g"], "convention", conv["M1_bound_g"])
-    row(2, "M2", "g^2/mol", t2["M2_g2_mol"], mc["M2_g2_mol"], "convention", conv["M2_bound_g2_mol"])
-    row(2, "Mn", "g/mol", t2["Mn_g_mol"], mc["Mn_g_mol"], "convention")
-    row(2, "Mw", "g/mol", t2["Mw_g_mol"], mc["Mw_g_mol"], "convention")
-    for k, label in enumerate(("mu0", "mu1", "mu2")):
-        value = t3["tail"]["dp_moments_mol"][k]
-        row(3, f"tail {label} (n > xs = {t3['xs']})", "mol", value, value, "diagnostic", mom_key=f"{label}_mol")
-    ladder = _fsum(t3["explicit"]["dp_amount_mol"].values())
-    row(3, f"explicit ladder (1 <= n <= xs = {t3['xs']})", "mol", ladder, ladder, "diagnostic")
-    row(3, "tail Mn (MoM convention)", "g/mol", q["Mn_g_mol"], q["Mn_g_mol"], "diagnostic", mom_key="Mn_g_mol")
-    row(3, "tail Mw (MoM convention)", "g/mol", q["Mw_g_mol"], q["Mw_g_mol"], "diagnostic", mom_key="Mw_g_mol")
+    for key in keys:
+        k_value = kmc.get(key)
+        if k_value is None and key.startswith(_ZERO_WHEN_ABSENT):
+            k_value = 0.0
+        m_value = given.get(key)
+        bound = bounds.get(key)
+        difference = relative = None
+        if mom is None:
+            agreement = "no_mom_values"
+        elif m_value is None:
+            agreement = "missing_in_mom"
+        elif k_value is None:
+            agreement = "missing_in_kmc"
+        else:
+            difference = k_value - m_value
+            relative = _rel(k_value, m_value)
+            if relative <= EQUAL_RELATIVE:
+                agreement = "equal"
+            elif bound is not None and abs(difference) <= bound:
+                agreement = "within_bound"
+            else:
+                agreement = "differs"
+        tier = 1 if key in _TIER1 or key.startswith("species_mol.") else 3
+        rows.append({"tier": tier, "quantity": key, "kmc": k_value, "mom": m_value, "difference": difference,
+                     "relative_difference": relative, "bound": bound, "agreement": agreement})
     return rows
 
 
-def _lookup(mapping: Mapping, dotted: str):
-    value = mapping
-    for part in dotted.split("."):
-        if not isinstance(value, Mapping) or part not in value:
-            return None
-        value = value[part]
-    return value
-
-
 __all__ = [
-    "CONVENTION_DEFINITION", "ComponentRecord", "InvariantChecker", "InvariantError", "MeltObserver",
-    "OBSERVABLES_SCHEMA", "ObservablesError", "Totals", "backbone_atoms_per_unit", "canonical_key",
-    "exact_totals", "mom_reported_quantities", "molar_mass_g_mol", "observe", "side_by_side",
-    "write_time_series",
+    "CONVENTION_DEFINITION", "ComponentRecord", "InvariantChecker", "InvariantError", "MASS_LAW_DEFINITION",
+    "MeltObserver", "OBSERVABLES_SCHEMA", "ObservablesError", "SPECIES_RULE", "TIER1_NOTE", "Totals",
+    "backbone_atoms_per_unit", "canonical_key", "declared_species_names", "exact_totals",
+    "mom_reported_quantities", "molar_mass_g_mol", "observe", "side_by_side", "write_time_series",
 ]
