@@ -1173,6 +1173,19 @@ class PolymerPoolConfig:
     # ordinary pools (the accessor then reduces to mu1*MW).
     chain_mass_defect_g_mol: float = 0.0
 
+    # Chain end-group bookkeeping (I-141). ``repeat_unit_atoms`` is the
+    # element count of one repeat unit; ``end_group_atoms`` the element count
+    # of the TWO declared end groups of one chain (head + tail), both as
+    # ((symbol, count), ...). The moment closure books condensed atoms as
+    # mu1*unit only; the physical inventory is mu1*unit + mu0*end groups, and
+    # the atoms of chains that vanish (or are minted by scission) are carried
+    # by one non-feeding "orphaned end groups" accumulator per pool (an
+    # appended aux slot, see _book_end_group_ledger). A pool with
+    # ``end_group_atoms`` None has no ledger; mixing declared and undeclared
+    # pools in one system is refused at setup.
+    repeat_unit_atoms: Optional[Tuple[Tuple[str, int], ...]] = None
+    end_group_atoms: Optional[Tuple[Tuple[str, int], ...]] = None
+
     # Custom Kinetics Hook
     # f(T, P, mu0, mu1, mu2, mu3) -> (dmu0_dt, dmu1_dt, dmu2_dt, small_species_sources)
     # Units:
@@ -1828,6 +1841,22 @@ class HybridPolymerSystem(ReactionSystem):
         # num_sgh_z == 0 and the residual path is bit-for-bit unchanged.
         self.num_sgh_z = 0
         self._scratch_dz_dt = None
+        # I-141 orphaned-end-group ledger. L_p = mol of chains' worth of pool-p
+        # end groups that left the moment accounting (net of chains minted):
+        #     L_p = mu0_p(0) - mu0_p(t) - H_p
+        # where H_p = chains handed to the pool's explicit-oligomer species
+        # (which carries its own ends, so those orphan nothing). mu0 is
+        # already a state, so L needs NO state of its own; only H_p does, and
+        # only on pools with an explicit-DP handshake: one trailing aux slot
+        # (state order [core | U | Z | H]), output-only, NEVER read into a
+        # rate. (A passive slot on every pool was tried and rejected: any
+        # extra slot changes DASPK's step sequence, measured 2e-9 on the
+        # poly102 crash-window replay.) end_ledger_rel[p] is the slot offset
+        # inside the H block (-1: none).
+        self.num_end_ledger = 0
+        self.end_ledger_rel = np.full(len(polymer_pools), -1, dtype=np.int32)
+        self._scratch_dl_dt = None
+        self._core_species_atoms = None
 
         self.pool_mu0_indices = np.full(len(self.polymer_pools), -1, dtype=np.int32)
         self.pool_mu1_indices = np.full(len(polymer_pools), -1, dtype=np.int32)
@@ -1893,7 +1922,28 @@ class HybridPolymerSystem(ReactionSystem):
             if channels:
                 n_sgh_z += len(channels)
         self.num_sgh_z = n_sgh_z
-        if n_weak == 0 and n_sgh_z == 0:
+        # I-141: declared-and-undeclared end groups in one system are refused
+        # rather than guessed at; a handoff-counter slot H is allocated only
+        # on declared pools that own an explicit-DP species, AFTER U and Z.
+        declared = [p for p in self.polymer_pools if p.end_group_atoms]
+        self.end_ledger_rel = np.full(len(self.polymer_pools), -1, dtype=np.int32)
+        if declared and len(declared) != len(self.polymer_pools):
+            # Not fatal at setup: hand-built pool configs predate the end-group
+            # declaration (every deck/artifact producer now sets it). The
+            # reporters refuse by name (_require_end_group_atoms) instead of
+            # guessing a composition for the undeclared pools.
+            logging.warning(
+                "Pool(s) %s declare no end_group_atoms while other pools do; "
+                "end_group_ledger/orphaned_end_atoms/physical_elemental_inventory "
+                "will refuse until every pool declares them.",
+                [p.label for p in self.polymer_pools if not p.end_group_atoms])
+        n_led = 0
+        for i_p, pool in enumerate(self.polymer_pools):
+            if pool.end_group_atoms and pool.explicit_dp_to_species_index:
+                self.end_ledger_rel[i_p] = n_led
+                n_led += 1
+        self.num_end_ledger = n_led
+        if n_weak == 0 and n_sgh_z == 0 and n_led == 0:
             return
         if sensitivity:
             raise ValueError(
@@ -1915,6 +1965,12 @@ class HybridPolymerSystem(ReactionSystem):
                 [self.atol_array, np.full(n_sgh_z, atol, dtype=float)])
             self.rtol_array = np.concatenate(
                 [self.rtol_array, np.full(n_sgh_z, rtol, dtype=float)])
+        if n_led > 0:
+            self.neq += n_led
+            self.atol_array = np.concatenate(
+                [self.atol_array, np.full(n_led, atol, dtype=float)])
+            self.rtol_array = np.concatenate(
+                [self.rtol_array, np.full(n_led, rtol, dtype=float)])
 
     def validate_configuration(self):
         """Strict validation of indices and masks."""
@@ -4182,6 +4238,9 @@ class HybridPolymerSystem(ReactionSystem):
         self._scratch_dn_dt = np.zeros(n_core, float)
         self._scratch_du_dt = np.zeros(self.num_qssa_u, float)
         self._scratch_dz_dt = np.zeros(self.num_sgh_z, float)
+        self._scratch_dl_dt = np.zeros(self.num_end_ledger, float)
+        self._core_species_atoms = self._collect_species_atoms(core_species)
+        self._core_labels = [getattr(sp, 'label', '') for sp in core_species]
         self._scratch_proxy_activity = np.zeros(n_core, float)
 
         # RIDER R2 dynamic half (item 17, spec 2026-06-12 SS3(e)): the edge
@@ -6192,7 +6251,7 @@ class HybridPolymerSystem(ReactionSystem):
 
         problems = []
         n_core = self.num_core_species
-        neq_expected = n_core + self.num_qssa_u + self.num_sgh_z
+        neq_expected = n_core + self.num_qssa_u + self.num_sgh_z + self.num_end_ledger
         # Guard 3 baseline: appended U/Z slots must exactly close the
         # state vector (initiate_tolerances extended neq by ITS count).
         if self.neq != neq_expected:
@@ -6272,7 +6331,7 @@ class HybridPolymerSystem(ReactionSystem):
         # appended-U/Z state layout EXACTLY; a drifted layout must never
         # produce a silently wrong-shaped/misaligned J.
         if (neq != self.neq
-                or neq != n_core + self.num_qssa_u + self.num_sgh_z
+                or neq != n_core + self.num_qssa_u + self.num_sgh_z + self.num_end_ledger
                 or len(dydt) != neq
                 or self._jac_wt_atol is None
                 or len(self._jac_wt_atol) != neq
@@ -6280,7 +6339,7 @@ class HybridPolymerSystem(ReactionSystem):
             raise RuntimeError(
                 "18.2e scoped Jacobian: state layout drifted from armed "
                 f"assumptions (len(y)={neq}, self.neq={self.neq}, "
-                f"n_core+U+Z={n_core + self.num_qssa_u + self.num_sgh_z})"
+                f"n_core+U+Z+L={n_core + self.num_qssa_u + self.num_sgh_z + self.num_end_ledger})"
                 " -- refusing to return a misaligned J.")
         if cj == 0.0:
             raise RuntimeError("18.2e scoped Jacobian: cj == 0")
@@ -6385,6 +6444,9 @@ class HybridPolymerSystem(ReactionSystem):
         if (self._scratch_dz_dt is None
                 or len(self._scratch_dz_dt) != self.num_sgh_z):
             self._scratch_dz_dt = np.zeros(self.num_sgh_z, float)
+        if (self._scratch_dl_dt is None
+                or len(self._scratch_dl_dt) != self.num_end_ledger):
+            self._scratch_dl_dt = np.zeros(self.num_end_ledger, float)
 
         # 2. Update Volumes
         if self.constant_gas_volume:
@@ -6435,6 +6497,9 @@ class HybridPolymerSystem(ReactionSystem):
 
         dz_dt = self._scratch_dz_dt
         dz_dt[:] = 0.0
+
+        dl_dt = self._scratch_dl_dt
+        dl_dt[:] = 0.0
 
         proxy_activity = self._scratch_proxy_activity
         proxy_activity[:] = 0.0
@@ -8166,6 +8231,12 @@ class HybridPolymerSystem(ReactionSystem):
                     if F > 0.0:
                         dn_dt[explicit_xs_idx] += F * V_poly
                         dmu0_dt -= F
+                        # I-141: the explicit oligomer species carries its own
+                        # end groups, so this chain loss orphans nothing; the
+                        # H counter lets the ledger subtract it from the
+                        # mu0 decrease (L = mu0(0) - mu0 - H).
+                        if self.end_ledger_rel[pool_i] >= 0:
+                            dl_dt[self.end_ledger_rel[pool_i]] += F * V_poly
                         dmu1_dt -= xs * F
                         dmu2_dt -= (xs * xs) * F
 
@@ -8219,7 +8290,7 @@ class HybridPolymerSystem(ReactionSystem):
                 for bi in bad[:10]:
                     print(f"[POLY-DBG]     idx {bi}: y={y[bi]:.4e} gas={bool(mask[bi])}")
 
-        if self.num_qssa_u > 0 or self.num_sgh_z > 0:
+        if self.num_qssa_u > 0 or self.num_sgh_z > 0 or self.num_end_ledger > 0:
             # Appended-state layout: y = [core species | U slots | Z slots].
             # The residual vector follows the SAME layout, so the blocks are
             # concatenated in slot-index order (core | U | Z) to match the
@@ -8228,8 +8299,142 @@ class HybridPolymerSystem(ReactionSystem):
             # (num_qssa_u == 0 AND num_sgh_z == 0) return below stays the
             # bit-for-bit pre-milestone expression -- a golden bitwise-RHS
             # test depends on it.
-            return (np.concatenate((dn_dt, du_dt, dz_dt)) - dydt), 1
+            return (np.concatenate((dn_dt, du_dt, dz_dt, dl_dt)) - dydt), 1
         return (dn_dt - dydt), 1
+
+    # ------------------------------------------------------------------
+    # I-141 chain end-group bookkeeping: reporters (read-only; none of this
+    # feeds a rate).
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _collect_species_atoms(core_species):
+        """Element counts per core species ({} when the species carries no
+        structure, e.g. a label-only consumer-world species)."""
+        out = []
+        for sp in core_species:
+            try:
+                out.append(dict(sp.molecule[0].get_element_count()))
+            except Exception:
+                out.append({})
+        return out
+
+    def _ledger_state(self, y):
+        if y is None:
+            y = self.y if getattr(self, "y", None) is not None else self.y0
+        return np.asarray(y, dtype=float)
+
+    def _require_end_group_atoms(self):
+        missing = [p.label for p in self.polymer_pools if not p.end_group_atoms]
+        if missing:
+            raise ValueError(
+                f"Pool(s) {missing} declare no end_group_atoms: the chain "
+                f"end-group ledger / physical inventory will not guess a "
+                f"composition. Declare end_group_atoms (and repeat_unit_atoms) "
+                f"on every pool.")
+
+    def end_group_ledger(self, y=None):
+        """Named output: {pool label: mol of chains' worth of that pool's end
+        groups that left the moment accounting (net of chains minted)}:
+        L_p = mu0_p(0) - mu0_p(y) - H_p. Every mu0 change by any channel
+        (scission/homolysis mint chains: L falls; recombination and release
+        to gas remove them: L rises; cross-pool transfers move L between
+        pools) is booked, except chains handed to an explicit-oligomer
+        species (H_p), whose ends travel with that species."""
+        self._require_end_group_atoms()
+        y = self._ledger_state(y)
+        y0 = np.asarray(self.y0, dtype=float)
+        base = self.num_core_species + self.num_qssa_u + self.num_sgh_z
+        out = {}
+        for i, pool in enumerate(self.polymer_pools):
+            m0 = int(pool.mu_indices[0])
+            h = 0.0
+            if self.end_ledger_rel[i] >= 0:
+                h = float(y[base + int(self.end_ledger_rel[i])])
+            out[pool.label] = float(y0[m0] - y[m0] - h)
+        return out
+
+    def orphaned_end_atoms(self, y=None):
+        """Named output "orphaned end atoms": {element: mol} = sum over pools
+        of ledger_p * declared end-group composition of pool p. Compare with
+        the small products of an atom-explicit simulation."""
+        led = self.end_group_ledger(y)
+        out = {}
+        for pool in self.polymer_pools:
+            if pool.label in led:
+                for el, n in pool.end_group_atoms:
+                    out[el] = out.get(el, 0.0) + led[pool.label] * n
+        return out
+
+    def code_convention_inventory(self, y=None, species_atoms=None,
+                                  defect_atoms=None):
+        """Elemental inventory under the moment code's own convention:
+        non-moment core species (gas and any condensed explicit species) plus
+        sum_pools mu1*repeat_unit - mu0*per-chain defect atoms. Chain end
+        groups are NOT included. ``species_atoms`` {label: {el: n}} overrides
+        / supplies compositions; ``defect_atoms`` {pool label: {el: n}} gives
+        the elements lost per chain by an X-loss feature pool (required when
+        its chain_mass_defect_g_mol > 0)."""
+        y = self._ledger_state(y)
+        species_atoms = species_atoms or {}
+        defect_atoms = defect_atoms or {}
+        n_core = self.num_core_species
+        moment = set()
+        for pool in self.polymer_pools:
+            moment.update(int(i) for i in pool.mu_indices)
+        out = {}
+        for i in range(n_core):
+            if i in moment or self.is_pool_proxy[i] or y[i] == 0.0:
+                continue
+            comp = species_atoms.get(self._core_labels[i]) \
+                if getattr(self, "_core_labels", None) else None
+            if comp is None:
+                comp = self._core_species_atoms[i]
+            if not comp:
+                raise ValueError(
+                    f"Core species index {i} ({getattr(self, '_core_labels', ['?'] * n_core)[i]}) holds "
+                    f"{y[i]:g} mol but has no element composition; pass "
+                    f"species_atoms={{label: {{element: count}}}}.")
+            for el, n in comp.items():
+                out[el] = out.get(el, 0.0) + y[i] * n
+        for pool in self.polymer_pools:
+            if not pool.repeat_unit_atoms:
+                raise ValueError(
+                    f"Pool {pool.label}: repeat_unit_atoms is not declared; "
+                    f"the elemental inventory cannot be reported.")
+            mu0 = float(y[pool.mu_indices[0]])
+            mu1 = float(y[pool.mu_indices[1]])
+            for el, n in pool.repeat_unit_atoms:
+                out[el] = out.get(el, 0.0) + mu1 * n
+            if pool.chain_mass_defect_g_mol > 0.0:
+                if pool.label not in defect_atoms:
+                    raise ValueError(
+                        f"Pool {pool.label}: chain_mass_defect_g_mol="
+                        f"{pool.chain_mass_defect_g_mol:g} > 0 but no "
+                        f"defect_atoms[{pool.label!r}] (elements lost per "
+                        f"chain) was supplied.")
+                for el, n in defect_atoms[pool.label].items():
+                    out[el] = out.get(el, 0.0) - mu0 * n
+        return out
+
+    def physical_elemental_inventory(self, y=None, species_atoms=None,
+                                     defect_atoms=None):
+        """Physical elemental inventory = code convention + sum_pools
+        mu0*(declared end groups) + orphaned end atoms (the ledger). With the
+        ledger, this is conserved by the moment model for any declared
+        linear polymer; the ledger itself is orphaned_end_atoms()."""
+        y = self._ledger_state(y)
+        out = dict(self.code_convention_inventory(y, species_atoms, defect_atoms))
+        for pool in self.polymer_pools:
+            if not pool.end_group_atoms:
+                raise ValueError(
+                    f"Pool {pool.label}: end_group_atoms is not declared; the "
+                    f"physical inventory cannot be reported.")
+            mu0 = float(y[pool.mu_indices[0]])
+            for el, n in pool.end_group_atoms:
+                out[el] = out.get(el, 0.0) + mu0 * n
+        for el, v in self.orphaned_end_atoms(y).items():
+            out[el] = out.get(el, 0.0) + v
+        return out
 
     def get_reaction_rates(self, y_in):
         """

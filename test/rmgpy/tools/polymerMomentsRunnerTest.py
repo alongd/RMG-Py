@@ -4597,3 +4597,23 @@ class TestConduitEntryRejectRules:
 # trajectory verification (including the T6 equality-boundary replay leg)
 # lives in the numpy reference consumer's twin tests
 # (test/rmgpy/tools/polymerMomentsConsumerTest.py).
+
+
+class TestEndGroupCompositionFromArtifact:
+    """I-141: the artifact's declared end_groups SMILES and monomer structure
+    must reach the rebuilt solver pool as element tuples (the ledger and the
+    physical-inventory reporter read them)."""
+
+    def test_rebuilt_pool_carries_declared_composition(self, qssa_deck):
+        artifact = _load_artifact(qssa_deck)
+        assert artifact["pools"][0]["end_groups"] == ["[H]", "[H]"]
+        rs, _, _ = _build_qssa(qssa_deck, artifact)
+        pool = rs.polymer_pools[0]
+        assert pool.end_group_atoms == (("H", 2),)
+        assert pool.repeat_unit_atoms == (("C", 8), ("H", 8))
+
+    def test_rebuilt_pool_follows_an_edited_declaration(self, qssa_deck):
+        artifact = _load_artifact(qssa_deck)
+        artifact["pools"][0]["end_groups"] = ["[CH3]", "[H]"]
+        rs, _, _ = _build_qssa(qssa_deck, artifact)
+        assert rs.polymer_pools[0].end_group_atoms == (("C", 1), ("H", 4))

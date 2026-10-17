@@ -1566,7 +1566,38 @@ class PolymerPool(object):
             k_homolysis=khom_channel,
             side_group_homolysis=sgh_channels,
             side_group_gas_indices=sgh_gas_indices,
+            repeat_unit_atoms=_element_count_tuple(self.monomer),
+            end_group_atoms=_end_group_atoms(
+                getattr(self.proxy_species, "end_groups", None)),
         )
+
+
+def _element_count_tuple(obj):
+    """((symbol, count), ...) element counts of a Molecule or a Species (first
+    resonance structure), sorted by symbol; None when unresolvable."""
+    try:
+        mol_list = getattr(obj, "molecule", None)
+        mol = mol_list[0] if mol_list else obj
+        return tuple(sorted((str(k), int(v))
+                            for k, v in mol.get_element_count().items()))
+    except Exception:
+        return None
+
+
+def _end_group_atoms(end_groups):
+    """Summed element counts ((symbol, count), ...) of a chain's declared end
+    groups (head + tail), or None when the polymer declares none (the solver
+    then refuses a mixed system rather than guessing a composition)."""
+    if not end_groups:
+        return None
+    total = {}
+    for eg in end_groups:
+        t = _element_count_tuple(eg)
+        if t is None:
+            return None
+        for el, n in t:
+            total[el] = total.get(el, 0) + n
+    return tuple(sorted(total.items()))
 
 
 def _monomer_heavy_atom_count(monomer):
@@ -1771,6 +1802,8 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
             # without it. 0.0 on every other daughter class (unchanged).
             chain_mass_defect_g_mol=float(
                 getattr(spc, "chain_mass_defect_g_mol", 0.0) or 0.0),
+            repeat_unit_atoms=_element_count_tuple(getattr(spc, "monomer", None)),
+            end_group_atoms=_end_group_atoms(getattr(spc, "end_groups", None)),
         ))
 
     # Item 16 discovery census over the EDGE (never configuration): any

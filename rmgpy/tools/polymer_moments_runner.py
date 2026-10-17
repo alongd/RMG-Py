@@ -157,6 +157,40 @@ def _species_from_yaml(entry):
     return spc
 
 
+def _monomer_atoms_from_pool_entry(p):
+    """((symbol, count), ...) element counts of an artifact pool's repeat
+    unit (same structure fields as the heavy-atom reader); None if absent."""
+    mol = None
+    try:
+        adj = p.get("monomer_adj_list")
+        if adj:
+            mol = Molecule().from_adjacency_list(str(adj))
+        elif p.get("monomer_smiles"):
+            mol = Molecule().from_smiles(str(p["monomer_smiles"]))
+    except Exception:
+        mol = None
+    if mol is None:
+        return None
+    return tuple(sorted((str(k), int(v)) for k, v in mol.get_element_count().items()))
+
+
+def _end_group_atoms_from_pool_entry(p):
+    """Summed element counts of an artifact pool's two declared ``end_groups``
+    SMILES; None when absent or unparsable (the solver then refuses a mixed
+    system instead of guessing)."""
+    egs = p.get("end_groups")
+    if not egs:
+        return None
+    total = {}
+    try:
+        for smi in egs:
+            for el, n in Molecule().from_smiles(str(smi)).get_element_count().items():
+                total[str(el)] = total.get(str(el), 0) + int(n)
+    except Exception:
+        return None
+    return tuple(sorted(total.items()))
+
+
 def _monomer_heavy_atoms_from_pool_entry(p):
     """Heavy-atom (non-H) count of an artifact pool's monomer, reconstructed
     from the structure fields the generation-world serializer writes for
@@ -3906,6 +3940,8 @@ def build_system_from_artifact(artifact, species, reactions,
             # defect-aware mass consumer reads it via condensed_mass_g.
             chain_mass_defect_g_mol=float(
                 p.get("chain_mass_defect_g_mol") or 0.0),
+            repeat_unit_atoms=_monomer_atoms_from_pool_entry(p),
+            end_group_atoms=_end_group_atoms_from_pool_entry(p),
         ))
         if initial_moments and lab in initial_moments:
             moments0[lab] = tuple(initial_moments[lab])
