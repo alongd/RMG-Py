@@ -346,8 +346,10 @@ def comparison(ref, rows, molecules=None, label=None, owners_default=None):
             name = f"{owner_id[4:16]}:{t['key'][:12]}"
             if name not in loaded:
                 loaded.add(name)
+                d = t.get("derived")
+                primary = owned.get((d["primary"]["record"], d["primary"]["key"])) if d else None
                 templates[(rec["family"], direction)].append(
-                    te.matcher_from_payload(t, 700.0, name=name))
+                    te.matcher_from_payload(t, 700.0, name=name, primary=primary))
     out = {}
     for (name, direction), tlist in sorted(templates.items()):
         family = fam[name]
@@ -473,6 +475,23 @@ def collide(rows):
     return table
 
 
+def interpolation_table(payloads):
+    """Worst leave-one-out interpolation error of the stored weight tables
+    (``template_emission.interpolation_error``) over the emitted templates."""
+    from rmgpy.kmc import template_emission as te
+    worst, at, who, n = 0.0, None, None, 0
+    for p in payloads:
+        for t in p.get("templates", []):
+            if t.get("status") == "emitted" and t.get("weight"):
+                err, T = te.interpolation_error(t["weight"]["T"], t["weight"]["w"])
+                n += 1
+                if err > worst:
+                    worst, at, who = err, T, f"{p.get('record_event_id', '')[:16]}:{t['key'][:12]}"
+    return {"templates": n, "worst": worst, "worst_T": at, "worst_template": who,
+            "method": "each interior grid point predicted from its two grid neighbours "
+                      "(2x the spacing; records carry only the grid k table)"}
+
+
 def cycle_gate(rows, complete):
     """The equilibrium-cycle check of the resolved, loaded catalog against
     independent thermo (``template_emission.check_cycles``); refusals follow
@@ -480,6 +499,7 @@ def cycle_gate(rows, complete):
     from rmgpy.kmc import template_emission as te
     have = [k for k, r in enumerate(rows) if r.get("payload")]
     payloads = [rows[k]["payload"] for k in have]
+    payloads = te.derive_weights(payloads, counter=_S["counter"])
     out, table = te.check_cycles(payloads, counter=_S["counter"], kc=_S["kc"],
                                  complete=complete)
     for k, payload in zip(have, out):
@@ -491,12 +511,20 @@ def cycle_gate(rows, complete):
                     default=None)
     loaded_pairs = len(table)
     refused = [r for r in table if r["status"] == "refused:cycle"]
-    return {"pairs": loaded_pairs, "refused": len(refused),
+    interp = interpolation_table(payloads)
+    return {"pairs": loaded_pairs, "refused": len(refused), "interpolation": interp,
+            "not_evaluable": te.cycle_not_evaluable(table),
             "by_status": dict(Counter(r["status"] for r in table)),
             "worst_ratio_error": worst_row["max_ratio_error"] if worst_row else None,
             "worst_pair": {"forward": worst_row["forward"], "reverse": worst_row["reverse"],
                            **(worst_row.get("worst") or {})} if worst_row else None,
-            "gates": te.cycle_gates(table, out, complete), "table": table}
+            "worst_offgrid_error": max([r.get("max_offgrid_error", 0.0) for r in table] or [0.0]),
+            "worst_grid_error": max([r.get("max_grid_error", 0.0) for r in table] or [0.0]),
+            "gates": te.cycle_gates(table, out, complete)
+            + ([f"primary-weight interpolation error {interp['worst']:.3g} > 1% at "
+                f"{interp['worst_T']} K ({interp['worst_template']})"]
+               if interp["worst"] > 0.01 else []),
+            "table": table}
 
 
 def orbit_table(rows):
