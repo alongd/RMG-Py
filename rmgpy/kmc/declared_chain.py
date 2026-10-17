@@ -38,9 +38,10 @@ breaks valence raises a ``BoundaryError`` subclass.
 Coordinates are ``(unit, position)``: position = index of the key in the
 period's sorted keys, plus ``width`` for a period oriented -1 (so the
 orientation survives into extension and backbone indexing).  Period
-detection compares pieces with hydrogens normalized and RMG-perceived
-aromatic rings read alike (``_piece_graph``); every other bond compares
-exactly.
+detection compares pieces as species (``piece_signature``: RDKit canonical
+SMILES through RMG's conversion), so implicit and explicit hydrogens and
+every writing of an aromatic ring read alike while every other bond order
+compares exactly.
 
 Scope limit: closed-shell declarations only.  A repeat unit, end group or
 monomer product that declares radical electrons or a multiplicity other than
@@ -418,68 +419,41 @@ def _components_without(adjacency, keys, removed) -> list:
     return parts
 
 
-def _aromatic_pairs(atoms, bonds, keys, head, tail, join_order) -> frozenset:
-    """Key pairs of the piece's bonds that RMG perceives as aromatic
-    (``Molecule.get_aromatic_rings``, RDKit Hueckel perception) on the
-    piece's Kekule form, ports capped with hydrogens."""
+HEAD_CAP_ISOTOPE, TAIL_CAP_ISOTOPE = 901, 902   # signature-only port marks
+
+
+def piece_signature(atoms, bonds, keys, head, tail, join_order) -> str:
+    """The identity of a piece as a species: RDKit's canonical isomeric SMILES
+    (RMG's own ``to_rdkit_mol`` conversion, which sanitizes and perceives
+    aromaticity) of the piece in a Kekule form, every hydrogen explicit and
+    each port capped with ``join_order`` hydrogens whose isotope labels mark
+    head and tail.  Two writings of one aromatic ring (1.5 or any Kekule
+    form, six- or five-membered, hetero or not) give one signature; every
+    other bond order, charge, radical and isotope is compared exactly."""
+    from rdkit import Chem
     from rmgpy.kmc.rmg_moves import molecule_from_rows
 
     keys = sorted(keys)
     inside = {pair: o for pair, o in bonds.items() if set(pair) <= set(keys)}
     extra = {head: join_order}
     extra[tail] = extra.get(tail, 0.0) + join_order
-    try:
-        kekule = _kekule(atoms, inside, extra)
-    except MetadataError:
-        return frozenset()
     asm = _Assembly()
-    handles = asm.add_period(atoms, keys, {k: i for i, k in enumerate(keys)}, kekule, 0,
-                             set(keys))
+    handles = asm.add_period(atoms, keys, {k: i for i, k in enumerate(keys)},
+                             _kekule(atoms, inside, extra), 0, set(keys))
+    marks = {}
     for _ in range(int(join_order)):
-        asm.add_h(handles[head], 4)
-        asm.add_h(handles[tail], 4)
+        marks[asm.add_h(handles[head], 4)] = HEAD_CAP_ISOTOPE
+        marks[asm.add_h(handles[tail], 4)] = TAIL_CAP_ISOTOPE
     rows, ids = asm.rows()
-    key_of = {ids[h]: k for k, h in handles.items()}
-    _rings, aromatic = molecule_from_rows(rows).get_aromatic_rings()
-    return frozenset(tuple(sorted((key_of[bond.atom1.id], key_of[bond.atom2.id])))
-                     for ring in aromatic for bond in ring)
-
-
-def _piece_graph(atoms, bonds, keys, head, tail, join_order):
-    """The heavy-atom graph of a piece in a representation-free form: each
-    heavy atom carries its hydrogens (implicit counts and explicit H atoms
-    alike) as a sorted attribute list; a bond on a ring RMG perceives as
-    aromatic is labelled ``aromatic`` (1.5 and any Kekule form read alike);
-    every other bond keeps its exact declared order."""
-    import networkx as nx
-
-    keys = set(keys)
-    aromatic = _aromatic_pairs(atoms, bonds, keys, head, tail, join_order)
-    heavy = sorted(k for k in keys if atoms[k].element != "H")
-    hydrogens = {k: [("H", None, 0, 0, 0)] * atoms[k].hydrogens for k in heavy}
-    graph = nx.Graph()
-    graph.add_nodes_from(heavy)
-    for (x, y), order in bonds.items():
-        if x not in keys or y not in keys:
-            continue
-        hx, hy = atoms[x].element == "H", atoms[y].element == "H"
-        if hx != hy:
-            h, owner = (x, y) if hx else (y, x)
-            hydrogens[owner].append(_attrs(atoms[h]))
-        elif not hx:
-            graph.add_edge(x, y, label="aromatic" if (x, y) in aromatic else order)
-    for k in heavy:
-        graph.nodes[k]["label"] = (_attrs(atoms[k]), tuple(sorted(hydrogens[k], key=repr)),
-                                   k == head, k == tail)
-    return graph
-
-
-def _isomorphic(g1, g2) -> bool:
-    from networkx.algorithms import isomorphism
-
-    return isomorphism.GraphMatcher(
-        g1, g2, node_match=lambda a, b: a["label"] == b["label"],
-        edge_match=lambda a, b: a["label"] == b["label"]).is_isomorphic()
+    molecule = molecule_from_rows(rows)
+    try:
+        rdmol, index = molecule.to_rdkit_mol(remove_h=False, return_mapping=True)
+    except (ValueError, RuntimeError) as error:
+        raise MetadataError(f"piece {keys} has no RDKit form: {error}") from error
+    by_id = {atom.id: index[atom] for atom in molecule.atoms}
+    for handle, isotope in marks.items():
+        rdmol.GetAtomWithIdx(by_id[ids[handle]]).SetIsotope(isotope)
+    return Chem.MolToSmiles(rdmol, isomericSmiles=True, canonical=True)
 
 
 def _is_bridge(adjacency, keys, pair) -> bool:
@@ -695,9 +669,9 @@ def _derive(unit, locality_policy, digest) -> ChainGeometry:
             pieces = []
             for j in range(d_rep // p):
                 part = next(x for x in parts if path[j * p] in x)
-                pieces.append(_piece_graph(atoms, declared, part, path[j * p],
-                                           path[(j + 1) * p - 1], join_order))
-            if all(_isomorphic(pieces[0], other) for other in pieces[1:]):
+                pieces.append(piece_signature(atoms, declared, part, path[j * p],
+                                              path[(j + 1) * p - 1], join_order))
+            if len(set(pieces)) == 1:
                 period = p
                 piece = next(x for x in parts if head in x)
                 piece_tail = path[p - 1]
@@ -729,9 +703,8 @@ def _derive(unit, locality_policy, digest) -> ChainGeometry:
     offsets = {k: from_head[k] for k in heavy
                if k in from_head and k in from_tail and from_head[k] + from_tail[k] == span}
 
-    reflection = _isomorphic(
-        _piece_graph(atoms, piece_declared, piece, head, piece_tail, join_order),
-        _piece_graph(atoms, piece_declared, piece, piece_tail, head, join_order))
+    reflection = piece_signature(atoms, piece_declared, piece, head, piece_tail, join_order) \
+        == piece_signature(atoms, piece_declared, piece, piece_tail, head, join_order)
     formula = {}
     for a in unit.atoms:
         formula[a.element] = formula.get(a.element, 0) + 1
