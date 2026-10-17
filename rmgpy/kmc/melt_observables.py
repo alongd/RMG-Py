@@ -99,11 +99,11 @@ from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 from rmgpy import constants
 from rmgpy.kmc.melt_engine import (BUILTIN_SPECIES, MeltEngine, SpeciesIdentity,
                                    refuse_initial_species_overlap)
-from rmgpy.kmc.melt_state import _Builder, _backbone_keys, _element_mass
+from rmgpy.kmc.melt_state import _Builder, _backbone_keys, _element_mass, monomer_backbone_keys
 from rmgpy.polymer_mass import (Composition, EvolvedPoolMass, ExplicitInventory, InventoryTerm,
                                 observables_from_moments)
 
-OBSERVABLES_SCHEMA = "kmc-melt-observables/2"
+OBSERVABLES_SCHEMA = "kmc-melt-observables/3"
 UNITS = {"amount": "mol (scale N / N_A)", "mass": "g", "molar_mass": "g/mol", "M2": "g^2/mol",
          "dp_moments": "mol, mol, mol (sum of amount n^k, k = 0, 1, 2)", "time": "s", "volume": "m^3",
          "end_inventory": "mol of end-group pairs (head + tail)"}
@@ -113,10 +113,13 @@ CONVENTION_DEFINITION = (
     "M2_difference = sum amount delta_c (2 (a n_c + e) + delta_c), "
     "M2_bound = sum amount |delta_c| (2 (a n_c + e) + |delta_c|); exact differences, not tolerances")
 MASS_LAW_DEFINITION = (
-    "value_g = a mu1_tail + e E + sum_n amount_n (a n + e), E = physical end-group inventory of the tail "
-    "(mass of end-group-origin atoms / e); difference_g = kMC polymer-derived mass - value_g = "
-    "amount x [sum_tail mass(comp_c - n_c repeat - caps_c) + sum_explicit mass(comp_c - n_c repeat - ends)]; "
-    "bound_g = the same sum of absolute values")
+    "value_g = a mu1_tail + e E - mu0_tail chain_mass_defect - sum_rows max(0, sites mu1_tail - Z) M_X "
+    "+ sum_n amount_n (a n + e) (the solver's depletion-aware law), E = physical end-group inventory of the "
+    "tail (mass of end-group-origin atoms / e), Z = side-group sites still on tail chains (anchor atoms by "
+    "origin), chain_mass_defect = 0 (per-chain loss is carried by Z); difference_g = kMC polymer-derived "
+    "mass - value_g = amount x [sum_tail mass(comp_c - n_c repeat - caps_c + sum_rows (n_c sites - z_c) X) "
+    "+ sum_explicit mass(comp_c - n_c repeat - ends) + sum_rows (clamped - unclamped lost) M_X]; bound_g = "
+    "the same with absolute values; a convention gap, never a tolerance for comparing with a MoM run")
 TIER1_NOTE = (
     "mom_definition is an accounting identity on the kMC partition (the MoM mass law and molecule count "
     "rebuilt from the kMC components), not a comparison with a MoM run; compare MoM output with side_by_side")
@@ -199,6 +202,7 @@ class ComponentRecord:
     caps: Tuple               # composition of the end-group-origin atoms
     defect: Tuple             # polymer: comp - n repeat - ends (signed); else ()
     law_defect: Tuple         # polymer: comp - n repeat - caps (signed); else ()
+    sites: Tuple = ()         # ((side-group row, side-group instances whose anchor atom is here), ...)
 
 
 def _fsum(values) -> float:
@@ -208,6 +212,50 @@ def _fsum(values) -> float:
 def _rel(a: float, b: float) -> float:
     scale = max(abs(a), abs(b))
     return abs(a - b) / scale if scale else 0.0
+
+
+def side_groups(graph, backbone_keys) -> List[Tuple[str, Tuple]]:
+    """(anchor key, composition) of every side group of a declaration: a
+    connected set of non-backbone atoms (with their hydrogens) attached to the
+    backbone, anchored at its least-key atom bonded to a backbone atom.
+    Groups made of hydrogen only (an explicit backbone H) are not side
+    groups."""
+    keys = {atom.key: atom for atom in graph.atoms}
+    neighbours = {k: [] for k in keys}
+    for bond in graph.bonds:
+        x, y = bond.atoms
+        neighbours[x].append(y)
+        neighbours[y].append(x)
+    seen, out = set(), []
+    for start in sorted(keys):
+        if start in backbone_keys or start in seen:
+            continue
+        group, stack = [], [start]
+        seen.add(start)
+        while stack:
+            k = stack.pop()
+            group.append(k)
+            for other in neighbours[k]:
+                if other not in backbone_keys and other not in seen:
+                    seen.add(other)
+                    stack.append(other)
+        if all(keys[k].element == "H" for k in group):
+            continue
+        anchors = sorted(k for k in group if any(o in backbone_keys for o in neighbours[k]))
+        if not anchors:
+            continue
+        counts = Counter()
+        for k in group:
+            atom = keys[k]
+            counts[(atom.element, None if atom.isotope == -1 else atom.isotope)] += 1
+            if atom.hydrogens:
+                counts[("H", None)] += atom.hydrogens
+        out.append((anchors[0], _key(counts)))
+    return out
+
+
+def _formula(composition: Tuple) -> str:
+    return "".join(f"{el}{iso or ''}{k if k != 1 else ''}" for (el, iso), k in composition)
 
 
 def declared_species_names(spec, identity: SpeciesIdentity) -> List[str]:
@@ -260,6 +308,20 @@ class MeltObserver:
         declared["H"] = Composition.from_mapping({"H": 1})
         declared["H2"] = Composition.from_mapping({"H": 2})
         self.declared_molar_mass = {k: declared[k].molar_mass_g_mol() for k in self.declared}
+        # side-group depletion rows (MoM's Z rows): one per side-group composition of the repeat unit
+        groups = side_groups(spec.repeat_unit, _backbone_keys(spec.repeat_unit))
+        self.side_rows: Dict[Tuple, dict] = {}
+        for _anchor, comp in groups:
+            row = self.side_rows.setdefault(comp, {"label": _formula(comp), "sites_per_unit": 0,
+                                                   "molar_mass_g_mol": molar_mass_g_mol(comp)})
+            row["sites_per_unit"] += 1
+        self.chain_anchor = {anchor: comp for anchor, comp in groups}
+        self.mobile_anchor: Dict[Tuple[str, str], Tuple] = {}
+        for name, graph, _d in spec.small_species:
+            flagged = monomer_backbone_keys(spec, graph)
+            for anchor, comp in (side_groups(graph, flagged) if flagged else ()):
+                if comp in self.side_rows:
+                    self.mobile_anchor[(name, anchor)] = comp
 
     # -- per component ----------------------------------------------------
     def components(self, state, engine: Optional[MeltEngine] = None) -> List[ComponentRecord]:
@@ -274,12 +336,18 @@ class MeltObserver:
             composition = _key(counts)
             backbone = comps.backbone_count(cid)
             n = backbone // self.b
-            caps = Counter()
+            caps, sites = Counter(), Counter()
             for x in comps.atoms(cid):
                 o = origin[x]
-                if o.kind == "chain" and o.segment in END_SEGMENTS:
-                    caps[(nodes[x].element, nodes[x].isotope)] += 1
+                if o.kind == "chain":
+                    if o.segment in END_SEGMENTS:
+                        caps[(nodes[x].element, nodes[x].isotope)] += 1
+                    elif o.key in self.chain_anchor:
+                        sites[self.chain_anchor[o.key]] += 1
+                elif (o.segment, o.key) in self.mobile_anchor:
+                    sites[self.mobile_anchor[(o.segment, o.key)]] += 1
             caps = _key(caps)
+            sites = tuple(sorted(sites.items()))
             species = engine.entries[cid].species if synced else self.identity.identify(state, cid)
             if species is not None:
                 category, defect, law_defect = "species", (), ()
@@ -290,7 +358,7 @@ class MeltObserver:
             else:
                 category, defect, law_defect = "light", (), ()
             out.append(ComponentRecord(cid, composition, molar_mass_g_mol(composition), backbone, n,
-                                       species, category, caps, defect, law_defect))
+                                       species, category, caps, defect, law_defect, sites))
         return out
 
     # -- one observation --------------------------------------------------------
@@ -353,14 +421,43 @@ class MeltObserver:
         ladder_mass = Counter()
         for r in explicit:
             ladder_mass[r.n] += r.molar_mass_g_mol
-        value = _fsum([a * mol_tail[1], e * end_mol] + [u * k * (a * n + e) for n, k in ladder.items()])
-        gaps = ([molar_mass_g_mol(r.law_defect) for r in tail]
-                + [molar_mass_g_mol(r.defect) for r in explicit])
+        # side-group depletion (MoM's Z rows): Z = remaining sites on the tail,
+        # lost = max(0, sites mu1 - Z) (clamped per row, as the solver does)
+        z_rep = Counter()
+        for r in tail:
+            for comp, k in r.sites:
+                z_rep[comp] += k
+        depletion, lost_mass, clamp = [], [], []
+        for comp, row in sorted(self.side_rows.items()):
+            open_sites = row["sites_per_unit"] * rep_tail[1] - z_rep[comp]       # integer
+            lost = max(0, open_sites)
+            lost_mass.append(u * lost * row["molar_mass_g_mol"])
+            clamp.append((lost - open_sites) * row["molar_mass_g_mol"])
+            depletion.append({"label": row["label"], "sites_per_unit": row["sites_per_unit"],
+                              "molar_mass_g_mol": row["molar_mass_g_mol"], "Z_mol": u * z_rep[comp],
+                              "lost_mol": u * lost, "lost_mass_g": u * lost * row["molar_mass_g_mol"]})
+        chain_defect = 0.0
+        explicit_capped = _fsum(u * k * (a * n + e) for n, k in ladder.items())
+        value = _fsum([a * mol_tail[1], e * end_mol, -mol_tail[0] * chain_defect, explicit_capped]
+                      + [-x for x in lost_mass])
+        # exact gap: per tail component comp - n repeat - caps + sum_rows (n sites - z) X (signed),
+        # per explicit chain comp - n repeat - ends, plus the clamp of each row
+        gaps = []
+        for r in tail:
+            here = dict(r.sites)
+            parts = [(r.n, self.repeat), (1, dict(r.caps))]
+            parts += [(here.get(comp, 0) - r.n * row["sites_per_unit"], dict(comp))
+                      for comp, row in self.side_rows.items()]
+            gaps.append(molar_mass_g_mol(_minus(dict(r.composition), *parts)))
+        gaps += [molar_mass_g_mol(r.defect) for r in explicit]
         mass_law = {"definition": MASS_LAW_DEFINITION, "end_inventory_mol": end_mol,
                     "tail_repeat_mass_g": a * mol_tail[1], "tail_end_mass_g": e * end_mol,
-                    "explicit_capped_mass_g": _fsum(u * k * (a * n + e) for n, k in ladder.items()),
+                    "chain_mass_defect_g_mol": chain_defect, "side_group_depletion": depletion,
+                    "side_group_lost_mass_g": _fsum(lost_mass),
+                    "explicit_capped_mass_g": explicit_capped,
                     "value_g": value, "kmc_mass_g": polymer_mass,
-                    "difference_g": u * _fsum(gaps), "bound_g": u * _fsum(abs(g) for g in gaps)}
+                    "difference_g": u * _fsum(gaps + clamp),
+                    "bound_g": u * _fsum([abs(g) for g in gaps] + clamp)}
 
         # tier 2: mass moments over the polymer-derived molecules
         m = [r.molar_mass_g_mol for r in polymer]
@@ -587,6 +684,8 @@ def mom_reported_quantities(obs: Mapping) -> dict:
         "mu0_mol": mu[0], "mu1_mol": mu[1], "mu2_mol": mu[2],
         "end_inventory_mol": law["end_inventory_mol"],
         "explicit_dp_mol": dict(t3["explicit"]["dp_amount_mol"]),
+        "side_group_Z_mol": {row["label"]: row["Z_mol"] for row in law["side_group_depletion"]},
+        "chain_mass_defect_g_mol": law["chain_mass_defect_g_mol"],
         "polymer_condensed_mass_g": law["value_g"],
         "Mn_g_mol": tail.mn_g_mol, "Mw_g_mol": tail.mw_g_mol,
         "polymer_conversion": 1.0 - law["value_g"] / obs["initial_polymer_mass_g"],
@@ -595,9 +694,8 @@ def mom_reported_quantities(obs: Mapping) -> dict:
     }
 
 
-_TIER1 = ("polymer_condensed_mass_g", "polymer_derived_mass_exact_g", "polymer_derived_molecules_mol",
-          "polymer_conversion")
-_ZERO_WHEN_ABSENT = ("explicit_dp_mol.", "species_mol.")
+_TIER1 = ("polymer_condensed_mass_g", "polymer_derived_molecules_mol", "polymer_conversion", "convention_gap_g")
+_ZERO_WHEN_ABSENT = ("explicit_dp_mol.", "species_mol.", "side_group_Z_mol.")
 EQUAL_RELATIVE = 1.0e-12
 
 
@@ -615,34 +713,31 @@ def _flatten(quantities: Mapping) -> Dict[str, Optional[float]]:
 def side_by_side(obs: Mapping, mom: Optional[Mapping] = None) -> List[dict]:
     """Rows comparing one kMC observation with a MoM run's own numbers
     (``mom``: a dict keyed like ``mom_reported_quantities``; nested
-    ``explicit_dp_mol`` / ``species_mol`` mappings).
+    ``explicit_dp_mol`` / ``species_mol`` / ``side_group_Z_mol`` mappings).
 
     One row per MoM quantity -- every key of ``mom_reported_quantities``,
-    every declared species, every key ``mom`` supplies (a DP or species the
-    kMC run never produced has kMC value 0) -- plus
-    ``polymer_derived_mass_exact_g``: the exact kMC polymer-derived mass
-    against the MoM condensed mass, with the mass-law gap bound.  Every
-    ``difference`` (kMC - MoM) and ``agreement`` is computed from the
-    supplied MoM value: ``equal`` (relative difference <= 1e-12), ``within_bound``
-    (|difference| <= the stated bound), ``differs``, ``missing_in_mom``,
-    ``missing_in_kmc``; without ``mom`` every row is ``no_mom_values`` and no
-    difference is claimed."""
+    every declared species, every key ``mom`` supplies (a DP, species or side
+    group the kMC run never produced has kMC value 0).  MoM numbers are
+    compared ONLY with the kMC value in the same convention (the kMC state
+    expressed by the MoM definitions, e.g. the condensed mass by MoM's mass
+    law), and a compared row is ``equal`` (relative difference <= 1e-12) or
+    ``differs``; ``missing_in_mom`` / ``missing_in_kmc`` when a side has no
+    value; without ``mom`` every row is ``no_mom_values``.  No convention
+    bound ever turns a kMC-vs-MoM difference into agreement.  The kMC
+    convention gap (exact polymer-derived mass minus its own mass-law value)
+    is its own row, ``convention_gap_g`` with its bound, labelled
+    ``not_a_comparison``."""
     kmc = _flatten(mom_reported_quantities(obs))
     for name in obs.get("declared_species", ()):
         kmc.setdefault(f"species_mol.{name}", 0.0)
-    kmc["polymer_derived_mass_exact_g"] = float(obs["tier1"]["polymer_derived"]["mass_g"])
-    bounds = {"polymer_derived_mass_exact_g": float(obs["mom_mass_law"]["bound_g"])}
     given = _flatten(mom) if mom is not None else {}
-    if mom is not None and "polymer_condensed_mass_g" in given:
-        given["polymer_derived_mass_exact_g"] = given["polymer_condensed_mass_g"]
-    keys = list(kmc) + [k for k in given if k not in kmc]
+    keys = list(kmc) + [k for k in given if k not in kmc and k != "convention_gap_g"]
     rows = []
     for key in keys:
         k_value = kmc.get(key)
         if k_value is None and key.startswith(_ZERO_WHEN_ABSENT):
             k_value = 0.0
         m_value = given.get(key)
-        bound = bounds.get(key)
         difference = relative = None
         if mom is None:
             agreement = "no_mom_values"
@@ -653,21 +748,20 @@ def side_by_side(obs: Mapping, mom: Optional[Mapping] = None) -> List[dict]:
         else:
             difference = k_value - m_value
             relative = _rel(k_value, m_value)
-            if relative <= EQUAL_RELATIVE:
-                agreement = "equal"
-            elif bound is not None and abs(difference) <= bound:
-                agreement = "within_bound"
-            else:
-                agreement = "differs"
+            agreement = "equal" if relative <= EQUAL_RELATIVE else "differs"
         tier = 1 if key in _TIER1 or key.startswith("species_mol.") else 3
         rows.append({"tier": tier, "quantity": key, "kmc": k_value, "mom": m_value, "difference": difference,
-                     "relative_difference": relative, "bound": bound, "agreement": agreement})
+                     "relative_difference": relative, "bound": None, "agreement": agreement})
+    law = obs["mom_mass_law"]
+    rows.append({"tier": 1, "quantity": "convention_gap_g", "kmc": float(law["difference_g"]), "mom": None,
+                 "difference": None, "relative_difference": None, "bound": float(law["bound_g"]),
+                 "agreement": "not_a_comparison"})
     return rows
 
 
 __all__ = [
     "CONVENTION_DEFINITION", "ComponentRecord", "InvariantChecker", "InvariantError", "MASS_LAW_DEFINITION",
     "MeltObserver", "OBSERVABLES_SCHEMA", "ObservablesError", "SPECIES_RULE", "TIER1_NOTE", "Totals",
-    "backbone_atoms_per_unit", "canonical_key", "declared_species_names", "exact_totals",
+    "backbone_atoms_per_unit", "canonical_key", "declared_species_names", "exact_totals", "side_groups",
     "mom_reported_quantities", "molar_mass_g_mol", "observe", "side_by_side", "write_time_series",
 ]
