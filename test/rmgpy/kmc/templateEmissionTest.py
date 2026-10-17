@@ -1816,3 +1816,134 @@ def test_a_non_identity_request_without_a_generated_reaction_stays_refused(monke
     res = rates(req)
     assert res.problems and "0 reactions" in res.problems[0]
     assert res.k == ()
+
+
+# --------------------------------------------------------------------------
+# I-150: a self-reverse family's channel counted on its reverse record
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize("decades,ok", [(0.00994, True), (-0.00994, True),
+                                        (0.01006, False), (-0.01006, False)])
+def test_merged_copy_guard_and_collision_diameter_share_one_boundary(decades, ok):
+    """Both sides of the 0.01-decade boundary, in the band the old linear
+    guard (|ratio - 1| <= 10**0.01 - 1) got wrong on the low side: a copy 0.01006
+    decades BELOW the loaded weight (ratio 0.97710, |ratio - 1| = 0.0229)
+    passed the guard and failed the diameter.  The guard refuses exactly what
+    the diameter refuses."""
+    # the same two weights, as a collision diameter
+    payloads, _counter = _two_pairs(0.0)
+    copy = [p for p in payloads if p["record_event_id"] == _rid(2)][0]
+    base_template(copy)["weight"]["w"] = [w * 10 ** decades for w in
+                                         base_template(copy)["weight"]["w"]]
+    payloads = [te.finish(p) if p is copy else p for p in payloads]
+    for p in payloads:
+        for t in p["templates"]:
+            t.pop("thermo", None)
+    _out, table = te.resolve_collisions(payloads, tolerance_log10=te.LOCALITY_TOLERANCE_LOG10)
+    diameter_ok = all(r["disposition"] == "merged" for r in table)
+    # and as the merged-copy guard
+    payloads, counter = _two_pairs(0.0)
+    out, _t = te.resolve_collisions(payloads)
+    out = te.derive_weights(out, counter=counter)
+    merged = next(p for p in out if p["record_event_id"] == _rid(2))
+    base_template(merged)["weight"]["w"] = [w * 10 ** decades for w in
+                                           base_template(merged)["weight"]["w"]]
+    out = [te.finish(p) for p in out]
+    _out2, cycles = _check(out, counter)
+    guard_ok = not any("own kinetics" in r["reason"] for r in cycles)
+    assert guard_ok is ok
+    assert diameter_ok is ok
+    assert te.beyond_tolerance(abs(decades)) is (not ok)
+
+
+class _Fam:
+    label = "toy_h_shift"
+    reverse_template = None
+
+
+class _HShiftCounter(te.RmgCounter):
+    """RMG's moves replaced by a toy own-reverse family on linear alkyl
+    radicals: the radical carbon takes an H from a carbon 1 or 2 bonds away
+    (ring label R2H / R3H); the template is (ring, class of the radical
+    carbon, class of the donor), the class being primary or secondary.  The
+    reading depends on the side it is made from: primary -> secondary is
+    (ring, p_rad, s_H), the same event read backwards is (ring, s_rad, p_H)."""
+
+    def __init__(self):
+        super().__init__({})
+
+    def moves(self, family, molecules, direction):
+        (mol,) = molecules
+        rows = rm.molecule_rows(mol)
+        carbons = [a for a, r in rows.items() if r[0] == "C"]
+        nbrs = {a: [n for n, _o in rows[a][5] if rows[n][0] == "C"] for a in carbons}
+        cls = {a: "p" if len(nbrs[a]) == 1 else "s" for a in carbons}
+        (rad,) = [a for a in carbons if rows[a][3]]
+        out = []
+        for donor in carbons:
+            d = abs(donor - rad)           # carbons are numbered along the chain
+            if d not in (1, 2):
+                continue
+            for h in [n for n, _o in rows[donor][5] if rows[n][0] == "H"]:
+                new = dict(rows)
+                r_row, d_row, h_row = rows[rad], rows[donor], rows[h]
+                new[rad] = r_row[:3] + (0,) + r_row[4:5] + (tuple(sorted(r_row[5] + ((h, 1.0),))),)
+                new[donor] = d_row[:3] + (1,) + d_row[4:5] + (
+                    tuple(e for e in d_row[5] if e[0] != h),)
+                new[h] = h_row[:5] + (((rad, 1.0),),)
+                out.append(rm.Move(
+                    "toy_h_shift", "forward", (0,), (0,), (True,), ((0, "*1", rad), (0, "*3", donor)),
+                    (), "kept", "", (f"R{d + 1}H", cls[rad] + "_rad", cls[donor] + "_H"),
+                    tuple(sorted(new.items())), ()))
+        return out
+
+
+def _butyl(radical):
+    """n-butyl radical rows, carbons 0..3 along the chain, the radical on ``radical``."""
+    rows = dict(alkane(4)[0])
+    h = next(n for n, _o in rows[radical][5] if rows[n][0] == "H")
+    r_row = rows[radical]
+    rows[radical] = r_row[:3] + (1,) + r_row[4:5] + (tuple(e for e in r_row[5] if e[0] != h),)
+    del rows[h]
+    return {a: (r[:5] + (tuple(e for e in r[5] if e[0] != h),)) for a, r in rows.items()}
+
+
+def _h_shift_case():
+    """Record R3H, C3 radical -> C1 radical, read from its reverse side: the
+    reactant is the C1 radical, the product the primary radical (C3, and the
+    mirror image C0 reached by R2H: the same species)."""
+    counter = _HShiftCounter()
+    reactant = _butyl(1)
+    product = _butyl(3)
+    species = counter.species_of_rows(product)
+    pathway = ("R3H", "p_rad", "s_H")
+    return counter, te.molecules_of(reactant), species, pathway
+
+
+def test_the_reverse_reading_of_a_self_reverse_family_is_filtered_to_the_records_recipe():
+    """R3H and R2H both reach the primary-radical species from the C1 radical
+    (3 + 3 outcomes); the record's channel is the three R3H outcomes only.
+    No filter takes all six."""
+    counter, mols, species, pathway = _h_shift_case()
+    unfiltered = counter.channel(_Fam, mols, "forward", None, species)
+    assert unfiltered.transitions == 6
+    flt = te.count_pathway(_Fam, pathway, True)
+    assert counter.channel(_Fam, mols, "forward", flt, species).transitions == 3
+
+
+def test_a_reverse_reading_on_another_node_of_the_same_recipe_still_counts():
+    """The moves of the reverse reading carry (R3H, s_rad, p_H), not the
+    record's (R3H, p_rad, s_H): a plain template filter finds none, which is
+    why the filter is the inverse move's template."""
+    counter, mols, species, pathway = _h_shift_case()
+    assert counter.channel(_Fam, mols, "forward", tuple(pathway), species).transitions == 0
+    flt = te.count_pathway(_Fam, pathway, True)
+    assert counter.channel(_Fam, mols, "forward", flt, species).transitions == 3
+
+
+def test_a_template_side_reading_and_other_families_keep_the_plain_filter():
+    assert te.count_pathway(_Fam, ("a", "b"), False) == ("a", "b")
+    assert te.count_pathway(_Fam, (), True) is None
+
+    class Other:
+        reverse_template = object()
+    assert te.count_pathway(Other, ("a", "b"), True) == ("a", "b")
