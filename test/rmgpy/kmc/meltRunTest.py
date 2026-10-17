@@ -528,3 +528,25 @@ def test_mom_side_by_side_gives_the_expected_differences(tmp_path):
     bad.write_text(json.dumps([{"time_s": 1.5, "quantities": entries[0]["quantities"]}]))
     with pytest.raises(kr.RunError, match="time"):
         kr.run(deck, [catalog], 700.0, times, seeds, tmp_path / "bad", mom=bad)
+
+
+def test_deck_side_group_channels_reach_the_observables(tmp_path):
+    """The deck's side_group_homolysis (the MoM channels) partitions the
+    observables; a channel the declaration contradicts is refused before any output."""
+    mapping = S.para_bromo_ps_spec({6: 2}).as_mapping()
+    mapping["transport_model"] = {"met": S.ps_met()}
+    channels = [S.sgh_channel("aryl_C-Br", "aryl", 1.0)]
+    deck = write_deck(tmp_path / "deck.py", mapping, cutoff=3, sgh=channels)
+    assert kr.read_deck(deck).side_group_homolysis == channels
+    out = tmp_path / "sgh"
+    manifest = kr.run(deck, ps_catalog_files(tmp_path), 700.0, [0.0, 1.0e6], [1], out)
+    assert manifest["deck"]["side_group_homolysis"] == channels
+    first = lines(out / "seed-1" / "observables.jsonl")[0]
+    (row,) = first["side_group_channels"]
+    assert row["label"] == "aryl_C-Br" and row["released_tracked"] is True
+    unit = first["scale_factor"] / first["avogadro"]
+    assert rel(row["inventory_tail_mol"] + row["inventory_explicit_mol"], 12 * unit) <= REL
+    wrong = write_deck(tmp_path / "wrong.py", mapping, sgh=[S.sgh_channel("aryl_C-Br", "aryl", 2.0)])
+    with pytest.raises(kr.RunError):
+        kr.run(wrong, ps_catalog_files(tmp_path), 700.0, [0.0], [1], tmp_path / "wrong_out")
+    assert not (tmp_path / "wrong_out").exists()
