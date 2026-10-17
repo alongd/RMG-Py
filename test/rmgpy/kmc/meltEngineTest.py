@@ -765,3 +765,137 @@ def test_unchanged_rebuild_keeps_the_pending_draw():
     a, b = plain.step(), rebuilt.step()
     assert a.time == b.time and a.time > horizon
     assert rebuilt.snapshot() == plain.snapshot()
+
+
+# --------------------------------------------------------------------------
+# I-152: one consistent leak estimator, labelled samples, counters vs the log
+# --------------------------------------------------------------------------
+def _exact_current_phi(engine, ci):
+    """Exhaustive mean phi over every current transition of unimolecular class ci."""
+    phis = []
+    for c in sorted(engine.entries):
+        for tr in engine.entries[c].uni.get(ci, ((), 0))[0]:
+            tx, products = engine._begin_apply(tr, me._LocalView(engine.state, list(tr.components)))
+            try:
+                phi = 1.0
+                if len(products) == 2:
+                    new = engine._scan(products)
+                    rate = engine.pair_rate(new[products[0]], new[products[1]])
+                    phi = 1.0 if rate is None else rate.phi
+            finally:
+                tx.rollback()
+            phis.append(phi)
+    return math.fsum(phis) / len(phis)
+
+
+def test_horizon_view_adds_no_biased_term_to_the_unbiased_phi_sum():
+    """leak_den = leak_num + non-thinned integral + sum of phi over proposals, always:
+    the open-segment estimate is a reported hint, not a term of the denominator."""
+    engine = _leak_fraction_state()
+    engine.run(until=0.7)
+    parts = engine.leak_estimate()
+    assert parts["open_thinned"] > 0.0
+    assert engine.leak_den == pytest.approx(
+        engine.leak_num + parts["non_thinned_integral"] + parts["phi_sum"], rel=1e-12, abs=0.0)
+
+
+def test_leak_estimator_is_unbiased_in_the_denominator_over_seeds():
+    """Mean over seeds of the physical part of the denominator at a horizon equals the
+    exact integral (apply/rollback enumeration) of the physical firing hazard.  A
+    one-shot regime (about one proposal per run), where an open-tail term shows."""
+    probe = _leak_fraction_state()
+    prop = probe.propensities()
+    physical = _physical_reverse_hazard(probe)
+    rate = (prop.enabled - prop.thinned) + physical
+    horizon = 1.0 / prop.thinned
+    dens = []
+    for seed in range(240):
+        engine = _leak_fraction_state()
+        engine.rng = np.random.default_rng(1000 + seed)
+        engine.run(until=horizon)
+        dens.append(engine.leak_den - engine.leak_num)
+    # state changes by a rare accepted event bias this by well under the tolerance
+    assert np.mean(dens) == pytest.approx(rate * horizon, rel=0.12)
+
+
+def test_phi_on_a_stride_subsample_is_labelled_a_sample():
+    engine = me.MeltEngine(S.pe_spec({5: 128}), S.ToyCatalog(names=("homolysis",)), 700.0,
+                           np.random.default_rng(1))
+    ci = next(c.index for c in engine.classes if c.met_reverse)
+    ntr = sum(len(en.uni.get(ci, ((), 0))[0]) for en in engine.entries.values())
+    assert ntr > me.PHI_FALLBACK_LIMIT
+    engine.run(until=1.0e-12)
+    parts = engine.leak_estimate()
+    assert parts["thinned_proposals"] == 0 and parts["open_thinned"] > 0.0
+    exhaustive = _exact_current_phi(engine, ci) * engine.propensities().thinned * 1.0e-12
+    if "exact" in parts["open_phi_source"]:
+        assert parts["open_thinned"] == pytest.approx(exhaustive, rel=1e-12)
+    else:
+        assert "sample" in parts["open_phi_source"]
+    assert "exact" not in parts["open_phi_source"]          # 512+ transitions are sampled here
+
+
+def test_phi_over_few_transitions_is_exhaustive_and_labelled_exact():
+    engine = me.MeltEngine(S.pe_spec({5: 4}), S.ToyCatalog(names=("homolysis",)), 700.0,
+                           np.random.default_rng(1))
+    ci = next(c.index for c in engine.classes if c.met_reverse)
+    engine.run(until=1.0e-12)
+    parts = engine.leak_estimate()
+    assert parts["open_phi_source"] == "exact_current_transitions"
+    assert parts["open_thinned"] == pytest.approx(
+        _exact_current_phi(engine, ci) * engine.propensities().thinned * 1.0e-12, rel=1e-12)
+
+
+def test_counters_agree_with_the_event_log_under_recovery():
+    """An event committed and then lost to a post-commit failure is in met_counts
+    and the family/template counters exactly when it is in the log."""
+    engine = me.MeltEngine(S.pe_spec({10: 2}), S.ToyCatalog(names=("recombination",)),
+                           700.0, np.random.default_rng(4))
+    for chain in (0, 1):
+        S.strip_h(engine.state, S.end_carbons(engine.state, chain)[0])
+    engine.rebuild()
+    def failing(*args, **kwargs):
+        raise RuntimeError("injected")
+
+    engine._update = failing
+    with pytest.raises(RuntimeError, match="injected"):
+        engine.step()
+    del engine._update
+    assert len(engine.events) == 1
+    ev = engine.events[0]
+    assert sum(engine.template_counts.values()) == sum(engine.family_counts.values()) == 1
+    logged = Counter(e.channel for e in engine.events)
+    forward = engine.met_counts["forward"] + engine.met_counts["forward_bypass"]
+    assert forward == logged["met"]
+    assert ev.channel == "met"
+
+
+def test_running_mean_open_term_is_phi_sum_over_n_not_n_plus_one():
+    engine = _leak_fraction_state()
+    engine.run(until=3.0, max_events=10 ** 6)
+    n = engine.thinned_proposals
+    if engine.events_fired:
+        pytest.skip("state moved")
+    assert n >= 2
+    assert len(engine._proposals_by_class) == 1
+    engine.run(until=3.0 + 1.0e-3)
+    prop = engine.propensities()
+    elapsed = engine.time - engine._segment_start
+    expected = prop.thinned * (engine.phi_sum / n) * elapsed
+    assert engine.leak_estimate()["open_thinned"] == pytest.approx(expected, rel=1e-9)
+
+
+GOLDEN_TRAJECTORY = "fa6f80838f4de91a3ec81910b60e9d932906e8cf0a6be91c6472a524c5a0f4b6"
+
+
+def test_fixed_seed_trajectory_is_byte_identical_to_the_pre_i152_engine():
+    import hashlib
+    spec = S.pe_spec({10: 1, 6: 1})
+    e = me.MeltEngine(spec, S.ToyCatalog(names=PE_LIVE), 700.0, np.random.default_rng(42))
+    for h in np.linspace(0.37, 20.0, 41):
+        e.run(until=float(h))
+    tr = [(repr(x.time), x.template, x.components, x.products) for x in e.events]
+    digest = repr((tr, e.state.state_hash(), e.null_proposals, repr(e.leak_num), e.events_fired,
+                   dict(e.template_counts)))
+    assert len(tr) == 136 and e.null_proposals == 18
+    assert hashlib.sha256(digest.encode()).hexdigest() == GOLDEN_TRAJECTORY
