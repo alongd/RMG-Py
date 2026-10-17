@@ -451,7 +451,15 @@ def _ring_system_rows(state, group):
     the atoms whose element, charge, electrons and bonds RDKit's aromaticity
     model reads.  Ids are ranks (sorted atom id); returns (rows, rank -> atom)
     or None when a leaving bond cannot be capped (falls back to the whole
-    component)."""
+    component).
+
+    The second shell never decides the answer: RDKit counts a ring atom's
+    pi electrons from that atom's own bonds, charge and electrons and the
+    element of an exocyclic double-bond partner (first shell; C=O versus
+    C=CH2 can flip it), and RMG keeps only six-membered carbon rings, all
+    inside the ring system.  The cap's order matters only for validity: it
+    keeps every first-shell atom's bond-order sum, so RMG's atom typing
+    (``Molecule.update``) and the RDKit conversion accept the graph."""
     nodes = state.atoms
     shell = sorted({b for a in group for b in nodes[a].edges} - set(group))
     included = sorted(group) + shell

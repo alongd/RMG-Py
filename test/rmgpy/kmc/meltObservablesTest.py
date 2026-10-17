@@ -1166,7 +1166,7 @@ def test_polymer_inventory_excludes_declared_sites_in_small_species():
 
 
 @pytest.mark.parametrize("case", ["naphthyl_b_alternating", "naphthyl_b_not_alternating", "para_bromo_ps",
-                                  "pyridyl", "biphenylyl", "quinone", "quinodimethane"])
+                                  "pyridyl", "biphenylyl", "quinone", "quinodimethane", "vinylphenyl"])
 def test_ring_system_aromaticity_equals_whole_molecule_perception(case):
     specs = {"naphthyl_b_alternating": lambda: S.bromonaphthyl_spec({3: 1}, "ring_b_alternating"),
              "naphthyl_b_not_alternating": lambda: S.bromonaphthyl_spec({3: 1}, "ring_b_not_alternating"),
@@ -1174,7 +1174,8 @@ def test_ring_system_aromaticity_equals_whole_molecule_perception(case):
              "pyridyl": lambda: S.pyridyl_spec({3: 1}),
              "biphenylyl": lambda: S.biphenylyl_bromide_spec({3: 1}),
              "quinone": lambda: S.quinone_spec({3: 1}, "O"),              # the first shell decides:
-             "quinodimethane": lambda: S.quinone_spec({3: 1}, "C")}       # C=O vs C=CH2 flips RMG's answer
+             "quinodimethane": lambda: S.quinone_spec({3: 1}, "C"),       # C=O vs C=CH2 flips RMG's answer
+             "vinylphenyl": lambda: S.vinylphenyl_spec({3: 1})}           # a capped second-shell double bond
     state = materialize(specs[case]())
     for cid in state.components.ids():
         assert mo.aromatic_atoms(state, cid) == mo.aromatic_atoms_whole(state, cid)
@@ -1202,3 +1203,76 @@ def test_aromatic_perception_cost_does_not_grow_with_chain_length():
         assert observer.site_inventory(state)[0]["tail"] == dp
         perceived.append(mo.PERCEPTION_STATS["atoms"] - before)
     assert perceived[0] == perceived[1] and perceived[0] < 40
+
+
+def _ring_systems(state, cid):
+    """Connected ring atoms of a component (the groups ``aromatic_atoms`` perceives)."""
+    ring, _bridges = mo._ring_atoms_and_bridges(state, state.components.atoms(cid))
+    groups, seen = [], set()
+    for start in sorted(ring):
+        if start in seen:
+            continue
+        group, stack = [], [start]
+        seen.add(start)
+        while stack:
+            a = stack.pop()
+            group.append(a)
+            for b in state.atoms[a].edges:
+                if b in ring and b not in seen:
+                    seen.add(b)
+                    stack.append(b)
+        groups.append(group)
+    return groups
+
+
+@pytest.mark.parametrize("case", ["vinylphenyl", "quinone", "para_bromo_ps", "biphenylyl"])
+def test_capped_ring_system_graph_is_valence_consistent(case):
+    """The cap of a bond leaving the first shell keeps its order: every
+    included atom keeps its bond-order sum, every cap is a closed-shell H
+    (sum 1) or C (sum 4), and RMG accepts the graph (``Molecule.update``)."""
+    from rmgpy.kmc.rmg_moves import molecule_from_rows
+    specs = {"vinylphenyl": lambda: S.vinylphenyl_spec({3: 1}), "quinone": lambda: S.quinone_spec({3: 1}, "O"),
+             "para_bromo_ps": lambda: S.para_bromo_ps_spec({3: 1}), "biphenylyl": lambda: S.biphenylyl_bromide_spec({3: 1})}
+    state = materialize(specs[case]())
+    checked = 0
+    for cid in state.components.ids():
+        for group in _ring_systems(state, cid):
+            built = mo._ring_system_rows(state, group)
+            assert built is not None
+            rows, back = built
+            for k, row in rows.items():
+                order_sum = sum(o for _b, o in row[5])
+                if k in back:
+                    assert order_sum == sum(float(o) for o in state.atoms[back[k]].edges.values()), (k, row)
+                else:
+                    assert row[2:5] == (0, 0, 0) and order_sum == {"H": 1.0, "C": 4.0}[row[0]], (k, row)
+            molecule_from_rows(rows)
+            checked += 1
+    assert checked >= 3
+
+
+def test_aromaticity_follows_a_component_that_keeps_its_id_through_an_edit():
+    """Opening a ring keeps the component (and its id) but not its
+    aromaticity: the memo is per state revision, never per component id alone."""
+    state = materialize(S.kekule_phenyl_spec({3: 1}))
+    cid = state.components.ids()[0]
+    before = mo.aromatic_atoms(state, cid)
+    assert len(before) == 18
+    a, b = next((a, b) for a in sorted(before) for b, o in state.atoms[a].edges.items()
+                if b in before and float(o) == 1.0)
+    revision = state.revision
+    homolyse(state, a, b)                                 # opens one ring; the chain stays one component
+    assert state.revision == revision + 1 and state.components.ids()[0] == cid
+    assert cid in state.components.ids() and a in state.components.atoms(cid)
+    after = mo.aromatic_atoms(state, cid)
+    assert after == mo.aromatic_atoms_whole(state, cid)
+    assert len(after) == 12 and a not in after and b not in after
+
+
+def test_two_channels_differing_only_in_gas_product_are_refused():
+    """A channel's identity is (label, selector, gas product); labels are
+    unique, so two channels never share label and selector."""
+    spec = S.para_bromo_ps_spec({4: 1})
+    channels = [S.sgh_channel("aryl_C-Br", "aryl", 1.0), S.sgh_channel("aryl_C-Br", "aryl", 1.0, gas="[Cl]")]
+    with pytest.raises(mo.ObservablesError, match="duplicate"):
+        mo.MeltObserver(spec, xs=0, side_group_homolysis=channels)

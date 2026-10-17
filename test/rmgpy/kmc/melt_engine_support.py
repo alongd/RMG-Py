@@ -625,6 +625,22 @@ def quinone_spec(counts, exocyclic="O"):
     return pendant_spec(counts, atoms, bonds, "k2", elements=elements, lone_pairs=lone_pairs)
 
 
+def vinylphenyl_spec(counts):
+    """A 4-vinylphenyl pendant: a first-shell carbon with a double bond to the second shell."""
+    atoms, bonds = _ring6("p", {"p1": 0, "p4": 0})
+    atoms += [_atom("v1", hydrogens=1), _atom("v2", hydrogens=2)]
+    bonds += [("p4", "v1", 1), ("v1", "v2", 2)]
+    return pendant_spec(counts, atoms, bonds, "p1")
+
+
+def kekule_phenyl_spec(counts):
+    """A phenyl pendant stored in one Kekule form (ring bonds 2/1 alternating)."""
+    keys = [f"p{i}" for i in range(1, 7)]
+    atoms = [_atom(k, hydrogens=0 if k == "p1" else 1) for k in keys]
+    bonds = [(keys[i], keys[(i + 1) % 6], 2 if i % 2 == 0 else 1) for i in range(6)]
+    return pendant_spec(counts, atoms, bonds, "p1")
+
+
 def biphenylyl_bromide_spec(counts):
     """A 4'-bromo-4-biphenylyl pendant: two rings joined by a single bond, Br on the outer ring."""
     a_atoms, a_bonds = _ring6("q", {"q1": 0, "q4": 0})
