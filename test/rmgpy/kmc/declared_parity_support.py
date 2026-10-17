@@ -217,14 +217,25 @@ def legacy_to_chain(spec, ctx: PsContext):
         "radical" if spec.radical_end else "artificial"
     tail = END_OF[spec.tail_end] if spec.tail_end else \
         "radical" if spec.benzylic_end else "artificial"
+    # one radical per flagged site, by membership, as the legacy layouts do:
+    # the declared layout flags position 1 for radical_units OR
+    # pendant_loss_units and position 0 for secondary_radical_units; the
+    # SMILES layout flags position 1 for radical_units unless the benzylic
+    # end already sits there (its ``elif``)
+    flagged, ring_lost = set(), set(spec.pendant_loss_units)
+    if spec.declared:
+        flagged |= {(u, 1) for u in set(spec.radical_units) | ring_lost}
+        flagged |= {(u, 0) for u in spec.secondary_radical_units}
+    else:
+        flagged |= {(u, 1) for u in spec.radical_units
+                    if not (spec.benzylic_end and u == spec.units - 1)}
     edits = []
-    for u in spec.radical_units:
-        edits += [E("remove_h", u, K[1]), E("set_radical", u, K[1], 1)]
-    for u in spec.secondary_radical_units:
-        edits += [E("remove_h", u, K[0]), E("set_radical", u, K[0], 1)]
-    for u in spec.pendant_loss_units:
+    for u in sorted(ring_lost):
         edits += [E("delete_atom", u, K[k]) for k in range(2, 8)]
-        edits.append(E("set_radical", u, K[1], 1))
+    for u, k in sorted(flagged):
+        if not (k == 1 and u in ring_lost):   # the lost ring freed the bond
+            edits.append(E("remove_h", u, K[k]))
+        edits.append(E("set_radical", u, K[k], 1))
     if spec.ring_radical_unit is not None:
         u = spec.ring_radical_unit
         edits += [E("remove_h", u, K[5]), E("set_radical", u, K[5], 1)]
@@ -316,7 +327,62 @@ def ps_catalog() -> dict:
         add("one_carbon", make())
     for spec in ladder_shapes(3):
         add("ladder", spec)
+    for spec in overlap_specs():
+        add("overlap", spec)
     return groups
+
+
+def _features(units):
+    """Single legacy features of a ``units`` chain: (field, value) groups."""
+    S = b.PsChainSpec
+    out = []
+    for u in range(units):
+        out += [{"radical_units": (u,)}, {"secondary_radical_units": (u,)},
+                {"pendant_loss_units": (u,)}, {"ring_radical_unit": u}]
+    out += [{"radical_end": True}, {"benzylic_end": True}]
+    out += [{"head_end": e} for e in b.HEAD_ENDS] + [{"tail_end": e} for e in b.TAIL_ENDS]
+    out += [{"head_shift": True, "head_end": e} for e in b.TAIL_ENDS]
+    out += [{"tail_shift": True, "tail_end": e} for e in b.HEAD_ENDS]
+    assert all(set(f) <= set(S.__dataclass_fields__) for f in out)
+    return out
+
+
+def _merge(first, second):
+    merged = dict(first)
+    for field, value in second.items():
+        if field not in merged:
+            merged[field] = value
+        elif isinstance(value, tuple):
+            merged[field] = merged[field] + value       # repeated members kept
+        elif merged[field] != value:
+            return None
+    return merged
+
+
+def overlap_specs():
+    """Every pair of single features (same or different field, the same
+    site included) on 2- and 3-unit chains that the legacy provider
+    accepts: flags combine by membership there, and the translation must
+    too."""
+    legacy = b.PROVIDERS["polystyrene"]
+    out, seen = [], set()
+    for units in (2, 3):
+        features = _features(units)
+        for i, first in enumerate(features):
+            for second in features[i:]:
+                merged = _merge(first, second)
+                if merged is None:
+                    continue
+                spec = b.PsChainSpec(units, **merged)
+                if repr(spec) in seen:
+                    continue
+                seen.add(repr(spec))
+                try:
+                    legacy.build("probe", spec)
+                except b.BoundaryError:
+                    continue
+                out.append(spec)
+    return out
 
 
 def ps_parity(ctx: PsContext, specs):

@@ -129,9 +129,8 @@ def heavy_formula(build):
 
 
 def at(build, unit, key, provider):
-    position = provider.geometry.positions[key]
     for a, u, k in build.metadata.coordinates:
-        if (u, k) == (unit, position):
+        if u == unit and provider.key_of(k)[0] == key:
             return a
     raise KeyError((unit, key))
 
@@ -226,7 +225,7 @@ def test_ps_fragment_parity_at_head_and_tail(ps):
 def test_ps_fragment_refuses_a_phase_cut_port(ps):
     build = ps.provider.build("s", dc.ChainSpec(3, head_phase=ps.phase))
     port = build.metadata.port("head")
-    with pytest.raises(b.ExtensionRefused):
+    with pytest.raises(b.ExtensionRefused, match="phase cut"):
         ps.provider.fragment(port, build.metadata.coordinate(port.atom_id))
 
 
@@ -421,9 +420,10 @@ def _ladder_unit(spiro=False):
 
 @pytest.mark.parametrize("spiro", [False, True])
 def test_ladder_and_spiro_units_are_refused_by_rule_2(spiro):
-    with pytest.raises(dc.DeclarationRefused) as info:
+    with pytest.raises(dc.DeclarationRefused,
+                       match="inter-residue bond 0:c-1:a lies on a cycle") as info:
         dc.ChainGeometry.of_unit(_ladder_unit(spiro))
-    assert info.value.rule == "2"
+    assert info.value.rule == "2" and info.value.component
 
 
 def test_single_join_units_pass_rule_2(pp):
@@ -472,19 +472,31 @@ def test_pmma_edits(pmma):
     assert (1, p["o2"]) not in positions and (1, p["c5"]) not in positions
 
 
-@pytest.mark.parametrize("edit", [
-    E("set_radical", 3, "c2", 1),                       # unit >= units
-    E("set_radical", -1, "c2", 1),                      # negative unit
-    E("remove_h", 1, "zz"),                             # unknown key
-    E("set_bond_order", 1, "c1", 2, other=(1, "c3")),   # not bonded
-    E("set_bond_order", 1, "c1", 2, other=(5, "c2")),   # other unit absent
-    E("set_radical", 1, "c2", 1),                       # valence after edits
-    E("remove_h", 1, "c2", 2),                          # not enough H
-    E("delete_atom", 0, "c1"),                          # the head port atom
+@pytest.mark.parametrize("edit, message", [
+    (E("set_radical", 3, "c2", 1), "unit 3 is outside the chain"),
+    (E("set_radical", -1, "c2", 1), "unit -1 is outside the chain"),
+    (E("remove_h", 1, "zz"), "key 'zz' is not an atom of the period"),
+    (E("set_bond_order", 1, "c1", 2, other=(1, "c3")), "are not bonded"),
+    (E("set_bond_order", 1, "c1", 2, other=(5, "c2")), "unit 5 is outside the chain"),
+    (E("set_radical", 1, "c2", 1), "its valence needs"),
+    (E("remove_h", 1, "c2", 2), "removable hydrogens"),
+    (E("delete_atom", 0, "c1"), "carries a port"),
+    (E("delete_atom", 2, "c2"), "carries a port"),
 ])
-def test_edit_refusals(pp, edit):
-    with pytest.raises(dc.EditError):
+def test_edit_refusals(pp, edit, message):
+    """Each refusal is pinned by class and message: a guard that is removed
+    must not be silently replaced by a later check."""
+    with pytest.raises(dc.EditError, match=message):
         pp.build("x", dc.ChainSpec(3, edits=(edit,)))
+
+
+def test_unbonded_bond_edit_is_refused_even_when_valence_would_fit(pp):
+    # c3 of unit 0 and c3 of unit 1 are both methyls: removing one H on each
+    # and bonding them would satisfy valence, so only the bonded check refuses
+    with pytest.raises(dc.EditError, match="are not bonded"):
+        pp.build("x", dc.ChainSpec(2, edits=(
+            E("remove_h", 0, "c3"), E("remove_h", 1, "c3"),
+            E("set_bond_order", 0, "c3", 1, other=(1, "c3")))))
 
 
 def test_valence_is_checked_after_all_edits(pp):
@@ -605,3 +617,204 @@ def test_identical_across_hash_seeds():
         assert proc.returncode == 0, proc.stderr[-2000:]
         out.append(proc.stdout.strip().splitlines()[-1])
     assert out[0] == out[1] == sup.fingerprint()
+
+
+# --------------------------------------------------------------------------
+# rework 1 (review r101)
+# --------------------------------------------------------------------------
+def _radical_atom(key, hydrogens):
+    atom = _atom(key, hydrogens=hydrogens)
+    atom["electronic_state"] = {"radical_electrons": 1}
+    return atom
+
+
+def test_monomer_keeps_the_declared_singlet():
+    from melt_engine_support import pe_mapping
+    singlet = {"atoms": [_radical_atom("a", 2), _radical_atom("b", 2)],
+               "bonds": [_bond("a", "b")], "electronic_state": {"multiplicity": 1}}
+    spec = spec_of(pe_mapping({10: 1}, transport=False, monomer=singlet))
+    monomer = dc.DeclaredChainProvider(spec).monomer("m")
+    assert monomer.molecule.multiplicity == 1
+    declared = spec.monomer_product.to_legacy_molecule({})
+    assert declared.multiplicity == 1
+    assert monomer.molecule.is_isomorphic(declared)
+
+
+def pendant_diradical_mapping():
+    """c1H2-c2(c3H2.)(c4H2.): two pendant radicals per unit, declared as a
+    singlet pair (multiplicity 1)."""
+    mapping = _declaration([_atom("c1", hydrogens=2), _atom("c2"), _radical_atom("c3", 2),
+                            _radical_atom("c4", 2)],
+                           [_bond("c1", "c2"), _bond("c2", "c3"), _bond("c2", "c4")], "c1", "c2")
+    mapping["repeat_unit"]["electronic_state"] = {"multiplicity": 1}
+    return mapping
+
+
+def test_chain_builds_carry_the_declared_unit_spin():
+    provider = dc.DeclaredChainProvider(spec_of(pendant_diradical_mapping()))
+    chain = provider.build("c", dc.ChainSpec(2, head="declared", tail="declared"))
+    assert chain.molecule.multiplicity == 1          # RMG high spin would give 5
+    # an edit quenching one declared radical leaves an unpaired electron
+    quenched = provider.build("q", dc.ChainSpec(2, head="declared", tail="declared", edits=(
+        E("add_h", 0, "c3"), E("set_radical", 0, "c3", 0))))
+    assert quenched.molecule.multiplicity == 2
+    # an added radical end on top of the singlet pairs
+    radical = provider.build("r", dc.ChainSpec(2, head="radical", tail="declared"))
+    assert radical.molecule.multiplicity == 2
+    # the fragment's declared spin is reported per period
+    open_ = provider.build("o", dc.ChainSpec(2))
+    port = open_.metadata.port("tail")
+    fragment = provider.fragment(port, open_.metadata.coordinate(port.atom_id))
+    assert sorted(atom[3] for atom in fragment.atoms) == [0] * (len(fragment.atoms) - 2) + [1, 1]
+    assert provider.fragment_multiplicity(fragment) == 1
+    assert provider.geometry.period_two_spin == 0
+
+
+def _backbone_walk(build, provider):
+    """backbone_index of the atoms on the built head -> tail path."""
+    import networkx as nx
+    r = rows_of(build)
+    graph = nx.Graph()
+    for a, row in r.items():
+        if row[0] != "H":
+            for c, _o in row[5]:
+                if r[c][0] != "H":
+                    graph.add_edge(a, c)
+    head, tail = build.metadata.port("head").atom_id, build.metadata.port("tail").atom_id
+    coords = {a: (u, k) for a, u, k in build.metadata.coordinates}
+    path = nx.shortest_path(graph, head, tail) if head != tail else [head]
+    return [provider.backbone_index(*coords[a]) for a in path]
+
+
+@pytest.mark.parametrize("orientation", [(1, -1), (-1, 1), (1, -1, 1), (-1, -1), (1, 1, -1, -1)])
+def test_backbone_index_is_consecutive_along_reversed_chains(pp, orientation):
+    build = pp.build("o", dc.ChainSpec(len(orientation), orientation=orientation))
+    walk = _backbone_walk(build, pp)
+    assert walk == list(range(walk[0], walk[0] + len(walk))), walk
+    assert walk[0] == 0
+
+
+def test_backbone_index_on_reversed_ps(ps):
+    build = ps.provider.build("o", dc.ChainSpec(3, orientation=(1, -1, 1)))
+    walk = _backbone_walk(build, ps.provider)
+    assert walk == list(range(6))
+
+
+def test_extension_at_reversed_ends(pp):
+    # tail of a reversed last period: the chain continues reversed
+    hh = sup.identity_witness(pp.build("hh", dc.ChainSpec(2, orientation=(1, -1))))
+    extended, _ = b.extend_vector(hh, (0, 1), ceiling=CEILING)
+    direct = sup.identity_witness(pp.build("d", dc.ChainSpec(3, orientation=(1, -1, -1))))
+    assert sup.witnesses_match(direct, extended)
+    # head of a reversed first period
+    tt = sup.identity_witness(pp.build("tt", dc.ChainSpec(2, orientation=(-1, 1))))
+    extended, _ = b.extend_vector(tt, (1, 0), ceiling=CEILING)
+    direct = sup.identity_witness(pp.build("d", dc.ChainSpec(3, orientation=(-1, -1, 1))))
+    assert sup.witnesses_match(direct, extended, lambda c: (c[0] - 1, c[1]))
+    # both junction kinds survive two extensions at both ends
+    for orientation in ((1, -1), (-1, 1)):
+        w = sup.identity_witness(pp.build("j", dc.ChainSpec(2, orientation=orientation)))
+        extended, _ = b.extend_vector(w, (2, 2), ceiling=CEILING)
+        assert extended.heavy_count() == 6 * 3
+
+
+def pe_explicit_mapping():
+    """PE with c1 carrying implicit H2 and c2 two explicit H atoms."""
+    from melt_engine_support import pe_mapping
+    mapping = pe_mapping({10: 1}, transport=False)
+    repeat = mapping["repeat_unit"]
+    repeat["atoms"] = [_atom("c1", hydrogens=2), _atom("c2"), _atom("h1", "H"), _atom("h2", "H")]
+    repeat["bonds"] = [_bond("c1", "c2"), _bond("c2", "h1"), _bond("c2", "h2")]
+    return mapping
+
+
+def test_hydrogen_representation_does_not_change_the_period(pe):
+    explicit = dc.DeclaredChainProvider(spec_of(pe_explicit_mapping()))
+    assert explicit.geometry.period == 1
+    c3 = explicit.build("c3", dc.ChainSpec(3))
+    assert heavy_formula(c3) == {"C": 3, "H": 8}
+    assert sup.builds_match(pe.build("c3", dc.ChainSpec(3)), c3)
+    w = sup.identity_witness(c3)
+    extended, _ = b.extend_vector(w, (0, 1), ceiling=CEILING)
+    assert extended.heavy_count() == 4
+
+
+def test_aromatic_representation_does_not_change_the_period():
+    """CH2-C6H4-CH2-C6H4 (para), one ring declared aromatic (1.5), the other
+    Kekule: the primitive period is still CH2-C6H4."""
+    ring_a = [_atom(f"a{i}", hydrogens=0 if i in (1, 4) else 1) for i in range(1, 7)]
+    ring_b = [_atom(f"b{i}", hydrogens=0 if i in (1, 4) else 1) for i in range(1, 7)]
+    bonds = [_bond(f"a{i}", f"a{i % 6 + 1}", 1.5) for i in range(1, 7)]
+    bonds += [_bond(f"b{i}", f"b{i % 6 + 1}", 2 if i % 2 else 1) for i in range(1, 7)]
+    bonds += [_bond("m1", "a1"), _bond("a4", "m2"), _bond("m2", "b1")]
+    mapping = _declaration([_atom("m1", hydrogens=2), _atom("m2", hydrogens=2)] + ring_a + ring_b,
+                           bonds, "m1", "b4")
+    provider = dc.DeclaredChainProvider(spec_of(mapping))
+    assert (provider.geometry.d_rep, provider.geometry.period) == (10, 5)
+    para = dc.DeclaredChainProvider(spec_of(para_mapping()))
+    assert provider.build("x", dc.ChainSpec(3, head="declared", tail="declared")).molecule \
+        .is_isomorphic(para.build("y", dc.ChainSpec(3, head="declared", tail="declared")).molecule)
+
+
+def ends_mapping():
+    mapping = pp_mapping()
+    methyl = {"atoms": [_atom("m", hydrogens=3)], "bonds": [],
+              "ports": {"cap": {"atom": "m", "bond_order": 1}},
+              "electronic_state": {"multiplicity": 1}}
+    hydroxyl = {"atoms": [_atom("o", "O", hydrogens=1, lone_pairs=2)], "bonds": [],
+                "ports": {"cap": {"atom": "o", "bond_order": 1}},
+                "electronic_state": {"multiplicity": 1}}
+    mapping["end_groups"] = {"head": methyl, "tail": hydroxyl}
+    mapping["locality_policy"]["bounds"]["elements"] = ["C", "H", "O"]
+    mapping["locality_policy"]["bounds"]["lone_pairs"] = [0, 2]
+    return mapping
+
+
+def test_heavy_declared_ends_are_reconstructed():
+    provider = dc.DeclaredChainProvider(spec_of(ends_mapping()))
+    open_ = sup.identity_witness(provider.build("o", dc.ChainSpec(2)))
+    built, record = b.reconstruct_end(open_, (0, "tail"), "declared")
+    built, record2 = b.reconstruct_end(built, (0, "head"), "declared")
+    direct = sup.identity_witness(provider.build("d", dc.ChainSpec(2, head="declared",
+                                                                    tail="declared")))
+    assert sup.witnesses_match(direct, built)
+    assert [a[1][0] for a in record.fresh_atoms] == ["O", "H"]
+    assert [a[1][0] for a in record2.fresh_atoms] == ["C", "H", "H", "H"]
+    one = b.reconstruct_end(open_, (0, "head"), "declared")[0]
+    half = sup.identity_witness(provider.build("h", dc.ChainSpec(2, head="declared")))
+    assert sup.witnesses_match(half, one)
+
+
+def cyclopentane_mapping():
+    """A cyclopentane-1,3-diyl backbone: head r1, tail r3; r2 is the short
+    backbone side, r4-r5 the long one."""
+    atoms = [_atom("r1", hydrogens=1), _atom("r2", hydrogens=2), _atom("r3", hydrogens=1),
+             _atom("r4", hydrogens=2), _atom("r5", hydrogens=2)]
+    bonds = [_bond("r1", "r2"), _bond("r2", "r3"), _bond("r3", "r4"), _bond("r4", "r5"),
+             _bond("r5", "r1")]
+    return _declaration(atoms, bonds, "r1", "r3")
+
+
+def test_backbone_atoms_follow_deletions():
+    provider = dc.DeclaredChainProvider(spec_of(cyclopentane_mapping()))
+    assert provider.n_bb == 3
+    pristine = dc.ChainSpec(2)
+    assert provider.backbone_atoms(pristine) == 6
+    opened = dc.ChainSpec(2, edits=(E("delete_atom", 1, "r2"), E("set_radical", 1, "r1", 1),
+                                    E("set_radical", 1, "r3", 1)))
+    provider.build("x", opened)
+    # the built head -> tail path now runs r1-r5-r4-r3 in unit 1
+    assert provider.backbone_atoms(opened) == 7
+
+
+def test_overlapping_legacy_flags_translate(ps):
+    for spec in (b.PsChainSpec(3, head_end="methyl", tail_end="benzyl", radical_units=(1,),
+                               pendant_loss_units=(1,)),
+                 b.PsChainSpec(3, benzylic_end=True, radical_units=(2,)),
+                 b.PsChainSpec(3, radical_units=(1, 1))):
+        mismatches, refused = sup.ps_parity(ps, [spec])
+        assert not mismatches and not refused, (spec, mismatches, refused)
+
+
+def test_overlap_catalog_is_large():
+    assert len(CATALOG["overlap"]) >= 250
