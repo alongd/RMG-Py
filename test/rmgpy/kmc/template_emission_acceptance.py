@@ -60,6 +60,8 @@ def references():
     from rmgpy.kmc import boundaries as b
     S = b.PsChainSpec
     pe = S(1, tail_end="benzylic_radical")
+    import interior_radical_specs
+    interior_radical_specs.install()
     return {
         "dp8_closed": [S(8)],
         "dp8_headrad": [S(8, head_end="primary_radical")],
@@ -67,6 +69,9 @@ def references():
         "dp4rad+pe": [S(4, tail_end="benzylic_radical"), pe],
         "pe2_identical": [S(2, tail_end="benzylic_radical"), S(2, tail_end="benzylic_radical")],
         "c16": [("alkane", 16)],
+        # I-150: linear C25 alkyl radical, radical at C11 (0-based 10); compiled by
+        # /home/alon/runs/i150/ref_compile.py c25r11 (intra_H_migration)
+        "c25r11": [("alkane", 25, None, None, 10)],
     }
 
 
@@ -405,6 +410,8 @@ def main():
     parser.add_argument("--dp12", action="store_true")
     parser.add_argument("--limit", type=int, default=None, help="at most N records (timing)")
     parser.add_argument("--roster", default=None)
+    parser.add_argument("--event", action="append", default=None,
+                        help="only the records whose event id starts with this (repeatable)")
     parser.add_argument("--family", action="append", default=None,
                         help="only these families' records (repeatable)")
     parser.add_argument("--controls-only", action="store_true",
@@ -430,6 +437,8 @@ def main():
     _S["upstream"] = upstream_counts(records)
     print("UPSTREAM", json.dumps(_S["upstream"]), flush=True)
     pool = [r for r in records if upstream_of(r) == "open"] if args.open_only else records
+    if args.event:
+        pool = [r for r in pool if any(r["event_id"].startswith(e) for e in args.event)]
     picked = pool[::args.sample]
     if args.chunk:
         k, n = (int(x) for x in args.chunk.split("/"))
@@ -477,7 +486,11 @@ def collide(rows):
 
 def interpolation_table(payloads):
     """Worst leave-one-out interpolation error of the stored weight tables
-    (``template_emission.interpolation_error``) over the emitted templates."""
+    (``template_emission.interpolation_error``) over the emitted templates.
+    REPORTED, NOT GATED: each interior point is predicted from its two grid
+    neighbours (twice the spacing), and with three or fewer interior points
+    that measures the coarseness of the grid, not the runtime error; the gate
+    is ``midpoint_table``."""
     from rmgpy.kmc import template_emission as te
     worst, at, who, n = 0.0, None, None, 0
     for p in payloads:
@@ -489,7 +502,66 @@ def interpolation_table(payloads):
                     worst, at, who = err, T, f"{p.get('record_event_id', '')[:16]}:{t['key'][:12]}"
     return {"templates": n, "worst": worst, "worst_T": at, "worst_template": who,
             "method": "each interior grid point predicted from its two grid neighbours "
-                      "(2x the spacing; records carry only the grid k table)"}
+                      "(2x the spacing; records carry only the grid k table); reported only"}
+
+
+def midpoint_table(payloads):
+    """Worst error of the runtime interpolation at the grid midpoints against
+    the record's OWN kinetics there (gated at 1%): the weight table
+    interpolated linearly in 1/T at (T_i + T_i+1) / 2 against
+    ``ssa * k / T_ch`` with ``k`` of the record's own rate regenerated at the
+    midpoints (``ProductionRates`` on the midpoint grid, the emitted witness's
+    channel).  Primary templates with a stored emitted witness only; the rest
+    (derived, merged, no witness, no regenerated rate) are counted as
+    ``unavailable`` with the reason."""
+    from rmgpy.kmc import template_emission as te
+    worst, at, who, n = 0.0, None, None, 0
+    unavailable = Counter()
+    cache = {}
+    for p in payloads:
+        rid = p.get("record_event_id")
+        record = _S["by_id"].get(rid)
+        for t in p.get("templates", []):
+            if t.get("status") != "emitted" or not t.get("weight"):
+                continue
+            if t.get("derived"):
+                unavailable["derived"] += 1
+                continue
+            wit = ((t.get("maps") or {}).get("witnesses") or {}).get("emitted")
+            lrow = next((r for r in (t.get("locality") or {}).get("rows", [])
+                         if r.get("label") == "emitted" and r.get("status") == "ok"), None)
+            if record is None or wit is None or lrow is None:
+                unavailable["no emitted witness"] += 1
+                continue
+            temps = t["weight"]["T"]
+            mids = tuple((a + b) / 2.0 for a, b in zip(temps, temps[1:]))
+            if mids not in cache:
+                cache[mids] = te.ProductionRates(
+                    _S["db"], sorted({r["family"] for r in _S["records"]}), database_path=DATABASE,
+                    database_sha="i138-reference", temperature_grid=mids)
+            r_rows, p_rows = te.rows_from_json(wit["r"]), te.rows_from_json(wit["p"])
+            gen, prods = (p_rows, r_rows) if p.get("member_reverse") else (r_rows, p_rows)
+            tch = (p.get("counts") or {}).get("record", {}) or {}
+            tch = tch.get("matcher") if p.get("weight_source") == "record" else \
+                (lrow.get("counts") or {}).get("matcher")
+            try:
+                result = cache[mids](te.RateRequest(record["family"], record["template"],
+                                                    record["orientation"], gen, prods))
+                if result.problems or tuple(result.temperatures) != mids:
+                    raise te.EmissionError("; ".join(result.problems) or "grid mismatch")
+                truth = te.weight_table(mids, result.k, result.ssa_multiplier, tch)
+            except Exception as error:   # reported, never hidden
+                unavailable[f"{type(error).__name__}: {str(error)[:80]}"] += 1
+                continue
+            n += 1
+            for T, w in zip(mids, truth):
+                err = abs(te._interpolate(temps, t["weight"]["w"], T) / w - 1.0)
+                if err > worst:
+                    worst, at, who = err, T, f"{rid[:16]}:{t['key'][:12]}"
+    return {"templates": n, "worst": worst, "worst_T": at, "worst_template": who,
+            "unavailable": dict(unavailable),
+            "method": "weight table interpolated at the grid midpoints against ssa*k/T_ch of the "
+                      "record's own kinetics regenerated there"}
 
 
 def cycle_gate(rows, complete):
@@ -512,9 +584,10 @@ def cycle_gate(rows, complete):
     loaded_pairs = len(table)
     refused = [r for r in table if r["status"] == "refused:cycle"]
     interp = interpolation_table(payloads)
+    mid = midpoint_table(payloads)
     self_inverse = sum(1 for p in out for t in p.get("templates", [])
                        if t.get("status") == "emitted" and t.get("self_inverse"))
-    return {"pairs": loaded_pairs, "refused": len(refused), "interpolation": interp,
+    return {"pairs": loaded_pairs, "refused": len(refused), "interpolation": interp, "midpoint": mid,
             "self_inverse_templates": self_inverse,
             "not_evaluable": te.cycle_not_evaluable(table),
             "by_status": dict(Counter(r["status"] for r in table)),
@@ -524,9 +597,9 @@ def cycle_gate(rows, complete):
             "worst_offgrid_error": max([r.get("max_offgrid_error", 0.0) for r in table] or [0.0]),
             "worst_grid_error": max([r.get("max_grid_error", 0.0) for r in table] or [0.0]),
             "gates": te.cycle_gates(table, out, complete)
-            + ([f"primary-weight interpolation error {interp['worst']:.3g} > 1% at "
-                f"{interp['worst_T']} K ({interp['worst_template']})"]
-               if interp["worst"] > 0.01 else []),
+            + ([f"primary-weight midpoint error {mid['worst']:.3g} > 1% at "
+                f"{mid['worst_T']} K ({mid['worst_template']})"]
+               if mid["worst"] > 0.01 else []),
             "table": table}
 
 
