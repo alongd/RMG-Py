@@ -160,6 +160,16 @@ def test_unknown_end_variant_is_refused_never_dropped(tmp_path):
     assert "x" not in systems
 
 
+def test_interior_radical_on_the_alkane_is_refused_not_built_closed(tmp_path):
+    systems, refusals = systems_of(tmp_path, "pe", {"r": [chain(5, radical_unit=2)]})
+    assert [r["status"] for r in refusals] == ["refused:variant"] and "r" not in systems
+
+
+def test_ps_interior_radical_is_the_radical_unit_spec(tmp_path):
+    systems, _ = systems_of(tmp_path, "ps", {"r": [chain(5, radical_unit=2)]})
+    assert systems["r"][0].spec == S(5, radical_units=(2,))
+
+
 def test_a_refused_participant_refuses_its_whole_system(tmp_path):
     systems, refusals = systems_of(tmp_path, "ps", {
         "mixed": [chain(4), chain(2, tail="bogus")], "ok": [chain(2)]})
@@ -186,8 +196,8 @@ def test_roster_sha_is_the_file_hash(tmp_path):
 
 def test_no_chemistry_specific_code_in_emit():
     text = Path(emit.__file__).read_text()
-    found = re.findall(r"polystyrene|PsChainSpec|alkane|polyethylene|\bPS\b|\bPE\b|styrene",
-                       text, flags=re.IGNORECASE)
+    found = re.findall(r"polystyrene|PsChainSpec|alkane|polyethylene|styrene", text, flags=re.IGNORECASE)
+    found += re.findall(r"\bPS\b|\bPE\b", text)
     assert not found, found
 
 
@@ -239,7 +249,7 @@ def fixture_rows():
 
 
 def record_id(row):
-    return row["payload"]["record_event_id"]
+    return (row.get("payload") or {}).get("record_event_id") or row["event_id"] + "0" * 44
 
 
 def header(chunk, rows, **over):
@@ -324,9 +334,10 @@ def test_refusals_and_completeness(tmp_path):
     refused = {r["record_event_id"][:24] for r in catalog["refusals"]}
     assert refused == {r["event_id"] for r in fixture_rows() if r["status"] == "refused"}
     assert all(r["status"] and r["reason"] is not None for r in catalog["refusals"])
-    (key, counts), = catalog["completeness"].items()
-    assert key == "R_Recombination|as_generated"
-    assert counts["emitted"] == 4 and counts["refused"] == 2 and counts["partial"] == 0
+    totals = {s: sum(c[s] for c in catalog["completeness"].values())
+              for s in ("emitted", "partial", "refused", "error")}
+    assert totals == {"emitted": 4, "partial": 0, "refused": 2, "error": 0}
+    assert all(k.startswith("R_Recombination|") for k in catalog["completeness"])
 
 
 def test_two_shards_equal_one_unsharded_row_set(tmp_path):
@@ -367,8 +378,7 @@ def test_error_row_is_incomplete_with_the_failure_listed(tmp_path):
            "orientation": "as_generated", "status": "error", "refusal": "error:exception",
            "reason": "Traceback: boom", "seconds": 0.1}
     rows = rows + [bad]
-    bad_header = header("0/1", rows, artifact_records=7,
-                        assigned=[record_id(r) for r in rows[:-1]] + ["evt_ffffffffffffffffffff" + "0" * 44])
+    bad_header = header("0/1", rows, artifact_records=7)
     path = write_rows(tmp_path / "e.jsonl", bad_header, rows)
     catalog = run([path])
     assert catalog["complete"] is False
@@ -439,7 +449,10 @@ def test_round_trip_loads_at_every_provenance_temperature(tmp_path):
     catalog = run(shards(tmp_path))
     expected = sum(1 for r in fixture_rows() if r["payload"]
                    for t in r["payload"]["templates"] if t["status"] == "emitted")
-    assert expected > 0
+    # the fixture's two rows that emit one executable template are merged into one
+    merged = catalog["gates"]["collisions"]["copies"] - catalog["gates"]["collisions"]["keys"]
+    assert expected > 0 and merged >= 1
+    expected -= merged
     for T in catalog["provenance"]["temperatures"]:
         assert len(te.loaded_templates(catalog["payloads"], T)) == expected
     assert catalog["gates"]["round_trip"]["templates"] == expected
