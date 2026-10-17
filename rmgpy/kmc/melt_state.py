@@ -910,6 +910,26 @@ def monomer_backbone_keys(spec, graph) -> Optional[frozenset]:
     return next(iter(flagged))
 
 
+def monomer_repeat_key_map(spec, graph) -> Optional[Dict[str, str]]:
+    """{species atom key: repeat-unit atom key} of one isomorphism of the
+    mobile species ``graph`` (the declared ``monomer_product``) onto the
+    closed repeat unit, chosen among those that give the unique backbone
+    ancestry (``monomer_backbone_keys``); None when ``graph`` is not the
+    monomer.  Keys follow the origin convention (hydrogens
+    ``<parent>.H<i>``).  Atoms the map does not distinguish (automorphisms
+    that keep the backbone set) map onto structurally equivalent atoms."""
+    flagged = monomer_backbone_keys(spec, graph)
+    if flagged is None:
+        return None
+    keys, species_forms, _none = _normalized_forms(graph)
+    closed_keys, closed_forms, backbone = _normalized_forms(spec.repeat_unit, closing=True)
+    for form in closed_forms:
+        for iso in _isomorphisms(species_forms[0], form):
+            if frozenset(keys[k] for k, v in iso.items() if v in backbone) == flagged:
+                return {keys[k]: closed_keys[v] for k, v in iso.items()}
+    return None
+
+
 def materialize(spec) -> MeltState:
     """Materialize the declared melt: chains by (DP, declaration ordinal), then
     the initial mobile molecules in declaration order.  Atom ids are 0..N-1 in

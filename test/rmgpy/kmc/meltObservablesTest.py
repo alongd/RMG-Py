@@ -792,3 +792,54 @@ def test_equal_means_a_relative_difference_of_at_most_1e_12(relative, expected):
     mom["polymer_condensed_mass_g"] *= 1.0 + relative
     rows = {r["quantity"]: r for r in mo.side_by_side(o, mom)}
     assert rows["polymer_condensed_mass_g"]["agreement"] == expected
+
+
+def test_channel_rules_mirror_the_solver():
+    """Parity with the MoM solver's own site selection and channel validation
+    (read here, never imported by the observables module)."""
+    solver = pytest.importorskip("rmgpy.solver.polymer")
+    specs = [S.pvb_spec({4: 1}), S.para_bromo_ps_spec({4: 1}), S.two_bromine_spec({4: 1}), S.pe_spec({4: 1})]
+    for spec in specs:
+        repeat, _ends = spec.legacy_molecules()
+        for element in ("Br", "H"):
+            for selector in ("aryl", "benzylic", "aliphatic"):
+                assert (mo.side_group_site_indices(repeat, element, selector)
+                        == solver.side_group_site_atom_indices(repeat, element, selector))
+    cases = [[S.sgh_channel("x", "aliphatic", 1.0, gas="[CH3]")], [S.sgh_channel("x", "aliphatic", 2.0)],
+             [S.sgh_channel("x", "aryl", 1.0)], [S.sgh_channel("x", "aliphatic", 1.0)],
+             [S.sgh_channel("x", "aliphatic", 1.0), S.sgh_channel("y", "aliphatic", 1.0)]]
+    spec = S.pvb_spec({4: 1})
+    for channels in cases:
+        repeat, _ends = spec.legacy_molecules()
+        try:
+            solver.validate_side_group_homolysis("pool", channels, monomer=repeat)
+            ok_solver = True
+        except ValueError:
+            ok_solver = False
+        try:
+            mo.validate_side_group_channels(spec, channels)
+            ok_mine = True
+        except mo.ObservablesError:
+            ok_mine = False
+        assert ok_solver == ok_mine, channels
+
+
+def test_surplus_sites_are_clamped_per_channel_like_the_solver():
+    """A mobile vinyl bromide joins a PVB DP4 chain: its Br is a channel site
+    (through the monomer's ancestry map), Z = 5 > Z(0) = 4, and the solver's
+    per-row clamp books no negative loss."""
+    spec = S.pvb_spec_with_monomer({4: 1}, {"vinyl_bromide": 1})
+    state = materialize(spec)
+    (mob,) = [c for c in state.components.ids() if state.origin_kinds(c) == {"mobile"}]
+    _add_monomer_to_chain_end(state, mob)
+    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=PVB_CHANNEL).observe(state)
+    u = spec.initialization().scale_factor / constants.Na
+    law = o["mom_mass_law"]
+    (row,) = law["side_group_depletion"]
+    assert rel(row["Z0_mol"], 4 * u) <= REL and rel(row["Z_mol"], 5 * u) <= REL
+    assert row["lost_mol"] == 0.0 and row["lost_mass_g"] == 0.0
+    a = spec.repeat_unit.composition.molar_mass_g_mol()
+    e = spec.end_composition.molar_mass_g_mol()
+    assert rel(law["end_inventory_mol"], u / 2) <= REL      # the head cap H was the one stripped
+    assert rel(law["value_g"], a * 5 * u + e * u / 2) <= REL
+    assert rel(law["value_g"], o["tier1"]["polymer_derived"]["mass_g"]) <= REL

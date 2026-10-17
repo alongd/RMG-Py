@@ -476,3 +476,21 @@ def sgh_channel(label, selector, sites, gas="[Br]"):
     """One side_group_homolysis channel dict, exactly the deck's keys."""
     return {"label": label, "A": 1.0e15, "n": 0.0, "Ea": 2.9e5, "site_selector": selector,
             "sites_per_unit": sites, "gas_product": gas}
+
+
+VINYL_BROMIDE = {"atoms": [_atom("a", hydrogens=2), _atom("b", hydrogens=1), _br("x")],
+                 "bonds": [{"atoms": ["a", "b"], "order": 2}, {"atoms": ["b", "x"], "order": 1}],
+                 "electronic_state": {"multiplicity": 1}}
+
+
+def pvb_spec_with_monomer(counts, mobile):
+    """Toy PVB with vinyl bromide declared as monomer_product and mobile species."""
+    mapping = pe_mapping(counts, small={"vinyl_bromide": {"graph": VINYL_BROMIDE, "disposition": "mobile"}},
+                         mobile=mobile, monomer=VINYL_BROMIDE)
+    mapping["repeat_unit"] = {
+        "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=1), _br("x")],
+        "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", "x"], "order": 1}],
+        "ports": {"head": {"atom": "c1", "bond_order": 1}, "tail": {"atom": "c2", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+    return LinearHomopolymerSpec.from_mapping(_with_br(mapping))
