@@ -35,6 +35,14 @@ are built in one deterministic Kekule form.  Nothing is silently dropped:
 an unknown field, an out-of-range unit, an absent key or an edit that
 breaks valence raises a ``BoundaryError`` subclass.
 
+Coordinates are ``(unit, position)``: position = index of the key in the
+period's sorted keys, plus ``width`` for a period oriented -1 (so the
+orientation survives into extension and backbone indexing).  The molecule's
+multiplicity carries every declared spin (repeat unit shared by its
+primitive periods, end groups, monomer) plus the radicals that ends and
+edits add (``_Assembly.multiplicity``).  Period detection compares pieces
+with hydrogens and aromatic rings normalized (``_piece_graph``).
+
 Ids follow construction order: heavy atoms (head end group, then period by
 period in sorted-key order, then the tail end group), then hydrogens grouped
 by their heavy atom (declared, added, end-group, then caps: the cap is the
@@ -404,15 +412,35 @@ def _components_without(adjacency, keys, removed) -> list:
 
 
 def _piece_graph(atoms, bonds, keys, head, tail):
+    """The heavy-atom graph of a piece in a representation-free form: each
+    heavy atom carries its hydrogens (implicit counts and explicit H atoms
+    alike) as a sorted attribute list, and every bond on a ring made only
+    of pi atoms is labelled ``conj`` (aromatic 1.5 and any Kekule form read
+    alike); other bonds keep their order."""
     import networkx as nx
 
+    keys = set(keys)
+    heavy = sorted(k for k in keys if atoms[k].element != "H")
+    hydrogens = {k: [("H", None, 0, 0, 0)] * atoms[k].hydrogens for k in heavy}
     graph = nx.Graph()
-    for k in keys:
-        a = atoms[k]
-        graph.add_node(k, label=(_attrs(a), a.hydrogens, k == head, k == tail))
+    graph.add_nodes_from(heavy)
     for (x, y), order in bonds.items():
-        if x in keys and y in keys:
+        if x not in keys or y not in keys:
+            continue
+        hx, hy = atoms[x].element == "H", atoms[y].element == "H"
+        if hx != hy:
+            h, owner = (x, y) if hx else (y, x)
+            hydrogens[owner].append(_attrs(atoms[h]))
+        elif not hx:
             graph.add_edge(x, y, label=order)
+    pi = {k for k in heavy if any(d["label"] > 1.0 for _a, _b, d in graph.edges(k, data=True))}
+    for cycle in nx.cycle_basis(graph):
+        if set(cycle) <= pi:
+            for a, c in zip(cycle, cycle[1:] + cycle[:1]):
+                graph.edges[a, c]["label"] = "conj"
+    for k in heavy:
+        graph.nodes[k]["label"] = (_attrs(atoms[k]), tuple(sorted(hydrogens[k], key=repr)),
+                                   k == head, k == tail)
     return graph
 
 
@@ -525,6 +553,19 @@ class ChainGeometry:
     # period there makes a new junction, so it is not counted here.
     reflection_symmetric: bool
     unit_formula: Mapping
+    period_two_spin: int        # 2S the declared unit spin gives one period
+
+    @property
+    def width(self) -> int:
+        """Positions per orientation: a period oriented -1 (``ChainSpec``)
+        takes positions ``width + index`` so the coordinate carries it."""
+        return len(self.keys)
+
+    @property
+    def oriented(self) -> bool:
+        """Whether a reversed period differs in its keys (head atom is not the
+        tail atom)."""
+        return self.head_key != self.tail_key
 
     @property
     def heavy_classes(self) -> int:
@@ -632,6 +673,13 @@ def _derive(unit, locality_policy, digest) -> ChainGeometry:
                 break
     keys = tuple(sorted(piece))
     positions = {k: i for i, k in enumerate(keys)}
+    unit_two_spin = _declared_two_spin(unit, "repeat unit")
+    copies = d_rep // period
+    period_radicals = sum(atoms[k].radical_electrons for k in piece)
+    if unit_two_spin % copies or (unit_two_spin // copies) % 2 != period_radicals % 2:
+        raise MetadataError(f"the repeat-unit multiplicity {unit.multiplicity} cannot be "
+                            f"shared by its {copies} primitive periods")
+    period_two_spin = unit_two_spin // copies
     piece_declared = {pair: o for pair, o in declared.items() if set(pair) <= piece}
     extra = {head: join_order}
     extra[piece_tail] = extra.get(piece_tail, 0.0) + join_order
@@ -665,7 +713,7 @@ def _derive(unit, locality_policy, digest) -> ChainGeometry:
         if a.hydrogens:
             formula["H"] = formula.get("H", 0) + a.hydrogens
     classes = _atom_classes(atoms, keys, positions, piece_declared, head, piece_tail,
-                            join_order, period, locality_policy)
+                            join_order, period, locality_policy, period_two_spin)
     return ChainGeometry(
         digest=digest, keys=keys, positions=MappingProxyType(positions),
         atoms=MappingProxyType({k: atoms[k] for k in keys}),
@@ -675,16 +723,36 @@ def _derive(unit, locality_policy, digest) -> ChainGeometry:
         backbone_path=piece_path, n_bb=n_bb, d_rep=d_rep, period=period,
         phases=tuple(phases), backbone_offsets=MappingProxyType(offsets),
         atom_classes=classes, reflection_symmetric=reflection,
-        unit_formula=MappingProxyType(formula))
+        unit_formula=MappingProxyType(formula), period_two_spin=period_two_spin)
+
+
+def _declared_two_spin(graph, where) -> int:
+    """2S of a declared graph (multiplicity - 1), checked against its own
+    radical electrons (at most all of them paired up, same parity)."""
+    two_spin = int(graph.multiplicity) - 1
+    radicals = sum(a.radical_electrons for a in graph.atoms)
+    if two_spin > radicals or (radicals - two_spin) % 2:
+        raise MetadataError(f"{where}: multiplicity {graph.multiplicity} does not fit its "
+                            f"{radicals} radical electrons")
+    return two_spin
+
+
+def _molecule(rows, multiplicity):
+    """An RMG molecule of ``rows`` with the derived multiplicity (RMG's
+    ``update`` resets it to high spin)."""
+    from rmgpy.kmc.rmg_moves import molecule_from_rows
+
+    molecule = molecule_from_rows(rows)
+    molecule.multiplicity = multiplicity
+    return molecule
 
 
 def _atom_classes(atoms, keys, positions, bonds, head, tail, join_order, period,
-                  locality_policy) -> tuple:
+                  locality_policy, period_two_spin=0) -> tuple:
     """Orbits of the middle-period atoms of J_{2q+1} (declared bond orders,
     H-capped ends) under site-class keys.  q = ceil((radius + 2) / period)
     keeps every context, its hydrogens and its boundary signatures clear of
     the chain ends."""
-    from rmgpy.kmc.rmg_moves import molecule_from_rows
     from rmgpy.kmc.site_class import extract_site_class
 
     radius = int(locality_policy["radius"])
@@ -693,14 +761,15 @@ def _atom_classes(atoms, keys, positions, bonds, head, tail, join_order, period,
     asm = _Assembly()
     handles = []
     for u in range(copies):
-        handles.append(asm.add_period(atoms, keys, positions, bonds, u, set(keys)))
+        handles.append(asm.add_period(atoms, keys, positions, bonds, u, set(keys),
+                                      two_spin=period_two_spin))
         if u:
             asm.bond(handles[u - 1][tail], handles[u][head], join_order)
     for _ in range(int(join_order)):
         asm.add_h(handles[0][head], slot=4)
         asm.add_h(handles[-1][tail], slot=4)
     rows, ids = asm.rows()
-    molecule = molecule_from_rows(rows)
+    molecule = _molecule(rows, asm.multiplicity())
     by_id = {atom.id: atom for atom in molecule.atoms}
     heavy_count = sum(1 for atom in molecule.atoms if atom.symbol != "H")
     policy = site_class_policy(locality_policy, heavy_count)
@@ -732,6 +801,30 @@ class _Assembly:
         self.heavy_seq = 0
         self.h_seq = 0
         self.next = 0
+        self.instances = []     # (declared 2S, ((handle, declared radicals), ...))
+
+    def declare(self, two_spin, members) -> None:
+        """One declared graph instance: its 2S and its declared radical atoms."""
+        self.instances.append((int(two_spin), tuple((h, r) for h, r in members if r)))
+
+    def multiplicity(self) -> int:
+        """Declared spins carried through: each instance whose declared radical
+        atoms are all present keeps its declared 2S (otherwise its remaining
+        declared radicals count high spin); radical electrons beyond the
+        declared ones add high spin, fewer remove it (never below the parity
+        floor); an atom with two radical electrons forces a triplet."""
+        radicals = sum(attrs[3] for attrs in self.attrs.values())
+        declared = two_spin = 0
+        for spin, members in self.instances:
+            present = [r for h, r in members if h in self.attrs]
+            declared += sum(present)
+            two_spin += spin if len(present) == len(members) else sum(present)
+        two_spin += radicals - declared
+        if two_spin < 0:
+            two_spin = radicals % 2
+        if any(attrs[3] >= 2 for attrs in self.attrs.values()) and two_spin < 2:
+            two_spin = 2 + radicals % 2
+        return two_spin + 1
 
     def _new(self, attrs, sort, label):
         handle = self.next
@@ -775,14 +868,16 @@ class _Assembly:
         return sorted((h for h in self.adj[handle] if self.attrs[h][0] == "H"),
                       key=lambda h: self.sort[h])
 
-    def add_period(self, atoms, keys, positions, bonds, unit, present) -> dict:
+    def add_period(self, atoms, keys, positions, bonds, unit, present, offset=0,
+                   two_spin=0) -> dict:
         """One primitive period: heavy atoms (sorted keys), internal bonds,
-        declared and explicit hydrogens.  key -> handle."""
+        declared and explicit hydrogens; coordinates ``(unit, position +
+        offset)``; the period is one declared spin instance.  key -> handle."""
         handles = {}
         for key in keys:
             if key in present and atoms[key].element != "H":
                 handles[key] = self.heavy(_attrs(atoms[key]), (unit, key),
-                                          (unit, positions[key]))
+                                          (unit, positions[key] + offset))
         for (x, y), order in sorted(bonds.items()):
             if x in handles and y in handles:
                 self.bond(handles[x], handles[y], order)
@@ -798,6 +893,8 @@ class _Assembly:
                                         "heavy neighbour in the period")
                 handles[key] = self.add_h(handles[owners[0]], 1, _attrs(atoms[key]),
                                           (unit, key))
+        self.declare(two_spin, [(handles[k], atoms[k].radical_electrons) for k in keys
+                                if k in handles])
         return handles
 
     def ordered(self) -> list:
@@ -883,21 +980,45 @@ class DeclaredChainProvider(BoundaryProvider):
     def period(self) -> int:
         return self.geometry.period
 
-    def backbone_index(self, unit: int, position: int) -> Optional[int]:
-        """unit * period + distance from the period's head atom, for atoms on
-        a shortest head-to-tail path (equidistant ring atoms share an index:
-        an extent measure only); None otherwise."""
+    def key_of(self, position: int) -> tuple:
+        """(declaration key, orientation) of a coordinate position."""
         g = self.geometry
-        if not 0 <= position < len(g.keys):
+        if not _is_int(position) or not 0 <= position < 2 * g.width:
+            raise KeyError(position)
+        if position >= g.width:
+            return g.keys[position - g.width], -1
+        return g.keys[position], 1
+
+    def backbone_index(self, unit: int, position: int) -> Optional[int]:
+        """unit * period + distance from the period's chain-head-side end along
+        the chain (the head atom of a +1 period, the tail atom of a -1
+        period), for atoms on a shortest head-to-tail path of the period
+        (equidistant ring atoms share an index: an extent measure only); None
+        otherwise.  Consecutive along any orientation sequence."""
+        g = self.geometry
+        try:
+            key, orientation = self.key_of(position)
+        except KeyError:
             return None
-        offset = g.backbone_offsets.get(g.keys[position])
-        return None if offset is None else unit * g.period + offset
+        offset = g.backbone_offsets.get(key)
+        if offset is None:
+            return None
+        if orientation == -1:
+            offset = g.backbone_offsets[g.tail_key] - offset
+        return unit * g.period + offset
 
     def backbone_atoms(self, chain: ChainSpec) -> int:
-        """Backbone-path atoms present in a chain."""
-        plan = self._plan(chain)
-        path = set(self.geometry.backbone_path)
-        return sum(len(path & present) for present in plan.present)
+        """Heavy atoms on the shortest head-port -> tail-port path of the built
+        chain (edits included: a deletion reroutes the path)."""
+        from rmgpy.kmc.boundaries import rows_of_molecule
+
+        build = self.build("backbone", chain)
+        rows = dict(rows_of_molecule(build.molecule))
+        heavy = {a: [c for c, _o in row[5] if rows[c][0] != "H"]
+                 for a, row in rows.items() if row[0] != "H"}
+        head = build.metadata.port("head").atom_id
+        tail = build.metadata.port("tail").atom_id
+        return _bfs(heavy, head)[tail] + 1
 
     def interior_unit_atoms(self) -> tuple:
         """(position, key) of the heavy atoms of one primitive period."""
@@ -952,6 +1073,7 @@ class DeclaredChainProvider(BoundaryProvider):
                                  f"{port.bond_order:g}, the {side} port needs {order:g}")
         atoms = {a.key: a for a in group.atoms}
         keys = sorted(atoms)
+        two_spin = _declared_two_spin(group, f"the {side} end group")
         bonds = _kekule(atoms, _bonds_of(group), {port.atom: order})
         heavy = [k for k in keys if atoms[k].element != "H"]
         handles = {}
@@ -976,20 +1098,21 @@ class DeclaredChainProvider(BoundaryProvider):
                 if len(neighbours) != 1 or neighbours[0] not in handles:
                     raise MetadataError(f"end-group hydrogen {key!r} needs one heavy neighbour")
                 owner = handles[neighbours[0]]
-            asm.add_h(owner, 3, _attrs(atoms[key]), (side, key))
+            handles[key] = asm.add_h(owner, 3, _attrs(atoms[key]), (side, key))
+        asm.declare(two_spin, [(handles[k], atoms[k].radical_electrons) for k in keys])
 
     def build(self, name: str, chain: ChainSpec) -> ProxyBuild:
-        """The proxy of ``chain`` (see ChainSpec)."""
-        from rmgpy.kmc.rmg_moves import molecule_from_rows
-
+        """The proxy of ``chain`` (see ChainSpec), with the multiplicity the
+        declared spins give (``_Assembly.multiplicity``)."""
         g = self.geometry
         plan = self._plan(chain)
         asm = _Assembly()
         units = plan.units
         sites, periods = {}, []
         for u in range(units):
+            offset = g.width if plan.orientation[u] == -1 and g.oriented else 0
             periods.append(asm.add_period(g.atoms, g.keys, g.positions, g.bonds, u,
-                                          plan.present[u]))
+                                          plan.present[u], offset, g.period_two_spin))
             for key, handle in periods[u].items():
                 sites[(u, key)] = handle
         for u in range(units - 1):
@@ -1021,8 +1144,8 @@ class DeclaredChainProvider(BoundaryProvider):
         coordinates = tuple((ids[h], u, k) for h, (u, k) in asm.coord.items())
         metadata = BoundaryMetadata(self.name, built_ports, coordinates)
         metadata.check(rows, name)
-        molecule = molecule_from_rows(rows)
-        return ProxyBuild(name, molecule, metadata, tuple(range(len(rows))))
+        return ProxyBuild(name, _molecule(rows, asm.multiplicity()), metadata,
+                          tuple(range(len(rows))))
 
     def _apply(self, asm, edit, units, sites, port_handles, cap_handles):
         g = self.geometry
@@ -1068,9 +1191,7 @@ class DeclaredChainProvider(BoundaryProvider):
 
     def monomer(self, name: str = "monomer") -> ProxyBuild:
         """The declared ``monomer_product`` as a portless proxy (unit 0,
-        positions from its own sorted keys)."""
-        from rmgpy.kmc.rmg_moves import molecule_from_rows
-
+        positions from its own sorted keys, the declared multiplicity)."""
         graph = self.spec.monomer_product
         if graph is None:
             raise ChainSpecError("the declaration has no monomer_product")
@@ -1079,39 +1200,46 @@ class DeclaredChainProvider(BoundaryProvider):
         positions = {k: i for i, k in enumerate(keys)}
         asm = _Assembly()
         asm.add_period(atoms, keys, positions, _kekule(atoms, _bonds_of(graph), {}), 0,
-                       set(keys))
+                       set(keys), two_spin=_declared_two_spin(graph, "monomer_product"))
         asm.check_valence(name)
         rows, ids = asm.rows()
         metadata = BoundaryMetadata(self.name, (),
                                     tuple((ids[h], u, k) for h, (u, k) in asm.coord.items()))
         metadata.check(rows, name)
-        return ProxyBuild(name, molecule_from_rows(rows), metadata, tuple(range(len(rows))))
+        return ProxyBuild(name, _molecule(rows, asm.multiplicity()), metadata,
+                          tuple(range(len(rows))))
 
     # -- extension -------------------------------------------------------------
     def fragment(self, port: Port, coordinate: tuple) -> Fragment:
-        """One primitive period at ``port`` in declared bond orders: at a tail
-        port (on the period's tail atom) the new period follows (unit + 1)
-        and bonds through its head atom; at a head port (on the head atom) it
-        precedes (unit - 1) and bonds through its tail atom.  The new port is
-        the new period's other port atom and carries the new caps.  A port
-        on any other atom (a phase-cut end, or the end of a reversed period:
-        the two cannot be told apart from the coordinate) is refused."""
+        """One primitive period at ``port``, in declared bond orders, oriented
+        like the port's period (the orientation is in the coordinate): at a
+        tail port (on the period's chain-tail-side atom) the new period
+        follows (unit + 1), at a head port it precedes (unit - 1); it bonds
+        through its port atom facing the old one and its other port atom
+        carries the new caps.  A port on any other atom is a phase cut (part
+        of its period is absent) and is refused."""
         g = self.geometry
         unit, position = coordinate
-        key = g.keys[position] if 0 <= position < len(g.keys) else None
+        try:
+            key, orientation = self.key_of(position)
+        except KeyError:
+            raise ExtensionRefused(f"{self.name}: position {position} is not a period position")
+        entry = g.head_key if orientation == 1 else g.tail_key
+        exit_ = g.tail_key if orientation == 1 else g.head_key
         if port.tag == "backbone_tail":
-            expected, attach, new_port, new_unit = g.tail_key, g.head_key, g.tail_key, unit + 1
+            expected, attach, new_port, new_unit = exit_, entry, exit_, unit + 1
         elif port.tag == "backbone_head":
-            expected, attach, new_port, new_unit = g.head_key, g.tail_key, g.head_key, unit - 1
+            expected, attach, new_port, new_unit = entry, exit_, entry, unit - 1
         else:
             raise ExtensionRefused(f"{self.name}: no extension path for a {port.tag} port")
         if key != expected:
-            raise ExtensionRefused(f"{self.name}: a {port.tag} port on {key!r} is not on the "
-                                   f"period's {expected!r} (a phase-cut or reversed end is "
-                                   "not extended)")
+            raise ExtensionRefused(f"{self.name}: the {port.tag} port on {key!r} is on a phase "
+                                   f"cut (its period's {expected!r} end is absent); a "
+                                   "phase-cut end is not extended")
         asm = _Assembly()
+        offset = g.width if orientation == -1 else 0
         handles = asm.add_period(g.atoms, g.keys, g.positions, g.declared_bonds, new_unit,
-                                 set(g.keys))
+                                 set(g.keys), offset, g.period_two_spin)
         caps = [asm.add_h(handles[new_port], 4) for _ in range(int(g.join_order))]
         rows, ids = asm.rows()
         bonds = tuple(sorted((i, j, o) for i, row in rows.items() for j, o in row[5] if i < j))
@@ -1120,23 +1248,42 @@ class DeclaredChainProvider(BoundaryProvider):
                         tuple(ids[c] for c in caps),
                         tuple(sorted((ids[h], u, k) for h, (u, k) in asm.coord.items())))
 
+    def fragment_multiplicity(self, fragment: Fragment) -> int:
+        """The multiplicity the declared period spin gives a fragment (the
+        Fragment and witness rows have no multiplicity slot)."""
+        g = self.geometry
+        radicals = sum(atom[3] for atom in fragment.atoms)
+        declared = sum(a.radical_electrons for a in g.atoms.values())
+        two_spin = g.period_two_spin + radicals - declared
+        return (two_spin if two_spin >= 0 else radicals % 2) + 1
+
     def end_edit(self, metadata: BoundaryMetadata, port: Port, end: str, rows,
                  protected) -> EndEdit:
-        """The declared end group at an artificial port (S1: a single-atom
-        hydrogen end group; ``EndEdit`` cannot bond fresh atoms to each
-        other, and a heavy end atom would need a repeat coordinate)."""
+        """The declared end group of the port's side at an artificial port:
+        its caps are deleted and the whole end-group graph is attached (heavy
+        atoms with coordinates (port unit -/+ 1, position in the group's
+        sorted keys), exactly as a declared build places them)."""
         if end not in self.END_CHEMISTRIES.get(port.tag, ()):
             raise ExtensionRefused(f"{self.name}: {end!r} is not a declared end of a "
                                    f"{port.tag} port")
-        group = self.spec.head_end_group if port.tag == "backbone_head" else \
-            self.spec.tail_end_group
+        side = "head" if port.tag == "backbone_head" else "tail"
+        group = self.spec.head_end_group if side == "head" else self.spec.tail_end_group
         (_name_, group_port), = group.ports
-        if len(group.atoms) != 1 or group.atoms[0].element != "H" or group.atoms[0].hydrogens:
-            raise ExtensionRefused(f"{self.name}: only a lone-H declared end group can be "
-                                   "rebuilt at a port in S1")
-        if len(port.cap_atom_ids) != int(group_port.bond_order):
-            raise ExtensionRefused(f"{self.name}: the end group order does not fit the "
-                                   "port's caps")
-        atom = group.atoms[0]
-        return EndEdit(end, tuple(port.cap_atom_ids), (_attrs(atom),),
-                       ((0, port.atom_id, float(group_port.bond_order)),))
+        order = float(group_port.bond_order)
+        if len(port.cap_atom_ids) != int(order):
+            raise ExtensionRefused(f"{self.name}: the {side} end group binds with order "
+                                   f"{order:g}; the port has {len(port.cap_atom_ids)} caps")
+        unit, _position = metadata.coordinate(port.atom_id)
+        asm = _Assembly()
+        anchor = asm.heavy(("C", None, 0, 0, 0), ("anchor",))
+        self._end_group(asm, side, anchor, order, unit - 1 if side == "head" else unit + 1)
+        fresh = [h for h in asm.ordered() if h != anchor]
+        local = {h: i for i, h in enumerate(fresh)}
+        internal = tuple(sorted((local[a], local[c], o) for a in fresh
+                                for c, o in asm.adj[a].items() if c != anchor and
+                                local[a] < local[c]))
+        attach = tuple((local[h], port.atom_id, o) for h, o in sorted(asm.adj[anchor].items()))
+        return EndEdit(end, tuple(port.cap_atom_ids), tuple(tuple(asm.attrs[h]) for h in fresh),
+                       attach, fresh_internal_bonds=internal,
+                       fresh_coordinates=tuple((local[h], u, k) for h, (u, k)
+                                               in sorted(asm.coord.items()) if h != anchor))

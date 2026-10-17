@@ -775,8 +775,8 @@ def test_heavy_declared_ends_are_reconstructed():
     open_ = sup.identity_witness(provider.build("o", dc.ChainSpec(2)))
     built, record = b.reconstruct_end(open_, (0, "tail"), "declared")
     built, record2 = b.reconstruct_end(built, (0, "head"), "declared")
-    direct = sup.identity_witness(provider.build("d", dc.ChainSpec(2, head="declared",
-                                                                    tail="declared")))
+    both = dc.ChainSpec(2, head="declared", tail="declared")
+    direct = sup.identity_witness(provider.build("d", both))
     assert sup.witnesses_match(direct, built)
     assert [a[1][0] for a in record.fresh_atoms] == ["O", "H"]
     assert [a[1][0] for a in record2.fresh_atoms] == ["C", "H", "H", "H"]

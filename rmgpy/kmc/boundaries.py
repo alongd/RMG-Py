@@ -1422,7 +1422,10 @@ class EndEdit:
     port's declared caps and, for an alkene end, one H of the partner carbon),
     ``fresh_atoms`` (attributes, in local order) bonded by ``fresh_bonds``
     ((local index, witness atom, order)), ``radicals`` ((atom, radical
-    electrons)) and ``bonds`` ((atom, atom, new order))."""
+    electrons)) and ``bonds`` ((atom, atom, new order)).  Additive (I-159):
+    ``fresh_internal_bonds`` ((local, local, order)) bond fresh atoms to each
+    other and ``fresh_coordinates`` ((local, unit, position)) give fresh heavy
+    atoms their repeat coordinates (a multi-atom end group)."""
 
     end: str
     deleted: tuple[int, ...]
@@ -1430,6 +1433,8 @@ class EndEdit:
     fresh_bonds: tuple[tuple[int, int, float], ...] = ()
     radicals: tuple[tuple[int, int], ...] = ()
     bonds: tuple[tuple[int, int, float], ...] = ()
+    fresh_internal_bonds: tuple[tuple[int, int, float], ...] = ()
+    fresh_coordinates: tuple[tuple[int, int, int], ...] = ()
 
 
 def _free_hydrogen(rows, atom, protected) -> int:
@@ -1774,6 +1779,7 @@ class EndMap:
     fresh_bonds: tuple[tuple[int, int, float], ...]
     radicals: tuple[tuple[int, int], ...]
     bonds: tuple[tuple[int, int, float], ...]
+    fresh_coordinates: tuple[tuple[int, int, int], ...] = ()
 
     @property
     def fresh_ids(self) -> tuple[int, ...]:
@@ -1823,8 +1829,11 @@ def reconstruct_end(witness: Witness, port_key, end: str, providers=None):
     if len(ids) > FRAGMENT_STRIDE:
         raise BoundaryError("end fragment is larger than the fresh-id stride")
     fresh_atoms = tuple((ids[k], tuple(attrs)) for k, attrs in enumerate(edit.fresh_atoms))
-    fresh_bonds = tuple(sorted((min(ids[k], a), max(ids[k], a), float(o))
-                               for k, a, o in edit.fresh_bonds))
+    fresh_bonds = tuple(sorted([(min(ids[k], a), max(ids[k], a), float(o))
+                                for k, a, o in edit.fresh_bonds] +
+                               [(min(ids[i], ids[j]), max(ids[i], ids[j]), float(o))
+                                for i, j, o in edit.fresh_internal_bonds]))
+    fresh_coordinates = tuple(sorted((ids[k], u, q) for k, u, q in edit.fresh_coordinates))
     deleted = set(edit.deleted)
     radicals = dict(edit.radicals)
     orders = {(min(a, b), max(a, b)): float(o) for a, b, o in edit.bonds}
@@ -1860,13 +1869,14 @@ def reconstruct_end(witness: Witness, port_key, end: str, providers=None):
         ports = tuple(new_port if p.port_id == port.port_id else p for p in meta.ports)
         atoms = tuple(a for a in participant.atom_ids if a not in deleted) + ids
         participants.append(Participant(participant.index,
-                                        BoundaryMetadata(meta.provider, ports, meta.coordinates),
+                                        BoundaryMetadata(meta.provider, ports,
+                                                         meta.coordinates + fresh_coordinates),
                                         atoms))
     extended = Witness(reactants, products, tuple(participants), witness.id_base,
                        witness.extension_counts, witness.label)
     record = EndMap(port_key, end, port, new_port, tuple(sorted(deleted)), fresh_atoms,
                     fresh_bonds, tuple(sorted(radicals.items())), tuple(sorted(
-                        (a, b, o) for (a, b), o in orders.items())))
+                        (a, b, o) for (a, b), o in orders.items())), fresh_coordinates)
     verify_end(witness, record, extended)
     return extended, record
 
@@ -1922,6 +1932,11 @@ def verify_end(original: Witness, record: EndMap, built: Witness) -> None:
                                    participant.atom_ids)
     if built.port(record.port_key) != record.new_port or record.new_port.artificial:
         raise MapCheckError("the reconstructed port is not the recorded physical port")
+    before = original.participant(record.port_key[0]).metadata.coordinates
+    after = built.participant(record.port_key[0]).metadata.coordinates
+    if set(after) != set(before) | set(record.fresh_coordinates) or \
+            {a for a, _u, _k in record.fresh_coordinates} - fresh:
+        raise MapCheckError("coordinates are not the survivors' plus the recorded fresh ones")
 
 
 def ps_build(name: str, units: int) -> ProxyBuild:
