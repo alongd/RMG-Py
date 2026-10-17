@@ -191,6 +191,20 @@ def test_ps_radical_ends_are_physical_and_cap_free(ps):
     assert sup.builds_match(legacy, declared, ps.coord_map)
 
 
+@pytest.mark.parametrize("chain", [dc.ChainSpec(3), dc.ChainSpec(2, head="radical"),
+                                   dc.ChainSpec(3, tail_phase=1, tail="declared")])
+def test_caps_are_the_last_port_hydrogens_created(ps, chain):
+    build = ps.provider.build("c", chain)
+    r = rows_of(build)
+    for port in build.metadata.ports:
+        if not port.artificial:
+            assert port.cap_atom_ids == ()
+            continue
+        port_h = [a for a in build.construction_order
+                  if r[a][0] == "H" and r[a][5][0][0] == port.atom_id]
+        assert port.cap_atom_ids == (port_h[-1],)
+
+
 def test_ps_monomer_has_no_ports(ps):
     monomer = ps.provider.monomer("m")
     assert monomer.metadata.ports == ()
@@ -498,6 +512,46 @@ def test_edit_on_trimmed_atom_is_refused(ps):
 def test_chain_spec_refusals(pp, bad):
     with pytest.raises(dc.ChainSpecError):
         pp.build("x", dc.ChainSpec.from_mapping(bad))
+
+
+def test_heavy_declared_end_groups_carry_end_coordinates():
+    mapping = pp_mapping()
+    methyl = {"atoms": [_atom("m", hydrogens=3)], "bonds": [],
+              "ports": {"cap": {"atom": "m", "bond_order": 1}},
+              "electronic_state": {"multiplicity": 1}}
+    hydroxyl = {"atoms": [_atom("o", "O", hydrogens=1, lone_pairs=2)], "bonds": [],
+                "ports": {"cap": {"atom": "o", "bond_order": 1}},
+                "electronic_state": {"multiplicity": 1}}
+    mapping["end_groups"] = {"head": methyl, "tail": hydroxyl}
+    mapping["locality_policy"]["bounds"]["elements"] = ["C", "H", "O"]
+    mapping["locality_policy"]["bounds"]["lone_pairs"] = [0, 2]
+    provider = dc.DeclaredChainProvider(spec_of(mapping))
+    build = provider.build("e", dc.ChainSpec(2, head="declared", tail="declared"))
+    assert build.molecule.is_isomorphic(Molecule(smiles="CCC(C)CC(C)O"))
+    coords = {a: (u, k) for a, u, k in build.metadata.coordinates}
+    r = rows_of(build)
+    assert coords[0] == (-1, 0) and r[0][0] == "C"          # head group first
+    (oxygen,) = [a for a, row in r.items() if row[0] == "O"]
+    assert coords[oxygen] == (2, 0)
+    assert all(p.physicality == "physical" and not p.cap_atom_ids
+               for p in build.metadata.ports)
+
+
+def test_explicit_hydrogen_atoms_build_like_hydrogen_counts(pp):
+    mapping = pp_mapping()
+    atoms = mapping["repeat_unit"]["atoms"]
+    atoms[2]["hydrogens"] = 0
+    atoms += [_atom(f"h{i}", "H") for i in range(3)]
+    mapping["repeat_unit"]["bonds"] += [_bond("c3", f"h{i}") for i in range(3)]
+    explicit = dc.DeclaredChainProvider(spec_of(mapping))
+    for chain in (dc.ChainSpec(3), dc.ChainSpec(2, head="declared", tail="radical")):
+        assert sup.builds_match(pp.build("a", chain), explicit.build("b", chain))
+    open_ = explicit.build("o", dc.ChainSpec(2))
+    port = open_.metadata.port("tail")
+    assert sup.fragments_match(
+        pp.fragment(pp.build("o", dc.ChainSpec(2)).metadata.port("tail"), (1, 1)),
+        explicit.fragment(port, open_.metadata.coordinate(port.atom_id)),
+        lambda c: c)
 
 
 def test_declared_end_edit_equals_the_declared_build(pp):

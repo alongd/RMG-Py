@@ -242,6 +242,10 @@ def legacy_to_chain(spec, ctx: PsContext):
                 raise AdapterRefusal(f"{end}: one backbone carbon")
             if sorted(pair) not in double:
                 double.append(sorted(pair))
+    if len(double) == 2 and set(map(tuple, double[0])) & set(map(tuple, double[1])):
+        # legacy policy, not a construction limit: the declared provider
+        # builds the cumulene; the legacy layout refuses it
+        raise AdapterRefusal("two alkene ends share a backbone carbon")
     for (u1, k1), (u2, k2) in double:
         edits += [E("remove_h", u1, K[k1]), E("remove_h", u2, K[k2]),
                   E("set_bond_order", u1, K[k1], 2, other=(u2, K[k2]))]
@@ -290,13 +294,13 @@ def ladder_shapes(max_dp=3):
 
 
 def ps_catalog() -> dict:
-    """group -> [PsChainSpec, ...] (union of the legacy catalogs, each spec
-    once, first group wins)."""
+    """group -> [PsChainSpec, ...]: the legacy catalogs, each spec once per
+    group (a spec may sit in two groups)."""
     seen, groups = set(), {}
 
     def add(group, spec):
-        if repr(spec) not in seen:
-            seen.add(repr(spec))
+        if (group, repr(spec)) not in seen:
+            seen.add((group, repr(spec)))
             groups.setdefault(group, []).append(spec)
     for units in (3, 5):
         for spec in b.ps_structure_specs(units).values():
