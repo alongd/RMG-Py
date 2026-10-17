@@ -517,6 +517,7 @@ def midpoint_table(payloads):
     from rmgpy.kmc import template_emission as te
     worst, at, who, n = 0.0, None, None, 0
     unavailable = Counter()
+    unverified = []      # loaded primaries whose midpoint check could not be evaluated: gated
     cache = {}
     for p in payloads:
         rid = p.get("record_event_id")
@@ -530,8 +531,10 @@ def midpoint_table(payloads):
             wit = ((t.get("maps") or {}).get("witnesses") or {}).get("emitted")
             lrow = next((r for r in (t.get("locality") or {}).get("rows", [])
                          if r.get("label") == "emitted" and r.get("status") == "ok"), None)
+            name = f"{(rid or '')[:16]}:{t['key'][:12]}"
             if record is None or wit is None or lrow is None:
                 unavailable["no emitted witness"] += 1
+                unverified.append((name, "no emitted witness or record to regenerate on"))
                 continue
             temps = t["weight"]["T"]
             mids = tuple((a + b) / 2.0 for a, b in zip(temps, temps[1:]))
@@ -541,9 +544,9 @@ def midpoint_table(payloads):
                     database_sha="i138-reference", temperature_grid=mids)
             r_rows, p_rows = te.rows_from_json(wit["r"]), te.rows_from_json(wit["p"])
             gen, prods = (p_rows, r_rows) if p.get("member_reverse") else (r_rows, p_rows)
-            tch = (p.get("counts") or {}).get("record", {}) or {}
-            tch = tch.get("matcher") if p.get("weight_source") == "record" else \
-                (lrow.get("counts") or {}).get("matcher")
+            # the regenerated k is the EMITTED witness's, so its own count (the one the
+            # weight was calibrated with) is the denominator, not the record's
+            tch = (lrow.get("counts") or {}).get("matcher")
             try:
                 result = cache[mids](te.RateRequest(record["family"], record["template"],
                                                     record["orientation"], gen, prods))
@@ -551,7 +554,9 @@ def midpoint_table(payloads):
                     raise te.EmissionError("; ".join(result.problems) or "grid mismatch")
                 truth = te.weight_table(mids, result.k, result.ssa_multiplier, tch)
             except Exception as error:   # reported, never hidden
-                unavailable[f"{type(error).__name__}: {str(error)[:80]}"] += 1
+                reason = f"{type(error).__name__}: {str(error)[:120]}"
+                unavailable[reason] += 1
+                unverified.append((name, reason))
                 continue
             n += 1
             for T, w in zip(mids, truth):
@@ -559,9 +564,29 @@ def midpoint_table(payloads):
                 if err > worst:
                     worst, at, who = err, T, f"{rid[:16]}:{t['key'][:12]}"
     return {"templates": n, "worst": worst, "worst_T": at, "worst_template": who,
-            "unavailable": dict(unavailable),
+            "unavailable": dict(unavailable), "unverified": unverified,
             "method": "weight table interpolated at the grid midpoints against ssa*k/T_ch of the "
                       "record's own kinetics regenerated there"}
+
+
+def midpoint_gates(mid):
+    """The gate failures of ``midpoint_table``: an error above 1%, and every
+    loaded primary template whose midpoint check could not be evaluated (a
+    gate that evaluates nothing must not pass)."""
+    out = []
+    if mid["worst"] > 0.01:
+        out.append(f"primary-weight midpoint error {mid['worst']:.3g} > 1% at "
+                   f"{mid['worst_T']} K ({mid['worst_template']})")
+    for name, reason in mid.get("unverified", ()):
+        out.append(f"primary-weight midpoint check not evaluable for {name}: {reason}")
+    return out
+
+
+def is_complete(args):
+    """Whether the run covers the whole catalog (the cycle check then refuses an
+    absent partner; a subset reports it ``not_evaluable``)."""
+    return args.sample == 1 and not args.chunk and not args.limit and not args.open_only \
+        and not args.event
 
 
 def cycle_gate(rows, complete):
@@ -597,9 +622,7 @@ def cycle_gate(rows, complete):
             "worst_offgrid_error": max([r.get("max_offgrid_error", 0.0) for r in table] or [0.0]),
             "worst_grid_error": max([r.get("max_grid_error", 0.0) for r in table] or [0.0]),
             "gates": te.cycle_gates(table, out, complete)
-            + ([f"primary-weight midpoint error {mid['worst']:.3g} > 1% at "
-                f"{mid['worst_T']} K ({mid['worst_template']})"]
-               if mid["worst"] > 0.01 else []),
+            + midpoint_gates(mid),
             "table": table}
 
 
@@ -630,7 +653,7 @@ def summarize(args, rows, records, picked, wall):
     for c in refused_collisions:
         gates.append(f"{c['disposition']} {c['key'][:16]}: {c['copies']} copies, "
                      f"log10 diameter {c['log10_diameter']} (records {c['records']})")
-    complete = args.sample == 1 and not args.chunk and not args.limit and not args.open_only
+    complete = is_complete(args)
     cycles = cycle_gate(rows, complete)
     gates += cycles["gates"]
     if cycles["pairs"] and cycles["refused"] > 0.05 * cycles["pairs"]:

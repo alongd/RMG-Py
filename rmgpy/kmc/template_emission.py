@@ -2311,15 +2311,18 @@ def _inverse_counts(loaded, counter, rows, state, inside, payload, direction):
 CHECK_LABELS = ("context", "emitted")
 
 
+BOUNDARY_SLACK_LOG10 = 1e-12      # float slack: 10**0.01 scaling measures 0.01 + 6.8e-16
+
+
 def beyond_tolerance(distance_log10: float, tolerance_log10: float = LOCALITY_TOLERANCE_LOG10) -> bool:
     """The one boundary of "the same weight": two weights (or a weight and its
     expectation) are at ``|log10 ratio|`` decades; beyond ``tolerance_log10``
     (default ``LOCALITY_TOLERANCE_LOG10``, the collision diameter's) is
-    refused, exactly at it is accepted.  The merged-copy guard, the merged
+    refused, at it (within ``BOUNDARY_SLACK_LOG10`` of float noise) accepted.  The merged-copy guard, the merged
     pair's ratio check and the collision diameter all use this comparison, so
     no ratio is accepted by one and rejected by another (a linear |ratio - 1|
     bound is asymmetric in the ratio)."""
-    return distance_log10 > tolerance_log10
+    return distance_log10 > tolerance_log10 + BOUNDARY_SLACK_LOG10
 
 
 def _loads(payload) -> bool:
