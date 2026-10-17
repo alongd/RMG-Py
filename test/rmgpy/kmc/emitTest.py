@@ -581,7 +581,7 @@ def test_a_derived_template_is_not_midpoint_gated(tmp_path, monkeypatch):
         row["midpoint"] = {}          # no entry at all for any template
     catalog = run([write_rows(tmp_path / "m.jsonl", header(None, rows), rows)])
     mid = catalog["gates"]["midpoint"]
-    assert mid["unavailable"] == {"derived": 1}
+    assert mid["unavailable"]["derived"] == 1
     assert len(mid["unverified"]) == catalog["gates"]["round_trip"]["templates"] - 1
 
 

@@ -64,6 +64,7 @@ HEADER_MATCH = ("schema", "artifact_id", "artifact_sha256", "artifact_records", 
                 "database_path", "database_head", "code_sha", "roster_sha256", "temperatures",
                 "selection")
 CYCLE_REFUSED_FRACTION = 0.05
+MIDPOINT_THRESHOLD = 0.01     # the harness' gate on the primary-weight midpoint error
 
 
 # ---------------------------------------------------------------------------
@@ -428,6 +429,71 @@ def code_sha() -> Optional[str]:
     return head + ("-dirty" if dirty else "")
 
 
+class RatesByGrid:
+    """``ProductionRates`` per temperature grid (cached): the midpoint check
+    regenerates a record's own kinetics on the grid midpoints."""
+
+    def __init__(self, database, families, database_path):
+        self.database = database
+        self.families = list(families)
+        self.database_path = database_path
+        self._cache = {}
+
+    def __call__(self, grid):
+        grid = tuple(grid)
+        if grid not in self._cache:
+            self._cache[grid] = te.ProductionRates(
+                self.database, self.families, database_path=self.database_path,
+                database_sha=REFERENCE_RATES_LABEL, temperature_grid=grid)
+        return self._cache[grid]
+
+
+def midpoint_entries(record, payload, rates_for) -> dict:
+    """Per emitted primary template with a weight table, the worst error of the
+    runtime interpolation at the grid midpoints against the record's OWN
+    kinetics there (the harness' ``midpoint_table``, one record): the weight
+    table interpolated linearly in 1/T at (T_i + T_i+1) / 2 against ``ssa * k /
+    T_ch`` with ``k`` regenerated at the midpoints for the emitted witness's
+    channel.  {key: {status: ok, worst, worst_T, n} or {status: unavailable,
+    reason}}; a derived template is not entered (its weight follows from its
+    primary's)."""
+    out = {}
+    for t in payload.get("templates", []):
+        if t.get("status") != "emitted" or not t.get("weight") or t.get("derived"):
+            continue
+        wit = ((t.get("maps") or {}).get("witnesses") or {}).get("emitted")
+        lrow = next((r for r in (t.get("locality") or {}).get("rows", [])
+                     if r.get("label") == "emitted" and r.get("status") == "ok"), None)
+        if record is None or wit is None or lrow is None:
+            out[t["key"]] = {"status": "unavailable",
+                             "reason": "no emitted witness or record to regenerate on"}
+            continue
+        temps = t["weight"]["T"]
+        mids = tuple((a + b) / 2.0 for a, b in zip(temps, temps[1:]))
+        r_rows, p_rows = te.rows_from_json(wit["r"]), te.rows_from_json(wit["p"])
+        gen, prods = (p_rows, r_rows) if payload.get("member_reverse") else (r_rows, p_rows)
+        # the regenerated k is the EMITTED witness's, so its own count (the one the
+        # weight was calibrated with) is the denominator, not the record's
+        tch = (lrow.get("counts") or {}).get("matcher")
+        try:
+            result = rates_for(mids)(te.RateRequest(record["family"], record["template"],
+                                                    record["orientation"], gen, prods))
+            if result.problems or tuple(result.temperatures) != mids:
+                raise te.EmissionError("; ".join(result.problems) or "grid mismatch")
+            truth = te.weight_table(mids, result.k, result.ssa_multiplier, tch)
+        except Exception as error:   # reported, never hidden
+            out[t["key"]] = {"status": "unavailable",
+                             "reason": f"{type(error).__name__}: {str(error)[:120]}"}
+            continue
+        worst, at = 0.0, None
+        for T, w in zip(mids, truth):
+            err = abs(te._interpolate(temps, t["weight"]["w"], T) / w - 1.0)
+            if err > worst:
+                worst, at = err, T
+        out[t["key"]] = {"status": "ok", "worst": worst, "worst_T": at, "n": len(mids)}
+    return out
+
+
 class Emitter:
     """The emission session of one artifact against a roster's systems."""
 
@@ -471,7 +537,8 @@ class Emitter:
                  counter=te.RmgCounter(fam),
                  kc=te.ThermoKc(GasPhaseRMGReferenceThermo(db.thermo, REFERENCE_THERMO_LABEL)),
                  rates=te.ProductionRates(db, families, database_path=self.database,
-                                          database_sha=REFERENCE_RATES_LABEL))
+                                          database_sha=REFERENCE_RATES_LABEL),
+                 rates_by_grid=RatesByGrid(db, families, self.database))
 
     @property
     def records(self):
@@ -537,6 +604,7 @@ class Emitter:
             row["payload"] = payload
             row["status"] = payload["status"]
             row["refusal"] = (payload.get("refusal") or {}).get("status")
+            row["midpoint"] = midpoint_entries(record, payload, S["rates_by_grid"])
         except te.EmissionError as error:
             row.update(status="error", refusal="error:emission", reason=str(error)[:400])
         except Exception:   # reported, never hidden
@@ -680,6 +748,46 @@ def _refusal_reason(row):
     return ", ".join(f"{k} x{v}" for k, v in sorted(refused.items(), key=str)) or None
 
 
+def midpoint_gate(rows, payloads):
+    """Aggregate the rows' midpoint entries over the final emitted templates:
+    the worst error, the templates above the threshold, and every template
+    whose check is not evaluable (a gate that evaluates nothing must not pass).
+    Derived templates are counted ``unavailable`` and not gated, as in the
+    harness.  Returns the gate table plus ``failures``."""
+    by_record = {(r.get("payload") or {}).get("record_event_id"): r for r in rows if r.get("payload")}
+    worst, at, who, n = 0.0, None, None, 0
+    unavailable, unverified, failing, failures = Counter(), [], [], []
+    for p in payloads:
+        rid = p.get("record_event_id") or ""
+        entries = (by_record.get(rid) or {}).get("midpoint") or {}
+        for t in p.get("templates", []):
+            if t.get("status") != "emitted" or not t.get("weight"):
+                continue
+            name = f"{rid[:16]}:{t['key'][:12]}"
+            if t.get("derived"):
+                unavailable["derived"] += 1
+                continue
+            entry = entries.get(t["key"])
+            if entry is None:
+                unverified.append([name, "no midpoint entry in the row (not computed)"])
+            elif entry.get("status") != "ok":
+                unverified.append([name, entry.get("reason", "unavailable")])
+            else:
+                n += 1
+                if entry["worst"] > worst:
+                    worst, at, who = entry["worst"], entry["worst_T"], name
+                if entry["worst"] > MIDPOINT_THRESHOLD:
+                    failing.append([name, entry["worst"], entry["worst_T"]])
+    for name, error, T in failing:
+        failures.append(f"primary-weight midpoint error {error:.3g} > "
+                        f"{MIDPOINT_THRESHOLD:.0%} at {T} K ({name})")
+    for name, reason in unverified:
+        failures.append(f"primary-weight midpoint check not evaluable for {name}: {reason}")
+    return {"evaluated": not unverified, "threshold": MIDPOINT_THRESHOLD, "templates": n,
+            "worst": worst, "worst_T": at, "worst_template": who, "failing": failing,
+            "unverified": unverified, "unavailable": dict(unavailable), "failures": failures}
+
+
 def assemble(paths, *, database=None, services=None) -> dict:
     """The catalog of the rows files ``paths`` (see the module docstring)."""
     failures = []
@@ -802,6 +910,8 @@ def assemble(paths, *, database=None, services=None) -> dict:
                                    default=0.0),
         "self_inverse_templates": sum(1 for p in payloads for t in p.get("templates", [])
                                       if t.get("status") == "emitted" and t.get("self_inverse"))}
+    midpoint = midpoint_gate(rows, payloads)
+    failures += midpoint.pop("failures")
     out_payloads = stripped_payloads(payloads)
     expected = sum(1 for p in payloads for t in p.get("templates", [])
                    if t.get("status") == "emitted")
@@ -853,9 +963,7 @@ def assemble(paths, *, database=None, services=None) -> dict:
             "round_trip": round_trip,
             "coverage": {"complete": complete_coverage, "rows": len(rows),
                          "assigned": len(assigned)},
-            "midpoint": {"evaluated": False,
-                         "reason": "the primary-weight midpoint check regenerates rates from the "
-                                   "artifact records and is not part of assembly"},
+            "midpoint": midpoint,
             "failures": failures},
         "completeness": completeness,
         "complete": not failures,
