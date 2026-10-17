@@ -805,6 +805,111 @@ def test_non_aromatic_rings_keep_their_bond_orders_in_period_detection():
     assert not first.molecule.is_isomorphic(second.molecule)
 
 
+def _pyridine_ring(prefix, form):
+    """pyridine-2,5-diyl: {p}1 = C2 (toward the chain head), {p}2 = N1,
+    {p}4 = C5 (toward the chain tail).  form: "aromatic" (1.5), "X"
+    (C2=N1, C6=C5, C4=C3) or "Y" (N1=C6, C5=C4, C3=C2)."""
+    atoms = [_atom(f"{prefix}1"), _atom(f"{prefix}2", "N", lone_pairs=1),
+             _atom(f"{prefix}3", hydrogens=1), _atom(f"{prefix}4"),
+             _atom(f"{prefix}5", hydrogens=1), _atom(f"{prefix}6", hydrogens=1)]
+    doubles = {"X": (1, 3, 5), "Y": (2, 4, 6)}.get(form, ())
+    bonds = [_bond(f"{prefix}{i}", f"{prefix}{i % 6 + 1}",
+                   1.5 if form == "aromatic" else 2 if i in doubles else 1)
+             for i in range(1, 7)]
+    return atoms, bonds
+
+
+def _pyridine_mapping(first, second):
+    ra, ba = _pyridine_ring("a", first)
+    rb, bb = _pyridine_ring("b", second)
+    return _declaration([_atom("m1", hydrogens=2), _atom("m2", hydrogens=2)] + ra + rb,
+                        ba + bb + [_bond("m1", "a1"), _bond("a4", "m2"), _bond("m2", "b1")],
+                        "m1", "b4", elements=("C", "H", "N"), lone_pairs=(0, 1))
+
+
+@pytest.mark.parametrize("first, second", [("X", "Y"), ("aromatic", "Y"), ("Y", "aromatic"),
+                                           ("X", "X"), ("aromatic", "aromatic")])
+def test_heteroaromatic_representation_does_not_change_the_period(first, second):
+    provider = dc.DeclaredChainProvider(spec_of(_pyridine_mapping(first, second)))
+    assert (provider.geometry.d_rep, provider.geometry.period) == (10, 5)
+    build = provider.build("p", dc.ChainSpec(3, head="declared", tail="declared"))
+    assert heavy_formula(build) == {"C": 18, "H": 17, "N": 3}
+
+
+def _five_ring(prefix, hetero, form):
+    """X-2,5-diyl five ring: {p}1 = C2 (head side), {p}4 = C5 (tail side),
+    {p}5 the heteroatom (two lone pairs)."""
+    atoms = [_atom(f"{prefix}1"), _atom(f"{prefix}2", hydrogens=1),
+             _atom(f"{prefix}3", hydrogens=1), _atom(f"{prefix}4"),
+             _atom(f"{prefix}5", hetero, lone_pairs=2)]
+    if form == "aromatic":
+        orders = (1.5,) * 5
+    else:
+        orders = (2, 1, 2, 1, 1)
+    bonds = [_bond(f"{prefix}{i}", f"{prefix}{i % 5 + 1}", orders[i - 1]) for i in range(1, 6)]
+    return atoms, bonds
+
+
+def _five_ring_mapping(hetero, first, second):
+    ra, ba = _five_ring("a", hetero, first)
+    rb, bb = _five_ring("b", hetero, second)
+    return _declaration([_atom("m1", hydrogens=2), _atom("m2", hydrogens=2)] + ra + rb,
+                        ba + bb + [_bond("m1", "a1"), _bond("a4", "m2"), _bond("m2", "b1")],
+                        "m1", "b4", elements=("C", "H", hetero), lone_pairs=(0, 2))
+
+
+@pytest.mark.parametrize("hetero, refusal", [
+    ("S", "declared electronic state is inconsistent"), ("O", "overfills atom")])
+def test_five_ring_heteroaromatic_chains(hetero, refusal):
+    """A 2,5-diyl thiophene or furan has one Kekule form, and schema v1
+    refuses its 1.5 writing (RMG has no aromatic S/O five-ring atom type),
+    so the Kekule declaration is the only one: its period is one residue.
+    The piece comparison itself reads both writings alike
+    (``test_piece_signature_reads_ring_writings_alike``)."""
+    provider = dc.DeclaredChainProvider(spec_of(_five_ring_mapping(hetero, "K", "K")))
+    g = provider.geometry
+    assert (g.d_rep, g.period) == (8, 4)
+    with pytest.raises(ValueError, match=refusal):
+        spec_of(_five_ring_mapping(hetero, "aromatic", "K"))
+
+
+def _piece(atoms, bonds):
+    from rmgpy.polymer_spec import AtomDeclaration
+    decl = {a["key"]: AtomDeclaration.from_mapping(a) for a in atoms}
+    pairs = {tuple(sorted(bd["atoms"])): float(bd["order"]) for bd in bonds}
+    return decl, pairs
+
+
+@pytest.mark.parametrize("ring, forms, same", [
+    ("pyridine", ("aromatic", "X", "Y"), True),
+    ("thiophene", ("aromatic", "K"), True),
+    ("furan", ("aromatic", "K"), True),
+])
+def test_piece_signature_reads_ring_writings_alike(ring, forms, same):
+    signatures = set()
+    for form in forms:
+        if ring == "pyridine":
+            atoms, bonds = _pyridine_ring("r", form)
+        else:
+            atoms, bonds = _five_ring("r", "S" if ring == "thiophene" else "O", form)
+        decl, pairs = _piece(atoms + [_atom("m", hydrogens=2)], bonds + [_bond("m", "r1")])
+        signatures.add(dc.piece_signature(decl, pairs, set(decl), "m", "r4", 1.0))
+    assert (len(signatures) == 1) == same
+
+
+def test_piece_signature_keeps_non_aromatic_bond_orders():
+    mapping = _cyclobutadiene_mapping()
+    atoms = {a["key"]: a for a in mapping["repeat_unit"]["atoms"]}
+    bonds = mapping["repeat_unit"]["bonds"]
+    sigs = []
+    for ring, head, tail in (("a", "m1", "a2"), ("b", "m2", "b2")):
+        keys = {head} | {f"{ring}{i}" for i in range(1, 5)}
+        decl, pairs = _piece([atoms[k] for k in keys],
+                             [bd for bd in bonds if set(bd["atoms"]) <= keys])
+        sigs.append(dc.piece_signature(decl, pairs, keys, head, tail, 1.0))
+    assert sigs[0] != sigs[1]
+
+
 def ends_mapping():
     mapping = pp_mapping()
     methyl = {"atoms": [_atom("m", hydrogens=3)], "bonds": [],
