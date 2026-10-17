@@ -68,6 +68,10 @@ class PostconditionError(MeltStateError):
     """An applied edit set broke an invariant (and was rolled back)."""
 
 
+class AncestryError(MeltStateError):
+    """An initially mobile monomer cannot be given a unique backbone ancestry."""
+
+
 # --------------------------------------------------------------------------
 # nodes and origin
 # --------------------------------------------------------------------------
@@ -528,10 +532,13 @@ class MeltState:
     def backbone_count(self, cid: int) -> int:
         """Number of atoms of the component whose origin is_backbone (an integer).
 
-        Ancestry for initially mobile molecules (monomer, solvent, ...) is
-        undefined in v1 and reported as 0: consumers must not read zero as "not
-        polymer-derived"; test ``origin[a].is_mobile`` / ``origin_kinds(cid)``
-        for that.  No DP or comparison basis is defined here.
+        An initially mobile molecule that is the declared ``monomer_product``
+        carries backbone ancestry on the atoms its unique map onto the repeat
+        unit sends to the head-tail path (``monomer_backbone_keys``); any other
+        initially mobile molecule has none (0): consumers must not read zero as
+        "not polymer-derived"; test ``origin[a].is_mobile`` /
+        ``origin_kinds(cid)`` for that.  No DP or comparison basis is defined
+        here.
         """
         return self.components.backbone_count(cid)
 
@@ -816,11 +823,80 @@ def _backbone_keys(repeat) -> frozenset:
     return frozenset(path)
 
 
+def _declaration_graph(graph, closing=None):
+    """networkx graph of a declaration's heavy atoms (labels: element, isotope,
+    charge, radical electrons, lone pairs, hydrogens; edges: bond order).
+    ``closing = (a, b, order)`` raises the a-b bond order by ``order``."""
+    import networkx as nx
+    g = nx.Graph()
+    for atom in graph.atoms:
+        g.add_node(atom.key, label=(atom.element, atom.isotope, atom.charge, atom.radical_electrons,
+                                    atom.lone_pairs, atom.hydrogens))
+    for bond in graph.bonds:
+        g.add_edge(*bond.atoms, order=float(bond.order))
+    if closing is not None:
+        a, b, order = closing
+        g.edges[a, b]["order"] += float(order)
+    return g
+
+
+def _isomorphisms(g, h):
+    from networkx.algorithms.isomorphism import GraphMatcher
+    matcher = GraphMatcher(g, h, node_match=lambda x, y: x["label"] == y["label"],
+                           edge_match=lambda x, y: x["order"] == y["order"])
+    return matcher.isomorphisms_iter()
+
+
+def monomer_backbone_keys(spec, graph) -> Optional[frozenset]:
+    """Atom keys of ``graph`` (a mobile species declaration) that receive
+    backbone origin, or None when ``graph`` is not the declared
+    ``monomer_product`` (or none is declared).
+
+    The repeat unit is closed by raising its head-tail bond by the port bond
+    order (the vinyl C=C polymerized into the head-tail bond); every
+    isomorphism of ``graph`` onto that closed unit sends some atoms onto the
+    head-port -> tail-port path.  The ancestry must be unique: all
+    isomorphisms must flag the same atom keys (automorphisms that leave the
+    flagged set unchanged, such as a ring flip or the two ends of ethylene,
+    are not an ambiguity).  Refused (``AncestryError``) when the head and tail
+    atoms are not bonded, the ports differ in order, no isomorphism exists, or
+    two isomorphisms flag different atoms (ambiguous)."""
+    monomer = getattr(spec, "monomer_product", None)
+    if monomer is None:
+        return None
+    species = _declaration_graph(graph)
+    if next(_isomorphisms(species, _declaration_graph(monomer)), None) is None:
+        return None
+    repeat = spec.repeat_unit
+    ports = dict(repeat.ports)
+    head, tail = ports["head"], ports["tail"]
+    closed = _declaration_graph(repeat)
+    if not closed.has_edge(head.atom, tail.atom) or head.bond_order != tail.bond_order:
+        raise AncestryError(
+            "initial mobile monomer refused: the repeat unit's head and tail atoms are not bonded "
+            "by one bond with equal port orders, so the monomer's C=C has no head-tail bond to map onto")
+    closed.edges[head.atom, tail.atom]["order"] += float(head.bond_order)
+    backbone = _backbone_keys(repeat)
+    flagged = {frozenset(k for k, v in iso.items() if v in backbone)
+               for iso in _isomorphisms(species, closed)}
+    if not flagged:
+        raise AncestryError(
+            "initial mobile monomer refused: the declared monomer_product is not isomorphic to the "
+            "repeat unit with its head-tail bond closed")
+    if len(flagged) != 1:
+        raise AncestryError(
+            "initial mobile monomer refused: its map onto the repeat unit is ambiguous "
+            f"(backbone atom sets {sorted(sorted(f) for f in flagged)})")
+    return next(iter(flagged))
+
+
 def materialize(spec) -> MeltState:
     """Materialize the declared melt: chains by (DP, declaration ordinal), then
     the initial mobile molecules in declaration order.  Atom ids are 0..N-1 in
     canonical order, so the same declaration gives identical ids and bytes in
-    any process."""
+    any process.  An initially mobile molecule that is the declared
+    ``monomer_product`` gets backbone origin through its unique map onto the
+    repeat unit (``monomer_backbone_keys``; ambiguous: ``AncestryError``)."""
     from rmgpy.polymer_spec import LinearHomopolymerSpec
 
     if not isinstance(spec, LinearHomopolymerSpec):
@@ -849,8 +925,11 @@ def materialize(spec) -> MeltState:
     small = {name: graph for name, graph, _disposition in spec.small_species}
     mobile = 0
     for name, count in spec.initial_mobile_counts:
+        if not count:
+            continue
+        ancestry = monomer_backbone_keys(spec, small[name]) or frozenset()
         for _ in range(count):
-            builder.add_segment(small[name], "mobile", mobile, name)
+            builder.add_segment(small[name], "mobile", mobile, name, ancestry)
             mobile += 1
             molecules += 1
     state = builder.state()

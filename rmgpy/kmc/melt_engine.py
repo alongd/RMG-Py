@@ -102,8 +102,16 @@ Transport declaration (``transport_model["met"]``, schema ``MET_SCHEMA``)::
 ``M0`` and ``b`` come from the declared repeat unit.  A declaration without
 the block, or with a missing or unknown field, is refused at run start.
 
-Not here: observables tiers, the MoM comparison, captures/J_ring (R0 only),
-evaporation, volume change.
+Release (design §5): released fragments are components and their identity
+is exact isomorphism under resonance against the declared species.  A declared
+``mobile`` small species that takes part in no loaded template is refused at
+run start (``declared_mobile_participation`` in the report lists the templates
+each one takes part in); undeclared products are reported by the observables
+layer, never refused.  An initially mobile monomer whose backbone ancestry is
+ambiguous is refused at run start (``melt_state.monomer_backbone_keys``).
+
+Not here: observables tiers and the MoM comparison (``melt_observables``),
+captures/J_ring (R0 only), evaporation, volume change.
 """
 
 from __future__ import annotations
@@ -116,7 +124,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from rmgpy import constants
 from rmgpy.kmc import window_matcher as wm
-from rmgpy.kmc.melt_state import MeltState, SetBond, SetRadical, materialize, _Builder, _backbone_keys
+from rmgpy.kmc.melt_state import (AncestryError, MeltState, SetBond, SetRadical, materialize, _Builder,
+                                   _backbone_keys)
 
 MET_SCHEMA = "kmc-met-transport/1"
 PHI_FALLBACK_LIMIT = 64
@@ -930,7 +939,10 @@ class MeltEngine:
         self.temperature_range = (lo, hi)
         self.catalog = catalog
         self.rng = rng
-        self.state = materialize(spec) if state is None else state
+        try:
+            self.state = materialize(spec) if state is None else state
+        except AncestryError as error:
+            raise DeclarationError(str(error)) from error
         isotopes = sorted({n.isotope for n in self.state.atoms.values() if n.isotope is not None})
         if isotopes:
             raise DeclarationError(f"non-natural isotopes are refused in v1 (found mass numbers {isotopes})")
@@ -943,6 +955,7 @@ class MeltEngine:
         self.templates: Tuple[wm.Template, ...] = ()
         self.classes: Tuple[_Class, ...] = ()
         self._load(temperature)
+        self.declared_mobile_participation = self._declared_mobile_participation()
         # clock
         self.time = 0.0
         self.leak_num = self.leak_den = 0.0
@@ -985,6 +998,30 @@ class MeltEngine:
         self.classes = tuple(_classify(i, t) for i, t in enumerate(templates))
         self.weights = tuple(t.weight for t in templates)
         self.temperature = float(temperature)
+
+    def _declared_mobile_participation(self) -> Dict[str, List[str]]:
+        """Per declared ``mobile`` small species, the loaded templates it takes
+        part in (a unimolecular transition or a bimolecular site on the
+        declared molecule alone).  A species in none is refused (design §5)."""
+        out, idle = {}, []
+        for name, graph, disposition in self.spec.small_species:
+            if disposition != "mobile":
+                continue
+            builder = _Builder()
+            builder.add_segment(graph, "mobile", 0, name)
+            alone = builder.state()
+            names = set()
+            for entry in self._scan(alone.components.ids(), state=alone).values():
+                names.update(self.templates[ci].name for ci in entry.uni)
+                names.update(self.templates[key[0]].name for key in entry.sites)
+            if not names:
+                idle.append(name)
+            out[name] = sorted(names)
+        if idle:
+            raise DeclarationError(
+                f"declared mobile species {idle} take part in no loaded template; a mobile species is "
+                "retained in the closed melt and reactive only through the templates (design §5)")
+        return out
 
     def set_temperature(self, temperature: float):
         """Reload the catalog's weights at ``temperature`` (structure unchanged)
@@ -1656,6 +1693,7 @@ class MeltEngine:
             "met": dict(self.met_counts), "conservation_checks": self.conservation_checks,
             "components": len(comps), "composition": {f"{k[0]}{k[1] or ''}": v for k, v in sorted(total.items(), key=str)},
             "backbone_atoms": backbone,
+            "declared_mobile_participation": {k: list(v) for k, v in self.declared_mobile_participation.items()},
         }
 
 
