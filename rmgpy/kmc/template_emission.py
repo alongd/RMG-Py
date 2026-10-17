@@ -617,6 +617,35 @@ class RmgCounter:
                 self.species(rm.molecule_from_rows(part)) for part in rm.split_rows(dict(rows))))
         return self._product_species[sig]
 
+    def inverts(self, family, move, molecules, pathway) -> bool:
+        """``move`` (a reading of ``molecules`` in the template direction of an
+        own-reverse family) is the exact inverse of an RMG move of the record's
+        recipe: some move of the same family on ``move``'s product, carrying
+        the node labels ``pathway``, restores the touched reactant graph
+        (atom ids kept, modulo resonance).  RMG's own reading of the record's
+        reactants may sit on another tree node, and other recipes (another ring
+        size) may reach the same product species; neither is the record's
+        reaction."""
+        family = self.family(family)
+        product = move.product_rows()
+        ids = set(product)
+        back = {}
+        for mol in molecules:
+            rows = rm.molecule_rows(mol)
+            if set(rows) <= ids:
+                back.update(rows)
+        if set(back) != ids:
+            return False
+        want = rm.product_key(back)
+        parts = [rm.molecule_from_rows(part) for part in rm.split_rows(dict(product))]
+        for mv in self.moves(family, parts, "forward"):
+            if mv.status not in ("kept", "unchanged_species") or mv.products is None \
+                    or mv.template is None or tuple(mv.template) != tuple(pathway):
+                continue
+            if set(mv.product_rows()) == ids and rm.product_key(mv) == want:
+                return True
+        return False
+
     def channel(self, family, molecules, direction, pathway, product_species) -> RmgChannel:
         keys, orders, statuses = {}, defaultdict(set), Counter()
         directed = 0
@@ -626,9 +655,12 @@ class RmgCounter:
                 continue
             if m.template is None:
                 continue
-            if pathway is not None and tuple(m.template) != tuple(pathway):
+            inverse = isinstance(pathway, InversePathway)
+            if pathway is not None and not inverse and tuple(m.template) != tuple(pathway):
                 continue
             if self.species_of_rows(m.product_rows()) != tuple(product_species):
+                continue
+            if inverse and not self.inverts(family, m, molecules, pathway):
                 continue
             directed += 1
             k = rm.product_key(m)
@@ -658,13 +690,23 @@ class Count:
                 "target_found": self.target_found, "foreign": self.foreign}
 
 
+class InversePathway(tuple):
+    """A pathway filter read through the inverse: the node labels of the
+    record's recipe, applied to the moves that undo a counted move (an
+    own-reverse family counted on the side opposite to its template)."""
+
+
 def count_pathway(family, pathway, reverse: bool):
-    """The pathway filter of the channel count: the record's template, except
-    for a family that is its own reverse read opposite to its template side
-    (RMG reads another node on those reactants: product species decide)."""
+    """The pathway filter of the channel count: the record's template.  For a
+    family that is its own reverse, counted on the side opposite to its
+    template, RMG reads another node on those reactants (the labels are the
+    other side's), so the filter is an ``InversePathway``: a counted move
+    belongs to the channel when it undoes a move carrying the record's
+    template (``RmgCounter.inverts``).  Product species alone would also take
+    every other recipe of the family reaching the same species."""
     fam = family
     if getattr(fam, "reverse_template", "x") is None and reverse:
-        return None
+        return InversePathway(pathway) if pathway else None
     return tuple(pathway) if pathway else None
 
 
@@ -1966,11 +2008,11 @@ def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG
                         devs = max(devs, dev)
         grid_bad = next((k for k in unit if evals[k]["grid"]), None)
         diam_bad = [k for k in unit if evals[k]["diameter"] is not None
-                    and evals[k]["diameter"] > tolerance_log10]
+                    and beyond_tolerance(evals[k]["diameter"], tolerance_log10)]
         if grid_bad is not None:
             admit, disposition = False, COLLISION_STATUS + "_grid"
             reason = f"temperature grids differ: {evals[grid_bad]['grid']}"
-        elif diam_bad or devs > tolerance_log10:
+        elif diam_bad or beyond_tolerance(devs, tolerance_log10):
             admit, disposition = False, COLLISION_STATUS
             reason = (f"log10 weight diameter {[evals[k]['diameter'] for k in unit]} or loaded "
                       f"pair deviation {devs:.4g} > {tolerance_log10}")
@@ -2267,7 +2309,20 @@ def _inverse_counts(loaded, counter, rows, state, inside, payload, direction):
 
 
 CHECK_LABELS = ("context", "emitted")
-MERGED_TOLERANCE = 10 ** LOCALITY_TOLERANCE_LOG10 - 1.0
+
+
+BOUNDARY_SLACK_LOG10 = 1e-12      # float slack: 10**0.01 scaling measures 0.01 + 6.8e-16
+
+
+def beyond_tolerance(distance_log10: float, tolerance_log10: float = LOCALITY_TOLERANCE_LOG10) -> bool:
+    """The one boundary of "the same weight": two weights (or a weight and its
+    expectation) are at ``|log10 ratio|`` decades; beyond ``tolerance_log10``
+    (default ``LOCALITY_TOLERANCE_LOG10``, the collision diameter's) is
+    refused, at it (within ``BOUNDARY_SLACK_LOG10`` of float noise) accepted.  The merged-copy guard, the merged
+    pair's ratio check and the collision diameter all use this comparison, so
+    no ratio is accepted by one and rejected by another (a linear |ratio - 1|
+    bound is asymmetric in the ratio)."""
+    return distance_log10 > tolerance_log10 + BOUNDARY_SLACK_LOG10
 
 
 def _loads(payload) -> bool:
@@ -2484,12 +2539,12 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                     try:
                         if owner is None:
                             raise EmissionError("its owner is not loaded")
-                        bad = max(abs(loaded.weight(owner, T) / w - 1.0)
+                        bad = max(abs(math.log10(loaded.weight(owner, T) / w))
                                   for T, w in zip(t["weight"]["T"], t["weight"]["w"]))
-                        if bad > MERGED_TOLERANCE:
+                        if beyond_tolerance(bad):
                             fail(f"merged template {t['key'][:12]}: the record's own kinetics "
-                                 f"differ from the loaded weight by {bad:.3g} > "
-                                 f"{MERGED_TOLERANCE:.3g}")
+                                 f"differ from the loaded weight by {bad:.3g} decades > "
+                                 f"{LOCALITY_TOLERANCE_LOG10:.3g}")
                     except EmissionError as error:
                         fail(f"merged template {t['key'][:12]}: {error}")
                 if t.get("status") == "emitted" and t.get("derived"):
@@ -2532,7 +2587,9 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                             want = [ssa_of_rows(r_rows, counter) / ssa_of_rows(p_rows, counter) * k
                                     for k in kcs]
                             errs = [abs(a / b / c - 1.0) for a, b, c in zip(s_f, s_r, want)]
-                            cache[ck] = {"errs": errs, "back": back, "grid": temps, "s_f": s_f,
+                            decades = [abs(math.log10(a / b / c))
+                                       for a, b, c in zip(s_f, s_r, want)]
+                            cache[ck] = {"errs": errs, "decades": decades, "back": back, "grid": temps, "s_f": s_f,
                                          "s_r": s_r, "kc": kcs, "want": want}
                         except EmissionError as error:
                             cache[ck] = {"error": str(error)}
@@ -2546,7 +2603,7 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                     for T, e in zip(res["grid"], res["errs"]):
                         key_ = "max_grid_error" if T in on_grid else "max_offgrid_error"
                         row[key_] = max(row[key_], e)
-                    tol = rtol if t.get("status") == "emitted" else MERGED_TOLERANCE
+                    emitted_t = t.get("status") == "emitted"
                     worst = max(res["errs"])
                     i = res["errs"].index(worst)
                     if worst > row["max_ratio_error"] or "worst" not in row:
@@ -2565,11 +2622,14 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                         row["bijection_failures"] += 1
                         fail(f"inverse edit: each forward transition must be undone by exactly "
                              f"one loaded reverse transition (counts {res['back']})")
-                    if worst > tol:
+                    if (worst > rtol) if emitted_t else beyond_tolerance(max(res["decades"])):
                         fail(f"ratio: S_f/S_r = {res['s_f'][i] / res['s_r'][i]:.17g} vs "
                              f"(ssa ratio * Kc) = {res['want'][i]:.17g} at {res['grid'][i]} K"
                              f"{'' if res['grid'][i] in on_grid else ' (off the grid)'}, "
-                             f"relative error {worst:.3g} > {tol:.3g} (template "
+                             f"relative error {worst:.3g} ("
+                             + (f"> {rtol:.3g}" if emitted_t else f"{max(res['decades']):.3g} "
+                                f"decades > {LOCALITY_TOLERANCE_LOG10:.3g}")
+                             + f") (template "
                              f"{t['key'][:12]}, {t['status']}, row {lr['label']})")
         for pair, why in refuse.items():
             verdict[pair] = rows_out[pair]

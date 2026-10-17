@@ -412,5 +412,5 @@ def test_padding_off_identity_covers_library_archived_and_ordinary_records(
     assert ordinary
     assert all("proxy_padding" not in record for record in records)
     assert hashlib.sha256(compiler.canonical_json_bytes(artifact)).hexdigest() == (
-        "7d91d831856ef458d1182f8f833f3ba8cfada113784d7d9034e553d9a3f734eb"
+        "2d2a5186adde6707e1cedde15d892d88045cc3a24f42b4549359c11e41163e3a"
     )

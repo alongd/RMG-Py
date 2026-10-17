@@ -4164,6 +4164,131 @@ class SiteProxy:
     boundary_participants: Sequence[Any] = field(default_factory=tuple)
 
 
+PAIR_BALANCE_RTOL = 1e-12
+PAIR_BALANCE_CONVENTION = (
+    "S_f/S_r = (ssa_f/ssa_r)*Kc with S = ssa_multiplier*k and Kc from the "
+    "reference thermo in the primary direction; the derived record takes "
+    "S_d = S_p/((ssa_p/ssa_d)*Kc), k_d = S_d/ssa_d"
+)
+PAIR_PRIMARY_RULE = (
+    "the primary record is the direction RMG generated and rated from its own "
+    "family estimate, rate rule or archived rule; it keeps its k"
+)
+
+
+def _refuse_pair(primary: EventRecord, partner: EventRecord, reason: str):
+    reason = f"pair cannot be balanced: {reason}"
+    return (
+        replace(primary, status="refused", status_reason=reason, event_id=""),
+        replace(
+            partner, status="refused", status_reason=reason, k_table=None, event_id=""
+        ),
+    )
+
+
+def balance_reciprocal_pair(
+    primary: EventRecord,
+    partner: EventRecord,
+    provider: ReferenceThermoProvider,
+    temperatures: Sequence[float],
+) -> tuple[EventRecord, EventRecord]:
+    """Detailed balance by construction: keep ``primary``'s k, derive ``partner``.
+
+    ``primary`` is the direction RMG generated and rated from its own estimate;
+    ``partner`` is derived from it with the same reference thermo the template
+    emission cycle check uses (``provider``), under the convention
+    ``S_f/S_r = (ssa_f/ssa_r) * Kc``, ``S = ssa_multiplier * k``.  The pair is
+    refused, with a reason on both records, if the thermo cannot be evaluated.
+    """
+    if primary.k_table is None:
+        return _refuse_pair(primary, partner, "the primary record has no rate table")
+    grid = [float(t) for t in primary.k_table["T"]]
+    try:
+        reaction = _reaction_from_record(primary)
+        if hasattr(provider, "evaluate"):
+            result = provider.evaluate(reaction, grid)
+            constants = [float(c) for c in result.equilibrium_constants]
+        else:
+            result = None
+            constants = [
+                float(c) for c in provider.equilibrium_constants(reaction, grid)
+            ]
+    except (ThermoUnavailable, AttributeError) as error:
+        return _refuse_pair(primary, partner, str(error))
+    if len(constants) != len(grid) or any(
+        not math.isfinite(c) or c <= 0 for c in constants
+    ):
+        return _refuse_pair(
+            primary, partner, "reference Kc is missing, non-positive or non-finite"
+        )
+    ssa_p, ssa_d = float(primary.ssa_multiplier), float(partner.ssa_multiplier)
+    derived = []
+    for rate, constant in zip(primary.k_table["k"], constants):
+        # S_d = S_p/((ssa_p/ssa_d)*Kc) and k_d = S_d/ssa_d: the ssa factors
+        # cancel, so k_d = k_p/Kc (no intermediate can overflow).
+        derived.append(rate / constant)
+    if any(not math.isfinite(rate) or rate <= 0 for rate in derived):
+        return _refuse_pair(
+            primary, partner, "derived reverse rates are not positive and finite"
+        )
+    for rate_p, rate_d, constant in zip(primary.k_table["k"], derived, constants):
+        # the convention in logs: ln S_p - ln S_d - (ln ssa_p - ln ssa_d) - ln Kc
+        miss = (
+            (math.log(ssa_p) + math.log(rate_p))
+            - (math.log(ssa_d) + math.log(rate_d))
+            - (math.log(ssa_p) - math.log(ssa_d))
+            - math.log(constant)
+        )
+        if abs(math.expm1(miss)) > PAIR_BALANCE_RTOL:
+            raise ValueError("derived pair misses the detailed-balance convention")
+    thermo = {
+        **provider.provenance,
+        **(
+            {
+                "reaction_enthalpy_298_J_per_mol": (
+                    result.reaction_enthalpy_298_J_per_mol
+                ),
+                "species_thermo_assignments": list(result.species_thermo_assignments),
+            }
+            if result is not None
+            else {}
+        ),
+        "equilibrium_constant_table": {"T": grid, "Kc": constants},
+    }
+    note = {
+        "convention": PAIR_BALANCE_CONVENTION,
+        "primary_rule": PAIR_PRIMARY_RULE,
+        "primary_orientation": primary.orientation,
+        "ssa_primary": ssa_p,
+        "ssa_derived": ssa_d,
+    }
+    stale = {"equilibrium_constant_table", "reference", "error"}
+    partner_source = {
+        key: value for key, value in partner.rate_source.items() if key not in stale
+    }
+    primary_new = replace(
+        primary,
+        rate_source={**primary.rate_source, "pair_balance": {**note, "role": "primary"}},
+        thermo_provenance=copy.deepcopy(thermo),
+        event_id="",
+    )
+    partner_new = replace(
+        partner,
+        k_table={**copy.deepcopy(primary.k_table), "k": derived},
+        rate_source={
+            **partner_source,
+            "available": True,
+            "reference": "k_primary / Kc",
+            "pair_balance": {**note, "role": "derived"},
+        },
+        thermo_provenance=copy.deepcopy(thermo),
+        status="enabled",
+        status_reason="",
+        event_id="",
+    )
+    return primary_new, partner_new
+
+
 class EventSetCompiler:
     """Compile declared family reactions on finite, centred polymer proxies."""
 
@@ -5116,6 +5241,12 @@ class EventSetCompiler:
             forward if initiated_forward else reverse,
         )
 
+    def _balanced_junction_pair(self, forward, reverse):
+        """Balance an archived junction pair against the reference thermo."""
+        return balance_reciprocal_pair(
+            forward, reverse, self.reference_thermo_provider, self.temperature_grid
+        )
+
     def _linked_ortho_pair(
         self,
         proxy: SiteProxy,
@@ -5138,11 +5269,23 @@ class EventSetCompiler:
                 "attacker_site_label": "P9",
             },
         )
+        # The reverse is never rated on its own: the forward keeps its half-rate
+        # k and the reverse is derived from it against the reference thermo.
         reverse = self._record(
             reverse_proxy,
             _reverse_view(reaction),
             provenance,
             "reversed",
+            rate_override=(
+                None,
+                {
+                    "kind": "RMG family estimate",
+                    "available": True,
+                    "units": get_rate_coefficient_units_from_reaction_order(
+                        len(reaction.products)
+                    ),
+                },
+            ),
         )
         reverse = replace(
             reverse,
@@ -5153,15 +5296,10 @@ class EventSetCompiler:
                 action="dissociate",
                 reverse_event_handle=forward.event_id,
             ),
-            status="enabled" if reverse.k_table is not None else reverse.status,
-            status_reason="" if reverse.k_table is not None else reverse.status_reason,
-            thermo_provenance={
-                "gas_phase": "RMG Kc reference",
-                "condensed_phase_constraint": "UNKNOWN",
-            },
             reverse_of=forward.event_id,
             event_id="",
         )
+        forward, reverse = self._balanced_junction_pair(forward, reverse)
         forward = replace(
             forward,
             junction_ops=_junction_ops(
@@ -5254,6 +5392,16 @@ class EventSetCompiler:
             _reverse_view(reaction),
             provenance,
             "reversed",
+            rate_override=(
+                None,
+                {
+                    "kind": "RMG family estimate",
+                    "available": True,
+                    "units": get_rate_coefficient_units_from_reaction_order(
+                        len(reaction.products)
+                    ),
+                },
+            ),
         )
         reverse_source = {
             **reverse.rate_source,
@@ -5275,15 +5423,12 @@ class EventSetCompiler:
                 action="dissociate",
                 reverse_event_handle=forward.event_id,
             ),
-            status="enabled" if reverse.k_table is not None else reverse.status,
-            status_reason="" if reverse.k_table is not None else reverse.status_reason,
-            thermo_provenance={
-                "gas_phase": "R-009 archived RMG NASA Kc reference",
-                "condensed_phase_constraint": "UNKNOWN",
-            },
             reverse_of=forward.event_id,
             event_id="",
         )
+        # The archived rate rule keeps its k; the dissociation is derived from
+        # it with the reference thermo, not the archived NASA Kc.
+        forward, reverse = self._balanced_junction_pair(forward, reverse)
         forward = replace(
             forward,
             junction_ops=_junction_ops(
@@ -5292,10 +5437,6 @@ class EventSetCompiler:
                 action="create",
                 reverse_event_handle=reverse.event_id,
             ),
-            thermo_provenance={
-                "gas_phase": "R-009 archived RMG NASA Kc reference",
-                "condensed_phase_constraint": "UNKNOWN",
-            },
             reverse_of=reverse.event_id,
             event_id="",
         )
