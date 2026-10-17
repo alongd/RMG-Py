@@ -113,9 +113,15 @@ from rmgpy.kmc import window_matcher as wm
 from rmgpy.kmc.melt_state import MeltState, SetBond, SetRadical, materialize, _Builder, _backbone_keys
 
 MET_SCHEMA = "kmc-met-transport/1"
-LEAK_DEFINITION = ("leak_num / leak_den; leak_num = int leak hazard dt; leak_den = leak_num + int "
-                   "physical firing hazard dt, a phi-thinned channel counted as proposal hazard x phi "
-                   "(sum of phi over its proposals)")
+PHI_FALLBACK_LIMIT = 64
+LEAK_DEFINITION = (
+    "estimate: leak_num / leak_den; leak_num = int leak hazard dt; leak_den = leak_num + "
+    "non_thinned_integral + phi_sum + open_thinned, where non_thinned_integral = int of the "
+    "propensity of every non-thinned firing channel dt, phi_sum = sum of phi over the proposals of "
+    "the phi-thinned channels (unbiased for int proposal hazard x phi dt), and open_thinned (horizon "
+    "views only, never committed) = the open segment's thinned proposal hazard x the running mean "
+    "phi of each channel (exact mean over current transitions before its first proposal); a ratio "
+    "of estimates, so the fraction is itself an estimate")
 SPIN_FACTOR_RANGE = (0.25, 1.0)
 BUILTIN_SPECIES = ("H", "H2")
 
@@ -775,9 +781,10 @@ class SpeciesIdentity:
         if len(atoms) > self.max_atoms:
             return None
         comp = tuple(sorted(state.components.composition(cid).items(), key=str))
-        nodes = state.atoms
-        rows = {a: (nodes[a].element, nodes[a].isotope, nodes[a].charge, nodes[a].radical,
-                    nodes[a].lone_pairs, tuple(sorted(nodes[a].edges.items()))) for a in atoms}
+        # the query is normalized exactly like the declared forms: its first
+        # resonance form (aromatic sextets as 1.5), independent of the
+        # representation the state stores
+        rows = wm.form_rows(state, cid, wm.component_forms(state, cid)[0])
         g = _graph(rows)
         key = (comp, nx.weisfeiler_lehman_graph_hash(g, node_attr="hlabel", edge_attr="horder",
                                                      iterations=len(atoms)))
@@ -850,6 +857,7 @@ class RunResult:
     family_counts: Mapping[str, int]
     template_counts: Mapping[str, int]
     met: Mapping[str, int]
+    leak_estimate: Optional[Mapping[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -908,8 +916,16 @@ class MeltEngine:
         # clock
         self.time = 0.0
         self.leak_num = self.leak_den = 0.0
+        self.non_thinned = self.open_thinned = 0.0
+        self._non_thinned_c = 0.0
+        self.phi_sum = 0.0
+        self.thinned_proposals = 0
+        self._phi_by_class: Counter = Counter()
+        self._proposals_by_class: Counter = Counter()
+        self._open_phi_source = "none"
+        self._phi_fallback: Dict[Tuple, float] = {}
         self._segment_start = 0.0
-        self._leak_num_c = self._leak_den_c = 0.0
+        self._leak_num_c = 0.0
         self._pending: Optional[_Pending] = None
         self._stop = "horizon"
         # counters
@@ -997,8 +1013,13 @@ class MeltEngine:
         """Full recompute of every index layer from the current state.  The
         clock's open segment is committed at the current (possibly horizon)
         time first, so a resync never moves time backwards."""
+        keep = None
         if hasattr(self, "_leak_num_c"):
-            self._commit()
+            pending = self._pending
+            if pending is not None and pending.token == self._token():
+                keep = pending          # nothing changed since the draw: keep it
+            else:
+                self._commit()
         size = max(self.state.atoms) + 1
         self._size = size
         self.entries: Dict[int, _Entry] = {}
@@ -1016,7 +1037,7 @@ class MeltEngine:
         self._refresh_met()
         self._revision = self.state.revision
         self._index_revision += 1
-        self._pending = None
+        self._pending = keep
 
     def _ensure_kind(self, ci, p, kind):
         known = self.kinds.setdefault((ci, p), set())
@@ -1299,8 +1320,11 @@ class MeltEngine:
             # physical hazard of the thinned channels: each proposal contributes
             # its phi (Campbell: an unbiased estimate of the integral of
             # proposal hazard x phi)
-            self._leak_den_c += phi
-            self.leak_den = self._leak_den_c
+            self.phi_sum += phi
+            self.thinned_proposals += 1
+            self._phi_by_class[tr.class_index] += phi
+            self._proposals_by_class[tr.class_index] += 1
+            self._set_den()
             if len(products) != 2:
                 self.met_counts["reverse_no_pair"] += 1
             elif bypass:
@@ -1312,16 +1336,23 @@ class MeltEngine:
             if len(products) == 2:
                 self.met_counts["reverse_accepted"] += 1
         journal = tx.commit()
-        self._conserved(journal)
+        # the chemistry is committed: log the event first, then bring the index
+        # up to date; any failure there rebuilds the index from the state (full
+        # recompute) before re-raising, so the engine stays consistent
         old = [c for c, _a in journal.old_components]
         added = [c for c, _a in journal.new_components]
-        self._update(old, added, new)
         event = Event(self.time, tr.template, tr.family, channel, tr.components, tuple(added),
                       self.state.revision)
         self.events.append(event)
         self.events_fired += 1
         self.family_counts[tr.family] += 1
         self.template_counts[tr.template] += 1
+        try:
+            self._conserved(journal)
+            self._update(old, added, new)
+        except BaseException:
+            self.rebuild()
+            raise
         return event
 
     def _update(self, old, added, scanned=None):
@@ -1387,31 +1418,100 @@ class MeltEngine:
             g -= n
         raise EngineError("MET draw fell through")
 
+    # -- leak estimate ----------------------------------------------------------
+    def _open_thinned_rate(self, prop) -> float:
+        """Physical hazard estimate of the thinned channels over an open
+        segment: each channel's proposal hazard x the running mean phi of its
+        class.  A class with no proposal yet uses the exact mean phi over its
+        current transitions (unimolecular classes; evaluated by tentative
+        apply and rollback, at most ``PHI_FALLBACK_LIMIT`` transitions taken at
+        an even stride in edit-key order, no random draw); a bimolecular
+        thinned class with no proposal yet enters with phi = 1 (an upper
+        bound), and the source is reported."""
+        total, sources = 0.0, set()
+        for key, a in prop.channels:
+            if a <= 0.0 or key[0] == "met" or not self.classes[key[1]].met_reverse:
+                continue
+            ci = key[1]
+            n = self._proposals_by_class[ci]
+            if n:
+                total += a * self._phi_by_class[ci] / n
+                sources.add("running_mean")
+            elif key[0] == "uni":
+                total += a * self._fallback_phi(ci)
+                sources.add("exact_current_transitions")
+            else:
+                total += a
+                sources.add("upper_bound_phi_1")
+        self._open_phi_source = "+".join(sorted(sources)) or "none"
+        return total
+
+    def _fallback_phi(self, ci) -> float:
+        key = (ci, self.state.state_hash(), self.temperature)
+        if key in self._phi_fallback:
+            return self._phi_fallback[key]
+        trs = [tr for c in sorted(self.entries) for tr in self.entries[c].uni.get(ci, ((), 0))[0]]
+        if len(trs) > PHI_FALLBACK_LIMIT:
+            stride = len(trs) / PHI_FALLBACK_LIMIT
+            trs = [trs[int(k * stride)] for k in range(PHI_FALLBACK_LIMIT)]
+        phis = []
+        for tr in trs:
+            tx, products = self._begin_apply(tr, _LocalView(self.state, list(tr.components)))
+            try:
+                phi = 1.0
+                if len(products) == 2:
+                    new = self._scan(products)
+                    rate = self.pair_rate(new[products[0]], new[products[1]])
+                    phi = 1.0 if rate is None else rate.phi
+            finally:
+                tx.rollback()
+            phis.append(phi)
+        value = math.fsum(phis) / len(phis) if phis else 1.0
+        self._phi_fallback = {key: value}
+        return value
+
+    def leak_estimate(self) -> dict:
+        return {"estimate": True, "definition": LEAK_DEFINITION,
+                "leak_num": self.leak_num, "leak_den": self.leak_den,
+                "fraction": self.leak_num / self.leak_den if self.leak_den else 0.0,
+                "non_thinned_integral": self.non_thinned, "phi_sum": self.phi_sum,
+                "thinned_proposals": self.thinned_proposals, "open_thinned": self.open_thinned,
+                "open_phi_source": self._open_phi_source if self.open_thinned else "none"}
+
     # -- clock ----------------------------------------------------------------
     def _token(self):
-        return (id(self.state), self.state.revision, self._index_revision, self.temperature,
-                self.volume, id(self.catalog), id(self.rng))
+        return (id(self.state), self.state.state_hash(), self.temperature, self.volume,
+                id(self.catalog), id(self.rng))
 
     def _sync(self):
         if self.state.revision != self._revision:
             self.rebuild()
 
+    def _set_den(self):
+        self.leak_den = self.leak_num + self.non_thinned + self.phi_sum + self.open_thinned
+
     def _integrate(self, elapsed, enabled, leak, thinned=0.0):
         self.leak_num = self._leak_num_c + leak * elapsed
-        self.leak_den = self._leak_den_c + (enabled - thinned + leak) * elapsed
+        self.non_thinned = self._non_thinned_c + (enabled - thinned) * elapsed
+        self.open_thinned = 0.0
+        self._set_den()
         self.time = self._segment_start + elapsed
         self._commit()
 
     def _commit(self):
         self._segment_start = self.time
         self._leak_num_c = self.leak_num
-        self._leak_den_c = self.leak_den
+        self._non_thinned_c = self.non_thinned
+        self.open_thinned = 0.0   # a view-only estimate, never committed (Campbell: the
+        self._set_den()           # committed thinned part is the sum of phi over proposals)
         self._pending = None
 
-    def _view_to_horizon(self, until, enabled, leak, thinned=0.0):
+    def _view_to_horizon(self, until, enabled, leak, thinned=0.0, prop=None):
         elapsed = until - self._segment_start
         self.leak_num = self._leak_num_c + leak * elapsed
-        self.leak_den = self._leak_den_c + (enabled - thinned + leak) * elapsed
+        self.non_thinned = self._non_thinned_c + (enabled - thinned) * elapsed
+        self.open_thinned = self._open_thinned_rate(prop) * elapsed if (prop and thinned > 0) else 0.0
+        self._set_den()
         self.time = self._segment_start + elapsed
 
     def step(self, *, until: Optional[float] = None) -> Optional[Event]:
@@ -1437,7 +1537,7 @@ class MeltEngine:
                 self._stop = "absorbing" if pending.absorbing else "horizon"
                 if pending.absorbing and until is None:
                     return None
-                self._view_to_horizon(until, enabled, leak, prop.thinned)
+                self._view_to_horizon(until, enabled, leak, prop.thinned, prop)
                 self._pending = _Pending(pending.elapsed, pending.absorbing, enabled, leak,
                                          self.time, self._token())
                 return None
@@ -1497,7 +1597,7 @@ class MeltEngine:
                          self.leak_num, self.leak_den,
                          self.leak_num / self.leak_den if self.leak_den else 0.0,
                          self.null_proposals, dict(self.family_counts), dict(self.template_counts),
-                         dict(self.met_counts))
+                         dict(self.met_counts), self.leak_estimate())
 
     # -- report -----------------------------------------------------------------
     def report(self) -> dict:
@@ -1513,6 +1613,7 @@ class MeltEngine:
             "leak_num": self.leak_num, "leak_den": self.leak_den,
             "leak_fraction": self.leak_num / self.leak_den if self.leak_den else 0.0,
             "leak_definition": LEAK_DEFINITION,
+            "leak_estimate": self.leak_estimate(),
             "family_counts": dict(self.family_counts), "template_counts": dict(self.template_counts),
             "met": dict(self.met_counts), "conservation_checks": self.conservation_checks,
             "components": len(comps), "composition": {f"{k[0]}{k[1] or ''}": v for k, v in sorted(total.items(), key=str)},
