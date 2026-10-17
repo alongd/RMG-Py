@@ -242,9 +242,19 @@ class Services:
     kc = None
 
 
+def ok_midpoint(row, worst=0.0):
+    """The row's per-template midpoint entries, as the emit step stores them."""
+    return {t["key"]: {"status": "ok", "worst": worst, "worst_T": 650.0, "n": 28}
+            for t in (row.get("payload") or {}).get("templates", [])
+            if t["status"] == "emitted" and t.get("weight")}
+
+
 def fixture_rows():
     rows = [json.loads(line) for line in ROWS.read_text().splitlines()]
     rows.sort(key=lambda r: r["event_id"])
+    for row in rows:
+        if row.get("payload"):
+            row["midpoint"] = ok_midpoint(row)
     return rows
 
 
@@ -499,3 +509,165 @@ def test_module_runs_as_a_script():
     done = subprocess.run([sys.executable, "-m", "rmgpy.kmc.emit", "assemble", "--help"],
                           capture_output=True, text=True, timeout=120)
     assert done.returncode == 0 and "--out" in done.stdout
+
+
+# --------------------------------------------------------------------------
+# rework 1: the midpoint gate (computed per record at emission)
+# --------------------------------------------------------------------------
+def _emitted_row(rows, index=0):
+    return [r for r in rows if r["status"] == "emitted"][index]
+
+
+def test_midpoint_gate_aggregates_the_rows(tmp_path):
+    catalog = run(shards(tmp_path))
+    mid = catalog["gates"]["midpoint"]
+    assert mid["evaluated"] is True and mid["threshold"] == 0.01
+    assert mid["templates"] == catalog["gates"]["round_trip"]["templates"]
+    assert mid["worst"] == 0.0 and mid["failing"] == [] and mid["unverified"] == []
+    assert catalog["complete"] is True
+
+
+def test_injected_midpoint_failure_is_incomplete_with_the_failure_listed(tmp_path):
+    rows = fixture_rows()
+    row = _emitted_row(rows)
+    key = next(iter(row["midpoint"]))
+    row["midpoint"][key] = {"status": "ok", "worst": 0.05, "worst_T": 650.0, "n": 28}
+    path = write_rows(tmp_path / "m.jsonl", header(None, rows), rows)
+    catalog = run([path])
+    mid = catalog["gates"]["midpoint"]
+    assert mid["worst"] == 0.05 and len(mid["failing"]) == 1
+    assert catalog["complete"] is False
+    assert any("midpoint" in f and "650" in f for f in catalog["gates"]["failures"])
+
+
+def test_error_at_the_threshold_passes(tmp_path):
+    rows = fixture_rows()
+    row = _emitted_row(rows)
+    key = next(iter(row["midpoint"]))
+    row["midpoint"][key]["worst"] = 0.01
+    assert run([write_rows(tmp_path / "m.jsonl", header(None, rows), rows)])["complete"] is True
+
+
+def test_missing_midpoint_entry_is_unverified_and_incomplete(tmp_path):
+    rows = fixture_rows()
+    row = _emitted_row(rows)
+    row["midpoint"].pop(next(iter(row["midpoint"])))
+    catalog = run([write_rows(tmp_path / "m.jsonl", header(None, rows), rows)])
+    mid = catalog["gates"]["midpoint"]
+    assert mid["evaluated"] is False and len(mid["unverified"]) == 1
+    assert catalog["complete"] is False
+    assert any("midpoint check not evaluable" in f for f in catalog["gates"]["failures"])
+
+
+def test_unavailable_midpoint_entry_is_unverified_and_incomplete(tmp_path):
+    rows = fixture_rows()
+    row = _emitted_row(rows)
+    key = next(iter(row["midpoint"]))
+    row["midpoint"][key] = {"status": "unavailable", "reason": "no emitted witness"}
+    catalog = run([write_rows(tmp_path / "m.jsonl", header(None, rows), rows)])
+    assert catalog["gates"]["midpoint"]["evaluated"] is False
+    assert catalog["complete"] is False
+    assert any("no emitted witness" in f for f in catalog["gates"]["failures"])
+
+
+def test_a_derived_template_is_not_midpoint_gated(tmp_path, monkeypatch):
+    def derive(payloads, counter):
+        out = copy.deepcopy(payloads)
+        out[0]["templates"][0]["derived"] = {"primary": {"record": "x", "key": "y"}}
+        return out
+    monkeypatch.setattr(te, "derive_weights", derive)
+    rows = fixture_rows()
+    for row in rows:
+        row["midpoint"] = {}          # no entry at all for any template
+    catalog = run([write_rows(tmp_path / "m.jsonl", header(None, rows), rows)])
+    mid = catalog["gates"]["midpoint"]
+    assert mid["unavailable"] == {"derived": 1}
+    assert len(mid["unverified"]) == catalog["gates"]["round_trip"]["templates"] - 1
+
+
+class FakeRates:
+    """Stand-in for ``ProductionRates``: a fixed smooth k(T) on the requested grid."""
+    instances = []
+
+    def __init__(self, database, families, *, database_path=None, database_sha=None,
+                 temperature_grid=None, **kw):
+        self.grid = tuple(temperature_grid)
+        FakeRates.instances.append(self)
+
+    def __call__(self, request):
+        import math
+        from types import SimpleNamespace
+        return SimpleNamespace(problems=[], temperatures=self.grid, ssa_multiplier=1.0,
+                               k=[1.0e7 * math.exp(-400.0 / t) for t in self.grid])
+
+
+def _one_row_with_maps():
+    return json.loads((HERE / "fixtures" / "i155_row_with_maps.json").read_text())
+
+
+def test_midpoint_equals_the_harness_midpoint_table(monkeypatch):
+    acc = _harness()
+    row = _one_row_with_maps()
+    payload = row["payload"]
+    record = {"event_id": payload["record_event_id"], "family": "R_Recombination",
+              "template": "T", "orientation": "as_generated"}
+    monkeypatch.setattr(te, "ProductionRates", FakeRates)
+    monkeypatch.setitem(acc._S, "by_id", {record["event_id"]: record})
+    monkeypatch.setitem(acc._S, "db", None)
+    monkeypatch.setitem(acc._S, "records", [record])
+    table = acc.midpoint_table([payload])
+    entries = emit.midpoint_entries(record, payload, emit.RatesByGrid(None, ["R_Recombination"], "/db"))
+    (entry,) = entries.values()
+    assert table["templates"] == 1 and entry["status"] == "ok"
+    assert entry["worst"] == table["worst"] and entry["worst_T"] == table["worst_T"]
+    assert table["worst"] > 0.0
+
+
+def test_midpoint_without_a_witness_is_unavailable_not_skipped(monkeypatch):
+    monkeypatch.setattr(te, "ProductionRates", FakeRates)
+    payload = copy.deepcopy(_one_row_with_maps()["payload"])
+    for t in payload["templates"]:
+        t["maps"] = {}
+    record = {"event_id": payload["record_event_id"], "family": "R_Recombination",
+              "template": "T", "orientation": "as_generated"}
+    entries = emit.midpoint_entries(record, payload, emit.RatesByGrid(None, ["R_Recombination"], "/db"))
+    (entry,) = entries.values()
+    assert entry["status"] == "unavailable" and "witness" in entry["reason"]
+
+
+def test_midpoint_rate_failure_is_unavailable_with_the_reason(monkeypatch):
+    class Failing(FakeRates):
+        def __call__(self, request):
+            raise te.EmissionError("no rate")
+    monkeypatch.setattr(te, "ProductionRates", Failing)
+    payload = _one_row_with_maps()["payload"]
+    record = {"event_id": payload["record_event_id"], "family": "R_Recombination",
+              "template": "T", "orientation": "as_generated"}
+    (entry,) = emit.midpoint_entries(record, payload, emit.RatesByGrid(None, [], "/db")).values()
+    assert entry["status"] == "unavailable" and "no rate" in entry["reason"]
+
+
+# --------------------------------------------------------------------------
+# rework 1: coverage is pinned into the cycle check
+# --------------------------------------------------------------------------
+def test_a_missing_shard_alone_makes_the_cycle_check_partial(tmp_path, monkeypatch):
+    """Every record is assigned and has a row, the artifact count matches, no
+    header disagrees: the only defect is that shard 1/2 never arrived."""
+    seen = []
+
+    def cycles(payloads, counter, kc, complete=True, **kw):
+        seen.append(complete)
+        status = "ok" if complete else "not_evaluable"
+        return payloads, [{"forward": "evt_" + "a" * 20, "reverse": "evt_" + "b" * 20,
+                           "status": status, "reason": "reverse record absent"}]
+    monkeypatch.setattr(te, "check_cycles", cycles)
+    rows = fixture_rows()
+    path = write_rows(tmp_path / "only0.jsonl", header("0/2", rows), rows)
+    catalog = run([path])
+    assert seen == [False]
+    assert catalog["gates"]["cycles"]["by_status"] == {"not_evaluable": 1}
+    assert catalog["gates"]["coverage"]["complete"] is False
+    assert catalog["complete"] is False
+    assert any("missing shard 1/2" in f for f in catalog["gates"]["failures"])
+    full = run(shards(tmp_path, 2))
+    assert seen[-1] is True and full["gates"]["cycles"]["by_status"] == {"ok": 1}
