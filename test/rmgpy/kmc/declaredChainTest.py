@@ -628,46 +628,63 @@ def _radical_atom(key, hydrogens):
     return atom
 
 
-def test_monomer_keeps_the_declared_singlet():
+def _singlet_diradical_monomer():
     from melt_engine_support import pe_mapping
     singlet = {"atoms": [_radical_atom("a", 2), _radical_atom("b", 2)],
                "bonds": [_bond("a", "b")], "electronic_state": {"multiplicity": 1}}
-    spec = spec_of(pe_mapping({10: 1}, transport=False, monomer=singlet))
-    monomer = dc.DeclaredChainProvider(spec).monomer("m")
-    assert monomer.molecule.multiplicity == 1
-    declared = spec.monomer_product.to_legacy_molecule({})
-    assert declared.multiplicity == 1
-    assert monomer.molecule.is_isomorphic(declared)
+    return pe_mapping({10: 1}, transport=False, monomer=singlet)
 
 
-def pendant_diradical_mapping():
-    """c1H2-c2(c3H2.)(c4H2.): two pendant radicals per unit, declared as a
-    singlet pair (multiplicity 1)."""
+def pendant_diradical_mapping(multiplicity=3):
+    """c1H2-c2(c3H2.)(c4H2.): two pendant radicals per unit."""
     mapping = _declaration([_atom("c1", hydrogens=2), _atom("c2"), _radical_atom("c3", 2),
                             _radical_atom("c4", 2)],
                            [_bond("c1", "c2"), _bond("c2", "c3"), _bond("c2", "c4")], "c1", "c2")
+    mapping["repeat_unit"]["electronic_state"] = {"multiplicity": multiplicity}
+    return mapping
+
+
+def _pendant_radical_singlet():
+    """-CH2-CH(CH2.)- declared as a singlet."""
+    mapping = _declaration([_atom("c1", hydrogens=2), _atom("c2", hydrogens=1),
+                            _radical_atom("c3", 2)],
+                           [_bond("c1", "c2"), _bond("c2", "c3")], "c1", "c2")
     mapping["repeat_unit"]["electronic_state"] = {"multiplicity": 1}
     return mapping
 
 
-def test_chain_builds_carry_the_declared_unit_spin():
-    provider = dc.DeclaredChainProvider(spec_of(pendant_diradical_mapping()))
-    chain = provider.build("c", dc.ChainSpec(2, head="declared", tail="declared"))
-    assert chain.molecule.multiplicity == 1          # RMG high spin would give 5
-    # an edit quenching one declared radical leaves an unpaired electron
-    quenched = provider.build("q", dc.ChainSpec(2, head="declared", tail="declared", edits=(
-        E("add_h", 0, "c3"), E("set_radical", 0, "c3", 0))))
-    assert quenched.molecule.multiplicity == 2
-    # an added radical end on top of the singlet pairs
-    radical = provider.build("r", dc.ChainSpec(2, head="radical", tail="declared"))
-    assert radical.molecule.multiplicity == 2
-    # the fragment's declared spin is reported per period
-    open_ = provider.build("o", dc.ChainSpec(2))
-    port = open_.metadata.port("tail")
-    fragment = provider.fragment(port, open_.metadata.coordinate(port.atom_id))
-    assert sorted(atom[3] for atom in fragment.atoms) == [0] * (len(fragment.atoms) - 2) + [1, 1]
-    assert provider.fragment_multiplicity(fragment) == 1
-    assert provider.geometry.period_two_spin == 0
+def _radical_end_group():
+    mapping = pp_mapping()
+    mapping["end_groups"]["head"] = {
+        "atoms": [_radical_atom("m", 2)], "bonds": [],
+        "ports": {"cap": {"atom": "m", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 2}}
+    return mapping
+
+
+@pytest.mark.parametrize("make, where", [
+    (_singlet_diradical_monomer, "monomer_product"),
+    (pendant_diradical_mapping, "repeat unit"),
+    (_pendant_radical_singlet, "repeat unit"),
+    (_radical_end_group, "head end group"),
+])
+def test_open_shell_declarations_are_refused(make, where):
+    """S1 supports closed-shell declarations only (no declared radical
+    electrons, multiplicity 1): witness rows carry no multiplicity."""
+    spec = spec_of(make())
+    with pytest.raises(dc.DeclarationRefused, match=f"{where} is open-shell") as info:
+        dc.DeclaredChainProvider(spec)
+    assert info.value.rule == "closed_shell"
+
+
+def test_end_and_edit_radicals_keep_rmg_default_multiplicity(pp):
+    closed = pp.build("c", dc.ChainSpec(3, head="declared", tail="declared"))
+    assert closed.molecule.multiplicity == 1
+    three = pp.build("r", dc.ChainSpec(3, head="radical", tail="radical", edits=(
+        E("remove_h", 1, "c2"), E("set_radical", 1, "c2", 1))))
+    assert three.molecule.multiplicity == 4
+    monomer_free = dc.DeclaredChainProvider(sup.ps_declaration()).monomer("m")
+    assert monomer_free.molecule.multiplicity == 1
 
 
 def _backbone_walk(build, provider):
@@ -756,6 +773,38 @@ def test_aromatic_representation_does_not_change_the_period():
         .is_isomorphic(para.build("y", dc.ChainSpec(3, head="declared", tail="declared")).molecule)
 
 
+def _cyclobutadiene_mapping(alternate=True):
+    """m1-[c4 ring a, 1,2-attached, attachment edge double]-m2-[c4 ring b,
+    attachment edge single (alternate) or double]: two cyclobutadiene
+    patterns that differ in real bond orders (not aromatic)."""
+    atoms = [_atom("m1", hydrogens=2), _atom("m2", hydrogens=2)]
+    for ring in "ab":
+        atoms += [_atom(f"{ring}1"), _atom(f"{ring}2"), _atom(f"{ring}3", hydrogens=1),
+                  _atom(f"{ring}4", hydrogens=1)]
+    bonds = [_bond("m1", "a1"), _bond("a2", "m2"), _bond("m2", "b1"),
+             _bond("a1", "a2", 2), _bond("a2", "a3"), _bond("a3", "a4", 2), _bond("a4", "a1")]
+    if alternate:
+        bonds += [_bond("b1", "b2"), _bond("b2", "b3", 2), _bond("b3", "b4"),
+                  _bond("b4", "b1", 2)]
+    else:
+        bonds += [_bond("b1", "b2", 2), _bond("b2", "b3"), _bond("b3", "b4", 2),
+                  _bond("b4", "b1")]
+    return _declaration(atoms, bonds, "m1", "b2")
+
+
+def test_non_aromatic_rings_keep_their_bond_orders_in_period_detection():
+    alternating = dc.DeclaredChainProvider(spec_of(_cyclobutadiene_mapping()))
+    g = alternating.geometry
+    assert (g.d_rep, g.period) == (6, 6)
+    uniform = dc.DeclaredChainProvider(spec_of(_cyclobutadiene_mapping(alternate=False)))
+    assert (uniform.geometry.d_rep, uniform.geometry.period) == (6, 3)
+    ends = dict(head="declared", tail="declared")
+    first = alternating.build("a", dc.ChainSpec(2, **ends))
+    second = uniform.build("u", dc.ChainSpec(4, **ends))
+    assert heavy_formula(first) == heavy_formula(second) == {"C": 20, "H": 18}
+    assert not first.molecule.is_isomorphic(second.molecule)
+
+
 def ends_mapping():
     mapping = pp_mapping()
     methyl = {"atoms": [_atom("m", hydrogens=3)], "bonds": [],
@@ -805,6 +854,49 @@ def test_backbone_atoms_follow_deletions():
     provider.build("x", opened)
     # the built head -> tail path now runs r1-r5-r4-r3 in unit 1
     assert provider.backbone_atoms(opened) == 7
+
+
+def _built_path(build):
+    import networkx as nx
+    r = rows_of(build)
+    graph = nx.Graph()
+    for a, row in r.items():
+        if row[0] != "H":
+            graph.add_node(a)
+            for c, _o in row[5]:
+                if r[c][0] != "H":
+                    graph.add_edge(a, c)
+    return nx.shortest_path(graph, build.metadata.port("head").atom_id,
+                            build.metadata.port("tail").atom_id)
+
+
+def test_backbone_index_follows_the_built_path_after_a_deletion():
+    provider = dc.DeclaredChainProvider(spec_of(cyclopentane_mapping()))
+    opened = provider.build("x", dc.ChainSpec(2, edits=(
+        E("delete_atom", 1, "r2"), E("set_radical", 1, "r1", 1), E("set_radical", 1, "r3", 1))))
+    coords = {a: (u, k) for a, u, k in opened.metadata.coordinates}
+    path = _built_path(opened)
+    indices = provider.backbone_indices(opened)
+    walk = [indices.get(a) for a in path]
+    assert walk == list(range(7)), walk
+    assert [provider.backbone_index(*coords[a], build=opened) for a in path] == walk
+    # off-path atoms of the opened unit carry no index
+    p = provider.geometry.positions
+    assert indices.get(at(opened, 0, "r4", provider)) is None
+    # a pristine build agrees with the declaration-only index
+    pristine = provider.build("p", dc.ChainSpec(2))
+    pc = {a: (u, k) for a, u, k in pristine.metadata.coordinates}
+    built = provider.backbone_indices(pristine)
+    for a in _built_path(pristine):
+        assert built[a] == provider.backbone_index(*pc[a])
+    assert p["r2"] == 1
+
+
+def test_built_backbone_index_starts_at_a_phase_cut(ps):
+    build = ps.provider.build("s", dc.ChainSpec(3, head_phase=ps.phase))
+    path = _built_path(build)
+    indices = ps.provider.backbone_indices(build)
+    assert [indices[a] for a in path] == list(range(1, 6))
 
 
 def test_overlapping_legacy_flags_translate(ps):
