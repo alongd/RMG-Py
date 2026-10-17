@@ -429,13 +429,16 @@ def test_horizon_schedule_does_not_change_the_trajectory():
 
 def test_temperature_refreshes_weights_through_the_catalog():
     catalog = S.ToyCatalog(builder=lambda t: S.pe_templates(t, scale=t / 700.0), names=PE_LIVE)
-    engine = me.MeltEngine(S.pe_spec({10: 2}), catalog, 700.0, np.random.default_rng(2))
+    engine = me.MeltEngine(S.pe_spec({10: 2}), catalog, 700.0, np.random.default_rng(2),
+                           temperature_range=(650.0, 850.0))
     before = engine.propensities().enabled
     engine.set_temperature(840.0)
     assert catalog.requested == [700.0, 840.0]
     assert engine.temperature == 840.0
     assert engine.propensities().enabled == pytest.approx(before * 840.0 / 700.0, rel=1e-12)
     assert engine.snapshot() == engine.fresh_snapshot()
+    with pytest.raises(me.DeclarationError, match="outside the run range"):
+        engine.set_temperature(900.0)
 
 
 def test_non_natural_isotopes_are_refused_at_run_start():

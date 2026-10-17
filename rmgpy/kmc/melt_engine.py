@@ -70,6 +70,13 @@ degree after the participant's own edits); a kind pair is allowed or leak, so
 the leak and allowed pair counts are exact.  Leak propensity accrues to the
 leak integral (``leak_num``) and never fires.
 
+The leak fraction (``LEAK_DEFINITION``) is ``leak_num / leak_den`` with
+``leak_den = leak_num + integral of the PHYSICAL firing hazard``: a
+phi-thinned channel enters as proposal hazard x phi, accumulated as the sum of
+phi over its proposals (an unbiased estimate, Campbell's theorem); every other
+channel enters with its propensity.  A horizon view of an open segment holds
+the non-thinned part only.
+
 Matching cost: structural matches use the matcher's own embedding, finish
 and evaluate steps on a component-local view, with one optimization: hydrogen
 leaves that no edit names are enumerated in increasing atom order only
@@ -106,6 +113,9 @@ from rmgpy.kmc import window_matcher as wm
 from rmgpy.kmc.melt_state import MeltState, SetBond, SetRadical, materialize, _Builder, _backbone_keys
 
 MET_SCHEMA = "kmc-met-transport/1"
+LEAK_DEFINITION = ("leak_num / leak_den; leak_num = int leak hazard dt; leak_den = leak_num + int "
+                   "physical firing hazard dt, a phi-thinned channel counted as proposal hazard x phi "
+                   "(sum of phi over its proposals)")
 SPIN_FACTOR_RANGE = (0.25, 1.0)
 BUILTIN_SPECIES = ("H", "H2")
 
@@ -239,6 +249,30 @@ class TransportLaw:
     def met_length(self, backbone_atoms: int) -> int:
         return max(1, backbone_atoms // self.backbone_atoms_per_unit)
 
+    def check_range(self, t_low: float, t_high: float, samples: int = 64):
+        """Refuse a law that is singular, non-finite or non-positive anywhere in
+        [t_low, t_high] (WLF: ``C2 + T - T_wlf`` must stay positive; both laws:
+        D0 finite and positive on the endpoints and a uniform grid)."""
+        t_low, t_high = float(t_low), float(t_high)
+        if not (math.isfinite(t_low) and math.isfinite(t_high) and 0.0 < t_low <= t_high):
+            raise DeclarationError(f"invalid run temperature range [{t_low}, {t_high}]")
+        if self.segment_diffusivity[0] == "wlf":
+            _l, _d, t_ref, _c1, c2, t_wlf = self.segment_diffusivity
+            pole = t_wlf - c2
+            for label, t in (("run", t_low), ("reference", t_ref)):
+                if t <= pole:
+                    raise DeclarationError(
+                        f"segment_diffusivity (wlf) is singular: C2 + T - T_wlf <= 0 at the {label} "
+                        f"temperature {t} K (pole at T_wlf - C2 = {pole} K)")
+        grid = [t_low + (t_high - t_low) * k / max(1, samples - 1) for k in range(samples)]
+        for t in grid:
+            try:
+                d0 = self.d0(t)
+            except (OverflowError, ZeroDivisionError) as error:
+                raise DeclarationError(f"segment_diffusivity is not finite at {t} K ({error})") from None
+            if not math.isfinite(d0) or d0 <= 0.0:
+                raise DeclarationError(f"segment_diffusivity is not finite and positive at {t} K: D0 = {d0}")
+
 
 def escape_factor(k_act: float, k_d: float) -> float:
     """phi = k_D / (k_D + k_act): the Collins-Kimball factor of a summed activation."""
@@ -349,7 +383,7 @@ class _LocalView(wm._View):
 # --------------------------------------------------------------------------
 # H-leaf quotient enumeration (a matcher optimization only)
 # --------------------------------------------------------------------------
-_H_ORDER: Dict[int, Tuple] = {}
+_H_ORDER = weakref.WeakKeyDictionary()   # template -> plan-position constraints
 
 
 def _h_order(template: wm.Template) -> Tuple:
@@ -360,10 +394,9 @@ def _h_order(template: wm.Template) -> Tuple:
     keeping the increasing assignment alone leaves every deduplicated
     transition and every site unchanged (the embedding COUNT is not kept;
     the engine never reads it).  Equivalence to full enumeration is tested."""
-    key = id(template)
-    cached = _H_ORDER.get(key)
-    if cached is not None and cached[0] is template:
-        return cached[1]
+    cached = _H_ORDER.get(template)
+    if cached is not None:
+        return cached
     edited = set(template.edited_all)
     out = []
     for pieces in template.pieces:
@@ -382,7 +415,7 @@ def _h_order(template: wm.Template) -> Tuple:
             per_piece.append(tuple(constraint))
         out.append(tuple(per_piece))
     out = tuple(out)
-    _H_ORDER[key] = (template, out)
+    _H_ORDER[template] = out
     return out
 
 
@@ -691,11 +724,17 @@ def _graph(rows):
     import networkx as nx
     g = nx.Graph()
     for a, row in rows.items():
-        g.add_node(a, label=row[:5])
+        g.add_node(a, label=row[:5], hlabel=repr(row[:5]))
         for b, o in row[5]:
             if a < b:
-                g.add_edge(a, b, order=float(o))
+                g.add_edge(a, b, order=float(o), horder=repr(float(o)))
     return g
+
+
+def _isomorphic(g, h) -> bool:
+    import networkx as nx
+    return nx.is_isomorphic(g, h, node_match=lambda x, y: x["label"] == y["label"],
+                            edge_match=lambda x, y: x["order"] == y["order"])
 
 
 class SpeciesIdentity:
@@ -716,7 +755,7 @@ class SpeciesIdentity:
         self._add("H", MeltState(h1, {0: Origin("mobile", 0, "H", "H", False)}))
         self._add("H2", MeltState(h2, {i: Origin("mobile", 0, "H2", f"H{i}", False) for i in (0, 1)}))
         self.max_atoms = max(len(rows) for _n, _c, rows in self.forms)
-        self._cache: Dict[Tuple, Optional[str]] = {}
+        self._cache: Dict[Tuple, List] = {}
 
     def _add(self, name, state):
         cid = state.components.ids()[0]
@@ -725,6 +764,13 @@ class SpeciesIdentity:
             self.forms.append((name, comp, wm.form_rows(state, cid, form)))
 
     def identify(self, state, cid) -> Optional[str]:
+        """The declared species the component IS (exact labelled-graph
+        isomorphism against every resonance form of every declared species),
+        or None.  The cache is keyed on a Weisfeiler-Lehman hash of the
+        labelled graph (separates isomers by connectivity) and every hit is
+        confirmed by an exact isomorphism test against the cached graph, so a
+        hash collision can never return another species."""
+        import networkx as nx
         atoms = state.components.atoms(cid)
         if len(atoms) > self.max_atoms:
             return None
@@ -732,19 +778,19 @@ class SpeciesIdentity:
         nodes = state.atoms
         rows = {a: (nodes[a].element, nodes[a].isotope, nodes[a].charge, nodes[a].radical,
                     nodes[a].lone_pairs, tuple(sorted(nodes[a].edges.items()))) for a in atoms}
-        key = (comp, tuple(sorted((r[:5], tuple(sorted(o for _b, o in r[5]))) for r in rows.values())))
-        if key in self._cache:
-            return self._cache[key]
-        import networkx as nx
-        found = None
         g = _graph(rows)
+        key = (comp, nx.weisfeiler_lehman_graph_hash(g, node_attr="hlabel", edge_attr="horder",
+                                                     iterations=len(atoms)))
+        bucket = self._cache.setdefault(key, [])
+        for known, name in bucket:
+            if _isomorphic(g, known):
+                return name
+        found = None
         for name, c, declared in self.forms:
-            if c == comp and nx.is_isomorphic(
-                    g, _graph(declared), node_match=lambda x, y: x["label"] == y["label"],
-                    edge_match=lambda x, y: x["order"] == y["order"]):
+            if c == comp and _isomorphic(g, _graph(declared)):
                 found = name
                 break
-        self._cache[key] = found
+        bucket.append((g, found))
         return found
 
 
@@ -764,9 +810,15 @@ class Event:
 
 @dataclass(frozen=True)
 class Propensities:
+    """``enabled``: the proposal hazard of every firing channel; ``thinned``:
+    the part of it proposed at intrinsic weight and accepted with the phi of
+    its product pair (its physical hazard is ``thinned * E[phi]``); ``leak``:
+    refused branch-creating transitions (physical rates, never fired)."""
+
     enabled: float
     leak: float
     channels: Tuple[Tuple[Tuple, float], ...]
+    thinned: float = 0.0
 
     @property
     def total(self) -> float:
@@ -824,7 +876,7 @@ class MeltEngine:
     constant volume (default: the declaration's representative volume)."""
 
     def __init__(self, spec, catalog, temperature: float, rng, *, state=None, volume_m3=None,
-                 quotient: bool = True):
+                 quotient: bool = True, temperature_range=None):
         from rmgpy.polymer_spec import LinearHomopolymerSpec
         if not isinstance(spec, LinearHomopolymerSpec):
             raise DeclarationError(
@@ -832,6 +884,12 @@ class MeltEngine:
         self.spec = spec
         self.quotient = bool(quotient)
         self.transport = TransportLaw.from_spec(spec)
+        lo, hi = (float(temperature), float(temperature)) if temperature_range is None else \
+            (float(temperature_range[0]), float(temperature_range[1]))
+        if not lo <= float(temperature) <= hi:
+            raise DeclarationError(f"run temperature {temperature} K outside the declared range [{lo}, {hi}]")
+        self.transport.check_range(lo, hi)
+        self.temperature_range = (lo, hi)
         self.catalog = catalog
         self.rng = rng
         self.state = materialize(spec) if state is None else state
@@ -884,7 +942,11 @@ class MeltEngine:
 
     def set_temperature(self, temperature: float):
         """Reload the catalog's weights at ``temperature`` (structure unchanged)
-        and refresh every rate; the pending draw is invalidated."""
+        and refresh every rate; the pending draw is invalidated.  Refused
+        outside the run's temperature range (checked for transport at start)."""
+        lo, hi = self.temperature_range
+        if not lo <= float(temperature) <= hi:
+            raise DeclarationError(f"temperature {temperature} K outside the run range [{lo}, {hi}]")
         self._load(temperature)
         self._refresh_met()
 
@@ -932,7 +994,11 @@ class MeltEngine:
         return out
 
     def rebuild(self):
-        """Full recompute of every index layer from the current state."""
+        """Full recompute of every index layer from the current state.  The
+        clock's open segment is committed at the current (possibly horizon)
+        time first, so a resync never moves time backwards."""
+        if hasattr(self, "_leak_num_c"):
+            self._commit()
         size = max(self.state.atoms) + 1
         self._size = size
         self.entries: Dict[int, _Entry] = {}
@@ -1085,7 +1151,9 @@ class MeltEngine:
         met = math.fsum(r.allowed for r in self.pairs.values())
         channels.append((("met",), met))
         leak.append(math.fsum(r.leak for r in self.pairs.values()))
-        return Propensities(math.fsum(a for _k, a in channels), math.fsum(leak), tuple(channels))
+        thinned = math.fsum(a for k, a in channels if k[0] != "met" and self.classes[k[1]].met_reverse)
+        return Propensities(math.fsum(a for _k, a in channels), math.fsum(leak), tuple(channels),
+                            thinned)
 
     # -- snapshots (incremental == full recompute) ---------------------------
     def snapshot(self):
@@ -1111,7 +1179,7 @@ class MeltEngine:
         other.__dict__.update({k: v for k, v in self.__dict__.items()
                                if k in ("spec", "transport", "catalog", "rng", "state", "volume", "nav",
                                         "identity", "temperature", "templates", "classes", "weights",
-                                        "quotient")})
+                                        "quotient", "temperature_range")})
         other._index_revision = 0
         other.rebuild()
         return other.snapshot()
@@ -1211,23 +1279,38 @@ class MeltEngine:
         tx, products = self._begin_apply(tr, view)
         new = None
         if thinning:
-            if len(products) == 2:
-                new = self._scan(products)
-                rate = self.pair_rate(new[products[0]], new[products[1]])
-                if rate is None:
-                    phi, bypass = 1.0, (new[products[0]].species is not None
-                                        or new[products[1]].species is not None)
-                else:
-                    phi, bypass = rate.phi, rate.bypass
-                if bypass:
-                    self.met_counts["reverse_bypass"] += 1
-                if phi < 1.0 and self.rng.random() >= phi:
+            try:
+                phi, bypass = 1.0, False
+                if len(products) == 2:
+                    new = self._scan(products)
+                    rate = self.pair_rate(new[products[0]], new[products[1]])
+                    if rate is None:
+                        bypass = (new[products[0]].species is not None
+                                  or new[products[1]].species is not None)
+                    else:
+                        phi, bypass = rate.phi, rate.bypass
+                    if not (math.isfinite(phi) and 0.0 < phi <= 1.0):
+                        raise EngineError(f"{tr.template}: escape factor {phi!r} outside (0, 1]")
+                accept = phi >= 1.0 or self.rng.random() < phi
+            except BaseException:
+                if tx.open:
                     tx.rollback()
-                    self.met_counts["reverse_rejected"] += 1
-                    return None
-                self.met_counts["reverse_accepted"] += 1
-            else:
+                raise
+            # physical hazard of the thinned channels: each proposal contributes
+            # its phi (Campbell: an unbiased estimate of the integral of
+            # proposal hazard x phi)
+            self._leak_den_c += phi
+            self.leak_den = self._leak_den_c
+            if len(products) != 2:
                 self.met_counts["reverse_no_pair"] += 1
+            elif bypass:
+                self.met_counts["reverse_bypass"] += 1
+            if not accept:
+                tx.rollback()
+                self.met_counts["reverse_rejected"] += 1
+                return None
+            if len(products) == 2:
+                self.met_counts["reverse_accepted"] += 1
         journal = tx.commit()
         self._conserved(journal)
         old = [c for c, _a in journal.old_components]
@@ -1313,9 +1396,9 @@ class MeltEngine:
         if self.state.revision != self._revision:
             self.rebuild()
 
-    def _integrate(self, elapsed, enabled, leak):
+    def _integrate(self, elapsed, enabled, leak, thinned=0.0):
         self.leak_num = self._leak_num_c + leak * elapsed
-        self.leak_den = self._leak_den_c + (enabled + leak) * elapsed
+        self.leak_den = self._leak_den_c + (enabled - thinned + leak) * elapsed
         self.time = self._segment_start + elapsed
         self._commit()
 
@@ -1325,10 +1408,10 @@ class MeltEngine:
         self._leak_den_c = self.leak_den
         self._pending = None
 
-    def _view_to_horizon(self, until, enabled, leak):
+    def _view_to_horizon(self, until, enabled, leak, thinned=0.0):
         elapsed = until - self._segment_start
         self.leak_num = self._leak_num_c + leak * elapsed
-        self.leak_den = self._leak_den_c + (enabled + leak) * elapsed
+        self.leak_den = self._leak_den_c + (enabled - thinned + leak) * elapsed
         self.time = self._segment_start + elapsed
 
     def step(self, *, until: Optional[float] = None) -> Optional[Event]:
@@ -1354,11 +1437,11 @@ class MeltEngine:
                 self._stop = "absorbing" if pending.absorbing else "horizon"
                 if pending.absorbing and until is None:
                     return None
-                self._view_to_horizon(until, enabled, leak)
+                self._view_to_horizon(until, enabled, leak, prop.thinned)
                 self._pending = _Pending(pending.elapsed, pending.absorbing, enabled, leak,
                                          self.time, self._token())
                 return None
-            self._integrate(pending.elapsed, enabled, leak)
+            self._integrate(pending.elapsed, enabled, leak, prop.thinned)
             r = self.rng.random() * enabled
             key = None
             for k, a in prop.channels:
@@ -1429,6 +1512,7 @@ class MeltEngine:
             "events": self.events_fired, "null_proposals": self.null_proposals,
             "leak_num": self.leak_num, "leak_den": self.leak_den,
             "leak_fraction": self.leak_num / self.leak_den if self.leak_den else 0.0,
+            "leak_definition": LEAK_DEFINITION,
             "family_counts": dict(self.family_counts), "template_counts": dict(self.template_counts),
             "met": dict(self.met_counts), "conservation_checks": self.conservation_checks,
             "components": len(comps), "composition": {f"{k[0]}{k[1] or ''}": v for k, v in sorted(total.items(), key=str)},
