@@ -369,3 +369,47 @@ def allyl_recombination(temperature=700.0, weight=1.0e-2):
     return [Template("allyl_recombination", "toy_recombination", atoms, bonds,
                      [BondEdit(0, 4, 1), AtomEdit(0, radical=0), AtomEdit(4, radical=0)],
                      weight=weight)]
+
+
+# --------------------------------------------------------------------------
+# S5 rework 1: declarations written in other (equivalent) forms
+# --------------------------------------------------------------------------
+def _h(key):
+    return {"key": key, "element": "H"}
+
+
+ETHYLENE_EXPLICIT_H = {"atoms": [_atom("a"), _atom("b"), _h("h1"), _h("h2"), _h("h3"), _h("h4")],
+                       "bonds": [{"atoms": ["a", "b"], "order": 2},
+                                 {"atoms": ["a", "h1"], "order": 1}, {"atoms": ["a", "h2"], "order": 1},
+                                 {"atoms": ["b", "h3"], "order": 1}, {"atoms": ["b", "h4"], "order": 1}],
+                       "electronic_state": {"multiplicity": 1}}
+
+
+def styrene_graph(kekule=False):
+    """Styrene with the ring as aromatic 1.5 bonds or as a Kekule structure."""
+    ring = [_atom(f"p{i}", hydrogens=0 if i == 1 else 1) for i in range(1, 7)]
+    orders = [2, 1, 2, 1, 2, 1] if kekule else [1.5] * 6
+    bonds = [{"atoms": [f"p{i}", f"p{i % 6 + 1}"], "order": o} for i, o in zip(range(1, 7), orders)]
+    return {"atoms": [_atom("a", hydrogens=2), _atom("b", hydrogens=1)] + ring,
+            "bonds": [{"atoms": ["a", "b"], "order": 2}, {"atoms": ["b", "p1"], "order": 1}] + bonds,
+            "electronic_state": {"multiplicity": 1}}
+
+
+def ps_spec_declared(counts, styrene, monomer, mobile=None):
+    """PS with the given styrene (small species) and monomer_product graphs."""
+    mapping = ps_mapping(counts, mobile=dict(mobile or {}))
+    mapping["small_species"] = {"styrene": {"graph": styrene, "disposition": "mobile"}}
+    mapping["monomer_product"] = monomer
+    mapping["transport_model"] = {"met": ps_met()}
+    return LinearHomopolymerSpec.from_mapping(mapping)
+
+
+BUTANE = {"graph": {"atoms": [_atom("c1", hydrogens=3), _atom("c2", hydrogens=2), _atom("c3", hydrogens=2),
+                              _atom("c4", hydrogens=3)],
+                    "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", "c3"], "order": 1},
+                              {"atoms": ["c3", "c4"], "order": 1}],
+                    "electronic_state": {"multiplicity": 1}}, "disposition": "mobile"}
+
+ETHYL = {"graph": {"atoms": [_atom("c1", hydrogens=2, radical=1), _atom("c2", hydrogens=3)],
+                   "bonds": [{"atoms": ["c1", "c2"], "order": 1}],
+                   "electronic_state": {"multiplicity": 2}}, "disposition": "mobile"}

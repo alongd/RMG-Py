@@ -380,8 +380,189 @@ def test_time_series_is_written_at_requested_times_without_perturbing_the_run(tm
                 "polymer_condensed_mass_g", "Mn_g_mol", "Mw_g_mol", "polymer_conversion", "species_mol",
                 "polymer_derived_molecules_mol"):
         assert key in mom
-    rows = mo.side_by_side(last)
-    assert {r["tier"] for r in rows} == {1, 2, 3}
-    for r in rows:
-        if r["agreement"] == "exact":
-            assert rel(r["kmc"], r["mom_definition"]) <= REL, r
+    # a MoM run that reports exactly the kMC state agrees on every row
+    rows = mo.side_by_side(last, mom)
+    assert {r["tier"] for r in rows} == {1, 3}
+    assert all(r["agreement"] in ("equal", "within_bound") for r in rows), rows
+
+
+# --------------------------------------------------------------------------
+# rework 1
+# --------------------------------------------------------------------------
+def _mass_law_replay(spec, o):
+    """MoM's shared mass law on the exported quantities, written out here:
+    the tail pool (repeat x mu1 + end-group composition x E) plus every
+    explicit DP-n amount at the capped DP-n molar mass."""
+    from rmgpy.polymer_mass import EvolvedPoolMass, InventoryTerm
+    q = mo.mom_reported_quantities(o)
+    pool = EvolvedPoolMass("tail", spec.repeat_unit.composition, (q["mu0_mol"], q["mu1_mol"], q["mu2_mol"]),
+                           end_inventory=(InventoryTerm("ends", spec.end_composition, q["end_inventory_mol"],
+                                                        True),))
+    a = spec.repeat_unit.composition.molar_mass_g_mol()
+    e = spec.end_composition.molar_mass_g_mol()
+    return pool.mass_g + sum(amount * (a * int(n) + e) for n, amount in q["explicit_dp_mol"].items()), q
+
+
+def test_end_inventory_is_physical_and_bridge_scission_keeps_the_mass_law_exact():
+    spec = S.pe_spec({6: 1})
+    state = materialize(spec)
+    path = chain_carbons_in_order(state, 0)
+    u = spec.initialization().scale_factor / constants.Na
+    homolyse(state, path[5], path[6])                       # two DP3 radicals
+    o = mo.MeltObserver(spec, xs=0).observe(state)
+    replay, q = _mass_law_replay(spec, o)
+    kmc = o["tier1"]["polymer_derived"]["mass_g"]
+    assert q["mu0_mol"] == pytest.approx(2 * u, rel=REL)
+    assert q["end_inventory_mol"] == pytest.approx(u, rel=REL)  # one end pair: no cap atom appeared
+    assert rel(replay, kmc) <= REL, (replay, kmc)
+    assert rel(q["polymer_condensed_mass_g"], kmc) <= REL
+    law = o["mom_mass_law"]
+    assert law["difference_g"] == 0.0 and law["bound_g"] == 0.0
+    recombine(state, path[5], path[6])
+    o = mo.MeltObserver(spec, xs=0).observe(state)
+    replay, q = _mass_law_replay(spec, o)
+    assert q["end_inventory_mol"] == pytest.approx(u, rel=REL)
+    assert rel(replay, o["tier1"]["polymer_derived"]["mass_g"]) <= REL
+
+
+def test_mass_law_gap_of_radical_explicit_chains_is_covered_by_the_bound():
+    """The two DP3 radicals in the explicit ladder (xs = 3): MoM values each at
+    the capped DP3 mass, so the gap is one cap H per radical end."""
+    spec = S.pe_spec({6: 1})
+    state = materialize(spec)
+    path = chain_carbons_in_order(state, 0)
+    u = spec.initialization().scale_factor / constants.Na
+    homolyse(state, path[5], path[6])
+    o = mo.MeltObserver(spec, xs=3).observe(state)
+    replay, q = _mass_law_replay(spec, o)
+    kmc = o["tier1"]["polymer_derived"]["mass_g"]
+    h = Composition.from_mapping({"H": 1}).molar_mass_g_mol()
+    law = o["mom_mass_law"]
+    assert law["difference_g"] == pytest.approx(kmc - replay, rel=1e-9)
+    assert law["difference_g"] == pytest.approx(-2 * u * h, rel=1e-9)
+    assert abs(kmc - replay) <= law["bound_g"]
+
+
+def test_ps_chain_end_homolysis_mass_law_gap_is_covered_by_the_bound():
+    spec = S.ps_spec({10: 1})
+    state = materialize(spec)
+    path = chain_carbons_in_order(state, 0)
+    u = spec.initialization().scale_factor / constants.Na
+    homolyse(state, path[2], path[3])          # 2-phenylpropyl (B = 3, n = 1) + the rest (B = 17, n = 8)
+    o = mo.MeltObserver(spec, xs=0).observe(state)
+    replay, q = _mass_law_replay(spec, o)
+    kmc = o["tier1"]["polymer_derived"]["mass_g"]
+    a = spec.repeat_unit.composition.molar_mass_g_mol()
+    assert q["end_inventory_mol"] == pytest.approx(u, rel=REL)
+    assert q["mu1_mol"] == pytest.approx(9 * u, rel=REL)
+    assert kmc - replay == pytest.approx(u * a, rel=1e-9)         # one repeat unit split over two ends
+    assert o["mom_mass_law"]["difference_g"] == pytest.approx(kmc - replay, rel=1e-9)
+    assert abs(kmc - replay) <= o["mom_mass_law"]["bound_g"]
+
+
+def _add_monomer_to_chain_end(state, mobile_cid):
+    """Strip an H from the chain's backbone end and add the monomer's
+    backbone C=C to it (the monomer becomes the chain's next unit)."""
+    path = chain_carbons_in_order(state, 0)
+    S.strip_h(state, path[0])
+    flagged = [x for x in state.components.atoms(mobile_cid) if state.origin[x].is_backbone]
+    assert len(flagged) == 2
+    a, b = flagged
+    if sum(1 for y in state.atoms[a].edges if state.atoms[y].element == "H") < 2:
+        a, b = b, a
+    state.apply([SetBond(path[0], a, 0.0, 1.0), SetBond(a, b, 2.0, 1.0),
+                 SetRadical(path[0], 1, 0), SetRadical(b, 0, 1)])
+
+
+@pytest.mark.parametrize("case", ["explicit_h_species", "explicit_h_both", "kekule_species", "kekule_both"])
+def test_monomer_ancestry_is_matched_after_normalization(case):
+    if case.startswith("explicit_h"):
+        monomer = S.ETHYLENE_EXPLICIT_H if case == "explicit_h_both" else S.ETHYLENE_GRAPH
+        spec = S.pe_spec({4: 1}, small={"ethylene": {"graph": S.ETHYLENE_EXPLICIT_H, "disposition": "mobile"}},
+                         mobile={"ethylene": 1}, monomer=monomer)
+    else:
+        monomer = S.styrene_graph(kekule=(case == "kekule_both"))
+        spec = S.ps_spec_declared({4: 1}, S.styrene_graph(kekule=True), monomer, mobile={"styrene": 1})
+    state = materialize(spec)
+    (mob,) = [c for c in state.components.ids() if state.origin_kinds(c) == {"mobile"}]
+    assert state.components.backbone_count(mob) == 2
+    _add_monomer_to_chain_end(state, mob)
+    o = mo.MeltObserver(spec, xs=0).observe(state)
+    assert o["tier2"]["dp_moments_representative"] == [1, 5, 25]
+
+
+def test_declared_small_species_isomorphic_to_an_initial_chain_is_refused():
+    spec = S.pe_spec({2: 1}, small={"butane": S.BUTANE})
+    with pytest.raises(me.DeclarationError, match="butane"):
+        mo.MeltObserver(spec, xs=0)
+    with pytest.raises(me.DeclarationError, match="butane"):
+        me.MeltEngine(spec, S.ToyCatalog(), 700.0, np.random.default_rng(0))
+    ok = S.pe_spec({3: 1}, small={"butane": S.BUTANE})
+    o = mo.MeltObserver(ok, xs=0).observe(materialize(ok))
+    for got, want in zip(o["tier2"]["dp_moments_mol"], ok.macroscopic_moments_mol):
+        assert rel(got, want) <= REL
+    assert o["tier1"]["species"]["butane"]["molecules"] == 0
+
+
+def test_a_fragment_matching_a_declared_species_is_that_species():
+    """Run-time rule: a component isomorphic (under resonance) to a declared
+    species is that species whatever its ancestry, so a polymer-derived
+    fragment (here n_c = 1) that matches one leaves the polymer class."""
+    spec = S.pe_spec({6: 1}, small={"ethyl": S.ETHYL})
+    state = materialize(spec)
+    path = chain_carbons_in_order(state, 0)
+    homolyse(state, path[1], path[2])          # ethyl (B = 2, n = 1) + C10H21 radical
+    o = mo.MeltObserver(spec, xs=0).observe(state)
+    u = spec.initialization().scale_factor / constants.Na
+    assert o["tier1"]["species"]["ethyl"]["molecules"] == 1
+    assert o["tier1"]["polymer_derived"]["molecules"] == 1
+    assert mo.mom_reported_quantities(o)["species_mol"]["ethyl"] == pytest.approx(u, rel=REL)
+    assert "declared species" in mo.SPECIES_RULE
+
+
+def test_polymer_light_boundary_is_n_c_equal_one():
+    ps = S.ps_spec({10: 1})
+    state = materialize(ps)
+    path = chain_carbons_in_order(state, 0)
+    homolyse(state, path[2], path[3])          # 2-phenylpropyl: n_c = 1 -> polymer-derived
+    o = mo.MeltObserver(ps, xs=0).observe(state)
+    assert o["tier1"]["polymer_derived"]["molecules"] == 2 and o["tier1"]["undeclared_light"]["molecules"] == 0
+    pe = S.pe_spec({6: 1})
+    state = materialize(pe)
+    path = chain_carbons_in_order(state, 0)
+    homolyse(state, path[0], path[1])          # methyl: n_c = 0 -> light
+    o = mo.MeltObserver(pe, xs=0).observe(state)
+    assert o["tier1"]["polymer_derived"]["molecules"] == 1 and o["tier1"]["undeclared_light"]["molecules"] == 1
+
+
+def test_side_by_side_differences_come_from_the_supplied_mom_values():
+    spec = S.pe_spec({6: 1}, small={"methyl": S.METHYL})
+    o = mo.MeltObserver(spec, xs=0).observe(materialize(spec))
+    assert "accounting identity" in o["tier1"]["mom_definition_note"]
+    assert "accounting identity" in mo.__doc__
+    rows = {r["quantity"]: r for r in mo.side_by_side(o, {"polymer_condensed_mass_g": 1.0e5,
+                                                          "species_mol": {"methyl": 1.0}})}
+    mass = rows["polymer_condensed_mass_g"]
+    assert mass["kmc"] == pytest.approx(1000.0, rel=REL) and mass["mom"] == 1.0e5
+    assert mass["difference"] == pytest.approx(1000.0 - 1.0e5, rel=REL) and mass["agreement"] == "differs"
+    methyl = rows["species_mol.methyl"]
+    assert methyl["kmc"] == 0.0 and methyl["mom"] == 1.0 and methyl["agreement"] == "differs"
+    assert rows["mu0_mol"]["agreement"] == "missing_in_mom"
+    for key in ("mu0_mol", "mu1_mol", "mu2_mol", "end_inventory_mol", "polymer_condensed_mass_g",
+                "polymer_derived_mass_exact_g", "Mn_g_mol", "Mw_g_mol", "polymer_conversion",
+                "polymer_derived_molecules_mol", "species_mol.methyl", "species_mol.H", "species_mol.H2"):
+        assert key in rows, key
+    # a MoM quantity the kMC run never produced still gets a row
+    rows = {r["quantity"]: r for r in mo.side_by_side(o, {"explicit_dp_mol": {"7": 0.5}})}
+    assert rows["explicit_dp_mol.7"]["kmc"] == 0.0 and rows["explicit_dp_mol.7"]["agreement"] == "differs"
+    # no MoM values: no difference is claimed
+    assert all(r["difference"] is None and r["agreement"] == "no_mom_values" for r in mo.side_by_side(o))
+
+
+@pytest.mark.parametrize("label", ["H", "H2", "monomer_product"])
+def test_a_declared_label_colliding_with_a_builtin_is_refused(label):
+    spec = S.pe_spec({6: 1}, small={label: S.METHYL})
+    with pytest.raises(me.DeclarationError, match="built-in"):
+        mo.MeltObserver(spec, xs=0)
+    with pytest.raises(me.DeclarationError, match="built-in"):
+        me.MeltEngine(spec, S.ToyCatalog(builder=lambda T: S.pe_templates(T)), 700.0, np.random.default_rng(0))
