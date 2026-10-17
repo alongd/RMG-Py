@@ -648,3 +648,120 @@ def test_hydrogen_order_cache_holds_templates_weakly():
     del templates, t
     gc.collect()
     assert len(me._H_ORDER) <= alive - len(S.PE_WEIGHTS)
+
+
+# --------------------------------------------------------------------------
+# rework 2
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize("declared_kekule", [True, False])
+def test_declared_benzyl_is_identified_in_any_representation_and_bypasses_met(declared_kekule):
+    """The query is normalized like the declared forms: a Kekule-materialized,
+    an aromatic-materialized and a ring-radical resonance form of benzyl are
+    all 'benzyl', on a cached identity and on fresh ones; the engine pair of
+    two declared benzyls bypasses MET (phi = 1)."""
+    declared = {"benzyl": S.benzyl(declared_kekule)}
+    queries = []
+    for kekule in (True, False):
+        state = me.materialize(S.pe_spec({6: 1}, small={"benzyl": S.benzyl(kekule)}, mobile={"benzyl": 1}))
+        queries.append((state, [c for c in state.components.ids() if state.origin_kinds(c) == {"mobile"}][0]))
+    for smiles in ("[CH2]C1=CC=CC=C1", "[CH2]c1ccccc1", "C=C1C=C[CH]C=C1", "C=C1[CH]C=CC=C1"):
+        state = S.witness_state([smiles])
+        queries.append((state, state.components.ids()[0]))
+    spec = S.pe_spec({6: 1}, small=declared, mobile={"benzyl": 2})
+    cached = me.SpeciesIdentity(spec)
+    for state, cid in queries:
+        assert cached.identify(state, cid) == "benzyl"
+        assert me.SpeciesIdentity(spec).identify(state, cid) == "benzyl"
+    tolyl = S.witness_state(["Cc1ccc[c]c1"])          # an isomer (m-tolyl, sigma radical): not benzyl
+    assert cached.identify(tolyl, tolyl.components.ids()[0]) is None
+    engine = me.MeltEngine(spec, S.ToyCatalog(builder=S.benzyl_recombination), 700.0,
+                           np.random.default_rng(0))
+    mobiles = [c for c in engine.state.components.ids() if engine.state.origin_kinds(c) == {"mobile"}]
+    assert [engine.entries[c].species for c in mobiles] == ["benzyl", "benzyl"]
+    (pair,) = engine.pairs.values()
+    assert pair.bypass and pair.phi == 1.0
+
+
+def _two_end_radicals(seed=4):
+    engine = me.MeltEngine(S.pe_spec({10: 2}), S.ToyCatalog(names=("recombination",)), 700.0,
+                           np.random.default_rng(seed))
+    for chain in (0, 1):
+        S.strip_h(engine.state, S.end_carbons(engine.state, chain)[0])
+    engine.rebuild()
+    return engine
+
+
+@pytest.mark.parametrize("target", ["_scan", "_add"])
+def test_post_commit_failure_logs_the_event_and_leaves_a_consistent_index(target):
+    engine = _two_end_radicals()
+    original = getattr(engine, target)
+    calls = {"n": 0}
+
+    def once(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError(f"injected in {target}")
+        return original(*args, **kwargs)
+
+    before = engine.state.revision
+    setattr(engine, target, once)
+    with pytest.raises(RuntimeError, match="injected"):
+        engine.step()
+    delattr(engine, target)
+    assert engine.state.revision == before + 1                  # the chemistry is committed
+    assert len(engine.events) == 1 and engine.events_fired == 1
+    assert engine.events[0].template == "recombination"
+    assert set(engine.entries) == set(engine.state.components.ids())
+    engine.check_consistency()
+    assert engine.snapshot() == engine.fresh_snapshot()
+
+
+def _fast_leak_state():
+    spec = S.pe_spec({12: 1})       # fast declared transport: phi of the homolysis products ~ 1
+    engine = me.MeltEngine(spec, S.ToyCatalog(names=("homolysis", "recombination", "intra_mid_end")),
+                           700.0, np.random.default_rng(31))
+    state = engine.state
+    c = S.carbons(state, 0)
+    S.strip_h(state, sorted(c)[len(c) // 2])
+    S.strip_h(state, S.end_carbons(state, 0)[0])
+    engine.rebuild()
+    return engine
+
+
+def test_short_horizon_leak_report_is_not_degenerate():
+    engine = _fast_leak_state()
+    prop = engine.propensities()
+    exact = prop.leak / (prop.leak + _physical_reverse_hazard(engine))
+    result = engine.run(until=1.0e-6)
+    assert result.events == 0 and engine.null_proposals == 0
+    assert abs(result.leak - exact) < 0.02 * exact, (result.leak, exact)
+    parts = engine.report()["leak_estimate"]
+    assert parts["estimate"] is True
+    assert parts["leak_num"] == engine.leak_num and parts["leak_den"] == engine.leak_den
+    assert set(parts) >= {"non_thinned_integral", "phi_sum", "thinned_proposals", "open_thinned"}
+    assert "estimate" in me.LEAK_DEFINITION
+
+
+def test_long_run_leak_estimate_matches_the_physical_fraction():
+    engine = _leak_fraction_state()
+    prop = engine.propensities()
+    exact = prop.leak / (prop.leak + _physical_reverse_hazard(engine))
+    result = engine.run(until=40.0, max_events=1)
+    assert engine.null_proposals >= 40
+    assert abs(result.leak - exact) < 0.03
+    parts = engine.report()["leak_estimate"]
+    assert parts["thinned_proposals"] == engine.null_proposals + result.events
+
+
+def test_unchanged_rebuild_keeps_the_pending_draw():
+    def engine():
+        return me.MeltEngine(S.pe_spec({6: 1}), S.ToyCatalog(names=("homolysis",)), 700.0,
+                             np.random.default_rng(1))
+    horizon = 0.5748369784
+    plain, rebuilt = engine(), engine()
+    plain.run(until=horizon)
+    rebuilt.run(until=horizon)
+    rebuilt.rebuild()
+    a, b = plain.step(), rebuilt.step()
+    assert a.time == b.time and a.time > horizon
+    assert rebuilt.snapshot() == plain.snapshot()

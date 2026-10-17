@@ -281,3 +281,29 @@ CROTYL = {"graph": {"atoms": [_atom("c1", hydrogens=2, radical=1), _atom("c2", h
                               {"atoms": ["c3", "c4"], "order": 1}],
                     "electronic_state": {"multiplicity": 2}},
           "disposition": "mobile"}   # [CH2]C=CC; its isomer [CH2]CC=C is NOT declared
+
+
+def benzyl(kekule=True):
+    """Benzyl radical, ring bonds as a Kekule structure or as aromatic 1.5."""
+    ring = [_atom(f"r{i}", hydrogens=0 if i == 1 else 1) for i in range(1, 7)]
+    orders = [2, 1, 2, 1, 2, 1] if kekule else [1.5] * 6
+    bonds = [{"atoms": [f"r{i}", f"r{i % 6 + 1}"], "order": o} for i, o in zip(range(1, 7), orders)]
+    return {"graph": {"atoms": [_atom("c0", hydrogens=2, radical=1)] + ring,
+                      "bonds": [{"atoms": ["c0", "r1"], "order": 1}] + bonds,
+                      "electronic_state": {"multiplicity": 2}},
+            "disposition": "mobile"}
+
+
+AROMATIC_PORT = ((1.5, "C", True), (1.5, "C", True))
+
+
+def benzyl_recombination(temperature=700.0, weight=1.0e-2):
+    """Toy MET class: benzyl CH2(.) + benzyl CH2(.) (identical windows, role_swap)."""
+    def half(p):
+        return [WindowAtom("C", p, radical=1), WindowAtom("H", p), WindowAtom("H", p),
+                WindowAtom("C", p, "port", AROMATIC_PORT)]
+    atoms = half(0) + half(1)
+    bonds = [(0, 1, 1), (0, 2, 1), (0, 3, 1), (4, 5, 1), (4, 6, 1), (4, 7, 1)]
+    return [Template("benzyl_recombination", "toy_recombination", atoms, bonds,
+                     [BondEdit(0, 4, 1), AtomEdit(0, radical=0), AtomEdit(4, radical=0)],
+                     weight=weight)]
