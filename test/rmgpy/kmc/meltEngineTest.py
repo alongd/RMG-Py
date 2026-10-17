@@ -905,3 +905,57 @@ def test_fixed_seed_trajectory_is_byte_identical_to_the_pre_i152_engine():
                    dict(e.template_counts)))
     assert len(tr) == 136 and e.null_proposals == 18
     assert hashlib.sha256(digest.encode()).hexdigest() == GOLDEN_TRAJECTORY
+
+
+# --------------------------------------------------------------------------
+# I-152 rework 1: no cancellation in the non-thinned integral; pooled ensemble estimate
+# --------------------------------------------------------------------------
+def test_non_thinned_integral_does_not_cancel_against_a_huge_thinned_hazard():
+    weights = {"homolysis": 1.0e17, "recombination": 1.0e-2}
+    engine = me.MeltEngine(
+        S.pe_spec({10: 2}),
+        S.ToyCatalog(builder=lambda T: S.pe_templates(T, weights=weights),
+                     names=("homolysis", "recombination")),
+        700.0, np.random.default_rng(4))
+    for chain in (0, 1):
+        S.strip_h(engine.state, S.end_carbons(engine.state, chain)[0])
+    engine.rebuild()
+    prop = engine.propensities()
+    direct = math.fsum(a for k, a in prop.channels
+                       if k[0] == "met" or not engine.classes[k[1]].met_reverse)
+    assert direct > 0.0 and prop.thinned > 1.0e15 * direct
+    assert (prop.enabled - prop.thinned) < 0.5 * direct     # the subtraction has lost it
+    horizon = 1.0e-18
+    engine.run(until=horizon)
+    assert engine.events_fired == 0
+    assert engine.leak_estimate()["non_thinned_integral"] == pytest.approx(direct * horizon, rel=1e-9, abs=0.0)
+
+
+def test_pooled_estimate_is_consistent_in_runs_and_a_single_run_is_a_biased_ratio():
+    probe = _leak_fraction_state()
+    prop = probe.propensities()
+    exact = prop.leak / (prop.leak + (prop.enabled - prop.thinned) + _physical_reverse_hazard(probe))
+    horizon = 1.0 / prop.thinned          # about one proposal per run
+    reports, singles = [], []
+    for seed in range(240):
+        engine = _leak_fraction_state()
+        engine.rng = np.random.default_rng(5000 + seed)
+        engine.run(until=horizon)
+        reports.append(engine.report())
+        singles.append(reports[-1]["leak_fraction"])
+    pooled = me.pooled_leak_fraction(reports)
+    assert pooled["runs"] == 240
+    assert pooled["fraction"] == pytest.approx(exact, rel=0.06)
+    # the per-run fraction is a ratio estimate: its expectation is not the exact value
+    assert abs(np.mean(singles) - exact) > 0.05 * exact
+    assert "high" not in me.LEAK_DEFINITION
+    assert "pooled_leak_fraction" in me.LEAK_DEFINITION
+
+
+def test_pooled_fraction_is_the_ratio_of_ensemble_sums():
+    runs = [{"leak_estimate": {"leak_num": 1.0, "leak_den": 4.0}},
+            {"leak_estimate": {"leak_num": 0.0, "leak_den": 2.0}},
+            {"leak_estimate": {"leak_num": 3.0, "leak_den": 6.0}}]
+    pooled = me.pooled_leak_fraction(runs)
+    assert pooled["fraction"] == pytest.approx(4.0 / 12.0) and pooled["runs"] == 3
+    assert pooled["leak_num"] == 4.0 and pooled["leak_den"] == 12.0
