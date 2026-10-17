@@ -1709,6 +1709,54 @@ def test_c16_n_octyl_pair_balances_at_312_5_and_612_5_kelvin(rmg):
     assert te.cycle_gates(table, out) == []
 
 
+# --------------------------------------------------------------------------
+# I-147 rework 3: self-inverse classes, merged-copy kinetics, interpolation report
+# --------------------------------------------------------------------------
+def test_a_self_inverse_template_is_primary_and_never_derived(monkeypatch):
+    """A class that is its own reverse after merging (R3H on a linear chain,
+    C11 <-> C13) finds ITSELF as the partner of its transitions: it is a
+    primary with its production weight, never derived from itself.  (The real
+    C25 case needs the C25 compile; the partner discovery is forced here.)"""
+    payloads, counter = _toy_pair()
+    resolved = te.resolve_collisions([te.finish(p) for p in payloads])[0]
+    h_id, h_key = resolved[0]["record_event_id"], base_template(resolved[0])["key"]
+    monkeypatch.setattr(te, "_inverse_partners", lambda *a, **k: {(h_id, h_key)})
+    out = te.derive_weights(resolved, counter=counter)
+    h = base_template(out[0])
+    assert h.get("self_inverse") is True and "derived" not in h
+    assert te.weight_at(h, 437.3) == pytest.approx(
+        te._interpolate(h["weight"]["T"], h["weight"]["w"], 437.3), rel=1e-15)
+    assert len(te.loaded_templates(out, 437.3)) == 2
+
+
+def test_a_merged_copy_must_match_the_loaded_weight_on_its_own_kinetics():
+    """After the merge the copy's own table drifts: 1e-6 passes, 3 % is gated
+    and refuses the whole unit."""
+    for factor, ok in ((1 + 1e-6, True), (1.03, False)):
+        payloads, counter = _two_pairs(0.0)
+        out, _t = te.resolve_collisions(payloads)
+        out = te.derive_weights(out, counter=counter)
+        copy = next(p for p in out if p["record_event_id"] == _rid(2))
+        assert base_template(copy)["status"] == "merged"
+        base_template(copy)["weight"]["w"] = [w * factor for w in base_template(copy)["weight"]["w"]]
+        out = [te.finish(p) for p in out]
+        out2, table = _check(out, counter)
+        if ok:
+            assert all(r["status"] == "ok" for r in table) and not te.cycle_gates(table, out2)
+        else:
+            assert any("own kinetics" in r["reason"] for r in table)
+            assert te.cycle_gates(table, out2) and te.loaded_templates(out2, 700.0) == []
+
+
+def test_the_interpolation_report_ignores_derived_tables():
+    import template_emission_acceptance as acc
+    payloads, counter = _toy_pair()
+    out = _res(payloads, counter)
+    base_template(out[1])["weight"]["w"][7] *= 1.5      # a bad table that is never interpolated
+    rep = acc.interpolation_table(out)
+    assert rep["templates"] == 1 and rep["worst"] <= 1e-12
+
+
 # -- class overlap -----------------------------------------------------------
 def test_two_templates_of_one_family_on_one_site_are_a_class_overlap():
     w = homolysis(12, (5, 6))
