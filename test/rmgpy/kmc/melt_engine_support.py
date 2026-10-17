@@ -571,3 +571,46 @@ def h_loss_templates(temperature=700.0, weight=0.5):
     bonds = [(0, 1, 1), (0, 2, 1), (0, 3, 1), (0, 4, 1)]
     return [Template("h_loss", "toy_c_h_homolysis", atoms, bonds,
                      [BondEdit(0, 1, 0), AtomEdit(0, radical=1), AtomEdit(1, radical=1)], weight=weight)]
+
+
+# --------------------------------------------------------------------------
+# I-158 rework 2: pendant ring systems for the aromaticity equivalence
+# --------------------------------------------------------------------------
+def pendant_spec(counts, atoms, bonds, attach, elements=("C", "H"), lone_pairs=(0,)):
+    """-CH2-CH(R)-: the pendant R (declaration atoms and bonds) bonded to the
+    backbone CH through ``attach``."""
+    mapping = pe_mapping(counts)
+    mapping["repeat_unit"] = {
+        "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=1)] + list(atoms),
+        "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", attach], "order": 1}]
+                 + [{"atoms": [a, b], "order": o} for a, b, o in bonds],
+        "ports": {"head": {"atom": "c1", "bond_order": 1}, "tail": {"atom": "c2", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+    bounds = mapping["locality_policy"]["bounds"]
+    bounds["elements"] = sorted(elements)
+    bounds["lone_pairs"] = sorted(lone_pairs)
+    return LinearHomopolymerSpec.from_mapping(mapping)
+
+
+def _ring6(prefix, hydrogens, order=1.5):
+    keys = [f"{prefix}{i}" for i in range(1, 7)]
+    atoms = [_atom(k, hydrogens=hydrogens.get(k, 1)) for k in keys]
+    bonds = [(keys[i], keys[(i + 1) % 6], order) for i in range(6)]
+    return atoms, bonds
+
+
+def pyridyl_spec(counts):
+    """A 4-pyridyl pendant (heteroaromatic ring; RMG perceives carbon-only rings)."""
+    atoms, bonds = _ring6("p", {"p1": 0})
+    atoms[3] = {"key": "p4", "element": "N", "lone_pairs": 1}
+    return pendant_spec(counts, atoms, bonds, "p1", elements=("C", "H", "N"), lone_pairs=(0, 1))
+
+
+def biphenylyl_bromide_spec(counts):
+    """A 4'-bromo-4-biphenylyl pendant: two rings joined by a single bond, Br on the outer ring."""
+    a_atoms, a_bonds = _ring6("q", {"q1": 0, "q4": 0})
+    b_atoms, b_bonds = _ring6("r", {"r1": 0, "r4": 0})
+    return pendant_spec(counts, a_atoms + b_atoms + [_br("x")],
+                        a_bonds + b_bonds + [("q4", "r1", 1), ("r4", "x", 1)], "q1",
+                        elements=("Br", "C", "H"), lone_pairs=(0, 3))

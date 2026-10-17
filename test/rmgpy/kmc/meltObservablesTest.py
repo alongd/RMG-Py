@@ -1069,3 +1069,132 @@ def test_balance_holds_after_every_engine_event():
     engine.run(max_events=20, check=check)
     assert engine.events_fired == 20
     assert _channel(observer.observe(engine, releases=tracker), "aliphatic_C-H")["released_count"] == 20
+
+
+
+# --------------------------------------------------------------------------
+# I-158 rework 2
+# --------------------------------------------------------------------------
+TWO_BR_CHANNELS = [S.sgh_channel("aliphatic_C-Br", "aliphatic", 1.0), S.sgh_channel("benzylic_C-Br", "benzylic", 1.0)]
+
+
+def test_reversed_channel_order_gives_the_same_per_label_counts():
+    spec = S.two_bromine_spec({4: 1})
+    state = materialize(spec)
+    forward = mo.MeltObserver(spec, xs=0, side_group_homolysis=TWO_BR_CHANNELS)
+    tracker = forward.release_tracker(state)
+    _remove_br(state, chain_carbons_in_order(state, 0)[2])      # the aliphatic Br of unit 2
+    tracker.update(state)
+    backward = mo.MeltObserver(spec, xs=0, side_group_homolysis=list(reversed(TWO_BR_CHANNELS)))
+    for observer in (forward, backward):
+        o = observer.observe(state, releases=tracker)
+        ali, ben = _channel(o, "aliphatic_C-Br"), _channel(o, "benzylic_C-Br")
+        assert ali["released_tracked"] and ben["released_tracked"]
+        assert ali["released_count"] == 1 and ben["released_count"] == 0
+    other = mo.MeltObserver(spec, xs=0, side_group_homolysis=TWO_BR_CHANNELS[:1])
+    assert _channel(other.observe(state, releases=tracker), "aliphatic_C-Br")["released_tracked"] is False
+
+
+def _failing_once(engine, name="_add"):
+    original = getattr(engine, name)
+    calls = {"n": 0}
+
+    def once(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError(f"injected in {name}")
+        return original(*args, **kwargs)
+    setattr(engine, name, once)
+
+
+def test_export_resumes_after_a_recovered_post_commit_failure(tmp_path):
+    engine = _h_loss_engine()
+    path = tmp_path / "series.jsonl"
+    mo.write_time_series(engine, [0.0], path, xs=0, side_group_homolysis=H_CHANNEL)
+    _failing_once(engine)
+    with pytest.raises(RuntimeError, match="injected"):
+        mo.write_time_series(engine, [1.0e6], path, xs=0, side_group_homolysis=H_CHANNEL, append=True)
+    del engine._add
+    assert engine.events_fired == 1
+    last = mo.write_time_series(engine, [1.0e6], path, xs=0, side_group_homolysis=H_CHANNEL, append=True)[-1]
+    row = _channel(last, "aliphatic_C-H")
+    assert engine.events_fired == 20
+    assert row["released_tracked"] is True and row["released_count"] == 20
+
+
+def test_observing_before_the_event_callback_keeps_continuity():
+    engine = _h_loss_engine()
+    observer = mo.MeltObserver(engine.spec, xs=0, side_group_homolysis=H_CHANNEL)
+    tracker = observer.release_tracker(engine)
+
+    def hook(eng, event):
+        observer.observe(eng, releases=tracker)          # syncs the event first
+        tracker(eng, event)
+    engine.run(max_events=5, check=hook)
+    row = _channel(observer.observe(engine, releases=tracker), "aliphatic_C-H")
+    assert row["released_tracked"] is True and row["released_count"] == 5
+
+
+def test_a_callback_after_missed_events_reports_untracked():
+    engine = _h_loss_engine()
+    observer = mo.MeltObserver(engine.spec, xs=0, side_group_homolysis=H_CHANNEL)
+    tracker = observer.release_tracker(engine)
+    engine.run(max_events=2)                             # two events the tracker never saw
+    engine.run(max_events=1, check=tracker)
+    row = _channel(observer.observe(engine, releases=tracker), "aliphatic_C-H")
+    assert row["released_tracked"] is False and row["released_count"] is None
+
+
+def test_an_attached_tracker_is_the_exports_tracker(tmp_path):
+    engine = _h_loss_engine()
+    observer = mo.MeltObserver(engine.spec, xs=0, side_group_homolysis=H_CHANNEL)
+    tracker = observer.release_tracker(engine)
+    engine.run(max_events=1, check=tracker)
+    obs = mo.write_time_series(engine, [engine.time], tmp_path / "s.jsonl", xs=0, observer=observer)[-1]
+    row = _channel(obs, "aliphatic_C-H")
+    assert row["released_tracked"] is True and row["released_count"] == 1
+    assert observer.release_tracker(engine) is tracker
+
+
+def test_polymer_inventory_excludes_declared_sites_in_small_species():
+    spec = S.pvb_with_methyl_bromide({4: 1})
+    observer = mo.MeltObserver(spec, xs=0, side_group_homolysis=PVB_CHANNEL)
+    state = materialize(spec)
+    assert observer.site_inventory(state)[0] == {"tail": 4, "explicit": 0}      # not the CH3Br bromine
+    balance = observer.x_balance(state)["Br"]
+    assert balance["condensed_at_declared_sites_count"] == 4 and balance["other_count"] == 1
+
+
+@pytest.mark.parametrize("case", ["naphthyl_b_alternating", "naphthyl_b_not_alternating", "para_bromo_ps",
+                                  "pyridyl", "biphenylyl"])
+def test_ring_system_aromaticity_equals_whole_molecule_perception(case):
+    specs = {"naphthyl_b_alternating": lambda: S.bromonaphthyl_spec({3: 1}, "ring_b_alternating"),
+             "naphthyl_b_not_alternating": lambda: S.bromonaphthyl_spec({3: 1}, "ring_b_not_alternating"),
+             "para_bromo_ps": lambda: S.para_bromo_ps_spec({4: 1}),
+             "pyridyl": lambda: S.pyridyl_spec({3: 1}),
+             "biphenylyl": lambda: S.biphenylyl_bromide_spec({3: 1})}
+    state = materialize(specs[case]())
+    for cid in state.components.ids():
+        assert mo.aromatic_atoms(state, cid) == mo.aromatic_atoms_whole(state, cid)
+    if case != "pyridyl":
+        assert mo.aromatic_atoms(state, state.components.ids()[0])
+    br = [x for x in state.atoms if state.atoms[x].element == "Br"]
+    if br:
+        homolyse(state, next(iter(state.atoms[br[0]].edges)), br[0])        # an aryl sigma radical
+        for cid in state.components.ids():
+            assert mo.aromatic_atoms(state, cid) == mo.aromatic_atoms_whole(state, cid)
+
+
+def test_aromatic_perception_cost_does_not_grow_with_chain_length():
+    """Perception runs per ring system and is cached by its graph: the atoms
+    handed to RMG for a whole chain's inventory do not depend on DP."""
+    perceived = []
+    for dp in (8, 16):
+        spec = S.para_bromo_ps_spec({dp: 1})
+        observer = mo.MeltObserver(spec, xs=0, side_group_homolysis=[S.sgh_channel("aryl_C-Br", "aryl", 1.0)])
+        state = materialize(spec)
+        mo.clear_aromaticity_cache()
+        before = mo.PERCEPTION_STATS["atoms"]
+        assert observer.site_inventory(state)[0]["tail"] == dp
+        perceived.append(mo.PERCEPTION_STATS["atoms"] - before)
+    assert perceived[0] == perceived[1] and perceived[0] < 40
