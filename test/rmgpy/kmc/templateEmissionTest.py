@@ -1021,3 +1021,337 @@ def test_reference_acceptance():
     res = subprocess.run([sys.executable, str(HERE / "template_emission_acceptance.py"),
                           str(out), "c16", "--sample", "1"], capture_output=True, text=True)
     assert res.returncode == 0, res.stdout[-3000:] + res.stderr[-3000:]
+
+
+# --------------------------------------------------------------------------
+# I-147: weighted collision merge, reciprocal pairs, single orbit, equilibrium
+# cycle, class overlap, subset loading, the identity-transfer guard
+# --------------------------------------------------------------------------
+import itertools
+
+
+def _rid(k):
+    return "evt_" + format(k, "x") * 64
+
+
+def _variant(payload, rid, shift=0.0, *, key=None, reverse_of=None, grid=None):
+    """A copy of ``payload`` as record ``rid``: every emitted weight moved by
+    ``shift`` decades, optionally another key, reverse link or T grid."""
+    p = json.loads(json.dumps(payload))
+    p["record_event_id"] = rid
+    if reverse_of is not None:
+        p["reverse_of"] = reverse_of
+    for t in p["templates"]:
+        if t["status"] != "emitted":
+            continue
+        t["weight"]["w"] = [w * 10 ** shift for w in t["weight"]["w"]]
+        if grid is not None:
+            t["weight"]["T"] = list(grid)
+            t["weight"]["w"] = t["weight"]["w"][:len(grid)]
+        if key is not None:
+            t["key"] = key
+    return te.finish(p)
+
+
+def _group(shifts, **kw):
+    base = _toy_catalog()[0]
+    return [_variant(base, _rid(k + 1), s, **kw) for k, s in enumerate(shifts)]
+
+
+def _canon(payloads):
+    return te.canonical_json(sorted(payloads, key=lambda p: p["record_event_id"]))
+
+
+def test_collision_diameter_is_not_pairwise_or_chained():
+    """Three copies 0.006 decades apart in a row: every consecutive pair is
+    within 0.01 but the diameter is 0.012: refused, in any order."""
+    members = _group([0.0, 0.006, 0.012])
+    for order in itertools.permutations(members):
+        out, table = te.resolve_collisions(list(order))
+        assert [r["disposition"] for r in table] == ["refused:collision"]
+        assert table[0]["log10_diameter"] == pytest.approx(0.012, abs=1e-9)
+        for p in out:
+            t = base_template(p)
+            assert t["status"] == "refused" and t["refusal"]["status"] == "refused:collision"
+
+
+def test_weighted_collision_merges_within_the_diameter_in_any_order():
+    """The same three copies 0.004 apart merge into the least record id's
+    template at its weight; every input order gives one merged catalog."""
+    members = _group([0.0, 0.004, 0.008])
+    canon, owner_w = set(), None
+    for order in itertools.permutations(members):
+        out, table = te.resolve_collisions(list(order))
+        canon.add(_canon(out) + te.canonical_json(table))
+        assert [r["disposition"] for r in table] == ["merged"] and table[0]["copies"] == 3
+        assert table[0]["log10_diameter"] == pytest.approx(0.008, abs=1e-9)
+        by = {p["record_event_id"]: base_template(p) for p in out}
+        assert by[_rid(1)]["status"] == "emitted"
+        assert by[_rid(1)]["collision"]["records"] == [_rid(1), _rid(2), _rid(3)]
+        assert by[_rid(1)]["weight"] == base_template(members[0])["weight"]
+        assert by[_rid(2)]["status"] == by[_rid(3)]["status"] == "merged"
+        assert by[_rid(2)]["merged_into"]["record"] == _rid(1)
+        for p in out:
+            te.validate_payload(p)
+    assert len(canon) == 1
+
+
+def test_collision_on_different_temperature_grids_is_a_named_refusal():
+    """Copies on a 29-point and a 3-point grid cannot be compared: refused by
+    name, no exception."""
+    base = _toy_catalog()[0]
+    a = _variant(base, _rid(1))
+    b = _variant(base, _rid(2), grid=[300.0, 650.0, 1000.0])
+    out, table = te.resolve_collisions([a, b])
+    assert [r["disposition"] for r in table] == ["refused:collision_grid"]
+    for p in out:
+        t = base_template(p)
+        assert t["status"] == "refused" and t["refusal"]["status"] == "refused:collision_grid"
+        assert "grid" in t["refusal"]["reason"]
+        te.validate_payload(p)
+
+
+def test_catalog_refuses_a_zero_or_unusable_weight_or_channel():
+    """T_ch = 0, a non-finite and a non-positive weight at any grid
+    temperature fail the catalog gate (compile errors)."""
+    base = _toy_catalog()[0]
+    for bad in (0.0, -1.0, float("inf"), float("nan")):
+        p = json.loads(json.dumps(base))
+        base_template(p)["weight"]["w"][7] = bad
+        with pytest.raises(te.EmissionError, match="weight"):
+            te.resolve_collisions([p])
+    p = json.loads(json.dumps(base))
+    base_template(p)["counts"]["context"]["matcher"] = 0
+    with pytest.raises(te.EmissionError, match="T_ch"):
+        te.resolve_collisions([p])
+
+
+def _reciprocal(forward_keys, reverse_keys, reverse_shift=(0.0, 0.0)):
+    """Forward records 1.. and their reverse records 5..: ``*_keys`` give
+    each record's base template key."""
+    base = _toy_catalog()[0]
+    out = []
+    for k, key in enumerate(forward_keys):
+        out.append(_variant(base, _rid(k + 1), key=key, reverse_of=_rid(k + 5)))
+    for k, key in enumerate(reverse_keys):
+        out.append(_variant(base, _rid(k + 5), reverse_shift[k], key=key,
+                            reverse_of=_rid(k + 1)))
+    return out
+
+
+def test_a_merge_that_splits_a_reciprocal_pair_fails():
+    """Two forward records merge but their reverses carry different keys."""
+    kf, k1, k2 = "a" * 64, "b" * 64, "c" * 64
+    with pytest.raises(te.ReciprocalSplitError, match="reciprocal"):
+        te.resolve_collisions(_reciprocal([kf, kf], [k1, k2]))
+    # reverses merged, forward not
+    with pytest.raises(te.ReciprocalSplitError, match="reciprocal"):
+        te.resolve_collisions(_reciprocal([k1, k2], [kf, kf]))
+    # a reverse copy of a third forward record lands in the merged reverse
+    # template while its forward partner stays alone
+    payloads = _reciprocal([kf, kf, k1], [k2, k2, k2])
+    with pytest.raises(te.ReciprocalSplitError, match="reciprocal"):
+        te.resolve_collisions(payloads)
+
+
+def test_a_reciprocal_pair_merges_together_with_a_bijective_link():
+    kf, kr = "a" * 64, "b" * 64
+    out, table = te.resolve_collisions(_reciprocal([kf, kf], [kr, kr], (0.003, 0.0)))
+    assert sorted(r["disposition"] for r in table) == ["merged", "merged"]
+    links = {}
+    for p in out:
+        for t in p["templates"]:
+            if t["status"] == "emitted":
+                links[t["key"]] = t["reverse"]["key"]
+                assert t["reverse"]["records"] == sorted(
+                    {_rid(1), _rid(2)} if t["key"] == kr else {_rid(5), _rid(6)})
+    assert links == {kf: kr, kr: kf}
+
+
+def test_orbit_problem_on_a_witness():
+    """Transitions at the mirror bonds of a chain are one orbit; two inequivalent
+    bonds are not."""
+    w = homolysis(12, (5, 6))
+    rows = dict(w.reactant_rows())
+    t = cut(w).matcher(1.0, "t")
+    state = te.melt_state(rows)
+    keys = {rm.product_key(wm.product_rows(state, x)): x.edit_key[1:]
+            for x in wm.match([t], state).transitions}
+    edits = sorted(keys.values())
+    assert len(edits) >= 4
+    assert te.orbit_problem(rows, [edits[0]]) is None
+    assert te.orbit_problem(rows, [edits[0], edits[0]]) is None
+    why = te.orbit_problem(rows, [edits[0], edits[1]])
+    assert why and "orbit" in why
+    # the chain's reflection maps the first cleavage onto the last
+    assert te.orbit_problem(rows, [edits[0], edits[-1]]) is None
+
+
+class ForcedCounter(ToyCounter):
+    """The channel is every transition of ``template`` (the species check of
+    the toy oracle dropped): a class whose transitions are not symmetric."""
+
+    def __init__(self, template):
+        super().__init__()
+        self.template = template
+
+    def channel(self, family, molecules, direction, pathway, product_species):
+        rows = {}
+        for m in molecules:
+            rows.update(rm.molecule_rows(m))
+        state = te.melt_state(rows)
+        keys = sorted({rm.product_key(wm.product_rows(state, x))
+                       for x in wm.match([self.template], state).transitions})
+        return te.RmgChannel(tuple(keys), 2 * len(keys), tuple(((0,), (0,)) for _ in keys),
+                             (("kept", 2 * len(keys)),))
+
+
+def test_a_class_that_is_not_one_orbit_is_refused_non_transferable():
+    w = homolysis(12, (5, 6))
+    template = cut(w).matcher(1.0, "t")
+    counter = ForcedCounter(template)
+    case, row, ctx = member(w)
+    record = toy_record(w, 1)
+    out = te.emit_record(record, family=ToyFamily, members=[(case, row, ctx)],
+                         counter=counter, rates=stub_rates(counter), check_upstream=False)
+    t = base_template(out)
+    assert t["status"] == "refused" and t["refusal"]["status"] == "refused:non_transferable"
+    assert out["status"] == "refused"
+    # the ordinary mirror class of the same bond stays emitted
+    assert base_template(emit(w))["status"] == "emitted"
+
+
+# -- reciprocal pair on a witness ------------------------------------------
+KC = tuple(2.0e-3 * math.exp(t / 400.0) for t in GRID)
+
+
+def _pair_rates(by_orientation):
+    def rates(req):
+        return te.RateResult(GRID, by_orientation[req.orientation], 1.0, {}, ())
+    return rates
+
+
+def _toy_pair(kc=KC):
+    """Homolysis H of C12 at (3,4) (reversed record) and the recombination W
+    of its two products (as_generated), linked by ``reverse_of``;
+    ``k_W = Kc * k_H``."""
+    h = homolysis(12, (3, 4))
+    r = recombination(4, 8)
+    k_h = tuple(k for k in K_RULE)
+    k_w = tuple(a * c for a, c in zip(k_h, kc))
+    hid, wid = _rid(1), _rid(2)
+    rec_h = toy_record(h, 1)
+    rec_h.update(event_id=hid, reverse_of=wid)
+    rec_h["k_table"]["k"] = list(k_h)
+    rec_w = toy_record(r, 1, orientation="as_generated")
+    rec_w.update(event_id=wid, reverse_of=hid, reactant_multiplicities=[1, 1])
+    rec_w["k_table"]["k"] = list(k_w)
+    rates = _pair_rates({"reversed": k_h, "as_generated": k_w})
+    counter = ToyCounter()
+    case_h, row_h, ctx_h = member(h)
+    p_h = te.emit_record(rec_h, family=ToyFamily, members=[(case_h, row_h, ctx_h)],
+                         counter=counter, rates=rates, check_upstream=False)
+    case_w, row_w, ctx_w = member(r, direction="forward")
+    p_w = te.emit_record(rec_w, family=ToyFamily, members=[(case_w, row_w, ctx_w)],
+                         counter=counter, rates=rates, check_upstream=False)
+    return [p_h, p_w], {hid: rec_h, wid: rec_w}, counter
+
+
+def test_toy_reciprocal_pair_satisfies_the_cycle():
+    payloads, records, counter = _toy_pair()
+    assert [p["status"] for p in payloads] == ["emitted", "emitted"]
+    out, table = te.check_cycles(payloads, records, counter=counter)
+    assert len(table) == 1 and table[0]["status"] == "ok", table
+    assert table[0]["max_ratio_error"] <= 1e-12
+    assert table[0]["bijection"]["forward_to_reverse"] and table[0]["bijection"]["reverse_to_forward"]
+    assert [p["status"] for p in out] == ["emitted", "emitted"]
+
+
+def test_perturbing_one_weight_by_1e_6_fails_the_cycle():
+    payloads, records, counter = _toy_pair()
+    t = base_template(payloads[1])
+    t["weight"]["w"][10] *= 1 + 1e-6
+    payloads[1] = te.finish(payloads[1])
+    out, table = te.check_cycles(payloads, records, counter=counter)
+    assert table[0]["status"] == "refused:cycle"
+    assert table[0]["max_ratio_error"] == pytest.approx(1e-6, rel=1e-3)
+    for p in out:
+        t = base_template(p)
+        assert t["status"] == "refused" and t["refusal"]["status"] == "refused:cycle"
+        assert "ratio" in t["refusal"]["reason"]
+        assert p["status"] == "refused"
+
+
+def test_a_cycle_whose_inverse_edit_is_missing_is_refused():
+    """The reverse record's template does not undo the forward edit (it cuts
+    another bond): the bijection fails."""
+    payloads, records, counter = _toy_pair()
+    other = emit(homolysis(12, (4, 5)))
+    # the C12 (4,5) template in place of the (3,4) one
+    payloads[0] = te.finish(dict(other, record_event_id=payloads[0]["record_event_id"],
+                                 reverse_of=payloads[0]["reverse_of"]))
+    out, table = te.check_cycles(payloads, records, counter=counter)
+    assert table[0]["status"] == "refused:cycle"
+    assert "inverse" in base_template(out[0])["refusal"]["reason"] or \
+        "inverse" in base_template(out[1])["refusal"]["reason"]
+
+
+# -- class overlap -----------------------------------------------------------
+def test_two_templates_of_one_family_on_one_site_are_a_class_overlap():
+    w = homolysis(12, (5, 6))
+    t2, t3 = cut(w, 2).matcher(1.0, "r2"), cut(w, 3).matcher(1.0, "r3")
+    assert t2.family == t3.family == "toy_cc"
+    rows = alkane(12)[0]
+    found = te.class_overlaps([t2, t3], rows)
+    assert found and all(set(x["templates"]) == {"r2", "r3"} for x in found)
+    with pytest.raises(te.ClassOverlapError, match="r2"):
+        te.check_class_overlap([t2, t3], rows)
+    # different families producing one net edit are distinct pathways: they sum
+    other = wm.Template("r3", "other_family", t3.atoms, t3.bonds, t3.edits, weight=1.0)
+    assert te.class_overlaps([t2, other], rows) == []
+    te.check_class_overlap([t2, other], rows)
+    result = wm.match([t2, other], te.melt_state(rows))
+    assert len(result.transitions) > len({tr.identity[2] for tr in result.transitions})
+
+
+# -- leftovers ---------------------------------------------------------------
+def test_a_subset_without_the_owner_of_a_merged_template_is_refused_or_carried():
+    """C16 n-octyl recombination evt_7b9bec086f4e... is merged into the
+    template of evt_19427fbeeceb...: loading it alone must not silently load
+    nothing."""
+    payloads = json.loads((HERE / "fixtures" / "i147_c16_orphan_payloads.json").read_text())
+    by = {p["record_event_id"][:16]: p for p in payloads}
+    merged_record = by["evt_7b9bec086f4e"]
+    assert [t["status"] for t in merged_record["templates"]] == ["merged"]
+    assert merged_record["status"] == "emitted"
+    with pytest.raises(te.EmissionError, match="orphan"):
+        te.loaded_templates([merged_record], 700.0)
+    carried = te.carry_owners([merged_record], payloads)
+    loaded = te.loaded_templates(carried, 700.0)
+    assert len(loaded) == 1
+    both = te.carry_owners(payloads, payloads)
+    assert len(te.loaded_templates(both, 700.0)) == 1
+
+
+def test_a_non_identity_request_without_a_generated_reaction_stays_refused(monkeypatch):
+    """The generator returns nothing for a non-identity request: no explicit
+    identity transfer is tried and the result is a refusal."""
+    from rmgpy.kmc import compiler
+    rates = te.ProductionRates.__new__(te.ProductionRates)
+    rates.compiler = type("C", (), {"kinetics_database": None, "generation_provider": None})()
+    rates._cache, rates._max, rates.calls, rates.generated = {}, 8, 0, 0
+    rates.explicit_calls = 0
+    rates._counter = ToyCounter()
+    monkeypatch.setattr(compiler, "_resolve_generator",
+                        lambda *a, **k: (lambda *x, **y: []))
+
+    def boom(self, request):
+        raise AssertionError("the explicit identity path must not run")
+    monkeypatch.setattr(te.ProductionRates, "explicit", boom)
+    w = homolysis(8, (3, 4))
+    r, p = dict(w.reactant_rows()), dict(w.product_rows())
+    req = te.RateRequest("toy_cc", "toy", "reversed", r, p, w)
+    assert not rates.identity(req)
+    res = rates(req)
+    assert res.problems and "0 reactions" in res.problems[0]
+    assert res.k == ()
