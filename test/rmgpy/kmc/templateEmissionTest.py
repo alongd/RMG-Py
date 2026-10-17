@@ -2054,3 +2054,19 @@ def test_the_boundary_accepts_an_exact_scaling_and_refuses_beyond_it():
         assert not te.beyond_tolerance(exact)
         assert te.beyond_tolerance(abs(math.log10(w / (w * 10 ** (sign * 0.01001)))))
     assert te.beyond_tolerance(0.01 + 1e-9)
+
+
+def test_an_acceptance_selection_that_matches_nothing_gates():
+    """A cluster compile numbers its records differently: --event prefixes that
+    match no record, or a selection that processes none, must not pass."""
+    import argparse
+    import template_emission_acceptance as acc
+    records = [{"event_id": "evt_08c9cfdc6831aa"}, {"event_id": "evt_1561c939b769bb"}]
+    args = argparse.Namespace(event=["evt_9c441910", "evt_08c9cf"])
+    assert acc.selection_problems(args, records, [records[0]]) == [
+        "--event prefix evt_9c441910 matches no record"]
+    none = acc.selection_problems(argparse.Namespace(event=["evt_9c441910"]), records, [])
+    assert any("evt_9c441910" in g for g in none) and any("processed 0 records" in g for g in none)
+    assert acc.selection_problems(argparse.Namespace(event=None), records, records) == []
+    assert acc.selection_problems(argparse.Namespace(event=None), records, []) == [
+        "the selection processed 0 records (a vacuous run)"]
