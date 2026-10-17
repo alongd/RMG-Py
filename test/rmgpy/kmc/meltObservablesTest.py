@@ -380,10 +380,10 @@ def test_time_series_is_written_at_requested_times_without_perturbing_the_run(tm
                 "polymer_condensed_mass_g", "Mn_g_mol", "Mw_g_mol", "polymer_conversion", "species_mol",
                 "polymer_derived_molecules_mol"):
         assert key in mom
-    # a MoM run that reports exactly the kMC state agrees on every row
+    # a MoM run that reports exactly the kMC state agrees on every compared row
     rows = mo.side_by_side(last, mom)
     assert {r["tier"] for r in rows} == {1, 3}
-    assert all(r["agreement"] in ("equal", "within_bound") for r in rows), rows
+    assert all(r["agreement"] in ("equal", "not_a_comparison") for r in rows), rows
 
 
 # --------------------------------------------------------------------------
@@ -549,14 +549,17 @@ def test_side_by_side_differences_come_from_the_supplied_mom_values():
     assert methyl["kmc"] == 0.0 and methyl["mom"] == 1.0 and methyl["agreement"] == "differs"
     assert rows["mu0_mol"]["agreement"] == "missing_in_mom"
     for key in ("mu0_mol", "mu1_mol", "mu2_mol", "end_inventory_mol", "polymer_condensed_mass_g",
-                "polymer_derived_mass_exact_g", "Mn_g_mol", "Mw_g_mol", "polymer_conversion",
+                "convention_gap_g", "Mn_g_mol", "Mw_g_mol", "polymer_conversion",
                 "polymer_derived_molecules_mol", "species_mol.methyl", "species_mol.H", "species_mol.H2"):
         assert key in rows, key
     # a MoM quantity the kMC run never produced still gets a row
     rows = {r["quantity"]: r for r in mo.side_by_side(o, {"explicit_dp_mol": {"7": 0.5}})}
     assert rows["explicit_dp_mol.7"]["kmc"] == 0.0 and rows["explicit_dp_mol.7"]["agreement"] == "differs"
     # no MoM values: no difference is claimed
-    assert all(r["difference"] is None and r["agreement"] == "no_mom_values" for r in mo.side_by_side(o))
+    plain = mo.side_by_side(o)
+    assert all(r["difference"] is None and r["agreement"] == "no_mom_values"
+               for r in plain if r["quantity"] != "convention_gap_g")
+    assert [r["agreement"] for r in plain if r["quantity"] == "convention_gap_g"] == ["not_a_comparison"]
 
 
 @pytest.mark.parametrize("label", ["H", "H2", "monomer_product"])
@@ -566,3 +569,107 @@ def test_a_declared_label_colliding_with_a_builtin_is_refused(label):
         mo.MeltObserver(spec, xs=0)
     with pytest.raises(me.DeclarationError, match="built-in"):
         me.MeltEngine(spec, S.ToyCatalog(builder=lambda T: S.pe_templates(T)), 700.0, np.random.default_rng(0))
+
+
+# --------------------------------------------------------------------------
+# rework 2
+# --------------------------------------------------------------------------
+def test_pendant_bromine_loss_is_booked_as_side_group_depletion():
+    """MoM's depletion-aware law: a mu1 + e E - mu0 defect - sum_rows
+    max(0, sites mu1 - Z) M_X (+ explicit).  One Br homolysed off a PVB DP4
+    chain: Z = 3 sites, one Br lost, the law equals the exact mass."""
+    spec = S.pvb_spec({4: 1})
+    state = materialize(spec)
+    path = chain_carbons_in_order(state, 0)
+    c2 = path[1]
+    br = next(x for x in state.atoms[c2].edges if state.atoms[x].element == "Br")
+    homolyse(state, c2, br)
+    o = mo.MeltObserver(spec, xs=0).observe(state)
+    u = spec.initialization().scale_factor / constants.Na
+    m_br = Composition.from_mapping({"Br": 1}).molar_mass_g_mol()
+    law = o["mom_mass_law"]
+    kmc = o["tier1"]["polymer_derived"]["mass_g"]
+    assert rel(kmc, 1000.0 - u * m_br) <= REL and kmc < 0.9 * 1000.0
+    (row,) = law["side_group_depletion"]
+    assert row["sites_per_unit"] == 1 and rel(row["molar_mass_g_mol"], m_br) <= REL
+    assert rel(row["Z_mol"], 3 * u) <= REL and rel(row["lost_mol"], u) <= REL
+    assert law["chain_mass_defect_g_mol"] == 0.0
+    a = spec.repeat_unit.composition.molar_mass_g_mol()
+    e = spec.end_composition.molar_mass_g_mol()
+    hand = a * 4 * u + e * u - (1 * 4 * u - 3 * u) * m_br
+    assert rel(law["value_g"], hand) <= REL and rel(law["value_g"], kmc) <= REL
+    assert law["difference_g"] == 0.0 and law["bound_g"] == 0.0
+    q = mo.mom_reported_quantities(o)
+    assert rel(q["polymer_condensed_mass_g"], kmc) <= REL
+    assert rel(q["polymer_conversion"], u * m_br / 1000.0) <= 1e-9
+    assert rel(q["side_group_Z_mol"][row["label"]], 3 * u) <= REL
+
+
+def test_pendant_phenyl_loss_is_booked_as_side_group_depletion():
+    spec = S.ps_spec({10: 1})
+    state = materialize(spec)
+    path = chain_carbons_in_order(state, 0)
+    c2 = path[9]                                  # the CH of unit 5
+    ring = next(x for x in state.atoms[c2].edges
+                if state.atoms[x].element == "C" and not state.origin[x].is_backbone)
+    homolyse(state, c2, ring)                     # phenyl radical leaves the chain
+    o = mo.MeltObserver(spec, xs=0).observe(state)
+    u = spec.initialization().scale_factor / constants.Na
+    m_ph = Composition.from_mapping({"C": 6, "H": 5}).molar_mass_g_mol()
+    law = o["mom_mass_law"]
+    kmc = o["tier1"]["polymer_derived"]["mass_g"]
+    (row,) = law["side_group_depletion"]
+    assert rel(row["molar_mass_g_mol"], m_ph) <= REL and rel(row["Z_mol"], 9 * u) <= REL
+    assert rel(law["value_g"], kmc) <= REL and rel(kmc, 1250.0 - u * m_ph) <= REL
+    assert law["difference_g"] == 0.0
+    assert o["tier1"]["undeclared_light"]["molecules"] == 1
+
+
+def test_explicit_ladder_term_of_the_mass_law_is_the_capped_dp_mass():
+    spec = S.pe_spec({6: 1, 10: 1})
+    state = materialize(spec)
+    path = chain_carbons_in_order(state, 0)       # the DP6 chain
+    assert len(path) == 12
+    homolyse(state, path[5], path[6])             # two DP3 radicals: explicit at xs = 3
+    o = mo.MeltObserver(spec, xs=3).observe(state)
+    u = spec.initialization().scale_factor / constants.Na
+    a = spec.repeat_unit.composition.molar_mass_g_mol()
+    e = spec.end_composition.molar_mass_g_mol()
+    law = o["mom_mass_law"]
+    assert rel(law["explicit_capped_mass_g"], 2 * u * (3 * a + e)) <= REL
+    hand = a * 10 * u + e * u + 2 * u * (3 * a + e)
+    assert rel(law["value_g"], hand) <= REL
+
+
+def test_mom_numbers_are_compared_only_in_the_same_convention():
+    """A MoM run that released 49.9 g of styrene the kMC melt did not: every
+    mass row differs, and the convention gap is never an agreement."""
+    spec = S.ps_spec({10: 1}, declare_styrene=True)
+    state = materialize(spec)
+    path = chain_carbons_in_order(state, 0)
+    homolyse(state, path[2], path[3])             # convention gap of one repeat unit (~125 g)
+    o = mo.MeltObserver(spec, xs=0).observe(state)
+    assert o["mom_mass_law"]["bound_g"] > 49.9
+    mom = mo.mom_reported_quantities(o)
+    m_sty = Composition.from_mapping({"C": 8, "H": 8}).molar_mass_g_mol()
+    mom["polymer_condensed_mass_g"] -= 49.9
+    mom["polymer_conversion"] += 49.9 / o["initial_polymer_mass_g"]
+    mom["species_mol"]["styrene"] += 49.9 / m_sty
+    rows = {r["quantity"]: r for r in mo.side_by_side(o, mom)}
+    for key in ("polymer_condensed_mass_g", "polymer_conversion", "species_mol.styrene"):
+        assert rows[key]["agreement"] == "differs", rows[key]
+    gap = rows["convention_gap_g"]
+    assert gap["agreement"] == "not_a_comparison" and gap["mom"] is None and gap["difference"] is None
+    assert abs(gap["kmc"]) <= gap["bound"]
+    assert not any(r["agreement"] == "within_bound" for r in rows.values())
+    assert "polymer_derived_mass_exact_g" not in rows
+
+
+@pytest.mark.parametrize("relative, expected", [(1.0e-6, "differs"), (1.0e-14, "equal")])
+def test_equal_means_a_relative_difference_of_at_most_1e_12(relative, expected):
+    spec = S.pe_spec({6: 1})
+    o = mo.MeltObserver(spec, xs=0).observe(materialize(spec))
+    mom = mo.mom_reported_quantities(o)
+    mom["polymer_condensed_mass_g"] *= 1.0 + relative
+    rows = {r["quantity"]: r for r in mo.side_by_side(o, mom)}
+    assert rows["polymer_condensed_mass_g"]["agreement"] == expected

@@ -413,3 +413,18 @@ BUTANE = {"graph": {"atoms": [_atom("c1", hydrogens=3), _atom("c2", hydrogens=2)
 ETHYL = {"graph": {"atoms": [_atom("c1", hydrogens=2, radical=1), _atom("c2", hydrogens=3)],
                    "bonds": [{"atoms": ["c1", "c2"], "order": 1}],
                    "electronic_state": {"multiplicity": 2}}, "disposition": "mobile"}
+
+
+def pvb_spec(counts):
+    """Toy poly(vinyl bromide), -CH2-CHBr-: one Br side group per unit."""
+    mapping = pe_mapping(counts)
+    mapping["label"] = "toy poly(vinyl bromide)"
+    mapping["repeat_unit"] = {
+        "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=1), dict(_atom("x", "Br"), lone_pairs=3)],
+        "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", "x"], "order": 1}],
+        "ports": {"head": {"atom": "c1", "bond_order": 1}, "tail": {"atom": "c2", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+    mapping["locality_policy"]["bounds"]["elements"] = ["Br", "C", "H"]
+    mapping["locality_policy"]["bounds"]["lone_pairs"] = [0, 3]
+    return LinearHomopolymerSpec.from_mapping(mapping)
