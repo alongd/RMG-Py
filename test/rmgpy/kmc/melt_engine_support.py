@@ -494,3 +494,80 @@ def pvb_spec_with_monomer(counts, mobile):
         "electronic_state": {"multiplicity": 1},
     }
     return LinearHomopolymerSpec.from_mapping(_with_br(mapping))
+
+
+# --------------------------------------------------------------------------
+# I-158 rework 1
+# --------------------------------------------------------------------------
+METHYL_BROMIDE = {"graph": {"atoms": [_atom("c", hydrogens=3), _br("x")],
+                            "bonds": [{"atoms": ["c", "x"], "order": 1}],
+                            "electronic_state": {"multiplicity": 1}}, "disposition": "mobile"}
+
+
+def pvb_with_methyl_bromide(counts, mobile=1):
+    mapping = _with_br(pe_mapping(counts, small={"methyl_bromide": METHYL_BROMIDE},
+                                  mobile={"methyl_bromide": mobile}))
+    mapping["repeat_unit"] = {
+        "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=1), _br("x")],
+        "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", "x"], "order": 1}],
+        "ports": {"head": {"atom": "c1", "bond_order": 1}, "tail": {"atom": "c2", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+    return LinearHomopolymerSpec.from_mapping(mapping)
+
+
+NAPHTHYL_KEKULE = {
+    # ring A: n1 n2 n3 n4 n4a n8a; ring B: n4a n5 n6 n7 n8 n8a; Br on n6 (ring B)
+    "ring_b_alternating": [("n4a", "n5", 2), ("n5", "n6", 1), ("n6", "n7", 2), ("n7", "n8", 1), ("n8", "n8a", 2),
+                           ("n8a", "n4a", 1), ("n8a", "n1", 1), ("n1", "n2", 2), ("n2", "n3", 1), ("n3", "n4", 2),
+                           ("n4", "n4a", 1)],
+    "ring_b_not_alternating": [("n8a", "n1", 2), ("n1", "n2", 1), ("n2", "n3", 2), ("n3", "n4", 1),
+                               ("n4", "n4a", 2), ("n4a", "n8a", 1), ("n4a", "n5", 1), ("n5", "n6", 2),
+                               ("n6", "n7", 1), ("n7", "n8", 2), ("n8", "n8a", 1)],
+}
+
+
+def bromonaphthyl_spec(counts, kekule):
+    """-CH2-CH(C10H6Br)-: a 6-bromo-1-naphthyl pendant, one aryl C-Br site per unit,
+    declared in the given Kekule form."""
+    mapping = pe_mapping(counts)
+    hydrogens = {"n1": 0, "n4a": 0, "n8a": 0, "n6": 0}
+    ring = [_atom(k, hydrogens=hydrogens.get(k, 1)) for k in
+            ("n1", "n2", "n3", "n4", "n4a", "n5", "n6", "n7", "n8", "n8a")]
+    mapping["repeat_unit"] = {
+        "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=1), _br("x")] + ring,
+        "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", "n1"], "order": 1},
+                  {"atoms": ["n6", "x"], "order": 1}]
+                 + [{"atoms": [a, b], "order": o} for a, b, o in NAPHTHYL_KEKULE[kekule]],
+        "ports": {"head": {"atom": "c1", "bond_order": 1}, "tail": {"atom": "c2", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+    return LinearHomopolymerSpec.from_mapping(_with_br(mapping))
+
+
+def oxy_polymer_spec(counts, charge):
+    """-CH2-CH(O)-: a terminal O pendant with formal charge -1 (alkoxide,
+    3 lone pairs) or +1 (oxenium, 2 lone pairs)."""
+    mapping = pe_mapping(counts)
+    lone_pairs = 3 if charge < 0 else 2
+    mapping["repeat_unit"] = {
+        "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=1),
+                  {"key": "o", "element": "O", "charge": charge, "lone_pairs": lone_pairs}],
+        "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", "o"], "order": 1}],
+        "ports": {"head": {"atom": "c1", "bond_order": 1}, "tail": {"atom": "c2", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+    bounds = mapping["locality_policy"]["bounds"]
+    bounds["elements"] = ["C", "H", "O"]
+    bounds["lone_pairs"] = [0, 2, 3]
+    bounds["formal_charges"] = [-1, 0, 1]
+    return LinearHomopolymerSpec.from_mapping(mapping)
+
+
+def h_loss_templates(temperature=700.0, weight=0.5):
+    """Toy C-H homolysis of a CH3 chain end: CH3-CH2- -> .CH2-CH2- + H."""
+    atoms = [WindowAtom("C"), WindowAtom("H"), WindowAtom("H"), WindowAtom("H"),
+             WindowAtom("C", 0, "port", MID)]
+    bonds = [(0, 1, 1), (0, 2, 1), (0, 3, 1), (0, 4, 1)]
+    return [Template("h_loss", "toy_c_h_homolysis", atoms, bonds,
+                     [BondEdit(0, 1, 0), AtomEdit(0, radical=1), AtomEdit(1, radical=1)], weight=weight)]

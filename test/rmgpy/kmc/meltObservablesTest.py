@@ -882,3 +882,190 @@ def test_channel_rules_mirror_the_solver():
         except mo.ObservablesError:
             ok_mine = False
         assert ok_solver == ok_mine, channels
+
+
+# --------------------------------------------------------------------------
+# I-158 rework 1
+# --------------------------------------------------------------------------
+H_CHANNEL = [S.sgh_channel("aliphatic_C-H", "aliphatic", 4.0, gas="[H]")]
+
+
+def _h_loss_engine(seed=3, **kw):
+    spec = S.pe_spec({6: 10})                         # 20 CH3 ends: up to 20 H-loss events
+    return me.MeltEngine(spec, S.ToyCatalog(builder=lambda T: S.h_loss_templates(T, **kw)), 700.0,
+                         np.random.default_rng(seed))
+
+
+def _balance_holds(observer, state, tracker):
+    for element, b in observer.x_balance(state, tracker).items():
+        parts = (b["condensed_at_declared_sites_count"] + b["condensed_elsewhere_count"] + b["free_count"]
+                 + b["other_count"])
+        assert b["initial_count"] == parts, (element, b)
+
+
+def test_appended_export_keeps_cumulative_releases(tmp_path):
+    engine = _h_loss_engine()
+    path = tmp_path / "series.jsonl"
+    first = mo.write_time_series(engine, [10.0], path, xs=0, side_group_homolysis=H_CHANNEL)[-1]
+    second = mo.write_time_series(engine, [10.0], path, xs=0, side_group_homolysis=H_CHANNEL, append=True)[-1]
+    a, b = _channel(first, "aliphatic_C-H"), _channel(second, "aliphatic_C-H")
+    assert engine.events_fired >= 1 and a["released_count"] == engine.events_fired
+    assert b["released_count"] == a["released_count"] and a["released_tracked"] and b["released_tracked"]
+    third = mo.write_time_series(engine, [10.0, 20.0], path, xs=0, side_group_homolysis=H_CHANNEL, append=True)[-1]
+    assert _channel(third, "aliphatic_C-H")["released_count"] == engine.events_fired
+
+
+def test_an_export_that_cannot_prove_continuity_reports_untracked(tmp_path):
+    engine = _h_loss_engine()
+    engine.run(until=10.0)
+    assert engine.events_fired >= 1
+    obs = mo.write_time_series(engine, [10.0], tmp_path / "s.jsonl", xs=0, side_group_homolysis=H_CHANNEL)[-1]
+    row = _channel(obs, "aliphatic_C-H")
+    assert row["released_tracked"] is False
+
+
+def test_tracker_recovers_a_release_committed_before_a_post_commit_failure():
+    engine = _h_loss_engine()
+    observer = mo.MeltObserver(engine.spec, xs=0, side_group_homolysis=H_CHANNEL)
+    tracker = observer.release_tracker(engine)
+    original = engine._add
+    calls = {"n": 0}
+
+    def once(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("injected in _add")
+        return original(*args, **kwargs)
+
+    engine._add = once
+    with pytest.raises(RuntimeError, match="injected"):
+        engine.run(max_events=1, check=tracker)
+    del engine._add
+    engine.check_consistency()
+    assert engine.events_fired == 1 and engine.events[0].template == "h_loss"
+    row = _channel(observer.observe(engine, releases=tracker), "aliphatic_C-H")
+    assert row["released_tracked"] is True and row["released_count"] == 1
+    # two events the tracker never saw: continuity cannot be proven
+    engine.run(max_events=2)
+    row = _channel(observer.observe(engine, releases=tracker), "aliphatic_C-H")
+    assert row["released_tracked"] is False
+
+
+def test_an_unattributed_polymer_release_is_an_undeclared_loss():
+    def edit(state, _t):
+        _remove_br(state, chain_carbons_in_order(state, 0)[3])     # the benzylic Br of unit 2
+    o, _s, u = _observe(S.two_bromine_spec({4: 1}), 0, [S.sgh_channel("aliphatic_C-Br", "aliphatic", 1.0)], edit)
+    assert _channel(o, "aliphatic_C-Br")["released_count"] == 0
+    assert o["side_group_unattributed_releases"] == {"polymer": 1, "other": 0}
+    loss = o["mom_mass_law"]["undeclared_loss"]
+    assert loss["atoms"] == {"Br": 1} and rel(loss["mass_g"], u * M_BR) <= REL
+
+
+def test_mobile_species_cleavage_is_not_a_polymer_release():
+    spec = S.pvb_with_methyl_bromide({4: 1})
+
+    def edit(state, _t):
+        (mob,) = [c for c in state.components.ids() if state.origin_kinds(c) == {"mobile"}]
+        c = next(x for x in state.components.atoms(mob) if state.atoms[x].element == "C")
+        _remove_br(state, c)
+    o, _s, u = _observe(spec, 0, PVB_CHANNEL, edit)
+    row = _channel(o, "aliphatic_C-Br")
+    assert row["released_count"] == 0 and row["released_from_other_count"] == 1
+    assert rel(row["inventory_tail_mol"], 4 * u) <= REL
+    assert rel(o["tier1"]["polymer_derived"]["mass_g"], 1000.0) <= REL
+
+
+@pytest.mark.parametrize("kekule", ["ring_b_alternating", "ring_b_not_alternating"])
+def test_site_classification_is_resonance_invariant(kekule):
+    spec = S.bromonaphthyl_spec({3: 1}, kekule)
+    channel = [S.sgh_channel("aryl_C-Br", "aryl", 1.0)]
+    state = materialize(spec)
+    observer = mo.MeltObserver(spec, xs=0, side_group_homolysis=channel)
+    assert observer.site_inventory(state)[0] == {"tail": 3, "explicit": 0}
+
+    def edit(state, _t):
+        br = next(x for x in state.atoms if state.atoms[x].element == "Br")
+        homolyse(state, next(iter(state.atoms[br].edges)), br)
+    o, _s, u = _observe(spec, 0, channel, edit)
+    row = _channel(o, "aryl_C-Br")
+    assert row["released_count"] == 1 and rel(row["inventory_tail_mol"], 2 * u) <= REL
+    assert o["side_group_unattributed_releases"] == {"polymer": 0, "other": 0}
+
+
+def test_a_charged_gas_product_is_matched_exactly():
+    spec = S.oxy_polymer_spec({4: 1}, -1)
+    channel = [S.sgh_channel("aliphatic_C-O", "aliphatic", 1.0, gas="[O-]")]
+
+    def edit(state, _t):
+        c2 = chain_carbons_in_order(state, 0)[1]
+        o_atom = next(x for x in state.atoms[c2].edges if state.atoms[x].element == "O")
+        homolyse(state, c2, o_atom)
+    o, _s, u = _observe(spec, 0, channel, edit)
+    row = _channel(o, "aliphatic_C-O")
+    assert row["released_count"] == 1 and rel(row["free_now_mol"], u) <= REL
+    assert o["mom_mass_law"]["undeclared_loss"]["mass_g"] == 0.0
+
+
+def test_a_gas_product_that_homolysis_cannot_produce_is_refused():
+    spec = S.oxy_polymer_spec({4: 1}, +1)              # O+ site: homolysis gives O+., not [O-]
+    with pytest.raises(mo.ObservablesError, match="cannot be matched"):
+        mo.MeltObserver(spec, xs=0, side_group_homolysis=[S.sgh_channel("x", "aliphatic", 1.0, gas="[O-]")])
+
+
+def test_release_count_is_gross_and_recaptures_are_reported():
+    spec = S.pvb_spec({4: 1})
+    state = materialize(spec)
+    observer = mo.MeltObserver(spec, xs=0, side_group_homolysis=PVB_CHANNEL)
+    tracker = observer.release_tracker(state)
+    path = chain_carbons_in_order(state, 0)
+    _balance_holds(observer, state, tracker)
+    br = _remove_br(state, path[1])
+    tracker.update(state)
+    _balance_holds(observer, state, tracker)
+    recombine(state, path[1], br)                       # the free Br re-adds at its site
+    tracker.update(state)
+    _balance_holds(observer, state, tracker)
+    _remove_br(state, path[1])
+    tracker.update(state)
+    _balance_holds(observer, state, tracker)
+    row = _channel(observer.observe(state, releases=tracker), "aliphatic_C-Br")
+    assert row["released_count"] == 2 and row["recaptured_count"] == 1 and row["released_net_count"] == 1
+
+
+def test_bromine_balance_holds_through_release_transfer_and_capture():
+    spec = S.pvb_with_methyl_bromide({4: 2})
+    state = materialize(spec)
+    observer = mo.MeltObserver(spec, xs=0, side_group_homolysis=PVB_CHANNEL)
+    tracker = observer.release_tracker(state)
+    a, b = chain_carbons_in_order(state, 0), chain_carbons_in_order(state, 1)
+    steps = []
+
+    def step(edits):
+        state.apply(edits)
+        tracker.update(state)
+        _balance_holds(observer, state, tracker)
+        steps.append(observer.x_balance(state, tracker)["Br"])
+
+    br = next(x for x in state.atoms[a[1]].edges if state.atoms[x].element == "Br")
+    step([SetBond(a[1], br, 1.0, 0.0), SetRadical(a[1], 0, 1), SetRadical(br, 0, 1)])        # release
+    h = min(x for x in state.atoms[b[2]].edges if state.atoms[x].element == "H")
+    step([SetBond(b[2], h, 1.0, 0.0), SetBond(br, h, 0.0, 1.0), SetRadical(br, 1, 0),
+          SetRadical(b[2], 0, 1)])                                                              # Br + H -> HBr
+    assert steps[-1]["other_count"] >= 2 and steps[-1]["free_count"] == 0                      # HBr and CH3Br
+    assert steps[0]["condensed_at_declared_sites_count"] == 7
+    row = _channel(observer.observe(state, releases=tracker), "aliphatic_C-Br")
+    assert row["released_count"] == 1
+    assert observer.observe(state, releases=tracker)["mom_mass_law"]["undeclared_loss"]["mass_g"] > 0.0  # the H
+
+
+def test_balance_holds_after_every_engine_event():
+    engine = _h_loss_engine(seed=5)
+    observer = mo.MeltObserver(engine.spec, xs=0, side_group_homolysis=H_CHANNEL)
+    tracker = observer.release_tracker(engine)
+
+    def check(eng, event):
+        tracker(eng, event)
+        _balance_holds(observer, eng.state, tracker)
+    engine.run(max_events=20, check=check)
+    assert engine.events_fired == 20
+    assert _channel(observer.observe(engine, releases=tracker), "aliphatic_C-H")["released_count"] == 20
