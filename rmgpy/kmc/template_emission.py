@@ -77,6 +77,14 @@ row are then ``not_applicable`` (never a zero count), and each template's
 weight and calibration come from its emitted witness (``weight_source:
 emitted_witness``) through the same production path.
 
+A transfer whose products are its reactants (an unchanged_species move:
+a radical moves between equal chains) is dropped by RMG's generator
+(``_create_reaction``) but still has a rate: ``ProductionRates`` then builds
+the witness's own channel as one explicit labelled ``TemplateReaction``
+(``explicit_reaction``: rmg_moves mappings, RMG's template labels, RMG's
+degeneracy rule) and sends it through the same ``_linked_family_pair``, so
+the family's estimator gives k (provenance ``path: explicit_identity``).
+
 Locality (item 3)
 -----------------
 Witnesses (``locality_witnesses``): the emitted one (the context's
@@ -108,11 +116,22 @@ Policy for RMG-filtered moves (item 5)
 files only as forbidden fails); ``unchanged_species`` moves are required
 (missing fails) and reported as matcher-only by policy.
 
+Catalog collisions
+------------------
+Templates of different records with equal executable keys would each fire
+on every matched transition.  ``resolve_collisions`` (one catalog) merges
+copies whose weights agree to ``COLLISION_RTOL`` at every grid temperature
+into one template listing every source record (the others ``merged``) and
+refuses unequal ones (``refused:collision``: keys, records, weights).
+``loaded_templates`` is what a catalog loads; the reference comparison fails
+when a transition is produced more than once.
+
 Schema (item 6)
 ---------------
 ``executable_payload`` / ``validate_payload``; ``attach`` sets
 ``executable_template`` on an ``EventRecord`` (schema ``rewrite_record/0.2``;
-the template is not part of the event id, it carries its own sha256);
+the template is not part of the event id, it carries its own sha256; only
+the record's own payload attaches: ``ownership_problem``);
 ``matcher_from_payload`` is the temperature-specific projection to
 ``window_matcher.Template``.
 
@@ -146,7 +165,7 @@ CALIBRATION_RTOL = 1e-9
 EXTENSION_STEPS = (1, 2)
 CANONICAL_LEAF_LIMIT = 20000
 BOUNDARY_LABELS = ("artificial", "physical", "interior")
-TEMPLATE_STATUSES = ("emitted", "refused")
+TEMPLATE_STATUSES = ("emitted", "merged", "refused")
 RECORD_STATUSES = ("emitted", "partial", "refused")
 ESTIMATE_KINDS = ("RMG family estimate", "reference-thermo reverse",
                   "synthetic:unchanged_species")
@@ -789,6 +808,74 @@ class ProductionRates:
         self._max = max_entries
         self.calls = 0
         self.generated = 0
+        self.explicit_calls = 0
+        self._counter = None
+
+    def counter(self):
+        if self._counter is None:
+            self._counter = RmgCounter(self.database.kinetics.families)
+        return self._counter
+
+    def _linked(self, species, reaction):
+        from rmgpy.kmc.compiler import SiteProxy
+        proxy = SiteProxy("i138_emission_witness", tuple(species),
+                          participant_site_types=tuple(f"w{k}" for k in range(len(species))),
+                          metadata={"centred": True, "context_class": "emission_witness",
+                                    "proxy_units": 0, "family_candidates": [reaction.family]})
+        try:
+            records, _initiating = self.compiler._linked_family_pair(proxy, reaction, {})
+            return tuple(records), ""
+        except Exception as error:   # reported, never hidden
+            return None, f"production pair failed: {type(error).__name__}: {error}"
+
+    def explicit_reaction(self, request):
+        """(reaction, problem): the witness's own channel as one explicit
+        labelled ``TemplateReaction`` in the family's template direction
+        (``request.generation`` is that side), built without RMG's generator,
+        which drops a reaction whose products are its reactants.
+
+        The channel's moves are ``rmg_moves`` mappings (RMG's own template
+        matching and recipe; template labels by ``get_reaction_template_labels``,
+        for an identity transfer through ``_unchanged_species_template``).  The
+        degeneracy is RMG's: the distinct mapped outcomes of the channel (the
+        generator merges isomorphic, non-identical reactions and drops identical
+        ones, ``find_degenerate_reactions``), halved for two identical reactants
+        (``reduce_same_reactant_degeneracy``).  Kinetics then come from the
+        family's estimator inside the compiler's ``_linked_family_pair``, the
+        same call the generator's reaction goes through."""
+        from rmgpy.data.kinetics.family import TemplateReaction
+        from rmgpy.species import Species
+        fam = self.database.kinetics.families[request.family]
+        counter = self.counter()
+        gen = molecules_of(request.generation)
+        species = counter.species_of_rows(request.products)
+        pathway = tuple(request.template.split(";")) if request.template else None
+        channel = counter.channel(fam, gen, "forward", pathway, species)
+        if not channel.transitions:
+            return None, ("explicit path: no forward rmg_moves of the template reach the "
+                          "witness's products (the generation side is not the family's "
+                          "template side)")
+        degeneracy = float(channel.transitions)
+        if len(gen) == 2 and gen[0].is_isomorphic(gen[1]):
+            degeneracy *= 0.5
+        reactants = [Species(molecule=[m.copy(deep=True)]) for m in gen]
+        products = [Species(molecule=[m.copy(deep=True)]) for m in molecules_of(request.products)]
+        for spc in reactants + products:
+            spc.generate_resonance_structures(keep_isomorphic=False)
+        reaction = TemplateReaction(reactants=reactants, products=products,
+                                    degeneracy=degeneracy, reversible=fam.reversible,
+                                    family=fam.label, is_forward=True,
+                                    template=list(pathway or ()), electrons=fam.electrons)
+        return (reaction, species, reactants), ""
+
+    def explicit(self, request):
+        """Records of the explicit labelled-reaction path (``explicit_reaction``)."""
+        self.explicit_calls += 1
+        built, why = self.explicit_reaction(request)
+        if built is None:
+            return None, why
+        reaction, _species, reactants = built
+        return self._linked(reactants, reaction)
 
     def _pair(self, request):
         from rmgpy.kmc.compiler import SiteProxy, _resolve_generator, _template
@@ -809,27 +896,31 @@ class ProductionRates:
                                           products=[s.copy(deep=True) for s in products],
                                           only_families=[request.family], resonance=True)
                      if _template(x) == request.template]
-        if len(reactions) != 1:
+        if not reactions and self.identity(request):
+            # RMG's generator drops a transfer whose products are its reactants
+            # (_create_reaction); it still has a rate: the explicit path
+            records, why = self.explicit(request)
+            value = (records, why, "explicit_identity")
+        elif len(reactions) != 1:
             value = (None, f"production generation found {len(reactions)} reactions of the "
-                           f"template on the witness (one needed)")
+                           f"template on the witness (one needed)", "generator")
         else:
-            proxy = SiteProxy("i138_emission_witness", tuple(species),
-                              participant_site_types=tuple(f"w{k}" for k in range(len(species))),
-                              metadata={"centred": True, "context_class": "emission_witness",
-                                        "proxy_units": 0, "family_candidates": [request.family]})
-            try:
-                records, _initiating = self.compiler._linked_family_pair(proxy, reactions[0], {})
-                value = (tuple(records), "")
-            except Exception as error:   # reported, never hidden
-                value = (None, f"production pair failed: {type(error).__name__}: {error}")
+            records, why = self._linked(species, reactions[0])
+            value = (records, why, "generator")
         if len(self._cache) >= self._max:
             self._cache.pop(next(iter(self._cache)))
         self._cache[key] = value
         return value
 
+    def identity(self, request) -> bool:
+        """Whether the witness's products are its reactants (as species)."""
+        counter = self.counter()
+        return counter.species_of_rows(request.generation) == \
+            counter.species_of_rows(request.products)
+
     def __call__(self, request: RateRequest) -> RateResult:
         self.calls += 1
-        records, why = self._pair(request)
+        records, why, path = self._pair(request)
         if records is None:
             return RateResult((), (), 0.0, {}, (why,))
         hits = [x for x in records if x.orientation == request.orientation and
@@ -852,7 +943,7 @@ class ProductionRates:
         return RateResult(tuple(rec.k_table["T"]), tuple(rec.k_table["k"]),
                           float(rec.ssa_multiplier),
                           {"selection": _selection(rec.rate_source), "event_id": rec.event_id,
-                           "status": rec.status}, problems)
+                           "status": rec.status, "path": path}, problems)
 
 
 # ---------------------------------------------------------------------------
@@ -1007,9 +1098,13 @@ def reaches_beyond(cut, witness, unextended) -> bool:
     r, p = dict(witness.reactant_rows()), dict(witness.product_rows())
     reach = set(cut.witness_atoms)
     for a in cut.ports:
+        # a port is never edited (``cut_template``), so its neighbours are
+        # the same on both sides; one side is read, the other checked
         aid = cut.witness_atoms[a]
-        reach.update(n for n, _o in r.get(aid, (None,) * 6)[5])
-        reach.update(n for n, _o in p.get(aid, (None,) * 6)[5])
+        neighbours = {n for n, _o in r[aid][5]}
+        if neighbours != {n for n, _o in p[aid][5]}:
+            raise EmissionError(f"port atom {aid} has different neighbours on the two sides")
+        reach |= neighbours
     have = set(dict(unextended.reactant_rows())) | set(dict(unextended.product_rows()))
     return not reach <= have
 
@@ -1203,19 +1298,31 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
             temperatures=rate["T"], providers=providers, ceiling=ceiling,
             owner_rate_source=owner_rate_source, record_map=next((record_map.get(f"probe{i}") for i, c in enumerate(base)
                              if c is cand), None)))
-    emitted = [t for t in templates if t["status"] == "emitted"]
-    base_ok = any(t["status"] == "emitted" and t["base"] for t in templates)
-    status = "emitted" if base_ok and len(emitted) == len(templates) else \
-        "partial" if base_ok else "refused"
-    out = {**head, "status": status, "refusal": None if base_ok else
-           {"by": "emission", "status": "refused:base_template",
-            "reason": "; ".join(t["refusal"]["status"] for t in templates
-                                if t["base"] and t["refusal"])[:300]},
+    status, refusal = record_status(templates)
+    out = {**head, "status": status, "refusal": refusal,
            "counts": {"record": record_count},
            "weight_source": "record" if weights is not None else "emitted_witness",
            "weight": {"T": rate["T"], "w": weights} if weights is not None else None,
            "calibration": cal, "templates": templates, "contexts": ctx_rows}
     return finish(out)
+
+
+def record_status(templates) -> tuple:
+    """(status, refusal) of a record from its templates: ``emitted`` when the
+    base template carries the rate (emitted, or merged into an equal template
+    of another record) and every template does; ``partial`` when only the
+    base does; else ``refused`` naming the base templates' refusals."""
+    live = ("emitted", "merged")
+    base_ok = any(t["status"] in live and t["base"] for t in templates)
+    if not base_ok:
+        reasons = [t["refusal"]["status"] for t in templates if t["base"] and t.get("refusal")]
+        collision = "refused:collision" in reasons
+        return "refused", {"by": "collision" if collision else "emission",
+                           "status": "refused:collision" if collision else
+                           "refused:base_template", "reason": "; ".join(reasons)[:300]}
+    if all(t["status"] in live for t in templates):
+        return "emitted", None
+    return "partial", None
 
 
 def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, counter,
@@ -1423,6 +1530,12 @@ def validate_payload(payload: dict) -> None:
             if not (t.get("refusal") or {}).get("status"):
                 raise EmissionError("a refused template needs a refusal status")
             continue
+        if t["status"] == "merged":
+            into = t.get("merged_into") or {}
+            if not into.get("record") or into.get("key") != t.get("key") or \
+                    sha256_json(t["executable"]) != t["key"]:
+                raise EmissionError("a merged template needs its key and owning record")
+            continue
         ex = t["executable"]
         if sha256_json(ex) != t["key"]:
             raise EmissionError("template key does not match its executable content")
@@ -1477,15 +1590,121 @@ def _interpolate(ts, ws, t):
     return ws[-1]
 
 
+def ownership_problem(record, payload: dict) -> Optional[str]:
+    """Why ``payload`` is not this record's (None: it is): a payload is
+    emitted for one record, named by its event id, family and orientation."""
+    get = record.get if isinstance(record, dict) else (lambda k: getattr(record, k, None))
+    for field_, mine in (("record_event_id", get("event_id")), ("family", get("family")),
+                         ("orientation", get("orientation"))):
+        if payload.get(field_) != mine:
+            return (f"the executable_template belongs to {field_} {payload.get(field_)!r}, "
+                    f"not this record's {mine!r}")
+    return None
+
+
 def attach(record, payload: dict):
     """An ``EventRecord`` with ``executable_template`` set (schema
     ``rewrite_record/0.2``; the event id is unchanged: the template is not
-    part of it)."""
+    part of it).  Only the record's own payload attaches
+    (``ownership_problem``)."""
     from dataclasses import replace
     from rmgpy.kmc.event_record import EventRecord
     validate_payload(payload)
     rec = record if isinstance(record, EventRecord) else EventRecord.from_dict(dict(record))
+    why = ownership_problem(rec, payload)
+    if why:
+        raise EmissionError(why)
     return replace(rec, schema_version=RECORD_SCHEMA, executable_template=payload)
+
+
+# ---------------------------------------------------------------------------
+# catalog-level collisions
+# ---------------------------------------------------------------------------
+COLLISION_RTOL = 1e-12
+
+
+def _weights_equal(a, b, rtol=COLLISION_RTOL) -> bool:
+    if a is None or b is None or list(a["T"]) != list(b["T"]) or len(a["w"]) != len(b["w"]):
+        return False
+    return all(abs(x - y) <= rtol * max(abs(x), abs(y)) for x, y in zip(a["w"], b["w"]))
+
+
+def _rel_spread(weights) -> float:
+    worst = 0.0
+    for i in range(len(weights[0]["w"])):
+        values = [w["w"][i] for w in weights]
+        worst = max(worst, (max(values) - min(values)) / max(values))
+    return worst
+
+
+def resolve_collisions(payloads, rtol: float = COLLISION_RTOL) -> tuple:
+    """One catalog's payloads with equal executable keys made one template.
+
+    Across every emitted template of every payload (one per record), a key
+    emitted more than once would fire every matched transition once per
+    copy.  Copies whose weights agree to ``rtol`` at every grid temperature
+    are merged: the copy of the least record event id stays ``emitted`` and
+    lists every source record (``collision``); the others become ``merged``
+    (``merged_into``: that record and key).  Copies that disagree are all
+    refused ``refused:collision`` with the keys, records and weights (no
+    weighted merge).  Record statuses follow (``record_status``).  Returns
+    (new payloads, collision table: one row per key with more than one copy)."""
+    out = [json.loads(canonical_json(p)) for p in payloads]
+    groups = defaultdict(list)
+    for i, p in enumerate(out):
+        for j, t in enumerate(p.get("templates", [])):
+            if t.get("status") == "emitted":
+                groups[t["key"]].append((p.get("record_event_id") or "", i, j))
+    table = []
+    touched = set()
+    for key in sorted(groups):
+        copies = sorted(groups[key])
+        if len(copies) < 2:
+            continue
+        weights = [out[i]["templates"][j]["weight"] for _r, i, j in copies]
+        records = [r for r, _i, _j in copies]
+        equal = all(_weights_equal(weights[0], w, rtol) for w in weights[1:])
+        spread = _rel_spread(weights)
+        row = {"key": key, "records": records, "copies": len(copies),
+               "rel_spread": spread, "disposition": "merged" if equal else "refused:collision",
+               "w_700": [w["w"][list(w["T"]).index(700.0)] if 700.0 in list(w["T"]) else None
+                         for w in weights]}
+        table.append(row)
+        owner_record, oi, oj = copies[0]
+        for r, i, j in copies:
+            t = out[i]["templates"][j]
+            touched.add(i)
+            if equal and (i, j) == (oi, oj):
+                t["collision"] = {"merged": True, "records": records, "rel_spread": spread,
+                                  "rtol": rtol}
+            elif equal:
+                t["status"] = "merged"
+                t["merged_into"] = {"record": owner_record, "key": key}
+            else:
+                t["status"] = "refused"
+                t["refusal"] = {"status": "refused:collision",
+                                "reason": f"{len(copies)} copies of key {key[:16]} with weights "
+                                          f"differing by {spread:.3g} (relative) > {rtol}",
+                                "keys": [key], "records": records,
+                                "weights": [{"record": rr, "T": w["T"], "w": w["w"]}
+                                            for rr, w in zip(records, weights)]}
+    for i in touched:
+        out[i]["status"], out[i]["refusal"] = record_status(out[i]["templates"])
+        out[i] = finish(out[i])
+    return out, table
+
+
+def loaded_templates(payloads, temperature: float, *, name=None) -> list:
+    """The ``window_matcher.Template`` set a catalog loads at ``temperature``:
+    every ``emitted`` template (merged copies and refused ones are not)."""
+    out = []
+    for p in payloads:
+        for t in p.get("templates", []):
+            if t.get("status") == "emitted":
+                label = (name or (lambda p, t: f"{(p.get('record_event_id') or '')[4:16]}:"
+                                               f"{t['key'][:12]}"))(p, t)
+                out.append(matcher_from_payload(t, temperature, name=label))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1634,6 +1853,10 @@ def classify_reference(templates, molecules, *, family, directions, counter, own
         if not status.startswith("refused") or status in EMISSION_FAILURE_STATUSES:
             failures.append("required unchanged_species move not produced "
                             f"({';'.join(mv.template or ())[:60]})")
+    for k, names in sorted(matcher.items()):
+        if len(names) > 1:
+            failures.append(f"one transition is produced {len(names)} times by "
+                            f"{len(set(names))} loaded template(s) ({sorted(set(names))[0][:40]})")
     overlap = Counter(len(set(v)) for v in matcher.values())
     return {"rmg_status_moves": dict(n_moves),
             "rmg_kept": len(kept), "rmg_forbidden": len(forbidden),

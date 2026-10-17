@@ -203,12 +203,16 @@ class EventRecord:
                 raise ValueError("an executable_template needs schema rewrite_record/0.2")
             if self.executable_template is None:
                 raise ValueError("a rewrite_record/0.2 record needs its executable_template")
-            from rmgpy.kmc.template_emission import EmissionError, validate_payload
+            from rmgpy.kmc.template_emission import (EmissionError, ownership_problem,
+                                                     validate_payload)
 
             try:
                 validate_payload(self.executable_template)
             except EmissionError as error:
                 raise ValueError(f"executable_template: {error}") from None
+            why = ownership_problem(self, self.executable_template)
+            if why:
+                raise ValueError(f"executable_template: {why}")
         if self.status != "enabled" and not self.status_reason:
             raise ValueError("non-enabled records require a status reason")
         if not _is_full_event_id(self.event_id):

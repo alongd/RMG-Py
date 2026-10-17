@@ -420,6 +420,9 @@ def main():
                   flush=True)
     summary = summarize(args, rows, records, picked, time.time() - t0)
     (out / f"summary.{tag}.json").write_text(json.dumps(summary, indent=1, default=str))
+    with open(out / f"rows.{tag}.resolved.jsonl", "w") as log:   # after the collision gate
+        for row in rows:
+            log.write(json.dumps(row, default=str) + "\n")
     print("SUMMARY", json.dumps({k: v for k, v in summary.items() if k != "comparison"},
                                 default=str)[:6000], flush=True)
     print("GATES", len(summary["gates"]), json.dumps(summary["gates"][:40], default=str),
@@ -427,10 +430,30 @@ def main():
     return 1 if summary["gates"] else 0
 
 
+def collide(rows):
+    """The catalog collision gate (``template_emission.resolve_collisions``)
+    over every row's payload: rows carry the resolved payloads (status and
+    refusal follow); returns the collision table."""
+    from rmgpy.kmc import template_emission as te
+    have = [k for k, r in enumerate(rows) if r.get("payload")]
+    merged, table = te.resolve_collisions([rows[k]["payload"] for k in have])
+    for k, payload in zip(have, merged):
+        rows[k]["payload"] = payload
+        rows[k]["status"] = payload["status"]
+        rows[k]["refusal"] = (payload.get("refusal") or {}).get("status")
+    return table
+
+
 def summarize(args, rows, records, picked, wall):
+    from rmgpy.kmc import template_emission as te
     gates = []
     by_family = defaultdict(Counter)
     calibration_rows = []
+    collisions = collide(rows)
+    refused_collisions = [c for c in collisions if c["disposition"] != "merged"]
+    for c in refused_collisions:
+        gates.append(f"unequal-weight collision {c['key'][:16]}: {c['copies']} copies, "
+                     f"relative spread {c['rel_spread']:.3g} (records {c['records']})")
     for row in rows:
         fam_key = f"{row['family']}|{row['orientation']}"
         by_family[fam_key][row.get("refusal") or row["status"]] += 1
@@ -451,7 +474,13 @@ def summarize(args, rows, records, picked, wall):
         by_family[fam_key]["weight_source:" + str(p.get("weight_source"))] += 1
         if row["status"] == "error":
             gates.append(f"error {row['event_id']}: {row.get('reason', '')[:300]}")
-    out = {"ref": args.ref, "families": args.family or "all", "records": len(records),
+    out = {"collisions": {"keys": len(collisions),
+                          "merged": len(collisions) - len(refused_collisions),
+                          "refused": len(refused_collisions),
+                          "copies": sum(c["copies"] for c in collisions),
+                          "max_rel_spread": max([c["rel_spread"] for c in collisions] or [0.0]),
+                          "rtol": te.COLLISION_RTOL, "table": collisions},
+           "ref": args.ref, "families": args.family or "all", "records": len(records),
            "upstream_all": _S.get("upstream"), "open_only": args.open_only,
            "processed": len(picked),
            "sample": args.sample, "chunk": args.chunk, "contexts": args.contexts,
