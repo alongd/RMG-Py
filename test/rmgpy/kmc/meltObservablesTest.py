@@ -574,38 +574,65 @@ def test_a_declared_label_colliding_with_a_builtin_is_refused(label):
 # --------------------------------------------------------------------------
 # rework 2
 # --------------------------------------------------------------------------
-def test_pendant_bromine_loss_is_booked_as_side_group_depletion():
-    """MoM's depletion-aware law: a mu1 + e E - mu0 defect - sum_rows
-    max(0, sites mu1 - Z) M_X (+ explicit).  One Br homolysed off a PVB DP4
-    chain: Z = 3 sites, one Br lost, the law equals the exact mass."""
+def _remove_br(state, carbon):
+    br = next(x for x in state.atoms[carbon].edges if state.atoms[x].element == "Br")
+    homolyse(state, carbon, br)
+    return br
+
+
+M_BR = Composition.from_mapping({"Br": 1}).molar_mass_g_mol()
+PVB_CHANNEL = [S.sgh_channel("aliphatic_C-Br", "aliphatic", 1.0)]
+
+
+def test_pendant_bromine_loss_is_booked_on_the_declared_channel():
+    """MoM's depletion-aware law with the declared channel: a mu1 + e E -
+    mu0 defect - sum_channels max(0, sites mu1(0) - Z) M_X (+ explicit).  One
+    Br homolysed off a PVB DP4 chain: Z = 3 sites, one Br lost."""
     spec = S.pvb_spec({4: 1})
     state = materialize(spec)
     path = chain_carbons_in_order(state, 0)
-    c2 = path[1]
-    br = next(x for x in state.atoms[c2].edges if state.atoms[x].element == "Br")
-    homolyse(state, c2, br)
-    o = mo.MeltObserver(spec, xs=0).observe(state)
+    _remove_br(state, path[1])
+    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=PVB_CHANNEL).observe(state)
     u = spec.initialization().scale_factor / constants.Na
-    m_br = Composition.from_mapping({"Br": 1}).molar_mass_g_mol()
     law = o["mom_mass_law"]
     kmc = o["tier1"]["polymer_derived"]["mass_g"]
-    assert rel(kmc, 1000.0 - u * m_br) <= REL and kmc < 0.9 * 1000.0
+    assert rel(kmc, 1000.0 - u * M_BR) <= REL and kmc < 0.9 * 1000.0
     (row,) = law["side_group_depletion"]
-    assert row["sites_per_unit"] == 1 and rel(row["molar_mass_g_mol"], m_br) <= REL
+    assert row["label"] == "aliphatic_C-Br" and row["site_selector"] == "aliphatic"
+    assert row["sites_per_unit"] == 1 and rel(row["molar_mass_g_mol"], M_BR) <= REL
+    assert rel(row["Z0_mol"], 4 * u) <= REL
     assert rel(row["Z_mol"], 3 * u) <= REL and rel(row["lost_mol"], u) <= REL
     assert law["chain_mass_defect_g_mol"] == 0.0
     a = spec.repeat_unit.composition.molar_mass_g_mol()
     e = spec.end_composition.molar_mass_g_mol()
-    hand = a * 4 * u + e * u - (1 * 4 * u - 3 * u) * m_br
+    hand = a * 4 * u + e * u - (1 * 4 * u - 3 * u) * M_BR
     assert rel(law["value_g"], hand) <= REL and rel(law["value_g"], kmc) <= REL
     assert law["difference_g"] == 0.0 and law["bound_g"] == 0.0
+    assert law["undeclared_loss"]["mass_g"] == 0.0
     q = mo.mom_reported_quantities(o)
     assert rel(q["polymer_condensed_mass_g"], kmc) <= REL
-    assert rel(q["polymer_conversion"], u * m_br / 1000.0) <= 1e-9
-    assert rel(q["side_group_Z_mol"][row["label"]], 3 * u) <= REL
+    assert rel(q["polymer_conversion"], u * M_BR / 1000.0) <= 1e-9
+    assert rel(q["side_group_Z_mol"]["aliphatic_C-Br"], 3 * u) <= REL
 
 
-def test_pendant_phenyl_loss_is_booked_as_side_group_depletion():
+def test_no_declared_channel_means_no_depletion_and_the_loss_is_reported_undeclared():
+    """The solver skips absent channels: PVB DP4 minus Br projects 1000 g;
+    the Br that left is an undeclared loss, never folded into the projection."""
+    spec = S.pvb_spec({4: 1})
+    state = materialize(spec)
+    path = chain_carbons_in_order(state, 0)
+    _remove_br(state, path[1])
+    o = mo.MeltObserver(spec, xs=0).observe(state)
+    u = spec.initialization().scale_factor / constants.Na
+    law = o["mom_mass_law"]
+    assert law["side_group_depletion"] == []
+    assert rel(law["value_g"], 1000.0) <= REL
+    assert rel(law["undeclared_loss"]["mass_g"], u * M_BR) <= REL
+    assert law["undeclared_loss"]["atoms"] == {"Br": 1}
+    assert rel(law["difference_g"], -u * M_BR) <= 1e-9 and abs(law["difference_g"]) <= law["bound_g"]
+
+
+def test_pendant_phenyl_loss_has_no_mom_channel_and_is_an_undeclared_loss():
     spec = S.ps_spec({10: 1})
     state = materialize(spec)
     path = chain_carbons_in_order(state, 0)
@@ -618,11 +645,103 @@ def test_pendant_phenyl_loss_is_booked_as_side_group_depletion():
     m_ph = Composition.from_mapping({"C": 6, "H": 5}).molar_mass_g_mol()
     law = o["mom_mass_law"]
     kmc = o["tier1"]["polymer_derived"]["mass_g"]
-    (row,) = law["side_group_depletion"]
-    assert rel(row["molar_mass_g_mol"], m_ph) <= REL and rel(row["Z_mol"], 9 * u) <= REL
-    assert rel(law["value_g"], kmc) <= REL and rel(kmc, 1250.0 - u * m_ph) <= REL
-    assert law["difference_g"] == 0.0
+    assert law["side_group_depletion"] == [] and rel(law["value_g"], 1250.0) <= REL
+    assert rel(kmc, 1250.0 - u * m_ph) <= REL
+    assert rel(law["undeclared_loss"]["mass_g"], u * m_ph) <= REL
+    assert law["undeclared_loss"]["atoms"] == {"C": 6, "H": 5}
     assert o["tier1"]["undeclared_light"]["molecules"] == 1
+
+
+def test_channel_z_counts_the_leaving_atom_not_the_pendant_anchor():
+    """Para-brominated PS DP4 with an aryl C-Br channel: the Br leaves, the
+    ring stays; the configured depletion books the Br."""
+    spec = S.para_bromo_ps_spec({4: 1})
+    state = materialize(spec)
+    br = next(x for x in state.atoms if state.atoms[x].element == "Br")
+    ring_c = next(iter(state.atoms[br].edges))
+    homolyse(state, ring_c, br)
+    channel = [S.sgh_channel("aryl_C-Br", "aryl", 1.0)]
+    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=channel).observe(state)
+    u = spec.initialization().scale_factor / constants.Na
+    law = o["mom_mass_law"]
+    (row,) = law["side_group_depletion"]
+    assert rel(row["Z_mol"], 3 * u) <= REL and rel(row["lost_mol"], u) <= REL
+    assert rel(law["value_g"], 1250.0 - u * M_BR) <= REL
+    assert law["value_g"] == pytest.approx(1113.960, abs=5e-4)
+
+
+def test_a_declared_c_h_channel_counts_hydrogen():
+    spec = S.pe_spec({6: 1})
+    state = materialize(spec)
+    path = chain_carbons_in_order(state, 0)
+    S.strip_h(state, path[5])                     # a mid-chain CH2 loses one H
+    channel = [S.sgh_channel("aliphatic_C-H", "aliphatic", 4.0, gas="[H]")]
+    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=channel).observe(state)
+    u = spec.initialization().scale_factor / constants.Na
+    m_h = Composition.from_mapping({"H": 1}).molar_mass_g_mol()
+    law = o["mom_mass_law"]
+    (row,) = law["side_group_depletion"]
+    assert rel(row["Z0_mol"], 24 * u) <= REL and rel(row["Z_mol"], 23 * u) <= REL
+    assert rel(law["value_g"], 1000.0 - u * m_h) <= REL
+    assert rel(law["value_g"], o["tier1"]["polymer_derived"]["mass_g"]) <= REL
+
+
+def test_depletion_baseline_is_the_stationary_initial_inventory():
+    """PVB DP10 x 2: an intra-unit backbone cut on one chain (its fragments
+    carry 10 Br on floor-units summing to 9), then one Br removed from the
+    other chain.  The baseline sites mu1(0) = 20 books the lost Br; a
+    floor-mu1 baseline (19) would let the surplus Br cancel it."""
+    spec = S.pvb_spec({10: 2})
+    state = materialize(spec)
+    a_path = chain_carbons_in_order(state, 0)
+    homolyse(state, a_path[8], a_path[9])         # c1-c2 bond inside unit 5 of chain 0
+    b_path = chain_carbons_in_order(state, 1)
+    _remove_br(state, b_path[1])
+    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=PVB_CHANNEL).observe(state)
+    u = spec.initialization().scale_factor / constants.Na
+    law = o["mom_mass_law"]
+    (row,) = law["side_group_depletion"]
+    assert rel(row["Z0_mol"], 20 * u) <= REL and rel(row["Z_mol"], 19 * u) <= REL
+    assert rel(row["lost_mass_g"], u * M_BR) <= REL
+    assert row["lost_mass_g"] == pytest.approx(37.286, abs=5e-4)
+    a = spec.repeat_unit.composition.molar_mass_g_mol()
+    e = spec.end_composition.molar_mass_g_mol()
+    assert rel(law["value_g"], a * 19 * u + e * 2 * u - u * M_BR) <= REL
+    kmc = o["tier1"]["polymer_derived"]["mass_g"]
+    assert rel(kmc - law["value_g"], law["difference_g"]) <= 1e-9 and abs(law["difference_g"]) <= law["bound_g"]
+
+
+def test_declared_channels_keep_separate_inventories_and_compare_per_label():
+    spec = S.two_bromine_spec({4: 1})
+    state = materialize(spec)
+    path = chain_carbons_in_order(state, 0)
+    _remove_br(state, path[2])                    # the aliphatic Br on the head carbon of unit 2
+    channels = [S.sgh_channel("aliphatic_C-Br", "aliphatic", 1.0), S.sgh_channel("benzylic_C-Br", "benzylic", 1.0)]
+    o = mo.MeltObserver(spec, xs=0, side_group_homolysis=channels).observe(state)
+    u = spec.initialization().scale_factor / constants.Na
+    rows = {r["label"]: r for r in o["mom_mass_law"]["side_group_depletion"]}
+    assert set(rows) == {"aliphatic_C-Br", "benzylic_C-Br"}
+    assert rel(rows["aliphatic_C-Br"]["Z_mol"], 3 * u) <= REL and rel(rows["aliphatic_C-Br"]["lost_mol"], u) <= REL
+    assert rel(rows["benzylic_C-Br"]["Z_mol"], 4 * u) <= REL and rows["benzylic_C-Br"]["lost_mol"] == 0.0
+    mom = mo.mom_reported_quantities(o)
+    mom["side_group_Z_mol"] = {"aliphatic_C-Br": 3 * u, "benzylic_C-Br": 3 * u}
+    compared = {r["quantity"]: r for r in mo.side_by_side(o, mom)}
+    assert compared["side_group_Z_mol.aliphatic_C-Br"]["agreement"] == "equal"
+    assert compared["side_group_Z_mol.benzylic_C-Br"]["agreement"] == "differs"
+
+
+@pytest.mark.parametrize("bad, match", [
+    ([S.sgh_channel("x", "aliphatic", 1.0, gas="[CH3]")], "monoatomic"),
+    ([S.sgh_channel("x", "aliphatic", 2.0)], "sites_per_unit"),
+    ([S.sgh_channel("x", "aryl", 1.0)], "matches NO"),
+    ([S.sgh_channel("x", "aliphatic", 1.0), S.sgh_channel("y", "aliphatic", 1.0)], "SAME"),
+    ([S.sgh_channel("x", "aliphatic", 1.0), S.sgh_channel("x", "aliphatic", 1.0)], "duplicate"),
+    ([dict(S.sgh_channel("x", "aliphatic", 1.0), extra=1)], "exactly"),
+    ([], "empty"),
+])
+def test_only_channels_mom_can_represent_are_accepted(bad, match):
+    with pytest.raises(mo.ObservablesError, match=match):
+        mo.MeltObserver(S.pvb_spec({4: 1}), xs=0, side_group_homolysis=bad)
 
 
 def test_explicit_ladder_term_of_the_mass_law_is_the_capped_dp_mass():

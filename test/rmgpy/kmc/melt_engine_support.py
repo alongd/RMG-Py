@@ -428,3 +428,51 @@ def pvb_spec(counts):
     mapping["locality_policy"]["bounds"]["elements"] = ["Br", "C", "H"]
     mapping["locality_policy"]["bounds"]["lone_pairs"] = [0, 3]
     return LinearHomopolymerSpec.from_mapping(mapping)
+
+
+# --------------------------------------------------------------------------
+# S5 rework 3: side-group-homolysis channel declarations (the MoM deck's list)
+# --------------------------------------------------------------------------
+def _br(key):
+    return {"key": key, "element": "Br", "lone_pairs": 3}
+
+
+def _with_br(mapping):
+    mapping["locality_policy"]["bounds"]["elements"] = ["Br", "C", "H"]
+    mapping["locality_policy"]["bounds"]["lone_pairs"] = [0, 3]
+    return mapping
+
+
+def para_bromo_ps_spec(counts):
+    """PS with a Br on the para ring carbon (p4) of every unit: one aryl C-Br site per unit."""
+    mapping = ps_mapping(counts, mobile={})
+    mapping["small_species"] = {}
+    repeat = mapping["repeat_unit"]
+    for atom in repeat["atoms"]:
+        if atom["key"] == "p4":
+            atom["hydrogens"] = 0
+    repeat["atoms"].append(_br("x"))
+    repeat["bonds"].append({"atoms": ["p4", "x"], "order": 1})
+    return LinearHomopolymerSpec.from_mapping(_with_br(mapping))
+
+
+def two_bromine_spec(counts):
+    """-CHBr-CBr(Ph)-: one aliphatic C-Br (on the head carbon) and one benzylic
+    C-Br (on the tail carbon, bonded to the ring) per unit."""
+    mapping = ps_mapping(counts, mobile={})
+    mapping["small_species"] = {}
+    repeat = mapping["repeat_unit"]
+    for atom in repeat["atoms"]:
+        if atom["key"] == "c1":
+            atom["hydrogens"] = 1
+        if atom["key"] == "c2":
+            atom["hydrogens"] = 0
+    repeat["atoms"] += [_br("x1"), _br("x2")]
+    repeat["bonds"] += [{"atoms": ["c1", "x1"], "order": 1}, {"atoms": ["c2", "x2"], "order": 1}]
+    return LinearHomopolymerSpec.from_mapping(_with_br(mapping))
+
+
+def sgh_channel(label, selector, sites, gas="[Br]"):
+    """One side_group_homolysis channel dict, exactly the deck's keys."""
+    return {"label": label, "A": 1.0e15, "n": 0.0, "Ea": 2.9e5, "site_selector": selector,
+            "sites_per_unit": sites, "gas_product": gas}
