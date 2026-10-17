@@ -1471,6 +1471,36 @@ class PolystyreneProvider(BoundaryProvider):
     # declared end chemistries per port tag (additive, I-137)
     END_CHEMISTRIES = {"backbone_head": HEAD_ENDS, "backbone_tail": TAIL_ENDS}
 
+    # The repeat unit this provider builds, in the ``polymer_spec`` graph
+    # declaration schema (heavy atoms with their hydrogen counts, aromatic
+    # bonds 1.5, head/tail ports): a roster matches a declared repeat unit to
+    # a provider by graph isomorphism against this (additive, I-155).
+    REPEAT_UNIT = {
+        "atoms": [{"key": "c0", "element": "C", "hydrogens": 2},
+                  {"key": "c1", "element": "C", "hydrogens": 1},
+                  {"key": "r0", "element": "C", "hydrogens": 0}] +
+                 [{"key": f"r{k}", "element": "C", "hydrogens": 1} for k in range(1, 6)],
+        "bonds": [{"atoms": ["c0", "c1"], "order": 1}, {"atoms": ["c1", "r0"], "order": 1}] +
+                 [{"atoms": [f"r{k}", f"r{(k + 1) % 6}"], "order": 1.5} for k in range(6)],
+        "ports": {"head": {"atom": "c0", "bond_order": 1}, "tail": {"atom": "c1", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+
+    def spec_from_declaration(self, dp, head=None, tail=None, interior_radical=None):
+        """The chain spec of ``dp`` declared repeat units with the head/tail
+        end variants named from ``END_CHEMISTRIES`` (``None``: the artificial
+        H-capped end) and, optionally, a radical on the phenyl-bearing carbon
+        of unit ``interior_radical``.  ValueError on a name or count this
+        provider does not declare."""
+        if not isinstance(dp, int) or dp < 1:
+            raise ValueError(f"degree of polymerization must be a positive integer, got {dp!r}")
+        for end, allowed in ((head, HEAD_ENDS + TAIL_ENDS), (tail, HEAD_ENDS + TAIL_ENDS)):
+            if end is not None and end not in allowed:
+                raise ValueError(f"{end!r} is not a declared end (declared: {allowed})")
+        extra = {} if interior_radical is None else {"radical_units": (int(interior_radical),)}
+        return PsChainSpec(dp, head_end=head, tail_end=tail, head_shift=head in TAIL_ENDS,
+                           tail_shift=tail in HEAD_ENDS, **extra)
+
     @staticmethod
     def declared_layout(spec: PsChainSpec):
         """(SMILES, heavy roles in SMILES order, ports) of a declared-end spec.
@@ -1687,6 +1717,36 @@ class LinearAlkaneProvider(BoundaryProvider):
     # chain)
     END_CHEMISTRIES = {"backbone_head": ("methyl", "primary_radical"),
                        "backbone_tail": ("methyl", "primary_radical")}
+
+    # the two-carbon repeat of the declared chain (additive, I-155; see
+    # ``PolystyreneProvider.REPEAT_UNIT``)
+    REPEAT_UNIT = {
+        "atoms": [{"key": "c0", "element": "C", "hydrogens": 2},
+                  {"key": "c1", "element": "C", "hydrogens": 2}],
+        "bonds": [{"atoms": ["c0", "c1"], "order": 1}],
+        "ports": {"head": {"atom": "c0", "bond_order": 1}, "tail": {"atom": "c1", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+    REPEAT_CARBONS = 2
+
+    def spec_from_declaration(self, dp, head=None, tail=None, interior_radical=None):
+        """The chain spec of ``dp`` declared repeat units (``2 * dp`` carbons)
+        with end variants from ``END_CHEMISTRIES``.  ValueError on a name, count
+        or interior radical this provider does not declare."""
+        if not isinstance(dp, int) or dp < 1:
+            raise ValueError(f"degree of polymerization must be a positive integer, got {dp!r}")
+        carbons = self.REPEAT_CARBONS * dp
+        for end in (head, tail):
+            if end is not None and end not in self.END_CHEMISTRIES["backbone_head"]:
+                raise ValueError(f"{end!r} is not a declared end "
+                                 f"(declared: {self.END_CHEMISTRIES['backbone_head']})")
+        if interior_radical is not None:
+            # ``windows.build_spec`` reads the end fields only: a radical field
+            # would build a closed chain silently
+            raise ValueError("the linear alkane builder declares no interior radical")
+        if head is None and tail is None:
+            return ("alkane", carbons)
+        return ("alkane", carbons, head, tail)
 
     def end_edit(self, metadata: BoundaryMetadata, port: Port, end: str, rows,
                  protected) -> EndEdit:
