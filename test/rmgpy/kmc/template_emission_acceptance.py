@@ -482,7 +482,7 @@ def interpolation_table(payloads):
     worst, at, who, n = 0.0, None, None, 0
     for p in payloads:
         for t in p.get("templates", []):
-            if t.get("status") == "emitted" and t.get("weight"):
+            if t.get("status") == "emitted" and t.get("weight") and not t.get("derived"):
                 err, T = te.interpolation_error(t["weight"]["T"], t["weight"]["w"])
                 n += 1
                 if err > worst:
@@ -512,7 +512,10 @@ def cycle_gate(rows, complete):
     loaded_pairs = len(table)
     refused = [r for r in table if r["status"] == "refused:cycle"]
     interp = interpolation_table(payloads)
+    self_inverse = sum(1 for p in out for t in p.get("templates", [])
+                       if t.get("status") == "emitted" and t.get("self_inverse"))
     return {"pairs": loaded_pairs, "refused": len(refused), "interpolation": interp,
+            "self_inverse_templates": self_inverse,
             "not_evaluable": te.cycle_not_evaluable(table),
             "by_status": dict(Counter(r["status"] for r in table)),
             "worst_ratio_error": worst_row["max_ratio_error"] if worst_row else None,

@@ -2361,6 +2361,12 @@ def derive_weights(payloads, *, counter) -> list:
             if len(partners) != 1 or None in partners:
                 continue
             ref = next(iter(partners))
+            if ref == (rid, t["key"]):
+                # a self-inverse class (after merging, its own reverse): primary,
+                # never derived; its balance is checked directly
+                t["self_inverse"] = True
+                changed.add(i)
+                continue
             u = loaded.index[ref]
             if (str(rid), t["key"]) < (str(ref[0]), ref[1]):
                 continue                         # t is the primary of this pair
@@ -2469,6 +2475,23 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                 fail(f"reverse record {str(rev)[:16]} loads no template (one-way channel)")
                 continue
             for t in mine:
+                if t.get("status") == "merged":
+                    # a merged copy's own record kinetics must match the loaded
+                    # weight (representative's, or derived) within the locality
+                    # tolerance at every grid temperature
+                    into = t["merged_into"]
+                    owner = loaded.index.get((into["record"], into["key"]))
+                    try:
+                        if owner is None:
+                            raise EmissionError("its owner is not loaded")
+                        bad = max(abs(loaded.weight(owner, T) / w - 1.0)
+                                  for T, w in zip(t["weight"]["T"], t["weight"]["w"]))
+                        if bad > MERGED_TOLERANCE:
+                            fail(f"merged template {t['key'][:12]}: the record's own kinetics "
+                                 f"differ from the loaded weight by {bad:.3g} > "
+                                 f"{MERGED_TOLERANCE:.3g}")
+                    except EmissionError as error:
+                        fail(f"merged template {t['key'][:12]}: {error}")
                 if t.get("status") == "emitted" and t.get("derived"):
                     try:
                         grid = t["weight"]["T"]
