@@ -42,8 +42,21 @@ def ps_met():
             "contact_radius_m": met.SIGMA_CONTACT, "spin_factor": 1.0}
 
 
-def ps_spec(counts, mobile=None, transport=True, met_block=None):
-    mapping = ps_mapping(counts, mobile=mobile if mobile is not None else {})
+def ps_spec(counts, mobile=None, transport=True, met_block=None, monomer=False, declare_styrene=None):
+    """PS declaration.  Styrene is declared as a mobile small species only when
+    it is initially present or ``declare_styrene`` is true (a declared mobile
+    species that no loaded template involves is refused at run start, and the
+    sampled PS catalogs carry no styrene template); ``monomer`` also declares
+    it as ``monomer_product``."""
+    mobile = mobile if mobile is not None else {}
+    mapping = ps_mapping(counts, mobile=mobile)
+    styrene = mapping["small_species"]["styrene"]["graph"]
+    if declare_styrene is None:
+        declare_styrene = bool(mobile.get("styrene"))
+    if not declare_styrene:
+        mapping["small_species"] = {}
+    if monomer:
+        mapping["monomer_product"] = styrene
     if transport:
         mapping["transport_model"] = {"met": met_block or ps_met()}
     return LinearHomopolymerSpec.from_mapping(mapping)
@@ -80,7 +93,8 @@ def pe_met(d_ref=1.0e-17):
             "contact_radius_m": 5.0e-10, "spin_factor": 1.0}
 
 
-def pe_mapping(counts, *, transport=True, d_ref=1.0e-17, small=None, mobile=None, met_block=None):
+def pe_mapping(counts, *, transport=True, d_ref=1.0e-17, small=None, mobile=None, met_block=None,
+               monomer=None):
     repeat = {
         "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=2)],
         "bonds": [{"atoms": ["c1", "c2"], "order": 1}],
@@ -114,6 +128,8 @@ def pe_mapping(counts, *, transport=True, d_ref=1.0e-17, small=None, mobile=None
         "family_manifest": {}, "library_manifest": {},
         "transport_model": {"met": met_block or pe_met(d_ref)} if transport else {}, "diagnostics": {},
     }
+    if monomer is not None:
+        mapping["monomer_product"] = monomer
     return mapping
 
 
@@ -305,5 +321,51 @@ def benzyl_recombination(temperature=700.0, weight=1.0e-2):
     atoms = half(0) + half(1)
     bonds = [(0, 1, 1), (0, 2, 1), (0, 3, 1), (4, 5, 1), (4, 6, 1), (4, 7, 1)]
     return [Template("benzyl_recombination", "toy_recombination", atoms, bonds,
+                     [BondEdit(0, 4, 1), AtomEdit(0, radical=0), AtomEdit(4, radical=0)],
+                     weight=weight)]
+
+
+# --------------------------------------------------------------------------
+# S5: monomer ancestry declarations and a crotyl-matching toy template
+# --------------------------------------------------------------------------
+ETHYLENE_GRAPH = {"atoms": [_atom("a", hydrogens=2), _atom("b", hydrogens=2)],
+                  "bonds": [{"atoms": ["a", "b"], "order": 2}],
+                  "electronic_state": {"multiplicity": 1}}
+ETHYLENE = {"graph": ETHYLENE_GRAPH, "disposition": "mobile"}
+
+BUTADIENE_GRAPH = {"atoms": [_atom("a", hydrogens=2), _atom("b", hydrogens=1),
+                             _atom("c", hydrogens=1), _atom("d", hydrogens=2)],
+                   "bonds": [{"atoms": ["a", "b"], "order": 2}, {"atoms": ["b", "c"], "order": 1},
+                             {"atoms": ["c", "d"], "order": 2}],
+                   "electronic_state": {"multiplicity": 1}}
+
+
+def vinyl_butadiene_spec(counts, mobile=None):
+    """1,2-polybutadiene, -CH2-CH(CH=CH2)-: the declared monomer butadiene maps
+    onto the closed repeat unit (head-tail bond made double) in two ways whose
+    backbone atoms differ (either terminal C=C can be the polymerized one), so
+    the ancestry of an initially mobile monomer is ambiguous."""
+    mapping = pe_mapping(counts, small={"butadiene": {"graph": BUTADIENE_GRAPH, "disposition": "mobile"}},
+                         mobile=mobile, monomer=BUTADIENE_GRAPH)
+    mapping["label"] = "toy 1,2-polybutadiene"
+    mapping["repeat_unit"] = {
+        "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=1), _atom("c3", hydrogens=1),
+                  _atom("c4", hydrogens=2)],
+        "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", "c3"], "order": 1},
+                  {"atoms": ["c3", "c4"], "order": 2}],
+        "ports": {"head": {"atom": "c1", "bond_order": 1}, "tail": {"atom": "c2", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+    return LinearHomopolymerSpec.from_mapping(mapping)
+
+
+ALLYL_PORT = ((2.0, "C", False), (1.0, "H", False))   # a =CH- port seen from inside
+
+
+def allyl_recombination(temperature=700.0, weight=1.0e-2):
+    """Toy MET class: allyl-type CH2(.)-CH= + the same (crotyl participates)."""
+    atoms = _ch2_radical(0, ALLYL_PORT) + _ch2_radical(1, ALLYL_PORT)
+    bonds = [(0, 1, 1), (0, 2, 1), (0, 3, 1), (4, 5, 1), (4, 6, 1), (4, 7, 1)]
+    return [Template("allyl_recombination", "toy_recombination", atoms, bonds,
                      [BondEdit(0, 4, 1), AtomEdit(0, radical=0), AtomEdit(4, radical=0)],
                      weight=weight)]

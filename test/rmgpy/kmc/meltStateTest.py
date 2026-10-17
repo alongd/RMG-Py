@@ -918,7 +918,8 @@ def test_mobile_origin_query_and_zero_ancestry(state):
     assert len(mobile) == 2
     for c in mobile:
         assert state.origin_kinds(c) == frozenset({"mobile"})
-        assert state.backbone_count(c) == 0  # undefined in v1, not "not polymer-derived"
+        assert state.backbone_count(c) == 0  # no monomer_product declared: no ancestry, not "not polymer-derived"
     chains = [c for c in state.components.ids() if not state.origin[c].is_mobile]
     assert all(state.origin_kinds(c) == frozenset({"chain"}) for c in chains)
-    assert "undefined" in MeltState.backbone_count.__doc__
+    # S5 (I-154): a declared monomer_product's ancestry is defined (unique map onto the repeat unit)
+    assert "monomer_product" in MeltState.backbone_count.__doc__

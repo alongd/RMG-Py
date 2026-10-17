@@ -96,7 +96,21 @@ def two_state_ratio(engine, events):
 @pytest.mark.parametrize("mobile", [{}, {"styrene": 2}])
 def test_c3_closed_melt_from_declared_contents_has_positive_initiation(mobile):
     spec = S.ps_spec({10: 1, 20: 1, 30: 1}, mobile=mobile)
-    engine = me.MeltEngine(spec, S.ps_catalog(), 700.0, np.random.default_rng(0))
+    catalog = S.ps_catalog()
+    if mobile:
+        # S5 (design §5): styrene is declared mobile but no template of the
+        # sampled PS catalogs involves it, so the run is refused at start; the
+        # declared contents are still materialized and identified as styrene.
+        with pytest.raises(me.DeclarationError, match="styrene"):
+            me.MeltEngine(spec, catalog, 700.0, np.random.default_rng(0))
+        catalog = me.PayloadCatalog(catalog.payloads)
+        state = me.materialize(spec)
+        identity = me.SpeciesIdentity(spec)
+        others = [c for c in state.components.ids() if state.origin_kinds(c) == {"mobile"}]
+        assert len(others) == 2 and all(identity.identify(state, c) == "styrene" for c in others)
+        spec = S.ps_spec({10: 1, 20: 1, 30: 1})
+        mobile = {}
+    engine = me.MeltEngine(spec, catalog, 700.0, np.random.default_rng(0))
     state = engine.state
     chains = [c for c in state.components.ids() if state.origin_kinds(c) == {"chain"}]
     others = [c for c in state.components.ids() if c not in chains]
@@ -475,8 +489,9 @@ def test_declared_species_identity_is_graph_isomorphism_not_an_attribute_multise
     other = S.witness_state(["C=C[CH]C"])
     assert me.SpeciesIdentity(spec).identify(other, other.components.ids()[0]) == "crotyl"
     # the engine: only the declared species bypasses MET
-    engine = me.MeltEngine(spec, S.ToyCatalog(names=("homolysis",)), 700.0, np.random.default_rng(0),
-                           state=crotyl_state)
+    # (S5: a declared mobile species must take part in a loaded template)
+    engine = me.MeltEngine(spec, S.ToyCatalog(builder=S.allyl_recombination), 700.0,
+                           np.random.default_rng(0), state=crotyl_state)
     assert [engine.entries[c].species for c in first] == ["crotyl", None]
 
 
