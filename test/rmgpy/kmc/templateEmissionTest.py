@@ -1220,15 +1220,46 @@ def test_a_class_that_is_not_one_orbit_is_refused_non_transferable():
 
 
 # -- reciprocal pair on a witness ------------------------------------------
-KC = tuple(2.0e-3 * math.exp(t / 400.0) for t in GRID)
+def _td(cp, h298, s298, cp0, cpinf):
+    return {"Tdata": [300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1500.0], "Cpdata": cp,
+            "H298": h298, "S298": s298, "Cp0": cp0, "CpInf": cpinf}
 
 
-def toy_kc(reactant_rows, product_rows, temperatures):
-    """The toy thermo: Kc of a recombination of two species is ``KC``, of the
-    homolysis it undoes ``1 / KC`` (concentration units)."""
-    assert list(temperatures) == list(GRID)
-    one = len(rm.split_rows(dict(reactant_rows))) == 1
-    return [1.0 / k if one else k for k in KC]
+# a toy thermo with dCp != 0, so that ln Kc is NOT linear in 1/T: A <-> B + C
+TOY_A = _td([200.0, 220.0, 240.0, 260.0, 290.0, 310.0, 340.0], -100000.0, 500.0, 100.0, 700.0)
+TOY_B = _td([90.0, 100.0, 108.0, 115.0, 130.0, 140.0, 155.0], -30000.0, 250.0, 60.0, 400.0)
+TOY_C = _td([125.0, 135.0, 147.0, 160.0, 175.0, 185.0, 200.0], -50000.0, 330.0, 60.0, 400.0)
+
+
+def toy_form(homolysis_direction):
+    return {"kind": "ThermoData-Kc/1", "P0": 1e5,
+            "reactants": [TOY_A] if homolysis_direction else [TOY_B, TOY_C],
+            "products": [TOY_B, TOY_C] if homolysis_direction else [TOY_A]}
+
+
+class ToyKc:
+    """The toy thermo through the same exact evaluation the payload stores."""
+
+    def form(self, reactant_rows, product_rows, temperatures):
+        return toy_form(len(rm.split_rows(dict(reactant_rows))) == 1)
+
+    def __call__(self, reactant_rows, product_rows, temperatures):
+        f = self.form(reactant_rows, product_rows, temperatures)
+        return [te.kc_at(f, t) for t in temperatures]
+
+
+toy_kc = ToyKc()
+def _kc_grid():
+    return tuple(te.kc_at(toy_form(False), t) for t in GRID)
+
+
+KC_CACHE = []
+
+
+def _kc():
+    if not KC_CACHE:
+        KC_CACHE.append(_kc_grid())
+    return KC_CACHE[0]
 
 
 def _pair_rates(by_orientation):
@@ -1244,7 +1275,7 @@ def _toy_pair(hid=None, wid=None, scale=1.0, h_scale=1.0, counter=None):
     h = homolysis(12, (3, 4))
     r = recombination(4, 8)
     k_h = tuple(k * scale * h_scale for k in K_RULE)
-    k_w = tuple(k * scale * c for k, c in zip(K_RULE, KC))
+    k_w = tuple(k * scale * c for k, c in zip(K_RULE, _kc()))
     hid, wid = hid or _rid(1), wid or _rid(2)
     rec_h = toy_record(h, 1)
     rec_h.update(event_id=hid, reverse_of=wid)
@@ -1267,16 +1298,24 @@ def _check(payloads, counter, **kw):
     return te.check_cycles(payloads, counter=counter, kc=toy_kc, **kw)
 
 
+def _res(payloads, counter):
+    """The catalog gate: collisions resolved, reciprocal weights derived."""
+    resolved = te.resolve_collisions([te.finish(p) for p in payloads])[0]
+    return te.derive_weights(resolved, counter=counter)
+
+
 def test_toy_reciprocal_pair_satisfies_the_cycle_against_thermo():
     """AMENDED (it encoded the circular ratio): the pair passes against the
     independent thermo Kc, which the table reports."""
     payloads, counter = _toy_pair()
     assert [p["status"] for p in payloads] == ["emitted", "emitted"]
-    out, table = _check(payloads, counter)
+    out, table = _check(_res(payloads, counter), counter)
     assert len(table) == 1 and table[0]["status"] == "ok", table
     assert table[0]["max_ratio_error"] <= 1e-12 and table[0]["rows"] >= 4
-    assert table[0]["worst"]["Kc"] in (pytest.approx(1 / KC[GRID.index(table[0]["worst"]["T"])]),
-                                       pytest.approx(KC[GRID.index(table[0]["worst"]["T"])]))
+    assert table[0]["max_offgrid_error"] <= 1e-12 and table[0]["temperatures"] > len(GRID)
+    T = table[0]["worst"]["T"]
+    assert table[0]["worst"]["Kc"] in (pytest.approx(te.kc_at(toy_form(True), T), rel=1e-12),
+                                       pytest.approx(te.kc_at(toy_form(False), T), rel=1e-12))
     assert [p["status"] for p in out] == ["emitted", "emitted"]
     assert te.one_way_problems(out) == [] and te.cycle_gates(table, out) == []
 
@@ -1287,10 +1326,9 @@ def test_homolysis_rate_and_weight_doubled_is_detected_against_thermo():
     unchanged, so the loaded pair fails."""
     payloads, counter = _toy_pair(h_scale=2.0)
     assert all(c["ok"] for c in payloads[0]["calibration"])
-    out, table = _check(payloads, counter)
+    out, table = _check(_res(payloads, counter), counter)
     assert table[0]["status"] == "refused:cycle"
-    assert table[0]["max_ratio_error"] == pytest.approx(1.0, rel=1e-9)
-    assert "Kc" in table[0]["reason"] and te.cycle_gates(table, out)
+    assert "reverse-by-Kc" in table[0]["reason"] and te.cycle_gates(table, out)
 
 
 def test_perturbing_one_weight_by_1e_6_fails_the_cycle_and_is_gated():
@@ -1299,10 +1337,9 @@ def test_perturbing_one_weight_by_1e_6_fails_the_cycle_and_is_gated():
     of the pair stays loaded (no one-way channel)."""
     payloads, counter = _toy_pair()
     base_template(payloads[1])["weight"]["w"][10] *= 1 + 1e-6
-    payloads[1] = te.finish(payloads[1])
-    out, table = _check(payloads, counter)
+    out, table = _check(_res(payloads, counter), counter)
     assert table[0]["status"] == "refused:cycle"
-    assert table[0]["max_ratio_error"] == pytest.approx(1e-6, rel=1e-3)
+    assert "reverse-by-Kc" in table[0]["reason"]
     for p in out:
         t = base_template(p)
         assert t["status"] == "refused" and t["refusal"]["status"] == "refused:cycle"
@@ -1319,8 +1356,7 @@ def test_a_cycle_whose_inverse_edit_is_not_unique_is_refused():
     twin = json.loads(json.dumps(base_template(payloads[1])))
     twin["key"] = "d" * 64
     payloads[1]["templates"].append(twin)
-    payloads[1] = te.finish(payloads[1])
-    out, table = _check(payloads, counter)
+    out, table = _check(_res(payloads, counter), counter)
     assert table[0]["status"] == "refused:cycle" and table[0]["bijection_failures"] >= 1
     assert "inverse edit" in table[0]["reason"]
 
@@ -1332,7 +1368,7 @@ def test_a_cycle_without_a_channel_transition_is_refused():
     other = emit(homolysis(12, (5, 6)), radius=4)
     payloads[0] = te.finish(dict(other, record_event_id=payloads[0]["record_event_id"],
                                  reverse_of=payloads[0]["reverse_of"]))
-    out, table = _check(payloads, counter)
+    out, table = _check(_res(payloads, counter), counter)
     assert table[0]["status"] == "refused:cycle"
     for p in out:
         assert base_template(p)["refusal"]["status"] == "refused:cycle"
@@ -1344,23 +1380,25 @@ def test_a_pair_with_an_emitted_witness_weight_is_checked():
     payloads, counter = _toy_pair()
     for p in payloads:
         p["weight_source"], p["counts"] = "emitted_witness", {"record": None}
-    out, table = _check([te.finish(p) for p in payloads], counter)
+    out, table = _check(_res(payloads, counter), counter)
     assert table[0]["status"] == "ok" and table[0]["rows"] >= 4
     base_template(payloads[0])["weight"]["w"][3] *= 1.001
-    out, table = _check([te.finish(p) for p in payloads], counter)
+    out, table = _check(_res(payloads, counter), counter)
     assert table[0]["status"] == "refused:cycle"
 
 
 def test_a_pair_of_context_templates_is_checked():
-    """No base template on either side (only context templates load): the
-    pair is still checked, and a bad context weight is caught."""
+    """No base template on either side (only context templates load): the pair
+    is checked on its rows (grid, midpoints, random temperatures), its second
+    direction derived like any other, and a bad context weight is caught."""
     payloads, counter = _toy_pair()
     for p in payloads:
         p["templates"][0]["base"] = False
-    out, table = _check([te.finish(p) for p in payloads], counter)
+    out, table = _check(_res(payloads, counter), counter)
     assert table[0]["status"] == "ok" and table[0]["rows"] >= 4
+    assert table[0]["max_offgrid_error"] <= 1e-12
     payloads[0]["templates"][0]["weight"]["w"][5] *= 1.01
-    out, table = _check([te.finish(p) for p in payloads], counter)
+    out, table = _check(_res(payloads, counter), counter)
     assert table[0]["status"] == "refused:cycle" and te.cycle_gates(table, out)
 
 
@@ -1371,6 +1409,8 @@ def test_a_live_pair_without_its_reverse_record_is_refused_when_complete():
     assert te.loaded_templates(out, 700.0) == []
     out, table = _check(payloads[:1], counter, complete=False)
     assert table[0]["status"] == "not_evaluable" and base_template(out[0])["status"] == "emitted"
+    assert te.cycle_gates(table, out, complete=False) == []
+    assert len(te.cycle_not_evaluable(table)) == 1
 
 
 def _two_pairs(shift_b=0.0, b_first=False):
@@ -1389,12 +1429,15 @@ def test_unit_representatives_come_from_one_source_pair_and_the_loaded_catalog_i
     loaded reverse weight from the other."""
     payloads, counter = _two_pairs(0.004)
     out, table = te.resolve_collisions(payloads)
+    out = te.derive_weights(out, counter=counter)
     assert sorted(r["disposition"] for r in table) == ["merged", "merged"]
     live = {p["record_event_id"]: base_template(p)["status"] for p in out}
     assert live == {_rid(1): "emitted", _rid(6): "emitted", _rid(2): "merged", _rid(5): "merged"}
     assert all(len(r["pair_deviations"]) == 2 for r in table)
     out2, cycles = _check(out, counter)
     assert all(c["status"] == "ok" for c in cycles), cycles
+    assert all(c["max_offgrid_error"] <= 1e-12 for c in cycles
+               if c["worst"]["status"] == "emitted")
     assert max(c["max_ratio_error"] for c in cycles) <= 1e-12 or \
         all(c["worst"]["status"] == "merged" for c in cycles if c["max_ratio_error"] > 1e-12)
     assert te.one_way_problems(out2) == []
@@ -1417,8 +1460,9 @@ def test_merge_beyond_the_pair_tolerance_is_refused_with_every_deviation_reporte
     """Each group's diameter is 0.008 (inside), but the second pair's
     loaded ratio is 0.016 decades off: refused, deviations in the table."""
     payloads, counter = _two_pairs(0.0)
-    for p in payloads:
-        p.pop("thermo")        # legacy payloads: the expectation is each pair's own ratio
+    for p in payloads:        # legacy payloads: the expectation is each pair's own ratio
+        for t in p["templates"]:
+            t.pop("thermo")
     base_template(payloads[2])["weight"]["w"] = [w * 10 ** 0.008 for w in base_template(payloads[2])["weight"]["w"]]
     base_template(payloads[3])["weight"]["w"] = [w * 10 ** -0.008 for w in base_template(payloads[3])["weight"]["w"]]
     payloads[2], payloads[3] = te.finish(payloads[2]), te.finish(payloads[3])
@@ -1435,6 +1479,7 @@ def test_a_cycle_failure_of_the_representative_refuses_the_merged_partner_too():
     gated, and leaves no loaded reverse link to a non-loaded template."""
     payloads, counter = _two_pairs(0.0)
     out, _t = te.resolve_collisions(payloads)
+    out = te.derive_weights(out, counter=counter)
     rep = next(p for p in out if p["record_event_id"] == _rid(1))
     base_template(rep)["weight"]["w"][10] *= 1 + 1e-6
     out = [te.finish(p) for p in out]
@@ -1487,6 +1532,181 @@ def test_thermo_kc_is_whole_species_rmg_thermo_in_concentration_units(rmg):
 
 def ToyCounterReal(rmg):
     return rmg[2]
+
+
+# --------------------------------------------------------------------------
+# I-147 rework 2: detailed balance at every runtime temperature
+# --------------------------------------------------------------------------
+OFF_GRID = (312.5, 437.3, 612.5, 888.8)
+
+
+def test_interpolation_is_linear_in_inverse_temperature():
+    """A table of w = exp(a - b / T) is reproduced exactly between its grid
+    points (linear-in-T interpolation of ln w is not)."""
+    ts = [300.0, 400.0, 600.0]
+    ws = [math.exp(30.0 - 20000.0 / t) for t in ts]
+    for t in (333.3, 350.0, 512.5):
+        assert te._interpolate(ts, ws, t) == pytest.approx(math.exp(30.0 - 20000.0 / t), rel=1e-12)
+    with pytest.raises(te.EmissionError, match="extrapolation"):
+        te._interpolate(ts, ws, 299.0)
+
+
+def test_interpolation_error_of_a_stored_table():
+    ts = [float(t) for t in range(300, 1001, 25)]
+    smooth = [math.exp(30.0 - 20000.0 / t) for t in ts]
+    err, _ = te.interpolation_error(ts, smooth)
+    assert err <= 1e-12
+    kinked = list(smooth)
+    kinked[10] *= 1.05
+    err, at = te.interpolation_error(ts, kinked)
+    assert err == pytest.approx(0.05, rel=0.05) and at == ts[10]
+
+
+def test_stored_thermo_form_reproduces_kc_at_any_temperature():
+    """``kc_at`` of the toy form against the closed expression of
+    ``Reaction.get_equilibrium_constant`` (Ka = exp(-dG/RT), C0 = P0/RT)."""
+    from rmgpy import constants
+    from rmgpy.thermo import ThermoData
+    td = lambda d: ThermoData(Tdata=(d["Tdata"], "K"), Cpdata=(d["Cpdata"], "J/(mol*K)"),
+                              H298=(d["H298"], "J/mol"), S298=(d["S298"], "J/(mol*K)"),
+                              Cp0=(d["Cp0"], "J/(mol*K)"), CpInf=(d["CpInf"], "J/(mol*K)"))
+    for T in (301.7, 512.5, 999.0):
+        dg = td(TOY_B).get_free_energy(T) + td(TOY_C).get_free_energy(T) - td(TOY_A).get_free_energy(T)
+        want = math.exp(-dg / constants.R / T) * (1e5 / constants.R / T)
+        assert te.kc_at(toy_form(True), T) == pytest.approx(want, rel=1e-13)
+        assert te.kc_at(toy_form(True), T) * te.kc_at(toy_form(False), T) == pytest.approx(1.0, rel=1e-12)
+
+
+def test_the_second_direction_of_a_unit_is_derived_from_the_primary_at_the_requested_T():
+    """Primary = the emitted template of the lesser record id (the homolysis,
+    record 1); the recombination's weight at an off-grid T is w_H(T) *
+    (N_H / N_W) / (ssa_ratio * Kc_H(T)) with Kc evaluated exactly at T, not
+    interpolated, not taken at the nearest grid T."""
+    payloads, counter = _toy_pair()
+    out = _res(payloads, counter)
+    h, w = base_template(out[0]), base_template(out[1])
+    assert "derived" not in h and w["derived"]["primary"] == {"record": _rid(1), "key": h["key"]}
+    assert "lesser (record event id, key)" in w["derived"]["rule"]
+    for T in OFF_GRID:
+        wh = te.weight_at(h, T)
+        got = te.weight_at(w, T, h)
+        want = wh * w["derived"]["counts_ratio"] / (w["derived"]["ssa_ratio"] * te.kc_at(toy_form(True), T))
+        assert got == pytest.approx(want, rel=1e-12)
+        # and the loaded sums satisfy S_H / S_W = ssa_ratio * Kc_H exactly
+        nh = te._count_of(out[0], h)
+        nw = te._count_of(out[1], w)
+        assert (nh * wh) / (nw * got) == pytest.approx(
+            h["thermo"]["ssa_ratio"] * te.kc_at(toy_form(True), T), rel=1e-12)
+    with pytest.raises(te.EmissionError, match="primary"):
+        te.weight_at(w, 500.0)
+    with pytest.raises(te.EmissionError, match="extrapolation"):
+        te.weight_at(w, 1200.0, h)
+    # the catalog loads it through the primary
+    assert len(te.loaded_templates(out, 437.3)) == 2
+
+
+def test_toy_pair_balances_at_off_grid_temperatures():
+    payloads, counter = _toy_pair()
+    out, table = _check(_res(payloads, counter), counter, extra_temperatures=OFF_GRID)
+    assert table[0]["status"] == "ok"
+    assert set(OFF_GRID) <= set(table[0]["extra"])
+    assert max(table[0]["extra"].values()) <= 1e-12
+    assert table[0]["max_offgrid_error"] <= 1e-12 and table[0]["temperatures"] >= 2 * len(GRID) - 1
+
+
+def test_independently_interpolated_directions_are_gated_off_the_grid():
+    """Both weight tables are exact at every grid temperature but the second
+    direction is not derived (independent interpolation): the midpoint and
+    random temperatures expose it."""
+    payloads, counter = _toy_pair()
+    out = _res(payloads, counter)
+    base_template(out[1]).pop("derived")
+    out = [te.finish(p) for p in out]
+    out2, table = _check(out, counter)
+    assert table[0]["status"] == "refused:cycle" and table[0]["max_grid_error"] <= 1e-12
+    assert table[0]["max_offgrid_error"] > 1e-10 and "off the grid" in table[0]["reason"]
+    gates = te.cycle_gates(table, out2)
+    assert gates and te.loaded_templates(out2, 500.0) == []
+
+
+def test_a_merged_only_failure_refuses_the_owner_and_every_copy():
+    """A merged copy's record that cannot be evaluated (no stored witness)
+    refuses its representative and the other copies too."""
+    payloads, counter = _two_pairs(0.0)
+    out, _t = te.resolve_collisions(payloads)
+    out = te.derive_weights(out, counter=counter)
+    copy = next(p for p in out if p["record_event_id"] == _rid(2))
+    assert base_template(copy)["status"] == "merged"
+    base_template(copy)["maps"].pop("witnesses")
+    out = [te.finish(p) for p in out]
+    out2, table = _check(out, counter)
+    assert {p["record_event_id"]: base_template(p)["status"] for p in out2} == \
+        {_rid(k): "refused" for k in (1, 2, 5, 6)}
+    assert te.loaded_templates(out2, 700.0) == [] and te.one_way_problems(out2) == []
+    assert te.cycle_gates(table, out2)
+
+
+def test_an_absent_reverse_on_a_partial_catalog_is_reported_not_gated():
+    payloads, counter = _toy_pair()
+    out, table = _check(_res(payloads, counter)[:1], counter, complete=False)
+    assert table[0]["status"] == "not_evaluable"
+    assert te.cycle_gates(table, out, complete=False) == []
+    assert te.cycle_not_evaluable(table) and base_template(out[0])["status"] == "emitted"
+
+
+def test_a_subset_carries_the_primary_of_a_derived_template():
+    payloads, counter = _toy_pair()
+    out = _res(payloads, counter)
+    with pytest.raises(te.EmissionError, match="primary"):
+        te.loaded_templates(out[1:], 500.0)
+    carried = te.carry_owners(out[1:], out)
+    assert len(te.loaded_templates(carried, 500.0)) == 2
+
+
+def test_thermo_form_from_rmg_matches_the_provider_at_any_temperature(rmg):
+    """The stored form of real RMG ThermoData reproduces
+    ``GasPhaseRMGReferenceThermo`` Kc at off-grid temperatures to 1e-12."""
+    import channelsTest as ct
+    from rmgpy.kmc.reference_thermo import GasPhaseRMGReferenceThermo
+    from rmgpy.molecule import Molecule
+    prov = GasPhaseRMGReferenceThermo(ct.database().thermo, "test-only-database-commit")
+    kc = te.ThermoKc(prov)
+
+    def rows_of(smiles, offset):
+        m = Molecule().from_smiles(smiles)
+        m.assign_atom_ids()
+        return {a + offset: (x[0], x[1], x[2], x[3], x[4], tuple((n + offset, o) for n, o in x[5]))
+                for a, x in rm.molecule_rows(m).items()}
+    ethane = rows_of("CC", 0)
+    two = dict(rows_of("[CH3]", 100))
+    two.update(rows_of("[CH3]", 200))
+    form = kc.form(ethane, two, [700.0])
+    assert form["kind"] == te.KC_FORM
+    for T in (312.5, 437.3, 612.5, 888.8):
+        assert te.kc_at(form, T) == pytest.approx(kc(ethane, two, [T])[0], rel=1e-12)
+
+
+def test_c16_n_octyl_pair_balances_at_312_5_and_612_5_kelvin(rmg):
+    """The reviewer's repro: the resolved C16 catalog, 2 n-octyl <-> n-hexadecane
+    (record evt_7b9bec086f..., merged into evt_19427fbeec...; reverse
+    evt_1417a43aae... merged into evt_f00a90e832...), loaded S_recomb / S_hom
+    against 2 Kc(T) from independent RMG thermo at off-grid temperatures."""
+    import channelsTest as ct
+    from rmgpy.kmc.reference_thermo import GasPhaseRMGReferenceThermo
+    payloads = json.loads((HERE / "fixtures" / "i147_c16_unit_payloads.json").read_text())
+    kc = te.ThermoKc(GasPhaseRMGReferenceThermo(ct.database().thermo, "test-only-database-commit"))
+    out, table = te.check_cycles(payloads, counter=rmg[2], kc=kc, complete=True,
+                                 extra_temperatures=(312.5, 612.5))
+    ids = {p["record_event_id"][:16] for p in payloads}
+    assert {"evt_7b9bec086f4e", "evt_1417a43aae8f"} <= ids
+    pair = next(r for r in table if r["forward"].startswith("evt_1417a43aae8f")
+                or r["reverse"].startswith("evt_1417a43aae8f"))
+    assert pair["status"] == "ok", pair
+    for T in (312.5, 612.5):
+        assert pair["extra"][T] <= 1e-12, (T, pair["extra"])
+    assert max(r["max_offgrid_error"] for r in table) <= 1e-12 or all(
+        r["status"] == "ok" for r in table)
+    assert te.cycle_gates(table, out) == []
 
 
 # -- class overlap -----------------------------------------------------------
