@@ -730,7 +730,7 @@ def _fast_leak_state():
 
 def test_short_horizon_leak_report_states_its_bias_and_keeps_the_parts():
     """No proposal yet: the thinned part of the denominator is 0, so the fraction is
-    biased high (documented); the open-segment hint is reported but not in leak_den."""
+    high here (a single-run ratio estimate, bias sign unspecified); the open-segment hint is reported but not in leak_den."""
     engine = _fast_leak_state()
     prop = engine.propensities()
     exact = prop.leak / (prop.leak + _physical_reverse_hazard(engine))
@@ -745,7 +745,7 @@ def test_short_horizon_leak_report_states_its_bias_and_keeps_the_parts():
     assert set(parts) >= {"non_thinned_integral", "phi_sum", "thinned_proposals", "open_thinned"}
     assert parts["open_thinned"] == pytest.approx(
         _physical_reverse_hazard(engine) * 1.0e-6, rel=1e-9)     # the hint is the exact value here
-    assert "estimate" in me.LEAK_DEFINITION and "biased" in me.LEAK_DEFINITION
+    assert "estimate" in me.LEAK_DEFINITION and "unspecified bias sign" in me.LEAK_DEFINITION
 
 
 def test_long_run_leak_estimate_matches_the_physical_fraction():
@@ -931,21 +931,37 @@ def test_non_thinned_integral_does_not_cancel_against_a_huge_thinned_hazard():
     assert engine.leak_estimate()["non_thinned_integral"] == pytest.approx(direct * horizon, rel=1e-9, abs=0.0)
 
 
+def _balanced_leak_state(seed):
+    """_leak_fraction_state with the leak weight set so that leak is about as large as the
+    physical hazard (exact fraction near 0.5); the leak never fires, so dynamics are unchanged."""
+    spec = S.pe_spec({12: 1}, d_ref=3.0e-20)
+    engine = me.MeltEngine(
+        spec, S.ToyCatalog(builder=lambda T: S.pe_templates(T, weights={"intra_mid_end": 0.0125}),
+                           names=("homolysis", "recombination", "intra_mid_end")),
+        700.0, np.random.default_rng(seed))
+    state = engine.state
+    c = S.carbons(state, 0)
+    S.strip_h(state, sorted(c)[len(c) // 2])
+    S.strip_h(state, S.end_carbons(state, 0)[0])
+    engine.rebuild()
+    return engine
+
+
 def test_pooled_estimate_is_consistent_in_runs_and_a_single_run_is_a_biased_ratio():
-    probe = _leak_fraction_state()
+    probe = _balanced_leak_state(0)
     prop = probe.propensities()
-    exact = prop.leak / (prop.leak + (prop.enabled - prop.thinned) + _physical_reverse_hazard(probe))
+    exact = prop.leak / (prop.leak + prop.non_thinned + _physical_reverse_hazard(probe))
+    assert 0.4 < exact < 0.6
     horizon = 1.0 / prop.thinned          # about one proposal per run
     reports, singles = [], []
     for seed in range(240):
-        engine = _leak_fraction_state()
-        engine.rng = np.random.default_rng(5000 + seed)
+        engine = _balanced_leak_state(5000 + seed)
         engine.run(until=horizon)
         reports.append(engine.report())
         singles.append(reports[-1]["leak_fraction"])
     pooled = me.pooled_leak_fraction(reports)
     assert pooled["runs"] == 240
-    assert pooled["fraction"] == pytest.approx(exact, rel=0.06)
+    assert pooled["fraction"] == pytest.approx(exact, rel=0.05)
     # the per-run fraction is a ratio estimate: its expectation is not the exact value
     assert abs(np.mean(singles) - exact) > 0.05 * exact
     assert "high" not in me.LEAK_DEFINITION

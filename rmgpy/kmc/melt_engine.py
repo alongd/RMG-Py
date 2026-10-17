@@ -75,10 +75,12 @@ The leak fraction (``LEAK_ESTIMATOR``, ``LEAK_DEFINITION``) is
 ``leak_num`` and ``non_thinned`` are exact integrals to the clock, ``phi_sum``
 (the sum of phi over the proposals of the phi-thinned channels) is unbiased
 for the integral of proposal hazard x phi (Campbell's theorem), so ``leak_den``
-is unbiased and the ratio converges to the exact physical fraction as the run
-lengthens; at short times it is biased (with no proposal yet the thinned part is
-0 and the fraction is high; a ratio of unbiased parts has an O(1/proposals)
-bias).  Nothing else is added: the open segment's thinned hazard estimate
+is unbiased.  A single run's fraction is a RATIO of random quantities: an
+estimate of unspecified bias sign (it need not converge with run length, e.g.
+after absorption more time adds no information).  The consistent estimate is
+the ensemble one, ``pooled_leak_fraction``: sum of ``leak_num`` over runs
+divided by the sum of ``leak_den`` (a ratio of unbiased ensemble sums,
+consistent in the number of runs).  Nothing else is added: the open segment's thinned hazard estimate
 (``open_thinned``) is reported as a labelled hint only.
 
 Matching cost: structural matches use the matcher's own embedding, finish
@@ -124,13 +126,33 @@ LEAK_DEFINITION = (
     "leak_den = leak_num + non_thinned_integral + phi_sum, where non_thinned_integral = int of the "
     "propensity of every non-thinned firing channel dt and phi_sum = sum of phi over the proposals "
     "of the phi-thinned channels (unbiased for int proposal hazard x phi dt, Campbell); leak_den is "
-    "unbiased and the ratio is consistent as the run lengthens, biased high at short times (O(1/"
-    "proposals); with no proposal yet the thinned part is 0).  open_thinned (horizon views only, "
+    "unbiased; a single run's fraction is a ratio estimate of unspecified bias sign (not consistent "
+    "in run length: after absorption more time adds no information); the consistent estimate "
+    "is pooled_leak_fraction = sum(leak_num) / sum(leak_den) over runs, consistent in the number of "
+    "runs.  Per-run additive parts are reported (leak_num, non_thinned_integral, phi_sum, "
+    "thinned_proposals).  open_thinned (horizon views only, "
     "never committed, NOT part of leak_den) = the open segment's thinned proposal hazard x the "
     "running mean phi of each channel, a hint whose source is labelled (a sampled mean before a "
     "channel's first proposal is labelled sampled)")
 SPIN_FACTOR_RANGE = (0.25, 1.0)
 BUILTIN_SPECIES = ("H", "H2")
+
+
+def pooled_leak_fraction(runs) -> dict:
+    """Ensemble estimate of the leak fraction from independent runs: sum of
+    ``leak_num`` over the runs divided by the sum of ``leak_den`` (each run
+    given as an engine ``report()`` or ``leak_estimate()`` dict).  A ratio of
+    ensemble sums of unbiased parts: consistent in the number of runs.  A
+    single run's own fraction carries no such guarantee."""
+    num, den, n = [], [], 0
+    for run in runs:
+        parts = run.get("leak_estimate", run)
+        num.append(parts["leak_num"])
+        den.append(parts["leak_den"])
+        n += 1
+    leak_num, leak_den = math.fsum(num), math.fsum(den)
+    return {"estimator": LEAK_ESTIMATOR + "/pooled", "runs": n, "leak_num": leak_num,
+            "leak_den": leak_den, "fraction": leak_num / leak_den if leak_den else 0.0}
 
 
 class EngineError(ValueError):
@@ -833,6 +855,7 @@ class Propensities:
     leak: float
     channels: Tuple[Tuple[Tuple, float], ...]
     thinned: float = 0.0
+    non_thinned: float = 0.0   # fsum of the non-thinned channels (no subtraction of rounded totals)
 
     @property
     def total(self) -> float:
@@ -1180,8 +1203,10 @@ class MeltEngine:
         channels.append((("met",), met))
         leak.append(math.fsum(r.leak for r in self.pairs.values()))
         thinned = math.fsum(a for k, a in channels if k[0] != "met" and self.classes[k[1]].met_reverse)
+        non_thinned = math.fsum(a for k, a in channels
+                                if k[0] == "met" or not self.classes[k[1]].met_reverse)
         return Propensities(math.fsum(a for _k, a in channels), math.fsum(leak), tuple(channels),
-                            thinned)
+                            thinned, non_thinned)
 
     # -- snapshots (incremental == full recompute) ---------------------------
     def snapshot(self):
@@ -1505,9 +1530,9 @@ class MeltEngine:
     def _set_den(self):
         self.leak_den = self.leak_num + self.non_thinned + self.phi_sum
 
-    def _integrate(self, elapsed, enabled, leak, thinned=0.0):
+    def _integrate(self, elapsed, leak, non_thinned):
         self.leak_num = self._leak_num_c + leak * elapsed
-        self.non_thinned = self._non_thinned_c + (enabled - thinned) * elapsed
+        self.non_thinned = self._non_thinned_c + non_thinned * elapsed
         self.open_thinned = 0.0
         self._set_den()
         self.time = self._segment_start + elapsed
@@ -1521,10 +1546,10 @@ class MeltEngine:
         self._set_den()
         self._pending = None
 
-    def _view_to_horizon(self, until, enabled, leak, thinned=0.0, prop=None):
+    def _view_to_horizon(self, until, leak, non_thinned, thinned=0.0, prop=None):
         elapsed = until - self._segment_start
         self.leak_num = self._leak_num_c + leak * elapsed
-        self.non_thinned = self._non_thinned_c + (enabled - thinned) * elapsed
+        self.non_thinned = self._non_thinned_c + non_thinned * elapsed
         self.open_thinned = self._open_thinned_rate(prop) * elapsed if (prop and thinned > 0) else 0.0
         self._set_den()
         self.time = self._segment_start + elapsed
@@ -1552,11 +1577,11 @@ class MeltEngine:
                 self._stop = "absorbing" if pending.absorbing else "horizon"
                 if pending.absorbing and until is None:
                     return None
-                self._view_to_horizon(until, enabled, leak, prop.thinned, prop)
+                self._view_to_horizon(until, leak, prop.non_thinned, prop.thinned, prop)
                 self._pending = _Pending(pending.elapsed, pending.absorbing, enabled, leak,
                                          self.time, self._token())
                 return None
-            self._integrate(pending.elapsed, enabled, leak, prop.thinned)
+            self._integrate(pending.elapsed, leak, prop.non_thinned)
             r = self.rng.random() * enabled
             key = None
             for k, a in prop.channels:
@@ -1637,5 +1662,5 @@ class MeltEngine:
 __all__ = [
     "ComponentPairSampler", "DeclarationError", "EngineError", "EngineTransition", "Event",
     "LEAK_ESTIMATOR", "MET_SCHEMA", "MeltEngine", "PairRate", "PayloadCatalog", "Propensities", "RunResult",
-    "SpeciesIdentity", "TransportLaw", "escape_factor",
+    "SpeciesIdentity", "TransportLaw", "escape_factor", "pooled_leak_fraction",
 ]
