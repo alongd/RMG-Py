@@ -22,7 +22,7 @@ import math
 import os
 import subprocess
 import sys
-from collections import namedtuple
+from collections import defaultdict, namedtuple
 from pathlib import Path
 
 import pytest
@@ -480,6 +480,141 @@ def test_template_reaching_the_padding_weighs_on_its_emitted_witness():
     te.validate_payload(out)
 
 
+def test_padding_reach_through_a_port_exterior_alone():
+    """The padded C8 (2,3) window holds only original atoms: the template
+    reaches the padding through a port's exterior neighbour alone, so the
+    port-neighbour reach is load-bearing.  A port is never edited, so its
+    neighbours are the same on both witness sides."""
+    w0 = homolysis(8, (2, 3))
+    padded = b.evaluate_vector(w0, (1,) * len(list(b.vector_ports(w0)))).witness
+    cut_ = te.cut_template(padded, window(padded, 2).atoms, family="toy_cc",
+                           pathway=("toy",), direction="reverse")
+    assert set(cut_.witness_atoms) <= set(dict(w0.reactant_rows()))
+    assert te.reaches_beyond(cut_, padded, w0)
+
+
+def test_a_refused_emitted_witness_leaves_the_template_without_a_weight():
+    """Weight from the emitted witness (the template reaches the padding) but
+    the emitted witness's own row is refused (its rate is not rebound): the
+    template is refused and carries no weight and no calibration."""
+    w0 = homolysis(8, (2, 3))
+    padded = b.evaluate_vector(w0, (1,) * len(list(b.vector_ports(w0)))).witness
+    win_ = window(padded, 2)
+    case, row, _ctx = member(w0, 2)
+    ctx = win.ContextResult(tuple((p, None) for p in b.vector_ports(w0)), "fixed_point", "",
+                            padded, win_, None)
+    oracle = ToyCounter().channel(ToyFamily, te.molecules_of(dict(w0.reactant_rows())),
+                                  "reverse", None, ToyCounter().species_of_rows(w0.product_rows()))
+    base = stub_rates(ToyCounter())
+
+    def rates(req):
+        res = base(req)
+        if req.label == "emitted":
+            return te.RateResult(res.temperatures, res.k, res.ssa_multiplier, res.provenance,
+                                 ("stub: the emitted witness's selection is not rebound",))
+        return res
+
+    out = te.emit_record(toy_record(w0, oracle.transitions), family=ToyFamily,
+                         members=[(case, row, ((ctx,), ()))], counter=ToyCounter(),
+                         rates=rates, check_upstream=False)
+    t = base_template(out)
+    rows = {r["label"]: r for r in t["locality"]["rows"]}
+    assert rows["emitted"]["status"] == "refused:rebind"
+    assert t["status"] == "refused" and t["weight"] is None and "calibration" not in t
+    assert out["status"] == "refused"
+    te.validate_payload(out)
+
+
+# --------------------------------------------------------------------------
+# catalog-level collisions
+# --------------------------------------------------------------------------
+def _toy_catalog():
+    """C12 homolysis at (3,4) and at (4,5): two records (two channels), one
+    local template (radius 2, artificial ends far)."""
+    out = []
+    for k, bond in enumerate([(3, 4), (4, 5)]):
+        w = homolysis(12, bond)
+        oracle = ToyCounter().channel(ToyFamily, te.molecules_of(dict(w.reactant_rows())),
+                                      "reverse", None,
+                                      ToyCounter().species_of_rows(w.product_rows()))
+        rec = toy_record(w, oracle.transitions)
+        rec["event_id"] = "evt_" + str(k + 1) * 64
+        out.append(emit(w, record=rec))
+    return out
+
+
+def _per_outcome(templates, rows):
+    state = te.melt_state(rows)
+    counts = defaultdict(int)
+    for tr in wm.match(templates, state).transitions:
+        counts[rm.product_key(wm.product_rows(state, tr))] += 1
+    return counts
+
+
+def test_equal_weight_collision_is_one_template():
+    """Two records emit the same template with equal weights: loaded together
+    every matched cleavage fires twice; after the catalog collision gate it
+    fires once, and the surviving template lists both source records."""
+    payloads = _toy_catalog()
+    keys = [base_template(p)["key"] for p in payloads]
+    assert keys[0] == keys[1]
+    rows = alkane(12)[0]
+    before = _per_outcome(te.loaded_templates(payloads, 700.0), rows)
+    assert before and set(before.values()) == {2}
+    merged, table = te.resolve_collisions(payloads)
+    after = _per_outcome(te.loaded_templates(merged, 700.0), rows)
+    assert set(after) == set(before) and set(after.values()) == {1}
+    assert [r["disposition"] for r in table] == ["merged"] and table[0]["copies"] == 2
+    owner, other = (base_template(p) for p in merged)
+    assert owner["status"] == "emitted"
+    assert owner["collision"]["records"] == ["evt_" + "1" * 64, "evt_" + "2" * 64]
+    assert other["status"] == "merged" and other["merged_into"]["record"] == "evt_" + "1" * 64
+    assert [p["status"] for p in merged] == ["emitted", "emitted"]
+    for p in merged:
+        te.validate_payload(p)
+
+
+def test_unequal_weight_collision_is_refused():
+    """The same template with weights 1e-6 apart: no merge, every copy and
+    its record refused ``refused:collision`` with keys, records and weights;
+    nothing of the key is loaded."""
+    payloads = _toy_catalog()
+    t = base_template(payloads[1])
+    t["weight"]["w"] = [w * (1 + 1e-6) for w in t["weight"]["w"]]
+    payloads[1] = te.finish(payloads[1])
+    out, table = te.resolve_collisions(payloads)
+    assert [r["disposition"] for r in table] == ["refused:collision"]
+    assert table[0]["rel_spread"] == pytest.approx(1e-6, rel=1e-3)
+    for p in out:
+        t = base_template(p)
+        assert t["status"] == "refused" and t["refusal"]["status"] == "refused:collision"
+        assert t["refusal"]["keys"] == [t["key"]] and len(t["refusal"]["weights"]) == 2
+        assert t["refusal"]["records"] == ["evt_" + "1" * 64, "evt_" + "2" * 64]
+        assert p["status"] == "refused" and p["refusal"]["status"] == "refused:collision"
+        te.validate_payload(p)
+    assert te.loaded_templates(out, 700.0) == []
+
+
+def test_a_payload_attaches_only_to_its_own_record():
+    """A payload emitted for one record cannot ride on another (another event
+    id, family or orientation): attach and EventRecord.validate refuse it."""
+    from dataclasses import replace
+    w = homolysis(10, (3, 4))
+    payload = emit(w)
+    rec = _event_record(w)
+    payload = te.finish(dict(payload, record_event_id=rec.event_id))
+    te.attach(rec, payload).validate()
+    other = te.finish(dict(payload, record_event_id="evt_" + "9" * 64))
+    with pytest.raises(te.EmissionError, match="belongs to"):
+        te.attach(rec, other)
+    flipped = te.finish(dict(payload, orientation="as_generated"))
+    with pytest.raises(te.EmissionError, match="belongs to"):
+        te.attach(rec, flipped)
+    smuggled = replace(rec, schema_version=te.RECORD_SCHEMA, executable_template=other)
+    with pytest.raises(ValueError, match="belongs to"):
+        smuggled.validate()
+
+
 def test_upstream_refused_records_stay_refused_with_their_status():
     w = homolysis(10, (3, 4))
     rec = toy_record(w, 2, status="refused")
@@ -513,9 +648,9 @@ def _event_record(witness):
 def test_schema_round_trip_and_hashing():
     from rmgpy.kmc.event_record import EventRecord
     w = homolysis(10, (3, 4))
-    payload = emit(w)
-    te.validate_payload(payload)
     old = _event_record(w)
+    payload = te.finish(dict(emit(w), record_event_id=old.event_id))
+    te.validate_payload(payload)
     old.validate()
     assert "executable_template" not in old.to_dict()
     assert old.to_dict()["schema_version"] == "rewrite_record/0.1"
@@ -712,6 +847,134 @@ def test_forbidden_outcomes_are_never_produced(rmg, dp3):
                                   owners=lambda mv: ("refused:outside_this_test", ""))
     assert table["rmg_forbidden"] >= 1 and table["matched"] >= 1
     assert not [f for f in table["failures"] if "forbidden" in f], table["failures"]
+
+
+@pytest.fixture(scope="module")
+def compile_db():
+    """H abstraction and disproportionation loaded the compile's way (the
+    production rate path checks the rate-rule preparation policy)."""
+    import template_emission_acceptance as acc
+    if not acc.DATABASE.is_dir():
+        pytest.skip(f"needs the RMG database at {acc.DATABASE}")
+    return acc.load_database(["H_Abstraction", "Disproportionation"])
+
+
+def _rates(compile_db, family):
+    import template_emission_acceptance as acc
+    return te.ProductionRates(compile_db, [family], database_path=acc.DATABASE,
+                              database_sha="i138-test")
+
+
+def _request(family, case, witness, orientation="as_generated"):
+    r, p = te.template_sides(witness)
+    return te.RateRequest(family, ";".join(case.pathway), orientation, r, p, witness,
+                          "emitted", ())
+
+
+def test_identity_transfer_gets_an_executable_rate(rmg, dp3, compile_db):
+    """The DP3 benzylic H transfer (central benzylic H, C/H/Cs2Cb;C_rad/CbCs2)
+    whose products are its reactants: RMG's generator drops it, the explicit
+    labelled reaction carries the family's estimate, and its emitted witness
+    gets an ok row with a weight (as does the whole-species ladder member)."""
+    fam, _certifier, counter = rmg
+    (case, fp, c), _kept = dp3
+    rates = _rates(compile_db, "H_Abstraction")
+    req = _request("H_Abstraction", case, fp.witness)
+    assert rates.identity(req)
+    res = rates(req)
+    assert not res.problems and res.provenance["path"] == "explicit_identity"
+    assert all(k > 0 for k in res.k)
+    row = te.witness_row(c.matcher(1.0, "t"), fp.witness, label="emitted", vector=(),
+                         family=fam["H_Abstraction"], direction="forward",
+                         pathway=te.count_pathway(fam["H_Abstraction"], case.pathway, False),
+                         reverse=False, counter=counter, rates=rates,
+                         record={"template": ";".join(case.pathway),
+                                 "orientation": "as_generated"})
+    assert row["status"] == "ok", row
+    assert row["counts"]["matcher"] == row["counts"]["rmg"] == 1
+    assert row["w"] == pytest.approx([k * res.ssa_multiplier for k in res.k], rel=1e-12)
+    entry = te.ladder_member(case, {"status": "fixed_point"}, family=fam["H_Abstraction"],
+                             counter=counter, rates=rates, orientation="as_generated")
+    assert entry["status"] == "emitted", entry.get("refusal")
+    assert all(w > 0 for w in entry["weight"]["w"])
+    assert [x["ok"] for x in entry["calibration"]] == [True] * 3
+
+
+def test_explicit_rate_equals_production_rate_off_identity(rmg, compile_db):
+    """The explicit labelled-reaction path against RMG's generator on
+    non-identity transfers (CH2 and CH3 donors: degeneracy 2 and 3) and on a
+    disproportionation of two identical radicals (the identical-reactant
+    halving): equal k to 1e-9 at 600/700/800 K, equal ssa."""
+    _fam, certifier, _counter = rmg
+    S = b.PsChainSpec
+    sets = [("H_Abstraction", [S(3, radical_units=(1,)), S(3)], 3),
+            ("Disproportionation", [S(2, tail_end="benzylic_radical")] * 2, 1)]
+    checked = 0
+    for family, specs, n in sets:
+        rates = _rates(compile_db, family)
+        seen = []
+        for case in win.member_cases(certifier, compile_db.kinetics.families[family],
+                                     win.builds_of(specs), "forward"):
+            if case.kind != "kept" or case.support != "supported" or case.pathway in seen:
+                continue
+            req = _request(family, case, case.witness)
+            if rates.identity(req):
+                continue
+            seen.append(case.pathway)
+            produced = rates(req)
+            assert not produced.problems and produced.provenance["path"] == "generator"
+            records, why = rates.explicit(req)
+            hit = [x for x in records or () if x.orientation == "as_generated" and x.k_table
+                   and x.template == req.template]
+            assert len(hit) == 1, why
+            k = dict(zip(hit[0].k_table["T"], hit[0].k_table["k"]))
+            for t, value in zip(produced.temperatures, produced.k):
+                if t in te.CALIBRATION_TEMPERATURES:
+                    assert k[t] == pytest.approx(value, rel=1e-9)
+            assert hit[0].ssa_multiplier == produced.ssa_multiplier
+            checked += 1
+            if len(seen) == n:
+                break
+    assert checked == 4
+
+
+def test_c16_two_record_collision_fires_once_after_the_gate(rmg):
+    """Records evt_1417a43aae8f and evt_f00a90e83259 of the C16 acceptance emit
+    one C-C homolysis template (key f5338ad0...) with equal weights: loaded
+    together nine cleavages of C16 fire twice and the reference comparison
+    fails; after the catalog gate every cleavage fires once, at the single
+    template's weight, and the comparison has no multiplicity failure."""
+    fam, _certifier, counter = rmg
+    payloads = json.loads((HERE / "fixtures" / "i138_c16_collision_payloads.json").read_text())
+    mols, _parts = b.witness_reactants(win.builds_of([("alkane", 16)]))
+    rows = {}
+    for m in mols:
+        rows.update(rm.molecule_rows(m))
+
+    def fired(loaded):
+        state = te.melt_state(rows)
+        out = defaultdict(list)
+        for tr in wm.match(loaded, state).transitions:
+            out[rm.product_key(wm.product_rows(state, tr))].append(tr)
+        return out
+
+    before = fired(te.loaded_templates(payloads, 700.0))
+    assert sum(1 for v in before.values() if len(v) == 2) == 9
+    table = te.classify_reference(te.loaded_templates(payloads, 700.0), list(mols),
+                                  family="R_Recombination", directions=("reverse",),
+                                  counter=counter, owners=lambda mv: ("refused:other", ""))
+    assert any("produced 2 times" in f for f in table["failures"])
+    merged, collisions = te.resolve_collisions(payloads)
+    assert [(r["copies"], r["disposition"]) for r in collisions] == [(2, "merged")]
+    assert collisions[0]["key"].startswith("f5338ad0")
+    after = fired(te.loaded_templates(merged, 700.0))
+    assert set(after) == set(before) and {len(v) for v in after.values()} == {1}
+    w700 = 5.513978431788572e-10
+    assert all(v[0].weight == pytest.approx(w700, rel=1e-12) for v in after.values())
+    table = te.classify_reference(te.loaded_templates(merged, 700.0), list(mols),
+                                  family="R_Recombination", directions=("reverse",),
+                                  counter=counter, owners=lambda mv: ("refused:other", ""))
+    assert not [f for f in table["failures"] if "produced" in f]
 
 
 @pytest.mark.parametrize("second", ["identical", "unequal"])

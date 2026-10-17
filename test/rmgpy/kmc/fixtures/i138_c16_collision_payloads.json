@@ -1,0 +1,4695 @@
+[
+{
+"calibration": [
+{
+"T": 600.0,
+"ok": true,
+"relative_error": 0.0,
+"ssa_k": 2.2896353242460437e-14,
+"sum_w": 2.2896353242460437e-14
+},
+{
+"T": 700.0,
+"ok": true,
+"relative_error": 0.0,
+"ssa_k": 5.513978431788572e-10,
+"sum_w": 5.513978431788572e-10
+},
+{
+"T": 800.0,
+"ok": true,
+"relative_error": 0.0,
+"ssa_k": 1.0053589087430895e-06,
+"sum_w": 1.0053589087430895e-06
+}
+],
+"certificate": "588782a5e2d332d2d1c3b53ff2c8a2fe56231c757ce95c1d8a4745f6305f43aa",
+"contexts": [
+{
+"assignment": [],
+"context": [],
+"emission": "candidate",
+"index": 0,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCCC,[CH2]CCCCCCC|m0",
+"reason": "",
+"status": "fixed_point"
+},
+{
+"assignment": [
+[
+[
+0,
+"tail"
+],
+"primary_radical"
+]
+],
+"emission": "refused upstream (context status)",
+"index": 1,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCCC,[CH2]CCCCCCC|m0",
+"reason": "refused",
+"status": "refused:whole_species_search: Root label * candidates [15]"
+},
+{
+"assignment": [
+[
+[
+0,
+"head"
+],
+"primary_radical"
+]
+],
+"emission": "refused upstream (context status)",
+"index": 2,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCCC,[CH2]CCCCCCC|m0",
+"reason": "refused",
+"status": "refused:whole_species_search: Root label * candidates [0]"
+},
+{
+"assignment": [
+[
+[
+0,
+"head"
+],
+"primary_radical"
+],
+[
+[
+0,
+"tail"
+],
+"primary_radical"
+]
+],
+"emission": "refused upstream (context status)",
+"index": 3,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCCC,[CH2]CCCCCCC|m0",
+"reason": "refused",
+"status": "refused:whole_species_search: Root label * candidates [0, 15]"
+},
+{
+"assignment": [
+[
+[
+0,
+"head"
+],
+"methyl"
+]
+],
+"emission": "merged into context 0",
+"index": 4,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCCC,[CH2]CCCCCCC|m0",
+"reason": "",
+"status": "fixed_point"
+},
+{
+"assignment": [
+[
+[
+0,
+"tail"
+],
+"methyl"
+]
+],
+"emission": "merged into context 0",
+"index": 5,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCCC,[CH2]CCCCCCC|m0",
+"reason": "",
+"status": "fixed_point"
+},
+{
+"assignment": [
+[
+[
+0,
+"head"
+],
+"methyl"
+],
+[
+[
+0,
+"tail"
+],
+"methyl"
+]
+],
+"emission": "merged into context 0",
+"index": 6,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCCC,[CH2]CCCCCCC|m0",
+"reason": "",
+"status": "fixed_point"
+}
+],
+"counts": {
+"record": {
+"foreign": 8,
+"matcher": 1,
+"rmg": 1,
+"rmg_directed": 2,
+"target_found": true
+}
+},
+"direction": "reverse",
+"family": "R_Recombination",
+"namespaces": {
+"executable": "template atom index: window_matcher.Template atom order (canonical)",
+"record": "the record's reactant-graph atom positions (certificates.witness_molecules)",
+"template": "RMG family template labels of the representative mapping",
+"witness": "emission witness atom ids (boundaries.Witness, explicit H)"
+},
+"orientation": "reversed",
+"pathway": [
+"Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R"
+],
+"rate": {
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"k": [
+1.5651996214537802e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.2909030366372533e-33,
+7.019985828883958e-30,
+3.9584693210636704e-27,
+1.0943697917501533e-24,
+1.6604836761232433e-22,
+1.5132757139427548e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.0476228810571323e-15,
+2.2896353242460437e-14,
+3.8894591936435366e-13,
+5.287684266987114e-12,
+5.897989337314646e-11,
+5.513978431788572e-10,
+4.400765706077431e-09,
+3.04653336461868e-08,
+1.8548801967699692e-07,
+1.0053589087430895e-06,
+4.902821129136579e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.0003296835313268775,
+0.001145956879481701,
+0.0037212909299885375,
+0.011349317676313694,
+0.03266346720928871
+],
+"provenance": {
+"class": "estimate",
+"event_id": "evt_1417a43aae8f703a5ef26506635bf996bbfd7000da77703af8fb3ddf1caad442",
+"kind": "reference-thermo reverse",
+"orientation": "reversed",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+}
+},
+"ssa_multiplier": 1.0
+},
+"record_event_id": "evt_1417a43aae8f703a5ef26506635bf996bbfd7000da77703af8fb3ddf1caad442",
+"refusal": null,
+"schema": "kmc-executable-template/1",
+"sha256": "b534f9863f4270c449ecd2003da1d360c36cb7b220ffc89bb170a34388a43ae1",
+"slot_order_rule": "one transition per distinct mapped outcome (rmg_moves.product_key): every directed mapping reaching one mapped product -- both template slot orders of a pair when the template is symmetric (identical or unequal radicals recombining: one product per site pair), every reactant resonance form, every subgraph isomorphism -- is one transition; an ordered template (disproportionation: acceptor/donor) keeps the two slot orders apart because they give different mapped products; an A + A pair is two separate copies",
+"status": "emitted",
+"templates": [
+{
+"atoms": [
+{
+"boundary": "artificial",
+"charge": 0,
+"element": "C",
+"exterior": [
+[
+1.0,
+"C",
+false
+]
+],
+"final": {},
+"index": 0,
+"isotope": null,
+"kind": "port",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": "artificial",
+"charge": 0,
+"element": "C",
+"exterior": [
+[
+1.0,
+"C",
+false
+]
+],
+"final": {},
+"index": 1,
+"isotope": null,
+"kind": "port",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {
+"radical": 1
+},
+"index": 2,
+"isotope": null,
+"kind": "closed",
+"labels": [
+"*"
+],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {
+"radical": 1
+},
+"index": 3,
+"isotope": null,
+"kind": "closed",
+"labels": [
+"*"
+],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {},
+"index": 4,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {},
+"index": 5,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 6,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 7,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 8,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 9,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 10,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 11,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 12,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 13,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 14,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 15,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 16,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 17,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+}
+],
+"base": true,
+"bonds": [
+[
+0,
+4,
+1.0,
+1.0
+],
+[
+0,
+6,
+1.0,
+1.0
+],
+[
+0,
+7,
+1.0,
+1.0
+],
+[
+1,
+5,
+1.0,
+1.0
+],
+[
+1,
+8,
+1.0,
+1.0
+],
+[
+1,
+9,
+1.0,
+1.0
+],
+[
+2,
+3,
+1.0,
+0.0
+],
+[
+2,
+4,
+1.0,
+1.0
+],
+[
+2,
+10,
+1.0,
+1.0
+],
+[
+2,
+11,
+1.0,
+1.0
+],
+[
+3,
+5,
+1.0,
+1.0
+],
+[
+3,
+12,
+1.0,
+1.0
+],
+[
+3,
+13,
+1.0,
+1.0
+],
+[
+4,
+14,
+1.0,
+1.0
+],
+[
+4,
+15,
+1.0,
+1.0
+],
+[
+5,
+16,
+1.0,
+1.0
+],
+[
+5,
+17,
+1.0,
+1.0
+]
+],
+"certificate": "e34c5e0464da65b8eb3e8ca9c37011ca6591493f5313b8571fc3e55e468c2798",
+"context": [],
+"context_index": 0,
+"counts": {
+"context": {
+"foreign": 8,
+"matcher": 1,
+"rmg": 1,
+"rmg_directed": 2,
+"target_found": true
+},
+"emitted": {
+"foreign": 8,
+"matcher": 1,
+"rmg": 1,
+"rmg_directed": 2,
+"target_found": true
+}
+},
+"direction": "reverse",
+"edits": {
+"atoms": [
+[
+2,
+{
+"radical": 1
+}
+],
+[
+3,
+{
+"radical": 1
+}
+]
+],
+"bonds": [
+[
+2,
+3,
+0.0
+]
+]
+},
+"executable": {
+"atoms": [
+{
+"charge": 0,
+"element": "C",
+"exterior": [
+[
+1.0,
+"C",
+false
+]
+],
+"final": {},
+"isotope": null,
+"kind": "port",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "C",
+"exterior": [
+[
+1.0,
+"C",
+false
+]
+],
+"final": {},
+"isotope": null,
+"kind": "port",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {
+"radical": 1
+},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {
+"radical": 1
+},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+}
+],
+"bonds": [
+[
+0,
+4,
+1.0,
+1.0
+],
+[
+0,
+6,
+1.0,
+1.0
+],
+[
+0,
+7,
+1.0,
+1.0
+],
+[
+1,
+5,
+1.0,
+1.0
+],
+[
+1,
+8,
+1.0,
+1.0
+],
+[
+1,
+9,
+1.0,
+1.0
+],
+[
+2,
+3,
+1.0,
+0.0
+],
+[
+2,
+4,
+1.0,
+1.0
+],
+[
+2,
+10,
+1.0,
+1.0
+],
+[
+2,
+11,
+1.0,
+1.0
+],
+[
+3,
+5,
+1.0,
+1.0
+],
+[
+3,
+12,
+1.0,
+1.0
+],
+[
+3,
+13,
+1.0,
+1.0
+],
+[
+4,
+14,
+1.0,
+1.0
+],
+[
+4,
+15,
+1.0,
+1.0
+],
+[
+5,
+16,
+1.0,
+1.0
+],
+[
+5,
+17,
+1.0,
+1.0
+]
+],
+"participants": 1
+},
+"family": "R_Recombination",
+"key": "f5338ad0db2e3e4f380ddb94b77aa46c818f6643f17e5f008375931c2cf8eae5",
+"locality": {
+"accepted": true,
+"max_spread_log10": 5.950795411990839e-14,
+"rows": [
+{
+"label": "record",
+"source": "record k_table / T_R",
+"status": "ok",
+"vector": [],
+"w": [
+1.5651996214537802e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.2909030366372533e-33,
+7.019985828883958e-30,
+3.9584693210636704e-27,
+1.0943697917501533e-24,
+1.6604836761232433e-22,
+1.5132757139427548e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.0476228810571323e-15,
+2.2896353242460437e-14,
+3.8894591936435366e-13,
+5.287684266987114e-12,
+5.897989337314646e-11,
+5.513978431788572e-10,
+4.400765706077431e-09,
+3.04653336461868e-08,
+1.8548801967699692e-07,
+1.0053589087430895e-06,
+4.902821129136579e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.0003296835313268775,
+0.001145956879481701,
+0.0037212909299885375,
+0.011349317676313694,
+0.03266346720928871
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 8,
+"matcher": 1,
+"rmg": 1,
+"rmg_directed": 2,
+"target_found": true
+},
+"heavy_atoms": 16,
+"k": [
+1.5651996214537802e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.2909030366372533e-33,
+7.019985828883958e-30,
+3.9584693210636704e-27,
+1.0943697917501533e-24,
+1.6604836761232433e-22,
+1.5132757139427548e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.0476228810571323e-15,
+2.2896353242460437e-14,
+3.8894591936435366e-13,
+5.287684266987114e-12,
+5.897989337314646e-11,
+5.513978431788572e-10,
+4.400765706077431e-09,
+3.04653336461868e-08,
+1.8548801967699692e-07,
+1.0053589087430895e-06,
+4.902821129136579e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.0003296835313268775,
+0.001145956879481701,
+0.0037212909299885375,
+0.011349317676313694,
+0.03266346720928871
+],
+"label": "context",
+"provenance": {
+"event_id": "evt_a5c85353ca06c78aef04822f2b17aaf359724580116ebc4c5aab48536702357b",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [],
+"w": [
+1.5651996214537802e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.2909030366372533e-33,
+7.019985828883958e-30,
+3.9584693210636704e-27,
+1.0943697917501533e-24,
+1.6604836761232433e-22,
+1.5132757139427548e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.0476228810571323e-15,
+2.2896353242460437e-14,
+3.8894591936435366e-13,
+5.287684266987114e-12,
+5.897989337314646e-11,
+5.513978431788572e-10,
+4.400765706077431e-09,
+3.04653336461868e-08,
+1.8548801967699692e-07,
+1.0053589087430895e-06,
+4.902821129136579e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.0003296835313268775,
+0.001145956879481701,
+0.0037212909299885375,
+0.011349317676313694,
+0.03266346720928871
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 8,
+"matcher": 1,
+"rmg": 1,
+"rmg_directed": 2,
+"target_found": true
+},
+"heavy_atoms": 16,
+"k": [
+1.5651996214537802e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.2909030366372533e-33,
+7.019985828883958e-30,
+3.9584693210636704e-27,
+1.0943697917501533e-24,
+1.6604836761232433e-22,
+1.5132757139427548e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.0476228810571323e-15,
+2.2896353242460437e-14,
+3.8894591936435366e-13,
+5.287684266987114e-12,
+5.897989337314646e-11,
+5.513978431788572e-10,
+4.400765706077431e-09,
+3.04653336461868e-08,
+1.8548801967699692e-07,
+1.0053589087430895e-06,
+4.902821129136579e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.0003296835313268775,
+0.001145956879481701,
+0.0037212909299885375,
+0.011349317676313694,
+0.03266346720928871
+],
+"label": "emitted",
+"provenance": {
+"event_id": "evt_a5c85353ca06c78aef04822f2b17aaf359724580116ebc4c5aab48536702357b",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+0,
+0
+],
+"w": [
+1.5651996214537802e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.2909030366372533e-33,
+7.019985828883958e-30,
+3.9584693210636704e-27,
+1.0943697917501533e-24,
+1.6604836761232433e-22,
+1.5132757139427548e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.0476228810571323e-15,
+2.2896353242460437e-14,
+3.8894591936435366e-13,
+5.287684266987114e-12,
+5.897989337314646e-11,
+5.513978431788572e-10,
+4.400765706077431e-09,
+3.04653336461868e-08,
+1.8548801967699692e-07,
+1.0053589087430895e-06,
+4.902821129136579e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.0003296835313268775,
+0.001145956879481701,
+0.0037212909299885375,
+0.011349317676313694,
+0.03266346720928871
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 8,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"heavy_atoms": 17,
+"k": [
+3.130399242907472e-45,
+2.0913242221464194e-40,
+2.8207090910552896e-36,
+1.0581806073274808e-32,
+1.4039971657767515e-29,
+7.916938642127117e-27,
+2.1887395835002754e-24,
+3.320967352246392e-22,
+3.02655142788538e-20,
+1.7821973297836392e-18,
+7.198465740173383e-17,
+2.0952457621142346e-15,
+4.57927064849199e-14,
+7.778918387286906e-13,
+1.0575368533974002e-11,
+1.179597867462929e-10,
+1.1027956863577145e-09,
+8.801531412154863e-09,
+6.09306672923736e-08,
+3.709760393539727e-07,
+2.0107178174861506e-06,
+9.805642258273332e-06,
+4.343139920820891e-05,
+0.00017617739230129108,
+0.000659367062653776,
+0.0022919137589632634,
+0.007442581859977075,
+0.022698635352626746,
+0.06532693441857743
+],
+"label": "port 0:head +1",
+"provenance": {
+"event_id": "evt_67055f7badfe9bc3b5214e72e4fb7ff9f9f7f9d8044bff77d8f20ae352ab62ec",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+1,
+0
+],
+"w": [
+1.565199621453736e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.290903036637404e-33,
+7.019985828883757e-30,
+3.9584693210635585e-27,
+1.0943697917501377e-24,
+1.660483676123196e-22,
+1.51327571394269e-20,
+8.910986648918196e-19,
+3.5992328700866914e-17,
+1.0476228810571173e-15,
+2.289635324245995e-14,
+3.889459193643453e-13,
+5.287684266987001e-12,
+5.897989337314646e-11,
+5.513978431788572e-10,
+4.400765706077431e-09,
+3.04653336461868e-08,
+1.8548801967698636e-07,
+1.0053589087430753e-06,
+4.902821129136666e-06,
+2.1715699604104454e-05,
+8.808869615064554e-05,
+0.000329683531326888,
+0.0011459568794816317,
+0.0037212909299885375,
+0.011349317676313373,
+0.03266346720928871
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 9,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"heavy_atoms": 18,
+"k": [
+3.1303992429075604e-45,
+2.0913242221463602e-40,
+2.8207090910551694e-36,
+1.0581806073274507e-32,
+1.4039971657767515e-29,
+7.916938642127117e-27,
+2.1887395835003066e-24,
+3.320967352246392e-22,
+3.026551427885466e-20,
+1.7821973297836773e-18,
+7.198465740173231e-17,
+2.0952457621142346e-15,
+4.57927064849199e-14,
+7.778918387287073e-13,
+1.0575368533974452e-11,
+1.1795978674629795e-10,
+1.102795686357738e-09,
+8.801531412154863e-09,
+6.09306672923749e-08,
+3.709760393539859e-07,
+2.010717817486122e-06,
+9.805642258273157e-06,
+4.343139920821045e-05,
+0.0001761773923012961,
+0.0006593670626537316,
+0.002291913758963402,
+0.007442581859977075,
+0.022698635352627387,
+0.06532693441857906
+],
+"label": "port 0:head +2",
+"provenance": {
+"event_id": "evt_85343b272d1fcfbfe15493a65aaa096e458142f7d055fd9dadc1b5a93eeac82d",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+2,
+0
+],
+"w": [
+1.5651996214537802e-45,
+1.0456621110731801e-40,
+1.4103545455275847e-36,
+5.2909030366372533e-33,
+7.019985828883757e-30,
+3.9584693210635585e-27,
+1.0943697917501533e-24,
+1.660483676123196e-22,
+1.513275713942733e-20,
+8.910986648918387e-19,
+3.5992328700866156e-17,
+1.0476228810571173e-15,
+2.289635324245995e-14,
+3.8894591936435366e-13,
+5.287684266987226e-12,
+5.897989337314898e-11,
+5.51397843178869e-10,
+4.400765706077431e-09,
+3.046533364618745e-08,
+1.8548801967699295e-07,
+1.005358908743061e-06,
+4.902821129136579e-06,
+2.1715699604105226e-05,
+8.808869615064805e-05,
+0.0003296835313268658,
+0.001145956879481701,
+0.0037212909299885375,
+0.011349317676313694,
+0.03266346720928953
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 8,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"heavy_atoms": 17,
+"k": [
+3.130399242907472e-45,
+2.0913242221464194e-40,
+2.8207090910552896e-36,
+1.0581806073274808e-32,
+1.4039971657767515e-29,
+7.916938642127117e-27,
+2.1887395835002754e-24,
+3.320967352246392e-22,
+3.02655142788538e-20,
+1.7821973297836392e-18,
+7.198465740173383e-17,
+2.0952457621142346e-15,
+4.57927064849199e-14,
+7.778918387286906e-13,
+1.0575368533974002e-11,
+1.179597867462929e-10,
+1.1027956863577145e-09,
+8.801531412154863e-09,
+6.09306672923736e-08,
+3.709760393539727e-07,
+2.0107178174861506e-06,
+9.805642258273332e-06,
+4.343139920820891e-05,
+0.00017617739230129108,
+0.000659367062653776,
+0.0022919137589632634,
+0.007442581859977075,
+0.022698635352626746,
+0.06532693441857743
+],
+"label": "port 0:tail +1",
+"provenance": {
+"event_id": "evt_0bb28a7a9c21ea07f57bc81c2eead0c7e71247812e974b279c5b48366575b57a",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+0,
+1
+],
+"w": [
+1.565199621453736e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.290903036637404e-33,
+7.019985828883757e-30,
+3.9584693210635585e-27,
+1.0943697917501377e-24,
+1.660483676123196e-22,
+1.51327571394269e-20,
+8.910986648918196e-19,
+3.5992328700866914e-17,
+1.0476228810571173e-15,
+2.289635324245995e-14,
+3.889459193643453e-13,
+5.287684266987001e-12,
+5.897989337314646e-11,
+5.513978431788572e-10,
+4.400765706077431e-09,
+3.04653336461868e-08,
+1.8548801967698636e-07,
+1.0053589087430753e-06,
+4.902821129136666e-06,
+2.1715699604104454e-05,
+8.808869615064554e-05,
+0.000329683531326888,
+0.0011459568794816317,
+0.0037212909299885375,
+0.011349317676313373,
+0.03266346720928871
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 9,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"heavy_atoms": 18,
+"k": [
+3.1303992429075604e-45,
+2.0913242221463602e-40,
+2.8207090910551694e-36,
+1.0581806073274507e-32,
+1.4039971657767515e-29,
+7.916938642127117e-27,
+2.1887395835003066e-24,
+3.320967352246392e-22,
+3.026551427885466e-20,
+1.7821973297836773e-18,
+7.198465740173231e-17,
+2.0952457621142346e-15,
+4.57927064849199e-14,
+7.778918387287073e-13,
+1.0575368533974452e-11,
+1.1795978674629795e-10,
+1.102795686357738e-09,
+8.801531412154863e-09,
+6.09306672923749e-08,
+3.709760393539859e-07,
+2.010717817486122e-06,
+9.805642258273157e-06,
+4.343139920821045e-05,
+0.0001761773923012961,
+0.0006593670626537316,
+0.002291913758963402,
+0.007442581859977075,
+0.022698635352627387,
+0.06532693441857906
+],
+"label": "port 0:tail +2",
+"provenance": {
+"event_id": "evt_0cb9ec17917f021b3b91b2f55dc4c855230d8fc7a4c00837fcc6528706afe03e",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+0,
+2
+],
+"w": [
+1.5651996214537802e-45,
+1.0456621110731801e-40,
+1.4103545455275847e-36,
+5.2909030366372533e-33,
+7.019985828883757e-30,
+3.9584693210635585e-27,
+1.0943697917501533e-24,
+1.660483676123196e-22,
+1.513275713942733e-20,
+8.910986648918387e-19,
+3.5992328700866156e-17,
+1.0476228810571173e-15,
+2.289635324245995e-14,
+3.8894591936435366e-13,
+5.287684266987226e-12,
+5.897989337314898e-11,
+5.51397843178869e-10,
+4.400765706077431e-09,
+3.046533364618745e-08,
+1.8548801967699295e-07,
+1.005358908743061e-06,
+4.902821129136579e-06,
+2.1715699604105226e-05,
+8.808869615064805e-05,
+0.0003296835313268658,
+0.001145956879481701,
+0.0037212909299885375,
+0.011349317676313694,
+0.03266346720928953
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 10,
+"matcher": 1,
+"rmg": 1,
+"rmg_directed": 2,
+"target_found": true
+},
+"heavy_atoms": 18,
+"k": [
+1.5651996214537802e-45,
+1.0456621110731801e-40,
+1.4103545455275847e-36,
+5.2909030366372533e-33,
+7.019985828883958e-30,
+3.9584693210634466e-27,
+1.0943697917501533e-24,
+1.660483676123196e-22,
+1.513275713942733e-20,
+8.910986648918387e-19,
+3.5992328700866914e-17,
+1.0476228810571173e-15,
+2.2896353242460437e-14,
+3.8894591936435366e-13,
+5.2876842669873385e-12,
+5.897989337314814e-11,
+5.513978431788572e-10,
+4.400765706077588e-09,
+3.046533364618789e-08,
+1.8548801967699692e-07,
+1.005358908743061e-06,
+4.902821129136911e-06,
+2.1715699604105226e-05,
+8.808869615064805e-05,
+0.0003296835313268775,
+0.0011459568794816644,
+0.0037212909299885375,
+0.011349317676313694,
+0.03266346720928871
+],
+"label": "joint +1",
+"provenance": {
+"event_id": "evt_3d3f9f650fc26cf95965c6d24eeeda6efb0410f1e93ec4e5edbe7b67739c63ee",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+1,
+1
+],
+"w": [
+1.5651996214537802e-45,
+1.0456621110731801e-40,
+1.4103545455275847e-36,
+5.2909030366372533e-33,
+7.019985828883958e-30,
+3.9584693210634466e-27,
+1.0943697917501533e-24,
+1.660483676123196e-22,
+1.513275713942733e-20,
+8.910986648918387e-19,
+3.5992328700866914e-17,
+1.0476228810571173e-15,
+2.2896353242460437e-14,
+3.8894591936435366e-13,
+5.2876842669873385e-12,
+5.897989337314814e-11,
+5.513978431788572e-10,
+4.400765706077588e-09,
+3.046533364618789e-08,
+1.8548801967699692e-07,
+1.005358908743061e-06,
+4.902821129136911e-06,
+2.1715699604105226e-05,
+8.808869615064805e-05,
+0.0003296835313268775,
+0.0011459568794816644,
+0.0037212909299885375,
+0.011349317676313694,
+0.03266346720928871
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 12,
+"matcher": 1,
+"rmg": 1,
+"rmg_directed": 2,
+"target_found": true
+},
+"heavy_atoms": 20,
+"k": [
+1.5651996214537802e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.2909030366372533e-33,
+7.019985828884057e-30,
+3.9584693210635585e-27,
+1.0943697917501844e-24,
+1.660483676123196e-22,
+1.513275713942733e-20,
+8.910986648918387e-19,
+3.5992328700866156e-17,
+1.0476228810571323e-15,
+2.2896353242458816e-14,
+3.8894591936435366e-13,
+5.287684266986888e-12,
+5.897989337314814e-11,
+5.513978431788456e-10,
+4.400765706077431e-09,
+3.046533364618572e-08,
+1.8548801967699295e-07,
+1.005358908743025e-06,
+4.9028211291362315e-06,
+2.1715699604104454e-05,
+8.808869615064554e-05,
+0.0003296835313268658,
+0.0011459568794816644,
+0.0037212909299885375,
+0.011349317676313373,
+0.03266346720928871
+],
+"label": "joint +2",
+"provenance": {
+"event_id": "evt_1ef1de678028594618d5c1a7bcc66cecb0ff01aa75143e1bc677245210dcdec5",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+2,
+2
+],
+"w": [
+1.5651996214537802e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.2909030366372533e-33,
+7.019985828884057e-30,
+3.9584693210635585e-27,
+1.0943697917501844e-24,
+1.660483676123196e-22,
+1.513275713942733e-20,
+8.910986648918387e-19,
+3.5992328700866156e-17,
+1.0476228810571323e-15,
+2.2896353242458816e-14,
+3.8894591936435366e-13,
+5.287684266986888e-12,
+5.897989337314814e-11,
+5.513978431788456e-10,
+4.400765706077431e-09,
+3.046533364618572e-08,
+1.8548801967699295e-07,
+1.005358908743025e-06,
+4.9028211291362315e-06,
+2.1715699604104454e-05,
+8.808869615064554e-05,
+0.0003296835313268658,
+0.0011459568794816644,
+0.0037212909299885375,
+0.011349317676313373,
+0.03266346720928871
+]
+}
+],
+"spread_log10": [
+1.4210854715202004e-14,
+7.105427357601002e-15,
+2.1316282072803006e-14,
+1.4210854715202004e-14,
+1.7763568394002505e-14,
+2.4868995751603507e-14,
+1.7763568394002505e-14,
+1.0658141036401503e-14,
+1.7763568394002505e-14,
+2.1316282072803006e-14,
+1.7763568394002505e-14,
+7.105427357601002e-15,
+3.197442310920451e-14,
+1.0658141036401503e-14,
+3.730349362740526e-14,
+1.7763568394002505e-14,
+1.7763568394002505e-14,
+1.5987211554602254e-14,
+3.108624468950438e-14,
+2.4868995751603507e-14,
+2.7533531010703882e-14,
+5.950795411990839e-14,
+1.509903313490213e-14,
+1.2434497875801753e-14,
+2.930988785010413e-14,
+2.6201263381153694e-14,
+0.0,
+1.2212453270876722e-14,
+1.0880185641326534e-14
+],
+"tolerance_log10": 0.01
+},
+"maps": {
+"components": [
+0
+],
+"record": [
+[
+44,
+45,
+48,
+49,
+46,
+47,
+22,
+23,
+24,
+25,
+30,
+31,
+32,
+33,
+26,
+27,
+28,
+29
+]
+],
+"window_id": "d085cd716131944accf9ea05683ba9280cc646b2de824e3aa23014688a44a910",
+"witness": [
+5,
+10,
+7,
+8,
+6,
+9,
+27,
+28,
+37,
+38,
+31,
+32,
+33,
+34,
+29,
+30,
+35,
+36
+],
+"witness_label": "R_Recombination/reverse/(0,)/(0,)/((0, '*', 7), (0, '*', 8))"
+},
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCCC,[CH2]CCCCCCC|m0",
+"name": "R_Recombination:reverse:f5338ad0db2e3e4f",
+"participants": [
+{
+"atoms": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17
+],
+"index": 0,
+"roles": [
+"*"
+]
+}
+],
+"pathway": [
+"Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R"
+],
+"ports": [
+{
+"atom": 0,
+"exterior": [
+[
+1.0,
+"C",
+false
+]
+],
+"label": "artificial"
+},
+{
+"atom": 1,
+"exterior": [
+[
+1.0,
+"C",
+false
+]
+],
+"label": "artificial"
+}
+],
+"predicates": [],
+"refusal": null,
+"sources": [
+[
+"verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCCC,[CH2]CCCCCCC|m0",
+0
+]
+],
+"status": "emitted",
+"weight": {
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"w": [
+1.5651996214537802e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.2909030366372533e-33,
+7.019985828883958e-30,
+3.9584693210636704e-27,
+1.0943697917501533e-24,
+1.6604836761232433e-22,
+1.5132757139427548e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.0476228810571323e-15,
+2.2896353242460437e-14,
+3.8894591936435366e-13,
+5.287684266987114e-12,
+5.897989337314646e-11,
+5.513978431788572e-10,
+4.400765706077431e-09,
+3.04653336461868e-08,
+1.8548801967699692e-07,
+1.0053589087430895e-06,
+4.902821129136579e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.0003296835313268775,
+0.001145956879481701,
+0.0037212909299885375,
+0.011349317676313694,
+0.03266346720928871
+]
+},
+"weight_source": "record",
+"whole_species": false,
+"window": {
+"atoms": 18,
+"depths": []
+}
+}
+],
+"tolerance_log10": 0.01,
+"weight": {
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"w": [
+1.5651996214537802e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.2909030366372533e-33,
+7.019985828883958e-30,
+3.9584693210636704e-27,
+1.0943697917501533e-24,
+1.6604836761232433e-22,
+1.5132757139427548e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.0476228810571323e-15,
+2.2896353242460437e-14,
+3.8894591936435366e-13,
+5.287684266987114e-12,
+5.897989337314646e-11,
+5.513978431788572e-10,
+4.400765706077431e-09,
+3.04653336461868e-08,
+1.8548801967699692e-07,
+1.0053589087430895e-06,
+4.902821129136579e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.0003296835313268775,
+0.001145956879481701,
+0.0037212909299885375,
+0.011349317676313694,
+0.03266346720928871
+]
+},
+"weight_source": "record"
+},
+{
+"calibration": [
+{
+"T": 600.0,
+"ok": true,
+"relative_error": 0.0,
+"ssa_k": 4.5792706484920875e-14,
+"sum_w": 4.5792706484920875e-14
+},
+{
+"T": 700.0,
+"ok": true,
+"relative_error": 0.0,
+"ssa_k": 1.1027956863577145e-09,
+"sum_w": 1.1027956863577145e-09
+},
+{
+"T": 800.0,
+"ok": true,
+"relative_error": 0.0,
+"ssa_k": 2.0107178174861506e-06,
+"sum_w": 2.0107178174861506e-06
+}
+],
+"certificate": "7bd7d78d4fa058cb87781e6df972628583911f27d89caef3d97e714bfe790167",
+"contexts": [
+{
+"assignment": [],
+"context": [],
+"emission": "candidate",
+"index": 0,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m0",
+"reason": "",
+"status": "fixed_point"
+},
+{
+"assignment": [
+[
+[
+0,
+"tail"
+],
+"methyl"
+]
+],
+"emission": "merged into context 0",
+"index": 1,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m0",
+"reason": "",
+"status": "fixed_point"
+},
+{
+"assignment": [
+[
+[
+0,
+"tail"
+],
+"primary_radical"
+]
+],
+"emission": "refused upstream (context status)",
+"index": 2,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m0",
+"reason": "refused:domain: products species at atom 12: separated-radical policy: radical pi systems 3 heavy bonds apart (must be > 4)",
+"status": "refused:domain"
+},
+{
+"assignment": [
+[
+[
+0,
+"head"
+],
+"primary_radical"
+]
+],
+"emission": "refused upstream (context status)",
+"index": 3,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m0",
+"reason": "refused",
+"status": "refused:whole_species_search: Root label * candidates [0]"
+},
+{
+"assignment": [
+[
+[
+0,
+"head"
+],
+"primary_radical"
+],
+[
+[
+0,
+"tail"
+],
+"methyl"
+]
+],
+"emission": "refused upstream (context status)",
+"index": 4,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m0",
+"reason": "refused",
+"status": "refused:whole_species_search: Root label * candidates [0]"
+},
+{
+"assignment": [
+[
+[
+0,
+"head"
+],
+"primary_radical"
+],
+[
+[
+0,
+"tail"
+],
+"primary_radical"
+]
+],
+"emission": "refused upstream (context status)",
+"index": 5,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m0",
+"reason": "refused:domain: products species at atom 12: separated-radical policy: radical pi systems 3 heavy bonds apart (must be > 4)",
+"status": "refused:domain"
+},
+{
+"assignment": [
+[
+[
+0,
+"head"
+],
+"methyl"
+]
+],
+"emission": "merged into context 0",
+"index": 6,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m0",
+"reason": "",
+"status": "fixed_point"
+},
+{
+"assignment": [],
+"context": [],
+"emission": "candidate",
+"index": 0,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m1",
+"reason": "",
+"status": "fixed_point"
+},
+{
+"assignment": [
+[
+[
+0,
+"tail"
+],
+"primary_radical"
+]
+],
+"emission": "refused upstream (context status)",
+"index": 1,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m1",
+"reason": "refused",
+"status": "refused:whole_species_search: Root label * candidates [15]"
+},
+{
+"assignment": [
+[
+[
+0,
+"head"
+],
+"methyl"
+]
+],
+"emission": "merged into context 0",
+"index": 2,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m1",
+"reason": "",
+"status": "fixed_point"
+},
+{
+"assignment": [
+[
+[
+0,
+"head"
+],
+"methyl"
+],
+[
+[
+0,
+"tail"
+],
+"primary_radical"
+]
+],
+"emission": "refused upstream (context status)",
+"index": 3,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m1",
+"reason": "refused",
+"status": "refused:whole_species_search: Root label * candidates [15]"
+},
+{
+"assignment": [
+[
+[
+0,
+"head"
+],
+"primary_radical"
+]
+],
+"emission": "refused upstream (context status)",
+"index": 4,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m1",
+"reason": "refused:domain: products species at atom 0: separated-radical policy: radical pi systems 3 heavy bonds apart (must be > 4)",
+"status": "refused:domain"
+},
+{
+"assignment": [
+[
+[
+0,
+"head"
+],
+"primary_radical"
+],
+[
+[
+0,
+"tail"
+],
+"primary_radical"
+]
+],
+"emission": "refused upstream (context status)",
+"index": 5,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m1",
+"reason": "refused:domain: products species at atom 0: separated-radical policy: radical pi systems 3 heavy bonds apart (must be > 4)",
+"status": "refused:domain"
+},
+{
+"assignment": [
+[
+[
+0,
+"tail"
+],
+"methyl"
+]
+],
+"emission": "merged into context 0",
+"index": 6,
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m1",
+"reason": "",
+"status": "fixed_point"
+}
+],
+"counts": {
+"record": {
+"foreign": 7,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+}
+},
+"direction": "reverse",
+"family": "R_Recombination",
+"namespaces": {
+"executable": "template atom index: window_matcher.Template atom order (canonical)",
+"record": "the record's reactant-graph atom positions (certificates.witness_molecules)",
+"template": "RMG family template labels of the representative mapping",
+"witness": "emission witness atom ids (boundaries.Witness, explicit H)"
+},
+"orientation": "reversed",
+"pathway": [
+"Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R"
+],
+"rate": {
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"k": [
+3.130399242907695e-45,
+2.0913242221464194e-40,
+2.8207090910552896e-36,
+1.0581806073274958e-32,
+1.4039971657768313e-29,
+7.916938642127568e-27,
+2.1887395835003375e-24,
+3.320967352246628e-22,
+3.026551427885552e-20,
+1.7821973297837278e-18,
+7.198465740173537e-17,
+2.095245762114324e-15,
+4.5792706484920875e-14,
+7.778918387287293e-13,
+1.0575368533974677e-11,
+1.1795978674629795e-10,
+1.1027956863577145e-09,
+8.801531412155175e-09,
+6.09306672923736e-08,
+3.709760393539991e-07,
+2.0107178174861506e-06,
+9.805642258273332e-06,
+4.343139920821045e-05,
+0.0001761773923012936,
+0.000659367062653776,
+0.002291913758963402,
+0.007442581859977259,
+0.022698635352628036,
+0.06532693441857743
+],
+"provenance": {
+"class": "estimate",
+"event_id": "evt_f00a90e83259b551a3267988bbddcac41365e26a24aa2b44d52b0c8e42cece40",
+"kind": "reference-thermo reverse",
+"orientation": "reversed",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+}
+},
+"ssa_multiplier": 1.0
+},
+"record_event_id": "evt_f00a90e83259b551a3267988bbddcac41365e26a24aa2b44d52b0c8e42cece40",
+"refusal": null,
+"schema": "kmc-executable-template/1",
+"sha256": "2cb7e3cac8c0b4a99e6f5b1ab698b418e935f569e9c2c37f553141b51fddf165",
+"slot_order_rule": "one transition per distinct mapped outcome (rmg_moves.product_key): every directed mapping reaching one mapped product -- both template slot orders of a pair when the template is symmetric (identical or unequal radicals recombining: one product per site pair), every reactant resonance form, every subgraph isomorphism -- is one transition; an ordered template (disproportionation: acceptor/donor) keeps the two slot orders apart because they give different mapped products; an A + A pair is two separate copies",
+"status": "emitted",
+"templates": [
+{
+"atoms": [
+{
+"boundary": "artificial",
+"charge": 0,
+"element": "C",
+"exterior": [
+[
+1.0,
+"C",
+false
+]
+],
+"final": {},
+"index": 0,
+"isotope": null,
+"kind": "port",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": "artificial",
+"charge": 0,
+"element": "C",
+"exterior": [
+[
+1.0,
+"C",
+false
+]
+],
+"final": {},
+"index": 1,
+"isotope": null,
+"kind": "port",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {
+"radical": 1
+},
+"index": 2,
+"isotope": null,
+"kind": "closed",
+"labels": [
+"*"
+],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {
+"radical": 1
+},
+"index": 3,
+"isotope": null,
+"kind": "closed",
+"labels": [
+"*"
+],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {},
+"index": 4,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {},
+"index": 5,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 6,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 7,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 8,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 9,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 10,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 11,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 12,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 13,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 14,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 15,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 16,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+},
+{
+"boundary": null,
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"index": 17,
+"isotope": null,
+"kind": "closed",
+"labels": [],
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0,
+"witness_port": null
+}
+],
+"base": true,
+"bonds": [
+[
+0,
+4,
+1.0,
+1.0
+],
+[
+0,
+6,
+1.0,
+1.0
+],
+[
+0,
+7,
+1.0,
+1.0
+],
+[
+1,
+5,
+1.0,
+1.0
+],
+[
+1,
+8,
+1.0,
+1.0
+],
+[
+1,
+9,
+1.0,
+1.0
+],
+[
+2,
+3,
+1.0,
+0.0
+],
+[
+2,
+4,
+1.0,
+1.0
+],
+[
+2,
+10,
+1.0,
+1.0
+],
+[
+2,
+11,
+1.0,
+1.0
+],
+[
+3,
+5,
+1.0,
+1.0
+],
+[
+3,
+12,
+1.0,
+1.0
+],
+[
+3,
+13,
+1.0,
+1.0
+],
+[
+4,
+14,
+1.0,
+1.0
+],
+[
+4,
+15,
+1.0,
+1.0
+],
+[
+5,
+16,
+1.0,
+1.0
+],
+[
+5,
+17,
+1.0,
+1.0
+]
+],
+"certificate": "2718686f3d1a4412a0a2b22a20f858a6e56a05693c1c848f2afe4f5dfc7cae5b",
+"context": [],
+"context_index": 0,
+"counts": {
+"context": {
+"foreign": 7,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"emitted": {
+"foreign": 7,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+}
+},
+"direction": "reverse",
+"edits": {
+"atoms": [
+[
+2,
+{
+"radical": 1
+}
+],
+[
+3,
+{
+"radical": 1
+}
+]
+],
+"bonds": [
+[
+2,
+3,
+0.0
+]
+]
+},
+"executable": {
+"atoms": [
+{
+"charge": 0,
+"element": "C",
+"exterior": [
+[
+1.0,
+"C",
+false
+]
+],
+"final": {},
+"isotope": null,
+"kind": "port",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "C",
+"exterior": [
+[
+1.0,
+"C",
+false
+]
+],
+"final": {},
+"isotope": null,
+"kind": "port",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {
+"radical": 1
+},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {
+"radical": 1
+},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "C",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+},
+{
+"charge": 0,
+"element": "H",
+"exterior": [],
+"final": {},
+"isotope": null,
+"kind": "closed",
+"lone_pairs": 0,
+"participant": 0,
+"radical": 0
+}
+],
+"bonds": [
+[
+0,
+4,
+1.0,
+1.0
+],
+[
+0,
+6,
+1.0,
+1.0
+],
+[
+0,
+7,
+1.0,
+1.0
+],
+[
+1,
+5,
+1.0,
+1.0
+],
+[
+1,
+8,
+1.0,
+1.0
+],
+[
+1,
+9,
+1.0,
+1.0
+],
+[
+2,
+3,
+1.0,
+0.0
+],
+[
+2,
+4,
+1.0,
+1.0
+],
+[
+2,
+10,
+1.0,
+1.0
+],
+[
+2,
+11,
+1.0,
+1.0
+],
+[
+3,
+5,
+1.0,
+1.0
+],
+[
+3,
+12,
+1.0,
+1.0
+],
+[
+3,
+13,
+1.0,
+1.0
+],
+[
+4,
+14,
+1.0,
+1.0
+],
+[
+4,
+15,
+1.0,
+1.0
+],
+[
+5,
+16,
+1.0,
+1.0
+],
+[
+5,
+17,
+1.0,
+1.0
+]
+],
+"participants": 1
+},
+"family": "R_Recombination",
+"key": "f5338ad0db2e3e4f380ddb94b77aa46c818f6643f17e5f008375931c2cf8eae5",
+"locality": {
+"accepted": true,
+"max_spread_log10": 3.9968028886505635e-14,
+"rows": [
+{
+"label": "record",
+"source": "record k_table / T_R",
+"status": "ok",
+"vector": [],
+"w": [
+1.5651996214538474e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.290903036637479e-33,
+7.019985828884157e-30,
+3.958469321063784e-27,
+1.0943697917501687e-24,
+1.660483676123314e-22,
+1.513275713942776e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.047622881057162e-15,
+2.2896353242460437e-14,
+3.8894591936436466e-13,
+5.2876842669873385e-12,
+5.897989337314898e-11,
+5.513978431788572e-10,
+4.400765706077588e-09,
+3.04653336461868e-08,
+1.8548801967699954e-07,
+1.0053589087430753e-06,
+4.902821129136666e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.000329683531326888,
+0.001145956879481701,
+0.0037212909299886294,
+0.011349317676314018,
+0.03266346720928871
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 7,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"heavy_atoms": 16,
+"k": [
+3.130399242907695e-45,
+2.0913242221464194e-40,
+2.8207090910552896e-36,
+1.0581806073274958e-32,
+1.4039971657768313e-29,
+7.916938642127568e-27,
+2.1887395835003375e-24,
+3.320967352246628e-22,
+3.026551427885552e-20,
+1.7821973297837278e-18,
+7.198465740173537e-17,
+2.095245762114324e-15,
+4.5792706484920875e-14,
+7.778918387287293e-13,
+1.0575368533974677e-11,
+1.1795978674629795e-10,
+1.1027956863577145e-09,
+8.801531412155175e-09,
+6.09306672923736e-08,
+3.709760393539991e-07,
+2.0107178174861506e-06,
+9.805642258273332e-06,
+4.343139920821045e-05,
+0.0001761773923012936,
+0.000659367062653776,
+0.002291913758963402,
+0.007442581859977259,
+0.022698635352628036,
+0.06532693441857743
+],
+"label": "context",
+"provenance": {
+"event_id": "evt_c45333a51d18b3da29fd5d1113fb140d83337a096fcb918cf093877ae9a041b2",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [],
+"w": [
+1.5651996214538474e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.290903036637479e-33,
+7.019985828884157e-30,
+3.958469321063784e-27,
+1.0943697917501687e-24,
+1.660483676123314e-22,
+1.513275713942776e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.047622881057162e-15,
+2.2896353242460437e-14,
+3.8894591936436466e-13,
+5.2876842669873385e-12,
+5.897989337314898e-11,
+5.513978431788572e-10,
+4.400765706077588e-09,
+3.04653336461868e-08,
+1.8548801967699954e-07,
+1.0053589087430753e-06,
+4.902821129136666e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.000329683531326888,
+0.001145956879481701,
+0.0037212909299886294,
+0.011349317676314018,
+0.03266346720928871
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 7,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"heavy_atoms": 16,
+"k": [
+3.130399242907695e-45,
+2.0913242221464194e-40,
+2.8207090910552896e-36,
+1.0581806073274958e-32,
+1.4039971657768313e-29,
+7.916938642127568e-27,
+2.1887395835003375e-24,
+3.320967352246628e-22,
+3.026551427885552e-20,
+1.7821973297837278e-18,
+7.198465740173537e-17,
+2.095245762114324e-15,
+4.5792706484920875e-14,
+7.778918387287293e-13,
+1.0575368533974677e-11,
+1.1795978674629795e-10,
+1.1027956863577145e-09,
+8.801531412155175e-09,
+6.09306672923736e-08,
+3.709760393539991e-07,
+2.0107178174861506e-06,
+9.805642258273332e-06,
+4.343139920821045e-05,
+0.0001761773923012936,
+0.000659367062653776,
+0.002291913758963402,
+0.007442581859977259,
+0.022698635352628036,
+0.06532693441857743
+],
+"label": "emitted",
+"provenance": {
+"event_id": "evt_c45333a51d18b3da29fd5d1113fb140d83337a096fcb918cf093877ae9a041b2",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+0,
+0
+],
+"w": [
+1.5651996214538474e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.290903036637479e-33,
+7.019985828884157e-30,
+3.958469321063784e-27,
+1.0943697917501687e-24,
+1.660483676123314e-22,
+1.513275713942776e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.047622881057162e-15,
+2.2896353242460437e-14,
+3.8894591936436466e-13,
+5.2876842669873385e-12,
+5.897989337314898e-11,
+5.513978431788572e-10,
+4.400765706077588e-09,
+3.04653336461868e-08,
+1.8548801967699954e-07,
+1.0053589087430753e-06,
+4.902821129136666e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.000329683531326888,
+0.001145956879481701,
+0.0037212909299886294,
+0.011349317676314018,
+0.03266346720928871
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 8,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"heavy_atoms": 17,
+"k": [
+3.1303992429075604e-45,
+2.091324222146449e-40,
+2.8207090910552896e-36,
+1.0581806073274958e-32,
+1.4039971657768114e-29,
+7.916938642127341e-27,
+2.1887395835003375e-24,
+3.320967352246581e-22,
+3.026551427885466e-20,
+1.7821973297836392e-18,
+7.198465740173383e-17,
+2.0952457621142646e-15,
+4.57927064849199e-14,
+7.778918387286906e-13,
+1.0575368533974228e-11,
+1.1795978674629795e-10,
+1.102795686357738e-09,
+8.801531412154863e-09,
+6.09306672923736e-08,
+3.709760393539859e-07,
+2.0107178174861506e-06,
+9.805642258273473e-06,
+4.343139920820891e-05,
+0.0001761773923012961,
+0.000659367062653776,
+0.002291913758963402,
+0.007442581859977259,
+0.022698635352626746,
+0.06532693441857906
+],
+"label": "port 0:head +1",
+"provenance": {
+"event_id": "evt_304e4012b913d895f3e577ee5ce7240047777eb275c1d9f6958344e807b92694",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+1,
+0
+],
+"w": [
+1.5651996214537802e-45,
+1.0456621110732246e-40,
+1.4103545455276448e-36,
+5.290903036637479e-33,
+7.019985828884057e-30,
+3.9584693210636704e-27,
+1.0943697917501687e-24,
+1.6604836761232906e-22,
+1.513275713942733e-20,
+8.910986648918196e-19,
+3.5992328700866914e-17,
+1.0476228810571323e-15,
+2.289635324245995e-14,
+3.889459193643453e-13,
+5.287684266987114e-12,
+5.897989337314898e-11,
+5.51397843178869e-10,
+4.400765706077431e-09,
+3.04653336461868e-08,
+1.8548801967699295e-07,
+1.0053589087430753e-06,
+4.902821129136736e-06,
+2.1715699604104454e-05,
+8.808869615064805e-05,
+0.000329683531326888,
+0.001145956879481701,
+0.0037212909299886294,
+0.011349317676313373,
+0.03266346720928953
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 9,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"heavy_atoms": 18,
+"k": [
+3.1303992429076046e-45,
+2.0913242221463602e-40,
+2.8207090910552896e-36,
+1.0581806073274958e-32,
+1.4039971657768313e-29,
+7.916938642127341e-27,
+2.1887395835003066e-24,
+3.320967352246581e-22,
+3.026551427885552e-20,
+1.7821973297837278e-18,
+7.198465740173383e-17,
+2.095245762114324e-15,
+4.57927064849199e-14,
+7.778918387287293e-13,
+1.057536853397513e-11,
+1.1795978674630046e-10,
+1.102795686357738e-09,
+8.801531412155175e-09,
+6.093066729237578e-08,
+3.709760393539991e-07,
+2.010717817486179e-06,
+9.805642258273822e-06,
+4.3431399208212e-05,
+0.00017617739230130173,
+0.000659367062653776,
+0.0022919137589634754,
+0.0074425818599774965,
+0.022698635352628036,
+0.06532693441858091
+],
+"label": "port 0:head +2",
+"provenance": {
+"event_id": "evt_8a37875afbee34b2e5ebe6b6da5292f6ae05157aba2d8abce11d25103b694c54",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+2,
+0
+],
+"w": [
+1.5651996214538023e-45,
+1.0456621110731801e-40,
+1.4103545455276448e-36,
+5.290903036637479e-33,
+7.019985828884157e-30,
+3.9584693210636704e-27,
+1.0943697917501533e-24,
+1.6604836761232906e-22,
+1.513275713942776e-20,
+8.910986648918639e-19,
+3.5992328700866914e-17,
+1.047622881057162e-15,
+2.289635324245995e-14,
+3.8894591936436466e-13,
+5.287684266987565e-12,
+5.897989337315023e-11,
+5.51397843178869e-10,
+4.400765706077588e-09,
+3.046533364618789e-08,
+1.8548801967699954e-07,
+1.0053589087430895e-06,
+4.902821129136911e-06,
+2.1715699604106e-05,
+8.808869615065087e-05,
+0.000329683531326888,
+0.0011459568794817377,
+0.0037212909299887483,
+0.011349317676314018,
+0.032663467209290455
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 8,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"heavy_atoms": 17,
+"k": [
+3.1303992429076046e-45,
+2.091324222146449e-40,
+2.8207090910552896e-36,
+1.0581806073275109e-32,
+1.4039971657768114e-29,
+7.916938642127454e-27,
+2.1887395835002754e-24,
+3.320967352246581e-22,
+3.026551427885466e-20,
+1.7821973297836392e-18,
+7.198465740173537e-17,
+2.0952457621142646e-15,
+4.57927064849199e-14,
+7.778918387287073e-13,
+1.0575368533974452e-11,
+1.1795978674629795e-10,
+1.102795686357738e-09,
+8.801531412155175e-09,
+6.09306672923749e-08,
+3.709760393539859e-07,
+2.010717817486179e-06,
+9.805642258273473e-06,
+4.343139920820891e-05,
+0.0001761773923012961,
+0.000659367062653776,
+0.0022919137589632634,
+0.007442581859977075,
+0.022698635352626746,
+0.06532693441857906
+],
+"label": "port 0:tail +1",
+"provenance": {
+"event_id": "evt_c12a404545f0478e74ab80a12be0d2dbac584bcd8f9046f7c0ee7540885a599d",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+0,
+1
+],
+"w": [
+1.5651996214538023e-45,
+1.0456621110732246e-40,
+1.4103545455276448e-36,
+5.2909030366375544e-33,
+7.019985828884057e-30,
+3.958469321063727e-27,
+1.0943697917501377e-24,
+1.6604836761232906e-22,
+1.513275713942733e-20,
+8.910986648918196e-19,
+3.5992328700867685e-17,
+1.0476228810571323e-15,
+2.289635324245995e-14,
+3.8894591936435366e-13,
+5.287684266987226e-12,
+5.897989337314898e-11,
+5.51397843178869e-10,
+4.400765706077588e-09,
+3.046533364618745e-08,
+1.8548801967699295e-07,
+1.0053589087430895e-06,
+4.902821129136736e-06,
+2.1715699604104454e-05,
+8.808869615064805e-05,
+0.000329683531326888,
+0.0011459568794816317,
+0.0037212909299885375,
+0.011349317676313373,
+0.03266346720928953
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 9,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"heavy_atoms": 18,
+"k": [
+3.1303992429076046e-45,
+2.0913242221463602e-40,
+2.8207090910551694e-36,
+1.0581806073274958e-32,
+1.4039971657768114e-29,
+7.916938642127117e-27,
+2.1887395835003066e-24,
+3.320967352246581e-22,
+3.026551427885552e-20,
+1.7821973297836773e-18,
+7.198465740173537e-17,
+2.0952457621142646e-15,
+4.579270648492218e-14,
+7.778918387287293e-13,
+1.0575368533974903e-11,
+1.1795978674630046e-10,
+1.102795686357738e-09,
+8.801531412155175e-09,
+6.093066729237578e-08,
+3.70976039354007e-07,
+2.010717817486179e-06,
+9.805642258273822e-06,
+4.343139920821045e-05,
+0.00017617739230130173,
+0.000659367062653776,
+0.0022919137589634754,
+0.0074425818599774965,
+0.02269863535262868,
+0.06532693441858091
+],
+"label": "port 0:tail +2",
+"provenance": {
+"event_id": "evt_50c357200b331323029f04aebe80e32bf61424c5997f72fab3ddbe0b56a010ee",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+0,
+2
+],
+"w": [
+1.5651996214538023e-45,
+1.0456621110731801e-40,
+1.4103545455275847e-36,
+5.290903036637479e-33,
+7.019985828884057e-30,
+3.9584693210635585e-27,
+1.0943697917501533e-24,
+1.6604836761232906e-22,
+1.513275713942776e-20,
+8.910986648918387e-19,
+3.5992328700867685e-17,
+1.0476228810571323e-15,
+2.289635324246109e-14,
+3.8894591936436466e-13,
+5.2876842669874516e-12,
+5.897989337315023e-11,
+5.51397843178869e-10,
+4.400765706077588e-09,
+3.046533364618789e-08,
+1.854880196770035e-07,
+1.0053589087430895e-06,
+4.902821129136911e-06,
+2.1715699604105226e-05,
+8.808869615065087e-05,
+0.000329683531326888,
+0.0011459568794817377,
+0.0037212909299887483,
+0.01134931767631434,
+0.032663467209290455
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 9,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"heavy_atoms": 18,
+"k": [
+3.1303992429076046e-45,
+2.0913242221464194e-40,
+2.8207090910551694e-36,
+1.0581806073274808e-32,
+1.4039971657768114e-29,
+7.916938642127117e-27,
+2.1887395835003066e-24,
+3.3209673522464867e-22,
+3.026551427885552e-20,
+1.7821973297836773e-18,
+7.198465740173383e-17,
+2.095245762114324e-15,
+4.579270648492218e-14,
+7.778918387287293e-13,
+1.0575368533974903e-11,
+1.1795978674630297e-10,
+1.102795686357738e-09,
+8.801531412155175e-09,
+6.093066729237707e-08,
+3.7097603935401227e-07,
+2.010717817486179e-06,
+9.805642258273822e-06,
+4.343139920821045e-05,
+0.0001761773923012961,
+0.000659367062653776,
+0.0022919137589634754,
+0.0074425818599774965,
+0.022698635352627387,
+0.06532693441858091
+],
+"label": "joint +1",
+"provenance": {
+"event_id": "evt_e779ef332d0d6d2eea8d0c122280662fbb464eea1a815673cb1c3a42da0cbb1f",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+1,
+1
+],
+"w": [
+1.5651996214538023e-45,
+1.0456621110732097e-40,
+1.4103545455275847e-36,
+5.290903036637404e-33,
+7.019985828884057e-30,
+3.9584693210635585e-27,
+1.0943697917501533e-24,
+1.6604836761232433e-22,
+1.513275713942776e-20,
+8.910986648918387e-19,
+3.5992328700866914e-17,
+1.047622881057162e-15,
+2.289635324246109e-14,
+3.8894591936436466e-13,
+5.2876842669874516e-12,
+5.897989337315148e-11,
+5.51397843178869e-10,
+4.400765706077588e-09,
+3.046533364618854e-08,
+1.8548801967700613e-07,
+1.0053589087430895e-06,
+4.902821129136911e-06,
+2.1715699604105226e-05,
+8.808869615064805e-05,
+0.000329683531326888,
+0.0011459568794817377,
+0.0037212909299887483,
+0.011349317676313694,
+0.032663467209290455
+]
+},
+{
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"counts": {
+"foreign": 11,
+"matcher": 2,
+"rmg": 2,
+"rmg_directed": 4,
+"target_found": true
+},
+"heavy_atoms": 20,
+"k": [
+3.1303992429075604e-45,
+2.0913242221464194e-40,
+2.8207090910553698e-36,
+1.0581806073274958e-32,
+1.4039971657768512e-29,
+7.916938642127117e-27,
+2.1887395835003687e-24,
+3.3209673522464867e-22,
+3.026551427885552e-20,
+1.7821973297837783e-18,
+7.198465740173537e-17,
+2.095245762114324e-15,
+4.57927064849199e-14,
+7.778918387287293e-13,
+1.0575368533974452e-11,
+1.1795978674629795e-10,
+1.1027956863576911e-09,
+8.801531412155175e-09,
+6.093066729237144e-08,
+3.709760393539991e-07,
+2.010717817486251e-06,
+9.805642258273473e-06,
+4.343139920821045e-05,
+0.00017617739230130173,
+0.000659367062653776,
+0.002291913758963402,
+0.0074425818599774965,
+0.022698635352628036,
+0.06532693441858091
+],
+"label": "joint +2",
+"provenance": {
+"event_id": "evt_aa44bddef00965d8dfd905f0929567e897b2f8d33186f94a195d13001b647727",
+"selection": {
+"kind": "reference-thermo reverse",
+"reference": "k_family / Kc"
+},
+"status": "enabled"
+},
+"ssa": 1.0,
+"status": "ok",
+"vector": [
+2,
+2
+],
+"w": [
+1.5651996214537802e-45,
+1.0456621110732097e-40,
+1.4103545455276849e-36,
+5.290903036637479e-33,
+7.019985828884256e-30,
+3.9584693210635585e-27,
+1.0943697917501844e-24,
+1.6604836761232433e-22,
+1.513275713942776e-20,
+8.910986648918891e-19,
+3.5992328700867685e-17,
+1.047622881057162e-15,
+2.289635324245995e-14,
+3.8894591936436466e-13,
+5.287684266987226e-12,
+5.897989337314898e-11,
+5.513978431788456e-10,
+4.400765706077588e-09,
+3.046533364618572e-08,
+1.8548801967699954e-07,
+1.0053589087431255e-06,
+4.902821129136736e-06,
+2.1715699604105226e-05,
+8.808869615065087e-05,
+0.000329683531326888,
+0.001145956879481701,
+0.0037212909299887483,
+0.011349317676314018,
+0.032663467209290455
+]
+}
+],
+"spread_log10": [
+1.4210854715202004e-14,
+1.4210854715202004e-14,
+3.552713678800501e-14,
+1.4210854715202004e-14,
+1.4210854715202004e-14,
+2.4868995751603507e-14,
+1.7763568394002505e-14,
+1.7763568394002505e-14,
+1.4210854715202004e-14,
+3.552713678800501e-14,
+1.0658141036401503e-14,
+1.2434497875801753e-14,
+2.3092638912203256e-14,
+2.3092638912203256e-14,
+3.552713678800501e-14,
+1.9539925233402755e-14,
+1.7763568394002505e-14,
+1.5987211554602254e-14,
+3.9968028886505635e-14,
+3.108624468950438e-14,
+2.220446049250313e-14,
+2.1316282072803006e-14,
+3.019806626980426e-14,
+1.9539925233402755e-14,
+0.0,
+3.9968028886505635e-14,
+2.4424906541753444e-14,
+3.68594044175552e-14,
+2.3092638912203256e-14
+],
+"tolerance_log10": 0.01
+},
+"maps": {
+"components": [
+0
+],
+"record": [
+[
+36,
+46,
+40,
+42,
+38,
+44,
+6,
+7,
+26,
+27,
+14,
+15,
+18,
+19,
+10,
+11,
+22,
+23
+]
+],
+"window_id": "cc851c1ba2df7cf6495701deb94b4001ce5eac499450cd8515cc6298c0b8fb5a",
+"witness": [
+9,
+14,
+11,
+12,
+10,
+13,
+35,
+36,
+45,
+46,
+39,
+40,
+41,
+42,
+37,
+38,
+43,
+44
+],
+"witness_label": "R_Recombination/reverse/(0,)/(0,)/((0, '*', 11), (0, '*', 12))"
+},
+"member": "verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m0",
+"name": "R_Recombination:reverse:f5338ad0db2e3e4f",
+"participants": [
+{
+"atoms": [
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9,
+10,
+11,
+12,
+13,
+14,
+15,
+16,
+17
+],
+"index": 0,
+"roles": [
+"*"
+]
+}
+],
+"pathway": [
+"Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R"
+],
+"ports": [
+{
+"atom": 0,
+"exterior": [
+[
+1.0,
+"C",
+false
+]
+],
+"label": "artificial"
+},
+{
+"atom": 1,
+"exterior": [
+[
+1.0,
+"C",
+false
+]
+],
+"label": "artificial"
+}
+],
+"predicates": [],
+"refusal": null,
+"sources": [
+[
+"verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m0",
+0
+],
+[
+"verse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m1",
+0
+]
+],
+"status": "emitted",
+"weight": {
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"w": [
+1.5651996214538474e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.290903036637479e-33,
+7.019985828884157e-30,
+3.958469321063784e-27,
+1.0943697917501687e-24,
+1.660483676123314e-22,
+1.513275713942776e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.047622881057162e-15,
+2.2896353242460437e-14,
+3.8894591936436466e-13,
+5.2876842669873385e-12,
+5.897989337314898e-11,
+5.513978431788572e-10,
+4.400765706077588e-09,
+3.04653336461868e-08,
+1.8548801967699954e-07,
+1.0053589087430753e-06,
+4.902821129136666e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.000329683531326888,
+0.001145956879481701,
+0.0037212909299886294,
+0.011349317676314018,
+0.03266346720928871
+]
+},
+"weight_source": "record",
+"whole_species": false,
+"window": {
+"atoms": 18,
+"depths": []
+}
+}
+],
+"tolerance_log10": 0.01,
+"weight": {
+"T": [
+300.0,
+325.0,
+350.0,
+375.0,
+400.0,
+425.0,
+450.0,
+475.0,
+500.0,
+525.0,
+550.0,
+575.0,
+600.0,
+625.0,
+650.0,
+675.0,
+700.0,
+725.0,
+750.0,
+775.0,
+800.0,
+825.0,
+850.0,
+875.0,
+900.0,
+925.0,
+950.0,
+975.0,
+1000.0
+],
+"w": [
+1.5651996214538474e-45,
+1.0456621110732097e-40,
+1.4103545455276448e-36,
+5.290903036637479e-33,
+7.019985828884157e-30,
+3.958469321063784e-27,
+1.0943697917501687e-24,
+1.660483676123314e-22,
+1.513275713942776e-20,
+8.910986648918639e-19,
+3.5992328700867685e-17,
+1.047622881057162e-15,
+2.2896353242460437e-14,
+3.8894591936436466e-13,
+5.2876842669873385e-12,
+5.897989337314898e-11,
+5.513978431788572e-10,
+4.400765706077588e-09,
+3.04653336461868e-08,
+1.8548801967699954e-07,
+1.0053589087430753e-06,
+4.902821129136666e-06,
+2.1715699604105226e-05,
+8.80886961506468e-05,
+0.000329683531326888,
+0.001145956879481701,
+0.0037212909299886294,
+0.011349317676314018,
+0.03266346720928871
+]
+},
+"weight_source": "record"
+}
+]
