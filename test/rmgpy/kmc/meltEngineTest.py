@@ -1,0 +1,451 @@
+"""S4 red tests: the melt engine over a loaded template catalog (I-151).
+
+Design: I-127 v3 §3 (propensity, exact pair sampler, role_swap), §4 (engine),
+§7 (MET length and invariants), §8 (scope), §9 (S4 red tests).  Every
+expected number below is derived independently of the engine: exact pair
+enumeration, the declared transport formula written out here, whole-species
+Kc from the catalog's stored thermo (``template_emission.kc_at``), and atom
+counts read from the state.
+"""
+
+import math
+import re
+from collections import Counter
+from pathlib import Path
+
+import numpy as np
+import pytest
+from scipy import stats
+
+from rmgpy import constants
+from rmgpy.kmc import template_emission as te
+
+import melt_engine_support as S
+
+from rmgpy.kmc import melt_engine as me
+
+ENGINE_SOURCE = Path(me.__file__).read_text()
+PE_LIVE = ("homolysis", "recombination", "h_abstraction", "disproportionation", "beta_scission",
+           "mid_end_recombination", "intra_mid_end")
+
+
+# --------------------------------------------------------------------------
+# helpers
+# --------------------------------------------------------------------------
+def totals(state):
+    """(sum of compositions, sum of backbone counts), read from the atoms."""
+    comp = Counter((n.element, n.isotope) for n in state.atoms.values())
+    backbone = sum(1 for o in state.origin.values() if o.is_backbone)
+    per_component = Counter()
+    bb = 0
+    for cid in state.components.ids():
+        per_component.update(state.components.composition(cid))
+        bb += state.components.backbone_count(cid)
+    assert per_component == comp and bb == backbone
+    return comp, backbone
+
+
+def max_backbone_degree(state):
+    origin = state.origin
+    return max(sum(1 for b in state.atoms[a].edges if origin[b].is_backbone)
+               for a in state.atoms if origin[a].is_backbone)
+
+
+def k_diffusion(met_block, temperature, m0, n1, n2):
+    """The declared encounter law, written out independently of the engine."""
+    d = met_block["segment_diffusivity"]
+    if d["law"] == "arrhenius":
+        d0 = d["D_ref_m2_s"] * math.exp(-d["Ea_J_mol"] / constants.R * (1 / temperature - 1 / d["T_ref_K"]))
+    else:
+        def shift(x):
+            return -d["C1"] * (x - d["T_wlf_K"]) / (d["C2_K"] + x - d["T_wlf_K"])
+        d0 = d["D_ref_m2_s"] * 10 ** (shift(d["T_ref_K"]) - shift(temperature))
+    scaling = met_block["chain_scaling"]
+
+    def diff(n):
+        if scaling["law"] == "rouse" or n <= scaling["entanglement_units"]:
+            return d0 / n
+        return d0 * scaling["entanglement_units"] / n ** 2
+    rg = math.sqrt(met_block["mean_square_end_to_end_per_molar_mass_m2_mol_per_g"] * m0 * min(n1, n2) / 6)
+    radius = max(met_block["contact_radius_m"], 2 * rg)
+    return 4 * math.pi * constants.Na * met_block["spin_factor"] * (diff(n1) + diff(n2)) * radius
+
+
+def two_state_ratio(engine, events):
+    """Run ``events`` events of the dimer <-> radical-pair system; return
+    (time in dimer / time in pair, completed sojourns)."""
+    comps = len(engine.state.components)
+    time_in = Counter()
+    last = engine.time
+    sojourns = 0
+    for _ in range(events):
+        before = len(engine.state.components)
+        event = engine.step()
+        assert event is not None
+        time_in[before] += event.time - last
+        last = event.time
+        sojourns += 1
+        assert len(engine.state.components) != before
+    assert comps in time_in
+    return time_in[1] / time_in[2], sojourns
+
+
+# --------------------------------------------------------------------------
+# C3': declared contents only, positive initiation
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize("mobile", [{}, {"styrene": 2}])
+def test_c3_closed_melt_from_declared_contents_has_positive_initiation(mobile):
+    spec = S.ps_spec({10: 1, 20: 1, 30: 1}, mobile=mobile)
+    engine = me.MeltEngine(spec, S.ps_catalog(), 700.0, np.random.default_rng(0))
+    state = engine.state
+    chains = [c for c in state.components.ids() if state.origin_kinds(c) == {"chain"}]
+    others = [c for c in state.components.ids() if c not in chains]
+    formulas = sorted(tuple(sorted(state.components.composition(c).items(), key=str)) for c in chains)
+    assert formulas == sorted(((("C", None), 8 * n), (("H", None), 8 * n + 2)) for n in (10, 20, 30))
+    assert len(others) == sum(mobile.values())
+    assert all(engine.entries[c].species == "styrene" for c in others)
+    assert all(state.components.radical_count(c) == 0 for c in state.components.ids())
+    prop = engine.propensities()
+    assert prop.enabled > 0.0
+    live = [k for k, a in prop.channels if a > 0]
+    assert live and all(k[0] == "uni" and engine.classes[k[1]].radical_delta > 0 for k in live)
+    # the MET length unit: n = max(1, floor(B_c / b)), b = 2 backbone atoms per PS unit
+    assert engine.transport.backbone_atoms_per_unit == 2
+    assert sorted(engine.entries[c].met_length for c in chains) == [10, 20, 30]
+
+
+# --------------------------------------------------------------------------
+# index: incremental == full recompute
+# --------------------------------------------------------------------------
+def test_incremental_equals_full_recompute_after_200_events():
+    spec = S.pe_spec({10: 1, 20: 1, 30: 1})
+    engine = me.MeltEngine(spec, S.ToyCatalog(names=PE_LIVE), 700.0, np.random.default_rng(11))
+    hab = next(c.index for c in engine.classes if c.name == "h_abstraction")
+    split_x = merge_x = 0
+    previous = engine.snapshot()
+    for _ in range(200):
+        event = engine.step()
+        assert event is not None, "the toy melt went absorbing before 200 events"
+        engine.check_consistency()
+        mine, fresh = engine.snapshot(), engine.fresh_snapshot()
+        assert mine == fresh
+        x_before = {k: v for k, v in previous["X"] if k[0] == hab}
+        x_after = {k: v for k, v in mine["X"] if k[0] == hab}
+        if x_before != x_after:
+            if len(event.products) > len(event.components):
+                split_x += 1
+            elif len(event.products) < len(event.components):
+                merge_x += 1
+        previous = mine
+    assert split_x >= 1 and merge_x >= 1, (split_x, merge_x)
+
+
+def test_incremental_equals_full_recompute_on_the_loaded_ps_catalog():
+    """The same check on emitted templates (sampled closed-PS-DP8 R_Recombination
+    and H_Abstraction catalogs) over a closed PS melt."""
+    engine = me.MeltEngine(S.ps_spec({6: 3}), S.ps_catalog(), 700.0, np.random.default_rng(8))
+    fired = Counter()
+    for _ in range(40):
+        event = engine.step()
+        assert event is not None
+        fired[event.channel] += 1
+        engine.check_consistency()
+        assert engine.snapshot() == engine.fresh_snapshot()
+    assert fired["uni"] and fired["met"], fired
+
+
+@pytest.mark.parametrize("quotient_catalog", ["ps", "pe"])
+def test_hydrogen_quotient_equals_full_enumeration(quotient_catalog):
+    if quotient_catalog == "ps":
+        spec, catalog = S.ps_spec({6: 2}), S.ps_catalog()
+    else:
+        spec, catalog = S.pe_spec({8: 2}), S.ToyCatalog()
+    engine = me.MeltEngine(spec, catalog, 700.0, np.random.default_rng(4))
+    for _ in range(6):
+        if engine.step() is None:
+            break
+    ids = engine.state.components.ids()
+    fast = engine._scan(ids)
+    engine.quotient = False
+    full = engine._scan(ids)
+    assert {c: e.canonical() for c, e in fast.items()} == {c: e.canonical() for c, e in full.items()}
+
+
+# --------------------------------------------------------------------------
+# two-state equilibrium and the MET escape factor
+# --------------------------------------------------------------------------
+def _pe2_engine(met_block, seed, temperature=700.0):
+    catalog, state, raw = S.pe2_two_state()
+    derived = [t for p in raw for t in p["templates"] if t.get("derived")]
+    forward = next(t for t in derived if t["key"].startswith("165c69761932"))
+    kc = te.kc_at(forward["derived"]["thermo"], temperature)   # dimer -> 2 radicals, mol/m^3
+    assert len(forward["derived"]["thermo"]["reactants"]) == 1
+    assert len(forward["derived"]["thermo"]["products"]) == 2
+    volume = 2.0 / (kc * constants.Na)          # expected pi(dimer)/pi(pair) = 2/(Kc N_A V) = 1
+    spec = S.ps_spec({2: 1}, met_block=met_block)
+    engine = me.MeltEngine(spec, catalog, temperature, np.random.default_rng(seed),
+                           state=state, volume_m3=volume)
+    return engine, 2.0 / (kc * constants.Na * volume), kc
+
+
+def test_two_state_equilibrium_reproduces_kc():
+    """2 R. <-> R-R (identical radicals, role_swap).  The stationary ratio of
+    time in R-R over time in 2 R. is 2 / (Kc N_A V) with Kc the whole-species
+    dissociation constant from the catalog's stored thermo.  Tolerance: four
+    standard errors of a ratio of two means of n exponential sojourns each,
+    4 * sqrt(2 / n)."""
+    fast = dict(S.ps_met(), segment_diffusivity={"law": "arrhenius", "D_ref_m2_s": 1.0,
+                                                 "T_ref_K": 700.0, "Ea_J_mol": 0.0})
+    engine, expected, _kc = _pe2_engine(fast, seed=20261017)
+    (pair,) = engine.pairs.values()
+    assert pair.phi > 1 - 1e-6
+    ratio, n = two_state_ratio(engine, 3000)
+    tolerance = 4 * math.sqrt(2.0 / (n / 2))
+    assert abs(ratio / expected - 1) < tolerance, (ratio, expected, tolerance)
+
+
+def test_met_escape_factor_preserves_k():
+    """Same system with transport declared so that phi = 0.3: association is
+    slowed by phi (Collins-Kimball on the summed activation), homolysis is
+    thinned by the phi of its product pair, and K is unchanged."""
+    catalog, state, _raw = S.pe2_two_state()
+    probe = me.MeltEngine(S.ps_spec({2: 1}), catalog, 700.0, np.random.default_rng(0), state=state)
+    (k_act,) = [p.k_act for p in probe.pairs.values()]
+    m0 = probe.transport.repeat_unit_molar_mass_g_mol
+    base = dict(S.ps_met(), segment_diffusivity={"law": "arrhenius", "D_ref_m2_s": 1.0,
+                                                 "T_ref_K": 700.0, "Ea_J_mol": 0.0})
+    unit = k_diffusion(base, 700.0, m0, 1, 1)
+    target_kd = k_act * 0.3 / 0.7
+    slow = dict(base, segment_diffusivity=dict(base["segment_diffusivity"], D_ref_m2_s=target_kd / unit))
+    engine, expected, _kc = _pe2_engine(slow, seed=7)
+    (pair,) = engine.pairs.values()
+    kd = k_diffusion(slow, 700.0, m0, 1, 1)
+    assert pair.k_d == pytest.approx(kd, rel=1e-12)
+    assert pair.phi == pytest.approx(kd / (kd + k_act), rel=1e-12)
+    assert pair.phi == pytest.approx(0.3, rel=1e-9)
+    assert engine.propensities().enabled == pytest.approx(pair.phi * k_act / engine.nav, rel=1e-12)
+    ratio, n = two_state_ratio(engine, 3000)
+    tolerance = 4 * math.sqrt(2.0 / (n / 2))
+    assert abs(ratio / expected - 1) < tolerance, (ratio, expected, tolerance)
+    rejected = engine.met_counts["reverse_rejected"]
+    accepted = engine.met_counts["reverse_accepted"]
+    assert accepted / (accepted + rejected) == pytest.approx(0.3, abs=4 * math.sqrt(0.21 / (accepted + rejected)))
+    assert engine.null_proposals == rejected
+
+
+def test_ck_applied_once_per_component_pair():
+    """Two radical chains, two MET classes between them (recombination,
+    role_swap: T = 1; disproportionation, ordered, either chain the donor,
+    either of the donor's two beta H: T = 4): the pair rate is
+    CK of the SUMMED activation, and a class is drawn proportional to w T."""
+    spec = S.pe_spec({12: 2})
+    catalog = S.ToyCatalog(builder=lambda t: S.pe_templates(t, weights={"disproportionation": 5.0e-3}),
+                           names=("recombination", "disproportionation"))
+    engine = me.MeltEngine(spec, catalog, 700.0, np.random.default_rng(3))
+    state = engine.state
+    for chain in (0, 1):
+        S.strip_h(state, S.end_carbons(state, chain)[0])
+    engine.rebuild()
+    w = {t.name: t.weight for t in engine.templates}
+    k_act = w["recombination"] * 1 + w["disproportionation"] * 4
+    chains = sorted(c for c in state.components.ids() if state.components.radical_count(c))
+    chains = [c for c in chains if state.components.backbone_count(c)]
+    assert len(chains) == 2
+    (key, pair), = [(k, p) for k, p in engine.pairs.items() if set(k) == set(chains)]
+    m0 = engine.transport.repeat_unit_molar_mass_g_mol
+    kd = k_diffusion(S.pe_met(), 700.0, m0, 12, 12)
+    assert pair.k_act == pytest.approx(k_act, rel=1e-12)
+    assert pair.k_d == pytest.approx(kd, rel=1e-12)
+    phi = kd / (kd + k_act)
+    assert 0.2 < phi < 0.8   # the per-pair and per-site-type sums differ materially here
+    assert pair.allowed == pytest.approx(phi * k_act / engine.nav, rel=1e-12)
+    met = dict(engine.propensities().channels)[("met",)]
+    assert met == pytest.approx(phi * k_act / engine.nav, rel=1e-12)
+    # within the pair: class ~ w T
+    rng_draws = Counter()
+    for _ in range(4000):
+        tr, _view, _rate = engine._draw_met(met)
+        rng_draws[tr.template] += 1
+    p_rec = w["recombination"] / k_act
+    n = sum(rng_draws.values())
+    assert abs(rng_draws["recombination"] / n - p_rec) < 4 * math.sqrt(p_rec * (1 - p_rec) / n)
+
+
+def test_declared_small_species_bypass_met_and_is_counted():
+    spec = S.pe_spec({12: 1}, small={"methyl": S.METHYL}, mobile={"methyl": 1})
+    engine = me.MeltEngine(spec, S.ToyCatalog(names=("methyl_recombination",)), 700.0,
+                           np.random.default_rng(1))
+    state = engine.state
+    S.strip_h(state, S.end_carbons(state, 0)[0])
+    engine.rebuild()
+    methyl = next(c for c in state.components.ids() if engine.entries[c].species == "methyl")
+    (pair,) = [p for k, p in engine.pairs.items() if methyl in k]
+    assert pair.bypass and pair.phi == 1.0
+    assert engine.step().template == "methyl_recombination"
+    assert engine.met_counts["forward_bypass"] == 1
+
+
+# --------------------------------------------------------------------------
+# branching leak
+# --------------------------------------------------------------------------
+def test_branch_creating_transitions_accrue_as_leak():
+    spec = S.pe_spec({14: 2})
+    names = ("recombination", "mid_end_recombination", "intra_mid_end")
+    engine = me.MeltEngine(spec, S.ToyCatalog(names=names), 700.0, np.random.default_rng(9))
+    state = engine.state
+    c0 = S.carbons(state, 0)
+    mid = sorted(c0, key=lambda a: a)[len(c0) // 2]
+    S.strip_h(state, mid)
+    S.strip_h(state, S.end_carbons(state, 0)[0])
+    S.strip_h(state, S.end_carbons(state, 1)[0])
+    engine.rebuild()
+    prop = engine.propensities()
+    assert prop.leak > 0.0
+    w = {t.name: t.weight for t in engine.templates}
+    # intramolecular: exactly one mid/end transition on chain 0 (uni, leak)
+    intra = engine.classes[[t.name for t in engine.templates].index("intra_mid_end")].index
+    assert engine.uni_allowed[intra] == 0 and engine.uni_leak[intra] == 1
+    assert dict(prop.channels).get(("uni", intra)) == 0.0
+    met_leak = sum(p.leak for p in engine.pairs.values())
+    assert prop.leak == pytest.approx(w["intra_mid_end"] * 1 + met_leak, rel=1e-12)
+    assert met_leak > 0.0
+    fired = Counter()
+
+    def check(eng, event):
+        fired[event.template] += 1
+        assert max_backbone_degree(eng.state) <= 2
+
+    result = engine.run(max_events=1, check=check)
+    assert fired == {"recombination": 1}
+    assert result.leak_num > 0.0 and 0.0 < result.leak < 1.0
+    assert engine.report()["leak_fraction"] == result.leak
+    # a live toy melt: branch-creating classes never fire, their propensity accrues
+    live = me.MeltEngine(S.pe_spec({10: 1, 20: 1, 30: 1}), S.ToyCatalog(names=PE_LIVE), 700.0,
+                         np.random.default_rng(5))
+    fired.clear()
+    result = live.run(max_events=200, check=check)
+    assert result.events == 200
+    assert fired["mid_end_recombination"] == 0 and fired["intra_mid_end"] == 0
+    assert fired["h_abstraction"] > 0 and fired["beta_scission"] > 0   # mid radicals existed
+    assert result.leak_num > 0.0
+
+
+# --------------------------------------------------------------------------
+# exact pair sampler
+# --------------------------------------------------------------------------
+def _sites(prefix, cid, n):
+    return tuple((prefix, cid, k) for k in range(n))
+
+
+@pytest.mark.parametrize("layout", [
+    {0: (2, 1), 5: (0, 2), 9: (3, 0), 14: (1, 2), 20: (2, 3), 27: (1, 1)},
+    {1: (4, 4), 3: (1, 0), 4: (0, 1), 8: (1, 1), 11: (2, 0), 30: (0, 3)},
+])
+def test_pair_sampler_chi2_against_exact_enumeration(layout):
+    sampler = me.ComponentPairSampler(32)
+    for cid in sorted(layout):
+        sampler.set(cid, (), _sites("x", cid, 5))      # dummy content first: updates must replace it
+    for cid, (n0, n1) in sorted(layout.items()):
+        sampler.set(cid, _sites("a", cid, n0), _sites("b", cid, n1))
+    pairs = [(s0, s1) for c0, (n0, _x) in layout.items() for c1, (_y, n1) in layout.items() if c0 != c1
+             for s0 in _sites("a", c0, n0) for s1 in _sites("b", c1, n1)]
+    assert sampler.ordered_total == len(pairs)
+    n0 = sum(v[0] for v in layout.values())
+    n1 = sum(v[1] for v in layout.values())
+    assert len(pairs) == n0 * n1 - sum(a * b for a, b in layout.values())
+    rng = np.random.default_rng(12345)
+    draws = 200 * len(pairs)
+    counts = Counter()
+    for _ in range(draws):
+        c0, s0, c1, s1 = sampler.draw(rng)
+        assert c0 != c1 and s0[1] == c0 and s1[1] == c1
+        counts[(s0, s1)] += 1
+    assert set(counts) <= set(pairs)
+    observed = np.array([counts[p] for p in pairs], dtype=float)
+    chi2 = float(((observed - 200.0) ** 2 / 200.0).sum())
+    assert chi2 < stats.chi2.ppf(0.999, len(pairs) - 1), chi2
+
+
+# --------------------------------------------------------------------------
+# declaration: generic transport, refused when absent
+# --------------------------------------------------------------------------
+def test_run_start_refuses_a_declaration_without_transport():
+    spec = S.ps_spec({10: 1}, transport=False)
+    with pytest.raises(me.DeclarationError, match="transport_model"):
+        me.MeltEngine(spec, S.ps_catalog(), 700.0, np.random.default_rng(0))
+    broken = dict(S.ps_met())
+    del broken["contact_radius_m"]
+    with pytest.raises(me.DeclarationError, match="contact_radius_m"):
+        me.MeltEngine(S.ps_spec({10: 1}, met_block=broken), S.ps_catalog(), 700.0,
+                      np.random.default_rng(0))
+
+
+def test_engine_names_no_polymer_and_reads_no_ps_constants():
+    code = re.sub(r'"""[\s\S]*?"""', "", ENGINE_SOURCE)
+    code = re.sub(r"#.*", "", code)
+    assert not re.search(r"\b(PS|PE|PP|styrene|polystyrene|polyethylene|phenyl)\b", code, re.I)
+    for name in ("PS_M0", "PS_C_R2", "SIGMA_CONTACT", "TRANSPORT_ARMS", "_D_FERRY", "rmgpy.kmc.met"):
+        assert name not in ENGINE_SOURCE
+
+
+def test_non_ps_linear_polymer_runs_200_events():
+    spec = S.pe_spec({10: 1, 20: 1, 30: 1})
+    engine = me.MeltEngine(spec, S.ToyCatalog(names=PE_LIVE), 700.0, np.random.default_rng(5))
+    assert engine.transport.backbone_atoms_per_unit == 2
+    assert engine.transport.repeat_unit_molar_mass_g_mol == pytest.approx(28.05, abs=0.01)
+    start = totals(engine.state)
+
+    def check(eng, event):
+        assert totals(eng.state) == start
+        for cid, entry in eng.entries.items():
+            assert entry.met_length == max(1, eng.state.components.backbone_count(cid) // 2)
+
+    result = engine.run(max_events=200, check=check)
+    assert result.events == 200 and result.stop_reason == "max_events"
+    assert engine.conservation_checks == 200
+    assert result.family_counts["toy_homolysis"] > 0 and result.family_counts["toy_recombination"] > 0
+    assert sum(result.family_counts.values()) == 200
+
+
+# --------------------------------------------------------------------------
+# clock and temperature
+# --------------------------------------------------------------------------
+def _trace(engine):
+    return [(e.time, e.template, e.components, e.products) for e in engine.events]
+
+
+def test_horizon_schedule_does_not_change_the_trajectory():
+    spec = S.pe_spec({10: 1, 20: 1})
+    whole = me.MeltEngine(spec, S.ToyCatalog(names=PE_LIVE), 700.0, np.random.default_rng(42))
+    whole.run(until=20.0)
+    pieces = me.MeltEngine(spec, S.ToyCatalog(names=PE_LIVE), 700.0, np.random.default_rng(42))
+    for horizon in np.linspace(0.37, 20.0, 41):
+        pieces.run(until=float(horizon))
+    assert _trace(whole) == _trace(pieces) and len(whole.events) > 20
+    assert whole.state.state_hash() == pieces.state.state_hash()
+    assert whole.null_proposals == pieces.null_proposals > 0
+    assert whole.leak_num == pytest.approx(pieces.leak_num, rel=1e-12)
+
+
+def test_temperature_refreshes_weights_through_the_catalog():
+    catalog = S.ToyCatalog(builder=lambda t: S.pe_templates(t, scale=t / 700.0), names=PE_LIVE)
+    engine = me.MeltEngine(S.pe_spec({10: 2}), catalog, 700.0, np.random.default_rng(2))
+    before = engine.propensities().enabled
+    engine.set_temperature(840.0)
+    assert catalog.requested == [700.0, 840.0]
+    assert engine.temperature == 840.0
+    assert engine.propensities().enabled == pytest.approx(before * 840.0 / 700.0, rel=1e-12)
+    assert engine.snapshot() == engine.fresh_snapshot()
+
+
+def test_non_natural_isotopes_are_refused_at_run_start():
+    from rmgpy.kmc.melt_state import MeltState, Node
+    spec = S.pe_spec({4: 1})
+    state = S.witness_state(["CCCC"])
+    atoms = dict(state.atoms)
+    first = min(a for a in atoms if atoms[a].element == "C")
+    n = atoms[first]
+    atoms[first] = Node(n.element, 13, n.charge, n.radical, n.lone_pairs, n.edges)
+    labelled = MeltState(atoms, state.origin)
+    with pytest.raises(me.DeclarationError, match="isotope"):
+        me.MeltEngine(spec, S.ToyCatalog(), 700.0, np.random.default_rng(0), state=labelled)
