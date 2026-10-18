@@ -1039,40 +1039,23 @@ class TestStaleTopologySidecar:
 
 
 class TestSolverGasMaskRecord:
-    """conventions.solver_gas_mask: the live solver's gas_species_mask
-    recorded verbatim, the core species in solver order each with its gas
-    flag, beside (never instead of) conventions.condensed_species, which
-    unions the mask with pool membership and the spawned-pool closure and so
-    loses the solver's verdict for a spawned-but-unconfigured pool.  The
-    record's source is "solver" when the engine's mask matched the core
-    length and the engine was built against this core (not stale); else the
-    record is absent."""
+    """conventions.solver_gas_mask: each polymer reactor's live solver
+    gas_species_mask recorded verbatim, bound to its reactor (1-based, the
+    profile writer's numbering), the profile that reactor wrote for this core
+    (solver/simulation_<reactor>_<n_core>.csv), and each core species'
+    structure (``species_structure``), the core species in solver order each
+    with its gas flag; beside (never instead of) condensed_species, which
+    unions the mask with pool membership and the spawned-pool closure.  A
+    reactor's mask is recorded only when it is the mask of this core: length
+    matched and the engine built against this very core, structures
+    included (not stale); with none, the record is absent."""
 
     @staticmethod
-    def _rmg_with_engine(tmp_path):
-        import time as _time
-        from types import SimpleNamespace
-
+    def _engine(core_species, n2):
         import numpy as np
 
-        from rmgpy.rmg.main import RMG
-        from rmgpy.rmg.model import CoreEdgeReactionModel
         from rmgpy.solver.polymer import (HybridPolymerSystem,
                                           PolymerPoolConfig)
-
-        kw = dict(monomer="[CH2][CH2]", end_groups=["[H]", "[H]"], cutoff=3,
-                  moments=[1.0, 5.0, 30.0], initial_mass=0.0, k_scission=1.0,
-                  k_unzip=0.0)
-        root = Polymer(label="poly", **kw)
-        tail = Polymer(label="tail", **kw)       # spawned: no solver config
-        n2 = _spc("N#N", "N2")
-        core_species = ([root, _spc("CCCCCCCCCCCC", "poly", index=3)]
-                        + [_mu_dummy(f"poly_mu{k}") for k in range(3)] + [n2]
-                        + [tail, _spc("CCCCCC", "tail", index=7)]
-                        + [_spc("[Ne]", f"tail_mu{k}") for k in range(3)]
-                        + [_spc("CCCC", "poly", index=12)])
-        # (the tail's moment species carry no is_moment_dummy flag: the
-        # solver refuses a flagged moment coordinate it classifies gas)
         cfg = PolymerPoolConfig(
             label="poly", xs=2, explicit_dp_to_species_index={},
             mu_indices=(2, 3, 4), monomer_poly_index=None,
@@ -1088,6 +1071,33 @@ class TestSolverGasMaskRecord:
             initial_polymer_moments={"poly": (1.0, 5.0, 30.0)},
             termination=[])
         engine.initialize_model(list(core_species), [], [], [])
+        return engine
+
+    @classmethod
+    def _rmg_with_engine(cls, tmp_path, layout=("polymer",)):
+        """``layout``: the reaction systems in order, "polymer" (a hybrid
+        reactor's engine) or "gas" (a reactor without polymer pools)."""
+        import time as _time
+        from types import SimpleNamespace
+
+        from rmgpy.rmg.main import RMG
+        from rmgpy.rmg.model import CoreEdgeReactionModel
+
+        kw = dict(monomer="[CH2][CH2]", end_groups=["[H]", "[H]"], cutoff=3,
+                  moments=[1.0, 5.0, 30.0], initial_mass=0.0, k_scission=1.0,
+                  k_unzip=0.0)
+        root = Polymer(label="poly", **kw)
+        tail = Polymer(label="tail", **kw)       # spawned: no solver config
+        n2 = _spc("N#N", "N2")
+        core_species = ([root, _spc("CCCCCCCCCCCC", "poly", index=3)]
+                        + [_mu_dummy(f"poly_mu{k}") for k in range(3)] + [n2]
+                        + [tail, _spc("CCCCCC", "tail", index=7)]
+                        + [_spc("[Ne]", f"tail_mu{k}") for k in range(3)]
+                        + [_spc("CCCC", "poly", index=12)])
+        # (the tail's moment species carry no is_moment_dummy flag: the
+        # solver refuses a flagged moment coordinate it classifies gas)
+        systems = [SimpleNamespace(solver=cls._engine(core_species, n2)) if x == "polymer"
+                   else SimpleNamespace() for x in layout]
 
         model = CoreEdgeReactionModel()
         model.core.species.extend(core_species)
@@ -1100,8 +1110,9 @@ class TestSolverGasMaskRecord:
         rmg.profiler = None
         rmg.reaction_model = model
         rmg.output_directory = str(tmp_path)
-        rmg.reaction_systems = [SimpleNamespace(solver=engine)]
-        return rmg, engine, model
+        rmg.reaction_systems = systems
+        engines = [getattr(x, "solver", None) for x in systems]
+        return rmg, engines, model
 
     @staticmethod
     def _saved(rmg, tmp_path):
@@ -1109,22 +1120,46 @@ class TestSolverGasMaskRecord:
         with open(tmp_path / "polymer_pools.json") as fh:
             return json.load(fh)["conventions"]
 
+    @staticmethod
+    def _record(reactor, engine, core):
+        from rmgpy.polymer import _artifact_species_label, species_structure
+        return {"reactor": reactor, "profile": f"solver/simulation_{reactor}_{len(core)}.csv",
+                "core": [{"species": _artifact_species_label(s), "structure": species_structure(s), "gas": bool(g)}
+                         for s, g in zip(core, engine.gas_species_mask)]}
+
     def test_the_recorded_mask_is_the_solvers_in_core_order(self, tmp_path):
-        from rmgpy.polymer import _artifact_species_label
-        rmg, engine, model = self._rmg_with_engine(tmp_path)
+        rmg, (engine,), model = self._rmg_with_engine(tmp_path)
         conventions = self._saved(rmg, tmp_path)
         assert "stale_topology" not in conventions
         assert conventions["solver_gas_mask"] == {
-            "source": "solver",
-            "core": [{"species": _artifact_species_label(s), "gas": bool(g)}
-                     for s, g in zip(model.core.species, engine.gas_species_mask)]}
+            "source": "solver", "reactors": [self._record(1, engine, model.core.species)]}
+
+    def test_species_are_bound_to_their_structures(self, tmp_path):
+        from rmgpy.polymer import species_structure
+        rmg, _engines, model = self._rmg_with_engine(tmp_path)
+        core = self._saved(rmg, tmp_path)["solver_gas_mask"]["reactors"][0]["core"]
+        by_label = {e["species"]: e["structure"] for e in core}
+        assert by_label["tail(7)"] == Molecule().from_smiles("CCCCCC").to_augmented_inchi()
+        assert by_label["N2"] == species_structure(model.core.species[5]) is not None
+
+    def test_a_polymer_reactor_after_a_gas_reactor_is_reactor_2(self, tmp_path):
+        """Spar r156 item 1: the mask belongs to the second reaction system
+        and names its profile, never reactor 1's."""
+        rmg, (_gas, engine), model = self._rmg_with_engine(tmp_path, layout=("gas", "polymer"))
+        assert self._saved(rmg, tmp_path)["solver_gas_mask"]["reactors"] == [
+            self._record(2, engine, model.core.species)]
+
+    def test_each_polymer_reactor_has_its_own_record(self, tmp_path):
+        rmg, (first, second), model = self._rmg_with_engine(tmp_path, layout=("polymer", "polymer"))
+        assert self._saved(rmg, tmp_path)["solver_gas_mask"]["reactors"] == [
+            self._record(1, first, model.core.species), self._record(2, second, model.core.species)]
 
     def test_a_spawned_unconfigured_pools_members_are_as_the_solver_had_them(self, tmp_path):
         """The solver keeps the spawned pool's members gas; the record says
         so, while condensed_species (unchanged) carries the closure."""
-        rmg, engine, _model = self._rmg_with_engine(tmp_path)
+        rmg, (engine,), _model = self._rmg_with_engine(tmp_path)
         conventions = self._saved(rmg, tmp_path)
-        flags = {(e["species"]): e["gas"] for e in conventions["solver_gas_mask"]["core"]}
+        flags = {(e["species"]): e["gas"] for e in conventions["solver_gas_mask"]["reactors"][0]["core"]}
         assert [flags[x] for x in ("tail(7)", "tail_mu0", "tail_mu1", "tail_mu2")] == [True] * 4
         assert [flags[x] for x in ("poly(3)", "poly_mu0", "poly_mu1", "poly_mu2")] == [False] * 4
         assert flags["N2"] is True
@@ -1135,10 +1170,19 @@ class TestSolverGasMaskRecord:
         assert conventions["spawned_pools"] == ["tail"]
         assert {"tail(7)", "tail_mu0"} <= set(conventions["condensed_species"])
 
+    def test_a_same_label_isomer_is_stale(self, tmp_path):
+        """Spar r156 item 2: another isomer under the same label and index
+        after the engine's build: stale, and no record."""
+        rmg, _engines, model = self._rmg_with_engine(tmp_path)
+        assert model.core.species[7].label == "tail" and model.core.species[7].index == 7
+        model.core.species[7] = _spc("CC(C)CCC", "tail", index=7)
+        conventions = self._saved(rmg, tmp_path)
+        assert conventions.get("stale_topology") is True and "solver_gas_mask" not in conventions
+
     def test_no_record_without_a_mask_of_this_core(self, tmp_path):
         """A core grown after the engine's build, a same-length swapped core
         (stale) and no engine at all: no record."""
-        rmg, _engine, model = self._rmg_with_engine(tmp_path)
+        rmg, _engines, model = self._rmg_with_engine(tmp_path)
         swapped = model.core.species[5]
         model.core.species[5] = _spc("C", "CH4")
         assert "solver_gas_mask" not in self._saved(rmg, tmp_path)
