@@ -2263,3 +2263,62 @@ def test_the_as_generated_side_is_primary_even_with_the_greater_key():
     ip, idd = _primary_derived(out)
     assert out[ip]["orientation"] == "as_generated"
     assert base_template(out[ip])["key"] > base_template(out[idd])["key"]
+
+
+# --------------------------------------------------------------------------
+# I-162 S-g rework 3: only the id slots and the id forms the code writes are
+# masked; every other string is kept as stored
+# --------------------------------------------------------------------------
+def _with_selection_entry(payload, label):
+    p = json.loads(json.dumps(payload))
+    p["rate"]["provenance"].setdefault("selection", {})["entry"] = label
+    return te.finish(p)
+
+
+def test_hex_like_labels_are_not_record_ids():
+    payloads, _counter = _toy_pair()
+    p = payloads[0]
+    a, b = (json.loads(json.dumps(p)) for _ in range(2))
+    a["pathway"], b["pathway"] = ["evt_dead"], ["evt_beef"]
+    assert te.partition_free_identity(a) != te.partition_free_identity(b)
+    a, b = _with_selection_entry(p, "evt_dead"), _with_selection_entry(p, "evt_beef")
+    assert te.partition_free_identity(a) != te.partition_free_identity(b)
+    assert te.partition_free_identity(a, base_template(a)) != \
+        te.partition_free_identity(b, base_template(b))
+
+
+def test_free_text_masks_exactly_the_id_forms_the_code_writes():
+    """A refusal reason quoting the record's own id (whole, or its 16-character
+    ``str(id)[:16]`` form of check_cycles / one_way_problems) is masked; a
+    reason quoting a hex-like label is kept."""
+    payloads, _counter = _toy_pair()
+    p = payloads[0]
+
+    def with_reason(payload, text):
+        q = json.loads(json.dumps(payload))
+        q["refusal"] = {"status": "refused:cycle", "reason": text}
+        return q
+    rid = p["record_event_id"]
+    renamed = _relabel([p], {rid: _rid(14)})[0]
+    for form in (lambda r: r, lambda r: r[:16]):
+        assert te.partition_free_identity(with_reason(p, f"reverse record {form(rid)} x")) == \
+            te.partition_free_identity(with_reason(renamed, f"reverse record {form(_rid(14))} x"))
+    assert te.partition_free_identity(with_reason(p, "rule evt_dead")) != \
+        te.partition_free_identity(with_reason(p, "rule evt_beef"))
+
+
+def test_the_retained_rule_does_not_follow_the_ids_when_labels_look_like_ids():
+    """The spar's repro: two copies equal but for a rate-entry label that
+    looks like an id (evt_dead, evt_beef).  Masking every hex run made them
+    tie, so the record ids chose which rule the catalog kept."""
+    members = _group([0.0, 0.0])
+    members = [_with_selection_entry(members[0], "evt_dead"),
+               _with_selection_entry(members[1], "evt_beef")]
+    ids = [p["record_event_id"] for p in members]
+    kept = set()
+    for mapping in ({}, dict(zip(ids, reversed(ids)))):
+        out, table = te.resolve_collisions(_relabel(members, mapping))
+        assert [r["disposition"] for r in table] == ["merged"]
+        (rep,) = [p for p in out if base_template(p)["status"] == "emitted"]
+        kept.add(rep["rate"]["provenance"]["selection"]["entry"])
+    assert len(kept) == 1

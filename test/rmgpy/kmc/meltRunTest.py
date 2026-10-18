@@ -148,7 +148,8 @@ def write_catalog(path, payloads, *, complete=True, failures=(), tag="test", bin
                   "code_sha": None, "temperatures": [300.0, 1000.0],
                   # the shared inputs catalogs loaded together must agree on (catalog_set)
                   "database_path": "/db", "database_content_sha256": "h" * 64,
-                  "code_sources_sha256": "s" * 64, "roster_sha256": "r" * 64}
+                  "code_sources_sha256": "s" * 64, "code_extensions_sha256": "x" * 64,
+                  "roster_sha256": "r" * 64}
     if bind is not None:
         provenance["chemistry_sha256"] = chemistry_sha256(bind)
     if declaration is not None:

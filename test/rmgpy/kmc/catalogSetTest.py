@@ -23,7 +23,8 @@ from rmgpy.kmc import run as kr
 GRID = (300.0, 1000.0)
 FAMILIES_A = ("toy_homolysis", "toy_recombination")
 SHARED = {"database_path": "/db", "database_content_sha256": "h" * 64, "code_sources_sha256": "s" * 64,
-          "roster_sha256": "r" * 64, "database_head": "d" * 40, "code_sha": "c" * 40}
+          "code_extensions_sha256": "x" * 64, "roster_sha256": "r" * 64, "database_head": "d" * 40,
+          "code_sha": "c" * 40}
 
 
 def stub_payloads():
@@ -418,7 +419,7 @@ def test_the_runner_loads_the_bytes_the_set_verified(monkeypatch, tmp_path):
 # rework 1: unknown provenance is not shared provenance
 # --------------------------------------------------------------------------
 @pytest.mark.parametrize("field", ["database_path", "database_content_sha256", "code_sources_sha256",
-                                   "roster_sha256"])
+                                   "code_extensions_sha256", "roster_sha256"])
 @pytest.mark.parametrize("how", ["null", "missing"])
 def test_a_member_with_an_unknown_shared_input_is_refused_by_name(tmp_path, field, how):
     a, b = stub_payloads()

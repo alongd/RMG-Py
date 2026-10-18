@@ -240,6 +240,7 @@ def test_chunks_partition_the_sorted_records():
 class Services:
     counter = None
     kc = None
+    database_content_sha256 = "h" * 64
 
 
 def ok_midpoint(row, worst=0.0):
@@ -267,6 +268,7 @@ def header(chunk, rows, **over):
            "artifact_sha256": "a" * 64, "artifact_records": 6, "families": ["R_Recombination"],
            "database_path": "/db", "database_head": "d" * 40, "code_sha": "c" * 40,
            "database_content_sha256": "h" * 64, "code_sources_sha256": "s" * 64,
+           "code_extensions_sha256": "x" * 64,
            "roster_sha256": "r" * 64, "temperatures": [600.0, 700.0, 800.0], "chunk": chunk,
            "selection": "all", "assigned": [record_id(r) for r in rows], "roster_refusals": [],
            "systems": {"dp8_closed": ["chain dp=8"]}}
@@ -291,7 +293,8 @@ def shards(tmp_path, n=2, rows=None, **over):
     return paths
 
 
-ASSEMBLER = {"database_content_sha256": "h" * 64, "code_sources_sha256": "s" * 64}
+ASSEMBLER = {"database_content_sha256": "h" * 64, "code_sources_sha256": "s" * 64,
+             "code_extensions_sha256": "x" * 64}
 
 
 @pytest.fixture(autouse=True)
@@ -724,7 +727,8 @@ def test_the_catalog_carries_the_content_identities_of_its_inputs(tmp_path):
 # --------------------------------------------------------------------------
 # I-162 S-g rework 2: assemble derives with its own code and database
 # --------------------------------------------------------------------------
-@pytest.mark.parametrize("field_", ["database_content_sha256", "code_sources_sha256"])
+@pytest.mark.parametrize("field_", ["database_content_sha256", "code_sources_sha256",
+                                    "code_extensions_sha256"])
 def test_assemble_refuses_shards_emitted_with_other_code_or_database(tmp_path, field_,
                                                                      assembler_identity):
     """Derivation and the cycle check run with the assembler's own code and
@@ -736,7 +740,8 @@ def test_assemble_refuses_shards_emitted_with_other_code_or_database(tmp_path, f
     assert field_ in str(caught.value) and "x" * 16 in str(caught.value)
 
 
-@pytest.mark.parametrize("field_", ["database_content_sha256", "code_sources_sha256"])
+@pytest.mark.parametrize("field_", ["database_content_sha256", "code_sources_sha256",
+                                    "code_extensions_sha256"])
 def test_assemble_refuses_shards_without_the_digests(tmp_path, field_):
     with pytest.raises(emit.AssembleRefused, match=field_):
         run(shards(tmp_path, **{field_: None}))
@@ -769,3 +774,61 @@ def test_the_code_digest_covers_every_rmgpy_source(tmp_path):
     assert emit.code_sources_sha256(root) != base
     import rmgpy
     assert emit.code_sources_sha256() == emit.code_sources_sha256(Path(rmgpy.__file__).parent)
+
+
+
+# --------------------------------------------------------------------------
+# I-162 S-g rework 3: the compiled extensions and the supplied services
+# --------------------------------------------------------------------------
+def test_the_extension_digest_reads_the_compiled_modules(tmp_path):
+    """Edited sources next to extensions built from another revision: the
+    source digest moves, the binaries do not, so the binaries are digested
+    too (every extension module file under rmgpy/, paths included); a loaded
+    rmgpy extension from outside that tree makes the digest unknown."""
+    from types import SimpleNamespace
+    root = tmp_path / "rmgpy"
+    (root / "molecule").mkdir(parents=True)
+    so = root / "molecule" / "molecule.cpython-39-x86_64-linux-gnu.so"
+    so.write_bytes(b"old build")
+    (root / "molecule" / "molecule.pyx").write_text("cdef int a\n")
+    loaded = [SimpleNamespace(__name__="rmgpy.molecule.molecule", __file__=str(so))]
+    base = emit.code_extensions_sha256(root, modules=loaded)
+    assert base and len(base) == 64
+    (root / "molecule" / "molecule.pyx").write_text("cdef int b\n")     # a source edit alone
+    assert emit.code_extensions_sha256(root, modules=loaded) == base
+    so.write_bytes(b"new build")
+    assert emit.code_extensions_sha256(root, modules=loaded) != base
+    stray = tmp_path / "elsewhere" / "kinetics.cpython-39-x86_64-linux-gnu.so"
+    stray.parent.mkdir()
+    stray.write_bytes(b"other")
+    outside = loaded + [SimpleNamespace(__name__="rmgpy.kinetics.kinetics", __file__=str(stray))]
+    assert emit.code_extensions_sha256(root, modules=outside) is None
+    assert emit.code_extensions_sha256() is not None                 # this process, this build
+
+
+def test_the_identity_of_this_process_covers_the_extensions():
+    """The shard header and the assembler compare the same three digests."""
+    assert set(emit.IDENTITY_FIELDS) == {"database_content_sha256", "code_sources_sha256",
+                                         "code_extensions_sha256"}
+    assert set(emit.IDENTITY_FIELDS) <= set(emit.HEADER_MATCH)
+
+
+@pytest.mark.parametrize("digest", ["y" * 64, None])
+def test_assemble_refuses_services_built_from_another_database(tmp_path, digest):
+    """Services carry the digest of the database they were built from; the
+    balance check would otherwise run on database B under provenance A."""
+    services = Services()
+    services.database_content_sha256 = digest
+    with pytest.raises(emit.AssembleRefused, match="services"):
+        emit.assemble([str(p) for p in shards(tmp_path)], services=services)
+
+
+def test_load_services_records_its_database_digest(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(emit, "load_database", lambda families, database: SimpleNamespace(
+        kinetics=SimpleNamespace(families={}), thermo=None))
+    monkeypatch.setattr(emit, "database_content_sha256", lambda database: "d" * 64)
+    monkeypatch.setattr(emit.te, "ThermoKc", lambda provider: None)
+    import rmgpy.kmc.reference_thermo as rt
+    monkeypatch.setattr(rt, "GasPhaseRMGReferenceThermo", lambda thermo, label: None)
+    assert emit.load_services("/db", []).database_content_sha256 == "d" * 64
