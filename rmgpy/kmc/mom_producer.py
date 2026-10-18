@@ -672,11 +672,15 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
         ("pool_chain_classes", "kMC classes before polymer",
          "a pool chain kMC would class as a declared species (pool_species_candidates: chain mass at a whole DP "
          "equal to the species' mass, structure-checked for pools without defect) is booked as that species "
-         "where the pool's moments pin that DP and the end-group ledger is zero, else the polymer rows and "
-         "the species row are withheld after t = 0; a pool receiving volatile ejections may hold chains below "
-         "one unit's backbone (kMC class light): its polymer rows are withheld after t = 0; pool moments "
-         "below -f, or units without chains, are corruption (pool_state) and withhold mass, molecules and "
-         "the whole keys"),
+         "only where the pool has no defect, its moments pin that DP and the end-group ledger is zero; a "
+         "defect pool keeps no structure, so a candidate in it is never booked by mass alone; any other "
+         "non-empty candidate pool withholds the polymer rows, at every row including t = 0; a species row "
+         "is exported only when every pool that may hold the species is booked or provably empty (all "
+         "moments within f), never as a partial count; a pool receiving volatile ejections of positive "
+         "moment units (eject_units corrected for the pools' defects, polymer.pyx 4110-4113) may hold chains "
+         "below one unit's backbone (kMC class light): its polymer rows are withheld after t = 0; pool "
+         "moments below -f, units without chains (mu0 = 0) or a variance below MoM's census tolerance are "
+         "corruption (pool_state) and withhold mass, molecules and the whole keys"),
         ("kmc_classes", "melt_observables.MeltObserver.category",
          "every MoM species outside the pools and the bath is put in kMC's class (declared species, "
          "polymer-derived when floor(B / b) >= 1, else light) by kMC's own classifier on its structure; "
@@ -1097,8 +1101,13 @@ def whole_ledger(row, first, pools, columns, ends) -> Tuple[float, bool]:
 def pool_state(row, pools, columns, floor: float = MOM_MOMENT_FLOOR) -> Tuple[Dict[str, List[float]], List[str]]:
     """Each pool's moments under MoM's accepted-state check
     (``_assert_pool_moments_accepted``): a moment below ``-f`` is corruption,
-    within ``[-f, 0)`` it is clamped to 0; a pool with ``mu0 <= f`` whose mu1
-    or mu2 is beyond ``f`` holds units without chains (corruption)."""
+    within ``[-f, 0)`` it is clamped to 0.  After the clamp a pool is corrupt
+    when it holds units without chains (mu0 = 0 exactly while mu1 or mu2 is
+    beyond ``f``) or when its variance mu0 mu2 - mu1^2 is below minus MoM's
+    variance-census tolerance f |mu2| + f |mu0| + 2 f |mu1| + 2 f^2
+    (polymer.pyx 5570-5580 at b1285f08f, all three floors f).  A trace
+    population whose mu0 is under ``f`` (DP 30 at (5e-15, 1.5e-13, 4.5e-12))
+    is a valid state."""
     out, corrupt = {}, []
     for p in pools:
         label = p["label"]
@@ -1109,9 +1118,12 @@ def pool_state(row, pools, columns, floor: float = MOM_MOMENT_FLOOR) -> Tuple[Di
                                "(corrupt)")
             elif m[k] < 0.0:
                 m[k] = 0.0
-        if m[0] <= floor and (abs(m[1]) > floor or abs(m[2]) > floor):
+        if m[0] == 0.0 and (abs(m[1]) > floor or abs(m[2]) > floor):
             corrupt.append(f"pool {label} holds units without chains (mu0 = {m[0]!r}, mu1 = {m[1]!r}, "
                            f"mu2 = {m[2]!r} mol; corrupt)")
+        elif m[0] * m[2] - m[1] * m[1] < -(floor * (abs(m[2]) + abs(m[0]) + 2.0 * abs(m[1])) + 2.0 * floor * floor):
+            corrupt.append(f"pool {label} variance mu0 mu2 - mu1^2 = {m[0] * m[2] - m[1] * m[1]!r} is below MoM's "
+                           f"variance-census tolerance (mu = {m!r} mol; corrupt)")
         out[label] = m
     return out, corrupt
 
@@ -1166,7 +1178,7 @@ def pool_species_candidates(pools, structures: Dict[str, Molecule], masses: Dict
     without defect the chain's structure is built from the pool's declared
     repeat unit (else the deck's) and end groups and must be the species
     (``same_species``); a defect pool keeps no structure, so its formula
-    match stands."""
+    match stands as a candidate that can never be booked (``convert``)."""
     out = {}
     for p in pools:
         a_p = p["monomer_mw_g_mol"]
@@ -1376,9 +1388,21 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
     light_pools = {}
     for r in pool_doc.get("reactions") or ():
         units = (r.get("params") or {}).get("eject_units")
-        if (not r.get("refused") and r.get("archetype") == "volatile_ejection/1"
-                and isinstance(units, (int, float)) and units > 0 and r.get("dst_pool") in columns):
-            light_pools[r["dst_pool"]] = max(units, light_pools.get(r["dst_pool"], 0.0))
+        if (r.get("refused") or r.get("archetype") != "volatile_ejection/1"
+                or not isinstance(units, (int, float)) or r.get("dst_pool") not in columns):
+            continue
+        # MoM moves eject_units corrected for the pools' defects between source and destination
+        # (polymer.pyx 4110-4113 at b1285f08f: a_mom = a_mass - (defect_dst - defect_src) / mw_src, zero
+        # within 1e-9 max(1, |a_mass|)); a source the table does not resolve keeps the raw units.
+        a_mom = float(units)
+        src, dst = by_label.get(r.get("src_pool")), by_label[r["dst_pool"]]
+        if src is not None and src is not dst and (src.get("monomer_mw_g_mol") or 0.0) > 0.0:
+            a_mom = units - (float(dst.get("chain_mass_defect_g_mol") or 0.0)
+                             - float(src.get("chain_mass_defect_g_mol") or 0.0)) / src["monomer_mw_g_mol"]
+            if abs(a_mom) <= 1.0e-9 * max(1.0, abs(units)):
+                a_mom = 0.0
+        if a_mom > 0.0:
+            light_pools[r["dst_pool"]] = max(a_mom, light_pools.get(r["dst_pool"], 0.0))
     pool_breaks = pool_coordinate_breaks(
         pool_doc, {p["label"]: ends[p["label"]] - float(p.get("chain_mass_defect_g_mol") or 0.0) for p in pools},
         a_deck)
@@ -1399,36 +1423,53 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
         withheld = {}
         pm, corrupt = pool_state(row, pools, columns)
         booked_as, blocked = {}, []
+        corrupt_pools = {label for label in pm if any(c.startswith(f"pool {label} ") for c in corrupt)}
+        unresolved = {}                       # pool label -> why its chains are not booked
+        ledger_zero = whole_ledger(row, first, pools, columns, ends)[1]
+        for label, cands in candidates.items():  # classified at every row, t = 0 included
+            m = pm[label]
+            if not cands or (label not in corrupt_pools and all(abs(x) <= MOM_MOMENT_FLOOR for x in m)):
+                continue                      # provably empty
+            names = sorted({c[0] for c in cands})
+            dps = sorted({c[1] for c in cands})
+            pinned = [(name, n) for name, n, _M in cands if pinned_at(m, n)]
+            if label in corrupt_pools:
+                why = f"pool {label} may hold chains of declared species {names} and its moments are corrupt"
+            elif float(by_label[label].get("chain_mass_defect_g_mol") or 0.0) != 0.0:
+                why = (f"pool {label} may hold chains of the formula of declared species {names} (DP {dps}); a "
+                       "defect pool keeps no structure, so they are not booked by mass alone")
+            elif ledger_zero and len(pinned) == 1:
+                booked_as[label] = pinned[0]
+                continue
+            else:
+                why = (f"pool {label} may hold chains that kMC classes as declared species {names} (DP {dps}) and "
+                       "its moments do not pin them" + ("" if ledger_zero else " (end-group ledger nonzero)"))
+            unresolved[label] = why
+            blocked.append(why)
         if t > data[0][0]:
-            ledger_zero = whole_ledger(row, first, pools, columns, ends)[1]
-            for label, cands in candidates.items():
-                m = pm[label]
-                if m[0] <= MOM_MOMENT_FLOOR or not cands:
-                    continue
-                pinned = [(name, n) for name, n, _M in cands if pinned_at(m, n)]
-                if ledger_zero and len(pinned) == 1:
-                    booked_as[label] = pinned[0]
-                else:
-                    blocked.append(f"pool {label} may hold chains that kMC classes as declared species "
-                                   f"{sorted({c[0] for c in cands})} (DP {sorted({c[1] for c in cands})}) and its "
-                                   "moments do not pin them" + ("" if ledger_zero else " (end-group ledger nonzero)"))
-            blocked += [f"pool {label} receives volatile ejections of {units} units: chains below one repeat "
-                        "unit's backbone (kMC class light) may be in it" for label, units in sorted(light_pools.items())
-                        if pm[label][0] > MOM_MOMENT_FLOOR]
+            blocked += [f"pool {label} receives volatile ejections of {units} moment units: chains below one "
+                        "repeat unit's backbone (kMC class light) may be in it"
+                        for label, units in sorted(light_pools.items()) if pm[label][0] > MOM_MOMENT_FLOOR]
+        # a species row stands only when every pool that may hold it is booked or provably empty
+        species_withheld = {}
+        for name in sorted({c[0] for cands in candidates.values() for c in cands}):
+            open_pools = [label for label, cands in candidates.items()
+                          if label in unresolved and any(c[0] == name for c in cands)]
+            if open_pools:
+                species_withheld[name] = "; ".join(unresolved[label] for label in open_pools)
+                quantities["species_mol"].pop(name, None)
+            else:
+                into = [pm[label][0] for label, (s_name, _n) in booked_as.items() if s_name == name]
+                if into:
+                    quantities["species_mol"][name] = quantities["species_mol"].get(name, 0.0) + math.fsum(into)
         reasons = []
         if unclassified:
             reasons.append(f"unclassifiable species present: {unclassified}")
-        reasons += corrupt + blocked
+        reasons += corrupt + [b for b in blocked if b not in corrupt]
         polymer_withheld = "; ".join(reasons) or None
         if polymer_withheld is not None:
             withheld.update({k: polymer_withheld for k in WHOLE_KEYS})
-            for label in candidates:
-                if any(label in b for b in blocked):
-                    for name, _n, _M in candidates[label]:
-                        quantities["species_mol"].pop(name, None)
         else:
-            for label, (name, _n) in booked_as.items():
-                quantities["species_mol"][name] = quantities["species_mol"].get(name, 0.0) + pm[label][0]
             clamped_row = list(row)
             for label in pm:
                 for k, i in enumerate(columns[label]):
@@ -1480,6 +1521,7 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
                             "unclassified_species": unclassified, "whole_withheld": withheld,
                             "polymer_withheld": polymer_withheld,
                             "pools_booked_as_species": {k: list(v) for k, v in booked_as.items()},
+                            "species_withheld": species_withheld,
                             "mass_closure_residual_g": residual, "bath_closure_residual_g": bath_residual,
                             "mass_exported": "polymer_condensed_mass_g" in quantities,
                             "native_Mn_g_mol": a * mu[1] / mu[0] if mu[0] else None,

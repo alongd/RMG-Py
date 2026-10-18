@@ -713,6 +713,18 @@ def _quantities_problem(quantities: dict) -> Optional[str]:
     return None
 
 
+def _non_finite(value, where: str = "header") -> List[str]:
+    """The paths of every number in a decoded JSON value that is not finite
+    (JSON decoding accepts NaN and Infinity)."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return [f"{where} = {value!r}"]
+    if isinstance(value, dict):
+        return [x for k, v in value.items() for x in _non_finite(v, f"{where}.{k}")]
+    if isinstance(value, list):
+        return [x for i, v in enumerate(value) for x in _non_finite(v, f"{where}[{i}]")]
+    return []
+
+
 def load_mom(path, times: Sequence[float], *, deck_sha256: Optional[str] = None,
              temperature_K: Optional[float] = None) -> Tuple[List[Optional[dict]], dict]:
     """Per observation time the MoM quantities (None where the file has none);
@@ -745,6 +757,9 @@ def load_mom(path, times: Sequence[float], *, deck_sha256: Optional[str] = None,
                            "({\"flags\": {name: details}, ...})")
         if not isinstance(doc, list):
             raise RunError(f"MoM file {path}: entries must be a list of {{time_s, quantities}} entries")
+        non_finite = _non_finite(header)
+        if non_finite:
+            raise RunError(f"MoM file {path}: header values {non_finite} are not finite numbers")
         producer = header.get("producer")
         bound = producer.get("deck_sha256") if isinstance(producer, dict) else None
         if deck_sha256 is None or bound != deck_sha256:
