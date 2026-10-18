@@ -136,6 +136,11 @@ PHI_FALLBACK_LIMIT = 64
 # least recently used evicted first).  A bound, not a tuning knob: an entry is
 # only ever served at the revision it was computed at.
 PHI_FALLBACK_CACHE_LIMIT = 256
+PHI_SUM_DEFINITION = (
+    "sum of phi over the proposals: the compensator of the accepted count (accepted - phi_sum is a "
+    "zero-mean martingale), so E[accepted] = E[phi_sum] for a run stopped at a fixed horizon; it is not "
+    "the expected number of acceptances given the proposals, and under a stopping rule that depends on "
+    "acceptances (an event cap, stop after the first event) the two expectations differ")
 LEAK_ESTIMATOR = "ratio_of_unbiased_integrals"
 LEAK_DEFINITION = (
     "estimate (ratio_of_unbiased_integrals): leak_num / leak_den; leak_num = int leak hazard dt; "
@@ -1777,8 +1782,8 @@ class MeltEngine:
         phi <= 1) and a proposal is accepted with probability phi, the
         Collins-Kimball escape factor k_D / (k_D + k_act) of its product pair
         (1 for a pair with no MET class or a declared species).  Per class and
-        overall: proposals, accepted events, the summed phi (the expected number
-        of accepted events given the proposals) and the mean phi per proposal
+        overall: proposals, accepted events, the summed phi (the compensator of
+        the accepted count, ``PHI_SUM_DEFINITION``) and the mean phi per proposal
         (the escape probability; None before any proposal).  Zero events with
         many proposals reads as this probability, not as a failure."""
         rows = []
@@ -1797,7 +1802,7 @@ class MeltEngine:
                               "proposals",
                 "majorant": "phi <= 1",
                 "proposals": n, "accepted": sum(r["accepted"] for r in rows),
-                "phi_sum": self.phi_sum, "expected_accepted": self.phi_sum,
+                "phi_sum": self.phi_sum, "phi_sum_definition": PHI_SUM_DEFINITION,
                 "escape_probability": self.phi_sum / n if n else None, "classes": rows}
 
 

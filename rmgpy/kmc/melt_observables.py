@@ -1244,10 +1244,13 @@ def write_time_series(engine, times: Iterable[float], path, *, xs: int, check: b
 
     ``max_events`` caps the events fired by this call (all horizons together).
     When the cap is reached before a requested time, the call stops there and
-    that observation is not written.  The stop reason is the engine's own
-    (``RunResult.stop_reason`` of the last advance): "max_events" for the cap,
-    else "horizon" or "absorbing" (no enabled channel) at the last requested
-    time; "horizon" when no advance was needed.  It ends the file as a stop
+    that observation is not written; a time the engine has reached (the
+    capping event fired exactly at it) is written.  The stop reason is
+    "max_events" exactly when a requested time was not reached because of the
+    cap; otherwise it is the last advance's (``RunResult.stop_reason``):
+    "horizon", or "absorbing" (no enabled channel) at the last requested time,
+    and "horizon" when no advance was needed or when the cap and the last
+    requested time are reached by the same event.  It ends the file as a stop
     record and is returned with the observations (``TimeSeries``)."""
     if max_events is not None and (isinstance(max_events, bool) or not isinstance(max_events, int)
                                    or max_events < 0):
@@ -1272,7 +1275,12 @@ def write_time_series(engine, times: Iterable[float], path, *, xs: int, check: b
                 if stop not in STOP_REASONS:
                     raise ObservablesError(f"engine stopped with unknown reason {stop!r}")
                 if stop == "max_events":
-                    break                        # t not reached: no observation
+                    if engine.time < t:
+                        break                    # t not reached: no observation
+                    # the capping event fired exactly at t: t is reached and
+                    # observed; the series stops for the cap only if a later
+                    # requested time remains (the next advance has no events left)
+                    stop = "horizon"
             obs = observer.observe(engine, releases=tracker)
             obs["time_s"] = t
             obs["invariant_checks"] = checker.checks if checker is not None else None

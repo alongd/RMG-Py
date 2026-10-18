@@ -106,10 +106,11 @@ catalog must load at the run temperature (no extrapolation).
 written, ``seed`` and the labels above, and the file ends with the time
 series' stop record (``melt_observables.STOP_SCHEMA``).  The optional event cap
 is run-wide per seed and is passed to ``write_time_series(max_events=...)``:
-when it is reached the seed stops and the observation in progress is not
-written (``observations`` counts the observation lines).  The seed's stop
-reason is the one ``write_time_series`` returns (``max_events``, ``horizon``
-or ``absorbing``; ``melt_observables.STOP_REASONS``), recorded as returned;
+when it is reached the seed stops and a requested time the engine has not
+reached is not observed (``observations`` counts the observation lines).  The
+seed's stop reason is the one ``write_time_series`` returns (``max_events``
+when the cap left a requested time unreached, else ``horizon`` or
+``absorbing``; ``melt_observables.STOP_REASONS``), recorded as returned;
 an exception in a seed (engine, observation or report) stops it with stop
 reason ``error`` (``error`` names it; the traceback goes to stderr), the other
 seeds still run and the run's status is ``failed``.
