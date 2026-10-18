@@ -1005,16 +1005,46 @@ def _effective_pressures(efficiencies, gas: Sequence[int], pressure: float,
     return out
 
 
+def _units(part) -> frozenset:
+    """The ambiguity units in one half of a rule: a unit string, a set of
+    them, or none (None, True, "gas", "condensed")."""
+    if isinstance(part, str):
+        return frozenset() if part in ("gas", "condensed") else frozenset([part])
+    if isinstance(part, (set, frozenset, tuple, list)):
+        return frozenset(part)
+    return frozenset()
+
+
+def _simplified(rule) -> Tuple:
+    """A rule with what it cannot depend on removed: a species a configured
+    pool's override condenses, or the first stage condenses outright, is
+    condensed under every combination and carries no unit."""
+    configured, stage1 = rule
+    if configured is True or stage1 == "condensed":
+        return True, "condensed"
+    return _units(configured) or None, _units(stage1) or "gas"
+
+
+def _merged(a, b) -> Tuple:
+    """Two pools' rules for one species, as MoM applies them: the overrides
+    only condense (polymer.pyx 3185-3261) and the first stage is one mask,
+    so either condensation stands whatever the pool order."""
+    (ca, sa), (cb, sb) = a, b
+    configured = True if True in (ca, cb) else (_units(ca) | _units(cb)) or None
+    stage1 = "condensed" if "condensed" in (sa, sb) else (_units(sa) | _units(sb)) or "gas"
+    return configured, stage1
+
+
 def _condensed(rule, chosen) -> bool:
     """Whether a core species is condensed in MoM's gas mask under the
     ambiguity units ``chosen`` (``core_phases``): its rule is (configured,
     stage1), configured None (no pool override), True (a configured pool's
-    override) or a unit "configured:<pool>"; stage1 "gas", "condensed" or a
-    unit "stage1:<species>"."""
+    override) or units "configured:<pool>" (any chosen condenses); stage1
+    "gas", "condensed" or units "stage1:<species>" (any chosen condenses)."""
     configured, stage1 = rule
-    if configured is True or (isinstance(configured, str) and configured in chosen):
+    if configured is True or _units(configured) & set(chosen):
         return True
-    return stage1 == "condensed" or (stage1 != "gas" and stage1 in chosen)
+    return stage1 == "condensed" or bool(_units(stage1) & set(chosen))
 
 
 def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressure: float,
@@ -1030,10 +1060,12 @@ def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressu
     (``get_effective_collider_efficiencies(core_species)``, polymer_input.py
     428-434: each efficiency goes to the first isomorphic core species,
     model.pyx 415-421), and only then the gas mask weighs the amounts
-    (``core``, from ``core_phases``, in MoM's core order).  Every ambiguity
-    unit (a spawned pool configured or not; a species whose first-stage phase
-    the sidecar cannot settle) that decides the phase of a species holding an
-    amount at some composition is taken both ways, every combination (at
+    (``core``, from ``core_phases``, in MoM's core order: with the solver's
+    recorded mask every rule is settled and one gas set is evaluated).  Every
+    ambiguity unit of a reconstructed mask (a spawned pool configured or not;
+    a species whose first-stage phase the sidecar cannot settle) that decides
+    the phase of a species holding an amount at some composition, counted on
+    the simplified rules (``_simplified``), is taken both ways, every combination (at
     most ``AMBIGUOUS_MAX`` units, else dead with the reason): where the
     forward rate's liveness differs it is dead with the reason "gas mask
     ambiguous for ...".  Compositions are the profile's saved rows (and the
@@ -1061,9 +1093,11 @@ def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressu
         efficiencies = kinetics.get_effective_collider_efficiencies([c[1] for c in core])
         rows = [[None if c[0] is None else y[c[0]] for c in core] for y in compositions]
         rows = [[0.0 if v is None else v for v in y] for y in rows]      # a core species without a column holds 0
-        # the ambiguity units that decide the phase of a core species holding an amount at some composition
+        # the ambiguity units that decide the phase of a core species holding an amount at some composition,
+        # counted on the simplified rules (a species condensed whatever its units brings none)
+        rules = [_simplified(c[2]) for c in core]
         present = [j for j in range(len(core)) if any(y[j] != 0.0 for y in rows)]
-        units = sorted({u for j in present for u in core[j][2] if isinstance(u, str) and u not in ("gas", "condensed")})
+        units = sorted({u for j in present for part in rules[j] for u in _units(part)})
         if len(units) > AMBIGUOUS_MAX:
             out.update(forward=False, error=f"gas mask ambiguous for {units} (more than {AMBIGUOUS_MAX} to "
                                             f"enumerate) at the {sampled}")
@@ -1071,7 +1105,7 @@ def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressu
         variants = []
         for mask in range(2 ** len(units)):
             chosen = {u for b, u in enumerate(units) if mask >> b & 1}
-            members = [j for j in range(len(core)) if not _condensed(core[j][2], chosen)]
+            members = [j for j in range(len(core)) if not _condensed(rules[j], chosen)]
             values, why = forward_at(_effective_pressures(efficiencies, members, pressure, rows))
             variants.append((any(not dead(k) for k in values), values, why))
         if len({v[0] for v in variants}) > 1:
@@ -1191,14 +1225,38 @@ def _h_loss_radical_daughter(molecule, proxies) -> bool:
     return False
 
 
+def _recorded_mask(conventions: dict) -> Optional[List[Tuple[str, bool]]]:
+    """conventions.solver_gas_mask, MoM's own gas_species_mask recorded by
+    its serializer (the core species in solver order, each with its gas
+    flag, source "solver"), or None when the sidecar does not carry it."""
+    record = conventions.get("solver_gas_mask")
+    if record is None:
+        return None
+    core = record.get("core") if isinstance(record, dict) else None
+    if (not isinstance(record, dict) or record.get("source") != "solver" or not isinstance(core, list)
+            or not all(isinstance(e, dict) and isinstance(e.get("species"), str) and isinstance(e.get("gas"), bool)
+                       for e in core)):
+        raise ProducerError(f"conventions.solver_gas_mask is not a solver mask record: {record!r}")
+    return [(e["species"], e["gas"]) for e in core]
+
+
 def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any],
-                profile) -> List[Tuple[Optional[int], Any, Tuple]]:
-    """MoM's core in its order as (profile column or None, RMG species, rule):
-    the order is the profile's columns (the solver writes its core in
-    promotion order, rmg/model.py; RMG's Chemkin writer sorts the SPECIES
-    block by index, chemkin.pyx ~2153, so the block is not it), then any
-    Chemkin species the profile lacks (amount 0).  The rule (``_condensed``)
-    rebuilds the solver's gas mask from what the sidecar records:
+                profile) -> Tuple[List[Tuple[Optional[int], Any, Tuple]], str]:
+    """MoM's core in its order as (profile column or None, RMG species, rule),
+    and the phase source: the order is the profile's columns (the solver
+    writes its core in promotion order, rmg/model.py; RMG's Chemkin writer
+    sorts the SPECIES block by index, chemkin.pyx ~2153, so the block is not
+    it), then any Chemkin species the profile lacks (amount 0).
+
+    ``"solver_mask"``: the sidecar records MoM's own gas mask
+    (conventions.solver_gas_mask).  It is the only phase source: each rule is
+    the recorded flag, no unit, nothing reconstructed.  The mask is static
+    over the simulation that wrote the profile, whose columns are its core in
+    its order, so the record must name the profile's species columns in that
+    order (refused otherwise).
+
+    ``"reconstructed"`` (older sidecars): the rule (``_condensed``) rebuilds
+    the solver's gas mask from what the sidecar records:
 
     * the second stage, per pool (``_apply_pool_phase_overrides``, polymer.pyx
       3185-3243 at b1285f08f), condenses the FIRST core species whose base
@@ -1206,12 +1264,17 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
       mu dummies and explicit-DP species; a configured (root) pool always, a
       spawned pool (conventions.spawned_pools) only if the solver configured
       it, which the sidecar does not record: the unit "configured:<pool>";
-    * every other pool member keeps the first stage's phase (``get_gas_mask``,
-      polymer_input.py 709-781): a spawned pool's mu dummies are not
-      registered there (gas), nor its other members, unless one is an H-loss
-      radical daughter of a root pool's proxy (section D, 880-990), which
-      the sidecar cannot settle (the durable gas veto and Polymer-ness are
-      not recorded): the unit "stage1:<species>";
+    * the first stage (``get_gas_mask``, polymer_input.py 709-781): a root
+      pool's mu dummies are condensed, a spawned pool's gas; section D
+      (787-791) condenses EVERY core species whose base label is that of an
+      H-loss radical daughter of a root pool's proxy (880-990), which the
+      sidecar cannot settle (the durable gas veto and Polymer-ness are not
+      recorded): each candidate daughter (a pool member or any other core
+      species, not a mu dummy, its base no root pool's label) is the unit
+      "stage1:<species>", and a pool member's first stage is condensed when
+      any candidate of its base is;
+    * a species in several pools takes every pool's rule (``_merged``: any
+      condensation stands, whatever the pool order);
     * a species no pool lists: condensed iff conventions.condensed_species
       names it (derived from the solver's own final-core mask; the
       serializer's spawned-pool closure only adds pool members).
@@ -1253,12 +1316,23 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
                             "Chemkin file")
     placed = {key for _i, key in order}
     order += [(None, key) for key in by_key if key not in placed]    # no profile column: last, amount 0
-    position = {key: j for j, (_i, key) in enumerate(order)}
 
+    recorded = _recorded_mask(conventions)
+    if recorded is not None:
+        keys = [identity(x) for x, _gas in recorded]
+        columns = [species_key(h) for h in header[2:]]
+        if keys != columns:
+            raise ProducerError(f"conventions.solver_gas_mask names {[x for x, _g in recorded]}, the profile "
+                                f"{profile} {list(header[2:])}: the recorded mask is not the mask of the profile's "
+                                "core in its order")
+        gas = dict(zip(keys, (g for _x, g in recorded)))
+        return [(i, by_key[key], (None, "gas" if gas.get(key, True) else "condensed")) for i, key in order], \
+            "solver_mask"
+
+    position = {key: j for j, (_i, key) in enumerate(order)}
     # pool members: the mu dummies, the species of the pool's base label, the explicit-DP species
-    rules = {}
+    member_of, names_of = {}, {}
     root_proxies = []
-    member_of = {}
     for p in doc["pools"]:
         label = p["label"]
         mus = {identity(f"{label}_mu{k}") for k in range(3)}
@@ -1266,8 +1340,25 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
         labelled = {identity(x) for x in names if base(x) == label and identity(x) not in mus}
         explicit = {identity(x) for x in names if identity(x) not in mus and identity(x) not in labelled}
         member_of[label] = (mus, labelled, explicit)
+        for x in names:
+            names_of.setdefault(identity(x), str(x))
         if label not in spawned:
             root_proxies += [by_key[k].molecule[0] for k in labelled if k in by_key and by_key[k].molecule]
+    all_mus = {k for mus, _l, _e in member_of.values() for k in mus}
+    root_labels = labels - spawned
+
+    # section D: candidate H-loss daughters of a root proxy, by base label (a pool member by its sidecar name)
+    daughters: Dict[str, set] = {}
+    for key, _j in sorted(position.items(), key=lambda kv: kv[1]):
+        x = by_key[key]
+        name = names_of.get(key) or get_species_identifier(x)
+        mol = x.molecule[0] if x.molecule else None
+        if key in all_mus or mol is None or base(name) in root_labels:
+            continue
+        if _h_loss_radical_daughter(mol, root_proxies):
+            daughters.setdefault(base(name), set()).add(f"stage1:{get_species_identifier(x)}")
+
+    rules = {}
     for p in doc["pools"]:
         label = p["label"]
         mus, labelled, explicit = member_of[label]
@@ -1279,13 +1370,13 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
             if key in mus:
                 stage1 = "condensed" if label not in spawned else "gas"
             else:
-                mol = by_key[key].molecule[0] if by_key[key].molecule else None
-                stage1 = (f"stage1:{get_species_identifier(by_key[key])}"
-                          if mol is not None and _h_loss_radical_daughter(mol, root_proxies) else "gas")
+                stage1 = frozenset(daughters.get(base(names_of.get(key, "")), ())) or "gas"
             condensable = key in mus or key in explicit or key == first
-            rules[key] = (configured if condensable else None, stage1)
+            rule = (configured if condensable else None, stage1)
+            rules[key] = _merged(rules[key], rule) if key in rules else rule
     kept = {identity(x) for x in condensed}
-    return [(i, by_key[key], rules.get(key, (None, "condensed" if key in kept else "gas"))) for i, key in order]
+    return [(i, by_key[key], rules.get(key, (None, "condensed" if key in kept else "gas"))) for i, key in order], \
+        "reconstructed"
 
 
 def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> dict:
@@ -1318,7 +1409,7 @@ def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> 
     horizon = float(times[-1])
     header, data = read_profile(find_profile(rmg_dir))
     dictionary = read_species_dictionary(dictionary_path)
-    core = core_phases(header, doc, rmg_species, find_profile(rmg_dir))
+    core, phase_source = core_phases(header, doc, rmg_species, find_profile(rmg_dir))
     visited = [r for r in data if r[0] < horizon] + [interpolate(data, horizon)]
     by_key: Dict[Tuple, List[dict]] = {}
     for reaction in reactions:
@@ -1429,7 +1520,7 @@ def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> 
                                 "absolute_g": ACTIVITY_MASS_FLOOR_FRACTION * float(facts["initial_mass_g"])},
             "rate_errors": rate_errors, "reverse_disabled": reverse_disabled, "dead_reasons": dead_reasons,
             "temperature_K": temperature, "pressure_Pa": pressure,
-            "activity_rule": ACTIVITY_RULE, "refused_reasons": refused_reasons,
+            "activity_rule": ACTIVITY_RULE, "refused_reasons": refused_reasons, "phase_source": phase_source,
             "stale_topology": bool((doc.get("conventions") or {}).get("stale_topology"))}
 
 
