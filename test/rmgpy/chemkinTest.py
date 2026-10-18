@@ -1776,6 +1776,23 @@ class TestEndOfFileInsideABlock:
                                     thermo="THERM ALL\n" + self.RANGES + entry.splitlines()[0] + "\n")
         assert isinstance(outcome, ChemkinError) and re.search(r"THERM block.*H2", str(outcome)), outcome
 
+    @pytest.mark.parametrize("header", ["SPECIES", "SITE/SURF/"], ids=["species", "site"])
+    def test_a_species_or_site_block_cannot_swallow_reactions(self, tmp_path, header):
+        """A block header before END belongs to the next block, not its
+        unfinished SPECIES or SITE predecessor."""
+        text = "ELEMENTS H END\n{0}\nH2 H\nREACTIONS\nH2=H+H 1.0 0 0\nEND\n".format(header)
+        outcome = self.read_guarded(tmp_path, text)
+        block = "SITE" if header.startswith("SITE") else "SPECIES"
+        assert isinstance(outcome, ChemkinError) and re.search(block + r" block.*REACTIONS", str(outcome)), outcome
+
+    @pytest.mark.parametrize("line_count", [1, 2, 3])
+    def test_end_inside_a_thermo_entry_fails_by_species(self, tmp_path, line_count):
+        """END cannot silently discard one to three NASA lines."""
+        entry = self.h2_entry()
+        outcome = self.read_guarded(tmp_path, self.HEAD + "THERM ALL\n" + self.RANGES
+                                    + "\n".join(entry.splitlines()[:line_count]) + "\nEND\n")
+        assert isinstance(outcome, ChemkinError) and re.search(r"THERM block.*H2", str(outcome)), outcome
+
     def test_the_same_blocks_with_their_end_read(self, tmp_path):
         """The shapes above, each block closed by END (RMG's writer closes
         every block it writes), read: H2's thermo and the reaction."""
