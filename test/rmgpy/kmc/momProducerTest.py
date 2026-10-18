@@ -14,6 +14,7 @@ exported quantity equals the kMC observation of the same deck.
 import csv
 import hashlib
 import json
+import re
 
 import numpy as np
 import pytest
@@ -129,7 +130,7 @@ def family_rows(admitted, label=LABEL):
 
 def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABEL, end_groups=("[H]", "[H]"),
               mass_override=None, duplicate=None, extra_columns=(), n2=lambda t: 1.0, gas_reactions=(),
-              pool_extra=None):
+              pool_extra=None, proxy_amount=lambda t: 7.0, ea_units="KCAL/MOLE"):
     """A MoM output directory under ``out/rmg``.
 
     ``pools``: [(label, f(t) -> (mu0, mu1, mu2), defect_g_mol)]; ``gas``:
@@ -139,9 +140,15 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     family, admitted, reactants, products, reversible and optionally
     cantera_null / expanded: no Cantera index / a MultiArrhenius the Chemkin
     writer expands without its family annotation; A: the rate coefficient's
-    A, default 1; no_chemkin: the row has no Chemkin entry);
+    A, default 1; no_chemkin: the row has no Chemkin entry; rate: the
+    Chemkin main line's (A, n, Ea); aux: Chemkin lines after it (PLOG, LOW,
+    ...); terms: the main lines of an expanded row; equation: the Chemkin
+    equation (colliders); sidecar_kinetics: the sidecar's kinetics record,
+    None as the serializer writes for non-Arrhenius kinetics);
     ``gas_reactions``: Chemkin-only reactions (reactants, products,
-    reversible, A)."""
+    reversible, A).  The Chemkin file is complete for RMG's own reader
+    (SPECIES block, every reaction species in the dictionary); its Ea unit
+    is ``ea_units``."""
     rmg = out / "rmg"
     for sub in ("solver", "chemkin"):
         (rmg / sub).mkdir(parents=True, exist_ok=True)
@@ -155,7 +162,7 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
         row = [t, 1.0, n2(t)]
         for _p, f, _d in pools:
             row += list(f(t))
-        row += [g[2](t) for g in gas] + [7.0] + [0.0] * len(extra_columns)
+        row += [g[2](t) for g in gas] + [proxy_amount(t)] + [0.0] * len(extra_columns)
         table.append(row)
     if duplicate is not None:
         k, delta = duplicate
@@ -168,19 +175,28 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
         writer.writerows(table)
     with open(rmg / "solver" / "simulation_1_7.csv", "w", newline="") as handle:   # an earlier core: ignored
         csv.writer(handle).writerow(["Time (s)", "Volume (m^3)"])
+    if rows is None:
+        rows = family_rows({"toy_homolysis": (1, 1)} if admitted is None else admitted, label)
     dictionary = [f"N2\n{ADJ['N2']}"]
     for p, _f, _d in pools:
         dictionary += [f"{c}\n{ADJ['dummy']}" for c in moment_ids[p]]
     dictionary += [f"{g[0]}\n{g[1]}" for g in gas]
     dictionary.append(f"{proxy}\n" + Molecule(smiles="CCCCCC").to_adjacency_list())
+    named = {entry.split("\n", 1)[0] for entry in dictionary}
+    every = [x for r in list(rows) + list(gas_reactions) for x in list(r["reactants"]) + list(r["products"])]
+    every += [x for r in rows for x in r.get("colliders", ())]
+    # RMG's Chemkin identifiers fit 16 characters: a longer indexed label is written as formula(index)
+    ck = {x: (re.sub(r"^.*\((\d+)\)$", r"C2H2(\1)", x) if len(x) > 16 else x) for x in every}
+    for x in dict.fromkeys(every):
+        if ck[x] not in named:              # a structure for RMG's reader; no profile column
+            dictionary.append(f"{ck[x]}\n" + Molecule(smiles="C#C").to_adjacency_list())
+            named.add(ck[x])
     (rmg / "chemkin" / "species_dictionary.txt").write_text("\n".join(dictionary) + "\n")
     pool_rows = [{"label": p, "monomer_mw_g_mol": a if mass_override is None else mass_override,
                   "chain_mass_defect_g_mol": d, "end_groups": list(end_groups),
                   "bookkeeping_species": moment_ids[p] + ([proxy] if p == label else []), **(pool_extra or {})}
                  for p, _f, d in pools]
-    if rows is None:
-        rows = family_rows({"toy_homolysis": (1, 1)} if admitted is None else admitted, label)
-    reactions, annotated, k, c = [], ["REACTIONS    KCAL/MOLE   MOLES", ""], 0, 0
+    reactions, annotated, k, c = [], [f"REACTIONS    {ea_units}   MOLES", ""], 0, 0
     pool_labels = {p for p, _f, _d in pools}
 
     def is_proxy(x):
@@ -195,7 +211,8 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
             row = {"id": f"r{k}", "cantera": {"index": k, "equation": equation}}
             k += 1
         big_a = r.get("A", 1.0)
-        row.update({"kinetics": {"A": big_a, "n": 0.0, "Ea": 0.0, "reversible": r["reversible"]},
+        kinetics = r.get("sidecar_kinetics", {"A": big_a, "n": 0.0, "Ea": 0.0})
+        row.update({"kinetics": None if kinetics is None else {**kinetics, "reversible": r["reversible"]},
                     "reactants": list(r["reactants"]), "products": list(r["products"]),
                     "proxy_reactants": [x for x in r["reactants"] if is_proxy(x)],
                     "proxy_products": [x for x in r["products"] if is_proxy(x)],
@@ -204,22 +221,27 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
         if not r["admitted"]:
             row["refused_reason"] = "conduit-deferred"
         reactions.append(row)
-        line = "+".join(r["reactants"]) + arrow + "+".join(r["products"])
-        for _ in range(0 if r.get("no_chemkin") else 2 if r.get("expanded") else 1):
+        line = r.get("equation") or ("+".join(ck[x] for x in r["reactants"]) + arrow
+                                     + "+".join(ck[x] for x in r["products"]))
+        terms = r.get("terms") or [r.get("rate", (big_a, 0.0, 0.0))] * (2 if r.get("expanded") else 1)
+        for term in ([] if r.get("no_chemkin") else terms):
             c += 1
             annotated.append(f"! Reaction index: Chemkin #{c}; RMG #{len(reactions)}")
             if not r.get("expanded"):
                 annotated.append(f"! Template reaction: {r['family']}")
-            annotated += [f"{line:<51} {big_a} 0.0 0.0"] + (["DUPLICATE"] if r.get("expanded") else []) + [""]
+            annotated += ([f"{line:<51} {term[0]!r} {term[1]!r} {term[2]!r}"] + list(r.get("aux", ()))
+                          + (["DUPLICATE"] if r.get("expanded") else []) + [""])
     for j, g in enumerate(gas_reactions):
         c += 1
-        line = "+".join(g["reactants"]) + ("<=>" if g["reversible"] else "=>") + "+".join(g["products"])
+        line = ("+".join(ck[x] for x in g["reactants"]) + ("<=>" if g["reversible"] else "=>")
+                + "+".join(ck[x] for x in g["products"]))
         annotated += [f"! Reaction index: Chemkin #{c}; RMG #{len(reactions) + 1 + j}",
                       "! Template reaction: toy_h_abstraction", f"{line:<51} {g['A']} 0.0 0.0", ""]
     (rmg / "chemkin" / "polymer_pools.json").write_text(json.dumps(
         {"schema_version": "2.0", "pools": pool_rows, "reactions": reactions,
          "conventions": {"stale_topology": False}}))
-    (rmg / "chemkin" / "chem_annotated.inp").write_text("\n".join(annotated + ["END", ""]))
+    species_block = ["SPECIES"] + [f"    {x}" for x in sorted(named)] + ["END", ""]
+    (rmg / "chemkin" / "chem_annotated.inp").write_text("\n".join(species_block + annotated + ["END", ""]))
 
 
 def mom_entries(out):
@@ -861,7 +883,7 @@ def test_a_bath_that_does_not_close_exports_no_mass(setup):
     out = setup["tmp"] / "out"
     produce(setup, out)
     mu = declared(setup["spec"])
-    write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: mu, 0.0)], gas=ZERO_GAS,
+    write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: mu, 0.0)], gas=TRACE,
               n2=lambda t: 1.0 - 1e-3 * t)
     produce(setup, out, mode="convert")
     entries = mom_entries(out)
@@ -1238,8 +1260,7 @@ def _boundary_run(tmp_path, scale):
     produce(s, out, end=10.0, snapshots=2)
     mu = declared(s["spec"])
     row = tuple(m * f for m, f in zip(mu, scale))
-    trace = [("H(1)", ADJ["H"], lambda t: 1e-9 * t), ("H2(2)", ADJ["H2"], lambda t: 0.0)]   # the profile moves
-    write_run(out, times=[0.0, 10.0], pools=[(LABEL, lambda t: mu if t == 0.0 else row, 0.0)], gas=trace)
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, lambda t: mu if t == 0.0 else row, 0.0)], gas=TRACE)
     produce(s, out, end=10.0, snapshots=2, mode="convert")
     return mom_entries(out)[-1]["quantities"], json.loads((out / "mom_diagnostics.json").read_text())[-1]
 
@@ -1321,7 +1342,9 @@ def test_a_mechanism_that_leaves_the_mass_dp_coordinate_withholds_the_whole_keys
 # I-170 rework 2 (r136)
 # --------------------------------------------------------------------------
 FLOOR = 1e-14            # MoM's accepted-state floor for atol 1e-16: max(1e-30, 100 atol)
-TRACE = [("H(1)", ADJ["H"], lambda t: 1e-9 * t), ("H2(2)", ADJ["H2"], lambda t: 0.0)]   # keeps a profile moving
+# keeps a profile moving: H (declared) reaches 1e-4 g by 10 s, above the activity floors (1e-8 of the
+# deck's 1000 g) and inside the mass closure (1e-6 of the system's mass)
+TRACE = [("H(1)", ADJ["H"], lambda t: 1e-5 * t), ("H2(2)", ADJ["H2"], lambda t: 0.0)]
 
 
 def _ethylene_setup(tmp_path):
@@ -1687,3 +1710,156 @@ def test_an_h2_loss_transfer_does_not_make_a_pool_light(setup):
     produce(setup, out, mode="convert")
     q = mom_entries(out)[-1]["quantities"]
     assert "polymer_derived_molecules_mol" in q and "polymer_condensed_mass_g" in q
+
+
+# --------------------------------------------------------------------------
+# I-172: the activity gate's rates by RMG, physical motion, colliders
+# --------------------------------------------------------------------------
+KCAL = 4184.0
+
+
+def _row(**kw):
+    """One admitted homolysis row of the main pool (proxy -> proxy + X0)."""
+    proxy = proxy_of()
+    return {"family": "toy_homolysis", "admitted": True, "reactants": [proxy], "products": [proxy, "X0"],
+            "reversible": False, **kw}
+
+
+def _census(setup, rows, **kw):
+    """(census, refused?) of a moving run with ``rows``."""
+    out = setup["tmp"] / f"out{len(list(setup['tmp'].glob('out*')))}"
+    produce(setup, out)
+    constant_run(out, setup["spec"], rows=rows, **kw)
+    try:
+        manifest = produce(setup, out, mode="convert")
+    except mp.ProducerError as error:
+        assert "inactive_chemistry" in str(error), error
+        return json.loads((out / "producer.json").read_text())["census"], True
+    return manifest["census"], False
+
+
+def test_a_plog_whose_pressure_rates_are_all_zero_is_dead(setup):
+    """Review defect 1: RMG's writer puts a placeholder 1 0 0 on the main
+    line of a PLOG; the rate is on the PLOG lines."""
+    plog = ["PLOG /  0.1 0.0 0.0 0.0 /", "PLOG /  10.0 0.0 0.0 0.0 /"]
+    census, refused = _census(setup, [_row(rate=(1.0, 0.0, 0.0), aux=plog, sidecar_kinetics=None)])
+    assert refused and census["zero_rate_rows"] == ["r0"]
+
+
+def test_a_plog_with_positive_pressure_rates_and_a_zero_main_line_is_live(setup):
+    plog = ["PLOG /  0.1 2.0 0.0 0.0 /", "PLOG /  10.0 3.0 0.0 0.0 /"]
+    census, refused = _census(setup, [_row(rate=(0.0, 0.0, 0.0), aux=plog, sidecar_kinetics=None)])
+    assert not refused and census["live_rows"] == ["r0"]
+
+
+def test_a_lindemann_falloff_with_a_zero_low_pressure_rate_is_dead(setup):
+    proxy = proxy_of()
+    row = _row(equation=f"{proxy}(+M)=>{proxy}+X0(+M)", rate=(1.0, 0.0, 0.0), aux=["LOW /  0.0 0.0 0.0 /"],
+               sidecar_kinetics=None)
+    census, refused = _census(setup, [row])
+    assert refused and census["zero_rate_rows"] == ["r0"]
+
+
+@pytest.mark.parametrize("a", [2.0, 1.0])
+def test_cancelling_multi_arrhenius_terms_are_dead(setup, a):
+    """Review defect 2: terms (a, 0, 0) and (-a, 0, 0) sum to zero.  (RMG's
+    Arrhenius cannot return exactly -1: its except -1 sentinel raises, a
+    stated rate error, dead as well.)"""
+    census, refused = _census(setup, [_row(expanded=True, terms=[(a, 0.0, 0.0), (-a, 0.0, 0.0)],
+                                           sidecar_kinetics=None)])
+    assert refused and census["zero_rate_rows"] == ["r0"]
+
+
+def test_a_multi_arrhenius_with_one_zero_term_is_live(setup):
+    census, refused = _census(setup, [_row(expanded=True, terms=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)],
+                                           sidecar_kinetics=None)])
+    assert not refused and census["live_rows"] == ["r0"]
+
+
+OVERFLOW = {"rate": (0.0, 0.0, -1e7 / KCAL), "sidecar_kinetics": {"A": 0.0, "n": 0.0, "Ea": -1e7}}
+
+
+def test_a_refused_row_whose_rate_overflows_is_never_evaluated(setup):
+    """Review defect 3: A = 0, Ea = -1e7 J/mol at 700 K on a refused row:
+    the admission filter comes first, so the census converts and records no
+    rate error; on an admitted row the error is a stated reason, not a
+    crash."""
+    proxy = proxy_of()
+    refused_row = _row(admitted=False, products=[proxy, "X1"], **OVERFLOW)
+    census, refused = _census(setup, [refused_row, _row()])
+    assert not refused and census["live_rows"] == ["r1"] and census["rate_errors"] == {}
+    census, refused = _census(setup, [_row(**OVERFLOW)])
+    assert refused and census["zero_rate_rows"] == ["r0"] and list(census["rate_errors"]) == ["r0"]
+
+
+@pytest.mark.parametrize("units, dead", [("KCAL/MOLE", True), ("CAL/MOLE", False)])
+def test_the_reactions_block_ea_unit_is_honoured(setup, units, dead):
+    """Ea = 1e6 in the header's unit: kcal/mol underflows exp(-Ea / RT) to 0 at
+    700 K, cal/mol leaves 2e-313."""
+    census, refused = _census(setup, [_row(rate=(1.0, 0.0, 1e6), sidecar_kinetics=None)], ea_units=units)
+    assert refused is dead and (census["zero_rate_rows"] == ["r0"]) is dead
+
+
+def test_more_chemkin_reactions_than_sidecar_rows_is_refused(setup):
+    proxy = proxy_of()
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    constant_run(out, setup["spec"], rows=[_row()],
+                 gas_reactions=[{"reactants": [proxy], "products": [proxy, "X0"], "reversible": False, "A": 1.0}])
+    with pytest.raises(mp.ProducerError, match="no one-to-one match"):
+        produce(setup, out, mode="convert")
+
+
+def test_an_indexed_specific_collider_matches_its_row(setup):
+    """Review defect 5: P(3)(+H2(2)) => Q + H(1)(+H2(2))."""
+    proxy = proxy_of()
+    row = _row(equation=f"{proxy}(+H2(2))=>{proxy}+X0(+H2(2))", rate=(1.0, 0.0, 0.0),
+               aux=["LOW /  1.0 0.0 0.0 /"], sidecar_kinetics=None, colliders=["H2(2)"])
+    census, refused = _census(setup, [row])
+    assert not refused and census["live_rows"] == ["r0"]
+
+
+def _motion(setup, pool, *, gas=ZERO_GAS, **kw):
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    write_run(out, times=PROFILE_T, pools=[(LABEL, pool, 0.0)], gas=gas, **kw)
+    try:
+        return produce(setup, out, mode="convert")["census"]["profile_changes"]
+    except mp.ProducerError as error:
+        assert "inactive_chemistry" in str(error), error
+        return json.loads((out / "producer.json").read_text())["census"]["profile_changes"]
+
+
+def test_a_real_moment_change_of_5e_7_moves_the_profile(setup):
+    """Review defect 4: mu1 falls by 5e-7 of itself by the horizon."""
+    mu = declared(setup["spec"])
+    assert _motion(setup, lambda t: (mu[0], mu[1] * (1 - 5e-7 * t / 40.0), mu[2])) is True
+
+
+def test_a_lone_1e_300_appearance_does_not_move_the_profile(setup):
+    mu = declared(setup["spec"])
+    gas = [("H(1)", ADJ["H"], lambda t: 0.0 if t == 0.0 else 1e-300), ("H2(2)", ADJ["H2"], lambda t: 0.0)]
+    assert _motion(setup, lambda t: mu, gas=gas) is False
+
+
+def test_motion_of_a_bookkeeping_proxy_alone_does_not_move_the_profile(setup):
+    mu = declared(setup["spec"])
+    assert _motion(setup, lambda t: mu, proxy_amount=lambda t: 7.0 + t) is False
+
+
+def test_motion_after_the_horizon_does_not_move_the_profile(setup):
+    """The solver's last row (45 s) passes the 40 s horizon; only it moves."""
+    mu = declared(setup["spec"])
+    assert _motion(setup, lambda t: mu if t <= 40.0 else (2 * mu[0], mu[1], mu[2])) is False
+
+
+def test_a_reaction_rmgs_reader_cannot_give_is_refused(setup):
+    """RMG's Chemkin reader ends a REACTIONS block at any line holding 'end',
+    so a species identifier holding it drops reactions: the census refuses
+    the run rather than count it short."""
+    proxy = proxy_of()
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    constant_run(out, setup["spec"], rows=[_row(products=[proxy, "Xend"])])
+    with pytest.raises(mp.ProducerError, match="RMG's Chemkin reader"):
+        produce(setup, out, mode="convert")
