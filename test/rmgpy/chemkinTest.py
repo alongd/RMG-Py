@@ -53,7 +53,8 @@ from rmgpy.data.kinetics import LibraryReaction
 from rmgpy.exceptions import ChemkinError
 from rmgpy.kinetics.arrhenius import Arrhenius, MultiArrhenius
 from rmgpy.kinetics.chebyshev import Chebyshev
-from rmgpy.kinetics.falloff import Lindemann
+from rmgpy.kinetics.falloff import Lindemann, ThirdBody, Troe
+from rmgpy.kinetics.arrhenius import PDepArrhenius
 from rmgpy import constants
 from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
@@ -1322,14 +1323,15 @@ class TestRecordShapes:
     EXTRA = {"REV": "CC", "DUP": "CCC", "LOW": "CCCC", "CHEB": "CCCCC"}
     EQUATION = "H(1)+H(1)(+M)<=>H2(2)(+M)    1.0e13 0.0 0.0"
 
-    def load(self, tmp_path, aux, names=None, thermo_header="THERM ALL", thermo_path=False, name="chem"):
+    def load(self, tmp_path, aux, names=None, thermo_header="THERM ALL", thermo_path=False, name="chem",
+             equation=None):
         names = dict(self.BASE, **self.EXTRA) if names is None else names
         therm = [thermo_header, "   300.000  1000.000  5000.000"]
         for species in names:
             therm += [line.format(species) for line in self.THERM_ENTRY]
         therm += ["END"]
         text = "\n".join(["ELEMENTS H C N END", "SPECIES", *names, "END", *therm,
-                          "REACTIONS    KCAL/MOLE   MOLES", self.EQUATION, *aux, "END", ""])
+                          "REACTIONS    KCAL/MOLE   MOLES", equation or self.EQUATION, *aux, "END", ""])
         path = tmp_path / f"{name}.inp"
         path.write_text(text)
         (tmp_path / "dict.txt").write_text("\n".join(f"{n}\n{Molecule(smiles=s).to_adjacency_list()}"
@@ -1359,9 +1361,34 @@ class TestRecordShapes:
         assert self.efficiencies(reaction.kinetics) == [("N#N", 0.5)]
         assert "explicit reverse" in reaction.kinetics.comment
 
-    def test_a_record_of_both_shapes_is_an_ambiguity(self, tmp_path):
-        with pytest.raises(ChemkinError, match="ambiguous"):
-            self.load(tmp_path, ["N2/0.50/ CHEB/2/", "LOW/1e24 -2 0/"])
+    def test_a_single_cheb_value_on_a_falloff_reaction_is_an_efficiency(self, tmp_path):
+        """Spar r153 P2: one value is a Chebyshev coefficient only on a
+        reaction already read as Chebyshev; on a falloff reaction it is the
+        declared species' efficiency."""
+        _s, (reaction,) = self.load(tmp_path, ["N2/0.50/ CHEB/2/", "LOW/1e24 -2 0/"])
+        assert type(reaction.kinetics).__name__ == "Lindemann"
+        assert self.efficiencies(reaction.kinetics) == sorted([("N#N", 0.5), ("CCCCC", 2.0)])
+
+    def test_a_record_that_fits_no_reading_names_both(self, tmp_path):
+        """LOW on a third-body reaction: no falloff collider for the keyword,
+        three values for an efficiency of the declared species LOW."""
+        with pytest.raises(ChemkinError, match="keyword LOW.*efficiency"):
+            self.load(tmp_path, ["N2/0.50/ LOW/1e24 -2 0/"], equation="H(1)+H(1)+M<=>H2(2)+M    1.0e13 0.0 0.0")
+
+    def test_a_lowercase_record_names_the_capital_species(self, tmp_path):
+        """Species names are matched as written, else upper-cased (the old
+        reader's fallback): ``cheb/2/`` is the efficiency of the declared
+        CHEB; the keyword test uses the same lookup."""
+        _s, (reaction,) = self.load(tmp_path, ["N2/0.50/ cheb/2/", "LOW/1e24 -2 0/"])
+        assert self.efficiencies(reaction.kinetics) == sorted([("N#N", 0.5), ("CCCCC", 2.0)])
+
+    def test_a_capital_record_is_no_species_declared_lowercase(self, tmp_path):
+        """Only ``cheb`` is declared: ``CHEB/2/`` names no species (never
+        lower-cased), so it is the keyword, which a falloff reaction cannot
+        take."""
+        names = dict(self.BASE, cheb="CCCCC")
+        with pytest.raises(ChemkinError, match="CHEB"):
+            self.load(tmp_path, ["N2/0.50/ CHEB/2/", "LOW/1e24 -2 0/"], names=names)
 
     def test_rmgs_writer_output_round_trips(self, tmp_path):
         polys = [NASAPolynomial(coeffs=[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 3.35], Tmin=lo, Tmax=hi)
@@ -1385,6 +1412,32 @@ class TestRecordShapes:
                                         check_duplicates=False, generate_resonance_structures=False)
         assert back.reversible and not back.duplicate
         assert self.efficiencies(back.kinetics) == self.efficiencies(kinetics)
+
+    @pytest.mark.parametrize("thermo_path", [False, True])
+    @pytest.mark.parametrize("block", [["REACTIONS    KCAL/MOLE   MOLES"], ["REAC"], ["SPECIES", "N2", "END"],
+                                       ["ELEMENTS H C N", "END"], ["THERMO", "END"], ["SITE/SURF/", "END"]],
+                             ids=["REACTIONS", "REAC", "SPECIES", "ELEMENTS", "THERMO", "SITE"])
+    def test_an_unterminated_thermo_block_fails_by_name(self, tmp_path, thermo_path, block):
+        """Spar r153 P1: a THERM block without its END, read or skipped for a
+        separate thermo file, stops at the next block's header with an
+        error naming both; it never consumes another block."""
+        therm = ["THERM ALL", "   300.000  1000.000  5000.000"]
+        for species in self.BASE:
+            therm += [line.format(species) for line in self.THERM_ENTRY]
+        reactions = ["REACTIONS    KCAL/MOLE   MOLES", self.EQUATION, "LOW/1e24 -2 0/", "END"]
+        text = "\n".join(["ELEMENTS H C N END", "SPECIES", *self.BASE, "END", *therm,
+                          *(block if block[0] not in ("REACTIONS    KCAL/MOLE   MOLES", "REAC") else []),
+                          *(["REAC"] + reactions[1:] if block == ["REAC"] else reactions), ""])
+        (tmp_path / "chem.inp").write_text(text)
+        (tmp_path / "dict.txt").write_text("\n".join(f"{n}\n{Molecule(smiles=s).to_adjacency_list()}"
+                                                     for n, s in self.BASE.items()))
+        kwargs = {}
+        if thermo_path:
+            (tmp_path / "therm.dat").write_text("\n".join(therm + ["END"]) + "\n")
+            kwargs["thermo_path"] = str(tmp_path / "therm.dat")
+        with pytest.raises(ChemkinError, match=r"THERM.*END.*" + block[0].split()[0].split("/")[0]):
+            load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"), check_duplicates=False,
+                              generate_resonance_structures=False, **kwargs)
 
     @pytest.mark.parametrize("thermo_path", [False, True])
     def test_an_inline_thermo_entry_named_reac_loads(self, tmp_path, thermo_path):
@@ -1419,3 +1472,92 @@ class TestRecordShapes:
         reaction = read_kinetics_entry(entry, species, aunits, aunits_surf, "kcal/mol")
         assert type(reaction.kinetics).__name__ == "Lindemann"
         assert reaction.kinetics.arrheniusLow.A.value_si == pytest.approx(1e24 * 1e-12, rel=1e-12)
+
+    # every keyword the reader knows, as a species name, and a lowercase cheb beside CHEB
+    KEYWORD_SPECIES = ["CHEB", "cheb", "REV", "DUP", "DUPL", "DUPLICATE", "LOW", "HIGH", "TROE", "SRI", "PLOG",
+                       "TCHEB", "PCHEB", "COV", "COVERAGE", "STICK", "MOME", "XSMI"]
+
+    @staticmethod
+    def _close(a, b):
+        return a == pytest.approx(b, rel=1e-9, abs=1e-12)
+
+    def _same_arrhenius(self, a, b):
+        return all(self._close(x.value_si, y.value_si) for x, y in ((a.A, b.A), (a.Ea, b.Ea), (a.T0, b.T0))) \
+            and self._close(a.n.value_si, b.n.value_si)
+
+    def _same_kinetics(self, a, b):
+        assert type(a) is type(b), (type(a), type(b))
+        if isinstance(a, Chebyshev):
+            return (a.coeffs.value_si.shape == b.coeffs.value_si.shape
+                    and all(self._close(x, y) for x, y in zip(a.coeffs.value_si.flat, b.coeffs.value_si.flat))
+                    and all(self._close(getattr(a, k).value_si, getattr(b, k).value_si)
+                            for k in ("Tmin", "Tmax", "Pmin", "Pmax")))
+        if isinstance(a, PDepArrhenius):
+            return (all(self._close(x, y) for x, y in zip(a.pressures.value_si, b.pressures.value_si))
+                    and len(a.arrhenius) == len(b.arrhenius)
+                    and all(self._same_kinetics(x, y) for x, y in zip(a.arrhenius, b.arrhenius)))
+        if isinstance(a, MultiArrhenius):
+            return len(a.arrhenius) == len(b.arrhenius) and all(
+                self._same_arrhenius(x, y) for x, y in zip(a.arrhenius, b.arrhenius))
+        if isinstance(a, Arrhenius):
+            return self._same_arrhenius(a, b)
+        same = self.efficiencies(a) == self.efficiencies(b) and self._same_arrhenius(a.arrheniusLow, b.arrheniusLow)
+        if isinstance(a, (Lindemann, Troe)):
+            same = same and self._same_arrhenius(a.arrheniusHigh, b.arrheniusHigh)
+        if isinstance(a, Troe):
+            same = same and self._close(a.alpha, b.alpha) and all(
+                (getattr(a, k) is None and getattr(b, k) is None) or self._close(getattr(a, k).value_si,
+                                                                                  getattr(b, k).value_si)
+                for k in ("T1", "T2", "T3"))
+        return same
+
+    def test_every_entry_rmgs_writer_emits_reads_back(self, tmp_path):
+        """Spar r153 oracle: a model whose species are named like every
+        keyword (and cheb beside CHEB), with Chebyshev (one, three and six
+        pressure terms), Lindemann, Troe, third-body, PLOG and duplicate
+        reactions, written by RMG's own writer, reads back exactly."""
+        polys = [NASAPolynomial(coeffs=[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 3.35], Tmin=lo, Tmax=hi)
+                 for lo, hi in (((200, "K"), (1000, "K")), ((1000, "K"), (6000, "K")))]
+        species = {}
+        for label, smiles in [("N2", "N#N"), ("H", "[H]"), ("H2", "[H][H]")] + [
+                (x, "C" * (k + 1)) for k, x in enumerate(self.KEYWORD_SPECIES)]:
+            spc = Species(label=label).from_smiles(smiles)
+            spc.label = label
+            spc.thermo = NASA(polynomials=polys, Tmin=(200, "K"), Tmax=(6000, "K"))
+            species[label] = spc
+        h, h2 = species["H"], species["H2"]
+        eff = {species[x].molecule[0]: 0.25 * (k + 1) for k, x in enumerate(["N2"] + self.KEYWORD_SPECIES)}
+
+        def arr(a, units, n=0.5, ea=2.0):
+            return Arrhenius(A=(a, units), n=n, Ea=(ea, "kcal/mol"), T0=(1, "K"))
+
+        def cheb(rows, cols, units):
+            coeffs = [[1.25 - 0.5 * i - 0.125 * j for j in range(cols)] for i in range(rows)]
+            return Chebyshev(coeffs=coeffs, kunits=units, Tmin=(300, "K"), Tmax=(2000, "K"),
+                             Pmin=(0.01, "atm"), Pmax=(100, "atm"))
+        bi, ter = "cm^3/(mol*s)", "cm^6/(mol^2*s)"
+        kinetics = [
+            Lindemann(arrheniusHigh=arr(1.5e13, bi), arrheniusLow=arr(2.5e18, ter, n=-1.5), efficiencies=eff),
+            Troe(arrheniusHigh=arr(1.5e13, bi), arrheniusLow=arr(2.5e18, ter, n=-1.5), alpha=0.5, T3=(100, "K"),
+                 T1=(1000, "K"), efficiencies=eff),
+            Troe(arrheniusHigh=arr(1.5e13, bi), arrheniusLow=arr(2.5e18, ter, n=-1.5), alpha=0.5, T3=(100, "K"),
+                 T1=(1000, "K"), T2=(5000, "K"), efficiencies=eff),
+            ThirdBody(arrheniusLow=arr(2.5e18, ter, n=-1.5), efficiencies=eff),
+            cheb(3, 1, bi), cheb(2, 3, bi), cheb(5, 6, bi),
+            PDepArrhenius(pressures=([0.1, 1.0, 10.0], "atm"), arrhenius=[arr(1.5e13, bi), arr(2.5e13, bi),
+                                                                          arr(3.5e13, bi)]),
+            arr(1.5e13, bi), arr(2.5e13, bi, n=1.5),
+        ]
+        reactions = [Reaction(reactants=[h, h], products=[h2], kinetics=k, reversible=True,
+                              duplicate=j >= len(kinetics) - 2) for j, k in enumerate(kinetics)]
+        save_chemkin_file(str(tmp_path / "chem.inp"), list(species.values()), reactions, verbose=False,
+                          check_for_duplicates=False)
+        save_species_dictionary(str(tmp_path / "dict.txt"), list(species.values()))
+        _s, back = load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"),
+                                     check_duplicates=False, generate_resonance_structures=False)
+        assert len(back) == len(reactions)
+        for original, read in zip(reactions, back):
+            assert [s.label for s in read.reactants] == ["H", "H"] and [s.label for s in read.products] == ["H2"]
+            assert read.reversible and read.duplicate == original.duplicate
+            assert self._same_kinetics(original.kinetics, read.kinetics), (original.kinetics, read.kinetics)
+
