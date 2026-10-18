@@ -141,13 +141,22 @@ class BoundaryMetadata:
     """Ports and repeat coordinates of one participant graph.
 
     ``coordinates`` holds ``(atom id, unit, position)`` for every heavy atom
-    (sorted by atom id); ``ports`` is sorted by ``port_id``."""
+    (sorted by atom id); ``ports`` is sorted by ``port_id``.
+    ``monomer_backbone``: None, or (on a portless declared monomer) the atom
+    ids of its backbone in path order, bound once from the declaration
+    (empty: the declaration defines none); carried by atom id."""
 
     provider: str
     ports: tuple[Port, ...]
     coordinates: tuple[tuple[int, int, int], ...]
+    monomer_backbone: Optional[tuple] = field(default=None, repr=False)
 
     def __post_init__(self):
+        if self.monomer_backbone is not None:
+            if self.ports:
+                raise MetadataError("a monomer backbone annotation needs a portless participant")
+            object.__setattr__(self, "monomer_backbone",
+                               tuple(int(a) for a in self.monomer_backbone))
         ports = tuple(sorted(self.ports, key=lambda p: p.port_id))
         if len({p.port_id for p in ports}) != len(ports):
             raise MetadataError("port ids must be unique within a participant")
@@ -180,7 +189,9 @@ class BoundaryMetadata:
         return BoundaryMetadata(
             self.provider,
             tuple(p.relabel(mapping) for p in self.ports),
-            tuple((mapping[a], u, k) for a, u, k in self.coordinates))
+            tuple((mapping[a], u, k) for a, u, k in self.coordinates),
+            None if self.monomer_backbone is None else
+            tuple(mapping[a] for a in self.monomer_backbone))
 
     def check(self, rows: Mapping[int, tuple], where: str = "graph",
               atom_ids: Optional[Iterable[int]] = None) -> None:
@@ -198,6 +209,10 @@ class BoundaryMetadata:
             raise MetadataError(f"{where}: repeat coordinates do not cover exactly the "
                                 f"heavy atoms (extra {sorted(coords - heavy)}, "
                                 f"missing {sorted(heavy - coords)})")
+        if self.monomer_backbone and not set(self.monomer_backbone) <= coords:
+            raise MetadataError(f"{where}: monomer backbone atoms "
+                                f"{sorted(set(self.monomer_backbone) - coords)} carry no "
+                                "repeat coordinate")
         seen = set()
         for a, unit, position in self.coordinates:
             if (unit, position) in seen:

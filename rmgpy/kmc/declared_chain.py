@@ -921,6 +921,112 @@ class _Plan:
     tail_order: float
 
 
+@dataclass(frozen=True)
+class MonomerBinding:
+    """The backbone of the declared monomer: ``keys`` (monomer atom keys,
+    head image first) or None with the named ``refusal``."""
+
+    keys: Optional[tuple]
+    refusal: Optional[str] = None
+
+
+MONOMER_ISOMORPHISM_LIMIT = 4096
+
+
+def _folded_graph(graph, raised=None):
+    """A declaration graph with every plain explicit hydrogen (one single
+    bond to a heavy atom, no charge, radical or isotope) folded into its
+    owner's hydrogen count: (nodes, edges), nodes key -> (element, isotope,
+    charge, radical electrons, lone pairs, hydrogens, bond-order sum over the
+    unfolded neighbours).  Bond orders enter only through each atom's sum,
+    so Kekule and aromatic writings of one ring agree.  ``raised``: a bonded
+    pair whose order is raised by one (None when the pair is not bonded)."""
+    atoms = {a.key: a for a in graph.atoms}
+    orders = {}
+    for bond in graph.bonds:
+        orders[frozenset(bond.atoms)] = float(bond.order)
+    if raised is not None:
+        pair = frozenset(raised)
+        if len(pair) != 2 or pair not in orders:
+            return None
+        orders[pair] += 1.0
+    neighbours = {k: {} for k in atoms}
+    for pair, order in orders.items():
+        x, y = sorted(pair)
+        neighbours[x][y] = order
+        neighbours[y][x] = order
+
+    def plain_h(k):
+        a = atoms[k]
+        if a.element != "H" or a.isotope != -1 or a.charge or a.radical_electrons or \
+                a.hydrogens or len(neighbours[k]) != 1:
+            return False
+        (owner, order), = neighbours[k].items()
+        return order == 1.0 and atoms[owner].element != "H"
+
+    folded = {k for k in atoms if plain_h(k)}
+    nodes = {}
+    for k, a in atoms.items():
+        if k in folded:
+            continue
+        hydrogens = a.hydrogens + sum(1 for n in neighbours[k] if n in folded)
+        total = sum(o for n, o in neighbours[k].items() if n not in folded)
+        nodes[k] = (a.element, a.isotope, a.charge, a.radical_electrons, a.lone_pairs,
+                    hydrogens, total)
+    edges = sorted(tuple(sorted(pair)) for pair in orders if not pair & folded)
+    return nodes, edges
+
+
+def bind_monomer(unit, monomer) -> MonomerBinding:
+    """The monomer backbone by the vinyl-addition relation: the monomer is
+    the declared repeat unit (hydrogens included) with its head- and
+    tail-port atoms bonded and that bond's order raised by one.  Every
+    isomorphism (atoms matched with their hydrogens, charge, radical, lone
+    pairs and bond-order sum) must map the head and tail atoms onto the same
+    two monomer atoms; otherwise the backbone is ambiguous and refused.  No
+    such isomorphism (condensation, ring opening, a mismatched declaration):
+    the monomer has no backbone (refused by name)."""
+    import networkx as nx
+    from networkx.algorithms import isomorphism
+
+    ports = dict(unit.ports)
+    head, tail = ports["head"].atom, ports["tail"].atom
+    undefined = "refused:monomer_backbone_undefined: "
+    if head == tail:
+        return MonomerBinding(None, undefined + "the head and tail ports are on one atom; "
+                                                "no vinyl-addition relation")
+    raised = _folded_graph(unit, (head, tail))
+    if raised is None:
+        return MonomerBinding(None, undefined + f"the head ({head}) and tail ({tail}) atoms are "
+                                                "not bonded; no vinyl-addition relation")
+    graphs = []
+    for nodes, edges in (_folded_graph(monomer), raised):
+        g = nx.Graph()
+        for key in sorted(nodes):
+            g.add_node(key, atom=nodes[key])
+        g.add_edges_from(edges)
+        graphs.append(g)
+    matcher = isomorphism.GraphMatcher(graphs[0], graphs[1],
+                                       node_match=lambda m, u: m["atom"] == u["atom"])
+    pairs, first = set(), None
+    for count, mapping in enumerate(matcher.isomorphisms_iter(), 1):
+        if count > MONOMER_ISOMORPHISM_LIMIT:
+            return MonomerBinding(None, "refused:monomer_backbone_ambiguous: more than "
+                                        f"{MONOMER_ISOMORPHISM_LIMIT} isomorphisms")
+        image = {u: m for m, u in mapping.items()}
+        pair = (image[head], image[tail])
+        pairs.add(frozenset(pair))
+        first = first or pair
+    if first is None:
+        return MonomerBinding(None, undefined + "the monomer is not the repeat unit with its "
+                                                "head-tail bond raised by one")
+    if len(pairs) > 1:
+        return MonomerBinding(None, "refused:monomer_backbone_ambiguous: the monomer's "
+                                    "symmetry maps the head-tail pair onto "
+                                    f"{sorted(sorted(p) for p in pairs)}")
+    return MonomerBinding(first)
+
+
 class DeclaredChainProvider(BoundaryProvider):
     """Chain proxies of one declaration (module doc).  Registered in
     ``boundaries.PROVIDERS`` under ``declared:<sha256[:16]>`` of the
@@ -932,6 +1038,8 @@ class DeclaredChainProvider(BoundaryProvider):
         self.name = "declared:" + _canonical_digest(spec)[:16]
         self.END_CHEMISTRIES = {"backbone_head": ("declared", "radical"),
                                 "backbone_tail": ("declared", "radical")}
+        self.monomer_binding = None if spec.monomer_product is None else \
+            bind_monomer(spec.repeat_unit, spec.monomer_product)
         PROVIDERS[self.name] = self
 
     RADICAL_END_CHEMISTRIES = ("radical",)
@@ -1023,62 +1131,37 @@ class DeclaredChainProvider(BoundaryProvider):
         (``rows``: edits and extensions included; a deletion reroutes it): the
         head port's pristine index plus the distance from the head port.
         Consecutive along the path; atoms off every shortest path have no
-        entry.  A participant without both ports (the portless monomer) uses
-        ``portless_backbone_indices``."""
-        if {port.port_id for port in metadata.ports} < {"head", "tail"}:
-            return self.portless_backbone_indices(rows)
+        entry.
+
+        A portless participant carrying the monomer annotation (``monomer``)
+        reads its stamped backbone atom ids (bound once from the declaration,
+        ``bind_monomer``), whatever has happened to the rest of its graph.
+        Any other participant without both a head and a tail port is refused
+        (``refused:backbone_ports``): the built path needs both, and the
+        named providers never build one (their coordinate rule is the pristine
+        index, which edits and deletions invalidate)."""
+        port_ids = {port.port_id for port in metadata.ports}
+        if metadata.monomer_backbone is not None and not metadata.ports:
+            return self._monomer_indices(rows, metadata)
+        if not {"head", "tail"} <= port_ids:
+            raise MetadataError(f"refused:backbone_ports: a participant with ports "
+                                f"{sorted(port_ids)} has no head-to-tail backbone and is not "
+                                "a declared monomer")
         from_head, from_tail, span = self._path_over_rows(rows, metadata)
         head = metadata.port("head").atom_id
         base = self.backbone_index(*metadata.coordinate(head)) or 0
         return {a: base + d for a, d in from_head.items()
                 if a in from_tail and d + from_tail[a] == span}
 
-    def portless_backbone_indices(self, rows) -> dict:
-        """Backbone indices of a participant without ports (the declared
-        monomer): the primitive period's heavy atoms embedded in its heavy
-        atoms (a monomorphism matching elements, each image carrying at least
-        the declared hydrogens), the period's backbone path at its offsets
-        from the head key (a vinyl monomer: its vinyl pair, as the legacy
-        monomer).
-        Without an embedding: every heavy atom on a shortest path between the
-        two ends of a heavy-atom diameter, indexed from one end."""
-        import networkx as nx
-        from networkx.algorithms import isomorphism
-
-        g = self.geometry
-        heavy = sorted(a for a, row in rows.items() if row[0] != "H")
-        if not heavy:
-            return {}
-        adjacency = {a: sorted(c for c, _o in rows[a][5] if c in rows and rows[c][0] != "H")
-                     for a in heavy}
-        mol = nx.Graph()
-        for a in heavy:
-            mol.add_node(a, element=rows[a][0],
-                         hydrogens=sum(1 for c, _o in rows[a][5] if rows[c][0] == "H"))
-        mol.add_edges_from((a, c) for a in heavy for c in adjacency[a] if a < c)
-        unit = nx.Graph()
-        for key in g.keys:
-            if g.atoms[key].element != "H":
-                unit.add_node(key, element=g.atoms[key].element,
-                              hydrogens=g.atoms[key].hydrogens)
-        unit.add_edges_from(pair for pair in sorted(g.declared_bonds)
-                            if all(k in unit for k in pair))
-        matcher = isomorphism.GraphMatcher(
-            mol, unit, node_match=lambda m, u: m["element"] == u["element"]
-            and m["hydrogens"] >= u["hydrogens"])
-        embedding = next(matcher.subgraph_monomorphisms_iter(), None)
-        if embedding is not None:
-            image = {key: atom for atom, key in embedding.items()}
-            return {image[key]: g.backbone_offsets[key] for key in g.backbone_path}
-        start = heavy[0]
-        seen = _bfs(adjacency, start)
-        first = min(seen, key=lambda a: (-seen[a], a))
-        from_first = _bfs(adjacency, first)
-        last = min(from_first, key=lambda a: (-from_first[a], a))
-        from_last = _bfs(adjacency, last)
-        span = from_first[last]
-        return {a: d for a, d in from_first.items()
-                if a in from_last and d + from_last[a] == span}
+    def _monomer_indices(self, rows, metadata: BoundaryMetadata) -> dict:
+        """The stamped monomer backbone ids present in ``rows``, indexed along
+        the stamped path."""
+        if not metadata.monomer_backbone:
+            binding = self.monomer_binding
+            raise MetadataError(binding.refusal if binding is not None else
+                                "refused:monomer_backbone_undefined: the declaration has no "
+                                "monomer_product")
+        return {a: i for i, a in enumerate(metadata.monomer_backbone) if a in rows}
 
     def backbone_atoms(self, chain: ChainSpec) -> int:
         """Heavy atoms on the shortest head-port -> tail-port path of the built
@@ -1282,7 +1365,9 @@ class DeclaredChainProvider(BoundaryProvider):
 
     def monomer(self, name: str = "monomer") -> ProxyBuild:
         """The declared ``monomer_product`` as a portless proxy (unit 0,
-        positions from its own sorted keys)."""
+        positions from its own sorted keys), its metadata stamped with the
+        atom ids of the backbone bound from the declaration
+        (``monomer_binding``; empty when the declaration defines none)."""
         from rmgpy.kmc.rmg_moves import molecule_from_rows
 
         graph = self.spec.monomer_product
@@ -1296,8 +1381,11 @@ class DeclaredChainProvider(BoundaryProvider):
                        set(keys))
         asm.check_valence(name)
         rows, ids = asm.rows()
-        metadata = BoundaryMetadata(self.name, (),
-                                    tuple((ids[h], u, k) for h, (u, k) in asm.coord.items()))
+        coordinates = tuple((ids[h], u, k) for h, (u, k) in asm.coord.items())
+        at = {k: a for a, _u, k in coordinates}
+        keys_bound = self.monomer_binding.keys if self.monomer_binding is not None else None
+        stamp = tuple(at[positions[key]] for key in keys_bound) if keys_bound else ()
+        metadata = BoundaryMetadata(self.name, (), coordinates, monomer_backbone=stamp)
         metadata.check(rows, name)
         return ProxyBuild(name, molecule_from_rows(rows), metadata, tuple(range(len(rows))))
 
