@@ -18,7 +18,8 @@ from rmgpy.kmc import windows as win
 import declared_parity_support as sup
 import interior_radical_specs as irs
 import one_family
-from declaredChainTest import cyclopentane_mapping, pmma_mapping, pp_mapping, spec_of
+from declaredChainTest import (_atom, _bond, _declaration, cyclopentane_mapping,
+                               pmma_mapping, pp_mapping, spec_of)
 
 E = dc.EditOp
 HEAD, TAIL = (0, "head"), (0, "tail")
@@ -634,18 +635,202 @@ def test_portless_pp_monomer_backbone_is_the_vinyl_pair():
     assert win.window_span(w, {vinyl, methyl})[0]["backbone_atoms"] == 1
 
 
-def test_portless_monomer_without_an_embedding_uses_the_heavy_diameter():
-    # an ethylene "monomer" cannot carry the three-carbon PP period
-    mapping = pp_mapping()
-    graph = _propylene()
-    graph["atoms"] = [dict(graph["atoms"][0]), dict(graph["atoms"][1], hydrogens=2)]
-    graph["bonds"] = graph["bonds"][:1]
-    mapping["monomer_product"] = graph
-    provider = dc.DeclaredChainProvider(spec_of(mapping))
-    w = sup.identity_witness(provider.monomer())
-    rows, heavy = _heavy_of(w)
-    assert len(heavy) == 2
-    assert win.window_span(w, set(rows))[0]["backbone_atoms"] == 2
+# --------------------------------------------------------------------------
+# rework 2: the monomer backbone is bound once, from the declaration, by the
+# vinyl-addition relation, and carried by atom id
+# --------------------------------------------------------------------------
+def _graph(atoms, bonds):
+    """atoms: (key, element, hydrogens, lone pairs); bonds: (x, y, order)."""
+    return {"atoms": [_atom(k, e, hydrogens=h, lone_pairs=lp) for k, e, h, lp in atoms],
+            "bonds": [_bond(x, y, o) for x, y, o in bonds],
+            "electronic_state": {"multiplicity": 1}}
+
+
+def _explicit(atoms, bonds):
+    """The same graph with every hydrogen an explicit atom."""
+    out_atoms, out_bonds = [], list(bonds)
+    for k, e, h, lp in atoms:
+        out_atoms.append((k, e, 0, lp))
+        for i in range(h):
+            out_atoms.append((f"h_{k}_{i}", "H", 0, 0))
+            out_bonds.append((k, f"h_{k}_{i}", 1))
+    return out_atoms, out_bonds
+
+
+def _provider(repeat, head, tail, monomer, elements=("C", "H"), lone_pairs=(0,)):
+    atoms, bonds = repeat
+    mapping = _declaration([_atom(k, e, hydrogens=h, lone_pairs=lp) for k, e, h, lp in atoms],
+                           [_bond(x, y, o) for x, y, o in bonds], head, tail,
+                           elements=elements, lone_pairs=lone_pairs)
+    mapping["monomer_product"] = _graph(*monomer)
+    return dc.DeclaredChainProvider(spec_of(mapping))
+
+
+def _signature(rows, a):
+    """A labelling-free name of a heavy atom: element, H count and its heavy
+    neighbours' (element, H count)."""
+    def own(x):
+        return rows[x][0], sum(1 for n, _o in rows[x][5] if rows[n][0] == "H")
+    return own(a), tuple(sorted(own(n) for n, _o in rows[a][5] if rows[n][0] != "H"))
+
+
+def _monomer_spans(witness):
+    """{signature: backbone atoms} of every one-atom and every bonded
+    two-atom heavy window, and the whole span."""
+    rows, heavy = _heavy_of(witness)
+    out = {"all": win.window_span(witness, set(rows))[0]["backbone_atoms"]}
+    for a in heavy:
+        out[_signature(rows, a)] = win.window_span(witness, {a})[0]["backbone_atoms"]
+        for n, _o in rows[a][5]:
+            if n in heavy and n > a:
+                key = tuple(sorted((_signature(rows, a), _signature(rows, n))))
+                out[key] = win.window_span(witness, {a, n})[0]["backbone_atoms"]
+    return out
+
+
+PP_REPEAT = ([("c1", "C", 2, 0), ("c2", "C", 1, 0), ("c3", "C", 3, 0)],
+             [("c1", "c2", 1), ("c2", "c3", 1)])
+PROPYLENE = ([("m1", "C", 2, 0), ("m2", "C", 1, 0), ("m3", "C", 3, 0)],
+             [("m1", "m2", 2), ("m2", "m3", 1)])
+PROPYLENE_RELABELLED = ([("z", "C", 2, 0), ("b", "C", 1, 0), ("a", "C", 3, 0)],
+                        [("z", "b", 2), ("b", "a", 1)])
+
+
+def _pp_spans(repeat, monomer):
+    return _monomer_spans(sup.identity_witness(_provider(repeat, "c1", "c2", monomer).monomer()))
+
+
+def test_pp_monomer_spans_are_independent_of_h_representation_and_labels():
+    implicit = _pp_spans(PP_REPEAT, PROPYLENE)
+    assert implicit["all"] == 2
+    assert sorted(v for k, v in implicit.items() if k != "all") == [0, 1, 1, 1, 2]
+    methyl = next(k for k in implicit if k != "all" and k[0] == ("C", 3))
+    assert implicit[methyl] == 0
+    assert _pp_spans(_explicit(*PP_REPEAT), PROPYLENE) == implicit
+    assert _pp_spans(PP_REPEAT, _explicit(*PROPYLENE)) == implicit
+    assert _pp_spans(_explicit(*PP_REPEAT), _explicit(*PROPYLENE)) == implicit
+    assert _pp_spans(PP_REPEAT, PROPYLENE_RELABELLED) == implicit
+    assert _pp_spans(_explicit(*PP_REPEAT), _explicit(*PROPYLENE_RELABELLED)) == implicit
+    assert _pp_spans(_explicit(*PP_REPEAT), PROPYLENE_RELABELLED) == implicit
+
+
+PB12_REPEAT = ([("c1", "C", 2, 0), ("c2", "C", 1, 0), ("c3", "C", 1, 0), ("c4", "C", 2, 0)],
+               [("c1", "c2", 1), ("c2", "c3", 1), ("c3", "c4", 2)])
+
+
+@pytest.mark.parametrize("keys", [("m1", "m2", "m3", "m4"), ("q", "c", "x", "a")])
+def test_symmetric_butadiene_monomer_is_refused_under_any_labelling(keys):
+    # 1,2-polybutadiene: the repeat unit with c1=c2 is butadiene, whose two
+    # vinyl pairs are exchanged by its symmetry, so the backbone pair is not
+    # determined; every labelling gives the same named refusal
+    w, x, y, z = keys
+    monomer = ([(w, "C", 2, 0), (x, "C", 1, 0), (y, "C", 1, 0), (z, "C", 2, 0)],
+               [(w, x, 2), (x, y, 1), (y, z, 2)])
+    provider = _provider(PB12_REPEAT, "c1", "c2", monomer)
+    witness = sup.identity_witness(provider.monomer())
+    with pytest.raises(b.MetadataError, match="refused:monomer_backbone_ambiguous"):
+        win.window_span(witness, set(witness.reactant_rows()))
+
+
+def test_pe_ethylene_monomer_backbone_is_both_carbons():
+    from melt_engine_support import pe_mapping
+    ethylene = _graph([("e1", "C", 2, 0), ("e2", "C", 2, 0)], [("e1", "e2", 2)])
+    provider = dc.DeclaredChainProvider(spec_of(pe_mapping({10: 1}, transport=False,
+                                                           monomer=ethylene)))
+    assert provider.geometry.period == 1        # the primitive period is one CH2
+    spans = _monomer_spans(sup.identity_witness(provider.monomer()))
+    assert spans["all"] == 2
+
+
+def _abstract_h(witness, carbon):
+    """The witness after one H of ``carbon`` is abstracted (the carbon
+    becomes a radical); metadata kept."""
+    from dataclasses import replace
+    rows = dict(witness.reactant_rows())
+    h = min(n for n, _o in rows[carbon][5] if rows[n][0] == "H")
+    del rows[h]
+    row = rows[carbon]
+    rows[carbon] = row[:3] + (row[3] + 1,) + row[4:5] + (
+        tuple(e for e in row[5] if e[0] != h),)
+    (part,) = witness.participants
+    part = replace(part, atom_ids=tuple(a for a in part.atom_ids if a != h))
+    rows = tuple(sorted(rows.items()))
+    return b.make_witness(rows, rows, (part,))
+
+
+def _backbone_of(witness):
+    (part,) = witness.participants
+    provider = b.PROVIDERS[part.metadata.provider]
+    rows = {a: r for a, r in witness.reactant_rows().items() if a in set(part.atom_ids)}
+    return provider.witness_backbone_indices(rows, part.metadata)
+
+
+def test_propylene_backbone_survives_methyl_h_abstraction():
+    provider = _provider(PP_REPEAT, "c1", "c2", PROPYLENE)
+    before = sup.identity_witness(provider.monomer())
+    rows, heavy = _heavy_of(before)
+    methyl = next(a for a in heavy if _signature(rows, a)[0] == ("C", 3))
+    after = _abstract_h(before, methyl)
+    assert _backbone_of(after) == _backbone_of(before)
+    assert len(_backbone_of(before)) == 2 and methyl not in _backbone_of(before)
+    full = set(after.reactant_rows())
+    assert win.window_span(after, full)[0]["backbone_atoms"] == 2
+    assert win.window_span(after, {methyl})[0]["backbone_atoms"] == 0
+
+
+MMA_REPEAT = ([("c1", "C", 2, 0), ("c2", "C", 0, 0), ("c3", "C", 3, 0), ("c4", "C", 0, 0),
+               ("o1", "O", 0, 2), ("o2", "O", 0, 2), ("c5", "C", 3, 0)],
+              [("c1", "c2", 1), ("c2", "c3", 1), ("c2", "c4", 1), ("c4", "o1", 2),
+               ("c4", "o2", 1), ("o2", "c5", 1)])
+MMA = ([("m1", "C", 2, 0), ("m2", "C", 0, 0), ("m3", "C", 3, 0), ("m4", "C", 0, 0),
+        ("q1", "O", 0, 2), ("q2", "O", 0, 2), ("m5", "C", 3, 0)],
+       [("m1", "m2", 2), ("m2", "m3", 1), ("m2", "m4", 1), ("m4", "q1", 2),
+        ("m4", "q2", 1), ("q2", "m5", 1)])
+
+
+def test_mma_backbone_survives_o_methyl_h_abstraction():
+    provider = _provider(MMA_REPEAT, "c1", "c2", MMA, elements=("C", "H", "O"),
+                         lone_pairs=(0, 2))
+    before = sup.identity_witness(provider.monomer())
+    rows, heavy = _heavy_of(before)
+    o_methyl = next(a for a in heavy if _signature(rows, a)[0] == ("C", 3)
+                    and _signature(rows, a)[1] == (("O", 0),))
+    after = _abstract_h(before, o_methyl)
+    assert _backbone_of(after) == _backbone_of(before)
+    assert len(_backbone_of(before)) == 2
+    assert win.window_span(after, set(after.reactant_rows()))[0]["backbone_atoms"] == 2
+    assert win.window_span(after, {o_methyl})[0]["backbone_atoms"] == 0
+
+
+def test_ring_opening_monomer_has_no_span():
+    # poly(ethylene oxide) and ethylene oxide: not related by vinyl addition
+    peo = ([("c1", "C", 2, 0), ("c2", "C", 2, 0), ("o1", "O", 0, 2)],
+           [("c1", "c2", 1), ("c2", "o1", 1)])
+    oxirane = ([("a", "C", 2, 0), ("b", "C", 2, 0), ("o", "O", 0, 2)],
+               [("a", "b", 1), ("b", "o", 1), ("o", "a", 1)])
+    provider = _provider(peo, "c1", "o1", oxirane, elements=("C", "H", "O"),
+                         lone_pairs=(0, 2))
+    witness = sup.identity_witness(provider.monomer())
+    with pytest.raises(b.MetadataError, match="refused:monomer_backbone_undefined"):
+        win.window_span(witness, set(witness.reactant_rows()))
+
+
+def _with_ports(witness, ports):
+    from dataclasses import replace
+    (part,) = witness.participants
+    meta = b.BoundaryMetadata(part.metadata.provider, ports, part.metadata.coordinates)
+    return replace(witness, participants=(replace(part, metadata=meta),))
+
+
+def test_one_port_and_side_only_participants_are_refused(pp):
+    w = sup.identity_witness(pp.build("w", dc.ChainSpec(6)))
+    (part,) = w.participants
+    head = part.metadata.port("head")
+    side = b.Port("side", head.atom_id, (), "pendant", "physical")
+    for ports in ((head,), (side,)):
+        broken = _with_ports(w, ports)
+        with pytest.raises(b.MetadataError, match="refused:backbone_ports"):
+            win.window_span(broken, set(broken.reactant_rows()))
 
 
 # --------------------------------------------------------------------------
