@@ -114,11 +114,44 @@ def test_comparator_a_disagreeing_pair_fails(parity, field, value):
     assert any("b" in f and field in f for f in report.failures), report.failures
 
 
-def test_comparator_contexts_compare_only_end_classes_on_both_sides(parity):
-    legacy = _row("a", contexts={"(0,'head'):declared": "fixed_point",
-                                 "(0,'tail'):radical": "fixed_point"})
-    declared = _row("a", contexts={"(0,'head'):declared": "fixed_point"})
+@pytest.mark.parametrize("side", ["legacy", "declared"])
+def test_comparator_a_one_sided_context_fails(parity, side):
+    """A context key on one side only is a failure (r124: comparing only the
+    shared keys let a side drop every common-end context)."""
+    more = _row("a", contexts={"(0,'head'):declared": "fixed_point",
+                               "(0,'tail'):radical": "fixed_point"})
+    fewer = _row("a", contexts={"(0,'head'):declared": "fixed_point"})
+    legacy, declared = (more, fewer) if side == "legacy" else (fewer, more)
     report = parity.compare([legacy, _row("b")], [declared, _row("b")], _expected())
+    assert not report.ok
+    assert any("(0,'tail'):radical" in f and f"{side} only" in f for f in report.failures), \
+        report.failures
+
+
+def test_comparator_a_one_sided_context_listed_deferred_is_not_failed(parity):
+    key = "(0,'head'):vinylidene"
+    legacy = _row("a", deferred=[key])
+    declared = _row("a", contexts={"(0,'head'):declared": "fixed_point", key: "fixed_point"})
+    report = parity.compare([legacy, _row("b")], [declared, _row("b")], _expected(deferred=1))
+    assert report.ok, report.failures
+
+
+def test_comparator_zero_members_compared_fails(parity):
+    """Every member unrun on both sides: nothing was compared (r124)."""
+    legacy = [_row("a", run=False, status="not_run"), _row("b", run=False, status="not_run")]
+    declared = [dict(r) for r in legacy]
+    report = parity.compare(legacy, declared, _expected())
+    assert not report.ok and report.compared == 0
+    assert any("zero members compared" in f for f in report.failures), report.failures
+
+
+def test_comparator_contexts_requested_and_none_compared_fails(parity):
+    rows = [_row("a", contexts={}), _row("b", contexts={})]
+    report = parity.compare(rows, [dict(r) for r in rows], _expected())
+    assert not report.ok
+    assert any("zero contexts compared" in f for f in report.failures), report.failures
+    unrequested = [dict(r, contexts_requested=False) for r in rows]
+    report = parity.compare(unrequested, [dict(r) for r in unrequested], _expected())
     assert report.ok, report.failures
 
 
@@ -218,8 +251,7 @@ def _mol(smiles):
 ])
 def test_interim_check_accepts(name, smiles):
     from rmgpy.kmc import domain as dom
-    _pp(), _pmma()          # registered declarations (PMMA declares O)
-    verdict = dom.declared_interim_check(_mol(smiles))
+    verdict = dom.declared_interim_check(_mol(smiles), ("C", "H", "O"))
     assert verdict.accepted, (name, verdict.reason)
     assert verdict.kind == "declared_interim"
     sites = [a.id for a in _mol(smiles).atoms if a.radical_electrons]
@@ -257,17 +289,114 @@ def _one_site_triplet():
 ])
 def test_interim_check_refuses(name, make, reason):
     from rmgpy.kmc import domain as dom
-    _pp(), _pmma()
-    verdict = dom.declared_interim_check(make())
+    verdict = dom.declared_interim_check(make(), ("C", "H", "O"))
     assert not verdict.accepted, name
     assert reason in verdict.reason, (name, verdict.reason)
 
 
 def test_interim_check_refuses_an_undeclared_element():
     from rmgpy.kmc import domain as dom
-    _pp()
     verdict = dom.declared_interim_check(_mol("CCCl"))
     assert not verdict.accepted and "element" in verdict.reason
+    assert not dom.declared_interim_check(_mol("CCO")).accepted       # default: C and H
+
+
+def _oh_pp():
+    """PP with a methyl head and a hydroxyl tail end group (O only in the
+    tail end group, not in the repeat unit)."""
+    from declaredChainTest import _atom, pp_mapping, spec_of
+    from rmgpy.kmc import declared_chain as dc
+    mapping = pp_mapping()
+    methyl = {"atoms": [_atom("m", hydrogens=3)], "bonds": [],
+              "ports": {"cap": {"atom": "m", "bond_order": 1}},
+              "electronic_state": {"multiplicity": 1}}
+    hydroxyl = {"atoms": [_atom("o", "O", hydrogens=1, lone_pairs=2)], "bonds": [],
+                "ports": {"cap": {"atom": "o", "bond_order": 1}},
+                "electronic_state": {"multiplicity": 1}}
+    mapping["end_groups"] = {"head": methyl, "tail": hydroxyl}
+    mapping["locality_policy"]["bounds"]["elements"] = ["C", "H", "O"]
+    mapping["locality_policy"]["bounds"]["lone_pairs"] = [0, 2]
+    return dc.DeclaredChainProvider(spec_of(mapping))
+
+
+def test_interim_elements_come_from_the_witness_own_declarations(monkeypatch):
+    """r124 item 1: the element set is the witness's own declarations (repeat
+    unit, end groups, small species, monomer product) plus C and H; a verdict
+    never depends on what else is registered."""
+    import declared_parity_support as sup
+    from rmgpy.kmc import boundaries as b
+    from rmgpy.kmc import declared_chain as dc
+    from rmgpy.kmc import windows as win
+    oh = _oh_pp()
+    build = oh.build("oh", dc.ChainSpec(3, head="declared", tail="declared"))
+    alone = {name: p for name, p in b.PROVIDERS.items()
+             if not isinstance(p, dc.DeclaredChainProvider) or p is oh}
+    monkeypatch.setattr(b, "PROVIDERS", alone)
+    policy = win.policy_for(sup.identity_witness(build))
+    assert policy.name == "declared_interim_v1"
+    verdict = policy.domain.check(build.molecule)
+    assert verdict.accepted, verdict.reason
+    assert policy.domain.check(_mol("CCCC(C)CC(C)CO")).accepted
+    monkeypatch.undo()
+    # an O-free declaration refuses an O-bearing species, whatever is registered
+    _pmma()
+    pp_witness = sup.identity_witness(_pp().build("w", dc.ChainSpec(3)))
+    refused = win.policy_for(pp_witness).domain.check(_mol("CCCC(C)CC(C)CO"))
+    assert not refused.accepted and "element" in refused.reason
+
+
+def _sulfone_provider():
+    """-CH2-CH(S(=O)(=O)CH3)-: a neutral hexavalent S with no lone pair."""
+    from declaredChainTest import _atom, _bond, _declaration, spec_of
+    from rmgpy.kmc import declared_chain as dc
+    mapping = _declaration(
+        [_atom("c1", hydrogens=2), _atom("c2", hydrogens=1), _atom("s", "S"),
+         _atom("o1", "O", lone_pairs=2), _atom("o2", "O", lone_pairs=2),
+         _atom("c3", hydrogens=3)],
+        [_bond("c1", "c2"), _bond("c2", "s"), _bond("s", "o1", 2), _bond("s", "o2", 2),
+         _bond("s", "c3")], "c1", "c2", elements=("C", "H", "O", "S"), lone_pairs=(0, 2))
+    return dc.DeclaredChainProvider(spec_of(mapping))
+
+
+def test_interim_check_accepts_a_declared_sulfone_chain():
+    """r124 item 2: neutral valence states, not one lone-pair count per
+    element: S6 (sulfone, 0 lone pairs) is a recognized neutral state."""
+    import declared_parity_support as sup
+    from rmgpy.kmc import declared_chain as dc
+    from rmgpy.kmc import windows as win
+    build = _sulfone_provider().build("s", dc.ChainSpec(3))
+    sulfur = [a for a in build.molecule.atoms if a.symbol == "S"]
+    assert sulfur and all(a.lone_pairs == 0 for a in sulfur)
+    verdict = win.policy_for(sup.identity_witness(build)).domain.check(build.molecule)
+    assert verdict.accepted, verdict.reason
+
+
+def _divalent_s_one_lone_pair():
+    m = _mol("CSC")
+    next(a for a in m.atoms if a.symbol == "S").lone_pairs = 1
+    return m
+
+
+def test_interim_neutral_valence_states():
+    """Accepted: thioether S2 (2 lone pairs), sulfoxide S4 (1), sulfone S6
+    (0), phosphine P3 (1), phosphine oxide P5 (0).  Refused: a divalent S
+    with one lone pair (no neutral state: 2 bonds + 1 pair), a singlet
+    carbene (C with 2 bonds and a lone pair), and charges and u2 as before."""
+    from rmgpy.kmc import domain as dom
+    elements = ("C", "H", "O", "S", "P")
+    for smiles in ("CSC", "CS(C)=O", "CS(C)(=O)=O", "CP(C)C", "CP(C)(C)=O"):
+        verdict = dom.declared_interim_check(_mol(smiles), elements)
+        assert verdict.accepted, (smiles, verdict.reason)
+    verdict = dom.declared_interim_check(_divalent_s_one_lone_pair(), elements)
+    assert not verdict.accepted and "neutral valence state" in verdict.reason
+    carbene = _mol("C[C]C")
+    centre = next(a for a in carbene.atoms if a.radical_electrons == 2)
+    centre.radical_electrons, centre.lone_pairs = 0, 1
+    carbene.multiplicity = 1
+    verdict = dom.declared_interim_check(carbene, elements)
+    assert not verdict.accepted and "neutral valence state" in verdict.reason
+    assert "u2" in dom.declared_interim_check(_mol("[CH2]"), elements).reason
+    assert "charged" in dom.declared_interim_check(_mol("C[CH2+]"), elements).reason
 
 
 def test_interim_check_does_not_apply_the_ps_shape_rules():
@@ -541,6 +670,24 @@ def test_ring_edit_policy(habs):
     excluded = win.member_cases(certifier, family, builds, "forward", stats=stats)
     assert stats["ring_change_mappings"] > 0
     assert sum(len(c.moves) for c in admitted) > sum(len(c.moves) for c in excluded)
+
+
+def test_cover_cases_are_keyed_by_policy(habs):
+    """M-a: the same family, direction and specs under two policies (ring
+    edits excluded, then admitted) never share cached cover cases."""
+    from rmgpy.kmc import boundaries as b
+    from rmgpy.kmc import windows as win
+    family, certifier = habs
+    specs = (b.PsChainSpec(3), ("small", "H"))
+    admit = win.ChemistryPolicy("admit_test", win.LEGACY_V1.domain, "admit")
+    win._COVER_CASES.clear()
+    excluded = win._cover_cases(certifier, family, specs, "forward", win.LEGACY_V1)
+    admitted = win._cover_cases(certifier, family, specs, "forward", admit)
+    builds = win.builds_of(specs)
+    every = win.member_cases(certifier, family, builds, "forward", skip_ring_changes=False)
+    assert sorted(c.label for c in admitted) == sorted(c.label for c in every)
+    assert sum(len(c.moves) for c in admitted) > sum(len(c.moves) for c in excluded)
+    assert win._cover_cases(certifier, family, specs, "forward", win.LEGACY_V1) is excluded
 
 
 # --------------------------------------------------------------------------
