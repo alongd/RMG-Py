@@ -345,6 +345,116 @@ def test_interim_elements_come_from_the_witness_own_declarations(monkeypatch):
     assert not refused.accepted and "element" in refused.reason
 
 
+def test_the_policy_name_carries_its_element_set():
+    from rmgpy.kmc import windows as win
+    assert win.declared_interim({"C", "H"}) is win.DECLARED_INTERIM
+    assert win.DECLARED_INTERIM.name == "declared_interim_v1"
+    cho = win.declared_interim({"O", "C"})
+    assert cho.name == cho.domain.name == "declared_interim_v1[C,H,O]"
+    assert win.declared_interim(["S", "O"]).name == "declared_interim_v1[C,H,O,S]"
+    assert win.declared_interim({"O"}) is cho
+
+
+def _water_pp(with_water=True):
+    """PP whose declaration lists water as a small species (O nowhere else)."""
+    from declaredChainTest import _atom, pp_mapping, spec_of
+    from rmgpy.kmc import declared_chain as dc
+    mapping = pp_mapping()
+    if with_water:
+        mapping["small_species"] = {"water": {
+            "graph": {"atoms": [_atom("o", "O", hydrogens=2, lone_pairs=2)], "bonds": [],
+                      "electronic_state": {"multiplicity": 1}},
+            "disposition": "mobile"}}
+        mapping["locality_policy"]["bounds"]["elements"] = ["C", "H", "O"]
+        mapping["locality_policy"]["bounds"]["lone_pairs"] = [0, 2]
+    return dc.DeclaredChainProvider(spec_of(mapping))
+
+
+def test_a_declared_small_species_element_is_admitted():
+    """r126 item 3: the small species of the witness's declaration count."""
+    import declared_parity_support as sup
+    from rmgpy.kmc import declared_chain as dc
+    from rmgpy.kmc import windows as win
+    for with_water, accepted in ((True, True), (False, False)):
+        provider = _water_pp(with_water)
+        witness = sup.identity_witness(provider.build("w", dc.ChainSpec(3)))
+        verdict = win.policy_for(witness).domain.check(_mol("O"))
+        assert verdict.accepted is accepted, (with_water, verdict.reason)
+
+
+PINNED_STATES = {"H": {(0, 1)}, "C": {(0, 4)}, "Si": {(0, 4)}, "N": {(1, 3)},
+                 "P": {(1, 3), (0, 5)}, "O": {(2, 2)}, "S": {(2, 2), (1, 4), (0, 6)},
+                 "F": {(3, 1)}, "Cl": {(3, 1)}, "Br": {(3, 1)}, "I": {(3, 1)}}
+
+
+@pytest.mark.parametrize("element", sorted(PINNED_STATES) + ["B", "Na"])
+def test_neutral_state_table_is_pinned(element):
+    """M-b: every listed (lone pairs, valence) state is accepted and every
+    other state on the grid (0-3 lone pairs, valence 0-7 by halves) refused;
+    an unlisted element has no state."""
+    from rmgpy.kmc import domain as dom
+    allowed = PINNED_STATES.get(element, set())
+    for pairs in range(4):
+        for twice in range(15):
+            valence = twice / 2
+            assert dom.in_neutral_state(element, pairs, valence) == \
+                ((pairs, valence) in allowed), (element, pairs, valence)
+
+
+def _vinylnaphthalene_provider():
+    """-CH2-CH(2-naphthyl)-, declared in a Kekule form."""
+    from declaredChainTest import _atom, _bond, _declaration, spec_of
+    from rmgpy.kmc import declared_chain as dc
+    ring = [_atom(f"r{i}", hydrogens=0 if i in (2, 5, 10) else 1) for i in range(1, 11)]
+    pairs = [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9), (9, 10), (10, 1),
+             (5, 10)]
+    double = {(1, 2), (3, 4), (5, 10), (6, 7), (8, 9)}
+    bonds = [_bond(f"r{x}", f"r{y}", 2 if (x, y) in double else 1) for x, y in pairs]
+    mapping = _declaration([_atom("c1", hydrogens=2), _atom("c2", hydrogens=1)] + ring,
+                           [_bond("c1", "c2"), _bond("c2", "r2")] + bonds, "c1", "c2")
+    return dc.DeclaredChainProvider(spec_of(mapping))
+
+
+def _aromatic(smiles):
+    """``smiles`` with every ring bond written as a benzene bond (B, 1.5)."""
+    m = _mol(smiles)
+    for bond in m.get_all_edges():
+        if m.is_bond_in_cycle(bond):
+            bond.order = 1.5
+    return m
+
+
+def test_interim_check_reads_aromatic_bonds_as_rmg_does():
+    """r126 item 2: a fused aromatic carbon (three B bonds) is a neutral C,
+    as RMG reads it; the declared vinylnaphthalene chain is accepted after
+    the production normalization (``aromatic_root``), as are naphthalene,
+    pyridine, thiophene and furan written aromatic.  A ring carbon over
+    valence in its aromatic form (two B bonds and two H) is refused."""
+    import declared_parity_support as sup
+    from rmgpy.kmc import certificates as cm
+    from rmgpy.kmc import declared_chain as dc
+    from rmgpy.kmc import domain as dom
+    from rmgpy.kmc import windows as win
+    build = _vinylnaphthalene_provider().build("n", dc.ChainSpec(2))
+    root = cm.aromatic_root(build.molecule)
+    assert any(bond.order == 1.5 for bond in root.get_all_edges())
+    verdict = win.policy_for(sup.identity_witness(build)).domain.check(root)
+    assert verdict.accepted, verdict.reason
+    elements = ("C", "H", "N", "O", "S")
+    for smiles in ("c1ccc2ccccc2c1", "c1ccncc1", "c1ccsc1", "c1ccoc1"):
+        molecule = _aromatic(smiles)
+        assert sum(bond.order == 1.5 for bond in molecule.get_all_edges()) >= 5, smiles
+        verdict = dom.declared_interim_check(molecule, elements)
+        assert verdict.accepted, (smiles, verdict.reason)
+    over = _aromatic("c1ccccc1")
+    from rmgpy.molecule import Atom, Bond
+    ring_carbon = next(a for a in over.atoms if a.is_carbon())
+    extra = Atom(element="H", radical_electrons=0, lone_pairs=0)
+    over.add_atom(extra)
+    over.add_bond(Bond(ring_carbon, extra, order=1))
+    assert not dom.declared_interim_check(over, elements).accepted
+
+
 def _sulfone_provider():
     """-CH2-CH(S(=O)(=O)CH3)-: a neutral hexavalent S with no lone pair."""
     from declaredChainTest import _atom, _bond, _declaration, spec_of
@@ -670,6 +780,49 @@ def test_ring_edit_policy(habs):
     excluded = win.member_cases(certifier, family, builds, "forward", stats=stats)
     assert stats["ring_change_mappings"] > 0
     assert sum(len(c.moves) for c in admitted) > sum(len(c.moves) for c in excluded)
+
+
+def test_a_changed_element_set_is_a_changed_policy(habs, pp_cases):
+    """r126 item 1: certified under the C/H interim domain, recertified under
+    C/H/O: the element set is part of the policy identity, so the gate
+    refuses (it was accepted with same_selection when both were named
+    ``declared_interim_v1``)."""
+    from rmgpy.kmc import windows as win
+    family, certifier = habs
+    cho = win.declared_interim({"O"})
+    for case in pp_cases[0]:
+        cert = _pp_certificate(habs, case, domain=win.DECLARED_INTERIM.domain)
+        mols = _longer(case)
+        present = {a.id for m in mols for a in m.atoms}
+        amap = {row[0]: row[0] for row in cert["witness"]["atoms"] if row[0] in present}
+        same = certifier.recertify_certificate(family, cert, mols, amap,
+                                               domain=win.DECLARED_INTERIM.domain)
+        if same.get("same_selection"):
+            break
+    else:
+        pytest.fail("no PP member recertifies with the same selection one period longer")
+    changed = certifier.recertify_certificate(family, cert, mols, amap, domain=cho.domain)
+    assert not changed.get("same_selection")
+    assert any("refused:domain_policy_changed" in r and "declared_interim_v1[C,H,O]" in r
+               for r in changed["refusals"]), changed["refusals"]
+    stamped = _pp_certificate(habs, case, domain=cho.domain)
+    assert stamped["domain_policy"] == "declared_interim_v1[C,H,O]"
+
+
+def test_closing_partners_are_not_training_species(habs):
+    """Item 4 (Zeus 4801839): once C-3 let H and H2 close, ``closing_partners``
+    picked them; a depository match reads a training species whole, so a
+    class closed against one (1-phenylethyl + H2) reaches no fixed point and
+    the reduced plan's closings lose its leaf.  A closing partner is never a
+    species of the family's training reactions."""
+    from rmgpy.kmc import channels as chm
+    from rmgpy.kmc import windows as win
+    family, certifier = habs
+    partners = win.closing_partners(certifier, family, win.family_constants(family))
+    training, species = win.training_keys(family), chm.SpeciesKeys()
+    assert set(partners["forward"]) == {0, 1}
+    for slot, (name, spec) in partners["forward"].items():
+        assert species(win.builds_of([spec])[0].molecule) not in training, (slot, name)
 
 
 def test_cover_cases_are_keyed_by_policy(habs):
