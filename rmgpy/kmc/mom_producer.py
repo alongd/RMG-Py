@@ -116,6 +116,12 @@ MASS_RELATIVE = 1.0e-9           # pool repeat mass against the deck's
 INITIAL_RELATIVE = 1.0e-9        # t = 0 moments and mass against the declared ensemble
 MASS_CLOSURE_RELATIVE = 1.0e-6   # booked total mass against its t = 0 value
 SIMULATOR_ATOL = 1.0e-16         # simulator(atol=...) the producer writes
+SIMULATOR_RTOL = 1.0e-8          # simulator(rtol=...) the producer writes
+# the profile moves (ACTIVITY_RULE) when a physical quantity changes by more than both floors: a relative
+# one, ten times the integrator's relative tolerance, and an absolute one in grams, the integrator's relative
+# tolerance on the deck's initial polymer mass (the error it allows on the condensed mass)
+ACTIVITY_RELATIVE_FLOOR = 10.0 * SIMULATOR_RTOL
+ACTIVITY_MASS_FLOOR_FRACTION = SIMULATOR_RTOL
 MOM_SMALL_EPS = 1.0e-30          # rmgpy/solver/polymer.pyx:73 SMALL_EPS
 MOM_EXHAUSTION_FLOOR_K = 100.0   # rmgpy/solver/polymer.pyx:153 EXHAUSTION_FLOOR_K
 # MoM's per-moment accepted-state floor f = max(SMALL_EPS, EXHAUSTION_FLOOR_K atol) (polymer.pyx:4288)
@@ -612,7 +618,7 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
         "    constant_gas_volume=False,",
         ")",
         "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)",
-        f"simulator(atol={SIMULATOR_ATOL!r}, rtol=1e-08)",
+        f"simulator(atol={SIMULATOR_ATOL!r}, rtol={SIMULATOR_RTOL!r})",
         "options(units='si', generateOutputHTML=False, generatePlots=False, saveSimulationProfiles=True, "
         "saveEdgeSpecies=False)",
     ]
@@ -712,8 +718,8 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
         ("inactive_chemistry", STATUS_INACTIVE,
          "pool-coupled reactions of the final mechanism counted per family (polymer_pools.json "
          "reactions[].refused; family from the serialized id of a Cantera-null row, else from the "
-         "chem_annotated.inp entries with the same species; entries without one counted by equation as "
-         "unattributed requested-family rows); " + ACTIVITY_RULE + "; no live row: refused, unless "
+         "chem_annotated.inp entries with the same species, a fall-off collider (+M) or (+<name>) dropped; "
+         "entries without one counted by equation as unattributed requested-family rows); " + ACTIVITY_RULE + "; no live row: refused, unless "
          "--allow-inactive (then flagged)"),
         ("database", database[0], "RMG database.directory (rmgrc), from " + database[1]),
         ("kernels_off", ["k_scission=0", "k_unzip=0", "k_homolysis", "k_depropagation",
@@ -723,7 +729,7 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
         ("no_cage", True, "MoM rate coefficients are intrinsic: the deck's transport_model (MET, "
                           "Collins-Kimball phi) has no MoM counterpart"),
         ("model_settings", {"toleranceMoveToCore": 0.1, "toleranceInterruptSimulation": 0.1,
-                            "atol": SIMULATOR_ATOL, "rtol": 1e-08, "constant_gas_volume": False},
+                            "atol": SIMULATOR_ATOL, "rtol": SIMULATOR_RTOL, "constant_gas_volume": False},
          "RMG model / simulator settings the deck does not set"),
         ("species_constraints", facts["constraints"], "generatedSpeciesConstraints as given "
                                                       "(--species-constraint; allowed=['input species'] "
@@ -818,8 +824,25 @@ def species_key(label: str) -> Tuple:
     return ("index", int(m.group(2))) if m else ("label", label)
 
 
+def _strip_collider(side: str) -> str:
+    """A Chemkin side without its trailing fall-off collider ``(+M)`` or
+    ``(+<name>)``, where ``<name>`` may itself hold parentheses
+    (``P(3)(+H2(2))``)."""
+    side = side.strip()
+    if side.endswith(")"):
+        depth = 0
+        for i in range(len(side) - 1, -1, -1):
+            if side[i] == ")":
+                depth += 1
+            elif side[i] == "(":
+                depth -= 1
+                if depth == 0:
+                    return side[:i] if side.startswith("(+", i) else side
+    return side
+
+
 def _split_side(side: str) -> List[str]:
-    side = re.sub(r"\(\+[^()]*\)$", "", side.strip())
+    side = _strip_collider(side)
     if side.endswith("+M"):
         side = side[:-2]
     parts, depth, current = [], 0, ""
@@ -845,26 +868,18 @@ def _is_number(token: str) -> bool:
     return True
 
 
-_EA_UNITS = {"KCAL/MOLE": 4184.0, "CAL/MOLE": 4.184, "KJOULES/MOLE": 1000.0, "JOULES/MOLE": 1.0,
-             "KELVINS": constants.R}
-
-
 def read_annotated(path) -> List[dict]:
     """``chem_annotated.inp`` reactions as RMG writes them: consecutive
     entries of one RMG number (an expanded MultiArrhenius writes several) are
     one reaction, with its Chemkin numbers, family (``Template reaction``
     line; library / pdep prefixed; None when the writer gave none: an
-    expanded MultiArrhenius), reactant and product keys, reversibility and the
-    modified-Arrhenius coefficients (A, n, Ea in J/mol) of each entry, in
-    file order."""
+    expanded MultiArrhenius), reactant and product keys (a fall-off collider
+    dropped) and reversibility, in file order.  The rate coefficients are
+    not read here: RMG's own reader gives them (``rmg_kinetics``)."""
     try:
         text = Path(path).read_text()
     except OSError as error:
         raise ProducerError(f"annotated mechanism {path}: {error}") from error
-    ea_unit = 4.184                                    # Chemkin's default, cal/mol
-    m = re.search(r"^REACTIONS\s+(\S+)", text, re.M)
-    if m and m.group(1).upper() in _EA_UNITS:
-        ea_unit = _EA_UNITS[m.group(1).upper()]
     out, pending = [], None
     for line in text.splitlines():
         m = re.match(r"! Reaction index: Chemkin #(\d+); RMG #(-?\d+)", line)
@@ -880,11 +895,12 @@ def read_annotated(path) -> List[dict]:
                                      else f"{m.group(1).lower()}:{m.group(2)}")
             continue
         tokens = line.split()
-        numbers = []
+        trailing = 0
         while tokens and _is_number(tokens[-1]):
-            numbers.insert(0, float(tokens.pop()))
-        if len(numbers) != 3:
-            raise ProducerError(f"annotated mechanism {path}: Chemkin #{pending['chemkin']}: no A, n, Ea")
+            tokens.pop()
+            trailing += 1
+        if trailing != 3:
+            raise ProducerError(f"annotated mechanism {path}: Chemkin #{pending['chemkin']}: no reaction line")
         equation = "".join(tokens)
         arrow = "<=>" if "<=>" in equation else ("=>" if "=>" in equation else "=")
         if arrow not in equation:
@@ -892,16 +908,14 @@ def read_annotated(path) -> List[dict]:
         left, right = equation.split(arrow, 1)
         entry = {"reactants": [species_key(x) for x in _split_side(left)],
                  "products": [species_key(x) for x in _split_side(right)], "reversible": arrow != "=>"}
-        arrhenius = (numbers[0], numbers[1], numbers[2] * ea_unit)
         last = out[-1] if out else None
         if (last is not None and last["rmg"] == pending["rmg"] and pending["family"] is None
                 and _reaction_key(last["reactants"], last["products"])
                 == _reaction_key(entry["reactants"], entry["products"])):
             last["chemkin"].append(pending["chemkin"])
-            last["arrhenius"].append(arrhenius)
         else:
             out.append({"chemkin": [pending["chemkin"]], "rmg": pending["rmg"], "family": pending["family"],
-                        **entry, "arrhenius": [arrhenius]})
+                        **entry})
         pending = None
     return out
 
@@ -910,23 +924,105 @@ def _reaction_key(reactants, products) -> Tuple:
     return tuple(sorted(reactants)), tuple(sorted(products))
 
 
-def _zero_rate(arrhenius, temperature: float) -> bool:
-    """Every (A, n, Ea / J mol^-1) term gives k = 0 at the run's (isothermal) temperature."""
-    return all(a * temperature ** n * math.exp(-ea / (constants.R * temperature)) == 0.0
-               for a, n, ea in arrhenius)
+def rmg_kinetics(annotated, dictionary, reactions: List[dict]) -> Dict[int, Any]:
+    """Each Chemkin entry's kinetics object (by Chemkin number) as RMG's own
+    reader builds it (``rmgpy.chemkin.load_chemkin_file`` with the species
+    dictionary beside the file; duplicates kept apart, so an expanded
+    MultiArrhenius stays one entry per term).  The reader returns the entries
+    in file order: the k-th is ``reactions``' k-th Chemkin number, checked by
+    its species."""
+    from rmgpy.chemkin import get_species_identifier, load_chemkin_file
+    try:
+        _species, loaded = load_chemkin_file(str(annotated), str(dictionary), check_duplicates=False,
+                                             generate_resonance_structures=False)
+    except Exception as error:
+        raise ProducerError(f"RMG's Chemkin reader refuses {annotated} with {dictionary}: "
+                            f"{type(error).__name__}: {error}") from error
+    entries = [(c, _reaction_key(r["reactants"], r["products"])) for r in reactions for c in r["chemkin"]]
+    if len(loaded) != len(entries):
+        raise ProducerError(f"RMG's Chemkin reader gives {len(loaded)} reactions of {annotated}, its annotations "
+                            f"{len(entries)}")
+    out = {}
+    for (number, key), reaction in zip(entries, loaded):
+        mine = _reaction_key([species_key(get_species_identifier(x)) for x in reaction.reactants],
+                             [species_key(get_species_identifier(x)) for x in reaction.products])
+        if mine != key:
+            raise ProducerError(f"{annotated}: Chemkin #{number} is {reaction} for RMG's reader, not the annotated "
+                                "reaction's species")
+        out[number] = reaction.kinetics
+    return out
+
+
+def reaction_rate(terms: Sequence[Any], temperature: float, pressure: float) -> Tuple[Optional[float], Optional[str]]:
+    """The rate coefficient of one reaction (the sum of an expanded
+    MultiArrhenius' terms, as RMG's MultiArrhenius / MultiPDepArrhenius) by
+    RMG's ``get_rate_coefficient(T, P)``, and why it is not usable (None when
+    it is): an error RMG raises, or a value that is not finite."""
+    from rmgpy.kinetics import Arrhenius, MultiArrhenius, MultiPDepArrhenius, PDepArrhenius
+    try:
+        if len(terms) == 1:
+            kinetics = terms[0]
+        elif all(isinstance(k, Arrhenius) for k in terms):
+            kinetics = MultiArrhenius(arrhenius=list(terms))
+        elif all(isinstance(k, PDepArrhenius) for k in terms):
+            kinetics = MultiPDepArrhenius(arrhenius=list(terms))
+        else:
+            raise ValueError(f"duplicate entries of mixed kinetics {[type(k).__name__ for k in terms]}")
+        k = kinetics.get_rate_coefficient(temperature, pressure)
+    except Exception as error:
+        return None, f"RMG cannot evaluate the rate coefficient ({type(error).__name__}: {error})"
+    if not math.isfinite(k):
+        return k, f"the rate coefficient {k!r} is not finite"
+    return k, None
+
+
+def dead(k: Optional[float]) -> bool:
+    """A rate coefficient that moves nothing: exactly 0, not finite, or not evaluable."""
+    return k is None or k == 0.0 or not math.isfinite(k)
 
 
 ACTIVITY_RULE = (
-    "a pool-coupled row is live when it is admitted, its rate coefficient is not zero at the run "
-    "temperature (isothermal, the deck's temperature range), and every reactant is present at t = 0 (a "
-    "profile column > 0, or a pool proxy whose pool has mu0 > 0) or is made by another live row "
-    "(admitted sidecar rows and every Chemkin reaction that is no sidecar row, each only with a nonzero "
-    "rate coefficient; a reversible row also runs from its products); the chemistry is active when a "
-    "live row belongs to the requested families AND some species column or pool moment of the profile "
-    "changes between t = 0 and the last row by more than MASS_CLOSURE_RELATIVE (relative)")
+    "a pool-coupled row is live when it is admitted, its rate coefficient (evaluated for admitted rows only, "
+    "by RMG's own kinetics objects from rmgpy.chemkin.load_chemkin_file on chem_annotated.inp and the "
+    "species dictionary, an expanded MultiArrhenius as the sum of its terms, get_rate_coefficient at the run "
+    "temperature and the deck's pressure) is neither exactly 0 nor non-finite nor unevaluable (each error a "
+    "stated reason), and every reactant is present at t = 0 (a profile column > 0, or a pool proxy whose pool "
+    "has mu0 > 0) or is made by another live row (admitted sidecar rows and every Chemkin reaction that is no "
+    "sidecar row, each only with a live rate coefficient; a reversible row also runs from its products); the "
+    "chemistry is active when a live row belongs to the requested families AND the profile moves: some polymer "
+    "pool's mu0 or mu1, or the amount of a declared species, at a profile row at or before the requested "
+    f"horizon differs from its t = 0 value by more than ACTIVITY_RELATIVE_FLOOR = {ACTIVITY_RELATIVE_FLOOR!r} "
+    "of that value AND by more than an absolute floor of ACTIVITY_MASS_FLOOR_FRACTION = "
+    f"{ACTIVITY_MASS_FLOOR_FRACTION!r} of the deck's initial polymer mass in grams (mu1 weighed by the pool's "
+    "repeat-unit mass, mu0 by the deck's initial number-average molar mass, a species by its molar mass); "
+    "bookkeeping proxy columns, mu2, other species and rows past the horizon do not count")
 
 
-def census(rmg_dir, families: Sequence[str], temperature: float) -> dict:
+def profile_motion(header, data, pools, facts: dict, dictionary, horizon: float) -> Optional[dict]:
+    """The first physical change of the profile beyond both activity floors
+    (``ACTIVITY_RULE``), or None when nothing moves."""
+    floor_g = ACTIVITY_MASS_FLOOR_FRACTION * float(facts["initial_mass_g"])
+    per_chain = float(facts["initial_mass_g"]) / float(facts["moments_mol"][0])
+    quantities = []
+    for p in pools:
+        for k, grams in ((0, per_chain), (1, float(p["monomer_mw_g_mol"]))):
+            column = moment_column(f"{p['label']}_mu{k}")
+            if column in header:
+                quantities.append((f"{p['label']} mu{k}", header.index(column), grams))
+    for name, i in sorted(resolve_species(header, dictionary, species_structures(facts)).items()):
+        quantities.append((name, i, dictionary[header[i]].get_molecular_weight() * 1000.0))
+    first = data[0]
+    for row in data[1:]:
+        if row[0] > horizon:
+            break
+        for name, i, grams in quantities:
+            change = abs(row[i] - first[i])
+            if change > ACTIVITY_RELATIVE_FLOOR * abs(first[i]) and change * grams > floor_g:
+                return {"quantity": name, "time_s": row[0], "change": row[i] - first[i], "change_g": change * grams}
+    return None
+
+
+def census(rmg_dir, facts: dict, temperature: float, horizon: float) -> dict:
     """Pool-coupled reactions of the final mechanism per family (rows and
     admitted rows), the live rows and whether the profile moves
     (``ACTIVITY_RULE``).  Each sidecar row is matched one-to-one to its own
@@ -940,13 +1036,18 @@ def census(rmg_dir, families: Sequence[str], temperature: float) -> dict:
     MultiArrhenius: plain Reaction entries) is counted by equation under
     ``unattributed``; the input admits no reaction source but the requested
     families (no libraries, no seed, no pdep), so it counts as a
-    requested-family row.  Rate coefficient: the sidecar's kinetics, else its
-    Chemkin reaction's."""
+    requested-family row.  Rate coefficient: its Chemkin reaction's, by RMG's
+    own reader and kinetics (``rmg_kinetics``, ``reaction_rate``), evaluated
+    only for admitted rows; motion: ``profile_motion`` up to ``horizon``."""
     rmg_dir = Path(rmg_dir)
     temperature = float(temperature)
+    families = facts["families"]
+    pressure = Quantity(*facts["pressure"]).value_si
+    dictionary_path = rmg_dir / "chemkin" / "species_dictionary.txt"
     doc = read_pools(rmg_dir / "chemkin" / "polymer_pools.json")
     annotated = rmg_dir / "chemkin" / "chem_annotated.inp"
     reactions = read_annotated(annotated)
+    kinetics_of = rmg_kinetics(annotated, dictionary_path, reactions)
     by_key: Dict[Tuple, List[dict]] = {}
     for reaction in reactions:
         by_key.setdefault(_reaction_key(reaction["reactants"], reaction["products"]), []).append(reaction)
@@ -968,6 +1069,7 @@ def census(rmg_dir, families: Sequence[str], temperature: float) -> dict:
     counts: Dict[str, Dict[str, int]] = {}
     unattributed: Dict[str, Dict[str, int]] = {}
     refused_reasons: Dict[str, int] = {}
+    rate_errors: Dict[str, str] = {}
     rows = []
     for j, row in enumerate(sidecar):
         reaction = own[j]
@@ -991,25 +1093,28 @@ def census(rmg_dir, families: Sequence[str], temperature: float) -> dict:
         if not admitted:
             reason = str(row.get("refused_reason"))
             refused_reasons[reason] = refused_reasons.get(reason, 0) + 1
+        zero = None
+        if admitted:                      # a refused row's rate is never evaluated
+            k, error = reaction_rate([kinetics_of[c] for c in reaction["chemkin"]], temperature, pressure)
+            zero = dead(k)
+            if error is not None:
+                rate_errors[str(row.get("id"))] = error
         kinetics = row.get("kinetics") or {}
-        if all(isinstance(kinetics.get(x), (int, float)) for x in ("A", "n", "Ea")):
-            arrhenius = [(float(kinetics["A"]), float(kinetics["n"]), float(kinetics["Ea"]))]
-        else:
-            arrhenius = reaction["arrhenius"]
         reversible = kinetics.get("reversible")
         if reversible is None:
             reversible = reaction["reversible"]
         rows.append({"id": row.get("id"), "admitted": admitted, "requested": family is None or
-                     set(family.split("|")) <= requested, "zero_rate": _zero_rate(arrhenius, temperature),
+                     set(family.split("|")) <= requested, "zero_rate": zero,
                      "reactants": {species_key(x) for x in row.get("reactants") or ()},
                      "products": {species_key(x) for x in row.get("products") or ()},
                      "reversible": bool(reversible),
                      "proxies": list(row.get("proxy_reactants") or ()) + list(row.get("proxy_products") or ())})
     # presence at t = 0, and whether the profile moves
     header, data = read_profile(find_profile(rmg_dir))
-    first, last = data[0], data[-1]
+    first = data[0]
     present = {species_key(h) for h, v in zip(header[2:], first[2:]) if v > 0}
-    moves = any(_rel(x, y) > MASS_CLOSURE_RELATIVE for x, y in zip(first[2:], last[2:]))
+    motion = profile_motion(header, data, doc["pools"], facts, read_species_dictionary(dictionary_path),
+                            float(horizon))
     mu0 = {}
     for p in doc["pools"]:
         column = moment_column(f"{p['label']}_mu0")
@@ -1021,8 +1126,14 @@ def census(rmg_dir, families: Sequence[str], temperature: float) -> dict:
     own_reactions = {id(x) for x in own.values()}
     movers = [(r, r["reactants"], r["products"], r["reversible"]) for r in rows
               if r["admitted"] and not r["zero_rate"]]
-    movers += [(None, set(x["reactants"]), set(x["products"]), x["reversible"]) for x in reactions
-               if id(x) not in own_reactions and not _zero_rate(x["arrhenius"], temperature)]
+    for x in reactions:
+        if id(x) in own_reactions:
+            continue
+        k, error = reaction_rate([kinetics_of[c] for c in x["chemkin"]], temperature, pressure)
+        if error is not None:
+            rate_errors[f"chemkin #{x['chemkin'][0]}"] = error
+        if not dead(k):
+            movers.append((None, set(x["reactants"]), set(x["products"]), x["reversible"]))
     fired, changed = set(), True
     while changed:
         changed = False
@@ -1036,7 +1147,10 @@ def census(rmg_dir, families: Sequence[str], temperature: float) -> dict:
     return {"families": dict(sorted(counts.items())), "unattributed": dict(sorted(unattributed.items())),
             "requested_families": sorted(requested), "admitted_in_requested_families": admitted_requested,
             "zero_rate_rows": [r["id"] for r in rows if r["admitted"] and r["zero_rate"]],
-            "live_rows": live, "profile_changes": moves, "temperature_K": temperature,
+            "live_rows": live, "profile_changes": motion is not None, "profile_motion": motion,
+            "activity_floors": {"relative": ACTIVITY_RELATIVE_FLOOR,
+                                "absolute_g": ACTIVITY_MASS_FLOOR_FRACTION * float(facts["initial_mass_g"])},
+            "rate_errors": rate_errors, "temperature_K": temperature, "pressure_Pa": pressure,
             "activity_rule": ACTIVITY_RULE, "refused_reasons": refused_reasons,
             "stale_topology": bool((doc.get("conventions") or {}).get("stale_topology"))}
 
@@ -1657,7 +1771,7 @@ def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: i
             (out / stale).unlink()
     # the run's integrity first (its refusals take precedence), then its activity
     entries, diagnostics, read = convert(rmg_dir, times, facts, KmcClasses(deck.spec, deck.xs))
-    manifest["census"] = census(rmg_dir, facts["families"], temperature)
+    manifest["census"] = census(rmg_dir, facts, temperature, times[-1])
     if not manifest["census"]["live_rows"] or not manifest["census"]["profile_changes"]:
         flags["inactive_chemistry"] = manifest["census"]
         if not allow_inactive:
