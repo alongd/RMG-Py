@@ -266,6 +266,7 @@ def header(chunk, rows, **over):
     out = {"kind": "header", "schema": emit.ROWS_SCHEMA, "artifact_id": "art",
            "artifact_sha256": "a" * 64, "artifact_records": 6, "families": ["R_Recombination"],
            "database_path": "/db", "database_head": "d" * 40, "code_sha": "c" * 40,
+           "database_content_sha256": "h" * 64, "code_sources_sha256": "s" * 64,
            "roster_sha256": "r" * 64, "temperatures": [600.0, 700.0, 800.0], "chunk": chunk,
            "selection": "all", "assigned": [record_id(r) for r in rows], "roster_refusals": [],
            "systems": {"dp8_closed": ["chain dp=8"]}}
@@ -288,6 +289,18 @@ def shards(tmp_path, n=2, rows=None, **over):
         mine = rows[k::n]
         paths.append(write_rows(tmp_path / f"rows.{k}of{n}.jsonl", header(f"{k}/{n}", mine, **over), mine))
     return paths
+
+
+ASSEMBLER = {"database_content_sha256": "h" * 64, "code_sources_sha256": "s" * 64}
+
+
+@pytest.fixture(autouse=True)
+def assembler_identity(monkeypatch):
+    """The assembling process's own database and code digests: those of the
+    fixture shards unless a test sets others."""
+    current = dict(ASSEMBLER)
+    monkeypatch.setattr(emit, "assembler_identity", lambda database: dict(current), raising=False)
+    return current
 
 
 @pytest.fixture(autouse=True)
@@ -704,6 +717,55 @@ def test_the_catalog_carries_the_content_identities_of_its_inputs(tmp_path):
     head["code_sources_sha256"] = "t" * 64
     lines = mixed[1].read_text().splitlines()
     mixed[1].write_text("\n".join([json.dumps(head)] + lines[1:]) + "\n")
-    catalog = run(mixed)
-    assert catalog["complete"] is False
-    assert any("code_sources_sha256" in f for f in catalog["gates"]["failures"])
+    with pytest.raises(emit.AssembleRefused, match="code_sources_sha256"):
+        run(mixed)
+
+
+# --------------------------------------------------------------------------
+# I-162 S-g rework 2: assemble derives with its own code and database
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize("field_", ["database_content_sha256", "code_sources_sha256"])
+def test_assemble_refuses_shards_emitted_with_other_code_or_database(tmp_path, field_,
+                                                                     assembler_identity):
+    """Derivation and the cycle check run with the assembler's own code and
+    database: shards emitted with others are refused by field name, and the
+    catalog would otherwise carry their digests."""
+    assembler_identity[field_] = "x" * 64
+    with pytest.raises(emit.AssembleRefused) as caught:
+        run(shards(tmp_path))
+    assert field_ in str(caught.value) and "x" * 16 in str(caught.value)
+
+
+@pytest.mark.parametrize("field_", ["database_content_sha256", "code_sources_sha256"])
+def test_assemble_refuses_shards_without_the_digests(tmp_path, field_):
+    with pytest.raises(emit.AssembleRefused, match=field_):
+        run(shards(tmp_path, **{field_: None}))
+
+
+def test_cli_refusal_writes_no_catalog_and_exits_nonzero(tmp_path, monkeypatch, assembler_identity):
+    monkeypatch.setattr(emit, "load_services", lambda database, families: Services())
+    assembler_identity["code_sources_sha256"] = "x" * 64
+    out = tmp_path / "refused.json"
+    assert emit.main(["assemble", *[str(p) for p in shards(tmp_path)], "--out", str(out)]) == 1
+    assert not out.exists()
+
+
+def test_the_code_digest_covers_every_rmgpy_source(tmp_path):
+    """Every .py, .pyx and .pxd file under rmgpy/ (paths included), not only
+    rmgpy/kmc: a change to rmgpy/reaction.py changes the chemistry."""
+    root = tmp_path / "rmgpy"
+    for rel, text in {"reaction.py": "a = 1\n", "kmc/emit.py": "b = 1\n", "molecule/x.pyx": "c\n",
+                      "molecule/x.pxd": "d\n", "molecule/x.c": "generated\n"}.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text)
+    base = emit.code_sources_sha256(root)
+    for rel, changes in (("reaction.py", True), ("molecule/x.pyx", True), ("molecule/x.pxd", True),
+                         ("kmc/emit.py", True), ("molecule/x.c", False)):
+        before = (root / rel).read_text()
+        (root / rel).write_text(before + "# changed\n")
+        assert (emit.code_sources_sha256(root) != base) is changes, rel
+        (root / rel).write_text(before)
+    (root / "reaction.py").rename(root / "reaction2.py")              # the paths are digested
+    assert emit.code_sources_sha256(root) != base
+    import rmgpy
+    assert emit.code_sources_sha256() == emit.code_sources_sha256(Path(rmgpy.__file__).parent)

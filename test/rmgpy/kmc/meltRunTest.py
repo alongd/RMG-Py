@@ -145,7 +145,10 @@ def write_catalog(path, payloads, *, complete=True, failures=(), tag="test", bin
     carries; ``declaration``: one whose full declaration digest it carries."""
     failures = list(failures)
     provenance = {"artifact_id": f"artifact-{tag}", "families": sorted({p["family"] for p in payloads}),
-                  "code_sha": None, "temperatures": [300.0, 1000.0]}
+                  "code_sha": None, "temperatures": [300.0, 1000.0],
+                  # the shared inputs catalogs loaded together must agree on (catalog_set)
+                  "database_path": "/db", "database_content_sha256": "h" * 64,
+                  "code_sources_sha256": "s" * 64, "roster_sha256": "r" * 64}
     if bind is not None:
         provenance["chemistry_sha256"] = chemistry_sha256(bind)
     if declaration is not None:
@@ -153,7 +156,10 @@ def write_catalog(path, payloads, *, complete=True, failures=(), tag="test", bin
     doc = {"schema": "kmc-template-catalog/1",
            "provenance": provenance,
            "payloads": payloads, "refusals": [],
-           "gates": {"failures": failures}, "completeness": {}, "complete": complete}
+           "gates": {"failures": failures,
+                     "collisions": {"entry_keys": sorted({t["key"] for p in payloads for t in p["templates"]
+                                                          if t.get("status") == "emitted"})}},
+           "completeness": {}, "complete": complete}
     Path(path).write_text(json.dumps(doc, sort_keys=True, indent=1) + "\n")
     return Path(path)
 

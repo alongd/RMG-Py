@@ -444,3 +444,60 @@ def test_a_git_identity_known_for_one_member_only_is_refused(tmp_path, field):
     fa = write_stub(tmp_path / "a.json", a, **{field: None})
     manifest = build_set([fa, fb], tmp_path / "set.json")          # unknown for both: the digests decide
     assert json.loads(manifest.read_text())["shared"][field] is None
+
+
+# --------------------------------------------------------------------------
+# rework 2: entry keys must cover the loaded keys; the runner checks the union
+# --------------------------------------------------------------------------
+def test_a_member_loading_a_key_its_entry_keys_omit_is_refused(tmp_path):
+    a, b = stub_payloads()
+    keys = sorted({t["key"] for p in a for t in p["templates"]})
+    fa = write_stub(tmp_path / "a.json", a, entry_keys=keys[1:])
+    fb = write_stub(tmp_path / "b.json", b)
+    with pytest.raises(ValueError) as caught:
+        build_set([fa, fb], tmp_path / "set.json")
+    assert keys[0] in str(caught.value) and "entry_keys" in str(caught.value)
+
+
+def plain_or_sets(tmp_path, fa, fb, how):
+    """The two catalogs as the runner gets them: plain, or one set each."""
+    if how == "plain":
+        return [fa, fb]
+    return [build_set([fa], tmp_path / "set_a.json"), build_set([fb], tmp_path / "set_b.json")]
+
+
+@pytest.mark.parametrize("how", ["plain", "two_sets"])
+def test_catalogs_loaded_together_with_different_inputs_are_refused(tmp_path, how):
+    """The set checks hold for everything the runner loads together, not only
+    inside one set: two complete catalogs emitted against different databases
+    are refused by field name, given directly or through separate sets."""
+    a, b = stub_payloads()
+    fa = write_stub(tmp_path / "a.json", a)
+    fb = write_stub(tmp_path / "b.json", b, database_content_sha256="e" * 64)
+    with pytest.raises(kr.RunError, match="database_content_sha256"):
+        kr.load_catalogs([str(p) for p in plain_or_sets(tmp_path, fa, fb, how)], 650.0)
+
+
+@pytest.mark.parametrize("how", ["plain", "two_sets"])
+def test_a_historical_key_collision_is_refused_even_with_allow_incomplete(tmp_path, how):
+    """A key refused inside incomplete catalog A (entered its collision
+    resolution, loads nothing) and loaded by B: --allow-incomplete relaxes
+    completeness only, never the collision check."""
+    a, b = stub_payloads()
+    key = b[0]["templates"][0]["key"]
+    keys = sorted({t["key"] for p in a for t in p["templates"]} | {key})
+    fa = write_stub(tmp_path / "a.json", a, entry_keys=keys, complete=False)
+    fb = write_stub(tmp_path / "b.json", b)
+    with pytest.raises(kr.RunError) as caught:
+        kr.load_catalogs([str(p) for p in plain_or_sets(tmp_path, fa, fb, how)], 650.0,
+                         allow_incomplete=True)
+    assert key in str(caught.value) and "collision" in str(caught.value)
+
+
+def test_one_catalog_alone_needs_no_shared_inputs(tmp_path):
+    """Nothing is shared by a catalog loaded alone: an old catalog without the
+    content digests or entry keys still runs by itself."""
+    a, _b = stub_payloads()
+    fa = write_stub(tmp_path / "a.json", a, entry_keys="absent",
+                    drop=("database_content_sha256", "code_sources_sha256"))
+    assert loaded([fa], 650.0)[0]

@@ -2190,3 +2190,73 @@ def test_the_cycle_check_temperatures_do_not_follow_the_record_ids(monkeypatch):
         _out, table = _check(_res(ps, counter), counter)
         assert table[0]["status"] == "ok"
     assert used[0] and used[0] == used[1]
+
+
+# --------------------------------------------------------------------------
+# I-162 S-g rework 2: the identity is the whole stored content less the ids
+# --------------------------------------------------------------------------
+def test_the_identity_is_every_stored_field_but_the_record_ids():
+    """Renaming the record ids leaves the identity unchanged; changing any
+    other stored field of the payload or of the template changes it."""
+    payloads, _counter = _toy_pair()
+    p = payloads[0]
+    t = base_template(p)
+    renamed = _relabel(payloads, {_rid(1): _rid(12), _rid(2): _rid(13)})[0]
+    assert te.partition_free_identity(renamed) == te.partition_free_identity(p)
+    assert te.partition_free_identity(renamed, base_template(renamed)) == \
+        te.partition_free_identity(p, t)
+    stripped = {"record_event_id", "reverse_of", "sha256", "certificate"}
+    for field_ in sorted(set(p) - stripped):
+        q = json.loads(json.dumps(p))
+        q[field_] = {"changed": field_}
+        assert te.partition_free_identity(q) != te.partition_free_identity(p), field_
+    q = json.loads(json.dumps(p))
+    q["rate"]["k"] = [2 * k for k in q["rate"]["k"]]
+    assert te.partition_free_identity(q) != te.partition_free_identity(p)
+    for field_ in sorted(t):
+        q = json.loads(json.dumps(p))
+        base_template(q)[field_] = {"changed": field_}
+        assert te.partition_free_identity(q, base_template(q)) != \
+            te.partition_free_identity(p, t), field_
+
+
+def _thermo_variant_pairs():
+    """Pair A (records 1/6) and pair B (2/5), equal in everything but the
+    stored thermo of B's recombination (ssa_ratio 0.1 % larger)."""
+    payloads, counter = _two_pairs(0.0)
+    w_b = next(p for p in payloads if p["record_event_id"] == _rid(5))
+    th = base_template(w_b)["thermo"]
+    th["ssa_ratio"] *= 1.001
+    payloads = [te.finish(p) for p in payloads]
+    return payloads, counter
+
+
+def test_copies_that_differ_only_in_thermo_choose_by_thermo_never_by_id():
+    """The spar's repro: two source pairs tie on everything the earlier
+    identity read, so the record ids chose the representative recombination,
+    and the derived homolysis took that copy's thermo.  Under any ids the
+    loaded weights (and the representative's thermo) are the same."""
+    payloads, counter = _thermo_variant_pairs()
+    swap = {_rid(1): _rid(2), _rid(2): _rid(1), _rid(5): _rid(6), _rid(6): _rid(5)}
+    temps = list(OFF_GRID) + [650.0]
+    seen = []
+    for ps in (payloads, _relabel(payloads, swap)):
+        out = _res(ps, counter)
+        thermo = sorted(te.canonical_json(t.get("thermo")) for p in out for t in p["templates"]
+                        if t.get("status") == "emitted")
+        seen.append((_loaded_weights(out, temps), thermo))
+    assert seen[0] == seen[1]
+
+
+def test_the_as_generated_side_is_primary_even_with_the_greater_key():
+    """The recombination's key is the lesser in the toy pair; with the
+    orientations exchanged the as_generated homolysis (the greater key) must
+    be the primary."""
+    payloads, counter = _toy_pair()
+    for p in payloads:
+        p["orientation"] = "as_generated" if p["orientation"] == "reversed" else "reversed"
+    payloads = [te.finish(p) for p in payloads]
+    out = _res(payloads, counter)
+    ip, idd = _primary_derived(out)
+    assert out[ip]["orientation"] == "as_generated"
+    assert base_template(out[ip])["key"] > base_template(out[idd])["key"]
