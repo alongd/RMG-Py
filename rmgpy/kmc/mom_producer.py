@@ -985,7 +985,7 @@ def dead(k: Optional[float]) -> bool:
     return k is None or not math.isfinite(k) or k <= 0.0
 
 
-AMBIGUOUS_MAX = 10           # gas-mask-ambiguous spawned pools whose 2^n gas sets the census still enumerates
+AMBIGUOUS_MAX = 10           # gas-mask ambiguity units whose 2^n gas sets the census still enumerates
 
 
 def _effective_pressures(efficiencies, gas: Sequence[int], pressure: float,
@@ -1005,8 +1005,20 @@ def _effective_pressures(efficiencies, gas: Sequence[int], pressure: float,
     return out
 
 
+def _condensed(rule, chosen) -> bool:
+    """Whether a core species is condensed in MoM's gas mask under the
+    ambiguity units ``chosen`` (``core_phases``): its rule is (configured,
+    stage1), configured None (no pool override), True (a configured pool's
+    override) or a unit "configured:<pool>"; stage1 "gas", "condensed" or a
+    unit "stage1:<species>"."""
+    configured, stage1 = rule
+    if configured is True or (isinstance(configured, str) and configured in chosen):
+        return True
+    return stage1 == "condensed" or (stage1 != "gas" and stage1 in chosen)
+
+
 def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressure: float,
-              core: Sequence[Tuple[Optional[int], Any, str]], compositions: Sequence[Sequence[float]]) -> dict:
+              core: Sequence[Tuple[Optional[int], Any, Tuple]], compositions: Sequence[Sequence[float]]) -> dict:
     """Whether one reaction (its Chemkin entries ``group``) moves forward and
     backward as MoM's solver computes its rates (polymer.pyx at b1285f08f).
     kf: ``get_rate_coefficient(T, P)``, a non-finite value taken as 0
@@ -1018,12 +1030,15 @@ def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressu
     (``get_effective_collider_efficiencies(core_species)``, polymer_input.py
     428-434: each efficiency goes to the first isomorphic core species,
     model.pyx 415-421), and only then the gas mask weighs the amounts
-    (``core``, from ``core_phases``, in MoM's core order).  A spawned pool
-    whose gas membership is ambiguous and one of whose species holds an
-    amount at some composition is taken in and out of the gas, every
-    combination (at most ``AMBIGUOUS_MAX`` such pools, else dead with the
-    reason): where the forward rate's liveness differs it is dead with the
-    reason "gas mask ambiguous for ...".  kb = kf / Keq with Keq from the
+    (``core``, from ``core_phases``, in MoM's core order).  Every ambiguity
+    unit (a spawned pool configured or not; a species whose first-stage phase
+    the sidecar cannot settle) that decides the phase of a species holding an
+    amount at some composition is taken both ways, every combination (at
+    most ``AMBIGUOUS_MAX`` units, else dead with the reason): where the
+    forward rate's liveness differs it is dead with the reason "gas mask
+    ambiguous for ...".  Compositions are the profile's saved rows (and the
+    horizon), samples of the solver's states: a dead verdict and every reason
+    say "at the N sampled compositions".  kb = kf / Keq with Keq from the
     species' thermo, and kb = 0 where Keq is not finite or not positive or kb
     is not finite (4749-4760), under every combination likewise: where the
     reverse liveness differs the reverse is dead and the reason a rate
@@ -1040,34 +1055,36 @@ def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressu
             why = why or reason
         return values, why
 
+    sampled = f"{len(compositions)} sampled compositions"
     out = {"reverse": False, "reverse_reason": None}
     if len(terms) == 1 and kinetics.is_pressure_dependent() and getattr(kinetics, "efficiencies", None):
         efficiencies = kinetics.get_effective_collider_efficiencies([c[1] for c in core])
         rows = [[None if c[0] is None else y[c[0]] for c in core] for y in compositions]
         rows = [[0.0 if v is None else v for v in y] for y in rows]      # a core species without a column holds 0
-        gas = [j for j, c in enumerate(core) if c[2] == "gas"]
-        # the ambiguity: spawned pools (in or out of the gas together) one of whose species holds an amount
-        units = sorted({core[j][3] for j in range(len(core)) if core[j][2] == "ambiguous"
-                        and any(y[j] != 0.0 for y in rows)})
+        # the ambiguity units that decide the phase of a core species holding an amount at some composition
+        present = [j for j in range(len(core)) if any(y[j] != 0.0 for y in rows)]
+        units = sorted({u for j in present for u in core[j][2] if isinstance(u, str) and u not in ("gas", "condensed")})
         if len(units) > AMBIGUOUS_MAX:
-            out.update(forward=False, error=f"gas mask ambiguous for spawned pools {units} (more than "
-                                            f"{AMBIGUOUS_MAX} to enumerate)")
+            out.update(forward=False, error=f"gas mask ambiguous for {units} (more than {AMBIGUOUS_MAX} to "
+                                            f"enumerate) at the {sampled}")
             return out
         variants = []
         for mask in range(2 ** len(units)):
             chosen = {u for b, u in enumerate(units) if mask >> b & 1}
-            members = gas + [j for j, c in enumerate(core) if c[2] == "ambiguous" and c[3] in chosen]
-            values, why = forward_at(_effective_pressures(efficiencies, sorted(members), pressure, rows))
+            members = [j for j in range(len(core)) if not _condensed(core[j][2], chosen)]
+            values, why = forward_at(_effective_pressures(efficiencies, members, pressure, rows))
             variants.append((any(not dead(k) for k in values), values, why))
         if len({v[0] for v in variants}) > 1:
-            out.update(forward=False, error=f"gas mask ambiguous for spawned pools {units}: the rate is live with "
-                                            "some of them in MoM's gas and dead with others")
+            out.update(forward=False, error=f"gas mask ambiguous for {units}: the rate is live with some of them "
+                                            f"in MoM's gas and dead with others at the {sampled}")
             return out
     else:
         values, why = forward_at([pressure])
         units, variants = [], [(any(not dead(k) for k in values), values, why)]
+        sampled += " (this rate does not depend on composition)"
     live, forward, error = variants[0]
-    out.update(forward=live, error=error)
+    out.update(forward=live, error=error,
+               dead_reason=None if live else (f"{error} " if error else "") + f"kf is {forward!r} at the {sampled}")
     if reversible:
         try:
             keq = float(group[0].get_equilibrium_constant(temperature))
@@ -1075,21 +1092,21 @@ def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressu
             out["reverse_reason"] = f"RMG cannot evaluate Keq ({type(e).__name__}: {e})"
             return out
         if not math.isfinite(keq) or keq <= 0.0:
-            out["reverse_reason"] = f"Keq = {keq!r}: MoM sets kb = 0"
+            out["reverse_reason"] = f"Keq = {keq!r}: MoM sets kb = 0 at the {sampled}"
             return out
         backward = []
         for _live, values, _why in variants:            # kb under every gas mask, as the forward rate
             kb = [(k / keq) if (k is not None and math.isfinite(k)) else 0.0 for k in values]
             backward.append((any(not dead(x) for x in kb), kb))
         if len({b[0] for b in backward}) > 1:
-            reason = (f"gas mask ambiguous for spawned pools {units}: the reverse rate kb = kf / Keq is live with "
-                      "some of them in MoM's gas and dead (not finite, MoM's kb = 0) with others")
+            reason = (f"gas mask ambiguous for {units}: the reverse rate kb = kf / Keq is live with some of them "
+                      f"in MoM's gas and dead (not finite, MoM's kb = 0) with others at the {sampled}")
             out["reverse_reason"] = reason
             out["error"] = reason if error is None else f"{error}; {reason}"
             return out
         out["reverse"] = backward[0][0]
         if not out["reverse"]:
-            out["reverse_reason"] = f"kb = kf / Keq is {backward[0][1]!r}"
+            out["reverse_reason"] = f"kb = kf / Keq is {backward[0][1]!r} at the {sampled}"
     return out
 
 
@@ -1138,28 +1155,66 @@ def profile_motion(header, data, pools, facts: dict, dictionary, times: Sequence
     return None
 
 
-def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any],
-                profile) -> List[Tuple[Optional[int], Any, str]]:
-    """MoM's core in its order as (profile column or None, RMG species, phase,
-    ambiguity unit): the order is the profile's columns (the solver writes its
-    core in promotion order, rmg/model.py; RMG's Chemkin writer sorts the
-    SPECIES block by index, chemkin.pyx ~2153, so the block is not it), then
-    any Chemkin species the profile lacks (amount 0).  Phase "gas",
-    "condensed" or "ambiguous", rebuilt from what the sidecar records
-    of the solver's gas mask (get_gas_mask, polymer_input.py 709-781, and the
-    configured pools' label overrides, polymer.pyx 3185-3240):
+def _h_loss_radical_daughter(molecule, proxies) -> bool:
+    """MoM's structural H-loss radical-daughter test (rmgpy/polymer.py
+    ``is_h_loss_radical_daughter`` at b1285f08f, conditions (ii)-(iv), (vi)):
+    radical-bearing and neutral, the heavy-atom composition of a proxy, H
+    short by its radical count, and, saturated, isomorphic to that proxy under
+    any resonance form of either; any structure error: False."""
+    try:
+        n_rad = molecule.get_radical_count()
+        comp = molecule.get_element_count()
+        if n_rad < 1 or molecule.get_net_charge() != 0:
+            return False
+    except Exception:
+        return False
+    heavy = {el: n for el, n in comp.items() if el != "H"}
+    saturated = None
+    for proxy in proxies:
+        try:
+            pcomp = proxy.get_element_count()
+        except Exception:
+            continue
+        if {el: n for el, n in pcomp.items() if el != "H"} != heavy or pcomp.get("H", 0) - comp.get("H", 0) != n_rad:
+            continue
+        try:
+            if saturated is None:
+                sat = molecule.copy(deep=True)
+                sat.saturate_radicals()
+                sat.update()
+                saturated = [sat] + list(sat.generate_resonance_structures() or [])
+            forms = [proxy] + list(proxy.generate_resonance_structures() or [])
+            if any(x.is_isomorphic(y) for x in saturated for y in forms):
+                return True
+        except Exception:
+            return False
+    return False
 
-    * condensed: a configured pool's moments, proxy and phase / bookkeeping
-      species, and every other name of conventions.condensed_species (its
-      source is the solver's own final-core mask, polymer.py
-      derive_condensed_species);
-    * ambiguous: a spawned pool's (conventions.spawned_pools) phase /
-      bookkeeping species other than its mu dummies (its proxy): the
-      serializer lists them condensed whether or not the solver configured
-      the pool (polymer.py 9238-9246), and the sidecar does not record which;
-      a pool's members are in or out of the gas together, so its unit is the
-      pool; every pool's mu dummies are moment coordinates, condensed;
-    * gas: the rest.
+
+def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any],
+                profile) -> List[Tuple[Optional[int], Any, Tuple]]:
+    """MoM's core in its order as (profile column or None, RMG species, rule):
+    the order is the profile's columns (the solver writes its core in
+    promotion order, rmg/model.py; RMG's Chemkin writer sorts the SPECIES
+    block by index, chemkin.pyx ~2153, so the block is not it), then any
+    Chemkin species the profile lacks (amount 0).  The rule (``_condensed``)
+    rebuilds the solver's gas mask from what the sidecar records:
+
+    * the second stage, per pool (``_apply_pool_phase_overrides``, polymer.pyx
+      3185-3243 at b1285f08f), condenses the FIRST core species whose base
+      label (index stripped) is the pool's label, then breaks, plus the pool's
+      mu dummies and explicit-DP species; a configured (root) pool always, a
+      spawned pool (conventions.spawned_pools) only if the solver configured
+      it, which the sidecar does not record: the unit "configured:<pool>";
+    * every other pool member keeps the first stage's phase (``get_gas_mask``,
+      polymer_input.py 709-781): a spawned pool's mu dummies are not
+      registered there (gas), nor its other members, unless one is an H-loss
+      radical daughter of a root pool's proxy (section D, 880-990), which
+      the sidecar cannot settle (the durable gas veto and Polymer-ness are
+      not recorded): the unit "stage1:<species>";
+    * a species no pool lists: condensed iff conventions.condensed_species
+      names it (derived from the solver's own final-core mask; the
+      serializer's spawned-pool closure only adds pool members).
 
     Names and columns are matched by identity, never by raw string: a moment
     by ``moment_column`` of ``<pool>_mu<k>``, a species by ``species_key``.
@@ -1178,18 +1233,10 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
             return species_key(moment_column(str(name)))
         return species_key(str(name))
 
-    def members(p) -> set:
-        return ({identity(f"{p['label']}_mu{k}") for k in range(3)}
-                | {identity(x) for x in list(p.get("phase_species") or ()) + list(p.get("bookkeeping_species") or ())})
+    def base(name: str) -> str:
+        m = re.fullmatch(r"(.*)\((\d+)\)", str(name))
+        return m.group(1) if m else str(name)
 
-    moment_keys = {identity(f"{label}_mu{k}") for label in labels for k in range(3)}
-    unit = {}                                   # a spawned pool's physical member -> the pool (in or out together)
-    for p in doc["pools"]:
-        if p["label"] in spawned:
-            for key in members(p) - moment_keys:
-                unit.setdefault(key, p["label"])
-    kept = {identity(x) for x in condensed}
-    kept |= set().union(*[members(p) for p in doc["pools"] if p["label"] not in spawned]) | moment_keys
     by_key = {}
     for x in chemkin_species:
         by_key.setdefault(species_key(get_species_identifier(x)), x)
@@ -1206,8 +1253,39 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
                             "Chemkin file")
     placed = {key for _i, key in order}
     order += [(None, key) for key in by_key if key not in placed]    # no profile column: last, amount 0
-    return [(i, by_key[key], "ambiguous" if key in unit else "condensed" if key in kept else "gas", unit.get(key))
-            for i, key in order]
+    position = {key: j for j, (_i, key) in enumerate(order)}
+
+    # pool members: the mu dummies, the species of the pool's base label, the explicit-DP species
+    rules = {}
+    root_proxies = []
+    member_of = {}
+    for p in doc["pools"]:
+        label = p["label"]
+        mus = {identity(f"{label}_mu{k}") for k in range(3)}
+        names = list(p.get("phase_species") or ()) + list(p.get("bookkeeping_species") or ())
+        labelled = {identity(x) for x in names if base(x) == label and identity(x) not in mus}
+        explicit = {identity(x) for x in names if identity(x) not in mus and identity(x) not in labelled}
+        member_of[label] = (mus, labelled, explicit)
+        if label not in spawned:
+            root_proxies += [by_key[k].molecule[0] for k in labelled if k in by_key and by_key[k].molecule]
+    for p in doc["pools"]:
+        label = p["label"]
+        mus, labelled, explicit = member_of[label]
+        configured = True if label not in spawned else f"configured:{label}"
+        first = min((k for k in labelled if k in position), key=position.get, default=None)
+        for key in mus | labelled | explicit:
+            if key not in by_key:
+                continue
+            if key in mus:
+                stage1 = "condensed" if label not in spawned else "gas"
+            else:
+                mol = by_key[key].molecule[0] if by_key[key].molecule else None
+                stage1 = (f"stage1:{get_species_identifier(by_key[key])}"
+                          if mol is not None and _h_loss_radical_daughter(mol, root_proxies) else "gas")
+            condensable = key in mus or key in explicit or key == first
+            rules[key] = (configured if condensable else None, stage1)
+    kept = {identity(x) for x in condensed}
+    return [(i, by_key[key], rules.get(key, (None, "condensed" if key in kept else "gas"))) for i, key in order]
 
 
 def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> dict:
@@ -1265,6 +1343,7 @@ def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> 
     refused_reasons: Dict[str, int] = {}
     rate_errors: Dict[str, str] = {}
     reverse_disabled: Dict[str, str] = {}
+    dead_reasons: Dict[str, str] = {}
     rows = []
     for j, row in enumerate(sidecar):
         reaction = own[j]
@@ -1299,6 +1378,8 @@ def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> 
             zero, backward = not rates["forward"], rates["reverse"]
             if rates["error"] is not None:
                 rate_errors[str(row.get("id"))] = rates["error"]
+            if zero:
+                dead_reasons[str(row.get("id"))] = rates.get("dead_reason") or rates["error"]
             if reversible and not backward:
                 reverse_disabled[str(row.get("id"))] = rates["reverse_reason"]
         rows.append({"id": row.get("id"), "admitted": admitted, "requested": family is None or
@@ -1346,7 +1427,8 @@ def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> 
             "live_rows": live, "profile_changes": motion is not None, "profile_motion": motion,
             "activity_floors": {"relative": ACTIVITY_RELATIVE_FLOOR,
                                 "absolute_g": ACTIVITY_MASS_FLOOR_FRACTION * float(facts["initial_mass_g"])},
-            "rate_errors": rate_errors, "reverse_disabled": reverse_disabled, "temperature_K": temperature, "pressure_Pa": pressure,
+            "rate_errors": rate_errors, "reverse_disabled": reverse_disabled, "dead_reasons": dead_reasons,
+            "temperature_K": temperature, "pressure_Pa": pressure,
             "activity_rule": ACTIVITY_RULE, "refused_reasons": refused_reasons,
             "stale_topology": bool((doc.get("conventions") or {}).get("stale_topology"))}
 
