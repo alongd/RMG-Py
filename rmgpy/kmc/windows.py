@@ -328,6 +328,7 @@ from itertools import combinations, combinations_with_replacement, permutations,
 from typing import Any, Callable, Optional, Sequence
 
 from rmgpy.kmc import boundaries as b
+from rmgpy.kmc import declared_chain as dc
 from rmgpy.kmc import domain as dom
 
 RING_LIMIT = 8
@@ -349,6 +350,152 @@ class WindowError(ValueError):
 class SpanBoundError(AssertionError):
     """A window exceeds its family's derived span bound (a bug or a domain
     error): fails the run."""
+
+
+# ---------------------------------------------------------------------------
+# provider objects (I-165): every chemistry the window machinery reads comes
+# from the provider of a witness participant, never from a provider name
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class DeclaredSpec:
+    """A witness spec of a declared-chain provider: the registered provider
+    name and the chain (``declared_chain.ChainSpec``)."""
+
+    provider: str
+    chain: Any
+
+
+class SmallSpeciesProvider(b.BoundaryProvider):
+    """The small declared species (``small_build``): no ports, no repeat
+    coordinates, no backbone (no span check), no interior atoms, no
+    extension fragment and no growth unit."""
+
+    name = "small"
+    SPECIES = ("H", "H2")
+    END_CHEMISTRIES: dict = {}
+
+    def build(self, name):
+        return small_build(name)
+
+    def fragment(self, port, coordinate):
+        raise b.ExtensionRefused("a small species has no ports")
+
+    @classmethod
+    def normalize_spec(cls, spec):
+        """("small", name) of a declared small species; None for another
+        shape; ValueError for a malformed one."""
+        if not isinstance(spec, tuple) or not spec or spec[0] != cls.name:
+            return None
+        if len(spec) != 2 or spec[1] not in cls.SPECIES:
+            raise ValueError(f"undeclared small species spec {spec!r} (declared: {cls.SPECIES})")
+        return spec
+
+
+SMALL_PROVIDER = SmallSpeciesProvider()
+# the owners of the named witness-spec shapes, asked in order
+SPEC_OWNERS = b.LEGACY_PROVIDERS + (SMALL_PROVIDER,)
+
+
+def witness_spec(spec):
+    """The normalized witness spec: a ``DeclaredSpec`` of a registered
+    declared-chain provider, or a named shape normalized by its owner
+    (``SPEC_OWNERS``).  Anything else, a bare ``ChainSpec`` and an
+    interior-radical 5-tuple included, is refused (never built closed)."""
+    if isinstance(spec, DeclaredSpec):
+        provider = b.PROVIDERS.get(spec.provider)
+        if not isinstance(provider, dc.DeclaredChainProvider):
+            raise WindowError(f"refused:legacy_spec: {spec.provider!r} is not a registered "
+                              "declared-chain provider")
+        if not isinstance(spec.chain, dc.ChainSpec):
+            raise WindowError(f"refused:legacy_spec: a DeclaredSpec needs a ChainSpec, got "
+                              f"{type(spec.chain).__name__}")
+        return spec
+    for owner in SPEC_OWNERS:
+        try:
+            normalized = owner.normalize_spec(spec)
+        except ValueError as error:
+            raise WindowError(f"refused:legacy_spec: {error}") from error
+        if normalized is not None:
+            return normalized
+    raise WindowError(f"refused:legacy_spec: {spec!r} is not a witness spec (a DeclaredSpec "
+                      "or a named provider shape)")
+
+
+def provider_object(provider, providers=None):
+    """The provider object of a participant's provider name (or the object
+    itself), looked up by name: never an enumeration of the registry."""
+    if isinstance(provider, b.BoundaryProvider):
+        return provider
+    if provider == SMALL_PROVIDER.name:
+        return SMALL_PROVIDER
+    table = b.PROVIDERS if providers is None else providers
+    found = table.get(provider)
+    if found is None:
+        raise WindowError(f"no provider {provider!r} is registered")
+    return found
+
+
+def _is_declared(provider) -> bool:
+    return isinstance(provider, dc.DeclaredChainProvider)
+
+
+def observation_providers(witness, providers=None) -> tuple:
+    """The provider objects whose interior atoms and extension fragments a
+    member observation reads: the distinct providers of the witness's
+    participants when one of them is declared; otherwise the named pair
+    (``boundaries.LEGACY_PROVIDERS``), exactly the base classifier and
+    fragment facts."""
+    found = []
+    for participant in witness.participants:
+        provider = provider_object(participant.metadata.provider, providers)
+        if provider not in found:
+            found.append(provider)
+    if not any(_is_declared(p) for p in found):
+        return b.LEGACY_PROVIDERS
+    return tuple(found)
+
+
+def growth_unit(witness, providers=None) -> Optional[tuple]:
+    """The depository growth unit of a witness with a declared participant
+    (its one chain provider's ``unit_formula``); None otherwise (the
+    certificate default).  Two different chain providers are refused."""
+    found = [provider_object(p.metadata.provider, providers) for p in witness.participants]
+    if not any(_is_declared(p) for p in found):
+        return None
+    chains = sorted({p.name for p in found if p.unit_formula() is not None})
+    if len(chains) != 1:
+        raise WindowError(f"refused:growth_unit: two chain providers in one witness: {chains}")
+    return next(p for p in found if p.name == chains[0]).unit_formula()
+
+
+def _radical_ends(witness, port, providers=None) -> tuple:
+    """The radical end chemistries of the port's provider."""
+    return tuple(b._provider_for(witness, tuple(port), providers).RADICAL_END_CHEMISTRIES)
+
+
+ROSTER_REFUSAL = "refused:roster: declared providers are not in the PS roster"
+
+
+def _roster_guard(*items) -> None:
+    """Refuse a declared spec, provider or all-declared witness: the named
+    rosters build their own chains and never stand for a declaration."""
+    for item in items:
+        if item is None:
+            continue
+        if isinstance(item, (DeclaredSpec, dc.DeclaredChainProvider)) or \
+                isinstance(item, str) and _is_declared(b.PROVIDERS.get(item)):
+            raise WindowError(ROSTER_REFUSAL)
+        participants = getattr(item, "participants", None)
+        if participants and all(_is_declared(b.PROVIDERS.get(p.metadata.provider))
+                                for p in participants):
+            raise WindowError(ROSTER_REFUSAL)
+
+
+def _roster_entry(make):
+    def entry(provider=None):
+        _roster_guard(provider)
+        return make()
+    return entry
 
 
 # ---------------------------------------------------------------------------
@@ -759,11 +906,13 @@ class SearchClassifier:
     tests the RMG group atoms of the label against every atom of an interior
     repeat unit of each provider (RMG atom types)."""
 
-    def __init__(self, family, providers: Sequence[str] = ("polystyrene", "linear_alkane")):
+    def __init__(self, family, providers: Optional[Sequence] = None):
         self.family = family
+        self.providers = tuple(provider_object(p) for p in (
+            b.LEGACY_PROVIDERS if providers is None else providers))
         self.fresh = []
-        for name in providers:
-            self.fresh.extend(_interior_unit_atoms(name))
+        for provider in self.providers:
+            self.fresh.extend(_interior_unit_atoms(provider))
         self._cache = {}
 
     def extensible(self, node, label) -> bool:
@@ -788,50 +937,48 @@ class SearchClassifier:
 
 
 _INTERIOR = {}
+_FACTS = {}
+FACTS_UNDECIDED = "undecided"
 
 
-def _interior_unit_atoms(provider: str) -> list:
-    """RMG atoms (atom types perceived) of an interior repeat unit: unit 1 of a
-    pristine PS DP3, carbon 2 of a C5 alkane, and their H."""
-    if provider not in _INTERIOR:
-        if provider == "polystyrene":
-            build = b.PROVIDERS["polystyrene"].build("interior", b.PsChainSpec(3))
-            coords = {a: (u, k) for a, u, k in build.metadata.coordinates}
-            heavy = {a for a, (u, _k) in coords.items() if u == 1}
-        elif provider == "linear_alkane":
-            build = b.PROVIDERS["linear_alkane"].build(5)
-            heavy = {2}
-        else:
-            _INTERIOR[provider] = []
-            return []
-        mol = build.molecule
-        atoms = [a for a in mol.atoms if a.id in heavy]
-        atoms += [h for a in atoms for h in a.bonds if h.is_hydrogen()]
-        _INTERIOR[provider] = atoms
-    return _INTERIOR[provider]
+def _interior_unit_atoms(provider) -> list:
+    """RMG atoms (atom types perceived) of an interior repeat of a provider
+    (an object or a registered name) and their H (``interior_atoms_rmg``),
+    cached by provider name."""
+    provider = provider_object(provider)
+    if provider.name not in _INTERIOR:
+        _INTERIOR[provider.name] = list(provider.interior_atoms_rmg())
+    return _INTERIOR[provider.name]
 
 
 def _fragment_facts(providers=None) -> dict:
-    """Per provider: whether every extension fragment is closed shell and the
-    net element delta of one step (fresh atoms minus the deleted H cap)."""
-    out = {}
-    providers = b.PROVIDERS if providers is None else providers
-    for name, provider in providers.items():
-        facts = {}
-        for tag, coordinate in (("backbone_tail", (0, 1)), ("backbone_head", (0, 0))):
-            port = b.Port("p", 0, (1,), tag, "artificial")
+    """Per provider (objects; default the named pair): whether every extension
+    fragment of its probes (``probe_ports``) is closed shell and the net
+    element delta of one step (fresh atoms minus the deleted caps).  A probe
+    that raises leaves that provider's facts undecided
+    (``{FACTS_UNDECIDED: reason}``).  Cached by the tuple of provider
+    names."""
+    providers = tuple(provider_object(p) for p in (
+        b.LEGACY_PROVIDERS if providers is None else providers))
+    key = tuple(p.name for p in providers)
+    if key not in _FACTS:
+        out = {}
+        for provider in providers:
+            facts = {}
             try:
-                fragment = provider.fragment(port, coordinate)
-            except b.BoundaryError:
-                continue
-            delta = defaultdict(int)
-            for atom in fragment.atoms:
-                delta[atom[0]] += 1
-            delta["H"] -= 1
-            facts[tag] = {"closed_shell": all(atom[3] == 0 for atom in fragment.atoms),
-                          "delta": dict(delta)}
-        out[name] = facts
-    return out
+                for port, coordinate in provider.probe_ports():
+                    fragment = provider.fragment(port, coordinate)
+                    delta = defaultdict(int)
+                    for atom in fragment.atoms:
+                        delta[atom[0]] += 1
+                    delta["H"] -= len(port.cap_atom_ids)
+                    facts[port.tag] = {"closed_shell": all(atom[3] == 0 for atom in fragment.atoms),
+                                       "delta": dict(delta)}
+            except Exception as error:   # fail closed: the facts are not decided
+                facts = {FACTS_UNDECIDED: f"{type(error).__name__}: {error}"}
+            out[provider.name] = facts
+        _FACTS[key] = out
+    return _FACTS[key]
 
 
 def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] = None,
@@ -847,9 +994,11 @@ def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] 
         return Support(frozenset(), refusal=f"refused:member: the member is in "
                                             f"{len(entries)} channels")
     facts = fragment_facts if fragment_facts is not None else _fragment_facts()
-    closed_shell = all(f["closed_shell"] for p in facts.values() for f in p.values())
+    undecided = sorted(name for name, p in facts.items() if FACTS_UNDECIDED in p)
+    decided = [p for p in facts.values() if FACTS_UNDECIDED not in p]
+    closed_shell = all(f["closed_shell"] for p in decided for f in p.values())
     deltas = defaultdict(set)
-    for p in facts.values():
+    for p in decided:
         for f in p.values():
             for el, d in f["delta"].items():
                 deltas[el].add(d)
@@ -900,7 +1049,12 @@ def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] 
                         if not g.get("read"):
                             continue
                         if name in ("multiplicity", "radical_count"):
-                            if not closed_shell:
+                            if undecided:
+                                dispositions[("guard", name)] = (
+                                    "refused", f"fragment facts undecided for {undecided[0]}")
+                                refusal = refusal or \
+                                    f"refused:fragment_facts_undecided: {undecided[0]}"
+                            elif not closed_shell:
                                 dispositions[("guard", name)] = ("refused", "a provider "
                                                                  "fragment is not closed shell")
                                 refusal = refusal or f"refused:guard: {name}"
@@ -917,7 +1071,12 @@ def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] 
                                 count = have.get(el, 0)
                                 ds = deltas.get(el, {0})
                                 key = ("guard", f"element_count:{el}")
-                                if any(x < 0 for x in ds):
+                                if undecided:
+                                    dispositions[key] = ("refused", "fragment facts undecided "
+                                                         f"for {undecided[0]}")
+                                    refusal = refusal or \
+                                        f"refused:fragment_facts_undecided: {undecided[0]}"
+                                elif any(x < 0 for x in ds):
                                     dispositions[key] = ("refused", "an extension removes "
                                                          f"{el} atoms")
                                     refusal = refusal or f"refused:guard: element_count {el}"
@@ -1174,7 +1333,7 @@ class MemberObserver:
     dispositions and the certificate view."""
 
     def __init__(self, certifier, family, direction, wanted, *, base_certificate=None,
-                 classifier=None, include_failed=True, scoped=True):
+                 classifier=None, include_failed=True, scoped=True, providers=None):
         self.wanted = frozenset(wanted)
         self.certifier = scoped_certifier(certifier, family, self.wanted) if scoped else \
             certifier
@@ -1183,24 +1342,36 @@ class MemberObserver:
         self.base = base_certificate
         self.base_atoms = None if base_certificate is None else \
             {row[0] for row in base_certificate["witness"]["atoms"]}
-        self.classifier = classifier or SearchClassifier(family)
-        self.facts = _fragment_facts()
+        # resolved from the first observed witness's participants
+        self.classifier = classifier
+        self.facts = None
+        self.repeat = None
+        self.providers = None
+        self.registry = providers
         self.include_failed = include_failed
         self.calls = 0
         self.flips = []
 
     def __call__(self, witness) -> Observation:
         self.calls += 1
+        if self.providers is None:
+            self.providers = observation_providers(witness, self.registry)
+            if self.classifier is None:
+                self.classifier = SearchClassifier(self.family, providers=self.providers)
+            self.facts = _fragment_facts(self.providers)
+            self.repeat = growth_unit(witness, self.registry)
+        extra = {} if self.repeat is None else {"repeat": self.repeat}
         mols = template_molecules(witness, self.direction)
         recert = None
         if self.base is None:
-            cert = self.certifier.certify(self.family, mols, member_labels=self.wanted)
+            cert = self.certifier.certify(self.family, mols, member_labels=self.wanted, **extra)
             self.base = cert
             self.base_atoms = {row[0] for row in cert["witness"]["atoms"]}
         else:
             present = {a.id for m in mols for a in m.atoms}
             amap = {a: a for a in self.base_atoms if a in present}
-            recert = self.certifier.recertify_certificate(self.family, self.base, mols, amap)
+            recert = self.certifier.recertify_certificate(self.family, self.base, mols, amap,
+                                                          **extra)
             cert = recert["certificate"]
             for f in recert.get("flips", []):
                 self.flips.append((dict(witness.extension_counts), f["node"], f["old"], f["new"]))
@@ -1362,9 +1533,10 @@ def context_assignments(witness, near_ports=None, providers=None) -> tuple:
     The first assignment is all artificial."""
     ports = list(b.vector_ports(witness))
     chem = {p: tuple(b.end_chemistries(witness, p, providers)) for p in ports}
+    radical = {p: _radical_ends(witness, p, providers) for p in ports}
     near = set(ports) if near_ports is None else set(near_ports) & set(ports)
     choices = [(None,) + chem[p] if p in near else
-               (None,) + tuple(e for e in chem[p] if e in b.RADICAL_ENDS) for p in ports]
+               (None,) + tuple(e for e in chem[p] if e in radical[p]) for p in ports]
     seen, out = set(), []
 
     def add(assignment):
@@ -1377,12 +1549,12 @@ def context_assignments(witness, near_ports=None, providers=None) -> tuple:
         if p in near:
             continue
         for e in chem[p]:
-            if e not in b.RADICAL_ENDS:
+            if e not in radical[p]:
                 add(tuple((q, e if q == p else None) for q in ports))
     # the joint check of the far reduction: every combination of non-radical
     # ends over all far ports of one participant, and over all far ports
     for group in far_port_groups(ports, near):
-        options = [[e for e in chem[p] if e not in b.RADICAL_ENDS] for p in group]
+        options = [[e for e in chem[p] if e not in radical[p]] for p in group]
         for combo in product(*options):
             choice = dict(zip(group, combo))
             add(tuple((q, choice.get(q)) for q in ports))
@@ -1403,19 +1575,30 @@ def far_port_groups(ports, near) -> tuple:
     return tuple(groups)
 
 
-def far_port_verdicts(results, far) -> dict:
+def far_port_verdicts(results, far, providers=None, *, witness=None) -> dict:
     """Whether each far non-radical context merges with the all-artificial
     context ``results[0]`` (``contexts_merge``: equal closed windows as marked
     graphs and equal certificate views): singles keyed (far port, end), joint
     contexts (two or more far ports set, all non-radical: single-end merging
     does not imply that combinations merge) keyed ((port, end), ...).  A
     refused or unmerged context is False: the far reduction does not hold
-    there."""
+    there.  The radical ends are the port provider's
+    (``RADICAL_END_CHEMISTRIES``), resolved on ``witness`` (default: the
+    first context witness; every context has the same participants)."""
     far = set(far)
     out = {}
+    if witness is None:     # the port providers: any context's witness (same participants)
+        witness = next((r.witness for r in results if r.witness is not None), None)
+    radical = {}
     for r in results[1:]:
         set_ = tuple((p, e) for p, e in r.assignment if e is not None)
-        if not set_ or any(p not in far or e in b.RADICAL_ENDS for p, e in set_):
+        for p, _e in set_:
+            if p not in radical:
+                if witness is None:
+                    raise WindowError("refused:far_ports: no context witness resolves the "
+                                      "port providers")
+                radical[p] = _radical_ends(witness, p, providers)
+        if not set_ or any(p not in far or e in radical[p] for p, e in set_):
             continue
         out[set_[0] if len(set_) == 1 else set_] = contexts_merge(results[0], r)
     return out
@@ -1498,15 +1681,31 @@ SPAN_ARGUMENT = (
     "the support), so reach = r + 1 per side")
 
 
-def span_bound(constants: FamilyConstants) -> SpanBound:
+def span_bound(constants: FamilyConstants, provider=None) -> SpanBound:
+    """The family's span bound.  Without ``provider``: two backbone atoms per
+    repeat (the base values).  With one: ``k`` = its
+    ``coordinate_backbone_atoms``, ``repeats = ceil((A + k - 1)/k)`` and ``L =
+    floor((A + k - 1)/k)``."""
     reach = int(constants.radius) + CLOSURE_EXTENSION
     atoms = int(constants.reacting_distance) + 2 * reach + 1
-    repeats = math.ceil((atoms + 1) / 2)
-    L = (atoms + 1) // 2
-    formula = (f"reach = r + {CLOSURE_EXTENSION} = {reach}; backbone atoms A = D + 2*reach + 1 "
-               f"= {constants.reacting_distance} + {2 * reach} + 1 = {atoms}; repeats = "
-               f"ceil((A + 1)/2) = {repeats}; L = floor((A + 1)/2) = {L} (largest n with "
-               f"2n - 1 <= A: one end on each repeat phase; in-phase chains need 2n <= A)")
+    if provider is None:
+        repeats = math.ceil((atoms + 1) / 2)
+        L = (atoms + 1) // 2
+        formula = (f"reach = r + {CLOSURE_EXTENSION} = {reach}; backbone atoms A = D + 2*reach "
+                   f"+ 1 = {constants.reacting_distance} + {2 * reach} + 1 = {atoms}; repeats = "
+                   f"ceil((A + 1)/2) = {repeats}; L = floor((A + 1)/2) = {L} (largest n with "
+                   f"2n - 1 <= A: one end on each repeat phase; in-phase chains need 2n <= A)")
+    else:
+        provider = provider_object(provider)
+        k = provider.coordinate_backbone_atoms
+        if not k:
+            raise WindowError(f"refused:span: provider {provider.name!r} has no backbone")
+        repeats = -(-(atoms + k - 1) // k)
+        L = (atoms + k - 1) // k
+        formula = (f"reach = r + {CLOSURE_EXTENSION} = {reach}; backbone atoms A = D + 2*reach "
+                   f"+ 1 = {constants.reacting_distance} + {2 * reach} + 1 = {atoms}; k = "
+                   f"{k} backbone atoms per {provider.name} coordinate unit; repeats = "
+                   f"ceil((A + k - 1)/k) = {repeats}; L = floor((A + k - 1)/k) = {L}")
     return SpanBound(constants.family, int(constants.radius), int(constants.reacting_distance),
                      reach, atoms, repeats, L, formula, SPAN_ARGUMENT)
 
@@ -1604,28 +1803,24 @@ def _group_graph(group):
     return graph
 
 
-def backbone_index(provider: str, unit: int, position: int) -> Optional[int]:
-    if provider == "polystyrene":
-        return 2 * unit + position if position in (0, 1) else None
-    if provider == "linear_alkane":
-        return unit
-    return None
-
-
-def window_span(witness, atoms) -> dict:
+def window_span(witness, atoms, providers=None) -> dict:
     """Per participant: the window's backbone extent (atoms) and repeat units,
-    and the physical ends (port keys) inside the window."""
+    and the physical ends (port keys) inside the window.  Backbone indices
+    come from the participant's provider over its own rows
+    (``witness_backbone_indices``)."""
     atoms = set(atoms)
+    rows = witness.reactant_rows()
     out = {}
     for participant in witness.participants:
         meta = participant.metadata
+        provider = provider_object(meta.provider, providers)
+        own = {a: rows[a] for a in participant.atom_ids if a in rows}
+        indices = provider.witness_backbone_indices(own, meta)
         idx, units = [], []
-        for a, u, k in meta.coordinates:
-            if a in atoms:
-                i = backbone_index(meta.provider, u, k)
-                if i is not None:
-                    idx.append(i)
-                    units.append(u)
+        for a, u, _k in meta.coordinates:
+            if a in atoms and a in indices:
+                idx.append(indices[a])
+                units.append(u)
         ends = tuple(sorted(port.port_id for port in meta.ports
                             if not port.artificial and port.atom_id in atoms))
         all_ends = tuple(sorted(port.port_id for port in meta.ports if not port.artificial))
@@ -1638,27 +1833,29 @@ def window_span(witness, atoms) -> dict:
     return out
 
 
-REPEAT_BACKBONE_ATOMS = {"polystyrene": 2, "linear_alkane": 1, "small": 1}   # small: no backbone
-
-
-def repeats_bound(bound: SpanBound, provider: str) -> int:
-    """The bound in the provider's own repeat units: ``A`` backbone atoms touch
-    at most ``ceil((A + k - 1) / k)`` repeats of ``k`` backbone atoms (any
-    phase): PS (k = 2) ``ceil((A + 1) / 2)``, the alkane (k = 1) ``A``."""
-    k = REPEAT_BACKBONE_ATOMS.get(provider)
-    if k is None:
-        raise WindowError(f"no repeat size declared for provider {provider!r}")
+def repeats_bound(bound: SpanBound, provider) -> int:
+    """The bound in the provider's own repeat units (an object or a name):
+    ``A`` backbone atoms touch at most ``ceil((A + k - 1) / k)`` repeats of
+    ``k = coordinate_backbone_atoms`` backbone atoms (any phase).  A provider
+    without a backbone has no bound (refused; ``check_span`` skips it)."""
+    provider = provider_object(provider)
+    k = provider.coordinate_backbone_atoms
+    if not k:
+        raise WindowError(f"refused:span: provider {provider.name!r} has no backbone")
     return -(-(bound.backbone_atoms + k - 1) // k)
 
 
-def check_span(witness, atoms, bound: SpanBound) -> dict:
+def check_span(witness, atoms, bound: SpanBound, providers=None) -> dict:
     """``window_span`` with the bound verdict; raises ``SpanBoundError`` when
     a participant's window exceeds the bound: backbone atoms against ``A``,
     repeat units against ``repeats_bound`` in that participant's provider
     units."""
-    span = window_span(witness, atoms)
+    span = window_span(witness, atoms, providers)
     for index, s in span.items():
-        limit = repeats_bound(bound, s["provider"])
+        provider = provider_object(s["provider"], providers)
+        if not provider.coordinate_backbone_atoms:
+            continue    # no backbone (a small species): nothing to bound
+        limit = repeats_bound(bound, provider)
         if s["backbone_atoms"] > bound.backbone_atoms or s["units"] > limit:
             raise SpanBoundError(f"{bound.family}: participant {index} ({s['provider']}) window "
                                  f"spans {s['backbone_atoms']} backbone atoms / {s['units']} "
@@ -1701,12 +1898,13 @@ LONG_UNITS = 4
 PARTICIPANT_KINDS = ("alkene", "closed", "radical")
 
 
-def kind_specs(kind: str, dp: int) -> tuple:
+def kind_specs(kind: str, dp: int, provider=None) -> tuple:
     """Representative chains of one participant kind at DP ``dp`` (physical
     ends): ``radical`` a benzylic or a primary end radical, ``closed`` the
     saturated chain, ``alkene`` a vinylidene or a styryl end; at DP 1 also the
     one-carbon species of the kind (benzyl and methyl radicals; toluene and
-    methane)."""
+    methane).  A declared ``provider`` is refused (``_roster_guard``)."""
+    _roster_guard(provider)
     S = b.PsChainSpec
     if kind == "radical":
         out = [S(dp, head_end="methyl", tail_end="benzylic_radical"),
@@ -1737,15 +1935,18 @@ LONG_SPECS = {"closed": lambda: (b.PsChainSpec(LONG_UNITS),),
                                   b.PsChainSpec(LONG_UNITS,
                                                 secondary_radical_units=(LONG_UNITS // 2,))),
               "alkene": lambda: (b.PsChainSpec(LONG_UNITS, head_end="vinylidene"),)}
+# each entry refuses a declared provider (``_roster_guard``)
+LONG_SPECS = {kind: _roster_entry(make) for kind, make in LONG_SPECS.items()}
 
 
-def pair_roster(certifier, family, probe_dps=(2, 3)) -> tuple:
+def pair_roster(certifier, family, probe_dps=(2, 3), provider=None) -> tuple:
     """The participant-kind combinations a bimolecular direction needs, from
     the family's own reactant templates: RMG applies them (``member_cases``,
     both slot orders) to the representative chains of every kind pair at the
     probe DPs; a pair is in the roster of that direction iff some member has
     every species in the declared domain.  ((direction, (kind, kind)), ...),
-    kinds sorted."""
+    kinds sorted.  A declared ``provider`` is refused."""
+    _roster_guard(provider)
     from itertools import combinations_with_replacement
     constants = family_constants(family)
     P = b.PROVIDERS["polystyrene"]
@@ -1928,11 +2129,12 @@ def _end_is_radical(end) -> bool:
     return any(k in RADICAL_SITES for k in END_SITE_KINDS[end])
 
 
-def participant_patterns() -> tuple:
+def participant_patterns(provider=None) -> tuple:
     """Every declared participant pattern: chains with any two declared end
     groups and up to ``MAX_RADICAL_SITES`` radical sites in total (radical ends
     plus interior radicals of each interior kind), the one-carbon species and
-    the small species."""
+    the small species.  A declared ``provider`` is refused."""
+    _roster_guard(provider)
     declared_site_kinds()       # every declared key is mapped
     ends = sorted(dom.END_GROUPS)
     out = []
@@ -1968,7 +2170,9 @@ def _chain_spec(head, tail, n, **interior):
 
 def _realizes(pattern, spec) -> bool:
     """The spec builds an in-domain chain whose end groups and radical kinds
-    are the pattern's (``domain.check``'s own reading)."""
+    are the pattern's (``domain.check``'s own reading).  A declared spec is
+    refused."""
+    _roster_guard(spec)
     try:
         build = b.PROVIDERS["polystyrene"].build("pattern", spec)
     except b.BoundaryError:
@@ -1993,14 +2197,15 @@ def _backbone_position(spec, unit, position) -> int:
 _PATTERN_SPECS = {}
 
 
-def pattern_specs(pattern, dp: int) -> tuple:
+def pattern_specs(pattern, dp: int, provider=None) -> tuple:
     """The canonical specs realizing ``pattern`` at DP ``dp`` (constructible and
     accepted by ``domain.check`` with the pattern's ends and radical kinds).
     A chain's first end group sits at the head; interior radicals take the
     in-domain placements nearest the head and nearest the tail (two radicals:
     the first as near the head, the second as near the tail as the domain
     allows, both kind orders), so the free stretch beside each feature is as
-    long as the DP allows."""
+    long as the DP allows.  A declared ``provider`` is refused."""
+    _roster_guard(provider)
     key = (pattern, dp)
     if key not in _PATTERN_SPECS:
         _PATTERN_SPECS[key] = _pattern_specs(pattern, dp)
@@ -2058,6 +2263,11 @@ def pattern_min_dp(pattern, limit: int = PATTERN_DP_LIMIT) -> Optional[int]:
 def build_spec(spec, name="p"):
     """A provider build of a spec (``PsChainSpec``, ("alkane", n[, head end,
     tail end]) or ("small", name))."""
+    # every spec is a witness spec first (refused otherwise); a declared spec
+    # builds through its registered provider
+    spec = witness_spec(spec)
+    if isinstance(spec, DeclaredSpec):
+        return b.PROVIDERS[spec.provider].build(name, spec.chain)
     if isinstance(spec, tuple) and spec[0] == "alkane":
         ends = tuple(spec[2:4]) + (None,) * (4 - len(spec))
         return b.PROVIDERS["linear_alkane"].build(spec[1], head_end=ends[0], tail_end=ends[1])
@@ -2101,7 +2311,9 @@ def site_kind(rows, atom, cyclic=None) -> str:
 
 
 def pattern_site_kinds(pattern, spec) -> frozenset:
-    """Site kinds present on a pattern's spec (ring carbons excluded)."""
+    """Site kinds present on a pattern's spec (ring carbons excluded); a
+    declared spec is refused."""
+    _roster_guard(spec)
     from rmgpy.kmc import rmg_moves as rm
     rows = rm.molecule_rows(build_spec(spec).molecule)
     cyclic = _cyclic_atoms(rows)
@@ -2132,9 +2344,11 @@ class SiteClass:
         return (self.direction, self.slot, self.site, self.pattern)
 
 
-def site_classes(limit: int = PATTERN_DP_LIMIT) -> tuple:
+def site_classes(limit: int = PATTERN_DP_LIMIT, provider=None) -> tuple:
     """The RMG-free class table: every (site kind, pattern) carried by a
-    declared pattern at its smallest constructible in-domain DP."""
+    declared pattern at its smallest constructible in-domain DP.  A declared
+    ``provider`` is refused."""
+    _roster_guard(provider)
     out = []
     for pattern in participant_patterns():
         dp = pattern_min_dp(pattern, limit)
@@ -2315,9 +2529,11 @@ def probe_pattern(certifier, family, pattern, constants: FamilyConstants,
     return tuple(found.values())
 
 
-def class_roster(certifier, family, patterns=None, constants=None) -> tuple:
+def class_roster(certifier, family, patterns=None, constants=None, provider=None) -> tuple:
     """Every site class the family's templates accept per direction and slot
-    (``probe_pattern`` over ``patterns``, default every declared pattern)."""
+    (``probe_pattern`` over ``patterns``, default every declared pattern).  A
+    declared ``provider`` is refused."""
+    _roster_guard(provider)
     constants = constants or family_constants(family)
     partners = probe_partners(certifier, family, constants)
     out = []
@@ -2625,12 +2841,14 @@ def _snapshot(case, row, keep):
 
 
 def close_classes(certifier, family, classes, partner=None, *, bound=None,
-                  providers=None) -> tuple:
+                  providers=None, provider=None) -> tuple:
     """Close every class of ``classes`` (one direction, slot and spec) once
     against ``partner`` ((name, spec) filling the other slot; None in a
     unimolecular direction): RMG's members of the spec (and partner), each
     member whose slot carries a class's site on participant 0 run once
-    (``run_member``, contexts and all).  (closures, rows)."""
+    (``run_member``, contexts and all).  (closures, rows).  A declared
+    ``provider`` (or class or partner spec) is refused."""
+    _roster_guard(provider, *(c.spec for c in classes), partner[1] if partner else None)
     from rmgpy.kmc import channels as chm
     first = classes[0]
     if any((c.direction, c.slot, repr(c.spec)) != (first.direction, first.slot, repr(first.spec))
@@ -2976,7 +3194,8 @@ def closure_gaps(classes, merge, directions=None) -> list:
     return out
 
 
-def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -> LadderPlan:
+def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None,
+                provider=None) -> LadderPlan:
     """The short-chain ladder of a family up to L, plus the DP L + 1 controls:
     intact in-phase chains in every declared end chemistry and the one-carbon
     species (DP 1); scission fragments of both backbone cut phases (phase A:
@@ -2990,7 +3209,8 @@ def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None) -
     other kind's long artificial chain, ``LONG_SPECS``).  Species outside the
     declared domain are excluded with the domain's reason; species built
     twice, and pairs of the same two species, are merged (kinds and
-    directions joined)."""
+    directions joined).  A declared ``provider`` is refused."""
+    _roster_guard(provider)
     bound = bound or span_bound(constants)
     L = bound.L
     if constants.classes is None:
@@ -3599,10 +3819,10 @@ def run_context(certifier, family, case: MemberCase, assignment, *, bound=None,
                     witness, _record = b.extend(witness, port, providers)
                 except b.BoundaryError:
                     break
-    observer = MemberObserver(certifier, family, case.direction, wanted)
+    observer = MemberObserver(certifier, family, case.direction, wanted, providers=providers)
     fp = fixed_point(witness, observer, providers, **loop)
     if fp.reached and bound is not None:
-        check_span(fp.witness, fp.window.atoms, bound)
+        check_span(fp.witness, fp.window.atoms, bound, providers)
     return ContextResult(assignment, fp.status, fp.reason, fp.witness, fp.window,
                          fp.observation, fp)
 
@@ -3665,9 +3885,36 @@ def reacting_ports(witness) -> tuple:
 
 
 def builds_of(specs):
-    """Provider builds of witness specs (``PsChainSpec``, ("alkane", n) or
-    ("small", name))."""
+    """Provider builds of witness specs (``build_spec``)."""
+    specs = list(specs)
+    for spec in specs:
+        witness_spec(spec)
     return [build_spec(spec, f"p{k}") for k, spec in enumerate(specs)]
+
+
+def _longer_declared(spec: DeclaredSpec, head: bool, k: int) -> DeclaredSpec:
+    """A declared chain ``k`` periods longer at one end: a head move shifts
+    every edit's unit (and a bond edit's other unit) by ``k`` and prepends
+    ``k`` copies of the first orientation; a tail move appends ``k`` copies of
+    the last.  An end cut at a phase cannot move (``ExtensionRefused``)."""
+    from dataclasses import replace
+    chain = spec.chain
+    phase = chain.head_phase if head else chain.tail_phase
+    if phase:
+        raise b.ExtensionRefused(f"the {'head' if head else 'tail'} of {spec.provider} is cut "
+                                 f"at phase {phase}: no whole period to move")
+    orientation = chain.orientation
+    edits = chain.edits
+    if head:
+        if orientation:
+            orientation = (orientation[0],) * k + orientation
+        edits = tuple(replace(e, unit=e.unit + k,
+                              other=None if e.other is None else (e.other[0] + k, e.other[1]))
+                      for e in edits)
+    elif orientation:
+        orientation = orientation + (orientation[-1],) * k
+    return DeclaredSpec(spec.provider, replace(chain, units=chain.units + k,
+                                               orientation=orientation, edits=edits))
 
 
 def longer_specs(specs, ports, k: int = 1):
@@ -3676,9 +3923,16 @@ def longer_specs(specs, ports, k: int = 1):
     interior), and the unit shift of each participant's old coordinates."""
     from dataclasses import replace
     specs, shift = list(specs), defaultdict(int)
+    for spec in specs:
+        witness_spec(spec)
     for index, port_id in ports:
         spec = specs[index]
         head = port_id == "head"
+        if isinstance(spec, DeclaredSpec):
+            specs[index] = _longer_declared(spec, head, k)
+            if head:
+                shift[index] += k
+            continue
         if isinstance(spec, tuple) and spec[0] == "alkane":
             specs[index] = ("alkane", spec[1] + k) + tuple(spec[2:])
         else:
@@ -3707,6 +3961,13 @@ def event_specs(specs, assignment):
         if choice == INTERIOR:
             continue
         spec = longer[index]
+        if isinstance(spec, DeclaredSpec):
+            # a declared chain sets its head / tail end kind; its edits are kept
+            if choice not in dc.END_KINDS or choice == "artificial":
+                return None, shift
+            longer[index] = DeclaredSpec(spec.provider, replace(
+                spec.chain, **{"head" if port_id == "head" else "tail": choice}))
+            continue
         if isinstance(spec, tuple) and spec[0] == "alkane":
             ends = list(spec[2:4]) + [None] * (4 - len(spec))
             ends[0 if port_id == "head" else 1] = choice
@@ -3962,7 +4223,8 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
     if why:
         out.update(status="refused:domain", reason=why)
         return out
-    observer = MemberObserver(certifier, family, case.direction, case.wanted)
+    observer = MemberObserver(certifier, family, case.direction, case.wanted,
+                              providers=providers)
     fp = fixed_point(case.witness, observer, providers, **loop)
     if keep is not None:       # the class closings keep the fixed point (``close_classes``)
         keep.append(fp)
@@ -3982,10 +4244,10 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
     out["window_heavy"] = sum(1 for a in window.atoms if fp.witness.reactant_rows()[a][0] != "H")
     out["boundary_bond_problems"] = boundary_bond_problems(fp.witness, window)
     out["mapping_problems"] = mapping_problems(case, window.atoms)
-    span = window_span(fp.witness, window.atoms)
+    span = window_span(fp.witness, window.atoms, providers)
     out["span"] = {str(k): v for k, v in span.items()}
     if bound is not None:
-        check_span(fp.witness, window.atoms, bound)
+        check_span(fp.witness, window.atoms, bound, providers)
         out["span_bound_held"] = True
     out["dispositions"] = sorted({(str(k[0]), d) for k, d, _a in window.support.dispositions})
     out["diagnostics"] = diagnostics(fp.witness, window.atoms)
@@ -4018,7 +4280,7 @@ def _contexts(out, certifier, family, case, fp, bound, providers, loop, contexts
                                                **loop)
         results = [done[a] for a in assignments]
         far = [p for p in ports if p not in near]
-        verdicts = far_port_verdicts(results, far)
+        verdicts = far_port_verdicts(results, far, providers, witness=case.witness)
         more = far_port_promotions(verdicts)
         if not more:
             break
@@ -4035,7 +4297,8 @@ def _contexts(out, certifier, family, case, fp, bound, providers, loop, contexts
     merged = {j for _i, j in merges}
     rows = []
     for k, r in enumerate(results):
-        span = window_span(r.witness, r.window.atoms) if r.window and r.status == "fixed_point" \
+        span = window_span(r.witness, r.window.atoms, providers) \
+            if r.window and r.status == "fixed_point" \
             else None
         rows.append({"assignment": [[list(p), e] for p, e in r.assignment if e],
                      "status": r.status, "reason": r.reason[:200],

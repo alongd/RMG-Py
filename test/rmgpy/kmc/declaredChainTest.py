@@ -572,7 +572,7 @@ def test_declared_end_edit_equals_the_declared_build(pp):
     assert built.port((0, "tail")).physicality == "physical"
     direct = sup.identity_witness(pp.build("d", dc.ChainSpec(3, tail="declared")))
     assert sup.witnesses_match(direct, built)
-    assert b.end_chemistries(open_, (0, "head")) == ("declared",)
+    assert b.end_chemistries(open_, (0, "head")) == ("declared", "radical")
 
 
 # --------------------------------------------------------------------------

@@ -930,9 +930,17 @@ class DeclaredChainProvider(BoundaryProvider):
         self.spec = spec
         self.geometry = ChainGeometry.of(spec)
         self.name = "declared:" + _canonical_digest(spec)[:16]
-        self.END_CHEMISTRIES = {"backbone_head": ("declared",),
-                                "backbone_tail": ("declared",)}
+        self.END_CHEMISTRIES = {"backbone_head": ("declared", "radical"),
+                                "backbone_tail": ("declared", "radical")}
         PROVIDERS[self.name] = self
+
+    RADICAL_END_CHEMISTRIES = ("radical",)
+
+    @property
+    def coordinate_backbone_atoms(self) -> int:
+        """Backbone atoms per coordinate unit: one primitive period (never
+        ``d_rep``)."""
+        return self.geometry.period
 
     # -- derived quantities --------------------------------------------------
     @property
@@ -983,28 +991,42 @@ class DeclaredChainProvider(BoundaryProvider):
         return unit * g.period + offset
 
     @staticmethod
-    def _built_path(build):
+    def _path_over_rows(rows, metadata):
         """(distances from the head port, from the tail port, span) over the
-        heavy atoms of a built chain."""
-        from rmgpy.kmc.boundaries import rows_of_molecule
-
-        rows = dict(rows_of_molecule(build.molecule))
-        heavy = {a: [c for c, _o in row[5] if rows[c][0] != "H"]
+        heavy atoms of ``rows`` (one participant)."""
+        heavy = {a: [c for c, _o in row[5] if c in rows and rows[c][0] != "H"]
                  for a, row in rows.items() if row[0] != "H"}
-        head = build.metadata.port("head").atom_id
-        tail = build.metadata.port("tail").atom_id
+        head = metadata.port("head").atom_id
+        tail = metadata.port("tail").atom_id
         from_head, from_tail = _bfs(heavy, head), _bfs(heavy, tail)
+        if tail not in from_head:
+            raise MetadataError("the head and tail ports are not connected")
         return from_head, from_tail, from_head[tail]
 
+    @classmethod
+    def _built_path(cls, build):
+        from rmgpy.kmc.boundaries import rows_of_molecule
+
+        return cls._path_over_rows(dict(rows_of_molecule(build.molecule)), build.metadata)
+
     def backbone_indices(self, build: ProxyBuild) -> dict:
+        """Atom id -> backbone index on the BUILT chain
+        (``witness_backbone_indices`` over its rows)."""
+        from rmgpy.kmc.boundaries import rows_of_molecule
+
+        return self.witness_backbone_indices(dict(rows_of_molecule(build.molecule)),
+                                             build.metadata)
+
+    def witness_backbone_indices(self, rows, metadata: BoundaryMetadata) -> dict:
         """Atom id -> backbone index for the heavy atoms on a shortest
-        head-port -> tail-port path of the BUILT chain (edits included: a
-        deletion reroutes it): the head port's pristine index plus the
-        distance from the head port.  Consecutive along the path; atoms off
-        every shortest path have no entry."""
-        from_head, from_tail, span = self._built_path(build)
-        head = build.metadata.port("head").atom_id
-        base = self.backbone_index(*build.metadata.coordinate(head)) or 0
+        head-port -> tail-port path of the participant's actual graph
+        (``rows``: edits and extensions included; a deletion reroutes it): the
+        head port's pristine index plus the distance from the head port.
+        Consecutive along the path; atoms off every shortest path have no
+        entry."""
+        from_head, from_tail, span = self._path_over_rows(rows, metadata)
+        head = metadata.port("head").atom_id
+        base = self.backbone_index(*metadata.coordinate(head)) or 0
         return {a: base + d for a, d in from_head.items()
                 if a in from_tail and d + from_tail[a] == span}
 
@@ -1012,6 +1034,33 @@ class DeclaredChainProvider(BoundaryProvider):
         """Heavy atoms on the shortest head-port -> tail-port path of the built
         chain (the path ``backbone_indices`` indexes)."""
         return self._built_path(self.build("backbone", chain))[2] + 1
+
+    def interior_atoms_rmg(self) -> list:
+        """Perceived RMG atoms of the middle period of a 3-period artificial
+        chain: its heavy atoms and their hydrogens."""
+        build = self.build("interior", ChainSpec(3))
+        molecule = build.molecule
+        molecule.update()
+        middle = {a for a, u, _k in build.metadata.coordinates if u == 1}
+        atoms = [a for a in molecule.atoms if a.id in middle]
+        return atoms + [h for a in atoms for h in a.bonds if h.is_hydrogen()]
+
+    def probe_ports(self) -> tuple:
+        """(port, coordinate) of the head and tail ports of a 2-period
+        artificial chain."""
+        build = self.build("probe", ChainSpec(2))
+        return tuple((port, build.metadata.coordinate(port.atom_id))
+                     for port in build.metadata.ports)
+
+    def unit_formula(self) -> tuple:
+        """One primitive period's atoms and their hydrogens, from the
+        declaration: ((element, count), ...) sorted."""
+        counts = {}
+        for atom in self.geometry.atoms.values():
+            counts[atom.element] = counts.get(atom.element, 0) + 1
+            if atom.hydrogens:
+                counts["H"] = counts.get("H", 0) + atom.hydrogens
+        return tuple(sorted(counts.items()))
 
     def interior_unit_atoms(self) -> tuple:
         """(position, key) of the heavy atoms of one primitive period."""
@@ -1243,13 +1292,19 @@ class DeclaredChainProvider(BoundaryProvider):
 
     def end_edit(self, metadata: BoundaryMetadata, port: Port, end: str, rows,
                  protected) -> EndEdit:
-        """The declared end group of the port's side at an artificial port:
-        its caps are deleted and the whole end-group graph is attached (heavy
-        atoms with coordinates (port unit -/+ 1, position in the group's
-        sorted keys), exactly as a declared build places them)."""
+        """An end at an artificial port, exactly as a build with that end:
+        ``"declared"`` deletes the caps and attaches the whole end-group graph
+        of the port's side (heavy atoms with coordinates (port unit -/+ 1,
+        position in the group's sorted keys)); ``"radical"`` deletes the caps
+        and puts their electrons on the port atom."""
         if end not in self.END_CHEMISTRIES.get(port.tag, ()):
             raise ExtensionRefused(f"{self.name}: {end!r} is not a declared end of a "
                                    f"{port.tag} port")
+        if end in self.RADICAL_END_CHEMISTRIES:
+            # the radical end: the caps go and the port atom keeps their
+            # electrons, as ``build`` with ``head``/``tail`` "radical"
+            return EndEdit(end, tuple(port.cap_atom_ids),
+                           radicals=((port.atom_id, len(port.cap_atom_ids)),))
         side = "head" if port.tag == "backbone_head" else "tail"
         group = self.spec.head_end_group if side == "head" else self.spec.tail_end_group
         (_name_, group_port), = group.ports

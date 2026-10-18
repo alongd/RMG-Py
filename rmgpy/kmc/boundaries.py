@@ -264,15 +264,56 @@ class Fragment:
 
 class BoundaryProvider:
     """One polymer chemistry: build proxies with metadata; extend one
-    artificial port by one repeat (``fragment``)."""
+    artificial port by one repeat (``fragment``).
+
+    The window machinery (``windows``) reads a provider only through this
+    interface (I-165): ``coordinate_backbone_atoms`` (backbone atoms per
+    coordinate unit; None: no backbone, no span check), ``backbone_index`` /
+    ``witness_backbone_indices`` (backbone positions of a participant),
+    ``RADICAL_END_CHEMISTRIES`` (the end chemistries that put an unpaired
+    electron on the port atom), ``interior_atoms_rmg`` (perceived RMG atoms
+    of an interior repeat, hydrogens included), ``probe_ports`` (port and
+    coordinate pairs whose fragments give the extension facts) and
+    ``unit_formula`` (the depository growth unit; None: no chain)."""
 
     name = "abstract"
+    coordinate_backbone_atoms: Optional[int] = None
+    RADICAL_END_CHEMISTRIES: tuple = ()
 
     def build(self, *args, **kwargs) -> ProxyBuild:  # pragma: no cover - interface
         raise NotImplementedError
 
     def fragment(self, port: Port, coordinate: tuple[int, int]) -> Fragment:  # pragma: no cover
         raise NotImplementedError
+
+    def backbone_index(self, unit: int, position: int) -> Optional[int]:
+        return None
+
+    def witness_backbone_indices(self, rows, metadata: BoundaryMetadata) -> dict:
+        """Atom id -> backbone index of the participant's atoms in ``rows``
+        (by repeat coordinate: ``backbone_index``)."""
+        out = {}
+        for a, unit, position in metadata.coordinates:
+            if a in rows:
+                index = self.backbone_index(unit, position)
+                if index is not None:
+                    out[a] = index
+        return out
+
+    def interior_atoms_rmg(self) -> list:
+        return []
+
+    def probe_ports(self) -> tuple:
+        return ()
+
+    def unit_formula(self) -> Optional[tuple]:
+        return None
+
+
+# the two extension probes of the named providers: a tail port on unit 0
+# position 1 and a head port on unit 0 position 0 (``windows`` facts)
+LEGACY_PROBE_PORTS = ((Port("p", 0, (1,), "backbone_tail", "artificial"), (0, 1)),
+                      (Port("p", 0, (1,), "backbone_head", "artificial"), (0, 0)))
 
 
 # ---------------------------------------------------------------------------
@@ -1475,6 +1516,31 @@ class PolystyreneProvider(BoundaryProvider):
     name = "polystyrene"
     # declared end chemistries per port tag (additive, I-137)
     END_CHEMISTRIES = {"backbone_head": HEAD_ENDS, "backbone_tail": TAIL_ENDS}
+    RADICAL_END_CHEMISTRIES = RADICAL_ENDS
+    coordinate_backbone_atoms = 2      # backbone CH2 (position 0) and CH(Ph) (1)
+
+    def backbone_index(self, unit: int, position: int) -> Optional[int]:
+        return 2 * unit + position if position in (0, 1) else None
+
+    def interior_atoms_rmg(self) -> list:
+        """RMG atoms (atom types perceived) of unit 1 of a pristine DP3 and
+        their H."""
+        build = self.build("interior", PsChainSpec(3))
+        coords = {a: (u, k) for a, u, k in build.metadata.coordinates}
+        heavy = {a for a, (u, _k) in coords.items() if u == 1}
+        atoms = [a for a in build.molecule.atoms if a.id in heavy]
+        return atoms + [h for a in atoms for h in a.bonds if h.is_hydrogen()]
+
+    def probe_ports(self) -> tuple:
+        return LEGACY_PROBE_PORTS
+
+    def unit_formula(self) -> tuple:
+        return (("C", 8), ("H", 8))
+
+    @staticmethod
+    def normalize_spec(spec):
+        """The spec if it is this provider's (a ``PsChainSpec``), else None."""
+        return spec if isinstance(spec, PsChainSpec) else None
 
     @staticmethod
     def declared_layout(spec: PsChainSpec):
@@ -1692,6 +1758,36 @@ class LinearAlkaneProvider(BoundaryProvider):
     # chain)
     END_CHEMISTRIES = {"backbone_head": ("methyl", "primary_radical"),
                        "backbone_tail": ("methyl", "primary_radical")}
+    RADICAL_END_CHEMISTRIES = ("primary_radical",)
+    coordinate_backbone_atoms = 1      # the one-carbon repeat (``fragment``)
+
+    def backbone_index(self, unit: int, position: int) -> Optional[int]:
+        return unit
+
+    def interior_atoms_rmg(self) -> list:
+        """RMG atoms (atom types perceived) of carbon 2 of a C5 and its H."""
+        build = self.build(5)
+        atoms = [a for a in build.molecule.atoms if a.id in {2}]
+        return atoms + [h for a in atoms for h in a.bonds if h.is_hydrogen()]
+
+    def probe_ports(self) -> tuple:
+        return LEGACY_PROBE_PORTS
+
+    def unit_formula(self) -> tuple:
+        return (("C", 1), ("H", 2))
+
+    @staticmethod
+    def normalize_spec(spec):
+        """("alkane", n, head end, tail end) of an ("alkane", n[, head[, tail]])
+        spec; None for another shape; ValueError for a malformed one (an
+        interior-radical 5-tuple included: never built closed)."""
+        if not isinstance(spec, tuple) or not spec or spec[0] != "alkane":
+            return None
+        if not 2 <= len(spec) <= 4:
+            raise ValueError(f"an alkane spec has 2 to 4 entries, got {len(spec)}: {spec!r}")
+        if isinstance(spec[1], bool) or not isinstance(spec[1], int):
+            raise ValueError(f"an alkane spec needs an integer carbon count: {spec!r}")
+        return ("alkane", spec[1]) + tuple(spec[2:]) + (None,) * (4 - len(spec))
 
     def end_edit(self, metadata: BoundaryMetadata, port: Port, end: str, rows,
                  protected) -> EndEdit:
@@ -1758,6 +1854,10 @@ PROVIDERS = {
     PolystyreneProvider.name: PolystyreneProvider(),
     LinearAlkaneProvider.name: LinearAlkaneProvider(),
 }
+# the named providers, in registry order: the classifier and fragment-fact
+# providers of a witness without a declared participant (I-165), and the
+# owners of the named spec shapes (``normalize_spec``)
+LEGACY_PROVIDERS = (PROVIDERS[PolystyreneProvider.name], PROVIDERS[LinearAlkaneProvider.name])
 
 
 # ---------------------------------------------------------------------------

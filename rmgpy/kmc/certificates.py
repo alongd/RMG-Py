@@ -796,11 +796,13 @@ class Certifier:
 
     # -- channel ------------------------------------------------------------
     def certify(self, family, reactants, *, pathway=None, products=None, member_labels=None,
-                channel_set=None, species=None) -> dict:
+                channel_set=None, species=None, repeat=None) -> dict:
         """Certificate of the forward (family-template direction) channel(s) on
         ``reactants`` selected by ``pathway`` + product ``products`` (species
         keys), or by ``member_labels`` (a set of frozensets of (label, atom id):
-        every channel with a member one of whose mappings has those labels)."""
+        every channel with a member one of whose mappings has those labels).
+        ``repeat``: the growth unit of ``depository_exclusion`` (element,
+        count) pairs; None keeps ``REPEAT_UNIT_FORMULA``."""
         species = species or chm.SpeciesKeys()
         given = list(reactants) if channel_set is None else list(channel_set.reactants)
         input_refusals = []
@@ -834,7 +836,8 @@ class Certifier:
         if not chosen:
             cert["gaps"].append("no channel on the witness matches the selector")
         for ch in chosen:
-            cert["channels"].append(self._channel(family, channel_set, ch, cert, species))
+            cert["channels"].append(self._channel(family, channel_set, ch, cert, species,
+                                                  repeat=repeat))
         cert["global_guards"] = _global_guards(cert)
         cert["gaps"].extend(completeness_gaps(cert))
         cert["complete"] = not cert["gaps"]
@@ -869,7 +872,7 @@ class Certifier:
             by_outcome[rm.product_key(m)].append(m)
         return {o: sorted(v, key=rm.Move.sort_key) for o, v in by_outcome.items()}
 
-    def _channel(self, family, channel_set, ch, cert, species):
+    def _channel(self, family, channel_set, ch, cert, species, repeat=None):
         out = {"direction": ch.direction, "pathway": list(ch.pathway), "kind": ch.kind,
                "reactants": list(ch.reactants), "products": list(ch.products),
                "size": ch.size, "mappings": list(ch.mappings), "support": ch.support,
@@ -939,8 +942,9 @@ class Certifier:
         else:
             out["whole_species"] = False
             out["support_scope"] = TREE
-            out["depository_exclusion"] = depository_exclusion(family, reactants, products,
-                                                                cache=self.cache)
+            out["depository_exclusion"] = depository_exclusion(
+                family, reactants, products, cache=self.cache,
+                repeat=REPEAT_UNIT_FORMULA if repeat is None else repeat)
             try:
                 kind, sel = self._tree_selection(family, ch)
                 out["source_kind"], out["selection"] = kind, sel
@@ -1242,7 +1246,7 @@ class Certifier:
         return self.recertify_certificate(self.families[record["family"]], old["certificate"],
                                           witness, atom_map)
 
-    def recertify_certificate(self, family, old_cert, witness, atom_map) -> dict:
+    def recertify_certificate(self, family, old_cert, witness, atom_map, repeat=None) -> dict:
         """Regenerate the mapped reaction on ``witness``, re-run the selection
         and compare through the map.
 
@@ -1256,7 +1260,8 @@ class Certifier:
         Otherwise ``compare_certificates``: ``same_selection`` (every
         certified mapping, by its full identity, has the same selection and
         descent verdicts), ``same_support`` (the transported support is
-        equal) and ``fixed_point`` (both)."""
+        equal) and ``fixed_point`` (both).  ``repeat``: the new certificate's
+        depository growth unit (``certify``)."""
         transport = {int(k): int(v) for k, v in atom_map.items()}
         refusals = old_certificate_refusals(old_cert)
         if refusals:
@@ -1269,7 +1274,7 @@ class Certifier:
             for mem in ch.get("members", []):
                 for mp in mem["mappings"]:
                     wanted.add(frozenset((lab, transport[a]) for _s, lab, a in mp["labels"]))
-        new = self.certify(family, witness, member_labels=wanted)
+        new = self.certify(family, witness, member_labels=wanted, repeat=repeat)
         refusals = [f"extension: {r}" for r in old_certificate_refusals(new)]
         comparison = compare_certificates(old_cert, new, transport)
         if refusals:

@@ -335,7 +335,7 @@ def test_pp_interior_atoms(pp):
     heavy = [a for a in atoms if not a.is_hydrogen()]
     assert _types(heavy) == ["Cs", "Cs", "Cs"]
     assert sorted(sum(1 for n in a.bonds if n.is_hydrogen()) for a in heavy) == [1, 2, 3]
-    assert _types([a for a in atoms if a.is_hydrogen()]) == ["H"] * 6
+    assert _types([a for a in atoms if a.is_hydrogen()]) == ["H0"] * 6    # RMG perceives a bonded neutral H as H0
     alkane = b.PROVIDERS["linear_alkane"].interior_atoms_rmg()
     assert _types(alkane) == _types(win._interior_unit_atoms("linear_alkane"))
 

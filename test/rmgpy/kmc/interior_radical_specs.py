@@ -60,7 +60,10 @@ def install():
         return _ORIGINAL["build_spec"](spec, name)
 
     def longer_specs(specs, ports, k=1):
-        out, shift = _ORIGINAL["longer_specs"](specs, ports, k)
+        # the window functions refuse the 5-tuple (never built closed): move
+        # the chain as a plain alkane and carry the radical unit across
+        plain = [tuple(spec[:4]) if _interior(spec) else spec for spec in specs]
+        out, shift = _ORIGINAL["longer_specs"](plain, ports, k)
         for i, spec in enumerate(specs):
             if _interior(spec):
                 out[i] = tuple(out[i][:4]) + (spec[4] + shift.get(i, 0),)
