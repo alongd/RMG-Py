@@ -1312,6 +1312,11 @@ class TestAuxiliaryRecordsAndHeaders:
         assert repr(short.kinetics) == repr(full.kinetics)
 
 
+# a SITE header whose site density puts a 1 in column 80 (spar r158 item 4)
+SITE_DENSITY_IN_COLUMN_80 = "SITE/SURF/   SDEN/2.7" + "0" * (79 - len("SITE/SURF/   SDEN/2.7")) + "1E-09/"
+assert SITE_DENSITY_IN_COLUMN_80[79] == "1"
+
+
 class TestRecordShapes:
     """A record whose name is both a keyword and a declared species is read by
     its shape; an unknown bare word, values with no name, and an unreadable
@@ -1415,8 +1420,9 @@ class TestRecordShapes:
 
     @pytest.mark.parametrize("thermo_path", [False, True])
     @pytest.mark.parametrize("block", [["REACTIONS    KCAL/MOLE   MOLES"], ["REAC"], ["SPECIES", "N2", "END"],
-                                       ["ELEMENTS H C N", "END"], ["THERMO", "END"], ["SITE/SURF/", "END"]],
-                             ids=["REACTIONS", "REAC", "SPECIES", "ELEMENTS", "THERMO", "SITE"])
+                                       ["ELEMENTS H C N", "END"], ["THERMO", "END"], ["SITE/SURF/", "END"],
+                                       [SITE_DENSITY_IN_COLUMN_80, "END"]],
+                             ids=["REACTIONS", "REAC", "SPECIES", "ELEMENTS", "THERMO", "SITE", "SITE_column_80"])
     def test_an_unterminated_thermo_block_fails_by_name(self, tmp_path, thermo_path, block):
         """Spar r153 P1: a THERM block without its END, read or skipped for a
         separate thermo file, stops at the next block's header with an
@@ -1560,4 +1566,50 @@ class TestRecordShapes:
             assert [s.label for s in read.reactants] == ["H", "H"] and [s.label for s in read.products] == ["H2"]
             assert read.reversible and read.duplicate == original.duplicate
             assert self._same_kinetics(original.kinetics, read.kinetics), (original.kinetics, read.kinetics)
+
+    # ---- I-177 rework 3 (spar r158) ----
+    SURFACE_UNITS = (['', 's^-1', 'cm^3/(mol*s)', 'cm^6/(mol^2*s)', 'cm^9/(mol^3*s)'],
+                     ['', 's^-1', 'cm^2/(mol*s)', 'cm^4/(mol^2*s)', 'cm^6/(mol^3*s)'])
+
+    @pytest.mark.parametrize("cov_first", [False, True])
+    def test_stick_keeps_the_coverage_of_an_earlier_cov(self, cov_first):
+        """Spar r158 item 1: STICK turns the surface Arrhenius into a sticking
+        coefficient carrying every field earlier records set: COV before
+        STICK keeps its coverage dependence, as after it."""
+        x = Species().from_adjacency_list("1 X u0 p0")
+        hx = Species().from_adjacency_list("1 H u0 p0 {2,S} \n 2 X u0 p0 {1,S}")
+        h2 = Species().from_smiles("[H][H]")
+        species = {"X": x, "H*": hx, "H2": h2}
+        lines = ["    STICK", "    COV / H*    0.5    1.0    1.099 /"]
+        entry = "\n".join(["H2+X+X=H*+H*    4.000e-02 0.000 7.098"] + (lines[::-1] if cov_first else lines))
+        reaction = read_kinetics_entry(entry, species, *self.SURFACE_UNITS, "kcal/mol")
+        assert isinstance(reaction.kinetics, StickingCoefficient)
+        (spc, cov), = reaction.kinetics.coverage_dependence.items()
+        assert spc is hx and cov["a"] == 0.5 and cov["m"] == 1.0
+        assert cov["E"].value_si == pytest.approx(1.099 * 4184.0, rel=1e-12)
+        assert reaction.kinetics.A.value_si == pytest.approx(4.0e-2, rel=1e-12)
+        assert reaction.kinetics.Ea.value_si == pytest.approx(7.098 * 4184.0, rel=1e-12)
+
+    @pytest.mark.parametrize("order", [0, 1])
+    def test_plog_with_an_optional_collider_is_plog_beside_a_species_plog(self, tmp_path, order):
+        """Spar r158 item 2: PLOG on a (+M) reaction (Cantera strips the
+        optional collider) stays PLOG with a species named PLOG declared."""
+        names = dict(self.BASE, PLOG="CC")
+        aux = ["PLOG/1.0 1e13 0 0/", "PLOG/10.0 2e13 0 0/"]
+        _s, (reaction,) = self.load(tmp_path, aux if order == 0 else aux[::-1], names=names)
+        assert type(reaction.kinetics).__name__ == "PDepArrhenius"
+        assert [p for p in reaction.kinetics.pressures.value_si] == pytest.approx([101325.0, 1013250.0])
+
+    CHEB_LINES = ["TCHEB/ 300.0 2000.0 /", "PCHEB/ 0.01 100.0 /", "CHEB/ 2 1 /", "CHEB/ 1.25 /", "CHEB/ 0.5 /"]
+
+    @pytest.mark.parametrize("position", range(6))
+    def test_low_beside_chebyshev_reads_in_every_order(self, tmp_path, position):
+        """Spar r158 item 3: LOW alongside Chebyshev records (the manual
+        allows it) reads in every line order with a species named LOW
+        declared: the reaction is Chebyshev, the LOW record the keyword."""
+        names = dict(self.BASE, LOW="CC")
+        aux = self.CHEB_LINES[:position] + ["LOW/1e24 -2 0/"] + self.CHEB_LINES[position:]
+        _s, (reaction,) = self.load(tmp_path, aux, names=names)
+        assert type(reaction.kinetics).__name__ == "Chebyshev"
+        assert reaction.kinetics.coeffs.value_si.shape == (2, 1)
 
