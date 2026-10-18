@@ -138,9 +138,9 @@ PHI_FALLBACK_LIMIT = 64
 PHI_FALLBACK_CACHE_LIMIT = 256
 PHI_SUM_DEFINITION = (
     "sum of phi over the proposals: the compensator of the accepted count (accepted - phi_sum is a "
-    "zero-mean martingale), so E[accepted] = E[phi_sum] for a run stopped at a fixed horizon; it is not "
-    "the expected number of acceptances given the proposals, and under a stopping rule that depends on "
-    "acceptances (an event cap, stop after the first event) the two expectations differ")
+    "zero-mean martingale), so E[accepted] = E[phi_sum] at any integrable stopping time, a fixed "
+    "horizon and an event cap included (optional stopping); in a single run phi_sum is an estimate "
+    "of that expectation, not the conditional expected number of acceptances given the proposals")
 LEAK_ESTIMATOR = "ratio_of_unbiased_integrals"
 LEAK_DEFINITION = (
     "estimate (ratio_of_unbiased_integrals): leak_num / leak_den; leak_num = int leak hazard dt; "
