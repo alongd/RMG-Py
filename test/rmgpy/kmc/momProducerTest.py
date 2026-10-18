@@ -131,7 +131,7 @@ def family_rows(admitted, label=LABEL):
 def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABEL, end_groups=("[H]", "[H]"),
               mass_override=None, duplicate=None, extra_columns=(), n2=lambda t: 1.0, gas_reactions=(),
               pool_extra=None, proxy_amount=lambda t: 7.0, ea_units="KCAL/MOLE", enthalpy=None, bookkeeping=None,
-              condensed=None, spawned=None):
+              condensed=None, spawned=None, proxy_index=3, proxy_first=False):
     """A MoM output directory under ``out/rmg``.
 
     ``pools``: [(label, f(t) -> (mu0, mu1, mu2), defect_g_mol)]; ``gas``:
@@ -154,22 +154,26 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     conventions.condensed_species is MoM's (every pool's mu-dummies by full
     label and the main proxy) plus ``condensed``; ``bookkeeping``: {pool:
     labels} replacing a pool's bookkeeping species; ``spawned``: the
-    conventions.spawned_pools.  The SPECIES block lists the core in RMG's
-    order: index-less species first, then by index."""
+    conventions.spawned_pools.  The SPECIES block lists the core as RMG's
+    Chemkin writer does: index-less species first, then by index; the
+    profile header in MoM's core order (``proxy_first``: the main proxy,
+    ``label(proxy_index)``, before the gas columns)."""
     rmg = out / "rmg"
     for sub in ("solver", "chemkin"):
         (rmg / sub).mkdir(parents=True, exist_ok=True)
     a, _e = masses()
     moment_ids = {p: [mp.moment_column(f"{p}_mu{k}") for k in range(3)] for p, _f, _d in pools}
-    proxy = f"{label}(3)"
+    proxy = f"{label}({proxy_index})"
     header = ["Time (s)", "Volume (m^3)", "N2"] + [c for p, _f, _d in pools for c in moment_ids[p]] + \
-        [g[0] for g in gas] + [proxy] + list(extra_columns)
+        ([proxy] if proxy_first else []) + [g[0] for g in gas] + ([] if proxy_first else [proxy]) + list(extra_columns)
     table = []
     for t in times:
         row = [t, 1.0, n2(t)]
         for _p, f, _d in pools:
             row += list(f(t))
-        row += [g[2](t) for g in gas] + [proxy_amount(t)] + [0.0] * len(extra_columns)
+        gas_amounts = [g[2](t) for g in gas]
+        row += (([proxy_amount(t)] + gas_amounts) if proxy_first else (gas_amounts + [proxy_amount(t)])) \
+            + [0.0] * len(extra_columns)
         table.append(row)
     if duplicate is not None:
         k, delta = duplicate
@@ -2045,14 +2049,15 @@ def test_collider_efficiencies_are_assigned_over_the_full_core(setup):
     """Spar r142 item 1: the efficiency line gives hexane 0; MoM assigns it to
     the FIRST isomorphic core species (model.pyx 415-421 over the core list,
     polymer_input.py 428-434), the condensed hexane-shaped proxy, so the gas
-    hexane keeps 1: Peff = 1e5 x 1 / (1 + 1) Pa and the row is live."""
+    hexane keeps 1: Peff = 1e5 x 1 / (1 + 1) Pa and the row is live.  (MoM's
+    core order is the profile's: the proxy column comes first.)"""
     proxy = proxy_of()
     row = _row(equation=f"{proxy}(+M)=>{proxy}+X0(+M)", rate=(1.0, 0.0, 0.0),
                aux=["LOW /  1.0 0.0 0.0 /", "N2/0.0/ C6H14(4)/0.0/"], sidecar_kinetics=None)
     out = setup["tmp"] / "out"
     produce(setup, out)
     write_run(out, times=PROFILE_T, pools=[(LABEL, drift(declared(setup["spec"])), 0.0)], rows=[row],
-              gas=ZERO_GAS + [("C6H14(4)", HEXANE, lambda t: 0.0 if t == 0.0 else 1.0)])
+              gas=ZERO_GAS + [("C6H14(4)", HEXANE, lambda t: 0.0 if t == 0.0 else 1.0)], proxy_first=True)
     assert produce(setup, out, mode="convert")["census"]["live_rows"] == ["r0"]
 
 
@@ -2072,3 +2077,83 @@ def test_a_spawned_pools_phase_is_an_ambiguous_gas_mask(setup):
               bookkeeping={DAUGHTER: full}, condensed=full, spawned=[DAUGHTER])
     census = _refused_census(setup, out)
     assert census["zero_rate_rows"] == ["r0"] and "gas mask ambiguous" in census["rate_errors"]["r0"]
+
+
+# --------------------------------------------------------------------------
+# I-176: MoM's core order, reverse-rate ambiguity, the ambiguity cap
+# --------------------------------------------------------------------------
+def test_collider_efficiencies_follow_moms_core_order_not_the_species_block(setup):
+    """I-176 item 1: MoM's core [N2, P(10), C6H14(4)] (the profile's order;
+    RMG's Chemkin writer sorts the SPECIES block by index, C6H14(4) first).
+    The hexane efficiency 0 goes to the first isomorphic core species, the
+    condensed hexane-shaped proxy P(10): the gas hexane keeps 1 and
+    Peff = 5e4 Pa, live."""
+    proxy = f"{LABEL}(10)"
+    row = _row(reactants=[proxy], products=[proxy, "X0"], equation=f"{proxy}(+M)=>{proxy}+X0(+M)",
+               rate=(1.0, 0.0, 0.0), aux=["LOW /  1.0 0.0 0.0 /", "N2/0.0/ C6H14(4)/0.0/"], sidecar_kinetics=None)
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    write_run(out, times=PROFILE_T, pools=[(LABEL, drift(declared(setup["spec"])), 0.0)], rows=[row],
+              gas=ZERO_GAS + [("C6H14(4)", HEXANE, lambda t: 0.0 if t == 0.0 else 1.0)], proxy_index=10,
+              proxy_first=True)
+    assert produce(setup, out, mode="convert")["census"]["live_rows"] == ["r0"]
+
+
+class _Kinetics:
+    """A falloff-like kinetics whose kf is Peff / P (1 at P)."""
+    efficiencies = {"collider": 2.0}
+
+    def is_pressure_dependent(self):
+        return True
+
+    def get_effective_collider_efficiencies(self, species):
+        return [1.0, 2.0]
+
+    def get_rate_coefficient(self, T, P):
+        return P / 1.0e5
+
+
+class _Reaction:
+    kinetics = _Kinetics()
+
+    def __init__(self, keq):
+        self.keq = keq
+
+    def get_equilibrium_constant(self, T):
+        return self.keq
+
+
+def test_a_reverse_rate_the_gas_masks_disagree_on_is_dead_with_the_reason():
+    """I-176 item 2: N2 (efficiency 1) and a spawned pool's species
+    (efficiency 2), one mol each: out of the gas kf = 1, in it kf = 1.5; with
+    Keq = 7e-309 kb = 1.4e308 is finite under one mask and overflows (MoM: kb
+    = 0) under the other.  Forward live; reverse dead, the reason stated."""
+    core = [(0, "N2", "gas", None), (1, "P2(5)", "ambiguous", "P2")]
+    rates = mp.mom_rates([_Reaction(7e-309)], True, 700.0, 1.0e5, core, [[1.0, 1.0]])
+    assert rates["forward"] is True and rates["reverse"] is False
+    assert "gas mask ambiguous" in rates["error"] and "reverse" in rates["error"]
+    rates = mp.mom_rates([_Reaction(1.0)], True, 700.0, 1.0e5, core, [[1.0, 1.0]])
+    assert rates["forward"] is True and rates["reverse"] is True and rates["error"] is None
+
+
+def test_the_ambiguity_cap_counts_spawned_pools_with_a_present_species(setup):
+    """I-176 item 3: three spawned pools (12 bookkeeping columns, their mu
+    dummies and proxies): every efficiency is 1, so every mask gives
+    Peff = P; the ambiguity is three pools, under the cap, and the row is
+    live."""
+    mu = declared(setup["spec"])
+    proxy = proxy_of()
+    row = _row(equation=f"{proxy}(+M)=>{proxy}+X0(+M)", rate=(1.0, 0.0, 0.0), aux=["LOW /  1.0 0.0 0.0 /"],
+               sidecar_kinetics=None)
+    row["aux"] = ["LOW /  1.0 0.0 0.0 /", "X0/1.0/"]             # an efficiency line: MoM's effective pressure
+    daughters = [f"{LABEL}_d{k}_rad_primary_end" for k in range(3)]
+    pools = [(LABEL, drift(mu), 0.0)] + [(d, lambda t: (0.0, 0.0, 0.0) if t == 0.0 else (0.1, 0.5, 4.0), 0.0)
+                                         for d in daughters]
+    gas = ZERO_GAS + [(f"C2H2({5 + k})", RADICAL, lambda t: 0.0 if t == 0.0 else 0.3) for k in range(3)]
+    full = {d: [f"{d}_mu{j}" for j in range(3)] + [f"{d}({5 + k})"] for k, d in enumerate(daughters)}
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    write_run(out, times=PROFILE_T, rows=[row], pools=pools, gas=gas, bookkeeping=full,
+              condensed=[x for v in full.values() for x in v], spawned=daughters)
+    manifest = produce(setup, out, mode="convert")
+    assert manifest["census"]["live_rows"] == ["r0"] and manifest["census"]["rate_errors"] == {}
