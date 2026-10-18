@@ -108,6 +108,7 @@ from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
 
+from rmgpy import species_identity as _species_identity  # one implementation, shared with the kMC producer
 from rmgpy.exceptions import InputError
 from rmgpy.molecule import Atom, Bond, Molecule
 from rmgpy.molecule.atomtype import ATOMTYPES
@@ -8286,23 +8287,8 @@ def species_structure(spc):
         return None
 
 
-def same_structure(first, second):
-    """Whether two species' molecule lists are one species by RMG's own
-    test, the one it merges species by: the same multiplicity, and some
-    molecule of each isomorphic (strict: electrons, charges) to some of the
-    other's, the first species' resonance forms generated when the lists
-    alone do not match (two drawings of one resonance hybrid).  Tautomers
-    are distinct graphs, so never equal.  Any error: not equal."""
-    try:
-        if not first or not second or first[0].multiplicity != second[0].multiplicity:
-            return False
-        if any(a.is_isomorphic(b, strict=True) for a in first for b in second):
-            return True
-        forms = first[0].copy(deep=True).generate_resonance_structures(keep_isomorphic=False)
-        return any(f.multiplicity == b.multiplicity and f.is_isomorphic(b, strict=True)
-                   for f in forms for b in second)
-    except Exception:
-        return False
+# RMG-isomorphism species identity (rmgpy.species_identity), the kMC producer's too
+same_structure = _species_identity.same_structure
 
 
 class _CoreStructure(object):
