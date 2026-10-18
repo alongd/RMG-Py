@@ -424,11 +424,32 @@ def test_neutral_state_table_is_pinned(element):
 
 # (lone pairs, B bonds, single, double, triple bonds, unpaired electrons)
 _RING_ONE = {(0, 2, 1, 0, 0, 0), (0, 2, 0, 0, 0, 1)}
+_RING_RADICAL = {(0, 2, 1, 0, 0, 1)}
 PINNED_AROMATIC = {"Cb": _RING_ONE, "Cbf": {(0, 3, 0, 0, 0, 0)},
                    "Sib": _RING_ONE, "Sibf": {(0, 3, 0, 0, 0, 0)},
-                   "N3b": {(1, 2, 0, 0, 0, 0)}, "N5b": _RING_ONE, "N5bd": {(0, 2, 0, 1, 0, 0)},
-                   "P3b": {(1, 2, 0, 0, 0, 0)}, "P5b": _RING_ONE, "P5bd": {(0, 2, 0, 1, 0, 0)},
-                   "O4b": {(1, 2, 0, 0, 0, 0)}, "S4b": {(1, 2, 0, 0, 0, 0)}}
+                   "N3b": {(1, 2, 0, 0, 0, 0)}, "N5b": _RING_RADICAL,
+                   "N5bd": {(0, 2, 0, 1, 0, 0)},
+                   "P3b": {(1, 2, 0, 0, 0, 0)}, "P5b": _RING_RADICAL,
+                   "P5bd": {(0, 2, 0, 1, 0, 0)}}
+
+
+def _rmg_formal_charge(symbol, state):
+    """RMG's formal charge (``Atom.update_charge``: valence electrons - total
+    bond order - unpaired electrons - 2 lone pairs, a B bond 3/2, or 4/3 on
+    an atom with three) of a ``domain.aromatic_state`` count tuple."""
+    from rmgpy.molecule.element import PeriodicSystem
+    pairs, benzene, single, double, triple, unpaired = state
+    order = benzene * (4 / 3 if benzene == 3 else 3 / 2) + single + 2 * double + 3 * triple
+    return PeriodicSystem.valence_electrons[symbol] - order - unpaired - 2 * pairs
+
+
+def test_every_aromatic_state_is_neutral_by_rmg_arithmetic():
+    """Each type's set is exactly its neutral, charge-consistent states."""
+    from rmgpy.kmc import domain as dom
+    for label, states in dom.AROMATIC_TYPES.items():
+        symbol = label.rstrip("bfd").rstrip("0123456789")
+        for state in states:
+            assert abs(_rmg_formal_charge(symbol, state)) < 1e-9, (label, state)
 
 
 def test_aromatic_state_table_is_pinned():
@@ -571,14 +592,81 @@ def test_aromatic_p_and_n_oxide_states_follow_rmg_types():
     assert not dom.declared_interim_check(m, elements).accepted
 
 
+def _ring_hetero_h(smiles, radical):
+    """``smiles`` aromatic with its ring N or P stripped of the lone pair and
+    given one single-bonded H (two B bonds, one single bond: atom type
+    N5b / P5b), with or without one unpaired electron."""
+    from rmgpy.molecule import Atom, Bond
+    m = _aromatic(smiles)
+    hetero = next(a for a in m.atoms if a.symbol in ("N", "P"))
+    hetero.lone_pairs = 0
+    h = Atom(element="H", radical_electrons=0, lone_pairs=0, charge=0)
+    m.add_atom(h)
+    m.add_bond(Bond(hetero, h, order=1))
+    hetero.radical_electrons = 1 if radical else 0
+    m.update_multiplicity()
+    return m, hetero
+
+
+@pytest.mark.parametrize("smiles", ["c1ccncc1", "c1ccpcc1"])
+def test_ring_n_and_p_with_h_follow_rmg_charge_consistency(smiles):
+    """r134 item 1: N5b / P5b with two B bonds and one H is formally +1 at a
+    stored charge 0 (RMG's ``check_partial_charge`` refuses it); with one
+    unpaired electron it is neutral and accepted."""
+    from rmgpy.molecule.atomtype import get_atomtype
+    from rmgpy.kmc import domain as dom
+    elements = ("C", "H", "N", "P")
+    closed, hetero = _ring_hetero_h(smiles, radical=False)
+    assert get_atomtype(hetero, hetero.edges).label in ("N5b", "P5b")
+    verdict = dom.declared_interim_check(closed, elements)
+    assert not verdict.accepted and "charge" in verdict.reason, verdict.reason
+    radical, _hetero = _ring_hetero_h(smiles, radical=True)
+    verdict = dom.declared_interim_check(radical, elements)
+    assert verdict.accepted, verdict.reason
+
+
+def test_rmg_charge_consistency_guards_a_widened_table(monkeypatch):
+    """The charge-consistency check is RMG's own and independent of the
+    table: widening N5b to the +1 state still refuses it."""
+    from rmgpy.kmc import domain as dom
+    widened = dict(dom.AROMATIC_TYPES)
+    widened["N5b"] = frozenset(widened["N5b"]) | {(0, 2, 1, 0, 0, 0)}
+    monkeypatch.setattr(dom, "AROMATIC_TYPES", widened)
+    closed, _hetero = _ring_hetero_h("c1ccncc1", radical=False)
+    verdict = dom.declared_interim_check(closed, ("C", "H", "N"))
+    assert not verdict.accepted and "charge" in verdict.reason, verdict.reason
+
+
+def test_a_quadruple_bond_on_an_aromatic_atom_is_refused():
+    """r134 item 2: two benzene rings joined by a quadruple bond between
+    H-bearing ring carbons (Cb leaves the quadruple count free)."""
+    from rmgpy.molecule import Bond
+    from rmgpy.kmc import domain as dom
+    first, second = _aromatic("c1ccccc1"), _aromatic("c1ccccc1")
+    joined = first.merge(second)
+    a = joined.atoms[0]
+    b = joined.atoms[len(first.atoms)]
+    assert a.is_carbon() and b.is_carbon()
+    joined.add_bond(Bond(a, b, order=4))
+    joined.update_multiplicity()
+    for k, atom in enumerate(joined.atoms):
+        atom.id = k
+    verdict = dom.declared_interim_check(joined)
+    assert not verdict.accepted
+    assert "bond" in verdict.reason and ("4" in verdict.reason or "quadruple" in verdict.reason)
+
+
 def test_interim_check_reads_aromatic_bonds_as_rmg_does():
     """r126 item 2: a fused aromatic carbon (three B bonds) is a neutral C,
     as RMG reads it (atom type Cbf); the declared vinylnaphthalene chain is
     accepted after the production normalization (``aromatic_root``), as are
-    naphthalene, pyridine, thiophene and furan written aromatic (RMG's types:
-    N3b, S4b, O4b).  A ring carbon over valence in its aromatic form (two B
-    bonds and two H) and one under it (two B bonds, nothing else) are
-    refused."""
+    naphthalene and pyridine (N3b) written aromatic.  Thiophene and furan
+    are accepted in the Kekule form RMG gives them (RMG's resonance never
+    writes a five-membered ring with B bonds); written with B bonds their O
+    and S (types O4b, S4b) fail RMG's charge consistency (formally +1) and
+    are refused, as RMG's adjacency-list reader refuses them.  A ring carbon
+    over valence in its aromatic form (two B bonds and two H) and one under
+    it (two B bonds, nothing else) are refused."""
     import declared_parity_support as sup
     from rmgpy.kmc import certificates as cm
     from rmgpy.kmc import declared_chain as dc
@@ -590,11 +678,18 @@ def test_interim_check_reads_aromatic_bonds_as_rmg_does():
     verdict = win.policy_for(sup.identity_witness(build)).domain.check(root)
     assert verdict.accepted, verdict.reason
     elements = ("C", "H", "N", "O", "S")
-    for smiles in ("c1ccc2ccccc2c1", "c1ccncc1", "c1ccsc1", "c1ccoc1"):
+    for smiles in ("c1ccc2ccccc2c1", "c1ccncc1"):
         molecule = _aromatic(smiles)
         assert sum(bond.order == 1.5 for bond in molecule.get_all_edges()) >= 5, smiles
         verdict = dom.declared_interim_check(molecule, elements)
         assert verdict.accepted, (smiles, verdict.reason)
+    for smiles in ("c1ccsc1", "c1ccoc1"):
+        kekule = _mol(smiles)
+        assert not any(bond.is_benzene() for bond in kekule.get_all_edges())
+        verdict = dom.declared_interim_check(kekule, elements)
+        assert verdict.accepted, (smiles, verdict.reason)
+        verdict = dom.declared_interim_check(_aromatic(smiles), elements)
+        assert not verdict.accepted and "charge" in verdict.reason, (smiles, verdict.reason)
     over = _aromatic("c1ccccc1")
     from rmgpy.molecule import Atom, Bond
     ring_carbon = next(a for a in over.atoms if a.is_carbon())
