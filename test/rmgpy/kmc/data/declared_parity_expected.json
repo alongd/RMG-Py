@@ -1,0 +1,38 @@
+{
+ "c16|R_Recombination|reverse": {
+  "deferred": 0,
+  "guarded": [],
+  "members": 49
+ },
+ "dp4_closed+benzyl|H_Abstraction|forward": {
+  "deferred": 333,
+  "guarded": [],
+  "members": 14
+ },
+ "dp4_headrad+benzyl|Disproportionation|forward": {
+  "deferred": 3,
+  "guarded": [],
+  "members": 4
+ },
+ "dp8_closed|R_Recombination|reverse": {
+  "deferred": 110,
+  "guarded": [],
+  "members": 41
+ },
+ "dp8_headrad|R_Addition_MultipleBond|reverse": {
+  "deferred": 1,
+  "guarded": [],
+  "members": 2
+ },
+ "dp8_headrad|intra_H_migration|forward": {
+  "deferred": 10,
+  "guarded": [],
+  "members": 10
+ },
+ "pp4+h|H_Abstraction|forward": {
+  "deferred": 0,
+  "guarded": [],
+  "members": 26,
+  "note": "declared PP (4 periods, artificial ends) + H: member count only (test 6); not a parity reference"
+ }
+}

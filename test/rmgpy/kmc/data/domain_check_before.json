@@ -1,0 +1,343 @@
+{
+ "1-phenylethyl": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 2,
+   "ends": [
+    "benzylic_radical",
+    "methyl"
+   ],
+   "phenyls": 1,
+   "radical_sites": [
+    [
+     1,
+     "benzylic"
+    ]
+   ]
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "C2H6": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 2,
+   "ends": [
+    "methyl",
+    "methyl"
+   ],
+   "phenyls": 0,
+   "radical_sites": []
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "CH3": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 1,
+   "ends": [
+    "methyl_radical"
+   ],
+   "phenyls": 0,
+   "radical_sites": [
+    [
+     0,
+     "methyl"
+    ]
+   ]
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "CH4": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 1,
+   "ends": [
+    "methane"
+   ],
+   "phenyls": 0,
+   "radical_sites": []
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "DP3 closed": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 6,
+   "ends": [
+    "benzyl",
+    "methyl"
+   ],
+   "phenyls": 3,
+   "radical_sites": []
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "DP3 radical": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 6,
+   "ends": [
+    "benzylic_radical",
+    "methyl"
+   ],
+   "phenyls": 3,
+   "radical_sites": [
+    [
+     36,
+     "benzylic"
+    ]
+   ]
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "DP4": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 8,
+   "ends": [
+    "benzyl",
+    "methyl"
+   ],
+   "phenyls": 4,
+   "radical_sites": []
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "DP8 closed": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 16,
+   "ends": [
+    "benzyl",
+    "methyl"
+   ],
+   "phenyls": 8,
+   "radical_sites": []
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "DP8 head radical": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 16,
+   "ends": [
+    "benzyl",
+    "primary_radical"
+   ],
+   "phenyls": 8,
+   "radical_sites": [
+    [
+     0,
+     "primary_end"
+    ]
+   ]
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "H": {
+  "accepted": true,
+  "details": {
+   "radical_sites": [
+    [
+     37,
+     "h_atom"
+    ]
+   ]
+  },
+  "kind": "small:H",
+  "reason": ""
+ },
+ "H2": {
+  "accepted": true,
+  "details": {},
+  "kind": "small:H2",
+  "reason": ""
+ },
+ "Kekule DP2": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 4,
+   "ends": [
+    "benzyl",
+    "methyl"
+   ],
+   "phenyls": 2,
+   "radical_sites": []
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "refused: allylic radical": {
+  "accepted": false,
+  "details": {},
+  "kind": "refused",
+  "reason": "an allylic radical (next to a chain-end double bond)"
+ },
+ "refused: aryl radical on a chain": {
+  "accepted": false,
+  "details": {},
+  "kind": "refused",
+  "reason": "a radical on a ring carbon in the most aromatic form"
+ },
+ "refused: branched": {
+  "accepted": false,
+  "details": {},
+  "kind": "refused",
+  "reason": "a branched backbone (a carbon with three backbone neighbours)"
+ },
+ "refused: carbene": {
+  "accepted": false,
+  "details": {},
+  "kind": "refused",
+  "reason": "an atom with two unpaired electrons (u2)"
+ },
+ "refused: internal unsaturation": {
+  "accepted": false,
+  "details": {},
+  "kind": "refused",
+  "reason": "backbone unsaturation away from a chain end"
+ },
+ "refused: naphthyl": {
+  "accepted": false,
+  "details": {},
+  "kind": "refused",
+  "reason": "a ring that is not a monosubstituted phenyl"
+ },
+ "refused: oxygen": {
+  "accepted": false,
+  "details": {},
+  "kind": "refused",
+  "reason": "an element other than C and H"
+ },
+ "refused: phenyl radical": {
+  "accepted": false,
+  "details": {},
+  "kind": "refused",
+  "reason": "a radical on a ring carbon in the most aromatic form"
+ },
+ "refused: radicals two bonds apart": {
+  "accepted": false,
+  "details": {},
+  "kind": "refused",
+  "reason": "separated-radical policy: radical pi systems 2 heavy bonds apart (must be > 4)"
+ },
+ "refused: three radicals": {
+  "accepted": false,
+  "details": {},
+  "kind": "refused",
+  "reason": "3 radical sites (at most 2 per chain)"
+ },
+ "refused: two phenyls on one carbon": {
+  "accepted": false,
+  "details": {},
+  "kind": "refused",
+  "reason": "two phenyls on one backbone carbon"
+ },
+ "secondary backbone radical": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 5,
+   "ends": [
+    "methyl",
+    "methyl"
+   ],
+   "phenyls": 2,
+   "radical_sites": [
+    [
+     8,
+     "secondary_backbone"
+    ]
+   ]
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "singlet biradical": {
+  "accepted": false,
+  "details": {
+   "multiplicity": 1
+  },
+  "kind": "refused",
+  "reason": "multiplicity convention violated: multiplicity 1 with 2 unpaired electrons (declared: maximum, 3)"
+ },
+ "styrene": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 2,
+   "ends": [
+    "styryl",
+    "vinylidene"
+   ],
+   "phenyls": 1,
+   "radical_sites": []
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "styryl end": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 5,
+   "ends": [
+    "methyl",
+    "styryl"
+   ],
+   "phenyls": 2,
+   "radical_sites": []
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "styryl with a second phenyl": {
+  "accepted": false,
+  "details": {},
+  "kind": "refused",
+  "reason": "an undeclared chain-end group at a backbone terminus"
+ },
+ "two far benzylic radicals": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 9,
+   "ends": [
+    "methyl",
+    "methyl"
+   ],
+   "phenyls": 4,
+   "radical_sites": [
+    [
+     1,
+     "benzylic"
+    ],
+    [
+     25,
+     "benzylic"
+    ]
+   ]
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ },
+ "vinylidene end": {
+  "accepted": true,
+  "details": {
+   "backbone_carbons": 5,
+   "ends": [
+    "methyl",
+    "vinylidene"
+   ],
+   "phenyls": 2,
+   "radical_sites": []
+  },
+  "kind": "ps_chain",
+  "reason": ""
+ }
+}

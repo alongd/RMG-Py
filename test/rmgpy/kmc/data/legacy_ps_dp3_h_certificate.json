@@ -1,0 +1,11452 @@
+{
+ "certificate": {
+  "channels": [
+   {
+    "ambiguous_with": [],
+    "depository": {
+     "identified_by": "Reaction.is_isomorphic (either direction): every reactant and product species isomorphic (Species.is_isomorphic over resonance structures; multiplicity, charges and electrons compared)",
+     "reads": "whole reactant and product species",
+     "searches": [
+      {
+       "depository": "H_Abstraction/training",
+       "entries_searched": 3119,
+       "matches": []
+      }
+     ],
+     "selected": null,
+     "stops_at_first_depository_with_a_match": true
+    },
+    "depository_exclusion": {
+     "argument": "a witness species has 24 heavy atoms > 22, the largest species of any depository entry; long-chain analogues only add atoms, and Reaction.is_isomorphic needs every species isomorphic",
+     "depository_max_heavy_atoms": 22,
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size",
+     "witness_max_heavy_atoms": 24
+    },
+    "direction": "forward",
+    "eligibility": {
+     "disposition": "eligible",
+     "refused_species": {}
+    },
+    "kind": "kept",
+    "mappings": [
+     1
+    ],
+    "members": [
+     {
+      "ambiguous_with": [],
+      "mappings": [
+       {
+        "descent": "0494a8223d6eb2a9",
+        "edits": {
+         "atoms": [
+          [
+           9,
+           [
+            "C",
+            null,
+            0,
+            0,
+            0
+           ],
+           [
+            "C",
+            null,
+            0,
+            1,
+            0
+           ]
+          ],
+          [
+           50,
+           [
+            "H",
+            null,
+            0,
+            1,
+            0
+           ],
+           [
+            "H",
+            null,
+            0,
+            0,
+            0
+           ]
+          ]
+         ],
+         "bonds": [
+          [
+           9,
+           35,
+           1.0,
+           0.0
+          ],
+          [
+           35,
+           50,
+           0.0,
+           1.0
+          ]
+         ]
+        },
+        "form_bonds": [
+         [
+          9,
+          35,
+          1.0
+         ]
+        ],
+        "forms": [
+         0,
+         0
+        ],
+        "labels": [
+         [
+          0,
+          "*1",
+          9
+         ],
+         [
+          0,
+          "*2",
+          35
+         ],
+         [
+          1,
+          "*3",
+          50
+         ]
+        ],
+        "leaves": [
+         "C/H/Cs2Cb",
+         "H_rad"
+        ],
+        "mapped": [
+         [
+          0,
+          7,
+          0,
+          9
+         ],
+         [
+          0,
+          7,
+          1,
+          35
+         ],
+         [
+          1,
+          0,
+          0,
+          50
+         ]
+        ],
+        "order": [
+         0,
+         1
+        ],
+        "status": "kept"
+       }
+      ],
+      "outcome": "f42de51f7885bfe4"
+     }
+    ],
+    "pathway": [
+     "C/H/Cs2Cb",
+     "H_rad"
+    ],
+    "products": [
+     "CC(C[C](CCc1ccccc1)c1ccccc1)c1ccccc1",
+     "[H][H]"
+    ],
+    "publishable": true,
+    "reactants": [
+     "CC(CC(CCc1ccccc1)c1ccccc1)c1ccccc1",
+     "[H]"
+    ],
+    "rmg_check": {
+     "agrees": true,
+     "problems": [],
+     "rmg_depository_entry": null
+    },
+    "selection": {
+     "contributors": [
+      {
+       "rule": {
+        "index": 1523,
+        "label": "C/H/Cs2Cb;H_rad",
+        "origin": "training-derived rule",
+        "rank": 10
+       },
+       "template": [
+        "C/H/Cs2Cb",
+        "H_rad"
+       ]
+      }
+     ],
+     "exact_template": true,
+     "rmg_entry": "C/H/Cs2Cb;H_rad",
+     "sources": {
+      "exact": true,
+      "rules": [
+       {
+        "entry": {
+         "index": 1523,
+         "label": "C/H/Cs2Cb;H_rad",
+         "rank": 10,
+         "short_desc": "Rate rule generated from training reaction 1521. Group additivity method for C--H--C abstractions, Aaron Vandeputte"
+        },
+        "weight": 1
+       }
+      ],
+      "training": []
+     },
+     "supplying_node": [
+      "C/H/Cs2Cb",
+      "H_rad"
+     ],
+     "supplying_templates": [
+      [
+       "C/H/Cs2Cb",
+       "H_rad"
+      ]
+     ]
+    },
+    "size": 1,
+    "source_kind": "rate_rule_from_training",
+    "support": "supported",
+    "support_scope": "tree_predicates",
+    "whole_species": false
+   }
+  ],
+  "complete": true,
+  "depository_exclusion_refused": [],
+  "descents": {
+   "0494a8223d6eb2a9": [
+    {
+     "atoms": [
+      [
+       1,
+       "C",
+       "Cs",
+       0,
+       0,
+       0,
+       "",
+       false,
+       [
+        [
+         0,
+         1.0
+        ],
+        [
+         2,
+         1.0
+        ],
+        [
+         8,
+         1.0
+        ],
+        [
+         27,
+         1.0
+        ]
+       ]
+      ],
+      [
+       8,
+       "C",
+       "Cs",
+       0,
+       0,
+       0,
+       "",
+       false,
+       [
+        [
+         1,
+         1.0
+        ],
+        [
+         9,
+         1.0
+        ],
+        [
+         33,
+         1.0
+        ],
+        [
+         34,
+         1.0
+        ]
+       ]
+      ],
+      [
+       9,
+       "C",
+       "Cs",
+       0,
+       0,
+       0,
+       "*1",
+       false,
+       [
+        [
+         8,
+         1.0
+        ],
+        [
+         10,
+         1.0
+        ],
+        [
+         16,
+         1.0
+        ],
+        [
+         35,
+         1.0
+        ]
+       ]
+      ],
+      [
+       10,
+       "C",
+       "Cb",
+       0,
+       0,
+       0,
+       "",
+       true,
+       [
+        [
+         9,
+         1.0
+        ],
+        [
+         11,
+         1.5
+        ],
+        [
+         15,
+         1.5
+        ]
+       ]
+      ],
+      [
+       11,
+       "C",
+       "Cb",
+       0,
+       0,
+       0,
+       "",
+       true,
+       [
+        [
+         10,
+         1.5
+        ],
+        [
+         12,
+         1.5
+        ],
+        [
+         36,
+         1.0
+        ]
+       ]
+      ],
+      [
+       15,
+       "C",
+       "Cb",
+       0,
+       0,
+       0,
+       "",
+       true,
+       [
+        [
+         10,
+         1.5
+        ],
+        [
+         14,
+         1.5
+        ],
+        [
+         40,
+         1.0
+        ]
+       ]
+      ],
+      [
+       16,
+       "C",
+       "Cs",
+       0,
+       0,
+       0,
+       "",
+       false,
+       [
+        [
+         9,
+         1.0
+        ],
+        [
+         17,
+         1.0
+        ],
+        [
+         41,
+         1.0
+        ],
+        [
+         42,
+         1.0
+        ]
+       ]
+      ],
+      [
+       17,
+       "C",
+       "Cs",
+       0,
+       0,
+       0,
+       "",
+       false,
+       [
+        [
+         16,
+         1.0
+        ],
+        [
+         18,
+         1.0
+        ],
+        [
+         43,
+         1.0
+        ],
+        [
+         44,
+         1.0
+        ]
+       ]
+      ],
+      [
+       33,
+       "H",
+       "H0",
+       0,
+       0,
+       0,
+       "",
+       false,
+       [
+        [
+         8,
+         1.0
+        ]
+       ]
+      ],
+      [
+       34,
+       "H",
+       "H0",
+       0,
+       0,
+       0,
+       "",
+       false,
+       [
+        [
+         8,
+         1.0
+        ]
+       ]
+      ],
+      [
+       35,
+       "H",
+       "H0",
+       0,
+       0,
+       0,
+       "*2",
+       false,
+       [
+        [
+         9,
+         1.0
+        ]
+       ]
+      ],
+      [
+       41,
+       "H",
+       "H0",
+       0,
+       0,
+       0,
+       "",
+       false,
+       [
+        [
+         16,
+         1.0
+        ]
+       ]
+      ],
+      [
+       42,
+       "H",
+       "H0",
+       0,
+       0,
+       0,
+       "",
+       false,
+       [
+        [
+         16,
+         1.0
+        ]
+       ]
+      ]
+     ],
+     "labelled": {
+      "*1": 9,
+      "*2": 35
+     },
+     "leaf": "C/H/Cs2Cb",
+     "root": {
+      "components": [
+       {
+        "components": [
+         {
+          "anchoring": "anchored",
+          "anchors": {
+           "*1": 9,
+           "*2": 35
+          },
+          "ball": [
+           [
+            9,
+            0
+           ],
+           [
+            35,
+            0
+           ]
+          ],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "C": 1,
+             "H": 1
+            },
+            "read": true,
+            "structure": {
+             "C": 24,
+             "H": 26
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 1
+           },
+           "radical_count": {
+            "group_minimum": 3,
+            "read": true,
+            "structure": 0
+           }
+          },
+          "ignored": [],
+          "logic": null,
+          "node": "C_quartet_H",
+          "radius": 0,
+          "result": "failed",
+          "scan": "ball"
+         },
+         {
+          "anchoring": "anchored",
+          "anchors": {
+           "*1": 9,
+           "*2": 35
+          },
+          "ball": [
+           [
+            9,
+            0
+           ],
+           [
+            35,
+            0
+           ]
+          ],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "C": 1,
+             "H": 1
+            },
+            "read": true,
+            "structure": {
+             "C": 24,
+             "H": 26
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 1
+           },
+           "radical_count": {
+            "group_minimum": 1,
+            "read": true,
+            "structure": 0
+           }
+          },
+          "ignored": [],
+          "logic": null,
+          "node": "C_doublet_H",
+          "radius": 0,
+          "result": "failed",
+          "scan": "ball"
+         }
+        ],
+        "evaluated": 2,
+        "invert": false,
+        "logic": "LogicOr",
+        "node": "Xtrirad_H",
+        "of": 2,
+        "result": "failed"
+       },
+       {
+        "components": [
+         {
+          "anchoring": "anchored",
+          "anchors": {
+           "*1": 9,
+           "*2": 35
+          },
+          "ball": [
+           [
+            8,
+            1
+           ],
+           [
+            9,
+            0
+           ],
+           [
+            10,
+            1
+           ],
+           [
+            16,
+            1
+           ],
+           [
+            35,
+            0
+           ]
+          ],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "C": 1,
+             "H": 2
+            },
+            "read": true,
+            "structure": {
+             "C": 24,
+             "H": 26
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 1
+           },
+           "radical_count": {
+            "group_minimum": 2,
+            "read": true,
+            "structure": 0
+           }
+          },
+          "ignored": [],
+          "logic": null,
+          "node": "CH2_triplet_H",
+          "radius": 1,
+          "result": "failed",
+          "scan": "ball"
+         },
+         {
+          "anchoring": "anchored",
+          "anchors": {
+           "*1": 9,
+           "*2": 35
+          },
+          "ball": [
+           [
+            8,
+            1
+           ],
+           [
+            9,
+            0
+           ],
+           [
+            10,
+            1
+           ],
+           [
+            16,
+            1
+           ],
+           [
+            35,
+            0
+           ]
+          ],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "C": 1,
+             "H": 2
+            },
+            "read": true,
+            "structure": {
+             "C": 24,
+             "H": 26
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 1
+           },
+           "radical_count": {
+            "group_minimum": 0,
+            "read": false,
+            "structure": 0
+           }
+          },
+          "ignored": [],
+          "logic": null,
+          "node": "CH2_singlet_H",
+          "radius": 1,
+          "result": "failed",
+          "scan": "ball"
+         },
+         {
+          "anchoring": "anchored",
+          "anchors": {
+           "*1": 9,
+           "*2": 35
+          },
+          "ball": [
+           [
+            9,
+            0
+           ],
+           [
+            35,
+            0
+           ]
+          ],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "H": 1,
+             "N": 1
+            },
+            "read": true,
+            "structure": {
+             "H": 26
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 1
+           },
+           "radical_count": {
+            "group_minimum": 2,
+            "read": true,
+            "structure": 0
+           }
+          },
+          "ignored": [],
+          "logic": null,
+          "node": "NH_triplet_H",
+          "radius": 0,
+          "result": "failed",
+          "scan": "ball"
+         },
+         {
+          "anchoring": "anchored",
+          "anchors": {
+           "*1": 9,
+           "*2": 35
+          },
+          "ball": [
+           [
+            9,
+            0
+           ],
+           [
+            35,
+            0
+           ]
+          ],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "H": 1,
+             "N": 1
+            },
+            "read": true,
+            "structure": {
+             "H": 26
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 1
+           },
+           "radical_count": {
+            "group_minimum": 0,
+            "read": false,
+            "structure": 0
+           }
+          },
+          "ignored": [],
+          "logic": null,
+          "node": "NH_singlet_H",
+          "radius": 0,
+          "result": "failed",
+          "scan": "ball"
+         }
+        ],
+        "evaluated": 4,
+        "invert": false,
+        "logic": "LogicOr",
+        "node": "Xbirad_H",
+        "of": 4,
+        "result": "failed"
+       },
+       {
+        "anchoring": "anchored",
+        "anchors": {
+         "*1": 9,
+         "*2": 35
+        },
+        "ball": [
+         [
+          9,
+          0
+         ],
+         [
+          35,
+          0
+         ]
+        ],
+        "candidates": {},
+        "free_labels": [],
+        "guards": {
+         "element_count": {
+          "group_minimum": {
+           "H": 1
+          },
+          "read": true,
+          "structure": {
+           "H": 26
+          }
+         },
+         "multiplicity": {
+          "group": [],
+          "read": false,
+          "structure": 1
+         },
+         "radical_count": {
+          "group_minimum": 1,
+          "read": true,
+          "structure": 0
+         }
+        },
+        "ignored": [],
+        "logic": null,
+        "node": "Xrad_H",
+        "radius": 0,
+        "result": "failed",
+        "scan": "ball"
+       },
+       {
+        "anchoring": "anchored",
+        "anchors": {
+         "*1": 9,
+         "*2": 35
+        },
+        "ball": [
+         [
+          9,
+          0
+         ],
+         [
+          35,
+          0
+         ]
+        ],
+        "candidates": {},
+        "embeddings": {
+         "by_group": [
+          [
+           0,
+           [
+            9
+           ]
+          ],
+          [
+           1,
+           [
+            35
+           ]
+          ]
+         ],
+         "count": 1,
+         "images": [
+          9,
+          35
+         ],
+         "least": [
+          [
+           0,
+           9
+          ],
+          [
+           1,
+           35
+          ]
+         ]
+        },
+        "free_labels": [],
+        "guards": {
+         "element_count": {
+          "group_minimum": {
+           "H": 1
+          },
+          "read": true,
+          "structure": {
+           "H": 26
+          }
+         },
+         "multiplicity": {
+          "group": [],
+          "read": false,
+          "structure": 1
+         },
+         "radical_count": {
+          "group_minimum": 0,
+          "read": false,
+          "structure": 0
+         }
+        },
+        "ignored": [],
+        "logic": null,
+        "node": "X_H",
+        "radius": 0,
+        "result": "matched",
+        "scan": "ball"
+       }
+      ],
+      "evaluated": 4,
+      "invert": false,
+      "logic": "LogicOr",
+      "node": "X_H_or_Xrad_H_Xbirad_H_Xtrirad_H",
+      "of": 4,
+      "result": "matched"
+     },
+     "steps": [
+      {
+       "children": [
+        {
+         "components": [
+          {
+           "anchoring": "anchored",
+           "anchors": {
+            "*1": 9,
+            "*2": 35
+           },
+           "ball": [
+            [
+             9,
+             0
+            ],
+            [
+             35,
+             0
+            ]
+           ],
+           "candidates": {},
+           "free_labels": [],
+           "guards": {
+            "element_count": {
+             "group_minimum": {
+              "C": 1,
+              "H": 1
+             },
+             "read": true,
+             "structure": {
+              "C": 24,
+              "H": 26
+             }
+            },
+            "multiplicity": {
+             "group": [],
+             "read": false,
+             "structure": 1
+            },
+            "radical_count": {
+             "group_minimum": 3,
+             "read": true,
+             "structure": 0
+            }
+           },
+           "ignored": [],
+           "logic": null,
+           "node": "C_quartet_H",
+           "radius": 0,
+           "result": "failed",
+           "scan": "ball"
+          },
+          {
+           "anchoring": "anchored",
+           "anchors": {
+            "*1": 9,
+            "*2": 35
+           },
+           "ball": [
+            [
+             9,
+             0
+            ],
+            [
+             35,
+             0
+            ]
+           ],
+           "candidates": {},
+           "free_labels": [],
+           "guards": {
+            "element_count": {
+             "group_minimum": {
+              "C": 1,
+              "H": 1
+             },
+             "read": true,
+             "structure": {
+              "C": 24,
+              "H": 26
+             }
+            },
+            "multiplicity": {
+             "group": [],
+             "read": false,
+             "structure": 1
+            },
+            "radical_count": {
+             "group_minimum": 1,
+             "read": true,
+             "structure": 0
+            }
+           },
+           "ignored": [],
+           "logic": null,
+           "node": "C_doublet_H",
+           "radius": 0,
+           "result": "failed",
+           "scan": "ball"
+          }
+         ],
+         "evaluated": 2,
+         "invert": false,
+         "logic": "LogicOr",
+         "node": "Xtrirad_H",
+         "of": 2,
+         "result": "failed"
+        },
+        {
+         "components": [
+          {
+           "anchoring": "anchored",
+           "anchors": {
+            "*1": 9,
+            "*2": 35
+           },
+           "ball": [
+            [
+             8,
+             1
+            ],
+            [
+             9,
+             0
+            ],
+            [
+             10,
+             1
+            ],
+            [
+             16,
+             1
+            ],
+            [
+             35,
+             0
+            ]
+           ],
+           "candidates": {},
+           "free_labels": [],
+           "guards": {
+            "element_count": {
+             "group_minimum": {
+              "C": 1,
+              "H": 2
+             },
+             "read": true,
+             "structure": {
+              "C": 24,
+              "H": 26
+             }
+            },
+            "multiplicity": {
+             "group": [],
+             "read": false,
+             "structure": 1
+            },
+            "radical_count": {
+             "group_minimum": 2,
+             "read": true,
+             "structure": 0
+            }
+           },
+           "ignored": [],
+           "logic": null,
+           "node": "CH2_triplet_H",
+           "radius": 1,
+           "result": "failed",
+           "scan": "ball"
+          },
+          {
+           "anchoring": "anchored",
+           "anchors": {
+            "*1": 9,
+            "*2": 35
+           },
+           "ball": [
+            [
+             8,
+             1
+            ],
+            [
+             9,
+             0
+            ],
+            [
+             10,
+             1
+            ],
+            [
+             16,
+             1
+            ],
+            [
+             35,
+             0
+            ]
+           ],
+           "candidates": {},
+           "free_labels": [],
+           "guards": {
+            "element_count": {
+             "group_minimum": {
+              "C": 1,
+              "H": 2
+             },
+             "read": true,
+             "structure": {
+              "C": 24,
+              "H": 26
+             }
+            },
+            "multiplicity": {
+             "group": [],
+             "read": false,
+             "structure": 1
+            },
+            "radical_count": {
+             "group_minimum": 0,
+             "read": false,
+             "structure": 0
+            }
+           },
+           "ignored": [],
+           "logic": null,
+           "node": "CH2_singlet_H",
+           "radius": 1,
+           "result": "failed",
+           "scan": "ball"
+          },
+          {
+           "anchoring": "anchored",
+           "anchors": {
+            "*1": 9,
+            "*2": 35
+           },
+           "ball": [
+            [
+             9,
+             0
+            ],
+            [
+             35,
+             0
+            ]
+           ],
+           "candidates": {},
+           "free_labels": [],
+           "guards": {
+            "element_count": {
+             "group_minimum": {
+              "H": 1,
+              "N": 1
+             },
+             "read": true,
+             "structure": {
+              "H": 26
+             }
+            },
+            "multiplicity": {
+             "group": [],
+             "read": false,
+             "structure": 1
+            },
+            "radical_count": {
+             "group_minimum": 2,
+             "read": true,
+             "structure": 0
+            }
+           },
+           "ignored": [],
+           "logic": null,
+           "node": "NH_triplet_H",
+           "radius": 0,
+           "result": "failed",
+           "scan": "ball"
+          },
+          {
+           "anchoring": "anchored",
+           "anchors": {
+            "*1": 9,
+            "*2": 35
+           },
+           "ball": [
+            [
+             9,
+             0
+            ],
+            [
+             35,
+             0
+            ]
+           ],
+           "candidates": {},
+           "free_labels": [],
+           "guards": {
+            "element_count": {
+             "group_minimum": {
+              "H": 1,
+              "N": 1
+             },
+             "read": true,
+             "structure": {
+              "H": 26
+             }
+            },
+            "multiplicity": {
+             "group": [],
+             "read": false,
+             "structure": 1
+            },
+            "radical_count": {
+             "group_minimum": 0,
+             "read": false,
+             "structure": 0
+            }
+           },
+           "ignored": [],
+           "logic": null,
+           "node": "NH_singlet_H",
+           "radius": 0,
+           "result": "failed",
+           "scan": "ball"
+          }
+         ],
+         "evaluated": 4,
+         "invert": false,
+         "logic": "LogicOr",
+         "node": "Xbirad_H",
+         "of": 4,
+         "result": "failed"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           9,
+           0
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Xrad_H",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           9,
+           0
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "embeddings": {
+          "by_group": [
+           [
+            0,
+            [
+             9
+            ]
+           ],
+           [
+            1,
+            [
+             35
+            ]
+           ]
+          ],
+          "count": 1,
+          "images": [
+           9,
+           35
+          ],
+          "least": [
+           [
+            0,
+            9
+           ],
+           [
+            1,
+            35
+           ]
+          ]
+         },
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "X_H",
+         "radius": 0,
+         "result": "matched",
+         "scan": "ball"
+        }
+       ],
+       "choice": "X_H",
+       "node": "X_H_or_Xrad_H_Xbirad_H_Xtrirad_H",
+       "rule": "single match"
+      },
+      {
+       "children": [
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           9,
+           0
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "H": 2
+           },
+           "read": true,
+           "structure": {
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "H2",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Ct_H",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "H": 1,
+            "O": 1
+           },
+           "read": true,
+           "structure": {
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "O_H",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "H": 1,
+            "O": 1
+           },
+           "read": true,
+           "structure": {
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "OSrad_O_H",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           9,
+           0
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "H": 1,
+            "S": 1
+           },
+           "read": true,
+           "structure": {
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "S_H",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Cd_H",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 3,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Cb_H",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1,
+            "H": 1,
+            "O": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "CO_H",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1,
+            "H": 1,
+            "S": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "CS_H",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "embeddings": {
+          "by_group": [
+           [
+            0,
+            [
+             9
+            ]
+           ],
+           [
+            1,
+            [
+             35
+            ]
+           ],
+           [
+            2,
+            [
+             8,
+             10,
+             16
+            ]
+           ],
+           [
+            3,
+            [
+             8,
+             10,
+             16
+            ]
+           ],
+           [
+            4,
+            [
+             8,
+             10,
+             16
+            ]
+           ]
+          ],
+          "count": 6,
+          "images": [
+           8,
+           9,
+           10,
+           16,
+           35
+          ],
+          "least": [
+           [
+            0,
+            9
+           ],
+           [
+            1,
+            35
+           ],
+           [
+            2,
+            8
+           ],
+           [
+            3,
+            10
+           ],
+           [
+            4,
+            16
+           ]
+          ]
+         },
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Cs_H",
+         "radius": 1,
+         "result": "matched",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           9,
+           0
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "H": 1,
+            "N": 1
+           },
+           "read": true,
+           "structure": {
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "N3_H",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           9,
+           0
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "H": 1,
+            "N": 1
+           },
+           "read": true,
+           "structure": {
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "N5_H",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           9,
+           0
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "Cl": 1,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "HCl",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           9,
+           0
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "H": 1,
+            "I": 1
+           },
+           "read": true,
+           "structure": {
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "HI",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        }
+       ],
+       "choice": "Cs_H",
+       "node": "X_H",
+       "rule": "single match"
+      },
+      {
+       "children": [
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1,
+            "H": 4
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C_methane",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1,
+            "H": 3
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C_pri",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1,
+            "H": 2
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C_sec",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "embeddings": {
+          "by_group": [
+           [
+            0,
+            [
+             9
+            ]
+           ],
+           [
+            1,
+            [
+             35
+            ]
+           ],
+           [
+            2,
+            [
+             8,
+             10,
+             16
+            ]
+           ],
+           [
+            3,
+            [
+             8,
+             10,
+             16
+            ]
+           ],
+           [
+            4,
+            [
+             8,
+             10,
+             16
+            ]
+           ]
+          ],
+          "count": 6,
+          "images": [
+           8,
+           9,
+           10,
+           16,
+           35
+          ],
+          "least": [
+           [
+            0,
+            9
+           ],
+           [
+            1,
+            35
+           ],
+           [
+            2,
+            8
+           ],
+           [
+            3,
+            10
+           ],
+           [
+            4,
+            16
+           ]
+          ]
+         },
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C_ter",
+         "radius": 1,
+         "result": "matched",
+         "scan": "ball"
+        }
+       ],
+       "choice": "C_ter",
+       "node": "Cs_H",
+       "rule": "single match"
+      },
+      {
+       "children": [
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/NonDe",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "embeddings": {
+          "by_group": [
+           [
+            0,
+            [
+             9
+            ]
+           ],
+           [
+            1,
+            [
+             35
+            ]
+           ],
+           [
+            2,
+            [
+             10
+            ]
+           ],
+           [
+            3,
+            [
+             8,
+             16
+            ]
+           ],
+           [
+            4,
+            [
+             8,
+             16
+            ]
+           ]
+          ],
+          "count": 2,
+          "images": [
+           8,
+           9,
+           10,
+           16,
+           35
+          ],
+          "least": [
+           [
+            0,
+            9
+           ],
+           [
+            1,
+            35
+           ],
+           [
+            2,
+            10
+           ],
+           [
+            3,
+            8
+           ],
+           [
+            4,
+            16
+           ]
+          ]
+         },
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 2,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/OneDe",
+         "radius": 1,
+         "result": "matched",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 3,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/TwoDe",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 4,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/ThreeDe",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        }
+       ],
+       "choice": "C/H/OneDe",
+       "node": "C_ter",
+       "rule": "single match"
+      },
+      {
+       "children": [
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "embeddings": {
+          "by_group": [
+           [
+            0,
+            [
+             9
+            ]
+           ],
+           [
+            1,
+            [
+             35
+            ]
+           ],
+           [
+            2,
+            [
+             10
+            ]
+           ],
+           [
+            3,
+            [
+             8,
+             16
+            ]
+           ],
+           [
+            4,
+            [
+             8,
+             16
+            ]
+           ]
+          ],
+          "count": 2,
+          "images": [
+           8,
+           9,
+           10,
+           16,
+           35
+          ],
+          "least": [
+           [
+            0,
+            9
+           ],
+           [
+            1,
+            35
+           ],
+           [
+            2,
+            10
+           ],
+           [
+            3,
+            8
+           ],
+           [
+            4,
+            16
+           ]
+          ]
+         },
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 4,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/Cs2",
+         "radius": 1,
+         "result": "matched",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 3,
+            "H": 1,
+            "O": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/CsO",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 3,
+            "H": 1,
+            "S": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/CsS",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 2,
+            "H": 1,
+            "O": 2
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/OO",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 2,
+            "H": 1,
+            "O": 1,
+            "S": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/OS",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 2,
+            "H": 1,
+            "S": 2
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/SS",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        }
+       ],
+       "choice": "C/H/Cs2",
+       "node": "C/H/OneDe",
+       "rule": "single match"
+      },
+      {
+       "children": [
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 4,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/Cs2Ct",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "embeddings": {
+          "by_group": [
+           [
+            0,
+            [
+             9
+            ]
+           ],
+           [
+            1,
+            [
+             35
+            ]
+           ],
+           [
+            2,
+            [
+             10
+            ]
+           ],
+           [
+            3,
+            [
+             8,
+             16
+            ]
+           ],
+           [
+            4,
+            [
+             8,
+             16
+            ]
+           ]
+          ],
+          "count": 2,
+          "images": [
+           8,
+           9,
+           10,
+           16,
+           35
+          ],
+          "least": [
+           [
+            0,
+            9
+           ],
+           [
+            1,
+            35
+           ],
+           [
+            2,
+            10
+           ],
+           [
+            3,
+            8
+           ],
+           [
+            4,
+            16
+           ]
+          ]
+         },
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 4,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/Cs2Cb",
+         "radius": 1,
+         "result": "matched",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           35,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 4,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/Cs2CO",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           1,
+           2
+          ],
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           11,
+           2
+          ],
+          [
+           15,
+           2
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           17,
+           2
+          ],
+          [
+           33,
+           2
+          ],
+          [
+           34,
+           2
+          ],
+          [
+           35,
+           0
+          ],
+          [
+           41,
+           2
+          ],
+          [
+           42,
+           2
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 5,
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/Cs2Cd",
+         "radius": 2,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*1": 9,
+          "*2": 35
+         },
+         "ball": [
+          [
+           1,
+           2
+          ],
+          [
+           8,
+           1
+          ],
+          [
+           9,
+           0
+          ],
+          [
+           10,
+           1
+          ],
+          [
+           11,
+           2
+          ],
+          [
+           15,
+           2
+          ],
+          [
+           16,
+           1
+          ],
+          [
+           17,
+           2
+          ],
+          [
+           33,
+           2
+          ],
+          [
+           34,
+           2
+          ],
+          [
+           35,
+           0
+          ],
+          [
+           41,
+           2
+          ],
+          [
+           42,
+           2
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 4,
+            "H": 1,
+            "S": 1
+           },
+           "read": true,
+           "structure": {
+            "C": 24,
+            "H": 26
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 1
+          },
+          "radical_count": {
+           "group_minimum": 0,
+           "read": false,
+           "structure": 0
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "C/H/Cs2CS",
+         "radius": 2,
+         "result": "failed",
+         "scan": "ball"
+        }
+       ],
+       "choice": "C/H/Cs2Cb",
+       "node": "C/H/Cs2",
+       "rule": "single match"
+      },
+      {
+       "children": [],
+       "choice": null,
+       "node": "C/H/Cs2Cb",
+       "rule": "no child matched: stop"
+      }
+     ],
+     "structure": "template reactant 0",
+     "top": "X_H_or_Xrad_H_Xbirad_H_Xtrirad_H"
+    },
+    {
+     "atoms": [],
+     "labelled": {
+      "*3": 50
+     },
+     "leaf": null,
+     "root": {
+      "components": [
+       {
+        "components": [
+         {
+          "anchoring": "labels_missing",
+          "anchors": {},
+          "ball": [],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "C": 1,
+             "H": 1
+            },
+            "read": true,
+            "structure": {
+             "H": 1
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 2
+           },
+           "radical_count": {
+            "group_minimum": 3,
+            "read": true,
+            "structure": 1
+           }
+          },
+          "ignored": [
+           50
+          ],
+          "labels_missing": [
+           "*1",
+           "*2"
+          ],
+          "logic": null,
+          "node": "C_quartet_H",
+          "radius": null,
+          "result": "failed"
+         },
+         {
+          "anchoring": "labels_missing",
+          "anchors": {},
+          "ball": [],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "C": 1,
+             "H": 1
+            },
+            "read": true,
+            "structure": {
+             "H": 1
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 2
+           },
+           "radical_count": {
+            "group_minimum": 1,
+            "read": true,
+            "structure": 1
+           }
+          },
+          "ignored": [
+           50
+          ],
+          "labels_missing": [
+           "*1",
+           "*2"
+          ],
+          "logic": null,
+          "node": "C_doublet_H",
+          "radius": null,
+          "result": "failed"
+         }
+        ],
+        "evaluated": 2,
+        "invert": false,
+        "logic": "LogicOr",
+        "node": "Xtrirad_H",
+        "of": 2,
+        "result": "failed"
+       },
+       {
+        "components": [
+         {
+          "anchoring": "labels_missing",
+          "anchors": {},
+          "ball": [],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "C": 1,
+             "H": 2
+            },
+            "read": true,
+            "structure": {
+             "H": 1
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 2
+           },
+           "radical_count": {
+            "group_minimum": 2,
+            "read": true,
+            "structure": 1
+           }
+          },
+          "ignored": [
+           50
+          ],
+          "labels_missing": [
+           "*1",
+           "*2"
+          ],
+          "logic": null,
+          "node": "CH2_triplet_H",
+          "radius": null,
+          "result": "failed"
+         },
+         {
+          "anchoring": "labels_missing",
+          "anchors": {},
+          "ball": [],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "C": 1,
+             "H": 2
+            },
+            "read": true,
+            "structure": {
+             "H": 1
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 2
+           },
+           "radical_count": {
+            "group_minimum": 0,
+            "read": false,
+            "structure": 1
+           }
+          },
+          "ignored": [
+           50
+          ],
+          "labels_missing": [
+           "*1",
+           "*2"
+          ],
+          "logic": null,
+          "node": "CH2_singlet_H",
+          "radius": null,
+          "result": "failed"
+         },
+         {
+          "anchoring": "labels_missing",
+          "anchors": {},
+          "ball": [],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "H": 1,
+             "N": 1
+            },
+            "read": true,
+            "structure": {
+             "H": 1
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 2
+           },
+           "radical_count": {
+            "group_minimum": 2,
+            "read": true,
+            "structure": 1
+           }
+          },
+          "ignored": [
+           50
+          ],
+          "labels_missing": [
+           "*1",
+           "*2"
+          ],
+          "logic": null,
+          "node": "NH_triplet_H",
+          "radius": null,
+          "result": "failed"
+         },
+         {
+          "anchoring": "labels_missing",
+          "anchors": {},
+          "ball": [],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "H": 1,
+             "N": 1
+            },
+            "read": true,
+            "structure": {
+             "H": 1
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 2
+           },
+           "radical_count": {
+            "group_minimum": 0,
+            "read": false,
+            "structure": 1
+           }
+          },
+          "ignored": [
+           50
+          ],
+          "labels_missing": [
+           "*1",
+           "*2"
+          ],
+          "logic": null,
+          "node": "NH_singlet_H",
+          "radius": null,
+          "result": "failed"
+         }
+        ],
+        "evaluated": 4,
+        "invert": false,
+        "logic": "LogicOr",
+        "node": "Xbirad_H",
+        "of": 4,
+        "result": "failed"
+       },
+       {
+        "anchoring": "labels_missing",
+        "anchors": {},
+        "ball": [],
+        "candidates": {},
+        "free_labels": [],
+        "guards": {
+         "element_count": {
+          "group_minimum": {
+           "H": 1
+          },
+          "read": true,
+          "structure": {
+           "H": 1
+          }
+         },
+         "multiplicity": {
+          "group": [],
+          "read": false,
+          "structure": 2
+         },
+         "radical_count": {
+          "group_minimum": 1,
+          "read": true,
+          "structure": 1
+         }
+        },
+        "ignored": [
+         50
+        ],
+        "labels_missing": [
+         "*1",
+         "*2"
+        ],
+        "logic": null,
+        "node": "Xrad_H",
+        "radius": null,
+        "result": "failed"
+       },
+       {
+        "anchoring": "labels_missing",
+        "anchors": {},
+        "ball": [],
+        "candidates": {},
+        "free_labels": [],
+        "guards": {
+         "element_count": {
+          "group_minimum": {
+           "H": 1
+          },
+          "read": true,
+          "structure": {
+           "H": 1
+          }
+         },
+         "multiplicity": {
+          "group": [],
+          "read": false,
+          "structure": 2
+         },
+         "radical_count": {
+          "group_minimum": 0,
+          "read": false,
+          "structure": 1
+         }
+        },
+        "ignored": [
+         50
+        ],
+        "labels_missing": [
+         "*1",
+         "*2"
+        ],
+        "logic": null,
+        "node": "X_H",
+        "radius": null,
+        "result": "failed"
+       }
+      ],
+      "evaluated": 4,
+      "invert": false,
+      "logic": "LogicOr",
+      "node": "X_H_or_Xrad_H_Xbirad_H_Xtrirad_H",
+      "of": 4,
+      "result": "failed"
+     },
+     "steps": [],
+     "structure": "template reactant 1",
+     "top": "X_H_or_Xrad_H_Xbirad_H_Xtrirad_H"
+    },
+    {
+     "atoms": [],
+     "labelled": {
+      "*1": 9,
+      "*2": 35
+     },
+     "leaf": null,
+     "root": {
+      "components": [
+       {
+        "anchoring": "labels_missing",
+        "anchors": {},
+        "ball": [],
+        "candidates": {},
+        "free_labels": [],
+        "guards": {
+         "element_count": {
+          "group_minimum": {},
+          "read": false,
+          "structure": {}
+         },
+         "multiplicity": {
+          "group": [],
+          "read": false,
+          "structure": 1
+         },
+         "radical_count": {
+          "group_minimum": 1,
+          "read": true,
+          "structure": 0
+         }
+        },
+        "ignored": [
+         9,
+         35
+        ],
+        "labels_missing": [
+         "*3"
+        ],
+        "logic": null,
+        "node": "Y_rad",
+        "radius": null,
+        "result": "failed"
+       },
+       {
+        "anchoring": "labels_missing",
+        "anchors": {},
+        "ball": [],
+        "candidates": {},
+        "free_labels": [],
+        "guards": {
+         "element_count": {
+          "group_minimum": {},
+          "read": false,
+          "structure": {}
+         },
+         "multiplicity": {
+          "group": [],
+          "read": false,
+          "structure": 1
+         },
+         "radical_count": {
+          "group_minimum": 2,
+          "read": true,
+          "structure": 0
+         }
+        },
+        "ignored": [
+         9,
+         35
+        ],
+        "labels_missing": [
+         "*3"
+        ],
+        "logic": null,
+        "node": "Y_1centerbirad",
+        "radius": null,
+        "result": "failed"
+       },
+       {
+        "components": [
+         {
+          "anchoring": "labels_missing",
+          "anchors": {},
+          "ball": [],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "N": 1
+            },
+            "read": true,
+            "structure": {}
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 1
+           },
+           "radical_count": {
+            "group_minimum": 3,
+            "read": true,
+            "structure": 0
+           }
+          },
+          "ignored": [
+           9,
+           35
+          ],
+          "labels_missing": [
+           "*3"
+          ],
+          "logic": null,
+          "node": "N_atom_quartet",
+          "radius": null,
+          "result": "failed"
+         },
+         {
+          "anchoring": "labels_missing",
+          "anchors": {},
+          "ball": [],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "N": 1
+            },
+            "read": true,
+            "structure": {}
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 1
+           },
+           "radical_count": {
+            "group_minimum": 1,
+            "read": true,
+            "structure": 0
+           }
+          },
+          "ignored": [
+           9,
+           35
+          ],
+          "labels_missing": [
+           "*3"
+          ],
+          "logic": null,
+          "node": "N_atom_doublet",
+          "radius": null,
+          "result": "failed"
+         },
+         {
+          "anchoring": "labels_missing",
+          "anchors": {},
+          "ball": [],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "C": 1,
+             "H": 1
+            },
+            "read": true,
+            "structure": {
+             "C": 24,
+             "H": 26
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 1
+           },
+           "radical_count": {
+            "group_minimum": 3,
+            "read": true,
+            "structure": 0
+           }
+          },
+          "ignored": [
+           9,
+           35
+          ],
+          "labels_missing": [
+           "*3"
+          ],
+          "logic": null,
+          "node": "CH_quartet",
+          "radius": null,
+          "result": "failed"
+         },
+         {
+          "anchoring": "labels_missing",
+          "anchors": {},
+          "ball": [],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "C": 1,
+             "H": 1
+            },
+            "read": true,
+            "structure": {
+             "C": 24,
+             "H": 26
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 1
+           },
+           "radical_count": {
+            "group_minimum": 1,
+            "read": true,
+            "structure": 0
+           }
+          },
+          "ignored": [
+           9,
+           35
+          ],
+          "labels_missing": [
+           "*3"
+          ],
+          "logic": null,
+          "node": "CH_doublet",
+          "radius": null,
+          "result": "failed"
+         }
+        ],
+        "evaluated": 4,
+        "invert": false,
+        "logic": "LogicOr",
+        "node": "Y_1centertrirad",
+        "of": 4,
+        "result": "failed"
+       },
+       {
+        "components": [
+         {
+          "anchoring": "labels_missing",
+          "anchors": {},
+          "ball": [],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "C": 1
+            },
+            "read": true,
+            "structure": {
+             "C": 24
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 1
+           },
+           "radical_count": {
+            "group_minimum": 4,
+            "read": true,
+            "structure": 0
+           }
+          },
+          "ignored": [
+           9,
+           35
+          ],
+          "labels_missing": [
+           "*3"
+          ],
+          "logic": null,
+          "node": "C_quintet",
+          "radius": null,
+          "result": "failed"
+         },
+         {
+          "anchoring": "labels_missing",
+          "anchors": {},
+          "ball": [],
+          "candidates": {},
+          "free_labels": [],
+          "guards": {
+           "element_count": {
+            "group_minimum": {
+             "C": 1
+            },
+            "read": true,
+            "structure": {
+             "C": 24
+            }
+           },
+           "multiplicity": {
+            "group": [],
+            "read": false,
+            "structure": 1
+           },
+           "radical_count": {
+            "group_minimum": 2,
+            "read": true,
+            "structure": 0
+           }
+          },
+          "ignored": [
+           9,
+           35
+          ],
+          "labels_missing": [
+           "*3"
+          ],
+          "logic": null,
+          "node": "C_triplet",
+          "radius": null,
+          "result": "failed"
+         }
+        ],
+        "evaluated": 2,
+        "invert": false,
+        "logic": "LogicOr",
+        "node": "Y_1centerquadrad",
+        "of": 2,
+        "result": "failed"
+       }
+      ],
+      "evaluated": 4,
+      "invert": false,
+      "logic": "LogicOr",
+      "node": "Y_rad_birad_trirad_quadrad",
+      "of": 4,
+      "result": "failed"
+     },
+     "steps": [],
+     "structure": "template reactant 0",
+     "top": "Y_rad_birad_trirad_quadrad"
+    },
+    {
+     "atoms": [
+      [
+       50,
+       "H",
+       "H0",
+       1,
+       0,
+       0,
+       "*3",
+       false,
+       []
+      ]
+     ],
+     "labelled": {
+      "*3": 50
+     },
+     "leaf": "H_rad",
+     "root": {
+      "components": [
+       {
+        "anchoring": "anchored",
+        "anchors": {
+         "*3": 50
+        },
+        "ball": [
+         [
+          50,
+          0
+         ]
+        ],
+        "candidates": {},
+        "embeddings": {
+         "by_group": [
+          [
+           0,
+           [
+            50
+           ]
+          ]
+         ],
+         "count": 1,
+         "images": [
+          50
+         ],
+         "least": [
+          [
+           0,
+           50
+          ]
+         ]
+        },
+        "free_labels": [],
+        "guards": {
+         "element_count": {
+          "group_minimum": {},
+          "read": false,
+          "structure": {}
+         },
+         "multiplicity": {
+          "group": [],
+          "read": false,
+          "structure": 2
+         },
+         "radical_count": {
+          "group_minimum": 1,
+          "read": true,
+          "structure": 1
+         }
+        },
+        "ignored": [],
+        "logic": null,
+        "node": "Y_rad",
+        "radius": 0,
+        "result": "matched",
+        "scan": "ball"
+       }
+      ],
+      "evaluated": 1,
+      "invert": false,
+      "logic": "LogicOr",
+      "node": "Y_rad_birad_trirad_quadrad",
+      "of": 4,
+      "result": "matched"
+     },
+     "steps": [
+      {
+       "children": [
+        {
+         "components": [
+          {
+           "anchoring": "anchored",
+           "anchors": {
+            "*3": 50
+           },
+           "ball": [
+            [
+             50,
+             0
+            ]
+           ],
+           "candidates": {},
+           "free_labels": [],
+           "guards": {
+            "element_count": {
+             "group_minimum": {
+              "C": 1
+             },
+             "read": true,
+             "structure": {}
+            },
+            "multiplicity": {
+             "group": [],
+             "read": false,
+             "structure": 2
+            },
+            "radical_count": {
+             "group_minimum": 4,
+             "read": true,
+             "structure": 1
+            }
+           },
+           "ignored": [],
+           "logic": null,
+           "node": "C_quintet",
+           "radius": 0,
+           "result": "failed",
+           "scan": "ball"
+          },
+          {
+           "anchoring": "anchored",
+           "anchors": {
+            "*3": 50
+           },
+           "ball": [
+            [
+             50,
+             0
+            ]
+           ],
+           "candidates": {},
+           "free_labels": [],
+           "guards": {
+            "element_count": {
+             "group_minimum": {
+              "C": 1
+             },
+             "read": true,
+             "structure": {}
+            },
+            "multiplicity": {
+             "group": [],
+             "read": false,
+             "structure": 2
+            },
+            "radical_count": {
+             "group_minimum": 2,
+             "read": true,
+             "structure": 1
+            }
+           },
+           "ignored": [],
+           "logic": null,
+           "node": "C_triplet",
+           "radius": 0,
+           "result": "failed",
+           "scan": "ball"
+          }
+         ],
+         "evaluated": 2,
+         "invert": false,
+         "logic": "LogicOr",
+         "node": "Y_1centerquadrad",
+         "of": 2,
+         "result": "failed"
+        },
+        {
+         "components": [
+          {
+           "anchoring": "anchored",
+           "anchors": {
+            "*3": 50
+           },
+           "ball": [
+            [
+             50,
+             0
+            ]
+           ],
+           "candidates": {},
+           "free_labels": [],
+           "guards": {
+            "element_count": {
+             "group_minimum": {
+              "N": 1
+             },
+             "read": true,
+             "structure": {}
+            },
+            "multiplicity": {
+             "group": [],
+             "read": false,
+             "structure": 2
+            },
+            "radical_count": {
+             "group_minimum": 3,
+             "read": true,
+             "structure": 1
+            }
+           },
+           "ignored": [],
+           "logic": null,
+           "node": "N_atom_quartet",
+           "radius": 0,
+           "result": "failed",
+           "scan": "ball"
+          },
+          {
+           "anchoring": "anchored",
+           "anchors": {
+            "*3": 50
+           },
+           "ball": [
+            [
+             50,
+             0
+            ]
+           ],
+           "candidates": {},
+           "free_labels": [],
+           "guards": {
+            "element_count": {
+             "group_minimum": {
+              "N": 1
+             },
+             "read": true,
+             "structure": {}
+            },
+            "multiplicity": {
+             "group": [],
+             "read": false,
+             "structure": 2
+            },
+            "radical_count": {
+             "group_minimum": 1,
+             "read": true,
+             "structure": 1
+            }
+           },
+           "ignored": [],
+           "logic": null,
+           "node": "N_atom_doublet",
+           "radius": 0,
+           "result": "failed",
+           "scan": "ball"
+          },
+          {
+           "anchoring": "anchored",
+           "anchors": {
+            "*3": 50
+           },
+           "ball": [
+            [
+             50,
+             0
+            ]
+           ],
+           "candidates": {},
+           "free_labels": [],
+           "guards": {
+            "element_count": {
+             "group_minimum": {
+              "C": 1,
+              "H": 1
+             },
+             "read": true,
+             "structure": {
+              "H": 1
+             }
+            },
+            "multiplicity": {
+             "group": [],
+             "read": false,
+             "structure": 2
+            },
+            "radical_count": {
+             "group_minimum": 3,
+             "read": true,
+             "structure": 1
+            }
+           },
+           "ignored": [],
+           "logic": null,
+           "node": "CH_quartet",
+           "radius": 1,
+           "result": "failed",
+           "scan": "ball"
+          },
+          {
+           "anchoring": "anchored",
+           "anchors": {
+            "*3": 50
+           },
+           "ball": [
+            [
+             50,
+             0
+            ]
+           ],
+           "candidates": {},
+           "free_labels": [],
+           "guards": {
+            "element_count": {
+             "group_minimum": {
+              "C": 1,
+              "H": 1
+             },
+             "read": true,
+             "structure": {
+              "H": 1
+             }
+            },
+            "multiplicity": {
+             "group": [],
+             "read": false,
+             "structure": 2
+            },
+            "radical_count": {
+             "group_minimum": 1,
+             "read": true,
+             "structure": 1
+            }
+           },
+           "ignored": [],
+           "logic": null,
+           "node": "CH_doublet",
+           "radius": 1,
+           "result": "failed",
+           "scan": "ball"
+          }
+         ],
+         "evaluated": 4,
+         "invert": false,
+         "logic": "LogicOr",
+         "node": "Y_1centertrirad",
+         "of": 4,
+         "result": "failed"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {},
+           "read": false,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 2,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Y_1centerbirad",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "embeddings": {
+          "by_group": [
+           [
+            0,
+            [
+             50
+            ]
+           ]
+          ],
+          "count": 1,
+          "images": [
+           50
+          ],
+          "least": [
+           [
+            0,
+            50
+           ]
+          ]
+         },
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {},
+           "read": false,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Y_rad",
+         "radius": 0,
+         "result": "matched",
+         "scan": "ball"
+        }
+       ],
+       "choice": "Y_rad",
+       "node": "Y_rad_birad_trirad_quadrad",
+       "rule": "single match"
+      },
+      {
+       "children": [
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "embeddings": {
+          "by_group": [
+           [
+            0,
+            [
+             50
+            ]
+           ]
+          ],
+          "count": 1,
+          "images": [
+           50
+          ],
+          "least": [
+           [
+            0,
+            50
+           ]
+          ]
+         },
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "H": 1
+           },
+           "read": true,
+           "structure": {
+            "H": 1
+           }
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "H_rad",
+         "radius": 0,
+         "result": "matched",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {},
+           "read": false,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 2,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Y_2centeradjbirad",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Ct_rad",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "O": 1
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "O_rad",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "S": 1
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "S_rad",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 2
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Cd_rad",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 3
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Cb_rad",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1,
+            "O": 1
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "CO_rad",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1,
+            "S": 1
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "CS_rad",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "C": 1
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Cs_rad",
+         "radius": 1,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "N": 1
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "N3_rad",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "N": 1
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "N5_rad",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "Cl": 1
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Cl_rad",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "I": 1
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "I_rad",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        },
+        {
+         "anchoring": "anchored",
+         "anchors": {
+          "*3": 50
+         },
+         "ball": [
+          [
+           50,
+           0
+          ]
+         ],
+         "candidates": {},
+         "free_labels": [],
+         "guards": {
+          "element_count": {
+           "group_minimum": {
+            "Li": 1
+           },
+           "read": true,
+           "structure": {}
+          },
+          "multiplicity": {
+           "group": [],
+           "read": false,
+           "structure": 2
+          },
+          "radical_count": {
+           "group_minimum": 1,
+           "read": true,
+           "structure": 1
+          }
+         },
+         "ignored": [],
+         "logic": null,
+         "node": "Li_rad",
+         "radius": 0,
+         "result": "failed",
+         "scan": "ball"
+        }
+       ],
+       "choice": "H_rad",
+       "node": "Y_rad",
+       "rule": "single match"
+      },
+      {
+       "children": [],
+       "choice": null,
+       "node": "H_rad",
+       "rule": "no child matched: stop"
+      }
+     ],
+     "structure": "template reactant 1",
+     "top": "Y_rad_birad_trirad_quadrad"
+    }
+   ]
+  },
+  "eligible": true,
+  "family": "H_Abstraction",
+  "gaps": [],
+  "global_guards": [
+   {
+    "guard": "multiplicity_convention",
+    "read_by": "the bridge (rmg_moves.molecule_from_rows) and every whole-species comparison (depository search, product identity)",
+    "value": "maximum: multiplicity = number of unpaired electrons + 1 (rmg_moves.molecule_from_rows -> Molecule.update_multiplicity; RMG's own SMILES/adjacency default for a radical without a multiplicity line)"
+   },
+   {
+    "guard": "depository_whole_species",
+    "read_by": "KineticsFamily.get_kinetics before any tree estimate"
+   },
+   {
+    "guard": "inRing",
+    "read_by": "atom predicates with an inRing prop (ring perception over the whole molecule; the value is recorded per ball atom)"
+   },
+   {
+    "guard": "group_multiplicity",
+    "read_by": [],
+    "where": "Molecule.is_subgraph_isomorphic, whole structure"
+   },
+   {
+    "guard": "group_radical_count",
+    "read_by": [
+     "CH2_triplet_H",
+     "CH_doublet",
+     "CH_quartet",
+     "CO_rad",
+     "CS_rad",
+     "C_doublet_H",
+     "C_quartet_H",
+     "C_quintet",
+     "C_triplet",
+     "Cb_rad",
+     "Cd_rad",
+     "Cl_rad",
+     "Cs_rad",
+     "Ct_rad",
+     "H_rad",
+     "I_rad",
+     "Li_rad",
+     "N3_rad",
+     "N5_rad",
+     "NH_triplet_H",
+     "N_atom_doublet",
+     "N_atom_quartet",
+     "OSrad_O_H",
+     "O_rad",
+     "S_rad",
+     "Xrad_H",
+     "Y_1centerbirad",
+     "Y_2centeradjbirad",
+     "Y_rad"
+    ],
+    "where": "Molecule.is_subgraph_isomorphic, whole structure"
+   },
+   {
+    "guard": "group_element_count",
+    "read_by": [
+     "C/H/Cs2",
+     "C/H/Cs2CO",
+     "C/H/Cs2CS",
+     "C/H/Cs2Cb",
+     "C/H/Cs2Cd",
+     "C/H/Cs2Ct",
+     "C/H/CsO",
+     "C/H/CsS",
+     "C/H/NonDe",
+     "C/H/OO",
+     "C/H/OS",
+     "C/H/OneDe",
+     "C/H/SS",
+     "C/H/ThreeDe",
+     "C/H/TwoDe",
+     "CH2_singlet_H",
+     "CH2_triplet_H",
+     "CH_doublet",
+     "CH_quartet",
+     "CO_H",
+     "CO_rad",
+     "CS_H",
+     "CS_rad",
+     "C_doublet_H",
+     "C_methane",
+     "C_pri",
+     "C_quartet_H",
+     "C_quintet",
+     "C_sec",
+     "C_ter",
+     "C_triplet",
+     "Cb_H",
+     "Cb_rad",
+     "Cd_H",
+     "Cd_rad",
+     "Cl_rad",
+     "Cs_H",
+     "Cs_rad",
+     "Ct_H",
+     "Ct_rad",
+     "H2",
+     "HCl",
+     "HI",
+     "H_rad",
+     "I_rad",
+     "Li_rad",
+     "N3_H",
+     "N3_rad",
+     "N5_H",
+     "N5_rad",
+     "NH_singlet_H",
+     "NH_triplet_H",
+     "N_atom_doublet",
+     "N_atom_quartet",
+     "OSrad_O_H",
+     "O_H",
+     "O_rad",
+     "S_H",
+     "S_rad",
+     "X_H",
+     "Xrad_H"
+    ],
+    "where": "Molecule.is_subgraph_isomorphic, whole structure"
+   }
+  ],
+  "h_handling": "explicit: hydrogens are graph atoms, a bond to H is one bond, an H inside a ball is listed with its own row",
+  "input_refusals": [],
+  "multiplicity_convention": "maximum: multiplicity = number of unpaired electrons + 1 (rmg_moves.molecule_from_rows -> Molecule.update_multiplicity; RMG's own SMILES/adjacency default for a radical without a multiplicity line)",
+  "nodes": {
+   "C/H/Cs2": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cb",
+       "Cd",
+       "Ct"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 4,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/Cs2CO": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 4,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/Cs2CS": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CS"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "S"
+      ],
+      "charge": [],
+      "index": 5,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ],
+     [
+      1,
+      5,
+      [
+       2.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 4,
+     "H": 1,
+     "S": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/Cs2Cb": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cb"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 4,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/Cs2Cd": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cd"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 5,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ],
+     [
+      1,
+      5,
+      [
+       2.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 5,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/Cs2Ct": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Ct"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 4,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/CsO": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cb",
+       "Cd",
+       "Ct"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "O"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 3,
+     "H": 1,
+     "O": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/CsS": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cb",
+       "Cd",
+       "Ct"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "S"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 3,
+     "H": 1,
+     "S": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/NonDe": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs",
+       "N",
+       "O",
+       "S"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs",
+       "N",
+       "O",
+       "S"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs",
+       "N",
+       "O",
+       "S"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/OO": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cb",
+       "Cd",
+       "Ct"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "O"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "O"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 2,
+     "H": 1,
+     "O": 2
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/OS": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cb",
+       "Cd",
+       "Ct"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "O"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "S"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 2,
+     "H": 1,
+     "O": 1,
+     "S": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/OneDe": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cb",
+       "Cd",
+       "Ct"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs",
+       "O",
+       "S"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs",
+       "O",
+       "S"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 2,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/SS": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cb",
+       "Cd",
+       "Ct"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "S"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "S"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 2,
+     "H": 1,
+     "S": 2
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/ThreeDe": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cb",
+       "Cd",
+       "Ct"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cb",
+       "Cd",
+       "Ct"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cb",
+       "Cd",
+       "Ct"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 4,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C/H/TwoDe": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cb",
+       "Cd",
+       "Ct"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cb",
+       "Cd",
+       "Ct"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cs",
+       "O",
+       "S"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 3,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "CH2_singlet_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [
+       1
+      ],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 2
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "CH2_triplet_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "Cs"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       2
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 2
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 2
+   },
+   "CH_doublet": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [
+       1
+      ],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "CH_quartet": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [
+       0
+      ],
+      "props": {},
+      "radical_electrons": [
+       3
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [
+       0
+      ],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 3
+   },
+   "CO_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "O"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       2.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 1,
+     "O": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "CO_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     },
+     {
+      "atomtypes": [
+       "O"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       2.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "O": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "CS_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "S"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       2.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 1,
+     "S": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "CS_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     },
+     {
+      "atomtypes": [
+       "S"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       2.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "S": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "C_doublet_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [
+       1
+      ],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [
+       0
+      ],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "C_methane": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 4
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C_pri": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R!H"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 3
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C_quartet_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [
+       0
+      ],
+      "props": {},
+      "radical_electrons": [
+       3
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [
+       0
+      ],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 3
+   },
+   "C_quintet": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [
+       0
+      ],
+      "props": {},
+      "radical_electrons": [
+       4
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {
+     "C": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 4
+   },
+   "C_sec": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R!H"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R!H"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 2
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C_ter": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R!H"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R!H"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R!H"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "C_triplet": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [
+       1
+      ],
+      "props": {},
+      "radical_electrons": [
+       2
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {
+     "C": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 2
+   },
+   "Cb_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "Cb"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cb",
+       "Cbf"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cb",
+       "Cbf"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.5
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.5
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 3,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "Cb_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "Cb"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cb",
+       "Cbf"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "Cb",
+       "Cbf"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.5
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.5
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 3
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "Cd_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "C",
+       "N"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       2.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "Cd_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     },
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       2.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 2
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "Cl_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "Cl1s"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {
+     "Cl": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "Cs_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 4,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      4,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "Cs_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 3,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      3,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "Ct_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "Ct"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "C",
+       "N"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       3.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "Ct_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "C"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     },
+     {
+      "atomtypes": [
+       "C",
+       "N"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       3.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "C": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "H2": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "H": 2
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "HCl": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "Cl1s"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "Cl": 1,
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "HI": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "I1s"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "H": 1,
+     "I": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "H_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "I_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "I1s"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {
+     "I": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "Li_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "Li"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {
+     "Li": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "N3_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "N3d",
+       "N3s"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "H": 1,
+     "N": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "N3_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "N3d",
+       "N3s"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {
+     "N": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "N5_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "N5b",
+       "N5dc",
+       "N5ddc",
+       "N5sc",
+       "N5tc"
+      ],
+      "charge": [
+       1
+      ],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [
+       0
+      ],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "H": 1,
+     "N": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "N5_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "N5dc",
+       "N5sc",
+       "N5tc"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {
+     "N": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "NH_singlet_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "N"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [
+       2
+      ],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "H": 1,
+     "N": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "NH_triplet_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "N"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [
+       1
+      ],
+      "props": {},
+      "radical_electrons": [
+       2
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "H": 1,
+     "N": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 2
+   },
+   "N_atom_doublet": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "N"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [
+       2
+      ],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {
+     "N": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "N_atom_quartet": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "N"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [
+       1
+      ],
+      "props": {},
+      "radical_electrons": [
+       3
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {
+     "N": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 3
+   },
+   "OSrad_O_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "O"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "O",
+       "S"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "H": 1,
+     "O": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "O_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "O"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 2,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ],
+     [
+      0,
+      2,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "H": 1,
+     "O": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "O_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "O"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     },
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "O": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "S_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "S"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "H": 1,
+     "S": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "S_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "S"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {
+     "S": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "X_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 0
+   },
+   "X_H_or_Xrad_H_Xbirad_H_Xtrirad_H": {
+    "components": [
+     "Xtrirad_H",
+     "Xbirad_H",
+     "Xrad_H",
+     "X_H"
+    ],
+    "invert": false,
+    "kind": "logic",
+    "operator": "LogicOr"
+   },
+   "Xbirad_H": {
+    "components": [
+     "CH2_triplet_H",
+     "CH2_singlet_H",
+     "NH_triplet_H",
+     "NH_singlet_H"
+    ],
+    "invert": false,
+    "kind": "logic",
+    "operator": "LogicOr"
+   },
+   "Xrad_H": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "R!H"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*1",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     },
+     {
+      "atomtypes": [
+       "H"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "*2",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       0
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0
+      ]
+     ]
+    ],
+    "element_count": {
+     "H": 1
+    },
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "Xtrirad_H": {
+    "components": [
+     "C_quartet_H",
+     "C_doublet_H"
+    ],
+    "invert": false,
+    "kind": "logic",
+    "operator": "LogicOr"
+   },
+   "Y_1centerbirad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "CO",
+       "CS",
+       "Cd",
+       "Cs",
+       "N",
+       "O",
+       "S"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       2
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {},
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 2
+   },
+   "Y_1centerquadrad": {
+    "components": [
+     "C_quintet",
+     "C_triplet"
+    ],
+    "invert": false,
+    "kind": "logic",
+    "operator": "LogicOr"
+   },
+   "Y_1centertrirad": {
+    "components": [
+     "N_atom_quartet",
+     "N_atom_doublet",
+     "CH_quartet",
+     "CH_doublet"
+    ],
+    "invert": false,
+    "kind": "logic",
+    "operator": "LogicOr"
+   },
+   "Y_2centeradjbirad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "Ct",
+       "O2s",
+       "S2s"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     },
+     {
+      "atomtypes": [
+       "Ct",
+       "O2s",
+       "S2s"
+      ],
+      "charge": [],
+      "index": 1,
+      "label": "",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     }
+    ],
+    "bonds": [
+     [
+      0,
+      1,
+      [
+       1.0,
+       3.0
+      ]
+     ]
+    ],
+    "element_count": {},
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 2
+   },
+   "Y_rad": {
+    "atoms": [
+     {
+      "atomtypes": [
+       "R"
+      ],
+      "charge": [],
+      "index": 0,
+      "label": "*3",
+      "lone_pairs": [],
+      "props": {},
+      "radical_electrons": [
+       1
+      ]
+     }
+    ],
+    "bonds": [],
+    "element_count": {},
+    "kind": "group",
+    "multiplicity": [],
+    "radical_count": 1
+   },
+   "Y_rad_birad_trirad_quadrad": {
+    "components": [
+     "Y_rad",
+     "Y_1centerbirad",
+     "Y_1centertrirad",
+     "Y_1centerquadrad"
+    ],
+    "invert": false,
+    "kind": "logic",
+    "operator": "LogicOr"
+   }
+  },
+  "radius_unit": "ordinary bonds of the witness graph (bond order ignored); the radius of a group is the largest bond distance from its labelled atoms to any group atom",
+  "species": {
+   "CC(CC(CCc1ccccc1)c1ccccc1)c1ccccc1": {
+    "domain": {
+     "accepted": true,
+     "details": {
+      "backbone_carbons": 6,
+      "ends": [
+       "benzyl",
+       "methyl"
+      ],
+      "phenyls": 3,
+      "radical_sites": []
+     },
+     "kind": "ps_chain",
+     "reason": ""
+    },
+    "spin": {
+     "convention": null,
+     "radical_electrons": 0,
+     "reason": "",
+     "status": "supported"
+    }
+   },
+   "CC(C[C](CCc1ccccc1)c1ccccc1)c1ccccc1": {
+    "domain": {
+     "accepted": true,
+     "details": {
+      "backbone_carbons": 6,
+      "ends": [
+       "benzyl",
+       "methyl"
+      ],
+      "phenyls": 3,
+      "radical_sites": [
+       [
+        9,
+        "benzylic"
+       ]
+      ]
+     },
+     "kind": "ps_chain",
+     "reason": ""
+    },
+    "spin": {
+     "convention": null,
+     "radical_electrons": 1,
+     "reason": "",
+     "status": "supported"
+    }
+   },
+   "[H]": {
+    "domain": {
+     "accepted": true,
+     "details": {
+      "radical_sites": [
+       [
+        50,
+        "h_atom"
+       ]
+      ]
+     },
+     "kind": "small:H",
+     "reason": ""
+    },
+    "spin": {
+     "convention": null,
+     "radical_electrons": 1,
+     "reason": "",
+     "status": "supported"
+    }
+   },
+   "[H][H]": {
+    "domain": {
+     "accepted": true,
+     "details": {},
+     "kind": "small:H2",
+     "reason": ""
+    },
+    "spin": {
+     "convention": null,
+     "radical_electrons": 0,
+     "reason": "",
+     "status": "supported"
+    }
+   }
+  },
+  "version": "kmc-rate-certificate/4",
+  "witness": {
+   "atoms": [
+    [
+     0,
+     "C",
+     0,
+     [
+      1,
+      24,
+      25,
+      26
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       1,
+       1.0
+      ],
+      [
+       24,
+       1.0
+      ],
+      [
+       25,
+       1.0
+      ],
+      [
+       26,
+       1.0
+      ]
+     ]
+    ],
+    [
+     1,
+     "C",
+     0,
+     [
+      0,
+      2,
+      8,
+      27
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       0,
+       1.0
+      ],
+      [
+       2,
+       1.0
+      ],
+      [
+       8,
+       1.0
+      ],
+      [
+       27,
+       1.0
+      ]
+     ]
+    ],
+    [
+     2,
+     "C",
+     0,
+     [
+      1,
+      3,
+      7
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       1,
+       1.0
+      ],
+      [
+       3,
+       1.5
+      ],
+      [
+       7,
+       1.5
+      ]
+     ]
+    ],
+    [
+     3,
+     "C",
+     0,
+     [
+      2,
+      4,
+      28
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       2,
+       1.5
+      ],
+      [
+       4,
+       1.5
+      ],
+      [
+       28,
+       1.0
+      ]
+     ]
+    ],
+    [
+     4,
+     "C",
+     0,
+     [
+      3,
+      5,
+      29
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       3,
+       1.5
+      ],
+      [
+       5,
+       1.5
+      ],
+      [
+       29,
+       1.0
+      ]
+     ]
+    ],
+    [
+     5,
+     "C",
+     0,
+     [
+      4,
+      6,
+      30
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       4,
+       1.5
+      ],
+      [
+       6,
+       1.5
+      ],
+      [
+       30,
+       1.0
+      ]
+     ]
+    ],
+    [
+     6,
+     "C",
+     0,
+     [
+      5,
+      7,
+      31
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       5,
+       1.5
+      ],
+      [
+       7,
+       1.5
+      ],
+      [
+       31,
+       1.0
+      ]
+     ]
+    ],
+    [
+     7,
+     "C",
+     0,
+     [
+      2,
+      6,
+      32
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       2,
+       1.5
+      ],
+      [
+       6,
+       1.5
+      ],
+      [
+       32,
+       1.0
+      ]
+     ]
+    ],
+    [
+     8,
+     "C",
+     0,
+     [
+      1,
+      9,
+      33,
+      34
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       1,
+       1.0
+      ],
+      [
+       9,
+       1.0
+      ],
+      [
+       33,
+       1.0
+      ],
+      [
+       34,
+       1.0
+      ]
+     ]
+    ],
+    [
+     9,
+     "C",
+     0,
+     [
+      8,
+      10,
+      16,
+      35
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       8,
+       1.0
+      ],
+      [
+       10,
+       1.0
+      ],
+      [
+       16,
+       1.0
+      ],
+      [
+       35,
+       1.0
+      ]
+     ]
+    ],
+    [
+     10,
+     "C",
+     0,
+     [
+      9,
+      11,
+      15
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       9,
+       1.0
+      ],
+      [
+       11,
+       1.5
+      ],
+      [
+       15,
+       1.5
+      ]
+     ]
+    ],
+    [
+     11,
+     "C",
+     0,
+     [
+      10,
+      12,
+      36
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       10,
+       1.5
+      ],
+      [
+       12,
+       1.5
+      ],
+      [
+       36,
+       1.0
+      ]
+     ]
+    ],
+    [
+     12,
+     "C",
+     0,
+     [
+      11,
+      13,
+      37
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       11,
+       1.5
+      ],
+      [
+       13,
+       1.5
+      ],
+      [
+       37,
+       1.0
+      ]
+     ]
+    ],
+    [
+     13,
+     "C",
+     0,
+     [
+      12,
+      14,
+      38
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       12,
+       1.5
+      ],
+      [
+       14,
+       1.5
+      ],
+      [
+       38,
+       1.0
+      ]
+     ]
+    ],
+    [
+     14,
+     "C",
+     0,
+     [
+      13,
+      15,
+      39
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       13,
+       1.5
+      ],
+      [
+       15,
+       1.5
+      ],
+      [
+       39,
+       1.0
+      ]
+     ]
+    ],
+    [
+     15,
+     "C",
+     0,
+     [
+      10,
+      14,
+      40
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       10,
+       1.5
+      ],
+      [
+       14,
+       1.5
+      ],
+      [
+       40,
+       1.0
+      ]
+     ]
+    ],
+    [
+     16,
+     "C",
+     0,
+     [
+      9,
+      17,
+      41,
+      42
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       9,
+       1.0
+      ],
+      [
+       17,
+       1.0
+      ],
+      [
+       41,
+       1.0
+      ],
+      [
+       42,
+       1.0
+      ]
+     ]
+    ],
+    [
+     17,
+     "C",
+     0,
+     [
+      16,
+      18,
+      43,
+      44
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       16,
+       1.0
+      ],
+      [
+       18,
+       1.0
+      ],
+      [
+       43,
+       1.0
+      ],
+      [
+       44,
+       1.0
+      ]
+     ]
+    ],
+    [
+     18,
+     "C",
+     0,
+     [
+      17,
+      19,
+      23
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       17,
+       1.0
+      ],
+      [
+       19,
+       1.5
+      ],
+      [
+       23,
+       1.5
+      ]
+     ]
+    ],
+    [
+     19,
+     "C",
+     0,
+     [
+      18,
+      20,
+      45
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       18,
+       1.5
+      ],
+      [
+       20,
+       1.5
+      ],
+      [
+       45,
+       1.0
+      ]
+     ]
+    ],
+    [
+     20,
+     "C",
+     0,
+     [
+      19,
+      21,
+      46
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       19,
+       1.5
+      ],
+      [
+       21,
+       1.5
+      ],
+      [
+       46,
+       1.0
+      ]
+     ]
+    ],
+    [
+     21,
+     "C",
+     0,
+     [
+      20,
+      22,
+      47
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       20,
+       1.5
+      ],
+      [
+       22,
+       1.5
+      ],
+      [
+       47,
+       1.0
+      ]
+     ]
+    ],
+    [
+     22,
+     "C",
+     0,
+     [
+      21,
+      23,
+      48
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       21,
+       1.5
+      ],
+      [
+       23,
+       1.5
+      ],
+      [
+       48,
+       1.0
+      ]
+     ]
+    ],
+    [
+     23,
+     "C",
+     0,
+     [
+      18,
+      22,
+      49
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       18,
+       1.5
+      ],
+      [
+       22,
+       1.5
+      ],
+      [
+       49,
+       1.0
+      ]
+     ]
+    ],
+    [
+     24,
+     "H",
+     0,
+     [
+      0
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       0,
+       1.0
+      ]
+     ]
+    ],
+    [
+     25,
+     "H",
+     0,
+     [
+      0
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       0,
+       1.0
+      ]
+     ]
+    ],
+    [
+     26,
+     "H",
+     0,
+     [
+      0
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       0,
+       1.0
+      ]
+     ]
+    ],
+    [
+     27,
+     "H",
+     0,
+     [
+      1
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       1,
+       1.0
+      ]
+     ]
+    ],
+    [
+     28,
+     "H",
+     0,
+     [
+      3
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       3,
+       1.0
+      ]
+     ]
+    ],
+    [
+     29,
+     "H",
+     0,
+     [
+      4
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       4,
+       1.0
+      ]
+     ]
+    ],
+    [
+     30,
+     "H",
+     0,
+     [
+      5
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       5,
+       1.0
+      ]
+     ]
+    ],
+    [
+     31,
+     "H",
+     0,
+     [
+      6
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       6,
+       1.0
+      ]
+     ]
+    ],
+    [
+     32,
+     "H",
+     0,
+     [
+      7
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       7,
+       1.0
+      ]
+     ]
+    ],
+    [
+     33,
+     "H",
+     0,
+     [
+      8
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       8,
+       1.0
+      ]
+     ]
+    ],
+    [
+     34,
+     "H",
+     0,
+     [
+      8
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       8,
+       1.0
+      ]
+     ]
+    ],
+    [
+     35,
+     "H",
+     0,
+     [
+      9
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       9,
+       1.0
+      ]
+     ]
+    ],
+    [
+     36,
+     "H",
+     0,
+     [
+      11
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       11,
+       1.0
+      ]
+     ]
+    ],
+    [
+     37,
+     "H",
+     0,
+     [
+      12
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       12,
+       1.0
+      ]
+     ]
+    ],
+    [
+     38,
+     "H",
+     0,
+     [
+      13
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       13,
+       1.0
+      ]
+     ]
+    ],
+    [
+     39,
+     "H",
+     0,
+     [
+      14
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       14,
+       1.0
+      ]
+     ]
+    ],
+    [
+     40,
+     "H",
+     0,
+     [
+      15
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       15,
+       1.0
+      ]
+     ]
+    ],
+    [
+     41,
+     "H",
+     0,
+     [
+      16
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       16,
+       1.0
+      ]
+     ]
+    ],
+    [
+     42,
+     "H",
+     0,
+     [
+      16
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       16,
+       1.0
+      ]
+     ]
+    ],
+    [
+     43,
+     "H",
+     0,
+     [
+      17
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       17,
+       1.0
+      ]
+     ]
+    ],
+    [
+     44,
+     "H",
+     0,
+     [
+      17
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       17,
+       1.0
+      ]
+     ]
+    ],
+    [
+     45,
+     "H",
+     0,
+     [
+      19
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       19,
+       1.0
+      ]
+     ]
+    ],
+    [
+     46,
+     "H",
+     0,
+     [
+      20
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       20,
+       1.0
+      ]
+     ]
+    ],
+    [
+     47,
+     "H",
+     0,
+     [
+      21
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       21,
+       1.0
+      ]
+     ]
+    ],
+    [
+     48,
+     "H",
+     0,
+     [
+      22
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       22,
+       1.0
+      ]
+     ]
+    ],
+    [
+     49,
+     "H",
+     0,
+     [
+      23
+     ],
+     null,
+     0,
+     0,
+     [
+      [
+       23,
+       1.0
+      ]
+     ]
+    ],
+    [
+     50,
+     "H",
+     1,
+     [],
+     null,
+     0,
+     0,
+     []
+    ]
+   ],
+   "molecules": [
+    [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23,
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30,
+     31,
+     32,
+     33,
+     34,
+     35,
+     36,
+     37,
+     38,
+     39,
+     40,
+     41,
+     42,
+     43,
+     44,
+     45,
+     46,
+     47,
+     48,
+     49
+    ],
+    [
+     50
+    ]
+   ]
+  }
+ },
+ "member": "PS3+H|H_Abstraction|forward|C/H/Cs2Cb;H_rad|CC(C[C](CCc1ccccc1)c1ccccc1)c1ccccc1,[H][H]|m0"
+}

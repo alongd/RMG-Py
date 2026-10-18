@@ -1,0 +1,694 @@
+{
+ "direction": "reverse",
+ "family": "R_Recombination",
+ "members": {
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_3R!H->C_Sp-3C-2CN_Ext-3C-R_N-Sp-4R!H=3C_Sp-4R!H-3C|[CH2]CCCCCCCCCCCCCCC,[H]|m0": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_3R!H->C_Sp-3C-2CN_Ext-3C-R_N-Sp-4R!H=3C_Sp-4R!H-3C",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_3R!H->C_Sp-3C-2CN_Ext-3C-R_N-Sp-4R!H=3C_Sp-4R!H-3C|[CH2]CCCCCCCCCCCCCCC,[H]|m1": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_3R!H->C_Sp-3C-2CN_Ext-3C-R_N-Sp-4R!H=3C_Sp-4R!H-3C",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_3R!H->C_Sp-3C-2CN_Ext-3C-R_N-Sp-4R!H=3C_Sp-4R!H-3C|[CH2]CCCCCCCCCCCCCCC,[H]|m2": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_3R!H->C_Sp-3C-2CN_Ext-3C-R_N-Sp-4R!H=3C_Sp-4R!H-3C",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_3R!H->C_Sp-3C-2CN_Ext-3C-R_N-Sp-4R!H=3C_Sp-4R!H-3C|[CH2]CCCCCCCCCCCCCCC,[H]|m3": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_3R!H->C_Sp-3C-2CN_Ext-3C-R_N-Sp-4R!H=3C_Sp-4R!H-3C",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_3R!H->C_Sp-3C-2CN_Ext-3C-R_N-Sp-4R!H=3C_Sp-4R!H-3C|[CH2]CCCCCCCCCCCCCCC,[H]|m4": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_3R!H->C_Sp-3C-2CN_Ext-3C-R_N-Sp-4R!H=3C_Sp-4R!H-3C",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_3R!H->C_Sp-3C-2CN_Ext-3C-R_N-Sp-4R!H=3C_Sp-4R!H-3C|[CH2]CCCCCCCCCCCCCCC,[H]|m5": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_3R!H->C_Sp-3C-2CN_Ext-3C-R_N-Sp-4R!H=3C_Sp-4R!H-3C",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCCCCC[CH]CCCCCCCC,[H]|m0": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCCCCC[CH]CCCCCCCC,[H]|m1": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCCCCC[CH]CCCCCCCC,[H]|m2": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCCCCC[CH]CCCCCCCC,[H]|m3": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCCCC[CH]CCCCCCCCC,[H]|m0": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCCCC[CH]CCCCCCCCC,[H]|m1": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCCCC[CH]CCCCCCCCC,[H]|m2": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCCCC[CH]CCCCCCCCC,[H]|m3": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCCC[CH]CCCCCCCCCC,[H]|m0": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCCC[CH]CCCCCCCCCC,[H]|m1": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCCC[CH]CCCCCCCCCC,[H]|m2": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCCC[CH]CCCCCCCCCC,[H]|m3": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCC[CH]CCCCCCCCCCC,[H]|m0": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCC[CH]CCCCCCCCCCC,[H]|m1": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCC[CH]CCCCCCCCCCC,[H]|m2": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCCC[CH]CCCCCCCCCCC,[H]|m3": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCC[CH]CCCCCCCCCCCC,[H]|m0": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCC[CH]CCCCCCCCCCCC,[H]|m1": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCC[CH]CCCCCCCCCCCC,[H]|m2": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CCC[CH]CCCCCCCCCCCC,[H]|m3": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CC[CH]CCCCCCCCCCCCC,[H]|m0": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CC[CH]CCCCCCCCCCCCC,[H]|m1": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CC[CH]CCCCCCCCCCCCC,[H]|m2": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|CC[CH]CCCCCCCCCCCCC,[H]|m3": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|C[CH]CCCCCCCCCCCCCC,[H]|m0": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|C[CH]CCCCCCCCCCCCCC,[H]|m1": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|C[CH]CCCCCCCCCCCCCC,[H]|m2": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R|C[CH]CCCCCCCCCCCCCC,[H]|m3": {
+   "channels": [
+    {
+     "pathway": "Root_1R->H_N-2R->S_N-2CHNO->H_N-2CNO-inRing_Ext-2CNO-R_N-Sp-3R!H=2CCNNOO_N-2CNO->O_Ext-2CN-R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|C[CH2],[CH2]CCCCCCCCCCCCC|m0": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|C[CH2],[CH2]CCCCCCCCCCCCC|m1": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CC,[CH2]CCCCCCCCCCCC|m0": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CC,[CH2]CCCCCCCCCCCC|m1": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m0": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCC,[CH2]CCCCCCCCCCC|m1": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCC,[CH2]CCCCCCCCCC|m0": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCC,[CH2]CCCCCCCCCC|m1": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCC,[CH2]CCCCCCCCC|m0": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCC,[CH2]CCCCCCCCC|m1": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCC,[CH2]CCCCCCCC|m0": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCC,[CH2]CCCCCCCC|m1": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCCC,[CH2]CCCCCCC|m0": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCCCCCCCCCC,[CH3]|m0": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  },
+  "c16|R_Recombination|reverse|Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R|[CH2]CCCCCCCCCCCCCC,[CH3]|m1": {
+   "channels": [
+    {
+     "pathway": "Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_Ext-3R!H-R_N-Sp-3R!H=2R",
+     "repeat_unit": {
+      "C": 8,
+      "H": 8
+     },
+     "verdict": "excluded:size"
+    }
+   ],
+   "complete": true,
+   "eligible": true
+  }
+ },
+ "reference": "c16",
+ "source": "S2a tip 34b7fd0fb (legacy witnesses byte-identical to 59246f18b)"
+}
