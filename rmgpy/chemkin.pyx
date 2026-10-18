@@ -1494,6 +1494,8 @@ def read_species_block(f, species_dict, species_aliases, species_list):
         line = f.readline()
         if line == '':
             raise _block_at_end_of_file('SITE' if first_token.startswith('SITE') else 'SPECIES')
+        if _opens_block(line):
+            raise _unterminated_block('SITE' if first_token.startswith('SITE') else 'SPECIES', line)
         # If the line contains only one species, and also contains
         # a comment with only one token, assume that token is 
         # intended to be the true identifier for the species, but
@@ -1649,6 +1651,9 @@ def read_thermo_block(f, species_dict):
         # RMG's writers close every THERM block with END: end of file before it is a cut file, and inside
         # an unfinished entry it names the species
         raise _block_at_end_of_file('THERM', thermo_block.split()[0] if thermo_block.strip() else None)
+    if thermo_block.strip():
+        raise ChemkinError('The THERM block has END inside the unfinished entry for species {0}'.format(
+            thermo_block.split()[0]))
     return formula_dict
 
 
@@ -1742,6 +1747,9 @@ def read_reactions_block(f, species_dict, read_comments=True):
     line = f.readline()
     ended = False
     while line != '':
+
+        if _opens_block(line):
+            raise _unterminated_block('REACTIONS', line)
 
         line_starts_with_comment = line.lstrip().startswith('!') or line.lstrip().startswith('//')
         line, comment = remove_comment_from_line(line)
