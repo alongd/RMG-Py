@@ -1170,3 +1170,58 @@ class TestEndKeyword:
                                                "end_cap(4) + H(1) => blend(3)", "H(1) + H(1) => blend(3)"]
         assert [r.kinetics.A.value_si for r in reactions] == pytest.approx([1.0, 2.0e-6, 3.0e-6], rel=1e-12)
         assert sorted(s.label for s in species if s.thermo is not None) == ["H", "blend", "end_cap"]
+
+
+class TestKeywordsAreTokens:
+    """An auxiliary line's keyword (DUPLICATE, LOW, HIGH, TROE, SRI, CHEB,
+    PLOG, REV, COV) is its first token, and a block header is a line's first
+    token: a collider label that merely holds one (``blow(4)``, ``dup_x(5)``)
+    on an efficiency line, or a thermo entry named ``species(9)``, is read as
+    what it is."""
+
+    LABELS = ["blow(4)", "dup_x(5)", "rev(6)", "troex(7)", "highT(8)", "cov1(9)", "cheb1(10)", "plog_x(11)",
+              "SRIx(12)"]
+    SMILES = ["C", "CC", "CCC", "CCCC", "CCCCC", "CCCCCC", "CCCCCCC", "CCCCCCCC", "CCCCCCCCC"]
+
+    def write(self, tmp_path, names, body, thermo=()):
+        text = "\n".join(["ELEMENTS H C N END", "SPECIES", *names, "END", *thermo,
+                          "REACTIONS    KCAL/MOLE   MOLES", *body, "END", ""])
+        (tmp_path / "chem.inp").write_text(text)
+        return str(tmp_path / "chem.inp")
+
+    def dictionary(self, tmp_path, structures):
+        (tmp_path / "dict.txt").write_text("\n".join(f"{n}\n{Molecule(smiles=s).to_adjacency_list()}"
+                                                     for n, s in structures.items()))
+        return str(tmp_path / "dict.txt")
+
+    @pytest.mark.parametrize("label", LABELS)
+    def test_a_collider_label_holding_a_keyword_is_an_efficiency(self, tmp_path, label):
+        structures = {"H(1)": "[H]", "H2(2)": "[H][H]", "N2": "N#N", label: self.SMILES[self.LABELS.index(label)]}
+        path = self.write(tmp_path, structures, ["H(1)+H(1)+M<=>H2(2)+M    1.0 0.0 0.0", f"{label}/2.0/ N2/0.5/"])
+        _species, reactions = load_chemkin_file(path, self.dictionary(tmp_path, structures),
+                                                check_duplicates=False, generate_resonance_structures=False)
+        (reaction,) = reactions
+        assert reaction.reversible and not reaction.duplicate
+        assert type(reaction.kinetics).__name__ == "ThirdBody"
+        efficiencies = {m.to_smiles(): e for m, e in reaction.kinetics.efficiencies.items()}
+        assert efficiencies == {Molecule(smiles=structures[label]).to_smiles(): 2.0, "N#N": 0.5}
+
+    def test_a_thermo_entry_named_like_a_header_is_no_block(self, tmp_path):
+        """With a separate thermo file the mechanism's own THERM block is not
+        read; its entry lines must not open a SPECIES or SITE block."""
+        entry = ["{0:<24}C   1H   4          G   200.000  6000.000 1000.00      1",
+                 " 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2",
+                 "-7.45375000E+02 3.35532000E+00 2.50000000E+00 0.00000000E+00 0.00000000E+00    3",
+                 " 0.00000000E+00 0.00000000E+00-7.45375000E+02 3.35532000E+00                   4"]
+        structures = {"species(9)": "C", "SITE_a(2)": "CC", "H(1)": "[H]"}
+        therm = ["THERM ALL", "   300.000  1000.000  5000.000"]
+        for name in structures:
+            therm += [line.format(name) for line in entry]
+        therm += ["END"]
+        path = self.write(tmp_path, structures, ["species(9)+H(1)=>SITE_a(2)    1.0 0.0 0.0"], thermo=therm)
+        (tmp_path / "therm.dat").write_text("\n".join(therm) + "\n")
+        species, reactions = load_chemkin_file(path, self.dictionary(tmp_path, structures),
+                                               thermo_path=str(tmp_path / "therm.dat"), check_duplicates=False,
+                                               generate_resonance_structures=False)
+        assert sorted(s.label for s in species) == ["H", "SITE_a", "species"]
+        assert [str(r) for r in reactions] == ["species(9) + H(1) => SITE_a(2)"]
