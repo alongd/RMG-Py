@@ -130,7 +130,7 @@ def family_rows(admitted, label=LABEL):
 
 def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABEL, end_groups=("[H]", "[H]"),
               mass_override=None, duplicate=None, extra_columns=(), n2=lambda t: 1.0, gas_reactions=(),
-              pool_extra=None, proxy_amount=lambda t: 7.0, ea_units="KCAL/MOLE"):
+              pool_extra=None, proxy_amount=lambda t: 7.0, ea_units="KCAL/MOLE", enthalpy=None):
     """A MoM output directory under ``out/rmg``.
 
     ``pools``: [(label, f(t) -> (mu0, mu1, mu2), defect_g_mol)]; ``gas``:
@@ -147,8 +147,9 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     None as the serializer writes for non-Arrhenius kinetics);
     ``gas_reactions``: Chemkin-only reactions (reactants, products,
     reversible, A).  The Chemkin file is complete for RMG's own reader
-    (SPECIES block, every reaction species in the dictionary); its Ea unit
-    is ``ea_units``."""
+    (SPECIES block, every reaction species in the dictionary, a THERM block:
+    every species Cp = 5/2 R with H/R = -745.375 K, or ``enthalpy``'s value
+    {identifier: H/R in K}); its Ea unit is ``ea_units``."""
     rmg = out / "rmg"
     for sub in ("solver", "chemkin"):
         (rmg / sub).mkdir(parents=True, exist_ok=True)
@@ -241,7 +242,15 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
         {"schema_version": "2.0", "pools": pool_rows, "reactions": reactions,
          "conventions": {"stale_topology": False}}))
     species_block = ["SPECIES"] + [f"    {x}" for x in sorted(named)] + ["END", ""]
-    (rmg / "chemkin" / "chem_annotated.inp").write_text("\n".join(species_block + annotated + ["END", ""]))
+    therm = ["THERM ALL", "   300.000  1000.000  5000.000", ""]
+    for x in sorted(named):
+        h = f"{(enthalpy or {}).get(x, -745.375):15.8E}"
+        therm += [f"{x:<24}Ne  1               G   200.000  6000.000 1000.00      1",
+                  " 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2",
+                  f"{h} 3.35532000E+00 2.50000000E+00 0.00000000E+00 0.00000000E+00    3",
+                  f" 0.00000000E+00 0.00000000E+00{h} 3.35532000E+00                   4", ""]
+    therm += ["END", ""]
+    (rmg / "chemkin" / "chem_annotated.inp").write_text("\n".join(species_block + therm + annotated + ["END", ""]))
 
 
 def mom_entries(out):
@@ -1853,13 +1862,91 @@ def test_motion_after_the_horizon_does_not_move_the_profile(setup):
     assert _motion(setup, lambda t: mu if t <= 40.0 else (2 * mu[0], mu[1], mu[2])) is False
 
 
-def test_a_reaction_rmgs_reader_cannot_give_is_refused(setup):
-    """RMG's Chemkin reader ends a REACTIONS block at any line holding 'end',
-    so a species identifier holding it drops reactions: the census refuses
-    the run rather than count it short."""
+def test_a_species_identifier_holding_end_keeps_its_reactions(setup):
+    """Spar r140 item 6: RMG's reader ended a REACTIONS block at any line
+    holding 'end'; with END recognised as Chemkin's first-token keyword the
+    row is read and live."""
+    proxy = proxy_of()
+    census, refused = _census(setup, [_row(products=[proxy, "Xend"])])
+    assert not refused and census["live_rows"] == ["r0"]
+
+
+def test_a_reaction_rmgs_reader_drops_is_refused(setup, monkeypatch):
+    """The census' backstop: a reader that returns fewer reactions than the
+    file annotates is refused, never counted short."""
+    import rmgpy.chemkin as chemkin
+    real = chemkin.load_chemkin_file
+
+    def short(*args, **kwargs):
+        species, reactions = real(*args, **kwargs)
+        return species, reactions[:-1]
+
+    monkeypatch.setattr(chemkin, "load_chemkin_file", short)
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    constant_run(out, setup["spec"], rows=[_row()])
+    with pytest.raises(mp.ProducerError, match="RMG's Chemkin reader gives 0 reactions"):
+        produce(setup, out, mode="convert")
+
+
+# --------------------------------------------------------------------------
+# I-172 rework 1 (spar r140)
+# --------------------------------------------------------------------------
+def test_a_reverse_rate_mom_disables_does_not_fire(setup):
+    """Spar r140 item 1: X5 <=> proxy with X5 absent and the proxy present;
+    the proxy's enthalpy makes Keq overflow, so MoM sets kb = 0
+    (polymer.pyx 4751-4762): the row carries no flux while the declared gas
+    moves.  Refused.  (With equal thermo the reverse runs:
+    test_a_reversible_row_runs_from_its_products.)"""
     proxy = proxy_of()
     out = setup["tmp"] / "out"
     produce(setup, out)
-    constant_run(out, setup["spec"], rows=[_row(products=[proxy, "Xend"])])
-    with pytest.raises(mp.ProducerError, match="RMG's Chemkin reader"):
-        produce(setup, out, mode="convert")
+    mu = declared(setup["spec"])
+    write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: mu, 0.0)], gas=TRACE,
+              rows=[_row(reactants=["X5"], products=[proxy], reversible=True)], enthalpy={proxy: -1.0e6})
+    census = _refused_census(setup, out)
+    assert census["live_rows"] == [] and census["profile_changes"] is True
+    assert "r0" in census["reverse_disabled"]
+
+
+def test_a_falloff_rate_takes_moms_effective_pressure(setup):
+    """Spar r140 item 2: a Lindemann row whose only collider in the gas (the
+    N2 bath, H and H2 at zero) has efficiency 0: MoM's effective pressure
+    (polymer.pyx 6546-6562) is 0 and so is its rate."""
+    proxy = proxy_of()
+    row = _row(equation=f"{proxy}(+M)=>{proxy}+X0(+M)", rate=(1.0, 0.0, 0.0),
+               aux=["LOW /  1.0 0.0 0.0 /", "N2/0.0/"], sidecar_kinetics=None)
+    census, refused = _census(setup, [row])
+    assert refused and census["zero_rate_rows"] == ["r0"]
+    census, refused = _census(setup, [dict(row, aux=["LOW /  1.0 0.0 0.0 /", "N2/1.0/"])])
+    assert not refused and census["live_rows"] == ["r0"]
+
+
+def test_motion_is_judged_on_the_interpolated_observations(setup):
+    """Spar r140 item 3: stored rows at 0 and 45 s, horizon 40 s: conversion
+    interpolates mu0 at every observation; so does the gate."""
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    write_run(out, times=[0.0, 45.0], pools=[(LABEL, drift(declared(setup["spec"])), 0.0)], gas=ZERO_GAS)
+    manifest = produce(setup, out, mode="convert")
+    assert manifest["census"]["profile_changes"] is True
+
+
+def test_a_change_of_mu2_alone_moves_the_profile(tmp_path):
+    """Spar r140 item 4: DP2 + DP4 -> DP3 + DP3 keeps mu0, mu1 and every
+    species but moves Mw."""
+    s = make_setup(tmp_path, {2: 1, 4: 1})
+    out = tmp_path / "out"
+    produce(s, out)
+    mu = declared(s["spec"])
+    assert mu[2] == pytest.approx(20.0 / 6.0 * mu[1], rel=1e-12)
+    write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: mu if t == 0.0 else (mu[0], mu[1], 9.0 * mu[0]), 0.0)],
+              gas=ZERO_GAS)
+    assert produce(s, out, mode="convert")["census"]["profile_changes"] is True
+
+
+def test_a_negative_total_rate_is_a_rate_error(setup):
+    """Spar r140 item 5: terms (2, 0, 0) and (-4, 0, 0) sum to -2."""
+    census, refused = _census(setup, [_row(expanded=True, terms=[(2.0, 0.0, 0.0), (-4.0, 0.0, 0.0)],
+                                           sidecar_kinetics=None)])
+    assert refused and census["zero_rate_rows"] == ["r0"] and "negative" in census["rate_errors"]["r0"]
