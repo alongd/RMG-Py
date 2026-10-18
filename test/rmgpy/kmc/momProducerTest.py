@@ -2128,7 +2128,7 @@ def test_a_reverse_rate_the_gas_masks_disagree_on_is_dead_with_the_reason():
     (efficiency 2), one mol each: out of the gas kf = 1, in it kf = 1.5; with
     Keq = 7e-309 kb = 1.4e308 is finite under one mask and overflows (MoM: kb
     = 0) under the other.  Forward live; reverse dead, the reason stated."""
-    core = [(0, "N2", "gas", None), (1, "P2(5)", "ambiguous", "P2")]
+    core = [(0, "N2", (None, "gas")), (1, "P2(5)", ("configured:P2", "gas"))]   # P2's first member
     rates = mp.mom_rates([_Reaction(7e-309)], True, 700.0, 1.0e5, core, [[1.0, 1.0]])
     assert rates["forward"] is True and rates["reverse"] is False
     assert "gas mask ambiguous" in rates["error"] and "reverse" in rates["error"]
@@ -2157,3 +2157,65 @@ def test_the_ambiguity_cap_counts_spawned_pools_with_a_present_species(setup):
               condensed=[x for v in full.values() for x in v], spawned=daughters)
     manifest = produce(setup, out, mode="convert")
     assert manifest["census"]["live_rows"] == ["r0"] and manifest["census"]["rate_errors"] == {}
+
+
+# --------------------------------------------------------------------------
+# I-176 rework 1 (spar r147): the solver's own masks for a spawned pool
+# --------------------------------------------------------------------------
+PROPANE = Molecule(smiles="CCC").to_adjacency_list()
+BUTANE_ADJ = Molecule(smiles="CCCC").to_adjacency_list()
+
+
+def _first_member_run(setup, gas_first):
+    """A spawned pool ``dgt`` whose members are its proxy ``dgt`` (propane-
+    shaped) and a gas species ``dgt(4)`` (butane), both listed by the sidecar
+    (proxy first); ``gas_first``: dgt(4) precedes dgt in MoM's core.  N2 and
+    dgt(4) have collider efficiency 0, dgt 1.  A configured pool condenses
+    only its FIRST core species with the pool's base label
+    (_apply_pool_phase_overrides, polymer.pyx 3204-3212); every other member
+    keeps the first stage's phase (gas here)."""
+    proxy = proxy_of()
+    row = _row(equation=f"{proxy}(+M)=>{proxy}+X0(+M)", rate=(1.0, 0.0, 0.0),
+               aux=["LOW /  1.0 0.0 0.0 /", "N2/0.0/ dgt(4)/0.0/"], sidecar_kinetics=None)
+    members = [("dgt(4)", BUTANE_ADJ, lambda t: 0.0 if t == 0.0 else 1.0),
+               ("dgt", PROPANE, lambda t: 0.0 if t == 0.0 else 1.0)]
+    if not gas_first:
+        members.reverse()
+    sidecar = ["dgt_mu0", "dgt_mu1", "dgt_mu2", "dgt", "dgt(4)"]
+    out = setup["tmp"] / f"out{len(list(setup['tmp'].glob('out*')))}"
+    produce(setup, out)
+    write_run(out, times=PROFILE_T, rows=[row], gas=ZERO_GAS + members,
+              pools=[(LABEL, drift(declared(setup["spec"])), 0.0), ("dgt", lambda t: (0.0, 0.0, 0.0), 0.0)],
+              bookkeeping={"dgt": sidecar}, condensed=sidecar, spawned=["dgt"])
+    try:
+        return produce(setup, out, mode="convert")["census"], False
+    except mp.ProducerError as error:
+        assert "inactive_chemistry" in str(error), error
+        return json.loads((out / "producer.json").read_text())["census"], True
+
+
+def test_a_configured_pool_condenses_only_its_first_member_in_core_order(setup):
+    """Spar r147 item 1, the gas species first: configured, dgt(4) is
+    condensed and dgt (efficiency 1) is gas; not configured, both are gas:
+    live either way, so the row is live (grouping the members would add the
+    all-condensed mask, Peff = 0)."""
+    census, refused = _first_member_run(setup, gas_first=True)
+    assert not refused and census["live_rows"] == ["r0"] and census["rate_errors"] == {}
+
+
+def test_the_proxy_first_gives_the_solvers_other_verdict(setup):
+    """The proxy first: configured, dgt is condensed and only efficiency-0
+    colliders hold the gas (Peff = 0, dead); not configured, live: the masks
+    disagree and the run is refused with the reason."""
+    census, refused = _first_member_run(setup, gas_first=False)
+    assert refused and census["zero_rate_rows"] == ["r0"]
+    assert "gas mask ambiguous" in census["rate_errors"]["r0"]
+
+
+def test_a_dead_verdict_states_its_sampled_compositions(setup):
+    """Spar r147 item 2: the saved rows are samples of the solver's states;
+    a dead verdict says so."""
+    census, refused = _falloff_census(setup)
+    assert refused and census["zero_rate_rows"] == ["r0"]
+    n = len([t for t in PROFILE_T if t < 40.0]) + 1
+    assert f"at the {n} sampled compositions" in census["dead_reasons"]["r0"]
