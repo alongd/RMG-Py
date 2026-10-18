@@ -587,3 +587,99 @@ def test_member_observer_refuses_two_chain_providers(pe, pp):
                                   scoped=False)
     with pytest.raises(win.WindowError, match="two chain providers"):
         observer(w)
+
+
+# --------------------------------------------------------------------------
+# rework 1: a portless declared monomer has a span
+# --------------------------------------------------------------------------
+def _heavy_of(witness):
+    rows = witness.reactant_rows()
+    return rows, {a for a, row in rows.items() if row[0] != "H"}
+
+
+def test_portless_ps_monomer_span_matches_the_legacy_monomer(ps):
+    legacy = sup.identity_witness(ps.legacy.build("s", b.PsChainSpec(1, monomer=True)))
+    ours = sup.identity_witness(ps.provider.monomer())
+    want = _span_keys(win.window_span(legacy, set(legacy.reactant_rows())))
+    got = _span_keys(win.window_span(ours, set(ours.reactant_rows())))
+    assert got == want
+    assert got[0]["backbone_atoms"] == 2 and got[0]["units"] == 1
+    bound = win.span_bound(_constants(8))
+    win.check_span(ours, set(ours.reactant_rows()), bound)
+
+
+def _propylene():
+    atoms = [{"key": k, "element": "C", "hydrogens": h,
+              "electronic_state": {"radical_electrons": 0}}
+             for k, h in (("m1", 2), ("m2", 1), ("m3", 3))]
+    return {"atoms": atoms, "bonds": [{"atoms": ["m1", "m2"], "order": 2},
+                                      {"atoms": ["m2", "m3"], "order": 1}],
+            "electronic_state": {"multiplicity": 1}}
+
+
+def test_portless_pp_monomer_backbone_is_the_vinyl_pair():
+    mapping = pp_mapping()
+    mapping["monomer_product"] = _propylene()
+    provider = dc.DeclaredChainProvider(spec_of(mapping))
+    w = sup.identity_witness(provider.monomer())
+    rows, heavy = _heavy_of(w)
+    span = win.window_span(w, set(rows))
+    assert span[0]["backbone_atoms"] == 2 and span[0]["units"] == 1
+    assert span[0]["physical_ends"] == ()
+    # the methyl carbon (three H) is the pendant, not the backbone
+    methyl = next(a for a in heavy if sum(rows[n][0] == "H" for n, _o in rows[a][5]) == 3)
+    vinyl = next(a for a in heavy if sum(rows[n][0] == "H" for n, _o in rows[a][5]) == 2)
+    assert win.window_span(w, {methyl})[0]["backbone_atoms"] == 0
+    assert win.window_span(w, {vinyl})[0]["backbone_atoms"] == 1
+    assert win.window_span(w, {vinyl, methyl})[0]["backbone_atoms"] == 1
+
+
+# --------------------------------------------------------------------------
+# rework 1: the growth unit reaches recertification
+# --------------------------------------------------------------------------
+class _SpyCertifier:
+    """Records the keywords of certify and recertify_certificate; returns a
+    minimal certificate over the witness atoms."""
+
+    def __init__(self):
+        self.certify_calls, self.recertify_calls = [], []
+
+    @staticmethod
+    def _cert(molecules):
+        return {"witness": {"atoms": [[a.id] for m in molecules for a in m.atoms]}}
+
+    def certify(self, family, molecules, **kw):
+        self.certify_calls.append(kw)
+        return self._cert(molecules)
+
+    def recertify_certificate(self, family, old, molecules, atom_map, **kw):
+        self.recertify_calls.append(kw)
+        return {"certificate": self._cert(molecules), "refusals": []}
+
+
+def _observe_twice(witness, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(win, "certificate_refusal", lambda cert: None)
+    monkeypatch.setattr(win, "member_refusal", lambda cert, wanted: None)
+    monkeypatch.setattr(win, "certificate_support",
+                        lambda *a, **k: SimpleNamespace(refusal=None, atoms=frozenset()))
+    spy = _SpyCertifier()
+    observer = win.MemberObserver(spy, None, "forward", (frozenset(),), scoped=False)
+    observer(witness)
+    port = next(p for p in b.vector_ports(witness) if witness.port(p).artificial)
+    longer, _record = b.extend(witness, port)
+    observer(longer)
+    assert len(spy.certify_calls) == 1 and len(spy.recertify_calls) == 1
+    return spy
+
+
+def test_recertification_receives_the_declared_growth_unit(pe, monkeypatch):
+    spy = _observe_twice(sup.identity_witness(pe.build("w", dc.ChainSpec(5))), monkeypatch)
+    assert spy.certify_calls[0]["repeat"] == (("C", 1), ("H", 2))
+    assert spy.recertify_calls[0]["repeat"] == (("C", 1), ("H", 2))
+
+
+def test_legacy_recertification_keeps_the_default_growth_unit(monkeypatch):
+    spy = _observe_twice(_ps_witness(), monkeypatch)
+    assert spy.certify_calls[0].get("repeat") is None
+    assert spy.recertify_calls[0].get("repeat") is None
