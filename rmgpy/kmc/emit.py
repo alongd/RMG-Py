@@ -257,7 +257,7 @@ def reference_systems(spec, provider, *, dps=(1, 2, 3, 8), phases=True,
         for label, entry, _radical, _kind in participants:
             systems[f"single:{label}"] = [entry]
     if 2 in molecularity:
-        radicals = [item for item in participants if item[2]]
+        radicals = [item for item in participants if item[2] and item[3] == "chain"]
         for left in radicals:
             for right in radicals:
                 systems[f"pair:radical:{left[0]}:{right[0]}"] = [left[1], right[1]]

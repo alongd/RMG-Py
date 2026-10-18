@@ -18,33 +18,12 @@ from rmgpy.kmc.run import read_deck
 
 
 def prior_unmapped(path):
-    if path is None:
-        return set()
     out = set()
     with open(path) as handle:
         for line in handle:
             row = json.loads(line)
             if row.get("kind") == "row" and row.get("refusal") == "refused:unmapped":
                 out.add((row.get("payload") or {}).get("record_event_id") or row["event_id"])
-    return out
-
-
-def compact_systems(systems):
-    """Drop systems that differ only by pair order.
-
-    ``member_cases`` tries both template-slot orders once both species are
-    present, so the checker needs one unordered pair.  The written roster
-    retains both declared role orders; only this read-only index build is
-    compacted.
-    """
-    out, seen = {}, set()
-    for name, entries in systems.items():
-        encoded = [json.dumps(entry, sort_keys=True, separators=(",", ":"))
-                   for entry in entries]
-        key = tuple(sorted(encoded)) if len(entries) == 2 else tuple(encoded)
-        if key not in seen:
-            seen.add(key)
-            out[name] = entries
     return out
 
 
@@ -58,7 +37,10 @@ def named_refusal(record):
 
 def check(args):
     artifact = json.loads(Path(args.artifact).read_text())
-    records = artifact["records"]
+    all_records = artifact["records"]
+    if len(all_records) != 762:
+        raise RuntimeError(f"expected the 762-record verifier artifact, got {len(all_records)}")
+    records = all_records
     if args.limit is not None:
         records = records[:args.limit]
     deck = read_deck(args.deck)
@@ -66,9 +48,7 @@ def check(args):
     roster = emit.reference_systems(deck.spec, provider, dps=args.dps)
     if args.roster_out:
         roster = emit.write_roster(roster, args.roster_out)
-    compact = emit.Roster(roster.polymer, compact_systems(roster.systems),
-                          roster.sha256, roster.path)
-    systems, refusals = emit.build_reference_systems(compact)
+    systems, refusals = emit.build_reference_systems(roster)
     if refusals:
         raise RuntimeError(f"generated roster has refusals: {refusals}")
 
@@ -80,6 +60,11 @@ def check(args):
     cases, case_stats = emit.reference_cases(certifier, fam, systems, species)
 
     old = prior_unmapped(args.old_rows)
+    all_ids = {record["event_id"] for record in all_records}
+    unknown_old = old - all_ids
+    if not old or unknown_old:
+        raise RuntimeError(f"old rows identify {len(old)} prior-unmapped records; "
+                           f"{len(unknown_old)} are absent from the artifact")
     selected_ids = {record["event_id"] for record in records}
     required = old & selected_ids
     counts = Counter()
@@ -92,15 +77,16 @@ def check(args):
         except Exception as error:
             found = False
             refusal = f"refused:key:{type(error).__name__}:{error}"
+            key_error = True
+        else:
+            key_error = False
         group = (record.get("site_type") or "<none>", record.get("orientation") or "<none>")
         counts[group + (("found" if found else "not_found"),)] += 1
         if not found and refusal:
             counts[group + ("named_refusal",)] += 1
         if record["event_id"] in required:
             counts[group + (("prior_unmapped_found" if found else "prior_unmapped_missing"),)] += 1
-            if not found and refusal == "refused:unmapped":
-                required_missing.append(record["event_id"])
-            elif not found and refusal is None:
+            if not found and (key_error or refusal is None):
                 required_missing.append(record["event_id"])
 
     print("site_type\torientation\tfound\tnot_found\tnamed_refusal\tprior_unmapped_found\tprior_unmapped_missing")
@@ -130,7 +116,7 @@ def parse_args():
     parser.add_argument("artifact")
     parser.add_argument("deck")
     parser.add_argument("--database", required=True)
-    parser.add_argument("--old-rows")
+    parser.add_argument("--old-rows", required=True)
     parser.add_argument("--roster-out")
     parser.add_argument("--dps", type=lambda value: tuple(int(x) for x in value.split(",")),
                         default=(1, 2, 3, 8))
