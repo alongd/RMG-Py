@@ -304,24 +304,29 @@ def in_neutral_state(symbol: str, lone_pairs: int, valence: float) -> bool:
     return (int(lone_pairs), valence) in NEUTRAL_STATES.get(symbol, ())
 
 
-# aromatic atoms (one or more benzene bonds, B) as RMG types them: element
-# -> {(lone pairs, B bonds, other bond orders + unpaired electrons)}, one
-# state per neutral aromatic atom type of ``rmgpy.molecule.atomtype`` with
-# two or three B bonds.  A B bond is not a number of electrons here; an
-# unpaired electron takes the place of a bond (a sigma radical, Cb with two B
-# bonds and a radical, is (0, 2, 1)).  Rows and the atomtype.py entries they
-# mirror (charge 0):
-#   C   (0, 2, 1) Cb (2 B + 1 single)   (0, 3, 0) Cbf (3 B)
-#   Si  (0, 2, 1) Sib                   (0, 3, 0) Sibf
-#   N   (1, 2, 0) N3b (1 pair)          (0, 2, 1) N5b (+1 single)
-#       (0, 2, 2) N5bd (+1 double)
-#   P   (1, 2, 0) P3b   (0, 2, 1) P5b   (0, 2, 2) P5bd
-#   O   (1, 2, 0) O4b                   S (1, 2, 0) S4b
+# aromatic atoms (one or more benzene bonds, B): the neutral aromatic atom
+# types of ``rmgpy.molecule.atomtype`` (``get_atomtype`` decides the type;
+# no type, or a type not listed, is a refusal) and, per type, the bond counts
+# allowed: (lone pairs, B bonds, single, double, triple bonds, unpaired
+# electrons).  The counts are never summed: a ring N with two B bonds and two
+# single bonds is not N5bd (two B bonds and one double bond), and RMG types
+# it as nothing.  RMG's types do not read unpaired electrons, so the counts
+# carry them: an unpaired electron takes the place of a single bond (a sigma
+# radical: Cb with two B bonds and one unpaired electron).  The types
+# mirrored (atomtype.py, charge 0):
+#   Cb, Sib, N5b, P5b   two B bonds and one single bond (or one electron)
+#   Cbf, Sibf           three B bonds
+#   N3b, P3b, O4b, S4b  two B bonds and one lone pair
+#   N5bd, P5bd          two B bonds and one double bond
 # Not mirrored: Cb with one B bond (a single B bond is no aromatic ring).
-AROMATIC_STATES = {"C": {(0, 2, 1), (0, 3, 0)}, "Si": {(0, 2, 1), (0, 3, 0)},
-                   "N": {(1, 2, 0), (0, 2, 1), (0, 2, 2)},
-                   "P": {(1, 2, 0), (0, 2, 1), (0, 2, 2)},
-                   "O": {(1, 2, 0)}, "S": {(1, 2, 0)}}
+_RING_ONE = frozenset({(0, 2, 1, 0, 0, 0), (0, 2, 0, 0, 0, 1)})
+_FUSED = frozenset({(0, 3, 0, 0, 0, 0)})
+_PAIR = frozenset({(1, 2, 0, 0, 0, 0)})
+_DOUBLE = frozenset({(0, 2, 0, 1, 0, 0)})
+AROMATIC_TYPES = {"Cb": _RING_ONE, "Cbf": _FUSED, "Sib": _RING_ONE, "Sibf": _FUSED,
+                  "N3b": _PAIR, "N5b": _RING_ONE, "N5bd": _DOUBLE,
+                  "P3b": _PAIR, "P5b": _RING_ONE, "P5bd": _DOUBLE,
+                  "O4b": _PAIR, "S4b": _PAIR}
 
 
 def valence_state(atom) -> tuple:
@@ -332,11 +337,34 @@ def valence_state(atom) -> tuple:
 
 
 def aromatic_state(atom) -> tuple:
-    """(lone pairs, benzene bonds, other bond orders + unpaired electrons) of
-    an atom with a benzene bond (``AROMATIC_STATES``)."""
-    benzene = sum(1 for bond in atom.bonds.values() if bond.is_benzene())
-    other = sum(float(bond.order) for bond in atom.bonds.values() if not bond.is_benzene())
-    return int(atom.lone_pairs), benzene, round((other + atom.radical_electrons) * 2) / 2
+    """(lone pairs, B bonds, single, double, triple bonds, unpaired electrons)
+    of an atom with a benzene bond (``AROMATIC_TYPES``); counts, never a
+    sum."""
+    bonds = list(atom.bonds.values())
+    return (int(atom.lone_pairs), sum(1 for b in bonds if b.is_benzene()),
+            sum(1 for b in bonds if b.is_single()), sum(1 for b in bonds if b.is_double()),
+            sum(1 for b in bonds if b.is_triple()), int(atom.radical_electrons))
+
+
+def aromatic_refusal(atom) -> Optional[str]:
+    """Why an atom with a benzene bond is outside ``AROMATIC_TYPES`` (None:
+    inside): RMG's atom type (``get_atomtype``) must be listed and the
+    atom's bond counts allowed for that type."""
+    from rmgpy.molecule.atomtype import AtomTypeError, get_atomtype
+    symbol = atom.element.symbol
+    try:
+        label = get_atomtype(atom, atom.edges).label
+    except AtomTypeError as error:
+        return f"an aromatic atom ({symbol}) with no RMG atom type: {error}"
+    state = aromatic_state(atom)
+    if label not in AROMATIC_TYPES:
+        return f"an aromatic atom ({symbol}) of RMG atom type {label}: not a neutral " \
+               f"aromatic type"
+    if state not in AROMATIC_TYPES[label]:
+        return (f"an aromatic atom ({symbol}) of RMG atom type {label} with bond counts "
+                f"{state} (lone pairs, B, single, double, triple, unpaired): not "
+                f"{sorted(AROMATIC_TYPES[label])}")
+    return None
 
 
 def _element_list(elements) -> str:
@@ -365,11 +393,9 @@ def universal_check(molecule, elements=("C", "H"), *, states=None,
     else:
         for a in atoms:
             if any(bond.is_benzene() for bond in a.bonds.values()):
-                state = aromatic_state(a)
-                if state not in AROMATIC_STATES.get(a.element.symbol, ()):
-                    return refused(f"an aromatic atom ({a.element.symbol}) with {state[0]} "
-                                   f"lone pairs, {state[1]} benzene bonds and {state[2]:g} "
-                                   f"other valence: not an RMG aromatic atom type")
+                why = aromatic_refusal(a)
+                if why:
+                    return refused(why)
                 continue
             state = valence_state(a)
             if state not in states.get(a.element.symbol, ()):
