@@ -53,6 +53,7 @@ from rmgpy.data.kinetics import LibraryReaction
 from rmgpy.exceptions import ChemkinError
 from rmgpy.kinetics.arrhenius import Arrhenius, MultiArrhenius
 from rmgpy.kinetics.chebyshev import Chebyshev
+from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
 from rmgpy.species import Species
 from rmgpy.thermo import NASA, NASAPolynomial
@@ -1128,3 +1129,44 @@ class TestLongLabelSpeciesIdentifier:
         labels = {s.label for s in loaded_species}
         # the compressed identifier round-trips as the species label
         assert any(l.endswith("_mu0") and len(l) <= 16 for l in labels)
+
+
+class TestEndKeyword:
+    """A Chemkin block ends only on a line whose first token is END (any case,
+    comments removed); a species identifier that merely holds 'end'
+    (``blend(3)``, ``end_cap(4)``) keeps its reactions and its thermo."""
+
+    THERM_ENTRY = [
+        "{0:<24}C   1H   4          G   200.000  6000.000 1000.00      1",
+        " 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2",
+        "-7.45375000E+02 3.35532000E+00 2.50000000E+00 0.00000000E+00 0.00000000E+00    3",
+        " 0.00000000E+00 0.00000000E+00-7.45375000E+02 3.35532000E+00                   4",
+    ]
+    NAMES = {"blend(3)": "CC", "end_cap(4)": "C", "H(1)": "[H]"}
+    REACTIONS = ["blend(3)=>end_cap(4)+end_cap(4)    1.0 0.0 0.0",
+                 "end_cap(4)+H(1)=>blend(3)    2.0 0.0 0.0",
+                 "H(1)+H(1)=>blend(3)    3.0 0.0 0.0"]
+    # each closer, then a line that the block would read had it not closed
+    CLOSERS = {"lowercase": ["end"], "comment_after": ["END ! closes the block"],
+               "comment_before": ["! a comment line", "  END"]}
+
+    def load(self, tmp_path, closer):
+        therm = ["THERM ALL", "   300.000  1000.000  5000.000"]
+        for name in self.NAMES:
+            therm += [line.format(name) for line in self.THERM_ENTRY]
+        text = "\n".join(["ELEMENTS H C END", "SPECIES", *self.NAMES, "END", *therm, *closer,
+                          "REACTIONS    KCAL/MOLE   MOLES", *self.REACTIONS, *closer,
+                          "H(1)+blend(3)=>end_cap(4)+end_cap(4)+H(1)    9.0 0.0 0.0", ""])
+        (tmp_path / "chem.inp").write_text(text)
+        (tmp_path / "dict.txt").write_text("\n".join(f"{n}\n{Molecule(smiles=s).to_adjacency_list()}"
+                                                     for n, s in self.NAMES.items()))
+        return load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"),
+                                 check_duplicates=False, generate_resonance_structures=False)
+
+    @pytest.mark.parametrize("closer", sorted(CLOSERS))
+    def test_every_reaction_and_thermo_entry_survives_and_end_still_closes(self, tmp_path, closer):
+        species, reactions = self.load(tmp_path, self.CLOSERS[closer])
+        assert [str(r) for r in reactions] == ["blend(3) => end_cap(4) + end_cap(4)",
+                                               "end_cap(4) + H(1) => blend(3)", "H(1) + H(1) => blend(3)"]
+        assert [r.kinetics.A.value_si for r in reactions] == pytest.approx([1.0, 2.0e-6, 3.0e-6], rel=1e-12)
+        assert sorted(s.label for s in species if s.thermo is not None) == ["H", "blend", "end_cap"]
