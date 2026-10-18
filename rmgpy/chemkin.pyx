@@ -1472,6 +1472,27 @@ def _block_at_end_of_file(header, species=None):
     return ChemkinError('The {0} block ends at the end of the file{1}, before its END'.format(header, where))
 
 
+def _opens_block_inside_species(f, line):
+    """Whether ``line`` starts a block instead of naming a species.
+
+    RMG's writer may emit the valid species name ``REAC`` alone on a line.
+    It is indistinguishable from the abbreviated REACTIONS header until the
+    next meaningful line: an equation makes it a header; otherwise it stays
+    a species name.
+    """
+    if not _opens_block(line):
+        return False
+    tokens = remove_comment_from_line(line)[0].split()
+    if len(tokens) != 1 or tokens[0].upper() != 'REAC':
+        return True
+    position = f.tell()
+    next_line = f.readline()
+    while next_line and not remove_comment_from_line(next_line)[0].strip():
+        next_line = f.readline()
+    f.seek(position)
+    return '=' in remove_comment_from_line(next_line)[0]
+
+
 def read_species_block(f, species_dict, species_aliases, species_list):
     """
     Read a Species block from a chemkin file.
@@ -1494,7 +1515,7 @@ def read_species_block(f, species_dict, species_aliases, species_list):
         line = f.readline()
         if line == '':
             raise _block_at_end_of_file('SITE' if first_token.startswith('SITE') else 'SPECIES')
-        if _opens_block(line):
+        if _opens_block_inside_species(f, line):
             raise _unterminated_block('SITE' if first_token.startswith('SITE') else 'SPECIES', line)
         # If the line contains only one species, and also contains
         # a comment with only one token, assume that token is 

@@ -1785,6 +1785,10 @@ class TestEndOfFileInsideABlock:
         block = "SITE" if header.startswith("SITE") else "SPECIES"
         assert isinstance(outcome, ChemkinError) and re.search(block + r" block.*REACTIONS", str(outcome)), outcome
 
+    def test_a_species_block_cannot_swallow_abbreviated_reactions(self, tmp_path):
+        outcome = self.read_guarded(tmp_path, "ELEMENTS H END\nSPECIES\nH2 H\nREAC\nH2=H+H 1.0 0 0\nEND\n")
+        assert isinstance(outcome, ChemkinError) and re.search(r"SPECIES block.*REAC", str(outcome)), outcome
+
     @pytest.mark.parametrize("line_count", [1, 2, 3])
     def test_end_inside_a_thermo_entry_fails_by_species(self, tmp_path, line_count):
         """END cannot silently discard one to three NASA lines."""
