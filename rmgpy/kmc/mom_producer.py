@@ -1225,23 +1225,72 @@ def _h_loss_radical_daughter(molecule, proxies) -> bool:
     return False
 
 
-def _recorded_mask(conventions: dict) -> Optional[List[Tuple[str, bool]]]:
-    """conventions.solver_gas_mask, MoM's own gas_species_mask recorded by
-    its serializer (the core species in solver order, each with its gas
-    flag, source "solver"), or None when the sidecar does not carry it."""
+def species_structure(species) -> Optional[str]:
+    """A species' structure as MoM binds its recorded mask to it
+    (``rmgpy.polymer.species_structure`` of the MoM checkout): the augmented
+    InChI of its first molecule, None without one or when none can be
+    computed."""
+    molecules = getattr(species, "molecule", None) or []
+    if not molecules or molecules[0] is None:
+        return None
+    try:
+        return molecules[0].to_augmented_inchi()
+    except Exception:
+        return None
+
+
+def _recorded_mask(conventions: dict, profile) -> Optional[List[Tuple[str, Optional[str], bool]]]:
+    """The solver's gas mask MoM recorded for the profile read
+    (conventions.solver_gas_mask: per polymer reactor, its 1-based number,
+    the profile it wrote and the core species in solver order, each with its
+    structure and gas flag), as (species, structure, gas), or None when the
+    sidecar records no mask.  The producer reads reactor 1's profile: a
+    record that cannot be bound, or none for reactor 1 naming that profile,
+    is refused."""
     record = conventions.get("solver_gas_mask")
     if record is None:
         return None
-    core = record.get("core") if isinstance(record, dict) else None
-    if (not isinstance(record, dict) or record.get("source") != "solver" or not isinstance(core, list)
-            or not all(isinstance(e, dict) and isinstance(e.get("species"), str) and isinstance(e.get("gas"), bool)
-                       for e in core)):
-        raise ProducerError(f"conventions.solver_gas_mask is not a solver mask record: {record!r}")
-    return [(e["species"], e["gas"]) for e in core]
+    reactors = record.get("reactors") if isinstance(record, dict) else None
+
+    def entry_ok(e):
+        return (isinstance(e, dict) and isinstance(e.get("species"), str) and isinstance(e.get("gas"), bool)
+                and (e.get("structure") is None or isinstance(e.get("structure"), str)) and "structure" in e)
+    if (not isinstance(record, dict) or record.get("source") != "solver" or not isinstance(reactors, list)
+            or not all(isinstance(r, dict) and isinstance(r.get("reactor"), int) and isinstance(r.get("profile"), str)
+                       and isinstance(r.get("core"), list) and all(entry_ok(e) for e in r["core"])
+                       for r in reactors)):
+        raise ProducerError("conventions.solver_gas_mask is not a solver mask record bound to its reactor, profile "
+                            f"and species structures: {record!r}")
+    wanted = f"solver/{Path(profile).name}"
+    mine = [r for r in reactors if r["reactor"] == 1 and r["profile"] == wanted]
+    if not mine:
+        raise ProducerError(f"conventions.solver_gas_mask records reactors and profiles "
+                            f"{[(r['reactor'], r['profile']) for r in reactors]}; the producer reads reactor 1's "
+                            f"profile {wanted}, which no recorded mask names")
+    return [(e["species"], e["structure"], e["gas"]) for e in mine[0]["core"]]
+
+
+def species_labels(annotated) -> Dict[Tuple, str]:
+    """Each species' own RMG label(index), by species key, where the Chemkin
+    file's SPECIES block gives it: RMG's verbose writer comments each line
+    with it (``<identifier> ! <label(index)>``, chemkin.pyx save_chemkin_file;
+    read as RMG's reader reads an alias: one identifier, one comment token)."""
+    out, inside = {}, False
+    for line in Path(annotated).read_text().splitlines():
+        head = line.split("!", 1)[0].split()
+        if not inside:
+            inside = bool(head) and head[0].upper() in ("SPECIES", "SPEC")
+            continue
+        if head and head[0].upper() == "END":
+            break
+        parts = line.split("!")
+        if len(parts) == 2 and len(parts[0].split()) == 1 and len(parts[1].split()) == 1:
+            out[species_key(parts[0].strip())] = parts[1].strip()
+    return out
 
 
 def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any],
-                profile) -> Tuple[List[Tuple[Optional[int], Any, Tuple]], str]:
+                profile, own_labels: Optional[Dict[Tuple, str]] = None) -> Tuple[List[Tuple[Optional[int], Any, Tuple]], str]:
     """MoM's core in its order as (profile column or None, RMG species, rule),
     and the phase source: the order is the profile's columns (the solver
     writes its core in promotion order, rmg/model.py; RMG's Chemkin writer
@@ -1249,8 +1298,11 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
     it), then any Chemkin species the profile lacks (amount 0).
 
     ``"solver_mask"``: the sidecar records MoM's own gas mask
-    (conventions.solver_gas_mask).  It is the only phase source: each rule is
-    the recorded flag, no unit, nothing reconstructed.  The mask is static
+    (conventions.solver_gas_mask) for reactor 1's profile read here
+    (``_recorded_mask``).  It is the only phase source: each rule is the
+    recorded flag, no unit, nothing reconstructed.  Each recorded species
+    must have the structure (``species_structure``) of the Chemkin species
+    it names (refused otherwise).  The mask is static
     over the simulation that wrote the profile, whose columns are its core in
     its order, so the record must name the profile's species columns in that
     order (refused otherwise).
@@ -1272,7 +1324,12 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
       recorded): each candidate daughter (a pool member or any other core
       species, not a mu dummy, its base no root pool's label) is the unit
       "stage1:<species>", and a pool member's first stage is condensed when
-      any candidate of its base is;
+      any candidate of its base is.  The base is the RMG label's, as MoM's:
+      a pool member's from the sidecar's name, another species' from its
+      own label(index) in ``own_labels`` (the SPECIES block's comments,
+      ``species_labels``), never from a Chemkin identifier, which may be a
+      formula; a species without either is its own unit and reaches no
+      pool's member;
     * a species in several pools takes every pool's rule (``_merged``: any
       condensation stands, whatever the pool order);
     * a species no pool lists: condensed iff conventions.condensed_species
@@ -1317,15 +1374,20 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
     placed = {key for _i, key in order}
     order += [(None, key) for key in by_key if key not in placed]    # no profile column: last, amount 0
 
-    recorded = _recorded_mask(conventions)
+    recorded = _recorded_mask(conventions, profile)
     if recorded is not None:
-        keys = [identity(x) for x, _gas in recorded]
+        keys = [identity(x) for x, _s, _gas in recorded]
         columns = [species_key(h) for h in header[2:]]
         if keys != columns:
-            raise ProducerError(f"conventions.solver_gas_mask names {[x for x, _g in recorded]}, the profile "
+            raise ProducerError(f"conventions.solver_gas_mask names {[x for x, _s, _g in recorded]}, the profile "
                                 f"{profile} {list(header[2:])}: the recorded mask is not the mask of the profile's "
                                 "core in its order")
-        gas = dict(zip(keys, (g for _x, g in recorded)))
+        for key, (x, structure, _g) in zip(keys, recorded):
+            if key in by_key and species_structure(by_key[key]) != structure:
+                raise ProducerError(f"conventions.solver_gas_mask: {x} has another structure in the Chemkin file "
+                                    f"({species_structure(by_key[key])}) than the solver's mask was for "
+                                    f"({structure})")
+        gas = dict(zip(keys, (g for _x, _s, g in recorded)))
         return [(i, by_key[key], (None, "gas" if gas.get(key, True) else "condensed")) for i, key in order], \
             "solver_mask"
 
@@ -1351,9 +1413,11 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
     daughters: Dict[str, set] = {}
     for key, _j in sorted(position.items(), key=lambda kv: kv[1]):
         x = by_key[key]
-        name = names_of.get(key) or get_species_identifier(x)
+        name = names_of.get(key) or (own_labels or {}).get(key)
         mol = x.molecule[0] if x.molecule else None
-        if key in all_mus or mol is None or base(name) in root_labels:
+        if key in all_mus or mol is None or (name is not None and base(name) in root_labels):
+            continue
+        if name is None:                  # no RMG label: its own unit, which reaches no pool member
             continue
         if _h_loss_radical_daughter(mol, root_proxies):
             daughters.setdefault(base(name), set()).add(f"stage1:{get_species_identifier(x)}")
@@ -1409,7 +1473,7 @@ def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> 
     horizon = float(times[-1])
     header, data = read_profile(find_profile(rmg_dir))
     dictionary = read_species_dictionary(dictionary_path)
-    core, phase_source = core_phases(header, doc, rmg_species, find_profile(rmg_dir))
+    core, phase_source = core_phases(header, doc, rmg_species, find_profile(rmg_dir), species_labels(annotated))
     visited = [r for r in data if r[0] < horizon] + [interpolate(data, horizon)]
     by_key: Dict[Tuple, List[dict]] = {}
     for reaction in reactions:
