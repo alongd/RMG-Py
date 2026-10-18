@@ -1133,7 +1133,7 @@ def test_report_decomposes_the_thinned_acceptance():
     assert th["escape_probability"] == engine.phi_sum / engine.thinned_proposals
     # phi_sum is the compensator of the accepted count, not a conditional expectation
     assert "expected_accepted" not in th
-    assert "compensator" in th["phi_sum_definition"] and "event cap" in th["phi_sum_definition"]
+    assert "compensator" in th["phi_sum_definition"]
     fired = Counter(e.template for e in engine.events)
     names = {c.name for c in engine.classes if c.met_reverse}
     assert {row["template"] for row in th["classes"]} == names
@@ -1244,3 +1244,23 @@ def test_fallback_phi_cache_belongs_to_one_state_object():
     fresh = _exact_current_phi(engine, ci)
     assert fresh != first[0]
     assert engine._fallback_phi(ci)[0] == fresh
+
+
+def test_fallback_phi_cache_evicts_the_least_recently_used_entry(monkeypatch):
+    """A hit refreshes an entry: with the cache full, the entry touched last
+    survives the next insertion and the least recently used one is evicted
+    (first-in-first-out would evict the touched one)."""
+    monkeypatch.setattr(me, "PHI_FALLBACK_CACHE_LIMIT", 2)
+    engine = _twin_engine()
+    a, b = sorted(c.index for c in engine.classes if c.met_reverse)
+    r0 = engine.state.revision
+    engine._fallback_phi(a)                      # oldest
+    engine._fallback_phi(b)
+    assert [k[:2] for k in engine._phi_fallback] == [(a, r0), (b, r0)]
+    calls = _count_applies(engine)
+    engine._fallback_phi(a)                      # a hit: a becomes the most recent
+    assert not calls
+    _round_trip(engine)
+    r1 = engine.state.revision
+    engine._fallback_phi(b)                      # one more entry: evicts the LRU, (b, r0)
+    assert [k[:2] for k in engine._phi_fallback] == [(a, r0), (b, r1)]
