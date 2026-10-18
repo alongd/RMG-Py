@@ -639,29 +639,38 @@ def test_portless_pp_monomer_backbone_is_the_vinyl_pair():
 # rework 2: the monomer backbone is bound once, from the declaration, by the
 # vinyl-addition relation, and carried by atom id
 # --------------------------------------------------------------------------
-def _graph(atoms, bonds):
-    """atoms: (key, element, hydrogens, lone pairs); bonds: (x, y, order)."""
-    return {"atoms": [_atom(k, e, hydrogens=h, lone_pairs=lp) for k, e, h, lp in atoms],
+def _atom_of(spec):
+    """(key, element, hydrogens, lone pairs[, {isotope, charge}])."""
+    k, e, h, lp = spec[:4]
+    atom = _atom(k, e, hydrogens=h, lone_pairs=lp)
+    atom.update(spec[4] if len(spec) > 4 else {})
+    return atom
+
+
+def _graph(atoms, bonds, multiplicity=1):
+    """atoms: (key, element, hydrogens, lone pairs[, extra]); bonds: (x, y, order)."""
+    return {"atoms": [_atom_of(a) for a in atoms],
             "bonds": [_bond(x, y, o) for x, y, o in bonds],
-            "electronic_state": {"multiplicity": 1}}
+            "electronic_state": {"multiplicity": multiplicity}}
 
 
 def _explicit(atoms, bonds):
     """The same graph with every hydrogen an explicit atom."""
     out_atoms, out_bonds = [], list(bonds)
-    for k, e, h, lp in atoms:
-        out_atoms.append((k, e, 0, lp))
+    for k, e, h, lp, *extra in atoms:
+        out_atoms.append((k, e, 0, lp, *extra))
         for i in range(h):
             out_atoms.append((f"h_{k}_{i}", "H", 0, 0))
             out_bonds.append((k, f"h_{k}_{i}", 1))
     return out_atoms, out_bonds
 
 
-def _provider(repeat, head, tail, monomer, elements=("C", "H"), lone_pairs=(0,)):
+def _provider(repeat, head, tail, monomer, elements=("C", "H"), lone_pairs=(0,), **bounds):
     atoms, bonds = repeat
-    mapping = _declaration([_atom(k, e, hydrogens=h, lone_pairs=lp) for k, e, h, lp in atoms],
+    mapping = _declaration([_atom_of(a) for a in atoms],
                            [_bond(x, y, o) for x, y, o in bonds], head, tail,
                            elements=elements, lone_pairs=lone_pairs)
+    mapping["locality_policy"]["bounds"].update(bounds)
     mapping["monomer_product"] = _graph(*monomer)
     return dc.DeclaredChainProvider(spec_of(mapping))
 
@@ -831,6 +840,185 @@ def test_one_port_and_side_only_participants_are_refused(pp):
         broken = _with_ports(w, ports)
         with pytest.raises(b.MetadataError, match="refused:backbone_ports"):
             win.window_span(broken, set(broken.reactant_rows()))
+
+
+# --------------------------------------------------------------------------
+# rework 3: the stamp survives extension; the binding matches labelled bonds
+# across resonance forms
+# --------------------------------------------------------------------------
+def _addition_witness():
+    """A PP radical chain (head artificial) adding to propylene: the radical
+    end bonds the monomer's CH2, whose double bond opens onto its CH."""
+    provider = _provider(PP_REPEAT, "c1", "c2", PROPYLENE)
+    chain = provider.build("r", dc.ChainSpec(3, tail="radical"))
+    molecules, parts = b.witness_reactants([chain, provider.monomer()])
+    rows = {}
+    for m in molecules:
+        rows.update(b.rows_of_molecule(m))
+    radical = parts[0].metadata.port("tail").atom_id
+    ch2, ch = parts[1].metadata.monomer_backbone
+    product = {a: list(r) for a, r in rows.items()}
+
+    def bonds(a, changes):
+        edges = dict(product[a][5])
+        edges.update(changes)
+        product[a][5] = tuple(sorted(edges.items()))
+    bonds(radical, {ch2: 1.0})
+    bonds(ch2, {radical: 1.0, ch: 1.0})
+    bonds(ch, {ch2: 1.0})
+    product[radical][3] -= 1
+    product[ch][3] += 1
+    side = tuple(sorted(rows.items()))
+    after = tuple(sorted((a, tuple(r)) for a, r in product.items()))
+    return provider, b.make_witness(side, after, parts)
+
+
+def test_extension_keeps_the_monomer_stamp():
+    provider, w = _addition_witness()
+    stamp = w.participants[1].metadata.monomer_backbone
+    # relabelled with its participant (second participant: non-identity ids)
+    assert stamp != provider.monomer().metadata.monomer_backbone
+    assert set(stamp) <= set(w.participants[1].atom_ids)
+    before = win.window_span(w, set(w.reactant_rows()))[1]
+    longer, _record = b.extend(w, (0, "head"))
+    assert longer.participants[1].metadata.monomer_backbone == stamp
+    after = win.window_span(longer, set(longer.reactant_rows()))
+    assert after[1] == before and after[1]["backbone_atoms"] == 2
+    assert after[0]["units"] == 4
+
+
+def test_identity_map_keeps_the_monomer_stamp():
+    _provider_, w = _addition_witness()
+    same = b.apply_map(w, b.identity_map(w))
+    assert [p.metadata for p in same.participants] == [p.metadata for p in w.participants]
+    assert same.participants[1].metadata.monomer_backbone == \
+        w.participants[1].metadata.monomer_backbone
+
+
+def test_deleted_backbone_atoms_shrink_the_stamp():
+    provider = _provider(PP_REPEAT, "c1", "c2", PROPYLENE)
+    build = provider.monomer()
+    meta = build.metadata
+    first, second = meta.monomer_backbone
+    one = meta.carried(meta.ports, meta.coordinates, deleted={first})
+    assert one.monomer_backbone == (second,)
+    rows = dict(b.rows_of_molecule(build.molecule))
+    none = meta.carried(meta.ports, meta.coordinates, deleted={first, second})
+    assert none.monomer_backbone == ()
+    with pytest.raises(b.MetadataError, match="refused:monomer_backbone_deleted"):
+        provider.witness_backbone_indices(rows, none)
+
+
+def test_monomer_backbone_ids_must_carry_coordinates():
+    provider = _provider(PP_REPEAT, "c1", "c2", PROPYLENE)
+    build = provider.monomer()
+    rows = dict(b.rows_of_molecule(build.molecule))
+    hydrogen = min(a for a, r in rows.items() if r[0] == "H")
+    meta = build.metadata
+    bad = b.BoundaryMetadata(meta.provider, (), meta.coordinates,
+                             monomer_backbone=(meta.monomer_backbone[0], hydrogen))
+    with pytest.raises(b.MetadataError, match="monomer backbone atoms"):
+        bad.check(rows)
+
+
+# the spar pair: the closed repeat unit is C=CC1=C(C)C=C1, the declared
+# monomer C=CC1=CC=C1C (same skeleton and bond-order sums, different bonds)
+CBD_REPEAT = ([("c1", "C", 2, 0), ("c2", "C", 1, 0), ("r1", "C", 0, 0), ("r2", "C", 0, 0),
+               ("r3", "C", 1, 0), ("r4", "C", 1, 0), ("me", "C", 3, 0)],
+              [("c1", "c2", 1), ("c2", "r1", 1), ("r1", "r2", 2), ("r2", "r3", 1),
+               ("r3", "r4", 2), ("r4", "r1", 1), ("r2", "me", 1)])
+CBD_OTHER = ([("a", "C", 2, 0), ("b", "C", 1, 0), ("s1", "C", 0, 0), ("s2", "C", 1, 0),
+              ("s3", "C", 1, 0), ("s4", "C", 0, 0), ("n", "C", 3, 0)],
+             [("a", "b", 2), ("b", "s1", 1), ("s1", "s2", 2), ("s2", "s3", 1),
+              ("s3", "s4", 2), ("s4", "s1", 1), ("s4", "n", 1)])
+CBD_SAME = ([("a", "C", 2, 0), ("b", "C", 1, 0), ("s1", "C", 0, 0), ("s2", "C", 0, 0),
+             ("s3", "C", 1, 0), ("s4", "C", 1, 0), ("n", "C", 3, 0)],
+            [("a", "b", 2), ("b", "s1", 1), ("s1", "s2", 2), ("s2", "s3", 1),
+             ("s3", "s4", 2), ("s4", "s1", 1), ("s2", "n", 1)])
+
+
+def test_bond_positions_matter_beyond_order_sums():
+    other = _provider(CBD_REPEAT, "c1", "c2", CBD_OTHER)
+    assert other.monomer_binding.keys is None
+    assert other.monomer_binding.refusal.startswith("refused:monomer_backbone_undefined")
+    w = sup.identity_witness(other.monomer())
+    with pytest.raises(b.MetadataError, match="refused:monomer_backbone_undefined"):
+        win.window_span(w, set(w.reactant_rows()))
+    assert _provider(CBD_REPEAT, "c1", "c2", CBD_SAME).monomer_binding.keys == ("a", "b")
+
+
+ACRYL_REPEAT = ([("c1", "C", 2, 0), ("c2", "C", 1, 0), ("c3", "C", 0, 0), ("o", "O", 0, 2),
+                 ("n", "N", 2, 1)],
+                [("c1", "c2", 1), ("c2", "c3", 1), ("c3", "o", 2), ("c3", "n", 1)])
+ACRYLAMIDE = ([("a", "C", 2, 0), ("b", "C", 1, 0), ("c", "C", 0, 0), ("o", "O", 0, 2),
+               ("n", "N", 2, 1)],
+              [("a", "b", 2), ("b", "c", 1), ("c", "o", 2), ("c", "n", 1)])
+ACRYLAMIDE_SEPARATED = ([("a", "C", 2, 0), ("b", "C", 1, 0), ("c", "C", 0, 0),
+                         ("o", "O", 0, 3, {"charge": -1}), ("n", "N", 2, 0, {"charge": 1})],
+                        [("a", "b", 2), ("b", "c", 1), ("c", "o", 1), ("c", "n", 2)])
+CHARGED = dict(elements=("C", "H", "N", "O"), lone_pairs=(0, 1, 2, 3),
+               formal_charges=[-1, 0, 1])
+
+
+def test_charge_separated_acrylamide_binds_like_the_neutral_form():
+    neutral = _provider(ACRYL_REPEAT, "c1", "c2", ACRYLAMIDE, **CHARGED)
+    separated = _provider(ACRYL_REPEAT, "c1", "c2", ACRYLAMIDE_SEPARATED, **CHARGED)
+    assert neutral.monomer_binding.keys == ("a", "b")
+    assert separated.monomer_binding.keys == ("a", "b")
+    assert _monomer_spans(sup.identity_witness(separated.monomer())) == \
+        _monomer_spans(sup.identity_witness(neutral.monomer()))
+
+
+def _kekule_ps(mapping, graph):
+    ring = [k for k in ("p1", "p2", "p3", "p4", "p5", "p6")]
+    for bond in mapping[graph]["bonds"]:
+        x, y = sorted(bond["atoms"])
+        if x in ring and y in ring and bond["order"] == 1.5:
+            i, j = ring.index(x), ring.index(y)
+            bond["order"] = 2 if {i, j} in ({0, 1}, {2, 3}, {4, 5}) else 1
+    return mapping
+
+
+def test_ps_aromatic_and_kekule_writings_bind_identically():
+    providers = []
+    for kekule in ((), ("monomer_product",), ("repeat_unit",),
+                   ("monomer_product", "repeat_unit")):
+        mapping = sup.ps_declaration_mapping()
+        for graph in kekule:
+            mapping = _kekule_ps(mapping, graph)
+        providers.append(dc.DeclaredChainProvider(spec_of(mapping)))
+    keys = {p.monomer_binding.keys for p in providers}
+    assert keys == {("a", "b")}
+    spans = [_monomer_spans(sup.identity_witness(p.monomer())) for p in providers]
+    assert all(x == spans[0] for x in spans) and spans[0]["all"] == 2
+
+
+def _labelled(atoms, key):
+    return [a + ({"isotope": 13},) if a[0] == key else a for a in atoms]
+
+
+def test_isotope_labels_must_agree():
+    isotopes = dict(isotopes=[-1, 13])
+    labelled_monomer = (_labelled(PROPYLENE[0], "m3"), PROPYLENE[1])
+    labelled_repeat = (_labelled(PP_REPEAT[0], "c3"), PP_REPEAT[1])
+    mismatch = _provider(PP_REPEAT, "c1", "c2", labelled_monomer, **isotopes)
+    assert mismatch.monomer_binding.refusal.startswith("refused:monomer_backbone_undefined")
+    both = _provider(labelled_repeat, "c1", "c2", labelled_monomer, **isotopes)
+    assert both.monomer_binding.keys == ("m1", "m2")
+    wrong_end = (_labelled(PROPYLENE[0], "m1"), PROPYLENE[1])
+    assert _provider(labelled_repeat, "c1", "c2", wrong_end, **isotopes
+                     ).monomer_binding.keys is None
+
+
+def test_open_shell_monomer_is_refused_by_name():
+    from rmgpy.polymer_spec import GraphDeclaration
+    unit = spec_of(pp_mapping()).repeat_unit
+    radical = _graph([("m1", "C", 2, 0), ("m2", "C", 1, 0), ("m3", "C", 2, 0)],
+                     [("m1", "m2", 2), ("m2", "m3", 1)], multiplicity=2)
+    radical["atoms"][2]["electronic_state"] = {"radical_electrons": 1}
+    binding = dc.bind_monomer(unit, GraphDeclaration.from_mapping(radical))
+    assert binding.keys is None
+    assert binding.refusal.startswith("refused:monomer_backbone_open_shell")
 
 
 # --------------------------------------------------------------------------
