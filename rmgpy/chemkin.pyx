@@ -48,7 +48,7 @@ from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.exceptions import ChemkinError
 from rmgpy.molecule.element import get_element
 from rmgpy.molecule.util import get_element_count
-from rmgpy.quantity import Quantity
+from rmgpy.quantity import Quantity, Dimensionless, Energy
 from rmgpy.reaction import Reaction
 from rmgpy.rmg.pdep import PDepNetwork, PDepReaction
 from rmgpy.species import Species
@@ -716,7 +716,10 @@ def _read_kinetics_record(line, reaction, species_dict, Eunits, kunits, klow_uni
         tokens = case_preserved_tokens[1].split()
         cov_dep_species = species_dict[tokens[0].strip()]
         Ea = Quantity(float(tokens[3]), Eunits)
-        k.coverage_dependence[cov_dep_species] = {'a':float(tokens[1]), 'm':float(tokens[2]), 'E':Ea}
+        # as the coverage_dependence setter stores them (rmgpy/kinetics/surface.pyx): quantities, which
+        # SurfaceReactor reads by .value_si; STICK carries them over as they are
+        k.coverage_dependence[cov_dep_species] = {'a': Dimensionless(float(tokens[1])),
+                                                  'm': Dimensionless(float(tokens[2])), 'E': Energy(Ea)}
 
     elif keyword == 'LOW':
         # Low-pressure-limit Arrhenius parameters
@@ -835,7 +838,7 @@ def _read_kinetics_record(line, reaction, species_dict, Eunits, kunits, klow_uni
             Pmax=k.Pmax,
             comment=k.comment,
         )
-        # the coverage entries as a COV record after STICK stores them (the constructor would wrap them)
+        # the coverage entries, quantities as a COV record stores them, carried over unchanged
         kinetics['sticking coefficient'].coverage_dependence.update(k.coverage_dependence)
         del kinetics['surface arrhenius']
 
@@ -1530,6 +1533,9 @@ def read_thermo_block(f, species_dict):
     # In case there are commented lines immediately after THER
     meaningfulline, comment = remove_comment_from_line(line)
     while not meaningfulline.strip():
+        if line == '':
+            raise ChemkinError('The THERM block ends at the end of the file, before its temperature ranges or '
+                               'its END')
         line = f.readline()
         meaningfulline, comment = remove_comment_from_line(line)
     Tmin = Tint = Tmax = None
@@ -2191,7 +2197,9 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
         for species, cov_params in kinetics.coverage_dependence.items():
             label = get_species_identifier(species)
             string += f'    COV / {label:<41} '
-            string += f"{cov_params['a']:<9.3g} {cov_params['m']:<9.3g} {cov_params['E'].value_si/4184.:<9.3f} /\n"
+            # a and m as quantities (the coverage_dependence setter's and the reader's form) or plain numbers
+            a, m = (getattr(cov_params[x], 'value_si', cov_params[x]) for x in ('a', 'm'))
+            string += f"{a:<9.3g} {m:<9.3g} {cov_params['E'].value_si/4184.:<9.3f} /\n"
 
     if isinstance(kinetics, (_kinetics.ThirdBody, _kinetics.Lindemann, _kinetics.Troe)):
         # Write collider efficiencies
@@ -2269,6 +2277,8 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                 if i % 5 == 0: string += '    CHEB/'
                 string += ' {0:<12.3e}'.format(coeffs[i])
                 if i % 5 == 4: string += '/\n'
+            if len(coeffs) % 5:
+                string += '/\n'      # close the last, unfinished line: DUPLICATE or the next entry follows on its own
 
     if reaction.duplicate:
         string += 'DUPLICATE\n'
