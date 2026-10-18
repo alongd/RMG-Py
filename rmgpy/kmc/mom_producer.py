@@ -985,7 +985,7 @@ def dead(k: Optional[float]) -> bool:
     return k is None or not math.isfinite(k) or k <= 0.0
 
 
-AMBIGUOUS_MAX = 10           # gas-mask-ambiguous species whose 2^n gas sets the census still enumerates
+AMBIGUOUS_MAX = 10           # gas-mask-ambiguous spawned pools whose 2^n gas sets the census still enumerates
 
 
 def _effective_pressures(efficiencies, gas: Sequence[int], pressure: float,
@@ -1018,11 +1018,16 @@ def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressu
     (``get_effective_collider_efficiencies(core_species)``, polymer_input.py
     428-434: each efficiency goes to the first isomorphic core species,
     model.pyx 415-421), and only then the gas mask weighs the amounts
-    (``core``, from ``core_phases``).  A gas-mask-ambiguous species is taken
-    in and out of the gas, every combination: where they disagree the
-    forward rate is dead with the reason "gas mask ambiguous for ...".
-    kb = kf / Keq with Keq from the species' thermo, and kb = 0 where Keq is
-    not finite or not positive or kb is not finite (4749-4760).  A direction
+    (``core``, from ``core_phases``, in MoM's core order).  A spawned pool
+    whose gas membership is ambiguous and one of whose species holds an
+    amount at some composition is taken in and out of the gas, every
+    combination (at most ``AMBIGUOUS_MAX`` such pools, else dead with the
+    reason): where the forward rate's liveness differs it is dead with the
+    reason "gas mask ambiguous for ...".  kb = kf / Keq with Keq from the
+    species' thermo, and kb = 0 where Keq is not finite or not positive or kb
+    is not finite (4749-4760), under every combination likewise: where the
+    reverse liveness differs the reverse is dead and the reason a rate
+    error.  A direction
     is live when its coefficient is positive and finite at some composition."""
     terms = [r.kinetics for r in group]
     kinetics = terms[0]
@@ -1041,24 +1046,27 @@ def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressu
         rows = [[None if c[0] is None else y[c[0]] for c in core] for y in compositions]
         rows = [[0.0 if v is None else v for v in y] for y in rows]      # a core species without a column holds 0
         gas = [j for j, c in enumerate(core) if c[2] == "gas"]
-        ambiguous = [j for j, c in enumerate(core) if c[2] == "ambiguous"]
-        names = [str(core[j][1]) for j in ambiguous]
-        if len(ambiguous) > AMBIGUOUS_MAX:
-            out.update(forward=False, error=f"gas mask ambiguous for {names} (too many to enumerate)")
+        # the ambiguity: spawned pools (in or out of the gas together) one of whose species holds an amount
+        units = sorted({core[j][3] for j in range(len(core)) if core[j][2] == "ambiguous"
+                        and any(y[j] != 0.0 for y in rows)})
+        if len(units) > AMBIGUOUS_MAX:
+            out.update(forward=False, error=f"gas mask ambiguous for spawned pools {units} (more than "
+                                            f"{AMBIGUOUS_MAX} to enumerate)")
             return out
         variants = []
-        for mask in range(2 ** len(ambiguous)):
-            chosen = gas + [j for b, j in enumerate(ambiguous) if mask >> b & 1]
-            values, why = forward_at(_effective_pressures(efficiencies, sorted(chosen), pressure, rows))
+        for mask in range(2 ** len(units)):
+            chosen = {u for b, u in enumerate(units) if mask >> b & 1}
+            members = gas + [j for j, c in enumerate(core) if c[2] == "ambiguous" and c[3] in chosen]
+            values, why = forward_at(_effective_pressures(efficiencies, sorted(members), pressure, rows))
             variants.append((any(not dead(k) for k in values), values, why))
         if len({v[0] for v in variants}) > 1:
-            out.update(forward=False, error=f"gas mask ambiguous for {names}: the rate is live with some of them "
-                                            "in MoM's gas and dead with others")
+            out.update(forward=False, error=f"gas mask ambiguous for spawned pools {units}: the rate is live with "
+                                            "some of them in MoM's gas and dead with others")
             return out
-        live, forward, error = variants[0]
     else:
-        forward, error = forward_at([pressure])
-        live = any(not dead(k) for k in forward)
+        values, why = forward_at([pressure])
+        units, variants = [], [(any(not dead(k) for k in values), values, why)]
+    live, forward, error = variants[0]
     out.update(forward=live, error=error)
     if reversible:
         try:
@@ -1069,10 +1077,19 @@ def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressu
         if not math.isfinite(keq) or keq <= 0.0:
             out["reverse_reason"] = f"Keq = {keq!r}: MoM sets kb = 0"
             return out
-        kb = [(k / keq) if (k is not None and math.isfinite(k)) else 0.0 for k in forward]
-        out["reverse"] = any(not dead(x) for x in kb)
+        backward = []
+        for _live, values, _why in variants:            # kb under every gas mask, as the forward rate
+            kb = [(k / keq) if (k is not None and math.isfinite(k)) else 0.0 for k in values]
+            backward.append((any(not dead(x) for x in kb), kb))
+        if len({b[0] for b in backward}) > 1:
+            reason = (f"gas mask ambiguous for spawned pools {units}: the reverse rate kb = kf / Keq is live with "
+                      "some of them in MoM's gas and dead (not finite, MoM's kb = 0) with others")
+            out["reverse_reason"] = reason
+            out["error"] = reason if error is None else f"{error}; {reason}"
+            return out
+        out["reverse"] = backward[0][0]
         if not out["reverse"]:
-            out["reverse_reason"] = f"kb = kf / Keq is {kb!r}"
+            out["reverse_reason"] = f"kb = kf / Keq is {backward[0][1]!r}"
     return out
 
 
@@ -1123,9 +1140,12 @@ def profile_motion(header, data, pools, facts: dict, dictionary, times: Sequence
 
 def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any],
                 profile) -> List[Tuple[Optional[int], Any, str]]:
-    """MoM's core in its order (the Chemkin file's SPECIES block, written from
-    the model core) as (profile column or None, RMG species, phase), phase
-    "gas", "condensed" or "ambiguous", rebuilt from what the sidecar records
+    """MoM's core in its order as (profile column or None, RMG species, phase,
+    ambiguity unit): the order is the profile's columns (the solver writes its
+    core in promotion order, rmg/model.py; RMG's Chemkin writer sorts the
+    SPECIES block by index, chemkin.pyx ~2153, so the block is not it), then
+    any Chemkin species the profile lacks (amount 0).  Phase "gas",
+    "condensed" or "ambiguous", rebuilt from what the sidecar records
     of the solver's gas mask (get_gas_mask, polymer_input.py 709-781, and the
     configured pools' label overrides, polymer.pyx 3185-3240):
 
@@ -1133,10 +1153,12 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
       species, and every other name of conventions.condensed_species (its
       source is the solver's own final-core mask, polymer.py
       derive_condensed_species);
-    * ambiguous: a spawned pool's (conventions.spawned_pools) moments and
-      phase / bookkeeping species: the serializer lists them condensed
-      whether or not the solver configured the pool (polymer.py 9238-9246),
-      and the sidecar does not record which;
+    * ambiguous: a spawned pool's (conventions.spawned_pools) phase /
+      bookkeeping species other than its mu dummies (its proxy): the
+      serializer lists them condensed whether or not the solver configured
+      the pool (polymer.py 9238-9246), and the sidecar does not record which;
+      a pool's members are in or out of the gas together, so its unit is the
+      pool; every pool's mu dummies are moment coordinates, condensed;
     * gas: the rest.
 
     Names and columns are matched by identity, never by raw string: a moment
@@ -1160,24 +1182,32 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
         return ({identity(f"{p['label']}_mu{k}") for k in range(3)}
                 | {identity(x) for x in list(p.get("phase_species") or ()) + list(p.get("bookkeeping_species") or ())})
 
-    ambiguous = set().union(*[members(p) for p in doc["pools"] if p["label"] in spawned])
+    moment_keys = {identity(f"{label}_mu{k}") for label in labels for k in range(3)}
+    unit = {}                                   # a spawned pool's physical member -> the pool (in or out together)
+    for p in doc["pools"]:
+        if p["label"] in spawned:
+            for key in members(p) - moment_keys:
+                unit.setdefault(key, p["label"])
     kept = {identity(x) for x in condensed}
-    kept |= set().union(*[members(p) for p in doc["pools"] if p["label"] not in spawned])
-    column = {}
-    unmapped = []
-    keys = [species_key(get_species_identifier(x)) for x in chemkin_species]
-    for i, h in enumerate(header):
+    kept |= set().union(*[members(p) for p in doc["pools"] if p["label"] not in spawned]) | moment_keys
+    by_key = {}
+    for x in chemkin_species:
+        by_key.setdefault(species_key(get_species_identifier(x)), x)
+    order, unmapped = [], []
+    for i, h in enumerate(header):            # MoM's core order: the profile's columns
         if i < 2:
             continue
-        if species_key(h) in keys:
-            column[species_key(h)] = i
+        if species_key(h) in by_key:
+            order.append((i, species_key(h)))
         else:
             unmapped.append(h)
     if unmapped:
         raise ProducerError(f"profile {profile}: columns {unmapped} are neither a pool moment nor a species of the "
                             "Chemkin file")
-    return [(column.get(key), x, "ambiguous" if key in ambiguous else "condensed" if key in kept else "gas")
-            for key, x in zip(keys, chemkin_species)]
+    placed = {key for _i, key in order}
+    order += [(None, key) for key in by_key if key not in placed]    # no profile column: last, amount 0
+    return [(i, by_key[key], "ambiguous" if key in unit else "condensed" if key in kept else "gas", unit.get(key))
+            for i, key in order]
 
 
 def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> dict:
