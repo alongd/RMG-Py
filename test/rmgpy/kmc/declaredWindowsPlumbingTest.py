@@ -634,6 +634,20 @@ def test_portless_pp_monomer_backbone_is_the_vinyl_pair():
     assert win.window_span(w, {vinyl, methyl})[0]["backbone_atoms"] == 1
 
 
+def test_portless_monomer_without_an_embedding_uses_the_heavy_diameter():
+    # an ethylene "monomer" cannot carry the three-carbon PP period
+    mapping = pp_mapping()
+    graph = _propylene()
+    graph["atoms"] = [dict(graph["atoms"][0]), dict(graph["atoms"][1], hydrogens=2)]
+    graph["bonds"] = graph["bonds"][:1]
+    mapping["monomer_product"] = graph
+    provider = dc.DeclaredChainProvider(spec_of(mapping))
+    w = sup.identity_witness(provider.monomer())
+    rows, heavy = _heavy_of(w)
+    assert len(heavy) == 2
+    assert win.window_span(w, set(rows))[0]["backbone_atoms"] == 2
+
+
 # --------------------------------------------------------------------------
 # rework 1: the growth unit reaches recertification
 # --------------------------------------------------------------------------

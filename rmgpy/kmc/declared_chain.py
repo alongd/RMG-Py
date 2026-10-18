@@ -1023,12 +1023,62 @@ class DeclaredChainProvider(BoundaryProvider):
         (``rows``: edits and extensions included; a deletion reroutes it): the
         head port's pristine index plus the distance from the head port.
         Consecutive along the path; atoms off every shortest path have no
-        entry."""
+        entry.  A participant without both ports (the portless monomer) uses
+        ``portless_backbone_indices``."""
+        if {port.port_id for port in metadata.ports} < {"head", "tail"}:
+            return self.portless_backbone_indices(rows)
         from_head, from_tail, span = self._path_over_rows(rows, metadata)
         head = metadata.port("head").atom_id
         base = self.backbone_index(*metadata.coordinate(head)) or 0
         return {a: base + d for a, d in from_head.items()
                 if a in from_tail and d + from_tail[a] == span}
+
+    def portless_backbone_indices(self, rows) -> dict:
+        """Backbone indices of a participant without ports (the declared
+        monomer): the primitive period's heavy atoms embedded in its heavy
+        atoms (a monomorphism matching elements, each image carrying at least
+        the declared hydrogens), the period's backbone path at its offsets
+        from the head key (a vinyl monomer: its vinyl pair, as the legacy
+        monomer).
+        Without an embedding: every heavy atom on a shortest path between the
+        two ends of a heavy-atom diameter, indexed from one end."""
+        import networkx as nx
+        from networkx.algorithms import isomorphism
+
+        g = self.geometry
+        heavy = sorted(a for a, row in rows.items() if row[0] != "H")
+        if not heavy:
+            return {}
+        adjacency = {a: sorted(c for c, _o in rows[a][5] if c in rows and rows[c][0] != "H")
+                     for a in heavy}
+        mol = nx.Graph()
+        for a in heavy:
+            mol.add_node(a, element=rows[a][0],
+                         hydrogens=sum(1 for c, _o in rows[a][5] if rows[c][0] == "H"))
+        mol.add_edges_from((a, c) for a in heavy for c in adjacency[a] if a < c)
+        unit = nx.Graph()
+        for key in g.keys:
+            if g.atoms[key].element != "H":
+                unit.add_node(key, element=g.atoms[key].element,
+                              hydrogens=g.atoms[key].hydrogens)
+        unit.add_edges_from(pair for pair in sorted(g.declared_bonds)
+                            if all(k in unit for k in pair))
+        matcher = isomorphism.GraphMatcher(
+            mol, unit, node_match=lambda m, u: m["element"] == u["element"]
+            and m["hydrogens"] >= u["hydrogens"])
+        embedding = next(matcher.subgraph_monomorphisms_iter(), None)
+        if embedding is not None:
+            image = {key: atom for atom, key in embedding.items()}
+            return {image[key]: g.backbone_offsets[key] for key in g.backbone_path}
+        start = heavy[0]
+        seen = _bfs(adjacency, start)
+        first = min(seen, key=lambda a: (-seen[a], a))
+        from_first = _bfs(adjacency, first)
+        last = min(from_first, key=lambda a: (-from_first[a], a))
+        from_last = _bfs(adjacency, last)
+        span = from_first[last]
+        return {a: d for a, d in from_first.items()
+                if a in from_last and d + from_last[a] == span}
 
     def backbone_atoms(self, chain: ChainSpec) -> int:
         """Heavy atoms on the shortest head-port -> tail-port path of the built
