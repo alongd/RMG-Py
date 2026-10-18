@@ -705,19 +705,24 @@ per-iteration saves are stale by construction; the final artifact of a
 normally-converged run is fresh (key absent).
 
 `conventions.solver_gas_mask` (optional, **additive**, informative —
-`condensed_species` stays the runner's phase source): the generating
-solver's `gas_species_mask` verbatim, `{"source": "solver", "core":
-[{"species": <chem.yaml label>, "gas": <bool>}, ...]}`, the core species in
-solver order. Present only when the engine's mask is the mask of the
-written core (length-matched and not stale); absent otherwise.
-`condensed_species` unions that mask with pool membership and adds spawned
-pools' members (§13), so it cannot tell which phase the solver gave a
-spawned-but-unconfigured pool's members; this record can. The mask is
+`condensed_species` stays the runner's phase source): each polymer reactor's
+solver `gas_species_mask` verbatim, `{"source": "solver", "reactors":
+[{"reactor": <1-based reaction system>, "profile":
+"solver/simulation_<reactor>_<n_core>.csv", "core": [{"species": <chem.yaml
+label>, "structure": <augmented InChI of its first molecule, or null>,
+"gas": <bool>}, ...]}, ...]}`, the core species in solver order. A
+reactor's mask is recorded only when it is the mask of the written core
+(length-matched, and the engine's rebuild signature — labels, indices and
+structures — equal to the current core's); with none, the key is absent.
+`condensed_species` unions the first engine's mask with pool membership and
+adds spawned pools' members (§13), so it cannot tell which phase the solver
+gave a spawned-but-unconfigured pool's members; this record can. The mask is
 static over one `simulate()`: built in `initialize_model` at its start and
 written nowhere else, while the core, and with it the mask, can change only
-between simulations. That simulation's snapshots are the profile
-`solver/simulation_<i>_<n>.csv`, whose species columns are this core in this
-order, so every row of it was integrated under this mask.
+between simulations. That simulation's snapshots are the named profile,
+whose species columns are this core in this order, so every row of it was
+integrated under this mask. A consumer reading a profile uses the record
+that names it, and checks each species' structure against its own.
 
 `conventions.generation_defaults` (optional, **NON-normative** — see §7):
 generation-run provenance for consumer-supplied operating conditions.

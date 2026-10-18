@@ -2424,15 +2424,27 @@ class RMG(util.Subject):
                 # never marks unconfigured-daughter proxies condensed).
                 condensed = derive_condensed_species(
                     core_species, configured_pools_cfg, solver_mask)
-                # conventions.solver_gas_mask: the engine's mask verbatim, only
-                # when it is the mask of THIS core (length-matched and the
-                # engine built against it; a stale same-length mask is the
+                # conventions.solver_gas_mask: EVERY polymer reactor's engine
+                # mask verbatim, numbered as the profile writer numbers the
+                # reaction systems (1-based), each only when it is the mask of
+                # THIS core: length-matched and the engine built against this
+                # very core (its rebuild signature, structures included, equal
+                # to the current core's; a stale same-length mask is the
                 # previous core's verdict).
-                recorded_mask = None
-                if (solver_mask is not None and engine_pools_cfg is not None
-                        and len(solver_mask) == len(core_species)
-                        and not sidecar_stale_topology):
-                    recorded_mask = [bool(g) for g in solver_mask]
+                recorded_masks = []
+                for number, system in enumerate(self.reaction_systems or [], 1):
+                    engine = getattr(system, "solver", None) or system
+                    mask = getattr(engine, "gas_species_mask", None)
+                    if not getattr(engine, "polymer_pools", None) or mask is None \
+                            or len(mask) != len(core_species):
+                        continue
+                    try:
+                        fresh = getattr(engine, "core_topology_signature", None) == \
+                            core_topology_signature(core_species, core_reactions)
+                    except (TypeError, ValueError):
+                        fresh = False
+                    if fresh:
+                        recorded_masks.append({"reactor": number, "mask": [bool(g) for g in mask]})
 
                 write_polymer_pools_sidecar(
                     pool_registry=pool_registry,
@@ -2449,7 +2461,7 @@ class RMG(util.Subject):
                     generation_v_poly_m3=generation_v_poly_m3,
                     explicit_dp_species_by_pool=explicit_dp_species_by_pool,
                     stale_topology=sidecar_stale_topology,
-                    solver_gas_mask=recorded_mask,
+                    solver_gas_masks=recorded_masks,
                 )
         except Exception as e:
             logging.warning(f"Failed to write polymer_pools.json sidecar: {e}", exc_info=True)
