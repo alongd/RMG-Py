@@ -671,3 +671,39 @@ def test_a_missing_shard_alone_makes_the_cycle_check_partial(tmp_path, monkeypat
     assert any("missing shard 1/2" in f for f in catalog["gates"]["failures"])
     full = run(shards(tmp_path, 2))
     assert seen[-1] is True and full["gates"]["cycles"]["by_status"] == {"ok": 1}
+
+
+def test_the_catalog_lists_every_key_that_entered_collision_resolution(tmp_path):
+    """I-162 S-g rework 1: a catalog set compares its members' entry keys, so
+    a catalog lists every executable key that entered collision resolution,
+    the refused ones included (a key refused here still collides with the same
+    key in another family's catalog under one joint assemble)."""
+    rows = fixture_rows()
+    emitted = [r for r in rows if r["status"] == "emitted"]
+    donor, host = emitted[0], emitted[1]
+    clone = copy.deepcopy(donor["payload"]["templates"][0])
+    clone["weight"] = dict(clone["weight"], w=[w * 1.0e3 for w in clone["weight"]["w"]])
+    host["payload"]["templates"] = host["payload"]["templates"] + [clone]
+    host["payload"] = te.finish(host["payload"])
+    want = sorted({t["key"] for r in rows for t in (r.get("payload") or {}).get("templates", [])
+                   if t.get("status") == "emitted"})
+    catalog = run([write_rows(tmp_path / "c.jsonl", header(None, rows), rows)])
+    assert catalog["gates"]["collisions"]["refused"] >= 1
+    assert clone["key"] in want
+    assert catalog["gates"]["collisions"]["entry_keys"] == want
+    loaded = {t["key"] for p in catalog["payloads"] for t in p["templates"]}
+    assert clone["key"] not in loaded
+
+
+def test_the_catalog_carries_the_content_identities_of_its_inputs(tmp_path):
+    catalog = run(shards(tmp_path, database_content_sha256="h" * 64, code_sources_sha256="s" * 64))
+    assert catalog["provenance"]["database_content_sha256"] == "h" * 64
+    assert catalog["provenance"]["code_sources_sha256"] == "s" * 64
+    mixed = shards(tmp_path, n=2, code_sources_sha256="s" * 64)
+    head = json.loads(mixed[1].read_text().splitlines()[0])
+    head["code_sources_sha256"] = "t" * 64
+    lines = mixed[1].read_text().splitlines()
+    mixed[1].write_text("\n".join([json.dumps(head)] + lines[1:]) + "\n")
+    catalog = run(mixed)
+    assert catalog["complete"] is False
+    assert any("code_sources_sha256" in f for f in catalog["gates"]["failures"])

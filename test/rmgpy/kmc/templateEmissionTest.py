@@ -1076,9 +1076,14 @@ def test_collision_diameter_is_not_pairwise_or_chained():
 
 
 def test_weighted_collision_merges_within_the_diameter_in_any_order():
-    """The same three copies 0.004 apart merge into the least record id's
-    template at its weight; every input order gives one merged catalog."""
+    """AMENDED (I-162 S-g rework 1: the representative no longer follows the
+    record ids): the same three copies 0.004 apart merge into the template of
+    the copy of least ``partition_free_identity``, at its weight; every input
+    order gives one merged catalog."""
     members = _group([0.0, 0.004, 0.008])
+    owner = min(members, key=lambda p: te.partition_free_identity(p, base_template(p)))
+    rid = owner["record_event_id"]
+    others = sorted({_rid(1), _rid(2), _rid(3)} - {rid})
     canon, owner_w = set(), None
     for order in itertools.permutations(members):
         out, table = te.resolve_collisions(list(order))
@@ -1086,11 +1091,12 @@ def test_weighted_collision_merges_within_the_diameter_in_any_order():
         assert [r["disposition"] for r in table] == ["merged"] and table[0]["copies"] == 3
         assert table[0]["log10_diameter"] == pytest.approx(0.008, abs=1e-9)
         by = {p["record_event_id"]: base_template(p) for p in out}
-        assert by[_rid(1)]["status"] == "emitted"
-        assert by[_rid(1)]["collision"]["records"] == [_rid(1), _rid(2), _rid(3)]
-        assert by[_rid(1)]["weight"] == base_template(members[0])["weight"]
-        assert by[_rid(2)]["status"] == by[_rid(3)]["status"] == "merged"
-        assert by[_rid(2)]["merged_into"]["record"] == _rid(1)
+        assert by[rid]["status"] == "emitted"
+        assert sorted(by[rid]["collision"]["records"]) == [_rid(1), _rid(2), _rid(3)]
+        assert by[rid]["collision"]["records"][0] == rid
+        assert by[rid]["weight"] == base_template(owner)["weight"]
+        assert by[others[0]]["status"] == by[others[1]]["status"] == "merged"
+        assert by[others[0]]["merged_into"]["record"] == rid
         for p in out:
             te.validate_payload(p)
     assert len(canon) == 1
@@ -1577,26 +1583,38 @@ def test_stored_thermo_form_reproduces_kc_at_any_temperature():
         assert te.kc_at(toy_form(True), T) * te.kc_at(toy_form(False), T) == pytest.approx(1.0, rel=1e-12)
 
 
+def _primary_derived(out):
+    """(primary index, derived index) of a resolved toy pair."""
+    (d,) = [k for k, p in enumerate(out) if base_template(p).get("derived")]
+    return 1 - d, d
+
+
 def test_the_second_direction_of_a_unit_is_derived_from_the_primary_at_the_requested_T():
-    """Primary = the emitted template of the lesser record id (the homolysis,
-    record 1); the recombination's weight at an off-grid T is w_H(T) *
-    (N_H / N_W) / (ssa_ratio * Kc_H(T)) with Kc evaluated exactly at T, not
-    interpolated, not taken at the nearest grid T."""
+    """AMENDED (I-162 S-g rework 1): primary = the emitted template of the
+    as_generated record (here the recombination), then of the lesser template
+    key; never by record id (the ids carry the artifact's family list).  The
+    other direction's weight at an off-grid T is w_P(T) * (N_P / N_D) /
+    (ssa_ratio * Kc_P(T)) with Kc evaluated exactly at T, not interpolated,
+    not taken at the nearest grid T."""
     payloads, counter = _toy_pair()
     out = _res(payloads, counter)
-    h, w = base_template(out[0]), base_template(out[1])
-    assert "derived" not in h and w["derived"]["primary"] == {"record": _rid(1), "key": h["key"]}
-    assert "lesser (record event id, key)" in w["derived"]["rule"]
+    ip, idd = _primary_derived(out)
+    h, w = base_template(out[ip]), base_template(out[idd])
+    assert out[ip]["orientation"] == "as_generated" and out[idd]["orientation"] == "reversed"
+    assert "derived" not in h and w["derived"]["primary"] == {"record": out[ip]["record_event_id"],
+                                                              "key": h["key"]}
+    assert "as_generated record, then of the lesser template key" in w["derived"]["rule"]
+    form = toy_form(out[ip]["orientation"] == "reversed")        # the homolysis is unimolecular
     for T in OFF_GRID:
         wh = te.weight_at(h, T)
         got = te.weight_at(w, T, h)
-        want = wh * w["derived"]["counts_ratio"] / (w["derived"]["ssa_ratio"] * te.kc_at(toy_form(True), T))
+        want = wh * w["derived"]["counts_ratio"] / (w["derived"]["ssa_ratio"] * te.kc_at(form, T))
         assert got == pytest.approx(want, rel=1e-12)
-        # and the loaded sums satisfy S_H / S_W = ssa_ratio * Kc_H exactly
-        nh = te._count_of(out[0], h)
-        nw = te._count_of(out[1], w)
+        # and the loaded sums satisfy S_P / S_D = ssa_ratio * Kc_P exactly
+        nh = te._count_of(out[ip], h)
+        nw = te._count_of(out[idd], w)
         assert (nh * wh) / (nw * got) == pytest.approx(
-            h["thermo"]["ssa_ratio"] * te.kc_at(toy_form(True), T), rel=1e-12)
+            h["thermo"]["ssa_ratio"] * te.kc_at(form, T), rel=1e-12)
     with pytest.raises(te.EmissionError, match="primary"):
         te.weight_at(w, 500.0)
     with pytest.raises(te.EmissionError, match="extrapolation"):
@@ -1620,7 +1638,7 @@ def test_independently_interpolated_directions_are_gated_off_the_grid():
     random temperatures expose it."""
     payloads, counter = _toy_pair()
     out = _res(payloads, counter)
-    base_template(out[1]).pop("derived")
+    base_template(out[_primary_derived(out)[1]]).pop("derived")
     out = [te.finish(p) for p in out]
     out2, table = _check(out, counter)
     assert table[0]["status"] == "refused:cycle" and table[0]["max_grid_error"] <= 1e-12
@@ -1657,9 +1675,10 @@ def test_an_absent_reverse_on_a_partial_catalog_is_reported_not_gated():
 def test_a_subset_carries_the_primary_of_a_derived_template():
     payloads, counter = _toy_pair()
     out = _res(payloads, counter)
+    alone = [out[_primary_derived(out)[1]]]
     with pytest.raises(te.EmissionError, match="primary"):
-        te.loaded_templates(out[1:], 500.0)
-    carried = te.carry_owners(out[1:], out)
+        te.loaded_templates(alone, 500.0)
+    carried = te.carry_owners(alone, out)
     assert len(te.loaded_templates(carried, 500.0)) == 2
 
 
@@ -1752,9 +1771,12 @@ def test_the_interpolation_report_ignores_derived_tables():
     import template_emission_acceptance as acc
     payloads, counter = _toy_pair()
     out = _res(payloads, counter)
-    base_template(out[1])["weight"]["w"][7] *= 1.5      # a bad table that is never interpolated
+    clean = acc.interpolation_table(out)
+    base_template(out[_primary_derived(out)[1]])["weight"]["w"][7] *= 1.5   # never interpolated
     rep = acc.interpolation_table(out)
-    assert rep["templates"] == 1 and rep["worst"] <= 1e-12
+    # AMENDED (I-162 S-g rework 1): the primary is now the recombination, whose
+    # own table is not exact under interpolation; the derived table is ignored
+    assert rep["templates"] == 1 and rep == clean
 
 
 # -- class overlap -----------------------------------------------------------
@@ -2070,3 +2092,101 @@ def test_an_acceptance_selection_that_matches_nothing_gates():
     assert acc.selection_problems(argparse.Namespace(event=None), records, records) == []
     assert acc.selection_problems(argparse.Namespace(event=None), records, []) == [
         "the selection processed 0 records (a vacuous run)"]
+
+
+# --------------------------------------------------------------------------
+# I-162 S-g rework 1: no choice follows the record ids.  A record id hashes
+# the artifact's provenance (its family list among it), so the same chemistry
+# compiled alone or with other families carries other ids; the primary of a
+# pair, the representative of a collision and the cycle-check temperatures
+# must not change with them.
+# --------------------------------------------------------------------------
+def _relabel(payloads, mapping):
+    """``payloads`` with every record id (own, reverse link, rate provenance)
+    renamed by ``mapping``: the same chemistry under other ids."""
+    out = []
+    for p in payloads:
+        p = json.loads(json.dumps(p))
+        p["record_event_id"] = mapping.get(p["record_event_id"], p["record_event_id"])
+        if p.get("reverse_of") is not None:
+            p["reverse_of"] = mapping.get(p["reverse_of"], p["reverse_of"])
+        prov = (p.get("rate") or {}).get("provenance") or {}
+        if prov.get("event_id") in mapping:
+            prov["event_id"] = mapping[prov["event_id"]]
+        out.append(te.finish(p))
+    return out
+
+
+def _loaded_weights(out, temperatures):
+    """key -> (derived?, weights at ``temperatures``) of every loaded template
+    (a derived one through its primary)."""
+    index = {(p["record_event_id"], t["key"]): t for p in out for t in p["templates"]
+             if t.get("status") == "emitted"}
+    got = {}
+    for (_rid_, key), t in index.items():
+        d = t.get("derived")
+        primary = index[(d["primary"]["record"], d["primary"]["key"])] if d else None
+        got[key] = (bool(d), [te.weight_at(t, T, primary) for T in temperatures])
+    return got
+
+
+def test_the_primary_of_a_reciprocal_pair_does_not_follow_the_record_ids():
+    """The pair under swapped record ids: the same template is derived from
+    the same primary, and every loaded weight is the same (the reviewer's
+    repro moved a loaded weight at 650 K from 1.002965894 to 1)."""
+    payloads, counter = _toy_pair()
+    swapped = _relabel(payloads, {_rid(1): _rid(2), _rid(2): _rid(1)})
+    temps = list(OFF_GRID) + [650.0]
+    a = _loaded_weights(_res(payloads, counter), temps)
+    b = _loaded_weights(_res(swapped, counter), temps)
+    assert sorted(derived for derived, _w in a.values()) == [False, True]
+    assert a == b
+
+
+def test_the_collision_representative_does_not_follow_the_record_ids():
+    """Three copies 0.004 decades apart merge; whichever record carries which
+    id, the loaded weight is the same copy's."""
+    members = _group([0.0, 0.004, 0.008])
+    ids = [p["record_event_id"] for p in members]
+    seen = set()
+    for perm in itertools.permutations(ids):
+        out, table = te.resolve_collisions(_relabel(members, dict(zip(ids, perm))))
+        assert [r["disposition"] for r in table] == ["merged"]
+        loaded = [base_template(p) for p in out if base_template(p)["status"] == "emitted"]
+        assert len(loaded) == 1
+        seen.add(te.canonical_json(loaded[0]["weight"]))
+    assert len(seen) == 1
+
+
+def test_the_representative_pair_of_a_reciprocal_unit_does_not_follow_the_record_ids():
+    """Two pairs merge as one unit (the reverse copies 0.003 decades apart):
+    the loaded forward and reverse weights are one source pair's, the same
+    pair under any ids."""
+    kf, kr = "a" * 64, "b" * 64
+    payloads = _reciprocal([kf, kf], [kr, kr], (0.003, 0.0))
+    swap = {_rid(1): _rid(2), _rid(2): _rid(1), _rid(5): _rid(6), _rid(6): _rid(5)}
+    seen = []
+    for ps in (payloads, _relabel(payloads, swap)):
+        out, table = te.resolve_collisions(ps)
+        assert sorted(r["disposition"] for r in table) == ["merged", "merged"]
+        seen.append(sorted((t["key"], te.canonical_json(t["weight"])) for p in out
+                           for t in p["templates"] if t.get("status") == "emitted"))
+    assert seen[0] == seen[1]
+
+
+def test_the_cycle_check_temperatures_do_not_follow_the_record_ids(monkeypatch):
+    payloads, counter = _toy_pair()
+    renamed = _relabel(payloads, {_rid(1): _rid(10), _rid(2): _rid(11)})
+    original = te.check_temperatures
+    used = []
+
+    def spy(grid, pair, extra=()):
+        temps = original(grid, pair, extra)
+        used[-1].update(temps)
+        return temps
+    monkeypatch.setattr(te, "check_temperatures", spy)
+    for ps in (payloads, renamed):
+        used.append(set())
+        _out, table = _check(_res(ps, counter), counter)
+        assert table[0]["status"] == "ok"
+    assert used[0] and used[0] == used[1]

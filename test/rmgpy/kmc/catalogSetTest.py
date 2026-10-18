@@ -22,8 +22,8 @@ from rmgpy.kmc import run as kr
 
 GRID = (300.0, 1000.0)
 FAMILIES_A = ("toy_homolysis", "toy_recombination")
-SHARED = {"database_path": "/db", "database_head": "d" * 40, "code_sha": "c" * 40,
-          "roster_sha256": "r" * 64}
+SHARED = {"database_path": "/db", "database_content_sha256": "h" * 64, "code_sources_sha256": "s" * 64,
+          "roster_sha256": "r" * 64, "database_head": "d" * 40, "code_sha": "c" * 40}
 
 
 def stub_payloads():
@@ -39,12 +39,20 @@ def stub_payloads():
     return a, b
 
 
-def write_stub(path, payloads, *, complete=True, **shared):
+def write_stub(path, payloads, *, complete=True, entry_keys=None, drop=(), **shared):
+    """A catalog of ``payloads``; ``entry_keys``: the keys that entered its
+    collision resolution (default: its emitted keys); ``drop``: provenance
+    fields left out."""
     provenance = dict(SHARED, **shared)
     provenance.update(artifact_id=f"art-{Path(path).stem}", families=sorted({p["family"] for p in payloads}),
                       temperatures=list(GRID))
+    for field in drop:
+        provenance.pop(field)
+    if entry_keys is None:
+        entry_keys = sorted({t["key"] for p in payloads for t in p["templates"] if t.get("status") == "emitted"})
+    collisions = {} if entry_keys == "absent" else {"entry_keys": list(entry_keys)}
     doc = {"schema": "kmc-template-catalog/1", "provenance": provenance, "payloads": payloads,
-           "refusals": [], "gates": {"failures": [] if complete else ["injected"]},
+           "refusals": [], "gates": {"failures": [] if complete else ["injected"], "collisions": collisions},
            "completeness": {}, "complete": complete}
     Path(path).write_text(json.dumps(doc, sort_keys=True, indent=1) + "\n")
     return Path(path)
@@ -149,6 +157,9 @@ def test_a_member_whose_sha_changed_is_refused(tmp_path):
 def test_members_with_differing_shared_inputs_are_refused_by_name(tmp_path):
     a, b = stub_payloads()
     fa = write_stub(tmp_path / "a.json", a)
+    fb = write_stub(tmp_path / "b.json", b, database_content_sha256="e" * 64)
+    with pytest.raises(ValueError, match="database_content_sha256"):
+        build_set([fa, fb], tmp_path / "set.json")
     fb = write_stub(tmp_path / "b.json", b, database_head="e" * 40)
     with pytest.raises(ValueError, match="database_head"):
         build_set([fa, fb], tmp_path / "set.json")
@@ -185,9 +196,32 @@ def spy(monkeypatch, tmp_path):
     return seen
 
 
+def toy_database(tmp_path, families=("R_Recombination", "H_Abstraction")):
+    root = tmp_path / "db"
+    for family in families:
+        (root / "input/kinetics/families" / family).mkdir(parents=True)
+        (root / "input/kinetics/families" / family / "groups.py").write_text("# groups\n")
+    return root
+
+
 def test_compile_family_requests_exactly_that_family(spy, tmp_path):
-    assert kcompile.main([str(tmp_path), str(tmp_path / "out"), "--family", "R_Recombination"]) == 0
+    db = toy_database(tmp_path)
+    assert kcompile.main([str(db), str(tmp_path / "out"), "--family", "R_Recombination"]) == 0
     assert [r.families for r in spy] == [("R_Recombination",)]
+
+
+@pytest.mark.parametrize("name", ["all", "ALL", "none", "default", "!H_Abstraction", "Not_A_Family",
+                                  "../db", "families", "R_Recombination,H_Abstraction"])
+def test_compile_family_refuses_selectors_and_unknown_names_before_anything_loads(spy, tmp_path, name,
+                                                                                   capsys):
+    """``all``, a recommended set, ``!F`` and anything that is not one family
+    directory of the database would expand into several families (or none)."""
+    db = toy_database(tmp_path)
+    with pytest.raises(SystemExit) as caught:
+        kcompile.main([str(db), str(tmp_path / "out"), "--family", name])
+    assert caught.value.code != 0
+    assert spy == []
+    assert name in capsys.readouterr().err
 
 
 def test_compile_families_still_reads_the_json_list(spy, tmp_path):
@@ -244,12 +278,15 @@ def selection_of(monkeypatch, tmp_path, artifact_families, **args):
     monkeypatch.setattr(emit, "build_reference_systems", lambda roster: ({}, []))
     monkeypatch.setattr(emit, "git_head", lambda path: "d" * 40)
     out = tmp_path / "rows.jsonl"
-    ns = SimpleNamespace(roster="r", artifact=str(artifact), database="/db", out=str(out), chunk=None,
+    database = args.pop("database", "/db")
+    ns = SimpleNamespace(roster="r", artifact=str(artifact), database=database, out=str(out), chunk=None,
                          family=None, limit=None, no_contexts=True)
     for k, v in args.items():
-        setattr(ns, k, v)
+        if k != "whole_header":
+            setattr(ns, k, v)
     emit.run_emit(ns)
-    return json.loads(out.read_text().splitlines()[0])["selection"]
+    head = json.loads(out.read_text().splitlines()[0])
+    return head if args.get("whole_header") else head["selection"]
 
 
 def test_a_one_family_artifact_is_a_complete_selection(monkeypatch, tmp_path):
@@ -260,3 +297,150 @@ def test_a_one_family_artifact_is_a_complete_selection(monkeypatch, tmp_path):
 def test_a_subset_of_families_or_a_limit_stays_partial(monkeypatch, tmp_path):
     assert selection_of(monkeypatch, tmp_path, ["A", "B"], family=["A"]) == "partial"
     assert selection_of(monkeypatch, tmp_path, ["R_Recombination"], limit=1) == "partial"
+
+
+def test_the_shard_header_carries_content_identities_that_never_need_git(monkeypatch, tmp_path):
+    """A database outside git (database_head null) and code outside git
+    (code_sha null) are still identified: by the database's content digest
+    and the sha256 of the kMC sources."""
+    from rmgpy.kmc.database_provenance import database_content_digest
+    db = toy_database(tmp_path)
+    (db / "input/thermo").mkdir()
+    (db / "input/thermo/x.py").write_text("x = 1\n")
+    monkeypatch.setattr(emit, "code_sha", lambda: None)
+    head = selection_of(monkeypatch, tmp_path, ["R_Recombination"], database=str(db), whole_header=True)
+    assert head["database_content_sha256"] == database_content_digest(db)[0]
+    assert head["code_sources_sha256"] == emit.code_sources_sha256()
+    assert len(head["code_sources_sha256"]) == 64 and head["code_sha"] is None
+
+
+# --------------------------------------------------------------------------
+# rework 1: a set gives what one joint assemble would, or is refused
+# --------------------------------------------------------------------------
+def colliding_stubs(tmp_path, *, refused_in_a=False):
+    """Catalog A gains a record of A's family whose template has B's first
+    executable key and weights: one joint assemble would resolve the two
+    copies together.  ``refused_in_a``: A's copy was refused inside A (its key
+    entered A's collision resolution but A loads nothing under it)."""
+    a, b = stub_payloads()
+    donor = b[0]["templates"][0]
+    copy = json.loads(json.dumps(donor))
+    copy["family"] = a[0]["family"]
+    host = {"record_event_id": "evt_" + "9" * 64, "family": a[0]["family"], "reverse_of": None,
+            "templates": [copy]}
+    keys = sorted({t["key"] for p in a for t in p["templates"]} | {donor["key"]})
+    if not refused_in_a:
+        a.append(host)
+    fa = write_stub(tmp_path / "a.json", a, entry_keys=keys)
+    fb = write_stub(tmp_path / "b.json", b)
+    return fa, fb, donor["key"], host["record_event_id"], b[0]["record_event_id"]
+
+
+@pytest.mark.parametrize("refused_in_a", [False, True])
+def test_a_cross_member_executable_collision_is_refused_by_name_when_the_set_is_built(tmp_path, refused_in_a):
+    fa, fb, key, rid_a, rid_b = colliding_stubs(tmp_path, refused_in_a=refused_in_a)
+    with pytest.raises(ValueError) as caught:
+        build_set([fa, fb], tmp_path / "set.json")
+    message = str(caught.value)
+    assert key in message and "a.json" in message and "b.json" in message
+    assert rid_b in message
+    assert not (tmp_path / "set.json").exists()
+
+
+def test_a_hand_made_set_with_a_cross_member_collision_is_refused_by_the_set_check(tmp_path):
+    """The loader repeats the build check: the refusal names the key and the
+    members, not the runner's generic duplicate-executable error."""
+    fa, fb, key, _ra, _rb = colliding_stubs(tmp_path)
+    a, b = stub_payloads()
+    ok_a = write_stub(tmp_path / "ok_a.json", a)
+    manifest = build_set([ok_a, fb], tmp_path / "set.json")
+    doc = json.loads(manifest.read_text())
+    import hashlib
+    doc["catalogs"][0] = dict(doc["catalogs"][0], path="a.json",
+                              sha256=hashlib.sha256(fa.read_bytes()).hexdigest())
+    manifest.write_text(json.dumps(doc))
+    with pytest.raises(kr.RunError) as caught:
+        kr.load_catalogs([str(manifest)], 650.0)
+    message = str(caught.value)
+    assert key in message and "a.json" in message and "b.json" in message
+    assert "fire it twice" not in message
+
+
+def test_a_member_that_does_not_list_its_entry_keys_is_refused(tmp_path):
+    a, b = stub_payloads()
+    fa = write_stub(tmp_path / "a.json", a, entry_keys="absent")
+    fb = write_stub(tmp_path / "b.json", b)
+    with pytest.raises(ValueError, match="entry_keys"):
+        build_set([fa, fb], tmp_path / "set.json")
+
+
+def test_a_set_without_collisions_is_the_joint_catalog(tmp_path):
+    """Disjoint entry keys: the set loads what the joint catalog loads."""
+    a, b = stub_payloads()
+    fa = write_stub(tmp_path / "a.json", a)
+    fb = write_stub(tmp_path / "b.json", b)
+    both = write_stub(tmp_path / "both.json", a + b)
+    manifest = build_set([fa, fb], tmp_path / "set.json")
+    for T in (300.0, 650.0, 1000.0):
+        assert loaded([manifest], T)[0] == loaded([both], T)[0]
+
+
+# --------------------------------------------------------------------------
+# rework 1: the runner loads the bytes the set verified, once
+# --------------------------------------------------------------------------
+def test_the_runner_loads_the_bytes_the_set_verified(monkeypatch, tmp_path):
+    """A member replaced on disk right after its sha256 was checked: the
+    runner still loads the verified content, never the replacement."""
+    from rmgpy.kmc import catalog_set as cs
+    a, b = stub_payloads()
+    fa = write_stub(tmp_path / "a.json", a)
+    fb = write_stub(tmp_path / "b.json", b)
+    manifest = build_set([fa, fb], tmp_path / "set.json")
+    want = loaded([manifest], 650.0)[0]
+    tampered = json.loads(json.dumps(b))
+    for p in tampered:
+        for t in p["templates"]:
+            t["weight"]["w"] = [999.0 for _ in t["weight"]["w"]]
+    original = cs.read_bytes
+
+    def swap_after_read(path):
+        raw = original(path)
+        if Path(path).name == "b.json":
+            write_stub(tmp_path / "b.json", tampered)
+        return raw
+    monkeypatch.setattr(cs, "read_bytes", swap_after_read)
+    got = loaded([manifest], 650.0)[0]
+    assert got == want
+    assert 999.0 not in [w for _n, w in got]
+
+
+# --------------------------------------------------------------------------
+# rework 1: unknown provenance is not shared provenance
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize("field", ["database_path", "database_content_sha256", "code_sources_sha256",
+                                   "roster_sha256"])
+@pytest.mark.parametrize("how", ["null", "missing"])
+def test_a_member_with_an_unknown_shared_input_is_refused_by_name(tmp_path, field, how):
+    a, b = stub_payloads()
+    fa = write_stub(tmp_path / "a.json", a, **({field: None} if how == "null" else {}),
+                    drop=(field,) if how == "missing" else ())
+    fb = write_stub(tmp_path / "b.json", b, **({field: None} if how == "null" else {}),
+                    drop=(field,) if how == "missing" else ())
+    with pytest.raises(ValueError) as caught:
+        build_set([fa, fb], tmp_path / "set.json")
+    assert field in str(caught.value) and "a.json" in str(caught.value)
+
+
+@pytest.mark.parametrize("field", ["database_head", "code_sha"])
+def test_a_git_identity_known_for_one_member_only_is_refused(tmp_path, field):
+    """database_head and code_sha are null outside git (the content digests
+    then identify the inputs); known for one member and unknown for another
+    is not the same input."""
+    a, b = stub_payloads()
+    fa = write_stub(tmp_path / "a.json", a)
+    fb = write_stub(tmp_path / "b.json", b, **{field: None})
+    with pytest.raises(ValueError, match=field):
+        build_set([fa, fb], tmp_path / "set.json")
+    fa = write_stub(tmp_path / "a.json", a, **{field: None})
+    manifest = build_set([fa, fb], tmp_path / "set.json")          # unknown for both: the digests decide
+    assert json.loads(manifest.read_text())["shared"][field] is None
