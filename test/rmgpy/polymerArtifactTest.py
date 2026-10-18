@@ -1038,6 +1038,122 @@ class TestStaleTopologySidecar:
         assert art["conventions"]["stale_topology"] is True
 
 
+class TestSolverGasMaskRecord:
+    """conventions.solver_gas_mask: the live solver's gas_species_mask
+    recorded verbatim, the core species in solver order each with its gas
+    flag, beside (never instead of) conventions.condensed_species, which
+    unions the mask with pool membership and the spawned-pool closure and so
+    loses the solver's verdict for a spawned-but-unconfigured pool.  The
+    record's source is "solver" when the engine's mask matched the core
+    length and the engine was built against this core (not stale); else the
+    record is absent."""
+
+    @staticmethod
+    def _rmg_with_engine(tmp_path):
+        import time as _time
+        from types import SimpleNamespace
+
+        import numpy as np
+
+        from rmgpy.rmg.main import RMG
+        from rmgpy.rmg.model import CoreEdgeReactionModel
+        from rmgpy.solver.polymer import (HybridPolymerSystem,
+                                          PolymerPoolConfig)
+
+        kw = dict(monomer="[CH2][CH2]", end_groups=["[H]", "[H]"], cutoff=3,
+                  moments=[1.0, 5.0, 30.0], initial_mass=0.0, k_scission=1.0,
+                  k_unzip=0.0)
+        root = Polymer(label="poly", **kw)
+        tail = Polymer(label="tail", **kw)       # spawned: no solver config
+        n2 = _spc("N#N", "N2")
+        core_species = ([root, _spc("CCCCCCCCCCCC", "poly", index=3)]
+                        + [_mu_dummy(f"poly_mu{k}") for k in range(3)] + [n2]
+                        + [tail, _spc("CCCCCC", "tail", index=7)]
+                        + [_spc("[Ne]", f"tail_mu{k}") for k in range(3)]
+                        + [_spc("CCCC", "poly", index=12)])
+        # (the tail's moment species carry no is_moment_dummy flag: the
+        # solver refuses a flagged moment coordinate it classifies gas)
+        cfg = PolymerPoolConfig(
+            label="poly", xs=2, explicit_dp_to_species_index={},
+            mu_indices=(2, 3, 4), monomer_poly_index=None,
+            k_scission=1.0, k_unzip=0.0, tail_kinetics=None)
+        # the first stage: the root pool's members condensed, all else gas
+        # (poly(12), of the root pool's base label but not its first core
+        # species, stays gas: the override condenses only the first)
+        mask = np.array([False] * 5 + [True] * 7)
+        engine = HybridPolymerSystem(
+            T=800.0, P=1.0e5, initial_mole_fractions={n2: 1.0},
+            V_poly=1.0, polymer_pools=[cfg], mass_transfer=[],
+            gas_species_mask=mask.copy(), constant_gas_volume=False,
+            initial_polymer_moments={"poly": (1.0, 5.0, 30.0)},
+            termination=[])
+        engine.initialize_model(list(core_species), [], [], [])
+
+        model = CoreEdgeReactionModel()
+        model.core.species.extend(core_species)
+        model.new_species_list = []
+        rmg = RMG.__new__(RMG)
+        rmg._observers = []
+        rmg.reaction_libraries = []
+        rmg.exec_time = []
+        rmg.initialization_time = _time.time()
+        rmg.profiler = None
+        rmg.reaction_model = model
+        rmg.output_directory = str(tmp_path)
+        rmg.reaction_systems = [SimpleNamespace(solver=engine)]
+        return rmg, engine, model
+
+    @staticmethod
+    def _saved(rmg, tmp_path):
+        rmg.save_everything()
+        with open(tmp_path / "polymer_pools.json") as fh:
+            return json.load(fh)["conventions"]
+
+    def test_the_recorded_mask_is_the_solvers_in_core_order(self, tmp_path):
+        from rmgpy.polymer import _artifact_species_label
+        rmg, engine, model = self._rmg_with_engine(tmp_path)
+        conventions = self._saved(rmg, tmp_path)
+        assert "stale_topology" not in conventions
+        assert conventions["solver_gas_mask"] == {
+            "source": "solver",
+            "core": [{"species": _artifact_species_label(s), "gas": bool(g)}
+                     for s, g in zip(model.core.species, engine.gas_species_mask)]}
+
+    def test_a_spawned_unconfigured_pools_members_are_as_the_solver_had_them(self, tmp_path):
+        """The solver keeps the spawned pool's members gas; the record says
+        so, while condensed_species (unchanged) carries the closure."""
+        rmg, engine, _model = self._rmg_with_engine(tmp_path)
+        conventions = self._saved(rmg, tmp_path)
+        flags = {(e["species"]): e["gas"] for e in conventions["solver_gas_mask"]["core"]}
+        assert [flags[x] for x in ("tail(7)", "tail_mu0", "tail_mu1", "tail_mu2")] == [True] * 4
+        assert [flags[x] for x in ("poly(3)", "poly_mu0", "poly_mu1", "poly_mu2")] == [False] * 4
+        assert flags["N2"] is True
+        assert list(engine.gas_species_mask[7:]) == [True] * 5
+        # condensed_species unions the mask with label membership: poly(12)
+        # is listed condensed there, gas in the solver's mask
+        assert flags["poly(12)"] is True and "poly(12)" in conventions["condensed_species"]
+        assert conventions["spawned_pools"] == ["tail"]
+        assert {"tail(7)", "tail_mu0"} <= set(conventions["condensed_species"])
+
+    def test_no_record_without_a_mask_of_this_core(self, tmp_path):
+        """A core grown after the engine's build, a same-length swapped core
+        (stale) and no engine at all: no record."""
+        rmg, _engine, model = self._rmg_with_engine(tmp_path)
+        swapped = model.core.species[5]
+        model.core.species[5] = _spc("C", "CH4")
+        assert "solver_gas_mask" not in self._saved(rmg, tmp_path)
+        model.core.species[5] = swapped
+        assert "solver_gas_mask" in self._saved(rmg, tmp_path)
+        model.core.species.append(_spc("C", "CH4"))
+        assert "solver_gas_mask" not in self._saved(rmg, tmp_path)
+        rmg.reaction_systems = []
+        assert "solver_gas_mask" not in self._saved(rmg, tmp_path)
+
+    def test_a_direct_build_without_a_mask_has_no_record(self, pe_pool):
+        art = build_polymer_moments_artifact([pe_pool])
+        assert "solver_gas_mask" not in art["conventions"]
+
+
 class TestCompileReactionEntries:
     def test_migration_entry(self):
         core = _two_pool_core()
