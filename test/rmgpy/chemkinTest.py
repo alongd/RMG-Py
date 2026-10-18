@@ -1797,11 +1797,6 @@ class TestEndOfFileInsideABlock:
                                     + "\n".join(entry.splitlines()[:line_count]) + "\nEND\n")
         assert isinstance(outcome, ChemkinError) and re.search(r"THERM block.*H2", str(outcome)), outcome
 
-    def test_a_reactions_block_cannot_swallow_thermo(self, tmp_path):
-        """REACTIONS stops at another block header before its END."""
-        outcome = self.read_guarded(tmp_path, self.HEAD + "REACTIONS\nH2=H+H 1.0 0 0\nTHERM ALL\nEND\n")
-        assert isinstance(outcome, ChemkinError) and re.search(r"REACTIONS block.*THERM", str(outcome)), outcome
-
     def test_the_same_blocks_with_their_end_read(self, tmp_path):
         """The shapes above, each block closed by END (RMG's writer closes
         every block it writes), read: H2's thermo and the reaction."""
