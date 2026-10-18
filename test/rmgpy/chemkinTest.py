@@ -1811,3 +1811,60 @@ class TestEndOfFileInsideABlock:
         species, reactions = outcome
         assert [s.label for s in species] == ["H2", "H"] and species[0].has_thermo()
         assert len(reactions) == 1
+
+
+class TestKeywordSpeciesAndBlockBoundaries:
+    @staticmethod
+    def read(tmp_path, text, names=None):
+        chemkin_path = tmp_path / "chem.inp"
+        chemkin_path.write_text(text)
+        dictionary_path = None
+        if names is not None:
+            species = []
+            for label, smiles in names.items():
+                item = Species(label=label).from_smiles(smiles)
+                item.label = label
+                species.append(item)
+            dictionary_path = tmp_path / "species_dictionary.txt"
+            save_species_dictionary(str(dictionary_path), species)
+        return load_chemkin_file(str(chemkin_path), str(dictionary_path) if dictionary_path else None,
+                                 check_duplicates=False, generate_resonance_structures=False)
+
+    @pytest.mark.parametrize("body, labels", [
+        ("REAC H2", ["REAC", "H2"]),
+        ("REAC", ["REAC"]),
+        ("THERM\nREACTIONS\nELEM\nH2", ["THERM", "REACTIONS", "ELEM", "H2"]),
+    ])
+    def test_keyword_species_without_a_block_signature_read(self, tmp_path, body, labels):
+        species, reactions = self.read(tmp_path, "ELEMENTS H END\nSPECIES\n" + body + "\nEND\n")
+        assert [species.label for species in species] == labels
+        assert reactions == []
+
+    def test_keyword_species_peek_does_not_consume_the_next_species(self, tmp_path):
+        species, _reactions = self.read(tmp_path, "ELEMENTS H END\nSPECIES\nREAC\nH2\nEND\n")
+        assert [species.label for species in species] == ["REAC", "H2"]
+
+    def test_keyword_named_reaction_and_efficiency_read(self, tmp_path):
+        names = {"REAC": "C", "H": "[H]", "H2": "[H][H]", "CH4": "C"}
+        text = ("ELEMENTS H C END\nSPECIES\nREAC H H2 CH4\nEND\nREACTIONS\n"
+                "REAC + H => CH4 1.0 0 0\nH+H(+M)=>H2(+M) 1.0 0 0\nREAC /2.0/\nEND\n")
+        _species, reactions = self.read(tmp_path, text, names)
+        assert len(reactions) == 2
+        assert reactions[0].reactants[0].label == "REAC"
+        assert reactions[1].kinetics.efficiencies[reactions[0].reactants[0].molecule[0]] == 2.0
+
+    @pytest.mark.parametrize("header, following, block", [
+        ("SPECIES", "REACTIONS\nH2=H+H 1.0 0 0", "REACTIONS"),
+        ("SPECIES", "THERM\n300 1000 5000", "THERM"),
+        ("SPECIES", "TRANSPORT\nH2 1 38 2.9 0 1.8 4", "TRANSPORT"),
+        ("SITE/SURF/", "REACTIONS\nH2=H+H 1.0 0 0", "REACTIONS"),
+    ])
+    def test_unterminated_species_or_site_block_names_the_following_block(self, tmp_path, header, following, block):
+        outcome = None
+        try:
+            self.read(tmp_path, "ELEMENTS H END\n{0}\nH2 H\n{1}\nEND\n".format(header, following))
+        except Exception as error:
+            outcome = error
+        predecessor = "SITE" if header.startswith("SITE") else "SPECIES"
+        assert isinstance(outcome, ChemkinError)
+        assert re.search(predecessor + r" block.*" + block, str(outcome))
