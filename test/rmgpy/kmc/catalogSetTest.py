@@ -105,6 +105,25 @@ def test_a_set_missing_one_side_of_a_cross_family_dependency_is_refused_by_name(
     assert ida in str(caught.value) and idb in str(caught.value) and "reverse_of" in str(caught.value)
 
 
+def test_the_manifest_dependency_check_stands_for_incomplete_members(tmp_path):
+    """For incomplete members (loaded with ``allow_incomplete``) a dangling
+    reverse_of is not an error by itself, so the manifest's own dependency
+    list is the only guard: a set with a member dropped is refused by name."""
+    a, b = stub_payloads()
+    link_pair(a, b)
+    fa = write_stub(tmp_path / "a.json", a, complete=False)
+    fb = write_stub(tmp_path / "b.json", b, complete=False)
+    ida, idb = a[0]["record_event_id"], b[0]["record_event_id"]
+    manifest = build_set([fa, fb], tmp_path / "set.json")
+    doc = json.loads(manifest.read_text())
+    half = dict(doc, catalogs=doc["catalogs"][:1])
+    (tmp_path / "half_set.json").write_text(json.dumps(half))
+    with pytest.raises(kr.RunError) as caught:
+        kr.load_catalogs([str(tmp_path / "half_set.json")], 650.0, allow_incomplete=True)
+    message = str(caught.value)
+    assert "lacks" in message and ida in message and idb in message and "reverse_of" in message
+
+
 def test_a_template_link_across_catalogs_is_refused(tmp_path):
     """merged_into / derived primaries load only inside their own catalog."""
     a, b = stub_payloads()
