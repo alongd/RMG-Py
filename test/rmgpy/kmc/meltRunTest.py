@@ -121,14 +121,19 @@ def toy_payloads(templates, grid=(300.0, 1000.0)):
 
 
 # the chemistry a catalog is bound to: these fields of the normalized declaration
-CHEMISTRY_FIELDS = ("schema_version", "repeat_unit", "end_groups", "locality_policy", "family_manifest",
-                    "library_manifest")
+# the declaration fields that do NOT enter the chemistry digest (everything else does)
+CHEMISTRY_EXCLUDED = ("label", "initial_ensemble", "initial_mobile_counts", "initial_mass_kg", "Mn_g_mol",
+                      "Mw_g_mol", "density_kg_m3", "density_basis", "transport_model",
+                      "observable_relative_tolerance", "diagnostics")
+
+
+def chemistry_of_normalized(normalized):
+    return hashlib.sha256(json.dumps({k: v for k, v in normalized.items() if k not in CHEMISTRY_EXCLUDED},
+                                     sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def chemistry_sha256(mapping):
-    normalized = json.loads(LinearHomopolymerSpec.from_mapping(mapping).normalized_json)
-    return hashlib.sha256(json.dumps({k: normalized[k] for k in CHEMISTRY_FIELDS}, sort_keys=True,
-                                     separators=(",", ":")).encode()).hexdigest()
+    return chemistry_of_normalized(json.loads(LinearHomopolymerSpec.from_mapping(mapping).normalized_json))
 
 
 def declaration_sha256(mapping):
@@ -615,7 +620,7 @@ def test_catalog_bound_to_another_declaration_is_refused(tmp_path):
     # the digests the manifest documents are the ones a catalog carries
     assert m["deck"]["chemistry_sha256"] == chemistry_sha256(pe_map)
     assert m["deck"]["declaration_sha256"] == declaration_sha256(pe_map)
-    assert kr.CHEMISTRY_FIELDS == CHEMISTRY_FIELDS
+    assert kr.CHEMISTRY_EXCLUDED == CHEMISTRY_EXCLUDED
     bound = kr.run(pe, [pe_catalog_file(tmp_path)], 700.0, [0.0], [1], tmp_path / "d")
     assert bound["catalogs"][0]["bound_by"] == ["chemistry_sha256"]
 
@@ -794,3 +799,148 @@ def test_a_failed_seed_is_labelled_and_recorded(tmp_path, monkeypatch):
     argv = [str(deck), str(catalog), "--temperature", "700", "--times", "0", "5", "--seeds", "1",
             "--out", str(tmp_path / "cli")]
     assert kr.main(argv) == 1
+
+
+# --------------------------------------------------------------------------
+# rework 2 (spar r110)
+# --------------------------------------------------------------------------
+def _reordered(executable, order, swap_participants=False):
+    """The same executable listed differently: atoms in ``order`` (old
+    indices), the bond list reversed, participants optionally exchanged."""
+    new_of = {old: new for new, old in enumerate(order)}
+    atoms = [dict(executable["atoms"][old]) for old in order]
+    if swap_participants:
+        for a in atoms:
+            a["participant"] = 1 - a["participant"]
+    bonds = [[new_of[j], new_of[i], x, y] for i, j, x, y in reversed(executable["bonds"])]
+    return {"atoms": atoms, "bonds": bonds}
+
+
+@pytest.mark.parametrize("variant", ["bond_order_reversed", "atoms_permuted", "participants_swapped"])
+def test_an_executable_listed_differently_is_still_a_duplicate(tmp_path, variant):
+    """Item 1: identity is the template's structure, not its JSON order."""
+    from rmgpy.kmc.template_emission import sha256_json
+    payloads = toy_payloads([t for t in S.pe_templates() if t.name in PE_LIVE])
+    name = "h_abstraction" if variant == "participants_swapped" else "homolysis"   # asymmetric pair
+    (copy,) = [p for p in renamed(payloads, "x") if p["templates"][0]["name"] == name]
+    ex = copy["templates"][0]["executable"]
+    n = len(ex["atoms"])
+    order = list(range(n)) if variant == "bond_order_reversed" else list(reversed(range(n)))
+    copy["templates"][0]["executable"] = _reordered(ex, order, variant == "participants_swapped")
+    assert sha256_json(copy["templates"][0]["executable"]) != sha256_json(ex)
+    first = write_catalog(tmp_path / "first.json", payloads, bind=S.pe_mapping({1: 1}))
+    second = write_catalog(tmp_path / "second.json", [copy], bind=S.pe_mapping({1: 1}))
+    me.PayloadCatalog([copy]).templates(700.0)            # the reordered copy is a valid template
+    with pytest.raises(kr.RunError, match="executable"):
+        kr.load_catalogs([first, second], 700.0)
+    within = write_catalog(tmp_path / "within.json", payloads + [copy], bind=S.pe_mapping({1: 1}))
+    with pytest.raises(kr.RunError, match="executable"):
+        kr.load_catalogs([within], 700.0)
+
+
+def test_distinct_templates_are_not_duplicates(tmp_path):
+    """Item 1, the converse: the toy set and the sampled PS catalogs load."""
+    kr.load_catalogs([pe_catalog_file(tmp_path)], 700.0)
+    kr.load_catalogs(ps_catalog_files(tmp_path), 700.0)
+
+
+def _full_pe_normalized():
+    mapping = S.pe_mapping({10: 1, 20: 1}, small={"methyl": S.METHYL}, monomer=S.ETHYLENE_GRAPH)
+    ens = LinearHomopolymerSpec.from_mapping(mapping).ensemble_observables
+    mapping["Mn_g_mol"], mapping["Mw_g_mol"] = ens.mn_g_mol, ens.mw_g_mol
+    return json.loads(LinearHomopolymerSpec.from_mapping(mapping).normalized_json)
+
+
+def test_chemistry_digest_covers_every_field_but_the_excluded():
+    """Item 2: the digest is the normalized declaration minus an explicit list."""
+    normalized = _full_pe_normalized()
+    assert kr.CHEMISTRY_EXCLUDED == CHEMISTRY_EXCLUDED
+    assert set(CHEMISTRY_EXCLUDED) <= set(normalized)      # every excluded field is perturbed below
+    base = kr.chemistry_digest(normalized)
+    assert base == chemistry_of_normalized(normalized)
+    for key in normalized:
+        perturbed = dict(normalized, **{key: {"perturbed": key}})
+        assert (kr.chemistry_digest(perturbed) != base) == (key not in CHEMISTRY_EXCLUDED), key
+    for key in ("small_species", "monomer_product", "repeat_unit", "end_groups", "locality_policy"):
+        assert key in normalized and key not in CHEMISTRY_EXCLUDED
+    assert kr.chemistry_digest(dict(normalized, future_field=1)) != base    # new fields count by default
+    spec = LinearHomopolymerSpec.from_mapping(S.pe_mapping({10: 1}))
+    assert kr.chemistry_sha256(spec) == kr.chemistry_digest(json.loads(spec.normalized_json))
+
+
+def test_a_declared_small_species_changes_the_binding(tmp_path):
+    """Item 2: a zero-population declared radical changes MET bypass, so a
+    catalog bound to the plain declaration is refused."""
+    plain = S.pe_mapping({10: 1})
+    with_radical = S.pe_mapping({10: 1}, small={"ethyl": S.ETHYL})
+    assert chemistry_sha256(plain) != chemistry_sha256(with_radical)
+    deck = write_deck(tmp_path / "deck.py", with_radical)
+    with pytest.raises(kr.RunError, match="chemistry_sha256"):
+        kr.run(deck, [pe_catalog_file(tmp_path)], 700.0, [0.0], [1], tmp_path / "out")
+    # population, mass, density and transport do not
+    other = S.pe_mapping({30: 4}, d_ref=3.0e-17)
+    other["initial_mass_kg"], other["density_kg_m3"] = 2.0, 900.0
+    assert chemistry_sha256(other) == chemistry_sha256(plain)
+
+
+def test_a_failing_report_does_not_abort_the_ensemble(tmp_path, monkeypatch):
+    """Item 3."""
+    deck, catalog = pe_deck(tmp_path), pe_catalog_file(tmp_path)
+
+    def broken(self):
+        raise RuntimeError("injected report failure")
+
+    monkeypatch.setattr(me.MeltEngine, "report", broken)
+    out = tmp_path / "report"
+    m = kr.run(deck, [catalog], 700.0, [0.0, 1.0], [1, 2], out)
+    assert m["status"] == "failed"
+    assert [r["seed"] for r in m["runs"]] == [1, 2]
+    for r in m["runs"]:
+        assert r["stop_reason"] == "error" and "injected report failure" in r["error"]
+        rows = lines(out / f"seed-{r['seed']}" / "observables.jsonl")
+        assert len(rows) == 2 and all(row["seed"] == r["seed"] for row in rows)
+    assert m["leak"]["excluded_seeds"] == [1, 2]
+
+
+@pytest.mark.parametrize("bad", ['"NaN"', '"1.0"', "true", "null", "[1.0]", '{"2": "NaN"}', '{"2": false}',
+                                 '{"2": {"x": 1.0}}', "1e999"])
+def test_mom_quantities_must_be_finite_json_numbers(tmp_path, bad):
+    """Item 4."""
+    path = tmp_path / "mom.json"
+    path.write_text('[{"time_s": 1.0, "quantities": {"mu0_mol": %s}}]' % bad)
+    with pytest.raises(kr.RunError, match="number"):
+        kr.load_mom(path, [0.0, 1.0])
+    good = tmp_path / "good.json"
+    good.write_text('[{"time_s": 1.0, "quantities": {"mu0_mol": 1, "explicit_dp_mol": {"2": 1.5e-6}}}]')
+    assert kr.load_mom(good, [0.0, 1.0])[0][1] == {"mu0_mol": 1, "explicit_dp_mol": {"2": 1.5e-6}}
+
+
+@pytest.mark.parametrize("binding", [
+    "def polymer(*args, **kwargs):\n    pass\n",
+    "async def polymer():\n    pass\n",
+    "class polymer:\n    pass\n",
+    "polymer = 1\n",
+    "import polymer\n",
+    "import os as polymer\n",
+    "from os import path as polymer\n",
+    "from os import *\n",
+    "def f():\n    global polymer\n",
+    "def f():\n    x = 1\n    def g():\n        nonlocal x\n        polymer = x\n",
+    "f = lambda polymer: 0\n",
+    "def f(polymer):\n    pass\n",
+    "def f(*, polymer=1):\n    pass\n",
+    "def f(*polymer):\n    pass\n",
+    "try:\n    pass\nexcept Exception as polymer:\n    pass\n",
+    "for polymer in []:\n    pass\n",
+    "with open('x') as polymer:\n    pass\n",
+    "(polymer := 1)\n",
+    "[0 for polymer in []]\n",
+])
+def test_a_deck_that_binds_the_name_polymer_is_refused(tmp_path, binding):
+    """Item 5: any binding of the name, before a literal declaration."""
+    mapping = S.pe_mapping({10: 1})
+    path = tmp_path / "deck.py"
+    path.write_text(DECK_HEAD + binding + f"polymer({mapping['label']!r}, linear_homopolymer_spec={mapping!r})\n"
+                    + DECK_TAIL)
+    with pytest.raises(kr.RunError, match="polymer"):
+        kr.read_deck(path)
