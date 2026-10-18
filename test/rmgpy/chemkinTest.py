@@ -53,6 +53,7 @@ from rmgpy.data.kinetics import LibraryReaction
 from rmgpy.exceptions import ChemkinError
 from rmgpy.kinetics.arrhenius import Arrhenius, MultiArrhenius
 from rmgpy.kinetics.chebyshev import Chebyshev
+from rmgpy import constants
 from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
 from rmgpy.species import Species
@@ -1225,3 +1226,85 @@ class TestKeywordsAreTokens:
                                                generate_resonance_structures=False)
         assert sorted(s.label for s in species) == ["H", "SITE_a", "species"]
         assert [str(r) for r in reactions] == ["species(9) + H(1) => SITE_a(2)"]
+
+
+class TestAuxiliaryRecordsAndHeaders:
+    """Chemkin allows several auxiliary records on one line, each with the
+    meaning it has on a line of its own, and the abbreviated block headers
+    ELEM, SPEC, THER and REAC."""
+
+    THERM_ENTRY = TestEndKeyword.THERM_ENTRY
+    NAMES = {"N2": "N#N", "H(1)": "[H]", "H2(2)": "[H][H]", "CH4(3)": "C"}
+
+    def load(self, tmp_path, reactions, headers=("ELEMENTS", "SPECIES", "THERM ALL", "REACTIONS    KCAL/MOLE   MOLES"),
+             name="chem"):
+        therm = [headers[2], "   300.000  1000.000  5000.000"]
+        for species in self.NAMES:
+            therm += [line.format(species) for line in self.THERM_ENTRY]
+        text = "\n".join([f"{headers[0]} H C N END", headers[1], *self.NAMES, "END", *therm, "END",
+                          headers[3], *reactions, "END", ""])
+        path = tmp_path / f"{name}.inp"
+        path.write_text(text)
+        (tmp_path / "dict.txt").write_text("\n".join(f"{n}\n{Molecule(smiles=s).to_adjacency_list()}"
+                                                     for n, s in self.NAMES.items()))
+        return load_chemkin_file(str(path), str(tmp_path / "dict.txt"), check_duplicates=False,
+                                 generate_resonance_structures=False)
+
+    @staticmethod
+    def described(kinetics):
+        efficiencies = sorted((m.to_smiles(), e) for m, e in getattr(kinetics, "efficiencies", {}).items())
+        pressures = list(kinetics.pressures.value_si) if hasattr(kinetics, "pressures") else None
+        return type(kinetics).__name__, repr(kinetics), efficiencies, pressures
+
+    CASES = {
+        "low_troe": (["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "LOW/1e24 -2 0/ TROE/0.5 100 1000/"],
+                     ["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "LOW/1e24 -2 0/", "TROE/0.5 100 1000/"],
+                     "Troe"),
+        "plog_plog": (["CH4(3)=>H(1)+H(1)+H2(2)    1.0 0.0 0.0", "PLOG/0.1 1e10 0 0/ PLOG/1.0 1e11 0 0/"],
+                      ["CH4(3)=>H(1)+H(1)+H2(2)    1.0 0.0 0.0", "PLOG/0.1 1e10 0 0/", "PLOG/1.0 1e11 0 0/"],
+                      "PDepArrhenius"),
+        "low_efficiency": (["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "LOW/1e24 -2 0/ N2/0.5/"],
+                           ["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "LOW/1e24 -2 0/", "N2/0.5/"],
+                           "Lindemann"),
+        "efficiency_low": (["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "N2/0.5/ LOW/1e24 -2 0/"],
+                           ["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "N2/0.5/", "LOW/1e24 -2 0/"],
+                           "Lindemann"),
+    }
+
+    @pytest.mark.parametrize("case", sorted(CASES))
+    def test_records_on_one_line_read_as_on_separate_lines(self, tmp_path, case):
+        together, apart, kind = self.CASES[case]
+        _s, (one,) = self.load(tmp_path, together, name="together")
+        _s, (two,) = self.load(tmp_path, apart, name="apart")
+        assert self.described(one.kinetics) == self.described(two.kinetics)
+        assert type(one.kinetics).__name__ == kind
+        if case == "plog_plog":
+            assert len(one.kinetics.pressures.value_si) == 2
+        if case.startswith(("low_e", "efficiency")):
+            assert self.described(one.kinetics)[2] == [("N#N", 0.5)]
+
+    def test_a_line_with_an_unreadable_record_is_an_error(self, tmp_path):
+        with pytest.raises(Exception):
+            self.load(tmp_path, ["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "LOW/1e24 -2 0/ TROE/0.5/"])
+
+    @pytest.mark.parametrize("which", [0, 1, 2, 3])
+    def test_abbreviated_headers_load_the_same_model(self, tmp_path, which):
+        full = ["ELEMENTS", "SPECIES", "THERM ALL", "REACTIONS    KCAL/MOLE   MOLES"]
+        short = list(full)
+        short[which] = ["ELEM", "SPEC", "THER", "REAC    KCAL/MOLE   MOLES"][which]
+        body = ["CH4(3)=>H(1)+H(1)+H2(2)    1.0 0.0 3.0", "H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0",
+                "LOW/1e24 -2 0/", "N2/0.5/"]
+        sp1, rx1 = self.load(tmp_path, body, headers=full, name="full")
+        sp2, rx2 = self.load(tmp_path, body, headers=short, name="short")
+        assert [s.label for s in sp2] == [s.label for s in sp1] and all(s.thermo is not None for s in sp2)
+        assert [str(r) for r in rx2] == [str(r) for r in rx1] and len(rx2) == 2
+        assert [self.described(r.kinetics) for r in rx2] == [self.described(r.kinetics) for r in rx1]
+
+    def test_reac_keeps_its_units(self, tmp_path):
+        body = ["CH4(3)=>H(1)+H(1)+H2(2)    1.0 0.0 1000.0"]
+        _s, (full,) = self.load(tmp_path, body, headers=("ELEMENTS", "SPECIES", "THERM ALL",
+                                                         "REACTIONS MOLES KELVINS"), name="full")
+        _s, (short,) = self.load(tmp_path, body, headers=("ELEMENTS", "SPECIES", "THERM ALL", "REAC MOLES KELVINS"),
+                                 name="short")
+        assert short.kinetics.Ea.value_si == pytest.approx(1000.0 * constants.R, rel=1e-12)
+        assert repr(short.kinetics) == repr(full.kinetics)
