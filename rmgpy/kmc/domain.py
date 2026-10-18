@@ -289,7 +289,6 @@ def _phenyl_rings(form):
     return (seen, ipso_of), ""
 
 
-# lone pairs of a neutral atom with a full octet (``declared_interim_check``)
 # neutral valence states: element -> {(lone pairs, bond-order sum + unpaired
 # electrons)}; hypervalent S (sulfoxide S4, sulfone S6) and P (P5) included.
 # A singlet carbene (C, 1 pair, valence 2) or a divalent S with one pair has
@@ -299,11 +298,36 @@ NEUTRAL_STATES = {"H": {(0, 1)}, "C": {(0, 4)}, "Si": {(0, 4)}, "N": {(1, 3)},
                   "F": {(3, 1)}, "Cl": {(3, 1)}, "Br": {(3, 1)}, "I": {(3, 1)}}
 
 
+def in_neutral_state(symbol: str, lone_pairs: int, valence: float) -> bool:
+    """Whether (``lone_pairs``, ``valence``) is a ``NEUTRAL_STATES`` state of
+    ``symbol`` (an element without an entry has none)."""
+    return (int(lone_pairs), valence) in NEUTRAL_STATES.get(symbol, ())
+
+
+# aromatic atoms (one or more benzene bonds, B) as RMG types them
+# (``rmgpy.molecule.atomtype``: Cb, Cbf, N3b, N5b, O4b, S4b, P3b, P5b, Sib,
+# Sibf at charge 0): element -> {(lone pairs, B bonds, other bond orders +
+# unpaired electrons)}.  A B bond is not a number of electrons here: a fused
+# carbon (Cbf) has three B bonds and nothing else, a ring carbon (Cb) two and
+# one more; RMG's aromatic O and S (O4b, S4b) carry one lone pair.
+AROMATIC_STATES = {"C": {(0, 2, 1), (0, 3, 0)}, "Si": {(0, 2, 1), (0, 3, 0)},
+                   "N": {(1, 2, 0), (0, 2, 1)}, "P": {(1, 2, 0), (0, 2, 1)},
+                   "O": {(1, 2, 0)}, "S": {(1, 2, 0)}}
+
+
 def valence_state(atom) -> tuple:
-    """(lone pairs, bond-order sum + unpaired electrons) of an atom; the sum
-    rounded to a half (aromatic 1.5 bonds)."""
+    """(lone pairs, bond-order sum + unpaired electrons) of an atom without a
+    benzene bond; the sum rounded to a half."""
     total = sum(float(bond.order) for bond in atom.bonds.values()) + atom.radical_electrons
     return int(atom.lone_pairs), round(total * 2) / 2
+
+
+def aromatic_state(atom) -> tuple:
+    """(lone pairs, benzene bonds, other bond orders + unpaired electrons) of
+    an atom with a benzene bond (``AROMATIC_STATES``)."""
+    benzene = sum(1 for bond in atom.bonds.values() if bond.is_benzene())
+    other = sum(float(bond.order) for bond in atom.bonds.values() if not bond.is_benzene())
+    return int(atom.lone_pairs), benzene, round((other + atom.radical_electrons) * 2) / 2
 
 
 def _element_list(elements) -> str:
@@ -331,6 +355,13 @@ def universal_check(molecule, elements=("C", "H"), *, states=None,
             return refused("an atom with a lone pair")
     else:
         for a in atoms:
+            if any(bond.is_benzene() for bond in a.bonds.values()):
+                state = aromatic_state(a)
+                if state not in AROMATIC_STATES.get(a.element.symbol, ()):
+                    return refused(f"an aromatic atom ({a.element.symbol}) with {state[0]} "
+                                   f"lone pairs, {state[1]} benzene bonds and {state[2]:g} "
+                                   f"other valence: not an RMG aromatic atom type")
+                continue
             state = valence_state(a)
             if state not in states.get(a.element.symbol, ()):
                 return refused(f"an atom ({a.element.symbol}) with {state[0]} lone pairs and "

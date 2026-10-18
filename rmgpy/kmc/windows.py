@@ -523,19 +523,21 @@ _INTERIM_POLICIES = {}
 
 def declared_interim(elements) -> ChemistryPolicy:
     """``DECLARED_INTERIM`` admitting ``elements`` (C and H always): the
-    same name, spin verdict and ring edits; the domain check reads only the
-    given set.  ``DECLARED_INTERIM`` itself for C and H; one object per
-    (policy name, element set)."""
+    same spin verdict and ring edits; the domain check reads only the given
+    set, and the set is part of the policy's identity: the name is
+    ``declared_interim_v1[C,H,O]`` (sorted), so certificates
+    (``domain_policy``, the recertification gate) and every cache keyed by
+    the policy name separate element sets.  ``DECLARED_INTERIM`` itself
+    (``declared_interim_v1``) for C and H; one object per name."""
     elements = tuple(sorted(set(elements) | {"C", "H"}))
     if elements == ("C", "H"):
         return DECLARED_INTERIM
-    key = (DECLARED_INTERIM.name, elements)
-    if key not in _INTERIM_POLICIES:
-        name = DECLARED_INTERIM.name
-        _INTERIM_POLICIES[key] = ChemistryPolicy(name, PolicyDomain(
+    name = f"{DECLARED_INTERIM.name}[{','.join(elements)}]"
+    if name not in _INTERIM_POLICIES:
+        _INTERIM_POLICIES[name] = ChemistryPolicy(name, PolicyDomain(
             name, lambda molecule: dom.declared_interim_check(molecule, elements),
             DECLARED_INTERIM.domain.spin_verdict), DECLARED_INTERIM.ring_edits)
-    return _INTERIM_POLICIES[key]
+    return _INTERIM_POLICIES[name]
 
 
 def policy_for(witness, providers=None) -> ChemistryPolicy:
@@ -2853,9 +2855,17 @@ def closing_partners(certifier, family, constants: FamilyConstants) -> dict:
     slot).  The probe partner H / H2 is the cheapest filler but its members
     end ``refused:guard: element_count`` (a failed carbon-count guard that a
     provider extension could flip), so the closing partner is the first
-    candidate whose member closes."""
+    candidate whose member closes.  A species of the family's training
+    reactions is never a closing partner (``training_keys``): a depository
+    match reads both species whole, so a class closed against one can be
+    refused whole-species (1-phenylethyl + H2 under H_Abstraction) and the
+    closings lose its leaf; this also excludes H and H2 now that their
+    members close (C-3)."""
+    from rmgpy.kmc import channels as chm
     out = {}
-    cands = [(name, make()) for name, make in CLOSING_CANDIDATES]
+    training, species = training_keys(family), chm.SpeciesKeys()
+    cands = [(name, spec) for name, spec in ((name, make()) for name, make in CLOSING_CANDIDATES)
+             if species(builds_of([spec])[0].molecule) not in training]
     for direction, molecularity in constants.directions:
         if molecularity != 2:
             continue
@@ -2949,7 +2959,11 @@ _TRAINING = {}
 def training_keys(family) -> frozenset:
     """Species keys (modulo resonance) of every species of the family's
     training reactions, both sides (RMG's depository match is a reaction
-    isomorphism in either direction)."""
+    isomorphism in either direction).  Each molecule is keyed on a copy with
+    its atoms numbered: ``SpeciesKeys`` first looks a molecule up by its
+    id-keyed rows, and the depository's molecules carry no atom ids, so
+    unnumbered every molecule of one size collapsed onto the first one keyed
+    (17 keys for 3119 H_Abstraction entries; H2 and 1-phenylethyl missing)."""
     if family.label not in _TRAINING:
         from rmgpy.kmc import channels as chm
         species = chm.SpeciesKeys()
@@ -2960,7 +2974,9 @@ def training_keys(family) -> frozenset:
             depository = None
         for entry in (depository.entries.values() if depository else ()):
             for s in list(entry.item.reactants) + list(entry.item.products):
-                mol = s.molecule[0] if hasattr(s, "molecule") else s
+                mol = (s.molecule[0] if hasattr(s, "molecule") else s).copy(deep=True)
+                for k, atom in enumerate(mol.atoms):
+                    atom.id = k
                 out.add(species(mol))
         _TRAINING[family.label] = frozenset(out)
     return _TRAINING[family.label]

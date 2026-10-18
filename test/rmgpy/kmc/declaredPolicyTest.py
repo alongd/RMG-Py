@@ -333,7 +333,7 @@ def test_interim_elements_come_from_the_witness_own_declarations(monkeypatch):
              if not isinstance(p, dc.DeclaredChainProvider) or p is oh}
     monkeypatch.setattr(b, "PROVIDERS", alone)
     policy = win.policy_for(sup.identity_witness(build))
-    assert policy.name == "declared_interim_v1"
+    assert policy.name == "declared_interim_v1[C,H,O]"
     verdict = policy.domain.check(build.molecule)
     assert verdict.accepted, verdict.reason
     assert policy.domain.check(_mol("CCCC(C)CC(C)CO")).accepted
@@ -382,6 +382,27 @@ def test_a_declared_small_species_element_is_admitted():
         assert verdict.accepted is accepted, (with_water, verdict.reason)
 
 
+def test_a_declared_monomer_product_element_is_admitted():
+    """r126 item 3: the monomer product of the witness's declaration counts
+    (a PP declaration whose monomer product carries O: allyl alcohol)."""
+    import declared_parity_support as sup
+    from declaredChainTest import _atom, _bond, pp_mapping, spec_of
+    from rmgpy.kmc import declared_chain as dc
+    from rmgpy.kmc import windows as win
+    mapping = pp_mapping()
+    mapping["locality_policy"]["bounds"]["elements"] = ["C", "H", "O"]
+    mapping["locality_policy"]["bounds"]["lone_pairs"] = [0, 2]
+    mapping["monomer_product"] = {
+        "atoms": [_atom("a", hydrogens=2), _atom("b", hydrogens=1), _atom("c", hydrogens=2),
+                  _atom("o", "O", hydrogens=1, lone_pairs=2)],
+        "bonds": [_bond("a", "b", 2), _bond("b", "c"), _bond("c", "o")],
+        "electronic_state": {"multiplicity": 1}}
+    with_monomer = dc.DeclaredChainProvider(spec_of(mapping))
+    for provider, accepted in ((with_monomer, True), (_water_pp(False), False)):
+        witness = sup.identity_witness(provider.build("w", dc.ChainSpec(3)))
+        assert win.policy_for(witness).domain.check(_mol("O")).accepted is accepted
+
+
 PINNED_STATES = {"H": {(0, 1)}, "C": {(0, 4)}, "Si": {(0, 4)}, "N": {(1, 3)},
                  "P": {(1, 3), (0, 5)}, "O": {(2, 2)}, "S": {(2, 2), (1, 4), (0, 6)},
                  "F": {(3, 1)}, "Cl": {(3, 1)}, "Br": {(3, 1)}, "I": {(3, 1)}}
@@ -401,6 +422,18 @@ def test_neutral_state_table_is_pinned(element):
                 ((pairs, valence) in allowed), (element, pairs, valence)
 
 
+PINNED_AROMATIC = {"C": {(0, 2, 1), (0, 3, 0)}, "Si": {(0, 2, 1), (0, 3, 0)},
+                   "N": {(1, 2, 0), (0, 2, 1)}, "P": {(1, 2, 0), (0, 2, 1)},
+                   "O": {(1, 2, 0)}, "S": {(1, 2, 0)}}
+
+
+def test_aromatic_state_table_is_pinned():
+    """The aromatic states (RMG's aromatic atom types at charge 0) are pinned
+    like the neutral ones: widening an entry goes red."""
+    from rmgpy.kmc import domain as dom
+    assert dom.AROMATIC_STATES == PINNED_AROMATIC
+
+
 def _vinylnaphthalene_provider():
     """-CH2-CH(2-naphthyl)-, declared in a Kekule form."""
     from declaredChainTest import _atom, _bond, _declaration, spec_of
@@ -416,20 +449,26 @@ def _vinylnaphthalene_provider():
 
 
 def _aromatic(smiles):
-    """``smiles`` with every ring bond written as a benzene bond (B, 1.5)."""
+    """``smiles`` with every ring bond written as a benzene bond (B, 1.5); a
+    ring O or S takes RMG's aromatic form (O4b, S4b: one lone pair)."""
     m = _mol(smiles)
     for bond in m.get_all_edges():
         if m.is_bond_in_cycle(bond):
             bond.order = 1.5
+    for atom in m.atoms:
+        if atom.symbol in ("O", "S"):
+            atom.lone_pairs = 1
     return m
 
 
 def test_interim_check_reads_aromatic_bonds_as_rmg_does():
     """r126 item 2: a fused aromatic carbon (three B bonds) is a neutral C,
-    as RMG reads it; the declared vinylnaphthalene chain is accepted after
-    the production normalization (``aromatic_root``), as are naphthalene,
-    pyridine, thiophene and furan written aromatic.  A ring carbon over
-    valence in its aromatic form (two B bonds and two H) is refused."""
+    as RMG reads it (atom type Cbf); the declared vinylnaphthalene chain is
+    accepted after the production normalization (``aromatic_root``), as are
+    naphthalene, pyridine, thiophene and furan written aromatic (RMG's types:
+    N3b, S4b, O4b).  A ring carbon over valence in its aromatic form (two B
+    bonds and two H) and one under it (two B bonds, nothing else) are
+    refused."""
     import declared_parity_support as sup
     from rmgpy.kmc import certificates as cm
     from rmgpy.kmc import declared_chain as dc
@@ -452,7 +491,12 @@ def test_interim_check_reads_aromatic_bonds_as_rmg_does():
     extra = Atom(element="H", radical_electrons=0, lone_pairs=0)
     over.add_atom(extra)
     over.add_bond(Bond(ring_carbon, extra, order=1))
-    assert not dom.declared_interim_check(over, elements).accepted
+    assert "aromatic" in dom.declared_interim_check(over, elements).reason
+    under = _aromatic("c1ccccc1")
+    lone = next(a for a in under.atoms if a.is_carbon())
+    hydrogen = next(a for a in lone.bonds if a.is_hydrogen())
+    under.remove_atom(hydrogen)
+    assert "aromatic" in dom.declared_interim_check(under, elements).reason
 
 
 def _sulfone_provider():
@@ -807,6 +851,20 @@ def test_a_changed_element_set_is_a_changed_policy(habs, pp_cases):
                for r in changed["refusals"]), changed["refusals"]
     stamped = _pp_certificate(habs, case, domain=cho.domain)
     assert stamped["domain_policy"] == "declared_interim_v1[C,H,O]"
+
+
+def test_training_keys_key_every_training_species(habs):
+    """Item 4: the depository's molecules carry no atom ids; keyed unnumbered
+    they collapsed onto one key per size (17 keys; H2, ethylbenzene and
+    1-phenylethyl, the species of training entry 'H2 + C8H9 <=> C8H10 + H',
+    missing)."""
+    from rmgpy.kmc import channels as chm
+    from rmgpy.kmc import windows as win
+    family, _certifier = habs
+    keys, species = win.training_keys(family), chm.SpeciesKeys()
+    for smiles in ("[H]", "[H][H]", "CCc1ccccc1", "C[CH]c1ccccc1"):
+        assert species(_mol(smiles)) in keys, smiles
+    assert len(keys) > 100
 
 
 def test_closing_partners_are_not_training_species(habs):
