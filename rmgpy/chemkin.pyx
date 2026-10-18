@@ -474,9 +474,46 @@ def _read_kinetics_reaction(line, species_dict, Aunits, Aunits_surf, Eunits):
     return reaction, third_body, kinetics, k_units, k_low_units
 
 
+def _split_auxiliary_records(line):
+    """The auxiliary records of one line of a Chemkin reaction entry, in order:
+    each ``KEYWORD/values/`` or ``SPECIES/efficiency/`` as ``'NAME/values/'``,
+    and each bare keyword (``DUPLICATE``, ``STICK``) on its own.  Chemkin
+    allows several records on one line (``LOW/.../ TROE/.../``)."""
+    segments = line.split('/')
+    records = []
+    for k in range(0, len(segments), 2):
+        words = segments[k].split()
+        if k + 1 < len(segments):
+            if not words:
+                raise ChemkinError('Values /{0}/ follow no keyword or species in line {1!r}'.format(
+                    segments[k + 1], line))
+            records.extend(words[:-1])
+            records.append('{0}/{1}/'.format(words[-1], segments[k + 1]))
+        else:
+            records.extend(words)
+    return records
+
+
 def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units, kinetics):
     """
-    Parse the subsequent lines of of a Chemkin reaction entry.
+    Parse one of the subsequent lines of a Chemkin reaction entry, record by
+    record (``_split_auxiliary_records``), each record with the meaning it has
+    on a line of its own.  A record that cannot be read fails the line.
+    """
+    for record in _split_auxiliary_records(line):
+        try:
+            kinetics = _read_kinetics_record(record, reaction, species_dict, Eunits, kunits, klow_units, kinetics)
+        except ChemkinError:
+            raise
+        except Exception as e:
+            raise ChemkinError('Could not read the auxiliary record {0!r} of line {1!r} for reaction {2}: '
+                               '{3}: {4}'.format(record, line, reaction, type(e).__name__, e))
+    return kinetics
+
+
+def _read_kinetics_record(line, reaction, species_dict, Eunits, kunits, klow_units, kinetics):
+    """
+    Parse one auxiliary record (or a line holding one) of a Chemkin reaction entry.
     """
     case_preserved_tokens = line.split('/')
     line = line.upper()
@@ -1015,13 +1052,13 @@ def load_chemkin_file(path, dictionary_path=None, transport_path=None, read_comm
                     f.seek(previous_line)
                     read_species_block(f, species_dict, sp_aliases, sp_list)
 
-                elif header in ('THERM', 'THERMO') and thermo_path is None:
+                elif header in ('THERM', 'THERMO', 'THER') and thermo_path is None:
                     # Skip this if a thermo file is specified
                     # Unread the line (we'll re-read it in read_thermo_block())
                     f.seek(previous_line)
                     read_thermo_block(f, species_dict)
 
-                elif header == 'REACTIONS':
+                elif header in ('REACTIONS', 'REAC'):
                     # Reactions section
                     # Unread the line (we'll re-read it in readReactionBlock())
                     f.seek(previous_line)
@@ -1049,7 +1086,7 @@ def load_chemkin_file(path, dictionary_path=None, transport_path=None, read_comm
                 previous_line = f.tell()
                 line0 = f.readline()
                 line = remove_comment_from_line(line0)[0].strip()
-                if [t.upper() for t in line.split()[:1]] in (['THERM'], ['THERMO']):
+                if [t.upper() for t in line.split()[:1]] in (['THERM'], ['THERMO'], ['THER']):
                     f.seek(previous_line)
                     read_thermo_block(f, species_dict)
                     break
@@ -1371,7 +1408,7 @@ def read_reactions_block(f, species_dict, read_comments=True):
         line = line.strip()
         tokens = line.split()
 
-        if len(tokens) > 0 and tokens[0].upper() == 'REACTIONS':
+        if len(tokens) > 0 and tokens[0].upper() in ('REACTIONS', 'REAC'):
             # Regular Chemkin file
             found = True
             for token in tokens[1:]:
