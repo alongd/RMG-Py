@@ -1051,7 +1051,7 @@ class TestSolverGasMaskRecord:
     included (not stale); with none, the record is absent."""
 
     @staticmethod
-    def _engine(core_species, n2):
+    def _engine(core_species, n2, extra=0):
         import numpy as np
 
         from rmgpy.solver.polymer import (HybridPolymerSystem,
@@ -1063,7 +1063,7 @@ class TestSolverGasMaskRecord:
         # the first stage: the root pool's members condensed, all else gas
         # (poly(12), of the root pool's base label but not its first core
         # species, stays gas: the override condenses only the first)
-        mask = np.array([False] * 5 + [True] * 7)
+        mask = np.array([False] * 5 + [True] * (7 + extra))
         engine = HybridPolymerSystem(
             T=800.0, P=1.0e5, initial_mole_fractions={n2: 1.0},
             V_poly=1.0, polymer_pools=[cfg], mass_transfer=[],
@@ -1074,9 +1074,10 @@ class TestSolverGasMaskRecord:
         return engine
 
     @classmethod
-    def _rmg_with_engine(cls, tmp_path, layout=("polymer",)):
+    def _rmg_with_engine(cls, tmp_path, layout=("polymer",), extra=None):
         """``layout``: the reaction systems in order, "polymer" (a hybrid
-        reactor's engine) or "gas" (a reactor without polymer pools)."""
+        reactor's engine) or "gas" (a reactor without polymer pools);
+        ``extra``: a gas species appended to the core."""
         import time as _time
         from types import SimpleNamespace
 
@@ -1093,10 +1094,10 @@ class TestSolverGasMaskRecord:
                         + [_mu_dummy(f"poly_mu{k}") for k in range(3)] + [n2]
                         + [tail, _spc("CCCCCC", "tail", index=7)]
                         + [_spc("[Ne]", f"tail_mu{k}") for k in range(3)]
-                        + [_spc("CCCC", "poly", index=12)])
+                        + [_spc("CCCC", "poly", index=12)] + ([extra] if extra is not None else []))
         # (the tail's moment species carry no is_moment_dummy flag: the
         # solver refuses a flagged moment coordinate it classifies gas)
-        systems = [SimpleNamespace(solver=cls._engine(core_species, n2)) if x == "polymer"
+        systems = [SimpleNamespace(solver=cls._engine(core_species, n2, extra=int(extra is not None))) if x == "polymer"
                    else SimpleNamespace() for x in layout]
 
         model = CoreEdgeReactionModel()
@@ -1135,12 +1136,62 @@ class TestSolverGasMaskRecord:
             "source": "solver", "reactors": [self._record(1, engine, model.core.species)]}
 
     def test_species_are_bound_to_their_structures(self, tmp_path):
-        from rmgpy.polymer import species_structure
+        """Each species' structure is RMG's adjacency list of its first
+        molecule, with its multiplicity."""
         rmg, _engines, model = self._rmg_with_engine(tmp_path)
         core = self._saved(rmg, tmp_path)["solver_gas_mask"]["reactors"][0]["core"]
         by_label = {e["species"]: e["structure"] for e in core}
-        assert by_label["tail(7)"] == Molecule().from_smiles("CCCCCC").to_augmented_inchi()
-        assert by_label["N2"] == species_structure(model.core.species[5]) is not None
+        tail = model.core.species[7].molecule[0]
+        assert by_label["tail(7)"] == {"adjacency_list": tail.to_adjacency_list(), "multiplicity": 1}
+        assert Molecule().from_adjacency_list(by_label["tail(7)"]["adjacency_list"]).is_isomorphic(tail)
+
+    @staticmethod
+    def _species(smiles, multiplicity=None):
+        spc = _spc(smiles, "X", index=13)
+        if multiplicity is not None:
+            spc.molecule[0].multiplicity = multiplicity
+        return spc
+
+    @pytest.mark.parametrize("before, after", [
+        (("Oc1ccccn1", None), ("O=c1cccc[nH]1", None)),           # tautomers: one augmented InChI
+        (("[CH2]C[CH]C", 3), ("[CH2]C[CH]C", 1)),                 # triplet and singlet: one augmented InChI
+    ], ids=["tautomer", "multiplicity"])
+    def test_another_species_under_the_same_label_is_stale(self, tmp_path, before, after):
+        """Spar r160 item 1: a species swapped for a distinct one under its
+        label and index after the engine's build is stale: no record."""
+        rmg, _engines, model = self._rmg_with_engine(tmp_path, extra=self._species(*before))
+        model.core.species[-1] = self._species(*after)
+        conventions = self._saved(rmg, tmp_path)
+        assert conventions.get("stale_topology") is True and "solver_gas_mask" not in conventions
+
+    def test_another_resonance_drawing_is_the_same_species(self, tmp_path):
+        """Spar r160 item 2: crotyl drawn [CH2]C=CC at the build and C=C[CH]C
+        at the save is the same species: fresh, recorded."""
+        rmg, _engines, model = self._rmg_with_engine(tmp_path, extra=self._species("[CH2]C=CC"))
+        model.core.species[-1] = self._species("C=C[CH]C")
+        conventions = self._saved(rmg, tmp_path)
+        assert "stale_topology" not in conventions and "solver_gas_mask" in conventions
+
+    def test_a_structure_that_cannot_be_read_equals_nothing(self):
+        """Two signatures each holding a species without a readable
+        structure are unequal, the same species object included."""
+        from rmgpy.polymer import core_topology_signature
+        blank = Species(label="X")
+        blank.index = 13
+        assert core_topology_signature([blank], []) != core_topology_signature([blank], [])
+        assert core_topology_signature([_spc("CC", "X", index=13)], []) == \
+            core_topology_signature([_spc("CC", "X", index=13)], [])
+
+    def test_a_structure_that_cannot_be_read_is_stale_by_name(self, tmp_path):
+        """Spar r160 item 3: a species without a readable structure equals
+        nothing: stale, and the sidecar names it."""
+        rmg, _engines, model = self._rmg_with_engine(tmp_path, extra=self._species("CC"))
+        blank = Species(label="X")
+        blank.index = 13
+        model.core.species[-1] = blank
+        conventions = self._saved(rmg, tmp_path)
+        assert conventions.get("stale_topology") is True and "solver_gas_mask" not in conventions
+        assert conventions.get("stale_topology_unreadable_structures") == ["X(13)"]
 
     def test_a_polymer_reactor_after_a_gas_reactor_is_reactor_2(self, tmp_path):
         """Spar r156 item 1: the mask belongs to the second reaction system
