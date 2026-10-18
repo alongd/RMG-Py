@@ -985,42 +985,81 @@ def dead(k: Optional[float]) -> bool:
     return k is None or not math.isfinite(k) or k <= 0.0
 
 
+AMBIGUOUS_MAX = 10           # gas-mask-ambiguous species whose 2^n gas sets the census still enumerates
+
+
+def _effective_pressures(efficiencies, gas: Sequence[int], pressure: float,
+                         compositions: Sequence[Sequence[Optional[float]]]) -> List[float]:
+    """MoM's effective pressure at each composition in time order over the
+    core positions ``gas`` (polymer.pyx 6546-6564): P sum(eff y) / sum(y); a
+    gas total at or below 1e-20 mol skips the update and keeps the previous
+    value, the total pressure of generate_rate_coefficients (4744) before any
+    state."""
+    out, current = [], pressure
+    for y in compositions:
+        amounts = [y[j] for j in gas]
+        total = math.fsum(amounts)
+        if total > 1e-20:
+            current = pressure * math.fsum(efficiencies[j] * v for j, v in zip(gas, amounts)) / total
+        out.append(current)
+    return out
+
+
 def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressure: float,
-              colliders: Sequence[Any], compositions: Sequence[Sequence[float]]) -> dict:
+              core: Sequence[Tuple[Optional[int], Any, str]], compositions: Sequence[Sequence[float]]) -> dict:
     """Whether one reaction (its Chemkin entries ``group``) moves forward and
     backward as MoM's solver computes its rates (polymer.pyx at b1285f08f).
     kf: ``get_rate_coefficient(T, P)``, a non-finite value taken as 0
     (``generate_rate_coefficients``, 4744-4748); a pressure-dependent
-    reaction with collider efficiencies at MoM's effective pressure
-    P sum(eff_i y_i) / sum(y_i) over the gas species (6546-6562, with
-    ``get_effective_collider_efficiencies`` as polymer_input.py 428-434
-    builds them), MoM recomputing it at every state: here at every
-    composition in ``compositions``, in time order, over the gas columns
-    ``colliders`` (``gas_columns``).  A gas total at or below 1e-20 mol skips
-    the update, so kf keeps the previous state's value (6553-6564); before
-    any state kf is the total-pressure value of generate_rate_coefficients
-    (4744), which an empty first state therefore keeps.  kb = kf / Keq with Keq from the species' thermo, and
-    kb = 0 where Keq is not finite or not positive or kb is not finite
-    (4749-4760).  A direction is live when its coefficient is positive and
-    finite at some composition."""
+    reaction with collider efficiencies at MoM's effective pressure, MoM
+    recomputing it at every state: here at every composition in
+    ``compositions`` (profile rows, in time order; ``_effective_pressures``).
+    The efficiencies are assigned over the FULL core in MoM's order
+    (``get_effective_collider_efficiencies(core_species)``, polymer_input.py
+    428-434: each efficiency goes to the first isomorphic core species,
+    model.pyx 415-421), and only then the gas mask weighs the amounts
+    (``core``, from ``core_phases``).  A gas-mask-ambiguous species is taken
+    in and out of the gas, every combination: where they disagree the
+    forward rate is dead with the reason "gas mask ambiguous for ...".
+    kb = kf / Keq with Keq from the species' thermo, and kb = 0 where Keq is
+    not finite or not positive or kb is not finite (4749-4760).  A direction
+    is live when its coefficient is positive and finite at some composition."""
     terms = [r.kinetics for r in group]
     kinetics = terms[0]
-    pressures = [pressure]
+
+    def forward_at(pressures):
+        values, why = [], None
+        for p in dict.fromkeys(pressures):
+            k, reason = reaction_rate(terms, temperature, p)
+            values.append(k)
+            why = why or reason
+        return values, why
+
+    out = {"reverse": False, "reverse_reason": None}
     if len(terms) == 1 and kinetics.is_pressure_dependent() and getattr(kinetics, "efficiencies", None):
-        efficiencies = kinetics.get_effective_collider_efficiencies([c[1] for c in colliders])
-        pressures, current = [], pressure
-        for y in compositions:
-            gas = [y[c[0]] for c in colliders]
-            total = math.fsum(gas)
-            if total > 1e-20:
-                current = pressure * math.fsum(e * v for e, v in zip(efficiencies, gas)) / total
-            pressures.append(current)
-    forward, error = [], None
-    for p in dict.fromkeys(pressures):
-        k, why = reaction_rate(terms, temperature, p)
-        forward.append(k)
-        error = error or why
-    out = {"forward": any(not dead(k) for k in forward), "error": error, "reverse": False, "reverse_reason": None}
+        efficiencies = kinetics.get_effective_collider_efficiencies([c[1] for c in core])
+        rows = [[None if c[0] is None else y[c[0]] for c in core] for y in compositions]
+        rows = [[0.0 if v is None else v for v in y] for y in rows]      # a core species without a column holds 0
+        gas = [j for j, c in enumerate(core) if c[2] == "gas"]
+        ambiguous = [j for j, c in enumerate(core) if c[2] == "ambiguous"]
+        names = [str(core[j][1]) for j in ambiguous]
+        if len(ambiguous) > AMBIGUOUS_MAX:
+            out.update(forward=False, error=f"gas mask ambiguous for {names} (too many to enumerate)")
+            return out
+        variants = []
+        for mask in range(2 ** len(ambiguous)):
+            chosen = gas + [j for b, j in enumerate(ambiguous) if mask >> b & 1]
+            values, why = forward_at(_effective_pressures(efficiencies, sorted(chosen), pressure, rows))
+            variants.append((any(not dead(k) for k in values), values, why))
+        if len({v[0] for v in variants}) > 1:
+            out.update(forward=False, error=f"gas mask ambiguous for {names}: the rate is live with some of them "
+                                            "in MoM's gas and dead with others")
+            return out
+        live, forward, error = variants[0]
+    else:
+        forward, error = forward_at([pressure])
+        live = any(not dead(k) for k in forward)
+    out.update(forward=live, error=error)
     if reversible:
         try:
             keq = float(group[0].get_equilibrium_constant(temperature))
@@ -1082,49 +1121,63 @@ def profile_motion(header, data, pools, facts: dict, dictionary, times: Sequence
     return None
 
 
-def gas_columns(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any], profile) -> List[Tuple[int, Any]]:
-    """MoM's gas species among the profile columns, each with its RMG species:
-    every column but the pool moments and the species MoM keeps condensed,
-    taken from its own record (the sidecar's conventions.condensed_species,
-    every pool's phase_species and bookkeeping_species).  Columns and those
-    names are matched by identity, never by raw string: a moment by
-    ``moment_column`` of ``<pool>_mu<k>`` (the profile compresses long moment
-    labels), a species by ``species_key`` (its RMG index; the profile and
-    Chemkin shorten long indexed labels).  A column that is neither a pool
-    moment nor a species of the Chemkin file is refused."""
+def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any],
+                profile) -> List[Tuple[Optional[int], Any, str]]:
+    """MoM's core in its order (the Chemkin file's SPECIES block, written from
+    the model core) as (profile column or None, RMG species, phase), phase
+    "gas", "condensed" or "ambiguous", rebuilt from what the sidecar records
+    of the solver's gas mask (get_gas_mask, polymer_input.py 709-781, and the
+    configured pools' label overrides, polymer.pyx 3185-3240):
+
+    * condensed: a configured pool's moments, proxy and phase / bookkeeping
+      species, and every other name of conventions.condensed_species (its
+      source is the solver's own final-core mask, polymer.py
+      derive_condensed_species);
+    * ambiguous: a spawned pool's (conventions.spawned_pools) moments and
+      phase / bookkeeping species: the serializer lists them condensed
+      whether or not the solver configured the pool (polymer.py 9238-9246),
+      and the sidecar does not record which;
+    * gas: the rest.
+
+    Names and columns are matched by identity, never by raw string: a moment
+    by ``moment_column`` of ``<pool>_mu<k>``, a species by ``species_key``.
+    A profile column that is no species of the Chemkin file is refused."""
     from rmgpy.chemkin import get_species_identifier
     conventions = doc.get("conventions") if isinstance(doc.get("conventions"), dict) else {}
     condensed = conventions.get("condensed_species")
     if not isinstance(condensed, list):
         raise ProducerError("the pool table has no conventions.condensed_species: MoM's gas set is not recorded")
     labels = {p["label"] for p in doc["pools"]}
-    moments = {moment_column(f"{label}_mu{k}") for label in labels for k in range(3)}
+    spawned = {str(x) for x in conventions.get("spawned_pools") or ()}
 
     def identity(name: str):
         m = re.fullmatch(r"(.+)_mu([0-2])", str(name))
         if m and m.group(1) in labels:
-            return ("moment", moment_column(str(name)))
+            return species_key(moment_column(str(name)))
         return species_key(str(name))
 
+    def members(p) -> set:
+        return ({identity(f"{p['label']}_mu{k}") for k in range(3)}
+                | {identity(x) for x in list(p.get("phase_species") or ()) + list(p.get("bookkeeping_species") or ())})
+
+    ambiguous = set().union(*[members(p) for p in doc["pools"] if p["label"] in spawned])
     kept = {identity(x) for x in condensed}
-    kept |= {identity(x) for p in doc["pools"] for x in list(p.get("phase_species") or ())
-             + list(p.get("bookkeeping_species") or ())}
-    by_key = {}
-    for x in chemkin_species:
-        by_key.setdefault(species_key(get_species_identifier(x)), x)
-    out, unmapped = [], []
+    kept |= set().union(*[members(p) for p in doc["pools"] if p["label"] not in spawned])
+    column = {}
+    unmapped = []
+    keys = [species_key(get_species_identifier(x)) for x in chemkin_species]
     for i, h in enumerate(header):
-        if i < 2 or h in moments:
+        if i < 2:
             continue
-        key = species_key(h)
-        if key not in by_key:
+        if species_key(h) in keys:
+            column[species_key(h)] = i
+        else:
             unmapped.append(h)
-        elif key not in kept:
-            out.append((i, by_key[key]))
     if unmapped:
         raise ProducerError(f"profile {profile}: columns {unmapped} are neither a pool moment nor a species of the "
                             "Chemkin file")
-    return out
+    return [(column.get(key), x, "ambiguous" if key in ambiguous else "condensed" if key in kept else "gas")
+            for key, x in zip(keys, chemkin_species)]
 
 
 def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> dict:
@@ -1157,7 +1210,7 @@ def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> 
     horizon = float(times[-1])
     header, data = read_profile(find_profile(rmg_dir))
     dictionary = read_species_dictionary(dictionary_path)
-    colliders = gas_columns(header, doc, rmg_species, find_profile(rmg_dir))
+    core = core_phases(header, doc, rmg_species, find_profile(rmg_dir))
     visited = [r for r in data if r[0] < horizon] + [interpolate(data, horizon)]
     by_key: Dict[Tuple, List[dict]] = {}
     for reaction in reactions:
@@ -1212,7 +1265,7 @@ def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> 
         zero, backward = None, False
         if admitted:                      # a refused row's rate is never evaluated
             rates = mom_rates([rmg[c] for c in reaction["chemkin"]], bool(reversible), temperature, pressure,
-                              colliders, visited)
+                              core, visited)
             zero, backward = not rates["forward"], rates["reverse"]
             if rates["error"] is not None:
                 rate_errors[str(row.get("id"))] = rates["error"]
@@ -1242,7 +1295,7 @@ def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> 
     for x in reactions:
         if id(x) in own_reactions:
             continue
-        rates = mom_rates([rmg[c] for c in x["chemkin"]], x["reversible"], temperature, pressure, colliders, visited)
+        rates = mom_rates([rmg[c] for c in x["chemkin"]], x["reversible"], temperature, pressure, core, visited)
         if rates["error"] is not None:
             rate_errors[f"chemkin #{x['chemkin'][0]}"] = rates["error"]
         if rates["forward"]:
