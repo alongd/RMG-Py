@@ -131,7 +131,7 @@ def family_rows(admitted, label=LABEL):
 def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABEL, end_groups=("[H]", "[H]"),
               mass_override=None, duplicate=None, extra_columns=(), n2=lambda t: 1.0, gas_reactions=(),
               pool_extra=None, proxy_amount=lambda t: 7.0, ea_units="KCAL/MOLE", enthalpy=None, bookkeeping=None,
-              condensed=None):
+              condensed=None, spawned=None):
     """A MoM output directory under ``out/rmg``.
 
     ``pools``: [(label, f(t) -> (mu0, mu1, mu2), defect_g_mol)]; ``gas``:
@@ -153,7 +153,9 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     {identifier: H/R in K}); its Ea unit is ``ea_units``.  The sidecar's
     conventions.condensed_species is MoM's (every pool's mu-dummies by full
     label and the main proxy) plus ``condensed``; ``bookkeeping``: {pool:
-    labels} replacing a pool's bookkeeping species."""
+    labels} replacing a pool's bookkeeping species; ``spawned``: the
+    conventions.spawned_pools.  The SPECIES block lists the core in RMG's
+    order: index-less species first, then by index."""
     rmg = out / "rmg"
     for sub in ("solver", "chemkin"):
         (rmg / sub).mkdir(parents=True, exist_ok=True)
@@ -247,8 +249,10 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
         {"schema_version": "2.0", "pools": pool_rows, "reactions": reactions,
          "conventions": {"stale_topology": False,
                          "condensed_species": sorted([proxy] + [f"{p}_mu{k}" for p, _f, _d in pools for k in range(3)]
-                                                     + list(condensed or ()))}}))
-    species_block = ["SPECIES"] + [f"    {x}" for x in sorted(named)] + ["END", ""]
+                                                     + list(condensed or ())),
+                         **({"spawned_pools": list(spawned)} if spawned else {})}}))
+    order = sorted(named, key=lambda x: (mp.species_key(x)[0] == "index", mp.species_key(x)[1:]))
+    species_block = ["SPECIES"] + [f"    {x}" for x in order] + ["END", ""]
     therm = ["THERM ALL", "   300.000  1000.000  5000.000", ""]
     for x in sorted(named):
         h = f"{(enthalpy or {}).get(x, -745.375):15.8E}"
@@ -2029,3 +2033,42 @@ def test_a_profile_column_that_maps_to_nothing_is_refused(setup):
     constant_run(out, setup["spec"], extra_columns=("Q(9)",))
     with pytest.raises(mp.ProducerError, match="neither a pool moment nor a species"):
         produce(setup, out, mode="convert")
+
+
+# --------------------------------------------------------------------------
+# I-172 rework 3 (spar r142): MoM's collider efficiencies and gas mask
+# --------------------------------------------------------------------------
+HEXANE = Molecule(smiles="CCCCCC").to_adjacency_list()
+
+
+def test_collider_efficiencies_are_assigned_over_the_full_core(setup):
+    """Spar r142 item 1: the efficiency line gives hexane 0; MoM assigns it to
+    the FIRST isomorphic core species (model.pyx 415-421 over the core list,
+    polymer_input.py 428-434), the condensed hexane-shaped proxy, so the gas
+    hexane keeps 1: Peff = 1e5 x 1 / (1 + 1) Pa and the row is live."""
+    proxy = proxy_of()
+    row = _row(equation=f"{proxy}(+M)=>{proxy}+X0(+M)", rate=(1.0, 0.0, 0.0),
+               aux=["LOW /  1.0 0.0 0.0 /", "N2/0.0/ C6H14(4)/0.0/"], sidecar_kinetics=None)
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    write_run(out, times=PROFILE_T, pools=[(LABEL, drift(declared(setup["spec"])), 0.0)], rows=[row],
+              gas=ZERO_GAS + [("C6H14(4)", HEXANE, lambda t: 0.0 if t == 0.0 else 1.0)])
+    assert produce(setup, out, mode="convert")["census"]["live_rows"] == ["r0"]
+
+
+def test_a_spawned_pools_phase_is_an_ambiguous_gas_mask(setup):
+    """Spar r142 item 2: an unconfigured spawned daughter's phase species are
+    in conventions.condensed_species (the serializer's 2.5 closure) though
+    the solver keeps them gas unless it configured the pool, which the
+    sidecar does not record.  In the gas the row is live, out of it dead:
+    refused with the stated ambiguity."""
+    mu = declared(setup["spec"])
+    full = [f"{DAUGHTER}_mu{k}" for k in range(3)] + [f"{DAUGHTER}(5)"]
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    write_run(out, times=PROFILE_T, rows=[_falloff_row()],
+              pools=[(LABEL, drift(mu), 0.0), (DAUGHTER, lambda t: (0.0, 0.0, 0.0) if t == 0.0 else (0.1, 0.5, 4.0), 0.0)],
+              gas=ZERO_GAS + [("C2H2(5)", RADICAL, lambda t: 0.0 if t == 0.0 else 0.3)],
+              bookkeeping={DAUGHTER: full}, condensed=full, spawned=[DAUGHTER])
+    census = _refused_census(setup, out)
+    assert census["zero_rate_rows"] == ["r0"] and "gas mask ambiguous" in census["rate_errors"]["r0"]
