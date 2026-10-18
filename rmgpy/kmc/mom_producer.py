@@ -803,15 +803,26 @@ def _is_number(token: str) -> bool:
     return True
 
 
+_EA_UNITS = {"KCAL/MOLE": 4184.0, "CAL/MOLE": 4.184, "KJOULES/MOLE": 1000.0, "JOULES/MOLE": 1.0,
+             "KELVINS": constants.R}
+
+
 def read_annotated(path) -> List[dict]:
-    """``chem_annotated.inp`` reactions: Chemkin and RMG numbers, family
-    (``Template reaction`` line; library / pdep prefixed; None when the
-    writer gave none: an expanded MultiArrhenius), reactant and product keys,
-    reversibility."""
+    """``chem_annotated.inp`` reactions as RMG writes them: consecutive
+    entries of one RMG number (an expanded MultiArrhenius writes several) are
+    one reaction, with its Chemkin numbers, family (``Template reaction``
+    line; library / pdep prefixed; None when the writer gave none: an
+    expanded MultiArrhenius), reactant and product keys, reversibility and the
+    modified-Arrhenius coefficients (A, n, Ea in J/mol) of each entry, in
+    file order."""
     try:
         text = Path(path).read_text()
     except OSError as error:
         raise ProducerError(f"annotated mechanism {path}: {error}") from error
+    ea_unit = 4.184                                    # Chemkin's default, cal/mol
+    m = re.search(r"^REACTIONS\s+(\S+)", text, re.M)
+    if m and m.group(1).upper() in _EA_UNITS:
+        ea_unit = _EA_UNITS[m.group(1).upper()]
     out, pending = [], None
     for line in text.splitlines():
         m = re.match(r"! Reaction index: Chemkin #(\d+); RMG #(-?\d+)", line)
@@ -827,17 +838,28 @@ def read_annotated(path) -> List[dict]:
                                      else f"{m.group(1).lower()}:{m.group(2)}")
             continue
         tokens = line.split()
+        numbers = []
         while tokens and _is_number(tokens[-1]):
-            tokens.pop()
+            numbers.insert(0, float(tokens.pop()))
+        if len(numbers) != 3:
+            raise ProducerError(f"annotated mechanism {path}: Chemkin #{pending['chemkin']}: no A, n, Ea")
         equation = "".join(tokens)
         arrow = "<=>" if "<=>" in equation else ("=>" if "=>" in equation else "=")
         if arrow not in equation:
             raise ProducerError(f"annotated mechanism {path}: Chemkin #{pending['chemkin']}: no reaction line")
         left, right = equation.split(arrow, 1)
-        pending.update({"reactants": [species_key(x) for x in _split_side(left)],
-                        "products": [species_key(x) for x in _split_side(right)],
-                        "reversible": arrow != "=>"})
-        out.append(pending)
+        entry = {"reactants": [species_key(x) for x in _split_side(left)],
+                 "products": [species_key(x) for x in _split_side(right)], "reversible": arrow != "=>"}
+        arrhenius = (numbers[0], numbers[1], numbers[2] * ea_unit)
+        last = out[-1] if out else None
+        if (last is not None and last["rmg"] == pending["rmg"] and pending["family"] is None
+                and _reaction_key(last["reactants"], last["products"])
+                == _reaction_key(entry["reactants"], entry["products"])):
+            last["chemkin"].append(pending["chemkin"])
+            last["arrhenius"].append(arrhenius)
+        else:
+            out.append({"chemkin": [pending["chemkin"]], "rmg": pending["rmg"], "family": pending["family"],
+                        **entry, "arrhenius": [arrhenius]})
         pending = None
     return out
 
@@ -846,54 +868,79 @@ def _reaction_key(reactants, products) -> Tuple:
     return tuple(sorted(reactants)), tuple(sorted(products))
 
 
+def _zero_rate(arrhenius, temperature: float) -> bool:
+    """Every (A, n, Ea / J mol^-1) term gives k = 0 at the run's (isothermal) temperature."""
+    return all(a * temperature ** n * math.exp(-ea / (constants.R * temperature)) == 0.0
+               for a, n, ea in arrhenius)
+
+
 ACTIVITY_RULE = (
-    "a pool-coupled row is live when it is admitted and every reactant is present at t = 0 (a profile "
-    "column > 0, or a pool proxy whose pool has mu0 > 0) or is made by another live row (admitted "
-    "sidecar rows and every Chemkin reaction that is no sidecar row; a reversible row also runs from its "
-    "products); the chemistry is active when a live row belongs to the requested families")
+    "a pool-coupled row is live when it is admitted, its rate coefficient is not zero at the run "
+    "temperature (isothermal, the deck's temperature range), and every reactant is present at t = 0 (a "
+    "profile column > 0, or a pool proxy whose pool has mu0 > 0) or is made by another live row "
+    "(admitted sidecar rows and every Chemkin reaction that is no sidecar row, each only with a nonzero "
+    "rate coefficient; a reversible row also runs from its products); the chemistry is active when a "
+    "live row belongs to the requested families AND some species column or pool moment of the profile "
+    "changes between t = 0 and the last row by more than MASS_CLOSURE_RELATIVE (relative)")
 
 
-def census(rmg_dir, families: Sequence[str]) -> dict:
+def census(rmg_dir, families: Sequence[str], temperature: float) -> dict:
     """Pool-coupled reactions of the final mechanism per family (rows and
-    admitted rows) and the live rows (``ACTIVITY_RULE``).  Family: for a row
-    without a Cantera index, the serializer's own id ``d<family>:...``;
-    otherwise the ``Template reaction`` of the Chemkin entries with the same
-    reactants and products (species by index).  Entries the Chemkin writer
-    gave no family (an expanded MultiArrhenius: plain Reaction entries) are
-    counted by equation under ``unattributed``; the input admits no reaction
-    source but the requested families (no libraries, no seed, no pdep), so
-    they count as requested-family rows."""
+    admitted rows), the live rows and whether the profile moves
+    (``ACTIVITY_RULE``).  Each sidecar row is matched one-to-one to its own
+    Chemkin reaction: the sidecar and the Chemkin file both list the final
+    core reactions in order, so the k-th sidecar row with given reactants and
+    products (species by index) is the k-th Chemkin reaction with them; a
+    different count is refused.  Family: for a row without a Cantera index,
+    the serializer's own id ``d<family>:...`` (refused if its Chemkin
+    reaction names another); otherwise its Chemkin reaction's ``Template
+    reaction``.  A reaction the Chemkin writer gave no family (an expanded
+    MultiArrhenius: plain Reaction entries) is counted by equation under
+    ``unattributed``; the input admits no reaction source but the requested
+    families (no libraries, no seed, no pdep), so it counts as a
+    requested-family row.  Rate coefficient: the sidecar's kinetics, else its
+    Chemkin reaction's."""
     rmg_dir = Path(rmg_dir)
+    temperature = float(temperature)
     doc = read_pools(rmg_dir / "chemkin" / "polymer_pools.json")
     annotated = rmg_dir / "chemkin" / "chem_annotated.inp"
-    entries = read_annotated(annotated)
+    reactions = read_annotated(annotated)
     by_key: Dict[Tuple, List[dict]] = {}
-    for entry in entries:
-        by_key.setdefault(_reaction_key(entry["reactants"], entry["products"]), []).append(entry)
+    for reaction in reactions:
+        by_key.setdefault(_reaction_key(reaction["reactants"], reaction["products"]), []).append(reaction)
+    sidecar = list(doc.get("reactions") or ())
+    keyed: Dict[Tuple, List[int]] = {}
+    for j, row in enumerate(sidecar):
+        key = _reaction_key([species_key(x) for x in row.get("reactants") or ()],
+                            [species_key(x) for x in row.get("products") or ()])
+        keyed.setdefault(key, []).append(j)
+    own = {}
+    for key, js in keyed.items():
+        group = by_key.get(key, [])
+        if len(group) != len(js):
+            name = (sidecar[js[0]].get("cantera") or {}).get("equation") or sidecar[js[0]].get("id")
+            raise ProducerError(f"{len(js)} pool reaction row(s) and {len(group)} reaction(s) of {annotated} "
+                                f"have the species of {name}: no one-to-one match")
+        own.update(zip(js, group))
     requested = set(families)
     counts: Dict[str, Dict[str, int]] = {}
     unattributed: Dict[str, Dict[str, int]] = {}
     refused_reasons: Dict[str, int] = {}
-    rows, sidecar_keys = [], set()
-    for row in doc.get("reactions") or ():
-        reactants = [species_key(x) for x in row.get("reactants") or ()]
-        products = [species_key(x) for x in row.get("products") or ()]
-        key = _reaction_key(reactants, products)
-        sidecar_keys.add(key)
+    rows = []
+    for j, row in enumerate(sidecar):
+        reaction = own[j]
         cantera = row.get("cantera")
         name = (cantera or {}).get("equation") or str(row.get("id"))
-        family = None
+        family = reaction["family"]
         if cantera is None:
             m = re.match(r"d([^:]+):", str(row.get("id")))
             if not m:
                 raise ProducerError(f"pool reaction {row.get('id')!r}: no Cantera index and no serialized family")
-            family = None if m.group(1) == "rxn" else m.group(1)
-        else:
-            matched = by_key.get(key)
-            if not matched:
-                raise ProducerError(f"pool reaction {row.get('id')!r} ({name}) is no reaction of {annotated}")
-            found = sorted({e["family"] for e in matched if e["family"]})
-            family = "|".join(found) if found else None
+            serialized = None if m.group(1) == "rxn" else m.group(1)
+            if family is not None and serialized is not None and family != serialized:
+                raise ProducerError(f"pool reaction {row.get('id')!r}: serialized family {serialized!r}, Chemkin "
+                                    f"#{reaction['chemkin'][0]} family {family!r}: no one-to-one match")
+            family = serialized if serialized is not None else family
         admitted = not row.get("refused")
         slot = (counts if family is not None else unattributed).setdefault(
             family if family is not None else name, {"rows": 0, "admitted": 0})
@@ -902,17 +949,25 @@ def census(rmg_dir, families: Sequence[str]) -> dict:
         if not admitted:
             reason = str(row.get("refused_reason"))
             refused_reasons[reason] = refused_reasons.get(reason, 0) + 1
-        in_requested = family is None or set(family.split("|")) <= requested
-        reversible = (row.get("kinetics") or {}).get("reversible")
+        kinetics = row.get("kinetics") or {}
+        if all(isinstance(kinetics.get(x), (int, float)) for x in ("A", "n", "Ea")):
+            arrhenius = [(float(kinetics["A"]), float(kinetics["n"]), float(kinetics["Ea"]))]
+        else:
+            arrhenius = reaction["arrhenius"]
+        reversible = kinetics.get("reversible")
         if reversible is None:
-            reversible = "<=>" in name
-        rows.append({"id": row.get("id"), "admitted": admitted, "requested": in_requested,
-                     "reactants": set(reactants), "products": set(products), "reversible": bool(reversible),
+            reversible = reaction["reversible"]
+        rows.append({"id": row.get("id"), "admitted": admitted, "requested": family is None or
+                     set(family.split("|")) <= requested, "zero_rate": _zero_rate(arrhenius, temperature),
+                     "reactants": {species_key(x) for x in row.get("reactants") or ()},
+                     "products": {species_key(x) for x in row.get("products") or ()},
+                     "reversible": bool(reversible),
                      "proxies": list(row.get("proxy_reactants") or ()) + list(row.get("proxy_products") or ())})
-    # presence at t = 0
+    # presence at t = 0, and whether the profile moves
     header, data = read_profile(find_profile(rmg_dir))
-    first = data[0]
+    first, last = data[0], data[-1]
     present = {species_key(h) for h, v in zip(header[2:], first[2:]) if v > 0}
+    moves = any(_rel(x, y) > MASS_CLOSURE_RELATIVE for x, y in zip(first[2:], last[2:]))
     mu0 = {}
     for p in doc["pools"]:
         column = moment_column(f"{p['label']}_mu0")
@@ -921,9 +976,11 @@ def census(rmg_dir, families: Sequence[str]) -> dict:
         for proxy in r["proxies"]:
             if mu0.get(re.sub(r"\(\d+\)$", "", proxy), 0.0) > 0:
                 present.add(species_key(proxy))
-    movers = [(r, r["reactants"], r["products"], r["reversible"]) for r in rows if r["admitted"]]
-    movers += [(None, set(e["reactants"]), set(e["products"]), e["reversible"]) for e in entries
-               if _reaction_key(e["reactants"], e["products"]) not in sidecar_keys]
+    own_reactions = {id(x) for x in own.values()}
+    movers = [(r, r["reactants"], r["products"], r["reversible"]) for r in rows
+              if r["admitted"] and not r["zero_rate"]]
+    movers += [(None, set(x["reactants"]), set(x["products"]), x["reversible"]) for x in reactions
+               if id(x) not in own_reactions and not _zero_rate(x["arrhenius"], temperature)]
     fired, changed = set(), True
     while changed:
         changed = False
@@ -936,7 +993,9 @@ def census(rmg_dir, families: Sequence[str]) -> dict:
     admitted_requested = sum(r["admitted"] and r["requested"] for r in rows)
     return {"families": dict(sorted(counts.items())), "unattributed": dict(sorted(unattributed.items())),
             "requested_families": sorted(requested), "admitted_in_requested_families": admitted_requested,
-            "live_rows": live, "activity_rule": ACTIVITY_RULE, "refused_reasons": refused_reasons,
+            "zero_rate_rows": [r["id"] for r in rows if r["admitted"] and r["zero_rate"]],
+            "live_rows": live, "profile_changes": moves, "temperature_K": temperature,
+            "activity_rule": ACTIVITY_RULE, "refused_reasons": refused_reasons,
             "stale_topology": bool((doc.get("conventions") or {}).get("stale_topology"))}
 
 
@@ -1197,18 +1256,21 @@ def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: i
     for stale in ("mom.json", "mom_diagnostics.json"):
         if (out / stale).exists():
             (out / stale).unlink()
-    manifest["census"] = census(rmg_dir, facts["families"])
-    if not manifest["census"]["live_rows"]:
+    # the run's integrity first (its refusals take precedence), then its activity
+    entries, diagnostics, read = convert(rmg_dir, times, facts, KmcClasses(deck.spec, deck.xs))
+    manifest["census"] = census(rmg_dir, facts["families"], temperature)
+    if not manifest["census"]["live_rows"] or not manifest["census"]["profile_changes"]:
         flags["inactive_chemistry"] = manifest["census"]
         if not allow_inactive:
             finish(STATUS_INACTIVE)
             raise ProducerError(f"{STATUS_INACTIVE}: no pool-coupled reaction of the families "
-                                f"{facts['families']} is live in the MoM mechanism "
+                                f"{facts['families']} is live in the MoM mechanism, or its profile "
+                                f"does not move (live rows {manifest['census']['live_rows']}, profile "
+                                f"changes {manifest['census']['profile_changes']}) "
                                 f"({manifest['census']['admitted_in_requested_families']} admitted; census "
                                 f"{manifest['census']['families']}, unattributed "
                                 f"{manifest['census']['unattributed']}; {ACTIVITY_RULE}); pass "
                                 "--allow-inactive to convert it anyway, flagged")
-    entries, diagnostics, read = convert(rmg_dir, times, facts, KmcClasses(deck.spec, deck.xs))
     (out / "mom.json").write_text(json.dumps(entries, indent=1, allow_nan=False) + "\n")
     (out / "mom_diagnostics.json").write_text(json.dumps(diagnostics, indent=1, allow_nan=False) + "\n")
     manifest.update({"read": read, "mom_file": str(out / "mom.json"),
