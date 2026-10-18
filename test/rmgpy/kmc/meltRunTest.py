@@ -944,3 +944,94 @@ def test_a_deck_that_binds_the_name_polymer_is_refused(tmp_path, binding):
                     + DECK_TAIL)
     with pytest.raises(kr.RunError, match="polymer"):
         kr.read_deck(path)
+
+
+# --------------------------------------------------------------------------
+# rework 3 (spar r111)
+# --------------------------------------------------------------------------
+def extended_homolysis(family="toy_homolysis", name="homolysis_ext"):
+    """The toy homolysis window grown by one CH2 shell on each side: it
+    matches a subset of the toy homolysis's cleavages (nested windows)."""
+    from rmgpy.kmc.window_matcher import AtomEdit, BondEdit, Template, WindowAtom
+    atoms = [WindowAtom("C"), WindowAtom("C"), WindowAtom("H"), WindowAtom("H"), WindowAtom("H"),
+             WindowAtom("H"), WindowAtom("C"), WindowAtom("C"), WindowAtom("H"), WindowAtom("H"),
+             WindowAtom("H"), WindowAtom("H"), WindowAtom("C", 0, "port", S.MID),
+             WindowAtom("C", 0, "port", S.MID)]
+    bonds = [(0, 1, 1), (0, 2, 1), (0, 3, 1), (1, 4, 1), (1, 5, 1), (0, 6, 1), (1, 7, 1), (6, 8, 1),
+             (6, 9, 1), (7, 10, 1), (7, 11, 1), (6, 12, 1), (7, 13, 1)]
+    return Template(name, family, atoms, bonds,
+                    [BondEdit(0, 1, 0), AtomEdit(0, radical=1), AtomEdit(1, radical=1)], weight=0.2)
+
+
+def test_catalogs_sharing_a_family_are_refused(tmp_path):
+    """Item 1 (r111): two chemistry-bound catalogs of one family with nested
+    windows would both fire the same cleavages."""
+    deck = pe_deck(tmp_path, counts={10: 1, 20: 1})
+    toy = pe_catalog_file(tmp_path)
+    nested = write_catalog(tmp_path / "nested.json", toy_payloads([extended_homolysis()]),
+                           bind=S.pe_mapping({1: 1}))
+    with pytest.raises(kr.RunError, match=r"famil.*toy_homolysis"):
+        kr.load_catalogs([toy, nested], 700.0)
+    with pytest.raises(kr.RunError, match="toy_homolysis"):
+        kr.run(deck, [toy, nested], 700.0, [0.0], [1], tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+    # either catalog alone runs
+    kr.load_catalogs([nested], 700.0)
+    kr.load_catalogs([toy], 700.0)
+
+
+def test_a_catalog_without_families_cannot_be_combined(tmp_path):
+    """Item 1: provenance.families is required to combine catalogs."""
+    first, second = ps_catalog_files(tmp_path)
+    doc = json.loads(second.read_text())
+    del doc["provenance"]["families"]
+    bare = tmp_path / "bare.json"
+    bare.write_text(json.dumps(doc))
+    with pytest.raises(kr.RunError, match="families"):
+        kr.load_catalogs([first, bare], 700.0)
+    kr.load_catalogs([bare], 700.0)                     # alone it loads
+    kr.load_catalogs([first, second], 700.0)           # disjoint families combine
+
+
+def test_a_site_matched_from_two_catalogs_is_refused(tmp_path):
+    """Item 1: the initial-state check catches nested windows that the family
+    policy misses (here declared under different family names)."""
+    deck = pe_deck(tmp_path, counts={10: 1, 20: 1})
+    toy = pe_catalog_file(tmp_path)
+    nested = write_catalog(tmp_path / "nested.json",
+                           toy_payloads([extended_homolysis(family="toy_homolysis_shell")]),
+                           bind=S.pe_mapping({1: 1}))
+    kr.load_catalogs([toy, nested], 700.0)             # disjoint families, distinct executables
+    with pytest.raises(kr.RunError, match="site"):
+        kr.run(deck, [toy, nested], 700.0, [0.0], [1], tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+def _beta_variants():
+    """Two beta scissions that differ only in which carbon carries which port:
+    the same nodes and the same pairs, different pair labels."""
+    from rmgpy.kmc.window_matcher import AtomEdit, BondEdit, Template, WindowAtom
+    branch = ((1.0, "C", False), (1.0, "C", False), (1.0, "H", False))
+    atoms = [WindowAtom("C", 0, radical=1), WindowAtom("H"), WindowAtom("C", 0, "port", S.MID),
+             WindowAtom("C"), WindowAtom("H"), WindowAtom("H"), WindowAtom("C"), WindowAtom("H"),
+             WindowAtom("H"), WindowAtom("C", 0, "port", branch)]
+    common = [(0, 1, 1), (0, 3, 1), (3, 4, 1), (3, 5, 1), (3, 6, 1), (6, 7, 1), (6, 8, 1)]
+    edits = [BondEdit(3, 6, 0), BondEdit(0, 3, 2), AtomEdit(0, radical=0), AtomEdit(6, radical=1)]
+    x = Template("beta_x", "toy_beta_scission", atoms, common + [(0, 2, 1), (6, 9, 1)], edits, weight=5.0)
+    y = Template("beta_y", "toy_beta_scission", atoms, common + [(0, 9, 1), (6, 2, 1)], edits, weight=5.0)
+    return x, y
+
+
+def test_executables_differing_only_in_a_pair_label_are_not_duplicates(tmp_path):
+    """Item 2: the identity reads pair labels (bond order before / after)."""
+    x, y = _beta_variants()
+    gx, gy = kr._template_graph(x), kr._template_graph(y)
+    assert sorted(gx.nodes(data=True)) == sorted(gy.nodes(data=True))
+    assert set(map(frozenset, gx.edges())) == set(map(frozenset, gy.edges()))
+    assert not kr._same_graph(gx, gy)
+    assert kr._same_graph(gx, kr._template_graph(x))
+    catalog = write_catalog(tmp_path / "beta.json", toy_payloads([x, y]), bind=S.pe_mapping({1: 1}))
+    kr.load_catalogs([catalog], 700.0)
+    # nested windows are different executables (only the families policy and the site check see them)
+    h = next(t for t in S.pe_templates() if t.name == "homolysis")
+    assert not kr._same_graph(kr._template_graph(h), kr._template_graph(extended_homolysis()))
