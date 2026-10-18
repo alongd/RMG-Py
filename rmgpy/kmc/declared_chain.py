@@ -1227,6 +1227,16 @@ class DeclaredChainProvider(BoundaryProvider):
                 counts["H"] = counts.get("H", 0) + atom.hydrogens
         return tuple(sorted(counts.items()))
 
+    def declared_elements(self) -> frozenset:
+        """Every element this declaration names: the repeat unit, both end
+        groups, the monomer product and the small species."""
+        spec = self.spec
+        graphs = [spec.repeat_unit, spec.head_end_group, spec.tail_end_group]
+        if spec.monomer_product is not None:
+            graphs.append(spec.monomer_product)
+        graphs += [graph for _name, graph, _disposition in spec.small_species]
+        return frozenset(atom.element for graph in graphs for atom in graph.atoms)
+
     def interior_unit_atoms(self) -> tuple:
         """(position, key) of the heavy atoms of one primitive period."""
         g = self.geometry

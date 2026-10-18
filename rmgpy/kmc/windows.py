@@ -513,17 +513,37 @@ LEGACY_V1 = ChemistryPolicy("legacy_v1", PolicyDomain(
     "legacy_v1", lambda molecule: dom.check(molecule),
     lambda molecule: dom.spin_verdict(molecule)), "exclude")
 # a declared chain under the INTERIM domain (``domain.declared_interim_check``)
-# and no ring edits; a later slice replaces the domain
+# and no ring edits; a later slice replaces the domain.  This object admits C
+# and H only; ``declared_interim`` binds a witness's declared elements
 DECLARED_INTERIM = ChemistryPolicy("declared_interim_v1", PolicyDomain(
     "declared_interim_v1", lambda molecule: dom.declared_interim_check(molecule),
     lambda molecule: dom.spin_verdict(molecule)), "exclude")
+_INTERIM_POLICIES = {}
+
+
+def declared_interim(elements) -> ChemistryPolicy:
+    """``DECLARED_INTERIM`` admitting ``elements`` (C and H always): the
+    same name, spin verdict and ring edits; the domain check reads only the
+    given set.  ``DECLARED_INTERIM`` itself for C and H; one object per
+    (policy name, element set)."""
+    elements = tuple(sorted(set(elements) | {"C", "H"}))
+    if elements == ("C", "H"):
+        return DECLARED_INTERIM
+    key = (DECLARED_INTERIM.name, elements)
+    if key not in _INTERIM_POLICIES:
+        name = DECLARED_INTERIM.name
+        _INTERIM_POLICIES[key] = ChemistryPolicy(name, PolicyDomain(
+            name, lambda molecule: dom.declared_interim_check(molecule, elements),
+            DECLARED_INTERIM.domain.spin_verdict), DECLARED_INTERIM.ring_edits)
+    return _INTERIM_POLICIES[key]
 
 
 def policy_for(witness, providers=None) -> ChemistryPolicy:
     """``LEGACY_V1`` when every participant comes from a legacy provider (the
     named chains and the small species), ``DECLARED_INTERIM`` when a chain
-    participant is declared; a witness mixing legacy and declared chain
-    providers is refused."""
+    participant is declared, admitting the elements of the witness's own
+    declarations (``declared_interim``; the legacy small species are H and
+    H2); a witness mixing legacy and declared chain providers is refused."""
     found = [provider_object(p.metadata.provider, providers) for p in witness.participants]
     declared = [p.name for p in found if _is_declared(p)]
     legacy_names = {x.name for x in b.LEGACY_PROVIDERS}
@@ -531,7 +551,10 @@ def policy_for(witness, providers=None) -> ChemistryPolicy:
     if declared and legacy:
         raise WindowError(f"refused:policy: a witness mixes legacy {sorted(set(legacy))} and "
                           f"declared {sorted(set(declared))} chain providers")
-    return DECLARED_INTERIM if declared else LEGACY_V1
+    if not declared:
+        return LEGACY_V1
+    return declared_interim(set().union(*(p.declared_elements() for p in found
+                                          if _is_declared(p))))
 
 
 def _builds_policy(builds, policy=None, participants=None) -> ChemistryPolicy:

@@ -25,7 +25,9 @@ coordinate space (legacy positions through the position map ``pi``):
               yet): listed, never compared.
 
 Failures (exit 1): an unpaired member; a pair disagreeing on status, window,
-view, span or the contexts both sides have; a member guarded
+view, span or the contexts both sides have; a context on one side only
+(unless a listed deferred one); a reference/direction with zero members
+compared, or with contexts requested and zero contexts compared; a member guarded
 (``refused:whole_species_search``) on one side only; a reference/direction
 with zero members on either side or a count off ``expected``; a guarded set
 off ``expected`` (on the members run).  Listed: members guarded on both
@@ -142,6 +144,7 @@ def compare(legacy_rows, declared_rows, expected) -> Report:
             side = "legacy" if pair in lmap else "declared"
             report.failures.append(f"{key}: {side} member {pair} without a partner")
         run_pairs, guarded = set(), set()
+        compared, contexts_compared, contexts_requested = 0, 0, False
         for pair in sorted(set(lmap) & set(dmap)):
             lrow, drow = lmap[pair], dmap[pair]
             for ctx in lrow.get("deferred") or ():
@@ -162,16 +165,31 @@ def compare(legacy_rows, declared_rows, expected) -> Report:
                 report.listed["guarded"].append(guard_entry(lrow))
                 continue
             report.compared += 1
+            compared += 1
+            contexts_requested |= bool(lrow.get("contexts_requested", True)) and \
+                bool(drow.get("contexts_requested", True))
             for name in COMPARED:
                 if lrow.get(name) != drow.get(name):
                     report.failures.append(f"{key}: pair {pair} disagrees on {name}: "
                                            f"{str(lrow.get(name))[:120]} != "
                                            f"{str(drow.get(name))[:120]}")
             lctx, dctx = lrow.get("contexts") or {}, drow.get("contexts") or {}
+            listed = set(lrow.get("deferred") or ()) | set(drow.get("deferred") or ())
+            for ctx in sorted((set(lctx) ^ set(dctx)) - listed):
+                side = "legacy" if ctx in lctx else "declared"
+                report.failures.append(f"{key}: pair {pair} context {ctx} on the {side} "
+                                       f"side only ({side} only)")
             for ctx in sorted(set(lctx) & set(dctx)):
+                contexts_compared += 1
                 if lctx[ctx] != dctx[ctx]:
                     report.failures.append(f"{key}: pair {pair} disagrees on contexts {ctx}: "
                                            f"{lctx[ctx]} != {dctx[ctx]}")
+        if not compared:
+            report.failures.append(f"{key}: zero members compared (every pair unrun or "
+                                   f"guarded)")
+        elif contexts_requested and not contexts_compared:
+            report.failures.append(f"{key}: contexts were requested and zero contexts "
+                                   f"compared")
         want_guarded = {g for g in want.get("guarded", ()) if g in run_pairs}
         if guarded != want_guarded:
             report.failures.append(f"{key}: guarded set {sorted(guarded)} != expected "
@@ -305,7 +323,8 @@ def member_row(key, family, case, result, fp, maps, run=True) -> dict:
     from rmgpy.kmc import windows as win
     row = {"key": key, "pair": pair_id(case, maps), "run": run, "family": family,
            "label": case.label[-160:], "status": result.get("status") if run else "not_run",
-           "window": None, "view": None, "span": None, "contexts": {}, "deferred": []}
+           "window": None, "view": None, "span": None, "contexts": {}, "deferred": [],
+           "contexts_requested": run}
     if not run:
         return row
     if fp is not None and result.get("status") == "fixed_point":

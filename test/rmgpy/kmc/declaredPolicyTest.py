@@ -684,7 +684,8 @@ def test_cover_cases_are_keyed_by_policy(habs):
     excluded = win._cover_cases(certifier, family, specs, "forward", win.LEGACY_V1)
     admitted = win._cover_cases(certifier, family, specs, "forward", admit)
     builds = win.builds_of(specs)
-    every = win.member_cases(certifier, family, builds, "forward", skip_ring_changes=False)
+    every = win.member_cases(certifier, family, builds, "forward", label="cover",
+                             skip_ring_changes=False)
     assert sorted(c.label for c in admitted) == sorted(c.label for c in every)
     assert sum(len(c.moves) for c in admitted) > sum(len(c.moves) for c in excluded)
     assert win._cover_cases(certifier, family, specs, "forward", win.LEGACY_V1) is excluded

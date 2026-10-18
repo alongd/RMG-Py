@@ -290,8 +290,20 @@ def _phenyl_rings(form):
 
 
 # lone pairs of a neutral atom with a full octet (``declared_interim_check``)
-OCTET_LONE_PAIRS = {"H": 0, "C": 0, "Si": 0, "N": 1, "P": 1, "O": 2, "S": 2,
-                    "F": 3, "Cl": 3, "Br": 3, "I": 3}
+# neutral valence states: element -> {(lone pairs, bond-order sum + unpaired
+# electrons)}; hypervalent S (sulfoxide S4, sulfone S6) and P (P5) included.
+# A singlet carbene (C, 1 pair, valence 2) or a divalent S with one pair has
+# no state; charges and u2 are refused by their own rules.
+NEUTRAL_STATES = {"H": {(0, 1)}, "C": {(0, 4)}, "Si": {(0, 4)}, "N": {(1, 3)},
+                  "P": {(1, 3), (0, 5)}, "O": {(2, 2)}, "S": {(2, 2), (1, 4), (0, 6)},
+                  "F": {(3, 1)}, "Cl": {(3, 1)}, "Br": {(3, 1)}, "I": {(3, 1)}}
+
+
+def valence_state(atom) -> tuple:
+    """(lone pairs, bond-order sum + unpaired electrons) of an atom; the sum
+    rounded to a half (aromatic 1.5 bonds)."""
+    total = sum(float(bond.order) for bond in atom.bonds.values()) + atom.radical_electrons
+    return int(atom.lone_pairs), round(total * 2) / 2
 
 
 def _element_list(elements) -> str:
@@ -300,11 +312,12 @@ def _element_list(elements) -> str:
         ", ".join(elements[:-1]) + " and " + elements[-1]
 
 
-def universal_check(molecule, elements=("C", "H"), *, lone_pairs=None,
+def universal_check(molecule, elements=("C", "H"), *, states=None,
                     hydrogen_partner: str = "carbon") -> Optional[DomainVerdict]:
     """The species rules every domain shares, in ``check``'s order: only
-    ``elements``; no charge; lone pairs (``lone_pairs``: element -> count;
-    None: none at all); no u2 atom; the multiplicity convention on the input
+    ``elements``; no charge; lone pairs (``states``: element -> the allowed
+    ``valence_state`` set, ``NEUTRAL_STATES``; None: no lone pair at all);
+    no u2 atom; the multiplicity convention on the input
     as given; hydrogen-only species are H or H2 (an accepted verdict); every
     H bonded to exactly one ``hydrogen_partner`` (``"carbon"`` or
     ``"heavy"``).  None: the rest is the caller's."""
@@ -313,15 +326,16 @@ def universal_check(molecule, elements=("C", "H"), *, lone_pairs=None,
         return refused(f"an element other than {_element_list(elements)}")
     if any(a.charge != 0 for a in atoms):
         return refused("a charged atom")
-    if lone_pairs is None:
+    if states is None:
         if any(a.lone_pairs != 0 for a in atoms):
             return refused("an atom with a lone pair")
     else:
         for a in atoms:
-            want = lone_pairs.get(a.element.symbol)
-            if want is None or a.lone_pairs != want:
-                return refused(f"an atom ({a.element.symbol}) with {a.lone_pairs} lone pairs "
-                               f"(neutral octet: {want})")
+            state = valence_state(a)
+            if state not in states.get(a.element.symbol, ()):
+                return refused(f"an atom ({a.element.symbol}) with {state[0]} lone pairs and "
+                               f"valence {state[1]:g}: not a neutral valence state "
+                               f"{sorted(states.get(a.element.symbol, ()))}")
     if any(a.radical_electrons >= 2 for a in atoms):
         return refused("an atom with two unpaired electrons (u2)")
     # the declared convention is checked on the input as given, BEFORE any
@@ -364,28 +378,17 @@ def check(molecule, separation: int = RADICAL_SEPARATION,
     return _check_form(canonical_form(molecule), separation, max_sites)
 
 
-def declared_elements() -> tuple:
-    """C, H and every element of a registered declared-chain provider's
-    declaration (its repeat unit's atoms)."""
-    from rmgpy.kmc import boundaries as b
-    from rmgpy.kmc import declared_chain as dc
-    found = {"C", "H"}
-    for provider in list(b.PROVIDERS.values()):
-        if isinstance(provider, dc.DeclaredChainProvider):
-            found |= {atom.element for atom in provider.geometry.atoms.values()}
-    return tuple(sorted(found))
-
-
-def declared_interim_check(molecule) -> DomainVerdict:
+def declared_interim_check(molecule, elements=("C", "H")) -> DomainVerdict:
     """INTERIM domain verdict for declared chains (``windows.DECLARED_INTERIM``,
     policy ``declared_interim_v1``).  A named placeholder: a later I-165
     slice (the declared chain domain) replaces it.
 
-    Accepts a molecule iff every element is C, H or an element of a
-    registered declared provider's declaration; no atom is charged or u2;
-    the multiplicity convention holds on the input as given; every atom
-    carries its neutral-octet lone pairs (``OCTET_LONE_PAIRS``: C 0, N 1,
-    O 2, S 2, halogens 3); every H is bonded to exactly one heavy atom and a
+    Accepts a molecule iff every element is in ``elements`` (C, H and the
+    elements of the witness's own declarations: ``windows.policy_for`` binds
+    them; never read from the provider registry); no atom is charged or u2;
+    the multiplicity convention holds on the input as given; every atom is
+    in a neutral valence state (``NEUTRAL_STATES``: lone pairs and
+    bond-order sum, hypervalent S and P included); every H is bonded to exactly one heavy atom and a
     hydrogen-only species is H or H2; at most ``MAX_RADICAL_SITES`` unpaired
     electrons; and ``spin_verdict`` is supported when there are two or
     more.  The verdict kind is ``declared_interim``; ``details`` gives the
@@ -395,8 +398,8 @@ def declared_interim_check(molecule) -> DomainVerdict:
     backbone, phenyl pendants, declared end groups and radical kinds) and the
     radical separation beyond ``spin_verdict``.  That widening is the point:
     a branched PP or an ester-bearing PMMA chain is in this domain."""
-    prefix = universal_check(molecule, declared_elements(), lone_pairs=OCTET_LONE_PAIRS,
-                             hydrogen_partner="heavy")
+    prefix = universal_check(molecule, tuple(sorted(set(elements) | {"C", "H"})),
+                             states=NEUTRAL_STATES, hydrogen_partner="heavy")
     if prefix is not None and not prefix.accepted:
         return prefix
     sites = [_key(a) for a in molecule.atoms if a.radical_electrons]
