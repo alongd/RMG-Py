@@ -152,6 +152,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Sequence
@@ -1918,29 +1919,49 @@ def _pair_deviation(pf, tf, pr, tr, rep_wf, rep_wr) -> tuple:
     return worst, "thermo (calibration witness)" if thermo else "own calibrated ratio"
 
 
+RECORD_ID_PATTERN = re.compile(r"evt_[0-9a-f]+")
+# payload fields that are digests over content holding record ids: ``sha256``
+# (``finish``: the whole payload, ids included) and ``certificate`` (the
+# record certificate's sha256; its owner block holds the record's event id,
+# ``certificates.record_owner``); the rate selection it certifies is stored
+# in ``rate.provenance.selection``, which the identity keeps
+ID_DIGEST_FIELDS = ("sha256", "certificate")
+
+
+def _without_ids(value):
+    """``value`` with every record id, whole or truncated (``evt_`` + hex, in
+    any string: ``record_event_id``, ``reverse_of``, ``rate.provenance.
+    event_id``, ``merged_into``/``derived``/``collision``/``reverse`` records,
+    refusal reasons), replaced by ``evt_*``."""
+    if isinstance(value, dict):
+        return {k: _without_ids(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_without_ids(v) for v in value]
+    if isinstance(value, str):
+        return RECORD_ID_PATTERN.sub("evt_*", value)
+    return value
+
+
+def _template_identity(record_identity: str, template) -> str:
+    return sha256_json({"payload": record_identity, "template": _without_ids(template)})
+
+
 def partition_free_identity(payload, template=None) -> str:
-    """sha256 of what a record (with ``template``: one of its templates) is,
-    with no record id in it.
+    """sha256 of a payload (with ``template``: of the payload and that
+    template) as stored, less its record ids and the fields derived from them.
 
     A record event id hashes the artifact's provenance, the artifact's family
     list among it, so the same chemistry compiled alone or with other
     families carries other ids.  Every choice that must not depend on how the
     families were partitioned (the representative of a collision, the source
-    pair of a reciprocal unit, the cycle-check temperatures) orders by this
-    instead: the family, direction, pathway and orientation of the record,
-    its rate table and rate selection, and the template's key and weight
-    table.  Record ids only break ties between copies equal in all of it."""
-    rate = payload.get("rate") or {}
-    prov = rate.get("provenance") or {}
-    body = {"family": payload.get("family"), "direction": payload.get("direction"),
-            "pathway": payload.get("pathway"), "orientation": payload.get("orientation"),
-            "rate": {"T": rate.get("T"), "k": rate.get("k"),
-                     "ssa_multiplier": rate.get("ssa_multiplier"),
-                     "kind": prov.get("kind"), "class": prov.get("class"),
-                     "selection": prov.get("selection")}}
-    if template is not None:
-        body["template"] = {"key": template.get("key"), "weight": template.get("weight")}
-    return sha256_json(body)
+    pair of a reciprocal unit, the cycle-check temperatures) orders by this.
+    It is the canonical JSON of the whole payload and template with
+    ``ID_DIGEST_FIELDS`` dropped and every record id masked
+    (``_without_ids``), so two copies tie only when their stored content is
+    identical, and then any choice between them gives the same result."""
+    body = {k: v for k, v in payload.items() if k not in ID_DIGEST_FIELDS}
+    record = sha256_json(_without_ids(body))
+    return record if template is None else _template_identity(record, template)
 
 
 def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG10) -> tuple:
@@ -1978,10 +1999,12 @@ def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG
     groups = defaultdict(list)
     identity = {}
     for i, p in enumerate(out):
+        record_identity = None
         for j, t in enumerate(p.get("templates", [])):
             if t.get("status") == "emitted":
                 groups[t["key"]].append((p.get("record_event_id") or "", i, j))
-                identity[(i, j)] = partition_free_identity(p, t)
+                record_identity = record_identity or partition_free_identity(p)
+                identity[(i, j)] = _template_identity(record_identity, t)
     for key in groups:
         groups[key].sort(key=lambda c: (identity[(c[1], c[2])], c))
     links = _reciprocal_partitions(out, groups)
@@ -2542,6 +2565,9 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
     reciprocal record pair)."""
     out = [json.loads(canonical_json(p)) for p in payloads]
     by_record = {p.get("record_event_id"): i for i, p in enumerate(out)}
+    # the seed of each pair's random check temperatures: the records' content
+    # as given (fixed over the rounds), never their ids
+    seed_of = {rid: partition_free_identity(out[i]) for rid, i in by_record.items()}
     verdict = {}            # pair -> table row (refused ones stick)
     for _round in range(max_rounds):
         loaded = _Loaded(out)
@@ -2578,7 +2604,7 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
             if not _loads(q):
                 fail(f"reverse record {str(rev)[:16]} loads no template (one-way channel)")
                 continue
-            seed_pair = tuple(sorted((partition_free_identity(p), partition_free_identity(q))))
+            seed_pair = tuple(sorted((seed_of[rid], seed_of[rev])))
             for t in mine:
                 if t.get("status") == "merged":
                     # a merged copy's own record kinetics must match the loaded

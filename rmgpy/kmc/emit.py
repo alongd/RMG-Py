@@ -437,14 +437,21 @@ def code_sha() -> Optional[str]:
     return head + ("-dirty" if dirty else "")
 
 
-def code_sources_sha256() -> str:
-    """sha256 over the sorted relative paths and bytes of the ``rmgpy/kmc``
-    Python sources: the emit code's identity where git is not available
-    (``code_sha`` null)."""
-    here = Path(__file__).resolve().parent
+CODE_SOURCE_SUFFIXES = (".py", ".pyx", ".pxd")
+
+
+def code_sources_sha256(root=None) -> str:
+    """sha256 over the sorted relative paths and bytes of every ``.py``,
+    ``.pyx`` and ``.pxd`` file under ``root`` (default: the ``rmgpy``
+    package, whose code beyond ``rmgpy/kmc`` also decides the chemistry:
+    reactions, families, thermo).  The code's identity where git is not
+    available (``code_sha`` null).  About 230 files, 8 MB: well under a
+    second per shard header or assemble."""
+    root = Path(root) if root is not None else Path(__file__).resolve().parent.parent
     digest = hashlib.sha256()
-    for path in sorted(p for p in here.rglob("*.py") if "__pycache__" not in p.parts):
-        digest.update(path.relative_to(here).as_posix().encode("utf-8"))
+    for path in sorted(p for p in root.rglob("*") if p.suffix in CODE_SOURCE_SUFFIXES
+                       and "__pycache__" not in p.parts and p.is_file()):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
         digest.update(b"\0")
         digest.update(path.read_bytes())
         digest.update(b"\0")
@@ -833,13 +840,38 @@ def midpoint_gate(rows, payloads):
             "unverified": unverified, "unavailable": dict(unavailable), "failures": failures}
 
 
+class AssembleRefused(RuntimeError):
+    """Rows that this assemble cannot vouch for: emitted with another code or
+    database than the one deriving and checking them here."""
+
+
+IDENTITY_FIELDS = ("database_content_sha256", "code_sources_sha256")
+
+
+def assembler_identity(database) -> dict:
+    """This process's own database content digest and code digest."""
+    return {"database_content_sha256": database_content_sha256(database),
+            "code_sources_sha256": code_sources_sha256()}
+
+
 def assemble(paths, *, database=None, services=None) -> dict:
-    """The catalog of the rows files ``paths`` (see the module docstring)."""
+    """The catalog of the rows files ``paths`` (see the module docstring).
+    Refused (``AssembleRefused``) unless every shard header carries the
+    database content digest and the code digest of this process: the
+    derivation and the cycle check run here, with this code and database."""
     failures = []
     files, read_failures = read_rows(paths)
     failures += read_failures
     headers = [f["header"] for f in files if f["header"]]
     first = headers[0] if headers else {}
+    own = assembler_identity(database or first.get("database_path"))
+    for field in IDENTITY_FIELDS:
+        theirs = sorted({str(h.get(field)) for h in headers})
+        if own[field] is None or any(h.get(field) != own[field] for h in headers):
+            raise AssembleRefused(
+                f"{field}: the shards were emitted with {theirs}, this assemble runs with "
+                f"{own[field]!r}; derivation and the balance check would use other code or data "
+                "than the rows record (emit and assemble with the same code and database)")
     for field in HEADER_MATCH:
         values = {_canon(h.get(field)) for h in headers}
         if len(values) > 1:
@@ -1023,7 +1055,11 @@ def assemble(paths, *, database=None, services=None) -> dict:
 
 def run_assemble(args):
     services = None
-    catalog = assemble(args.rows, database=args.database, services=services)
+    try:
+        catalog = assemble(args.rows, database=args.database, services=services)
+    except AssembleRefused as error:
+        print("REFUSED", error, flush=True)
+        return 1
     Path(args.out).write_text(dumps(catalog))
     print("CATALOG", args.out, "complete" if catalog["complete"] else "INCOMPLETE",
           len(catalog["payloads"]), "payloads", flush=True)

@@ -465,7 +465,10 @@ def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool
     ``allow_incomplete``, a catalog that does not load at ``temperature`` or
     loads no template, template names or executables shared by two emitted
     templates; with ``deck``, a declaration digest that differs from the
-    deck's, and a catalog without one unless ``allow_unbound``."""
+    deck's, and a catalog without one unless ``allow_unbound``.  Several
+    catalogs (plain, from one set or from several) must together pass the
+    set checks (``catalog_set.check_union``: shared inputs, owned families
+    and records, collision-entry keys, links), whatever ``allow_incomplete``."""
     if not paths:
         raise RunError("at least one catalog file is needed")
     sources = expand_catalog_sets(paths)
@@ -474,6 +477,7 @@ def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool
     payloads: List[dict] = []
     owner: Dict[str, str] = {}
     executables: Dict[str, List[Tuple[Any, str]]] = {}
+    verified: List[Tuple[Path, bytes]] = []
     for path, raw in sources:
         path = Path(path)
         try:
@@ -526,6 +530,7 @@ def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool
                                    f"{path}; loading both would fire it twice")
             bucket.append((graph, f"{t.name!r} of {path}"))
         payloads += doc["payloads"]
+        verified.append((path, raw))
         records.append(CatalogRecord(str(path), _sha256(raw), _plain(doc["provenance"]), complete,
                                      tuple(failures), tuple(names), bound_by))
     if len(records) > 1:
@@ -544,6 +549,13 @@ def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool
                     raise RunError(f"catalogs {records[i].path} and {records[j].path} share the families "
                                    f"{shared}; one emission owns each family, so catalogs combine only when "
                                    "their provenance.families are pairwise disjoint")
+        # the set checks hold for the union of everything loaded together
+        # (plain catalogs, one set or several sets); allow_incomplete relaxes
+        # completeness only, never these
+        try:
+            cs.check_union([cs.member_from_bytes(path, raw) for path, raw in verified])
+        except cs.CatalogSetError as error:
+            raise RunError(f"the catalogs loaded together are not one consistent set: {error}") from error
     return me.PayloadCatalog(payloads), records
 
 

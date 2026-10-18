@@ -91,8 +91,19 @@ def _read_member(path) -> dict:
     path = Path(path)
     try:
         raw = read_bytes(path)
+    except OSError as error:
+        raise CatalogSetError(f"catalog {path}: unreadable ({error})") from error
+    return member_from_bytes(path, raw)
+
+
+def member_from_bytes(path, raw: bytes) -> dict:
+    """The member view of catalog ``path`` whose bytes are ``raw`` (never
+    read again): its sha256, provenance, payloads, families, completeness and
+    collision-entry keys."""
+    path = Path(path)
+    try:
         doc = json.loads(raw)
-    except (OSError, ValueError) as error:
+    except ValueError as error:
         raise CatalogSetError(f"catalog {path}: unreadable ({error})") from error
     if not isinstance(doc, dict) or doc.get("schema") != CATALOG_SCHEMA:
         raise CatalogSetError(f"catalog {path}: not a {CATALOG_SCHEMA} file")
@@ -127,12 +138,8 @@ def _check_shared(members: Sequence[dict]) -> Dict[str, object]:
                 how = "missing" if field not in m["provenance"] else "null"
                 raise CatalogSetError(f"catalog {m['path']}: the shared input {field} is {how}; unknown "
                                       "provenance cannot be shared, so the catalog cannot join a set")
-    for field in GIT_INPUTS:
-        known = [m for m in members if m["provenance"].get(field) is not None]
-        if known and len(known) != len(members):
-            where = ", ".join(f"{m['path']}={m['provenance'].get(field)!r}" for m in members)
-            raise CatalogSetError(f"catalogs differ in the shared input {field}: known for some members and "
-                                  f"unknown for others ({where})")
+    # GIT_INPUTS are compared like the rest: known for one member and null
+    # for another differ, so only all-known-and-equal or all-null pass
     shared = {}
     for field in SHARED_INPUTS:
         values = {json.dumps(m["provenance"].get(field), sort_keys=True) for m in members}
@@ -211,6 +218,19 @@ def _cross_links(members: Sequence[dict], records: Dict[str, tuple]) -> List[dic
     return [found[k] for k in sorted(found)]
 
 
+def check_union(members: Sequence[dict]) -> List[dict]:
+    """Everything that must hold for catalogs used together, whether one set,
+    several sets or plain catalogs given to the runner: shared inputs known
+    and equal, families and records owned once, no collision-entry key in two
+    members, and no template link across members or dangling link of a
+    complete member.  Returns the reverse_of links between members.
+    Completeness (``--allow-incomplete``) relaxes none of it."""
+    _check_shared(members)
+    records = _check_disjoint(members)
+    _check_collisions(members)
+    return _cross_links(members, records)
+
+
 def build_catalog_set(paths: Sequence, out) -> dict:
     """Write the ``kmc-catalog-set/1`` manifest of the catalogs ``paths`` to
     ``out`` and return it.  Refused (``CatalogSetError``): a catalog that is
@@ -221,9 +241,7 @@ def build_catalog_set(paths: Sequence, out) -> dict:
         raise CatalogSetError("a catalog set needs at least one catalog")
     members = [_read_member(p) for p in paths]
     shared = _check_shared(members)
-    records = _check_disjoint(members)
-    _check_collisions(members)
-    dependencies = _cross_links(members, records)
+    dependencies = check_union(members)
     base = Path(out).resolve().parent
     doc = {"schema": CATALOG_SET_SCHEMA, "shared": shared,
            "catalogs": [{"path": os.path.relpath(Path(m["path"]).resolve(), base), "sha256": m["sha256"],

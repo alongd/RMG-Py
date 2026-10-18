@@ -1438,7 +1438,10 @@ def test_unit_representatives_come_from_one_source_pair_and_the_loaded_catalog_i
     out = te.derive_weights(out, counter=counter)
     assert sorted(r["disposition"] for r in table) == ["merged", "merged"]
     live = {p["record_event_id"]: base_template(p)["status"] for p in out}
-    assert live == {_rid(1): "emitted", _rid(6): "emitted", _rid(2): "merged", _rid(5): "merged"}
+    # AMENDED (I-162 S-g rework 2): the source pair is chosen by content, not
+    # by the least ids; whichever it is, both representatives are one pair's
+    assert live in ({_rid(1): "emitted", _rid(6): "emitted", _rid(2): "merged", _rid(5): "merged"},
+                    {_rid(2): "emitted", _rid(5): "emitted", _rid(1): "merged", _rid(6): "merged"})
     assert all(len(r["pair_deviations"]) == 2 for r in table)
     out2, cycles = _check(out, counter)
     assert all(c["status"] == "ok" for c in cycles), cycles
