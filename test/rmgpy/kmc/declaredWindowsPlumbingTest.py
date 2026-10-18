@@ -909,6 +909,15 @@ def test_deleted_backbone_atoms_shrink_the_stamp():
         provider.witness_backbone_indices(rows, none)
 
 
+def test_monomer_indices_cover_only_the_rows_given():
+    provider = _provider(PP_REPEAT, "c1", "c2", PROPYLENE)
+    build = provider.monomer()
+    rows = dict(b.rows_of_molecule(build.molecule))
+    first, second = build.metadata.monomer_backbone
+    del rows[first]
+    assert provider.witness_backbone_indices(rows, build.metadata) == {second: 1}
+
+
 def test_monomer_backbone_ids_must_carry_coordinates():
     provider = _provider(PP_REPEAT, "c1", "c2", PROPYLENE)
     build = provider.monomer()
