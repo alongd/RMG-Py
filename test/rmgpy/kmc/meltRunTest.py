@@ -179,7 +179,12 @@ def ps_deck(tmp_path, counts=None, **kw):
 
 
 def lines(path):
-    return [json.loads(x) for x in Path(path).read_text().splitlines()]
+    """The observation lines of a time series (typed records, e.g. the stop record, skipped)."""
+    return [r for r in (json.loads(x) for x in Path(path).read_text().splitlines()) if "record" not in r]
+
+
+def records(path):
+    return [r for r in (json.loads(x) for x in Path(path).read_text().splitlines()) if "record" in r]
 
 
 def strip_wall(obj):
@@ -1073,3 +1078,47 @@ def test_a_bimolecular_site_matched_from_two_catalogs_is_found(tmp_path):
     alone = me.MeltEngine(spec, me.PayloadCatalog(json.loads(toy.read_text())["payloads"]), 700.0,
                           np.random.default_rng(0), state=state)
     assert kr.cross_catalog_site(alone, {t.name: 0 for t in alone.templates}) is None
+
+
+# --------------------------------------------------------------------------
+# I-164: the stop reason is the time series' own, passed through to run.json
+# --------------------------------------------------------------------------
+def test_run_records_the_stop_reason_the_time_series_returns(tmp_path, monkeypatch):
+    """run.py passes its event cap to ``write_time_series`` and records the
+    reason it returns; it does not infer one (a forged reason shows through)."""
+    deck, catalog = pe_deck(tmp_path), pe_catalog_file(tmp_path)
+    real = mo.write_time_series
+    seen = []
+
+    def forged(engine, times, path, **kw):
+        out = real(engine, times, path, **kw)
+        seen.append((kw.get("max_events"), out.stop_reason))
+        out.stop_reason = "absorbing" if out.stop_reason != "absorbing" else "horizon"
+        return out
+
+    monkeypatch.setattr(mo, "write_time_series", forged)
+    m = kr.run(deck, [catalog], 700.0, [0.0, 1.0], [1, 2], tmp_path / "forged", max_events=10 ** 6)
+    assert [cap for cap, _r in seen] == [10 ** 6, 10 ** 6]
+    for r, (_cap, real_reason) in zip(m["runs"], seen):
+        assert real_reason == "horizon"
+        assert r["stop_reason"] == "absorbing"
+
+
+def test_each_seed_series_ends_with_its_stop_record(tmp_path):
+    deck, catalog = pe_deck(tmp_path), pe_catalog_file(tmp_path)
+    times = [0.0, 1.0, 3.0, 50.0]
+    m = kr.run(deck, [catalog], 700.0, times, [1, 2], tmp_path / "cap", max_events=5)
+    for r in m["runs"]:
+        path = tmp_path / "cap" / r["path"]
+        stops = records(path)
+        assert len(stops) == 1 and json.loads(path.read_text().splitlines()[-1]) == stops[0]
+        assert stops[0]["record"] == "stop" and stops[0]["stop_reason"] == r["stop_reason"] == "max_events"
+        assert stops[0]["events"] == r["events"] == 5
+        assert stops[0]["observations"] == r["observations"] == len(lines(path)) < 4
+    for s in m["censoring"]["stopped_early"]:
+        assert s["stop_reason"] == "max_events"
+        assert s["last_observed_time_s"] == lines(tmp_path / "cap" / f"seed-{s['seed']}" / "observables.jsonl")[-1]["time_s"]
+    free = kr.run(deck, [catalog], 700.0, times[:2], [1], tmp_path / "free")
+    (r,) = free["runs"]
+    (stop,) = records(tmp_path / "free" / r["path"])
+    assert stop["stop_reason"] == r["stop_reason"] == "horizon" and r["observations"] == 2

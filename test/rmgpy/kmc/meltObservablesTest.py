@@ -361,6 +361,7 @@ def test_time_series_is_written_at_requested_times_without_perturbing_the_run(tm
     path = tmp_path / "series.jsonl"
     out = mo.write_time_series(engine, times, path, xs=3)
     lines = [json.loads(x) for x in path.read_text().splitlines()]
+    lines = [x for x in lines if "record" not in x]          # observations (a stop record ends the call)
     assert len(lines) == len(out) == 4
     assert [x["time_s"] for x in lines] == times
     reference = me.MeltEngine(spec, S.ToyCatalog(names=PE_LIVE), 700.0, np.random.default_rng(42))
@@ -1276,3 +1277,65 @@ def test_two_channels_differing_only_in_gas_product_are_refused():
     channels = [S.sgh_channel("aryl_C-Br", "aryl", 1.0), S.sgh_channel("aryl_C-Br", "aryl", 1.0, gas="[Cl]")]
     with pytest.raises(mo.ObservablesError, match="duplicate"):
         mo.MeltObserver(spec, xs=0, side_group_homolysis=channels)
+
+
+# --------------------------------------------------------------------------
+# I-164: event cap and stop reason of a time series
+# --------------------------------------------------------------------------
+def _records(path):
+    rows = [json.loads(x) for x in Path(path).read_text().splitlines()]
+    return [x for x in rows if "record" not in x], [x for x in rows if "record" in x]
+
+
+def test_time_series_reports_why_it_stopped_at_the_horizon(tmp_path):
+    spec = S.pe_spec({10: 1, 20: 1})
+    engine = me.MeltEngine(spec, S.ToyCatalog(names=PE_LIVE), 700.0, np.random.default_rng(42))
+    path = tmp_path / "series.jsonl"
+    out = mo.write_time_series(engine, [0.0, 0.5, 2.0], path, xs=3)
+    assert out.stop_reason == "horizon" and out.events == engine.events_fired > 0
+    obs, stops = _records(path)
+    assert len(obs) == len(out) == 3
+    assert stops == [{"record": "stop", "schema": mo.STOP_SCHEMA, "stop_reason": "horizon",
+                      "events": engine.events_fired, "total_events": engine.events_fired,
+                      "observations": 3, "time_s": engine.time}]
+    assert engine.time == pytest.approx(2.0, rel=1e-12)
+    assert path.read_text().splitlines()[-1] == json.dumps(stops[0], sort_keys=True)
+    assert set(mo.STOP_REASONS) == {"horizon", "max_events", "absorbing"}
+
+
+def test_time_series_event_cap_stops_and_drops_the_observation_in_progress(tmp_path):
+    spec = S.pe_spec({10: 1, 20: 1})
+    times = [0.0, 1.0, 3.0, 50.0]
+    free = me.MeltEngine(spec, S.ToyCatalog(names=PE_LIVE), 700.0, np.random.default_rng(1))
+    mo.write_time_series(free, times, tmp_path / "free.jsonl", xs=3)
+    assert free.events_fired > 5
+    engine = me.MeltEngine(spec, S.ToyCatalog(names=PE_LIVE), 700.0, np.random.default_rng(1))
+    path = tmp_path / "capped.jsonl"
+    out = mo.write_time_series(engine, times, path, xs=3, max_events=5)
+    assert out.stop_reason == "max_events" and out.events == engine.events_fired == 5
+    obs, stops = _records(path)
+    assert len(obs) == len(out) < 4
+    assert all(x["counts"]["events"] <= 5 for x in obs)
+    assert engine.time < times[len(obs)]                 # stopped before the next requested time
+    assert stops[-1]["stop_reason"] == "max_events" and stops[-1]["events"] == 5
+    assert stops[-1]["observations"] == len(obs) and stops[-1]["time_s"] == engine.time
+    # the capped trajectory is the free one, cut
+    assert [(e.time, e.template) for e in engine.events] == [(e.time, e.template) for e in free.events[:5]]
+    # the cap counts the events of this call
+    more = mo.write_time_series(engine, [60.0], path, xs=3, max_events=2, append=True)
+    assert more.events == 2 and more.total_events == 7 and more.stop_reason == "max_events"
+
+
+def test_time_series_reports_an_absorbing_stop(tmp_path):
+    engine = me.MeltEngine(S.pe_spec({5: 2}), S.ToyCatalog(names=("recombination",)), 700.0,
+                           np.random.default_rng(0))
+    assert engine.propensities().enabled == 0.0
+    out = mo.write_time_series(engine, [0.0, 1.0, 2.0], tmp_path / "s.jsonl", xs=3)
+    assert out.stop_reason == "absorbing" and out.events == 0 and len(out) == 3
+
+
+def test_time_series_refuses_a_bad_event_cap(tmp_path):
+    engine = me.MeltEngine(S.pe_spec({5: 2}), S.ToyCatalog(names=PE_LIVE), 700.0, np.random.default_rng(0))
+    for bad in (-1, 1.5, True, "3"):
+        with pytest.raises(mo.ObservablesError, match="max_events"):
+            mo.write_time_series(engine, [0.0, 1.0], tmp_path / "s.jsonl", xs=3, max_events=bad)

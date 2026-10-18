@@ -990,3 +990,155 @@ def test_pooled_fraction_is_the_ratio_of_ensemble_sums():
     pooled = me.pooled_leak_fraction(runs)
     assert pooled["fraction"] == pytest.approx(4.0 / 12.0) and pooled["runs"] == 3
     assert pooled["leak_num"] == 4.0 and pooled["leak_den"] == 12.0
+
+
+# --------------------------------------------------------------------------
+# I-164: the fallback-phi cache, the phi-only product scan, the thinning report
+# --------------------------------------------------------------------------
+def _twin_homolysis(temperature):
+    """The toy PE catalog plus a second, identically shaped homolysis class:
+    two thinned unimolecular classes evaluated at the same state."""
+    out = S.pe_templates(temperature)
+    twin = next(t for t in S.pe_templates(temperature) if t.name == "homolysis")
+    twin.name = "homolysis_twin"
+    return out + [twin]
+
+
+def _twin_engine(seed=1):
+    catalog = S.ToyCatalog(builder=_twin_homolysis, names=("homolysis", "homolysis_twin", "recombination"))
+    return me.MeltEngine(S.pe_spec({5: 4}), catalog, 700.0, np.random.default_rng(seed))
+
+
+def _count_applies(engine):
+    calls = []
+    original = engine._begin_apply
+
+    def counted(tr, view):
+        calls.append(tr.class_index)
+        return original(tr, view)
+
+    engine._begin_apply = counted
+    return calls
+
+
+def _round_trip(engine):
+    """Two commits that restore the graph: the revision moves by 2, the state
+    hash and the index do not."""
+    from rmgpy.kmc.melt_state import SetBond, SetRadical
+    state = engine.state
+    before = (state.revision, state.state_hash())
+    carbon = S.end_carbons(state, 0)[0]
+    h = S.strip_h(state, carbon)
+    state.apply([SetBond(carbon, h, 0.0, 1.0), SetRadical(carbon, 1, 0), SetRadical(h, 1, 0)])
+    assert state.revision == before[0] + 2 and state.state_hash() == before[1]
+
+
+def test_fallback_phi_cache_holds_every_class_at_one_revision():
+    """The cache is keyed per class: evaluating one thinned class does not
+    evict another, so a repeated horizon view at an unchanged state re-applies
+    nothing (the single-entry cache recomputed each class at every view)."""
+    engine = _twin_engine()
+    a, b = sorted(c.index for c in engine.classes if c.met_reverse)
+    calls = _count_applies(engine)
+    va = engine._fallback_phi(a)
+    vb = engine._fallback_phi(b)
+    assert calls and set(calls) == {a, b}
+    n = len(calls)
+    assert engine._fallback_phi(a) == va and engine._fallback_phi(b) == vb
+    assert len(calls) == n
+    assert va[0] == _exact_current_phi(engine, a) and vb[0] == _exact_current_phi(engine, b)
+
+
+def test_fallback_phi_cache_is_keyed_on_the_state_revision():
+    """A commit (even one that restores the graph) moves the revision and the
+    cached value is recomputed; after a real change the served value is the
+    exhaustive mean over the new state's transitions, never the old one."""
+    engine = _twin_engine()
+    a = min(c.index for c in engine.classes if c.met_reverse)
+    calls = _count_applies(engine)
+    v0 = engine._fallback_phi(a)
+    n = len(calls)
+    _round_trip(engine)
+    assert engine._fallback_phi(a) == v0
+    assert len(calls) == 2 * n                    # recomputed at the new revision
+    S.strip_h(engine.state, S.end_carbons(engine.state, 1)[0])
+    engine.rebuild()
+    v1 = engine._fallback_phi(a)
+    assert v1[0] == _exact_current_phi(engine, a)
+    assert v1 != v0
+
+
+def test_fallback_phi_cache_is_bounded():
+    assert isinstance(me.PHI_FALLBACK_CACHE_LIMIT, int) and me.PHI_FALLBACK_CACHE_LIMIT >= 1
+    engine = _twin_engine()
+    a, b = sorted(c.index for c in engine.classes if c.met_reverse)
+    limit = 3
+    original = me.PHI_FALLBACK_CACHE_LIMIT
+    me.PHI_FALLBACK_CACHE_LIMIT = limit
+    try:
+        sizes = []
+        for _ in range(4):
+            engine._fallback_phi(a)
+            engine._fallback_phi(b)
+            sizes.append(len(engine._phi_fallback))
+            _round_trip(engine)
+    finally:
+        me.PHI_FALLBACK_CACHE_LIMIT = original
+    assert max(sizes) == limit                       # the bound is reached and held
+    calls = _count_applies(engine)
+    engine._fallback_phi(a)
+    engine._fallback_phi(a)
+    assert calls and len(set(calls)) == 1
+
+
+def test_phi_scan_gives_the_full_scan_pair_rate():
+    """phi needs only the MET-forward sites, the MET lengths and the species of
+    the two products: the restricted scan gives the same PairRate, bit for bit,
+    for every current transition of every thinned class, and scans no
+    unimolecular class."""
+    engine = _twin_engine()
+    S.strip_h(engine.state, S.end_carbons(engine.state, 2)[0])
+    engine.rebuild()
+    checked = 0
+    for ci in (c.index for c in engine.classes if c.met_reverse):
+        for c in sorted(engine.entries):
+            for tr in engine.entries[c].uni.get(ci, ((), 0))[0]:
+                tx, products = engine._begin_apply(tr, me._LocalView(engine.state, list(tr.components)))
+                try:
+                    full = engine._scan(products)
+                    part = engine._phi_scan(products)
+                finally:
+                    tx.rollback()
+                assert set(part) == set(full) == set(products)
+                for p in products:
+                    assert part[p].uni == {}
+                    assert (part[p].met_length, part[p].species) == (full[p].met_length, full[p].species)
+                assert engine.pair_rate(part[products[0]], part[products[1]]) == \
+                    engine.pair_rate(full[products[0]], full[products[1]])
+                checked += 1
+    assert checked > 20
+
+
+def test_report_decomposes_the_thinned_acceptance():
+    """The run report states, per thinned class and overall, the proposals,
+    the accepted ones, the summed escape factor and its mean (the escape
+    probability per proposal), so zero events read as a probability."""
+    engine = me.MeltEngine(S.pe_spec({10: 2, 20: 2}), S.ToyCatalog(names=("homolysis", "recombination")),
+                           700.0, np.random.default_rng(3))
+    engine.run(until=5.0, max_events=400)
+    assert engine.thinned_proposals > 0
+    th = engine.report()["thinning"]
+    assert th["proposals"] == engine.thinned_proposals
+    assert th["phi_sum"] == engine.phi_sum
+    assert th["escape_probability"] == engine.phi_sum / engine.thinned_proposals
+    assert th["expected_accepted"] == engine.phi_sum
+    fired = Counter(e.template for e in engine.events)
+    names = {c.name for c in engine.classes if c.met_reverse}
+    assert {row["template"] for row in th["classes"]} == names
+    for row in th["classes"]:
+        ci = next(c.index for c in engine.classes if c.name == row["template"])
+        assert row["proposals"] == engine._proposals_by_class[ci]
+        assert row["phi_sum"] == engine._phi_by_class[ci]
+        assert row["accepted"] == fired[row["template"]]
+        assert row["escape_probability"] == (row["phi_sum"] / row["proposals"] if row["proposals"] else None)
+    assert th["accepted"] == sum(fired[n] for n in names)
