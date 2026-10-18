@@ -7,6 +7,13 @@ Two steps, both from the command line::
     python -m rmgpy.kmc.emit ARTIFACT ROSTER --database DB --out rows.jsonl
         [--chunk i/n] [--family F]... [--limit N] [--no-contexts]
     python -m rmgpy.kmc.emit assemble ROWS... --out catalog.json [--database DB]
+    python -m rmgpy.kmc.emit catalog-set CATALOG... --out SET.json
+
+A one-family artifact (``compile --family F``) emits and assembles into a
+complete catalog; ``--family`` naming every family of the artifact is the same
+full selection.  ``catalog-set`` ties per-family catalogs into one
+``kmc-catalog-set/1`` manifest (``rmgpy.kmc.catalog_set``) that the runner
+accepts wherever it accepts catalogs.
 
 **Emit.** For each record (or the shard ``--chunk i/n``: records ``i::n`` of the
 event-id-sorted list): certify the records, match the reference cases of the
@@ -48,6 +55,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from rmgpy.kmc import boundaries as b
+from rmgpy.kmc.catalog_set import CatalogSetError, build_catalog_set  # noqa: F401
 from rmgpy.kmc import template_emission as te
 from rmgpy.kmc import windows as win
 
@@ -632,6 +640,15 @@ def shard_header(emitter, roster, refusals, picked, chunk, partial):
             "systems": {n: [p.label for p in ps] for n, ps in emitter.systems.items()}}
 
 
+def is_partial_selection(only, limit, artifact_records, selected_records) -> bool:
+    """Whether the emitted records are less than the artifact: ``--limit``, or
+    ``--family`` selecting fewer records than the artifact holds (a one-family
+    artifact, or ``--family`` naming all its families, is the whole artifact)."""
+    if limit:
+        return True
+    return bool(only) and selected_records != artifact_records
+
+
 def run_emit(args):
     roster = load_roster(args.roster)
     systems, refusals = build_reference_systems(roster)
@@ -643,7 +660,9 @@ def run_emit(args):
     emitter.init()
     picked = select_records(emitter.records, args.chunk, args.limit)
     header = shard_header(emitter, roster, refusals, picked, args.chunk,
-                          partial=bool(args.family or args.limit))
+                          partial=is_partial_selection(args.family, args.limit,
+                                                       emitter.state["artifact_records"],
+                                                       len(emitter.records)))
     print("INIT", {k: emitter.state.get(k) for k in ("load_s", "certify_s", "cases_s", "case_stats")},
           len(emitter.records), "records, selected", len(picked), flush=True)
     errors = 0
@@ -991,6 +1010,19 @@ def main(argv=None):
                             help="RMG-database path for the balance check (default: the "
                                  "shard headers')")
         return run_assemble(parser.parse_args(argv[1:]))
+    if argv and argv[0] == "catalog-set":
+        parser = argparse.ArgumentParser(prog="python -m rmgpy.kmc.emit catalog-set")
+        parser.add_argument("catalogs", nargs="+", help="one kmc-template-catalog/1 file per family")
+        parser.add_argument("--out", required=True)
+        args = parser.parse_args(argv[1:])
+        try:
+            doc = build_catalog_set(args.catalogs, args.out)
+        except CatalogSetError as error:
+            print("REFUSED", error, flush=True)
+            return 1
+        print("CATALOG-SET", args.out, len(doc["catalogs"]), "catalogs,",
+              len(doc["dependencies"]), "dependencies", flush=True)
+        return 0
     parser = argparse.ArgumentParser(prog="python -m rmgpy.kmc.emit")
     parser.add_argument("artifact")
     parser.add_argument("roster")
@@ -998,7 +1030,8 @@ def main(argv=None):
     parser.add_argument("--out", required=True)
     parser.add_argument("--chunk", default=None, help="i/n: records i::n of the sorted list")
     parser.add_argument("--family", action="append", default=None,
-                        help="only these families' records (repeatable; a partial catalog)")
+                        help="only these families' records (repeatable; a partial catalog unless "
+                             "they are all the artifact's records)")
     parser.add_argument("--limit", type=int, default=None, help="at most N records (a partial catalog)")
     parser.add_argument("--no-contexts", action="store_true")
     return run_emit(parser.parse_args(argv[1:] if argv and argv[0] == "run" else argv))

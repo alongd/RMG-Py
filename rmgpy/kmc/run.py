@@ -196,6 +196,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy
 
+from rmgpy.kmc import catalog_set as cs
 from rmgpy.kmc import melt_engine as me
 from rmgpy.kmc import melt_observables as mo
 from rmgpy.polymer_spec import LinearHomopolymerSpec, normalized_linear_homopolymer_spec
@@ -429,6 +430,28 @@ def _bound_by(path, provenance, deck: Deck, allow_unbound: bool) -> Tuple[str, .
     return tuple(out)
 
 
+def expand_catalog_sets(paths: Sequence) -> List[Path]:
+    """``paths`` with every ``kmc-catalog-set/1`` file replaced by its member
+    catalogs (sha256, shared inputs and dependencies verified): a set loads
+    exactly as its members given one by one."""
+    out: List[Path] = []
+    for path in paths:
+        path = Path(path)
+        try:
+            doc = json.loads(path.read_bytes())
+        except (OSError, ValueError):
+            out.append(path)                    # unreadable: load_catalogs reports it
+            continue
+        if not cs.is_catalog_set(doc):
+            out.append(path)
+            continue
+        try:
+            out.extend(cs.set_member_paths(path, doc))
+        except cs.CatalogSetError as error:
+            raise RunError(str(error)) from error
+    return out
+
+
 def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool = False,
                   deck: Optional[Deck] = None, allow_unbound: bool = False
                   ) -> Tuple[me.PayloadCatalog, List[CatalogRecord]]:
@@ -441,6 +464,7 @@ def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool
     deck's, and a catalog without one unless ``allow_unbound``."""
     if not paths:
         raise RunError("at least one catalog file is needed")
+    paths = expand_catalog_sets(paths)
     temperature = float(temperature)
     records: List[CatalogRecord] = []
     payloads: List[dict] = []
@@ -1079,7 +1103,8 @@ def main(argv=None) -> int:
         prog="python -m rmgpy.kmc.run",
         description="Isothermal melt kMC of the deck's linear_homopolymer_spec over emitted catalogs.")
     parser.add_argument("deck", help="RMG input file with one polymer(..., linear_homopolymer_spec=...)")
-    parser.add_argument("catalogs", nargs="+", help="kmc-template-catalog/1 files")
+    parser.add_argument("catalogs", nargs="+",
+                        help="kmc-template-catalog/1 files, or kmc-catalog-set/1 manifests (their members)")
     parser.add_argument("--temperature", type=float, required=True, help="K (isothermal)")
     parser.add_argument("--times", type=float, nargs="+", default=None, help="observation times (s)")
     parser.add_argument("--end", type=float, default=None, help="end time (s), with --snapshots")

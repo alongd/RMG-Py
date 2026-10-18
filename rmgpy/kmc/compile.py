@@ -13,9 +13,12 @@ generation of the compile goes through (default: the database's own method).
 
 CLI::
 
-    python -m rmgpy.kmc.compile DATABASE OUTPUT --families FILE.json
+    python -m rmgpy.kmc.compile DATABASE OUTPUT (--families FILE.json | --family F)
         [--family-universe FILE.json] [--database-sha SHA]
         [--barrier-e0-fixed-b K] [--proxy-units N]
+
+``--family F`` (exactly one family) compiles that family's artifact alone: the
+one-element form of ``--families``.
 
 The CLI runs the compile in a spawned child process that owns its own
 ``RMGDatabase``; the child exits promptly if the parent dies.
@@ -237,7 +240,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m rmgpy.kmc.compile")
     parser.add_argument("database")
     parser.add_argument("output")
-    parser.add_argument("--families", required=True, help="JSON list of family candidates")
+    which = parser.add_mutually_exclusive_group(required=True)
+    which.add_argument("--families", help="JSON list of family candidates")
+    which.add_argument("--family", action="append",
+                       help="exactly one family: the artifact of that family alone")
     parser.add_argument("--family-universe", help="JSON list from the pinned git tree")
     parser.add_argument("--database-sha", help="commit of a materialized pinned snapshot")
     parser.add_argument(
@@ -247,11 +253,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     parser.add_argument("--proxy-units", type=int, help="proxy chain length")
     args = parser.parse_args(argv)
+    if args.family is not None and (len(args.family) != 1 or not args.family[0]):
+        parser.error(f"--family takes exactly one family name, got {args.family}")
     try:
         request = CompileRequest(
             database_path=str(Path(args.database).resolve()),
             output_dir=str(Path(args.output).resolve()),
-            families=_read_list(args.families),
+            families=(
+                tuple(args.family) if args.family is not None else _read_list(args.families)
+            ),
             family_universe=(
                 _read_list(args.family_universe) if args.family_universe else None
             ),
