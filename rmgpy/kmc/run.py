@@ -10,7 +10,9 @@ Command line::
 **Deck.** An RMG input file, read without executing it: it is parsed with
 ``ast`` and must contain exactly one ``polymer(...)`` call, as a module-level
 statement; the name ``polymer`` may appear nowhere else (no alias, no call
-inside a conditional, loop, function or expression).  Its arguments bind like
+inside a conditional, loop, function or expression) and nothing may bind it
+(def / class names, assignment or loop targets, imports including ``*``,
+global / nonlocal, parameters, ``except ... as``).  Its arguments bind like
 ``rmgpy.rmg.input.polymer``'s (``POLYMER_PARAMETERS``), ``*args`` / ``**kw``
 are refused, and the arguments read are ``ast.literal_eval``-ed: a non-literal
 one is refused.  ``linear_homopolymer_spec`` (a literal mapping or JSON
@@ -24,14 +26,34 @@ same deck.  The rest of the deck is never evaluated.
 
 **Declaration digests.**  ``declaration_sha256`` = sha256 of
 ``LinearHomopolymerSpec.normalized_json`` (the bytes of the normalized
-declaration); ``chemistry_sha256`` = sha256 of the compact sorted-key JSON
-(``separators=(",", ":")``) of the normalized declaration restricted to
-``CHEMISTRY_FIELDS`` (schema_version, repeat_unit, end_groups,
-locality_policy, family_manifest, library_manifest): the chemistry a catalog
-is emitted for, independent of the ensemble, mass, density, transport and
-declared species of a particular run.  Both are written to ``run.json``
-(``deck``) and are the values an emitter writes into a catalog's
-``provenance`` under the same names.
+declaration).  ``chemistry_sha256`` = sha256 of the compact sorted-key JSON
+(``separators=(",", ":")``) of the normalized declaration MINUS the fields in
+``CHEMISTRY_EXCLUDED`` (``chemistry_digest``); every other field, including
+any field the declaration grows later, enters it.  Excluded, each because it
+does not enter catalog emission (``rmgpy.kmc.emit`` reads only the repeat
+unit and the roster's systems) and is a size, scale or runtime block of one
+particular run:
+
+* ``label``: a display string; no code reads chemistry from it;
+* ``initial_ensemble`` (dp_counts), ``initial_mobile_counts``: population
+  sizes; templates are local windows and emission builds its reference
+  systems from the roster's ``systems``, not from the ensemble;
+* ``initial_mass_kg``: the macroscopic scale (``scale_factor``) only;
+* ``Mn_g_mol``, ``Mw_g_mol``: summary statistics of the declared ensemble
+  (validated against it);
+* ``density_kg_m3``, ``density_basis``: the volume, which enters the engine
+  as ``N_A V`` in bimolecular propensities, never a template weight;
+* ``transport_model``: the runtime MET block the engine reads from the deck
+  (emission rosters carry ``{}``);
+* ``observable_relative_tolerance``: a tolerance of the observables checks;
+* ``diagnostics``: a free-form block that no emission, engine or
+  observables code reads.
+
+Included therefore: schema_version, repeat_unit, end_groups, small_species
+and monomer_product (declared species change species identity and MET
+bypass, hence rates), locality_policy, family_manifest, library_manifest.
+Both digests are written to ``run.json`` (``deck``) and are the values an
+emitter writes into a catalog's ``provenance`` under the same names.
 
 **Catalogs.** Each file is ``kmc-template-catalog/1`` (``rmgpy.kmc.emit``)
 with ``provenance``, ``payloads``, ``gates.failures`` and the ``complete``
@@ -49,9 +71,14 @@ flagged, and then labelled in every output file:
   ``--allow-unmatched-catalog``; label ``catalog_matches_initial_state``
   (``initial_match`` counts the matched templates and sites).
 
-Always refused: loaded template names that collide, and an executable
-(``sha256_json`` of the template's ``executable``) that two emitted templates
-share, within a catalog or across catalogs (it would fire twice).  Each
+Always refused: loaded template names that collide, and two loaded
+templates with the same executable, within a catalog or across catalogs (it
+would fire twice).  Executables are compared as the ``window_matcher.Template``
+the engine loads, by labelled-graph isomorphism (``template_identity``):
+atoms labelled by element, kind, sorted exterior, isotope, charge, radicals,
+lone pairs and final atom edits; every bonded, edited or same-participant
+pair labelled by (same participant, bond order before, after).  Invariant to
+the order of atoms, bonds and edits and to exchanging the two participants.  Each
 catalog must load at the run temperature (no extrapolation).
 
 **Run.** Isothermal.  Per seed ``n`` (sequentially, in one process, unless
@@ -61,7 +88,7 @@ catalog must load at the run temperature (no extrapolation).
 ``seed`` and the labels above.  The optional event cap is run-wide per seed:
 when it is reached the seed stops, the observation in progress is not written
 (``observations`` counts the lines), and the stop reason is ``max_events``;
-an exception in a seed stops it with stop reason ``error`` (``error`` names
+an exception in a seed (engine, observation or report) stops it with stop reason ``error`` (``error`` names
 it; the traceback goes to stderr), the other seeds still run and the run's
 status is ``failed``; otherwise the stop reason is that of the last horizon
 (``horizon`` or ``absorbing``).
@@ -113,7 +140,8 @@ Without ``--mom`` the MoM columns are empty.
 
 ``--mom FILE``: JSON (a list) or JSON lines of ``{"time_s": t, "quantities":
 {...}}`` with ``quantities`` keyed like ``mom_reported_quantities`` (the
-format ``side_by_side`` takes), every number finite.  A MoM time matches the
+format ``side_by_side`` takes): every value a finite JSON number (not a
+string, boolean or null) or a mapping of such numbers.  A MoM time matches the
 observation time within relative ``MOM_TIME_RELATIVE`` (1e-12, float
 round-off only) of it; a finite time matching none, or more than one, is
 refused, and so is a non-finite one.
@@ -146,7 +174,6 @@ import numpy
 
 from rmgpy.kmc import melt_engine as me
 from rmgpy.kmc import melt_observables as mo
-from rmgpy.kmc.template_emission import sha256_json
 from rmgpy.polymer_spec import LinearHomopolymerSpec, normalized_linear_homopolymer_spec
 
 RUN_SCHEMA = "kmc-melt-run/1"
@@ -161,9 +188,10 @@ POLYMER_PARAMETERS = (
     "linear_homopolymer_spec")
 POLYMER_CUTOFF_DEFAULT = 4
 LEGACY_CHEMISTRY = ("monomer", "end_groups", "moments", "Mn", "Mw", "monomer_product")
-# the declaration fields that fix the chemistry a catalog was emitted for (chemistry_sha256)
-CHEMISTRY_FIELDS = ("schema_version", "repeat_unit", "end_groups", "locality_policy", "family_manifest",
-                    "library_manifest")
+# the declaration fields that do NOT enter chemistry_sha256 (module docstring: why each one)
+CHEMISTRY_EXCLUDED = ("label", "initial_ensemble", "initial_mobile_counts", "initial_mass_kg", "Mn_g_mol",
+                      "Mw_g_mol", "density_kg_m3", "density_basis", "transport_model",
+                      "observable_relative_tolerance", "diagnostics")
 BINDING_KEYS = ("chemistry_sha256", "declaration_sha256")
 LEAK_NOTE = ("the run's leak number is pooled.fraction (sum of leak_num over seeds / sum of leak_den); "
              "per seed only the additive parts are reported; seeds that failed are excluded")
@@ -195,10 +223,14 @@ def declaration_sha256(spec: LinearHomopolymerSpec) -> str:
     return _sha256(spec.normalized_json)
 
 
+def chemistry_digest(normalized: Dict[str, Any]) -> str:
+    """sha256 of a normalized declaration mapping minus ``CHEMISTRY_EXCLUDED``."""
+    return _sha256(json.dumps({k: v for k, v in normalized.items() if k not in CHEMISTRY_EXCLUDED},
+                              sort_keys=True, separators=(",", ":")).encode())
+
+
 def chemistry_sha256(spec: LinearHomopolymerSpec) -> str:
-    normalized = json.loads(spec.normalized_json)
-    return _sha256(json.dumps({k: normalized[k] for k in CHEMISTRY_FIELDS}, sort_keys=True,
-                              separators=(",", ":")).encode())
+    return chemistry_digest(json.loads(spec.normalized_json))
 
 
 # --------------------------------------------------------------------------
@@ -223,6 +255,28 @@ class Deck:
                      "xs": self.xs, "side_group_homolysis": self.side_group_homolysis}, **self.digests())
 
 
+def _binds_polymer(node) -> bool:
+    """Whether ``node`` binds (or, for ``import *``, may bind) the name ``polymer``."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return node.name == "polymer"
+    if isinstance(node, ast.Name):
+        return node.id == "polymer" and isinstance(node.ctx, (ast.Store, ast.Del))
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        return any(alias.name == "*" or (alias.asname or alias.name.split(".")[0]) == "polymer"
+                   for alias in node.names)
+    if isinstance(node, (ast.Global, ast.Nonlocal)):
+        return "polymer" in node.names
+    if isinstance(node, ast.arg):
+        return node.arg == "polymer"
+    if isinstance(node, ast.ExceptHandler):
+        return node.name == "polymer"
+    for kind, field in (("MatchAs", "name"), ("MatchStar", "name"), ("MatchMapping", "rest")):
+        cls = getattr(ast, kind, None)
+        if cls is not None and isinstance(node, cls):
+            return getattr(node, field, None) == "polymer"
+    return False
+
+
 def _is_none(node) -> bool:
     return isinstance(node, ast.Constant) and node.value is None
 
@@ -236,6 +290,11 @@ def read_deck(path) -> Deck:
         tree = ast.parse(raw.decode("utf-8"), filename=str(path))
     except (OSError, UnicodeDecodeError, SyntaxError, ValueError) as error:
         raise RunError(f"deck {path} could not be read: {type(error).__name__}: {error}") from error
+    bindings = sorted({getattr(node, "lineno", 0) for node in ast.walk(tree) if _binds_polymer(node)})
+    if bindings:
+        raise RunError(f"deck {path}: the name 'polymer' is bound or may be bound (line {bindings}: a def, "
+                       "class, assignment, import, global/nonlocal or parameter); the deck is read "
+                       "without executing it and polymer must be the input file's own")
     statements = [stmt.value for stmt in tree.body
                   if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
                   and isinstance(stmt.value.func, ast.Name) and stmt.value.func.id == "polymer"]
@@ -362,7 +421,7 @@ def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool
     records: List[CatalogRecord] = []
     payloads: List[dict] = []
     owner: Dict[str, str] = {}
-    executables: Dict[str, str] = {}
+    executables: Dict[str, List[Tuple[Any, str]]] = {}
     for path in paths:
         path = Path(path)
         try:
@@ -394,10 +453,8 @@ def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool
         if not isinstance(doc["payloads"], list):
             raise RunError(f"catalog {path}: payloads must be a list")
         try:
-            names = [t.name for t in me.PayloadCatalog(doc["payloads"]).templates(temperature)]
-            emitted = [(p.get("record_event_id"), t.get("key"), sha256_json(t["executable"]))
-                       for p in doc["payloads"] for t in p.get("templates", ())
-                       if t.get("status") == "emitted"]
+            templates = me.PayloadCatalog(doc["payloads"]).templates(temperature)
+            names = [t.name for t in templates]
         except Exception as error:   # EmissionError, malformed payloads
             raise RunError(f"catalog {path} does not load at {temperature} K: {error}") from error
         if not names:
@@ -406,16 +463,61 @@ def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool
             if name in owner:
                 raise RunError(f"catalogs {owner[name]} and {path} collide on template name {name!r}")
             owner[name] = str(path)
-        for record, key, digest in emitted:
-            where = f"{path} (record {str(record)[:16]}, key {str(key)[:12]})"
-            if digest in executables:
-                raise RunError(f"two emitted templates share the executable {digest[:16]}: "
-                               f"{executables[digest]} and {where}; loading both would fire it twice")
-            executables[digest] = where
+        for t in templates:
+            graph = _template_graph(t)
+            bucket = executables.setdefault(_graph_hash(graph), [])
+            for other_graph, where in bucket:
+                if _same_graph(graph, other_graph):
+                    raise RunError(f"two loaded templates have the same executable (up to the order of atoms, "
+                                   f"bonds and edits and participant exchange): {where} and {t.name!r} of "
+                                   f"{path}; loading both would fire it twice")
+            bucket.append((graph, f"{t.name!r} of {path}"))
         payloads += doc["payloads"]
         records.append(CatalogRecord(str(path), _sha256(raw), _plain(doc["provenance"]), complete,
                                      tuple(failures), tuple(names), bound_by))
     return me.PayloadCatalog(payloads), records
+
+
+def _template_graph(t):
+    """The labelled graph of a loaded ``window_matcher.Template`` (module
+    docstring): equal executables give isomorphic graphs whatever their order."""
+    import networkx as nx
+    final_atom, final_bond = {}, {}
+    for edit in t.edits:
+        if hasattr(edit, "order"):
+            final_bond[(min(edit.a, edit.b), max(edit.a, edit.b))] = float(edit.order)
+        else:
+            final_atom[edit.atom] = (edit.radical, edit.charge, edit.lone_pairs)
+    g = nx.Graph()
+    for i, a in enumerate(t.atoms):
+        g.add_node(i, lab=repr((a.element, a.kind, tuple(sorted(a.exterior)), a.isotope, a.charge, a.radical,
+                                a.lone_pairs, final_atom.get(i))))
+    n = len(t.atoms)
+    for i in range(n):
+        for j in range(i + 1, n):
+            same = t.atoms[i].participant == t.atoms[j].participant
+            before = float(t.bond.get((i, j), 0.0))
+            after = final_bond.get((i, j), before)
+            if same or before or after:
+                g.add_edge(i, j, lab=repr((same, before, after)))
+    return g
+
+
+def _graph_hash(g) -> str:
+    import networkx as nx
+    return nx.weisfeiler_lehman_graph_hash(g, node_attr="lab", edge_attr="lab", iterations=4)
+
+
+def _same_graph(g, h) -> bool:
+    from networkx.algorithms import isomorphism as iso
+    return iso.GraphMatcher(g, h, node_match=lambda x, y: x["lab"] == y["lab"],
+                            edge_match=lambda x, y: x["lab"] == y["lab"]).is_isomorphic()
+
+
+def template_identity(t) -> str:
+    """A hash of a loaded template's executable (equal for equal executables;
+    a collision is resolved by isomorphism in ``load_catalogs``)."""
+    return _graph_hash(_template_graph(t))
 
 
 def initial_match(engine: me.MeltEngine) -> dict:
@@ -477,16 +579,20 @@ def _seeds(seeds) -> List[int]:
     return out
 
 
-def _finite_numbers(value) -> bool:
-    if isinstance(value, bool) or value is None or isinstance(value, str):
-        return True
-    if isinstance(value, (int, float)):
-        return math.isfinite(value)
-    if isinstance(value, dict):
-        return all(_finite_numbers(v) for v in value.values())
-    if isinstance(value, list):
-        return all(_finite_numbers(v) for v in value)
-    return True
+def _finite_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _quantities_problem(quantities: dict) -> Optional[str]:
+    """Why MoM quantities are not finite JSON numbers or mappings of them (None: they are)."""
+    for key, value in quantities.items():
+        if isinstance(value, dict):
+            for sub, v in value.items():
+                if not _finite_number(v):
+                    return f"{key}.{sub} = {v!r}"
+        elif not _finite_number(value):
+            return f"{key} = {value!r}"
+    return None
 
 
 def load_mom(path, times: Sequence[float]) -> Tuple[List[Optional[dict]], dict]:
@@ -518,8 +624,10 @@ def load_mom(path, times: Sequence[float]) -> Tuple[List[Optional[dict]], dict]:
         t = float(entry["time_s"])
         if not math.isfinite(t):
             raise RunError(f"MoM file {path}: time {t} is not finite")
-        if not _finite_numbers(entry["quantities"]):
-            raise RunError(f"MoM file {path}: a quantity at time {t} s is not finite")
+        problem = _quantities_problem(entry["quantities"])
+        if problem is not None:
+            raise RunError(f"MoM file {path}: at time {t} s, {problem} is not a finite JSON number "
+                           "(strings, booleans, null and lists are refused)")
         match = [k for k, ti in enumerate(times) if abs(t - ti) <= MOM_TIME_RELATIVE * max(abs(t), abs(ti))]
         if not match:
             raise RunError(f"MoM file {path}: time {t!r} s is not an observation time of the run {list(times)} "
@@ -621,19 +729,29 @@ def _run_seed(context: _Context, seed: int) -> dict:
     path = directory / "observables.jsonl"
     error = None
     engine = None
+    report = leak = None
     try:
-        engine = _SeedEngine(context.spec, context.catalog, context.temperature, numpy.random.default_rng(seed),
-                             event_cap=context.max_events)
-        observer = _LabelledObserver(context.spec, xs=context.xs, identity=engine.identity,
-                                     side_group_homolysis=context.side_group_homolysis,
-                                     label=dict(context.label, seed=seed))
-        mo.write_time_series(engine, context.times, path, xs=context.xs, check=True, observer=observer)
-        stop = engine.stop_reasons[-1] if engine.stop_reasons else "horizon"
-    except _EventCapReached:
-        stop = "max_events"
+        try:
+            engine = _SeedEngine(context.spec, context.catalog, context.temperature,
+                                 numpy.random.default_rng(seed), event_cap=context.max_events)
+            observer = _LabelledObserver(context.spec, xs=context.xs, identity=engine.identity,
+                                         side_group_homolysis=context.side_group_homolysis,
+                                         label=dict(context.label, seed=seed))
+            mo.write_time_series(engine, context.times, path, xs=context.xs, check=True, observer=observer)
+            stop = engine.stop_reasons[-1] if engine.stop_reasons else "horizon"
+        except _EventCapReached:
+            stop = "max_events"
+        report = engine.report()
+        estimate = report.pop("leak_estimate")
+        for key in ("leak_fraction", "leak_definition", "leak_num", "leak_den"):
+            report.pop(key, None)
+        leak = {"seed": seed}
+        leak.update({k: estimate[k] for k in LEAK_PARTS})
+        report, leak = _plain(report), _plain(leak)
     except Exception as exc:   # recorded as the seed's stop; the run's status becomes failed
         stop = "error"
         error = f"{type(exc).__name__}: {exc}"
+        report = leak = None
         print(f"seed {seed} failed:", file=sys.stderr, flush=True)
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
@@ -645,17 +763,9 @@ def _run_seed(context: _Context, seed: int) -> dict:
               "engine_time_s": engine.time if engine is not None else None,
               "events": engine.events_fired if engine is not None else 0,
               "null_proposals": engine.null_proposals if engine is not None else 0,
-              "report": None, "leak": None}
+              "report": report, "leak": leak}
     if error is not None:
         result["error"] = error
-    if engine is not None and error is None:
-        report = engine.report()
-        estimate = report.pop("leak_estimate")
-        for key in ("leak_fraction", "leak_definition", "leak_num", "leak_den"):
-            report.pop(key, None)
-        leak = {"seed": seed}
-        leak.update({k: estimate[k] for k in LEAK_PARTS})
-        result["report"], result["leak"] = _plain(report), _plain(leak)
     result["wall_s"] = time.perf_counter() - start
     return result
 
