@@ -120,11 +120,33 @@ def toy_payloads(templates, grid=(300.0, 1000.0)):
     return out
 
 
-def write_catalog(path, payloads, *, complete=True, failures=(), tag="test"):
+# the chemistry a catalog is bound to: these fields of the normalized declaration
+CHEMISTRY_FIELDS = ("schema_version", "repeat_unit", "end_groups", "locality_policy", "family_manifest",
+                    "library_manifest")
+
+
+def chemistry_sha256(mapping):
+    normalized = json.loads(LinearHomopolymerSpec.from_mapping(mapping).normalized_json)
+    return hashlib.sha256(json.dumps({k: normalized[k] for k in CHEMISTRY_FIELDS}, sort_keys=True,
+                                     separators=(",", ":")).encode()).hexdigest()
+
+
+def declaration_sha256(mapping):
+    return hashlib.sha256(LinearHomopolymerSpec.from_mapping(mapping).normalized_json).hexdigest()
+
+
+def write_catalog(path, payloads, *, complete=True, failures=(), tag="test", bind=None, declaration=None):
+    """``bind``: a declaration mapping whose chemistry digest the provenance
+    carries; ``declaration``: one whose full declaration digest it carries."""
     failures = list(failures)
+    provenance = {"artifact_id": f"artifact-{tag}", "families": sorted({p["family"] for p in payloads}),
+                  "code_sha": None, "temperatures": [300.0, 1000.0]}
+    if bind is not None:
+        provenance["chemistry_sha256"] = chemistry_sha256(bind)
+    if declaration is not None:
+        provenance["declaration_sha256"] = declaration_sha256(declaration)
     doc = {"schema": "kmc-template-catalog/1",
-           "provenance": {"artifact_id": f"artifact-{tag}", "families": sorted({p["family"] for p in payloads}),
-                          "code_sha": None, "temperatures": [300.0, 1000.0]},
+           "provenance": provenance,
            "payloads": payloads, "refusals": [],
            "gates": {"failures": failures}, "completeness": {}, "complete": complete}
     Path(path).write_text(json.dumps(doc, sort_keys=True, indent=1) + "\n")
@@ -132,12 +154,14 @@ def write_catalog(path, payloads, *, complete=True, failures=(), tag="test"):
 
 
 def pe_catalog_file(tmp_path, name="pe_toy_catalog.json", **kw):
+    kw.setdefault("bind", S.pe_mapping({1: 1}))
     return write_catalog(tmp_path / name, toy_payloads(
         [t for t in S.pe_templates() if t.name in PE_LIVE]), tag="pe-toy", **kw)
 
 
-def ps_catalog_files(tmp_path):
-    return [write_catalog(tmp_path / f"ps_{i}.json", S.payloads(name), tag=f"ps-{i}")
+def ps_catalog_files(tmp_path, bind=True):
+    return [write_catalog(tmp_path / f"ps_{i}.json", S.payloads(name), tag=f"ps-{i}",
+                          bind=ps_deck_mapping({1: 1}) if bind else None)
             for i, name in enumerate(S.PS_CATALOG)]
 
 
@@ -165,10 +189,9 @@ def strip_wall(obj):
 # deck parsing
 # --------------------------------------------------------------------------
 @pytest.mark.parametrize("polymer", ["ps", "pe"])
-@pytest.mark.parametrize("via_variable", [False, True])
-def test_deck_declaration_equals_from_mapping(tmp_path, polymer, via_variable):
+def test_deck_declaration_equals_from_mapping(tmp_path, polymer):
     mapping = ps_deck_mapping({6: 3}) if polymer == "ps" else S.pe_mapping({10: 1, 20: 1})
-    path = write_deck(tmp_path / "deck.py", mapping, via_variable=via_variable, cutoff=3)
+    path = write_deck(tmp_path / "deck.py", mapping, cutoff=3)
     deck = kr.read_deck(path)
     want = LinearHomopolymerSpec.from_mapping(mapping)
     assert deck.spec == want
@@ -186,18 +209,9 @@ def test_deck_without_cutoff_uses_the_polymer_default(tmp_path):
     assert kr.read_deck(pe_deck(tmp_path, cutoff=2)).xs == 2
 
 
-def test_deck_reader_follows_the_input_file_vocabulary():
-    """The deck reader stubs exactly the names the RMG input reader exposes and
-    binds polymer() arguments in the input reader's order."""
+def test_deck_reader_binds_polymer_arguments_in_the_input_order():
+    """Positional polymer() arguments bind in the input reader's order."""
     import rmgpy.rmg.input as rmg_input
-    tree = ast.parse(INPUT_PY.read_text())
-    reader = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "read_input_file")
-    names = None
-    for node in ast.walk(reader):
-        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "local_context" for t in node.targets):
-            names = {k.value for k in node.value.keys}
-    assert names is not None
-    assert names - {"__builtins__", "True", "False"} == set(kr.DECK_VOCABULARY)
     assert tuple(inspect.signature(rmg_input.polymer).parameters) == kr.POLYMER_PARAMETERS
 
 
@@ -539,7 +553,8 @@ def test_deck_side_group_channels_reach_the_observables(tmp_path):
     deck = write_deck(tmp_path / "deck.py", mapping, cutoff=3, sgh=channels)
     assert kr.read_deck(deck).side_group_homolysis == channels
     out = tmp_path / "sgh"
-    manifest = kr.run(deck, ps_catalog_files(tmp_path), 700.0, [0.0, 1.0e6], [1], out)
+    manifest = kr.run(deck, ps_catalog_files(tmp_path, bind=False), 700.0, [0.0, 1.0e6], [1], out,
+                      allow_unbound_catalog=True)
     assert manifest["deck"]["side_group_homolysis"] == channels
     first = lines(out / "seed-1" / "observables.jsonl")[0]
     (row,) = first["side_group_channels"]
@@ -548,5 +563,234 @@ def test_deck_side_group_channels_reach_the_observables(tmp_path):
     assert rel(row["inventory_tail_mol"] + row["inventory_explicit_mol"], 12 * unit) <= REL
     wrong = write_deck(tmp_path / "wrong.py", mapping, sgh=[S.sgh_channel("aryl_C-Br", "aryl", 2.0)])
     with pytest.raises(kr.RunError):
-        kr.run(wrong, ps_catalog_files(tmp_path), 700.0, [0.0], [1], tmp_path / "wrong_out")
+        kr.run(wrong, ps_catalog_files(tmp_path, bind=False), 700.0, [0.0], [1], tmp_path / "wrong_out",
+               allow_unbound_catalog=True)
     assert not (tmp_path / "wrong_out").exists()
+
+
+# --------------------------------------------------------------------------
+# rework 1 (spar r108)
+# --------------------------------------------------------------------------
+def renamed(payloads, prefix):
+    out = json.loads(json.dumps(payloads))
+    for p in out:
+        p["record_event_id"] = "evt_" + prefix + p["record_event_id"][4:]
+    return out
+
+
+def test_catalogs_sharing_an_executable_are_refused(tmp_path):
+    """Item 1: the same executable under another record id (so another template
+    name) in a second catalog would double its rate."""
+    deck = pe_deck(tmp_path, counts={5: 1})
+    payloads = toy_payloads([t for t in S.pe_templates() if t.name in PE_LIVE])
+    first = write_catalog(tmp_path / "first.json", payloads, bind=S.pe_mapping({1: 1}))
+    homolysis = [p for p in renamed(payloads, "x") if p["templates"][0]["name"] == "homolysis"]
+    second = write_catalog(tmp_path / "second.json", homolysis, bind=S.pe_mapping({1: 1}))
+    names_first = {t.name for t in me.PayloadCatalog(payloads).templates(700.0)}
+    names_second = {t.name for t in me.PayloadCatalog(homolysis).templates(700.0)}
+    assert not names_first & names_second            # the name check alone lets them through
+    with pytest.raises(kr.RunError, match="executable"):
+        kr.load_catalogs([first, second], 700.0)
+    with pytest.raises(kr.RunError, match="executable"):
+        kr.run(deck, [first, second], 700.0, [0.0], [1], tmp_path / "doubled")
+    assert not (tmp_path / "doubled").exists()
+    within = write_catalog(tmp_path / "within.json", payloads + homolysis, bind=S.pe_mapping({1: 1}))
+    with pytest.raises(kr.RunError, match="executable"):
+        kr.load_catalogs([within], 700.0)
+
+
+def test_catalog_bound_to_another_declaration_is_refused(tmp_path):
+    """Item 2a: a catalog whose provenance digest names another declaration."""
+    pe_map = S.pe_mapping({10: 1, 20: 1})
+    pe = pe_deck(tmp_path)
+    with pytest.raises(kr.RunError, match="chemistry_sha256"):
+        kr.run(pe, ps_catalog_files(tmp_path), 700.0, [0.0], [1], tmp_path / "a",
+               allow_unbound_catalog=True, allow_unmatched_catalog=True)
+    wrong = pe_catalog_file(tmp_path, "wrong_declaration.json", bind=None, declaration=S.pe_mapping({30: 1}))
+    with pytest.raises(kr.RunError, match="declaration_sha256"):
+        kr.run(pe, [wrong], 700.0, [0.0], [1], tmp_path / "b", allow_unbound_catalog=True)
+    exact = pe_catalog_file(tmp_path, "exact.json", bind=None, declaration=pe_map)
+    m = kr.run(pe, [exact], 700.0, [0.0], [1], tmp_path / "c")
+    assert m["catalog_bound"] is True and m["catalogs"][0]["bound_by"] == ["declaration_sha256"]
+    # the digests the manifest documents are the ones a catalog carries
+    assert m["deck"]["chemistry_sha256"] == chemistry_sha256(pe_map)
+    assert m["deck"]["declaration_sha256"] == declaration_sha256(pe_map)
+    assert kr.CHEMISTRY_FIELDS == CHEMISTRY_FIELDS
+    bound = kr.run(pe, [pe_catalog_file(tmp_path)], 700.0, [0.0], [1], tmp_path / "d")
+    assert bound["catalogs"][0]["bound_by"] == ["chemistry_sha256"]
+
+
+def test_unbound_catalog_needs_the_flag_and_is_labelled(tmp_path):
+    """Item 2b."""
+    deck = pe_deck(tmp_path)
+    unbound = pe_catalog_file(tmp_path, "unbound.json", bind=None)
+    with pytest.raises(kr.RunError, match="allow-unbound-catalog"):
+        kr.run(deck, [unbound], 700.0, [0.0, 1.0], [1], tmp_path / "refused")
+    assert not (tmp_path / "refused").exists()
+    out = tmp_path / "unbound"
+    m = kr.run(deck, [unbound], 700.0, [0.0, 1.0], [1, 2], out, allow_unbound_catalog=True)
+    assert m["catalog_bound"] is False and m["catalogs"][0]["bound_by"] == []
+    for seed in (1, 2):
+        assert all(r["catalog_bound"] is False for r in lines(out / f"seed-{seed}" / "observables.jsonl"))
+    assert "catalog_bound=false" in (out / "comparison.csv").read_text().splitlines()[0]
+    good = tmp_path / "bound"
+    m = kr.run(deck, [pe_catalog_file(tmp_path)], 700.0, [0.0], [1], good)
+    assert m["catalog_bound"] is True
+    assert lines(good / "seed-1" / "observables.jsonl")[0]["catalog_bound"] is True
+    assert "catalog_bound=true" in (good / "comparison.csv").read_text().splitlines()[0]
+    argv = [str(deck), str(unbound), "--temperature", "700", "--times", "0", "--seeds", "1"]
+    assert kr.main(argv + ["--out", str(tmp_path / "cli_refused")]) == 2
+    assert kr.main(argv + ["--out", str(tmp_path / "cli"), "--allow-unbound-catalog"]) == 0
+
+
+def test_catalog_matching_no_initial_site_is_refused_or_labelled(tmp_path):
+    """Item 2c: the wrong polymer's catalog matches nothing in the initial melt."""
+    deck = pe_deck(tmp_path, counts={5: 1})
+    ps = ps_catalog_files(tmp_path, bind=False)
+    with pytest.raises(kr.RunError, match="no catalog template matches"):
+        kr.run(deck, ps, 700.0, [0.0, 1.0], [1], tmp_path / "refused", allow_unbound_catalog=True)
+    assert not (tmp_path / "refused").exists()
+    out = tmp_path / "flagged"
+    m = kr.run(deck, ps, 700.0, [0.0, 1.0], [1], out, allow_unbound_catalog=True, allow_unmatched_catalog=True)
+    assert m["catalog_matches_initial_state"] is False and m["initial_match"]["templates"] == 0
+    assert all(r["catalog_matches_initial_state"] is False for r in lines(out / "seed-1" / "observables.jsonl"))
+    assert "catalog_matches_initial_state=false" in (out / "comparison.csv").read_text().splitlines()[0]
+    ok = kr.run(deck, [pe_catalog_file(tmp_path)], 700.0, [0.0], [1], tmp_path / "ok")
+    assert ok["catalog_matches_initial_state"] is True and ok["initial_match"]["templates"] > 0
+    argv = [str(deck), *map(str, ps), "--temperature", "700", "--times", "0", "--seeds", "1",
+            "--allow-unbound-catalog", "--allow-unmatched-catalog", "--out", str(tmp_path / "cli")]
+    assert kr.main(argv) == 0
+
+
+def test_deck_is_read_without_executing_it(tmp_path):
+    """Item 3: nothing in the deck runs."""
+    mapping = S.pe_mapping({10: 1})
+    sentinel = tmp_path / "executed"
+    attack = f"polymer.__globals__['__builtins__']['open']({str(sentinel)!r}, 'w').write('x')\n"
+    with pytest.raises(kr.RunError):
+        kr.read_deck(write_deck(tmp_path / "attack.py", mapping, extra=attack))
+    assert not sentinel.exists()
+    other = f"species(label=open({str(sentinel)!r}, 'w').write('x'))\n"
+    deck = kr.read_deck(write_deck(tmp_path / "other.py", mapping, extra=other))
+    assert deck.spec == LinearHomopolymerSpec.from_mapping(mapping)
+    assert not sentinel.exists()
+
+
+@pytest.mark.parametrize("variant", ["conditional", "function", "loop", "alias", "variable", "starstar",
+                                     "call_argument", "cutoff_expression", "nested"])
+def test_deck_polymer_call_must_be_one_literal_module_level_call(tmp_path, variant):
+    """Item 3: one module-level polymer() call with literal arguments, or a refusal."""
+    mapping = S.pe_mapping({10: 1})
+    label, lit = repr(mapping["label"]), repr(mapping)
+    call = f"polymer({label}, linear_homopolymer_spec={lit})"
+    body = {
+        "conditional": f"if True:\n    {call}\n",
+        "function": f"def make():\n    {call}\nmake()\n",
+        "loop": f"for _ in [1]:\n    {call}\n",
+        "alias": f"p = polymer\np({label}, linear_homopolymer_spec={lit})\n",
+        "variable": f"spec = {lit}\npolymer({label}, linear_homopolymer_spec=spec)\n",
+        "starstar": f"kw = {{'linear_homopolymer_spec': {lit}}}\npolymer({label}, **kw)\n",
+        "call_argument": f"polymer({label}, linear_homopolymer_spec=dict({lit}))\n",
+        "cutoff_expression": f"polymer({label}, linear_homopolymer_spec={lit}, cutoff=int('3'))\n",
+        "nested": f"x = [{call}]\n",
+    }[variant]
+    path = tmp_path / "deck.py"
+    path.write_text(DECK_HEAD + body + DECK_TAIL)
+    with pytest.raises(kr.RunError):
+        kr.read_deck(path)
+
+
+def test_capped_seeds_censor_the_comparison(tmp_path):
+    """Item 4: a row averaged over fewer seeds than requested is censored."""
+    deck, catalog = pe_deck(tmp_path), pe_catalog_file(tmp_path)
+    times = [0.0, 1.0, 4.0]
+    seeds = [1, 2, 3, 4]
+    free = kr.run(deck, [catalog], 700.0, times, seeds, tmp_path / "free")
+    events = {r["seed"]: r["events"] for r in free["runs"]}
+    cap = max(events.values()) - 1
+    capped = {s for s, n in events.items() if n >= cap}
+    assert min(events.values()) < cap and capped, events
+    out = tmp_path / "capped"
+    m = kr.run(deck, [catalog], 700.0, times, seeds, out, max_events=cap)
+    censoring = m["censoring"]
+    assert censoring["seeds_requested"] == 4
+    stopped = {s["seed"]: s for s in censoring["stopped_early"]}
+    assert set(stopped) == capped
+    assert all(s["stop_reason"] == "max_events" and s["observations"] < 3 for s in stopped.values())
+    assert 4.0 in censoring["censored_times_s"] and 0.0 not in censoring["censored_times_s"]
+    rows = read_comparison(out / "comparison.csv")
+    first = [r for r in rows if float(r["time_s"]) == 0.0]
+    assert first and all(r["censored"] == "false" and r["kmc_mean"] != "" for r in first)
+    last = [r for r in rows if float(r["time_s"]) == 4.0]
+    assert last and all(r["censored"] == "true" for r in last)
+    for r in last:
+        assert r["kmc_mean"] == "" and r["kmc_stderr"] == "" and r["difference"] == ""
+        assert int(r["seeds_requested"]) == 4
+    reached = [s for s in seeds if s not in capped]
+    mu0 = next(r for r in last if r["quantity"] == "mu0_mol")
+    assert int(mu0["seeds"]) == len(reached)
+    want = [mo.mom_reported_quantities(lines(out / f"seed-{s}" / "observables.jsonl")[-1])["mu0_mol"]
+            for s in reached]
+    assert rel(float(mu0["censored_kmc_mean"]), math.fsum(want) / len(want)) <= REL
+
+
+def test_mom_times_match_exactly_and_unambiguously(tmp_path):
+    """Item 5."""
+    deck, catalog = pe_deck(tmp_path), pe_catalog_file(tmp_path)
+    q = {"mu0_mol": 1.0}
+
+    def mom(name, text):
+        path = tmp_path / name
+        path.write_text(text)
+        return path
+
+    near = mom("near.json", json.dumps([{"time_s": 1.0000000001, "quantities": q}]))
+    with pytest.raises(kr.RunError, match="time"):
+        kr.load_mom(near, [0.0, 1.0])
+    for token in ("Infinity", "-Infinity", "NaN"):
+        bad = mom(f"bad{token}.json", '[{"time_s": %s, "quantities": {"mu0_mol": 1.0}}]' % token)
+        with pytest.raises(kr.RunError, match="finite"):
+            kr.load_mom(bad, [0.0, 1.0])
+    nan_value = mom("nan_value.json", '[{"time_s": 1.0, "quantities": {"mu0_mol": NaN}}]')
+    with pytest.raises(kr.RunError, match="finite"):
+        kr.load_mom(nan_value, [0.0, 1.0])
+    exact = mom("exact.json", json.dumps([{"time_s": 1.0, "quantities": q}]))
+    got, record = kr.load_mom(exact, [0.0, 1.0])
+    assert got == [None, q] and record["times"] == 1
+    within = mom("within.json", json.dumps([{"time_s": 1.0 + 2.0e-16, "quantities": q}]))
+    assert kr.load_mom(within, [0.0, 1.0])[0] == [None, q]
+    with pytest.raises(kr.RunError, match="ambiguous"):
+        kr.load_mom(exact, [0.0, 1.0, 1.0 + 1.0e-13])
+    with pytest.raises(kr.RunError):
+        kr.run(deck, [catalog], 700.0, [0.0, 1.0], [1], tmp_path / "near_run", mom=near)
+    assert not (tmp_path / "near_run").exists()
+
+
+def test_a_failed_seed_is_labelled_and_recorded(tmp_path, monkeypatch):
+    """Item 6: an invariant failure after the t = 0 row."""
+    deck, catalog = pe_deck(tmp_path), pe_catalog_file(tmp_path)
+    original = mo.InvariantChecker.check
+
+    def failing(self, state, event=None):
+        if self.checks >= 2:
+            raise mo.InvariantError("injected invariant failure")
+        return original(self, state, event)
+
+    monkeypatch.setattr(mo.InvariantChecker, "check", failing)
+    out = tmp_path / "failed"
+    m = kr.run(deck, [catalog], 700.0, [0.0, 1.0, 5.0], [1, 2], out)
+    on_disk = json.loads((out / "run.json").read_text())
+    assert m["status"] == on_disk["status"] == "failed"
+    for r in on_disk["runs"]:
+        assert r["stop_reason"] == "error"
+        assert "InvariantError" in r["error"] and "injected" in r["error"]
+        rows = lines(out / f"seed-{r['seed']}" / "observables.jsonl")
+        assert 1 <= len(rows) == r["observations"] < 3
+        for row in rows:
+            assert row["seed"] == r["seed"] and row["catalog_complete"] is True
+            assert row["catalog_gate_failures"] == [] and row["catalog_bound"] is True
+    assert on_disk["leak"]["excluded_seeds"] == [1, 2] and on_disk["leak"]["per_seed"] == []
+    assert {s["seed"] for s in on_disk["censoring"]["stopped_early"]} == {1, 2}
+    argv = [str(deck), str(catalog), "--temperature", "700", "--times", "0", "5", "--seeds", "1",
+            "--out", str(tmp_path / "cli")]
+    assert kr.main(argv) == 1
