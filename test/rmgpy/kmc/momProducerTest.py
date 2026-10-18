@@ -888,3 +888,17 @@ def test_a_doubled_initial_mu2_is_refused(setup):
     write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: [mu[0], mu[1], 2 * mu[2]], 0.0)], gas=ZERO_GAS)
     with pytest.raises(mp.ProducerError, match="initial inventory"):
         produce(setup, out, mode="convert")
+
+
+def test_an_inert_species_kmc_cannot_hold_blocks_nothing_while_absent(setup):
+    """RMG puts Ar in every core; the kMC melt has no argon: unclassifiable,
+    harmless at zero amount."""
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    mu = declared(setup["spec"])
+    write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: mu, 0.0)],
+              gas=ZERO_GAS + [("Ar", "1 Ar u0 p4 c0\n", lambda t: 0.0)])
+    manifest = produce(setup, out, mode="convert")
+    assert manifest["read"]["species_classes"]["Ar"] == "undetermined"
+    q = json.loads((out / "mom.json").read_text())[-1]["quantities"]
+    assert q["polymer_condensed_mass_g"] == pytest.approx(1000.0, rel=1e-12)
