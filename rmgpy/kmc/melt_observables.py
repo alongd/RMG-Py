@@ -113,7 +113,7 @@ import weakref
 from collections import Counter
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from rmgpy import constants
 from rmgpy.kmc.melt_engine import (BUILTIN_SPECIES, MeltEngine, SpeciesIdentity,
@@ -892,12 +892,14 @@ class MeltObserver:
         # tier 2: mass moments over the polymer-derived molecules
         m = [r.molar_mass_g_mol for r in polymer]
         m1, m2 = _fsum(m), _fsum(x * x for x in m)
+        n_m = [(x - e) / a for x in m]          # mass DP, MoM's pool coordinate
         conv = observables_from_moments(mol_all, a, e)
         deltas = [(molar_mass_g_mol(r.defect), a * r.n + e) for r in polymer]
         tier2 = {
             "M0_mol": u * len(polymer), "M1_g": u * m1, "M2_g2_mol": u * m2,
             "Mn_g_mol": m1 / len(polymer) if polymer else 0.0, "Mw_g_mol": m2 / m1 if m1 else 0.0,
             "dp_moments_representative": rep_all, "dp_moments_mol": mol_all,
+            "mass_dp_moments_mol": [u * len(n_m), u * _fsum(n_m), u * _fsum(x * x for x in n_m)],
             "mom_convention": {"mass_g": conv.mass_g, "Mn_g_mol": conv.mn_g_mol, "Mw_g_mol": conv.mw_g_mol,
                                "M2_g2_mol": conv.mw_g_mol * conv.mass_g},
             "end_mass_convention": {
@@ -1313,8 +1315,13 @@ def mom_reported_quantities(obs: Mapping) -> dict:
     a, e = obs["repeat_unit_molar_mass_g_mol"], obs["end_group_molar_mass_g_mol"]
     mu = list(t3["tail"]["dp_moments_mol"])
     tail = observables_from_moments(mu, a, e)
-    whole_mu = list(obs["tier2"]["dp_moments_mol"])
-    whole = observables_from_moments(whole_mu, a, e)
+    t2 = obs["tier2"]
+    if "mass_dp_moments_mol" in t2:
+        whole_mu = list(t2["mass_dp_moments_mol"])
+    else:                                   # an observation written before the key: the same sums
+        n0, n1, n2 = t2["M0_mol"], t2["M1_g"], t2["M2_g2_mol"]
+        whole_mu = [n0, (n1 - e * n0) / a, (n2 - 2.0 * e * n1 + e * e * n0) / (a * a)]
+    whole_mn, whole_mw = whole_averages(whole_mu, a, e)
     return {
         "mu0_mol": mu[0], "mu1_mol": mu[1], "mu2_mol": mu[2],
         "end_inventory_mol": law["end_inventory_mol"],
@@ -1326,7 +1333,7 @@ def mom_reported_quantities(obs: Mapping) -> dict:
         "species_mol": {k: v["amount_mol"] for k, v in t1["species"].items()},
         "polymer_derived_molecules_mol": t1["polymer_derived"]["mom_definition"]["amount_mol"],
         "whole_mu0_mol": whole_mu[0], "whole_mu1_mol": whole_mu[1], "whole_mu2_mol": whole_mu[2],
-        "whole_Mn_g_mol": whole.mn_g_mol, "whole_Mw_g_mol": whole.mw_g_mol,
+        "whole_Mn_g_mol": whole_mn, "whole_Mw_g_mol": whole_mw,
     }
 
 
@@ -1334,11 +1341,24 @@ _TIER1 = ("polymer_condensed_mass_g", "polymer_derived_molecules_mol", "polymer_
 WHOLE_ENSEMBLE_KEYS = ("whole_mu0_mol", "whole_mu1_mol", "whole_mu2_mol", "whole_Mn_g_mol", "whole_Mw_g_mol")
 WHOLE_ENSEMBLE_DEFINITION = (
     "whole_mu<k>_mol = sum over every polymer-derived molecule (class polymer: not a declared species, "
-    "n = floor(B / b) >= 1; explicit ladder and tail alike) of n^k, in mol (tier2 dp_moments_mol); "
-    "whole_Mn_g_mol / whole_Mw_g_mol = polymer_mass.observables_from_moments(whole moments, a, e): the "
-    "capped-chain convention, every molecule of DP n weighing a n + e with the deck's repeat-unit mass a "
-    "and end-group pair mass e, whatever end groups it actually carries (the actual-mass deviation is "
-    "tier2 end_mass_convention)")
+    "floor(B / b) >= 1; explicit ladder and tail alike) of n_m^k, in mol, where n_m = (M - e) / a is its "
+    "mass DP: M its actual molar mass, a and e the deck's repeat-unit and end-group-pair masses -- MoM's "
+    "pool coordinate (tier2 mass_dp_moments_mol); a capped chain of DP n has n_m = n, other molecules a "
+    "fractional n_m.  whole_Mn_g_mol = (a mu1 + e mu0) / mu0 and whole_Mw_g_mol = (a^2 mu2 + 2 a e mu1 + "
+    "e^2 mu0) / (a mu1 + e mu0) of those moments (whole_averages): with a n_m + e = M these are the true "
+    "number- and weight-average molar masses of the polymer-derived molecules.  The tail keys stay on "
+    "floor(B / b)")
+
+
+def whole_averages(moments: Sequence[float], a: float, e: float) -> Tuple[float, float]:
+    """(Mn, Mw) of mass-DP moments (``WHOLE_ENSEMBLE_DEFINITION``); (0, 0)
+    without molecules.  No DP >= 1 realizability is assumed: a mass DP may be
+    fractional and below 1."""
+    mu0, mu1, mu2 = (float(x) for x in moments)
+    if mu0 == 0.0:
+        return 0.0, 0.0
+    mass = a * mu1 + e * mu0
+    return mass / mu0, (a * a * mu2 + 2.0 * a * e * mu1 + e * e * mu0) / mass
 _ZERO_WHEN_ABSENT = ("explicit_dp_mol.", "species_mol.")
 EQUAL_RELATIVE = 1.0e-12
 

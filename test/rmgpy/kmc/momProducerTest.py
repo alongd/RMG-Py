@@ -128,7 +128,8 @@ def family_rows(admitted, label=LABEL):
 
 
 def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABEL, end_groups=("[H]", "[H]"),
-              mass_override=None, duplicate=None, extra_columns=(), n2=lambda t: 1.0, gas_reactions=()):
+              mass_override=None, duplicate=None, extra_columns=(), n2=lambda t: 1.0, gas_reactions=(),
+              pool_extra=None):
     """A MoM output directory under ``out/rmg``.
 
     ``pools``: [(label, f(t) -> (mu0, mu1, mu2), defect_g_mol)]; ``gas``:
@@ -175,7 +176,7 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     (rmg / "chemkin" / "species_dictionary.txt").write_text("\n".join(dictionary) + "\n")
     pool_rows = [{"label": p, "monomer_mw_g_mol": a if mass_override is None else mass_override,
                   "chain_mass_defect_g_mol": d, "end_groups": list(end_groups),
-                  "bookkeeping_species": moment_ids[p] + ([proxy] if p == label else [])}
+                  "bookkeeping_species": moment_ids[p] + ([proxy] if p == label else []), **(pool_extra or {})}
                  for p, _f, d in pools]
     if rows is None:
         rows = family_rows({"toy_homolysis": (1, 1)} if admitted is None else admitted, label)
@@ -198,7 +199,7 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
                     "reactants": list(r["reactants"]), "products": list(r["products"]),
                     "proxy_reactants": [x for x in r["reactants"] if is_proxy(x)],
                     "proxy_products": [x for x in r["products"] if is_proxy(x)],
-                    "refused": not r["admitted"]})
+                    "refused": not r["admitted"], "archetype": r.get("archetype", "same_pool/1")})
         if not r["admitted"]:
             row["refused_reason"] = "conduit-deferred"
         reactions.append(row)
@@ -680,7 +681,7 @@ def test_a_produced_mom_file_is_accepted_by_the_runner(setup):
     moving_run(out, setup["spec"])
     produce(setup, out, mode="convert")
     times = kr.observation_times(end=40.0, snapshots=9)
-    mom, record = kr.load_mom(out / "mom.json", times)
+    mom, record = kr.load_mom(out / "mom.json", times, deck_sha256=kr.read_deck(setup["deck"]).sha256)
     assert record["times"] == len(times) and all(q is not None for q in mom)
 
 
@@ -1163,7 +1164,7 @@ def test_an_h_abstraction_gives_a_fractional_mass_dp_on_both_sides(tmp_path):
     produce(s, out, end=10.0, snapshots=2, mode="convert")
     q = mom_entries(out)[-1]["quantities"]
     assert q["whole_mu1_mol"] / u == pytest.approx(30 - d, rel=1e-12) and abs(30 - d - 30) > 1e-3
-    kmc = kmc_whole(s["spec"], ["[CH2]" + "C" * 9, "C" * 20])
+    kmc = kmc_whole(s["spec"], ["[CH2]" + "C" * 19, "C" * 40])      # DP 10 less one H; DP 20
     for key in WHOLE:
         assert q[key] == pytest.approx(kmc[key], rel=1e-12), key
 
@@ -1243,12 +1244,20 @@ def test_a_boundary_roundoff_row_keeps_every_quantity(tmp_path):
     assert set(WHOLE) <= set(q) and "species_mol" in q and "polymer_derived_molecules_mol" in q
 
 
+def declared_row_mu2(tmp_path):
+    """The unclamped mu2 of the clamp fixture's 10 s row."""
+    with open(tmp_path / "out" / "rmg" / "solver" / "simulation_1_8.csv") as handle:
+        rows = list(csv.reader(handle))
+    return float(rows[-1][rows[0].index(mp.moment_column(f"{LABEL}_mu2"))])
+
+
 def test_moments_within_the_mom_floors_are_clamped(tmp_path):
     """mu2 a few ulps below mu1^2 / mu0: inside MoM's accepted-state variance
     tolerance (polymer.pyx, floors max(1e-30, 100 atol)): clamped to zero
     variance, Mw = Mn."""
     q, _d = _boundary_run(tmp_path, (1.0, 1.0, 1.0 - 5e-16))
-    assert q["whole_mu2_mol"] == pytest.approx(q["whole_mu1_mol"] ** 2 / q["whole_mu0_mol"], rel=1e-15)
+    assert q["whole_mu2_mol"] == q["whole_mu1_mol"] * q["whole_mu1_mol"] / q["whole_mu0_mol"]   # clamped exactly
+    assert q["whole_mu2_mol"] != declared_row_mu2(tmp_path)
     assert q["whole_Mw_g_mol"] == pytest.approx(q["whole_Mn_g_mol"], rel=1e-12)
 
 
@@ -1278,3 +1287,24 @@ def test_the_mom_file_carries_the_flags_and_the_conventions_digest(setup):
     assert record["header"] == header and all(q is not None for q in mom)
 
 
+
+
+@pytest.mark.parametrize("kind", ["chip", "kernel"])
+def test_a_mechanism_that_leaves_the_mass_dp_coordinate_withholds_the_whole_keys(setup, kind):
+    """Pool-coordinate audit: an admitted discrete_chip/1 row (rounded chip
+    units), or a pool kernel with a nonzero rate, takes the pool moments off
+    the mass DP after t = 0."""
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    proxy = proxy_of()
+    rows = [{"family": "toy_homolysis", "admitted": True, "reactants": [proxy], "products": [proxy, "X0"],
+             "reversible": True, "archetype": "discrete_chip/1" if kind == "chip" else "same_pool/1"}]
+    extra = {"channels": {"scission": {"A": 1.0, "n": 0.0, "Ea": 0.0}}} if kind == "kernel" else None
+    constant_run(out, setup["spec"], rows=rows, pool_extra=extra)
+    produce(setup, out, mode="convert")
+    entries = mom_entries(out)
+    assert set(WHOLE) <= set(entries[0]["quantities"])
+    diagnostics = json.loads((out / "mom_diagnostics.json").read_text())
+    for entry, diag in list(zip(entries, diagnostics))[1:]:
+        assert not set(WHOLE) & set(entry["quantities"])
+        assert ("discrete_chip" if kind == "chip" else "kernel scission") in diag["whole_withheld"]["whole_mu0_mol"]

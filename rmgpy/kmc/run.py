@@ -172,7 +172,9 @@ observation time within relative ``MOM_TIME_RELATIVE`` (1e-12, float
 round-off only) of it; a finite time matching none, or more than one, is
 refused, and so is a non-finite one.  Header form: one JSON object
 ``{"header": {"flags": {name: details}, ...}, "entries": [...]}`` (what
-``rmgpy.kmc.mom_producer`` writes); the entries as above, the header copied
+``rmgpy.kmc.mom_producer`` writes), refused unless ``header.producer.deck_sha256``
+is the sha256 of the deck being run and ``header.conventions_sha256`` that of
+the ``conventions.json`` beside the file; the entries as above, the header copied
 whole into ``run.json`` (``mom.header``) and its flag names onto every
 comparison row.
 
@@ -710,9 +712,14 @@ def _quantities_problem(quantities: dict) -> Optional[str]:
     return None
 
 
-def load_mom(path, times: Sequence[float]) -> Tuple[List[Optional[dict]], dict]:
+def load_mom(path, times: Sequence[float], *, deck_sha256: Optional[str] = None
+             ) -> Tuple[List[Optional[dict]], dict]:
     """Per observation time the MoM quantities (None where the file has none);
-    matching in the module docstring."""
+    matching in the module docstring.  A header-form file is bound to the
+    deck being run (``deck_sha256``, the sha256 of its bytes: refused when
+    absent or different from ``header.producer.deck_sha256``) and to the
+    ``conventions.json`` beside it (refused when missing or when its sha256
+    is not ``header.conventions_sha256``)."""
     path = Path(path)
     try:
         raw = path.read_bytes()
@@ -734,6 +741,20 @@ def load_mom(path, times: Sequence[float]) -> Tuple[List[Optional[dict]], dict]:
                            "({\"flags\": {name: details}, ...})")
         if not isinstance(doc, list):
             raise RunError(f"MoM file {path}: entries must be a list of {{time_s, quantities}} entries")
+        producer = header.get("producer")
+        bound = producer.get("deck_sha256") if isinstance(producer, dict) else None
+        if deck_sha256 is None or bound != deck_sha256:
+            raise RunError(f"MoM file {path}: the header's deck digest {bound!r} is not the deck being run "
+                           f"({deck_sha256!r}): the MoM run is not of this deck")
+        conventions = path.parent / "conventions.json"
+        try:
+            digest = _sha256(conventions.read_bytes())
+        except OSError as error:
+            raise RunError(f"MoM file {path}: no conventions.json beside it to bind the header to "
+                           f"({error})") from error
+        if header.get("conventions_sha256") != digest:
+            raise RunError(f"MoM file {path}: the header's conventions digest {header.get('conventions_sha256')!r} "
+                           f"is not the sha256 of {conventions} ({digest})")
     elif isinstance(doc, dict):
         doc = [doc]
     if not isinstance(doc, list):
@@ -994,7 +1015,8 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
         raise RunError(f"jobs must be a positive integer, got {jobs!r}")
     catalog, records = load_catalogs(catalogs, temperature, allow_incomplete=allow_incomplete, deck=deck,
                                      allow_unbound=allow_unbound_catalog)
-    mom_by_time, mom_record = load_mom(mom, times) if mom is not None else ([None] * len(times), None)
+    mom_by_time, mom_record = (load_mom(mom, times, deck_sha256=deck.sha256) if mom is not None
+                               else ([None] * len(times), None))
     try:   # the declaration as the engine and the observables read it, before any output
         me.TransportLaw.from_spec(deck.spec).check_range(temperature, temperature)
         mo.MeltObserver(deck.spec, xs=deck.xs, side_group_homolysis=deck.side_group_homolysis)
