@@ -1366,3 +1366,55 @@ def test_an_observation_reached_exactly_at_the_event_cap_is_written(tmp_path):
     # a later requested time the cap keeps the engine from reaching
     more = mo.write_time_series(engine(), [0.0, t, 5.0], tmp_path / "more.jsonl", xs=3, max_events=1)
     assert [x["time_s"] for x in more] == [0.0, t] and more.stop_reason == "max_events"
+
+
+# --------------------------------------------------------------------------
+# I-170: whole-ensemble moments
+# --------------------------------------------------------------------------
+WHOLE = ("whole_mu0_mol", "whole_mu1_mol", "whole_mu2_mol", "whole_Mn_g_mol", "whole_Mw_g_mol")
+
+
+def _capped(spec, moments):
+    from rmgpy.polymer_mass import observables_from_moments
+    return observables_from_moments(moments, spec.repeat_unit.composition.molar_mass_g_mol(),
+                                    spec.end_composition.molar_mass_g_mol())
+
+
+def test_whole_ensemble_moments_count_ladder_and_tail_chains():
+    """DP 2, 3, 3 (ladder, xs = 4) and 8 (tail): a direct count over the chains."""
+    spec = S.pe_spec({2: 1, 3: 2, 8: 1})
+    o = mo.MeltObserver(spec, xs=4).observe(materialize(spec))
+    q = mo.mom_reported_quantities(o)
+    u = spec.initialization().scale_factor / constants.Na
+    whole = [u * 4, u * (2 + 3 + 3 + 8), u * (4 + 9 + 9 + 64)]
+    assert [q["whole_mu0_mol"], q["whole_mu1_mol"], q["whole_mu2_mol"]] == pytest.approx(whole, rel=1e-12)
+    conv = _capped(spec, whole)
+    assert q["whole_Mn_g_mol"] == pytest.approx(conv.mn_g_mol, rel=1e-12)
+    assert q["whole_Mw_g_mol"] == pytest.approx(conv.mw_g_mol, rel=1e-12)
+    assert q["mu0_mol"] == pytest.approx(u, rel=1e-12)              # the tail is the DP-8 chain alone
+
+
+def test_whole_ensemble_moments_use_the_polymer_class_only():
+    """A DP-6 chain homolysed at its end: CH3. (n = 0, light) is out, the
+    C11 radical (B = 11, n = 5) is in."""
+    spec = S.pe_spec({6: 1})
+    state = materialize(spec)
+    end = S.end_carbons(state, 0)[0]
+    nxt = next(b for b in state.atoms[end].edges if state.atoms[b].element == "C")
+    homolyse(state, end, nxt)
+    q = mo.mom_reported_quantities(mo.MeltObserver(spec, xs=2).observe(state))
+    u = spec.initialization().scale_factor / constants.Na
+    assert [q["whole_mu0_mol"], q["whole_mu1_mol"], q["whole_mu2_mol"]] == pytest.approx(
+        [u, 5 * u, 25 * u], rel=1e-12)
+
+
+def test_tail_keys_are_unchanged_by_the_whole_ensemble_keys():
+    spec = S.pe_spec({2: 1, 3: 2, 8: 1})
+    o = mo.MeltObserver(spec, xs=4).observe(materialize(spec))
+    q = mo.mom_reported_quantities(o)
+    tail = list(o["tier3"]["tail"]["dp_moments_mol"])
+    conv = _capped(spec, tail)
+    assert [q["mu0_mol"], q["mu1_mol"], q["mu2_mol"]] == tail
+    assert q["Mn_g_mol"] == conv.mn_g_mol and q["Mw_g_mol"] == conv.mw_g_mol
+    rows = {r["quantity"]: r for r in mo.side_by_side(o, q)}
+    assert all(rows[k]["agreement"] == "equal" and rows[k]["tier"] == 2 for k in WHOLE)

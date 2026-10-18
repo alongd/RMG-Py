@@ -220,6 +220,16 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     (rmg / "chemkin" / "chem_annotated.inp").write_text("\n".join(annotated + ["END", ""]))
 
 
+def mom_entries(out):
+    """The entries of a produced --mom file (header form)."""
+    doc = json.loads((out / "mom.json").read_text())
+    assert set(doc) == {"header", "entries"}
+    return doc["entries"]
+
+
+WHOLE = ("whole_mu0_mol", "whole_mu1_mol", "whole_mu2_mol", "whole_Mn_g_mol", "whole_Mw_g_mol")
+
+
 def declared(spec):
     return [float(x) for x in spec.macroscopic_moments_mol]
 
@@ -321,7 +331,7 @@ def test_tail_keys_are_not_produced():
     for key in ("mu0_mol", "mu1_mol", "mu2_mol", "Mn_g_mol", "Mw_g_mol"):
         assert key in mp.NOT_PRODUCED and key not in mp.QUANTITY_SOURCES
     assert set(mp.QUANTITY_SOURCES) == {"polymer_condensed_mass_g", "polymer_conversion",
-                                        "polymer_derived_molecules_mol", "species_mol"}
+                                        "polymer_derived_molecules_mol", "species_mol", *WHOLE}
     assert set(mp.QUANTITY_SOURCES).isdisjoint(mp.NOT_PRODUCED)
     assert set(mp.QUANTITY_SOURCES) | set(mp.NOT_PRODUCED) == mp.runner_quantity_keys()
 
@@ -335,12 +345,12 @@ def test_every_exported_quantity_equals_the_kmc_value_of_the_same_deck_at_t0(tmp
     produce(s, out)
     constant_run(out, s["spec"])
     produce(s, out, mode="convert")
-    quantities = json.loads((out / "mom.json").read_text())[0]["quantities"]
+    quantities = mom_entries(out)[0]["quantities"]
     engine = me.MeltEngine(s["spec"], S.ToyCatalog(names=PE_LIVE), 700.0, np.random.default_rng(1))
     obs = mo.MeltObserver(s["spec"], xs=4, identity=engine.identity).observe(engine)
     rows = [r for r in mo.side_by_side(obs, quantities) if r["mom"] is not None]
     assert {r["quantity"] for r in rows} >= {"polymer_condensed_mass_g", "polymer_derived_molecules_mol",
-                                             "polymer_conversion", "species_mol.H", "species_mol.H2"}
+                                             "polymer_conversion", "species_mol.H", "species_mol.H2", *WHOLE}
     assert all(r["agreement"] == "equal" for r in rows), [r for r in rows if r["agreement"] != "equal"]
 
 
@@ -360,7 +370,7 @@ def test_scission_does_not_invent_end_group_mass(tmp_path):
 
     write_run(out, times=[0.0, 10.0], pools=[(LABEL, split, 0.0)], gas=ZERO_GAS)
     produce(s, out, end=10.0, snapshots=2, mode="convert")
-    entries = json.loads((out / "mom.json").read_text())
+    entries = mom_entries(out)
     a, e = masses()
     assert 1000.0 * (1 + e / (6 * a + e)) == pytest.approx(1011.8, abs=0.1)     # the invented value
     for entry in entries:
@@ -374,7 +384,7 @@ def test_profile_converts_to_the_mom_file_at_the_observation_times(setup):
     produce(setup, out)
     main, daughter, h, m_h2 = moving_run(out, setup["spec"])
     produce(setup, out, mode="convert")
-    entries = json.loads((out / "mom.json").read_text())
+    entries = mom_entries(out)
     times = kr.observation_times(end=40.0, snapshots=9)
     assert [x["time_s"] for x in entries] == times
     for entry in entries:
@@ -412,7 +422,7 @@ def test_chain_mass_defect_enters_the_booked_mass(setup):
     write_run(out, times=PROFILE_T, pools=[(LABEL, main, 0.0), (LABEL + "_mod", feature, m_h2)],
               gas=[("H(1)", ADJ["H"], lambda t: 0.0), ("H2(2)", ADJ["H2"], lambda t: y * t * t)])
     produce(setup, out, mode="convert")
-    for entry in json.loads((out / "mom.json").read_text()):
+    for entry in mom_entries(out):
         t = entry["time_s"]
         assert entry["quantities"]["polymer_condensed_mass_g"] == pytest.approx(
             1000.0 - m_h2 * interpolant(lambda s: y * s * s, t), rel=1e-12)
@@ -435,7 +445,7 @@ def test_a_booking_that_does_not_close_exports_no_mass(setup):
     write_run(out, times=PROFILE_T, pools=[(LABEL, main, 0.0)],
               gas=ZERO_GAS + [("C6H14(4)", hexane, lambda t: x * t * t)])
     produce(setup, out, mode="convert")
-    entries = json.loads((out / "mom.json").read_text())
+    entries = mom_entries(out)
     assert "polymer_condensed_mass_g" in entries[0]["quantities"]
     for entry in entries[1:]:
         assert "polymer_condensed_mass_g" not in entry["quantities"]
@@ -527,7 +537,7 @@ def test_a_formula_named_species_column_resolves(tmp_path):
     write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: mu, 0.0)],
               gas=ZERO_GAS + [("C2H4(4)", ethylene, lambda t: 1e-3 * t)])
     produce(s, out, mode="convert")
-    q = json.loads((out / "mom.json").read_text())[-1]["quantities"]
+    q = mom_entries(out)[-1]["quantities"]
     assert q["species_mol"]["monomer_product"] == pytest.approx(0.04, rel=1e-12)
     assert set(q["species_mol"]) == {"monomer_product", "H", "H2"}
 
@@ -583,7 +593,7 @@ def test_a_time_on_a_profile_row_takes_the_row_exactly(setup):
     produce(setup, out, end=20.0, snapshots=3)
     main, daughter, _h, _m = moving_run(out, setup["spec"])
     produce(setup, out, end=20.0, snapshots=3, mode="convert")
-    entries = json.loads((out / "mom.json").read_text())
+    entries = mom_entries(out)
     assert [x["time_s"] for x in entries] == [0.0, 10.0, 20.0]
     for entry in entries:
         t = entry["time_s"]
@@ -621,7 +631,7 @@ def test_quantity_keys_are_the_runners():
     keys = mp.runner_quantity_keys()
     assert keys == {"mu0_mol", "mu1_mol", "mu2_mol", "end_inventory_mol", "explicit_dp_mol",
                     "polymer_condensed_mass_g", "Mn_g_mol", "Mw_g_mol", "polymer_conversion", "released_mol",
-                    "species_mol", "polymer_derived_molecules_mol"}
+                    "species_mol", "polymer_derived_molecules_mol", *WHOLE}
     mp.check_quantity_keys({"polymer_derived_molecules_mol": 1.0, "species_mol": {"H": 0.0}}, ["H", "H2"])
     with pytest.raises(mp.ProducerError, match="not keys of"):
         mp.check_quantity_keys({"polymer_derived_molecules_mol": 1.0, "Mn": 1.0}, [])
@@ -724,7 +734,7 @@ def test_gas_oligomers_are_booked_on_the_side_kmc_puts_them(tmp_path):
     write_run(out, times=[0.0, 10.0], pools=[(LABEL, pool, 0.0)],
               gas=ZERO_GAS + [("C6H12(4)", hexene, lambda t: u * t / 10.0)])
     produce(s, out, end=10.0, snapshots=2, mode="convert")
-    q = json.loads((out / "mom.json").read_text())[-1]["quantities"]
+    q = mom_entries(out)[-1]["quantities"]
     assert q["polymer_condensed_mass_g"] == pytest.approx(1000.0, rel=1e-12)
     assert q["polymer_conversion"] == pytest.approx(0.0, abs=1e-12)
     assert q["polymer_derived_molecules_mol"] == pytest.approx(2 * u, rel=1e-12)
@@ -758,11 +768,11 @@ def test_a_species_kmc_cannot_classify_exports_no_polymer_rows(tmp_path):
     write_run(out, times=PROFILE_T, pools=[(LABEL, pool, 0.0)], end_groups=("[CH3]", "[H]"),
               gas=ZERO_GAS + [("C3H8(4)", propane, lambda t: x * t)])
     produce(s, out, mode="convert")
-    entries = json.loads((out / "mom.json").read_text())
-    assert {"polymer_condensed_mass_g", "polymer_derived_molecules_mol"} <= set(entries[0]["quantities"])
+    entries = mom_entries(out)
+    assert {"polymer_condensed_mass_g", "polymer_derived_molecules_mol", *WHOLE} <= set(entries[0]["quantities"])
     diagnostics = json.loads((out / "mom_diagnostics.json").read_text())
     for entry, diag in list(zip(entries, diagnostics))[1:]:
-        for key in ("polymer_condensed_mass_g", "polymer_conversion", "polymer_derived_molecules_mol"):
+        for key in ("polymer_condensed_mass_g", "polymer_conversion", "polymer_derived_molecules_mol", *WHOLE):
             assert key not in entry["quantities"]
         assert diag["mass_closure_residual_g"] == pytest.approx(0.0, abs=1e-9)
         assert diag["unclassified_species"] == ["C3H8(4)"]
@@ -837,7 +847,7 @@ def test_the_bath_does_not_dilute_the_mass_closure(tmp_path):
     write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: mu, 0.0)],
               gas=ZERO_GAS + [("C4H10(4)", butane, lambda t: b * t / 40.0)])
     produce(s, out, mode="convert")
-    entries = json.loads((out / "mom.json").read_text())
+    entries = mom_entries(out)
     assert "polymer_condensed_mass_g" in entries[0]["quantities"]
     for entry in entries[1:]:
         assert "polymer_condensed_mass_g" not in entry["quantities"]
@@ -851,7 +861,7 @@ def test_a_bath_that_does_not_close_exports_no_mass(setup):
     write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: mu, 0.0)], gas=ZERO_GAS,
               n2=lambda t: 1.0 - 1e-3 * t)
     produce(setup, out, mode="convert")
-    entries = json.loads((out / "mom.json").read_text())
+    entries = mom_entries(out)
     diagnostics = json.loads((out / "mom_diagnostics.json").read_text())
     for entry, diag in list(zip(entries, diagnostics))[1:]:
         assert "polymer_condensed_mass_g" not in entry["quantities"]
@@ -872,7 +882,7 @@ def test_the_initial_mobile_inventory_is_checked(tmp_path):
         produce(s, out, mode="convert")
     write_run(out, times=PROFILE_T, pools=[(LABEL, drift(mu), 0.0)],
               gas=ZERO_GAS + [("C2H4(4)", ethylene, lambda t: amount)])
-    q = produce(s, out, mode="convert") and json.loads((out / "mom.json").read_text())[-1]["quantities"]
+    q = produce(s, out, mode="convert") and mom_entries(out)[-1]["quantities"]
     assert q["species_mol"]["ethylene"] == amount
 
 
@@ -887,7 +897,7 @@ def test_a_resonance_form_of_a_declared_species_resolves(tmp_path):
     write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: mu, 0.0)],
               gas=ZERO_GAS + [("C4H7(4)", other.to_adjacency_list(), lambda t: 1e-6 * t)])
     produce(s, out, mode="convert")
-    q = json.loads((out / "mom.json").read_text())[-1]["quantities"]
+    q = mom_entries(out)[-1]["quantities"]
     assert q["species_mol"]["crotyl"] == pytest.approx(4e-5, rel=1e-12)
 
 
@@ -922,7 +932,7 @@ def test_an_inert_species_kmc_cannot_hold_blocks_nothing_while_absent(setup):
               gas=ZERO_GAS + [("Ar", "1 Ar u0 p4 c0\n", lambda t: 0.0)])
     manifest = produce(setup, out, mode="convert")
     assert manifest["read"]["species_classes"]["Ar"] == "undetermined"
-    q = json.loads((out / "mom.json").read_text())[-1]["quantities"]
+    q = mom_entries(out)[-1]["quantities"]
     assert q["polymer_condensed_mass_g"] == pytest.approx(1000.0, rel=1e-12)
 
 
@@ -1050,10 +1060,54 @@ def test_toluene_in_a_ps_deck_is_undetermined_and_withholds_the_polymer_rows(tmp
               mass_override=a, gas=ZERO_GAS + [("C7H8(4)", toluene, lambda t: x * t)])
     manifest = produce(s, out, mode="convert")
     assert manifest["read"]["species_classes"]["C7H8(4)"] == "undetermined"
-    entries = json.loads((out / "mom.json").read_text())
+    entries = mom_entries(out)
     diagnostics = json.loads((out / "mom_diagnostics.json").read_text())
     for entry, diag in list(zip(entries, diagnostics))[1:]:
         for key in ("polymer_condensed_mass_g", "polymer_conversion", "polymer_derived_molecules_mol"):
             assert key not in entry["quantities"]
         assert diag["unclassified_species"] == ["C7H8(4)"]
         assert diag["mass_closure_residual_g"] == pytest.approx(0.0, abs=1e-9)
+
+
+# --------------------------------------------------------------------------
+# I-170: whole-ensemble moments and the header form
+# --------------------------------------------------------------------------
+def test_whole_ensemble_keys_are_the_pools_plus_polymer_class_species(tmp_path):
+    """Pool moments plus the hexene (kMC class polymer, n = 3): mu_k + x 3^k;
+    Mn / Mw of those moments with the deck's a and e (capped chains)."""
+    from rmgpy.polymer_mass import observables_from_moments
+    s = make_setup(tmp_path, {6: 1})
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    u, mu1, mu2 = declared(s["spec"])
+
+    def pool(t):
+        f = t / 10.0
+        return u, mu1 - 3 * f * u, mu2 * (1 - f) + 9 * f * u
+
+    hexene = Molecule(smiles="C=CCCCC").to_adjacency_list()
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, pool, 0.0)],
+              gas=ZERO_GAS + [("C6H12(4)", hexene, lambda t: u * t / 10.0)])
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    whole = [u + u, mu1 - 3 * u + 3 * u, 9 * u + 9 * u]
+    assert [q["whole_mu0_mol"], q["whole_mu1_mol"], q["whole_mu2_mol"]] == pytest.approx(whole, rel=1e-12)
+    a, e = masses()
+    conv = observables_from_moments(whole, a, e)
+    assert q["whole_Mn_g_mol"] == pytest.approx(conv.mn_g_mol, rel=1e-12)
+    assert q["whole_Mw_g_mol"] == pytest.approx(conv.mw_g_mol, rel=1e-12)
+
+
+def test_the_mom_file_carries_the_flags_and_the_conventions_digest(setup):
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    constant_run(out, setup["spec"], admitted={"toy_homolysis": (3, 0)})
+    manifest = produce(setup, out, mode="convert", allow_inactive=True)
+    doc = json.loads((out / "mom.json").read_text())
+    header = doc["header"]
+    assert sorted(header["flags"]) == ["inactive_chemistry", "kinetics_not_comparable"]
+    assert header["flags"] == manifest["flags"]
+    assert header["conventions_sha256"] == hashlib.sha256((out / "conventions.json").read_bytes()).hexdigest()
+    assert header["producer"]["schema"] == mp.SCHEMA and header["producer"]["deck_sha256"] == manifest["deck"]["sha256"]
+    mom, record = kr.load_mom(out / "mom.json", kr.observation_times(end=40.0, snapshots=9))
+    assert record["header"] == header and all(q is not None for q in mom)

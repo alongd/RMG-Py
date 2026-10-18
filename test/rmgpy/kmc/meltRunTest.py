@@ -1122,3 +1122,46 @@ def test_each_seed_series_ends_with_its_stop_record(tmp_path):
     (r,) = free["runs"]
     (stop,) = records(tmp_path / "free" / r["path"])
     assert stop["stop_reason"] == r["stop_reason"] == "horizon" and r["observations"] == 2
+
+
+# --------------------------------------------------------------------------
+# I-170: the header form of --mom
+# --------------------------------------------------------------------------
+HEADER = {"flags": {"inactive_chemistry": {"admitted_in_requested_families": 0},
+                    "kinetics_not_comparable": {"ratio_by_species": {"H": 0.02}}},
+          "conventions_sha256": "0" * 64, "producer": {"schema": "kmc-mom-producer/1"}}
+
+
+def test_load_mom_accepts_the_header_form_and_the_legacy_forms(tmp_path):
+    q = {"mu0_mol": 1.0}
+    entries = [{"time_s": 1.0, "quantities": q}]
+    header_form = tmp_path / "header.json"
+    header_form.write_text(json.dumps({"header": HEADER, "entries": entries}))
+    got, record = kr.load_mom(header_form, [0.0, 1.0])
+    assert got == [None, q] and record["header"] == HEADER
+    legacy = tmp_path / "legacy.json"
+    legacy.write_text(json.dumps(entries))
+    got, record = kr.load_mom(legacy, [0.0, 1.0])
+    assert got == [None, q] and record["header"] is None
+    jsonl = tmp_path / "legacy.jsonl"
+    jsonl.write_text("\n".join(json.dumps(x) for x in entries) + "\n")
+    assert kr.load_mom(jsonl, [0.0, 1.0])[0] == [None, q]
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({"header": {"flags": ["inactive_chemistry"]}, "entries": entries}))
+    with pytest.raises(kr.RunError, match="flags"):
+        kr.load_mom(bad, [0.0, 1.0])
+
+
+def test_the_comparison_carries_the_mom_flags_and_run_json_the_header(tmp_path):
+    deck, catalog = pe_deck(tmp_path), pe_catalog_file(tmp_path)
+    times = [0.0, 1.0]
+    mom = tmp_path / "mom.json"
+    mom.write_text(json.dumps({"header": HEADER, "entries": [{"time_s": 0.0, "quantities": {"mu0_mol": 1.0}}]}))
+    out = tmp_path / "cmp"
+    kr.run(deck, [catalog], 700.0, times, [1], out, mom=mom)
+    rows = read_comparison(out / "comparison.csv")
+    assert rows and all(r["mom_flags"] == "inactive_chemistry;kinetics_not_comparable" for r in rows)
+    assert json.loads((out / "run.json").read_text())["mom"]["header"] == HEADER
+    plain = tmp_path / "plain"
+    kr.run(deck, [catalog], 700.0, times, [1], plain)
+    assert all(r["mom_flags"] == "" for r in read_comparison(plain / "comparison.csv"))
