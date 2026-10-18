@@ -1847,7 +1847,7 @@ class TestKeywordSpeciesAndBlockBoundaries:
     def test_keyword_named_reaction_and_efficiency_read(self, tmp_path):
         names = {"REAC": "C", "H": "[H]", "H2": "[H][H]", "CH4": "C"}
         text = ("ELEMENTS H C END\nSPECIES\nREAC H H2 CH4\nEND\nREACTIONS\n"
-                "REAC + H => CH4 1.0 0 0\nH+H(+M)=>H2(+M) 1.0 0 0\nREAC /2.0/\nEND\n")
+                "REAC + H => CH4 1.0 0 0\nH+H(+M)=>H2(+M) 1.0 0 0\nLOW/1e24 -2 0/\nREAC /2.0/\nEND\n")
         _species, reactions = self.read(tmp_path, text, names)
         assert len(reactions) == 2
         assert reactions[0].reactants[0].label == "REAC"

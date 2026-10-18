@@ -45,7 +45,7 @@ import rmgpy.kinetics as _kinetics
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
-from rmgpy.exceptions import ChemkinError
+from rmgpy.exceptions import ChemkinError, ElementError
 from rmgpy.molecule.element import get_element
 from rmgpy.molecule.util import get_element_count
 from rmgpy.quantity import Quantity, Dimensionless, Energy
@@ -1424,7 +1424,8 @@ def _is_end_keyword(line):
     return len(tokens) > 0 and tokens[0].upper() == 'END'
 
 
-_BLOCK_HEADERS = ('ELEMENTS', 'ELEM', 'SPECIES', 'SPEC', 'SITE', 'THERMO', 'THERM', 'THER', 'REACTIONS', 'REAC')
+_BLOCK_HEADERS = ('ELEMENTS', 'ELEM', 'SPECIES', 'SPEC', 'SITE', 'THERMO', 'THERM', 'THER', 'REACTIONS', 'REAC',
+                  'TRANSPORT', 'TRAN')
 
 
 def _is_thermo_entry_first_line(text):
@@ -1475,22 +1476,45 @@ def _block_at_end_of_file(header, species=None):
 def _opens_block_inside_species(f, line):
     """Whether ``line`` starts a block instead of naming a species.
 
-    RMG's writer may emit the valid species name ``REAC`` alone on a line.
-    It is indistinguishable from the abbreviated REACTIONS header until the
-    next meaningful line: an equation makes it a header; otherwise it stays
-    a species name.
+    A keyword is a header only when it is alone on its line and the next
+    meaningful line has that block's distinctive content signature.  The
+    peek restores the stream position so that species parsing keeps every
+    line it examines.
     """
-    if not _opens_block(line):
-        return False
     tokens = remove_comment_from_line(line)[0].split()
-    if len(tokens) != 1 or tokens[0].upper() != 'REAC':
-        return True
+    if len(tokens) != 1:
+        return False
+    header = tokens[0].upper()
+    if header in ('SPECIES', 'SPEC', 'SITE') or header.startswith('SITE/'):
+        return False
+    if header not in _BLOCK_HEADERS:
+        return False
+
     position = f.tell()
     next_line = f.readline()
     while next_line and not remove_comment_from_line(next_line)[0].strip():
         next_line = f.readline()
     f.seek(position)
-    return '=' in remove_comment_from_line(next_line)[0]
+    text = remove_comment_from_line(next_line)[0]
+    return _has_block_content_signature(header, text)
+
+
+def _has_block_content_signature(header, text):
+    """Whether a possible header's following line identifies its block."""
+    tokens = text.split()
+    if header in ('REACTIONS', 'REAC'):
+        return '=' in text and len(tokens) >= 4 and all(_is_float(token) for token in tokens[-3:])
+    if header in ('THERMO', 'THERM', 'THER'):
+        return (len(tokens) == 3 and all(_is_float(token) for token in tokens)) or _is_thermo_entry_first_line(text)
+    if header in ('TRANSPORT', 'TRAN'):
+        return (len(tokens) == 7 and tokens[1] in ('0', '1', '2')
+                and all(_is_float(token) for token in tokens[2:]))
+    if header in ('ELEMENTS', 'ELEM'):
+        try:
+            return bool(tokens) and all(get_element(token) for token in tokens)
+        except ElementError:
+            return False
+    return False
 
 
 def read_species_block(f, species_dict, species_aliases, species_list):
@@ -1768,10 +1792,6 @@ def read_reactions_block(f, species_dict, read_comments=True):
     line = f.readline()
     ended = False
     while line != '':
-
-        if _opens_block(line):
-            raise _unterminated_block('REACTIONS', line)
-
         line_starts_with_comment = line.lstrip().startswith('!') or line.lstrip().startswith('//')
         line, comment = remove_comment_from_line(line)
         line = line.strip()
