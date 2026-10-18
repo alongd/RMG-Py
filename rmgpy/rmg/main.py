@@ -2446,6 +2446,17 @@ class RMG(util.Subject):
                     if fresh:
                         recorded_masks.append({"reactor": number, "mask": [bool(g) for g in mask]})
 
+                # a species whose structure cannot be read equals nothing: the
+                # artifact is stale, and names it
+                try:
+                    unreadable = core_topology_signature(core_species, core_reactions).unreadable
+                except (TypeError, ValueError):
+                    unreadable = []
+                if unreadable:
+                    sidecar_stale_topology = True
+                    logging.warning("polymer_pools.json: stale, the structures of %s cannot be read",
+                                    ", ".join(unreadable))
+
                 write_polymer_pools_sidecar(
                     pool_registry=pool_registry,
                     output_dir=target_dir,
@@ -2461,7 +2472,8 @@ class RMG(util.Subject):
                     generation_v_poly_m3=generation_v_poly_m3,
                     explicit_dp_species_by_pool=explicit_dp_species_by_pool,
                     stale_topology=sidecar_stale_topology,
-                    solver_gas_masks=recorded_masks,
+                    solver_gas_masks=[] if unreadable else recorded_masks,
+                    stale_unreadable=unreadable,
                 )
         except Exception as e:
             logging.warning(f"Failed to write polymer_pools.json sidecar: {e}", exc_info=True)

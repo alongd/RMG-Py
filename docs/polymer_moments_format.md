@@ -709,11 +709,15 @@ normally-converged run is fresh (key absent).
 solver `gas_species_mask` verbatim, `{"source": "solver", "reactors":
 [{"reactor": <1-based reaction system>, "profile":
 "solver/simulation_<reactor>_<n_core>.csv", "core": [{"species": <chem.yaml
-label>, "structure": <augmented InChI of its first molecule, or null>,
-"gas": <bool>}, ...]}, ...]}`, the core species in solver order. A
-reactor's mask is recorded only when it is the mask of the written core
-(length-matched, and the engine's rebuild signature — labels, indices and
-structures — equal to the current core's); with none, the key is absent.
+label>, "structure": {"adjacency_list": <RMG adjacency list of its first
+molecule>, "multiplicity": <int>}, "gas": <bool>}, ...]}, ...]}`, the core
+species in solver order. A reactor's mask is recorded only when it is the
+mask of the written core (length-matched, and the engine's rebuild
+signature equal to the current core's: labels, indices, and each species
+the same species by RMG's isomorphism, resonance- and multiplicity-aware);
+with none, the key is absent. A species whose structure cannot be read
+equals nothing: the artifact is stale and
+`conventions.stale_topology_unreadable_structures` names it.
 `condensed_species` unions the first engine's mask with pool membership and
 adds spawned pools' members (§13), so it cannot tell which phase the solver
 gave a spawned-but-unconfigured pool's members; this record can. The mask is
@@ -722,7 +726,9 @@ written nowhere else, while the core, and with it the mask, can change only
 between simulations. That simulation's snapshots are the named profile,
 whose species columns are this core in this order, so every row of it was
 integrated under this mask. A consumer reading a profile uses the record
-that names it, and checks each species' structure against its own.
+that names it, and checks each species' structure against its own by RMG's
+species isomorphism (never by a string such as an InChI, which merges
+tautomers, drops multiplicity and splits resonance drawings).
 
 `conventions.generation_defaults` (optional, **NON-normative** — see §7):
 generation-run provenance for consumer-supplied operating conditions.

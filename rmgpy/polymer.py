@@ -8270,17 +8270,107 @@ def _serialize_pool_for_sidecar(pool: 'Polymer',
 
 
 def species_structure(spc):
-    """The structure a core species stands for: the augmented InChI of its
-    first molecule (resonance- and atom-order-independent), or None when it
-    has no molecule or none can be computed.  Binds a recorded species to
-    its structure, beyond its (label, index)."""
-    molecules = getattr(spc, "molecule", None) or []
-    if not molecules or molecules[0] is None:
+    """A core species' structure as the sidecar records it: RMG's adjacency
+    list of its first molecule (its multiplicity line included) and that
+    multiplicity, ``{"adjacency_list": ..., "multiplicity": ...}``; None when
+    it has no molecule or the list cannot be written.  A consumer compares it
+    with its own species by RMG's isomorphism (``same_structure``), never by
+    string."""
+    molecules = [m for m in (getattr(spc, "molecule", None) or []) if m is not None]
+    if not molecules:
         return None
     try:
-        return molecules[0].to_augmented_inchi()
+        return {"adjacency_list": molecules[0].to_adjacency_list(),
+                "multiplicity": int(molecules[0].multiplicity)}
     except Exception:
         return None
+
+
+def same_structure(first, second):
+    """Whether two species' molecule lists are one species by RMG's own
+    test, the one it merges species by: the same multiplicity, and some
+    molecule of each isomorphic (strict: electrons, charges) to some of the
+    other's, the first species' resonance forms generated when the lists
+    alone do not match (two drawings of one resonance hybrid).  Tautomers
+    are distinct graphs, so never equal.  Any error: not equal."""
+    try:
+        if not first or not second or first[0].multiplicity != second[0].multiplicity:
+            return False
+        if any(a.is_isomorphic(b, strict=True) for a in first for b in second):
+            return True
+        forms = first[0].copy(deep=True).generate_resonance_structures(keep_isomorphic=False)
+        return any(f.multiplicity == b.multiplicity and f.is_isomorphic(b, strict=True)
+                   for f in forms for b in second)
+    except Exception:
+        return False
+
+
+class _CoreStructure(object):
+    """A core species' structure as the rebuild signature holds it: deep
+    copies of its molecules (immune to later edits), compared by
+    ``same_structure``."""
+    __slots__ = ("molecules",)
+
+    def __init__(self, molecules):
+        self.molecules = [m.copy(deep=True) for m in molecules]
+
+    def same_as(self, other):
+        return isinstance(other, _CoreStructure) and same_structure(self.molecules, other.molecules)
+
+
+class _UnreadableStructure(object):
+    """A core species whose structure cannot be read or copied: equal to
+    nothing, itself included."""
+    __slots__ = ("name",)
+
+    def __init__(self, name):
+        self.name = name
+
+    def same_as(self, other):
+        return False
+
+
+def _core_structure(spc):
+    molecules = [m for m in (getattr(spc, "molecule", None) or []) if m is not None]
+    try:
+        if not molecules:
+            raise ValueError("no molecule")
+        return _CoreStructure(molecules)
+    except Exception:
+        return _UnreadableStructure(_artifact_species_label(spc))
+
+
+class CoreTopologySignature(object):
+    """The rebuild signature: per species (label, index) and its structure
+    (``_CoreStructure``), per reaction (index, label).  Two signatures are
+    equal when every label, index and reaction key is, and every species is
+    the same species by ``same_structure``.  The canonical identity is RMG's
+    own species isomorphism (resonance-aware, multiplicity-aware), not a
+    string token: augmented InChIs merge tautomers and drop multiplicity, and
+    one resonance hybrid drawn two ways gives two of them."""
+    __hash__ = None
+
+    def __init__(self, core_species, core_reactions):
+        self.species = [(getattr(s, "label", None), getattr(s, "index", None), _core_structure(s))
+                        for s in (core_species or [])]
+        self.reactions = tuple((getattr(r, "index", None), getattr(r, "label", None))
+                               for r in (core_reactions or []))
+
+    @property
+    def unreadable(self):
+        """The species whose structure cannot be read, by artifact label."""
+        return [x.name for _l, _i, x in self.species if isinstance(x, _UnreadableStructure)]
+
+    def __eq__(self, other):
+        if not isinstance(other, CoreTopologySignature):
+            return False
+        if self.reactions != other.reactions or len(self.species) != len(other.species):
+            return False
+        return all(la == lb and ia == ib and xa.same_as(xb)
+                   for (la, ia, xa), (lb, ib, xb) in zip(self.species, other.species))
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
 
 def core_topology_signature(core_species, core_reactions):
@@ -8294,20 +8384,15 @@ def core_topology_signature(core_species, core_reactions):
     engine rebuild, so the emitted artifact's engine-derived surfaces are
     stale (``conventions.stale_topology``).
 
-    Identity keys are ``(label, index, structure)`` per species
-    (``species_structure``: another isomer under the same label and index
-    flips it) and ``(index, label)`` per reaction -- stable across the
-    save/rebuild window, unlike ``id()`` (recyclable across GC), and
-    strictly stronger than the bare count equality this replaces: a
-    same-count species or reaction swap/restamp between rebuilds flips the
-    signature.
+    A ``CoreTopologySignature``: species by (label, index) and structure,
+    compared by RMG's isomorphism (another species under the same label and
+    index, a tautomer or another multiplicity included, flips it; another
+    resonance drawing does not; a structure that cannot be read flips it
+    always), reactions by (index, label) -- stable across the save/rebuild
+    window, unlike ``id()`` (recyclable across GC), and strictly stronger
+    than the bare count equality this replaces.
     """
-    return (
-        tuple((getattr(s, "label", None), getattr(s, "index", None), species_structure(s))
-              for s in (core_species or [])),
-        tuple((getattr(r, "index", None), getattr(r, "label", None))
-              for r in (core_reactions or [])),
-    )
+    return CoreTopologySignature(core_species, core_reactions)
 
 
 def write_polymer_pools_sidecar(
@@ -8328,6 +8413,7 @@ def write_polymer_pools_sidecar(
     explicit_dp_species_by_pool=None,
     stale_topology=False,
     solver_gas_masks=None,
+    stale_unreadable=None,
 ) -> str:
     """Emit ``polymer_pools.json`` alongside ``chem.yaml`` (design doc §6).
 
@@ -8373,6 +8459,10 @@ def write_polymer_pools_sidecar(
         ``core_species`` (True = gas), recorded verbatim as
         ``conventions.solver_gas_mask``; None or empty (default) -> key
         absent.
+    stale_unreadable : list of str, optional
+        The core species whose structure cannot be read, by artifact label,
+        named in ``conventions.stale_topology_unreadable_structures`` when
+        the artifact is stale.
     initial_explicit_by_pool : dict, optional
         ``{pool_label: {dp: moles}}`` — the stage-A solver contract
         (``HybridPolymerSystem.initial_explicit_species``). Feeds the
@@ -8410,6 +8500,7 @@ def write_polymer_pools_sidecar(
         explicit_dp_species_by_pool=explicit_dp_species_by_pool,
         stale_topology=stale_topology,
         solver_gas_masks=solver_gas_masks,
+        stale_unreadable=stale_unreadable,
     )
     path = os.path.join(output_dir, filename)
     with open(path, "w", encoding="utf-8") as fh:
@@ -8920,7 +9011,8 @@ def build_polymer_moments_artifact(pool_registry,
                                    generation_v_poly_m3=None,
                                    explicit_dp_species_by_pool=None,
                                    stale_topology=False,
-                                   solver_gas_masks=None):
+                                   solver_gas_masks=None,
+                                   stale_unreadable=None):
     """Assemble the full schema-2.0 polymer moments artifact payload.
 
     Normative contract: docs/polymer_moments_format.md. The payload mirrors
@@ -9431,6 +9523,10 @@ def build_polymer_moments_artifact(pool_registry,
     # conventions keys (probed 2026-07-04).
     if stale_topology:
         conventions["stale_topology"] = True
+        # the species whose structure could not be read (they equal nothing,
+        # so they alone keep the artifact stale), by artifact label
+        if stale_unreadable:
+            conventions["stale_topology_unreadable_structures"] = list(stale_unreadable)
 
     # conventions.solver_gas_mask: each polymer reactor's live solver
     # gas_species_mask VERBATIM (True = gas), bound to that reactor (1-based,
