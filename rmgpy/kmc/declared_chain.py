@@ -933,93 +933,121 @@ class MonomerBinding:
 MONOMER_ISOMORPHISM_LIMIT = 4096
 
 
-def _folded_graph(graph, raised=None):
-    """A declaration graph with every plain explicit hydrogen (one single
-    bond to a heavy atom, no charge, radical or isotope) folded into its
-    owner's hydrogen count: (nodes, edges), nodes key -> (element, isotope,
-    charge, radical electrons, lone pairs, hydrogens, bond-order sum over the
-    unfolded neighbours).  Bond orders enter only through each atom's sum,
-    so Kekule and aromatic writings of one ring agree.  ``raised``: a bonded
-    pair whose order is raised by one (None when the pair is not bonded)."""
+def _declaration_molecule(graph, raised=None):
+    """An RMG molecule of a declaration graph (the provider's own
+    declaration -> rows -> RMG conversion, 1.5 bonds in one Kekule form) and
+    atom id -> declaration key.  ``raised``: a bonded pair whose order is
+    raised by one (None when the pair is not bonded)."""
+    from rmgpy.kmc.rmg_moves import molecule_from_rows
+
     atoms = {a.key: a for a in graph.atoms}
-    orders = {}
-    for bond in graph.bonds:
-        orders[frozenset(bond.atoms)] = float(bond.order)
+    bonds = _bonds_of(graph)
     if raised is not None:
-        pair = frozenset(raised)
-        if len(pair) != 2 or pair not in orders:
+        pair = tuple(sorted(raised))
+        if pair not in bonds:
             return None
-        orders[pair] += 1.0
-    neighbours = {k: {} for k in atoms}
-    for pair, order in orders.items():
-        x, y = sorted(pair)
-        neighbours[x][y] = order
-        neighbours[y][x] = order
+        bonds[pair] += 1.0
+    keys = tuple(sorted(atoms))
+    asm = _Assembly()
+    handles = asm.add_period(atoms, keys, {k: i for i, k in enumerate(keys)},
+                             _kekule(atoms, bonds, {}), 0, set(keys))
+    asm.check_valence("monomer relation")
+    rows, ids = asm.rows()
+    return molecule_from_rows(rows), {ids[h]: k for k, h in handles.items()}
 
-    def plain_h(k):
-        a = atoms[k]
-        if a.element != "H" or a.isotope != -1 or a.charge or a.radical_electrons or \
-                a.hydrogens or len(neighbours[k]) != 1:
+
+def _form_graph(molecule):
+    """One resonance form as a labelled graph: plain hydrogens (one single
+    bond to a heavy atom; no charge, radical or isotope) folded into their
+    owner's count; nodes carry (element, isotope, charge, radical electrons,
+    lone pairs, hydrogens), edges their bond order."""
+    import networkx as nx
+
+    def plain(atom):
+        if not atom.is_hydrogen() or atom.element.isotope != -1 or atom.charge or \
+                atom.radical_electrons or len(atom.bonds) != 1:
             return False
-        (owner, order), = neighbours[k].items()
-        return order == 1.0 and atoms[owner].element != "H"
+        (owner, bond), = atom.bonds.items()
+        return bond.order == 1 and not owner.is_hydrogen()
 
-    folded = {k for k in atoms if plain_h(k)}
-    nodes = {}
-    for k, a in atoms.items():
-        if k in folded:
+    folded = {atom for atom in molecule.atoms if plain(atom)}
+    g = nx.Graph()
+    for atom in sorted(molecule.atoms, key=lambda a: a.id):
+        if atom in folded:
             continue
-        hydrogens = a.hydrogens + sum(1 for n in neighbours[k] if n in folded)
-        total = sum(o for n, o in neighbours[k].items() if n not in folded)
-        nodes[k] = (a.element, a.isotope, a.charge, a.radical_electrons, a.lone_pairs,
-                    hydrogens, total)
-    edges = sorted(tuple(sorted(pair)) for pair in orders if not pair & folded)
-    return nodes, edges
+        g.add_node(atom.id, atom=(atom.element.symbol, atom.element.isotope, atom.charge,
+                                  atom.radical_electrons, atom.lone_pairs,
+                                  sum(1 for n in atom.bonds if n in folded)))
+    for atom in molecule.atoms:
+        for other, bond in atom.bonds.items():
+            if atom not in folded and other not in folded and atom.id < other.id:
+                g.add_edge(atom.id, other.id, order=float(bond.order))
+    return g
+
+
+def _resonance_forms(molecule) -> list:
+    """The declared form and every RMG resonance form (Kekule and aromatic
+    writings, charge separation), atom ids kept."""
+    return molecule.generate_resonance_structures(keep_isomorphic=False,
+                                                  filter_structures=False)
 
 
 def bind_monomer(unit, monomer) -> MonomerBinding:
     """The monomer backbone by the vinyl-addition relation: the monomer is
     the declared repeat unit (hydrogens included) with its head- and
-    tail-port atoms bonded and that bond's order raised by one.  Every
-    isomorphism (atoms matched with their hydrogens, charge, radical, lone
-    pairs and bond-order sum) must map the head and tail atoms onto the same
-    two monomer atoms; otherwise the backbone is ambiguous and refused.  No
-    such isomorphism (condensation, ring opening, a mismatched declaration):
-    the monomer has no backbone (refused by name)."""
-    import networkx as nx
+    tail-port atoms bonded and that bond's order raised by one.  Both are
+    built as RMG molecules and expanded into their resonance forms; every
+    isomorphism between any monomer form and any raised-unit form (atoms
+    matched on element, isotope, charge, radical electrons, lone pairs and
+    hydrogens; bonds on their order) must map the head and tail atoms onto
+    the same two monomer atoms, otherwise the backbone is ambiguous.  No
+    isomorphism (condensation, ring opening, a different isomer, a
+    mismatched declaration): the monomer has no backbone.  An open-shell
+    monomer is refused (resonance generation would reset its multiplicity).
+    Every refusal is named."""
     from networkx.algorithms import isomorphism
 
+    undefined = "refused:monomer_backbone_undefined: "
+    if any(a.radical_electrons for a in monomer.atoms) or int(monomer.multiplicity) != 1:
+        return MonomerBinding(None, "refused:monomer_backbone_open_shell: the monomer is "
+                                    "declared open-shell")
     ports = dict(unit.ports)
     head, tail = ports["head"].atom, ports["tail"].atom
-    undefined = "refused:monomer_backbone_undefined: "
     if head == tail:
         return MonomerBinding(None, undefined + "the head and tail ports are on one atom; "
                                                 "no vinyl-addition relation")
-    raised = _folded_graph(unit, (head, tail))
-    if raised is None:
-        return MonomerBinding(None, undefined + f"the head ({head}) and tail ({tail}) atoms are "
-                                                "not bonded; no vinyl-addition relation")
-    graphs = []
-    for nodes, edges in (_folded_graph(monomer), raised):
-        g = nx.Graph()
-        for key in sorted(nodes):
-            g.add_node(key, atom=nodes[key])
-        g.add_edges_from(edges)
-        graphs.append(g)
-    matcher = isomorphism.GraphMatcher(graphs[0], graphs[1],
-                                       node_match=lambda m, u: m["atom"] == u["atom"])
-    pairs, first = set(), None
-    for count, mapping in enumerate(matcher.isomorphisms_iter(), 1):
-        if count > MONOMER_ISOMORPHISM_LIMIT:
-            return MonomerBinding(None, "refused:monomer_backbone_ambiguous: more than "
-                                        f"{MONOMER_ISOMORPHISM_LIMIT} isomorphisms")
-        image = {u: m for m, u in mapping.items()}
-        pair = (image[head], image[tail])
-        pairs.add(frozenset(pair))
-        first = first or pair
+    try:
+        raised = _declaration_molecule(unit, (head, tail))
+        if raised is None:
+            return MonomerBinding(None, undefined + f"the head ({head}) and tail ({tail}) atoms "
+                                                    "are not bonded; no vinyl-addition relation")
+        declared = _declaration_molecule(monomer)
+    except BoundaryError as error:
+        return MonomerBinding(None, undefined + f"no valid closed form: {error}")
+    (unit_mol, unit_key), (mono_mol, mono_key) = raised, declared
+    unit_id = {k: a for a, k in unit_key.items()}
+    head_id, tail_id = unit_id[head], unit_id[tail]
+    mono_forms = [_form_graph(m) for m in _resonance_forms(mono_mol)]
+    unit_forms = [_form_graph(m) for m in _resonance_forms(unit_mol)]
+    pairs, first, count = set(), None, 0
+    for mono in mono_forms:
+        for form in unit_forms:
+            matcher = isomorphism.GraphMatcher(
+                mono, form, node_match=lambda m, u: m["atom"] == u["atom"],
+                edge_match=lambda m, u: m["order"] == u["order"])
+            for mapping in matcher.isomorphisms_iter():
+                count += 1
+                if count > MONOMER_ISOMORPHISM_LIMIT:
+                    return MonomerBinding(None, "refused:monomer_backbone_ambiguous: more than "
+                                                f"{MONOMER_ISOMORPHISM_LIMIT} isomorphisms")
+                image = {u: m for m, u in mapping.items()}
+                pair = (mono_key[image[head_id]], mono_key[image[tail_id]])
+                pairs.add(frozenset(pair))
+                first = first or pair
     if first is None:
         return MonomerBinding(None, undefined + "the monomer is not the repeat unit with its "
-                                                "head-tail bond raised by one")
+                                                "head-tail bond raised by one (any resonance "
+                                                "form)")
     if len(pairs) > 1:
         return MonomerBinding(None, "refused:monomer_backbone_ambiguous: the monomer's "
                                     "symmetry maps the head-tail pair onto "
@@ -1158,9 +1186,13 @@ class DeclaredChainProvider(BoundaryProvider):
         the stamped path."""
         if not metadata.monomer_backbone:
             binding = self.monomer_binding
-            raise MetadataError(binding.refusal if binding is not None else
-                                "refused:monomer_backbone_undefined: the declaration has no "
-                                "monomer_product")
+            if binding is None:
+                raise MetadataError("refused:monomer_backbone_undefined: the declaration has "
+                                    "no monomer_product")
+            if binding.keys is None:
+                raise MetadataError(binding.refusal)
+            raise MetadataError("refused:monomer_backbone_deleted: every bound backbone atom "
+                                "of the monomer was deleted")
         return {a: i for i, a in enumerate(metadata.monomer_backbone) if a in rows}
 
     def backbone_atoms(self, chain: ChainSpec) -> int:

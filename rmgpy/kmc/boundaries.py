@@ -185,12 +185,21 @@ class BoundaryMetadata:
             ids.update(port.cap_atom_ids)
         return frozenset(ids)
 
+    def carried(self, ports, coordinates, deleted=frozenset()) -> "BoundaryMetadata":
+        """The same participant's metadata with new ports and coordinates:
+        every other field kept (``dataclasses.replace``), the monomer
+        backbone annotation minus the ``deleted`` atom ids."""
+        stamp = self.monomer_backbone
+        if stamp is not None:
+            stamp = tuple(a for a in stamp if a not in deleted)
+        return replace(self, ports=tuple(ports), coordinates=tuple(coordinates),
+                       monomer_backbone=stamp)
+
     def relabel(self, mapping: Mapping[int, int]) -> "BoundaryMetadata":
-        return BoundaryMetadata(
-            self.provider,
-            tuple(p.relabel(mapping) for p in self.ports),
-            tuple((mapping[a], u, k) for a, u, k in self.coordinates),
-            None if self.monomer_backbone is None else
+        return replace(
+            self, ports=tuple(p.relabel(mapping) for p in self.ports),
+            coordinates=tuple((mapping[a], u, k) for a, u, k in self.coordinates),
+            monomer_backbone=None if self.monomer_backbone is None else
             tuple(mapping[a] for a in self.monomer_backbone))
 
     def check(self, rows: Mapping[int, tuple], where: str = "graph",
@@ -732,8 +741,8 @@ def apply_map(witness: Witness, record: ExtensionMap, *, support=None) -> Witnes
             coordinates.get(participant.index, ()))
         new_atoms = tuple(a for a in participant.atom_ids if a not in deleted) + tuple(
             members.get(participant.index, ()))
-        participants.append(Participant(participant.index, BoundaryMetadata(
-            metadata.provider, new_ports, new_coords), new_atoms))
+        participants.append(Participant(participant.index, metadata.carried(
+            new_ports, new_coords, deleted), new_atoms))
     counts = dict(witness.extension_counts)
     for step in record.steps:
         counts[step.port_key] = counts.get(step.port_key, 0) + 1
@@ -1984,8 +1993,8 @@ def reconstruct_end(witness: Witness, port_key, end: str, providers=None):
         ports = tuple(new_port if p.port_id == port.port_id else p for p in meta.ports)
         atoms = tuple(a for a in participant.atom_ids if a not in deleted) + ids
         participants.append(Participant(participant.index,
-                                        BoundaryMetadata(meta.provider, ports,
-                                                         meta.coordinates + fresh_coordinates),
+                                        meta.carried(ports, meta.coordinates + fresh_coordinates,
+                                                     set(deleted)),
                                         atoms))
     extended = Witness(reactants, products, tuple(participants), witness.id_base,
                        witness.extension_counts, witness.label)
