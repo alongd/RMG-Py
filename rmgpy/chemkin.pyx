@@ -212,6 +212,8 @@ def read_kinetics_entry(entry, species_dict, Aunits, Aunits_surf, Eunits):
         kinetics.update({
             'chebyshev coefficients': [],
             'efficiencies': {},
+            # what the whole entry is, whatever its line order (_entry_kinds)
+            'entry': _entry_kinds(lines[1:]),
         })
 
         # Note that the subsequent lines could be in any order
@@ -525,47 +527,65 @@ def _declared_species(name, species_dict):
     return species_dict.get(name.upper())
 
 
+def _entry_kinds(lines):
+    """What a reaction entry is by its auxiliary records, whatever their line
+    order: 'chebyshev' when it holds a TCHEB or PCHEB record of 2 values or a
+    CHEB record of 2 or more, 'plog' when it holds a PLOG record of 4 values.
+    Only records no efficiency can be (an efficiency is one number) count, so
+    no record named like a declared species decides it by its own reading."""
+    kinds = set()
+    for line in lines:
+        try:
+            records = _split_auxiliary_records(remove_comment_from_line(line)[0])
+        except ChemkinError:
+            continue                      # the line fails when it is read
+        for record in records:
+            name, slash, rest = record.partition('/')
+            n = len(rest[:-1].split()) if slash else 0
+            keyword = name.upper()
+            if (keyword in ('TCHEB', 'PCHEB') and n == 2) or (keyword == 'CHEB' and n >= 2):
+                kinds.add('chebyshev')
+            elif keyword == 'PLOG' and n == 4:
+                kinds.add('plog')
+    return frozenset(kinds)
+
+
 def _reading_context(kinetics):
-    """What the reaction has been read as so far: its collider ('+M', '(+...)'
-    or ''; unknown when not recorded), and whether it is already Chebyshev
-    (a TCHEB, PCHEB or CHEB record read), its Chebyshev degrees read, its
-    coefficients still short of degreeT x degreeP, already PLOG, or a surface
-    reaction."""
-    chebyshev = kinetics.get('chebyshev')
-    degrees = chebyshev is not None and chebyshev.degreeT > 0 and chebyshev.degreeP > 0
+    """The reaction a record is read in, independent of line order: its
+    collider from the reaction line ('+M' a third body, '(+M)' or
+    '(+species)' a pressure-dependent collider, '' none; unknown when not
+    recorded), whether the entry is Chebyshev (``_entry_kinds``), and
+    whether it is a surface reaction."""
     return {
         'collider': kinetics.get('collider'),
-        'chebyshev': chebyshev is not None,
-        'degrees': degrees,
-        'short': degrees and len(kinetics.get('chebyshev coefficients', ())) < chebyshev.degreeT * chebyshev.degreeP,
-        'plog': 'pressure-dependent arrhenius' in kinetics,
+        'chebyshev': 'chebyshev' in kinetics.get('entry', ()),
         'surface': 'surface arrhenius' in kinetics or 'sticking coefficient' in kinetics,
     }
 
 
 def _keyword_reading(keyword, values, context):
-    """Whether ``keyword/values/`` can be the keyword in the reaction's
-    ``context`` (``_reading_context``), and why not: (possible, reason).
+    """Whether ``keyword/values/`` can be the keyword for the reaction
+    (``_reading_context``), and why not: (possible, reason).  Only what the
+    Chemkin manual forbids for the reaction is removed, never by line order:
 
-    LOW, HIGH: 3 values; TROE: 3 or 4; SRI: 3 or 5; all four only on a
-    reaction with a pressure-dependent collider (+M) or (+species), not read
-    as Chebyshev or PLOG.  REV: 3 values, any reaction.  PLOG: 4 values, no
-    collider, not Chebyshev.  TCHEB, PCHEB: 2 values, no third body, not PLOG.
-    CHEB: no third body, not PLOG; the degrees (2 values or more) while none
-    are read, then a coefficient record (1 value or more) while the
-    coefficients are short.  COV, COVERAGE: 4 values, a surface reaction.
+    LOW, HIGH: 3 values; TROE: 3 or 4; SRI: 3 or 5; on a reaction with a
+    (+M) or (+species) collider, beside any other records (Chebyshev or PLOG
+    included).  REV: 3 values, any reaction.  PLOG: 4 values, no +M third
+    body (an optional (+M) collider allowed, as Cantera strips it).  TCHEB,
+    PCHEB: 2 values, no +M third body.  CHEB: 1 value or more, no +M third
+    body, on a Chebyshev entry.  COV, COVERAGE: 4 values, a surface reaction.
     STICK: none, a surface reaction.  DUP, DUPL, DUPLICATE, MOME, XSMI: none,
     any reaction.  (An unrecorded collider allows every collider rule.)"""
     n = len(values)
     collider = context['collider']
     falloff = collider is None or collider.startswith('(+')
-    no_collider = collider is None or collider == ''
+    third_body = collider == '+M'
     if keyword in ('LOW', 'HIGH', 'TROE', 'SRI'):
         counts = {'LOW': (3,), 'HIGH': (3,), 'TROE': (3, 4), 'SRI': (3, 5)}[keyword]
         if n not in counts:
             return False, '{0} takes {1} values, not {2}'.format(keyword, ' or '.join(map(str, counts)), n)
-        if not falloff or context['chebyshev'] or context['plog']:
-            return False, '{0} needs a reaction with a (+M) collider, not read as Chebyshev or PLOG'.format(keyword)
+        if not falloff:
+            return False, '{0} needs a reaction with a (+M) collider'.format(keyword)
         return True, 'the {0} parameters {1}'.format(keyword, values)
     if keyword == 'REV':
         if n != 3:
@@ -574,25 +594,21 @@ def _keyword_reading(keyword, values, context):
     if keyword == 'PLOG':
         if n != 4:
             return False, 'PLOG takes 4 values, not {0}'.format(n)
-        if not no_collider or context['chebyshev']:
-            return False, 'PLOG needs a reaction without a collider, not read as Chebyshev'
+        if third_body:
+            return False, 'PLOG needs a reaction without a +M third body'
         return True, 'the PLOG rate {0}'.format(values)
     if keyword in ('TCHEB', 'PCHEB', 'CHEB'):
-        if collider == '+M' or context['plog']:
-            return False, '{0} needs a reaction without a third body, not read as PLOG'.format(keyword)
+        if third_body:
+            return False, '{0} needs a reaction without a +M third body'.format(keyword)
         if keyword != 'CHEB':
             if n != 2:
                 return False, '{0} takes 2 values, not {1}'.format(keyword, n)
             return True, 'the {0} range {1}'.format(keyword, values)
-        if not context['degrees']:
-            if n < 2:
-                return False, 'the first CHEB record holds the degrees, 2 values or more, not {0}'.format(n)
-            return True, 'the Chebyshev degrees {0}'.format(values[:2])
-        if not context['short']:
-            return False, 'the Chebyshev coefficients are all read'
         if n < 1:
             return False, 'CHEB holds no value'
-        return True, 'the Chebyshev coefficients {0}'.format(values)
+        if not context['chebyshev']:
+            return False, 'CHEB needs a Chebyshev entry (a TCHEB, PCHEB or CHEB degrees record)'
+        return True, 'the Chebyshev record {0}'.format(values)
     if keyword in ('COV', 'COVERAGE', 'STICK'):
         count = 0 if keyword == 'STICK' else 4
         if n != count:
@@ -608,15 +624,15 @@ def _keyword_reading(keyword, values, context):
 
 def _efficiency_reading(name, values, context):
     """Whether ``name/values/`` can be a collider efficiency of the declared
-    species ``name``: one number, on a reaction with a third body (+M) or a
-    pressure-dependent collider, not read as Chebyshev or PLOG (RMG's
-    Chebyshev and PLOG kinetics carry no efficiencies; its writer writes
-    efficiencies for third-body, Lindemann and Troe kinetics only)."""
+    species ``name``: one number, on a reaction with a +M third body or a
+    (+M) / (+species) collider, not on a Chebyshev entry (RMG's Chebyshev
+    kinetics carry no efficiencies, and its writer writes efficiencies for
+    third-body, Lindemann and Troe kinetics only)."""
     collider = context['collider']
     if len(values) != 1 or not _is_float(values[0]):
         return False, 'an efficiency is one number, not {0!r}'.format(' '.join(values))
-    if collider == '' or context['chebyshev'] or context['plog']:
-        return False, 'an efficiency needs a third body or a (+M) collider, on a reaction not read as Chebyshev or PLOG'
+    if collider == '' or context['chebyshev']:
+        return False, 'an efficiency needs a third body or a (+M) collider, on an entry that is not Chebyshev'
     return True, 'the efficiency {0} of species {1}'.format(float(values[0]), name)
 
 
@@ -807,12 +823,20 @@ def _read_kinetics_record(line, reaction, species_dict, Eunits, kunits, klow_uni
     elif line.strip() == 'STICK':
         # Convert what we thought was a surface arrhenius into StickingCoefficient
         k = kinetics['surface arrhenius']
+        # carrying every field the earlier records set (COV before STICK: the coverage dependence)
         kinetics['sticking coefficient'] = _kinetics.StickingCoefficient(
             A=k.A.value,
             n=k.n,
             Ea=k.Ea,
             T0=k.T0,
+            Tmin=k.Tmin,
+            Tmax=k.Tmax,
+            Pmin=k.Pmin,
+            Pmax=k.Pmax,
+            comment=k.comment,
         )
+        # the coverage entries as a COV record after STICK stores them (the constructor would wrap them)
+        kinetics['sticking coefficient'].coverage_dependence.update(k.coverage_dependence)
         del kinetics['surface arrhenius']
 
     else:
@@ -1386,19 +1410,37 @@ def _is_end_keyword(line):
 _BLOCK_HEADERS = ('ELEMENTS', 'ELEM', 'SPECIES', 'SPEC', 'SITE', 'THERMO', 'THERM', 'THER', 'REACTIONS', 'REAC')
 
 
+def _is_thermo_entry_first_line(text):
+    """Whether a line is the first line of a NASA thermo entry by its full
+    layout: the name field (columns 1-18), the element fields (columns
+    25-44: each blank, or a symbol of one or two letters, or 0, with a blank
+    or numeric count), the phase (column 45: G, L or S) and 1 in column 80."""
+    if len(text) < 80 or text[79] != '1' or text[44].upper() not in 'GLS':
+        return False
+    for i in (24, 29, 34, 39):
+        element, count = text[i:i + 2].strip(), text[i + 2:i + 5].strip()
+        if element and not (element.isalpha() or element == '0'):
+            return False
+        if count and not _is_float(count):
+            return False
+    return True
+
+
 def _opens_block(line):
-    """Whether a Chemkin line opens a block: its first token (comments
-    removed) is a block header in any case (SITE also as ``SITE/<name>/``),
-    and it is no line of a thermo entry (those carry 1-4 in column 80: an
-    entry of a species named REAC opens nothing)."""
+    """Whether a Chemkin line opens a block: decided by its first token
+    (comments removed), a block header in any case (SITE also as
+    ``SITE/<name>/``), whatever column 80 holds, unless the line is the
+    first line of a thermo entry by its full layout
+    (``_is_thermo_entry_first_line``: an entry of a species named REAC opens
+    nothing)."""
     text = remove_comment_from_line(line)[0]
     tokens = text.split()
     if not tokens:
         return False
-    if len(text) >= 80 and text[79] in '1234':
-        return False
     head = tokens[0].upper()
-    return head in _BLOCK_HEADERS or head.startswith('SITE/')
+    if not (head in _BLOCK_HEADERS or head.startswith('SITE/')):
+        return False
+    return not _is_thermo_entry_first_line(text)
 
 
 def _unterminated_block(header, line):
