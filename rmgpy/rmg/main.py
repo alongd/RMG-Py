@@ -2337,10 +2337,13 @@ class RMG(util.Subject):
                     engine_sig = getattr(
                         engine, "core_topology_signature", None)
                     try:
-                        sidecar_stale_topology = (
-                            engine_sig is None
-                            or engine_sig != core_topology_signature(
-                                core_species, core_reactions))
+                        current_sig = core_topology_signature(core_species, core_reactions)
+                        undecidable = (engine_sig.undecidable_species(current_sig)
+                                       if engine_sig is not None else [])
+                        if undecidable:
+                            raise RuntimeError("polymer_pools.json: cannot compare core topology for %s: "
+                                               "resonance expansion is unavailable" % ", ".join(undecidable))
+                        sidecar_stale_topology = engine_sig is None or engine_sig != current_sig
                     except (TypeError, ValueError):
                         sidecar_stale_topology = True
                     solver_mask = getattr(engine, "gas_species_mask", None)

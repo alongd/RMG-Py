@@ -8301,7 +8301,12 @@ class _CoreStructure(object):
         self.molecules = [m.copy(deep=True) for m in molecules]
 
     def same_as(self, other):
-        return isinstance(other, _CoreStructure) and same_structure(self.molecules, other.molecules)
+        return isinstance(other, _CoreStructure) and same_structure(self.molecules, other.molecules) is True
+
+    def identity_verdict(self, other):
+        if not isinstance(other, _CoreStructure):
+            return False
+        return same_structure(self.molecules, other.molecules)
 
 
 class _UnreadableStructure(object):
@@ -8357,6 +8362,17 @@ class CoreTopologySignature(object):
 
     def __ne__(self, other):
         return not self.__eq__(other)
+
+    def undecidable_species(self, other):
+        """Labels whose identity needs resonance expansion RMG cannot do."""
+        if not isinstance(other, CoreTopologySignature):
+            return []
+        undecidable = []
+        for (label, index, here), (other_label, other_index, there) in zip(self.species, other.species):
+            if label == other_label and index == other_index and \
+                    here.identity_verdict(there) is _species_identity.UNDECIDABLE:
+                undecidable.append(f"{label}({index})")
+        return undecidable
 
 
 def core_topology_signature(core_species, core_reactions):
