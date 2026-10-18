@@ -1221,3 +1221,15 @@ def test_a_header_of_other_run_conditions_is_refused(tmp_path):
     with pytest.raises(kr.RunError, match="temperature"):
         kr.load_mom(mom, [0.0, 1.0], deck_sha256=sha)
     assert kr.load_mom(mom, [0.0, 1.0], deck_sha256=sha, temperature_K=700.0)[1]["header"]["run"]["horizon_s"] == 1.0
+
+
+@pytest.mark.parametrize("field, value", [("horizon_s", float("nan")), ("horizon_s", float("inf")),
+                                          ("temperature_K", float("nan")), ("temperature_K", float("inf"))])
+def test_a_non_finite_header_value_is_refused(tmp_path, field, value):
+    """Spar r137 item 5."""
+    header = header_for(tmp_path, "d" * 64)
+    header["run"][field] = value
+    mom = tmp_path / "mom.json"
+    mom.write_text(json.dumps({"header": header, "entries": [{"time_s": 1.0, "quantities": {"mu0_mol": 1.0}}]}))
+    with pytest.raises(kr.RunError, match="finite"):
+        kr.load_mom(mom, [0.0, 1.0], deck_sha256="d" * 64, temperature_K=value if field == "temperature_K" else 700.0)

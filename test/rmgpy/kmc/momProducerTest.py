@@ -438,7 +438,7 @@ def test_a_booking_that_does_not_close_exports_no_mass(setup):
     out = setup["tmp"] / "out"
     produce(setup, out)
     mu = declared(setup["spec"])
-    x = 1e-3                        # mu0 stays positive to 45 s
+    x = 1e-4                        # the pool's variance stays positive to 45 s
 
     def main(t):
         return mu[0] - x * t * t, mu[1] - 3 * x * t * t, mu[2] - 9 * x * t * t
@@ -1268,14 +1268,14 @@ def test_moments_within_the_mom_floors_are_clamped(tmp_path):
     assert q["whole_Mw_g_mol"] == pytest.approx(q["whole_Mn_g_mol"], rel=1e-12)
 
 
-def test_moments_beyond_the_mom_floors_withhold_whole_mn_and_mw_only(tmp_path):
-    """A variance far below zero: whole Mn / Mw withheld with the reason, every
-    other quantity kept."""
+def test_a_pool_variance_beyond_the_mom_census_tolerance_is_corruption(tmp_path):
+    """r137 item 4: a pool whose mu0 mu2 - mu1^2 is far below MoM's variance
+    census tolerance holds no distribution: corruption, the mass and the
+    whole keys are withheld, the species rows kept."""
     q, d = _boundary_run(tmp_path, (1.0, 1.0, 0.5))
-    assert "whole_Mn_g_mol" not in q and "whole_Mw_g_mol" not in q
-    assert {"whole_mu0_mol", "whole_mu1_mol", "whole_mu2_mol", "polymer_derived_molecules_mol", "species_mol",
-            "polymer_condensed_mass_g"} <= set(q)
-    assert "variance" in d["whole_withheld"]["whole_Mw_g_mol"]
+    for key in ("polymer_condensed_mass_g", *WHOLE):
+        assert key not in q, key
+    assert "species_mol" in q and "variance" in d["polymer_withheld"]
 
 
 def test_the_mom_file_carries_the_flags_and_the_conventions_digest(setup):
@@ -1331,10 +1331,12 @@ def _ethylene_setup(tmp_path):
     return s, out, declared(s["spec"])[0] / 2
 
 
-def test_pool_chains_that_are_a_declared_species_are_booked_as_it(tmp_path):
-    """Spar r136: PE DP1 (ethane) + DP6; the DP1 chain loses H2 into the
-    feature pool, which then holds ethylene, the declared monomer.  Booked as
-    monomer_product, not as a polymer chain: the counts match kMC's."""
+def test_a_defect_pool_matching_a_declared_species_is_withheld_not_booked(tmp_path):
+    """Spar r136/r137: PE DP1 (ethane) + DP6; the DP1 chain loses H2 into the
+    feature pool, pinned at DP 1 with ethylene's formula.  A defect pool keeps
+    no structure, so its chains are not booked as the declared monomer by
+    mass alone (r137 item 1): the polymer rows and the monomer row are
+    withheld, never counted as polymer."""
     s, out, u = _ethylene_setup(tmp_path)
     m_h2 = mw("[H][H]")
     ethylene = Molecule(smiles="C=C").to_adjacency_list()
@@ -1352,13 +1354,10 @@ def test_pool_chains_that_are_a_declared_species_are_booked_as_it(tmp_path):
                    ("C2H4(4)", ethylene, lambda t: 0.0)])
     produce(s, out, end=10.0, snapshots=2, mode="convert")
     q = mom_entries(out)[-1]["quantities"]
-    kmc = kmc_quantities(s["spec"], ["C" * 12, "C=C", "[H][H]"])
     for key in ("polymer_condensed_mass_g", "polymer_derived_molecules_mol", *WHOLE):
-        assert q[key] == pytest.approx(kmc[key], rel=1e-12), key
-    assert q["species_mol"]["monomer_product"] == pytest.approx(u, rel=1e-12)
-    assert q["species_mol"]["monomer_product"] == pytest.approx(kmc["species_mol"]["monomer_product"], rel=1e-12)
-    a, e = masses()
-    assert q["whole_Mn_g_mol"] == pytest.approx(6 * a + e, rel=1e-12)
+        assert key not in q, key
+    assert "monomer_product" not in q["species_mol"] and "H2" in q["species_mol"]
+    assert "structure" in json.loads((out / "mom_diagnostics.json").read_text())[-1]["polymer_withheld"]
 
 
 def test_a_pool_that_may_hold_a_declared_species_unpinned_is_withheld(tmp_path):
@@ -1436,20 +1435,22 @@ def test_a_negative_whole_mu1_is_valid_and_mn_is_exported(tmp_path):
     assert q["whole_Mn_g_mol"] == pytest.approx((6 * a + e) / 2, rel=1e-12)
 
 
-def test_a_pool_with_no_chains_and_units_left_is_corrupt(tmp_path):
-    """Spar r136 item 4: the pool ends at (0, 6, 36) u; the booking closes
-    through the ledger, but chains without a count are corruption."""
+@pytest.mark.parametrize("keep_mu1", [True, False], ids=["0_6_36", "0_0_36"])
+def test_a_pool_with_no_chains_and_units_left_is_corrupt(tmp_path, keep_mu1):
+    """Spar r136 item 4 / r137 item 4: the pool ends at (0, 6, 36) u, or at
+    (0, 0, 36) u whose variance is zero; chains without a count are
+    corruption."""
     s = make_setup(tmp_path, {6: 1})
     out = tmp_path / "out"
     produce(s, out, end=10.0, snapshots=2)
     mu = declared(s["spec"])
-    write_run(out, times=[0.0, 10.0], pools=[(LABEL, lambda t: mu if t == 0.0 else (0.0, mu[1], mu[2]), 0.0)],
-              gas=TRACE)
+    end = (0.0, mu[1] if keep_mu1 else 0.0, mu[2])
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, lambda t: mu if t == 0.0 else end, 0.0)], gas=TRACE)
     produce(s, out, end=10.0, snapshots=2, mode="convert")
     q = mom_entries(out)[-1]["quantities"]
     for key in ("polymer_condensed_mass_g", "polymer_conversion", *WHOLE):
         assert key not in q, key
-    assert "corrupt" in json.loads((out / "mom_diagnostics.json").read_text())[-1]["polymer_withheld"]
+    assert "units without chains" in json.loads((out / "mom_diagnostics.json").read_text())[-1]["polymer_withheld"]
 
 
 def test_a_ledger_just_above_its_tolerance_withholds_mu2_and_mw(setup):
@@ -1494,3 +1495,195 @@ def test_an_isomer_of_a_pool_chain_is_not_a_candidate(tmp_path):
     q = mom_entries(out)[-1]["quantities"]
     assert "polymer_derived_molecules_mol" in q and "isobutane" in q["species_mol"]
     assert json.loads((out / "producer.json").read_text())["read"]["pool_species_candidates"] == {LABEL: []}
+
+
+# --------------------------------------------------------------------------
+# I-170 rework 3 (r137)
+# --------------------------------------------------------------------------
+def _declared_graph(smiles):
+    """A small-species declaration of a closed-shell hydrocarbon from SMILES."""
+    mol = Molecule(smiles=smiles)
+    heavy = [x for x in mol.atoms if not x.is_hydrogen()]
+    key = {x: f"c{k}" for k, x in enumerate(heavy)}
+    atoms = [S._atom(key[x], hydrogens=sum(1 for y in x.bonds if y.is_hydrogen())) for x in heavy]
+    bonds, seen = [], set()
+    for x in heavy:
+        for y, bond in x.bonds.items():
+            if y.is_hydrogen() or (y, x) in seen:
+                continue
+            seen.add((x, y))
+            bonds.append({"atoms": [key[x], key[y]], "order": int(bond.order)})
+    return {"graph": {"atoms": atoms, "bonds": bonds, "electronic_state": {"multiplicity": 1}},
+            "disposition": "mobile"}
+
+
+def _pool_run(tmp_path, small, pools_at_10, *, gas, monomer=None, main_empty=False):
+    """Deck: two DP-10 chains.  At 10 s the main pool has given chains to the
+    other pools (``pools_at_10``: (label, (mu0, mu1, mu2) at 10 s or a function
+    of the deck's chain count giving them, defect)); it keeps its other chains
+    at DP 10, or none (``main_empty``: the other pools then take every chain,
+    so the end-group ledger stays zero).  The main
+    pool keeps H caps, so every n-alkane declared is a candidate of it: a
+    species row it may hold stands only when it is provably empty."""
+    kw = {"monomer": monomer} if monomer is not None else {}
+    s = make_setup(tmp_path, {10: 2}, small=small, **kw)
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    mu = declared(s["spec"])
+    pools_at_10 = [(label, m(mu[0]) if callable(m) else m, d) for label, m, d in pools_at_10]
+    gone = sum(m[0] for _l, m, _d in pools_at_10)
+    assert not main_empty or gone == pytest.approx(mu[0], rel=1e-15)
+    left = 0.0 if main_empty else mu[0] - gone
+    pools = [(LABEL, lambda t: mu if t == 0.0 else (left, 10 * left, 100 * left), 0.0)]
+    for label, m, d in pools_at_10:
+        pools.append((label, (lambda m: lambda t: (0.0, 0.0, 0.0) if t == 0.0 else m)(m), d))
+    write_run(out, times=[0.0, 10.0], pools=pools, gas=TRACE + list(gas))
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    return s, out, mom_entries(out)[-1]["quantities"], json.loads((out / "mom_diagnostics.json").read_text())[-1]
+
+
+BUTANE_GAS = [("C4H10(4)", Molecule(smiles="CCCC").to_adjacency_list(), lambda t: 0.0)]
+Y = 1e-3
+
+
+def test_a_pinned_pool_with_a_known_structure_is_booked_as_the_species(tmp_path):
+    """A pool without defect pinned at DP 2 (n-butane, declared): booked."""
+    s, out, q, d = _pool_run(tmp_path, {"butane": S.BUTANE}, [(DAUGHTER, lambda n: (n, 2 * n, 4 * n), 0.0)],
+                                gas=BUTANE_GAS, main_empty=True)
+    assert q["species_mol"]["butane"] == declared(s["spec"])[0]
+    assert q["polymer_derived_molecules_mol"] == 0.0
+    assert d["pools_booked_as_species"] == {DAUGHTER: ["butane", 2]}
+
+
+@pytest.mark.parametrize("moments", [lambda n: (n, 2 * n, 5 * n), lambda n: (n, 2 * n + 300 * FLOOR, 4 * n + 1200 * FLOOR)],
+                         ids=["mean_2_polydisperse", "off_by_100_floors"])
+def test_a_pool_not_pinned_at_the_species_dp_is_not_booked(tmp_path, moments):
+    """Survivors pinned-mu2-ignored and pinned-loose: a pool whose mean is 2
+    but whose mu2 is not 4 mu0, and one a hundred floors off DP 2."""
+    _s, out, q, d = _pool_run(tmp_path, {"butane": S.BUTANE}, [(DAUGHTER, moments, 0.0)], gas=BUTANE_GAS,
+                                main_empty=True)
+    assert "butane" not in q["species_mol"] and "polymer_derived_molecules_mol" not in q
+    assert d["pools_booked_as_species"] == {}
+
+
+def test_a_mass_a_tenth_of_a_dp_off_is_not_a_candidate(setup):
+    """Survivor mass-tol-loose: isobutane (C4H10) is 0.07 DP off the H2-loss
+    pool's DP-2 chain mass (C4H8); not a candidate, the rows stay."""
+    (setup["tmp"] / "iso").mkdir()
+    s = make_setup(setup["tmp"] / "iso", BASE, small={"isobutane": _declared_graph("CC(C)C")})
+    out = setup["tmp"] / "iso" / "out"
+    produce(s, out)
+    mu = declared(s["spec"])
+    m_h2 = mw("[H][H]")
+    y = 1e-3
+
+    def main(t):
+        return mu[0] - y * t * t, mu[1] - 15 * y * t * t, mu[2] - 250 * y * t * t
+
+    def feature(t):
+        return y * t * t, 15 * y * t * t, 250 * y * t * t
+
+    write_run(out, times=PROFILE_T, pools=[(LABEL, main, 0.0), (LABEL + "_mod", feature, m_h2)],
+              gas=[("H(1)", ADJ["H"], lambda t: 0.0), ("H2(2)", ADJ["H2"], lambda t: y * t * t),
+                   ("C4H10(4)", Molecule(smiles="CC(C)C").to_adjacency_list(), lambda t: 0.0)])
+    manifest = produce(s, out, mode="convert")
+    assert manifest["read"]["pool_species_candidates"][LABEL + "_mod"] == []
+    q = mom_entries(out)[-1]["quantities"]
+    assert "polymer_derived_molecules_mol" in q and "isobutane" in q["species_mol"]
+
+
+def test_a_pinned_defect_pool_is_never_booked_by_mass(tmp_path):
+    """Spar r137 item 1: an H2-loss DP-2 pool (C4H8) with 1-butene declared:
+    the pool may hold 2-butene; withheld, not booked as 1-butene."""
+    butene = [("C4H8(4)", Molecule(smiles="C=CCC").to_adjacency_list(), lambda t: 0.0)]
+    _s, out, q, d = _pool_run(tmp_path, {"butene": _declared_graph("C=CCC")},
+                              [(LABEL + "_mod", (Y, 2 * Y, 4 * Y), mw("[H][H]"))], gas=butene)
+    assert "butene" not in q["species_mol"] and "polymer_derived_molecules_mol" not in q
+    assert d["pools_booked_as_species"] == {} and "structure" in d["polymer_withheld"]
+
+
+def test_a_species_row_needs_every_contributing_pool_booked_or_empty(tmp_path):
+    """Spar r137 item 2: one pool booked as butane next to another that may
+    hold butane unpinned: the butane row is withheld, never a partial count."""
+    pools = [(DAUGHTER, lambda n: (Y, 2 * Y, 4 * Y), 0.0),
+             (DAUGHTER + "_b", lambda n: (n - Y, 2.5 * (n - Y), 6.5 * (n - Y)), 0.0)]
+    _s, out, q, d = _pool_run(tmp_path, {"butane": S.BUTANE}, pools, gas=BUTANE_GAS, main_empty=True)
+    assert "butane" not in q["species_mol"] and "H" in q["species_mol"]
+
+
+def test_a_species_row_stands_when_the_blocked_pool_cannot_hold_it(tmp_path):
+    """Spar r137 item 2: the butane pool is booked, the main pool is empty;
+    an H2-loss pool (formula of ethylene, the
+    declared monomer) is blocked but cannot hold butane: the butane row is
+    exported in full, the monomer row and the polymer rows are withheld."""
+    gas = BUTANE_GAS + [("C2H4(5)", Molecule(smiles="C=C").to_adjacency_list(), lambda t: 0.0)]
+    pools = [(DAUGHTER, lambda n: (Y, 2 * Y, 4 * Y), 0.0), (LABEL + "_mod", lambda n: (n - Y,) * 3, mw("[H][H]"))]
+    _s, out, q, d = _pool_run(tmp_path, {"butane": S.BUTANE}, pools, gas=gas, monomer=S.ETHYLENE_GRAPH,
+                              main_empty=True)
+    assert q["species_mol"]["butane"] == pytest.approx(Y, rel=1e-12)
+    assert "monomer_product" not in q["species_mol"] and "polymer_derived_molecules_mol" not in q
+
+
+def test_pool_chains_are_classified_at_t0_too(tmp_path, monkeypatch):
+    """Spar r137 item 3: PE DP1 + DP6 with ethane declared.  kMC refuses the
+    declaration (a declared species may not be an initial chain), and so does
+    the producer; with that refusal bypassed, the t = 0 row withholds the
+    rows the DP-1 chains would otherwise put in the polymer class."""
+    ethane = _declared_graph("CC")
+    s = make_setup(tmp_path, {1: 1, 6: 1}, small={"ethane": ethane})
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    mu = declared(s["spec"])
+    gas = TRACE + [("C2H6(4)", Molecule(smiles="CC").to_adjacency_list(), lambda t: 0.0)]
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, drift(mu), 0.0)], gas=gas)
+    with pytest.raises(mp.ProducerError, match="initial chain"):
+        produce(s, out, end=10.0, snapshots=2, mode="convert")
+    monkeypatch.setattr(mo, "refuse_initial_species_overlap", lambda *args, **kwargs: None)
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    q0 = mom_entries(out)[0]["quantities"]
+    for key in ("polymer_condensed_mass_g", "polymer_derived_molecules_mol", *WHOLE):
+        assert key not in q0, key
+    assert "ethane" not in q0["species_mol"]
+
+
+def test_a_trace_population_is_not_corruption(setup):
+    """Spar r137 item 4: a monodisperse DP-30 trace (5e-15, 1.5e-13, 4.5e-12)
+    mol, mu0 under the floor, is a valid state; (0, 6, 36) is not."""
+    out = setup["tmp"] / "out"
+    produce(setup, out, end=10.0, snapshots=2)
+    mu = declared(setup["spec"])
+    trace = (5e-15, 1.5e-13, 4.5e-12)
+    write_run(out, times=[0.0, 10.0],
+              pools=[(LABEL, lambda t: mu, 0.0), (DAUGHTER, lambda t: (0.0, 0.0, 0.0) if t == 0.0 else trace, 0.0)],
+              gas=TRACE)
+    produce(setup, out, end=10.0, snapshots=2, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    assert {"polymer_condensed_mass_g", "polymer_derived_molecules_mol", *WHOLE} <= set(q)
+
+
+def test_an_h2_loss_transfer_does_not_make_a_pool_light(setup):
+    """r137 item 6: a volatile ejection that moves H2 into the defect pool has
+    eject_units = M(H2) / a but moment units a_mass - (d_dst - d_src) / a_src
+    = 0 (polymer.pyx:4110-4113): the DP is unchanged, the pool is not light."""
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    mu = declared(setup["spec"])
+    m_h2 = mw("[H][H]")
+    a, _e = masses()
+    y = 1e-3
+    proxy = proxy_of()
+
+    def main(t):
+        return mu[0] - y * t * t, mu[1] - 15 * y * t * t, mu[2] - 250 * y * t * t
+
+    def feature(t):
+        return y * t * t, 15 * y * t * t, 250 * y * t * t
+
+    rows = [{"family": "toy_h_abstraction", "admitted": True, "reactants": [proxy], "products": [proxy, "X0"],
+             "reversible": False, "archetype": "volatile_ejection/1",
+             "extra": {"params": {"eject_units": m_h2 / a}, "src_pool": LABEL, "dst_pool": LABEL + "_mod"}}]
+    write_run(out, times=PROFILE_T, pools=[(LABEL, main, 0.0), (LABEL + "_mod", feature, m_h2)],
+              gas=[("H(1)", ADJ["H"], lambda t: 0.0), ("H2(2)", ADJ["H2"], lambda t: y * t * t)], rows=rows)
+    produce(setup, out, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    assert "polymer_derived_molecules_mol" in q and "polymer_condensed_mass_g" in q
