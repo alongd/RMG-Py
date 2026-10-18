@@ -485,11 +485,13 @@ def _given_forms(participant) -> Optional[list]:
 def _resonance_forms(forms: list) -> list:
     """Every resonance structure of ``forms``, generated on copies (the
     participant is never touched; a form RMG cannot expand stays as given)."""
+    from rmgpy.molecule import resonance
+
     out = []
     for form in forms:
         copy = form.copy(deep=True)
         try:
-            out.extend(copy.generate_resonance_structures(keep_isomorphic=False))
+            out.extend(resonance.generate_resonance_structures(copy, keep_isomorphic=False))
         except Exception:  # an unexpandable form is compared as given
             out.append(copy)
     return out
@@ -514,7 +516,12 @@ def same_species(first, second) -> bool:
     the original forms first.  Everything runs on copies: the participants'
     forms and atom order are never changed.  Participants that are neither
     Species nor Molecules fall back to identity or their own
-    ``is_isomorphic``."""
+    ``is_isomorphic``.
+
+    Limit: RMG returns a charged structure without expanding its resonance
+    forms (``rmgpy.molecule.resonance.generate_resonance_structures``), so
+    two forms of one charged radical (``[CH2]C=C[NH3+]`` and
+    ``C=C[CH][NH3+]``) compare as given and are two species here (ssa 1)."""
     if first is second:
         return True
     a, b = _given_forms(first), _given_forms(second)
