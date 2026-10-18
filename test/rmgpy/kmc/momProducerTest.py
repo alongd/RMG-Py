@@ -128,7 +128,7 @@ def family_rows(admitted, label=LABEL):
 
 
 def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABEL, end_groups=("[H]", "[H]"),
-              mass_override=None, duplicate=None, extra_columns=(), n2=lambda t: 1.0):
+              mass_override=None, duplicate=None, extra_columns=(), n2=lambda t: 1.0, gas_reactions=()):
     """A MoM output directory under ``out/rmg``.
 
     ``pools``: [(label, f(t) -> (mu0, mu1, mu2), defect_g_mol)]; ``gas``:
@@ -137,7 +137,10 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     toy_homolysis row); ``rows``: the reaction rows themselves (dicts with
     family, admitted, reactants, products, reversible and optionally
     cantera_null / expanded: no Cantera index / a MultiArrhenius the Chemkin
-    writer expands without its family annotation)."""
+    writer expands without its family annotation; A: the rate coefficient's
+    A, default 1; no_chemkin: the row has no Chemkin entry);
+    ``gas_reactions``: Chemkin-only reactions (reactants, products,
+    reversible, A)."""
     rmg = out / "rmg"
     for sub in ("solver", "chemkin"):
         (rmg / sub).mkdir(parents=True, exist_ok=True)
@@ -177,6 +180,11 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     if rows is None:
         rows = family_rows({"toy_homolysis": (1, 1)} if admitted is None else admitted, label)
     reactions, annotated, k, c = [], ["REACTIONS    KCAL/MOLE   MOLES", ""], 0, 0
+    pool_labels = {p for p, _f, _d in pools}
+
+    def is_proxy(x):
+        return x.rsplit("(", 1)[0] in pool_labels and x.endswith(")")
+
     for r in rows:
         arrow = "<=>" if r["reversible"] else "=>"
         equation = " + ".join(r["reactants"]) + f" {arrow} " + " + ".join(r["products"])
@@ -185,21 +193,27 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
         else:
             row = {"id": f"r{k}", "cantera": {"index": k, "equation": equation}}
             k += 1
-        row.update({"kinetics": {"reversible": r["reversible"]}, "reactants": list(r["reactants"]),
-                    "products": list(r["products"]),
-                    "proxy_reactants": [x for x in r["reactants"] if x == proxy],
-                    "proxy_products": [x for x in r["products"] if x == proxy],
+        big_a = r.get("A", 1.0)
+        row.update({"kinetics": {"A": big_a, "n": 0.0, "Ea": 0.0, "reversible": r["reversible"]},
+                    "reactants": list(r["reactants"]), "products": list(r["products"]),
+                    "proxy_reactants": [x for x in r["reactants"] if is_proxy(x)],
+                    "proxy_products": [x for x in r["products"] if is_proxy(x)],
                     "refused": not r["admitted"]})
         if not r["admitted"]:
             row["refused_reason"] = "conduit-deferred"
         reactions.append(row)
         line = "+".join(r["reactants"]) + arrow + "+".join(r["products"])
-        for _ in range(2 if r.get("expanded") else 1):
+        for _ in range(0 if r.get("no_chemkin") else 2 if r.get("expanded") else 1):
             c += 1
             annotated.append(f"! Reaction index: Chemkin #{c}; RMG #{len(reactions)}")
             if not r.get("expanded"):
                 annotated.append(f"! Template reaction: {r['family']}")
-            annotated += [f"{line:<51} 1.0 0.0 0.0"] + (["DUPLICATE"] if r.get("expanded") else []) + [""]
+            annotated += [f"{line:<51} {big_a} 0.0 0.0"] + (["DUPLICATE"] if r.get("expanded") else []) + [""]
+    for j, g in enumerate(gas_reactions):
+        c += 1
+        line = "+".join(g["reactants"]) + ("<=>" if g["reversible"] else "=>") + "+".join(g["products"])
+        annotated += [f"! Reaction index: Chemkin #{c}; RMG #{len(reactions) + 1 + j}",
+                      "! Template reaction: toy_h_abstraction", f"{line:<51} {g['A']} 0.0 0.0", ""]
     (rmg / "chemkin" / "polymer_pools.json").write_text(json.dumps(
         {"schema_version": "2.0", "pools": pool_rows, "reactions": reactions,
          "conventions": {"stale_topology": False}}))
@@ -213,9 +227,17 @@ def declared(spec):
 ZERO_GAS = [("H(1)", ADJ["H"], lambda t: 0.0), ("H2(2)", ADJ["H2"], lambda t: 0.0)]
 
 
-def constant_run(out, spec, times=(0.0, 10.0, 20.0, 40.0, 45.0), **kw):
+def drift(mu):
+    """Pool moments whose chain count grows (scission-like) at fixed mu1: the
+    profile moves, the booked mass (ledger) stays 1000 g."""
+    return lambda t: (mu[0] * (1 + 1e-3 * t), mu[1], mu[2])
+
+
+def constant_run(out, spec, times=(0.0, 10.0, 20.0, 40.0, 45.0), flat=False, **kw):
+    """A run whose mass stays put; ``flat``: nothing in the profile moves."""
     mu = declared(spec)
-    write_run(out, times=list(times), pools=[(LABEL, lambda t: mu, 0.0)], gas=ZERO_GAS, **kw)
+    write_run(out, times=list(times), pools=[(LABEL, (lambda t: mu) if flat else drift(mu), 0.0)],
+              gas=ZERO_GAS, **kw)
 
 
 PROFILE_T = [0.0, 10.0, 20.0, 40.0, 45.0]       # the solver's last step passes the end time
@@ -229,7 +251,7 @@ def interpolant(f, t):
     raise AssertionError(t)
 
 
-def moving_run(out, spec):
+def moving_run(out, spec, **kw):
     """Main pool loses mass to H2 and chains to a spawned daughter pool;
     total mass closes exactly (linear in the columns, so also between rows)."""
     mu = declared(spec)
@@ -245,7 +267,7 @@ def moving_run(out, spec):
         return d * t * t, 5 * d * t * t, 40 * d * t * t
 
     write_run(out, times=PROFILE_T, pools=[(LABEL, main, 0.0), (DAUGHTER, daughter, 0.0)],
-              gas=[("H(1)", ADJ["H"], lambda t: 0.0), ("H2(2)", ADJ["H2"], lambda t: h * t * t)])
+              gas=[("H(1)", ADJ["H"], lambda t: 0.0), ("H2(2)", ADJ["H2"], lambda t: h * t * t)], **kw)
     return main, daughter, h, m_h2
 
 
@@ -848,7 +870,7 @@ def test_the_initial_mobile_inventory_is_checked(tmp_path):
               gas=ZERO_GAS + [("C2H4(4)", ethylene, lambda t: 0.0)])
     with pytest.raises(mp.ProducerError, match="initial inventory"):
         produce(s, out, mode="convert")
-    write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: mu, 0.0)],
+    write_run(out, times=PROFILE_T, pools=[(LABEL, drift(mu), 0.0)],
               gas=ZERO_GAS + [("C2H4(4)", ethylene, lambda t: amount)])
     q = produce(s, out, mode="convert") and json.loads((out / "mom.json").read_text())[-1]["quantities"]
     assert q["species_mol"]["ethylene"] == amount
@@ -896,9 +918,142 @@ def test_an_inert_species_kmc_cannot_hold_blocks_nothing_while_absent(setup):
     out = setup["tmp"] / "out"
     produce(setup, out)
     mu = declared(setup["spec"])
-    write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: mu, 0.0)],
+    write_run(out, times=PROFILE_T, pools=[(LABEL, drift(mu), 0.0)],
               gas=ZERO_GAS + [("Ar", "1 Ar u0 p4 c0\n", lambda t: 0.0)])
     manifest = produce(setup, out, mode="convert")
     assert manifest["read"]["species_classes"]["Ar"] == "undetermined"
     q = json.loads((out / "mom.json").read_text())[-1]["quantities"]
     assert q["polymer_condensed_mass_g"] == pytest.approx(1000.0, rel=1e-12)
+
+
+# --------------------------------------------------------------------------
+# rework 3 (r129)
+# --------------------------------------------------------------------------
+def _refused_census(setup, out):
+    with pytest.raises(mp.ProducerError, match="inactive_chemistry"):
+        produce(setup, out, mode="convert")
+    return json.loads((out / "producer.json").read_text())["census"]
+
+
+def test_a_zero_rate_row_is_dead(setup):
+    """An admitted homolysis with A = 0 on a moving profile: not live."""
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    proxy = proxy_of()
+    constant_run(out, setup["spec"], rows=[{"family": "toy_homolysis", "admitted": True, "reactants": [proxy],
+                                            "products": [proxy, "X0"], "reversible": True, "A": 0.0}])
+    census = _refused_census(setup, out)
+    assert census["live_rows"] == [] and census["zero_rate_rows"] == ["r0"]
+
+
+def test_a_zero_rate_gas_reaction_unlocks_nothing(setup):
+    """The admitted H abstraction needs H; the only maker of H is a gas
+    reaction from the bath: with A = 0 it makes nothing, with A = 1 it does."""
+    proxy = proxy_of()
+    hab = [{"family": "toy_h_abstraction", "admitted": True, "reactants": ["H(1)", proxy],
+            "products": ["H2(2)", proxy], "reversible": False}]
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    constant_run(out, setup["spec"], rows=hab,
+                 gas_reactions=[{"reactants": ["N2"], "products": ["H(1)"], "reversible": False, "A": 0.0}])
+    assert _refused_census(setup, out)["live_rows"] == []
+    live = setup["tmp"] / "live"
+    produce(setup, live)
+    constant_run(live, setup["spec"], rows=hab,
+                 gas_reactions=[{"reactants": ["N2"], "products": ["H(1)"], "reversible": False, "A": 1.0}])
+    assert produce(setup, live, mode="convert")["census"]["live_rows"] == ["r0"]
+
+
+def test_a_flat_profile_is_inactive_whatever_the_census(setup):
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    constant_run(out, setup["spec"], flat=True)
+    census = _refused_census(setup, out)
+    assert census["live_rows"] == ["r0"] and census["profile_changes"] is False
+
+
+def test_a_reversible_row_runs_from_its_products(setup):
+    """Survivor reversible-not-run: products present at t = 0, reactants absent."""
+    proxy = proxy_of()
+
+    def row(reversible):
+        return [{"family": "toy_homolysis", "admitted": True, "reactants": ["X5"], "products": [proxy],
+                 "reversible": reversible}]
+
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    constant_run(out, setup["spec"], rows=row(True))
+    assert produce(setup, out, mode="convert")["census"]["live_rows"] == ["r0"]
+    one_way = setup["tmp"] / "one_way"
+    produce(setup, one_way)
+    constant_run(one_way, setup["spec"], rows=row(False))
+    assert _refused_census(setup, one_way)["live_rows"] == []
+
+
+def test_a_proxy_of_an_empty_pool_is_absent(setup):
+    """Survivor pool-mu0-zero: the daughter pool has mu0 = 0 at t = 0; a row
+    that needs its proxy is not live."""
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    proxy = f"{DAUGHTER}(5)"
+    moving_run(out, setup["spec"], rows=[{"family": "toy_homolysis", "admitted": True, "reactants": [proxy],
+                                          "products": [proxy, "X0"], "reversible": False}])
+    assert _refused_census(setup, out)["live_rows"] == []
+
+
+def test_duplicate_stoichiometries_keep_their_own_families(setup):
+    """Spar's fixture: one refused toy_homolysis row and one admitted
+    toy_beta_scission row with the same species."""
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    proxy = proxy_of()
+    rows = [{"family": family, "admitted": ok, "reactants": [proxy], "products": [proxy, "X0"],
+             "reversible": True} for family, ok in (("toy_homolysis", False), ("toy_beta_scission", True))]
+    constant_run(out, setup["spec"], rows=rows)
+    census = produce(setup, out, mode="convert")["census"]
+    assert census["families"] == {"toy_homolysis": {"rows": 1, "admitted": 0},
+                                  "toy_beta_scission": {"rows": 1, "admitted": 1}}
+
+
+def test_rows_without_a_one_to_one_chemkin_match_are_refused(setup):
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    proxy = proxy_of()
+    rows = [{"family": "toy_homolysis", "admitted": True, "reactants": [proxy], "products": [proxy, "X0"],
+             "reversible": True, "no_chemkin": j == 1} for j in range(2)]
+    constant_run(out, setup["spec"], rows=rows)
+    with pytest.raises(mp.ProducerError, match="one-to-one"):
+        produce(setup, out, mode="convert")
+
+
+def test_toluene_in_a_ps_deck_is_undetermined_and_withholds_the_polymer_rows(tmp_path):
+    """Pins the conservative bracket (r129 item 3): PS carbon is backbone and
+    ring, so a released toluene is light or polymer-derived by ancestry MoM
+    does not keep.  A later, tighter bracket must change this test."""
+    from meltStateTest import ps_mapping
+    mapping = ps_mapping({10: 1, 20: 1}, mobile={})
+    mapping["small_species"] = {}
+    mapping["transport_model"] = {"met": S.ps_met()}
+    deck = write_deck(tmp_path / "ps_deck.py", mapping)
+    spec = LinearHomopolymerSpec.from_mapping(mapping)
+    s = {"deck": deck, "catalog": pe_catalog_file(tmp_path), "db": str(tmp_path / "db"), "tmp": tmp_path,
+         "spec": spec}
+    (tmp_path / "db" / "input" / "kinetics" / "families").mkdir(parents=True, exist_ok=True)
+    out = tmp_path / "out"
+    produce(s, out)
+    a = spec.repeat_unit.composition.molar_mass_g_mol()
+    mu = declared(spec)
+    m7, x = mw("Cc1ccccc1"), 1e-4
+    toluene = Molecule(smiles="Cc1ccccc1").to_adjacency_list()
+    write_run(out, times=PROFILE_T, label="PS", pools=[("PS", lambda t: (mu[0], mu[1] - m7 * x * t / a, mu[2]),
+                                                        0.0)],
+              mass_override=a, gas=ZERO_GAS + [("C7H8(4)", toluene, lambda t: x * t)])
+    manifest = produce(s, out, mode="convert")
+    assert manifest["read"]["species_classes"]["C7H8(4)"] == "undetermined"
+    entries = json.loads((out / "mom.json").read_text())
+    diagnostics = json.loads((out / "mom_diagnostics.json").read_text())
+    for entry, diag in list(zip(entries, diagnostics))[1:]:
+        for key in ("polymer_condensed_mass_g", "polymer_conversion", "polymer_derived_molecules_mol"):
+            assert key not in entry["quantities"]
+        assert diag["unclassified_species"] == ["C7H8(4)"]
+        assert diag["mass_closure_residual_g"] == pytest.approx(0.0, abs=1e-9)
