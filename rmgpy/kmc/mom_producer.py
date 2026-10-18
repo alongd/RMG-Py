@@ -1395,7 +1395,13 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
             if molecule is None:
                 raise ProducerError(f"conventions.solver_gas_mask: the structure recorded for {x} cannot be read "
                                     f"({structure!r}); it equals no species")
-            if not _same_structure([molecule], [m for m in (by_key[key].molecule or []) if m is not None]):
+            verdict = _same_structure([molecule], [m for m in (by_key[key].molecule or []) if m is not None])
+            if verdict is _species_identity.UNDECIDABLE:
+                raise ProducerError(f"conventions.solver_gas_mask: {x} cannot be compared to the Chemkin species "
+                                    "because resonance expansion is unavailable")
+            if verdict is _species_identity.MALFORMED:
+                raise ProducerError(f"conventions.solver_gas_mask: {x} has a malformed mixed-spin molecule list")
+            if verdict is not True:
                 raise ProducerError(f"conventions.solver_gas_mask: {x} has another structure in the Chemkin file "
                                     f"than the solver's mask was for (not RMG-isomorphic, resonance and "
                                     f"multiplicity considered)")
