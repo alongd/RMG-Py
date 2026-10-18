@@ -2424,6 +2424,15 @@ class RMG(util.Subject):
                 # never marks unconfigured-daughter proxies condensed).
                 condensed = derive_condensed_species(
                     core_species, configured_pools_cfg, solver_mask)
+                # conventions.solver_gas_mask: the engine's mask verbatim, only
+                # when it is the mask of THIS core (length-matched and the
+                # engine built against it; a stale same-length mask is the
+                # previous core's verdict).
+                recorded_mask = None
+                if (solver_mask is not None and engine_pools_cfg is not None
+                        and len(solver_mask) == len(core_species)
+                        and not sidecar_stale_topology):
+                    recorded_mask = [bool(g) for g in solver_mask]
 
                 write_polymer_pools_sidecar(
                     pool_registry=pool_registry,
@@ -2440,6 +2449,7 @@ class RMG(util.Subject):
                     generation_v_poly_m3=generation_v_poly_m3,
                     explicit_dp_species_by_pool=explicit_dp_species_by_pool,
                     stale_topology=sidecar_stale_topology,
+                    solver_gas_mask=recorded_mask,
                 )
         except Exception as e:
             logging.warning(f"Failed to write polymer_pools.json sidecar: {e}", exc_info=True)

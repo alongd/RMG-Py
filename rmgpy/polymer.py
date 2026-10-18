@@ -8311,6 +8311,7 @@ def write_polymer_pools_sidecar(
     generation_v_poly_m3=None,
     explicit_dp_species_by_pool=None,
     stale_topology=False,
+    solver_gas_mask=None,
 ) -> str:
     """Emit ``polymer_pools.json`` alongside ``chem.yaml`` (design doc §6).
 
@@ -8350,6 +8351,10 @@ def write_polymer_pools_sidecar(
         ``generate_cantera_data(..., return_reaction_index_map=True)``.
     rmg_commit : str, optional
         Override the auto-detected git SHA.
+    solver_gas_mask : sequence of bool, optional
+        The live solver's ``gas_species_mask`` for THIS ``core_species``
+        (True = gas), recorded verbatim as ``conventions.solver_gas_mask``;
+        None (default) -> key absent.
     initial_explicit_by_pool : dict, optional
         ``{pool_label: {dp: moles}}`` — the stage-A solver contract
         (``HybridPolymerSystem.initial_explicit_species``). Feeds the
@@ -8386,6 +8391,7 @@ def write_polymer_pools_sidecar(
         generation_v_poly_m3=generation_v_poly_m3,
         explicit_dp_species_by_pool=explicit_dp_species_by_pool,
         stale_topology=stale_topology,
+        solver_gas_mask=solver_gas_mask,
     )
     path = os.path.join(output_dir, filename)
     with open(path, "w", encoding="utf-8") as fh:
@@ -8895,7 +8901,8 @@ def build_polymer_moments_artifact(pool_registry,
                                    generation_mass_transfer=None,
                                    generation_v_poly_m3=None,
                                    explicit_dp_species_by_pool=None,
-                                   stale_topology=False):
+                                   stale_topology=False,
+                                   solver_gas_mask=None):
     """Assemble the full schema-2.0 polymer moments artifact payload.
 
     Normative contract: docs/polymer_moments_format.md. The payload mirrors
@@ -9406,6 +9413,32 @@ def build_polymer_moments_artifact(pool_registry,
     # conventions keys (probed 2026-07-04).
     if stale_topology:
         conventions["stale_topology"] = True
+
+    # conventions.solver_gas_mask: the live solver's gas_species_mask
+    # VERBATIM (True = gas), the core species in solver order each with its
+    # flag. condensed_species stays as it is (the mask UNIONED with pool
+    # membership, plus the spawned-pool closure above), so it cannot say
+    # which phase the solver gave a spawned-but-unconfigured pool's members;
+    # this record can. The caller passes the mask only when it is the
+    # solver's for THIS core (length-matched, engine signature not stale);
+    # otherwise the key is absent. The mask is static over one simulate()
+    # (built in initialize_model at its start, rmgpy/solver/base.pyx:690 ->
+    # rmgpy/solver/polymer.pyx initialize_model, written nowhere else), and
+    # that simulate's snapshots are the profile solver/simulation_<i>_<n>.csv
+    # whose columns are this core in this order (rmgpy/rmg/listener.py). Purely
+    # ADDITIVE conventions key (absent -> byte-identical; loaders ignore
+    # unknown conventions keys).
+    if solver_gas_mask is not None:
+        if core_species is None or len(solver_gas_mask) != len(core_species):
+            raise ValueError(
+                "solver_gas_mask has %d entries for a core of %s species"
+                % (len(solver_gas_mask),
+                   None if core_species is None else len(core_species)))
+        conventions["solver_gas_mask"] = {
+            "source": "solver",
+            "core": [{"species": _artifact_species_label(s), "gas": bool(g)}
+                     for s, g in zip(core_species, solver_gas_mask)],
+        }
 
     # conventions.conduit_flux_census (schema 3.1, DESIGN §4.4): the
     # run-level admitted-conduit gas-mass accumulator, partitioned at
