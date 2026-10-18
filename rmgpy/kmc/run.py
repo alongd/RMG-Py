@@ -71,6 +71,24 @@ flagged, and then labelled in every output file:
   ``--allow-unmatched-catalog``; label ``catalog_matches_initial_state``
   (``initial_match`` counts the matched templates and sites).
 
+**Combining catalogs.**  One emission owns each reaction family (the
+emitter's coverage gate makes the templates within one catalog disjoint), so
+several catalogs are combined only when every catalog's
+``provenance.families`` is a non-empty list and the lists are pairwise
+disjoint; shared families are refused by name, and a catalog without
+``provenance.families`` cannot be combined with another (alone it runs).
+Nested windows of one family (a window and the same window grown by a
+shell) would otherwise both fire the same reactions.  Two further guards:
+
+* the initial-state site check (more than one catalog): on the initial
+  melt, no reaction site may be matched by templates of two catalogs
+  (``cross_catalog_site``; the first such site is reported).  A
+  unimolecular site is the transition's concrete edit set; a bimolecular
+  one is the pair of participant sites with each participant's concrete
+  change (its atom edits, intra-participant bond edits and the order of the
+  bonds it forms to the partner), matched for both participants (in either
+  role).  Evidence on the initial state, not a proof for later states;
+
 Always refused: loaded template names that collide, and two loaded
 templates with the same executable, within a catalog or across catalogs (it
 would fire twice).  Executables are compared as the ``window_matcher.Template``
@@ -475,6 +493,22 @@ def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool
         payloads += doc["payloads"]
         records.append(CatalogRecord(str(path), _sha256(raw), _plain(doc["provenance"]), complete,
                                      tuple(failures), tuple(names), bound_by))
+    if len(records) > 1:
+        families = []
+        for r in records:
+            f = r.provenance.get("families") if isinstance(r.provenance, dict) else None
+            if not isinstance(f, list) or not f or not all(isinstance(x, str) and x for x in f):
+                raise RunError(f"catalog {r.path} carries no provenance.families (a non-empty list of family "
+                               "names), so it cannot be combined with another catalog: catalogs combine only "
+                               "when their families are pairwise disjoint")
+            families.append(set(f))
+        for i in range(len(records)):
+            for j in range(i + 1, len(records)):
+                shared = sorted(families[i] & families[j])
+                if shared:
+                    raise RunError(f"catalogs {records[i].path} and {records[j].path} share the families "
+                                   f"{shared}; one emission owns each family, so catalogs combine only when "
+                                   "their provenance.families are pairwise disjoint")
     return me.PayloadCatalog(payloads), records
 
 
@@ -518,6 +552,75 @@ def template_identity(t) -> str:
     """A hash of a loaded template's executable (equal for equal executables;
     a collision is resolved by isomorphism in ``load_catalogs``)."""
     return _graph_hash(_template_graph(t))
+
+
+def _edit_key(edit) -> Tuple:
+    if hasattr(edit, "a") and hasattr(edit, "b"):
+        a, b = sorted((edit.a, edit.b))
+        return (type(edit).__name__, a, b, float(edit.old), float(edit.new))
+    return (type(edit).__name__,) + tuple(getattr(edit, k) for k in ("atom", "old", "new"))
+
+
+def _participant_change(t, participant: int, site) -> frozenset:
+    """The concrete change a bimolecular template makes at one participant site."""
+    where = dict(zip(t.edited[participant], site))
+    out = set()
+    for edit in t.edits:
+        if hasattr(edit, "order"):
+            before = float(t.bond.get((min(edit.a, edit.b), max(edit.a, edit.b)), 0.0))
+            ends = [x for x in (edit.a, edit.b) if x in where]
+            if len(ends) == 2:
+                a, b = sorted((where[edit.a], where[edit.b]))
+                out.add(("bond", a, b, before, float(edit.order)))
+            elif ends:
+                out.add(("partner", where[ends[0]], before, float(edit.order)))
+        elif edit.atom in where:
+            atom = t.atoms[edit.atom]
+            for field in ("radical", "charge", "lone_pairs"):
+                new = getattr(edit, field)
+                if new is not None:
+                    out.add((field, where[edit.atom], getattr(atom, field), new))
+    return frozenset(out)
+
+
+def cross_catalog_site(engine: me.MeltEngine, owner: Dict[str, int]) -> Optional[str]:
+    """The first reaction site of the engine's current state matched by
+    templates of two catalogs (``owner``: template name -> catalog index), or
+    None (module docstring)."""
+    uni: Dict[frozenset, Tuple[int, str]] = {}
+    pair_sites: Dict[int, List[set]] = {}
+    for cid in sorted(engine.entries):
+        entry = engine.entries[cid]
+        for ci in sorted(entry.uni):
+            name = engine.templates[ci].name
+            for tr in entry.uni[ci][0]:
+                key = frozenset(_edit_key(e) for e in tr.edits)
+                seen = uni.setdefault(key, (owner[name], name))
+                if seen[0] != owner[name]:
+                    atoms = sorted({x for e in tr.edits for x in (getattr(e, "a", None), getattr(e, "b", None),
+                                                                     getattr(e, "atom", None)) if x is not None})
+                    return (f"atoms {atoms} (one transition, edits {sorted(key)}) are matched by template "
+                            f"{seen[1]!r} of catalog {seen[0]} and template {name!r} of catalog {owner[name]}")
+        for (ci, participant, _kind), sites in sorted(entry.sites.items(), key=lambda kv: repr(kv[0])):
+            t = engine.templates[ci]
+            slot = pair_sites.setdefault(ci, [set(), set()])
+            for site in sites:
+                slot[participant].add(_participant_change(t, participant, site))
+    names = sorted(pair_sites, key=lambda ci: engine.templates[ci].name)
+    for x, ci in enumerate(names):
+        for cj in names[x + 1:]:
+            a, b = engine.templates[ci].name, engine.templates[cj].name
+            if owner[a] == owner[b]:
+                continue
+            s, u = pair_sites[ci], pair_sites[cj]
+            for p in (0, 1):                 # u's participants in the same or the exchanged role
+                first, second = s[0] & u[p], s[1] & u[1 - p]
+                if first and second:
+                    site = sorted(min(first, key=repr))
+                    return (f"a bimolecular site (participant change {site}, with a matching partner) is "
+                            f"matched by template {a!r} of catalog {owner[a]} and template {b!r} of catalog "
+                            f"{owner[b]}")
+    return None
 
 
 def initial_match(engine: me.MeltEngine) -> dict:
@@ -893,9 +996,17 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
     try:   # the declaration as the engine and the observables read it, before any output
         me.TransportLaw.from_spec(deck.spec).check_range(temperature, temperature)
         mo.MeltObserver(deck.spec, xs=deck.xs, side_group_homolysis=deck.side_group_homolysis)
-        matched = initial_match(me.MeltEngine(deck.spec, catalog, temperature, numpy.random.default_rng(0)))
+        initial = me.MeltEngine(deck.spec, catalog, temperature, numpy.random.default_rng(0))
+        matched = initial_match(initial)
     except ValueError as error:
         raise RunError(f"deck {deck.path}: {error}") from error
+    if len(records) > 1:
+        owner = {name: i for i, r in enumerate(records) for name in r.template_names}
+        overlap = cross_catalog_site(initial, owner)
+        if overlap is not None:
+            raise RunError(f"a reaction site of the initial state is matched by templates of two catalogs "
+                           f"({overlap}); combined, it would fire twice")
+    del initial
     if not matched["templates"] and not allow_unmatched_catalog:
         raise RunError("no catalog template matches any site of the initial state (the catalogs may be "
                        "another polymer's); pass --allow-unmatched-catalog to run it, labelled "

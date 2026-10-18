@@ -1035,3 +1035,41 @@ def test_executables_differing_only_in_a_pair_label_are_not_duplicates(tmp_path)
     # nested windows are different executables (only the families policy and the site check see them)
     h = next(t for t in S.pe_templates() if t.name == "homolysis")
     assert not kr._same_graph(kr._template_graph(h), kr._template_graph(extended_homolysis()))
+
+
+def extended_recombination(family="toy_recombination_shell"):
+    """The toy end-radical recombination with participant 0's window grown by
+    one CH2 shell (nested in the toy recombination)."""
+    from rmgpy.kmc.window_matcher import AtomEdit, BondEdit, Template, WindowAtom
+    atoms = [WindowAtom("C", 0, radical=1), WindowAtom("H", 0), WindowAtom("H", 0), WindowAtom("C", 0),
+             WindowAtom("H", 0), WindowAtom("H", 0), WindowAtom("C", 0, "port", S.MID)] + S._ch2_radical(1)
+    bonds = [(0, 1, 1), (0, 2, 1), (0, 3, 1), (3, 4, 1), (3, 5, 1), (3, 6, 1), (7, 8, 1), (7, 9, 1), (7, 10, 1)]
+    return Template("recombination_shell", family, atoms, bonds,
+                    [BondEdit(0, 7, 1), AtomEdit(0, radical=0), AtomEdit(7, radical=0)], weight=1.0e-2)
+
+
+def test_a_bimolecular_site_matched_from_two_catalogs_is_found(tmp_path):
+    """Item 1, the bimolecular branch of the site check: two end radicals
+    (one mid-chain cleavage) are a recombination pair for both the toy
+    template and its nested extension in another catalog."""
+    import numpy as np
+    from rmgpy.kmc.melt_state import materialize
+    toy = pe_catalog_file(tmp_path)
+    nested = write_catalog(tmp_path / "nested_rec.json", toy_payloads([extended_recombination()]),
+                           bind=S.pe_mapping({1: 1}))
+    catalog, records = kr.load_catalogs([toy, nested], 700.0)
+    owner = {name: i for i, r in enumerate(records) for name in r.template_names}
+    spec = LinearHomopolymerSpec.from_mapping(S.pe_mapping({20: 1}))
+    state = materialize(spec)
+    cs = [c for c in S.carbons(state, 0)
+          if sum(1 for b in state.atoms[c].edges if state.atoms[b].element == "C") == 2]
+    a = cs[len(cs) // 2]
+    b = next(x for x in state.atoms[a].edges if x in cs and x != a)
+    from rmgpy.kmc.melt_state import SetBond, SetRadical
+    state.apply([SetBond(a, b, 1.0, 0.0), SetRadical(a, 0, 1), SetRadical(b, 0, 1)])
+    engine = me.MeltEngine(spec, catalog, 700.0, np.random.default_rng(0), state=state)
+    found = kr.cross_catalog_site(engine, owner)
+    assert found is not None and "bimolecular" in found and "catalog 0" in found and "catalog 1" in found
+    alone = me.MeltEngine(spec, me.PayloadCatalog(json.loads(toy.read_text())["payloads"]), 700.0,
+                          np.random.default_rng(0), state=state)
+    assert kr.cross_catalog_site(alone, {t.name: 0 for t in alone.templates}) is None
