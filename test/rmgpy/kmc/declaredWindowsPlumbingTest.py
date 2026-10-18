@@ -569,9 +569,12 @@ def _observe(witness):
 
 
 def test_member_observer_passes_the_growth_unit(pe, pp):
-    assert _observe(_ps_witness()).get("repeat") is None
+    """Correction C-1 (I-165 S2b): legacy witnesses take their provider's
+    unit too (S2a passed None for both: PS C8H8 unchanged, alkane was C8H8
+    by default and is CH2 now)."""
+    assert _observe(_ps_witness())["repeat"] == (("C", 8), ("H", 8))
     toy = sup.identity_witness(b.PROVIDERS["linear_alkane"].build(8))
-    assert _observe(toy).get("repeat") is None
+    assert _observe(toy)["repeat"] == (("C", 1), ("H", 2))
     assert _observe(sup.identity_witness(pe.build("w", dc.ChainSpec(5))))["repeat"] == \
         (("C", 1), ("H", 2))
     assert _observe(sup.identity_witness(pp.build("w", dc.ChainSpec(3))))["repeat"] == \
@@ -1073,9 +1076,18 @@ def test_recertification_receives_the_declared_growth_unit(pe, monkeypatch):
     spy = _observe_twice(sup.identity_witness(pe.build("w", dc.ChainSpec(5))), monkeypatch)
     assert spy.certify_calls[0]["repeat"] == (("C", 1), ("H", 2))
     assert spy.recertify_calls[0]["repeat"] == (("C", 1), ("H", 2))
+    # the declared policy's domain reaches both (I-165 S2b)
+    assert spy.certify_calls[0]["domain"] is win.DECLARED_INTERIM.domain
+    assert spy.recertify_calls[0]["domain"] is win.DECLARED_INTERIM.domain
 
 
-def test_legacy_recertification_keeps_the_default_growth_unit(monkeypatch):
+def test_legacy_recertification_receives_the_provider_growth_unit(monkeypatch):
+    """Correction C-1 (S2a: both None); the legacy policy passes no domain."""
     spy = _observe_twice(_ps_witness(), monkeypatch)
-    assert spy.certify_calls[0].get("repeat") is None
-    assert spy.recertify_calls[0].get("repeat") is None
+    assert spy.certify_calls[0]["repeat"] == (("C", 8), ("H", 8))
+    assert spy.recertify_calls[0]["repeat"] == (("C", 8), ("H", 8))
+    assert "domain" not in spy.certify_calls[0] and "domain" not in spy.recertify_calls[0]
+    toy = sup.identity_witness(b.PROVIDERS["linear_alkane"].build(8))
+    spy = _observe_twice(toy, monkeypatch)
+    assert spy.certify_calls[0]["repeat"] == spy.recertify_calls[0]["repeat"] == \
+        (("C", 1), ("H", 2))

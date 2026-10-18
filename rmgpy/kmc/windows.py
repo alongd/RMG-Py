@@ -456,16 +456,103 @@ def observation_providers(witness, providers=None) -> tuple:
 
 
 def growth_unit(witness, providers=None) -> Optional[tuple]:
-    """The depository growth unit of a witness with a declared participant
-    (its one chain provider's ``unit_formula``); None otherwise (the
-    certificate default).  Two different chain providers are refused."""
+    """The depository growth unit of a witness: its one chain provider's
+    ``unit_formula`` (correction C-1: legacy witnesses included, PS C8H8 as
+    before, the linear alkane CH2); None for a witness without a chain
+    provider (the certificate default).  Two different chain providers are
+    refused on a declared witness; on a legacy one (PS with alkane) the
+    certificate default is kept, as before."""
     found = [provider_object(p.metadata.provider, providers) for p in witness.participants]
-    if not any(_is_declared(p) for p in found):
-        return None
     chains = sorted({p.name for p in found if p.unit_formula() is not None})
+    if not chains:
+        return None
     if len(chains) != 1:
+        if not any(_is_declared(p) for p in found):
+            return None
         raise WindowError(f"refused:growth_unit: two chain providers in one witness: {chains}")
     return next(p for p in found if p.name == chains[0]).unit_formula()
+
+
+# ---------------------------------------------------------------------------
+# chemistry policy (I-165 S2b): the domain, certificate eligibility,
+# recertification and the ring-edit generation filter of a witness, named
+# ---------------------------------------------------------------------------
+RING_EDITS = ("exclude", "admit")
+
+
+@dataclass(frozen=True)
+class PolicyDomain:
+    """A species domain: ``check(molecule) -> domain.DomainVerdict`` and
+    ``spin_verdict(molecule) -> domain.SpinVerdict``, under ``name``."""
+
+    name: str
+    check: Callable = field(compare=False)
+    spin_verdict: Callable = field(compare=False)
+
+
+@dataclass(frozen=True)
+class ChemistryPolicy:
+    """The chemistry a witness is evaluated under: its species ``domain``
+    (``species_domain_refusal``, the event builds of a reacting-port cover,
+    certificate eligibility and recertification) and ``ring_edits``
+    (``"exclude"``: ``member_cases`` drops every mapping whose connectivity
+    change touches a ring atom, ``ring_change_select``; ``"admit"``: none)."""
+
+    name: str
+    domain: PolicyDomain
+    ring_edits: str
+
+    def __post_init__(self):
+        if self.ring_edits not in RING_EDITS:
+            raise WindowError(f"ring_edits {self.ring_edits!r} is not one of {RING_EDITS}")
+
+
+# the legacy chemistry exactly: the v1 PS domain (``domain.check``) and no
+# ring edits (late-bound, so the module functions stay the ones called)
+LEGACY_V1 = ChemistryPolicy("legacy_v1", PolicyDomain(
+    "legacy_v1", lambda molecule: dom.check(molecule),
+    lambda molecule: dom.spin_verdict(molecule)), "exclude")
+# a declared chain under the INTERIM domain (``domain.declared_interim_check``)
+# and no ring edits; a later slice replaces the domain
+DECLARED_INTERIM = ChemistryPolicy("declared_interim_v1", PolicyDomain(
+    "declared_interim_v1", lambda molecule: dom.declared_interim_check(molecule),
+    lambda molecule: dom.spin_verdict(molecule)), "exclude")
+
+
+def policy_for(witness, providers=None) -> ChemistryPolicy:
+    """``LEGACY_V1`` when every participant comes from a legacy provider (the
+    named chains and the small species), ``DECLARED_INTERIM`` when a chain
+    participant is declared; a witness mixing legacy and declared chain
+    providers is refused."""
+    found = [provider_object(p.metadata.provider, providers) for p in witness.participants]
+    declared = [p.name for p in found if _is_declared(p)]
+    legacy_names = {x.name for x in b.LEGACY_PROVIDERS}
+    legacy = [p.name for p in found if p.name in legacy_names]
+    if declared and legacy:
+        raise WindowError(f"refused:policy: a witness mixes legacy {sorted(set(legacy))} and "
+                          f"declared {sorted(set(declared))} chain providers")
+    return DECLARED_INTERIM if declared else LEGACY_V1
+
+
+def _builds_policy(builds, policy=None, participants=None) -> ChemistryPolicy:
+    """The policy of a witness of ``builds`` (or of its ``participants``)."""
+    if policy is not None:
+        return policy
+    if participants is None:
+        _molecules, participants = b.witness_reactants(builds)
+    return policy_for(_Participants(tuple(participants)))
+
+
+@dataclass(frozen=True)
+class _Participants:
+    participants: tuple
+
+
+def certificate_domain(policy: ChemistryPolicy):
+    """The ``domain=`` a certificate takes under ``policy``: None (the module
+    domain, certificates unchanged) for the legacy domain, the policy's
+    domain otherwise."""
+    return None if policy.domain is LEGACY_V1.domain else policy.domain
 
 
 def _radical_ends(witness, port, providers=None) -> tuple:
@@ -982,10 +1069,15 @@ def _fragment_facts(providers=None) -> dict:
 
 
 def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] = None,
-                        fragment_facts=None, include_failed: bool = True) -> Support:
+                        fragment_facts=None, include_failed: bool = True,
+                        growable=None) -> Support:
     """The support of the member of ``cert`` selected by ``wanted`` (label
     sets), with the disposition of every non-atom-set read (see the module
-    docstring)."""
+    docstring).  ``growable``: the witness atoms of participants an
+    extension can grow (an artificial port; ``growable_atoms``); an
+    ``element_count`` guard read on a certificate molecule without such an
+    atom is extension invariant (no extension adds to that molecule).  None
+    (the default): every molecule takes every provider's step delta."""
     entries = member_entries(cert, wanted)
     if not entries:
         return Support(frozenset(), refusal="refused:member: no certified member carries the "
@@ -1002,6 +1094,12 @@ def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] 
         for f in p.values():
             for el, d in f["delta"].items():
                 deltas[el].add(d)
+    molecule_of, still = {}, set()
+    if growable is not None:
+        for k, ids in enumerate(cert["witness"]["molecules"]):
+            molecule_of.update((int(a), k) for a in ids)
+            if not {int(a) for a in ids} & set(growable):
+                still.add(k)
     reacting, atoms, sources = set(), set(), []
     dispositions = {}
     refusal = None
@@ -1067,9 +1165,11 @@ def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] 
                         elif name == "element_count":
                             minimum = g.get("group_minimum") or {}
                             have = g.get("structure") or {}
+                            read = {molecule_of[a] for a in pa if a in molecule_of}
+                            invariant = bool(read) and read <= still
                             for el, need in sorted(minimum.items()):
                                 count = have.get(el, 0)
-                                ds = deltas.get(el, {0})
+                                ds = {0} if invariant else deltas.get(el, {0})
                                 key = ("guard", f"element_count:{el}")
                                 if undecided:
                                     dispositions[key] = ("refused", "fragment facts undecided "
@@ -1130,6 +1230,13 @@ def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] 
 def _iter_predicates(descent):
     from rmgpy.kmc import certificates as cm
     return cm.iter_descent_predicates(descent)
+
+
+def growable_atoms(witness) -> frozenset:
+    """The atoms of the participants of ``witness`` with an artificial port
+    (the molecules an extension can grow)."""
+    ports = {key[0] for key in b.vector_ports(witness)}
+    return frozenset(a for p in witness.participants if p.index in ports for a in p.atom_ids)
 
 
 def certificate_refusal(cert) -> Optional[str]:
@@ -1333,7 +1440,8 @@ class MemberObserver:
     dispositions and the certificate view."""
 
     def __init__(self, certifier, family, direction, wanted, *, base_certificate=None,
-                 classifier=None, include_failed=True, scoped=True, providers=None):
+                 classifier=None, include_failed=True, scoped=True, providers=None,
+                 policy=None):
         self.wanted = frozenset(wanted)
         self.certifier = scoped_certifier(certifier, family, self.wanted) if scoped else \
             certifier
@@ -1351,6 +1459,9 @@ class MemberObserver:
         self.include_failed = include_failed
         self.calls = 0
         self.flips = []
+        # resolved from the first observed witness unless given
+        self.policy = policy
+        self.domain = None
 
     def __call__(self, witness) -> Observation:
         self.calls += 1
@@ -1360,7 +1471,12 @@ class MemberObserver:
                 self.classifier = SearchClassifier(self.family, providers=self.providers)
             self.facts = _fragment_facts(self.providers)
             self.repeat = growth_unit(witness, self.registry)
+            if self.policy is None:
+                self.policy = policy_for(witness, self.registry)
+            self.domain = certificate_domain(self.policy)
         extra = {} if self.repeat is None else {"repeat": self.repeat}
+        if self.domain is not None:
+            extra["domain"] = self.domain
         mols = template_molecules(witness, self.direction)
         recert = None
         if self.base is None:
@@ -1382,7 +1498,8 @@ class MemberObserver:
         refusal = certificate_refusal(cert) or member_refusal(cert, self.wanted)
         support = certificate_support(cert, self.wanted, classifier=self.classifier,
                                       fragment_facts=self.facts,
-                                      include_failed=self.include_failed)
+                                      include_failed=self.include_failed,
+                                      growable=growable_atoms(witness))
         refusal = refusal or support.refusal
         missing = sorted(set(support.atoms) - set(witness.reactant_rows()))
         if missing and not refusal:
@@ -2429,7 +2546,7 @@ def _part_in_domain(part) -> bool:
 def probe_slots(certifier, family, specs, direction) -> dict:
     """{slot: {site, ...}} participant 0 of ``specs`` fills in in-domain moves
     of ``family`` (``direction``): RMG's own moves (``rmg_moves``, the
-    certifier's resonance, ring-change mappings excluded as in
+    certifier's resonance, the ring-edit filter of the witness's policy as in
     ``member_cases``), every reactant and product species accepted by
     ``domain.check``; sites typed by ``site_kind`` on the built reactant.
     Moves, not channels: the probe needs the slot and the domain verdict of
@@ -2445,8 +2562,10 @@ def probe_slots(certifier, family, specs, direction) -> dict:
         return {}
     roots = [cm.aromatic_root(m) for m in molecules] if direction == "forward" else \
         list(molecules)
+    policy = _builds_policy(None, participants=participants)
     moves = rm.generate_moves(family, roots, direction, resonance=certifier.resonance,
-                              select=ring_change_select(family, roots))
+                              select=ring_change_select(family, roots)
+                              if policy.ring_edits == "exclude" else None)
     owned = set(participants[0].atom_ids)
     rows = rm.molecule_rows(molecules[0])
     cyclic = _cyclic_atoms(rows)
@@ -3578,10 +3697,11 @@ def ladder_direction_gaps(plan: LadderPlan, rows) -> list:
 # ---------------------------------------------------------------------------
 # spin and resonance diagnostics (item 7)
 # ---------------------------------------------------------------------------
-def diagnostics(witness, atoms) -> dict:
+def diagnostics(witness, atoms, policy=None) -> dict:
     """Radical sites in the window (both sides), the separated-radical verdict
-    of every species touched and the matcher's resonance form count per whole
-    component used (or the overflow cutoff, never reported as a count)."""
+    (``policy``'s domain, default ``LEGACY_V1``) of every species touched and
+    the matcher's resonance form count per whole component used (or the
+    overflow cutoff, never reported as a count)."""
     from rmgpy.kmc import rmg_moves as rm
     from rmgpy.kmc import window_matcher as wm
     atoms = set(atoms)
@@ -3593,7 +3713,7 @@ def diagnostics(witness, atoms) -> dict:
             if not set(part) & atoms:
                 continue
             mol = rm.molecule_from_rows(part)
-            verdict = dom.spin_verdict(mol)
+            verdict = (policy or LEGACY_V1).domain.spin_verdict(mol)
             out["spin"].append({"side": side, "first_atom": min(part), "status": verdict.status,
                                 "reason": verdict.reason,
                                 "radical_electrons": verdict.radical_electrons})
@@ -3675,11 +3795,12 @@ def ring_atoms(molecules) -> set:
 
 
 def ring_change_select(family, molecules):
-    """``select`` refusing a mapping whose bond changes touch a ring atom (a
-    ring carbon gains or loses a bond: the declared domain's rings are
-    monosubstituted phenyls, so a species of that channel is outside the
-    domain: aryl radical, cyclohexadienyl, a second ring substituent or an
-    opened ring)."""
+    """``select`` dropping every mapping whose connectivity change (a bond
+    formed or broken, ``connectivity_change``) touches any ring atom of the
+    reactants.  A generation filter owned by the chemistry policy
+    (``ChemistryPolicy.ring_edits == "exclude"``): ``member_cases`` and
+    ``probe_slots`` apply it under such a policy and never otherwise.  The
+    chemistry it removes is counted (``stats["ring_change_mappings"]``)."""
     ring = ring_atoms(molecules)
 
     def select(candidate):
@@ -3689,17 +3810,23 @@ def ring_change_select(family, molecules):
 
 
 def member_cases(certifier, family, builds, direction, *, label="", molecules=None,
-                 participants=None, select=None, skip_ring_changes: bool = True, stats=None):
+                 participants=None, select=None, skip_ring_changes: Optional[bool] = None,
+                 stats=None, policy=None):
     """Every member of every channel of ``family`` (``direction``) on the
     provider builds (or given molecules + participants).  With
     ``skip_ring_changes`` mappings whose bond changes touch a ring atom are
-    not run through the recipe (``ring_change_select``: refused by the
-    domain); ``stats`` counts them."""
+    not run through the recipe (``ring_change_select``); ``stats`` counts
+    them.  ``skip_ring_changes`` None: the policy's ``ring_edits``
+    (``policy``, else ``policy_for`` the witness); an explicit bool keeps its
+    meaning."""
     from rmgpy.kmc import certificates as cm
     from rmgpy.kmc import channels as chm
     from rmgpy.kmc import rmg_moves as rm
     if molecules is None:
         molecules, participants = b.witness_reactants(builds)
+    if skip_ring_changes is None:
+        skip_ring_changes = _builds_policy(builds, policy, participants).ring_edits == \
+            "exclude"
     roots = [cm.aromatic_root(m) for m in molecules] if direction == "forward" else \
         list(molecules)
     gate = ring_change_select(family, roots) if skip_ring_changes else None
@@ -3731,12 +3858,14 @@ def member_cases(certifier, family, builds, direction, *, label="", molecules=No
     return out
 
 
-def species_domain_refusal(witness) -> Optional[str]:
-    """``domain.check`` of every species on both sides (None: all accepted)."""
+def species_domain_refusal(witness, policy=None) -> Optional[str]:
+    """The policy domain's ``check`` (``policy``, else ``policy_for`` the
+    witness) of every species on both sides (None: all accepted)."""
     from rmgpy.kmc import rmg_moves as rm
+    domain = (policy or policy_for(witness)).domain
     for side in ("reactants", "products"):
         for part in rm.split_rows(dict(_side_rows(witness, side))):
-            verdict = dom.check(rm.molecule_from_rows(part))
+            verdict = domain.check(rm.molecule_from_rows(part))
             if not verdict.accepted:
                 return f"refused:domain: {side} species at atom {min(part)}: {verdict.reason}"
     return None
@@ -3762,7 +3891,7 @@ def mapping_problems(case, window_atoms, fp_witness=None) -> list:
 
 
 def run_context(certifier, family, case: MemberCase, assignment, *, bound=None,
-                providers=None, start_depths=None, **loop) -> ContextResult:
+                providers=None, start_depths=None, policy=None, **loop) -> ContextResult:
     """A physical context: ends built by the provider on the ORIGINAL witness
     (the end sits where the witness declares it), the event rematched by
     ``rmg_moves`` (same labels, same mapped outcome), the other artificial
@@ -3773,7 +3902,8 @@ def run_context(certifier, family, case: MemberCase, assignment, *, bound=None,
         built = reconstruct(case.witness, assignment, providers)
     except b.BoundaryError as error:
         return ContextResult(assignment, "refused:end", str(error))
-    why = species_domain_refusal(built)
+    policy = policy or policy_for(case.witness, providers)
+    why = species_domain_refusal(built, policy)
     if why:
         return ContextResult(assignment, "refused:domain", why, built)
     rows = dict(built.reactant_rows())
@@ -3819,7 +3949,8 @@ def run_context(certifier, family, case: MemberCase, assignment, *, bound=None,
                     witness, _record = b.extend(witness, port, providers)
                 except b.BoundaryError:
                     break
-    observer = MemberObserver(certifier, family, case.direction, wanted, providers=providers)
+    observer = MemberObserver(certifier, family, case.direction, wanted, providers=providers,
+                              policy=policy)
     fp = fixed_point(witness, observer, providers, **loop)
     if fp.reached and bound is not None:
         check_span(fp.witness, fp.window.atoms, bound, providers)
@@ -4002,13 +4133,18 @@ def event_signatures(case, shift=None) -> set:
 _COVER_CASES = {}
 
 
-def _cover_cases(certifier, family, specs, direction):
-    key = (family.label, direction, repr(specs))
+def _cover_cases(certifier, family, specs, direction, policy=None):
+    """The member cases of an event's own specs (``member_cases``, the
+    generation filter of ``policy`` or of the event witness's policy),
+    cached per family, direction, specs and policy name."""
+    builds = builds_of(specs)
+    policy = _builds_policy(builds, policy)
+    key = (family.label, direction, repr(specs), policy.name)
     if key not in _COVER_CASES:
         if len(_COVER_CASES) > 4:
             _COVER_CASES.clear()
-        _COVER_CASES[key] = member_cases(certifier, family, builds_of(specs), direction,
-                                         label="cover")
+        _COVER_CASES[key] = member_cases(certifier, family, builds, direction,
+                                         label="cover", policy=policy)
     return _COVER_CASES[key]
 
 
@@ -4061,7 +4197,7 @@ def unmatched_event(wanted, built, present) -> tuple:
 
 
 def reacting_port_covers(certifier, family, case, *, bound=None, providers=None, specs=None,
-                         **loop) -> list:
+                         policy=None, **loop) -> list:
     """One cover row per distinct mapped event the reacting-port member stands
     for: every assignment of each reacting port to ``INTERIOR`` (the chain
     continues there) or to a declared end chemistry (the chain ends there).
@@ -4072,6 +4208,7 @@ def reacting_port_covers(certifier, family, case, *, bound=None, providers=None,
     specs / for an end a spec cannot carry, the end reconstructed on the
     member's witness (``run_context``).  ``verdict``: ``covered``,
     ``out_of_domain`` or ``gap`` (``cover_status_verdict``)."""
+    policy = policy or policy_for(case.witness, providers)
     ports = list(b.vector_ports(case.witness))
     reacting = list(reacting_ports(case.witness))
     choices = [(INTERIOR,) + tuple(b.end_chemistries(case.witness, p, providers))
@@ -4095,14 +4232,14 @@ def reacting_port_covers(certifier, family, case, *, bound=None, providers=None,
             except b.BoundaryError as error:
                 row.update(status="refused:end", reason=str(error)[:200])
             else:
-                refusals = [(k, dom.check(x.molecule)) for k, x in enumerate(builds)]
+                refusals = [(k, policy.domain.check(x.molecule)) for k, x in enumerate(builds)]
                 refusals = [(k, v) for k, v in refusals if not v.accepted]
                 if refusals:
                     # the event's own reactants are outside the declared domain
                     row.update(status="refused:domain", reason="; ".join(
                         f"reactants species {k}: {v.reason}" for k, v in refusals)[:300])
                 else:
-                    built = _cover_cases(certifier, family, especs, case.direction)
+                    built = _cover_cases(certifier, family, especs, case.direction, policy)
         if built is not None:
             wanted = event_signatures(case, shift)
             matches = [c for c in built if event_signatures(c) & wanted]
@@ -4120,10 +4257,10 @@ def reacting_port_covers(certifier, family, case, *, bound=None, providers=None,
                     # an event with a species outside the declared domain needs no
                     # rate (proved by domain.check, reason stated), whatever else
                     # refuses it first
-                    why = species_domain_refusal(c.witness)
+                    why = species_domain_refusal(c.witness, policy)
                     res = {"status": "refused:domain", "reason": why} if why else \
                         run_member(certifier, family, c, bound=bound, contexts=False,
-                                   providers=providers, covers=False, **loop)
+                                   providers=providers, covers=False, policy=policy, **loop)
                     members.append({"label": c.label[-120:], "pathway": list(c.pathway),
                                     "status": res["status"],
                                     "reason": str(res.get("reason", ""))[:200],
@@ -4136,7 +4273,7 @@ def reacting_port_covers(certifier, family, case, *, bound=None, providers=None,
         elif "status" not in row and not interior:
             r = run_context(certifier, family, case, tuple((p, dict(assignment).get(p))
                                                            for p in ports),
-                            bound=bound, providers=providers, **loop)
+                            bound=bound, providers=providers, policy=policy, **loop)
             row.update(route="reconstruct", status=r.status, reason=r.reason[:200],
                        members=[{"status": r.status, "reason": r.reason[:200]}],
                        window_atoms=len(r.window.atoms) if r.status == "fixed_point" else None)
@@ -4200,7 +4337,7 @@ def reacting_port_gaps(rows) -> list:
 
 def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: bool = True,
                providers=None, specs=None, covers: bool = True, keep=None, contexts_out=None,
-               **loop) -> dict:
+               policy=None, **loop) -> dict:
     """Items 1-5 and 7 for one member: refusal by status, or the fixed point
     (window, span against ``bound``, per-mapping edit checks, diagnostics,
     recertification flips) and the context list with merges.  A
@@ -4209,7 +4346,9 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
     ``contexts_out`` (additive, I-138): a list that receives the context
     results themselves (``ContextResult`` per assignment, first the
     all-artificial base, and the merge pairs) as one ``(results, merges)``
-    entry; the returned rows are unchanged."""
+    entry; the returned rows are unchanged.  ``policy``: the chemistry
+    (default ``policy_for`` the member's witness), passed to every
+    observation, context and cover."""
     import time
     start = time.perf_counter()
     out = {"label": case.label, "family": case.family, "direction": case.direction,
@@ -4219,12 +4358,13 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
     if case.support != "supported":
         out.update(status=f"refused:{case.support}", reason="channel support")
         return out
-    why = species_domain_refusal(case.witness)
+    policy = policy or policy_for(case.witness, providers)
+    why = species_domain_refusal(case.witness, policy)
     if why:
         out.update(status="refused:domain", reason=why)
         return out
     observer = MemberObserver(certifier, family, case.direction, case.wanted,
-                              providers=providers)
+                              providers=providers, policy=policy)
     fp = fixed_point(case.witness, observer, providers, **loop)
     if keep is not None:       # the class closings keep the fixed point (``close_classes``)
         keep.append(fp)
@@ -4235,7 +4375,8 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
     if not fp.reached:
         if fp.status == "refused:reacting_port" and covers:
             out["covers"] = reacting_port_covers(certifier, family, case, bound=bound,
-                                                 providers=providers, specs=specs, **loop)
+                                                 providers=providers, specs=specs,
+                                                 policy=policy, **loop)
             out["covered"] = cover_verdict(out["covers"])
         out["seconds"] = round(time.perf_counter() - start, 1)
         return out
@@ -4250,15 +4391,16 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
         check_span(fp.witness, window.atoms, bound, providers)
         out["span_bound_held"] = True
     out["dispositions"] = sorted({(str(k[0]), d) for k, d, _a in window.support.dispositions})
-    out["diagnostics"] = diagnostics(fp.witness, window.atoms)
+    out["diagnostics"] = diagnostics(fp.witness, window.atoms, policy)
     if contexts:
         _contexts(out, certifier, family, case, fp, bound, providers, loop,
-                  contexts_out=contexts_out)
+                  contexts_out=contexts_out, policy=policy)
     out["seconds"] = round(time.perf_counter() - start, 1)
     return out
 
 
-def _contexts(out, certifier, family, case, fp, bound, providers, loop, contexts_out=None):
+def _contexts(out, certifier, family, case, fp, bound, providers, loop, contexts_out=None,
+              policy=None):
     """Every context of ``context_assignments`` over the member's near ports
     (``member_near_ports``), run from the base fixed point's depths; far
     ports are reduced to their radical ends, and the reduction is checked:
@@ -4277,7 +4419,7 @@ def _contexts(out, certifier, family, case, fp, bound, providers, loop, contexts
             if assignment not in done:
                 done[assignment] = run_context(certifier, family, case, assignment, bound=bound,
                                                providers=providers, start_depths=fp.depths,
-                                               **loop)
+                                               policy=policy, **loop)
         results = [done[a] for a in assignments]
         far = [p for p in ports if p not in near]
         verdicts = far_port_verdicts(results, far, providers, witness=case.witness)

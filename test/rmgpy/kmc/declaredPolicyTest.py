@@ -271,10 +271,12 @@ def test_interim_check_refuses_an_undeclared_element():
 
 
 def test_interim_check_does_not_apply_the_ps_shape_rules():
-    """Branched backbones (PP), backbone radicals two bonds apart and
-    pendant-free chains are accepted: the interim widening is the point."""
+    """Branched backbones (PP), closed or with two far-apart radical sites,
+    are accepted: the interim widening is the point.  Radical sites closer
+    than ``spin_verdict`` allows stay refused (the spin rule is kept)."""
     from rmgpy.kmc import domain as dom
-    for smiles in ("CC(C)(C)CC", "C[CH]C[CH]C"):
+    assert dom.declared_interim_check(_mol("C[CH]C[CH]C")).reason.startswith("spin:")
+    for smiles in ("CC(C)(C)CC", "C[C](C)CCCCC[C](C)C"):
         assert dom.declared_interim_check(_mol(smiles)).accepted, smiles
         assert not dom.check(_mol(smiles)).accepted, smiles
 
@@ -322,6 +324,8 @@ def test_policy_objects():
     from rmgpy.kmc import domain as dom
     from rmgpy.kmc import windows as win
     assert (win.LEGACY_V1.name, win.LEGACY_V1.ring_edits) == ("legacy_v1", "exclude")
+    from rmgpy.kmc import certificates as cm
+    assert win.LEGACY_V1.name == win.LEGACY_V1.domain.name == cm.LEGACY_DOMAIN_POLICY
     assert (win.DECLARED_INTERIM.name, win.DECLARED_INTERIM.ring_edits) == \
         ("declared_interim_v1", "exclude")
     m = _mol("CC(C)(C)CC")
@@ -350,6 +354,38 @@ def test_an_explicit_policy_wins(monkeypatch):
     assert calls
     resolved = win.species_domain_refusal(witness)
     assert resolved is None and len(calls) == 2          # one species, both sides; unchanged
+
+
+def _two_molecule_guard_certificate():
+    """A certificate on two molecules (atoms 0-1 and 5) whose one passed
+    predicate reads molecule 1 (anchor atom 5) with a carbon minimum it fails."""
+    predicate = {"node": "C_rad", "result": "passed", "anchors": {"*3": 5},
+                 "guards": {"element_count": {"read": True, "group_minimum": {"C": 1},
+                                              "structure": {"H": 1}}}}
+    mapping = {"labels": [[1, "*3", 5]], "descent": "d"}
+    return {"channels": [{"kind": "kept", "members": [{"mappings": [mapping]}]}],
+            "descents": {"d": [{"root": predicate}]}, "global_guards": [],
+            "witness": {"molecules": [[0, 1], [5]]}}, {frozenset({("*3", 5)})}
+
+
+def test_an_element_count_guard_on_a_molecule_no_extension_grows_is_invariant():
+    """The guard reads the small participant (an H atom): a chain's step
+    delta cannot add carbon to it, so the failed minimum is extension
+    invariant, not 'an extension could satisfy it'.  Without ``growable``
+    the old reading (every molecule takes every provider's delta) stays."""
+    from rmgpy.kmc import windows as win
+    facts = {"declared:x": {"backbone_head": {"closed_shell": True, "delta": {"C": 3, "H": 6}}}}
+    cert, wanted = _two_molecule_guard_certificate()
+    old = win.certificate_support(cert, wanted, fragment_facts=facts)
+    assert old.refusal == "refused:guard: element_count C"
+    still = win.certificate_support(cert, wanted, fragment_facts=facts,
+                                    growable=frozenset({0, 1}))
+    assert still.refusal is None
+    assert {k: v for k, v, _r in still.dispositions}[("guard", "element_count:C")] == \
+        "invariant_failed"
+    grows = win.certificate_support(cert, wanted, fragment_facts=facts,
+                                    growable=frozenset({0, 1, 5}))
+    assert grows.refusal == "refused:guard: element_count C"
 
 
 # --------------------------------------------------------------------------

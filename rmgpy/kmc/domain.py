@@ -289,16 +289,39 @@ def _phenyl_rings(form):
     return (seen, ipso_of), ""
 
 
-def check(molecule, separation: int = RADICAL_SEPARATION,
-          max_sites: int = MAX_RADICAL_SITES) -> DomainVerdict:
-    """The v1 PS domain verdict of one molecule (see the module docstring)."""
+# lone pairs of a neutral atom with a full octet (``declared_interim_check``)
+OCTET_LONE_PAIRS = {"H": 0, "C": 0, "Si": 0, "N": 1, "P": 1, "O": 2, "S": 2,
+                    "F": 3, "Cl": 3, "Br": 3, "I": 3}
+
+
+def _element_list(elements) -> str:
+    elements = list(elements)
+    return elements[0] if len(elements) == 1 else \
+        ", ".join(elements[:-1]) + " and " + elements[-1]
+
+
+def universal_check(molecule, elements=("C", "H"), *, lone_pairs=None,
+                    hydrogen_partner: str = "carbon") -> Optional[DomainVerdict]:
+    """The species rules every domain shares, in ``check``'s order: only
+    ``elements``; no charge; lone pairs (``lone_pairs``: element -> count;
+    None: none at all); no u2 atom; the multiplicity convention on the input
+    as given; hydrogen-only species are H or H2 (an accepted verdict); every
+    H bonded to exactly one ``hydrogen_partner`` (``"carbon"`` or
+    ``"heavy"``).  None: the rest is the caller's."""
     atoms = molecule.atoms
-    if any(a.element.symbol not in ("C", "H") for a in atoms):
-        return refused("an element other than C and H")
+    if any(a.element.symbol not in elements for a in atoms):
+        return refused(f"an element other than {_element_list(elements)}")
     if any(a.charge != 0 for a in atoms):
         return refused("a charged atom")
-    if any(a.lone_pairs != 0 for a in atoms):
-        return refused("an atom with a lone pair")
+    if lone_pairs is None:
+        if any(a.lone_pairs != 0 for a in atoms):
+            return refused("an atom with a lone pair")
+    else:
+        for a in atoms:
+            want = lone_pairs.get(a.element.symbol)
+            if want is None or a.lone_pairs != want:
+                return refused(f"an atom ({a.element.symbol}) with {a.lone_pairs} lone pairs "
+                               f"(neutral octet: {want})")
     if any(a.radical_electrons >= 2 for a in atoms):
         return refused("an atom with two unpaired electrons (u2)")
     # the declared convention is checked on the input as given, BEFORE any
@@ -317,12 +340,75 @@ def check(molecule, separation: int = RADICAL_SEPARATION,
             return _accepted("small:H2")
         return refused("a hydrogen-only species other than H and H2")
     for a in atoms:
-        if a.is_hydrogen() and (len(a.bonds) != 1 or not next(iter(a.bonds)).is_carbon()):
-            return refused("a hydrogen not bonded to exactly one carbon")
+        if not a.is_hydrogen():
+            continue
+        partner_ok = len(a.bonds) == 1 and (
+            next(iter(a.bonds)).is_carbon() if hydrogen_partner == "carbon"
+            else not next(iter(a.bonds)).is_hydrogen())
+        if not partner_ok:
+            return refused(f"a hydrogen not bonded to exactly one {hydrogen_partner}"
+                           if hydrogen_partner != "heavy"
+                           else "a hydrogen not bonded to exactly one heavy atom")
+    return None
+
+
+def check(molecule, separation: int = RADICAL_SEPARATION,
+          max_sites: int = MAX_RADICAL_SITES) -> DomainVerdict:
+    """The v1 PS domain verdict of one molecule (see the module docstring)."""
+    prefix = universal_check(molecule, ("C", "H"))
+    if prefix is not None:
+        return prefix
     first = _check_form(molecule, separation, max_sites)
     if first.accepted:
         return first
     return _check_form(canonical_form(molecule), separation, max_sites)
+
+
+def declared_elements() -> tuple:
+    """C, H and every element of a registered declared-chain provider's
+    declaration (its repeat unit's atoms)."""
+    from rmgpy.kmc import boundaries as b
+    from rmgpy.kmc import declared_chain as dc
+    found = {"C", "H"}
+    for provider in list(b.PROVIDERS.values()):
+        if isinstance(provider, dc.DeclaredChainProvider):
+            found |= {atom.element for atom in provider.geometry.atoms.values()}
+    return tuple(sorted(found))
+
+
+def declared_interim_check(molecule) -> DomainVerdict:
+    """INTERIM domain verdict for declared chains (``windows.DECLARED_INTERIM``,
+    policy ``declared_interim_v1``).  A named placeholder: a later I-165
+    slice (the declared chain domain) replaces it.
+
+    Accepts a molecule iff every element is C, H or an element of a
+    registered declared provider's declaration; no atom is charged or u2;
+    the multiplicity convention holds on the input as given; every atom
+    carries its neutral-octet lone pairs (``OCTET_LONE_PAIRS``: C 0, N 1,
+    O 2, S 2, halogens 3); every H is bonded to exactly one heavy atom and a
+    hydrogen-only species is H or H2; at most ``MAX_RADICAL_SITES`` unpaired
+    electrons; and ``spin_verdict`` is supported when there are two or
+    more.  The verdict kind is ``declared_interim``; ``details`` gives the
+    radical sites (atom ids).
+
+    Deliberately NOT applied: ``_check_form``'s PS shape rules (simple-path
+    backbone, phenyl pendants, declared end groups and radical kinds) and the
+    radical separation beyond ``spin_verdict``.  That widening is the point:
+    a branched PP or an ester-bearing PMMA chain is in this domain."""
+    prefix = universal_check(molecule, declared_elements(), lone_pairs=OCTET_LONE_PAIRS,
+                             hydrogen_partner="heavy")
+    if prefix is not None and not prefix.accepted:
+        return prefix
+    sites = [_key(a) for a in molecule.atoms if a.radical_electrons]
+    unpaired = sum(int(a.radical_electrons) for a in molecule.atoms)
+    if unpaired > MAX_RADICAL_SITES:
+        return refused(f"{unpaired} unpaired electrons > MAX_RADICAL_SITES "
+                       f"({MAX_RADICAL_SITES})")
+    if unpaired >= 2:
+        spin = spin_verdict(molecule)
+        if not spin.supported:
+            return refused(f"spin: {spin.reason}")
+    return _accepted("declared_interim", radical_sites=sites)
 
 
 def _check_form(form, separation, max_sites) -> DomainVerdict:

@@ -74,6 +74,9 @@ RADIUS_UNIT = ("ordinary bonds of the witness graph (bond order ignored); the ra
 H_HANDLING = ("explicit: hydrogens are graph atoms, a bond to H is one bond, an H inside a "
               "ball is listed with its own row")
 REPEAT_UNIT_FORMULA = (("C", 8), ("H", 8))
+# the domain policy of a certificate without "domain_policy": the module
+# domain (``domain.check``), the policy ``windows.LEGACY_V1`` names
+LEGACY_DOMAIN_POLICY = "legacy_v1"
 WHOLE_SPECIES = "whole_species"
 TREE = "tree_predicates"
 
@@ -796,13 +799,17 @@ class Certifier:
 
     # -- channel ------------------------------------------------------------
     def certify(self, family, reactants, *, pathway=None, products=None, member_labels=None,
-                channel_set=None, species=None, repeat=None) -> dict:
+                channel_set=None, species=None, repeat=None, domain=None) -> dict:
         """Certificate of the forward (family-template direction) channel(s) on
         ``reactants`` selected by ``pathway`` + product ``products`` (species
         keys), or by ``member_labels`` (a set of frozensets of (label, atom id):
         every channel with a member one of whose mappings has those labels).
         ``repeat``: the growth unit of ``depository_exclusion`` (element,
-        count) pairs; None keeps ``REPEAT_UNIT_FORMULA``."""
+        count) pairs; None keeps ``REPEAT_UNIT_FORMULA``.  ``domain``: the
+        species domain of the channel eligibility (an object with ``name``,
+        ``check`` and ``spin_verdict``, ``windows.PolicyDomain``); None is the
+        module domain (``domain.check``) and leaves the certificate as it
+        always was, a domain adds ``"domain_policy": domain.name``."""
         species = species or chm.SpeciesKeys()
         given = list(reactants) if channel_set is None else list(channel_set.reactants)
         input_refusals = []
@@ -837,7 +844,7 @@ class Certifier:
             cert["gaps"].append("no channel on the witness matches the selector")
         for ch in chosen:
             cert["channels"].append(self._channel(family, channel_set, ch, cert, species,
-                                                  repeat=repeat))
+                                                  repeat=repeat, domain=domain))
         cert["global_guards"] = _global_guards(cert)
         cert["gaps"].extend(completeness_gaps(cert))
         cert["complete"] = not cert["gaps"]
@@ -852,6 +859,8 @@ class Certifier:
         cert["eligible"] = bool(cert["channels"]) and not input_refusals and all(
             (ch.get("eligibility") or {}).get("disposition") == "eligible"
             for ch in cert["channels"])
+        if domain is not None:
+            cert["domain_policy"] = domain.name
         return cert
 
     def certify_channel(self, family, channel_set, channel, species=None) -> dict:
@@ -872,7 +881,7 @@ class Certifier:
             by_outcome[rm.product_key(m)].append(m)
         return {o: sorted(v, key=rm.Move.sort_key) for o, v in by_outcome.items()}
 
-    def _channel(self, family, channel_set, ch, cert, species, repeat=None):
+    def _channel(self, family, channel_set, ch, cert, species, repeat=None, domain=None):
         out = {"direction": ch.direction, "pathway": list(ch.pathway), "kind": ch.kind,
                "reactants": list(ch.reactants), "products": list(ch.products),
                "size": ch.size, "mappings": list(ch.mappings), "support": ch.support,
@@ -915,12 +924,15 @@ class Certifier:
         for mol in mols:
             k = species(mol)
             if k not in cert["species"]:
-                spin = dom.spin_verdict(mol)
+                if domain is None:
+                    spin, verdict = dom.spin_verdict(mol), dom.check(mol)
+                else:
+                    spin, verdict = domain.spin_verdict(mol), domain.check(mol)
                 cert["species"][k] = {
                     "spin": {"status": spin.status, "reason": spin.reason,
                              "radical_electrons": spin.radical_electrons,
                              "convention": spin.convention},
-                    "domain": dom.check(mol).as_dict()}
+                    "domain": verdict.as_dict()}
             if not cert["species"][k]["domain"]["accepted"]:
                 refused[k] = cert["species"][k]["domain"]["reason"]
         out["eligibility"] = {"disposition": "refused:domain" if refused else "eligible",
@@ -1221,7 +1233,8 @@ class Certifier:
         others = witness_molecules(record[b], offset=sum(len(m.atoms) for m in mols))
         return a, mols, others
 
-    def recertify(self, record, witness, atom_map, certificate=None, rate_owner=None) -> dict:
+    def recertify(self, record, witness, atom_map, certificate=None, rate_owner=None,
+                  domain=None) -> dict:
         """Re-run the selection of a record on an extended witness.
 
         ``witness``: molecules of the record's family-template reactants on
@@ -1235,7 +1248,8 @@ class Certifier:
         re-derived on this certifier's database, successfully bound and
         certified (``record_certificate_refusals``: the artifact check, one
         code path); its inner certificate is never unwrapped otherwise.  See
-        ``recertify_certificate``."""
+        ``recertify_certificate`` (``domain``: the new certificate's domain;
+        a change of domain policy is refused)."""
         record = _as_dict(record)
         old = certificate if certificate is not None else \
             self.certify_record(record, rate_owner=rate_owner)
@@ -1244,9 +1258,10 @@ class Certifier:
         if refusals:
             return _refused_recertification(refusals)
         return self.recertify_certificate(self.families[record["family"]], old["certificate"],
-                                          witness, atom_map)
+                                          witness, atom_map, domain=domain)
 
-    def recertify_certificate(self, family, old_cert, witness, atom_map, repeat=None) -> dict:
+    def recertify_certificate(self, family, old_cert, witness, atom_map, repeat=None,
+                              domain=None) -> dict:
         """Regenerate the mapped reaction on ``witness``, re-run the selection
         and compare through the map.
 
@@ -1261,8 +1276,16 @@ class Certifier:
         certified mapping, by its full identity, has the same selection and
         descent verdicts), ``same_support`` (the transported support is
         equal) and ``fixed_point`` (both).  ``repeat``: the new certificate's
-        depository growth unit (``certify``)."""
+        depository growth unit (``certify``).  ``domain``: the new
+        certificate's species domain (``certify``); refused
+        (``refused:domain_policy_changed``) when it is not the old
+        certificate's ``domain_policy`` (absent: ``LEGACY_DOMAIN_POLICY``)."""
         transport = {int(k): int(v) for k, v in atom_map.items()}
+        before = old_cert.get("domain_policy", LEGACY_DOMAIN_POLICY)
+        after = LEGACY_DOMAIN_POLICY if domain is None else domain.name
+        if before != after:
+            return _refused_recertification(
+                [f"refused:domain_policy_changed: {before} -> {after}"])
         refusals = old_certificate_refusals(old_cert)
         if refusals:
             return _refused_recertification(refusals)
@@ -1274,7 +1297,7 @@ class Certifier:
             for mem in ch.get("members", []):
                 for mp in mem["mappings"]:
                     wanted.add(frozenset((lab, transport[a]) for _s, lab, a in mp["labels"]))
-        new = self.certify(family, witness, member_labels=wanted, repeat=repeat)
+        new = self.certify(family, witness, member_labels=wanted, repeat=repeat, domain=domain)
         refusals = [f"extension: {r}" for r in old_certificate_refusals(new)]
         comparison = compare_certificates(old_cert, new, transport)
         if refusals:
@@ -2971,6 +2994,6 @@ def certify_record(record, families, certifier: Optional[Certifier] = None,
 
 
 def recertify(record, witness, atom_map, *, families, certificate=None,
-              certifier: Optional[Certifier] = None, rate_owner=None) -> dict:
+              certifier: Optional[Certifier] = None, rate_owner=None, domain=None) -> dict:
     return (certifier or Certifier(families)).recertify(record, witness, atom_map, certificate,
-                                                        rate_owner=rate_owner)
+                                                        rate_owner=rate_owner, domain=domain)
