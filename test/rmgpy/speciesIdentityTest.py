@@ -86,6 +86,15 @@ def test_charged_resonance_pair_is_undecidable():
     assert same_structure([second], [first]) is UNDECIDABLE
 
 
+def test_resonance_generation_failure_is_undecidable(monkeypatch):
+    """A direct-generation failure cannot be accepted as complete expansion."""
+    from rmgpy.molecule import resonance
+    aromatic, kekule = _aromatic_benzene(), _kekule_benzene()
+    monkeypatch.setattr(resonance, "generate_resonance_structures",
+                        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert same_structure([aromatic], [kekule]) is UNDECIDABLE
+
+
 def test_mixed_spin_lists_are_malformed_not_equal_through_a_tail():
     """A shared triplet tail cannot make two singlet leaders comparable."""
     first = [_spin("CC", 1), _spin("[CH2]C[CH]C", 3)]
