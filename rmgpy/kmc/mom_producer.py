@@ -1225,18 +1225,37 @@ def _h_loss_radical_daughter(molecule, proxies) -> bool:
     return False
 
 
-def species_structure(species) -> Optional[str]:
-    """A species' structure as MoM binds its recorded mask to it
-    (``rmgpy.polymer.species_structure`` of the MoM checkout): the augmented
-    InChI of its first molecule, None without one or when none can be
-    computed."""
-    molecules = getattr(species, "molecule", None) or []
-    if not molecules or molecules[0] is None:
+def _same_structure(first, second) -> bool:
+    """Whether two molecule lists are one species by RMG's own test, the one
+    it merges species by (``rmgpy.polymer.same_structure`` of the MoM
+    checkout): the same multiplicity, and some molecule of each isomorphic
+    (strict) to some of the other's, the first's resonance forms generated
+    when the lists alone do not match.  Tautomers are distinct graphs.  Any
+    error: not equal."""
+    try:
+        if not first or not second or first[0].multiplicity != second[0].multiplicity:
+            return False
+        if any(a.is_isomorphic(b, strict=True) for a in first for b in second):
+            return True
+        forms = first[0].copy(deep=True).generate_resonance_structures(keep_isomorphic=False)
+        return any(f.multiplicity == b.multiplicity and f.is_isomorphic(b, strict=True)
+                   for f in forms for b in second)
+    except Exception:
+        return False
+
+
+def recorded_molecule(structure) -> Optional[Molecule]:
+    """A recorded structure ({"adjacency_list", "multiplicity"}) as RMG's
+    molecule, its multiplicity the recorded one; None when it cannot be
+    read (absent, malformed, or its multiplicity disagreeing)."""
+    if not isinstance(structure, dict) or not isinstance(structure.get("adjacency_list"), str) \
+            or not isinstance(structure.get("multiplicity"), int):
         return None
     try:
-        return molecules[0].to_augmented_inchi()
+        molecule = Molecule().from_adjacency_list(structure["adjacency_list"])
     except Exception:
         return None
+    return molecule if molecule.multiplicity == structure["multiplicity"] else None
 
 
 def _recorded_mask(conventions: dict, profile) -> Optional[List[Tuple[str, Optional[str], bool]]]:
@@ -1253,8 +1272,8 @@ def _recorded_mask(conventions: dict, profile) -> Optional[List[Tuple[str, Optio
     reactors = record.get("reactors") if isinstance(record, dict) else None
 
     def entry_ok(e):
-        return (isinstance(e, dict) and isinstance(e.get("species"), str) and isinstance(e.get("gas"), bool)
-                and (e.get("structure") is None or isinstance(e.get("structure"), str)) and "structure" in e)
+        return isinstance(e, dict) and isinstance(e.get("species"), str) and isinstance(e.get("gas"), bool) \
+            and "structure" in e
     if (not isinstance(record, dict) or record.get("source") != "solver" or not isinstance(reactors, list)
             or not all(isinstance(r, dict) and isinstance(r.get("reactor"), int) and isinstance(r.get("profile"), str)
                        and isinstance(r.get("core"), list) and all(entry_ok(e) for e in r["core"])
@@ -1301,8 +1320,9 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
     (conventions.solver_gas_mask) for reactor 1's profile read here
     (``_recorded_mask``).  It is the only phase source: each rule is the
     recorded flag, no unit, nothing reconstructed.  Each recorded species
-    must have the structure (``species_structure``) of the Chemkin species
-    it names (refused otherwise).  The mask is static
+    be the Chemkin species it names by RMG's isomorphism (``_same_structure``
+    of ``recorded_molecule``; refused otherwise, and a recorded structure
+    that cannot be read equals nothing).  The mask is static
     over the simulation that wrote the profile, whose columns are its core in
     its order, so the record must name the profile's species columns in that
     order (refused otherwise).
@@ -1383,10 +1403,16 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
                                 f"{profile} {list(header[2:])}: the recorded mask is not the mask of the profile's "
                                 "core in its order")
         for key, (x, structure, _g) in zip(keys, recorded):
-            if key in by_key and species_structure(by_key[key]) != structure:
+            if key not in by_key:
+                continue
+            molecule = recorded_molecule(structure)
+            if molecule is None:
+                raise ProducerError(f"conventions.solver_gas_mask: the structure recorded for {x} cannot be read "
+                                    f"({structure!r}); it equals no species")
+            if not _same_structure([molecule], [m for m in (by_key[key].molecule or []) if m is not None]):
                 raise ProducerError(f"conventions.solver_gas_mask: {x} has another structure in the Chemkin file "
-                                    f"({species_structure(by_key[key])}) than the solver's mask was for "
-                                    f"({structure})")
+                                    f"than the solver's mask was for (not RMG-isomorphic, resonance and "
+                                    f"multiplicity considered)")
         gas = dict(zip(keys, (g for _x, _s, g in recorded)))
         return [(i, by_key[key], (None, "gas" if gas.get(key, True) else "condensed")) for i, key in order], \
             "solver_mask"
