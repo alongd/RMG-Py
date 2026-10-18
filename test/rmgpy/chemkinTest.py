@@ -53,6 +53,7 @@ from rmgpy.data.kinetics import LibraryReaction
 from rmgpy.exceptions import ChemkinError
 from rmgpy.kinetics.arrhenius import Arrhenius, MultiArrhenius
 from rmgpy.kinetics.chebyshev import Chebyshev
+from rmgpy.kinetics.falloff import Lindemann
 from rmgpy import constants
 from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
@@ -1308,3 +1309,113 @@ class TestAuxiliaryRecordsAndHeaders:
                                  name="short")
         assert short.kinetics.Ea.value_si == pytest.approx(1000.0 * constants.R, rel=1e-12)
         assert repr(short.kinetics) == repr(full.kinetics)
+
+
+class TestRecordShapes:
+    """A record whose name is both a keyword and a declared species is read by
+    its shape; an unknown bare word, values with no name, and an unreadable
+    record fail the line; comments are not records; an inline THERM block
+    skipped for a separate thermo file is skipped whole."""
+
+    THERM_ENTRY = TestEndKeyword.THERM_ENTRY
+    BASE = {"N2": "N#N", "H(1)": "[H]", "H2(2)": "[H][H]"}
+    EXTRA = {"REV": "CC", "DUP": "CCC", "LOW": "CCCC", "CHEB": "CCCCC"}
+    EQUATION = "H(1)+H(1)(+M)<=>H2(2)(+M)    1.0e13 0.0 0.0"
+
+    def load(self, tmp_path, aux, names=None, thermo_header="THERM ALL", thermo_path=False, name="chem"):
+        names = dict(self.BASE, **self.EXTRA) if names is None else names
+        therm = [thermo_header, "   300.000  1000.000  5000.000"]
+        for species in names:
+            therm += [line.format(species) for line in self.THERM_ENTRY]
+        therm += ["END"]
+        text = "\n".join(["ELEMENTS H C N END", "SPECIES", *names, "END", *therm,
+                          "REACTIONS    KCAL/MOLE   MOLES", self.EQUATION, *aux, "END", ""])
+        path = tmp_path / f"{name}.inp"
+        path.write_text(text)
+        (tmp_path / "dict.txt").write_text("\n".join(f"{n}\n{Molecule(smiles=s).to_adjacency_list()}"
+                                                     for n, s in names.items()))
+        kwargs = {}
+        if thermo_path:
+            (tmp_path / "therm.dat").write_text("\n".join(therm) + "\n")
+            kwargs["thermo_path"] = str(tmp_path / "therm.dat")
+        return load_chemkin_file(str(path), str(tmp_path / "dict.txt"), check_duplicates=False,
+                                 generate_resonance_structures=False, **kwargs)
+
+    @staticmethod
+    def efficiencies(kinetics):
+        return sorted((m.to_smiles(), e) for m, e in kinetics.efficiencies.items())
+
+    @pytest.mark.parametrize("label, value", [("REV", "0.00"), ("DUP", "2"), ("LOW", "2")])
+    def test_a_species_named_like_a_keyword_keeps_its_efficiency(self, tmp_path, label, value):
+        _s, (reaction,) = self.load(tmp_path, [f"N2/0.50/ {label}/{value}/", "LOW/1e24 -2 0/"])
+        assert reaction.reversible and not reaction.duplicate
+        assert type(reaction.kinetics).__name__ == "Lindemann"
+        assert self.efficiencies(reaction.kinetics) == sorted(
+            [("N#N", 0.5), (Molecule(smiles=self.EXTRA[label]).to_smiles(), float(value))])
+        assert reaction.kinetics.arrheniusLow.A.value_si == pytest.approx(1e24 * 1e-12, rel=1e-12)
+
+    def test_a_keyword_record_of_keyword_shape_is_the_keyword(self, tmp_path):
+        _s, (reaction,) = self.load(tmp_path, ["N2/0.50/ REV/1e13 0 0/", "LOW/1e24 -2 0/"])
+        assert self.efficiencies(reaction.kinetics) == [("N#N", 0.5)]
+        assert "explicit reverse" in reaction.kinetics.comment
+
+    def test_a_record_of_both_shapes_is_an_ambiguity(self, tmp_path):
+        with pytest.raises(ChemkinError, match="ambiguous"):
+            self.load(tmp_path, ["N2/0.50/ CHEB/2/", "LOW/1e24 -2 0/"])
+
+    def test_rmgs_writer_output_round_trips(self, tmp_path):
+        polys = [NASAPolynomial(coeffs=[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 3.35], Tmin=lo, Tmax=hi)
+                 for lo, hi in (((200, "K"), (1000, "K")), ((1000, "K"), (6000, "K")))]
+        species = []
+        for label, smiles in [("N2", "N#N"), ("H", "[H]"), ("H2", "[H][H]"), ("REV", "CC"), ("DUP", "CCC"),
+                              ("LOW", "CCCC")]:
+            spc = Species(label=label).from_smiles(smiles)
+            spc.label = label
+            spc.thermo = NASA(polynomials=polys, Tmin=(200, "K"), Tmax=(6000, "K"))
+            species.append(spc)
+        n2, h, h2, rev, dup, low = species
+        kinetics = Lindemann(arrheniusHigh=Arrhenius(A=(1e7, "m^3/(mol*s)"), n=0, Ea=(0, "J/mol"), T0=(1, "K")),
+                             arrheniusLow=Arrhenius(A=(1e12, "m^6/(mol^2*s)"), n=-2, Ea=(0, "J/mol"), T0=(1, "K")),
+                             efficiencies={n2.molecule[0]: 0.5, rev.molecule[0]: 0.0, dup.molecule[0]: 2.0,
+                                           low.molecule[0]: 2.0})
+        reaction = Reaction(reactants=[h, h], products=[h2], kinetics=kinetics, reversible=True)
+        save_chemkin_file(str(tmp_path / "chem.inp"), species, [reaction], verbose=False, check_for_duplicates=False)
+        save_species_dictionary(str(tmp_path / "dict.txt"), species)
+        _s, (back,) = load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"),
+                                        check_duplicates=False, generate_resonance_structures=False)
+        assert back.reversible and not back.duplicate
+        assert self.efficiencies(back.kinetics) == self.efficiencies(kinetics)
+
+    @pytest.mark.parametrize("thermo_path", [False, True])
+    def test_an_inline_thermo_entry_named_reac_loads(self, tmp_path, thermo_path):
+        names = dict(self.BASE, REAC="CC")
+        species, (reaction,) = self.load(tmp_path, ["LOW/1e24 -2 0/"], names=names, thermo_path=thermo_path)
+        assert sorted(s.label for s in species) == ["H", "H2", "N2", "REAC"]
+        assert all(s.thermo is not None for s in species)
+        assert type(reaction.kinetics).__name__ == "Lindemann"
+
+    def test_a_separate_thermo_file_headed_ther_is_read(self, tmp_path):
+        species, _r = self.load(tmp_path, ["LOW/1e24 -2 0/"], names=dict(self.BASE), thermo_header="THER",
+                                thermo_path=True)
+        assert all(s.thermo is not None for s in species)
+
+    @pytest.mark.parametrize("aux", [["TYPO N2/0.5/", "LOW/1e24 -2 0/"], ["N2/0.5/ GARBAGE", "LOW/1e24 -2 0/"],
+                                     ["LOW/1e24 -2 0/ /0.5/"]], ids=["typo", "garbage", "values_with_no_name"])
+    def test_an_unreadable_record_fails_the_line(self, tmp_path, aux):
+        with pytest.raises(ChemkinError):
+            self.load(tmp_path, aux, names=dict(self.BASE))
+
+    def test_a_bare_keyword_before_a_record_is_read(self, tmp_path):
+        _s, (together,) = self.load(tmp_path, ["DUP LOW/1e24 -2 0/"], names=dict(self.BASE), name="together")
+        _s, (apart,) = self.load(tmp_path, ["DUP", "LOW/1e24 -2 0/"], names=dict(self.BASE), name="apart")
+        assert together.duplicate and apart.duplicate
+        assert repr(together.kinetics) == repr(apart.kinetics)
+
+    def test_a_comment_holding_a_slash_is_no_record(self):
+        species = {label: Species(label=label).from_smiles(smiles) for label, smiles in self.BASE.items()}
+        aunits = ['', 's^-1', 'cm^3/(mol*s)', 'cm^6/(mol^2*s)', 'cm^9/(mol^3*s)']
+        aunits_surf = ['', 's^-1', 'cm^2/(mol*s)', 'cm^4/(mol^2*s)']
+        entry = "H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0\nLOW/1e24 -2 0/ ! comment / slash"
+        reaction = read_kinetics_entry(entry, species, aunits, aunits_surf, "kcal/mol")
+        assert type(reaction.kinetics).__name__ == "Lindemann"
+        assert reaction.kinetics.arrheniusLow.A.value_si == pytest.approx(1e24 * 1e-12, rel=1e-12)
