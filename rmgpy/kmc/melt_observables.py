@@ -66,7 +66,23 @@ and signed: ``sum_tail mass(comp_c - n_c repeat - caps_c) + sum_explicit
 mass(comp_c - n_c repeat - ends)`` (zero after any bridge scission or
 recombination of whole units; nonzero for a split inside a repeat unit, a
 radical end lacking a cap H in the explicit ladder, a transferred H), bounded
-by the same sum of absolute values (``bound_g``).
+by the same sum of absolute values (``bound_g``).  The law carries no
+side-group depletion: the solver's depletion inventory Z is a model variable
+(stationary tail mu1, tail only) that a kMC state does not determine.
+
+Side-group loss (``side_group_channels``)
+-----------------------------------------
+Compared through physical observables only, per channel of the MoM deck's
+``side_group_homolysis`` declaration (validated with the solver's rules; no
+declaration, no channel): the cumulative amount of the channel's gas product
+released, counted from events (``SideGroupReleaseTracker``: an X atom that
+becomes a lone X radical, attributed to the site class it held on the current
+graph), and the remaining inventory of X at the channel's site class in
+polymer-derived molecules, by current-graph site matching, split tail /
+explicit.  Nothing is reconstructed from provenance.  ``side_by_side``
+compares the released amounts and the condensed mass (the exact kMC
+polymer-derived mass) directly with the MoM run's.  Losses outside every
+declared channel are ``mom_mass_law.undeclared_loss``.
 
 Units: ``amount = scale N / N_A`` (mol) with ``scale`` the declaration's
 ``initialization().scale_factor``; the volume is constant
@@ -82,7 +98,9 @@ recomputed from each component's composition (exact rationals): the line then
 catches stored-mass drift between the event's components.
 
 Export: ``write_time_series`` writes one JSON line per requested time (the
-engine's horizon API), ``mom_reported_quantities`` maps one observation to the
+engine's horizon API) and, last, one typed stop record (``"record": "stop"``,
+schema ``STOP_SCHEMA``): why the call stopped (``STOP_REASONS``) and its event
+count; observation lines carry no ``record`` key.  ``mom_reported_quantities`` maps one observation to the
 quantities the MoM solver reports, ``side_by_side`` compares them with a MoM
 run's own numbers.
 """
@@ -91,6 +109,7 @@ from __future__ import annotations
 
 import json
 import math
+import weakref
 from collections import Counter
 from dataclasses import dataclass
 from fractions import Fraction
@@ -99,11 +118,16 @@ from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 from rmgpy import constants
 from rmgpy.kmc.melt_engine import (BUILTIN_SPECIES, MeltEngine, SpeciesIdentity,
                                    refuse_initial_species_overlap)
-from rmgpy.kmc.melt_state import _Builder, _backbone_keys, _element_mass, monomer_repeat_key_map
+from rmgpy.kmc.melt_state import _Builder, _backbone_keys, _element_mass
 from rmgpy.polymer_mass import (Composition, EvolvedPoolMass, ExplicitInventory, InventoryTerm,
                                 observables_from_moments)
 
-OBSERVABLES_SCHEMA = "kmc-melt-observables/4"
+OBSERVABLES_SCHEMA = "kmc-melt-observables/6"
+STOP_SCHEMA = "kmc-melt-stop/1"
+# The reasons ``write_time_series`` can stop with: the last requested time was
+# reached ("horizon"), or the engine had no enabled channel when it was
+# ("absorbing"), or the call's event cap was reached first ("max_events").
+STOP_REASONS = ("horizon", "absorbing", "max_events")
 UNITS = {"amount": "mol (scale N / N_A)", "mass": "g", "molar_mass": "g/mol", "M2": "g^2/mol",
          "dp_moments": "mol, mol, mol (sum of amount n^k, k = 0, 1, 2)", "time": "s", "volume": "m^3",
          "end_inventory": "mol of end-group pairs (head + tail)"}
@@ -113,20 +137,37 @@ CONVENTION_DEFINITION = (
     "M2_difference = sum amount delta_c (2 (a n_c + e) + delta_c), "
     "M2_bound = sum amount |delta_c| (2 (a n_c + e) + |delta_c|); exact differences, not tolerances")
 UNDECLARED_LOSS_DEFINITION = (
-    "chain-origin atoms (repeat units and end groups) that are in no polymer-derived molecule, except the "
-    "X atoms of declared side-group-homolysis channels (booked by Z); reported with their mass, never "
-    "folded into the MoM projection")
+    "chain-origin atoms (repeat units and end groups) that are in no polymer-derived molecule, except the X "
+    "atoms the release tracker attributed to a declared channel's release from a polymer-derived molecule "
+    "(wherever they are now outside the polymer: free, or in a gas species formed later); a release from a "
+    "site with no declared class stays in this loss; without a continuous tracker nothing is exempted "
+    "(release_attribution_tracked = False); reported with mass, never folded into the MoM projection")
 MASS_LAW_DEFINITION = (
-    "value_g = a mu1_tail + e E - mu0_tail chain_mass_defect - sum_channels max(0, sites mu1_tail(0) - Z) M_X "
-    "+ sum_n amount_n (a n + e) (the solver's depletion-aware law); rows are exactly the declared "
-    "side_group_homolysis channels (none declared: no depletion), Z = the channel's X atoms still at their "
-    "declared site on tail chains (by origin), Z(0) = sites mu1_tail(0) from the initial ensemble, M_X = the "
-    "gas_product molar mass; E = physical end-group inventory of the tail (mass of end-group-origin atoms / "
-    "e); chain_mass_defect = 0 (per-chain loss is carried by Z); difference_g = kMC polymer-derived mass - "
-    "value_g = amount x [sum_tail mass(comp_c - n_c repeat - caps_c + sum_rows (n_c sites - z_c) X) + "
-    "sum_explicit mass(comp_c - n_c repeat - ends) + sum_rows sites (mu1(0) - mu1) M_X + sum_rows (clamped - "
-    "unclamped lost) M_X]; bound_g = the same with absolute values; a convention gap, never a tolerance for "
-    "comparing with a MoM run")
+    "value_g = a mu1_tail + e E + sum_n amount_n (a n + e): MoM's mass law WITHOUT side-group depletion "
+    "(the solver's depletion inventory Z is a model variable that a kMC state does not determine; a loss of "
+    "declared X atoms is visible through side_group_channels' released amounts and the exact condensed "
+    "mass); E = physical end-group inventory of the tail (mass of end-group-origin atoms / e); "
+    "difference_g = kMC polymer-derived mass - value_g = amount x [sum_tail mass(comp_c - n_c repeat - "
+    "caps_c) + sum_explicit mass(comp_c - n_c repeat - ends)]; bound_g = the same with absolute values; a "
+    "convention gap, never a tolerance for comparing with a MoM run")
+SIDE_GROUP_DEFINITION = (
+    "per declared side_group_homolysis channel, from a SideGroupReleaseTracker that follows the run (events "
+    "or rescans, never provenance): released_count = GROSS count of releases from polymer-derived molecules "
+    "(an X atom that becomes a free gas product, exactly the declared one: element, isotope, charge, one "
+    "radical electron, lone pairs), attributed to the site class the X held, on the current graph, when last "
+    "seen attached (RMG aromaticity perception, resonance-invariant); an X that re-enters a polymer-derived "
+    "molecule after a release is a recapture (recaptured_count), released_net_count = released - recaptured; "
+    "MoM's cumulative release Z(0) - Z is a gross channel flux (Z is never replenished); "
+    "released_from_other_count = releases from non-polymer molecules (mobile or small species, light "
+    "fragments) at the channel's site class, never booked on the polymer channel; released values are None "
+    "unless the tracker can prove it saw every event (released_tracked); free_now = free gas-product atoms "
+    "now; inventory = X now at the channel's site class in polymer-derived molecules, tail (n_c > xs) / "
+    "explicit (n_c <= xs)")
+BALANCE_DEFINITION = (
+    "per channel element: initial_count (at tracker start; without a tracker the current total) = "
+    "condensed_at_declared_sites (in polymer-derived molecules at a declared channel's site class) + "
+    "condensed_elsewhere (in polymer-derived molecules otherwise) + free (free gas-product atoms) + other "
+    "(every other molecule: mobile or small species, gas species such as HX, light fragments)")
 TIER1_NOTE = (
     "mom_definition is an accounting identity on the kMC partition (the MoM mass law and molecule count "
     "rebuilt from the kMC components), not a comparison with a MoM run; compare MoM output with side_by_side")
@@ -209,7 +250,6 @@ class ComponentRecord:
     caps: Tuple               # composition of the end-group-origin atoms
     defect: Tuple             # polymer: comp - n repeat - ends (signed); else ()
     law_defect: Tuple         # polymer: comp - n repeat - caps (signed); else ()
-    sites: Tuple = ()         # ((declared channel index, its X atoms still at their declared site here), ...)
 
 
 def _fsum(values) -> float:
@@ -319,17 +359,14 @@ def validate_side_group_channels(spec, channels) -> List[dict]:
                                    f"and {label!r}")
         seen[sanitized] = label
         gas_atom = gmol.atoms[0]
+        isotope = None if gas_atom.element.isotope == -1 else gas_atom.element.isotope
         rows.append({"label": label, "site_selector": selector, "sites_per_unit": values["sites_per_unit"],
-                     "gas_product": gas, "element": gas_atom.symbol,
-                     "isotope": None if gas_atom.element.isotope == -1 else gas_atom.element.isotope,
+                     "gas_product": gas, "element": gas_atom.symbol, "isotope": isotope,
+                     "signature": (gas_atom.symbol, isotope, int(gas_atom.charge),
+                                   int(gas_atom.radical_electrons), int(gas_atom.lone_pairs)),
                      "molar_mass_g_mol": gmol.get_molecular_weight() * 1000.0})
     # structural layer, on the legacy repeat-unit molecule the solver validates against
     repeat_molecule, _ends = spec.legacy_molecules()
-    keys = [atom.key for atom in spec.repeat_unit.atoms]
-    for atom in spec.repeat_unit.atoms:
-        keys += [f"{atom.key}.H{h}" for h in range(atom.hydrogens)]
-    # key by atom object: the aromaticity perception may reorder ``atoms``
-    key_of = {atom: keys[i] for i, atom in enumerate(repeat_molecule.atoms)}
     sites_seen = {}
     for row in rows:
         idxs = side_group_site_indices(repeat_molecule, row["element"], row["site_selector"])
@@ -348,11 +385,207 @@ def validate_side_group_channels(spec, channels) -> List[dict]:
             raise ObservablesError(f"channels {sites_seen[key]!r} and {row['label']!r} resolve to the SAME "
                                    f"{row['element']} atom set")
         sites_seen[key] = row["label"]
+        _symbol, _iso, charge, radical, lone_pairs = row["signature"]
+        for i in idxs:
+            site = repeat_molecule.atoms[i]
+            if (int(site.charge), int(site.radical_electrons) + 1, int(site.lone_pairs)) != (charge, radical, lone_pairs):
+                raise ObservablesError(
+                    f"channel {row['label']!r} gas_product={row['gas_product']!r} (charge {charge}, {radical} "
+                    f"radical electron(s), {lone_pairs} lone pairs) cannot be matched: homolysis of its site "
+                    f"gives charge {site.charge}, {site.radical_electrons + 1} radical electron(s), "
+                    f"{site.lone_pairs} lone pairs")
         row["sites_per_unit"] = len(idxs)
-        atoms = repeat_molecule.atoms
-        row["site_keys"] = frozenset(key_of[atoms[i]] for i in idxs)
-        row["neighbor"] = {key_of[atoms[i]]: key_of[next(iter(atoms[i].bonds))] for i in idxs}
     return rows
+
+
+PERCEPTION_STATS = {"calls": 0, "atoms": 0, "ring_system_hits": 0, "whole_fallbacks": 0}
+_RING_SYSTEM_CACHE: Dict[Tuple, frozenset] = {}
+_COMPONENT_MEMO = weakref.WeakKeyDictionary()   # state -> (revision, {cid: atoms})
+_CAPS = {2.0: ("C", 2), 3.0: ("C", 1)}          # a capped multiple bond keeps its order
+
+
+def clear_aromaticity_cache():
+    _RING_SYSTEM_CACHE.clear()
+    _COMPONENT_MEMO.clear()
+
+
+def _perceive(rows) -> frozenset:
+    """Atom keys of ``rows`` on RMG-aromatic rings (``get_aromatic_rings``)."""
+    from rmgpy.kmc.rmg_moves import molecule_from_rows
+    PERCEPTION_STATS["calls"] += 1
+    PERCEPTION_STATS["atoms"] += len(rows)
+    rings, _bonds = molecule_from_rows(rows).get_aromatic_rings()
+    return frozenset(atom.id for ring in rings for atom in ring)
+
+
+def _ring_atoms_and_bridges(state, atoms):
+    """(atoms on a cycle, bridge edges) of one component (iterative Tarjan)."""
+    nodes = state.atoms
+    disc, low, bridges, counter = {}, {}, set(), 0
+    for root in atoms:
+        if root in disc:
+            continue
+        disc[root] = low[root] = counter
+        counter += 1
+        stack = [(root, -1, iter(sorted(nodes[root].edges)))]
+        while stack:
+            v, parent, it = stack[-1]
+            w = next(it, None)
+            if w is None:
+                stack.pop()
+                if stack:
+                    u = stack[-1][0]
+                    low[u] = min(low[u], low[v])
+                    if low[v] > disc[u]:
+                        bridges.add((min(u, v), max(u, v)))
+                continue
+            if w == parent:
+                continue
+            if w in disc:
+                low[v] = min(low[v], disc[w])
+            else:
+                disc[w] = low[w] = counter
+                counter += 1
+                stack.append((w, v, iter(sorted(nodes[w].edges))))
+    ring = {a for a in atoms if any((min(a, b), max(a, b)) not in bridges for b in nodes[a].edges)}
+    return ring, bridges
+
+
+def _ring_system_rows(state, group):
+    """Rows of one ring system (connected ring atoms) and its first shell
+    (direct neighbours), each first-shell bond leaving the system replaced by
+    a cap of the same order (H for single, CH2= for double, CH# for triple):
+    the atoms whose element, charge, electrons and bonds RDKit's aromaticity
+    model reads.  Ids are ranks (sorted atom id); returns (rows, rank -> atom)
+    or None when a leaving bond cannot be capped (falls back to the whole
+    component).
+
+    The second shell never decides the answer: RDKit counts a ring atom's
+    pi electrons from that atom's own bonds, charge and electrons and the
+    element of an exocyclic double-bond partner (first shell; C=O versus
+    C=CH2 can flip it), and RMG keeps only six-membered carbon rings, all
+    inside the ring system.  The cap's order matters only for validity: it
+    keeps every first-shell atom's bond-order sum, so RMG's atom typing
+    (``Molecule.update``) and the RDKit conversion accept the graph."""
+    nodes = state.atoms
+    shell = sorted({b for a in group for b in nodes[a].edges} - set(group))
+    included = sorted(group) + shell
+    rank = {a: k for k, a in enumerate(sorted(included))}
+    rows, extra = {}, len(rank)
+    for a in sorted(included):
+        n = nodes[a]
+        edges = []
+        for b, order in n.edges.items():
+            if b in rank:
+                edges.append((rank[b], float(order)))
+                continue
+            order = float(order)
+            if order == 1.0:
+                rows[extra] = ("H", None, 0, 0, 0, ((rank[a], 1.0),))
+                edges.append((extra, 1.0))
+                extra += 1
+            elif order in _CAPS:
+                element, hydrogens = _CAPS[order]
+                cap = extra
+                cap_edges = [(rank[a], order)]
+                extra += 1
+                for _h in range(hydrogens):
+                    rows[extra] = ("H", None, 0, 0, 0, ((cap, 1.0),))
+                    cap_edges.append((extra, 1.0))
+                    extra += 1
+                rows[cap] = (element, None, 0, 0, 0, tuple(sorted(cap_edges)))
+                edges.append((cap, order))
+            else:
+                return None
+        rows[rank[a]] = (n.element, n.isotope, n.charge, n.radical, n.lone_pairs, tuple(sorted(edges)))
+    return rows, {k: a for a, k in rank.items()}
+
+
+def aromatic_atoms(state, cid) -> frozenset:
+    """Atoms of component ``cid`` on an aromatic ring by RMG's perception
+    (``Molecule.get_aromatic_rings``: six-membered carbon rings, RDKit
+    aromaticity, independent of the Kekule form stored), the perception the
+    solver's site selector uses.  Perceived per ring system (connected ring
+    atoms plus their capped first shell; aromaticity is a property of the
+    ring system and its direct substituents), cached by the ring system's
+    labelled graph across components and events, and memoized per state
+    revision; equal to ``aromatic_atoms_whole``."""
+    memo = None
+    if getattr(state, "_tx", None) is None:            # no open transaction: revision pins the graph
+        held = _COMPONENT_MEMO.get(state)
+        if held is None or held[0] != state.revision:
+            held = _COMPONENT_MEMO[state] = (state.revision, {})
+        memo = held[1]
+        if cid in memo:
+            return memo[cid]
+    atoms = state.components.atoms(cid)
+    ring, _bridges = _ring_atoms_and_bridges(state, atoms)
+    out = set()
+    seen = set()
+    for start in sorted(ring):
+        if start in seen:
+            continue
+        group, stack = [], [start]
+        seen.add(start)
+        while stack:
+            a = stack.pop()
+            group.append(a)
+            for b in state.atoms[a].edges:
+                if b in ring and b not in seen:
+                    seen.add(b)
+                    stack.append(b)
+        if len(group) < 6:
+            continue
+        built = _ring_system_rows(state, group)
+        if built is None:
+            PERCEPTION_STATS["whole_fallbacks"] += 1
+            out = set(aromatic_atoms_whole(state, cid))
+            break
+        rows, back = built
+        graph_key = tuple(sorted(rows.items()))
+        found = _RING_SYSTEM_CACHE.get(graph_key)
+        if found is None:
+            found = _RING_SYSTEM_CACHE[graph_key] = _perceive(rows)
+            if len(_RING_SYSTEM_CACHE) > 20000:
+                _RING_SYSTEM_CACHE.clear()
+        else:
+            PERCEPTION_STATS["ring_system_hits"] += 1
+        out.update(back[k] for k in found if k in back)
+    result = frozenset(out)
+    if memo is not None:
+        memo[cid] = result
+    return result
+
+
+def aromatic_atoms_whole(state, cid) -> frozenset:
+    """Whole-component RMG perception (the reference ``aromatic_atoms`` must equal)."""
+    rows = {}
+    for a in state.components.atoms(cid):
+        n = state.atoms[a]
+        rows[a] = (n.element, n.isotope, n.charge, n.radical, n.lone_pairs,
+                   tuple(sorted((b, float(o)) for b, o in n.edges.items())))
+    return _perceive(rows)
+
+
+def site_class(state, x, aromatic: Optional[frozenset] = None) -> Optional[str]:
+    """The solver's site predicate on the current graph: ``x`` is a terminal,
+    single-bonded, closed-shell atom on a carbon; its class is ``aryl`` (the
+    carbon is on an aromatic ring), ``benzylic`` (bonded to an aromatic-ring
+    carbon) or ``aliphatic``; None otherwise.  ``aromatic``: the component's
+    ``aromatic_atoms`` (computed when not given)."""
+    node = state.atoms[x]
+    if node.radical or len(node.edges) != 1:
+        return None
+    (c, order), = node.edges.items()
+    if order != 1.0 or state.atoms[c].element != "C":
+        return None
+    if aromatic is None:
+        aromatic = aromatic_atoms(state, state.components.component_of(x))
+    if c in aromatic:
+        return "aryl"
+    if any(b in aromatic and state.atoms[b].element == "C" for b in state.atoms[c].edges if b != x):
+        return "benzylic"
+    return "aliphatic"
 
 
 def declared_species_names(spec, identity: SpeciesIdentity) -> List[str]:
@@ -409,18 +642,96 @@ class MeltObserver:
         # side-group-homolysis channels: exactly the MoM declaration's (none: no depletion rows)
         self.channels = ([] if side_group_homolysis is None
                          else validate_side_group_channels(spec, side_group_homolysis))
-        self.site_channel = {}           # repeat-unit site key -> channel index
-        for i, row in enumerate(self.channels):
-            for key in row["site_keys"]:
-                self.site_channel[key] = i
-        # an initially mobile monomer's atoms map onto repeat-unit keys through its ancestry map
-        self.mobile_key_map = {}
-        for name, graph, _d in spec.small_species:
-            key_map = monomer_repeat_key_map(spec, graph) if self.channels else None
-            if key_map:
-                self.mobile_key_map[name] = key_map
-        tail0 = sum(count * dp for dp, count in spec.initial_ensemble.counts.items() if dp > xs)
-        self.tail_mu1_0_rep = tail0      # MoM's stationary tail mu1(0) (representative units)
+        self.channel_by_site = {(row["element"], row["isotope"], row["site_selector"]): i
+                                for i, row in enumerate(self.channels)}
+        self.channel_elements = {(row["element"], row["isotope"]) for row in self.channels}
+        self.gas_signatures = {row["signature"] for row in self.channels}
+        self.declaration = frozenset(channel_identity(row) for row in self.channels)
+
+    def category(self, state, cid) -> str:
+        """"species", "polymer" or "light": the module's classification of one component."""
+        if self.identity.identify(state, cid) is not None:
+            return "species"
+        return "polymer" if state.components.backbone_count(cid) // self.b >= 1 else "light"
+
+    def channel_of(self, state, x, aromatic: Optional[frozenset] = None) -> Optional[int]:
+        """The declared channel whose X atom ``x`` is, by current-graph site matching."""
+        node = state.atoms[x]
+        if (node.element, node.isotope) not in self.channel_elements:
+            return None
+        cls = site_class(state, x, aromatic)
+        return None if cls is None else self.channel_by_site.get((node.element, node.isotope, cls))
+
+    def is_free_gas_product(self, state, x) -> bool:
+        """``x`` is a lone atom exactly matching a declared gas product
+        (element, isotope, charge, radical electrons, lone pairs)."""
+        node = state.atoms[x]
+        return (not node.edges and (node.element, node.isotope, node.charge, node.radical, node.lone_pairs)
+                in self.gas_signatures)
+
+    def _x_atoms(self, state, cid) -> List[int]:
+        return [x for x in state.components.atoms(cid)
+                if (state.atoms[x].element, state.atoms[x].isotope) in self.channel_elements]
+
+    def site_inventory(self, state, records=None) -> Dict[int, Dict[str, int]]:
+        """Per channel index: X atoms at the channel's site class in polymer-derived
+        molecules now, {"tail": n, "explicit": n} (representative counts)."""
+        out = {i: {"tail": 0, "explicit": 0} for i in range(len(self.channels))}
+        if not self.channels:
+            return out
+        records = self.components(state) if records is None else records
+        for r in records:
+            if r.category != "polymer":
+                continue
+            xs_here = self._x_atoms(state, r.cid)
+            if not xs_here:
+                continue
+            aromatic = aromatic_atoms(state, r.cid)
+            part = "tail" if r.n > self.xs else "explicit"
+            for x in xs_here:
+                i = self.channel_of(state, x, aromatic)
+                if i is not None:
+                    out[i][part] += 1
+        return out
+
+    def x_balance(self, state, tracker: Optional["SideGroupReleaseTracker"] = None, records=None) -> dict:
+        """Per channel element (representative counts): initial = condensed at
+        declared sites + condensed elsewhere + free + other (``BALANCE_DEFINITION``)."""
+        out = {}
+        for element in sorted(self.channel_elements, key=str):
+            out[element] = {"condensed_at_declared_sites_count": 0, "condensed_elsewhere_count": 0,
+                            "free_count": 0, "other_count": 0}
+        if not self.channels:
+            return {}
+        records = {r.cid: r for r in (self.components(state) if records is None else records)}
+        for cid, r in records.items():
+            xs_here = self._x_atoms(state, cid)
+            if not xs_here:
+                continue
+            aromatic = aromatic_atoms(state, cid) if r.category == "polymer" else None
+            for x in xs_here:
+                slot = out[(state.atoms[x].element, state.atoms[x].isotope)]
+                if r.category == "polymer":
+                    at_site = self.channel_of(state, x, aromatic) is not None
+                    slot["condensed_at_declared_sites_count" if at_site else "condensed_elsewhere_count"] += 1
+                elif self.is_free_gas_product(state, x):
+                    slot["free_count"] += 1
+                else:
+                    slot["other_count"] += 1
+        for element, slot in out.items():
+            total = sum(slot.values())
+            slot["initial_count"] = (tracker.initial[element] if tracker is not None and tracker.continuous
+                                     else total)
+        return {f"{el}{iso or ''}": slot for (el, iso), slot in out.items()}
+
+    def release_tracker(self, target) -> "SideGroupReleaseTracker":
+        """The tracker that follows ``target``: for an engine, the run's one
+        tracker for this channel declaration (registered, shared with
+        ``write_time_series``); for a bare state, a new tracker updated by
+        hand."""
+        if isinstance(target, MeltEngine):
+            return _run_tracker(target, self)
+        return SideGroupReleaseTracker(self, target)
 
     # -- per component ----------------------------------------------------
     def components(self, state, engine: Optional[MeltEngine] = None) -> List[ComponentRecord]:
@@ -435,17 +746,12 @@ class MeltObserver:
             composition = _key(counts)
             backbone = comps.backbone_count(cid)
             n = backbone // self.b
-            caps, sites = Counter(), Counter()
+            caps = Counter()
             for x in comps.atoms(cid):
                 o = origin[x]
                 if o.kind == "chain" and o.segment in END_SEGMENTS:
                     caps[(nodes[x].element, nodes[x].isotope)] += 1
-                elif self.channels:
-                    i = self._channel_site(state, x)
-                    if i is not None:
-                        sites[i] += 1
             caps = _key(caps)
-            sites = tuple(sorted(sites.items()))
             species = engine.entries[cid].species if synced else self.identity.identify(state, cid)
             if species is not None:
                 category, defect, law_defect = "species", (), ()
@@ -456,37 +762,14 @@ class MeltObserver:
             else:
                 category, defect, law_defect = "light", (), ()
             out.append(ComponentRecord(cid, composition, molar_mass_g_mol(composition), backbone, n,
-                                       species, category, caps, defect, law_defect, sites))
+                                       species, category, caps, defect, law_defect))
         return out
 
-    def _repeat_key(self, o) -> Optional[str]:
-        if o.kind == "chain":
-            return o.key if o.segment.startswith("unit ") else None
-        key_map = self.mobile_key_map.get(o.segment)
-        return key_map.get(o.key) if key_map else None
-
-    def _channel_site(self, state, x) -> Optional[int]:
-        """The channel whose declared X atom ``x`` is, if ``x`` is still bonded
-        (singly) to the atom it was declared on (same molecule of origin):
-        the leaving atom at its declared site class, by origin."""
-        origin = state.origin
-        o = origin[x]
-        key = self._repeat_key(o)
-        i = self.site_channel.get(key) if key is not None else None
-        if i is None:
-            return None
-        edges = state.atoms[x].edges
-        if len(edges) != 1:
-            return None
-        (b, order), = edges.items()
-        ob = origin[b]
-        if order != 1.0 or (ob.kind, ob.ordinal) != (o.kind, o.ordinal) or (o.kind == "chain" and ob.segment != o.segment):
-            return None
-        return i if self._repeat_key(ob) == self.channels[i]["neighbor"][key] else None
-
     # -- one observation --------------------------------------------------------
-    def observe(self, target) -> dict:
-        """One observation (a JSON-ready dict) of an engine or a bare state."""
+    def observe(self, target, releases: Optional["SideGroupReleaseTracker"] = None) -> dict:
+        """One observation (a JSON-ready dict) of an engine or a bare state;
+        ``releases``: the tracker that followed the run (released amounts are
+        None without one)."""
         engine = target if isinstance(target, MeltEngine) else None
         state = engine.state if engine is not None else target
         records = self.components(state, engine)
@@ -544,63 +827,65 @@ class MeltObserver:
         ladder_mass = Counter()
         for r in explicit:
             ladder_mass[r.n] += r.molar_mass_g_mol
-        # side-group depletion on the DECLARED channels (MoM's Z rows): Z = channel X atoms still at
-        # their declared site on tail chains; baseline Z(0) = sites mu1(0) (the solver's stationary
-        # inventory); lost = max(0, sites mu1(0) - Z) per row, as the solver's accessor clamps it
-        z_rep = Counter()
-        for r in tail:
-            for i, k in r.sites:
-                z_rep[i] += k
-        depletion, lost_mass, clamp, shift = [], [], [], []
-        for i, row in enumerate(self.channels):
-            z0 = row["sites_per_unit"] * self.tail_mu1_0_rep                      # integer
-            open_sites = z0 - z_rep[i]
-            lost = max(0, open_sites)
-            m_x = row["molar_mass_g_mol"]
-            lost_mass.append(u * lost * m_x)
-            clamp.append((lost - open_sites) * m_x)
-            shift.append(row["sites_per_unit"] * (self.tail_mu1_0_rep - rep_tail[1]) * m_x)
-            depletion.append({"label": row["label"], "site_selector": row["site_selector"],
-                              "sites_per_unit": row["sites_per_unit"], "gas_product": row["gas_product"],
-                              "molar_mass_g_mol": m_x, "Z0_mol": u * z0, "Z_mol": u * z_rep[i],
-                              "lost_mol": u * lost, "lost_mass_g": u * lost * m_x})
         chain_defect = 0.0
         explicit_capped = _fsum(u * k * (a * n + e) for n, k in ladder.items())
-        value = _fsum([a * mol_tail[1], e * end_mol, -mol_tail[0] * chain_defect, explicit_capped]
-                      + [-x for x in lost_mass])
-        # exact gap: per tail component comp - n repeat - caps + sum_rows (n sites - z_c) X (signed),
-        # per explicit chain comp - n repeat - ends, plus per row sites (mu1(0) - mu1) M_X and the clamp
-        gaps = []
-        for r in tail:
-            here = dict(r.sites)
-            parts = [(r.n, self.repeat), (1, dict(r.caps))]
-            parts += [(here.get(i, 0) - r.n * row["sites_per_unit"], {(row["element"], row["isotope"]): 1})
-                      for i, row in enumerate(self.channels)]
-            gaps.append(molar_mass_g_mol(_minus(dict(r.composition), *parts)))
-        gaps += [molar_mass_g_mol(r.defect) for r in explicit]
-        # undeclared loss: chain-origin atoms outside every polymer-derived molecule, except the X
-        # atoms of declared channels (those are booked by Z)
+        value = _fsum([a * mol_tail[1], e * end_mol, -mol_tail[0] * chain_defect, explicit_capped])
+        # exact gap: per tail component comp - n repeat - caps, per explicit chain comp - n repeat - ends
+        gaps = ([molar_mass_g_mol(r.law_defect) for r in tail]
+                + [molar_mass_g_mol(r.defect) for r in explicit])
+        # undeclared loss: chain-origin atoms outside every polymer-derived molecule, except free
+        # gas-product atoms of declared channels (those are the channels' releases)
+        if releases is not None and engine is not None:
+            releases.sync(engine)
+        tracked = (releases is not None and releases.continuous
+                   and releases.declaration == self.declaration)
+        exempt = releases.released_from if tracked else {}
         lost_atoms = Counter()
         for r in records:
             if r.category == "polymer":
                 continue
             for x in state.components.atoms(r.cid):
-                o = state.origin[x]
-                if o.kind != "chain":
-                    continue
-                if self.channels and self._repeat_key(o) in self.site_channel:
+                if state.origin[x].kind != "chain" or x in exempt:
                     continue
                 lost_atoms[(state.atoms[x].element, state.atoms[x].isotope)] += 1
         lost_atoms = _key(lost_atoms)
+        # side-group channels: released (from events) and current-graph inventory
+        inventory = self.site_inventory(state, records)
+        free_now = Counter()
+        for x, node in state.atoms.items():
+            if not node.edges and self.channels and self.is_free_gas_product(state, x):
+                free_now[(node.element, node.isotope, node.charge, node.radical, node.lone_pairs)] += 1
+        channels = []
+        for i, row in enumerate(self.channels):
+            m_x = row["molar_mass_g_mol"]
+
+            ident = channel_identity(row)
+            gross = releases.counts[ident] if tracked else None
+            recaptured = releases.recaptured[ident] if tracked else None
+            channels.append({"label": row["label"], "site_selector": row["site_selector"],
+                             "sites_per_unit": row["sites_per_unit"], "gas_product": row["gas_product"],
+                             "molar_mass_g_mol": m_x, "released_tracked": tracked,
+                             "released_count": gross, "recaptured_count": recaptured,
+                             "released_net_count": None if not tracked else gross - recaptured,
+                             "released_from_other_count": releases.other_counts[ident] if tracked else None,
+                             "released_mol": u * gross if tracked else None,
+                             "released_mass_g": u * gross * m_x if tracked else None,
+                             "released_net_mol": None if not tracked else u * (gross - recaptured),
+                             "free_now_mol": u * free_now[row["signature"]],
+                             "inventory_tail_mol": u * inventory[i]["tail"],
+                             "inventory_explicit_mol": u * inventory[i]["explicit"]})
+        balance = {}
+        for element, slot in self.x_balance(state, releases if tracked else None, records).items():
+            balance[element] = dict(slot, **{k[:-6] + "_mol": u * v for k, v in slot.items()})
         mass_law = {"definition": MASS_LAW_DEFINITION, "end_inventory_mol": end_mol,
                     "tail_repeat_mass_g": a * mol_tail[1], "tail_end_mass_g": e * end_mol,
-                    "chain_mass_defect_g_mol": chain_defect, "side_group_depletion": depletion,
-                    "side_group_lost_mass_g": _fsum(lost_mass),
+                    "chain_mass_defect_g_mol": chain_defect,
                     "explicit_capped_mass_g": explicit_capped,
                     "value_g": value, "kmc_mass_g": polymer_mass,
-                    "difference_g": u * _fsum(gaps + shift + clamp),
-                    "bound_g": u * _fsum([abs(g) for g in gaps] + [abs(x) for x in shift] + clamp),
+                    "difference_g": u * _fsum(gaps),
+                    "bound_g": u * _fsum(abs(g) for g in gaps),
                     "undeclared_loss": {"definition": UNDECLARED_LOSS_DEFINITION,
+                                        "release_attribution_tracked": tracked,
                                         "atoms": {f"{el}{iso or ''}": k for (el, iso), k in lost_atoms},
                                         "mass_g": u * molar_mass_g_mol(lost_atoms)}}
 
@@ -672,10 +957,137 @@ class MeltObserver:
             "representative_volume_m3": rep_volume, "volume_m3": self.scale * rep_volume,
             "declared_species": list(self.declared), "species_rule": SPECIES_RULE,
             "tier1": tier1, "mom_mass_law": mass_law, "tier2": tier2, "tier3": tier3, "release": release,
+            "side_group_definition": SIDE_GROUP_DEFINITION, "side_group_channels": channels,
+            "side_group_unattributed_releases": dict(releases.unattributed) if tracked else None,
+            "side_group_balance_definition": BALANCE_DEFINITION, "side_group_balance": balance,
             "counts": counts, "leak_estimate": leak,
             "invariants": {"components": len(records), "backbone_atoms": sum(r.backbone for r in records),
                            "composition": {f"{el}{iso or ''}": k for (el, iso), k in _key(total_comp)}},
         }
+
+
+class SideGroupReleaseTracker:
+    """Follows one run and counts side-group releases from what happens to
+    the graph, never from provenance.
+
+    An X atom (element of a declared channel) that becomes a free gas
+    product (exactly the declared one) is one release, booked by where it was
+    when last seen attached: from a polymer-derived molecule at a declared
+    channel's site class -> that channel (gross); from a polymer-derived
+    molecule elsewhere -> ``unattributed["polymer"]`` (its mass stays in the
+    undeclared loss); from any other molecule -> the channel's
+    ``other_counts`` or ``unattributed["other"]``.  An X released from a
+    polymer through a channel that re-enters a polymer-derived molecule is a
+    recapture of that channel.
+
+    Feeding: ``engine.run(check=tracker)`` (one call per fired event), or
+    ``update(state)`` after hand edits (a rescan of every component).
+    Continuity: the tracker counts the engine's fired events; ``sync(engine)``
+    (called by ``observe``) rescans when exactly one event was missed (one
+    event cannot release and recapture the same atom, so the rescan is
+    exact, e.g. after a post-commit index failure) and drops ``continuous``
+    when more were missed or when the tracker started on an engine that had
+    already fired events."""
+
+    _UNSEEN = object()
+
+    def __init__(self, observer: MeltObserver, target):
+        engine = target if isinstance(target, MeltEngine) else None
+        state = engine.state if engine is not None else target
+        self.observer = observer
+        self.idents = [channel_identity(row) for row in observer.channels]
+        self.declaration = frozenset(self.idents)
+        self.engine = weakref.ref(engine) if engine is not None else None
+        self.events_seen = engine.events_fired if engine is not None else 0
+        self.continuous = engine is None or engine.events_fired == 0
+        self.counts = Counter({k: 0 for k in self.idents})          # keyed by channel identity
+        self.recaptured = Counter({k: 0 for k in self.idents})
+        self.other_counts = Counter({k: 0 for k in self.idents})
+        self.unattributed = {"polymer": 0, "other": 0}
+        self.attached: Dict[int, Tuple[Optional[Tuple], str]] = {}  # X -> (channel identity or None, source)
+        self.released_from: Dict[int, Tuple] = {}                   # X released from a polymer via a channel
+        self.updates = 0
+        self.initial = {}
+        for element in observer.channel_elements:
+            self.initial[element] = sum(1 for node in state.atoms.values()
+                                        if (node.element, node.isotope) == element)
+        self.update(state)
+        self.updates = 0
+
+    def __call__(self, engine, event):
+        """One fired event.  Idempotent in ``events_fired``: an event already
+        caught up by ``sync`` is skipped, not treated as missed."""
+        if self.engine is None or self.engine() is not engine:
+            self.continuous = False
+        new = engine.events_fired - self.events_seen
+        if new <= 0:
+            return
+        if new == 1:
+            self.update(engine.state, event)
+        else:
+            self.update(engine.state)
+            self.continuous = False
+        self.events_seen = engine.events_fired
+
+    def sync(self, engine):
+        """Catch up with events fired without the tracker (see the class doc)."""
+        if self.engine is None or self.engine() is not engine:
+            self.continuous = False
+            return
+        missed = engine.events_fired - self.events_seen
+        if missed:
+            self.update(engine.state)
+            if missed > 1:
+                self.continuous = False
+            self.events_seen = engine.events_fired
+
+    def update(self, state, event=None):
+        obs = self.observer
+        if not obs.channels:
+            return
+        comps = state.components
+        cids = comps.ids() if event is None else [c for c in event.products if c in comps._rec]
+        for cid in cids:
+            xs_here = obs._x_atoms(state, cid)
+            if not xs_here:
+                continue
+            category = aromatic = None
+            for x in xs_here:
+                if obs.is_free_gas_product(state, x):
+                    previous = self.attached.pop(x, self._UNSEEN)
+                    if previous is self._UNSEEN:
+                        continue
+                    channel, source = previous           # channel identity or None
+                    if source == "polymer":
+                        if channel is None:
+                            self.unattributed["polymer"] += 1
+                            self.released_from.pop(x, None)
+                        else:
+                            self.counts[channel] += 1
+                            self.released_from[x] = channel
+                    elif channel is None:
+                        self.unattributed["other"] += 1
+                    else:
+                        self.other_counts[channel] += 1
+                    continue
+                if category is None:
+                    category = obs.category(state, cid)
+                    aromatic = aromatic_atoms(state, cid)
+                source = "polymer" if category == "polymer" else "other"
+                if source == "polymer" and x in self.released_from:
+                    self.recaptured[self.released_from.pop(x)] += 1
+                index = obs.channel_of(state, x, aromatic)
+                self.attached[x] = (None if index is None else self.idents[index], source)
+        self.updates += 1
+
+
+class _Checks:
+    def __init__(self, *checks):
+        self.checks = [c for c in checks if c is not None]
+
+    def __call__(self, engine, event):
+        for check in self.checks:
+            check(engine, event)
 
 
 def observe(target, spec=None, *, xs: int, side_group_homolysis=None) -> dict:
@@ -789,41 +1201,112 @@ class InvariantChecker:
 # --------------------------------------------------------------------------
 # export
 # --------------------------------------------------------------------------
+_RUN_TRACKERS = weakref.WeakKeyDictionary()     # engine -> {channel declaration: tracker}
+
+
+def channel_identity(row) -> Tuple:
+    """A channel's identity: (label, site selector, gas product), never its position."""
+    return (row["label"], row["site_selector"], row["gas_product"])
+
+
+def _run_tracker(engine, observer) -> SideGroupReleaseTracker:
+    """The release tracker of this engine run for these channels: created
+    once (continuous only if the engine has fired no event yet) and reused by
+    every later export, so released amounts are cumulative across appends."""
+    key = observer.declaration
+    trackers = _RUN_TRACKERS.setdefault(engine, {})
+    tracker = trackers.get(key)
+    if tracker is None:
+        tracker = trackers[key] = SideGroupReleaseTracker(observer, engine)
+    return tracker
+
+
+class TimeSeries(list):
+    """The observations of one ``write_time_series`` call, and why it stopped:
+    ``stop_reason`` (one of ``STOP_REASONS``), ``events`` (fired in this call),
+    ``total_events`` (the engine's count) and ``time_s`` (engine time)."""
+
+    def __init__(self, observations=(), *, stop_reason="horizon", events=0, total_events=0, time_s=0.0):
+        super().__init__(observations)
+        self.stop_reason = stop_reason
+        self.events = events
+        self.total_events = total_events
+        self.time_s = time_s
+
+
 def write_time_series(engine, times: Iterable[float], path, *, xs: int, check: bool = True,
                       observer: Optional[MeltObserver] = None, append: bool = False,
-                      side_group_homolysis=None) -> List[dict]:
+                      side_group_homolysis=None, max_events: Optional[int] = None) -> TimeSeries:
     """Advance ``engine`` to each requested time (``run(until=t)``, the horizon
     API: observing never changes the trajectory) and write one observation per
     time as a JSON line; with ``check`` the exact invariants are asserted after
-    every event (``invariant_checks`` counts them).  Returns the observations."""
+    every event (``invariant_checks`` counts them).
+
+    ``max_events`` caps the events fired by this call (all horizons together).
+    When the cap is reached before a requested time, the call stops there and
+    that observation is not written; a time the engine has reached (the
+    capping event fired exactly at it) is written.  The stop reason is
+    "max_events" exactly when a requested time was not reached because of the
+    cap; otherwise it is the last advance's (``RunResult.stop_reason``):
+    "horizon", or "absorbing" (no enabled channel) at the last requested time,
+    and "horizon" when no advance was needed or when the cap and the last
+    requested time are reached by the same event.  It ends the file as a stop
+    record and is returned with the observations (``TimeSeries``)."""
+    if max_events is not None and (isinstance(max_events, bool) or not isinstance(max_events, int)
+                                   or max_events < 0):
+        raise ObservablesError(f"max_events must be None or a non-negative integer, got {max_events!r}")
     observer = observer if observer is not None else MeltObserver(
         engine.spec, xs=xs, identity=engine.identity, side_group_homolysis=side_group_homolysis)
     checker = InvariantChecker(engine.state) if check else None
+    tracker = _run_tracker(engine, observer)
+    hook = _Checks(checker, tracker)
     times = [float(t) for t in times]
     if any(not math.isfinite(t) for t in times) or times != sorted(times) or (times and times[0] < engine.time):
         raise ObservablesError(f"observation times must be finite, sorted and >= the engine time {engine.time}")
-    out = []
+    out = TimeSeries()
+    start = engine.events_fired
+    stop = "horizon"
     with open(path, "a" if append else "w") as handle:
         for t in times:
+            tracker.sync(engine)                 # catch up before advancing
             if t > engine.time:
-                engine.run(until=t, check=checker)
-            obs = observer.observe(engine)
+                left = None if max_events is None else max_events - (engine.events_fired - start)
+                stop = engine.run(until=t, max_events=left, check=hook).stop_reason
+                if stop not in STOP_REASONS:
+                    raise ObservablesError(f"engine stopped with unknown reason {stop!r}")
+                if stop == "max_events":
+                    if engine.time < t:
+                        break                    # t not reached: no observation
+                    # the capping event fired exactly at t: t is reached and
+                    # observed; the series stops for the cap only if a later
+                    # requested time remains (the next advance has no events left)
+                    stop = "horizon"
+            obs = observer.observe(engine, releases=tracker)
             obs["time_s"] = t
             obs["invariant_checks"] = checker.checks if checker is not None else None
             handle.write(json.dumps(obs, sort_keys=True, allow_nan=False) + "\n")
             handle.flush()
             out.append(obs)
+        out.stop_reason, out.events = stop, engine.events_fired - start
+        out.total_events, out.time_s = engine.events_fired, engine.time
+        record = {"record": "stop", "schema": STOP_SCHEMA, "stop_reason": stop, "events": out.events,
+                  "total_events": out.total_events, "observations": len(out), "time_s": out.time_s}
+        handle.write(json.dumps(record, sort_keys=True, allow_nan=False) + "\n")
+        handle.flush()
     return out
 
 
 def mom_reported_quantities(obs: Mapping) -> dict:
-    """The kMC state of one observation expressed in the quantities the MoM
-    solver reports, by the MoM definitions: tail moments (pool moment slots),
-    the physical end-group inventory of the tail, explicit-ladder amounts per
-    DP, the condensed polymer mass by MoM's mass law on those
-    (``mom_mass_law.value_g``), Mn / Mw of the tail moments
-    (``observables_from_moments``), polymer conversion, the amount of every
-    declared species (0 when absent) and the polymer-derived molecules."""
+    """The kMC state of one observation in the quantities the MoM solver
+    reports: tail moments (pool moment slots), the physical end-group
+    inventory of the tail, explicit-ladder amounts per DP, Mn / Mw of the
+    tail moments (``observables_from_moments``), the amount of every declared
+    species (0 when absent), the polymer-derived molecules, and the physical
+    observables compared directly: the condensed polymer mass (the exact kMC
+    polymer-derived mass; MoM's mass law on the kMC moments is
+    ``mom_mass_law.value_g``, its gap the ``convention_gap_g`` row), the
+    polymer conversion from it, and per declared side-group channel the
+    released gas-product amount (None when untracked)."""
     t1, t3, law = obs["tier1"], obs["tier3"], obs["mom_mass_law"]
     mu = list(t3["tail"]["dp_moments_mol"])
     tail = observables_from_moments(mu, obs["repeat_unit_molar_mass_g_mol"], obs["end_group_molar_mass_g_mol"])
@@ -831,18 +1314,17 @@ def mom_reported_quantities(obs: Mapping) -> dict:
         "mu0_mol": mu[0], "mu1_mol": mu[1], "mu2_mol": mu[2],
         "end_inventory_mol": law["end_inventory_mol"],
         "explicit_dp_mol": dict(t3["explicit"]["dp_amount_mol"]),
-        "side_group_Z_mol": {row["label"]: row["Z_mol"] for row in law["side_group_depletion"]},
-        "chain_mass_defect_g_mol": law["chain_mass_defect_g_mol"],
-        "polymer_condensed_mass_g": law["value_g"],
+        "polymer_condensed_mass_g": t1["polymer_derived"]["mass_g"],
         "Mn_g_mol": tail.mn_g_mol, "Mw_g_mol": tail.mw_g_mol,
-        "polymer_conversion": 1.0 - law["value_g"] / obs["initial_polymer_mass_g"],
+        "polymer_conversion": 1.0 - t1["polymer_derived"]["mass_g"] / obs["initial_polymer_mass_g"],
+        "released_mol": {row["label"]: row["released_mol"] for row in obs.get("side_group_channels", ())},
         "species_mol": {k: v["amount_mol"] for k, v in t1["species"].items()},
         "polymer_derived_molecules_mol": t1["polymer_derived"]["mom_definition"]["amount_mol"],
     }
 
 
 _TIER1 = ("polymer_condensed_mass_g", "polymer_derived_molecules_mol", "polymer_conversion", "convention_gap_g")
-_ZERO_WHEN_ABSENT = ("explicit_dp_mol.", "species_mol.", "side_group_Z_mol.")
+_ZERO_WHEN_ABSENT = ("explicit_dp_mol.", "species_mol.")
 EQUAL_RELATIVE = 1.0e-12
 
 
@@ -896,7 +1378,7 @@ def side_by_side(obs: Mapping, mom: Optional[Mapping] = None) -> List[dict]:
             difference = k_value - m_value
             relative = _rel(k_value, m_value)
             agreement = "equal" if relative <= EQUAL_RELATIVE else "differs"
-        tier = 1 if key in _TIER1 or key.startswith("species_mol.") else 3
+        tier = 1 if key in _TIER1 or key.startswith(("species_mol.", "released_mol.")) else 3
         rows.append({"tier": tier, "quantity": key, "kmc": k_value, "mom": m_value, "difference": difference,
                      "relative_difference": relative, "bound": None, "agreement": agreement})
     law = obs["mom_mass_law"]
@@ -908,7 +1390,10 @@ def side_by_side(obs: Mapping, mom: Optional[Mapping] = None) -> List[dict]:
 
 __all__ = [
     "CONVENTION_DEFINITION", "ComponentRecord", "InvariantChecker", "InvariantError", "MASS_LAW_DEFINITION",
-    "MeltObserver", "OBSERVABLES_SCHEMA", "ObservablesError", "SPECIES_RULE", "TIER1_NOTE", "Totals",
+    "SIDE_GROUP_DEFINITION", "BALANCE_DEFINITION", "SideGroupReleaseTracker", "site_class", "aromatic_atoms",
+    "aromatic_atoms_whole", "channel_identity", "clear_aromaticity_cache", "PERCEPTION_STATS",
+    "MeltObserver", "OBSERVABLES_SCHEMA", "ObservablesError", "SPECIES_RULE", "STOP_REASONS", "STOP_SCHEMA",
+    "TimeSeries", "TIER1_NOTE", "Totals",
     "backbone_atoms_per_unit", "canonical_key", "declared_species_names", "exact_totals",
     "side_group_site_indices", "validate_side_group_channels",
     "mom_reported_quantities", "molar_mass_g_mol", "observe", "side_by_side", "write_time_series",

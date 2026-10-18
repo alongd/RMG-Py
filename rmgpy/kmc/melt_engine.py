@@ -121,7 +121,7 @@ from __future__ import annotations
 
 import math
 import weakref
-from collections import Counter
+from collections import Counter, OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
@@ -132,6 +132,15 @@ from rmgpy.kmc.melt_state import (AncestryError, MeltState, SetBond, SetRadical,
 
 MET_SCHEMA = "kmc-met-transport/1"
 PHI_FALLBACK_LIMIT = 64
+# Entries of the fallback-phi cache (one per thinned class and state revision;
+# least recently used evicted first).  A bound, not a tuning knob: an entry is
+# only ever served at the revision it was computed at.
+PHI_FALLBACK_CACHE_LIMIT = 256
+PHI_SUM_DEFINITION = (
+    "sum of phi over the proposals: the compensator of the accepted count (accepted - phi_sum is a "
+    "zero-mean martingale), so E[accepted] = E[phi_sum] at any integrable stopping time, a fixed "
+    "horizon and an event cap included (optional stopping); in a single run phi_sum is an estimate "
+    "of that expectation, not the conditional expected number of acceptances given the proposals")
 LEAK_ESTIMATOR = "ratio_of_unbiased_integrals"
 LEAK_DEFINITION = (
     "estimate (ratio_of_unbiased_integrals): leak_num / leak_den; leak_num = int leak hazard dt; "
@@ -997,7 +1006,8 @@ class MeltEngine:
         self._phi_by_class: Counter = Counter()
         self._proposals_by_class: Counter = Counter()
         self._open_phi_source = "none"
-        self._phi_fallback: Dict[Tuple, float] = {}
+        self._phi_fallback: "OrderedDict[Tuple, Tuple[float, bool]]" = OrderedDict()
+        self._phi_fallback_state = None      # the state object the cache entries belong to
         self._segment_start = 0.0
         self._leak_num_c = 0.0
         self._pending: Optional[_Pending] = None
@@ -1065,7 +1075,11 @@ class MeltEngine:
         self._refresh_met()
 
     # -- index -------------------------------------------------------------
-    def _scan(self, cids, state=None) -> Dict[int, _Entry]:
+    def _scan(self, cids, state=None, only=None) -> Dict[int, _Entry]:
+        """The index entry of each component: every unimolecular transition and
+        every bimolecular site of every loaded class.  ``only`` (a set of class
+        indices) restricts the match to those classes; the entry then holds
+        only their transitions and sites (a partial entry, never indexed)."""
         state = self.state if state is None else state
         quotient = self.quotient
         out = {}
@@ -1074,6 +1088,8 @@ class MeltEngine:
             atoms = state.components.atoms(cid)
             uni, sites = {}, {}
             for cls, t in zip(self.classes, self.templates):
+                if only is not None and cls.index not in only:
+                    continue
                 if not cls.bimolecular:
                     found, cache = {}, {}
                     for emb in participant_embeddings(view, t, 0, quotient=quotient):
@@ -1106,6 +1122,15 @@ class MeltEngine:
             out[cid] = _Entry(cid, atoms, uni, sites, backbone, self.transport.met_length(backbone),
                               state.components.radical_count(cid), self.identity.identify(state, cid))
         return out
+
+    def _phi_scan(self, cids) -> Dict[int, _Entry]:
+        """Partial entries carrying exactly what ``pair_rate`` reads: the
+        MET-forward sites, the MET length and the species identity.  For a pair
+        of components ``pair_rate`` of these equals ``pair_rate`` of the full
+        entries (it counts only MET-forward sites), so phi and every draw that
+        depends on it are unchanged; the unimolecular classes, which enumerate
+        every backbone bond and dominate a full scan, are skipped."""
+        return self._scan(cids, only=frozenset(c.index for c in self.classes if c.met_forward))
 
     def rebuild(self):
         """Full recompute of every index layer from the current state.  The
@@ -1399,12 +1424,13 @@ class MeltEngine:
         if tr.leak:
             raise EngineError(f"{tr.template}: a branching (leak) transition reached the fire step")
         tx, products = self._begin_apply(tr, view)
-        new = None
         if thinning:
             try:
                 phi, bypass = 1.0, False
                 if len(products) == 2:
-                    new = self._scan(products)
+                    # partial entries (phi only); an accepted event's index
+                    # update scans the committed components in full
+                    new = self._phi_scan(products)
                     rate = self.pair_rate(new[products[0]], new[products[1]])
                     if rate is None:
                         bypass = (new[products[0]].species is not None
@@ -1452,7 +1478,7 @@ class MeltEngine:
             self.met_counts[met_key] += 1      # with the log, before any post-commit failure
         try:
             self._conserved(journal)
-            self._update(old, added, new)
+            self._update(old, added)
         except BaseException:
             self.rebuild()
             raise
@@ -1554,9 +1580,29 @@ class MeltEngine:
         return total
 
     def _fallback_phi(self, ci) -> Tuple[float, bool]:
-        key = (ci, self.state.state_hash(), self.temperature)
-        if key in self._phi_fallback:
-            return self._phi_fallback[key]
+        """Mean phi over the current transitions of unimolecular class ``ci``
+        (see ``_open_thinned_rate``), cached per class and state revision.
+
+        The value is a deterministic function (no random draw) of: the state
+        graph (apply and product scan), the index entries (which transitions),
+        the loaded templates and weights (temperature), the declared transport,
+        spec and identity (fixed at construction) and the matcher mode.  The key
+        holds each one that can change: ``state.revision`` (+1 on every commit;
+        a rollback restores the graph byte-identically and leaves it), the
+        engine's ``_index_revision`` (+1 on every ``rebuild`` and ``_update``,
+        the only writers of the entries), the temperature and the weights, and
+        ``quotient``; the cache belongs to one state object and is emptied when
+        the engine is given another.  A key match is therefore the same
+        computation and never a stale value.  At most
+        ``PHI_FALLBACK_CACHE_LIMIT`` entries are kept (least recently used out)."""
+        if self._phi_fallback_state is not self.state:
+            self._phi_fallback.clear()
+            self._phi_fallback_state = self.state
+        key = (ci, self.state.revision, self._index_revision, self.temperature, self.weights, self.quotient)
+        cache = self._phi_fallback
+        if key in cache:
+            cache.move_to_end(key)
+            return cache[key]
         trs = [tr for c in sorted(self.entries) for tr in self.entries[c].uni.get(ci, ((), 0))[0]]
         sampled = len(trs) > PHI_FALLBACK_LIMIT
         if sampled:
@@ -1568,14 +1614,16 @@ class MeltEngine:
             try:
                 phi = 1.0
                 if len(products) == 2:
-                    new = self._scan(products)
+                    new = self._phi_scan(products)
                     rate = self.pair_rate(new[products[0]], new[products[1]])
                     phi = 1.0 if rate is None else rate.phi
             finally:
                 tx.rollback()
             phis.append(phi)
         value = (math.fsum(phis) / len(phis) if phis else 1.0, sampled)
-        self._phi_fallback = {key: value}
+        cache[key] = value
+        while len(cache) > max(1, PHI_FALLBACK_CACHE_LIMIT):
+            cache.popitem(last=False)
         return value
 
     def leak_estimate(self) -> dict:
@@ -1725,7 +1773,37 @@ class MeltEngine:
             "components": len(comps), "composition": {f"{k[0]}{k[1] or ''}": v for k, v in sorted(total.items(), key=str)},
             "backbone_atoms": backbone,
             "declared_mobile_participation": {k: list(v) for k, v in self.declared_mobile_participation.items()},
+            "thinning": self.thinning_report(),
         }
+
+    def thinning_report(self) -> dict:
+        """The exact-thinning decomposition of the radical-increasing (MET
+        reverse) classes: each is proposed at its intrinsic rate (majorant
+        phi <= 1) and a proposal is accepted with probability phi, the
+        Collins-Kimball escape factor k_D / (k_D + k_act) of its product pair
+        (1 for a pair with no MET class or a declared species).  Per class and
+        overall: proposals, accepted events, the summed phi (the compensator of
+        the accepted count, ``PHI_SUM_DEFINITION``) and the mean phi per proposal
+        (the escape probability; None before any proposal).  Zero events with
+        many proposals reads as this probability, not as a failure."""
+        rows = []
+        for cls in self.classes:
+            if not cls.met_reverse:
+                continue
+            n = self._proposals_by_class[cls.index]
+            phi = self._phi_by_class[cls.index]
+            rows.append({"template": cls.name, "proposals": n,
+                         "accepted": self.template_counts[cls.name], "phi_sum": phi,
+                         "escape_probability": phi / n if n else None})
+        n = self.thinned_proposals
+        return {"definition": "exact thinning: proposal at the intrinsic rate, accepted with probability phi "
+                              "(Collins-Kimball escape factor of the product pair, 1 when no MET class "
+                              "pairs them or one is a declared species); escape_probability = phi_sum / "
+                              "proposals",
+                "majorant": "phi <= 1",
+                "proposals": n, "accepted": sum(r["accepted"] for r in rows),
+                "phi_sum": self.phi_sum, "phi_sum_definition": PHI_SUM_DEFINITION,
+                "escape_probability": self.phi_sum / n if n else None, "classes": rows}
 
 
 __all__ = [

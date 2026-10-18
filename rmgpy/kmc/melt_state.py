@@ -761,7 +761,17 @@ class _Builder:
         self.origin: Dict[int, Origin] = {}
 
     def add_segment(self, graph, kind, ordinal, segment, backbone_keys=()):
-        """Add one declared graph (heavy atoms by key, each followed by its H)."""
+        """Add one declared graph (heavy atoms by key, each followed by its H).
+        Implicit hydrogens get origin keys ``<parent key>.H<i>``; a declaration
+        whose own atom keys collide with a generated key is refused (two atoms
+        would share one origin key)."""
+        declared = {decl.key for decl in graph.atoms}
+        collide = sorted(f"{decl.key}.H{h}" for decl in graph.atoms for h in range(decl.hydrogens)
+                         if f"{decl.key}.H{h}" in declared)
+        if collide:
+            raise MeltStateError(
+                f"declared atom keys {collide} collide with generated implicit-hydrogen keys "
+                "(<parent key>.H<i>); rename the declared atoms")
         ids = {}
         for decl in graph.atoms:  # GraphDeclaration sorts atoms by key
             heavy = len(self.atoms)
@@ -908,26 +918,6 @@ def monomer_backbone_keys(spec, graph) -> Optional[frozenset]:
             "initial mobile monomer refused: its map onto the repeat unit is ambiguous "
             f"(backbone atom sets {sorted(sorted(f) for f in flagged)})")
     return next(iter(flagged))
-
-
-def monomer_repeat_key_map(spec, graph) -> Optional[Dict[str, str]]:
-    """{species atom key: repeat-unit atom key} of one isomorphism of the
-    mobile species ``graph`` (the declared ``monomer_product``) onto the
-    closed repeat unit, chosen among those that give the unique backbone
-    ancestry (``monomer_backbone_keys``); None when ``graph`` is not the
-    monomer.  Keys follow the origin convention (hydrogens
-    ``<parent>.H<i>``).  Atoms the map does not distinguish (automorphisms
-    that keep the backbone set) map onto structurally equivalent atoms."""
-    flagged = monomer_backbone_keys(spec, graph)
-    if flagged is None:
-        return None
-    keys, species_forms, _none = _normalized_forms(graph)
-    closed_keys, closed_forms, backbone = _normalized_forms(spec.repeat_unit, closing=True)
-    for form in closed_forms:
-        for iso in _isomorphisms(species_forms[0], form):
-            if frozenset(keys[k] for k, v in iso.items() if v in backbone) == flagged:
-                return {keys[k]: closed_keys[v] for k, v in iso.items()}
-    return None
 
 
 def materialize(spec) -> MeltState:

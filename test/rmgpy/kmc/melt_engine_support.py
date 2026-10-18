@@ -494,3 +494,157 @@ def pvb_spec_with_monomer(counts, mobile):
         "electronic_state": {"multiplicity": 1},
     }
     return LinearHomopolymerSpec.from_mapping(_with_br(mapping))
+
+
+# --------------------------------------------------------------------------
+# I-158 rework 1
+# --------------------------------------------------------------------------
+METHYL_BROMIDE = {"graph": {"atoms": [_atom("c", hydrogens=3), _br("x")],
+                            "bonds": [{"atoms": ["c", "x"], "order": 1}],
+                            "electronic_state": {"multiplicity": 1}}, "disposition": "mobile"}
+
+
+def pvb_with_methyl_bromide(counts, mobile=1):
+    mapping = _with_br(pe_mapping(counts, small={"methyl_bromide": METHYL_BROMIDE},
+                                  mobile={"methyl_bromide": mobile}))
+    mapping["repeat_unit"] = {
+        "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=1), _br("x")],
+        "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", "x"], "order": 1}],
+        "ports": {"head": {"atom": "c1", "bond_order": 1}, "tail": {"atom": "c2", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+    return LinearHomopolymerSpec.from_mapping(mapping)
+
+
+NAPHTHYL_KEKULE = {
+    # ring A: n1 n2 n3 n4 n4a n8a; ring B: n4a n5 n6 n7 n8 n8a; Br on n6 (ring B)
+    "ring_b_alternating": [("n4a", "n5", 2), ("n5", "n6", 1), ("n6", "n7", 2), ("n7", "n8", 1), ("n8", "n8a", 2),
+                           ("n8a", "n4a", 1), ("n8a", "n1", 1), ("n1", "n2", 2), ("n2", "n3", 1), ("n3", "n4", 2),
+                           ("n4", "n4a", 1)],
+    "ring_b_not_alternating": [("n8a", "n1", 2), ("n1", "n2", 1), ("n2", "n3", 2), ("n3", "n4", 1),
+                               ("n4", "n4a", 2), ("n4a", "n8a", 1), ("n4a", "n5", 1), ("n5", "n6", 2),
+                               ("n6", "n7", 1), ("n7", "n8", 2), ("n8", "n8a", 1)],
+}
+
+
+def bromonaphthyl_spec(counts, kekule):
+    """-CH2-CH(C10H6Br)-: a 6-bromo-1-naphthyl pendant, one aryl C-Br site per unit,
+    declared in the given Kekule form."""
+    mapping = pe_mapping(counts)
+    hydrogens = {"n1": 0, "n4a": 0, "n8a": 0, "n6": 0}
+    ring = [_atom(k, hydrogens=hydrogens.get(k, 1)) for k in
+            ("n1", "n2", "n3", "n4", "n4a", "n5", "n6", "n7", "n8", "n8a")]
+    mapping["repeat_unit"] = {
+        "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=1), _br("x")] + ring,
+        "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", "n1"], "order": 1},
+                  {"atoms": ["n6", "x"], "order": 1}]
+                 + [{"atoms": [a, b], "order": o} for a, b, o in NAPHTHYL_KEKULE[kekule]],
+        "ports": {"head": {"atom": "c1", "bond_order": 1}, "tail": {"atom": "c2", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+    return LinearHomopolymerSpec.from_mapping(_with_br(mapping))
+
+
+def oxy_polymer_spec(counts, charge):
+    """-CH2-CH(O)-: a terminal O pendant with formal charge -1 (alkoxide,
+    3 lone pairs) or +1 (oxenium, 2 lone pairs)."""
+    mapping = pe_mapping(counts)
+    lone_pairs = 3 if charge < 0 else 2
+    mapping["repeat_unit"] = {
+        "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=1),
+                  {"key": "o", "element": "O", "charge": charge, "lone_pairs": lone_pairs}],
+        "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", "o"], "order": 1}],
+        "ports": {"head": {"atom": "c1", "bond_order": 1}, "tail": {"atom": "c2", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+    bounds = mapping["locality_policy"]["bounds"]
+    bounds["elements"] = ["C", "H", "O"]
+    bounds["lone_pairs"] = [0, 2, 3]
+    bounds["formal_charges"] = [-1, 0, 1]
+    return LinearHomopolymerSpec.from_mapping(mapping)
+
+
+def h_loss_templates(temperature=700.0, weight=0.5):
+    """Toy C-H homolysis of a CH3 chain end: CH3-CH2- -> .CH2-CH2- + H."""
+    atoms = [WindowAtom("C"), WindowAtom("H"), WindowAtom("H"), WindowAtom("H"),
+             WindowAtom("C", 0, "port", MID)]
+    bonds = [(0, 1, 1), (0, 2, 1), (0, 3, 1), (0, 4, 1)]
+    return [Template("h_loss", "toy_c_h_homolysis", atoms, bonds,
+                     [BondEdit(0, 1, 0), AtomEdit(0, radical=1), AtomEdit(1, radical=1)], weight=weight)]
+
+
+# --------------------------------------------------------------------------
+# I-158 rework 2: pendant ring systems for the aromaticity equivalence
+# --------------------------------------------------------------------------
+def pendant_spec(counts, atoms, bonds, attach, elements=("C", "H"), lone_pairs=(0,)):
+    """-CH2-CH(R)-: the pendant R (declaration atoms and bonds) bonded to the
+    backbone CH through ``attach``."""
+    mapping = pe_mapping(counts)
+    mapping["repeat_unit"] = {
+        "atoms": [_atom("c1", hydrogens=2), _atom("c2", hydrogens=1)] + list(atoms),
+        "bonds": [{"atoms": ["c1", "c2"], "order": 1}, {"atoms": ["c2", attach], "order": 1}]
+                 + [{"atoms": [a, b], "order": o} for a, b, o in bonds],
+        "ports": {"head": {"atom": "c1", "bond_order": 1}, "tail": {"atom": "c2", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1},
+    }
+    bounds = mapping["locality_policy"]["bounds"]
+    bounds["elements"] = sorted(elements)
+    bounds["lone_pairs"] = sorted(lone_pairs)
+    return LinearHomopolymerSpec.from_mapping(mapping)
+
+
+def _ring6(prefix, hydrogens, order=1.5):
+    keys = [f"{prefix}{i}" for i in range(1, 7)]
+    atoms = [_atom(k, hydrogens=hydrogens.get(k, 1)) for k in keys]
+    bonds = [(keys[i], keys[(i + 1) % 6], order) for i in range(6)]
+    return atoms, bonds
+
+
+def pyridyl_spec(counts):
+    """A 4-pyridyl pendant (heteroaromatic ring; RMG perceives carbon-only rings)."""
+    atoms, bonds = _ring6("p", {"p1": 0})
+    atoms[3] = {"key": "p4", "element": "N", "lone_pairs": 1}
+    return pendant_spec(counts, atoms, bonds, "p1", elements=("C", "H", "N"), lone_pairs=(0, 1))
+
+
+def quinone_spec(counts, exocyclic="O"):
+    """A 2,5-cyclohexadiene-1,4-dione-2-yl pendant (``exocyclic="O"``, a
+    quinone) or its 3,6-dimethylene analogue (``"C"``): the exocyclic
+    partner's element decides RMG's aromaticity of the ring."""
+    keys = [f"k{i}" for i in range(1, 7)]
+    hydrogens = {"k1": 0, "k2": 0, "k3": 1, "k4": 0, "k5": 1, "k6": 1}
+    atoms = [_atom(k, hydrogens=hydrogens[k]) for k in keys]
+    bonds = [("k1", "k2", 1), ("k2", "k3", 2), ("k3", "k4", 1), ("k4", "k5", 1), ("k5", "k6", 2), ("k6", "k1", 1)]
+    if exocyclic == "O":
+        atoms += [{"key": "o1", "element": "O", "lone_pairs": 2}, {"key": "o4", "element": "O", "lone_pairs": 2}]
+        elements, lone_pairs = ("C", "H", "O"), (0, 2)
+    else:
+        atoms += [_atom("o1", hydrogens=2), _atom("o4", hydrogens=2)]
+        elements, lone_pairs = ("C", "H"), (0,)
+    bonds += [("k1", "o1", 2), ("k4", "o4", 2)]
+    return pendant_spec(counts, atoms, bonds, "k2", elements=elements, lone_pairs=lone_pairs)
+
+
+def vinylphenyl_spec(counts):
+    """A 4-vinylphenyl pendant: a first-shell carbon with a double bond to the second shell."""
+    atoms, bonds = _ring6("p", {"p1": 0, "p4": 0})
+    atoms += [_atom("v1", hydrogens=1), _atom("v2", hydrogens=2)]
+    bonds += [("p4", "v1", 1), ("v1", "v2", 2)]
+    return pendant_spec(counts, atoms, bonds, "p1")
+
+
+def kekule_phenyl_spec(counts):
+    """A phenyl pendant stored in one Kekule form (ring bonds 2/1 alternating)."""
+    keys = [f"p{i}" for i in range(1, 7)]
+    atoms = [_atom(k, hydrogens=0 if k == "p1" else 1) for k in keys]
+    bonds = [(keys[i], keys[(i + 1) % 6], 2 if i % 2 == 0 else 1) for i in range(6)]
+    return pendant_spec(counts, atoms, bonds, "p1")
+
+
+def biphenylyl_bromide_spec(counts):
+    """A 4'-bromo-4-biphenylyl pendant: two rings joined by a single bond, Br on the outer ring."""
+    a_atoms, a_bonds = _ring6("q", {"q1": 0, "q4": 0})
+    b_atoms, b_bonds = _ring6("r", {"r1": 0, "r4": 0})
+    return pendant_spec(counts, a_atoms + b_atoms + [_br("x")],
+                        a_bonds + b_bonds + [("q4", "r1", 1), ("r4", "x", 1)], "q1",
+                        elements=("Br", "C", "H"), lone_pairs=(0, 3))

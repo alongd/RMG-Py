@@ -1719,10 +1719,17 @@ def eligible_candidates(
             == state.components[candidate[1].strand_id]
         ):
             continue
-        key = _candidate_key(candidate)
-        if identical and key != min(key, tuple(reversed(key))):
-            continue
-        found[key] = candidate
+        found[_candidate_key(candidate)] = candidate
+    if identical:
+        # One identical-species pair is one event seen from both orderings:
+        # drop the larger-keyed ordering only when its reverse is itself a
+        # candidate.  A pair between two forms of one species (one localized
+        # form per role) has no reverse candidate and stays.
+        found = {
+            key: candidate
+            for key, candidate in found.items()
+            if not (tuple(reversed(key)) in found and tuple(reversed(key)) < key)
+        }
     return tuple(found[key] for key in sorted(found))
 
 
