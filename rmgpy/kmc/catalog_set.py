@@ -6,14 +6,14 @@ names the member catalogs and what ties them together::
 
     {"schema": "kmc-catalog-set/1",
      "shared": {database_path, database_content_sha256, code_sources_sha256,
-                roster_sha256, database_head, code_sha},
+                code_extensions_sha256, roster_sha256, database_head, code_sha},
      "catalogs": [{"path", "sha256", "families", "complete"}, ...],
      "dependencies": [{"kind": "reverse_of", "record_event_id", "family",
                        "requires_record_event_id", "requires_family"}, ...]}
 
 ``shared`` is what every member was emitted against; members that differ in
 one of its fields are refused by field name, and so is a member whose
-database path, database content digest, kMC source digest or roster sha256 is
+database path, database content digest, rmgpy source or extension digest or roster sha256 is
 null or missing (unknown is not shared).  ``database_head`` and ``code_sha``
 are null outside git; they must be known for every member or for none (then
 the content digests identify the inputs).
@@ -49,7 +49,8 @@ from typing import Dict, List, Sequence, Tuple
 
 CATALOG_SET_SCHEMA = "kmc-catalog-set/1"
 CATALOG_SCHEMA = "kmc-template-catalog/1"     # rmgpy.kmc.emit.SCHEMA
-KNOWN_INPUTS = ("database_path", "database_content_sha256", "code_sources_sha256", "roster_sha256")
+KNOWN_INPUTS = ("database_path", "database_content_sha256", "code_sources_sha256",
+                "code_extensions_sha256", "roster_sha256")
 GIT_INPUTS = ("database_head", "code_sha")
 SHARED_INPUTS = KNOWN_INPUTS + GIT_INPUTS
 SET_KEYS = ("schema", "shared", "catalogs", "dependencies")

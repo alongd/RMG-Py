@@ -734,10 +734,10 @@ def test_assemble_refuses_shards_emitted_with_other_code_or_database(tmp_path, f
     """Derivation and the cycle check run with the assembler's own code and
     database: shards emitted with others are refused by field name, and the
     catalog would otherwise carry their digests."""
-    assembler_identity[field_] = "x" * 64
+    assembler_identity[field_] = "z" * 64
     with pytest.raises(emit.AssembleRefused) as caught:
         run(shards(tmp_path))
-    assert field_ in str(caught.value) and "x" * 16 in str(caught.value)
+    assert field_ in str(caught.value) and "z" * 16 in str(caught.value)
 
 
 @pytest.mark.parametrize("field_", ["database_content_sha256", "code_sources_sha256",

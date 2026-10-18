@@ -152,7 +152,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Sequence
@@ -1919,31 +1918,99 @@ def _pair_deviation(pf, tf, pr, tr, rep_wf, rep_wr) -> tuple:
     return worst, "thermo (calibration witness)" if thermo else "own calibrated ratio"
 
 
-RECORD_ID_PATTERN = re.compile(r"evt_[0-9a-f]+")
+# Where a record id lives (schema slots), masked whole as ``evt_*``: on the
+# payload ``record_event_id``, ``reverse_of``, ``rate.provenance.event_id``,
+# ``carried_for`` (carry_owners); on a template ``merged_into.record``,
+# ``derived.primary.record``, ``collision.records[]``,
+# ``collision.pair_deviations[].forward/.reverse``, ``reverse.records[]``,
+# ``refusal.records[]`` and ``refusal.weights[].record`` (resolve_collisions),
+# ``locality.rows[].provenance.event_id`` (the rate provenance of each
+# witness row, ``rate_of``: the id of the record the rate was taken from).
+PAYLOAD_ID_SLOTS = (("record_event_id",), ("reverse_of",), ("rate", "provenance", "event_id"),
+                    ("carried_for",))
+TEMPLATE_ID_SLOTS = (("merged_into", "record"), ("derived", "primary", "record"),
+                     ("collision", "records", "*"),
+                     ("collision", "pair_deviations", "*", "forward"),
+                     ("collision", "pair_deviations", "*", "reverse"),
+                     ("reverse", "records", "*"), ("refusal", "records", "*"),
+                     ("refusal", "weights", "*", "record"),
+                     ("locality", "rows", "*", "provenance", "event_id"))
+# Free text that quotes record ids: the payload's and each template's
+# ``refusal.reason``.  Only the forms the code writes are masked there: the
+# whole id (``evt_`` + 64 hex, e.g. certificates' partner refusals) and its
+# 16-character ``str(id)[:16]`` (check_cycles and one_way_problems reasons),
+# and only for the ids found in the id slots above.
+FREE_TEXT_SLOTS = (("refusal", "reason"),)
+ID_TRUNCATIONS = (16,)
 # payload fields that are digests over content holding record ids: ``sha256``
 # (``finish``: the whole payload, ids included) and ``certificate`` (the
 # record certificate's sha256; its owner block holds the record's event id,
 # ``certificates.record_owner``); the rate selection it certifies is stored
 # in ``rate.provenance.selection``, which the identity keeps
 ID_DIGEST_FIELDS = ("sha256", "certificate")
+MASK = "evt_*"
 
 
-def _without_ids(value):
-    """``value`` with every record id, whole or truncated (``evt_`` + hex, in
-    any string: ``record_event_id``, ``reverse_of``, ``rate.provenance.
-    event_id``, ``merged_into``/``derived``/``collision``/``reverse`` records,
-    refusal reasons), replaced by ``evt_*``."""
-    if isinstance(value, dict):
-        return {k: _without_ids(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_without_ids(v) for v in value]
-    if isinstance(value, str):
-        return RECORD_ID_PATTERN.sub("evt_*", value)
-    return value
+def _slot_values(value, path):
+    """(container, key) of every place ``path`` names in ``value`` (``*``: each
+    list element)."""
+    if not path:
+        return []
+    head, rest = path[0], path[1:]
+    if head == "*":
+        items = list(enumerate(value)) if isinstance(value, list) else []
+    else:
+        items = [(head, value[head])] if isinstance(value, dict) and head in value else []
+    out = []
+    for key, item in items:
+        out += [(value, key)] if not rest else _slot_values(item, rest)
+    return out
 
 
-def _template_identity(record_identity: str, template) -> str:
-    return sha256_json({"payload": record_identity, "template": _without_ids(template)})
+def _mask_ids(value, slots, ids):
+    for path in slots:
+        for container, key in _slot_values(value, path):
+            if isinstance(container[key], str):
+                ids.add(container[key])
+                container[key] = MASK
+
+
+def _mask_free_text(value, ids):
+    forms = sorted({f for rid in ids if rid != MASK for f in
+                    [rid] + [rid[:n] for n in ID_TRUNCATIONS if len(rid) > n]},
+                   key=len, reverse=True)
+    for path in FREE_TEXT_SLOTS:
+        for container, key in _slot_values(value, path):
+            text = container[key]
+            if isinstance(text, str):
+                for form in forms:
+                    text = text.replace(form, MASK)
+                container[key] = text
+
+
+def _without_ids(payload, template=None) -> tuple:
+    """Copies of ``payload`` (``ID_DIGEST_FIELDS`` dropped) and ``template``
+    with the id slots masked whole and, in the free-text slots, the ids found
+    there (whole or ``ID_TRUNCATIONS``) masked; every other string as stored."""
+    body = json.loads(json.dumps({k: v for k, v in payload.items() if k not in ID_DIGEST_FIELDS}))
+    ids = set()
+    _mask_ids(body, PAYLOAD_ID_SLOTS, ids)
+    for t in body.get("templates", []) if isinstance(body.get("templates"), list) else []:
+        _mask_ids(t, TEMPLATE_ID_SLOTS, ids)
+    tpl = None
+    if template is not None:
+        tpl = json.loads(json.dumps(template))
+        _mask_ids(tpl, TEMPLATE_ID_SLOTS, ids)
+    _mask_free_text(body, ids)
+    for t in body.get("templates", []) if isinstance(body.get("templates"), list) else []:
+        _mask_free_text(t, ids)
+    if tpl is not None:
+        _mask_free_text(tpl, ids)
+    return body, tpl
+
+
+def _template_identity(record_identity: str, payload, template) -> str:
+    return sha256_json({"payload": record_identity, "template": _without_ids(payload, template)[1]})
 
 
 def partition_free_identity(payload, template=None) -> str:
@@ -1956,12 +2023,12 @@ def partition_free_identity(payload, template=None) -> str:
     families were partitioned (the representative of a collision, the source
     pair of a reciprocal unit, the cycle-check temperatures) orders by this.
     It is the canonical JSON of the whole payload and template with
-    ``ID_DIGEST_FIELDS`` dropped and every record id masked
-    (``_without_ids``), so two copies tie only when their stored content is
-    identical, and then any choice between them gives the same result."""
-    body = {k: v for k, v in payload.items() if k not in ID_DIGEST_FIELDS}
-    record = sha256_json(_without_ids(body))
-    return record if template is None else _template_identity(record, template)
+    ``ID_DIGEST_FIELDS`` dropped and the record ids masked where the schema
+    puts them (``_without_ids``), so two copies tie only when their stored
+    content is identical, and then any choice between them gives the same
+    result."""
+    record = sha256_json(_without_ids(payload)[0])
+    return record if template is None else _template_identity(record, payload, template)
 
 
 def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG10) -> tuple:
@@ -2004,7 +2071,7 @@ def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG
             if t.get("status") == "emitted":
                 groups[t["key"]].append((p.get("record_event_id") or "", i, j))
                 record_identity = record_identity or partition_free_identity(p)
-                identity[(i, j)] = _template_identity(record_identity, t)
+                identity[(i, j)] = _template_identity(record_identity, p, t)
     for key in groups:
         groups[key].sort(key=lambda c: (identity[(c[1], c[2])], c))
     links = _reciprocal_partitions(out, groups)

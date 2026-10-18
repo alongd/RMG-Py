@@ -70,7 +70,8 @@ REFERENCE_RATES_LABEL = "i138-reference"
 PAYLOAD_FIELDS = ("key", "name", "family", "status", "direction", "executable", "weight", "derived")
 HEADER_MATCH = ("schema", "artifact_id", "artifact_sha256", "artifact_records", "families",
                 "database_path", "database_head", "database_content_sha256", "code_sha",
-                "code_sources_sha256", "roster_sha256", "temperatures", "selection")
+                "code_sources_sha256", "code_extensions_sha256", "roster_sha256", "temperatures",
+                "selection")
 CYCLE_REFUSED_FRACTION = 0.05
 MIDPOINT_THRESHOLD = 0.01     # the harness' gate on the primary-weight midpoint error
 
@@ -458,6 +459,34 @@ def code_sources_sha256(root=None) -> str:
     return digest.hexdigest()
 
 
+def code_extensions_sha256(root=None, modules=None) -> Optional[str]:
+    """sha256 over the sorted relative paths and bytes of every compiled
+    extension module file under ``root`` (default: the ``rmgpy`` package):
+    the code that actually runs where sources were edited next to binaries
+    built from another revision.  None (unknown) when a loaded ``rmgpy``
+    extension module (``modules``, default ``sys.modules``) comes from a file
+    outside that set.  About 50 files, 18 MB: well under a second."""
+    import importlib.machinery
+    import sys
+    root = Path(root) if root is not None else Path(__file__).resolve().parent.parent
+    suffixes = tuple(importlib.machinery.EXTENSION_SUFFIXES)
+    files = sorted(p for p in root.rglob("*") if p.name.endswith(suffixes)
+                   and "__pycache__" not in p.parts and p.is_file())
+    known = {p.resolve() for p in files}
+    for module in list(modules if modules is not None else sys.modules.values()):
+        name, path = getattr(module, "__name__", ""), getattr(module, "__file__", None)
+        if (name == "rmgpy" or str(name).startswith("rmgpy.")) and path and \
+                str(path).endswith(suffixes) and Path(path).resolve() not in known:
+            return None
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def database_content_sha256(path) -> Optional[str]:
     """The database's content digest (``database_provenance``), known where
     git is not (``database_head`` null); None if the tree cannot be read."""
@@ -666,6 +695,7 @@ def shard_header(emitter, roster, refusals, picked, chunk, partial):
             "database_path": str(emitter.database), "database_head": git_head(emitter.database),
             "database_content_sha256": database_content_sha256(emitter.database),
             "code_sha": code_sha(), "code_sources_sha256": code_sources_sha256(),
+            "code_extensions_sha256": code_extensions_sha256(),
             "roster_sha256": roster.sha256,
             "temperatures": [float(t) for t in DEFAULT_T_GRID], "chunk": chunk,
             "selection": "partial" if partial else "all",
@@ -726,13 +756,16 @@ class Services:
 
     counter: Any
     kc: Any
+    # the content digest of the database the counter and thermo come from
+    database_content_sha256: Optional[str] = None
 
 
 def load_services(database, families):
     from rmgpy.kmc.reference_thermo import GasPhaseRMGReferenceThermo
     db = load_database(families, database)
     return Services(te.RmgCounter(db.kinetics.families),
-                    te.ThermoKc(GasPhaseRMGReferenceThermo(db.thermo, REFERENCE_THERMO_LABEL)))
+                    te.ThermoKc(GasPhaseRMGReferenceThermo(db.thermo, REFERENCE_THERMO_LABEL)),
+                    database_content_sha256(database))
 
 
 def dumps(catalog) -> str:
@@ -845,13 +878,14 @@ class AssembleRefused(RuntimeError):
     database than the one deriving and checking them here."""
 
 
-IDENTITY_FIELDS = ("database_content_sha256", "code_sources_sha256")
+IDENTITY_FIELDS = ("database_content_sha256", "code_sources_sha256", "code_extensions_sha256")
 
 
 def assembler_identity(database) -> dict:
     """This process's own database content digest and code digest."""
     return {"database_content_sha256": database_content_sha256(database),
-            "code_sources_sha256": code_sources_sha256()}
+            "code_sources_sha256": code_sources_sha256(),
+            "code_extensions_sha256": code_extensions_sha256()}
 
 
 def assemble(paths, *, database=None, services=None) -> dict:
@@ -872,6 +906,13 @@ def assemble(paths, *, database=None, services=None) -> dict:
                 f"{field}: the shards were emitted with {theirs}, this assemble runs with "
                 f"{own[field]!r}; derivation and the balance check would use other code or data "
                 "than the rows record (emit and assemble with the same code and database)")
+    if services is not None and \
+            getattr(services, "database_content_sha256", None) != own["database_content_sha256"]:
+        raise AssembleRefused(
+            f"database_content_sha256: the supplied services were built from "
+            f"{getattr(services, 'database_content_sha256', None)!r}, this assemble checks "
+            f"{own['database_content_sha256']!r}; the balance check would run on another database "
+            "than the provenance names")
     for field in HEADER_MATCH:
         values = {_canon(h.get(field)) for h in headers}
         if len(values) > 1:
@@ -1028,7 +1069,8 @@ def assemble(paths, *, database=None, services=None) -> dict:
         "schema": SCHEMA,
         "provenance": {k: first.get(k) for k in (
             "artifact_id", "artifact_sha256", "artifact_records", "database_path", "database_head",
-            "database_content_sha256", "code_sha", "code_sources_sha256", "roster_sha256",
+            "database_content_sha256", "code_sha", "code_sources_sha256",
+            "code_extensions_sha256", "roster_sha256",
             "families", "temperatures", "systems")},
         "payloads": out_payloads,
         "refusals": refusals,
