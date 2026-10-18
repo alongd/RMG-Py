@@ -165,8 +165,8 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     says otherwise; a list of (name, gas) is written as given.
     The record is bound as MoM binds it: reactor ``mask_reactor``, profile
     ``mask_profile`` (default the profile written, solver/simulation_1_8.csv),
-    each species' structure the augmented InChI of its dictionary entry
-    unless ``mask_structures`` {name: structure} says otherwise;
+    each species' structure its dictionary entry's adjacency list and
+    multiplicity unless ``mask_structures`` {name: structure} says otherwise;
     ``mask_record``: the conventions.solver_gas_mask value written as given.
     ``pool_order``: the sidecar's pool rows in this label order.
     ``species_comments``: {identifier: comment} on its SPECIES line, as RMG's
@@ -271,7 +271,10 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     def structure(name):
         if name in (mask_structures or {}):
             return mask_structures[name]
-        return Molecule().from_adjacency_list(adjacency[name]).to_augmented_inchi() if name in adjacency else None
+        if name not in adjacency:
+            return None
+        return {"adjacency_list": adjacency[name],
+                "multiplicity": Molecule().from_adjacency_list(adjacency[name]).multiplicity}
     recorded = {}
     if solver_mask is not None:
         recorded = {"solver_gas_mask": {"source": "solver", "reactors": [{
@@ -2405,14 +2408,16 @@ def test_a_recorded_mask_of_another_core_is_refused(setup):
 # I-178 (spar r156): the recorded mask bound to its reactor, profile and
 # structures; the reconstruction's base labels
 # --------------------------------------------------------------------------
-def _bound_run(setup, **kw):
-    """The r147 fixture with a recorded mask (dgt condensed); ``kw`` binds it."""
+def _bound_run(setup, extra_gas=(), **kw):
+    """The r147 fixture with a recorded mask (dgt condensed); ``kw`` binds it;
+    ``extra_gas``: more gas columns (no amount)."""
     out = setup["tmp"] / f"out{len(list(setup['tmp'].glob('out*')))}"
     proxy = proxy_of()
     row = _row(equation=f"{proxy}(+M)=>{proxy}+X0(+M)", rate=(1.0, 0.0, 0.0),
                aux=["LOW /  1.0 0.0 0.0 /", "N2/0.0/ dgt(4)/0.0/"], sidecar_kinetics=None)
     produce(setup, out)
-    write_run(out, times=PROFILE_T, rows=[row], gas=ZERO_GAS + [("dgt", PROPANE, LATER), ("dgt(4)", BUTANE_ADJ, LATER)],
+    write_run(out, times=PROFILE_T, rows=[row], gas=ZERO_GAS + [("dgt", PROPANE, LATER), ("dgt(4)", BUTANE_ADJ, LATER)]
+              + [(name, adj, lambda t: 0.0) for name, adj in extra_gas],
               pools=[(LABEL, drift(declared(setup["spec"])), 0.0), ("dgt", lambda t: (0.0, 0.0, 0.0), 0.0)],
               bookkeeping={"dgt": DGT + ["dgt(4)"]}, condensed=DGT, spawned=["dgt"],
               solver_mask={proxy: False, **{c: False for c in DGT[:3]},
@@ -2444,7 +2449,7 @@ def test_a_mask_naming_another_profile_is_refused(setup):
 def test_an_isomer_under_a_recorded_label_is_refused(setup):
     """Spar r156 item 2: the mask was the solver's for another structure
     under the label dgt(4) (propane, not the butane of the Chemkin file)."""
-    out = _bound_run(setup, mask_structures={"dgt(4)": Molecule(smiles="CCC").to_augmented_inchi()})
+    out = _bound_run(setup, mask_structures={"dgt(4)": _structure(Molecule(smiles="CCC"))})
     with pytest.raises(mp.ProducerError, match="dgt\(4\) has another structure"):
         produce(setup, out, mode="convert")
 
@@ -2490,4 +2495,48 @@ def test_an_own_label_of_the_pools_base_propagates(setup):
     every species of base C6H13, so C6H13(9)'s phase is the hexyl's unit."""
     census, refused = _c6h13_run(setup, comments={"C6H13(5)": "C6H13(5)"})
     assert refused and "gas mask ambiguous for ['stage1:C6H13(5)']" in census["rate_errors"]["r0"]
+
+
+# --------------------------------------------------------------------------
+# I-178 rework 1 (spar r160): species identity by RMG's isomorphism
+# --------------------------------------------------------------------------
+def _structure(molecule):
+    return {"adjacency_list": molecule.to_adjacency_list(), "multiplicity": molecule.multiplicity}
+
+
+def _with_multiplicity(smiles, multiplicity):
+    molecule = Molecule(smiles=smiles)
+    molecule.multiplicity = multiplicity
+    return molecule
+
+
+@pytest.mark.parametrize("recorded, chemkin", [
+    (Molecule(smiles="Oc1ccccn1"), Molecule(smiles="O=c1cccc[nH]1")),                 # tautomers
+    (_with_multiplicity("[CH2]C[CH]C", 1), _with_multiplicity("[CH2]C[CH]C", 3)),     # singlet, triplet
+], ids=["tautomer", "multiplicity"])
+def test_a_distinct_species_under_a_recorded_label_is_refused(setup, recorded, chemkin):
+    """Spar r160 item 1: one augmented InChI, two species: refused."""
+    out = _bound_run(setup, extra_gas=[("T(10)", chemkin.to_adjacency_list())],
+                     mask_structures={"T(10)": _structure(recorded)})
+    with pytest.raises(mp.ProducerError, match=r"T\(10\) has another structure"):
+        produce(setup, out, mode="convert")
+
+
+def test_another_resonance_drawing_is_the_recorded_species(setup):
+    """Spar r160 item 2: crotyl recorded C=C[CH]C, written [CH2]C=CC in the
+    dictionary: one species, the mask is used."""
+    out = _bound_run(setup, extra_gas=[("T(10)", Molecule(smiles="[CH2]C=CC").to_adjacency_list())],
+                     mask_structures={"T(10)": _structure(Molecule(smiles="C=C[CH]C"))})
+    with pytest.raises(mp.ProducerError, match="inactive_chemistry"):
+        produce(setup, out, mode="convert")
+    assert json.loads((out / "producer.json").read_text())["census"]["phase_source"] == "solver_mask"
+
+
+@pytest.mark.parametrize("structure", [None, {"adjacency_list": "1 Q u9 p0 c0", "multiplicity": 2}],
+                         ids=["absent", "unreadable"])
+def test_a_recorded_structure_that_cannot_be_read_is_refused_by_name(setup, structure):
+    """Spar r160 item 3: a structure that cannot be read equals nothing."""
+    out = _bound_run(setup, mask_structures={"dgt(4)": structure})
+    with pytest.raises(mp.ProducerError, match=r"dgt\(4\).*cannot be read"):
+        produce(setup, out, mode="convert")
 
