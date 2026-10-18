@@ -1165,6 +1165,14 @@ cpdef _process_duplicate_reactions(list reaction_list):
     reaction_list.extend(duplicate_reactions_to_add)
 
 
+def _is_end_keyword(line):
+    """Whether a Chemkin line closes its block: its first token (comments
+    removed) is the END keyword, in any case.  A species identifier that
+    merely holds 'end' (``blend(3)``, ``end_cap(4)``) does not."""
+    tokens = remove_comment_from_line(line)[0].split()
+    return len(tokens) > 0 and tokens[0].upper() == 'END'
+
+
 def read_species_block(f, species_dict, species_aliases, species_list):
     """
     Read a Species block from a chemkin file.
@@ -1265,7 +1273,7 @@ def read_thermo_block(f, species_dict):
         logging.info("(It should have Tmin in columns 1-10, Tmid in columns 11-20, and Tmax in columns 21-30)")
     thermo_block = ''
     comments = ''
-    while line != '' and not line.upper().strip().startswith('END'):
+    while line != '' and not _is_end_keyword(line):
         line, comment = remove_comment_from_line(line)
         if comment: comments += comment.strip().replace('\t', ', ') + '\n'
 
@@ -1429,7 +1437,7 @@ def read_reactions_block(f, species_dict, read_comments=True):
         line = line.strip()
         comment = comment.strip()
 
-        if 'end' in line or 'END' in line:
+        if _is_end_keyword(line):
             break
 
         # if 'rev' in line or 'REV' in line:
