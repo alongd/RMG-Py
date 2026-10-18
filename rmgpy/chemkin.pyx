@@ -481,6 +481,10 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
     case_preserved_tokens = line.split('/')
     line = line.upper()
     tokens = line.split('/')
+    # the line's keyword is its first token (before any '/'): a collider label on an efficiency line that
+    # merely holds a keyword (blow(4), dup_x(5), rev(6)) is no keyword
+    head = tokens[0].split()
+    keyword = head[0] if head else ''
 
     # check if any reactants are surface species
     surf_rxn = False
@@ -489,11 +493,11 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
     elif any(product.molecule[0].contains_surface_site() for product in reaction.products):
         surf_rxn = True
     
-    if 'DUP' in line:
+    if keyword in ('DUP', 'DUPL', 'DUPLICATE'):
         # Duplicate reaction
         reaction.duplicate = True
 
-    elif 'COV' in line:
+    elif keyword in ('COV', 'COVERAGE'):
         try:
             k = kinetics['sticking coefficient']
         except KeyError:
@@ -504,7 +508,7 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
         Ea = Quantity(float(tokens[3]), Eunits)
         k.coverage_dependence[cov_dep_species] = {'a':float(tokens[1]), 'm':float(tokens[2]), 'E':Ea}
 
-    elif 'LOW' in line:
+    elif keyword == 'LOW':
         # Low-pressure-limit Arrhenius parameters
         tokens = tokens[1].split()
         kinetics['arrhenius low'] = _kinetics.Arrhenius(
@@ -514,7 +518,7 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
             T0=(1, "K"),
         )
 
-    elif 'HIGH' in line:
+    elif keyword == 'HIGH':
         # What we thought was high, was in fact low-pressure
         kinetics['arrhenius low'] = kinetics['arrhenius high']
         kinetics['arrhenius low'].A = (
@@ -528,7 +532,7 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
             T0=(1, "K"),
         )
 
-    elif 'TROE' in line:
+    elif keyword == 'TROE':
         # Troe falloff parameters
         tokens = tokens[1].split()
         alpha = float(tokens[0].strip())
@@ -545,7 +549,7 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
             T1=(T1, "K"),
             T2=(T2, "K") if T2 is not None else None,
         )
-    elif line.strip().startswith('SRI'):
+    elif keyword == 'SRI':
         kinetics['sri'] = True
         """To define an SRI pressure-dependent reaction, in addition to the LOW or HIGH parameters, the
         keyword SRI followed by three or five parameters must be included in the following order: a, b,
@@ -554,23 +558,23 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
         """
         # see eg. http://www.dipic.unipd.it/faculty/canu/files/Comb/Docs/chemkinCK.pdf
 
-    elif 'CHEB' in line:
+    elif keyword in ('CHEB', 'TCHEB', 'PCHEB'):
         # Chebyshev parameters
         chebyshev = kinetics.get(
             'chebyshev', _kinetics.Chebyshev(kunits=kunits))
         kinetics['chebyshev'] = chebyshev
         tokens = [t.strip() for t in tokens]
-        if 'TCHEB' in line:
+        if 'TCHEB' in tokens:
             index = tokens.index('TCHEB')
             tokens2 = tokens[index + 1].split()
             chebyshev.Tmin = Quantity(float(tokens2[0].strip()), "K")
             chebyshev.Tmax = Quantity(float(tokens2[1].strip()), "K")
-        if 'PCHEB' in line:
+        if 'PCHEB' in tokens:
             index = tokens.index('PCHEB')
             tokens2 = tokens[index + 1].split()
             chebyshev.Pmin = Quantity(float(tokens2[0].strip()), "atm")
             chebyshev.Pmax = Quantity(float(tokens2[1].strip()), "atm")
-        if 'TCHEB' in line or 'PCHEB' in line:
+        if 'TCHEB' in tokens or 'PCHEB' in tokens:
             pass
         elif chebyshev.degreeT == 0 or chebyshev.degreeP == 0:
             tokens2 = tokens[1].split()
@@ -585,7 +589,7 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
             kinetics['chebyshev coefficients'].extend(
                 [float(t.strip()) for t in tokens2])
 
-    elif 'PLOG' in line:
+    elif keyword == 'PLOG':
         pdep_arrhenius = kinetics.get('pressure-dependent arrhenius', [])
         kinetics['pressure-dependent arrhenius'] = pdep_arrhenius
         tokens = tokens[1].split()
@@ -597,7 +601,7 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
                                    T0=(1, "K"),
                                )])
 
-    elif tokens[0].startswith('REV'):
+    elif keyword == 'REV':
         reverse_A = float(tokens[1].split()[0])
         kinetics['explicit reverse'] = line.strip()
         if reverse_A == 0:
@@ -997,23 +1001,27 @@ def load_chemkin_file(path, dictionary_path=None, transport_path=None, read_comm
                 line = remove_comment_from_line(line0)[0]
                 line = line.strip()
 
-                if 'SPECIES' in line.upper():
+                # a block opens on a header, the line's first token: a thermo entry of a species named
+                # like one (species(9), SITE_a(2)) opens none
+                head = line.split()
+                header = head[0].upper() if head else ''
+                if header in ('SPECIES', 'SPEC'):
                     # Unread the line (we'll re-read it in readReactionBlock())
                     f.seek(previous_line)
                     read_species_block(f, species_dict, sp_aliases, sp_list)
                 
-                elif 'SITE' in line.upper():
+                elif header == 'SITE' or header.startswith('SITE/'):
                     # Unread the line (we'll re-read it in readReactionBlock())
                     f.seek(previous_line)
                     read_species_block(f, species_dict, sp_aliases, sp_list)
 
-                elif 'THERM' in line.upper() and thermo_path is None:
+                elif header in ('THERM', 'THERMO') and thermo_path is None:
                     # Skip this if a thermo file is specified
                     # Unread the line (we'll re-read it in read_thermo_block())
                     f.seek(previous_line)
                     read_thermo_block(f, species_dict)
 
-                elif 'REACTIONS' in line.upper():
+                elif header == 'REACTIONS':
                     # Reactions section
                     # Unread the line (we'll re-read it in readReactionBlock())
                     f.seek(previous_line)
@@ -1041,7 +1049,7 @@ def load_chemkin_file(path, dictionary_path=None, transport_path=None, read_comm
                 previous_line = f.tell()
                 line0 = f.readline()
                 line = remove_comment_from_line(line0)[0].strip()
-                if 'THERM' in line.upper():
+                if [t.upper() for t in line.split()[:1]] in (['THERM'], ['THERMO']):
                     f.seek(previous_line)
                     read_thermo_block(f, species_dict)
                     break
