@@ -494,13 +494,63 @@ def _split_auxiliary_records(line):
     return records
 
 
+# Keywords that stand bare (no values): the ones the reader acts on (DUPLICATE and its DUP abbreviation, STICK)
+# and the Chemkin manual's other bare keywords, which it ignores (MOME, XSMI).
+_BARE_KEYWORDS = ('DUP', 'DUPL', 'DUPLICATE', 'STICK', 'MOME', 'XSMI')
+
+# The number of values each keyword record takes, as _read_kinetics_record reads them (and the Chemkin manual's
+# reaction auxiliary keywords state): LOW, HIGH and REV are a modified Arrhenius (A n Ea); TROE 3 or 4
+# parameters; SRI 3 or 5; PLOG a pressure and an Arrhenius; TCHEB / PCHEB a range; CHEB the degrees and / or
+# coefficients (at least one); COV a species and a m E; the bare keywords none.
+_KEYWORD_VALUE_COUNTS = {
+    'LOW': lambda n: n == 3, 'HIGH': lambda n: n == 3, 'REV': lambda n: n == 3,
+    'TROE': lambda n: n in (3, 4), 'SRI': lambda n: n in (3, 5), 'PLOG': lambda n: n == 4,
+    'TCHEB': lambda n: n == 2, 'PCHEB': lambda n: n == 2, 'CHEB': lambda n: n >= 1,
+    'COV': lambda n: n == 4, 'COVERAGE': lambda n: n == 4,
+}
+_KEYWORD_VALUE_COUNTS.update({k: (lambda n: n == 0) for k in _BARE_KEYWORDS})
+
+
+def _is_float(token):
+    try:
+        float(token)
+    except ValueError:
+        return False
+    return True
+
+
 def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units, kinetics):
     """
-    Parse one of the subsequent lines of a Chemkin reaction entry, record by
-    record (``_split_auxiliary_records``), each record with the meaning it has
-    on a line of its own.  A record that cannot be read fails the line.
+    Parse one of the subsequent lines of a Chemkin reaction entry, its comment
+    removed, record by record (``_split_auxiliary_records``), each record with
+    the meaning it has on a line of its own.  A record named both like a
+    keyword and like a declared species is read by its shape: the keyword
+    where its value count fits the keyword (``_KEYWORD_VALUE_COUNTS``), the
+    collider efficiency where a single number fits and the keyword does not;
+    where both fit it is an ambiguity.  A bare word that is no bare keyword
+    (``_BARE_KEYWORDS``), or a record that cannot be read, fails the line.
     """
+    line = remove_comment_from_line(line)[0]
     for record in _split_auxiliary_records(line):
+        name, slash, rest = record.partition('/')
+        if not slash:
+            if name.upper() not in _BARE_KEYWORDS:
+                raise ChemkinError('Unknown bare word {0!r} in line {1!r} for reaction {2}'.format(
+                    name, line, reaction))
+        elif name.upper() in _KEYWORD_VALUE_COUNTS and (name in species_dict or name.upper() in species_dict):
+            values = rest[:-1].split()
+            keyword_fits = _KEYWORD_VALUE_COUNTS[name.upper()](len(values))
+            efficiency_fits = len(values) == 1 and _is_float(values[0])
+            if keyword_fits and efficiency_fits:
+                raise ChemkinError('Record {0!r} in line {1!r} for reaction {2} is ambiguous: a keyword and an '
+                                   'efficiency of the declared species {3}'.format(record, line, reaction, name))
+            if efficiency_fits:
+                species = species_dict[name] if name in species_dict else species_dict[name.upper()]
+                kinetics['efficiencies'][species.molecule[0]] = float(values[0])
+                continue
+            if not keyword_fits:
+                raise ChemkinError('Record {0!r} in line {1!r} for reaction {2} fits neither the keyword {3} nor '
+                                   'an efficiency of the declared species {3}'.format(record, line, reaction, name))
         try:
             kinetics = _read_kinetics_record(record, reaction, species_dict, Eunits, kunits, klow_units, kinetics)
         except ChemkinError:
@@ -1053,10 +1103,16 @@ def load_chemkin_file(path, dictionary_path=None, transport_path=None, read_comm
                     read_species_block(f, species_dict, sp_aliases, sp_list)
 
                 elif header in ('THERM', 'THERMO', 'THER') and thermo_path is None:
-                    # Skip this if a thermo file is specified
                     # Unread the line (we'll re-read it in read_thermo_block())
                     f.seek(previous_line)
                     read_thermo_block(f, species_dict)
+
+                elif header in ('THERM', 'THERMO', 'THER'):
+                    # A separate thermo file is specified: skip this block whole, so that none of its entries
+                    # (a species named REAC or SPEC) is read as a block header
+                    line0 = f.readline()
+                    while line0 != '' and not _is_end_keyword(line0):
+                        line0 = f.readline()
 
                 elif header in ('REACTIONS', 'REAC'):
                     # Reactions section
