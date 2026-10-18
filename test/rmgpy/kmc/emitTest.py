@@ -103,6 +103,28 @@ def systems_of(tmp_path, kind, systems):
     return emit.build_reference_systems(roster)
 
 
+def generated_of(tmp_path, kind, **kwargs):
+    spec = LinearHomopolymerSpec.from_mapping(polymer_mapping(kind))
+    provider = emit.match_provider(spec.repeat_unit)
+    generated = emit.reference_systems(spec, provider, **kwargs)
+    path = tmp_path / f"{kind}.generated.roster.json"
+    written = emit.write_roster(generated, path)
+    systems, refusals = emit.build_reference_systems(written)
+    assert refusals == []
+    return generated, written, systems
+
+
+def generated_participants(systems):
+    return [participants[0] for name, participants in systems.items()
+            if name.startswith("single:")]
+
+
+def contains_species(participants, expected):
+    built = win.build_spec(expected, "legacy")
+    return any(isomorphic(participant.build("generated"), built)
+               for participant in participants)
+
+
 def isomorphic(build_a, build_b):
     return build_a.molecule.is_isomorphic(build_b.molecule)
 
@@ -160,9 +182,14 @@ def test_unknown_end_variant_is_refused_never_dropped(tmp_path):
     assert "x" not in systems
 
 
-def test_interior_radical_on_the_alkane_is_refused_not_built_closed(tmp_path):
+def test_interior_radical_on_the_alkane_is_built_open_shell(tmp_path):
     systems, refusals = systems_of(tmp_path, "pe", {"r": [chain(5, radical_unit=2)]})
-    assert [r["status"] for r in refusals] == ["refused:variant"] and "r" not in systems
+    assert refusals == []
+    participant = systems["r"][0]
+    assert participant.spec == ("alkane", 10, None, None, 4)
+    molecule = participant.build("r").molecule
+    assert molecule.get_formula() == "C10H21"
+    assert molecule.get_radical_count() == 1
 
 
 def test_ps_interior_radical_is_the_radical_unit_spec(tmp_path):
@@ -192,6 +219,69 @@ def test_roster_sha_is_the_file_hash(tmp_path):
     import hashlib
     path = write_roster(tmp_path, "ps", {"a": [chain(2)]})
     assert emit.load_roster(path).sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_generated_roster_counts_are_pinned_per_declaration(tmp_path):
+    ps, ps_written, ps_systems = generated_of(tmp_path, "ps", dps=(1, 2))
+    pe, pe_written, pe_systems = generated_of(tmp_path, "pe", dps=(1, 2))
+    assert (len(ps.systems), len(ps_systems)) == (174, 174)
+    assert (len(pe.systems), len(pe_systems)) == (102, 102)
+    assert ps.sha256 == ps_written.sha256
+    assert pe.sha256 == pe_written.sha256
+
+
+def test_ps_generated_roster_contains_the_recombination_legacy_oracle(tmp_path):
+    _roster, _written, systems = generated_of(tmp_path, "ps", dps=(1, 2))
+    participants = generated_participants(systems)
+    expected = []
+    for kind in win.PARTICIPANT_KINDS:
+        for dp in (1, 2):
+            expected.extend(win.kind_specs(kind, dp))
+    expected.extend(make() for _name, make in win.PROBE_CANDIDATES)
+    missing = [repr(spec) for spec in expected if not contains_species(participants, spec)]
+    assert missing == []
+
+
+def test_generated_radical_pairs_have_both_orders_and_identical_pairs(tmp_path):
+    _roster, _written, systems = generated_of(tmp_path, "ps", dps=(1,))
+    pairs = {name: participants for name, participants in systems.items()
+             if name.startswith("pair:radical:")}
+    unequal = next(participants for participants in pairs.values()
+                   if participants[0].label != participants[1].label)
+    assert any([p.label for p in participants] == [unequal[1].label, unequal[0].label]
+               for participants in pairs.values())
+    assert any(participants[0].label == participants[1].label
+               for participants in pairs.values())
+
+
+def test_pe_generated_roster_has_the_same_core_roles_without_ps_provider(tmp_path, monkeypatch):
+    def ps_reached(*_args, **_kwargs):
+        raise AssertionError("the PE path reached the PS provider")
+    monkeypatch.setattr(b.PROVIDERS["polystyrene"], "spec_from_declaration", ps_reached)
+    _roster, _written, systems = generated_of(tmp_path, "pe", dps=(1, 2))
+    names = set(systems)
+    for role in ("capped", "declared", "end-radical", "interior-radical",
+                 "monomer", "small:H"):
+        assert any(role in name for name in names), role
+
+
+def test_declared_small_species_are_singletons_and_pair_with_each_chain(tmp_path):
+    mapping = polymer_mapping("pe")
+    mapping["small_species"] = {
+        "methane": {"graph": {"atoms": [_atom("c", hydrogens=4)], "bonds": [],
+                                "ports": {}, "electronic_state": {"multiplicity": 1}},
+                    "disposition": "mobile"}}
+    spec = LinearHomopolymerSpec.from_mapping(mapping)
+    roster = emit.reference_systems(spec, emit.match_provider(spec.repeat_unit), dps=(1,))
+    path = tmp_path / "pe-small.roster.json"
+    systems, refusals = emit.build_reference_systems(emit.write_roster(roster, path))
+    assert refusals == []
+    assert "single:small:methane" in systems
+    chain_names = [name for name in systems if name.startswith("single:chain:")]
+    pairs = [name for name in systems if name.startswith("pair:small:methane:")]
+    assert len(pairs) == 2 * len(chain_names)
+    methane = systems["single:small:methane"][0].build("methane").molecule
+    assert methane.get_formula() == "CH4"
 
 
 def test_no_chemistry_specific_code_in_emit():
