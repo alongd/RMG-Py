@@ -383,7 +383,7 @@ def test_time_series_is_written_at_requested_times_without_perturbing_the_run(tm
         assert key in mom
     # a MoM run that reports exactly the kMC state agrees on every compared row
     rows = mo.side_by_side(last, mom)
-    assert {r["tier"] for r in rows} == {1, 3}
+    assert {r["tier"] for r in rows} == {1, 2, 3}       # 2: the whole-ensemble moments (I-170)
     assert all(r["agreement"] in ("equal", "not_a_comparison") for r in rows), rows
 
 

@@ -1111,3 +1111,28 @@ def test_the_mom_file_carries_the_flags_and_the_conventions_digest(setup):
     assert header["producer"]["schema"] == mp.SCHEMA and header["producer"]["deck_sha256"] == manifest["deck"]["sha256"]
     mom, record = kr.load_mom(out / "mom.json", kr.observation_times(end=40.0, snapshots=9))
     assert record["header"] == header and all(q is not None for q in mom)
+
+
+def test_whole_keys_are_withheld_where_a_polymer_species_dp_is_open(tmp_path, monkeypatch):
+    """The hexene of the whole-ensemble fixture, with its DP left open (the
+    two ends of the backbone bracket disagree): the molecule count stays, the
+    whole-ensemble keys are withheld, the reason is in the diagnostics."""
+    s = make_setup(tmp_path, {6: 1})
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    u, mu1, mu2 = declared(s["spec"])
+
+    def pool(t):
+        f = t / 10.0
+        return u, mu1 - 3 * f * u, mu2 * (1 - f) + 9 * f * u
+
+    hexene = Molecule(smiles="C=CCCCC").to_adjacency_list()
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, pool, 0.0)],
+              gas=ZERO_GAS + [("C6H12(4)", hexene, lambda t: u * t / 10.0)])
+    monkeypatch.setattr(mp, "kmc_dp", lambda classes, molecule: None)
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    entries = mom_entries(out)
+    assert set(WHOLE) <= set(entries[0]["quantities"])
+    q = entries[-1]["quantities"]
+    assert not set(WHOLE) & set(q) and q["polymer_derived_molecules_mol"] == pytest.approx(2 * u, rel=1e-12)
+    assert json.loads((out / "mom_diagnostics.json").read_text())[-1]["dp_undetermined_species"] == ["C6H12(4)"]

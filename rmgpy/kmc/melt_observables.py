@@ -1305,11 +1305,16 @@ def mom_reported_quantities(obs: Mapping) -> dict:
     observables compared directly: the condensed polymer mass (the exact kMC
     polymer-derived mass; MoM's mass law on the kMC moments is
     ``mom_mass_law.value_g``, its gap the ``convention_gap_g`` row), the
-    polymer conversion from it, and per declared side-group channel the
-    released gas-product amount (None when untracked)."""
+    polymer conversion from it, per declared side-group channel the
+    released gas-product amount (None when untracked), and the whole-ensemble
+    DP moments and Mn / Mw (``WHOLE_ENSEMBLE_DEFINITION``; the tail keys are
+    unchanged)."""
     t1, t3, law = obs["tier1"], obs["tier3"], obs["mom_mass_law"]
+    a, e = obs["repeat_unit_molar_mass_g_mol"], obs["end_group_molar_mass_g_mol"]
     mu = list(t3["tail"]["dp_moments_mol"])
-    tail = observables_from_moments(mu, obs["repeat_unit_molar_mass_g_mol"], obs["end_group_molar_mass_g_mol"])
+    tail = observables_from_moments(mu, a, e)
+    whole_mu = list(obs["tier2"]["dp_moments_mol"])
+    whole = observables_from_moments(whole_mu, a, e)
     return {
         "mu0_mol": mu[0], "mu1_mol": mu[1], "mu2_mol": mu[2],
         "end_inventory_mol": law["end_inventory_mol"],
@@ -1320,10 +1325,20 @@ def mom_reported_quantities(obs: Mapping) -> dict:
         "released_mol": {row["label"]: row["released_mol"] for row in obs.get("side_group_channels", ())},
         "species_mol": {k: v["amount_mol"] for k, v in t1["species"].items()},
         "polymer_derived_molecules_mol": t1["polymer_derived"]["mom_definition"]["amount_mol"],
+        "whole_mu0_mol": whole_mu[0], "whole_mu1_mol": whole_mu[1], "whole_mu2_mol": whole_mu[2],
+        "whole_Mn_g_mol": whole.mn_g_mol, "whole_Mw_g_mol": whole.mw_g_mol,
     }
 
 
 _TIER1 = ("polymer_condensed_mass_g", "polymer_derived_molecules_mol", "polymer_conversion", "convention_gap_g")
+WHOLE_ENSEMBLE_KEYS = ("whole_mu0_mol", "whole_mu1_mol", "whole_mu2_mol", "whole_Mn_g_mol", "whole_Mw_g_mol")
+WHOLE_ENSEMBLE_DEFINITION = (
+    "whole_mu<k>_mol = sum over every polymer-derived molecule (class polymer: not a declared species, "
+    "n = floor(B / b) >= 1; explicit ladder and tail alike) of n^k, in mol (tier2 dp_moments_mol); "
+    "whole_Mn_g_mol / whole_Mw_g_mol = polymer_mass.observables_from_moments(whole moments, a, e): the "
+    "capped-chain convention, every molecule of DP n weighing a n + e with the deck's repeat-unit mass a "
+    "and end-group pair mass e, whatever end groups it actually carries (the actual-mass deviation is "
+    "tier2 end_mass_convention)")
 _ZERO_WHEN_ABSENT = ("explicit_dp_mol.", "species_mol.")
 EQUAL_RELATIVE = 1.0e-12
 
@@ -1378,7 +1393,8 @@ def side_by_side(obs: Mapping, mom: Optional[Mapping] = None) -> List[dict]:
             difference = k_value - m_value
             relative = _rel(k_value, m_value)
             agreement = "equal" if relative <= EQUAL_RELATIVE else "differs"
-        tier = 1 if key in _TIER1 or key.startswith(("species_mol.", "released_mol.")) else 3
+        tier = (1 if key in _TIER1 or key.startswith(("species_mol.", "released_mol."))
+                else 2 if key in WHOLE_ENSEMBLE_KEYS else 3)
         rows.append({"tier": tier, "quantity": key, "kmc": k_value, "mom": m_value, "difference": difference,
                      "relative_difference": relative, "bound": None, "agreement": agreement})
     law = obs["mom_mass_law"]

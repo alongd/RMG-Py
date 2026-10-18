@@ -35,7 +35,11 @@ is exported only when the MoM run gives that key's kMC definition
 (``QUANTITY_SOURCES``); every other key is ``NOT_PRODUCED``, with the reason.
 In particular kMC's ``mu*_mol`` / ``Mn_g_mol`` / ``Mw_g_mol`` are tail
 quantities (chains with n > xs), which three moments of a MoM pool holding
-every DP do not determine.  The condensed mass is MoM's own ledger booking
+every DP do not determine; the whole-ensemble keys ``whole_mu*_mol`` /
+``whole_Mn_g_mol`` / ``whole_Mw_g_mol`` (``melt_observables.
+WHOLE_ENSEMBLE_DEFINITION``) are the pools' moments plus every polymer-class
+MoM species at its kMC DP, Mn / Mw in the capped-chain convention with the
+deck's a and e on both sides.  The condensed mass is MoM's own ledger booking
 (``polymer.pyx`` ``physical_elemental_inventory``: per pool
 ``M_u mu1 - defect mu0 + e (mu0 + L)``, ``L = mu0(0) - mu0 - H`` with ``H = 0``
 as no explicit-DP species exists) plus every other MoM species that kMC's
@@ -53,10 +57,10 @@ species column and the bath) off the deck's by more than ``INITIAL_RELATIVE``;
 a requested time outside the profile.  The pool-coupled reactions of the final
 mechanism are counted per family (``census``); when no row of the requested
 families is live (``ACTIVITY_RULE``) the run is refused (``status = "refused:inactive_chemistry"``, no ``--mom``
-file) unless ``--allow-inactive``, and then flagged.  The runner's ``--mom``
-format (``run.load_mom``) has no place for flags, so they are written to
-``conventions.json`` and ``producer.json`` (``flags``) only:
-``inactive_chemistry`` and ``kinetics_not_comparable`` (a declared mobile
+file) unless ``--allow-inactive``, and then flagged.  The flags are written to
+``conventions.json``, ``producer.json`` and the ``--mom`` file's header (the
+runner copies the header into ``run.json`` and the flag names onto every
+comparison row): ``inactive_chemistry`` and ``kinetics_not_comparable`` (a declared mobile
 species' concentration per amount in MoM's gas phase over kMC's melt at
 t = 0 differs from 1 by more than the deck's ``observable_relative_tolerance``).
 
@@ -68,7 +72,8 @@ quantities at exactly the deck's observation times
 (``rmgpy.kmc.run.observation_times``).  Each profile column is interpolated
 linearly in time between the two profile rows bracketing the requested time
 (a time on a row takes the row); derived quantities come from the interpolated
-columns.  Output: ``<out>/mom.json`` (the ``--mom`` file) and
+columns.  Output: ``<out>/mom.json`` (the ``--mom`` file, header form:
+``{"header": {"flags", "conventions_sha256", "producer"}, "entries": [...]}``) and
 ``<out>/mom_diagnostics.json`` (MoM's own numbers at the same times:
 whole-ensemble moments per pool and summed, its end-group-free code mass, its
 native Mn / Mw, the mass-closure residual).
@@ -96,6 +101,7 @@ from rmgpy.kmc import rmg_moves as rr
 from rmgpy.kmc import run as kr
 from rmgpy.kmc.event_record import same_species
 from rmgpy.molecule import Molecule
+from rmgpy.polymer_mass import observables_from_moments
 from rmgpy.quantity import Quantity
 
 SCHEMA = "kmc-mom-producer/1"
@@ -124,6 +130,15 @@ QUANTITY_SOURCES = {
         "class; not exported where a present species is unclassifiable"),
     "species_mol": ("profile column of each declared species, matched to its structure in the species "
                     "dictionary by event_record.same_species (resonance- and spin-aware)"),
+    **{f"whole_mu{k}_mol": (
+        f"sum over pools p of <p>_mu{k} plus, for every other MoM species kMC's classifier puts in the "
+        f"polymer class, its amount x n^{k} (n = floor(B / b), the same at both ends of the B bracket); kMC: "
+        "melt_observables.WHOLE_ENSEMBLE_DEFINITION; not exported where a present species is unclassifiable "
+        "or a polymer-class species' n is not determined") for k in range(3)},
+    "whole_Mn_g_mol": ("polymer_mass.observables_from_moments(whole moments, a, e).mn_g_mol with the deck's "
+                       "repeat-unit mass a and end-group pair mass e (capped chains, as kMC); with the moments"),
+    "whole_Mw_g_mol": ("polymer_mass.observables_from_moments(whole moments, a, e).mw_g_mol (capped chains, "
+                       "as kMC); with the moments"),
 }
 _TAIL = ("kMC's {} is a tail quantity (chains with n > xs, xs = the deck cutoff >= 2); a MoM pool's three "
          "moments cover every DP and do not determine the tail")
@@ -168,6 +183,7 @@ def runner_quantity_keys() -> frozenset:
     the reference)."""
     obs = {"tier1": {"polymer_derived": {"mass_g": 1.0, "mom_definition": {"amount_mol": 1.0}},
                      "species": {}},
+           "tier2": {"dp_moments_mol": [1.0, 2.0, 4.0]},
            "tier3": {"tail": {"dp_moments_mol": [1.0, 2.0, 4.0]}, "explicit": {"dp_amount_mol": {}}},
            "mom_mass_law": {"end_inventory_mol": 1.0},
            "repeat_unit_molar_mass_g_mol": 1.0, "end_group_molar_mass_g_mol": 1.0,
@@ -330,6 +346,29 @@ class KmcClasses:
                 raise ProducerError(f"species {molecule.to_smiles()} is {len(ids)} molecules")
             classes.add(self.observer.category(state, ids[0]))
         return classes.pop() if len(classes) == 1 else "undetermined"
+
+
+def kmc_dp(classes: KmcClasses, molecule) -> Optional[int]:
+    """kMC's n = floor(B / b) of a MoM species (``MeltObserver.components``)
+    at both ends of ``KmcClasses``' backbone-count bracket: n when the two
+    agree, else None (also for a species the kMC melt cannot hold)."""
+    mol = molecule.copy(deep=True)
+    for i, atom in enumerate(mol.atoms):
+        atom.id = i
+    rows = rr.molecule_rows(mol)
+    nodes = {i: ms.Node(el, iso, charge, radical, lone, dict(edges))
+             for i, (el, iso, charge, radical, lone, edges) in rows.items()}
+    found = set()
+    for allowed in (classes.only, classes.possible):
+        origin = {i: ms.Origin("mobile", 0, "mom", str(i), (row[0], row[1]) in allowed) for i, row in rows.items()}
+        try:
+            records = classes.observer.components(ms.MeltState(nodes, origin))
+        except ms.MeltStateError:
+            return None
+        if len(records) != 1:
+            return None
+        found.add(records[0].n)
+    return found.pop() if len(found) == 1 else None
 
 
 # --------------------------------------------------------------------------
@@ -700,8 +739,8 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
             "conventions": [{"name": n, "value": v, "statement": s} for n, v, s in rows],
             "quantity_sources": dict(QUANTITY_SOURCES), "not_produced": dict(NOT_PRODUCED),
             "flags": flags,
-            "runner_note": "run.load_mom accepts only {time_s, quantities} entries: the flags are not "
-                           "carried into comparison.csv; the runner needs a flags field for that"}
+            "runner_note": "the flags travel in the --mom file's header: run.json mom.header and the "
+                           "mom_flags column of comparison.csv"}
 
 
 # --------------------------------------------------------------------------
@@ -1065,6 +1104,7 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
     kind = {i: (classes.classify(dictionary[header[i]]) if header[i] in dictionary else "undetermined")
             for i in system}
     polymer_cols = [i for i in system if kind[i] == "polymer"]
+    dp = {i: kmc_dp(classes, dictionary[header[i]]) for i in polymer_cols}
     first = data[0]
 
     def booked(row):
@@ -1110,8 +1150,16 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
         quantities = {"species_mol": {name: row[i] for name, i in species.items()}}
         closes = (residual is not None and abs(residual) <= MASS_CLOSURE_RELATIVE * system_first
                   and bath_residual is not None and abs(bath_residual) <= MASS_CLOSURE_RELATIVE * bath_first)
+        dp_open = sorted(header[i] for i in polymer_cols if dp[i] is None and row[i] != 0.0)
         if not unclassified:
             quantities["polymer_derived_molecules_mol"] = mu[0] + math.fsum(row[i] for i in polymer_cols)
+            if not dp_open:
+                whole = [mu[k] + math.fsum(row[i] * dp[i] ** k for i in polymer_cols if row[i] != 0.0)
+                         for k in range(3)]
+                conv = observables_from_moments(whole, facts["a_g_mol"], facts["e_g_mol"])
+                quantities.update({"whole_mu0_mol": whole[0], "whole_mu1_mol": whole[1],
+                                   "whole_mu2_mol": whole[2], "whole_Mn_g_mol": conv.mn_g_mol,
+                                   "whole_Mw_g_mol": conv.mw_g_mol})
             if closes and oligomer_mass is not None:
                 polymer = mass + oligomer_mass
                 quantities["polymer_condensed_mass_g"] = polymer
@@ -1125,7 +1173,7 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
                             "booked_pool_mass_g": mass, "polymer_class_species_mass_g": oligomer_mass,
                             "code_condensed_mass_g": code, "kmc_inventory_species_mass_g": gas,
                             "species_without_structure": missing or missing_first,
-                            "unclassified_species": unclassified,
+                            "unclassified_species": unclassified, "dp_undetermined_species": dp_open,
                             "mass_closure_residual_g": residual, "bath_closure_residual_g": bath_residual,
                             "mass_exported": "polymer_condensed_mass_g" in quantities,
                             "native_Mn_g_mol": a * mu[1] / mu[0] if mu[0] else None,
@@ -1137,7 +1185,8 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
             "pool_labels": [p["label"] for p in pools],
             "species_columns": {name: header[i] for name, i in species.items()},
             "bath_columns": {label: header[i] for label, i in bath.items()},
-            "species_classes": {header[i]: kind[i] for i in system}}
+            "species_classes": {header[i]: kind[i] for i in system},
+            "polymer_species_dp": {header[i]: dp[i] for i in polymer_cols}}
     return entries, diagnostics, read
 
 
@@ -1271,7 +1320,12 @@ def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: i
                                 f"{manifest['census']['families']}, unattributed "
                                 f"{manifest['census']['unattributed']}; {ACTIVITY_RULE}); pass "
                                 "--allow-inactive to convert it anyway, flagged")
-    (out / "mom.json").write_text(json.dumps(entries, indent=1, allow_nan=False) + "\n")
+    finish()                                   # conventions.json as the header digests it
+    header = {"flags": flags, "conventions_sha256": _sha256((out / "conventions.json").read_bytes()),
+              "producer": {"schema": SCHEMA, "deck_sha256": deck.sha256, "input_sha256": manifest["input_sha256"],
+                           "mom_checkout": manifest["mom_checkout"]}}
+    (out / "mom.json").write_text(json.dumps({"header": header, "entries": entries}, indent=1, allow_nan=False)
+                                  + "\n")
     (out / "mom_diagnostics.json").write_text(json.dumps(diagnostics, indent=1, allow_nan=False) + "\n")
     manifest.update({"read": read, "mom_file": str(out / "mom.json"),
                      "mom_sha256": _sha256((out / "mom.json").read_bytes())})
