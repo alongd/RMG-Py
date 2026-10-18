@@ -1131,11 +1131,13 @@ FLAGS = {"inactive_chemistry": {"admitted_in_requested_families": 0},
          "kinetics_not_comparable": {"ratio_by_species": {"H": 0.02}}}
 
 
-def header_for(directory, deck_sha256, conventions=b'{"conventions": []}\n'):
-    """A header bound to a conventions.json written beside the --mom file."""
+def header_for(directory, deck_sha256, conventions=b'{"conventions": []}\n', temperature=700.0, horizon=1.0):
+    """A header bound to a conventions.json written beside the --mom file and
+    to the MoM run's conditions."""
     (Path(directory) / "conventions.json").write_bytes(conventions)
     return {"flags": FLAGS, "conventions_sha256": hashlib.sha256(conventions).hexdigest(),
-            "producer": {"schema": "kmc-mom-producer/1", "deck_sha256": deck_sha256}}
+            "producer": {"schema": "kmc-mom-producer/1", "deck_sha256": deck_sha256},
+            "run": {"temperature_K": temperature, "pressure": [1.0, "bar"], "horizon_s": horizon}}
 
 
 def test_load_mom_accepts_the_header_form_and_the_legacy_forms(tmp_path):
@@ -1144,7 +1146,7 @@ def test_load_mom_accepts_the_header_form_and_the_legacy_forms(tmp_path):
     header = header_for(tmp_path, "d" * 64)
     header_form = tmp_path / "header.json"
     header_form.write_text(json.dumps({"header": header, "entries": entries}))
-    got, record = kr.load_mom(header_form, [0.0, 1.0], deck_sha256="d" * 64)
+    got, record = kr.load_mom(header_form, [0.0, 1.0], deck_sha256="d" * 64, temperature_K=700.0)
     assert got == [None, q] and record["header"] == header
     legacy = tmp_path / "legacy.json"
     legacy.write_text(json.dumps(entries))
@@ -1156,7 +1158,7 @@ def test_load_mom_accepts_the_header_form_and_the_legacy_forms(tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps({"header": dict(header, flags=["inactive_chemistry"]), "entries": entries}))
     with pytest.raises(kr.RunError, match="flags"):
-        kr.load_mom(bad, [0.0, 1.0], deck_sha256="d" * 64)
+        kr.load_mom(bad, [0.0, 1.0], deck_sha256="d" * 64, temperature_K=700.0)
 
 
 def test_a_header_bound_to_nothing_is_refused(tmp_path):
@@ -1171,17 +1173,17 @@ def test_a_header_bound_to_nothing_is_refused(tmp_path):
         return path
 
     with pytest.raises(kr.RunError, match="conventions"):
-        kr.load_mom(mom("zero.json", dict(header, conventions_sha256="0" * 64)), [0.0, 1.0], deck_sha256="d" * 64)
+        kr.load_mom(mom("zero.json", dict(header, conventions_sha256="0" * 64)), [0.0, 1.0], deck_sha256="d" * 64, temperature_K=700.0)
     with pytest.raises(kr.RunError, match="deck"):
-        kr.load_mom(mom("other.json", header), [0.0, 1.0], deck_sha256="e" * 64)
+        kr.load_mom(mom("other.json", header), [0.0, 1.0], deck_sha256="e" * 64, temperature_K=700.0)
     with pytest.raises(kr.RunError, match="deck"):
         kr.load_mom(mom("unchecked.json", header), [0.0, 1.0])
     alone = tmp_path / "alone"
     alone.mkdir()
     (alone / "mom.json").write_text(json.dumps({"header": header, "entries": entries}))
     with pytest.raises(kr.RunError, match="conventions"):
-        kr.load_mom(alone / "mom.json", [0.0, 1.0], deck_sha256="d" * 64)
-    assert kr.load_mom(mom("good.json", header), [0.0, 1.0], deck_sha256="d" * 64)[1]["header"] == header
+        kr.load_mom(alone / "mom.json", [0.0, 1.0], deck_sha256="d" * 64, temperature_K=700.0)
+    assert kr.load_mom(mom("good.json", header), [0.0, 1.0], deck_sha256="d" * 64, temperature_K=700.0)[1]["header"] == header
 
 
 def test_the_comparison_carries_the_mom_flags_and_run_json_the_header(tmp_path):
@@ -1202,3 +1204,20 @@ def test_the_comparison_carries_the_mom_flags_and_run_json_the_header(tmp_path):
     other.write_bytes(Path(deck).read_bytes() + b"# another deck\n")
     with pytest.raises(kr.RunError, match="deck"):
         kr.run(other, [catalog], 700.0, times, [1], tmp_path / "other", mom=mom)
+
+
+def test_a_header_of_other_run_conditions_is_refused(tmp_path):
+    """Spar r136 item 2: a correctly hashed 700 K MoM file and a 1000 K run of
+    the same deck; and a MoM horizon that is not the run's last time."""
+    deck, catalog = pe_deck(tmp_path), pe_catalog_file(tmp_path)
+    sha = hashlib.sha256(Path(deck).read_bytes()).hexdigest()
+    mom = tmp_path / "mom.json"
+    entries = [{"time_s": 0.0, "quantities": {"mu0_mol": 1.0}}]
+    mom.write_text(json.dumps({"header": header_for(tmp_path, sha), "entries": entries}))
+    with pytest.raises(kr.RunError, match="temperature"):
+        kr.run(deck, [catalog], 1000.0, [0.0, 1.0], [1], tmp_path / "hot", mom=mom)
+    with pytest.raises(kr.RunError, match="horizon"):
+        kr.load_mom(mom, [0.0, 2.0], deck_sha256=sha, temperature_K=700.0)
+    with pytest.raises(kr.RunError, match="temperature"):
+        kr.load_mom(mom, [0.0, 1.0], deck_sha256=sha)
+    assert kr.load_mom(mom, [0.0, 1.0], deck_sha256=sha, temperature_K=700.0)[1]["header"]["run"]["horizon_s"] == 1.0

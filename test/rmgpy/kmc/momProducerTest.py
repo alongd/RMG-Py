@@ -199,7 +199,8 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
                     "reactants": list(r["reactants"]), "products": list(r["products"]),
                     "proxy_reactants": [x for x in r["reactants"] if is_proxy(x)],
                     "proxy_products": [x for x in r["products"] if is_proxy(x)],
-                    "refused": not r["admitted"], "archetype": r.get("archetype", "same_pool/1")})
+                    "refused": not r["admitted"], "archetype": r.get("archetype", "same_pool/1"),
+                    **r.get("extra", {})})
         if not r["admitted"]:
             row["refused_reason"] = "conduit-deferred"
         reactions.append(row)
@@ -681,7 +682,8 @@ def test_a_produced_mom_file_is_accepted_by_the_runner(setup):
     moving_run(out, setup["spec"])
     produce(setup, out, mode="convert")
     times = kr.observation_times(end=40.0, snapshots=9)
-    mom, record = kr.load_mom(out / "mom.json", times, deck_sha256=kr.read_deck(setup["deck"]).sha256)
+    mom, record = kr.load_mom(out / "mom.json", times, deck_sha256=kr.read_deck(setup["deck"]).sha256,
+                              temperature_K=700.0)
     assert record["times"] == len(times) and all(q is not None for q in mom)
 
 
@@ -1080,8 +1082,8 @@ def n_mass(smiles, spec):
     return (mw(smiles) - e) / a
 
 
-def kmc_whole(spec, smiles):
-    """kMC's whole-ensemble keys of a melt of the given molecules (one
+def kmc_quantities(spec, smiles):
+    """kMC's reported quantities of a melt of the given molecules (one
     representative each; PE: every carbon has backbone origin)."""
     from rmgpy.kmc import melt_state as ms
     from rmgpy.kmc import rmg_moves as rr
@@ -1094,7 +1096,12 @@ def kmc_whole(spec, smiles):
             nodes[i] = ms.Node(el, iso, charge, radical, lone, dict(edges))
             origin[i] = ms.Origin("chain", j, "unit 1", str(i), el == "C")
         k += len(mol.atoms)
-    q = mo.mom_reported_quantities(mo.MeltObserver(spec, xs=4).observe(ms.MeltState(nodes, origin)))
+    return mo.mom_reported_quantities(mo.MeltObserver(spec, xs=4).observe(ms.MeltState(nodes, origin)))
+
+
+def kmc_whole(spec, smiles):
+    """kMC's whole-ensemble keys of a melt of the given molecules."""
+    q = kmc_quantities(spec, smiles)
     return {key: q[key] for key in WHOLE}
 
 
@@ -1283,7 +1290,7 @@ def test_the_mom_file_carries_the_flags_and_the_conventions_digest(setup):
     assert header["conventions_sha256"] == hashlib.sha256((out / "conventions.json").read_bytes()).hexdigest()
     assert header["producer"]["schema"] == mp.SCHEMA and header["producer"]["deck_sha256"] == manifest["deck"]["sha256"]
     mom, record = kr.load_mom(out / "mom.json", kr.observation_times(end=40.0, snapshots=9),
-                              deck_sha256=manifest["deck"]["sha256"])
+                              deck_sha256=manifest["deck"]["sha256"], temperature_K=700.0)
     assert record["header"] == header and all(q is not None for q in mom)
 
 
@@ -1308,3 +1315,165 @@ def test_a_mechanism_that_leaves_the_mass_dp_coordinate_withholds_the_whole_keys
     for entry, diag in list(zip(entries, diagnostics))[1:]:
         assert not set(WHOLE) & set(entry["quantities"])
         assert ("discrete_chip" if kind == "chip" else "kernel scission") in diag["whole_withheld"]["whole_mu0_mol"]
+
+
+# --------------------------------------------------------------------------
+# I-170 rework 2 (r136)
+# --------------------------------------------------------------------------
+FLOOR = 1e-14            # MoM's accepted-state floor for atol 1e-16: max(1e-30, 100 atol)
+TRACE = [("H(1)", ADJ["H"], lambda t: 1e-9 * t), ("H2(2)", ADJ["H2"], lambda t: 0.0)]   # keeps a profile moving
+
+
+def _ethylene_setup(tmp_path):
+    s = make_setup(tmp_path, {1: 1, 6: 1}, monomer=S.ETHYLENE_GRAPH)
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    return s, out, declared(s["spec"])[0] / 2
+
+
+def test_pool_chains_that_are_a_declared_species_are_booked_as_it(tmp_path):
+    """Spar r136: PE DP1 (ethane) + DP6; the DP1 chain loses H2 into the
+    feature pool, which then holds ethylene, the declared monomer.  Booked as
+    monomer_product, not as a polymer chain: the counts match kMC's."""
+    s, out, u = _ethylene_setup(tmp_path)
+    m_h2 = mw("[H][H]")
+    ethylene = Molecule(smiles="C=C").to_adjacency_list()
+
+    def main(t):
+        f = t / 10.0
+        return 2 * u - f * u, 7 * u - f * u, 37 * u - f * u
+
+    def feature(t):
+        f = t / 10.0
+        return f * u, f * u, f * u
+
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, main, 0.0), (LABEL + "_mod", feature, m_h2)],
+              gas=[("H(1)", ADJ["H"], lambda t: 0.0), ("H2(2)", ADJ["H2"], lambda t: u * t / 10.0),
+                   ("C2H4(4)", ethylene, lambda t: 0.0)])
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    kmc = kmc_quantities(s["spec"], ["C" * 12, "C=C", "[H][H]"])
+    for key in ("polymer_condensed_mass_g", "polymer_derived_molecules_mol", *WHOLE):
+        assert q[key] == pytest.approx(kmc[key], rel=1e-12), key
+    assert q["species_mol"]["monomer_product"] == pytest.approx(u, rel=1e-12)
+    assert q["species_mol"]["monomer_product"] == pytest.approx(kmc["species_mol"]["monomer_product"], rel=1e-12)
+    a, e = masses()
+    assert q["whole_Mn_g_mol"] == pytest.approx(6 * a + e, rel=1e-12)
+
+
+def test_a_pool_that_may_hold_a_declared_species_unpinned_is_withheld(tmp_path):
+    """The feature pool holds DP 1 and DP 2 chains: some are ethylene, how
+    many the moments do not say."""
+    s, out, u = _ethylene_setup(tmp_path)
+    m_h2 = mw("[H][H]")
+    ethylene = Molecule(smiles="C=C").to_adjacency_list()
+
+    def main(t):
+        f = t / 10.0
+        return 2 * u - f * u, 7 * u - 1.5 * f * u, 37 * u - 2.5 * f * u
+
+    def feature(t):
+        f = t / 10.0
+        return f * u, 1.5 * f * u, 2.5 * f * u
+
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, main, 0.0), (LABEL + "_mod", feature, m_h2)],
+              gas=[("H(1)", ADJ["H"], lambda t: 0.0), ("H2(2)", ADJ["H2"], lambda t: u * t / 10.0),
+                   ("C2H4(4)", ethylene, lambda t: 0.0)])
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    for key in ("polymer_condensed_mass_g", "polymer_conversion", "polymer_derived_molecules_mol", *WHOLE):
+        assert key not in q, key
+    assert "monomer_product" not in q["species_mol"] and "H2" in q["species_mol"]
+    reason = json.loads((out / "mom_diagnostics.json").read_text())[-1]["polymer_withheld"]
+    assert "monomer_product" in reason
+
+
+def test_a_pool_whose_chains_may_lose_their_last_backbone_unit_is_withheld(setup):
+    """An admitted volatile ejection of 1.5 units into the pool: chains below
+    one unit's backbone (kMC: light) may be in it after t = 0."""
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    proxy = proxy_of()
+    constant_run(out, setup["spec"], rows=[{"family": "toy_homolysis", "admitted": True, "reactants": [proxy],
+                                            "products": [proxy, "X0"], "reversible": True,
+                                            "archetype": "volatile_ejection/1",
+                                            "extra": {"params": {"eject_units": 1.5}, "src_pool": LABEL,
+                                                      "dst_pool": LABEL}}])
+    produce(setup, out, mode="convert")
+    entries = mom_entries(out)
+    assert "polymer_condensed_mass_g" in entries[0]["quantities"]
+    for entry in entries[1:]:
+        assert "polymer_derived_molecules_mol" not in entry["quantities"]
+    assert "light" in json.loads((out / "mom_diagnostics.json").read_text())[-1]["polymer_withheld"]
+
+
+def _octyl_capped(mapping):
+    cap = {"atoms": [S._atom(f"c{k}", hydrogens=3 if k == 8 else 2) for k in range(1, 9)],
+           "bonds": [{"atoms": [f"c{k}", f"c{k + 1}"], "order": 1} for k in range(1, 8)],
+           "ports": {"cap": {"atom": "c1", "bond_order": 1}}, "electronic_state": {"multiplicity": 1}}
+    mapping["end_groups"] = {"head": cap, "tail": json.loads(json.dumps(cap))}
+
+
+def test_a_negative_whole_mu1_is_valid_and_mn_is_exported(tmp_path):
+    """Spar r133/r136 item 3: heavy caps (two octyls) and a DP6 cut in two:
+    each fragment's mass DP is 3 - e / 2a < 0, so whole mu1 < 0, and Mn =
+    (6a + e) / 2 is exported."""
+    s = make_setup(tmp_path, {6: 1}, edit=_octyl_capped)
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    mu = declared(s["spec"])
+
+    def split(t):
+        return mu[0] * (1 + t / 10.0), mu[1], mu[2] * (1 - 0.5 * t / 10.0)
+
+    octyl = "[CH2]CCCCCCC"
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, split, 0.0)], gas=ZERO_GAS, end_groups=(octyl, octyl))
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    a = s["spec"].repeat_unit.composition.molar_mass_g_mol()
+    e = s["spec"].end_composition.molar_mass_g_mol()
+    assert q["whole_mu1_mol"] == pytest.approx(mu[0] * (6 - e / a), rel=1e-12) and q["whole_mu1_mol"] < 0
+    assert q["whole_Mn_g_mol"] == pytest.approx((6 * a + e) / 2, rel=1e-12)
+
+
+def test_a_pool_with_no_chains_and_units_left_is_corrupt(tmp_path):
+    """Spar r136 item 4: the pool ends at (0, 6, 36) u; the booking closes
+    through the ledger, but chains without a count are corruption."""
+    s = make_setup(tmp_path, {6: 1})
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    mu = declared(s["spec"])
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, lambda t: mu if t == 0.0 else (0.0, mu[1], mu[2]), 0.0)],
+              gas=TRACE)
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    for key in ("polymer_condensed_mass_g", "polymer_conversion", *WHOLE):
+        assert key not in q, key
+    assert "corrupt" in json.loads((out / "mom_diagnostics.json").read_text())[-1]["polymer_withheld"]
+
+
+def test_a_ledger_just_above_its_tolerance_withholds_mu2_and_mw(setup):
+    """Survivor ledger-tol-loose: 10x the ledger tolerance (sum of e_p x 2f)."""
+    out = setup["tmp"] / "out"
+    produce(setup, out, end=10.0, snapshots=2)
+    mu = declared(setup["spec"])
+    row = (mu[0] - 20 * FLOOR, mu[1], mu[2])
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, lambda t: mu if t == 0.0 else row, 0.0)], gas=TRACE)
+    produce(setup, out, end=10.0, snapshots=2, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    assert "whole_mu2_mol" not in q and "whole_Mw_g_mol" not in q and "whole_Mn_g_mol" in q
+
+
+@pytest.mark.parametrize("depth, clamped", [(0.5, True), (10.0, False)])
+def test_a_negative_pool_moment_is_clamped_only_within_the_floor(setup, depth, clamped):
+    """Survivor floor-x1000: a daughter pool at (0, 0, -depth f)."""
+    out = setup["tmp"] / "out"
+    produce(setup, out, end=10.0, snapshots=2)
+    mu = declared(setup["spec"])
+    write_run(out, times=[0.0, 10.0],
+              pools=[(LABEL, lambda t: mu, 0.0),
+                     (DAUGHTER, lambda t: (0.0, 0.0, 0.0) if t == 0.0 else (0.0, 0.0, -depth * FLOOR), 0.0)],
+              gas=TRACE)
+    produce(setup, out, end=10.0, snapshots=2, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    assert (set(WHOLE) <= set(q)) is clamped and ("polymer_condensed_mass_g" in q) is clamped
