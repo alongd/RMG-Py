@@ -1374,46 +1374,60 @@ def test_an_observation_reached_exactly_at_the_event_cap_is_written(tmp_path):
 WHOLE = ("whole_mu0_mol", "whole_mu1_mol", "whole_mu2_mol", "whole_Mn_g_mol", "whole_Mw_g_mol")
 
 
-def _capped(spec, moments):
-    from rmgpy.polymer_mass import observables_from_moments
-    return observables_from_moments(moments, spec.repeat_unit.composition.molar_mass_g_mol(),
-                                    spec.end_composition.molar_mass_g_mol())
+def _ae(spec):
+    return spec.repeat_unit.composition.molar_mass_g_mol(), spec.end_composition.molar_mass_g_mol()
+
+
+def _polymer_masses(spec, xs, state):
+    observer = mo.MeltObserver(spec, xs=xs)
+    return [r.molar_mass_g_mol for r in observer.components(state) if r.category == "polymer"]
 
 
 def test_whole_ensemble_moments_count_ladder_and_tail_chains():
-    """DP 2, 3, 3 (ladder, xs = 4) and 8 (tail): a direct count over the chains."""
+    """DP 2, 3, 3 (ladder, xs = 4) and 8 (tail), capped: the mass DP
+    (M - e) / a of each chain is its DP."""
     spec = S.pe_spec({2: 1, 3: 2, 8: 1})
     o = mo.MeltObserver(spec, xs=4).observe(materialize(spec))
     q = mo.mom_reported_quantities(o)
     u = spec.initialization().scale_factor / constants.Na
     whole = [u * 4, u * (2 + 3 + 3 + 8), u * (4 + 9 + 9 + 64)]
     assert [q["whole_mu0_mol"], q["whole_mu1_mol"], q["whole_mu2_mol"]] == pytest.approx(whole, rel=1e-12)
-    conv = _capped(spec, whole)
-    assert q["whole_Mn_g_mol"] == pytest.approx(conv.mn_g_mol, rel=1e-12)
-    assert q["whole_Mw_g_mol"] == pytest.approx(conv.mw_g_mol, rel=1e-12)
     assert q["mu0_mol"] == pytest.approx(u, rel=1e-12)              # the tail is the DP-8 chain alone
 
 
-def test_whole_ensemble_moments_use_the_polymer_class_only():
-    """A DP-6 chain homolysed at its end: CH3. (n = 0, light) is out, the
-    C11 radical (B = 11, n = 5) is in."""
-    spec = S.pe_spec({6: 1})
+def test_whole_ensemble_moments_are_mass_dp_moments_of_the_polymer_class():
+    """A DP-6 chain homolysed at its end beside a DP-3 chain: CH3. (n = 0,
+    light) is out; the C11 radical counts with its mass DP (M - e) / a, not
+    its backbone count; whole Mn / Mw are the direct mass averages."""
+    spec = S.pe_spec({6: 1, 3: 1})
     state = materialize(spec)
     end = S.end_carbons(state, 0)[0]
     nxt = next(b for b in state.atoms[end].edges if state.atoms[b].element == "C")
     homolyse(state, end, nxt)
-    q = mo.mom_reported_quantities(mo.MeltObserver(spec, xs=2).observe(state))
+    o = mo.MeltObserver(spec, xs=2).observe(state)
+    q = mo.mom_reported_quantities(o)
     u = spec.initialization().scale_factor / constants.Na
-    assert [q["whole_mu0_mol"], q["whole_mu1_mol"], q["whole_mu2_mol"]] == pytest.approx(
-        [u, 5 * u, 25 * u], rel=1e-12)
+    a, e = _ae(spec)
+    masses = _polymer_masses(spec, 2, state)
+    assert len(masses) == 2
+    n_m = [(m - e) / a for m in masses]
+    assert any(abs(x - round(x)) > 0.1 for x in n_m)               # the radical's mass DP is fractional
+    whole = [u * len(n_m), u * math.fsum(n_m), u * math.fsum(x * x for x in n_m)]
+    assert [q["whole_mu0_mol"], q["whole_mu1_mol"], q["whole_mu2_mol"]] == pytest.approx(whole, rel=1e-12)
+    mn = math.fsum(masses) / len(masses)
+    mw = math.fsum(m * m for m in masses) / math.fsum(masses)
+    assert q["whole_Mn_g_mol"] == pytest.approx(mn, rel=1e-12)
+    assert q["whole_Mw_g_mol"] == pytest.approx(mw, rel=1e-12)
+    assert q["whole_Mn_g_mol"] == pytest.approx(o["tier2"]["Mn_g_mol"], rel=1e-12)
 
 
 def test_tail_keys_are_unchanged_by_the_whole_ensemble_keys():
+    from rmgpy.polymer_mass import observables_from_moments
     spec = S.pe_spec({2: 1, 3: 2, 8: 1})
     o = mo.MeltObserver(spec, xs=4).observe(materialize(spec))
     q = mo.mom_reported_quantities(o)
     tail = list(o["tier3"]["tail"]["dp_moments_mol"])
-    conv = _capped(spec, tail)
+    conv = observables_from_moments(tail, *_ae(spec))
     assert [q["mu0_mol"], q["mu1_mol"], q["mu2_mol"]] == tail
     assert q["Mn_g_mol"] == conv.mn_g_mol and q["Mw_g_mol"] == conv.mw_g_mol
     rows = {r["quantity"]: r for r in mo.side_by_side(o, q)}

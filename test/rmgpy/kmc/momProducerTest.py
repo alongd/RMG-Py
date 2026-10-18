@@ -1072,10 +1072,33 @@ def test_toluene_in_a_ps_deck_is_undetermined_and_withholds_the_polymer_rows(tmp
 # --------------------------------------------------------------------------
 # I-170: whole-ensemble moments and the header form
 # --------------------------------------------------------------------------
+def n_mass(smiles, spec):
+    """The mass DP (M - e) / a of a molecule, with the deck's a and e."""
+    a = spec.repeat_unit.composition.molar_mass_g_mol()
+    e = spec.end_composition.molar_mass_g_mol()
+    return (mw(smiles) - e) / a
+
+
+def kmc_whole(spec, smiles):
+    """kMC's whole-ensemble keys of a melt of the given molecules (one
+    representative each; PE: every carbon has backbone origin)."""
+    from rmgpy.kmc import melt_state as ms
+    from rmgpy.kmc import rmg_moves as rr
+    nodes, origin, k = {}, {}, 0
+    for j, smi in enumerate(smiles):
+        mol = Molecule(smiles=smi)
+        for i, atom in enumerate(mol.atoms):
+            atom.id = k + i
+        for i, (el, iso, charge, radical, lone, edges) in rr.molecule_rows(mol).items():
+            nodes[i] = ms.Node(el, iso, charge, radical, lone, dict(edges))
+            origin[i] = ms.Origin("chain", j, "unit 1", str(i), el == "C")
+        k += len(mol.atoms)
+    q = mo.mom_reported_quantities(mo.MeltObserver(spec, xs=4).observe(ms.MeltState(nodes, origin)))
+    return {key: q[key] for key in WHOLE}
+
+
 def test_whole_ensemble_keys_are_the_pools_plus_polymer_class_species(tmp_path):
-    """Pool moments plus the hexene (kMC class polymer, n = 3): mu_k + x 3^k;
-    Mn / Mw of those moments with the deck's a and e (capped chains)."""
-    from rmgpy.polymer_mass import observables_from_moments
+    """Pool moments plus the hexene (kMC class polymer) at its mass DP."""
     s = make_setup(tmp_path, {6: 1})
     out = tmp_path / "out"
     produce(s, out, end=10.0, snapshots=2)
@@ -1090,12 +1113,153 @@ def test_whole_ensemble_keys_are_the_pools_plus_polymer_class_species(tmp_path):
               gas=ZERO_GAS + [("C6H12(4)", hexene, lambda t: u * t / 10.0)])
     produce(s, out, end=10.0, snapshots=2, mode="convert")
     q = mom_entries(out)[-1]["quantities"]
-    whole = [u + u, mu1 - 3 * u + 3 * u, 9 * u + 9 * u]
+    n6 = n_mass("C=CCCCC", s["spec"])
+    whole = [2 * u, 3 * u + n6 * u, 9 * u + n6 * n6 * u]
     assert [q["whole_mu0_mol"], q["whole_mu1_mol"], q["whole_mu2_mol"]] == pytest.approx(whole, rel=1e-12)
+
+
+def test_propene_ejection_gives_the_same_whole_moments_on_both_sides(tmp_path):
+    """Spar r133: PE DP6 + DP4; the DP6 chain ejects propene and keeps 4.5
+    monomer-equivalents (nonane).  MoM: pool [2, 8.5, 36.25] u plus propene;
+    kMC: nonane, octane and propene by their masses."""
+    s = make_setup(tmp_path, {6: 1, 4: 1})
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    mu = declared(s["spec"])
+    u = mu[0] / 2
+
+    def pool(t):
+        f = t / 10.0
+        return mu[0], mu[1] - 1.5 * f * u, mu[2] + f * u * (4.5 ** 2 - 36)
+
+    propene = Molecule(smiles="C=CC").to_adjacency_list()
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, pool, 0.0)],
+              gas=ZERO_GAS + [("C3H6(4)", propene, lambda t: u * t / 10.0)])
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    assert "polymer_condensed_mass_g" in q                     # the booking closes
+    kmc = kmc_whole(s["spec"], ["CCCCCCCCC", "CCCCCCCC", "C=CC"])
+    for key in WHOLE:
+        assert q[key] == pytest.approx(kmc[key], rel=1e-12), key
+
+
+def test_an_h_abstraction_gives_a_fractional_mass_dp_on_both_sides(tmp_path):
+    """The DP-10 chain loses one H (to the gas as H): its mass DP is
+    10 - m_H / a on both sides."""
+    s = make_setup(tmp_path, BASE)
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    mu = declared(s["spec"])
+    u = mu[0] / 2
+    a, _e = masses()
+    d = mw("[H]") / a
+
+    def pool(t):
+        f = t / 10.0
+        return mu[0], mu[1] - d * f * u, mu[2] + f * u * ((10 - d) ** 2 - 100)
+
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, pool, 0.0)],
+              gas=[("H(1)", ADJ["H"], lambda t: u * t / 10.0), ("H2(2)", ADJ["H2"], lambda t: 0.0)])
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    assert q["whole_mu1_mol"] / u == pytest.approx(30 - d, rel=1e-12) and abs(30 - d - 30) > 1e-3
+    kmc = kmc_whole(s["spec"], ["[CH2]" + "C" * 9, "C" * 20])
+    for key in WHOLE:
+        assert q[key] == pytest.approx(kmc[key], rel=1e-12), key
+
+
+def test_a_pool_ledger_gives_mu0_mu1_and_mn_and_withholds_mu2_and_mw(tmp_path):
+    """Scission DP6 -> two DP3 radicals: each carries one cap (L = -u), mass
+    DP 3 - e / 2a.  Sum and count are exact from the ledger; how the missing
+    caps spread over chains (mu2, Mw) is not in the profile."""
+    s = make_setup(tmp_path, {6: 1})
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    mu = declared(s["spec"])
+
+    def split(t):
+        return mu[0] * (1 + t / 10.0), mu[1], mu[2] * (1 - 0.5 * t / 10.0)
+
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, split, 0.0)], gas=ZERO_GAS)
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
     a, e = masses()
-    conv = observables_from_moments(whole, a, e)
-    assert q["whole_Mn_g_mol"] == pytest.approx(conv.mn_g_mol, rel=1e-12)
-    assert q["whole_Mw_g_mol"] == pytest.approx(conv.mw_g_mol, rel=1e-12)
+    u = mu[0]
+    q = mom_entries(out)[-1]["quantities"]
+    assert q["whole_mu0_mol"] == pytest.approx(2 * u, rel=1e-12)
+    assert q["whole_mu1_mol"] == pytest.approx(6 * u - e * u / a, rel=1e-12)
+    assert q["whole_Mn_g_mol"] == pytest.approx((6 * a + e) / 2, rel=1e-12)
+    assert "whole_mu2_mol" not in q and "whole_Mw_g_mol" not in q
+    assert "whole_mu2_mol" in mom_entries(out)[0]["quantities"]
+    reasons = json.loads((out / "mom_diagnostics.json").read_text())[-1]["whole_withheld"]
+    assert set(reasons) == {"whole_mu2_mol", "whole_Mw_g_mol"} and "ledger" in reasons["whole_mu2_mol"]
+
+
+def test_a_pool_with_a_chain_mass_defect_is_shifted_to_the_mass_dp(setup):
+    """Feature pool chains lost H2 (defect = M(H2)): mass DP n - M(H2) / a."""
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    mu = declared(setup["spec"])
+    m_h2 = mw("[H][H]")
+    a, _e = masses()
+    y = 1e-3
+
+    def main(t):
+        return mu[0] - y * t * t, mu[1] - 15 * y * t * t, mu[2] - 250 * y * t * t
+
+    def feature(t):
+        return y * t * t, 15 * y * t * t, 250 * y * t * t
+
+    write_run(out, times=PROFILE_T, pools=[(LABEL, main, 0.0), (LABEL + "_mod", feature, m_h2)],
+              gas=[("H(1)", ADJ["H"], lambda t: 0.0), ("H2(2)", ADJ["H2"], lambda t: y * t * t)])
+    produce(setup, out, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    d = m_h2 / a
+    f = feature(40.0)
+    main40 = main(40.0)
+    want = [main40[0] + f[0], main40[1] + f[1] - d * f[0], main40[2] + f[2] - 2 * d * f[1] + d * d * f[0]]
+    assert [q["whole_mu0_mol"], q["whole_mu1_mol"], q["whole_mu2_mol"]] == pytest.approx(want, rel=1e-12)
+
+
+def _boundary_run(tmp_path, scale):
+    """A monodisperse DP-1 deck (mu0 = mu1 = mu2 = u); at 10 s the pool row is
+    ``scale`` x (u, u, u): the mass and the chain count barely move (a trace of
+    H keeps the profile moving), so the booking closes and the ledger is zero,
+    and only the moments' realizability is at stake."""
+    s = make_setup(tmp_path, {1: 3})
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    mu = declared(s["spec"])
+    row = tuple(m * f for m, f in zip(mu, scale))
+    trace = [("H(1)", ADJ["H"], lambda t: 1e-9 * t), ("H2(2)", ADJ["H2"], lambda t: 0.0)]   # the profile moves
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, lambda t: mu if t == 0.0 else row, 0.0)], gas=trace)
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    return mom_entries(out)[-1]["quantities"], json.loads((out / "mom_diagnostics.json").read_text())[-1]
+
+
+def test_a_boundary_roundoff_row_keeps_every_quantity(tmp_path):
+    """Spar r133 item 2: (1, nextafter(1, 0), 1) x u, a state MoM accepts
+    (mu1 a ulp below mu0)."""
+    q, _d = _boundary_run(tmp_path, (1.0, float(np.nextafter(1.0, 0.0)), 1.0))
+    assert set(WHOLE) <= set(q) and "species_mol" in q and "polymer_derived_molecules_mol" in q
+
+
+def test_moments_within_the_mom_floors_are_clamped(tmp_path):
+    """mu2 a few ulps below mu1^2 / mu0: inside MoM's accepted-state variance
+    tolerance (polymer.pyx, floors max(1e-30, 100 atol)): clamped to zero
+    variance, Mw = Mn."""
+    q, _d = _boundary_run(tmp_path, (1.0, 1.0, 1.0 - 5e-16))
+    assert q["whole_mu2_mol"] == pytest.approx(q["whole_mu1_mol"] ** 2 / q["whole_mu0_mol"], rel=1e-15)
+    assert q["whole_Mw_g_mol"] == pytest.approx(q["whole_Mn_g_mol"], rel=1e-12)
+
+
+def test_moments_beyond_the_mom_floors_withhold_whole_mn_and_mw_only(tmp_path):
+    """A variance far below zero: whole Mn / Mw withheld with the reason, every
+    other quantity kept."""
+    q, d = _boundary_run(tmp_path, (1.0, 1.0, 0.5))
+    assert "whole_Mn_g_mol" not in q and "whole_Mw_g_mol" not in q
+    assert {"whole_mu0_mol", "whole_mu1_mol", "whole_mu2_mol", "polymer_derived_molecules_mol", "species_mol",
+            "polymer_condensed_mass_g"} <= set(q)
+    assert "variance" in d["whole_withheld"]["whole_Mw_g_mol"]
 
 
 def test_the_mom_file_carries_the_flags_and_the_conventions_digest(setup):
@@ -1109,30 +1273,8 @@ def test_the_mom_file_carries_the_flags_and_the_conventions_digest(setup):
     assert header["flags"] == manifest["flags"]
     assert header["conventions_sha256"] == hashlib.sha256((out / "conventions.json").read_bytes()).hexdigest()
     assert header["producer"]["schema"] == mp.SCHEMA and header["producer"]["deck_sha256"] == manifest["deck"]["sha256"]
-    mom, record = kr.load_mom(out / "mom.json", kr.observation_times(end=40.0, snapshots=9))
+    mom, record = kr.load_mom(out / "mom.json", kr.observation_times(end=40.0, snapshots=9),
+                              deck_sha256=manifest["deck"]["sha256"])
     assert record["header"] == header and all(q is not None for q in mom)
 
 
-def test_whole_keys_are_withheld_where_a_polymer_species_dp_is_open(tmp_path, monkeypatch):
-    """The hexene of the whole-ensemble fixture, with its DP left open (the
-    two ends of the backbone bracket disagree): the molecule count stays, the
-    whole-ensemble keys are withheld, the reason is in the diagnostics."""
-    s = make_setup(tmp_path, {6: 1})
-    out = tmp_path / "out"
-    produce(s, out, end=10.0, snapshots=2)
-    u, mu1, mu2 = declared(s["spec"])
-
-    def pool(t):
-        f = t / 10.0
-        return u, mu1 - 3 * f * u, mu2 * (1 - f) + 9 * f * u
-
-    hexene = Molecule(smiles="C=CCCCC").to_adjacency_list()
-    write_run(out, times=[0.0, 10.0], pools=[(LABEL, pool, 0.0)],
-              gas=ZERO_GAS + [("C6H12(4)", hexene, lambda t: u * t / 10.0)])
-    monkeypatch.setattr(mp, "kmc_dp", lambda classes, molecule: None)
-    produce(s, out, end=10.0, snapshots=2, mode="convert")
-    entries = mom_entries(out)
-    assert set(WHOLE) <= set(entries[0]["quantities"])
-    q = entries[-1]["quantities"]
-    assert not set(WHOLE) & set(q) and q["polymer_derived_molecules_mol"] == pytest.approx(2 * u, rel=1e-12)
-    assert json.loads((out / "mom_diagnostics.json").read_text())[-1]["dp_undetermined_species"] == ["C6H12(4)"]
