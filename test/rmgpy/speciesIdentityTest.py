@@ -11,7 +11,7 @@ import pytest
 from rmgpy.molecule import Molecule
 
 try:
-    from rmgpy.species_identity import same_structure
+    from rmgpy.species_identity import MALFORMED, UNDECIDABLE, same_structure
 except ImportError:                       # before the shared module: each checkout's own copy
     try:
         from rmgpy.polymer import same_structure
@@ -69,6 +69,28 @@ def test_the_inputs_are_left_as_they_were():
 def test_nothing_equals_an_empty_list():
     assert same_structure([], [Molecule(smiles="C")]) is False
     assert same_structure([Molecule(smiles="C")], []) is False
+
+
+def test_unreactive_benzene_expands_and_matches_in_both_orders():
+    """The public wrapper suppresses this error; identity must not."""
+    aromatic, kekule = _aromatic_benzene(), _kekule_benzene()
+    aromatic.reactive = kekule.reactive = False
+    assert same_structure([aromatic], [kekule]) is True
+    assert same_structure([kekule], [aromatic]) is True
+
+
+def test_charged_resonance_pair_is_undecidable():
+    """RMG deliberately declines charged-species resonance expansion."""
+    first, second = Molecule(smiles="[CH2+]C=CC"), Molecule(smiles="C=C[CH+]C")
+    assert same_structure([first], [second]) is UNDECIDABLE
+    assert same_structure([second], [first]) is UNDECIDABLE
+
+
+def test_mixed_spin_lists_are_malformed_not_equal_through_a_tail():
+    """A shared triplet tail cannot make two singlet leaders comparable."""
+    first = [_spin("CC", 1), _spin("[CH2]C[CH]C", 3)]
+    second = [_spin("CCC", 1), _spin("[CH2]C[CH]C", 3)]
+    assert same_structure(first, second) is MALFORMED
 
 
 def test_this_checkout_compares_species_by_the_one_implementation():
