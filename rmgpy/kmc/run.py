@@ -430,23 +430,27 @@ def _bound_by(path, provenance, deck: Deck, allow_unbound: bool) -> Tuple[str, .
     return tuple(out)
 
 
-def expand_catalog_sets(paths: Sequence) -> List[Path]:
-    """``paths`` with every ``kmc-catalog-set/1`` file replaced by its member
-    catalogs (sha256, shared inputs and dependencies verified): a set loads
-    exactly as its members given one by one."""
-    out: List[Path] = []
+def expand_catalog_sets(paths: Sequence) -> List[Tuple[Path, Optional[bytes]]]:
+    """(path, bytes) for each catalog to load: every ``kmc-catalog-set/1``
+    file is replaced by its member catalogs with the very bytes whose sha256,
+    shared inputs, collision-entry keys and dependencies were verified (a set
+    loads exactly as its members given one by one, and a member replaced on
+    disk after the check is never read).  A plain catalog comes with the bytes
+    read here, or None when unreadable (``load_catalogs`` reports it)."""
+    out: List[Tuple[Path, Optional[bytes]]] = []
     for path in paths:
         path = Path(path)
         try:
-            doc = json.loads(path.read_bytes())
+            raw = path.read_bytes()
+            doc = json.loads(raw)
         except (OSError, ValueError):
-            out.append(path)                    # unreadable: load_catalogs reports it
+            out.append((path, None))             # unreadable: load_catalogs reports it
             continue
         if not cs.is_catalog_set(doc):
-            out.append(path)
+            out.append((path, raw))
             continue
         try:
-            out.extend(cs.set_member_paths(path, doc))
+            out.extend(cs.read_set_members(path, doc))
         except cs.CatalogSetError as error:
             raise RunError(str(error)) from error
     return out
@@ -464,16 +468,17 @@ def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool
     deck's, and a catalog without one unless ``allow_unbound``."""
     if not paths:
         raise RunError("at least one catalog file is needed")
-    paths = expand_catalog_sets(paths)
+    sources = expand_catalog_sets(paths)
     temperature = float(temperature)
     records: List[CatalogRecord] = []
     payloads: List[dict] = []
     owner: Dict[str, str] = {}
     executables: Dict[str, List[Tuple[Any, str]]] = {}
-    for path in paths:
+    for path, raw in sources:
         path = Path(path)
         try:
-            raw = path.read_bytes()
+            if raw is None:
+                raw = path.read_bytes()
             doc = json.loads(raw)
         except (OSError, ValueError) as error:
             raise RunError(f"catalog {path}: unreadable ({error})") from error

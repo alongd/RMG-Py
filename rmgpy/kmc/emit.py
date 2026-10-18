@@ -69,8 +69,8 @@ REFERENCE_THERMO_LABEL = "i147-reference"
 REFERENCE_RATES_LABEL = "i138-reference"
 PAYLOAD_FIELDS = ("key", "name", "family", "status", "direction", "executable", "weight", "derived")
 HEADER_MATCH = ("schema", "artifact_id", "artifact_sha256", "artifact_records", "families",
-                "database_path", "database_head", "code_sha", "roster_sha256", "temperatures",
-                "selection")
+                "database_path", "database_head", "database_content_sha256", "code_sha",
+                "code_sources_sha256", "roster_sha256", "temperatures", "selection")
 CYCLE_REFUSED_FRACTION = 0.05
 MIDPOINT_THRESHOLD = 0.01     # the harness' gate on the primary-weight midpoint error
 
@@ -437,6 +437,30 @@ def code_sha() -> Optional[str]:
     return head + ("-dirty" if dirty else "")
 
 
+def code_sources_sha256() -> str:
+    """sha256 over the sorted relative paths and bytes of the ``rmgpy/kmc``
+    Python sources: the emit code's identity where git is not available
+    (``code_sha`` null)."""
+    here = Path(__file__).resolve().parent
+    digest = hashlib.sha256()
+    for path in sorted(p for p in here.rglob("*.py") if "__pycache__" not in p.parts):
+        digest.update(path.relative_to(here).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def database_content_sha256(path) -> Optional[str]:
+    """The database's content digest (``database_provenance``), known where
+    git is not (``database_head`` null); None if the tree cannot be read."""
+    from rmgpy.kmc.database_provenance import database_content_digest
+    try:
+        return database_content_digest(path)[0]
+    except (OSError, ValueError):
+        return None
+
+
 class RatesByGrid:
     """``ProductionRates`` per temperature grid (cached): the midpoint check
     regenerates a record's own kinetics on the grid midpoints."""
@@ -633,7 +657,9 @@ def shard_header(emitter, roster, refusals, picked, chunk, partial):
             "artifact_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
             "artifact_records": S["artifact_records"], "families": S["families"],
             "database_path": str(emitter.database), "database_head": git_head(emitter.database),
-            "code_sha": code_sha(), "roster_sha256": roster.sha256,
+            "database_content_sha256": database_content_sha256(emitter.database),
+            "code_sha": code_sha(), "code_sources_sha256": code_sources_sha256(),
+            "roster_sha256": roster.sha256,
             "temperatures": [float(t) for t in DEFAULT_T_GRID], "chunk": chunk,
             "selection": "partial" if partial else "all",
             "assigned": [r["event_id"] for r in picked], "roster_refusals": refusals,
@@ -876,6 +902,10 @@ def assemble(paths, *, database=None, services=None) -> dict:
 
     have = [k for k, r in enumerate(rows) if r.get("payload")]
     payloads = [rows[k]["payload"] for k in have]
+    # every key that enters collision resolution (refused copies included): a
+    # catalog set compares them across its members (catalog_set)
+    entry_keys = sorted({t["key"] for p in payloads for t in p.get("templates", [])
+                         if t.get("status") == "emitted"})
     collisions = []
     try:
         merged, collisions = te.resolve_collisions(payloads)
@@ -966,7 +996,8 @@ def assemble(paths, *, database=None, services=None) -> dict:
         "schema": SCHEMA,
         "provenance": {k: first.get(k) for k in (
             "artifact_id", "artifact_sha256", "artifact_records", "database_path", "database_head",
-            "code_sha", "roster_sha256", "families", "temperatures", "systems")},
+            "database_content_sha256", "code_sha", "code_sources_sha256", "roster_sha256",
+            "families", "temperatures", "systems")},
         "payloads": out_payloads,
         "refusals": refusals,
         "gates": {
@@ -974,7 +1005,8 @@ def assemble(paths, *, database=None, services=None) -> dict:
                            "merged": len(collisions) - len(refused_collisions),
                            "refused": len(refused_collisions),
                            "copies": sum(c["copies"] for c in collisions),
-                           "tolerance_log10": te.LOCALITY_TOLERANCE_LOG10},
+                           "tolerance_log10": te.LOCALITY_TOLERANCE_LOG10,
+                           "entry_keys": entry_keys},
             "cycles": {"pairs": len(cycle_table), "refused": len(refused_pairs),
                        "not_evaluable": len(te.cycle_not_evaluable(cycle_table)),
                        "by_status": dict(Counter(r.get("status") for r in cycle_table))},

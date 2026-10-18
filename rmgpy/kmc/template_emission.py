@@ -121,7 +121,8 @@ Catalog collisions
 Templates of different records with equal executable keys would each fire
 on every matched transition.  ``resolve_collisions`` merges copies whose
 log10 weights have a diameter of at most ``LOCALITY_TOLERANCE_LOG10`` at
-every grid temperature (least record id's weight; every source listed) and
+every grid temperature (the weight of the copy of least
+``partition_free_identity``, never chosen by record id; every source listed) and
 refuses the rest.  Reciprocal (``reverse_of``) groups are admitted or refused
 together and their representatives come from one source record pair.
 ``check_cycles`` then tests the LOADED catalog's detailed balance on the
@@ -1917,13 +1918,40 @@ def _pair_deviation(pf, tf, pr, tr, rep_wf, rep_wr) -> tuple:
     return worst, "thermo (calibration witness)" if thermo else "own calibrated ratio"
 
 
+def partition_free_identity(payload, template=None) -> str:
+    """sha256 of what a record (with ``template``: one of its templates) is,
+    with no record id in it.
+
+    A record event id hashes the artifact's provenance, the artifact's family
+    list among it, so the same chemistry compiled alone or with other
+    families carries other ids.  Every choice that must not depend on how the
+    families were partitioned (the representative of a collision, the source
+    pair of a reciprocal unit, the cycle-check temperatures) orders by this
+    instead: the family, direction, pathway and orientation of the record,
+    its rate table and rate selection, and the template's key and weight
+    table.  Record ids only break ties between copies equal in all of it."""
+    rate = payload.get("rate") or {}
+    prov = rate.get("provenance") or {}
+    body = {"family": payload.get("family"), "direction": payload.get("direction"),
+            "pathway": payload.get("pathway"), "orientation": payload.get("orientation"),
+            "rate": {"T": rate.get("T"), "k": rate.get("k"),
+                     "ssa_multiplier": rate.get("ssa_multiplier"),
+                     "kind": prov.get("kind"), "class": prov.get("class"),
+                     "selection": prov.get("selection")}}
+    if template is not None:
+        body["template"] = {"key": template.get("key"), "weight": template.get("weight")}
+    return sha256_json(body)
+
+
 def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG10) -> tuple:
     """One catalog's payloads with equal executable keys made one template.
 
     Copies on one temperature grid whose log10 weights have a DIAMETER (max -
     min over all copies, at each grid temperature) of at most
     ``tolerance_log10`` can merge, whatever the input order.  The
-    representative is the copy of the least record event id; its weight is the
+    representative is the copy of the least ``partition_free_identity`` (then
+    the least record event id; never the id alone, which carries the
+    artifact's family list); its weight is the
     loaded weight and every source record is listed (``collision``); the
     others become ``merged`` (``merged_into``).  Copies beyond the diameter
     are all refused ``refused:collision``; copies on different grids
@@ -1935,7 +1963,8 @@ def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG
     weights loaded in place of its own, stays within ``tolerance_log10``
     decades of its thermo expectation (``_pair_deviation``; every member's
     deviation is in the table).  The representatives of a unit come from the
-    SAME source pair (the pair with the least sorted record-id pair), so the
+    SAME source pair (the pair with the least sorted pair of
+    ``partition_free_identity``, then of record ids), so the
     loaded forward and reverse weights are one record pair's.  A partition that
     maps forward copies to more than one reverse template is a
     ``ReciprocalSplitError``.  A non-finite or non-positive weight, or
@@ -1947,12 +1976,14 @@ def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG
             raise EmissionError(f"record {str(p.get('record_event_id'))[:16]}: {why}")
     out = [json.loads(canonical_json(p)) for p in payloads]
     groups = defaultdict(list)
+    identity = {}
     for i, p in enumerate(out):
         for j, t in enumerate(p.get("templates", [])):
             if t.get("status") == "emitted":
                 groups[t["key"]].append((p.get("record_event_id") or "", i, j))
+                identity[(i, j)] = partition_free_identity(p, t)
     for key in groups:
-        groups[key].sort()
+        groups[key].sort(key=lambda c: (identity[(c[1], c[2])], c))
     links = _reciprocal_partitions(out, groups)
     partner_key = {}
     for (_rid, key), (_rev, rkey) in links.items():
@@ -1987,8 +2018,10 @@ def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG
         devs, dev_rows = 0.0, []
         if len(unit) == 2:
             kf, kr = unit
+            ident = {r: identity[(i, j)] for k in unit for r, i, j in evals[k]["copies"]}
             pairs = sorted(((f_rid, links[(f_rid, kf)][0]) for f_rid, _i, _j in evals[kf]["copies"]
-                            if (f_rid, kf) in links), key=lambda x: tuple(sorted(x)))
+                            if (f_rid, kf) in links),
+                           key=lambda x: (tuple(sorted(ident.get(r, "") for r in x)), tuple(sorted(x))))
             if pairs:
                 rep_pair = pairs[0]
                 reps[kf] = next(c for c in evals[kf]["copies"] if c[0] == rep_pair[0])
@@ -2045,8 +2078,9 @@ def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG
                         "merged": True, "records": records,
                         "log10_diameter": ev["diameter"], "rel_spread": spread,
                         "tolerance_log10": tolerance_log10,
-                        "weight_rule": "the representative's weight; the representative pair is "
-                                       "the least sorted record-id pair of the unit",
+                        "weight_rule": "the representative's weight: the copy (of a unit: the "
+                                       "source pair) of the least partition-free identity, "
+                                       "record ids breaking ties only",
                         "pair_deviations": dev_rows if len(unit) == 2 else []}
                 elif admit:
                     t["status"] = "merged"
@@ -2371,6 +2405,14 @@ def _inverse_partners(loaded, counter, rows, state, inside, payload, direction) 
     return found
 
 
+def primary_order(payload, template, record_id) -> tuple:
+    """The order of the two templates of a reciprocal pair; the lesser is the
+    primary (``derive_weights``): as_generated before reversed, then the
+    template key, then (never decisive between loaded templates, whose keys
+    are unique) the record event id."""
+    return (payload.get("orientation") != "as_generated", template.get("key"), str(record_id))
+
+
 def derive_weights(payloads, *, counter) -> list:
     """Make the weights of every reciprocal pair of LOADED templates follow
     detailed balance at the requested temperature.
@@ -2378,9 +2420,14 @@ def derive_weights(payloads, *, counter) -> list:
     For each emitted template ``t`` (base or context) with a stored thermo, the
     reverse templates that undo its transitions on its ``context`` and
     ``emitted`` witnesses are found by matching the loaded catalog.  When
-    there is exactly one partner ``u``, the pair is ordered by (record event
-    id, key): the lesser is PRIMARY and keeps its interpolated table, the
-    greater is DERIVED: ``derived`` names the primary and carries the
+    there is exactly one partner ``u``, the pair is ordered by
+    ``primary_order``: the template of the record RMG generated (orientation
+    ``as_generated``, the record whose own k the compiler keeps, deriving its
+    partner by Kc) first, then the lesser template key (the sha256 of the
+    executable).  Both are the same however the families were partitioned; a
+    record id hashes the artifact's family list and only breaks a tie, which
+    loaded keys never have.  The lesser is PRIMARY and keeps its interpolated
+    table, the greater is DERIVED: ``derived`` names the primary and carries the
     primary's stored thermo form, ``N_P / N_D`` and the ``ssa`` ratio, so that
     ``weight_at`` returns ``w_P(T) * (N_P / N_D) / (ssa_ratio * Kc_P(T))``.  A
     template with several or no partners, or without thermo, stays
@@ -2423,7 +2470,7 @@ def derive_weights(payloads, *, counter) -> list:
                 changed.add(i)
                 continue
             u = loaded.index[ref]
-            if (str(rid), t["key"]) < (str(ref[0]), ref[1]):
+            if primary_order(p, t, rid) < primary_order(by_record.get(ref[0]) or {}, u, ref[0]):
                 continue                         # t is the primary of this pair
             th = u.get("thermo")
             if not th or "error" in th or "form" not in th:
@@ -2432,9 +2479,10 @@ def derive_weights(payloads, *, counter) -> list:
                 "primary": {"record": ref[0], "key": ref[1]},
                 "counts_ratio": _count_of(by_record[ref[0]], u) / _count_of(p, t),
                 "ssa_ratio": th["ssa_ratio"], "thermo": th["form"],
-                "rule": "primary = the lesser (record event id, key) of the pair of loaded "
-                        "templates that undo each other; w = w_primary(T) * (N_P / N_D) / "
-                        "(ssa_ratio * Kc(T)), Kc exactly at T"}
+                "rule": "primary = of the pair of loaded templates that undo each other, the "
+                        "one of the as_generated record, then of the lesser template key (record "
+                        "ids, which carry the artifact's family list, only break ties); "
+                        "w = w_primary(T) * (N_P / N_D) / (ssa_ratio * Kc(T)), Kc exactly at T"}
             changed.add(i)
     return [finish(p) if k in changed else p for k, p in enumerate(out)]
 
@@ -2446,7 +2494,8 @@ DERIVED_RTOL = 1e-9
 def check_temperatures(grid, pair, extra=()) -> list:
     """Where a loaded pair is checked: every grid temperature, every grid
     midpoint, ``OFFGRID_RANDOM`` in-range temperatures drawn from a generator
-    seeded by the pair's record ids, and ``extra``."""
+    seeded by ``pair`` (``check_cycles`` passes the pair's sorted
+    ``partition_free_identity``, never its record ids), and ``extra``."""
     import random
     grid = [float(x) for x in grid]
     mids = [(a + b) / 2.0 for a, b in zip(grid, grid[1:])]
@@ -2529,6 +2578,7 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
             if not _loads(q):
                 fail(f"reverse record {str(rev)[:16]} loads no template (one-way channel)")
                 continue
+            seed_pair = tuple(sorted((partition_free_identity(p), partition_free_identity(q))))
             for t in mine:
                 if t.get("status") == "merged":
                     # a merged copy's own record kinetics must match the loaded
@@ -2567,7 +2617,7 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                         continue
                     r_rows = rows_from_json(wit["r"])
                     p_rows = rows_from_json(wit["p"])
-                    temps = check_temperatures(t["weight"]["T"], pair, extra_temperatures)
+                    temps = check_temperatures(t["weight"]["T"], seed_pair, extra_temperatures)
                     ck = (rm._signature(r_rows), rm._signature(p_rows), t["direction"],
                           p["family"], q["family"], tuple(p.get("pathway") or ()),
                           tuple(q.get("pathway") or ()), tuple(temps))

@@ -18,7 +18,10 @@ CLI::
         [--barrier-e0-fixed-b K] [--proxy-units N]
 
 ``--family F`` (exactly one family) compiles that family's artifact alone: the
-one-element form of ``--families``.
+one-element form of ``--families``.  ``F`` must be one family directory of the
+database (``input/kinetics/families/F/groups.py``); a selector that RMG would
+expand (``all``, ``none``, a recommended set such as ``default``, ``!F``) or
+any other name is refused before anything loads.
 
 The CLI runs the compile in a spawned child process that owns its own
 ``RMGDatabase``; the child exits promptly if the parent dies.
@@ -229,6 +232,24 @@ def compile_in_child(request: CompileRequest) -> tuple[Path, str]:
     return Path(path), artifact_id
 
 
+def one_family_problem(database_path, name: str) -> Optional[str]:
+    """Why ``name`` is not exactly one family of the database (None if it is):
+    it must be the name of a family directory with ``groups.py``, never a
+    selector RMG expands into several families or none."""
+    if name.startswith("!") or name.lower() in ("all", "none"):
+        return (f"--family {name!r} is a family selector, not one family: name exactly one family "
+                "directory of the database")
+    try:
+        universe = enumerate_family_universe(database_path)
+    except OSError as error:
+        return f"--family {name!r}: the database has no readable input/kinetics/families ({error})"
+    if name not in universe:
+        return (f"--family {name!r} is not a family of {database_path} (no "
+                f"input/kinetics/families/{name}/groups.py; recommended sets such as 'default' "
+                "expand into several families and are refused)")
+    return None
+
+
 def _read_list(path: str) -> tuple[str, ...]:
     value = json.loads(Path(path).read_text())
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
@@ -253,8 +274,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     parser.add_argument("--proxy-units", type=int, help="proxy chain length")
     args = parser.parse_args(argv)
-    if args.family is not None and (len(args.family) != 1 or not args.family[0]):
-        parser.error(f"--family takes exactly one family name, got {args.family}")
+    if args.family is not None:
+        if len(args.family) != 1 or not args.family[0]:
+            parser.error(f"--family takes exactly one family name, got {args.family}")
+        problem = one_family_problem(args.database, args.family[0])
+        if problem:
+            parser.error(problem)
     try:
         request = CompileRequest(
             database_path=str(Path(args.database).resolve()),
