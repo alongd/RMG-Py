@@ -422,17 +422,43 @@ def test_neutral_state_table_is_pinned(element):
                 ((pairs, valence) in allowed), (element, pairs, valence)
 
 
-PINNED_AROMATIC = {"C": {(0, 2, 1), (0, 3, 0)}, "Si": {(0, 2, 1), (0, 3, 0)},
-                   "N": {(1, 2, 0), (0, 2, 1), (0, 2, 2)},
-                   "P": {(1, 2, 0), (0, 2, 1), (0, 2, 2)},
-                   "O": {(1, 2, 0)}, "S": {(1, 2, 0)}}
+# (lone pairs, B bonds, single, double, triple bonds, unpaired electrons)
+_RING_ONE = {(0, 2, 1, 0, 0, 0), (0, 2, 0, 0, 0, 1)}
+PINNED_AROMATIC = {"Cb": _RING_ONE, "Cbf": {(0, 3, 0, 0, 0, 0)},
+                   "Sib": _RING_ONE, "Sibf": {(0, 3, 0, 0, 0, 0)},
+                   "N3b": {(1, 2, 0, 0, 0, 0)}, "N5b": _RING_ONE, "N5bd": {(0, 2, 0, 1, 0, 0)},
+                   "P3b": {(1, 2, 0, 0, 0, 0)}, "P5b": _RING_ONE, "P5bd": {(0, 2, 0, 1, 0, 0)},
+                   "O4b": {(1, 2, 0, 0, 0, 0)}, "S4b": {(1, 2, 0, 0, 0, 0)}}
 
 
 def test_aromatic_state_table_is_pinned():
-    """The aromatic states (RMG's aromatic atom types at charge 0) are pinned
-    like the neutral ones: widening an entry goes red."""
+    """The aromatic table names RMG's neutral aromatic atom types and, per
+    type, the bond counts allowed (never a summed valence): widening an
+    entry goes red."""
     from rmgpy.kmc import domain as dom
-    assert dom.AROMATIC_STATES == PINNED_AROMATIC
+    assert dom.AROMATIC_TYPES == PINNED_AROMATIC
+
+
+@pytest.mark.parametrize("element", ["N", "P"])
+def test_an_aromatic_atom_without_an_rmg_type_is_refused(element):
+    """I-173: a ring N or P without a lone pair, with two B bonds and two
+    single-bonded H, summed to the N5bd/P5bd key (0, 2, 2) and was accepted;
+    RMG's ``get_atomtype`` has no type for it."""
+    from rmgpy.molecule.atomtype import AtomTypeError, get_atomtype
+    from rmgpy.kmc import domain as dom
+    m, atom = _oxide_ring(element, False)
+    oxygen = next(a for a in atom.bonds if a.is_oxygen())
+    m.remove_atom(oxygen)
+    for _ in range(2):
+        from rmgpy.molecule import Atom, Bond
+        h = Atom(element="H", radical_electrons=0, lone_pairs=0, charge=0)
+        m.add_atom(h)
+        m.add_bond(Bond(atom, h, order=1))
+    with pytest.raises(AtomTypeError):
+        get_atomtype(atom, atom.edges)
+    verdict = dom.declared_interim_check(m, ("C", "H", "N", "O", "P"))
+    assert not verdict.accepted
+    assert "RMG atom type" in verdict.reason and element in verdict.reason, verdict.reason
 
 
 def _vinylnaphthalene_provider():
@@ -483,7 +509,7 @@ def test_aromatic_sigma_radicals_count_their_electron():
     from rmgpy.kmc import domain as dom
     for smiles in ("c1ccccc1", "c1ccc2ccccc2c1"):
         m, carbon = _sigma_radical(smiles)
-        assert dom.aromatic_state(carbon) == (0, 2, 1)
+        assert dom.aromatic_state(carbon) == (0, 2, 0, 0, 0, 1)
         verdict = dom.declared_interim_check(m)
         assert verdict.accepted, (smiles, verdict.reason)
     m, carbon = _sigma_radical("c1ccccc1")
@@ -494,7 +520,7 @@ def test_aromatic_sigma_radicals_count_their_electron():
         h = Atom(element="H", radical_electrons=0, lone_pairs=0)
         m.add_atom(h)
         m.add_bond(Bond(methyl, h, order=1))
-    assert dom.aromatic_state(carbon) == (0, 2, 2)
+    assert dom.aromatic_state(carbon) == (0, 2, 1, 0, 0, 1)
     assert "aromatic" in dom.declared_interim_check(m).reason
 
 
