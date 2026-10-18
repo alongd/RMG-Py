@@ -2959,11 +2959,8 @@ _TRAINING = {}
 def training_keys(family) -> frozenset:
     """Species keys (modulo resonance) of every species of the family's
     training reactions, both sides (RMG's depository match is a reaction
-    isomorphism in either direction).  Each molecule is keyed on a copy with
-    its atoms numbered: ``SpeciesKeys`` first looks a molecule up by its
-    id-keyed rows, and the depository's molecules carry no atom ids, so
-    unnumbered every molecule of one size collapsed onto the first one keyed
-    (17 keys for 3119 H_Abstraction entries; H2 and 1-phenylethyl missing)."""
+    isomorphism in either direction).  ``SpeciesKeys`` numbers its own copy
+    (the depository's molecules carry no atom ids)."""
     if family.label not in _TRAINING:
         from rmgpy.kmc import channels as chm
         species = chm.SpeciesKeys()
@@ -2974,10 +2971,7 @@ def training_keys(family) -> frozenset:
             depository = None
         for entry in (depository.entries.values() if depository else ()):
             for s in list(entry.item.reactants) + list(entry.item.products):
-                mol = (s.molecule[0] if hasattr(s, "molecule") else s).copy(deep=True)
-                for k, atom in enumerate(mol.atoms):
-                    atom.id = k
-                out.add(species(mol))
+                out.add(species(s.molecule[0] if hasattr(s, "molecule") else s))
         _TRAINING[family.label] = frozenset(out)
     return _TRAINING[family.label]
 

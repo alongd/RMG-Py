@@ -97,7 +97,14 @@ def _isotope(atom):
 
 
 def molecule_rows(molecule) -> Dict[int, Tuple]:
-    """atom id -> row for an RMG Molecule whose atoms carry ids."""
+    """atom id -> row for an RMG Molecule whose atoms carry ids.  Refused
+    (ValueError) when two atoms share an id: an unnumbered molecule (every
+    id -1) would otherwise collapse onto one row."""
+    ids = [atom.id for atom in molecule.atoms]
+    if len(set(ids)) != len(ids):
+        repeated = sorted({i for i in ids if ids.count(i) > 1})
+        raise ValueError(f"molecule_rows needs distinct atom ids; atom id {repeated[:4]} "
+                         f"is repeated (an unnumbered molecule carries id -1 on every atom)")
     rows = {}
     for atom in molecule.atoms:
         edges = tuple(sorted((other.id, float(bond.order)) for other, bond in atom.bonds.items()))

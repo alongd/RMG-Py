@@ -304,14 +304,23 @@ def in_neutral_state(symbol: str, lone_pairs: int, valence: float) -> bool:
     return (int(lone_pairs), valence) in NEUTRAL_STATES.get(symbol, ())
 
 
-# aromatic atoms (one or more benzene bonds, B) as RMG types them
-# (``rmgpy.molecule.atomtype``: Cb, Cbf, N3b, N5b, O4b, S4b, P3b, P5b, Sib,
-# Sibf at charge 0): element -> {(lone pairs, B bonds, other bond orders +
-# unpaired electrons)}.  A B bond is not a number of electrons here: a fused
-# carbon (Cbf) has three B bonds and nothing else, a ring carbon (Cb) two and
-# one more; RMG's aromatic O and S (O4b, S4b) carry one lone pair.
+# aromatic atoms (one or more benzene bonds, B) as RMG types them: element
+# -> {(lone pairs, B bonds, other bond orders + unpaired electrons)}, one
+# state per neutral aromatic atom type of ``rmgpy.molecule.atomtype`` with
+# two or three B bonds.  A B bond is not a number of electrons here; an
+# unpaired electron takes the place of a bond (a sigma radical, Cb with two B
+# bonds and a radical, is (0, 2, 1)).  Rows and the atomtype.py entries they
+# mirror (charge 0):
+#   C   (0, 2, 1) Cb (2 B + 1 single)   (0, 3, 0) Cbf (3 B)
+#   Si  (0, 2, 1) Sib                   (0, 3, 0) Sibf
+#   N   (1, 2, 0) N3b (1 pair)          (0, 2, 1) N5b (+1 single)
+#       (0, 2, 2) N5bd (+1 double)
+#   P   (1, 2, 0) P3b   (0, 2, 1) P5b   (0, 2, 2) P5bd
+#   O   (1, 2, 0) O4b                   S (1, 2, 0) S4b
+# Not mirrored: Cb with one B bond (a single B bond is no aromatic ring).
 AROMATIC_STATES = {"C": {(0, 2, 1), (0, 3, 0)}, "Si": {(0, 2, 1), (0, 3, 0)},
-                   "N": {(1, 2, 0), (0, 2, 1)}, "P": {(1, 2, 0), (0, 2, 1)},
+                   "N": {(1, 2, 0), (0, 2, 1), (0, 2, 2)},
+                   "P": {(1, 2, 0), (0, 2, 1), (0, 2, 2)},
                    "O": {(1, 2, 0)}, "S": {(1, 2, 0)}}
 
 

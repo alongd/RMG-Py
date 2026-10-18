@@ -183,6 +183,11 @@ class SpeciesKeys:
         return [f for f in forms if f.reactive] or list(forms)
 
     def __call__(self, mol) -> str:
+        # keyed on a numbered copy: the caller's ids may be absent (-1 on
+        # every atom) or anything; the key never depends on them
+        mol = mol.copy(deep=True)
+        for k, atom in enumerate(mol.atoms):
+            atom.id = k
         sig = rm._signature(rm.molecule_rows(mol))
         if sig in self._by_sig:
             return self._by_sig[sig]
