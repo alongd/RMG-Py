@@ -27,7 +27,7 @@ from types import SimpleNamespace
 from rmgpy.kmc.atom_map import extract_atom_map
 from rmgpy.kmc.barrier_e0 import BarrierE0Error, FixedBBarrierE0Provider
 from rmgpy.kmc.boundaries import PROVIDERS as BOUNDARY_PROVIDERS, ps_structure_specs
-from rmgpy.kmc.event_record import EventRecord, ssa_multiplier_for
+from rmgpy.kmc.event_record import EventRecord, same_species, ssa_multiplier_for
 from rmgpy.kmc.kinetics_library import (
     load_plpsec_entry,
     matches_head_to_tail,
@@ -2234,10 +2234,7 @@ def _reverse_view(reaction):
 def _pair_convention(reactants: Sequence[Any]) -> str:
     if len(reactants) != 2:
         return "ordered-unimolecular"
-    first, second = reactants
-    same = first is second or (
-        hasattr(first, "is_isomorphic") and first.is_isomorphic(second)
-    )
+    same = same_species(*reactants)
     return "unordered-identical-pair N(N-1)/2" if same else "distinct-pair N_A*N_B"
 
 

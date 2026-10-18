@@ -471,6 +471,64 @@ def _canonical_link_handles(value: Any, key: str | None = None) -> Any:
     return value
 
 
+def _given_forms(participant) -> Optional[list]:
+    """The molecular forms a reaction participant carries: a Species' list,
+    or the Molecule itself; ``None`` for anything else."""
+    forms = getattr(participant, "molecule", None)
+    if forms is not None:
+        return list(forms)
+    if hasattr(participant, "atoms") and hasattr(participant, "multiplicity"):
+        return [participant]
+    return None
+
+
+def _resonance_forms(forms: list) -> list:
+    """Every resonance structure of ``forms``, generated on copies (the
+    participant is never touched; a form RMG cannot expand stays as given)."""
+    out = []
+    for form in forms:
+        copy = form.copy(deep=True)
+        try:
+            out.extend(copy.generate_resonance_structures(keep_isomorphic=False))
+        except Exception:  # an unexpandable form is compared as given
+            out.append(copy)
+    return out
+
+
+def _isomorphic_forms(first: list, second: list) -> bool:
+    """Any form of ``first`` isomorphic to any form of ``second``, on copies
+    (RMG's isomorphism check reorders the atoms it is given)."""
+    first = [m.copy(deep=True) for m in first]
+    second = [m.copy(deep=True) for m in second]
+    return any(a.is_isomorphic(b) for a in first for b in second)
+
+
+def same_species(first, second) -> bool:
+    """Whether two reaction participants are one species: one resonance set
+    at one spin multiplicity.
+
+    RMG's generated reactions carry one resonance form per reactant Species,
+    so two forms of one species (crotyl head and tail) are compared through
+    their resonance structures.  Resonance generation resets a singlet
+    biradical to the high-spin state, so the multiplicities are compared on
+    the original forms first.  Everything runs on copies: the participants'
+    forms and atom order are never changed.  Participants that are neither
+    Species nor Molecules fall back to identity or their own
+    ``is_isomorphic``."""
+    if first is second:
+        return True
+    a, b = _given_forms(first), _given_forms(second)
+    if not a or not b:
+        return hasattr(first, "is_isomorphic") and bool(first.is_isomorphic(second))
+    if {m.multiplicity for m in a} != {m.multiplicity for m in b}:
+        return False
+    if a[0].get_formula() != b[0].get_formula():
+        return False
+    if _isomorphic_forms(a, b):
+        return True
+    return _isomorphic_forms(_resonance_forms(a), _resonance_forms(b))
+
+
 def ssa_multiplier_for(reactant_species: list) -> float:
     """
     Return the SSA multiplier for a bimolecular reaction's reactant species.
@@ -478,6 +536,7 @@ def ssa_multiplier_for(reactant_species: list) -> float:
     RMG's merged degeneracy already includes the 1/2 factor for A+A reactions.
     The stochastic simulator counts pairs as N(N-1)/2 for A+A and N_A*N_B for A+B.
     To match RMG's rate law at large N, A+A needs a multiplier of 2.0, A+B needs 1.0.
+    A+A is decided by ``same_species`` (resonance-aware, spin-aware).
 
     Args:
         reactant_species: List of reactant Species objects (length 1 or 2).
@@ -485,13 +544,8 @@ def ssa_multiplier_for(reactant_species: list) -> float:
     Returns:
         2.0 for A+A (same species), 1.0 for A+B (different species) or unimolecular.
     """
-    if len(reactant_species) == 1:
-        return 1.0
-    if len(reactant_species) == 2:
-        sp1, sp2 = reactant_species[0], reactant_species[1]
-        if sp1 is sp2 or (hasattr(sp1, "is_isomorphic") and sp1.is_isomorphic(sp2)):
-            return 2.0
-        return 1.0
+    if len(reactant_species) == 2 and same_species(*reactant_species):
+        return 2.0
     return 1.0
 
 
