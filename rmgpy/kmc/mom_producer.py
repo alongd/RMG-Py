@@ -4,7 +4,7 @@ Command line::
 
     python -m rmgpy.kmc.mom_producer DECK --mom-checkout PATH --temperature T
         --end E --snapshots N --families F [F ...] --catalog FILE [FILE ...] --out DIR
-        [--run | --write-only | --convert] [--allow-family-mismatch]
+        [--run | --write-only | --convert] [--allow-family-mismatch] [--allow-inactive]
         [--database DIR] [--species-constraint KEY=VALUE ...]
 
 The same deck the kMC runner reads (``rmgpy.kmc.run.read_deck``: one
@@ -12,7 +12,7 @@ The same deck the kMC runner reads (``rmgpy.kmc.run.read_deck``: one
 method-of-moments (MoM) input for a polymer-mom checkout, whose ``polymer()``
 takes legacy arguments only.  The translation, and every MoM setting the deck
 does not determine, is a named convention in ``<out>/conventions.json``
-(``CONVENTIONS``, written in every mode).
+(written in every mode).
 
 **Chemistry scope.**  Only the RMG families given (``database(kineticsFamilies=
 [...])``; no reaction libraries, no seed mechanisms) and none of the MoM moment
@@ -30,19 +30,47 @@ common ``provenance.database_path``), ``conventions.json`` and
 streams to ``<out>/rmg/stdout.log`` / ``stderr.log``) and converts.
 ``--convert`` converts an existing ``<out>/rmg`` run.
 
+**Only kMC's definitions.**  A key of ``melt_observables.mom_reported_quantities``
+is exported only when the MoM run gives that key's kMC definition
+(``QUANTITY_SOURCES``); every other key is ``NOT_PRODUCED``, with the reason.
+In particular kMC's ``mu*_mol`` / ``Mn_g_mol`` / ``Mw_g_mol`` are tail
+quantities (chains with n > xs), which three moments of a MoM pool holding
+every DP do not determine.  The condensed mass is MoM's own ledger booking
+(``polymer.pyx`` ``physical_elemental_inventory``: per pool
+``M_u mu1 - defect mu0 + e (mu0 + L)``, ``L = mu0(0) - mu0 - H`` with ``H = 0``
+as no explicit-DP species exists), exported only where the booked total
+(condensed + every gas species by its structure) closes to
+``MASS_CLOSURE_RELATIVE`` of the initial total; elsewhere it is not exported
+(a booking that does not close carries end groups that are not where it puts
+them).
+
+**Refusals and flags.**  Conversion refuses: a first profile row not at
+t = 0; conflicting rows at one time anywhere in the profile; a pool repeat
+mass off the deck's; an initial inventory (summed moments and mass) off the
+declared ensemble by more than ``INITIAL_RELATIVE``; a requested time outside
+the profile.  The pool-coupled reactions of the final mechanism are counted
+per family (``polymer_pools.json`` ``reactions[].refused`` and the family of
+``chem_annotated.inp``); when none of the requested families is admitted the
+run is refused (``status = "refused:inactive_chemistry"``, no ``--mom``
+file) unless ``--allow-inactive``, and then flagged.  The runner's ``--mom``
+format (``run.load_mom``) has no place for flags, so they are written to
+``conventions.json`` and ``producer.json`` (``flags``) only:
+``inactive_chemistry`` and ``kinetics_not_comparable`` (a declared mobile
+species' concentration per amount in MoM's gas phase over kMC's melt at
+t = 0 differs from 1 by more than the deck's ``observable_relative_tolerance``).
+
 **Conversion.**  The final-core solver profile ``rmg/solver/simulation_1_<N>.csv``
-(highest ``N``; columns are mol) and the pool table
-``rmg/chemkin/polymer_pools.json`` give, at exactly the deck's observation
-times (``rmgpy.kmc.run.observation_times``), the quantities of
-``QUANTITY_SOURCES`` keyed like ``melt_observables.mom_reported_quantities``.
-Each profile column is interpolated linearly in time between the two profile
-rows that bracket the requested time (a time on a row takes the row); derived
-quantities are computed from the interpolated columns; a requested time
-outside the profile is refused.  ``NOT_PRODUCED`` keys are absent, with the
-reason.  Output: ``<out>/mom.json`` (the ``--mom`` file, a JSON list of
-``{"time_s", "quantities"}``) and ``<out>/mom_diagnostics.json`` (the MoM's own
-code-convention numbers at the same times: per-pool moments, its end-group-free
-condensed mass and Mn / Mw).
+(highest ``N``; columns are mol), the pool table ``rmg/chemkin/polymer_pools.json``
+and the species dictionary ``rmg/chemkin/species_dictionary.txt`` (columns are
+matched to structures, so RMG's formula-named identifiers resolve) give the
+quantities at exactly the deck's observation times
+(``rmgpy.kmc.run.observation_times``).  Each profile column is interpolated
+linearly in time between the two profile rows bracketing the requested time
+(a time on a row takes the row); derived quantities come from the interpolated
+columns.  Output: ``<out>/mom.json`` (the ``--mom`` file) and
+``<out>/mom_diagnostics.json`` (MoM's own numbers at the same times:
+whole-ensemble moments per pool and summed, its end-group-free code mass, its
+native Mn / Mw, the mass-closure residual).
 """
 
 import argparse
@@ -63,7 +91,8 @@ from rmgpy import constants
 from rmgpy.kmc import melt_engine as me
 from rmgpy.kmc import melt_observables as mo
 from rmgpy.kmc import run as kr
-from rmgpy.polymer_mass import observables_from_moments
+from rmgpy.molecule import Molecule
+from rmgpy.quantity import Quantity
 
 SCHEMA = "kmc-mom-producer/1"
 CONVENTIONS_SCHEMA = "kmc-mom-conventions/1"
@@ -71,26 +100,34 @@ BATH_GAS_TOTAL_MOL = 1.0
 DEFAULT_PRESSURE = (1.0, "bar")
 DEFAULT_THERMO_LIBRARIES = ("primaryThermoLibrary",)
 LABEL_MAX = 10
-MASS_RELATIVE = 1.0e-9
+MASS_RELATIVE = 1.0e-9           # pool repeat mass against the deck's
+INITIAL_RELATIVE = 1.0e-9        # t = 0 moments and mass against the declared ensemble
+MASS_CLOSURE_RELATIVE = 1.0e-6   # booked total mass against its t = 0 value
+STATUS_INACTIVE = "refused:inactive_chemistry"
 BUILTIN_STRUCTURES = {"H": "[H]", "H2": "[H][H]"}
 
 QUANTITY_SOURCES = {
-    "mu0_mol": "sum over pools p of profile column <p>_mu0 (mol of chains)",
-    "mu1_mol": "sum over pools p of profile column <p>_mu1 (mol of repeat units)",
-    "mu2_mol": "sum over pools p of profile column <p>_mu2 (mol x DP^2)",
-    "Mn_g_mol": "observables_from_moments(sum mu, a, e).mn_g_mol (every chain a n + e)",
-    "Mw_g_mol": "observables_from_moments(sum mu, a, e).mw_g_mol (every chain a n + e)",
-    "polymer_condensed_mass_g": "sum_p (M_u,p mu1_p - defect_p mu0_p) + e sum_p mu0_p",
-    "polymer_conversion": "1 - polymer_condensed_mass_g(t) / polymer_condensed_mass_g(profile t = 0)",
-    "polymer_derived_molecules_mol": "sum over pools p of <p>_mu0 (no explicit-DP species)",
-    "species_mol": "profile column of each declared species (declared as a MoM input species)",
+    "polymer_condensed_mass_g": (
+        "MoM's ledger booking, sum over pools p of M_u,p mu1_p - defect_p mu0_p + e_p (mu0_p + L_p), "
+        "L_p = mu0_p(0) - mu0_p (H_p = 0: no explicit-DP species); exported only where the booked "
+        "total (condensed + gas species) closes to MASS_CLOSURE_RELATIVE"),
+    "polymer_conversion": "1 - polymer_condensed_mass_g / (1000 initial_mass_kg); with the mass only",
+    "polymer_derived_molecules_mol": (
+        "sum over pools p of <p>_mu0 (every chain, DP >= 1; no explicit-DP species), kMC's count of "
+        "polymer-derived molecules (tail mu0 + explicit ladder)"),
+    "species_mol": "profile column of each declared species, matched by structure in the species dictionary",
 }
+_TAIL = ("kMC's {} is a tail quantity (chains with n > xs, xs = the deck cutoff >= 2); a MoM pool's three "
+         "moments cover every DP and do not determine the tail")
 NOT_PRODUCED = {
+    "mu0_mol": _TAIL.format("mu0_mol"),
+    "mu1_mol": _TAIL.format("mu1_mol"),
+    "mu2_mol": _TAIL.format("mu2_mol"),
+    "Mn_g_mol": _TAIL.format("Mn_g_mol (of the tail moments)"),
+    "Mw_g_mol": _TAIL.format("Mw_g_mol (of the tail moments)"),
     "end_inventory_mol": (
-        "MoM's end-group ledger L_p = mu0_p(0) - mu0_p - H_p (polymer.pyx end_group_ledger) nets "
-        "chains minted without end groups (scission) against chains removed with them "
-        "(recombination, release to gas); the tail's physical end-group inventory is not "
-        "determined, and the ledger is written to no file"),
+        "kMC's is the physical end-group inventory of the tail; MoM's ledger nets minted against "
+        "removed chains over the whole pool and is written to no file"),
     "explicit_dp_mol": (
         "no explicit-DP species: explicit_dp=False (the deck requests none; MoM's explicit_dp is a "
         "single DP == cutoff species, the kMC ladder 1..xs has no MoM counterpart)"),
@@ -107,6 +144,11 @@ class ProducerError(ValueError):
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _rel(x: float, y: float) -> float:
+    scale = max(abs(x), abs(y))
+    return abs(x - y) / scale if scale else 0.0
 
 
 # --------------------------------------------------------------------------
@@ -126,7 +168,8 @@ def runner_quantity_keys() -> frozenset:
 
 
 def check_quantity_keys(quantities: dict, declared: Sequence[str]) -> None:
-    """Refuse a quantity the runner does not report, or a species it does not declare."""
+    """Refuse a quantity the runner does not report, one declared not
+    produced, or a species the deck does not declare."""
     known = runner_quantity_keys()
     unknown = sorted(set(quantities) - known)
     if unknown:
@@ -174,13 +217,39 @@ def moment_column(label: str) -> str:
     return f"{label[:stem_len]}-{digest}{suffix}"
 
 
-def species_column(header: Sequence[str], label: str) -> int:
-    """Index of a species' profile column: ``label`` or ``label(<index>)``."""
-    pattern = re.compile(re.escape(label) + r"(\(\d+\))?$")
-    found = [k for k, h in enumerate(header) if pattern.fullmatch(h)]
-    if len(found) != 1:
-        raise ProducerError(f"species {label!r}: {len(found)} profile columns match (header {list(header)})")
-    return found[0]
+def read_species_dictionary(path) -> Dict[str, Molecule]:
+    """``chemkin/species_dictionary.txt``: identifier -> molecule (blocks of an
+    identifier line and an adjacency list, separated by blank lines)."""
+    try:
+        text = Path(path).read_text()
+    except OSError as error:
+        raise ProducerError(f"species dictionary {path}: {error}") from error
+    out = {}
+    for block in re.split(r"\n\s*\n", text.strip()):
+        lines = block.strip().splitlines()
+        if not lines:
+            continue
+        name, adjacency = lines[0].strip(), "\n".join(lines[1:])
+        try:
+            out[name] = Molecule().from_adjacency_list(adjacency)
+        except Exception as error:     # the adjacency-list parser raises several types
+            raise ProducerError(f"species dictionary {path}: {name!r}: {error}") from error
+    return out
+
+
+def resolve_species(header: Sequence[str], dictionary: Dict[str, Molecule],
+                    structures: Dict[str, Molecule]) -> Dict[str, int]:
+    """Declared name -> profile column, by structure: the column whose
+    dictionary molecule is isomorphic to the declared species (RMG names a
+    column ``label(index)`` or, past 16 characters, ``formula(index)``)."""
+    out = {}
+    for name, molecule in structures.items():
+        found = [k for k, h in enumerate(header) if h in dictionary and dictionary[h].is_isomorphic(molecule)]
+        if len(found) != 1:
+            raise ProducerError(f"species {name!r}: {len(found)} profile columns hold its structure "
+                                f"({[header[k] for k in found]})")
+        out[name] = found[0]
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -328,6 +397,13 @@ def declared_species(spec) -> Dict[str, Tuple[Optional[str], Optional[str]]]:
     return out
 
 
+def species_structures(facts: dict) -> Dict[str, Molecule]:
+    out = {}
+    for name, (adjacency, smiles) in facts["species_structures"].items():
+        out[name] = Molecule(smiles=smiles) if smiles is not None else Molecule().from_adjacency_list(adjacency)
+    return out
+
+
 def _parse_constraints(items: Sequence[str]) -> Dict[str, Any]:
     out = {}
     for item in items or ():
@@ -342,6 +418,25 @@ def _parse_constraints(items: Sequence[str]) -> Dict[str, Any]:
             raise ProducerError(f"--species-constraint {item!r}: value is not a literal") from error
         out[key] = value
     return out
+
+
+def phase_kinetics(spec, species: Sequence[str], initial: Dict[str, float], polymer: str,
+                   temperature: float, pressure: Tuple[float, str]) -> dict:
+    """Per declared species, its concentration per amount in MoM's gas phase
+    over kMC's melt at t = 0: ``V_kMC / V_gas`` (MoM: c = n / V_gas, V_gas the
+    ideal-gas volume of the gas moles, 1 m^3 when there are none; kMC: c =
+    n / V, V the melt volume of the declaration)."""
+    init = spec.initialization()
+    v_kmc = init.volume_m3 * init.scale_factor
+    n_gas = math.fsum(v for k, v in initial.items() if k != polymer)
+    p_pa = Quantity(pressure[0], pressure[1]).value_si
+    v_gas = constants.R * float(temperature) * n_gas / p_pa if n_gas > 0 else 1.0
+    ratio = v_kmc / v_gas
+    tolerance = spec.observable_relative_tolerance
+    ratios = {name: ratio for name in species}
+    return {"ratio_by_species": ratios, "V_kmc_m3": v_kmc, "V_gas_m3": v_gas, "gas_mol": n_gas,
+            "tolerance": tolerance,
+            "not_comparable": sorted(n for n, r in ratios.items() if abs(r - 1.0) > tolerance)}
 
 
 def build_input(deck, context: dict, *, temperature: float, end: float, families: Sequence[str],
@@ -361,9 +456,11 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
     mu = [float(x) for x in spec.macroscopic_moments_mol]
     scale = spec.initialization().scale_factor
     species = declared_species(spec)
-    clash = sorted((set(species) | {label}) & set(context["species"]))
+    generated = {label, f"{label}_melt"} | {f"{label}_mu{k}" for k in range(3)}
+    clash = sorted((set(species) & generated) | ((set(species) | generated) & set(context["species"])))
     if clash:
-        raise ProducerError(f"deck species {clash} collide with the declared species / pool label")
+        raise ProducerError(f"species labels {clash} collide with the MoM pool label {label!r}, its moment "
+                            "or phase labels, or another species of the deck")
     mobile = {name: count * scale / constants.Na for name, count in spec.initial_mobile_counts if count}
     graphs = {name: graph for name, graph, _d in spec.small_species}
     mobile_kg = {name: amount * graphs[name].composition.molar_mass_kg_mol() for name, amount in mobile.items()}
@@ -418,38 +515,47 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
     if constraints:
         args = ", ".join(f"{k}={v!r}" for k, v in sorted(constraints.items()))
         lines.append(f"generatedSpeciesConstraints({args})")
-    facts = {"label": label, "a_g_mol": a, "e_g_mol": e, "moments_mol": mu, "species": sorted(species),
+    facts = {"label": label, "a_g_mol": a, "e_g_mol": e, "moments_mol": mu,
+             "initial_mass_g": spec.initial_mass_kg * 1000.0, "species": sorted(species),
+             "species_structures": {k: list(v) for k, v in sorted(species.items())},
+             "end_groups": [head.to_smiles(), tail.to_smiles()],
              "phase_species": phase, "initial_moles": initial, "pressure": list(pressure),
              "constraints": constraints, "families": sorted(set(families)),
              "volume_ratio_mom_over_kmc": (a * mu[1] / 1000.0 + math.fsum(
-                 mobile_kg[n] for n in phase[1:])) / (spec.initial_mass_kg + math.fsum(mobile_kg.values()))}
+                 mobile_kg[n] for n in phase[1:])) / (spec.initial_mass_kg + math.fsum(mobile_kg.values())),
+             "phase_kinetics": phase_kinetics(spec, sorted(species), initial, label, temperature, pressure)}
     return "\n".join(lines) + "\n", facts
 
 
-def conventions(deck, facts: dict, *, temperature: float, family: dict, database: Tuple[str, str]) -> dict:
+def conventions(deck, facts: dict, *, temperature: float, family: dict, database: Tuple[str, str],
+                flags: dict) -> dict:
     """``conventions.json``: every MoM setting or definition that is not the
-    deck's own, named, with its value."""
+    deck's own, named, with its value, and the run's flags."""
     spec = deck.spec
     rows = [
         ("label", facts["label"], f"MoM pool label from {deck.label!r}: letters and digits, <= {LABEL_MAX} "
-                                  "characters (so its moment columns are the label verbatim)"),
+                                  "characters (so its moment columns are the label verbatim); a declared "
+                                  "species label equal to it, its moment or phase labels is refused"),
         ("legacy_translation", "LinearHomopolymerSpec.legacy_molecules",
          "repeat unit as an adjacency list with the head port *2 and the tail port *1 (radical at each "
          "port); end groups as mono-radical SMILES (radical at the port)"),
         ("initial_moments", facts["moments_mol"],
          "macroscopic_moments_mol of the declared ensemble (exact DP moments, mol); the reactor takes "
-         "mu0 from initialMoles and mu1, mu2 from the moment ratios"),
-        ("mass_basis", "MoM excludes end groups",
-         "polymer(initial_mass = a mu1 / 1000 kg); MoM's own condensed mass is "
-         "sum_p (M_u mu1 - defect mu0) without end groups"),
-        ("capped_chains", facts["e_g_mol"],
-         "Mn, Mw and polymer_condensed_mass_g assign every MoM chain a n + e (e = head + tail end-group "
-         "molar mass, g/mol), as the kMC's Mn / Mw do; kMC's condensed mass is exact, so after a bridge "
-         "scission they differ by e per chain minted without end groups"),
-        ("moments_all_dp", True,
-         "MoM pool moments cover every DP of the pool (no explicit ladder); kMC's are the tail n > xs"),
-        ("all_pools_summed", True, "moments, chain count and mass sum every pool in polymer_pools.json, "
-                                   "spawned pools included"),
+         "mu0 from initialMoles and mu1, mu2 from the moment ratios; polymer(initial_mass = a mu1 / 1000 "
+         "kg), MoM's end-group-free basis"),
+        ("initial_inventory", INITIAL_RELATIVE,
+         "the profile's t = 0 summed moments and booked mass must equal the declared ensemble's to this "
+         "relative tolerance, else refused"),
+        ("tail_keys", sorted(k for k in NOT_PRODUCED if k.startswith(("mu", "M"))),
+         "not produced: kMC's are tail quantities (n > xs); MoM's pool moments cover every DP "
+         "(whole-ensemble moments are in mom_diagnostics.json, not compared)"),
+        ("mass_booking", "MoM physical_elemental_inventory ledger",
+         "condensed mass = sum_p M_u,p mu1_p - defect_p mu0_p + e_p (mu0_p + L_p), L_p = mu0_p(0) - mu0_p "
+         "(H_p = 0, no explicit-DP species); e_p from the pool's end-group SMILES"),
+        ("mass_closure", MASS_CLOSURE_RELATIVE,
+         "the booked total (condensed + every gas / explicit species by its structure's molar mass) must "
+         "stay within this relative tolerance of its t = 0 value; where it does not, the mass and the "
+         "conversion are not exported (the residual is in mom_diagnostics.json)"),
         ("volume", facts["volume_ratio_mom_over_kmc"],
          "MoM V_poly = (a mu1 + phase species mass) / rho (end groups excluded), constant; value = "
          "MoM V_poly / kMC volume (polymer with end groups + mobile species, same density)"),
@@ -458,6 +564,10 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
         ("declared_species", facts["species"],
          "every name kMC reports under species_mol is a reactive MoM input species (gas phase in MoM, "
          "melt in kMC); initial amount count x scale / N_A from initial_mobile_counts, else 0"),
+        ("phase_kinetics", facts["phase_kinetics"],
+         "concentration per amount of each declared species, MoM gas (n / V_gas) over kMC melt (n / V), "
+         "at t = 0; kinetics_not_comparable when a ratio differs from 1 by more than the deck's "
+         "observable_relative_tolerance"),
         ("bath_gas", facts["initial_moles"], f"the deck's simpleReactor mole fractions x "
                                              f"{BATH_GAS_TOTAL_MOL} mol (MoM gas phase; kMC has none)"),
         ("pressure", facts["pressure"], "the deck's simpleReactor pressure, else 1 bar"),
@@ -466,6 +576,10 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
                                         "seedMechanisms = []; kineticsEstimator 'rate rules'; "
                                         "kineticsDepositories 'default'; no pressureDependence"),
         ("family_check", family, "the catalogs' provenance.families against --families"),
+        ("inactive_chemistry", STATUS_INACTIVE,
+         "pool-coupled reactions of the final mechanism counted per family (polymer_pools.json "
+         "reactions[].refused, family from chem_annotated.inp); none admitted in the requested "
+         "families: refused, unless --allow-inactive (then flagged)"),
         ("database", database[0], "RMG database.directory (rmgrc), from " + database[1]),
         ("kernels_off", ["k_scission=0", "k_unzip=0", "k_homolysis", "k_depropagation",
                          "radical_qssa_unzip", "side_group_homolysis", "explicit_dp=False"],
@@ -481,20 +595,24 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
                                                       "unless given, so the declared input species stay "
                                                       "admissible), else none"),
         ("profile", "rmg/solver/simulation_1_<N>.csv, highest N",
-         "the final-core solver profile (rows at the integrator's steps, amounts in mol)"),
+         "the final-core solver profile (rows at the integrator's steps, amounts in mol); columns matched "
+         "to species by structure (chemkin/species_dictionary.txt); a first row not at t = 0 or "
+         "conflicting rows at one time are refused"),
         ("time_interpolation", "linear in time",
          "each profile column interpolated between the two rows bracketing the requested time (a row "
          "time takes the row); derived quantities from the interpolated columns; outside the profile "
          "refused"),
-        ("polymer_conversion_basis", "profile t = 0", "1 - mass(t) / mass at the profile's first row"),
     ]
     return {"schema": CONVENTIONS_SCHEMA,
             "conventions": [{"name": n, "value": v, "statement": s} for n, v, s in rows],
-            "quantity_sources": dict(QUANTITY_SOURCES), "not_produced": dict(NOT_PRODUCED)}
+            "quantity_sources": dict(QUANTITY_SOURCES), "not_produced": dict(NOT_PRODUCED),
+            "flags": flags,
+            "runner_note": "run.load_mom accepts only {time_s, quantities} entries: the flags are not "
+                           "carried into comparison.csv; the runner needs a flags field for that"}
 
 
 # --------------------------------------------------------------------------
-# the profile
+# the run's outputs
 # --------------------------------------------------------------------------
 def find_profile(rmg_dir) -> Path:
     found = []
@@ -528,10 +646,15 @@ def read_profile(path) -> Tuple[List[str], List[List[float]]]:
     times = [r[0] for r in data]
     if any(b < a for a, b in zip(times, times[1:])):
         raise ProducerError(f"profile {path}: time is not non-decreasing")
+    for x, y in zip(data, data[1:]):
+        if x[0] == y[0] and x != y:
+            raise ProducerError(f"profile {path}: duplicate rows at t = {x[0]!r} s with different values")
+    if data[0][0] != 0.0:
+        raise ProducerError(f"profile {path}: the first row is at t = {data[0][0]!r} s, not 0")
     return header, data
 
 
-def read_pools(path) -> List[dict]:
+def read_pools(path) -> dict:
     try:
         doc = json.loads(Path(path).read_text())
     except (OSError, ValueError) as error:
@@ -542,11 +665,57 @@ def read_pools(path) -> List[dict]:
     for p in pools:
         if not isinstance(p, dict) or not isinstance(p.get("label"), str) or not _positive(p.get("monomer_mw_g_mol")):
             raise ProducerError(f"pool table {path}: each pool needs a label and monomer_mw_g_mol")
-    return pools
+        if p.get("explicit_dp"):
+            raise ProducerError(f"pool table {path}: pool {p['label']!r} has explicit-DP species; the ledger "
+                                "handoff H is not in the profile")
+    return doc
 
 
 def _positive(x) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) and x > 0
+
+
+def census(rmg_dir, families: Sequence[str]) -> dict:
+    """Pool-coupled reactions of the final mechanism per family: rows and
+    admitted rows (``polymer_pools.json`` ``reactions[]``; the family of
+    Chemkin reaction ``index + 1`` from ``chem_annotated.inp``)."""
+    rmg_dir = Path(rmg_dir)
+    doc = read_pools(rmg_dir / "chemkin" / "polymer_pools.json")
+    annotated = rmg_dir / "chemkin" / "chem_annotated.inp"
+    try:
+        text = annotated.read_text()
+    except OSError as error:
+        raise ProducerError(f"annotated mechanism {annotated}: {error}") from error
+    family_of, current = {}, None
+    for line in text.splitlines():
+        m = re.match(r"! Reaction index: Chemkin #(\d+);", line)
+        if m:
+            current = int(m.group(1))
+            continue
+        m = re.match(r"! (Template|Library|PDep) reaction: (\S+)", line)
+        if m and current is not None and current not in family_of:
+            family_of[current] = m.group(2) if m.group(1) == "Template" else f"{m.group(1).lower()}:{m.group(2)}"
+    counts: Dict[str, Dict[str, int]] = {}
+    refused_reasons: Dict[str, int] = {}
+    for row in doc.get("reactions") or ():
+        index = (row.get("cantera") or {}).get("index")
+        if not isinstance(index, int) or isinstance(index, bool):
+            raise ProducerError(f"pool reaction {row.get('id')!r}: no cantera index")
+        family = family_of.get(index + 1)
+        if family is None:
+            raise ProducerError(f"pool reaction {row.get('id')!r}: Chemkin reaction #{index + 1} has no family "
+                                f"in {annotated}")
+        slot = counts.setdefault(family, {"rows": 0, "admitted": 0})
+        slot["rows"] += 1
+        if row.get("refused"):
+            reason = str(row.get("refused_reason"))
+            refused_reasons[reason] = refused_reasons.get(reason, 0) + 1
+        else:
+            slot["admitted"] += 1
+    admitted = sum(counts.get(f, {}).get("admitted", 0) for f in families)
+    return {"families": dict(sorted(counts.items())), "requested_families": sorted(set(families)),
+            "admitted_in_requested_families": admitted, "refused_reasons": refused_reasons,
+            "stale_topology": bool((doc.get("conventions") or {}).get("stale_topology"))}
 
 
 def interpolate(data: List[List[float]], t: float) -> List[float]:
@@ -557,13 +726,15 @@ def interpolate(data: List[List[float]], t: float) -> List[float]:
         raise ProducerError(f"time {t!r} s is outside the profile [{times[0]!r}, {times[-1]!r}] s")
     at = [r for r in data if r[0] == t]
     if at:
-        if any(r != at[0] for r in at[1:]):
-            raise ProducerError(f"time {t!r} s: several profile rows with different values")
         return list(at[0])
     right = bisect.bisect_right(times, t)
     lo, hi = data[right - 1], data[right]
     w = (t - lo[0]) / (hi[0] - lo[0])
     return [x + (y - x) * w for x, y in zip(lo, hi)]
+
+
+def _end_mass(smiles: Sequence[str]) -> float:
+    return math.fsum(Molecule(smiles=s).get_molecular_weight() * 1000.0 for s in smiles)
 
 
 def convert(rmg_dir, times: Sequence[float], facts: dict) -> Tuple[List[dict], List[dict], dict]:
@@ -572,15 +743,16 @@ def convert(rmg_dir, times: Sequence[float], facts: dict) -> Tuple[List[dict], L
     profile = find_profile(rmg_dir)
     pools_path = rmg_dir / "chemkin" / "polymer_pools.json"
     header, data = read_profile(profile)
-    pools = read_pools(pools_path)
-    a, e = facts["a_g_mol"], facts["e_g_mol"]
+    pools = read_pools(pools_path)["pools"]
+    dictionary = read_species_dictionary(rmg_dir / "chemkin" / "species_dictionary.txt")
+    a = facts["a_g_mol"]
     by_label = {p["label"]: p for p in pools}
     if facts["label"] not in by_label:
         raise ProducerError(f"pool table has no pool {facts['label']!r} (pools {sorted(by_label)})")
     m_u = by_label[facts["label"]]["monomer_mw_g_mol"]
     if abs(m_u - a) > MASS_RELATIVE * a:
         raise ProducerError(f"MoM repeat-unit mass {m_u!r} differs from the deck's {a!r} g/mol")
-    columns = {}
+    columns, ends = {}, {}
     for p in pools:
         cols = []
         for k in range(3):
@@ -589,45 +761,78 @@ def convert(rmg_dir, times: Sequence[float], facts: dict) -> Tuple[List[dict], L
                 raise ProducerError(f"profile {profile}: no column {name!r} for pool {p['label']!r}")
             cols.append(header.index(name))
         columns[p["label"]] = cols
+        groups = p.get("end_groups")
+        if not isinstance(groups, list) or len(groups) != 2:
+            raise ProducerError(f"pool {p['label']!r}: no end groups in {pools_path}")
+        ends[p["label"]] = _end_mass(groups)
     used = {i for cols in columns.values() for i in cols}
     stray = [h for i, h in enumerate(header) if re.search(r"_mu[0-9]+$", h) and i not in used]
     if stray:
         raise ProducerError(f"profile {profile}: moment columns {stray} belong to no pool of {pools_path}")
-    species = {name: species_column(header, name) for name in facts["species"]}
+    bookkeeping = set(used) | {header.index(s) for p in pools for s in p.get("bookkeeping_species") or ()
+                               if s in header}
+    species = resolve_species(header, dictionary, species_structures(facts))
+    others = [i for i in range(2, len(header)) if i not in bookkeeping]
+    molar = {}
+    for i in others:
+        molecule = dictionary.get(header[i])
+        molar[i] = None if molecule is None else molecule.get_molecular_weight() * 1000.0
+    first = data[0]
 
-    def state(row):
-        mu = [math.fsum(row[columns[p["label"]][k]] for p in pools) for k in range(3)]
-        code = math.fsum(row[columns[p["label"]][1]] * p["monomer_mw_g_mol"]
-                         - row[columns[p["label"]][0]] * float(p.get("chain_mass_defect_g_mol") or 0.0)
-                         for p in pools)
-        return mu, code
+    def booked(row):
+        total = 0.0
+        for p in pools:
+            mu0, mu1 = row[columns[p["label"]][0]], row[columns[p["label"]][1]]
+            ledger = first[columns[p["label"]][0]] - mu0
+            total += (mu1 * p["monomer_mw_g_mol"] - mu0 * float(p.get("chain_mass_defect_g_mol") or 0.0)
+                      + ends[p["label"]] * (mu0 + ledger))
+        return total
 
-    mu_initial, code_initial = state(data[0])
-    if data[0][0] != 0.0:
-        raise ProducerError(f"profile {profile}: the first row is at t = {data[0][0]!r} s, not 0")
-    mass_initial = code_initial + e * mu_initial[0]
+    def gas_mass(row):
+        missing = [header[i] for i in others if row[i] != 0.0 and molar[i] is None]
+        if missing:
+            return None, missing
+        return math.fsum(row[i] * molar[i] for i in others if row[i] != 0.0), []
+
+    mu_first = [math.fsum(first[columns[p["label"]][k]] for p in pools) for k in range(3)]
+    mass_first = booked(first)
+    bad = [(k, x, y) for k, (x, y) in enumerate(zip(mu_first, facts["moments_mol"])) if _rel(x, y) > INITIAL_RELATIVE]
+    if bad or _rel(mass_first, facts["initial_mass_g"]) > INITIAL_RELATIVE:
+        raise ProducerError(f"profile {profile}: the initial inventory (summed moments {mu_first}, booked mass "
+                            f"{mass_first!r} g) is not the declared ensemble's ({facts['moments_mol']}, "
+                            f"{facts['initial_mass_g']!r} g) to relative {INITIAL_RELATIVE}")
+    gas_first, missing_first = gas_mass(first)
+    total_first = None if gas_first is None else mass_first + gas_first
     entries, diagnostics = [], []
     for t in times:
         row = interpolate(data, t)
-        mu, code = state(row)
-        mass = code + e * mu[0]
-        obs = observables_from_moments(mu, a, e)
-        quantities = {"mu0_mol": mu[0], "mu1_mol": mu[1], "mu2_mol": mu[2],
-                      "Mn_g_mol": obs.mn_g_mol, "Mw_g_mol": obs.mw_g_mol,
-                      "polymer_condensed_mass_g": mass,
-                      "polymer_conversion": 1.0 - mass / mass_initial,
-                      "polymer_derived_molecules_mol": mu[0],
+        mu = [math.fsum(row[columns[p["label"]][k]] for p in pools) for k in range(3)]
+        mass = booked(row)
+        gas, missing = gas_mass(row)
+        residual = None if (gas is None or total_first is None) else mass + gas - total_first
+        quantities = {"polymer_derived_molecules_mol": mu[0],
                       "species_mol": {name: row[i] for name, i in species.items()}}
+        closes = residual is not None and abs(residual) <= MASS_CLOSURE_RELATIVE * total_first
+        if closes:
+            quantities["polymer_condensed_mass_g"] = mass
+            quantities["polymer_conversion"] = 1.0 - mass / facts["initial_mass_g"]
         check_quantity_keys(quantities, facts["species"])
         entries.append({"time_s": t, "quantities": quantities})
-        diagnostics.append({"time_s": t, "volume_m3": row[1], "code_condensed_mass_g": code,
+        code = math.fsum(row[columns[p["label"]][1]] * p["monomer_mw_g_mol"]
+                         - row[columns[p["label"]][0]] * float(p.get("chain_mass_defect_g_mol") or 0.0)
+                         for p in pools)
+        diagnostics.append({"time_s": t, "volume_m3": row[1], "whole_ensemble_moments_mol": mu,
+                            "booked_condensed_mass_g": mass, "code_condensed_mass_g": code,
+                            "gas_mass_g": gas, "species_without_structure": missing or missing_first,
+                            "mass_closure_residual_g": residual, "mass_exported": closes,
                             "native_Mn_g_mol": a * mu[1] / mu[0] if mu[0] else None,
                             "native_Mw_g_mol": a * mu[2] / mu[1] if mu[1] else None,
                             "pools": {p["label"]: [row[i] for i in columns[p["label"]]] for p in pools}})
     read = {"profile": str(profile), "profile_sha256": _sha256(profile.read_bytes()),
             "profile_rows": len(data), "profile_time_range_s": [data[0][0], data[-1][0]],
             "pools": str(pools_path), "pools_sha256": _sha256(pools_path.read_bytes()),
-            "pool_labels": [p["label"] for p in pools]}
+            "pool_labels": [p["label"] for p in pools],
+            "species_columns": {name: header[i] for name, i in species.items()}}
     return entries, diagnostics, read
 
 
@@ -674,9 +879,14 @@ def run_rmg(rmg_dir, checkout, python=None) -> int:
 # --------------------------------------------------------------------------
 # command line
 # --------------------------------------------------------------------------
+def _write_json(path, doc):
+    Path(path).write_text(json.dumps(doc, indent=1, sort_keys=True, allow_nan=False) + "\n")
+
+
 def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: int, families: Sequence[str],
             catalogs: Sequence, out, mode: str = "write", allow_family_mismatch: bool = False,
-            database: Optional[str] = None, species_constraints: Sequence[str] = ()) -> dict:
+            allow_inactive: bool = False, database: Optional[str] = None,
+            species_constraints: Sequence[str] = ()) -> dict:
     """Write (and with ``mode`` "run" / "convert", run and convert); returns ``producer.json``."""
     if mode not in ("write", "run", "convert"):
         raise ProducerError(f"mode {mode!r}")
@@ -703,13 +913,26 @@ def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: i
     db = database_directory(database, catalog_databases)
     text, facts = build_input(deck, context, temperature=temperature, end=times[-1], families=families,
                               constraints=_parse_constraints(species_constraints))
-    conv = conventions(deck, facts, temperature=temperature, family=family, database=db)
+    flags = {}
+    kinetics = facts["phase_kinetics"]
+    if kinetics["not_comparable"]:
+        flags["kinetics_not_comparable"] = {
+            "ratio_by_species": {n: kinetics["ratio_by_species"][n] for n in kinetics["not_comparable"]},
+            "tolerance": kinetics["tolerance"]}
     manifest = {"schema": SCHEMA, "status": "written", "mode": mode,
                 "deck": {"path": deck.path, "sha256": deck.sha256, **deck.digests()},
                 "catalogs": [{"path": str(p), "sha256": _sha256(Path(p).read_bytes())} for p in catalogs],
                 "family_check": family, "temperature_K": temperature, "times_s": times,
                 "mom_checkout": checkout_identity(checkout), "input_sha256": _sha256(text.encode()),
-                "facts": facts}
+                "facts": facts, "flags": flags}
+
+    def finish(status=None):
+        if status is not None:
+            manifest["status"] = status
+        _write_json(out / "conventions.json",
+                    conventions(deck, facts, temperature=temperature, family=family, database=db, flags=flags))
+        _write_json(out / "producer.json", manifest)
+
     rmg_dir.mkdir(parents=True, exist_ok=True)
     if mode == "convert":
         if (rmg_dir / "input.py").read_text() != text:
@@ -717,19 +940,32 @@ def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: i
     else:
         (rmg_dir / "input.py").write_text(text)
         (rmg_dir / "rmgrc").write_text(f"database.directory : {db[0]}\n")
-    (out / "conventions.json").write_text(json.dumps(conv, indent=1, sort_keys=True, allow_nan=False) + "\n")
+    finish()
+    if mode == "write":
+        return manifest
     if mode == "run":
         run_rmg(rmg_dir, checkout)
         manifest["status"] = "ran"
-    if mode in ("run", "convert"):
-        entries, diagnostics, read = convert(rmg_dir, times, facts)
-        (out / "mom.json").write_text(json.dumps(entries, indent=1, allow_nan=False) + "\n")
-        (out / "mom_diagnostics.json").write_text(json.dumps(diagnostics, indent=1, allow_nan=False) + "\n")
-        rmgpy_path = rmg_dir / "rmgpy_path.txt"
-        manifest.update({"status": "converted", "read": read, "mom_file": str(out / "mom.json"),
-                         "mom_sha256": _sha256((out / "mom.json").read_bytes()),
-                         "rmgpy_imported": rmgpy_path.read_text().strip() if rmgpy_path.exists() else None})
-    (out / "producer.json").write_text(json.dumps(manifest, indent=1, sort_keys=True, allow_nan=False) + "\n")
+    rmgpy_path = rmg_dir / "rmgpy_path.txt"
+    manifest["rmgpy_imported"] = rmgpy_path.read_text().strip() if rmgpy_path.exists() else None
+    for stale in ("mom.json", "mom_diagnostics.json"):
+        if (out / stale).exists():
+            (out / stale).unlink()
+    manifest["census"] = census(rmg_dir, facts["families"])
+    if manifest["census"]["admitted_in_requested_families"] == 0:
+        flags["inactive_chemistry"] = manifest["census"]
+        if not allow_inactive:
+            finish(STATUS_INACTIVE)
+            raise ProducerError(f"{STATUS_INACTIVE}: no pool-coupled reaction of the families "
+                                f"{facts['families']} is admitted in the MoM mechanism "
+                                f"(census {manifest['census']['families']}); pass --allow-inactive to "
+                                "convert it anyway, flagged")
+    entries, diagnostics, read = convert(rmg_dir, times, facts)
+    (out / "mom.json").write_text(json.dumps(entries, indent=1, allow_nan=False) + "\n")
+    (out / "mom_diagnostics.json").write_text(json.dumps(diagnostics, indent=1, allow_nan=False) + "\n")
+    manifest.update({"read": read, "mom_file": str(out / "mom.json"),
+                     "mom_sha256": _sha256((out / "mom.json").read_bytes())})
+    finish("converted")
     return manifest
 
 
@@ -748,6 +984,7 @@ def main(argv=None) -> int:
     group.add_argument("--write-only", action="store_const", dest="mode", const="write")
     group.add_argument("--convert", action="store_const", dest="mode", const="convert")
     parser.add_argument("--allow-family-mismatch", action="store_true")
+    parser.add_argument("--allow-inactive", action="store_true")
     parser.add_argument("--database")
     parser.add_argument("--species-constraint", action="append", default=[])
     args = parser.parse_args(argv)
@@ -755,12 +992,13 @@ def main(argv=None) -> int:
         manifest = produce(args.deck, checkout=args.mom_checkout, temperature=args.temperature, end=args.end,
                            snapshots=args.snapshots, families=args.families, catalogs=args.catalog,
                            out=args.out, mode=args.mode or "write",
-                           allow_family_mismatch=args.allow_family_mismatch, database=args.database,
-                           species_constraints=args.species_constraint)
+                           allow_family_mismatch=args.allow_family_mismatch, allow_inactive=args.allow_inactive,
+                           database=args.database, species_constraints=args.species_constraint)
     except (ProducerError, kr.RunError) as error:
         print(f"refused: {error}", file=sys.stderr)
         return 2
-    print(f"{manifest['status']}: {args.out}" + (f" -> {manifest['mom_file']}" if "mom_file" in manifest else ""))
+    print(f"{manifest['status']}: {args.out}" + (f" -> {manifest['mom_file']}" if "mom_file" in manifest else "")
+          + (f" flags {sorted(manifest['flags'])}" if manifest["flags"] else ""))
     return 0
 
 
