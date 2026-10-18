@@ -306,27 +306,35 @@ def in_neutral_state(symbol: str, lone_pairs: int, valence: float) -> bool:
 
 # aromatic atoms (one or more benzene bonds, B): the neutral aromatic atom
 # types of ``rmgpy.molecule.atomtype`` (``get_atomtype`` decides the type;
-# no type, or a type not listed, is a refusal) and, per type, the bond counts
-# allowed: (lone pairs, B bonds, single, double, triple bonds, unpaired
-# electrons).  The counts are never summed: a ring N with two B bonds and two
-# single bonds is not N5bd (two B bonds and one double bond), and RMG types
-# it as nothing.  RMG's types do not read unpaired electrons, so the counts
-# carry them: an unpaired electron takes the place of a single bond (a sigma
-# radical: Cb with two B bonds and one unpaired electron).  The types
-# mirrored (atomtype.py, charge 0):
-#   Cb, Sib, N5b, P5b   two B bonds and one single bond (or one electron)
-#   Cbf, Sibf           three B bonds
-#   N3b, P3b, O4b, S4b  two B bonds and one lone pair
-#   N5bd, P5bd          two B bonds and one double bond
-# Not mirrored: Cb with one B bond (a single B bond is no aromatic ring).
+# no type, or a type not listed, is a refusal), RMG's own charge consistency
+# (``adjlist.ConsistencyChecker.check_partial_charge``: valence electrons -
+# total bond order - unpaired electrons - 2 lone pairs equals the stored
+# charge, 0; a B bond counts 3/2, or 4/3 on an atom with three) and, per type,
+# the bond counts allowed: (lone pairs, B bonds, single, double, triple bonds,
+# unpaired electrons), never summed.  Each type's set is exactly its neutral,
+# charge-consistent states (RMG's types do not read unpaired electrons, so
+# the counts carry them):
+#   Cb, Sib     two B + one single bond, or two B + one unpaired electron
+#   Cbf, Sibf   three B
+#   N5b, P5b    two B + one single bond + one unpaired electron (with the
+#               single bond alone the atom is formally +1)
+#   N3b, P3b    two B + one lone pair
+#   N5bd, P5bd  two B + one double bond
+# Not listed: O4b and S4b have no neutral charge-consistent state (two B and
+# one lone pair is formally +1: RMG's adjacency-list reader refuses it, and
+# RMG's resonance never writes a five-membered ring with B bonds, so furan
+# and thiophene reach this check in their Kekule form); Cb with one B bond
+# (a single B bond is no aromatic ring).  A bond on an aromatic atom whose
+# order is not single, double, triple or B (a quadruple bond, which Cb
+# leaves free) is refused before the type is read.
 _RING_ONE = frozenset({(0, 2, 1, 0, 0, 0), (0, 2, 0, 0, 0, 1)})
+_RING_RADICAL = frozenset({(0, 2, 1, 0, 0, 1)})
 _FUSED = frozenset({(0, 3, 0, 0, 0, 0)})
 _PAIR = frozenset({(1, 2, 0, 0, 0, 0)})
 _DOUBLE = frozenset({(0, 2, 0, 1, 0, 0)})
 AROMATIC_TYPES = {"Cb": _RING_ONE, "Cbf": _FUSED, "Sib": _RING_ONE, "Sibf": _FUSED,
-                  "N3b": _PAIR, "N5b": _RING_ONE, "N5bd": _DOUBLE,
-                  "P3b": _PAIR, "P5b": _RING_ONE, "P5bd": _DOUBLE,
-                  "O4b": _PAIR, "S4b": _PAIR}
+                  "N3b": _PAIR, "N5b": _RING_RADICAL, "N5bd": _DOUBLE,
+                  "P3b": _PAIR, "P5b": _RING_RADICAL, "P5bd": _DOUBLE}
 
 
 def valence_state(atom) -> tuple:
@@ -348,14 +356,27 @@ def aromatic_state(atom) -> tuple:
 
 def aromatic_refusal(atom) -> Optional[str]:
     """Why an atom with a benzene bond is outside ``AROMATIC_TYPES`` (None:
-    inside): RMG's atom type (``get_atomtype``) must be listed and the
-    atom's bond counts allowed for that type."""
+    inside): only single, double, triple and B bonds; RMG's atom type
+    (``get_atomtype``) listed; RMG's charge consistency
+    (``check_partial_charge``); and the atom's bond counts allowed for its
+    type."""
+    from rmgpy.molecule.adjlist import ConsistencyChecker, InvalidAdjacencyListError
     from rmgpy.molecule.atomtype import AtomTypeError, get_atomtype
     symbol = atom.element.symbol
+    other = sorted({float(b.order) for b in atom.bonds.values()
+                    if not (b.is_single() or b.is_double() or b.is_triple() or b.is_benzene())})
+    if other:
+        return (f"an aromatic atom ({symbol}) with a bond of order {other[0]:g}: only single, "
+                f"double, triple and B bonds are read")
     try:
         label = get_atomtype(atom, atom.edges).label
     except AtomTypeError as error:
         return f"an aromatic atom ({symbol}) with no RMG atom type: {error}"
+    try:
+        ConsistencyChecker.check_partial_charge(atom)
+    except InvalidAdjacencyListError as error:
+        return (f"an aromatic atom ({symbol}) of RMG atom type {label} fails RMG's charge "
+                f"consistency (formal charge != stored charge {atom.charge}): {error}")
     state = aromatic_state(atom)
     if label not in AROMATIC_TYPES:
         return f"an aromatic atom ({symbol}) of RMG atom type {label}: not a neutral " \

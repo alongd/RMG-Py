@@ -653,7 +653,22 @@ def test_a_quadruple_bond_on_an_aromatic_atom_is_refused():
         atom.id = k
     verdict = dom.declared_interim_check(joined)
     assert not verdict.accepted
-    assert "bond" in verdict.reason and ("4" in verdict.reason or "quadruple" in verdict.reason)
+    assert "bond of order 4" in verdict.reason, verdict.reason
+
+
+def test_the_bond_order_guard_stands_without_the_charge_check(monkeypatch):
+    """RMG's charge consistency also refuses the quadruple-bonded ring carbon
+    (formally -4); the bond-order guard refuses it on its own."""
+    from rmgpy.molecule import Bond
+    from rmgpy.molecule.adjlist import ConsistencyChecker
+    from rmgpy.kmc import domain as dom
+    monkeypatch.setattr(ConsistencyChecker, "check_partial_charge", staticmethod(lambda a: None))
+    first, second = _aromatic("c1ccccc1"), _aromatic("c1ccccc1")
+    joined = first.merge(second)
+    joined.add_bond(Bond(joined.atoms[0], joined.atoms[len(first.atoms)], order=4))
+    joined.update_multiplicity()
+    verdict = dom.declared_interim_check(joined)
+    assert not verdict.accepted and "bond of order 4" in verdict.reason, verdict.reason
 
 
 def test_interim_check_reads_aromatic_bonds_as_rmg_does():
