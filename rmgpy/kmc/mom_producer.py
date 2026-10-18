@@ -103,6 +103,7 @@ from rmgpy.kmc import rmg_moves as rr
 from rmgpy.kmc import run as kr
 from rmgpy.kmc.event_record import same_species
 from rmgpy.molecule import Molecule
+from rmgpy import species_identity as _species_identity
 from rmgpy.molecule.molecule import Bond
 from rmgpy.quantity import Quantity
 
@@ -1225,23 +1226,8 @@ def _h_loss_radical_daughter(molecule, proxies) -> bool:
     return False
 
 
-def _same_structure(first, second) -> bool:
-    """Whether two molecule lists are one species by RMG's own test, the one
-    it merges species by (``rmgpy.polymer.same_structure`` of the MoM
-    checkout): the same multiplicity, and some molecule of each isomorphic
-    (strict) to some of the other's, the first's resonance forms generated
-    when the lists alone do not match.  Tautomers are distinct graphs.  Any
-    error: not equal."""
-    try:
-        if not first or not second or first[0].multiplicity != second[0].multiplicity:
-            return False
-        if any(a.is_isomorphic(b, strict=True) for a in first for b in second):
-            return True
-        forms = first[0].copy(deep=True).generate_resonance_structures(keep_isomorphic=False)
-        return any(f.multiplicity == b.multiplicity and f.is_isomorphic(b, strict=True)
-                   for f in forms for b in second)
-    except Exception:
-        return False
+# one implementation, shared with polymer-mom's serializer (rmgpy.polymer)
+_same_structure = _species_identity.same_structure
 
 
 def recorded_molecule(structure) -> Optional[Molecule]:
