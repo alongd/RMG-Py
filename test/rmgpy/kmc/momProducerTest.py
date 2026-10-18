@@ -131,7 +131,8 @@ def family_rows(admitted, label=LABEL):
 def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABEL, end_groups=("[H]", "[H]"),
               mass_override=None, duplicate=None, extra_columns=(), n2=lambda t: 1.0, gas_reactions=(),
               pool_extra=None, proxy_amount=lambda t: 7.0, ea_units="KCAL/MOLE", enthalpy=None, bookkeeping=None,
-              condensed=None, spawned=None, proxy_index=3, proxy_first=False):
+              condensed=None, spawned=None, proxy_index=3, proxy_first=False, solver_mask=None,
+              pool_order=None):
     """A MoM output directory under ``out/rmg``.
 
     ``pools``: [(label, f(t) -> (mu0, mu1, mu2), defect_g_mol)]; ``gas``:
@@ -157,7 +158,11 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     conventions.spawned_pools.  The SPECIES block lists the core as RMG's
     Chemkin writer does: index-less species first, then by index; the
     profile header in MoM's core order (``proxy_first``: the main proxy,
-    ``label(proxy_index)``, before the gas columns)."""
+    ``label(proxy_index)``, before the gas columns).  ``solver_mask``: the
+    sidecar records the solver's gas mask (conventions.solver_gas_mask) over
+    the profile's species columns, each gas unless the dict {column: gas}
+    says otherwise; a list of (name, gas) is written as given.
+    ``pool_order``: the sidecar's pool rows in this label order."""
     rmg = out / "rmg"
     for sub in ("solver", "chemkin"):
         (rmg / sub).mkdir(parents=True, exist_ok=True)
@@ -249,9 +254,15 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
                 + "+".join(ck[x] for x in g["products"]))
         annotated += [f"! Reaction index: Chemkin #{c}; RMG #{len(reactions) + 1 + j}",
                       "! Template reaction: toy_h_abstraction", f"{line:<51} {g['A']} 0.0 0.0", ""]
+    if pool_order is not None:
+        pool_rows = [next(r for r in pool_rows if r["label"] == x) for x in pool_order]
+    if isinstance(solver_mask, dict):
+        solver_mask = [(h, solver_mask.get(h, True)) for h in header[2:]]
+    recorded = ({"solver_gas_mask": {"source": "solver", "core": [{"species": x, "gas": g} for x, g in solver_mask]}}
+                if solver_mask is not None else {})
     (rmg / "chemkin" / "polymer_pools.json").write_text(json.dumps(
         {"schema_version": "2.0", "pools": pool_rows, "reactions": reactions,
-         "conventions": {"stale_topology": False,
+         "conventions": {"stale_topology": False, **recorded,
                          "condensed_species": sorted([proxy] + [f"{p}_mu{k}" for p, _f, _d in pools for k in range(3)]
                                                      + list(condensed or ())),
                          **({"spawned_pools": list(spawned)} if spawned else {})}}))
@@ -2219,3 +2230,152 @@ def test_a_dead_verdict_states_its_sampled_compositions(setup):
     assert refused and census["zero_rate_rows"] == ["r0"]
     n = len([t for t in PROFILE_T if t < 40.0]) + 1
     assert f"at the {n} sampled compositions" in census["dead_reasons"]["r0"]
+
+
+# --------------------------------------------------------------------------
+# I-176 rework 2 (spar r151): the solver's recorded mask; the reconstruction
+# --------------------------------------------------------------------------
+HEXYL = Molecule(smiles="[CH2]CCCCC").to_adjacency_list()      # an H-loss daughter of the hexane-shaped proxy
+
+
+def _phase_run(setup, *, members, aux, bookkeeping, spawned=("dgt",), pools=None, **kw):
+    """The falloff row ``proxy(+M) => proxy + X0(+M)`` (A = 1) over MoM's
+    core: N2, the main pool's moments, a pool ``dgt`` (no amounts), the main
+    proxy (7 mol, condensed) and ``members`` [(column, adjacency, f(t))];
+    ``aux``: the efficiency line.  Returns (census, refused)."""
+    proxy = proxy_of()
+    row = _row(equation=f"{proxy}(+M)=>{proxy}+X0(+M)", rate=(1.0, 0.0, 0.0),
+               aux=["LOW /  1.0 0.0 0.0 /", aux], sidecar_kinetics=None)
+    out = setup["tmp"] / f"out{len(list(setup['tmp'].glob('out*')))}"
+    produce(setup, out)
+    if pools is None:
+        pools = [(LABEL, drift(declared(setup["spec"])), 0.0), ("dgt", lambda t: (0.0, 0.0, 0.0), 0.0)]
+    write_run(out, times=PROFILE_T, rows=[row], gas=ZERO_GAS + list(members), pools=pools,
+              bookkeeping=bookkeeping, spawned=list(spawned), **kw)
+    try:
+        return produce(setup, out, mode="convert")["census"], False
+    except mp.ProducerError as error:
+        assert "inactive_chemistry" in str(error), error
+        return json.loads((out / "producer.json").read_text())["census"], True
+
+
+DGT = ["dgt_mu0", "dgt_mu1", "dgt_mu2", "dgt"]
+LATER = lambda t: 0.0 if t == 0.0 else 1.0      # noqa: E731
+
+
+def test_section_d_condenses_every_species_of_a_qualifying_base(setup):
+    """Spar r151 P1: dgt(4) (hexyl) is an H-loss daughter of the root proxy;
+    MoM's first stage then condenses EVERY core species of base ``dgt``
+    (get_gas_mask section D), the butane dgt(5) too.  dgt(5) holds the only
+    collider weight: in the gas the row is live, out of it dead.  Whether
+    dgt(4) qualifies the sidecar cannot settle (gas veto, Polymer-ness), so
+    the verdict is the ambiguity, its unit dgt(4)'s."""
+    census, refused = _phase_run(
+        setup, members=[("dgt", PROPANE, lambda t: 0.0), ("dgt(4)", HEXYL, lambda t: 0.0), ("dgt(5)", BUTANE_ADJ, LATER)],
+        aux="N2/0.0/ dgt/0.0/ dgt(4)/0.0/", bookkeeping={"dgt": DGT + ["dgt(4)", "dgt(5)"]}, condensed=DGT)
+    assert census["phase_source"] == "reconstructed"
+    assert refused and census["zero_rate_rows"] == ["r0"]
+    assert "gas mask ambiguous for ['stage1:dgt(4)']" in census["rate_errors"]["r0"]
+
+
+def test_a_stage1_daughter_is_an_ambiguity_unit(setup):
+    """The H-loss daughter dgt(4) itself, a member the configured override
+    does not reach (not the pool's first): its first-stage phase is the
+    unit stage1:dgt(4)."""
+    census, refused = _phase_run(
+        setup, members=[("dgt", PROPANE, lambda t: 0.0), ("dgt(4)", HEXYL, LATER)],
+        aux="N2/0.0/ dgt/0.0/", bookkeeping={"dgt": DGT + ["dgt(4)"]}, condensed=DGT)
+    assert refused and "gas mask ambiguous for ['stage1:dgt(4)']" in census["rate_errors"]["r0"]
+
+
+@pytest.mark.parametrize("order", [(LABEL, "dgt"), ("dgt", LABEL)])
+def test_a_member_of_two_pools_is_condensed_whatever_their_order(setup, order):
+    """Spar r151 P1: X(6) is a member of the root pool and of the spawned
+    pool dgt.  MoM's overrides only condense, so the root pool's
+    condensation stands whatever the order: X(6), the only collider weight,
+    is out of the gas and the row dead, with no ambiguity."""
+    main = [mp.moment_column(f"{LABEL}_mu{k}") for k in range(3)] + [proxy_of()]
+    census, refused = _phase_run(
+        setup, members=[("dgt", PROPANE, lambda t: 0.0), ("X(6)", BUTANE_ADJ, LATER)], aux="N2/0.0/ dgt/0.0/",
+        bookkeeping={LABEL: main + ["X(6)"], "dgt": DGT + ["X(6)"]}, condensed=DGT + ["X(6)"], pool_order=order)
+    assert refused and census["zero_rate_rows"] == ["r0"] and census["rate_errors"] == {}
+
+
+def test_an_explicit_member_of_a_root_pool_is_condensed(setup):
+    """A root pool's member of another base (an explicit-DP species, PD(7))
+    is condensed by the pool's override: no collider weight is left in the
+    gas, the row is dead, and no phase is in doubt."""
+    main = [mp.moment_column(f"{LABEL}_mu{k}") for k in range(3)] + [proxy_of()]
+    census, refused = _phase_run(
+        setup, members=[("PD(7)", RADICAL, LATER)], aux="N2/0.0/", bookkeeping={LABEL: main + ["PD(7)"]},
+        spawned=(), pools=[(LABEL, drift(declared(setup["spec"])), 0.0)])
+    assert refused and census["zero_rate_rows"] == ["r0"] and census["rate_errors"] == {}
+
+
+def test_a_root_pool_is_no_ambiguity(setup):
+    """The main (root) pool is configured: its proxy is condensed, the row
+    dead for want of gas colliders, and no phase is in doubt."""
+    census, refused = _falloff_census(setup)
+    assert refused and census["zero_rate_rows"] == ["r0"] and census["rate_errors"] == {}
+    assert "ambiguous" not in census["dead_reasons"]["r0"]
+
+
+class _ManyKinetics(_Kinetics):
+    def __init__(self, n):
+        self.n = n
+
+    def get_effective_collider_efficiencies(self, species):
+        return [1.0] * self.n
+
+
+class _ManyReaction(_Reaction):
+    def __init__(self, n):
+        self.kinetics = _ManyKinetics(n)
+        self.keq = 1.0
+
+
+def test_condensed_rules_bring_no_units_to_the_cap():
+    """Spar r151 P2: eleven species a configured pool condenses whatever
+    their first stage, (True, stage1 unit): simplified, they carry no unit,
+    so the cap is not reached and N2 alone keeps the row live."""
+    core = [(0, "N2", (None, "gas"))] + [(1 + k, f"S({k})", (True, f"stage1:S({k})")) for k in range(11)]
+    rates = mp.mom_rates([_ManyReaction(12)], False, 700.0, 1.0e5, core, [[1.0] * 12])
+    assert rates["forward"] is True and rates["error"] is None
+
+
+def test_the_recorded_solver_mask_is_the_only_phase_source(setup, monkeypatch):
+    """With conventions.solver_gas_mask the solver's own verdict decides:
+    the r147 fixture the reconstruction calls ambiguous (the spawned pool's
+    proxy dgt first) is dead with dgt condensed by the solver and live with
+    it gas; neither the reconstruction nor any enumeration runs."""
+    def no_reconstruction(*_a, **_k):
+        raise AssertionError("the reconstruction ran")
+    calls = []
+    pressures = mp._effective_pressures
+
+    def counted(*a, **k):
+        calls.append(1)
+        return pressures(*a, **k)
+    monkeypatch.setattr(mp, "_h_loss_radical_daughter", no_reconstruction)
+    monkeypatch.setattr(mp, "_effective_pressures", counted)
+    verdicts = {}
+    for gas in (False, True):
+        census, refused = _phase_run(
+            setup, members=[("dgt", PROPANE, LATER), ("dgt(4)", BUTANE_ADJ, LATER)], aux="N2/0.0/ dgt(4)/0.0/",
+            bookkeeping={"dgt": DGT + ["dgt(4)"]}, condensed=DGT,
+            solver_mask={proxy_of(): False, **{c: False for c in DGT[:3]},
+                         **{mp.moment_column(f"{LABEL}_mu{k}"): False for k in range(3)}, "dgt": gas})
+        assert census["phase_source"] == "solver_mask" and census["rate_errors"] == {}
+        verdicts[gas] = (refused, census["zero_rate_rows"])
+    assert verdicts == {False: (True, ["r0"]), True: (False, [])}
+    assert len(calls) == 2                      # one gas set per run: no enumeration
+
+
+def test_a_recorded_mask_of_another_core_is_refused(setup):
+    """The recorded mask must be the mask of the profile's core, in its
+    order: it is static over the simulation that wrote the profile."""
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    constant_run(out, setup["spec"], solver_mask=[("N2", True), ("H(1)", True)])
+    with pytest.raises(mp.ProducerError, match="solver_gas_mask"):
+        produce(setup, out, mode="convert")
