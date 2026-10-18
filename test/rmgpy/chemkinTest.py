@@ -1585,10 +1585,87 @@ class TestRecordShapes:
         reaction = read_kinetics_entry(entry, species, *self.SURFACE_UNITS, "kcal/mol")
         assert isinstance(reaction.kinetics, StickingCoefficient)
         (spc, cov), = reaction.kinetics.coverage_dependence.items()
-        assert spc is hx and cov["a"] == 0.5 and cov["m"] == 1.0
+        # I-179 item 3: a, m and E are quantities, as the coverage_dependence setter makes them, in both orders
+        assert spc is hx and cov["a"].value_si == 0.5 and cov["m"].value_si == 1.0
         assert cov["E"].value_si == pytest.approx(1.099 * 4184.0, rel=1e-12)
         assert reaction.kinetics.A.value_si == pytest.approx(4.0e-2, rel=1e-12)
         assert reaction.kinetics.Ea.value_si == pytest.approx(7.098 * 4184.0, rel=1e-12)
+        # the read SurfaceReactor makes of a coverage dependence (rmgpy/solver/surface.pyx initialize_model)
+        assert [(p['a'].value_si, p['m'].value_si, p['E'].value_si)
+                for p in reaction.kinetics.coverage_dependence.values()] == [(0.5, 1.0, cov["E"].value_si)]
+
+    @pytest.mark.parametrize("cov_first", [False, True])
+    def test_a_read_coverage_dependence_writes_and_reads_back(self, tmp_path, cov_first):
+        """I-179 item 3: the quantities RMG's writer gets from the reader
+        write and read back unchanged, in both orders."""
+        x = Species().from_adjacency_list("1 X u0 p0")
+        x.label = "X"
+        hx = Species().from_adjacency_list("1 H u0 p0 {2,S} \n 2 X u0 p0 {1,S}")
+        hx.label = "H*"
+        h2 = Species().from_smiles("[H][H]")
+        h2.label = "H2"
+        species = {"X": x, "H*": hx, "H2": h2}
+        lines = ["    STICK", "    COV / H*    0.5    1.0    1.099 /"]
+        entry = "\n".join(["H2+X+X=H*+H*    4.000e-02 0.000 7.098"] + (lines[::-1] if cov_first else lines))
+        reaction = read_kinetics_entry(entry, species, *self.SURFACE_UNITS, "kcal/mol")
+        text = write_kinetics_entry(reaction, list(species.values()), verbose=False)
+        back = read_kinetics_entry(text, species, *self.SURFACE_UNITS, "kcal/mol")
+        (_s, cov), = back.kinetics.coverage_dependence.items()
+        assert (cov["a"].value_si, cov["m"].value_si) == (0.5, 1.0)
+        assert cov["E"].value_si == pytest.approx(1.099 * 4184.0, rel=1e-6)
+
+    def test_duplicate_chebyshev_fits_write_and_read_back(self, tmp_path):
+        """I-179 item 1: duplicate Chebyshev pairs of 2x6 (twelve coefficients,
+        the last CHEB line unfinished), 3x1 and 5x6 write DUPLICATE on its own
+        line and read back equal."""
+        polys = [NASAPolynomial(coeffs=[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 3.35], Tmin=lo, Tmax=hi)
+                 for lo, hi in (((200, "K"), (1000, "K")), ((1000, "K"), (6000, "K")))]
+        species = []
+        for label, smiles in [("N2", "N#N"), ("H", "[H]"), ("H2", "[H][H]")]:
+            spc = Species(label=label).from_smiles(smiles)
+            spc.label = label
+            spc.thermo = NASA(polynomials=polys, Tmin=(200, "K"), Tmax=(6000, "K"))
+            species.append(spc)
+        _n2, h, h2 = species
+
+        def cheb(rows, cols, shift):
+            coeffs = [[1.25 - 0.5 * i - 0.125 * j + shift for j in range(cols)] for i in range(rows)]
+            return Chebyshev(coeffs=coeffs, kunits="cm^3/(mol*s)", Tmin=(300, "K"), Tmax=(2000, "K"),
+                             Pmin=(0.01, "atm"), Pmax=(100, "atm"))
+        reactions = [Reaction(reactants=[h, h], products=[h2], kinetics=cheb(rows, cols, shift), reversible=True,
+                              duplicate=True)
+                     for rows, cols in ((2, 6), (3, 1), (5, 6)) for shift in (0.0, 0.25)]
+        save_chemkin_file(str(tmp_path / "chem.inp"), species, reactions, verbose=False, check_for_duplicates=False)
+        save_species_dictionary(str(tmp_path / "dict.txt"), species)
+        text = (tmp_path / "chem.inp").read_text()
+        assert all(line.strip() == "DUPLICATE" for line in text.splitlines() if "DUPLICATE" in line)
+        _s, back = load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"),
+                                     check_duplicates=False, generate_resonance_structures=False)
+        assert len(back) == len(reactions)
+        for original, read in zip(reactions, back):
+            assert read.duplicate and self._same_kinetics(original.kinetics, read.kinetics)
+
+    def test_a_therm_block_ending_in_a_comment_fails_by_name(self, tmp_path):
+        """I-179 item 2: THERM ALL followed only by a comment line: end of
+        file stops the reader with an error naming the block, never a hang
+        (guarded: the read runs in a daemon thread given 60 s)."""
+        import threading
+        (tmp_path / "chem.inp").write_text("ELEMENTS H END\nSPECIES\nH2\nEND\nTHERM ALL\n! only a comment\n")
+        (tmp_path / "dict.txt").write_text("H2\n" + Molecule(smiles="[H][H]").to_adjacency_list())
+        outcome = []
+
+        def read():
+            try:
+                load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"),
+                                  generate_resonance_structures=False)
+                outcome.append(None)
+            except Exception as error:
+                outcome.append(error)
+        worker = threading.Thread(target=read, daemon=True)
+        worker.start()
+        worker.join(60.0)
+        assert not worker.is_alive(), "the reader hangs on a THERM block ending at end of file"
+        assert isinstance(outcome[0], ChemkinError) and "THERM" in str(outcome[0])
 
     @pytest.mark.parametrize("order", [0, 1])
     def test_plog_with_an_optional_collider_is_plog_beside_a_species_plog(self, tmp_path, order):
