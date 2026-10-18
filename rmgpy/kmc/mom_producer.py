@@ -995,8 +995,11 @@ def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressu
     P sum(eff_i y_i) / sum(y_i) over the gas species (6546-6562, with
     ``get_effective_collider_efficiencies`` as polymer_input.py 428-434
     builds them), MoM recomputing it at every state: here at every
-    composition in ``compositions`` (a gas total at or below 1e-20 mol keeps
-    the total pressure).  kb = kf / Keq with Keq from the species' thermo, and
+    composition in ``compositions``, in time order, over the gas columns
+    ``colliders`` (``gas_columns``).  A gas total at or below 1e-20 mol skips
+    the update, so kf keeps the previous state's value (6553-6564); before
+    any state kf is the total-pressure value of generate_rate_coefficients
+    (4744), which an empty first state therefore keeps.  kb = kf / Keq with Keq from the species' thermo, and
     kb = 0 where Keq is not finite or not positive or kb is not finite
     (4749-4760).  A direction is live when its coefficient is positive and
     finite at some composition."""
@@ -1005,12 +1008,13 @@ def mom_rates(group: Sequence[Any], reversible: bool, temperature: float, pressu
     pressures = [pressure]
     if len(terms) == 1 and kinetics.is_pressure_dependent() and getattr(kinetics, "efficiencies", None):
         efficiencies = kinetics.get_effective_collider_efficiencies([c[1] for c in colliders])
-        pressures = []
+        pressures, current = [], pressure
         for y in compositions:
             gas = [y[c[0]] for c in colliders]
             total = math.fsum(gas)
-            pressures.append(pressure * math.fsum(e * v for e, v in zip(efficiencies, gas)) / total
-                             if total > 1e-20 else pressure)
+            if total > 1e-20:
+                current = pressure * math.fsum(e * v for e, v in zip(efficiencies, gas)) / total
+            pressures.append(current)
     forward, error = [], None
     for p in dict.fromkeys(pressures):
         k, why = reaction_rate(terms, temperature, p)
@@ -1078,6 +1082,51 @@ def profile_motion(header, data, pools, facts: dict, dictionary, times: Sequence
     return None
 
 
+def gas_columns(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any], profile) -> List[Tuple[int, Any]]:
+    """MoM's gas species among the profile columns, each with its RMG species:
+    every column but the pool moments and the species MoM keeps condensed,
+    taken from its own record (the sidecar's conventions.condensed_species,
+    every pool's phase_species and bookkeeping_species).  Columns and those
+    names are matched by identity, never by raw string: a moment by
+    ``moment_column`` of ``<pool>_mu<k>`` (the profile compresses long moment
+    labels), a species by ``species_key`` (its RMG index; the profile and
+    Chemkin shorten long indexed labels).  A column that is neither a pool
+    moment nor a species of the Chemkin file is refused."""
+    from rmgpy.chemkin import get_species_identifier
+    conventions = doc.get("conventions") if isinstance(doc.get("conventions"), dict) else {}
+    condensed = conventions.get("condensed_species")
+    if not isinstance(condensed, list):
+        raise ProducerError("the pool table has no conventions.condensed_species: MoM's gas set is not recorded")
+    labels = {p["label"] for p in doc["pools"]}
+    moments = {moment_column(f"{label}_mu{k}") for label in labels for k in range(3)}
+
+    def identity(name: str):
+        m = re.fullmatch(r"(.+)_mu([0-2])", str(name))
+        if m and m.group(1) in labels:
+            return ("moment", moment_column(str(name)))
+        return species_key(str(name))
+
+    kept = {identity(x) for x in condensed}
+    kept |= {identity(x) for p in doc["pools"] for x in list(p.get("phase_species") or ())
+             + list(p.get("bookkeeping_species") or ())}
+    by_key = {}
+    for x in chemkin_species:
+        by_key.setdefault(species_key(get_species_identifier(x)), x)
+    out, unmapped = [], []
+    for i, h in enumerate(header):
+        if i < 2 or h in moments:
+            continue
+        key = species_key(h)
+        if key not in by_key:
+            unmapped.append(h)
+        elif key not in kept:
+            out.append((i, by_key[key]))
+    if unmapped:
+        raise ProducerError(f"profile {profile}: columns {unmapped} are neither a pool moment nor a species of the "
+                            "Chemkin file")
+    return out
+
+
 def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> dict:
     """Pool-coupled reactions of the final mechanism per family (rows and
     admitted rows), the live rows and whether the profile moves
@@ -1108,15 +1157,7 @@ def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> 
     horizon = float(times[-1])
     header, data = read_profile(find_profile(rmg_dir))
     dictionary = read_species_dictionary(dictionary_path)
-    # the gas species (MoM's gas mask: no pool phase or bookkeeping species) and the compositions visited
-    pool_species = {x for p in doc["pools"] for x in list(p.get("phase_species") or ())
-                    + list(p.get("bookkeeping_species") or ())}
-    by_species_key = {}
-    from rmgpy.chemkin import get_species_identifier
-    for x in rmg_species:
-        by_species_key.setdefault(species_key(get_species_identifier(x)), x)
-    colliders = [(i, by_species_key.get(species_key(h)) or dictionary.get(h) or Molecule())
-                 for i, h in enumerate(header) if i >= 2 and h not in pool_species]
+    colliders = gas_columns(header, doc, rmg_species, find_profile(rmg_dir))
     visited = [r for r in data if r[0] < horizon] + [interpolate(data, horizon)]
     by_key: Dict[Tuple, List[dict]] = {}
     for reaction in reactions:
