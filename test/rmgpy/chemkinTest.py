@@ -28,6 +28,7 @@
 ###############################################################################
 
 import os
+import re
 
 from unittest import mock
 
@@ -1690,3 +1691,97 @@ class TestRecordShapes:
         assert type(reaction.kinetics).__name__ == "Chebyshev"
         assert reaction.kinetics.coeffs.value_si.shape == (2, 1)
 
+
+
+class TestEndOfFileInsideABlock:
+    """Spar r164: end of file inside a block, before its END, stops the reader
+    with a ChemkinError naming the block (inside an unfinished thermo entry,
+    naming the species), never a hang and never a silent partial read.  Each
+    read runs in a daemon thread given 60 s."""
+
+    @staticmethod
+    def h2_entry():
+        polys = [NASAPolynomial(coeffs=[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 3.35], Tmin=lo, Tmax=hi)
+                 for lo, hi in (((200, "K"), (1000, "K")), ((1000, "K"), (6000, "K")))]
+        spc = Species(label="H2").from_smiles("[H][H]")
+        spc.label = "H2"
+        spc.thermo = NASA(polynomials=polys, Tmin=(200, "K"), Tmax=(6000, "K"))
+        return write_thermo_entry(spc, verbose=False)
+
+    @staticmethod
+    def read_guarded(tmp_path, text, thermo=None):
+        import threading
+        (tmp_path / "chem.inp").write_text(text)
+        (tmp_path / "dict.txt").write_text("H2\n" + Molecule(smiles="[H][H]").to_adjacency_list()
+                                           + "\nH\n" + Molecule(smiles="[H]").to_adjacency_list())
+        thermo_path = None
+        if thermo is not None:
+            (tmp_path / "therm.dat").write_text(thermo)
+            thermo_path = str(tmp_path / "therm.dat")
+        outcome = []
+
+        def read():
+            try:
+                outcome.append(load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"),
+                                                 thermo_path=thermo_path, generate_resonance_structures=False))
+            except Exception as error:
+                outcome.append(error)
+        worker = threading.Thread(target=read, daemon=True)
+        worker.start()
+        worker.join(60.0)
+        assert not worker.is_alive(), "the reader hangs at end of file"
+        return outcome[0]
+
+    RANGES = "   300.000  1000.000  5000.000\n"
+    HEAD = "ELEMENTS H END\nSPECIES\nH2 H\nEND\n"
+
+    def shapes(self):
+        entry = self.h2_entry()
+        return {
+            "species": ("ELEMENTS H END\nSPECIES\nH2\n", r"SPECIES block"),
+            "species_one_line": ("ELEMENTS H END\nSPECIES H2 H\n", r"SPECIES block"),
+            "site": ("SITE/SURF/\nX\n", r"SITE block"),
+            "elements": ("ELEMENTS\nH\n", r"ELEMENTS block"),
+            "elements_one_line": ("ELEMENTS H\n", r"ELEMENTS block"),
+            "therm_ranges": (self.HEAD + "THERM ALL\n" + self.RANGES, r"THERM block"),
+            "therm_first_entry_line": (self.HEAD + "THERM ALL\n" + self.RANGES + entry.splitlines()[0] + "\n",
+                                       r"THERM block.*H2"),
+            "therm_three_entry_lines": (self.HEAD + "THERM ALL\n" + self.RANGES
+                                        + "\n".join(entry.splitlines()[:3]) + "\n", r"THERM block.*H2"),
+            "therm_whole_entry_no_end": (self.HEAD + "THERM ALL\n" + self.RANGES + entry, r"THERM block"),
+            "reactions": (self.HEAD + "THERM ALL\n" + self.RANGES + entry + "END\nREACTIONS\nH2=H+H 1.0 0 0\n",
+                          r"REACTIONS block"),
+        }
+
+    @pytest.mark.parametrize("name", ["species", "species_one_line", "site", "elements", "elements_one_line",
+                                      "therm_ranges", "therm_first_entry_line", "therm_three_entry_lines",
+                                      "therm_whole_entry_no_end", "reactions"])
+    def test_a_truncated_block_fails_by_name(self, tmp_path, name):
+        text, message = self.shapes()[name]
+        outcome = self.read_guarded(tmp_path, text)
+        assert isinstance(outcome, ChemkinError), outcome
+        assert re.search(message, str(outcome)), str(outcome)
+
+    def test_a_skipped_therm_block_ending_at_end_of_file_fails_by_name(self, tmp_path):
+        """A separate thermo file given: the mechanism's own THERM block is
+        skipped, and its end of file before END still fails by name."""
+        entry = self.h2_entry()
+        outcome = self.read_guarded(tmp_path, self.HEAD + "THERM ALL\n" + self.RANGES + entry,
+                                    thermo="THERM ALL\n" + self.RANGES + entry + "END\n")
+        assert isinstance(outcome, ChemkinError) and "THERM block" in str(outcome), outcome
+
+    def test_a_separate_thermo_file_ending_inside_an_entry_fails_by_species(self, tmp_path):
+        entry = self.h2_entry()
+        outcome = self.read_guarded(tmp_path, self.HEAD + "REACTIONS\nH2=H+H 1.0 0 0\nEND\n",
+                                    thermo="THERM ALL\n" + self.RANGES + entry.splitlines()[0] + "\n")
+        assert isinstance(outcome, ChemkinError) and re.search(r"THERM block.*H2", str(outcome)), outcome
+
+    def test_the_same_blocks_with_their_end_read(self, tmp_path):
+        """The shapes above, each block closed by END (RMG's writer closes
+        every block it writes), read: H2's thermo and the reaction."""
+        entry = self.h2_entry()
+        outcome = self.read_guarded(tmp_path, "ELEMENTS\nH\nEND\nSPECIES\nH2\nH\nEND\nTHERM ALL\n" + self.RANGES
+                                    + entry + "END\nREACTIONS\nH2=H+H 1.0 0 0\nEND\n")
+        species, reactions = outcome
+        assert [s.label for s in species] == ["H2", "H"] and species[0].has_thermo()
+        assert len(reactions) == 1
