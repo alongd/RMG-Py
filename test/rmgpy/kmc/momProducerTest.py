@@ -130,7 +130,8 @@ def family_rows(admitted, label=LABEL):
 
 def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABEL, end_groups=("[H]", "[H]"),
               mass_override=None, duplicate=None, extra_columns=(), n2=lambda t: 1.0, gas_reactions=(),
-              pool_extra=None, proxy_amount=lambda t: 7.0, ea_units="KCAL/MOLE", enthalpy=None):
+              pool_extra=None, proxy_amount=lambda t: 7.0, ea_units="KCAL/MOLE", enthalpy=None, bookkeeping=None,
+              condensed=None):
     """A MoM output directory under ``out/rmg``.
 
     ``pools``: [(label, f(t) -> (mu0, mu1, mu2), defect_g_mol)]; ``gas``:
@@ -149,7 +150,10 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     reversible, A).  The Chemkin file is complete for RMG's own reader
     (SPECIES block, every reaction species in the dictionary, a THERM block:
     every species Cp = 5/2 R with H/R = -745.375 K, or ``enthalpy``'s value
-    {identifier: H/R in K}); its Ea unit is ``ea_units``."""
+    {identifier: H/R in K}); its Ea unit is ``ea_units``.  The sidecar's
+    conventions.condensed_species is MoM's (every pool's mu-dummies by full
+    label and the main proxy) plus ``condensed``; ``bookkeeping``: {pool:
+    labels} replacing a pool's bookkeeping species."""
     rmg = out / "rmg"
     for sub in ("solver", "chemkin"):
         (rmg / sub).mkdir(parents=True, exist_ok=True)
@@ -195,7 +199,8 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     (rmg / "chemkin" / "species_dictionary.txt").write_text("\n".join(dictionary) + "\n")
     pool_rows = [{"label": p, "monomer_mw_g_mol": a if mass_override is None else mass_override,
                   "chain_mass_defect_g_mol": d, "end_groups": list(end_groups),
-                  "bookkeeping_species": moment_ids[p] + ([proxy] if p == label else []), **(pool_extra or {})}
+                  "bookkeeping_species": (bookkeeping or {}).get(p, moment_ids[p] + ([proxy] if p == label else [])),
+                  **(pool_extra or {})}
                  for p, _f, d in pools]
     reactions, annotated, k, c = [], [f"REACTIONS    {ea_units}   MOLES", ""], 0, 0
     pool_labels = {p for p, _f, _d in pools}
@@ -240,7 +245,9 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
                       "! Template reaction: toy_h_abstraction", f"{line:<51} {g['A']} 0.0 0.0", ""]
     (rmg / "chemkin" / "polymer_pools.json").write_text(json.dumps(
         {"schema_version": "2.0", "pools": pool_rows, "reactions": reactions,
-         "conventions": {"stale_topology": False}}))
+         "conventions": {"stale_topology": False,
+                         "condensed_species": sorted([proxy] + [f"{p}_mu{k}" for p, _f, _d in pools for k in range(3)]
+                                                     + list(condensed or ()))}}))
     species_block = ["SPECIES"] + [f"    {x}" for x in sorted(named)] + ["END", ""]
     therm = ["THERM ALL", "   300.000  1000.000  5000.000", ""]
     for x in sorted(named):
@@ -1950,3 +1957,75 @@ def test_a_negative_total_rate_is_a_rate_error(setup):
     census, refused = _census(setup, [_row(expanded=True, terms=[(2.0, 0.0, 0.0), (-4.0, 0.0, 0.0)],
                                            sidecar_kinetics=None)])
     assert refused and census["zero_rate_rows"] == ["r0"] and "negative" in census["rate_errors"]["r0"]
+
+
+# --------------------------------------------------------------------------
+# I-172 rework 2 (spar r141): MoM's gas set and effective pressure
+# --------------------------------------------------------------------------
+def _falloff_row():
+    """A Lindemann row whose N2 collider efficiency is 0."""
+    proxy = proxy_of()
+    return _row(equation=f"{proxy}(+M)=>{proxy}+X0(+M)", rate=(1.0, 0.0, 0.0),
+                aux=["LOW /  1.0 0.0 0.0 /", "N2/0.0/"], sidecar_kinetics=None)
+
+
+def _falloff_census(setup, **kw):
+    out = setup["tmp"] / f"out{len(list(setup['tmp'].glob('out*')))}"
+    produce(setup, out)
+    kw.setdefault("pools", [(LABEL, drift(declared(setup["spec"])), 0.0)])
+    kw.setdefault("gas", ZERO_GAS)
+    write_run(out, times=PROFILE_T, rows=[_falloff_row()], **kw)
+    try:
+        return produce(setup, out, mode="convert")["census"], False
+    except mp.ProducerError as error:
+        assert "inactive_chemistry" in str(error), error
+        return json.loads((out / "producer.json").read_text())["census"], True
+
+
+RADICAL = Molecule(smiles="[CH2]CCCCCCC").to_adjacency_list()
+
+
+def test_a_condensed_species_is_no_collider(setup):
+    """Spar r141 item 1: 0.1 mol of a daughter MoM condenses
+    (conventions.condensed_species) beside the N2 bath of efficiency 0: MoM's
+    effective pressure is 0, not 1e5 x 0.1 / 1.1 Pa."""
+    census, refused = _falloff_census(setup, gas=ZERO_GAS + [("PD(7)", RADICAL, lambda t: 0.0 if t == 0.0 else 0.1)],
+                                      condensed=["PD(7)"])
+    assert refused and census["zero_rate_rows"] == ["r0"]
+
+
+def test_compressed_bookkeeping_columns_are_no_colliders(setup):
+    """Spar r141 item 2: a daughter pool with a long label: the profile names
+    its mu columns compressed and its proxy by formula, the sidecar by full
+    label; mapped by moment_column / species_key, they are not gas."""
+    mu = declared(setup["spec"])
+    full = [f"{DAUGHTER}_mu{k}" for k in range(3)] + [f"{DAUGHTER}(5)"]
+    census, refused = _falloff_census(
+        setup, pools=[(LABEL, drift(mu), 0.0), (DAUGHTER, lambda t: (0.0, 0.0, 0.0) if t == 0.0 else (0.1, 0.5, 4.0), 0.0)],
+        gas=ZERO_GAS + [("C2H2(5)", RADICAL, lambda t: 0.0 if t == 0.0 else 0.3)], bookkeeping={DAUGHTER: full}, condensed=full)
+    assert refused and census["zero_rate_rows"] == ["r0"]
+
+
+def test_an_empty_gas_keeps_the_previous_rate(setup):
+    """Spar r141 item 3: N2 (efficiency 0) at t = 0, then no gas at all: MoM
+    skips the kf update on an empty gas (polymer.pyx 6553-6564) and keeps 0."""
+    census, refused = _falloff_census(setup, n2=lambda t: 1.0 if t == 0.0 else 0.0)
+    assert refused and census["zero_rate_rows"] == ["r0"]
+
+
+def test_a_gas_empty_from_t0_keeps_the_initial_rate(setup):
+    """The first state empty: MoM's kf stays at its initial
+    get_rate_coefficient(T, P) at the total pressure (polymer.pyx 4744):
+    live."""
+    census, refused = _falloff_census(setup, condensed=["N2"])
+    assert not refused and census["live_rows"] == ["r0"]
+
+
+def test_a_profile_column_that_maps_to_nothing_is_refused(setup):
+    """Spar r141 item 2: every column is a pool moment or a species of the
+    Chemkin file; one that is neither cannot be put in or out of the gas."""
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    constant_run(out, setup["spec"], extra_columns=("Q(9)",))
+    with pytest.raises(mp.ProducerError, match="neither a pool moment nor a species"):
+        produce(setup, out, mode="convert")
