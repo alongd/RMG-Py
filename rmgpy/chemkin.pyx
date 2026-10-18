@@ -1226,7 +1226,19 @@ def load_chemkin_file(path, dictionary_path=None, transport_path=None, read_comm
                 # like one (species(9), SITE_a(2)) opens none
                 head = line.split()
                 header = head[0].upper() if head else ''
-                if header in ('SPECIES', 'SPEC'):
+                if header in ('ELEMENTS', 'ELEM'):
+                    # read through to its END (on the header line or a later one): end of file or another
+                    # block before it is an error, never a silent end
+                    tokens_upper = [t.upper() for t in head]
+                    while 'END' not in tokens_upper:
+                        line0 = f.readline()
+                        if line0 == '':
+                            raise _block_at_end_of_file('ELEMENTS')
+                        if _opens_block(line0):
+                            raise _unterminated_block('ELEMENTS', line0)
+                        tokens_upper = remove_comment_from_line(line0)[0].upper().split()
+
+                elif header in ('SPECIES', 'SPEC'):
                     # Unread the line (we'll re-read it in readReactionBlock())
                     f.seek(previous_line)
                     read_species_block(f, species_dict, sp_aliases, sp_list)
@@ -1249,6 +1261,8 @@ def load_chemkin_file(path, dictionary_path=None, transport_path=None, read_comm
                         if _opens_block(line0):
                             raise _unterminated_block(header, line0)
                         line0 = f.readline()
+                    if line0 == '':
+                        raise _block_at_end_of_file('THERM')
 
                 elif header in ('REACTIONS', 'REAC'):
                     # Reactions section
@@ -1451,6 +1465,13 @@ def _unterminated_block(header, line):
         header, line.strip()))
 
 
+def _block_at_end_of_file(header, species=None):
+    """The error for end of file inside a block, before its END (inside an
+    unfinished thermo entry, naming its species)."""
+    where = ' inside the entry for species {0}'.format(species) if species else ''
+    return ChemkinError('The {0} block ends at the end of the file{1}, before its END'.format(header, where))
+
+
 def read_species_block(f, species_dict, species_aliases, species_list):
     """
     Read a Species block from a chemkin file.
@@ -1471,6 +1492,8 @@ def read_species_block(f, species_dict, species_aliases, species_list):
      # Build list of species identifiers
     while 'END' not in tokens_upper:
         line = f.readline()
+        if line == '':
+            raise _block_at_end_of_file('SITE' if first_token.startswith('SITE') else 'SPECIES')
         # If the line contains only one species, and also contains
         # a comment with only one token, assume that token is 
         # intended to be the true identifier for the species, but
@@ -1622,6 +1645,10 @@ def read_thermo_block(f, species_dict):
         if len(thermo_block.split('/n')) > 5:
             raise ChemkinError('Should only have a maximum of 5 lines in a thermo block:\n{0}'.format(thermo_block))
         line = f.readline()
+    if line == '':
+        # RMG's writers close every THERM block with END: end of file before it is a cut file, and inside
+        # an unfinished entry it names the species
+        raise _block_at_end_of_file('THERM', thermo_block.split()[0] if thermo_block.strip() else None)
     return formula_dict
 
 
@@ -1713,6 +1740,7 @@ def read_reactions_block(f, species_dict, read_comments=True):
     comments = ''
 
     line = f.readline()
+    ended = False
     while line != '':
 
         line_starts_with_comment = line.lstrip().startswith('!') or line.lstrip().startswith('//')
@@ -1721,6 +1749,7 @@ def read_reactions_block(f, species_dict, read_comments=True):
         comment = comment.strip()
 
         if _is_end_keyword(line):
+            ended = True
             break
 
         # if 'rev' in line or 'REV' in line:
@@ -1739,6 +1768,9 @@ def read_reactions_block(f, species_dict, read_comments=True):
         if comment: comments += comment + '\n'
 
         line = f.readline()
+
+    if not ended:
+        raise _block_at_end_of_file('REACTIONS')
 
     # Don't forget the last reaction!
     if kinetics.strip() != '':
