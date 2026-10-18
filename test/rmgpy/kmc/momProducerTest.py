@@ -132,7 +132,8 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
               mass_override=None, duplicate=None, extra_columns=(), n2=lambda t: 1.0, gas_reactions=(),
               pool_extra=None, proxy_amount=lambda t: 7.0, ea_units="KCAL/MOLE", enthalpy=None, bookkeeping=None,
               condensed=None, spawned=None, proxy_index=3, proxy_first=False, solver_mask=None,
-              pool_order=None):
+              pool_order=None, mask_reactor=1, mask_profile=None, mask_structures=None, mask_record=None,
+              species_comments=None):
     """A MoM output directory under ``out/rmg``.
 
     ``pools``: [(label, f(t) -> (mu0, mu1, mu2), defect_g_mol)]; ``gas``:
@@ -162,7 +163,14 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
     sidecar records the solver's gas mask (conventions.solver_gas_mask) over
     the profile's species columns, each gas unless the dict {column: gas}
     says otherwise; a list of (name, gas) is written as given.
-    ``pool_order``: the sidecar's pool rows in this label order."""
+    The record is bound as MoM binds it: reactor ``mask_reactor``, profile
+    ``mask_profile`` (default the profile written, solver/simulation_1_8.csv),
+    each species' structure the augmented InChI of its dictionary entry
+    unless ``mask_structures`` {name: structure} says otherwise;
+    ``mask_record``: the conventions.solver_gas_mask value written as given.
+    ``pool_order``: the sidecar's pool rows in this label order.
+    ``species_comments``: {identifier: comment} on its SPECIES line, as RMG's
+    verbose writer gives the species' own label(index)."""
     rmg = out / "rmg"
     for sub in ("solver", "chemkin"):
         (rmg / sub).mkdir(parents=True, exist_ok=True)
@@ -258,8 +266,19 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
         pool_rows = [next(r for r in pool_rows if r["label"] == x) for x in pool_order]
     if isinstance(solver_mask, dict):
         solver_mask = [(h, solver_mask.get(h, True)) for h in header[2:]]
-    recorded = ({"solver_gas_mask": {"source": "solver", "core": [{"species": x, "gas": g} for x, g in solver_mask]}}
-                if solver_mask is not None else {})
+    adjacency = {entry.split("\n", 1)[0]: entry.split("\n", 1)[1] for entry in dictionary}
+
+    def structure(name):
+        if name in (mask_structures or {}):
+            return mask_structures[name]
+        return Molecule().from_adjacency_list(adjacency[name]).to_augmented_inchi() if name in adjacency else None
+    recorded = {}
+    if solver_mask is not None:
+        recorded = {"solver_gas_mask": {"source": "solver", "reactors": [{
+            "reactor": mask_reactor, "profile": mask_profile or "solver/simulation_1_8.csv",
+            "core": [{"species": x, "structure": structure(x), "gas": g} for x, g in solver_mask]}]}}
+    if mask_record is not None:
+        recorded = {"solver_gas_mask": mask_record}
     (rmg / "chemkin" / "polymer_pools.json").write_text(json.dumps(
         {"schema_version": "2.0", "pools": pool_rows, "reactions": reactions,
          "conventions": {"stale_topology": False, **recorded,
@@ -267,7 +286,8 @@ def write_run(out, *, times, pools, gas=(), admitted=None, rows=None, label=LABE
                                                      + list(condensed or ())),
                          **({"spawned_pools": list(spawned)} if spawned else {})}}))
     order = sorted(named, key=lambda x: (mp.species_key(x)[0] == "index", mp.species_key(x)[1:]))
-    species_block = ["SPECIES"] + [f"    {x}" for x in order] + ["END", ""]
+    species_block = ["SPECIES"] + [f"    {x}" + (f"    ! {species_comments[x]}" if x in (species_comments or {}) else "")
+                                   for x in order] + ["END", ""]
     therm = ["THERM ALL", "   300.000  1000.000  5000.000", ""]
     for x in sorted(named):
         h = f"{(enthalpy or {}).get(x, -745.375):15.8E}"
@@ -2379,3 +2399,95 @@ def test_a_recorded_mask_of_another_core_is_refused(setup):
     constant_run(out, setup["spec"], solver_mask=[("N2", True), ("H(1)", True)])
     with pytest.raises(mp.ProducerError, match="solver_gas_mask"):
         produce(setup, out, mode="convert")
+
+
+# --------------------------------------------------------------------------
+# I-178 (spar r156): the recorded mask bound to its reactor, profile and
+# structures; the reconstruction's base labels
+# --------------------------------------------------------------------------
+def _bound_run(setup, **kw):
+    """The r147 fixture with a recorded mask (dgt condensed); ``kw`` binds it."""
+    out = setup["tmp"] / f"out{len(list(setup['tmp'].glob('out*')))}"
+    proxy = proxy_of()
+    row = _row(equation=f"{proxy}(+M)=>{proxy}+X0(+M)", rate=(1.0, 0.0, 0.0),
+               aux=["LOW /  1.0 0.0 0.0 /", "N2/0.0/ dgt(4)/0.0/"], sidecar_kinetics=None)
+    produce(setup, out)
+    write_run(out, times=PROFILE_T, rows=[row], gas=ZERO_GAS + [("dgt", PROPANE, LATER), ("dgt(4)", BUTANE_ADJ, LATER)],
+              pools=[(LABEL, drift(declared(setup["spec"])), 0.0), ("dgt", lambda t: (0.0, 0.0, 0.0), 0.0)],
+              bookkeeping={"dgt": DGT + ["dgt(4)"]}, condensed=DGT, spawned=["dgt"],
+              solver_mask={proxy: False, **{c: False for c in DGT[:3]},
+                           **{mp.moment_column(f"{LABEL}_mu{k}"): False for k in range(3)}, "dgt": False}, **kw)
+    return out
+
+
+def test_a_bound_mask_of_reactor_1_and_its_profile_is_used(setup):
+    out = _bound_run(setup)
+    with pytest.raises(mp.ProducerError, match="inactive_chemistry"):
+        produce(setup, out, mode="convert")
+    assert json.loads((out / "producer.json").read_text())["census"]["phase_source"] == "solver_mask"
+
+
+def test_the_mask_of_reactor_2_is_refused_for_reactor_1s_profile(setup):
+    """Spar r156 item 1: the polymer reactor is the second reaction system;
+    the producer reads reactor 1's profile, which no recorded mask names."""
+    out = _bound_run(setup, mask_reactor=2, mask_profile="solver/simulation_2_8.csv")
+    with pytest.raises(mp.ProducerError, match="reactor 1"):
+        produce(setup, out, mode="convert")
+
+
+def test_a_mask_naming_another_profile_is_refused(setup):
+    out = _bound_run(setup, mask_profile="solver/simulation_1_7.csv")
+    with pytest.raises(mp.ProducerError, match="simulation_1_8.csv"):
+        produce(setup, out, mode="convert")
+
+
+def test_an_isomer_under_a_recorded_label_is_refused(setup):
+    """Spar r156 item 2: the mask was the solver's for another structure
+    under the label dgt(4) (propane, not the butane of the Chemkin file)."""
+    out = _bound_run(setup, mask_structures={"dgt(4)": Molecule(smiles="CCC").to_augmented_inchi()})
+    with pytest.raises(mp.ProducerError, match="dgt\(4\) has another structure"):
+        produce(setup, out, mode="convert")
+
+
+def test_an_unbound_mask_record_is_refused(setup):
+    """A record without reactor, profile and structures cannot be bound."""
+    out = _bound_run(setup, mask_record={"source": "solver", "core": [{"species": "N2", "gas": True}]})
+    with pytest.raises(mp.ProducerError, match="solver_gas_mask"):
+        produce(setup, out, mode="convert")
+
+
+def _c6h13_run(setup, comments=None):
+    """Spar r156 item 3: a spawned pool named C6H13 (members C6H13, the
+    first, and the butane C6H13(9), the only collider weight) beside a
+    non-pool hexyl radical, an H-loss daughter of the root proxy, whose
+    Chemkin identifier is its formula, C6H13(5) (amount 0)."""
+    members = [("C6H13", PROPANE, lambda t: 0.0), ("C6H13(5)", HEXYL, lambda t: 0.0),
+               ("C6H13(9)", BUTANE_ADJ, LATER)]
+    pool = ["C6H13_mu0", "C6H13_mu1", "C6H13_mu2", "C6H13"]
+    return _phase_run(setup, members=members, aux="N2/0.0/ C6H13/0.0/", bookkeeping={"C6H13": pool + ["C6H13(9)"]},
+                      spawned=("C6H13",), condensed=pool,
+                      pools=[(LABEL, drift(declared(setup["spec"])), 0.0), ("C6H13", lambda t: (0.0, 0.0, 0.0), 0.0)],
+                      species_comments=comments)
+
+
+def test_a_formula_identifier_is_no_base_label(setup):
+    """Without its own label the hexyl is its own unit, never the pool's:
+    C6H13(9) stays gas and the row live."""
+    census, refused = _c6h13_run(setup)
+    assert census["phase_source"] == "reconstructed"
+    assert not refused and census["live_rows"] == ["r0"] and census["rate_errors"] == {}
+
+
+def test_a_long_own_label_is_the_base_label(setup):
+    """RMG's verbose SPECIES line gives the hexyl's own label: its base is
+    that label, not the pool's; the row stays live."""
+    census, refused = _c6h13_run(setup, comments={"C6H13(5)": "hexyl_primary_radical(5)"})
+    assert not refused and census["live_rows"] == ["r0"] and census["rate_errors"] == {}
+
+
+def test_an_own_label_of_the_pools_base_propagates(setup):
+    """Its own label C6H13(5) has the pool's base: MoM's section D condenses
+    every species of base C6H13, so C6H13(9)'s phase is the hexyl's unit."""
+    census, refused = _c6h13_run(setup, comments={"C6H13(5)": "C6H13(5)"})
+    assert refused and "gas mask ambiguous for ['stage1:C6H13(5)']" in census["rate_errors"]["r0"]
+
