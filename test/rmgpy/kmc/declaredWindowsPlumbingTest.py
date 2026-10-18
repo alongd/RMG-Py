@@ -58,7 +58,6 @@ def pe_key(pe):
 # 1. witness_spec refusals
 # --------------------------------------------------------------------------
 @pytest.mark.parametrize("spec", [
-    ("alkane", 16, None, None, 7),
     ("polystyrene", 3, None),
     ("small", "X"),
     ("small",),
@@ -77,8 +76,11 @@ def test_witness_spec_refuses_an_unregistered_provider():
 
 
 def test_witness_spec_normalizes_the_accepted_shapes(pe):
-    assert win.witness_spec(("alkane", 16)) == ("alkane", 16, None, None)
-    assert win.witness_spec(("alkane", 16, "methyl")) == ("alkane", 16, "methyl", None)
+    assert win.witness_spec(("alkane", 16)) == ("alkane", 16, None, None, None)
+    assert win.witness_spec(("alkane", 16, "methyl")) == \
+        ("alkane", 16, "methyl", None, None)
+    assert win.witness_spec(("alkane", 16, None, None, 7)) == \
+        ("alkane", 16, None, None, 7)
     assert win.witness_spec(("small", "H")) == ("small", "H")
     spec = b.PsChainSpec(3)
     assert win.witness_spec(spec) is spec
@@ -86,15 +88,15 @@ def test_witness_spec_normalizes_the_accepted_shapes(pe):
     assert win.witness_spec(d) == d
 
 
-def test_interior_radical_tuple_is_never_built_closed():
-    with pytest.raises(win.WindowError, match="refused:legacy_spec"):
-        win.build_spec(("alkane", 16, None, None, 7))
-    for call in (lambda: win.builds_of([("alkane", 16, None, None, 7)]),
-                 lambda: win.longer_specs([("alkane", 16, None, None, 7)], [HEAD]),
-                 lambda: win.event_specs([("alkane", 16, None, None, 7)],
-                                         ((HEAD, win.INTERIOR),))):
-        with pytest.raises(win.WindowError, match="refused:legacy_spec"):
-            call()
+def test_interior_radical_tuple_builds_and_tracks_head_moves():
+    spec = ("alkane", 16, None, None, 7)
+    assert win.build_spec(spec).molecule.get_radical_count() == 1
+    (longer,), shift = win.longer_specs([spec], [HEAD])
+    assert longer == ("alkane", 17, None, None, 8)
+    assert shift == {0: 1}
+    (event,), shift = win.event_specs([spec], ((HEAD, win.INTERIOR),))
+    assert event == ("alkane", 17, None, None, 8)
+    assert shift == {0: 1}
 
 
 def test_declared_spec_builds_through_its_provider(pp):

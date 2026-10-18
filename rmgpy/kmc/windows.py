@@ -399,8 +399,8 @@ SPEC_OWNERS = b.LEGACY_PROVIDERS + (SMALL_PROVIDER,)
 def witness_spec(spec):
     """The normalized witness spec: a ``DeclaredSpec`` of a registered
     declared-chain provider, or a named shape normalized by its owner
-    (``SPEC_OWNERS``).  Anything else, a bare ``ChainSpec`` and an
-    interior-radical 5-tuple included, is refused (never built closed)."""
+    (``SPEC_OWNERS``).  Anything else, including a bare ``ChainSpec``, is
+    refused (never built closed)."""
     if isinstance(spec, DeclaredSpec):
         provider = b.PROVIDERS.get(spec.provider)
         if not isinstance(provider, dc.DeclaredChainProvider):
@@ -2404,15 +2404,17 @@ def pattern_min_dp(pattern, limit: int = PATTERN_DP_LIMIT) -> Optional[int]:
 
 def build_spec(spec, name="p"):
     """A provider build of a spec (``PsChainSpec``, ("alkane", n[, head end,
-    tail end]) or ("small", name))."""
+    tail end[, interior radical]]) or ("small", name))."""
     # every spec is a witness spec first (refused otherwise); a declared spec
     # builds through its registered provider
     spec = witness_spec(spec)
     if isinstance(spec, DeclaredSpec):
         return b.PROVIDERS[spec.provider].build(name, spec.chain)
     if isinstance(spec, tuple) and spec[0] == "alkane":
-        ends = tuple(spec[2:4]) + (None,) * (4 - len(spec))
-        return b.PROVIDERS["linear_alkane"].build(spec[1], head_end=ends[0], tail_end=ends[1])
+        fields = tuple(spec[2:5]) + (None,) * (5 - len(spec))
+        return b.PROVIDERS["linear_alkane"].build(
+            spec[1], head_end=fields[0], tail_end=fields[1],
+            interior_radical=fields[2])
     if isinstance(spec, tuple) and spec[0] == "small":
         return small_build(spec[1])
     return b.PROVIDERS["polystyrene"].build(name, spec)
@@ -4098,7 +4100,10 @@ def longer_specs(specs, ports, k: int = 1):
                 shift[index] += k
             continue
         if isinstance(spec, tuple) and spec[0] == "alkane":
-            specs[index] = ("alkane", spec[1] + k) + tuple(spec[2:])
+            fields = list(spec[2:5]) + [None] * (5 - len(spec))
+            if head and fields[2] is not None:
+                fields[2] += k
+            specs[index] = ("alkane", spec[1] + k, *fields)
         else:
             moved = {"units": spec.units + k}
             if head:
@@ -4133,9 +4138,10 @@ def event_specs(specs, assignment):
                 spec.chain, **{"head" if port_id == "head" else "tail": choice}))
             continue
         if isinstance(spec, tuple) and spec[0] == "alkane":
-            ends = list(spec[2:4]) + [None] * (4 - len(spec))
+            fields = list(spec[2:5]) + [None] * (5 - len(spec))
+            ends = fields[:2]
             ends[0 if port_id == "head" else 1] = choice
-            longer[index] = ("alkane", spec[1], *ends)
+            longer[index] = ("alkane", spec[1], *ends, fields[2])
             continue
         if not isinstance(spec, b.PsChainSpec):
             return None, shift

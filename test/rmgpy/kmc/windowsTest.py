@@ -701,9 +701,9 @@ def test_alkane_proxy_builds_declared_physical_ends():
     half = win.build_spec(("alkane", 5, "methyl", None))
     assert [p.artificial for p in half.metadata.ports] == [False, True]
     assert win.event_specs([("alkane", 16)], (((0, "head"), "primary_radical"),)) == \
-        ([("alkane", 16, "primary_radical", None)], {})
+        ([("alkane", 16, "primary_radical", None, None)], {})
     assert win.event_specs([("alkane", 16, None, "methyl")], (((0, "head"), "interior"),)) == \
-        ([("alkane", 17, None, "methyl")], {0: 1})
+        ([("alkane", 17, None, "methyl", None)], {0: 1})
     with pytest.raises(b.MetadataError):
         win.build_spec(("alkane", 5, "vinylidene", None))
 

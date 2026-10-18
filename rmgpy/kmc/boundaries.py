@@ -303,6 +303,7 @@ class BoundaryProvider:
     name = "abstract"
     coordinate_backbone_atoms: Optional[int] = None
     RADICAL_END_CHEMISTRIES: tuple = ()
+    ALKENE_END_CHEMISTRIES: tuple = ()
 
     def build(self, *args, **kwargs) -> ProxyBuild:  # pragma: no cover - interface
         raise NotImplementedError
@@ -332,6 +333,21 @@ class BoundaryProvider:
 
     def unit_formula(self) -> Optional[tuple]:
         return None
+
+    def reference_special_declarations(self) -> tuple:
+        """Extra ``(label, dp, head, tail, interior_radical)`` chain phases
+        needed to represent a provider's shorter-than-one-repeat species."""
+        return ()
+
+    def reference_monomer(self, spec):
+        """Build the declaration's addition monomer by raising the bond
+        between its repeat-unit ports.  ``None`` names the unsupported case
+        where those ports do not share a bond."""
+        from rmgpy.kmc.declared_chain import _declaration_molecule
+        ports = dict(spec.repeat_unit.ports)
+        built = _declaration_molecule(
+            spec.repeat_unit, (ports["head"].atom, ports["tail"].atom))
+        return None if built is None else built[0]
 
 
 # the two extension probes of the named providers: a tail port on unit 0
@@ -1541,6 +1557,7 @@ class PolystyreneProvider(BoundaryProvider):
     # declared end chemistries per port tag (additive, I-137)
     END_CHEMISTRIES = {"backbone_head": HEAD_ENDS, "backbone_tail": TAIL_ENDS}
     RADICAL_END_CHEMISTRIES = RADICAL_ENDS
+    ALKENE_END_CHEMISTRIES = ALKENE_ENDS
     coordinate_backbone_atoms = 2      # backbone CH2 (position 0) and CH(Ph) (1)
 
     def backbone_index(self, unit: int, position: int) -> Optional[int]:
@@ -1587,14 +1604,20 @@ class PolystyreneProvider(BoundaryProvider):
         H-capped end) and, optionally, a radical on the phenyl-bearing carbon
         of unit ``interior_radical``.  ValueError on a name or count this
         provider does not declare."""
-        if not isinstance(dp, int) or dp < 1:
-            raise ValueError(f"degree of polymerization must be a positive integer, got {dp!r}")
+        if not isinstance(dp, int) or dp < 0:
+            raise ValueError(f"degree of polymerization must be a non-negative integer, got {dp!r}")
         for end, allowed in ((head, HEAD_ENDS + TAIL_ENDS), (tail, HEAD_ENDS + TAIL_ENDS)):
             if end is not None and end not in allowed:
                 raise ValueError(f"{end!r} is not a declared end (declared: {allowed})")
         extra = {} if interior_radical is None else {"radical_units": (int(interior_radical),)}
         return PsChainSpec(dp, head_end=head, tail_end=tail, head_shift=head in TAIL_ENDS,
                            tail_shift=tail in HEAD_ENDS, **extra)
+
+    def reference_special_declarations(self) -> tuple:
+        return (("methane", 0, "methyl", "methyl", None),
+                ("methyl-radical", 0, "primary_radical", "methyl", None),
+                ("toluene", 1, "benzyl", "benzyl", None),
+                ("benzyl-radical", 1, "benzyl", "benzylic_radical", None))
 
     @staticmethod
     def declared_layout(spec: PsChainSpec):
@@ -1832,16 +1855,16 @@ class LinearAlkaneProvider(BoundaryProvider):
 
     @staticmethod
     def normalize_spec(spec):
-        """("alkane", n, head end, tail end) of an ("alkane", n[, head[, tail]])
-        spec; None for another shape; ValueError for a malformed one (an
-        interior-radical 5-tuple included: never built closed)."""
+        """("alkane", n, head end, tail end, interior radical) of an
+        ("alkane", n[, head[, tail[, interior radical]]]) spec; None for
+        another shape; ValueError for a malformed one."""
         if not isinstance(spec, tuple) or not spec or spec[0] != "alkane":
             return None
-        if not 2 <= len(spec) <= 4:
-            raise ValueError(f"an alkane spec has 2 to 4 entries, got {len(spec)}: {spec!r}")
+        if not 2 <= len(spec) <= 5:
+            raise ValueError(f"an alkane spec has 2 to 5 entries, got {len(spec)}: {spec!r}")
         if isinstance(spec[1], bool) or not isinstance(spec[1], int):
             raise ValueError(f"an alkane spec needs an integer carbon count: {spec!r}")
-        return ("alkane", spec[1]) + tuple(spec[2:]) + (None,) * (4 - len(spec))
+        return ("alkane", spec[1]) + tuple(spec[2:]) + (None,) * (5 - len(spec))
 
     # the two-carbon repeat of the declared chain (additive, I-155; see
     # ``PolystyreneProvider.REPEAT_UNIT``)
@@ -1865,13 +1888,16 @@ class LinearAlkaneProvider(BoundaryProvider):
             if end is not None and end not in self.END_CHEMISTRIES["backbone_head"]:
                 raise ValueError(f"{end!r} is not a declared end "
                                  f"(declared: {self.END_CHEMISTRIES['backbone_head']})")
+        radical = None
         if interior_radical is not None:
-            # ``windows.build_spec`` reads the end fields only: a radical field
-            # would build a closed chain silently
-            raise ValueError("the linear alkane builder declares no interior radical")
-        if head is None and tail is None:
+            if isinstance(interior_radical, bool) or not isinstance(interior_radical, int) or \
+                    not 0 <= interior_radical < dp:
+                raise ValueError(f"interior radical unit must be in 0..{dp - 1}, got "
+                                 f"{interior_radical!r}")
+            radical = self.REPEAT_CARBONS * interior_radical
+        if head is None and tail is None and radical is None:
             return ("alkane", carbons)
-        return ("alkane", carbons, head, tail)
+        return ("alkane", carbons, head, tail, radical)
 
     def end_edit(self, metadata: BoundaryMetadata, port: Port, end: str, rows,
                  protected) -> EndEdit:
@@ -1880,7 +1906,8 @@ class LinearAlkaneProvider(BoundaryProvider):
         return standard_end_edit(port, end, None, rows, protected)
 
     def build(self, carbons: int, name: Optional[str] = None, head_end: Optional[str] = None,
-              tail_end: Optional[str] = None) -> ProxyBuild:
+              tail_end: Optional[str] = None,
+              interior_radical: Optional[int] = None) -> ProxyBuild:
         """``head_end`` / ``tail_end`` (additive, I-137 rework 2): build that end
         PHYSICAL with a declared end chemistry (``methyl``: the CH3 terminus,
         no cap; ``primary_radical``: a .CH2 terminus) instead of the
@@ -1892,6 +1919,11 @@ class LinearAlkaneProvider(BoundaryProvider):
         for end in (head_end, tail_end):
             if end is not None and end not in self.END_CHEMISTRIES["backbone_head"]:
                 raise MetadataError(f"linear alkane: {end!r} is not a declared end")
+        if interior_radical is not None and (isinstance(interior_radical, bool) or
+                                             not isinstance(interior_radical, int) or
+                                             not 0 <= interior_radical < carbons):
+            raise MetadataError(f"linear alkane: interior radical carbon {interior_radical!r} "
+                                f"is outside 0..{carbons - 1}")
         name = name or f"C{carbons}"
         neighbours = {i: [] for i in range(carbons)}
         for i in range(carbons - 1):
@@ -1899,6 +1931,8 @@ class LinearAlkaneProvider(BoundaryProvider):
             neighbours[i + 1].append(i)
         radical = {0: int(head_end == "primary_radical"),
                    carbons - 1: int(tail_end == "primary_radical")}
+        if interior_radical is not None:
+            radical[interior_radical] = radical.get(interior_radical, 0) + 1
         h_of, next_id = {}, carbons
         for i in range(carbons):
             count = 4 - len(neighbours[i]) - radical.get(i, 0)

@@ -166,7 +166,7 @@ def test_pe_declaration_is_the_n_alkane(tmp_path):
 
 def test_pe_declaration_with_ends_is_the_alkane_end_spec(tmp_path):
     systems, _ = systems_of(tmp_path, "pe", {"r": [chain(3, head="primary_radical", tail="methyl")]})
-    assert systems["r"][0].spec == ("alkane", 6, "primary_radical", "methyl")
+    assert systems["r"][0].spec == ("alkane", 6, "primary_radical", "methyl", None)
 
 
 def test_unregistered_repeat_unit_is_refused_with_a_row(tmp_path):
@@ -224,8 +224,8 @@ def test_roster_sha_is_the_file_hash(tmp_path):
 def test_generated_roster_counts_are_pinned_per_declaration(tmp_path):
     ps, ps_written, ps_systems = generated_of(tmp_path, "ps", dps=(1, 2))
     pe, pe_written, pe_systems = generated_of(tmp_path, "pe", dps=(1, 2))
-    assert (len(ps.systems), len(ps_systems)) == (174, 174)
-    assert (len(pe.systems), len(pe_systems)) == (102, 102)
+    assert (len(ps.systems), len(ps_systems)) == (152, 152)
+    assert (len(pe.systems), len(pe_systems)) == (84, 84)
     assert ps.sha256 == ps_written.sha256
     assert pe.sha256 == pe_written.sha256
 
@@ -247,10 +247,11 @@ def test_generated_radical_pairs_have_both_orders_and_identical_pairs(tmp_path):
     pairs = {name: participants for name, participants in systems.items()
              if name.startswith("pair:radical:")}
     unequal = next(participants for participants in pairs.values()
-                   if participants[0].label != participants[1].label)
-    assert any([p.label for p in participants] == [unequal[1].label, unequal[0].label]
+                   if not isomorphic(participants[0].build("a"), participants[1].build("b")))
+    assert any(isomorphic(participants[0].build("a"), unequal[1].build("b")) and
+               isomorphic(participants[1].build("b"), unequal[0].build("a"))
                for participants in pairs.values())
-    assert any(participants[0].label == participants[1].label
+    assert any(isomorphic(participants[0].build("a"), participants[1].build("b"))
                for participants in pairs.values())
 
 

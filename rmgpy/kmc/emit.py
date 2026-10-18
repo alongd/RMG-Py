@@ -125,6 +125,159 @@ def load_roster(path) -> Roster:
     return Roster(polymer, systems, hashlib.sha256(raw).hexdigest(), str(path))
 
 
+def roster_bytes(roster: Roster) -> bytes:
+    """Canonical bytes of a reference roster, used for both writing and its
+    provenance hash."""
+    document = {"schema": ROSTER_SCHEMA, "polymer": roster.polymer.as_mapping(),
+                "systems": roster.systems}
+    return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def write_roster(roster: Roster, path) -> Roster:
+    """Write ``roster`` in the emit CLI's input format and return the loaded
+    file-backed roster (whose hash is therefore the exact file hash)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(roster_bytes(roster))
+    return load_roster(path)
+
+
+def _adjacency_entry(molecule) -> dict:
+    molecule.update()
+    return {"adjacency_list": molecule.to_adjacency_list()}
+
+
+def _chain_entry(dp, head=None, tail=None, radical_unit=None) -> dict:
+    return {"chain": {"dp": dp, "head": head, "tail": tail,
+                      "radical_unit": radical_unit}}
+
+
+def _reference_chain_entries(provider, dps, phases) -> list:
+    """``(label, roster entry, radical)`` for the provider's capped,
+    physical-end and interior-radical reference chains."""
+    out = []
+
+    def add(label, dp, head=None, tail=None, radical_unit=None):
+        entry = _chain_entry(dp, head, tail, radical_unit)
+        built = _participant(provider, None, entry, label).build("reference_check")
+        out.append((label, entry, bool(built.molecule.get_radical_count())))
+
+    end_table = getattr(provider, "END_CHEMISTRIES", {})
+    head_ends = tuple(end_table.get("backbone_head", ()))
+    tail_ends = tuple(end_table.get("backbone_tail", ()))
+    radical_ends = set(getattr(provider, "RADICAL_END_CHEMISTRIES", ()))
+    alkene_ends = set(getattr(provider, "ALKENE_END_CHEMISTRIES", ()))
+    closed_head = next((end for end in head_ends
+                        if end not in radical_ends | alkene_ends), None)
+    closed_tail = next((end for end in tail_ends
+                        if end not in radical_ends | alkene_ends), None)
+    for dp in dps:
+        add(f"chain:dp{dp}:capped", dp)
+        if phases and closed_head is not None and closed_tail is not None:
+            add(f"chain:dp{dp}:declared", dp, closed_head, closed_tail)
+            for end in head_ends:
+                if end in radical_ends:
+                    add(f"chain:dp{dp}:end-radical:head:{end}", dp, end, closed_tail)
+                elif end in alkene_ends:
+                    add(f"chain:dp{dp}:alkene:head:{end}", dp, end, closed_tail)
+            for end in tail_ends:
+                if end in radical_ends:
+                    add(f"chain:dp{dp}:end-radical:tail:{end}", dp, closed_head, end)
+                elif end in alkene_ends:
+                    add(f"chain:dp{dp}:alkene:tail:{end}", dp, closed_head, end)
+        if dp > 1:
+            add(f"chain:dp{dp}:interior-radical", dp, radical_unit=(dp - 1) // 2)
+    if phases:
+        for label, dp, head, tail, radical_unit in provider.reference_special_declarations():
+            add(f"chain:special:{label}", dp, head, tail, radical_unit)
+    return out
+
+
+def _reference_small_entries(spec, small) -> list:
+    """``(label, roster entry, radical, declared)`` for built-ins and the
+    declaration's physical small species."""
+    if small is False:
+        return []
+    selected = None if small is True else set(small)
+    declared = {name: graph for name, graph, _disposition in spec.small_species}
+    out = []
+    builtins = {
+        "H": "1 H u1 p0 c0\n",
+        "H2": "1 H u0 p0 c0 {2,S}\n2 H u0 p0 c0 {1,S}\n",
+    }
+    for name, adjacency in builtins.items():
+        if selected is None or name in selected:
+            out.append((f"small:{name}", {"adjacency_list": adjacency}, name == "H", False))
+    for name, graph in declared.items():
+        if selected is not None and name not in selected:
+            continue
+        molecule = graph.to_legacy_molecule({})
+        molecule.multiplicity = graph.multiplicity
+        out.append((f"small:{name}", _adjacency_entry(molecule),
+                    bool(molecule.get_radical_count()), True))
+    return out
+
+
+def reference_systems(spec, provider, *, dps=(1, 2, 3, 8), phases=True,
+                      small=True, monomer=True, molecularity=frozenset((1, 2))) -> Roster:
+    """Generate an emit roster solely from a chain declaration and provider.
+
+    Singles cover every requested chain length and end role.  Bimolecular
+    systems contain every ordered radical pair (including two copies for
+    identical species), both orders of chain plus H or a declared small
+    species, and both orders of chain plus the provider-built monomer.
+    """
+    from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
+    spec = normalized_linear_homopolymer_spec(spec)
+    if provider is None:
+        raise RosterRefusal("refused:no_provider", "the declaration has no reference provider")
+    dps = tuple(dps)
+    if not dps or any(isinstance(dp, bool) or not isinstance(dp, int) or dp < 1 for dp in dps):
+        raise RosterRefusal("refused:roster", f"reference DPs must be positive integers: {dps!r}")
+    molecularity = frozenset(molecularity)
+    if not molecularity <= {1, 2} or not molecularity:
+        raise RosterRefusal("refused:roster", "molecularity must contain 1, 2, or both")
+
+    chains = _reference_chain_entries(provider, dps, bool(phases))
+    small_entries = _reference_small_entries(spec, small)
+    participants = [(label, entry, radical, "chain") for label, entry, radical in chains]
+    participants += [(label, entry, radical, "declared-small" if declared else "small")
+                     for label, entry, radical, declared in small_entries]
+
+    monomer_item = None
+    if monomer:
+        molecule = provider.reference_monomer(spec)
+        if molecule is not None:
+            monomer_item = ("monomer", _adjacency_entry(molecule),
+                            bool(molecule.get_radical_count()), "monomer")
+            participants.append(monomer_item)
+
+    systems = {}
+    if 1 in molecularity:
+        for label, entry, _radical, _kind in participants:
+            systems[f"single:{label}"] = [entry]
+    if 2 in molecularity:
+        radicals = [item for item in participants if item[2]]
+        for left in radicals:
+            for right in radicals:
+                systems[f"pair:radical:{left[0]}:{right[0]}"] = [left[1], right[1]]
+        h_item = next((item for item in participants if item[0] == "small:H"), None)
+        for chain in [item for item in participants if item[3] == "chain"]:
+            if h_item is not None:
+                systems[f"pair:H:{chain[0]}:left"] = [chain[1], h_item[1]]
+                systems[f"pair:H:{chain[0]}:right"] = [h_item[1], chain[1]]
+            for species in [item for item in participants if item[3] == "declared-small"]:
+                systems[f"pair:{species[0]}:{chain[0]}:left"] = [chain[1], species[1]]
+                systems[f"pair:{species[0]}:{chain[0]}:right"] = [species[1], chain[1]]
+            if monomer_item is not None:
+                systems[f"pair:monomer:{chain[0]}:left"] = [chain[1], monomer_item[1]]
+                systems[f"pair:monomer:{chain[0]}:right"] = [monomer_item[1], chain[1]]
+
+    provisional = Roster(spec, systems, "", "")
+    raw = roster_bytes(provisional)
+    return Roster(spec, systems, hashlib.sha256(raw).hexdigest(), "")
+
+
 def _normal_graph(graph):
     """(atom label by key, bond order by key pair, port atom by name) of a graph
     declaration with explicit single-bonded terminal H atoms folded into their
