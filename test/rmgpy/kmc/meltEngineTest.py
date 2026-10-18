@@ -1131,7 +1131,9 @@ def test_report_decomposes_the_thinned_acceptance():
     assert th["proposals"] == engine.thinned_proposals
     assert th["phi_sum"] == engine.phi_sum
     assert th["escape_probability"] == engine.phi_sum / engine.thinned_proposals
-    assert th["expected_accepted"] == engine.phi_sum
+    # phi_sum is the compensator of the accepted count, not a conditional expectation
+    assert "expected_accepted" not in th
+    assert "compensator" in th["phi_sum_definition"] and "event cap" in th["phi_sum_definition"]
     fired = Counter(e.template for e in engine.events)
     names = {c.name for c in engine.classes if c.met_reverse}
     assert {row["template"] for row in th["classes"]} == names
@@ -1142,3 +1144,103 @@ def test_report_decomposes_the_thinned_acceptance():
         assert row["accepted"] == fired[row["template"]]
         assert row["escape_probability"] == (row["phi_sum"] / row["proposals"] if row["proposals"] else None)
     assert th["accepted"] == sum(fired[n] for n in names)
+
+
+# --------------------------------------------------------------------------
+# I-164 rework 1: every key component and invalidation of the fallback-phi
+# cache is pinned by a case in which dropping it serves a stale value
+# --------------------------------------------------------------------------
+def _mid_strip_engine():
+    """An engine indexed with one mid-chain carbon radical (its two C-C bonds
+    are no homolysis site), whose state then re-attaches the H outside the
+    engine: one commit, after which the index is stale."""
+    from rmgpy.kmc.melt_state import SetBond, SetRadical
+    engine = me.MeltEngine(S.pe_spec({5: 4}), S.ToyCatalog(names=("homolysis", "recombination")), 700.0,
+                           np.random.default_rng(1))
+    state = engine.state
+    mid = [c for c in S.carbons(state, 0)
+           if sum(1 for b in state.atoms[c].edges if state.atoms[b].element == "C") == 2][1]
+    h = S.strip_h(state, mid)
+    engine.rebuild()
+    old = sorted({state.components.component_of(mid), state.components.component_of(h)})
+    state.apply([SetBond(mid, h, 0.0, 1.0), SetRadical(mid, 1, 0), SetRadical(h, 1, 0)])
+    added = [state.components.component_of(mid)]
+    return engine, old, added
+
+
+@pytest.mark.parametrize("refresh", ["rebuild", "update"])
+def test_fallback_phi_cache_is_keyed_on_the_index_revision(refresh):
+    """At one state revision the index changes (rebuild, or _update of the
+    changed components): the cached value of the old index is not served."""
+    engine, old, added = _mid_strip_engine()
+    ci = min(c.index for c in engine.classes if c.met_reverse)
+    revision = engine.state.revision
+    stale = engine._fallback_phi(ci)
+    assert stale[0] == _exact_current_phi(engine, ci)       # the old index's own value
+    if refresh == "rebuild":
+        engine.rebuild()
+    else:
+        engine._update(old, added)
+    assert engine.state.revision == revision
+    fresh = _exact_current_phi(engine, ci)
+    assert fresh != stale[0]                                # the index change moves the value
+    assert engine._fallback_phi(ci)[0] == fresh
+
+
+def test_update_bumps_the_index_revision():
+    engine, old, added = _mid_strip_engine()
+    before = engine._index_revision
+    engine._update(old, added)
+    assert engine._index_revision == before + 1
+
+
+def _transport_engine(temperature=700.0):
+    """Constant template weights (the toy catalog ignores T) and a transport
+    with an activation energy: only k_D, hence phi, moves with temperature."""
+    met = dict(S.pe_met(), segment_diffusivity={"law": "arrhenius", "D_ref_m2_s": 1.0e-17, "T_ref_K": 700.0,
+                                                "Ea_J_mol": 6.0e4})
+    engine = me.MeltEngine(S.pe_spec({5: 4}, met_block=met), S.ToyCatalog(names=("homolysis", "recombination")),
+                           temperature, np.random.default_rng(1), temperature_range=(600.0, 900.0))
+    S.strip_h(engine.state, S.end_carbons(engine.state, 0)[0])
+    engine.rebuild()
+    return engine
+
+
+def test_fallback_phi_cache_is_keyed_on_the_temperature():
+    engine = _transport_engine()
+    ci = min(c.index for c in engine.classes if c.met_reverse)
+    weights, index, revision = engine.weights, engine._index_revision, engine.state.revision
+    at_700 = engine._fallback_phi(ci)
+    engine.set_temperature(840.0)
+    assert (engine.weights, engine._index_revision, engine.state.revision) == (weights, index, revision)
+    fresh = _exact_current_phi(engine, ci)
+    assert fresh > at_700[0] + 0.1                         # faster diffusion, more escape
+    assert engine._fallback_phi(ci)[0] == fresh
+    assert fresh == pytest.approx(_exact_current_phi(_transport_engine(840.0), ci), rel=1e-12)
+
+
+def _strip_last_h(state, carbon):
+    from rmgpy.kmc.melt_state import SetBond, SetRadical
+    h = max(x for x in state.atoms[carbon].edges if state.atoms[x].element == "H")
+    state.apply([SetBond(carbon, h, 1.0, 0.0), SetRadical(carbon, 0, 1), SetRadical(h, 0, 1)])
+
+
+def test_fallback_phi_cache_belongs_to_one_state_object():
+    """The engine given another state object at the same revision number (and
+    an unchanged index revision) does not serve the first state's value."""
+    def make():
+        return me.MeltEngine(S.pe_spec({5: 2, 8: 2}), S.ToyCatalog(names=("homolysis", "recombination")),
+                             700.0, np.random.default_rng(1))
+
+    engine, other = make(), make()
+    _strip_last_h(engine.state, S.end_carbons(engine.state, 0)[0])
+    engine.rebuild()
+    _strip_last_h(other.state, S.end_carbons(other.state, 3)[0])
+    ci = min(c.index for c in engine.classes if c.met_reverse)
+    first = engine._fallback_phi(ci)
+    index = engine._index_revision
+    engine.state = other.state
+    assert engine.state.revision == 1 and engine._index_revision == index
+    fresh = _exact_current_phi(engine, ci)
+    assert fresh != first[0]
+    assert engine._fallback_phi(ci)[0] == fresh

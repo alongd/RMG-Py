@@ -1339,3 +1339,30 @@ def test_time_series_refuses_a_bad_event_cap(tmp_path):
     for bad in (-1, 1.5, True, "3"):
         with pytest.raises(mo.ObservablesError, match="max_events"):
             mo.write_time_series(engine, [0.0, 1.0], tmp_path / "s.jsonl", xs=3, max_events=bad)
+
+
+def test_an_observation_reached_exactly_at_the_event_cap_is_written(tmp_path):
+    """The capping event fires exactly at a requested time: the engine has
+    reached it, so the observation is written (byte-identical to the uncapped
+    run's).  When every requested time is observed the stop reason is the
+    horizon's; "max_events" means a requested time was not reached."""
+    t = 0.7664493045518134                       # the first event time of this seed
+    spec = S.pe_spec({6: 1})
+
+    def engine():
+        return me.MeltEngine(spec, S.ToyCatalog(names=("homolysis",)), 700.0, np.random.default_rng(1))
+
+    free = mo.write_time_series(engine(), [0.0, t], tmp_path / "free.jsonl", xs=3)
+    assert free.events == 1 and free.stop_reason == "horizon"
+    capped = engine()
+    out = mo.write_time_series(capped, [0.0, t], tmp_path / "capped.jsonl", xs=3, max_events=1)
+    assert capped.time == t and out.events == 1
+    assert [x["time_s"] for x in out] == [0.0, t]
+    assert out.stop_reason == "horizon"
+    obs, stops = _records(tmp_path / "capped.jsonl")
+    assert (tmp_path / "capped.jsonl").read_text().splitlines()[:2] == \
+        (tmp_path / "free.jsonl").read_text().splitlines()[:2]
+    assert stops[0]["stop_reason"] == "horizon" and stops[0]["observations"] == 2
+    # a later requested time the cap keeps the engine from reaching
+    more = mo.write_time_series(engine(), [0.0, t, 5.0], tmp_path / "more.jsonl", xs=3, max_events=1)
+    assert [x["time_s"] for x in more] == [0.0, t] and more.stop_reason == "max_events"
