@@ -423,7 +423,8 @@ def test_neutral_state_table_is_pinned(element):
 
 
 PINNED_AROMATIC = {"C": {(0, 2, 1), (0, 3, 0)}, "Si": {(0, 2, 1), (0, 3, 0)},
-                   "N": {(1, 2, 0), (0, 2, 1)}, "P": {(1, 2, 0), (0, 2, 1)},
+                   "N": {(1, 2, 0), (0, 2, 1), (0, 2, 2)},
+                   "P": {(1, 2, 0), (0, 2, 1), (0, 2, 2)},
                    "O": {(1, 2, 0)}, "S": {(1, 2, 0)}}
 
 
@@ -459,6 +460,89 @@ def _aromatic(smiles):
         if atom.symbol in ("O", "S"):
             atom.lone_pairs = 1
     return m
+
+
+def _sigma_radical(smiles):
+    """``smiles`` aromatic (``_aromatic``) with one H removed from the first
+    ring carbon carrying one: a sigma radical on an aromatic carbon (two B
+    bonds, one unpaired electron: state (0, 2, 1))."""
+    m = _aromatic(smiles)
+    carbon = next(a for a in m.atoms if a.is_carbon()
+                  and any(n.is_hydrogen() for n in a.bonds))
+    m.remove_atom(next(n for n in carbon.bonds if n.is_hydrogen()))
+    carbon.radical_electrons = 1
+    m.update_multiplicity()
+    return m, carbon
+
+
+def test_aromatic_sigma_radicals_count_their_electron():
+    """arom-radical-dropped: phenyl and 1-naphthyl sigma radicals (0, 2, 1)
+    are accepted; an aromatic carbon with a radical and an extra single bond
+    (0, 2, 2) is refused (the unpaired electron counts as valence)."""
+    from rmgpy.molecule import Atom, Bond
+    from rmgpy.kmc import domain as dom
+    for smiles in ("c1ccccc1", "c1ccc2ccccc2c1"):
+        m, carbon = _sigma_radical(smiles)
+        assert dom.aromatic_state(carbon) == (0, 2, 1)
+        verdict = dom.declared_interim_check(m)
+        assert verdict.accepted, (smiles, verdict.reason)
+    m, carbon = _sigma_radical("c1ccccc1")
+    methyl = Atom(element="C", radical_electrons=0, lone_pairs=0)
+    m.add_atom(methyl)
+    m.add_bond(Bond(carbon, methyl, order=1))
+    for _ in range(3):
+        h = Atom(element="H", radical_electrons=0, lone_pairs=0)
+        m.add_atom(h)
+        m.add_bond(Bond(methyl, h, order=1))
+    assert dom.aromatic_state(carbon) == (0, 2, 2)
+    assert "aromatic" in dom.declared_interim_check(m).reason
+
+
+def _oxide_ring(hetero, kekule):
+    """A six-membered ring with ``hetero`` (no lone pair) double-bonded to an
+    exocyclic O: phosphorin oxide (P) or neutral pyridine N-oxide (N), in the
+    Kekule form or with every ring bond aromatic (B)."""
+    from rmgpy.molecule import Atom, Bond, Molecule
+    m = Molecule()
+    ring = [Atom(element=hetero if i == 0 else "C", radical_electrons=0, lone_pairs=0,
+                 charge=0) for i in range(6)]
+    for atom in ring:
+        m.add_atom(atom)
+    oxygen = Atom(element="O", radical_electrons=0, lone_pairs=2, charge=0)
+    m.add_atom(oxygen)
+    for i in range(6):
+        order = (2 if i % 2 == 0 else 1) if kekule else 1.5
+        m.add_bond(Bond(ring[i], ring[(i + 1) % 6], order=order))
+    m.add_bond(Bond(ring[0], oxygen, order=2))
+    for atom in ring[1:]:
+        h = Atom(element="H", radical_electrons=0, lone_pairs=0, charge=0)
+        m.add_atom(h)
+        m.add_bond(Bond(atom, h, order=1))
+    m.update_multiplicity()
+    for k, atom in enumerate(m.atoms):
+        atom.id = k
+    return m, ring[0]
+
+
+def test_aromatic_p_and_n_oxide_states_follow_rmg_types():
+    """r130 item 1: phosphorin oxide is accepted in both forms (RMG types
+    P5dd and P5bd); pyridine N-oxide written neutral is accepted in the
+    aromatic form (RMG type N5bd).  Its neutral Kekule form has no RMG atom
+    type at all (no neutral N5dd: RMG writes N-oxides charge separated), so
+    it stays refused."""
+    from rmgpy.molecule.atomtype import AtomTypeError, get_atomtype
+    from rmgpy.kmc import domain as dom
+    elements = ("C", "H", "N", "O", "P")
+    for hetero, kekule, rmg_type in (("P", True, "P5dd"), ("P", False, "P5bd"),
+                                     ("N", False, "N5bd")):
+        m, atom = _oxide_ring(hetero, kekule)
+        assert get_atomtype(atom, atom.edges).label == rmg_type
+        verdict = dom.declared_interim_check(m, elements)
+        assert verdict.accepted, (hetero, kekule, verdict.reason)
+    m, atom = _oxide_ring("N", True)
+    with pytest.raises(AtomTypeError):
+        get_atomtype(atom, atom.edges)
+    assert not dom.declared_interim_check(m, elements).accepted
 
 
 def test_interim_check_reads_aromatic_bonds_as_rmg_does():
@@ -851,6 +935,36 @@ def test_a_changed_element_set_is_a_changed_policy(habs, pp_cases):
                for r in changed["refusals"]), changed["refusals"]
     stamped = _pp_certificate(habs, case, domain=cho.domain)
     assert stamped["domain_policy"] == "declared_interim_v1[C,H,O]"
+
+
+def _unnumbered(smiles):
+    from rmgpy.molecule import Molecule
+    return Molecule().from_smiles(smiles)
+
+
+def test_species_keys_distinguish_unnumbered_molecules():
+    """r130 item 2: unnumbered atoms all carry id -1; keyed by their rows,
+    ethane then propane collapsed onto 'CC'.  SpeciesKeys numbers a copy, so
+    every caller gets the species' own key, and the caller's molecule keeps
+    its ids."""
+    from rmgpy.kmc import channels as chm
+    species = chm.SpeciesKeys()
+    ethane, propane = _unnumbered("CC"), _unnumbered("CCC")
+    assert [species(ethane), species(propane)] == ["CC", "CCC"]
+    assert all(a.id == -1 for a in ethane.atoms)
+    numbered = chm.SpeciesKeys()
+    assert [numbered(_mol("CC")), numbered(_mol("CCC"))] == ["CC", "CCC"]
+
+
+def test_molecule_rows_refuse_duplicate_atom_ids():
+    from rmgpy.kmc import rmg_moves as rm
+    with pytest.raises(ValueError, match="atom id"):
+        rm.molecule_rows(_unnumbered("CC"))
+    m = _mol("CCO")
+    m.atoms[2].id = m.atoms[0].id
+    with pytest.raises(ValueError, match="atom id"):
+        rm.molecule_rows(m)
+    assert sorted(rm.molecule_rows(_mol("CC"))) == list(range(8))
 
 
 def test_training_keys_key_every_training_species(habs):
