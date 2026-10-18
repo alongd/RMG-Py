@@ -103,6 +103,7 @@ from rmgpy.kmc import rmg_moves as rr
 from rmgpy.kmc import run as kr
 from rmgpy.kmc.event_record import same_species
 from rmgpy.molecule import Molecule
+from rmgpy.molecule.molecule import Bond
 from rmgpy.quantity import Quantity
 
 SCHEMA = "kmc-mom-producer/1"
@@ -668,6 +669,14 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
          "accepted-state floors, max(1e-30, 100 atol)), pool_coordinate_breaks (mechanisms that leave the "
          "coordinate withhold every whole key after t = 0); mu2 under MoM's closures (mu3 log-Lagrange, "
          "gamma) is MoM's model, compared as such"),
+        ("pool_chain_classes", "kMC classes before polymer",
+         "a pool chain kMC would class as a declared species (pool_species_candidates: chain mass at a whole DP "
+         "equal to the species' mass, structure-checked for pools without defect) is booked as that species "
+         "where the pool's moments pin that DP and the end-group ledger is zero, else the polymer rows and "
+         "the species row are withheld after t = 0; a pool receiving volatile ejections may hold chains below "
+         "one unit's backbone (kMC class light): its polymer rows are withheld after t = 0; pool moments "
+         "below -f, or units without chains, are corruption (pool_state) and withhold mass, molecules and "
+         "the whole keys"),
         ("kmc_classes", "melt_observables.MeltObserver.category",
          "every MoM species outside the pools and the bath is put in kMC's class (declared species, "
          "polymer-derived when floor(B / b) >= 1, else light) by kMC's own classifier on its structure; "
@@ -1063,10 +1072,8 @@ def whole_moments(row, first, pools, columns, ends, shift, polymer_cols, n_mass,
     mu0_pools = math.fsum(row[columns[p["label"]][0]] for p in pools)
     w0 = mu0_pools + math.fsum(row[i] for i in polymer_cols)
     w1 = (booked - e * mu0_pools) / a + math.fsum(row[i] * n_mass[i] for i in polymer_cols)
-    ledger = math.fsum(ends[p["label"]] * (first[columns[p["label"]][0]] - row[columns[p["label"]][0]])
-                       for p in pools)
-    tolerance = math.fsum(ends[p["label"]] for p in pools) * 2.0 * MOM_MOMENT_FLOOR
-    if abs(ledger) > tolerance:
+    ledger, zero = whole_ledger(row, first, pools, columns, ends)
+    if not zero:
         return [w0, w1, None], (f"MoM's end-group ledger books {ledger!r} g/mol x mol of end groups minted "
                                 "or removed (sum of e_p L_p): how that deficit spreads over chains, hence "
                                 "mu2 and Mw, is not in the profile")
@@ -1077,6 +1084,113 @@ def whole_moments(row, first, pools, columns, ends, shift, polymer_cols, n_mass,
         w2 += m2 + 2.0 * d * m1 + d * d * m0
     w2 += math.fsum(row[i] * n_mass[i] ** 2 for i in polymer_cols)
     return [w0, w1, w2], None
+
+
+def whole_ledger(row, first, pools, columns, ends) -> Tuple[float, bool]:
+    """(sum of e_p L_p, whether it is zero within MoM's floors: 2 f per pool's e_p)."""
+    ledger = math.fsum(ends[p["label"]] * (first[columns[p["label"]][0]] - row[columns[p["label"]][0]])
+                       for p in pools)
+    tolerance = math.fsum(ends[p["label"]] for p in pools) * 2.0 * MOM_MOMENT_FLOOR
+    return ledger, abs(ledger) <= tolerance
+
+
+def pool_state(row, pools, columns, floor: float = MOM_MOMENT_FLOOR) -> Tuple[Dict[str, List[float]], List[str]]:
+    """Each pool's moments under MoM's accepted-state check
+    (``_assert_pool_moments_accepted``): a moment below ``-f`` is corruption,
+    within ``[-f, 0)`` it is clamped to 0; a pool with ``mu0 <= f`` whose mu1
+    or mu2 is beyond ``f`` holds units without chains (corruption)."""
+    out, corrupt = {}, []
+    for p in pools:
+        label = p["label"]
+        m = [row[i] for i in columns[label]]
+        for k in range(3):
+            if m[k] < -floor:
+                corrupt.append(f"pool {label} mu{k} = {m[k]!r} mol is below MoM's accepted-state floor -{floor!r} "
+                               "(corrupt)")
+            elif m[k] < 0.0:
+                m[k] = 0.0
+        if m[0] <= floor and (abs(m[1]) > floor or abs(m[2]) > floor):
+            corrupt.append(f"pool {label} holds units without chains (mu0 = {m[0]!r}, mu1 = {m[1]!r}, "
+                           f"mu2 = {m[2]!r} mol; corrupt)")
+        out[label] = m
+    return out, corrupt
+
+
+def pinned_at(m: Sequence[float], n: int, floor: float = MOM_MOMENT_FLOOR) -> bool:
+    """Every chain of a pool with moments ``m`` is at DP ``n`` (mu1 = n mu0,
+    mu2 = n^2 mu0 within the moments' floors)."""
+    return abs(m[1] - n * m[0]) <= floor * (n + 1) and abs(m[2] - n * n * m[0]) <= floor * (n * n + 1)
+
+
+def _capped_chain(repeat, heads: Sequence[str], n: int) -> Optional[Molecule]:
+    """The chain head - n repeat units - tail of a pool's declared structure
+    (repeat unit: head port *2, tail port *1, radical at each; end groups:
+    mono-radical SMILES), or None when it cannot be built."""
+    try:
+        chain = Molecule(smiles=heads[0])
+        open_atom = [a for a in chain.atoms if a.radical_electrons == 1]
+        if len(open_atom) != 1:
+            return None
+        open_atom = open_atom[0]
+        for _ in range(n):
+            unit = repeat.copy(deep=True)
+            head = next(a for a in unit.atoms if a.label == "*2")
+            tail = next(a for a in unit.atoms if a.label == "*1")
+            chain = chain.merge(unit)
+            chain.add_bond(Bond(open_atom, head, 1))
+            open_atom.decrement_radical()
+            head.decrement_radical()
+            open_atom = tail
+        cap = Molecule(smiles=heads[1])
+        port = [a for a in cap.atoms if a.radical_electrons == 1]
+        if len(port) != 1:
+            return None
+        chain = chain.merge(cap)
+        chain.add_bond(Bond(open_atom, port[0], 1))
+        open_atom.decrement_radical()
+        port[0].decrement_radical()
+        for atom in chain.atoms:
+            atom.label = ""
+        chain.update_multiplicity()
+        chain.update()
+        return chain
+    except Exception:          # RMG raises several types for an unbuildable structure
+        return None
+
+
+def pool_species_candidates(pools, structures: Dict[str, Molecule], masses: Dict[str, float],
+                            deck_repeat) -> Dict[str, List[Tuple[str, int, float]]]:
+    """Per pool, the declared species a chain of it may be (kMC's class
+    "species" comes before "polymer"): a species whose molar mass is the
+    pool's chain mass a_p n + e_p - defect_p at a whole DP n >= 1.  For a pool
+    without defect the chain's structure is built from the pool's declared
+    repeat unit (else the deck's) and end groups and must be the species
+    (``same_species``); a defect pool keeps no structure, so its formula
+    match stands."""
+    out = {}
+    for p in pools:
+        a_p = p["monomer_mw_g_mol"]
+        e_p = _end_mass(p["end_groups"])
+        defect = float(p.get("chain_mass_defect_g_mol") or 0.0)
+        repeat = deck_repeat
+        if p.get("monomer_adj_list"):
+            try:
+                repeat = Molecule().from_adjacency_list(p["monomer_adj_list"])
+            except Exception:
+                repeat = deck_repeat
+        found = []
+        for name, molecule in structures.items():
+            x = (masses[name] - e_p + defect) / a_p
+            n = round(x)
+            if n < 1 or abs(x - n) > 1e-6:
+                continue
+            if defect == 0.0:
+                chain = _capped_chain(repeat, p["end_groups"], n)
+                if chain is not None and not same_species(chain, molecule):
+                    continue
+            found.append((name, n, masses[name]))
+        out[p["label"]] = found
+    return out
 
 
 BREAKING_ARCHETYPES = {
@@ -1136,7 +1250,8 @@ def pool_coordinate_breaks(doc: dict, label_mass: Dict[str, float], a: float) ->
     return {k: text for k in WHOLE_KEYS}
 
 
-def realizable(whole: Sequence[float], floor: float = MOM_MOMENT_FLOOR) -> Tuple[List[float], Optional[str]]:
+def realizable(whole: Sequence[float], floor: float = MOM_MOMENT_FLOOR, *, a: float = 1.0,
+               e: float = 0.0) -> Tuple[List[float], Optional[str]]:
     """Whole-ensemble moments under MoM's own accepted-state tolerances
     (rmgpy/solver/polymer.pyx ``_assert_pool_moments_accepted``): a moment
     below ``-f`` is corruption, within ``[-f, 0)`` it is clamped to 0; the
@@ -1144,15 +1259,20 @@ def realizable(whole: Sequence[float], floor: float = MOM_MOMENT_FLOOR) -> Tuple
     (the variance census tolerance) leaves the realizable set, within it
     ``mu2`` is clamped to ``mu1^2 / mu0`` (zero variance).  Returns the
     clamped moments and None, or the moments and the reason Mn / Mw cannot
-    be formed.  The cone ``mu1 >= mu0`` is not required: a mass DP may be
-    below 1."""
+    be formed.  mu1 is neither required nor clamped non-negative (a mass DP
+    (M - e) / a is negative for a molecule lighter than the end pair); the
+    cone ``mu1 >= mu0`` is not required; Mn = (a mu1 + e mu0) / mu0 and the Mw
+    numerator must be positive; mu0 = 0 with mu1 or mu2 beyond f is
+    refused."""
     w = [float(x) for x in whole]
-    for k in range(3):
+    for k in (0, 2):                     # mu1 is a sum of mass DPs, which may be negative
         if w[k] < -floor:
             return w, f"whole mu{k} = {w[k]!r} mol is below MoM's accepted-state floor -{floor!r}"
         if w[k] < 0.0:
             w[k] = 0.0
     if w[0] == 0.0:
+        if abs(w[1]) > floor or w[2] > floor:
+            return w, f"whole moments {w} hold mass DP without molecules"
         return w, None
     variance = w[0] * w[2] - w[1] * w[1]
     tolerance = floor * (abs(w[2]) + abs(w[0]) + 2.0 * abs(w[1])) + 2.0 * floor * floor
@@ -1161,6 +1281,9 @@ def realizable(whole: Sequence[float], floor: float = MOM_MOMENT_FLOOR) -> Tuple
                    f"-{tolerance!r}: no distribution has these moments")
     if variance < 0.0:
         w[2] = w[1] * w[1] / w[0]
+    mass = a * w[1] + e * w[0]
+    if mass <= 0.0 or a * a * w[2] + 2.0 * a * e * w[1] + e * e * w[0] <= 0.0:
+        return w, f"whole Mn / Mw of {w} are not positive (a mu1 + e mu0 = {mass!r})"
     return w, None
 
 
@@ -1247,6 +1370,15 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
     gas_first, missing_first = mass_of(first, system)
     system_first = None if gas_first is None else mass_first + gas_first
     bath_first, _m = mass_of(first, list(bath.values()))
+    species_mass = {name: m.get_molecular_weight() * 1000.0 for name, m in species_structures(facts).items()}
+    candidates = pool_species_candidates(pools, species_structures(facts), species_mass,
+                                         classes.observer.spec.legacy_molecules()[0])
+    light_pools = {}
+    for r in pool_doc.get("reactions") or ():
+        units = (r.get("params") or {}).get("eject_units")
+        if (not r.get("refused") and r.get("archetype") == "volatile_ejection/1"
+                and isinstance(units, (int, float)) and units > 0 and r.get("dst_pool") in columns):
+            light_pools[r["dst_pool"]] = max(units, light_pools.get(r["dst_pool"], 0.0))
     pool_breaks = pool_coordinate_breaks(
         pool_doc, {p["label"]: ends[p["label"]] - float(p.get("chain_mass_defect_g_mol") or 0.0) for p in pools},
         a_deck)
@@ -1265,12 +1397,54 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
         closes = (residual is not None and abs(residual) <= MASS_CLOSURE_RELATIVE * system_first
                   and bath_residual is not None and abs(bath_residual) <= MASS_CLOSURE_RELATIVE * bath_first)
         withheld = {}
+        pm, corrupt = pool_state(row, pools, columns)
+        booked_as, blocked = {}, []
+        if t > data[0][0]:
+            ledger_zero = whole_ledger(row, first, pools, columns, ends)[1]
+            for label, cands in candidates.items():
+                m = pm[label]
+                if m[0] <= MOM_MOMENT_FLOOR or not cands:
+                    continue
+                pinned = [(name, n) for name, n, _M in cands if pinned_at(m, n)]
+                if ledger_zero and len(pinned) == 1:
+                    booked_as[label] = pinned[0]
+                else:
+                    blocked.append(f"pool {label} may hold chains that kMC classes as declared species "
+                                   f"{sorted({c[0] for c in cands})} (DP {sorted({c[1] for c in cands})}) and its "
+                                   "moments do not pin them" + ("" if ledger_zero else " (end-group ledger nonzero)"))
+            blocked += [f"pool {label} receives volatile ejections of {units} units: chains below one repeat "
+                        "unit's backbone (kMC class light) may be in it" for label, units in sorted(light_pools.items())
+                        if pm[label][0] > MOM_MOMENT_FLOOR]
+        reasons = []
         if unclassified:
-            withheld.update({k: f"unclassifiable species present: {unclassified}" for k in WHOLE_KEYS})
+            reasons.append(f"unclassifiable species present: {unclassified}")
+        reasons += corrupt + blocked
+        polymer_withheld = "; ".join(reasons) or None
+        if polymer_withheld is not None:
+            withheld.update({k: polymer_withheld for k in WHOLE_KEYS})
+            for label in candidates:
+                if any(label in b for b in blocked):
+                    for name, _n, _M in candidates[label]:
+                        quantities["species_mol"].pop(name, None)
         else:
-            quantities["polymer_derived_molecules_mol"] = mu[0] + math.fsum(row[i] for i in polymer_cols)
-            whole, reason = whole_moments(row, first, pools, columns, ends, shift, polymer_cols, n_mass,
+            for label, (name, _n) in booked_as.items():
+                quantities["species_mol"][name] = quantities["species_mol"].get(name, 0.0) + pm[label][0]
+            clamped_row = list(row)
+            for label in pm:
+                for k, i in enumerate(columns[label]):
+                    clamped_row[i] = pm[label][k]
+            booked_mu0 = math.fsum(pm[label][0] for label in booked_as)
+            booked_mass = math.fsum(pm[label][0] * species_mass[name] for label, (name, _n) in booked_as.items())
+            quantities["polymer_derived_molecules_mol"] = (math.fsum(v[0] for v in pm.values()) - booked_mu0
+                                                           + math.fsum(row[i] for i in polymer_cols))
+            whole, reason = whole_moments(clamped_row, first, pools, columns, ends, shift, polymer_cols, n_mass,
                                           booked=mass, e=e_deck, a=a_deck)
+            for label, (name, _n) in booked_as.items():
+                n_s = (species_mass[name] - e_deck) / a_deck
+                whole[0] -= pm[label][0]
+                whole[1] -= pm[label][0] * n_s
+                if whole[2] is not None:
+                    whole[2] -= pm[label][0] * n_s * n_s
             if not closes:
                 for k in ("whole_mu1_mol", "whole_mu2_mol", "whole_Mn_g_mol", "whole_Mw_g_mol"):
                     withheld[k] = "the kMC inventory or the bath does not close: MoM's booked chain mass is not trusted"
@@ -1282,16 +1456,16 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
                     withheld.setdefault(k, pool_breaks[k])
             if whole[2] is None:              # Mn needs mu0 and mu1 only: a zero-variance stand-in for mu2
                 whole[2] = whole[1] * whole[1] / whole[0] if whole[0] > 0.0 else 0.0
-            clamped, bad = realizable(whole)
+            clamped, bad = realizable(whole, a=a_deck, e=e_deck)
             if bad is not None:
                 for k in ("whole_Mn_g_mol", "whole_Mw_g_mol"):
                     withheld.setdefault(k, bad)
-            mn, mw = mo.whole_averages(clamped, a_deck, e_deck)
+            mn, mw = mo.whole_averages(clamped, a_deck, e_deck) if bad is None else (None, None)
             values = {"whole_mu0_mol": clamped[0], "whole_mu1_mol": clamped[1], "whole_mu2_mol": clamped[2],
                       "whole_Mn_g_mol": mn, "whole_Mw_g_mol": mw}
             quantities.update({k: v for k, v in values.items() if k not in withheld})
             if closes and oligomer_mass is not None:
-                polymer = mass + oligomer_mass
+                polymer = mass + oligomer_mass - booked_mass
                 quantities["polymer_condensed_mass_g"] = polymer
                 quantities["polymer_conversion"] = 1.0 - polymer / facts["initial_mass_g"]
         check_quantity_keys(quantities, facts["species"])
@@ -1304,6 +1478,8 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
                             "code_condensed_mass_g": code, "kmc_inventory_species_mass_g": gas,
                             "species_without_structure": missing or missing_first,
                             "unclassified_species": unclassified, "whole_withheld": withheld,
+                            "polymer_withheld": polymer_withheld,
+                            "pools_booked_as_species": {k: list(v) for k, v in booked_as.items()},
                             "mass_closure_residual_g": residual, "bath_closure_residual_g": bath_residual,
                             "mass_exported": "polymer_condensed_mass_g" in quantities,
                             "native_Mn_g_mol": a * mu[1] / mu[0] if mu[0] else None,
@@ -1317,7 +1493,8 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
             "bath_columns": {label: header[i] for label, i in bath.items()},
             "species_classes": {header[i]: kind[i] for i in system},
             "polymer_species_mass_dp": {header[i]: n_mass[i] for i in polymer_cols},
-            "pool_mass_dp_shift": shift}
+            "pool_mass_dp_shift": shift,
+            "pool_species_candidates": {k: [list(c) for c in v] for k, v in candidates.items()}}
     return entries, diagnostics, read
 
 
@@ -1453,6 +1630,7 @@ def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: i
                                 "--allow-inactive to convert it anyway, flagged")
     finish()                                   # conventions.json as the header digests it
     header = {"flags": flags, "conventions_sha256": _sha256((out / "conventions.json").read_bytes()),
+              "run": {"temperature_K": temperature, "pressure": list(facts["pressure"]), "horizon_s": times[-1]},
               "producer": {"schema": SCHEMA, "deck_sha256": deck.sha256, "input_sha256": manifest["input_sha256"],
                            "mom_checkout": manifest["mom_checkout"]}}
     (out / "mom.json").write_text(json.dumps({"header": header, "entries": entries}, indent=1, allow_nan=False)

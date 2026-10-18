@@ -438,7 +438,7 @@ def test_a_booking_that_does_not_close_exports_no_mass(setup):
     out = setup["tmp"] / "out"
     produce(setup, out)
     mu = declared(setup["spec"])
-    x = 1e-2
+    x = 1e-3                        # mu0 stays positive to 45 s
 
     def main(t):
         return mu[0] - x * t * t, mu[1] - 3 * x * t * t, mu[2] - 9 * x * t * t
@@ -835,26 +835,26 @@ def test_an_expanded_multi_arrhenius_row_is_counted_by_name(setup):
 
 
 def test_the_bath_does_not_dilute_the_mass_closure(tmp_path):
-    """1 ug of PE in 1 mol N2: a declared butane appears while the pool keeps
+    """1 ug of PE in 1 mol N2: a declared ethyl appears while the pool keeps
     its mass (the exported polymer mass would be 3.59 % high).  Against the
     bath it closes to 1e-9; against the kMC inventory it does not."""
     def tiny(mapping):
         mapping["initial_mass_kg"] = 1.0e-9
 
-    s = make_setup(tmp_path, BASE, edit=tiny, small={"butane": S.BUTANE})
+    s = make_setup(tmp_path, BASE, edit=tiny, small={"ethyl": S.ETHYL})
     out = tmp_path / "out"
     produce(s, out)
     mu = declared(s["spec"])
-    b = 0.0359e-6 / mw("CCCC")
-    butane = Molecule(smiles="CCCC").to_adjacency_list()
+    b = 0.0359e-6 / mw("[CH2]C")
+    ethyl = Molecule(smiles="[CH2]C").to_adjacency_list()
     write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: mu, 0.0)],
-              gas=ZERO_GAS + [("C4H10(4)", butane, lambda t: b * t / 40.0)])
+              gas=ZERO_GAS + [("C2H5(4)", ethyl, lambda t: b * t / 40.0)])
     produce(s, out, mode="convert")
     entries = mom_entries(out)
     assert "polymer_condensed_mass_g" in entries[0]["quantities"]
     for entry in entries[1:]:
         assert "polymer_condensed_mass_g" not in entry["quantities"]
-    assert entries[-1]["quantities"]["species_mol"]["butane"] == pytest.approx(b, rel=1e-12)
+    assert entries[-1]["quantities"]["species_mol"]["ethyl"] == pytest.approx(b, rel=1e-12)
 
 
 def test_a_bath_that_does_not_close_exports_no_mass(setup):
@@ -1477,3 +1477,20 @@ def test_a_negative_pool_moment_is_clamped_only_within_the_floor(setup, depth, c
     produce(setup, out, end=10.0, snapshots=2, mode="convert")
     q = mom_entries(out)[-1]["quantities"]
     assert (set(WHOLE) <= set(q)) is clamped and ("polymer_condensed_mass_g" in q) is clamped
+
+
+def test_an_isomer_of_a_pool_chain_is_not_a_candidate(tmp_path):
+    """A declared isobutane has the formula of a capped PE DP-2 chain
+    (n-butane) but not its structure: the pool's chains stay polymer."""
+    isobutane = {"graph": {"atoms": [S._atom("c", hydrogens=1)] + [S._atom(f"m{k}", hydrogens=3) for k in range(3)],
+                           "bonds": [{"atoms": ["c", f"m{k}"], "order": 1} for k in range(3)],
+                           "electronic_state": {"multiplicity": 1}}, "disposition": "mobile"}
+    s = make_setup(tmp_path, BASE, small={"isobutane": isobutane})
+    out = tmp_path / "out"
+    produce(s, out)
+    write_run(out, times=PROFILE_T, pools=[(LABEL, drift(declared(s["spec"])), 0.0)],
+              gas=ZERO_GAS + [("C4H10(4)", Molecule(smiles="CC(C)C").to_adjacency_list(), lambda t: 0.0)])
+    produce(s, out, mode="convert")
+    q = mom_entries(out)[-1]["quantities"]
+    assert "polymer_derived_molecules_mol" in q and "isobutane" in q["species_mol"]
+    assert json.loads((out / "producer.json").read_text())["read"]["pool_species_candidates"] == {LABEL: []}
