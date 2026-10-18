@@ -554,7 +554,7 @@ def test_deck_side_group_channels_reach_the_observables(tmp_path):
     assert kr.read_deck(deck).side_group_homolysis == channels
     out = tmp_path / "sgh"
     manifest = kr.run(deck, ps_catalog_files(tmp_path, bind=False), 700.0, [0.0, 1.0e6], [1], out,
-                      allow_unbound_catalog=True)
+                      allow_unbound_catalog=True, allow_unmatched_catalog=True)
     assert manifest["deck"]["side_group_homolysis"] == channels
     first = lines(out / "seed-1" / "observables.jsonl")[0]
     (row,) = first["side_group_channels"]
@@ -564,7 +564,7 @@ def test_deck_side_group_channels_reach_the_observables(tmp_path):
     wrong = write_deck(tmp_path / "wrong.py", mapping, sgh=[S.sgh_channel("aryl_C-Br", "aryl", 2.0)])
     with pytest.raises(kr.RunError):
         kr.run(wrong, ps_catalog_files(tmp_path, bind=False), 700.0, [0.0], [1], tmp_path / "wrong_out",
-               allow_unbound_catalog=True)
+               allow_unbound_catalog=True, allow_unmatched_catalog=True)
     assert not (tmp_path / "wrong_out").exists()
 
 
