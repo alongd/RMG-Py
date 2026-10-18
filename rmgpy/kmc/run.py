@@ -102,14 +102,17 @@ catalog must load at the run temperature (no extrapolation).
 **Run.** Isothermal.  Per seed ``n`` (sequentially, in one process, unless
 ``--jobs``): ``MeltEngine(spec, catalog, T, numpy.random.default_rng(n))`` and
 ``melt_observables.write_time_series`` with the invariant checker on, into
-``<out>/seed-<n>/observables.jsonl``; every line carries, as it is written,
-``seed`` and the labels above.  The optional event cap is run-wide per seed:
-when it is reached the seed stops, the observation in progress is not written
-(``observations`` counts the lines), and the stop reason is ``max_events``;
-an exception in a seed (engine, observation or report) stops it with stop reason ``error`` (``error`` names
-it; the traceback goes to stderr), the other seeds still run and the run's
-status is ``failed``; otherwise the stop reason is that of the last horizon
-(``horizon`` or ``absorbing``).
+``<out>/seed-<n>/observables.jsonl``; every observation line carries, as it is
+written, ``seed`` and the labels above, and the file ends with the time
+series' stop record (``melt_observables.STOP_SCHEMA``).  The optional event cap
+is run-wide per seed and is passed to ``write_time_series(max_events=...)``:
+when it is reached the seed stops and the observation in progress is not
+written (``observations`` counts the observation lines).  The seed's stop
+reason is the one ``write_time_series`` returns (``max_events``, ``horizon``
+or ``absorbing``; ``melt_observables.STOP_REASONS``), recorded as returned;
+an exception in a seed (engine, observation or report) stops it with stop
+reason ``error`` (``error`` names it; the traceback goes to stderr), the other
+seeds still run and the run's status is ``failed``.
 
 **Manifest** ``<out>/run.json`` (``kmc-melt-run/1``)::
 
@@ -125,7 +128,9 @@ status is ``failed``; otherwise the stop reason is that of the last horizon
     environment: {python, numpy, PYTHONHASHSEED}
     runs: [{seed, path, observables_sha256, observations, stop_reason, [error,]
             engine_time_s, events, null_proposals, wall_s,
-            report (engine report without its leak entries; null for a failed seed)}]
+            report (engine report without its leak entries, with its ``thinning``
+            decomposition: proposals, accepted, phi_sum and escape probability
+            per radical-increasing class; null for a failed seed)}]
     censoring: {seeds_requested, censored_times_s,
                 stopped_early: [{seed, stop_reason, observations,
                                  last_observed_time_s, engine_time_s}]}
@@ -772,32 +777,6 @@ def code_identity() -> dict:
 # --------------------------------------------------------------------------
 # one seed
 # --------------------------------------------------------------------------
-class _EventCapReached(Exception):
-    pass
-
-
-class _SeedEngine(me.MeltEngine):
-    """The engine with a run-wide event cap across ``write_time_series``'
-    horizon calls; records each call's stop reason.  Chemistry, clock and
-    index are the engine's own."""
-
-    def __init__(self, *args, event_cap: Optional[int] = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.event_cap = event_cap
-        self.stop_reasons: List[str] = []
-
-    def run(self, *, until=None, max_events=None, check=None):
-        if self.event_cap is not None:
-            left = max(0, self.event_cap - self.events_fired)
-            max_events = left if max_events is None else min(max_events, left)
-        result = super().run(until=until, max_events=max_events, check=check)
-        self.stop_reasons.append(result.stop_reason)
-        if (result.stop_reason == "max_events" and self.event_cap is not None
-                and self.events_fired >= self.event_cap):
-            raise _EventCapReached()
-        return result
-
-
 class _LabelledObserver(mo.MeltObserver):
     """The observer ``write_time_series`` would build, adding the run's labels
     to every observation as it is written."""
@@ -825,6 +804,12 @@ class _Context:
     label: Tuple[Tuple[str, Any], ...]
 
 
+def _observation_lines(text: str) -> List[str]:
+    """The observation lines of a time series (typed records such as the stop
+    record carry a ``record`` key and are not observations)."""
+    return [line for line in text.splitlines() if "record" not in json.loads(line)]
+
+
 def _run_seed(context: _Context, seed: int) -> dict:
     start = time.perf_counter()
     directory = context.out / f"seed-{seed}"
@@ -834,16 +819,14 @@ def _run_seed(context: _Context, seed: int) -> dict:
     engine = None
     report = leak = None
     try:
-        try:
-            engine = _SeedEngine(context.spec, context.catalog, context.temperature,
-                                 numpy.random.default_rng(seed), event_cap=context.max_events)
-            observer = _LabelledObserver(context.spec, xs=context.xs, identity=engine.identity,
-                                         side_group_homolysis=context.side_group_homolysis,
-                                         label=dict(context.label, seed=seed))
-            mo.write_time_series(engine, context.times, path, xs=context.xs, check=True, observer=observer)
-            stop = engine.stop_reasons[-1] if engine.stop_reasons else "horizon"
-        except _EventCapReached:
-            stop = "max_events"
+        engine = me.MeltEngine(context.spec, context.catalog, context.temperature,
+                               numpy.random.default_rng(seed))
+        observer = _LabelledObserver(context.spec, xs=context.xs, identity=engine.identity,
+                                     side_group_homolysis=context.side_group_homolysis,
+                                     label=dict(context.label, seed=seed))
+        series = mo.write_time_series(engine, context.times, path, xs=context.xs, check=True,
+                                      observer=observer, max_events=context.max_events)
+        stop = series.stop_reason
         report = engine.report()
         estimate = report.pop("leak_estimate")
         for key in ("leak_fraction", "leak_definition", "leak_num", "leak_den"):
@@ -859,7 +842,7 @@ def _run_seed(context: _Context, seed: int) -> dict:
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
     data = path.read_bytes() if path.exists() else b""
-    rows = data.decode().splitlines()
+    rows = _observation_lines(data.decode())
     result = {"seed": seed, "path": f"seed-{seed}/observables.jsonl", "observables_sha256": _sha256(data),
               "observations": len(rows), "stop_reason": stop,
               "last_observed_time_s": json.loads(rows[-1])["time_s"] if rows else None,
@@ -1071,7 +1054,7 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
             with _executor(jobs, context) as pool:
                 for result in pool.map(_seed_task, seeds):
                     record(result)
-        observations = {r["seed"]: [json.loads(x) for x in (out / r["path"]).read_text().splitlines()]
+        observations = {r["seed"]: [json.loads(x) for x in _observation_lines((out / r["path"]).read_text())]
                         if (out / r["path"]).exists() else [] for r in manifest["runs"]}
         write_comparison(out / "comparison.csv",
                          comparison_rows(observations, times, mom_by_time, len(seeds)), labels)

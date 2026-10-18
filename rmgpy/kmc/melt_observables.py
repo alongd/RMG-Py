@@ -98,7 +98,9 @@ recomputed from each component's composition (exact rationals): the line then
 catches stored-mass drift between the event's components.
 
 Export: ``write_time_series`` writes one JSON line per requested time (the
-engine's horizon API), ``mom_reported_quantities`` maps one observation to the
+engine's horizon API) and, last, one typed stop record (``"record": "stop"``,
+schema ``STOP_SCHEMA``): why the call stopped (``STOP_REASONS``) and its event
+count; observation lines carry no ``record`` key.  ``mom_reported_quantities`` maps one observation to the
 quantities the MoM solver reports, ``side_by_side`` compares them with a MoM
 run's own numbers.
 """
@@ -121,6 +123,11 @@ from rmgpy.polymer_mass import (Composition, EvolvedPoolMass, ExplicitInventory,
                                 observables_from_moments)
 
 OBSERVABLES_SCHEMA = "kmc-melt-observables/6"
+STOP_SCHEMA = "kmc-melt-stop/1"
+# The reasons ``write_time_series`` can stop with: the last requested time was
+# reached ("horizon"), or the engine had no enabled channel when it was
+# ("absorbing"), or the call's event cap was reached first ("max_events").
+STOP_REASONS = ("horizon", "absorbing", "max_events")
 UNITS = {"amount": "mol (scale N / N_A)", "mass": "g", "molar_mass": "g/mol", "M2": "g^2/mol",
          "dp_moments": "mol, mol, mol (sum of amount n^k, k = 0, 1, 2)", "time": "s", "volume": "m^3",
          "end_inventory": "mol of end-group pairs (head + tail)"}
@@ -1214,13 +1221,37 @@ def _run_tracker(engine, observer) -> SideGroupReleaseTracker:
     return tracker
 
 
+class TimeSeries(list):
+    """The observations of one ``write_time_series`` call, and why it stopped:
+    ``stop_reason`` (one of ``STOP_REASONS``), ``events`` (fired in this call),
+    ``total_events`` (the engine's count) and ``time_s`` (engine time)."""
+
+    def __init__(self, observations=(), *, stop_reason="horizon", events=0, total_events=0, time_s=0.0):
+        super().__init__(observations)
+        self.stop_reason = stop_reason
+        self.events = events
+        self.total_events = total_events
+        self.time_s = time_s
+
+
 def write_time_series(engine, times: Iterable[float], path, *, xs: int, check: bool = True,
                       observer: Optional[MeltObserver] = None, append: bool = False,
-                      side_group_homolysis=None) -> List[dict]:
+                      side_group_homolysis=None, max_events: Optional[int] = None) -> TimeSeries:
     """Advance ``engine`` to each requested time (``run(until=t)``, the horizon
     API: observing never changes the trajectory) and write one observation per
     time as a JSON line; with ``check`` the exact invariants are asserted after
-    every event (``invariant_checks`` counts them).  Returns the observations."""
+    every event (``invariant_checks`` counts them).
+
+    ``max_events`` caps the events fired by this call (all horizons together).
+    When the cap is reached before a requested time, the call stops there and
+    that observation is not written.  The stop reason is the engine's own
+    (``RunResult.stop_reason`` of the last advance): "max_events" for the cap,
+    else "horizon" or "absorbing" (no enabled channel) at the last requested
+    time; "horizon" when no advance was needed.  It ends the file as a stop
+    record and is returned with the observations (``TimeSeries``)."""
+    if max_events is not None and (isinstance(max_events, bool) or not isinstance(max_events, int)
+                                   or max_events < 0):
+        raise ObservablesError(f"max_events must be None or a non-negative integer, got {max_events!r}")
     observer = observer if observer is not None else MeltObserver(
         engine.spec, xs=xs, identity=engine.identity, side_group_homolysis=side_group_homolysis)
     checker = InvariantChecker(engine.state) if check else None
@@ -1229,18 +1260,31 @@ def write_time_series(engine, times: Iterable[float], path, *, xs: int, check: b
     times = [float(t) for t in times]
     if any(not math.isfinite(t) for t in times) or times != sorted(times) or (times and times[0] < engine.time):
         raise ObservablesError(f"observation times must be finite, sorted and >= the engine time {engine.time}")
-    out = []
+    out = TimeSeries()
+    start = engine.events_fired
+    stop = "horizon"
     with open(path, "a" if append else "w") as handle:
         for t in times:
             tracker.sync(engine)                 # catch up before advancing
             if t > engine.time:
-                engine.run(until=t, check=hook)
+                left = None if max_events is None else max_events - (engine.events_fired - start)
+                stop = engine.run(until=t, max_events=left, check=hook).stop_reason
+                if stop not in STOP_REASONS:
+                    raise ObservablesError(f"engine stopped with unknown reason {stop!r}")
+                if stop == "max_events":
+                    break                        # t not reached: no observation
             obs = observer.observe(engine, releases=tracker)
             obs["time_s"] = t
             obs["invariant_checks"] = checker.checks if checker is not None else None
             handle.write(json.dumps(obs, sort_keys=True, allow_nan=False) + "\n")
             handle.flush()
             out.append(obs)
+        out.stop_reason, out.events = stop, engine.events_fired - start
+        out.total_events, out.time_s = engine.events_fired, engine.time
+        record = {"record": "stop", "schema": STOP_SCHEMA, "stop_reason": stop, "events": out.events,
+                  "total_events": out.total_events, "observations": len(out), "time_s": out.time_s}
+        handle.write(json.dumps(record, sort_keys=True, allow_nan=False) + "\n")
+        handle.flush()
     return out
 
 
@@ -1340,7 +1384,8 @@ __all__ = [
     "CONVENTION_DEFINITION", "ComponentRecord", "InvariantChecker", "InvariantError", "MASS_LAW_DEFINITION",
     "SIDE_GROUP_DEFINITION", "BALANCE_DEFINITION", "SideGroupReleaseTracker", "site_class", "aromatic_atoms",
     "aromatic_atoms_whole", "channel_identity", "clear_aromaticity_cache", "PERCEPTION_STATS",
-    "MeltObserver", "OBSERVABLES_SCHEMA", "ObservablesError", "SPECIES_RULE", "TIER1_NOTE", "Totals",
+    "MeltObserver", "OBSERVABLES_SCHEMA", "ObservablesError", "SPECIES_RULE", "STOP_REASONS", "STOP_SCHEMA",
+    "TimeSeries", "TIER1_NOTE", "Totals",
     "backbone_atoms_per_unit", "canonical_key", "declared_species_names", "exact_totals",
     "side_group_site_indices", "validate_side_group_channels",
     "mom_reported_quantities", "molar_mass_g_mol", "observe", "side_by_side", "write_time_series",
