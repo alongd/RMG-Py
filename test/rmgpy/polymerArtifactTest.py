@@ -371,6 +371,31 @@ def test_newer_reentrant_refusal_supersedes_older_write(
     assert "superseded" in caplog.text
 
 
+def test_nested_refusal_during_payload_build_supersedes_older_write(
+        tmp_path, pe_pool, monkeypatch):
+    original_build = polymer_module.build_polymer_moments_artifact
+    nested = False
+
+    def build_with_nested_refusal(*args, **kwargs):
+        nonlocal nested
+        if not nested:
+            nested = True
+            write_refused_polymer_pools_sidecar(str(tmp_path), "nested")
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(
+        polymer_module,
+        "build_polymer_moments_artifact",
+        build_with_nested_refusal,
+    )
+    write_polymer_pools_sidecar([pe_pool], str(tmp_path))
+    assert json.loads((tmp_path / "polymer_pools.json").read_text()) == {
+        "refused": True,
+        "reason": "nested",
+        "species": [],
+    }
+
+
 def test_save_path_refuses_existing_sidecar_when_registry_becomes_empty(
         tmp_path, pe_pool):
     readable = _spc("CC", "readable", index=10)
