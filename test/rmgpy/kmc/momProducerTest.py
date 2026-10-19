@@ -39,6 +39,14 @@ LABEL = "toylinearp"                      # mom_label of "toy linear polymer (CH
 DAUGHTER = LABEL + "_rad_primary_end"     # a spawned pool with a long label
 BASE = {10: 1, 20: 1}
 
+
+def test_refused_sidecar_is_not_treated_as_missing(tmp_path):
+    path = tmp_path / "polymer_pools.json"
+    path.write_text(json.dumps({"refused": True, "reason": "core_topology_identity",
+                                "species": ["bad(7)"]}))
+    with pytest.raises(mp.ProducerError, match="refused:core_topology_identity.*bad\\(7\\)"):
+        mp.read_pools(path)
+
 GOLDEN = '''polymer(
     label='toylinearp',
     monomer="""multiplicity 3
