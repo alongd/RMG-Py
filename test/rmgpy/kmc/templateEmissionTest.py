@@ -2549,3 +2549,182 @@ def test_the_member_order_does_not_change_the_emitted_partition():
     one, two = _two_member_emit(witnesses), _two_member_emit(witnesses[::-1])
     assert _partition(one) == _partition(two)
     assert (one["status"], one["refusal"]) == (two["status"], two["refusal"])
+
+
+# --------------------------------------------------------------------------
+# I-192: an own-reverse record with members of both orientations; no
+# non-finite spread; an order-free representative
+# --------------------------------------------------------------------------
+class _ShiftCounter(_HShiftCounter):
+    def __init__(self):
+        super().__init__()
+        self.families = {_Fam.label: _Fam}
+
+
+SHIFT = ("R3H", "p_rad", "s_H")
+
+
+def _shifted(rows, rad, donor):
+    """``rows`` with one H moved from carbon ``donor`` to the radical ``rad``."""
+    rows = dict(rows)
+    h = next(n for n, _o in rows[donor][5] if rows[n][0] == "H")
+    r_row, d_row, h_row = rows[rad], rows[donor], rows[h]
+    rows[rad] = r_row[:3] + (r_row[3] - 1,) + r_row[4:5] + (tuple(sorted(r_row[5] + ((h, 1.0),))),)
+    rows[donor] = d_row[:3] + (d_row[3] + 1,) + d_row[4:5] + (
+        tuple(e for e in d_row[5] if e[0] != h),)
+    rows[h] = h_row[:5] + (((rad, 1.0),),)
+    return rows
+
+
+def _shift_witness(primary_side, n=8):
+    """The C``n`` 1,3 H shift between the primary radical at the tail and the
+    secondary radical two carbons in, generated on the primary side (the
+    record's recipe ``SHIFT`` is read there) or on the secondary side (RMG
+    reads ``(R3H, s_rad, p_H)`` there)."""
+    alkane_ = b.PROVIDERS["linear_alkane"]
+    if primary_side:
+        build, rad, donor = alkane_.build(n, tail_end="primary_radical"), n - 1, n - 3
+    else:
+        build = alkane_.build(n, tail_end="methyl", interior_radical=n - 3)
+        rad, donor = n - 3, n - 1
+    mols, parts = b.witness_reactants([build])
+    rows = rm.molecule_rows(mols[0])
+    return b.make_witness(tuple(sorted(rows.items())),
+                          tuple(sorted(_shifted(rows, rad, donor).items())), parts,
+                          label=f"C{n}|{'primary' if primary_side else 'secondary'}")
+
+
+def _shift_member(witness, label):
+    w = window(witness, 2)
+    pair = sorted(a for a in b.edit_support(witness) if witness.reactant_rows()[a][0] == "C")
+    move = Move(((0, "*1", pair[0]), (0, "*3", pair[1])), (("*1", pair[0]), ("*3", pair[1])))
+    case = win.MemberCase(label, _Fam.label, "forward", SHIFT, witness, (move,), frozenset())
+    ctx = win.ContextResult(tuple((p, None) for p in b.vector_ports(witness)), "fixed_point", "",
+                            witness, w, None)
+    return case, {"status": "fixed_point"}, ((ctx,), ())
+
+
+class _ShiftKc:
+    """The toy thermo of the shift: the primary radical TOY_B, the secondary TOY_C."""
+
+    def form(self, reactant_rows, product_rows, temperatures):
+        rows = dict(reactant_rows)
+        primary = any(r[0] == "C" and r[3] and sum(rows[n][0] == "C" for n, _o in r[5]) == 1
+                      for r in rows.values())
+        return {"kind": "ThermoData-Kc/1", "P0": 1e5,
+                "reactants": [TOY_B if primary else TOY_C],
+                "products": [TOY_C if primary else TOY_B]}
+
+    def __call__(self, reactant_rows, product_rows, temperatures):
+        f = self.form(reactant_rows, product_rows, temperatures)
+        return [te.kc_at(f, t) for t in temperatures]
+
+
+def _shift_pair(members):
+    """The as_generated shift P (primary -> secondary, its recipe read on its
+    reactants) and its reversed record Q (read on Q's products), both drawn
+    from ``members``; ``k_Q = k_P / Kc`` so the pair balances."""
+    pw, sw = _shift_witness(True), _shift_witness(False)
+    kc = _ShiftKc()
+    k_p = tuple(K_RULE)
+    k_q = tuple(k / c for k, c in zip(k_p, kc(pw.reactant_rows(), pw.product_rows(), GRID)))
+    out = []
+    for witness, orientation, rid, rev, k in ((pw, "as_generated", _rid(1), _rid(2), k_p),
+                                              (sw, "reversed", _rid(2), _rid(1), k_q)):
+        record = toy_record(witness, 1, orientation=orientation)
+        record.update(family=_Fam.label, template=";".join(SHIFT), event_id=rid, reverse_of=rev)
+        record["k_table"]["k"] = list(k)
+        out.append(te.emit_record(record, family=_Fam, members=members, counter=_ShiftCounter(),
+                                  rates=_pair_rates({"as_generated": k_p, "reversed": k_q}),
+                                  check_upstream=False, kc=kc))
+    return out, kc
+
+
+def _mixed_shift_members():
+    """One member generated on each side; the secondary-side one sorts first."""
+    return [_shift_member(_shift_witness(True), "b|primary"),
+            _shift_member(_shift_witness(False), "a|secondary")]
+
+
+def test_an_own_reverse_record_counts_its_recipe_on_its_template_side():
+    """An own-reverse family whose readings differ by side, one record pair,
+    members generated on both sides.  Every count of a record's channel is on
+    its reactants in its direction, whichever member the witness came from:
+    the recipe filter follows the record's template side (plain for P,
+    through the inverse for Q), never a member's.  Both records emit in either
+    member order, and the loaded pair passes the cycle gate on and off the
+    grid."""
+    for members in (_mixed_shift_members(), _mixed_shift_members()[::-1]):
+        payloads, kc = _shift_pair(members)
+        assert [p["status"] for p in payloads] == ["emitted", "emitted"], \
+            [p.get("refusal") for p in payloads]
+        out, table = te.check_cycles(_res(payloads, _ShiftCounter()), counter=_ShiftCounter(),
+                                     kc=kc)
+        assert len(table) == 1 and table[0]["status"] == "ok", table
+        assert table[0]["max_offgrid_error"] <= te.CYCLE_RTOL
+        assert te.cycle_gates(table, out) == []
+
+
+def test_each_template_carries_its_own_members_orientation():
+    """The template keeps the orientation of the member it was cut from (its
+    witnesses' generation side), not the record's last member's."""
+    payloads, _kc = _shift_pair(_mixed_shift_members())
+    for p in payloads:
+        for t in p["templates"]:
+            secondary = t["member"].endswith("secondary")
+            want = secondary if p["orientation"] == "as_generated" else not secondary
+            assert t["member_reverse"] is want, (p["orientation"], t["member"])
+        assert "member_reverse" not in p
+
+
+def test_a_candidate_with_no_ok_locality_row_is_refused_by_name_and_serializes():
+    """No row ok and no record weight (every count mismatched): the spread is
+    unmeasured, written null, the candidate refused by name, and the payload
+    seals (a non-finite spread used to make ``finish`` raise)."""
+    w = homolysis(10, (4, 5))
+    (cand,) = _record_candidates(w)
+    entry = te.emit_candidate(cand, record=toy_record(w, 1), family=ToyFamily,
+                              direction="reverse", pathway=("toy",), cpath=("toy",),
+                              reverse=False, counter=ToyCounter(extra=1),
+                              rates=stub_rates(ToyCounter()), weights=None,
+                              temperatures=list(GRID))
+    assert entry["status"] == "refused" and entry["refusal"]["status"]
+    loc = entry["locality"]
+    assert loc["max_spread_log10"] is None and set(loc["spread_log10"]) == {None}
+    assert loc["accepted"] is False
+    sealed = te.finish({"schema": te.SCHEMA, "status": "refused",
+                        "refusal": {"status": "refused:base_template"}, "templates": [entry]})
+    te.validate_payload(sealed)
+
+
+def test_an_unmeasured_or_non_finite_spread_is_null():
+    """No ok row measures nothing, and an infinite weight measures nothing at
+    its temperature: null there and as the maximum, never inf or NaN."""
+    per, worst = te.spread([], list(GRID))
+    assert worst is None and set(per) == {None}
+    assert te.spread([{"w": [1.0, float("inf")]}, {"w": [1.0, 10.0]}], [1.0, 2.0]) == \
+        ([0.0, None], None)
+    assert te.spread([{"w": [1.0, 1.0]}, {"w": [10.0, 1.0]}], [1.0, 2.0]) == ([1.0, 0.0], 1.0)
+
+
+def test_reversing_the_member_order_gives_a_byte_identical_payload():
+    """Two accepted copies of one executable on different witnesses: which
+    copy represents the template (its witnesses, weights and maps) is chosen
+    by a rule on the candidates themselves, and the payload's lists are
+    ordered by content, so the member order leaves no trace."""
+    witnesses = [homolysis(10, (3, 4)), homolysis(10, (5, 6))]
+    oracle = ToyCounter().channel(ToyFamily, te.molecules_of(dict(witnesses[0].reactant_rows())),
+                                  "reverse", None,
+                                  ToyCounter().species_of_rows(witnesses[0].product_rows()))
+
+    def emit_(ws):
+        return te.emit_record(toy_record(witnesses[0], oracle.transitions), family=ToyFamily,
+                              members=[member(w) for w in ws], counter=ToyCounter(),
+                              rates=stub_rates(ToyCounter()), check_upstream=False)
+    one, two = emit_(witnesses), emit_(witnesses[::-1])
+    assert one["status"] == "emitted"
+    (t,) = one["templates"]
+    assert len(t["sources"]) == 2
+    assert te.canonical_json(one) == te.canonical_json(two)
+    mixed = [_shift_pair(m)[0] for m in (_mixed_shift_members(), _mixed_shift_members()[::-1])]
+    assert te.canonical_json(mixed[0]) == te.canonical_json(mixed[1])

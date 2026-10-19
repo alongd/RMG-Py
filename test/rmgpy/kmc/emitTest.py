@@ -965,6 +965,36 @@ def test_midpoint_without_a_witness_is_unavailable_not_skipped(monkeypatch):
     assert entry["status"] == "unavailable" and "witness" in entry["reason"]
 
 
+def test_midpoint_regenerates_on_the_templates_own_generation_side(monkeypatch):
+    """The emitted witness is stored in template direction; the rate is
+    regenerated on the side its member was generated on, which is the
+    template's own orientation (members of both orientations mix in one
+    record), not one flag for the whole payload."""
+    seen = []
+
+    class Recording(FakeRates):
+        def __call__(self, request):
+            seen.append(request)
+            return super().__call__(request)
+    monkeypatch.setattr(te, "ProductionRates", Recording)
+    payload = copy.deepcopy(_one_row_with_maps()["payload"])
+    payload.pop("member_reverse", None)
+    record = {"event_id": payload["record_event_id"], "family": "R_Recombination",
+              "template": "T", "orientation": "as_generated"}
+    for flag in (False, True):
+        seen.clear()
+        for t in payload["templates"]:
+            t["member_reverse"] = flag
+        entries = emit.midpoint_entries(record, payload,
+                                        emit.RatesByGrid(None, ["R_Recombination"], "/db"))
+        (t,) = [t for t in payload["templates"] if t["key"] in entries]
+        wit = t["maps"]["witnesses"]["emitted"]
+        r_rows, p_rows = te.rows_from_json(wit["r"]), te.rows_from_json(wit["p"])
+        assert entries[t["key"]]["status"] == "ok"
+        assert [dict(seen[0].generation), dict(seen[0].products)] == \
+            ([p_rows, r_rows] if flag else [r_rows, p_rows])
+
+
 def test_midpoint_rate_failure_is_unavailable_with_the_reason(monkeypatch):
     class Failing(FakeRates):
         def __call__(self, request):
