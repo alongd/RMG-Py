@@ -208,6 +208,12 @@ def _adjacency_entry(molecule) -> dict:
     return {"adjacency_list": molecule.to_adjacency_list()}
 
 
+def centred_radical_unit(dp: int) -> int:
+    """The unit of a ``dp``-unit chain the declared compile proxies put
+    their interior radical on (``declared_proxies``); the roster offers it too."""
+    return dp // 2
+
+
 def _chain_entry(owner, dp, head=None, tail=None, radical_unit=None) -> dict:
     return {"chain": {"owner": owner, "dp": dp, "head": head, "tail": tail,
                       "radical_unit": radical_unit}}
@@ -227,6 +233,7 @@ def _reference_chain_entries(provider, dps, phases, declared=None) -> list:
         out.append((label, entry, bool(built.molecule.get_radical_count())))
 
     def add_interior_radical(dp):
+        first = None
         for unit in range(dp):
             entry = _chain_entry(provider.name, dp, radical_unit=unit)
             try:
@@ -243,7 +250,15 @@ def _reference_chain_entries(provider, dps, phases, declared=None) -> list:
                    {indices[n] for n, _order in rows[atom][5] if n in indices}
                    for atom in radicals):
                 out.append((f"chain:dp{dp}:interior-radical", entry, True))
-                return
+                first = unit
+                break
+        # the compile proxies' own interior radical (centred), when it differs
+        centred = centred_radical_unit(dp)
+        if centred != first:
+            try:
+                add(f"chain:dp{dp}:interior-radical:centred", dp, radical_unit=centred)
+            except (b.BoundaryError, ValueError):
+                pass
 
     end_table = getattr(provider, "END_CHEMISTRIES", {})
     head_ends = tuple(end_table.get("backbone_head", ()))
@@ -268,8 +283,7 @@ def _reference_chain_entries(provider, dps, phases, declared=None) -> list:
                     add(f"chain:dp{dp}:end-radical:tail:{end}", dp, closed_head, end)
                 elif end in alkene_ends:
                     add(f"chain:dp{dp}:alkene:tail:{end}", dp, closed_head, end)
-        if dp > 1:
-            add_interior_radical(dp)
+        add_interior_radical(dp)
     if phases:
         for label, dp, head, tail, radical_unit in provider.reference_special_declarations():
             add(f"chain:special:{label}", dp, head, tail, radical_unit)

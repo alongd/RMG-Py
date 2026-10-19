@@ -244,8 +244,8 @@ def test_roster_sha_is_the_file_hash(tmp_path):
 def test_generated_roster_counts_are_pinned_per_declaration(tmp_path):
     ps, ps_written, ps_systems = generated_of(tmp_path, "ps", dps=(1, 2))
     pe, pe_written, pe_systems = generated_of(tmp_path, "pe", dps=(1, 2))
-    assert (len(ps.systems), len(ps_systems)) == (326, 326)
-    assert (len(pe.systems), len(pe_systems)) == (138, 138)
+    assert (len(ps.systems), len(ps_systems)) == (440, 440)
+    assert (len(pe.systems), len(pe_systems)) == (173, 173)
     assert ps.sha256 == ps_written.sha256
     assert pe.sha256 == pe_written.sha256
 

@@ -133,7 +133,8 @@ class _Builder:
         """name -> ``ProxyBuild`` of every structure buildable at ``units``."""
         recipes = {
             "pristine": lambda: [self.chain(units)],
-            "interior_radical": lambda: [self.chain(units, radical_unit=units // 2)],
+            "interior_radical": lambda: [self.chain(units,
+                                                    radical_unit=emit.centred_radical_unit(units))],
             "doubly_featured": lambda: [self._joined(self.chain(units, radical_unit=0),
                                                      self.chain(units, radical_unit=1))]
             if units > 1 else [],
