@@ -329,6 +329,7 @@ from typing import Any, Callable, Optional, Sequence
 
 from rmgpy.kmc import boundaries as b
 from rmgpy.kmc import declared_chain as dc
+from rmgpy.kmc import declared_sequence as ds
 from rmgpy.kmc import domain as dom
 
 RING_LIMIT = 8
@@ -359,7 +360,8 @@ class SpanBoundError(AssertionError):
 @dataclass(frozen=True)
 class DeclaredSpec:
     """A witness spec of a declared-chain provider: the registered provider
-    name and the chain (``declared_chain.ChainSpec``)."""
+    name and the chain (``declared_chain.ChainSpec``; of a residue-sequence
+    provider, ``declared_sequence.SequenceChainSpec``)."""
 
     provider: str
     chain: Any
@@ -409,12 +411,14 @@ def witness_spec(spec):
     refused (never built closed)."""
     if isinstance(spec, DeclaredSpec):
         provider = b.PROVIDERS.get(spec.provider)
-        if not isinstance(provider, dc.DeclaredChainProvider):
+        if not _is_declared(provider):
             raise WindowError(f"refused:legacy_spec: {spec.provider!r} is not a registered "
                               "declared-chain provider")
-        if not isinstance(spec.chain, dc.ChainSpec):
-            raise WindowError(f"refused:legacy_spec: a DeclaredSpec needs a ChainSpec, got "
-                              f"{type(spec.chain).__name__}")
+        chain_type = ds.SequenceChainSpec if isinstance(provider, ds.SequenceChainProvider) \
+            else dc.ChainSpec
+        if not isinstance(spec.chain, chain_type):
+            raise WindowError(f"refused:legacy_spec: a DeclaredSpec of {spec.provider} needs a "
+                              f"{chain_type.__name__}, got {type(spec.chain).__name__}")
         return spec
     for owner in SPEC_OWNERS:
         try:
@@ -442,7 +446,7 @@ def provider_object(provider, providers=None):
 
 
 def _is_declared(provider) -> bool:
-    return isinstance(provider, dc.DeclaredChainProvider)
+    return isinstance(provider, (dc.DeclaredChainProvider, ds.SequenceChainProvider))
 
 
 def observation_providers(witness, providers=None) -> tuple:
@@ -600,7 +604,8 @@ def _roster_guard(*items) -> None:
     for item in items:
         if item is None:
             continue
-        if isinstance(item, (DeclaredSpec, dc.DeclaredChainProvider)) or \
+        if isinstance(item, (DeclaredSpec, dc.DeclaredChainProvider,
+                             ds.SequenceChainProvider)) or \
                 isinstance(item, str) and _is_declared(b.PROVIDERS.get(item)):
             raise WindowError(ROSTER_REFUSAL)
         participants = getattr(item, "participants", None)
@@ -4071,6 +4076,10 @@ def _longer_declared(spec: DeclaredSpec, head: bool, k: int) -> DeclaredSpec:
     the last.  An end cut at a phase cannot move (``ExtensionRefused``)."""
     from dataclasses import replace
     chain = spec.chain
+    if isinstance(chain, ds.SequenceChainSpec):
+        raise b.ExtensionRefused(f"{ds.SEQUENCE_EXTENSION_REFUSAL}: {spec.provider}: the residue "
+                                 "beyond an end of a copolymer chain is not fixed by the "
+                                 "declaration")
     phase = chain.head_phase if head else chain.tail_phase
     if phase:
         raise b.ExtensionRefused(f"the {'head' if head else 'tail'} of {spec.provider} is cut "

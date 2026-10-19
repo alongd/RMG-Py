@@ -40,11 +40,15 @@ length (``<radical>+monomer``) and at ``units - 1``
 ``<site type>@<units + 2>`` (the full contexts of the radius-one
 completeness bound).  No proxy names family candidates: the compile tries
 the requested families on all.
+
+A schema-v2 (linear copolymer) declaration is refused by the functions
+above; its proxies are ``sequence_proxy_set`` and its roster structures
+``sequence_declared_structures`` (the section at the end of this module).
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from rmgpy.kmc import boundaries as b
 from rmgpy.kmc import emit
@@ -313,3 +317,366 @@ def _same_structure(first, second) -> bool:
         if len(candidates) == 1:
             pins[a_by_id[port.atom_id]] = c_by_id[candidates[0]]
     return bool(a.find_isomorphism(c, initial_map=pins, strict=False)) if pins else True
+
+
+# ---------------------------------------------------------------------------
+# linear copolymer declarations (schema v2)
+# ---------------------------------------------------------------------------
+# The compile structures of a ``PolymerSpec``, built by its residue-sequence
+# chain provider (``declared_sequence``) on the witness words of its
+# environment set (``declared_environments.environment_witnesses``):
+#
+# - ``interior_radical:<i>``: one per class of hydrogen-bearing heavy atoms
+#   (``i`` counts the classes in key order), on the class's shortest witness
+#   word with one more residue of the covering period on each side (the key
+#   reads the heavy neighbours of its boundary shell, so a cap must not sit
+#   on the shell), widened from the period until it holds ``units`` residues
+#   with the radical's residue in the centre.  A class no single-residue
+#   chain shows is a junction class (``SequenceStructure.junction``); those
+#   come out of the words, not out of a rule of their own;
+# - ``pristine:<i>``: the distinct chains of those radicals, unedited;
+# - ``head_end_radical:<i>`` / ``tail_end_radical:<i>``: one per environment
+#   of the radical end atom over every k-residue word at that end, on the
+#   least such word (the other end artificial).  A shorter word can show the
+#   same key only through its cap (a cap and a side group standing in for
+#   the next residue), which any growth of the chain undoes, so the
+#   witnesses are k-residue words;
+# - ``head_group_radical:<i>`` / ``tail_group_radical:<i>``: likewise, per
+#   (hydrogen-bearing heavy atom of the declared end group x environment);
+# - ``monomer:<residue>``: one per ``monomer_products`` entry (no ports).
+#
+# Each structure is repeated at ``units + 2`` with one more residue at each
+# artificial end (the full-context copies: the same names, no new ones).  Proxies: every structure but
+# the monomers alone, and the pairs over family-tree classes
+# (``pair_classes.class_pairs``) of each depth, computed from the loaded
+# families by the compile and recorded with the artifact; the roster takes
+# the recorded pairs (``sequence_declared_structures``).
+
+
+@dataclass(frozen=True)
+class SequenceStructure:
+    """One compile structure of a v2 declaration: its witness spec
+    (``windows.DeclaredSpec`` of the sequence provider; None for a monomer),
+    its build, the environment key of the class it stands for (radicals) and
+    the witness word (interior radicals)."""
+
+    witness: object
+    build: object
+    environment: object = None
+    junction: bool = False
+    word: tuple = ()
+
+
+PAIR_RULE = "family_tree_classes"
+
+
+def _h_bearing(graph, key) -> bool:
+    atoms = {atom.key: atom for atom in graph.atoms}
+    hydrogens = {k for k, atom in atoms.items() if atom.element == "H"}
+    bonded = {k for bond in graph.bonds for k in bond.atoms if set(bond.atoms) & hydrogens}
+    return atoms[key].element != "H" and bool(atoms[key].hydrogens or key in bonded - hydrogens)
+
+
+class _SequenceBuilder:
+    """The structures of one v2 declaration (comment above)."""
+
+    def __init__(self, spec):
+        from rmgpy.kmc import declared_environments as de
+        from rmgpy.kmc.declared_chain import site_class_policy
+        from rmgpy.kmc.declared_sequence import sequence_provider
+
+        self.spec = spec
+        self.provider = sequence_provider(spec)
+        self.period, self.witnesses = de.environment_witnesses(spec)
+        self.k = de.spec_word_order(spec)
+        self.policy = site_class_policy(spec.locality_policy, de.MAX_HEAVY_ATOMS)
+        self.homopolymer = set()
+        for name, _residue in spec.residues:
+            self.homopolymer |= set(de.period_environments(
+                dict(spec.residues), spec.junctions, spec.locality_policy, (name,)))
+        self._built = {}
+
+    # -- chains ----------------------------------------------------------------
+    def _from_period(self, word, position, start, units):
+        """``word`` (at period index ``start``) with one more residue of the
+        covering period on each side, widened from the period until it has
+        ``units`` residues and ``position`` is central."""
+        size = len(self.period)
+        left, right = start - 1, start + len(word)
+        residues = [self.period[left % size]] + list(word) + [self.period[right % size]]
+        position += 1
+        while True:
+            before, after = position, len(residues) - 1 - position
+            if len(residues) >= units and abs(before - after) <= 1:
+                return tuple(residues), position
+            if before < after or (before == after and len(residues) % 2 == 0):
+                left -= 1
+                residues.insert(0, self.period[left % size])
+                position += 1
+            else:
+                right += 1
+                residues.append(self.period[right % size])
+
+    def _support_paths(self, length):
+        paths = [(name,) for name in sorted(self.provider.support)]
+        for _ in range(length - 1):
+            paths = [p + (b,) for p in paths for b in self.provider.support[p[-1]]]
+        return paths
+
+    def _padded(self, residues, side, units):
+        """``residues`` grown at the end opposite ``side`` (the artificial
+        one) along the support until it has ``units`` residues."""
+        residues = list(residues)
+        support = self.provider.support
+        while len(residues) < units:
+            if side == "head":
+                residues.append(min(support[residues[-1]]))
+            else:
+                residues.insert(0, min(a for a in sorted(support) if residues[0] in support[a]))
+        return tuple(residues)
+
+    def _key(self, build, unit, key):
+        from rmgpy.kmc.site_class import extract_site_class
+
+        if unit in (-1, len(build.metadata.residues)):
+            graph = self.spec.head_end_group if unit == -1 else self.spec.tail_end_group
+            position = sorted(atom.key for atom in graph.atoms).index(key)
+        else:
+            position = self.provider.position(build.metadata.residues[unit], key)
+        atom_id = next(a for a, u, p in build.metadata.coordinates if (u, p) == (unit, position))
+        atom = next(atom for atom in build.molecule.atoms if atom.id == atom_id)
+        return extract_site_class(build.molecule, [("site", atom)], self.policy)[0]
+
+    @staticmethod
+    def _radical(chain, unit, key):
+        from rmgpy.kmc.declared_chain import EditOp
+        return replace(chain, edits=chain.edits + (EditOp("remove_h", unit, key),
+                                                   EditOp("set_radical", unit, key, 1)))
+
+    def _interior(self, units) -> list:
+        from rmgpy.kmc.declared_sequence import SequenceChainSpec
+
+        residues = dict(self.spec.residues)
+        out, index = [], 0
+        for key, occurrences in self.witnesses.items():
+            word, position, atom, start = occurrences[0]
+            if not _h_bearing(residues[word[position]].graph, atom):
+                continue
+            chain, unit = self._from_period(word, position, start, units)
+            out.append((f"interior_radical:{index}",
+                        self._radical(SequenceChainSpec(chain), unit, atom),
+                        dict(environment=key, junction=key not in self.homopolymer, word=word)))
+            index += 1
+        return out
+
+    def _ends(self, units) -> list:
+        """End radicals and end-group radicals (comment above)."""
+        from rmgpy.kmc.declared_sequence import SequenceChainSpec
+
+        out = []
+        for side in ("head", "tail"):
+            group = self.spec.head_end_group if side == "head" else self.spec.tail_end_group
+            sites = [("end_radical", None)] + [
+                ("group_radical", key) for key in sorted(atom.key for atom in group.atoms)
+                if _h_bearing(group, key)]
+            for kind, key in sites:
+                found = {}
+                for path in self._support_paths(self.k):
+                    found.setdefault(self._key(*self._end_probe(path, side, key)), []).append(path)
+                index = len([n for n, _c, _i in out if n.startswith(f"{side}_{kind}:")])
+                for environment in sorted(found):
+                    path = min(found[environment])
+                    chain = self._end_chain(SequenceChainSpec(self._padded(path, side, units)),
+                                            side, key)
+                    out.append((f"{side}_{kind}:{index}", chain, dict(environment=environment)))
+                    index += 1
+        return out
+
+    def _end_probe(self, path, side, key):
+        from rmgpy.kmc.declared_sequence import SequenceChainSpec
+        chain = self._end_chain(SequenceChainSpec(path), side, key)
+        unit, atom = self._end_site(chain, side, key)
+        return self.provider.build("end", chain), unit, atom
+
+    def _end_site(self, chain, side, key):
+        """(unit, key) of the radical of an end structure."""
+        if key is None:
+            residue = chain.residues[0] if side == "head" else chain.residues[-1]
+            return ((0, self.provider.entry[residue]) if side == "head"
+                    else (len(chain.residues) - 1, self.provider.exit[residue]))
+        return (-1 if side == "head" else len(chain.residues)), key
+
+    def _end_chain(self, chain, side, key):
+        if key is None:
+            return replace(chain, **{side: "radical"})
+        chain = replace(chain, **{side: "declared"})
+        unit, atom = self._end_site(chain, side, key)
+        return self._radical(chain, unit, atom)
+
+    def _wide(self, chain):
+        """``chain`` with one more residue at each artificial end, from the
+        support (every edit off the head group moves with its unit)."""
+        from rmgpy.kmc.declared_sequence import SequenceChainSpec
+
+        residues = list(chain.residues)
+        support = self.provider.support
+        edits = chain.edits
+        if chain.head == "artificial":
+            residues.insert(0, min(a for a in sorted(support) if residues[0] in support[a]))
+            edits = tuple(replace(e, unit=e.unit + 1) if e.unit >= 0 else e for e in edits)
+        if chain.tail == "artificial":
+            residues.append(min(support[residues[-1]]))
+        return SequenceChainSpec(tuple(residues), chain.head, chain.tail, edits)
+
+    def _monomers(self) -> list:
+        out = []
+        for name, graph in self.spec.monomer_products:
+            molecule = graph.to_legacy_molecule({})
+            molecule.multiplicity = graph.multiplicity
+            out.append((f"monomer:{name}", b.explicit_species_build(
+                f"monomer:{name}", adjacency_list=molecule.to_adjacency_list(remove_h=False))))
+        return out
+
+    def structures(self, units: int, wide: bool = False) -> dict:
+        """name -> ``SequenceStructure`` at ``units`` (``wide``: the
+        full-context copy of each of those structures, under its name)."""
+        if (units, wide) in self._built:
+            return self._built[(units, wide)]
+        if wide:
+            out = {}
+            for name, s in self.structures(units).items():
+                if s.witness is None:
+                    out[name] = s
+                    continue
+                chain = self._wide(s.witness.chain)
+                out[name] = replace(s, witness=win.DeclaredSpec(self.provider.name, chain),
+                                    build=self.provider.build(name, chain))
+            self._built[(units, wide)] = out
+            return out
+        radicals = self._interior(units)
+        recipes = radicals + [("pristine", replace(chain, edits=()), {})
+                              for _name, chain, _info in radicals] + self._ends(units)
+        out = {}
+        for name, chain, info in recipes:
+            build = self.provider.build(name, chain)
+            if any(_same_structure(build, other.build) for other in out.values()):
+                if name.startswith("interior_radical:"):
+                    raise ValueError(f"{name}: two environment classes gave one structure")
+                continue
+            if name == "pristine":
+                name = f"pristine:{sum(n.startswith('pristine:') for n in out)}"
+            out[name] = SequenceStructure(win.DeclaredSpec(self.provider.name, chain), build,
+                                          **info)
+        for name, build in self._monomers():
+            out[name] = SequenceStructure(None, build)
+        self._built[(units, wide)] = out
+        return out
+
+
+def _sequence_builder(spec, units) -> _SequenceBuilder:
+    from rmgpy.polymer_spec import PolymerSpec
+
+    if not isinstance(spec, PolymerSpec):
+        raise TypeError(f"a sequence proxy set takes a PolymerSpec (schema v2), got "
+                        f"{type(spec).__name__}")
+    if isinstance(units, bool) or not isinstance(units, int) or units < 1:
+        raise ValueError(f"sequence proxies need at least one residue per chain, got {units!r}")
+    return _SequenceBuilder(spec)
+
+
+def sequence_structures(spec, units: int = DEFAULT_PROXY_UNITS, wide: bool = False) -> dict:
+    """name -> ``SequenceStructure`` of a ``PolymerSpec`` at ``units``
+    residues (``wide``: their ``units + 2`` full-context copies)."""
+    return _sequence_builder(spec, units).structures(units, wide)
+
+
+def _sequence_declarations(structures, pairs) -> list:
+    """(site type, participant names) of every proxy over ``structures``."""
+    declarations = [(name, (name,)) for name in structures if not name.startswith("monomer")]
+    for first, second in pairs:
+        if first not in structures or second not in structures:
+            raise ValueError(f"the pair {first}+{second} names a structure that is not built")
+        declarations.append((f"{first}+{second}", (first, second)))
+    return declarations
+
+
+def _depths(units) -> tuple:
+    return ((units, False, ""), (units + COVERAGE_EXTRA_UNITS, True,
+                                 f"@{units + COVERAGE_EXTRA_UNITS}"))
+
+
+def _check_pairs(pairs, units) -> dict:
+    expected = {str(depth) for depth, _wide, _suffix in _depths(units)}
+    if not isinstance(pairs, dict) or set(pairs) != expected:
+        raise ValueError(f"the recorded pairs must give the pairs of depths {sorted(expected)}")
+    return {depth: [tuple(pair) for pair in value] for depth, value in pairs.items()}
+
+
+def sequence_proxy_set(spec, units: int, families) -> tuple:
+    """``(proxies, record)`` of a ``PolymerSpec``: every structure but the
+    monomers alone and the pairs over family-tree classes of ``families``
+    (name -> loaded family) at ``units`` and at its full-context depth;
+    ``record`` holds the pairs per depth (``rule``: ``family_tree_classes``)
+    for the artifact and its roster."""
+    from rmgpy.kmc.pair_classes import class_pairs
+
+    builder = _sequence_builder(spec, units)
+    pairs, classes = {}, {}
+    for depth, wide, _suffix in _depths(units):
+        structures = builder.structures(units, wide)
+        molecules = {name: s.build.molecule for name, s in structures.items()}
+        found, members = class_pairs(families, molecules)
+        pairs[str(depth)] = [list(pair) for pair in found]
+        classes[str(depth)] = [list(group) for group in members]
+    record = {"rule": PAIR_RULE, "families": sorted(families), "pairs": pairs, "classes": classes}
+    return _sequence_proxies(builder, units, pairs), record
+
+
+def _sequence_proxies(builder, units, pairs) -> tuple:
+    from rmgpy.species import Species
+
+    pairs = _check_pairs(pairs, units)
+    proxies = []
+    for depth, wide, suffix in _depths(units):
+        structures = builder.structures(units, wide)
+        builds = {name: s.build for name, s in structures.items()}
+        species = {name: Species(molecule=[build.molecule]) for name, build in builds.items()}
+        for site_type, participants in _sequence_declarations(structures, pairs[str(depth)]):
+            boundaries = tuple(
+                port for index, name in enumerate(participants)
+                for port in construction_ports(name, builds[name].molecule, index,
+                                               builds[name].metadata))
+            metadata = {"centred": True,
+                        "context_class": CONTEXT_CLASS[participants[0].split(":")[0]],
+                        "proxy_units": depth, "declaration": builder.provider.name}
+            if wide:
+                metadata["coverage_site_type"] = site_type
+            proxies.append(SiteProxy(
+                site_type + suffix,
+                tuple(species[name] for name in participants),
+                participant_site_types=tuple(participants),
+                artificial_boundaries=boundaries,
+                repeat_unit=None,
+                boundary_builds=tuple(builds[name] for name in participants),
+                metadata=metadata,
+            ))
+    return tuple(proxies)
+
+
+def sequence_declared_structures(spec, units: int, pairs) -> tuple:
+    """``(structures, proxies)`` of the compile of a ``PolymerSpec`` at
+    ``units`` with the recorded ``pairs``: ``structures`` maps a participant
+    name (``<name>@<depth>``) to ``(witness spec or None, build)`` (None: a
+    monomer, an explicit build); ``proxies`` maps each site type to its
+    participant names, in order (``declared_structures`` of a v1
+    declaration)."""
+    builder = _sequence_builder(spec, units)
+    pairs = _check_pairs(pairs, units)
+    structures, proxies = {}, {}
+    for depth, wide, suffix in _depths(units):
+        found = builder.structures(units, wide)
+        for name, s in found.items():
+            structures[f"{name}@{depth}"] = (s.witness, s.build)
+        for site_type, participants in _sequence_declarations(found, pairs[str(depth)]):
+            proxies[site_type + suffix] = tuple(f"{name}@{depth}" for name in participants)
+    return structures, proxies

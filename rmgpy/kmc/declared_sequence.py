@@ -1,0 +1,348 @@
+"""Chain witnesses of a linear copolymer declaration (schema v2).
+
+``SequenceChainProvider`` builds the chains of one ``PolymerSpec``
+(``rmgpy/polymer_spec.py``) from the declared residues, links and end
+groups; nothing here names a polymer.  It is the copolymer counterpart of
+``declared_chain.DeclaredChainProvider`` and is registered in
+``boundaries.PROVIDERS`` under ``sequence:<sha256[:16]>`` of the
+normalized declaration.
+
+Builds (``SequenceChainSpec``):
+
+- ``residues``: one declared residue name per unit, in chain order; every
+  step ``a -> b`` must be in the sequence support, and residue ``b`` is
+  joined to ``a`` by the declared junction (exit atom of ``a`` to entry atom
+  of ``b``, ``PolymerSpec.junctions``).
+- ``head`` / ``tail``: ``artificial`` (H caps on the port, port
+  artificial), ``declared`` (the declared end group attached, port
+  physical) or ``radical`` (port physical, the port atom keeps the cap's
+  electrons), as in ``declared_chain``.  The head port is the entry atom of
+  the first residue, the tail port the exit atom of the last.
+- ``edits``: ``declared_chain.EditOp``, addressing ``(unit, residue atom
+  key)``; a declared end group's heavy atom is ``(-1, key)`` at the head
+  and ``(units, key)`` at the tail.
+
+Coordinates are ``(unit, position)`` with ``position`` the index of the key
+in that residue's sorted keys; ``BoundaryMetadata.residues`` carries the
+residue name of every unit.  Aromatic (1.5) residues are built in one
+deterministic Kekule form per residue, as ``declared_chain`` builds its
+periods.
+
+**Extension is refused** (``refused:sequence_extension``): the residue
+beyond an artificial port is not fixed by the declaration, so a sequence
+chain is never extended there (``fragment``, ``end_edit``).
+
+**The growth unit** (``unit_formula``) is the formula every residue formula
+is a whole multiple of.  Growth by its multiples is a superset of every
+combination of residues, so the depository exclusion stays sound.  When no
+such formula exists, the unit is refused by name
+(``refused:growth_unit``)."""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+from math import gcd
+from typing import Mapping
+
+from rmgpy.kmc import declared_chain as dc
+from rmgpy.kmc.boundaries import (
+    PROVIDERS,
+    BoundaryMetadata,
+    BoundaryProvider,
+    ExtensionRefused,
+    MetadataError,
+    Port,
+    ProxyBuild,
+)
+
+SEQUENCE_EXTENSION_REFUSAL = "refused:sequence_extension"
+GROWTH_UNIT_REFUSAL = "refused:growth_unit"
+
+
+@dataclass(frozen=True)
+class SequenceChainSpec:
+    """A chain of declared residues (module doc)."""
+
+    residues: tuple
+    head: str = "artificial"
+    tail: str = "artificial"
+    edits: tuple = ()
+
+    def __post_init__(self):
+        residues = tuple(self.residues)
+        if not residues or not all(isinstance(r, str) and r for r in residues):
+            raise dc.ChainSpecError("a sequence chain needs one or more residue names")
+        object.__setattr__(self, "residues", residues)
+        for end in (self.head, self.tail):
+            if end not in dc.END_KINDS:
+                raise dc.ChainSpecError(f"end {end!r} is not one of {dc.END_KINDS}")
+        edits = tuple(dc.EditOp.from_mapping(e) if isinstance(e, Mapping) else e
+                      for e in self.edits)
+        if any(not isinstance(e, dc.EditOp) for e in edits):
+            raise dc.ChainSpecError("edits must be EditOp entries")
+        object.__setattr__(self, "edits", edits)
+
+    @classmethod
+    def from_mapping(cls, value: Mapping) -> "SequenceChainSpec":
+        return dc._from_mapping(cls, value)
+
+
+def _formula(graph) -> dict:
+    counts = {}
+    for atom in graph.atoms:
+        counts[atom.element] = counts.get(atom.element, 0) + 1
+        if atom.hydrogens:
+            counts["H"] = counts.get("H", 0) + atom.hydrogens
+    return counts
+
+
+def common_growth_unit(formulas) -> tuple:
+    """The formula every one of ``formulas`` (element -> count) is a whole
+    multiple of, as ((element, count), ...) sorted; refused when none is."""
+    formulas = [dict(f) for f in formulas]
+    elements = sorted(set().union(*formulas))
+    divisors = [gcd(*(f.get(e, 0) for e in elements)) for f in formulas]
+    units = {tuple((e, f.get(e, 0) // d) for e in elements) for f, d in zip(formulas, divisors)}
+    if len(units) != 1:
+        raise ValueError(f"{GROWTH_UNIT_REFUSAL}: the residue formulas {sorted(units)} are not "
+                         "whole multiples of one formula; the depository growth by every "
+                         "combination of residues is not one growth unit")
+    (unit,) = units
+    return tuple((e, n) for e, n in unit if n)
+
+
+class SequenceChainProvider(BoundaryProvider):
+    """Chains of one linear copolymer declaration (module doc)."""
+
+    RADICAL_END_CHEMISTRIES = ("radical",)
+
+    def __init__(self, spec):
+        from rmgpy.kmc.declared_environments import _backbone_atoms, _ends
+
+        self.spec = spec
+        self.name = "sequence:" + hashlib.sha256(spec.normalized_json).hexdigest()[:16]
+        self.residues = dict(spec.residues)
+        self.junctions = spec.junctions
+        self.support = {a: tuple(successors) for a, successors in spec.sequence_support}
+        self.entry, self.exit = _ends(self.junctions)
+        self.keys = {name: tuple(sorted(atom.key for atom in residue.graph.atoms))
+                     for name, residue in self.residues.items()}
+        self.bonds = {}
+        for name, residue in self.residues.items():
+            atoms = {atom.key: atom for atom in residue.graph.atoms}
+            sites = {site.atom: site.bond_order for _s, site in residue.sites}
+            self.bonds[name] = dc._kekule(atoms, dc._bonds_of(residue.graph), sites)
+        self.backbone = {name: _backbone_atoms(residue, self.entry[name], self.exit[name])
+                         for name, residue in self.residues.items()}
+        self.coordinate_backbone_atoms = min(self.backbone.values())
+        self.END_CHEMISTRIES = {"backbone_head": ("declared", "radical"),
+                                "backbone_tail": ("declared", "radical")}
+        PROVIDERS[self.name] = self
+
+    # -- builds ----------------------------------------------------------------
+    def _check(self, chain) -> None:
+        if not isinstance(chain, SequenceChainSpec):
+            raise dc.ChainSpecError(f"a sequence chain needs a SequenceChainSpec, got {chain!r}")
+        for name in chain.residues:
+            if name not in self.residues:
+                raise dc.ChainSpecError(f"{name!r} is not a declared residue "
+                                        f"({sorted(self.residues)})")
+        for a, b in zip(chain.residues, chain.residues[1:]):
+            if b not in self.support[a]:
+                raise dc.ChainSpecError(f"the step {a}->{b} is not in the sequence support")
+
+    def _order(self, name, atom) -> float:
+        return next(site.bond_order for _s, site in self.residues[name].sites if site.atom == atom)
+
+    def build(self, name: str, chain: SequenceChainSpec) -> ProxyBuild:
+        """The chain of ``chain`` (module doc); RMG's default multiplicity."""
+        from rmgpy.kmc.rmg_moves import molecule_from_rows
+
+        self._check(chain)
+        asm = dc._Assembly()
+        sites, placed = {}, []
+        for unit, residue in enumerate(chain.residues):
+            keys = self.keys[residue]
+            atoms = {atom.key: atom for atom in self.residues[residue].graph.atoms}
+            handles = asm.add_period(atoms, keys, {k: i for i, k in enumerate(keys)},
+                                     self.bonds[residue], unit, set(keys))
+            if placed:
+                left, right, order = self.junctions[(chain.residues[unit - 1], residue)]
+                asm.bond(placed[-1][left], handles[right], order)
+            placed.append(handles)
+            for key, handle in handles.items():
+                sites[(unit, key)] = handle
+        units = len(chain.residues)
+        first, last = chain.residues[0], chain.residues[-1]
+        ports = []
+        for side, end, handle, order, tag in (
+                ("head", chain.head, placed[0][self.entry[first]],
+                 self._order(first, self.entry[first]), "backbone_head"),
+                ("tail", chain.tail, placed[-1][self.exit[last]],
+                 self._order(last, self.exit[last]), "backbone_tail")):
+            caps = []
+            if end == "artificial":
+                caps = [asm.add_h(handle, 4) for _ in range(int(order))]
+            elif end == "radical":
+                asm.attrs[handle][3] += int(order)
+            else:
+                group_unit = -1 if side == "head" else units
+                # the declared end group, attached as declared_chain attaches it
+                for key, atom in dc.DeclaredChainProvider._end_group(
+                        self, asm, side, handle, order, group_unit).items():
+                    sites[(group_unit, key)] = atom
+            ports.append((side, handle, caps, tag,
+                          "artificial" if end == "artificial" else "physical"))
+        port_handles = {h for _s, h, _c, _t, _p in ports}
+        cap_handles = {c for _s, _h, caps, _t, _p in ports for c in caps}
+        for edit in chain.edits:
+            self._apply(asm, edit, chain, sites, port_handles, cap_handles)
+        asm.check_valence(name)
+        asm.check_connected(name)
+        rows, ids = asm.rows()
+        built_ports = tuple(Port(side, ids[h], tuple(ids[c] for c in caps), tag, physicality)
+                            for side, h, caps, tag, physicality in ports)
+        coordinates = tuple((ids[h], u, k) for h, (u, k) in asm.coord.items())
+        metadata = BoundaryMetadata(self.name, built_ports, coordinates, residues=chain.residues)
+        metadata.check(rows, name)
+        return ProxyBuild(name, molecule_from_rows(rows), metadata, tuple(range(len(rows))))
+
+    def _apply(self, asm, edit, chain, sites, port_handles, cap_handles):
+        units = len(chain.residues)
+
+        def locate(unit, key):
+            if unit in (-1, units) and (unit, key) in sites:
+                return sites[(unit, key)]
+            if not 0 <= unit < units:
+                raise dc.EditError(f"{edit}: unit {unit} is outside the chain (0..{units - 1})")
+            residue = chain.residues[unit]
+            if key not in self.keys[residue]:
+                raise dc.EditError(f"{edit}: key {key!r} is not an atom of residue {residue} "
+                                   f"{list(self.keys[residue])}")
+            handle = sites.get((unit, key))
+            if handle is None or handle not in asm.attrs:
+                raise dc.EditError(f"{edit}: atom ({unit}, {key!r}) is not in this chain")
+            return handle
+
+        handle = locate(edit.unit, edit.key)
+        if edit.kind == "set_radical":
+            asm.attrs[handle][3] = int(edit.value)
+        elif edit.kind == "add_h":
+            for _ in range(edit.count):
+                asm.add_h(handle, 2)
+        elif edit.kind == "remove_h":
+            free = [h for h in asm.hydrogens(handle) if h not in cap_handles]
+            if len(free) < edit.count:
+                raise dc.EditError(f"{edit}: atom ({edit.unit}, {edit.key!r}) has {len(free)} "
+                                   "removable hydrogens")
+            for h in free[len(free) - edit.count:]:
+                asm.remove(h)
+        elif edit.kind == "set_bond_order":
+            other = locate(*edit.other)
+            if other not in asm.adj[handle]:
+                raise dc.EditError(f"{edit}: ({edit.unit}, {edit.key!r}) and {edit.other} "
+                                   "are not bonded")
+            asm.adj[handle][other] = asm.adj[other][handle] = float(edit.value)
+        elif edit.kind == "delete_atom":
+            if handle in port_handles:
+                raise dc.EditError(f"{edit}: ({edit.unit}, {edit.key!r}) carries a port")
+            for h in [h for h in asm.adj[handle] if asm.attrs[h][0] == "H"
+                      and len(asm.adj[h]) == 1]:
+                asm.remove(h)
+            asm.remove(handle)
+
+    def position(self, residue: str, key: str) -> int:
+        """The coordinate position of ``key`` in ``residue``."""
+        return self.keys[residue].index(key)
+
+    # -- what the windows read ---------------------------------------------------
+    def declared_elements(self) -> frozenset:
+        """Every element the declaration names: residues, end groups,
+        monomer products and small species."""
+        spec = self.spec
+        graphs = [residue.graph for residue in self.residues.values()]
+        graphs += [spec.head_end_group, spec.tail_end_group]
+        graphs += [graph for _name, graph in spec.monomer_products]
+        graphs += [graph for _name, graph, _disposition in spec.small_species]
+        return frozenset(atom.element for graph in graphs for atom in graph.atoms)
+
+    def unit_formula(self) -> tuple:
+        """The depository growth unit (module doc)."""
+        return common_growth_unit(_formula(residue.graph) for residue in self.residues.values())
+
+    def _neighbours(self, name) -> tuple:
+        before = min(a for a in sorted(self.support) if name in self.support[a])
+        return before, min(self.support[name])
+
+    def interior_atoms_rmg(self) -> list:
+        """Perceived RMG atoms of every residue in the middle of a
+        three-residue artificial chain (its declared neighbours), with their
+        hydrogens."""
+        out = []
+        for name in sorted(self.residues):
+            before, after = self._neighbours(name)
+            build = self.build("interior", SequenceChainSpec((before, name, after)))
+            molecule = build.molecule
+            molecule.update()
+            middle = {a for a, u, _k in build.metadata.coordinates if u == 1}
+            atoms = [a for a in molecule.atoms if a.id in middle]
+            out += atoms + [h for a in atoms for h in a.bonds if h.is_hydrogen()]
+        return out
+
+    def probe_ports(self) -> tuple:
+        """(port, coordinate) of the head and tail ports of a two-residue
+        artificial chain."""
+        name = min(self.residues)
+        build = self.build("probe", SequenceChainSpec((name, self._neighbours(name)[1])))
+        return tuple((port, build.metadata.coordinate(port.atom_id))
+                     for port in build.metadata.ports)
+
+    def witness_backbone_indices(self, rows, metadata: BoundaryMetadata) -> dict:
+        """Atom id -> backbone index for the heavy atoms on a shortest
+        head-port -> tail-port path of the participant (the distance from the
+        head port, counted from the backbone atoms of the residues before it)."""
+        port_ids = {port.port_id for port in metadata.ports}
+        if not {"head", "tail"} <= port_ids or metadata.residues is None:
+            raise MetadataError(f"refused:backbone_ports: a participant with ports "
+                                f"{sorted(port_ids)} has no head-to-tail backbone")
+        from_head, from_tail, span = dc.DeclaredChainProvider._path_over_rows(rows, metadata)
+        unit, _position = metadata.coordinate(metadata.port("head").atom_id)
+        base = sum(self.backbone[name] for name in metadata.residues[:max(unit, 0)])
+        return {a: base + d for a, d in from_head.items()
+                if a in from_tail and d + from_tail[a] == span}
+
+    def backbone_index(self, unit: int, position: int, build=None):
+        if build is None:
+            raise MetadataError("refused:sequence_coordinates: a sequence chain has a backbone "
+                                "index only on a built chain")
+        from rmgpy.kmc.boundaries import rows_of_molecule
+
+        indices = self.witness_backbone_indices(dict(rows_of_molecule(build.molecule)),
+                                                build.metadata)
+        for a, u, k in build.metadata.coordinates:
+            if (u, k) == (unit, position):
+                return indices.get(a)
+        return None
+
+    def fragment(self, port, coordinate):
+        raise ExtensionRefused(f"{SEQUENCE_EXTENSION_REFUSAL}: {self.name}: the residue beyond "
+                               "an artificial port of a copolymer chain is not fixed by the "
+                               "declaration")
+
+    def end_edit(self, metadata, port, end, rows, protected):
+        raise ExtensionRefused(f"{SEQUENCE_EXTENSION_REFUSAL}: {self.name}: an end of a "
+                               "copolymer chain is built, never edited onto an extended chain")
+
+
+def sequence_provider(spec) -> SequenceChainProvider:
+    """The registered provider of this exact normalized v2 declaration."""
+    from rmgpy.polymer_spec import normalized_polymer_spec
+
+    spec = normalized_polymer_spec(spec)
+    name = "sequence:" + hashlib.sha256(spec.normalized_json).hexdigest()[:16]
+    found = PROVIDERS.get(name)
+    if isinstance(found, SequenceChainProvider) and \
+            found.spec.normalized_json == spec.normalized_json:
+        return found
+    return SequenceChainProvider(spec)

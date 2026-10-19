@@ -144,14 +144,22 @@ class BoundaryMetadata:
     (sorted by atom id); ``ports`` is sorted by ``port_id``.
     ``monomer_backbone``: None, or (on a portless declared monomer) the atom
     ids of its backbone in path order, bound once from the declaration
-    (empty: the declaration defines none); carried by atom id."""
+    (empty: the declaration defines none); carried by atom id.
+    ``residues``: None, or (on a residue-sequence chain) the residue letter
+    of every coordinate unit, in unit order."""
 
     provider: str
     ports: tuple[Port, ...]
     coordinates: tuple[tuple[int, int, int], ...]
     monomer_backbone: Optional[tuple] = field(default=None, repr=False)
+    residues: Optional[tuple] = field(default=None, repr=False)
 
     def __post_init__(self):
+        if self.residues is not None:
+            residues = tuple(self.residues)
+            if not all(isinstance(r, str) and r for r in residues):
+                raise MetadataError("residue letters must be non-empty strings")
+            object.__setattr__(self, "residues", residues)
         if self.monomer_backbone is not None:
             if self.ports:
                 raise MetadataError("a monomer backbone annotation needs a portless participant")

@@ -9,7 +9,8 @@ refusal (production's own upstream refusal, never emitted), found, or
 uncovered; the exit status is non-zero when any record is uncovered.
 
 The roster of an artifact compiled from a deck is built from its own
-compile structures (``reference_roster``); ``--roster-out`` writes the
+compile structures (``reference_roster``; for a schema-v2 deck with the
+pairs its compile recorded); ``--roster-out`` writes the
 roster emit takes.  The deck must be the declaration the artifact was
 compiled from: a carried
 declaration digest that differs is refused by name, and an artifact carrying
@@ -80,13 +81,13 @@ def reference_dps(records, requested):
 
 def reference_roster(artifact, spec, dps):
     """The roster the check (and emit) takes: for an artifact compiled from
-    a deck, the v3 roster of its own compile structures
-    (``emit.declared_reference_systems`` at its proxy units); for a legacy
-    artifact, the roster generated at ``dps`` plus the artifact's proxy
-    depths."""
+    a deck, the roster of its own compile structures
+    (``emit.declared_reference_systems`` at its proxy units: v3, or v4 with
+    the pairs a schema-v2 compile recorded); for a legacy artifact, the
+    roster generated at ``dps`` plus the artifact's proxy depths."""
     units = emit.declared_roster_units(artifact)
     if units is not None:
-        return emit.declared_reference_systems(spec, units)
+        return emit.declared_reference_systems(spec, units, emit.declared_roster_pairs(artifact))
     provider = emit.match_provider(spec.repeat_unit)
     return emit.reference_systems(spec, provider, dps=reference_dps(artifact["records"], dps))
 

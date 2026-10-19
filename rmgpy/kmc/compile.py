@@ -9,7 +9,10 @@ Nothing here is specific to one polymer: the family candidate list, the family
 universe and the proxy size are inputs.  With a deck (``--deck``) the proxies
 are the declared polymer's own (``declared_proxies.declared_proxy_set``) and
 every requested family is a candidate on them; without one the built-in proxy
-set is compiled as before.  The artifact's provenance names the source
+set is compiled as before.  A schema-v2 (copolymer) deck's proxies
+(``declared_proxies.sequence_proxy_set``) pair its structures over the
+family-tree classes of the loaded families, so they are built once the
+families load, and ``proxy_source`` records the pairs.  The artifact's provenance names the source
 (``proxy_source``: the deck's declaration digests, or the built-in set).  Caching is not part of this module;
 the only seam is ``generation_provider``, a callable with the signature of
 ``RMGDatabase.kinetics.generate_reactions_from_families`` that every reaction
@@ -130,6 +133,10 @@ def compile_artifact(
         thermo_libraries=["primaryThermoLibrary"],
         depository=True,
     )
+    if callable(proxies):
+        # a schema-v2 deck: the pairs are read from the loaded family trees
+        print("pairing structures over family-tree classes", flush=True)
+        proxies = proxies(database.kinetics.families)
     print("preparing non-auto-generated rate rules from training", flush=True)
     prepare_rate_rules(database.kinetics, database.thermo, verbose=True)
     database_commit = resolve_database_declaration(request.database_sha)
@@ -187,20 +194,37 @@ def _proxy_inputs(request: CompileRequest):
             "reason": "no deck was given",
         }
         return proxies, source, {}, {}
-    from rmgpy.kmc.declared_proxies import DEFAULT_PROXY_UNITS, declared_proxy_set
+    from rmgpy.kmc.declared_proxies import (
+        DEFAULT_PROXY_UNITS,
+        declared_proxy_set,
+        sequence_proxy_set,
+        sequence_structures,
+    )
     from rmgpy.kmc.run import read_deck
+    from rmgpy.polymer_spec import PolymerSpec
 
     deck = read_deck(request.deck)
     units = request.proxy_units if request.proxy_units is not None else DEFAULT_PROXY_UNITS
-    proxies = declared_proxy_set(deck.spec, units)
+    build = sequence_proxy_set if isinstance(deck.spec, PolymerSpec) else declared_proxy_set
     source = {
         "kind": "declaration",
         "label": deck.label,
         "deck_sha256": deck.sha256,
         **deck.digests(),
         "proxy_units": units,
-        "proxy_set": f"{declared_proxy_set.__module__}.{declared_proxy_set.__qualname__}",
+        "proxy_set": f"{build.__module__}.{build.__qualname__}",
     }
+    if build is sequence_proxy_set:
+        # the structures are built (and refused) before anything loads
+        sequence_structures(deck.spec, units)
+
+        def proxies(families):
+            built, record = sequence_proxy_set(deck.spec, units, families)
+            source.update(pairs=record["pairs"], pair_rule=record["rule"],
+                          pair_families=record["families"], pair_classes=record["classes"])
+            return built
+    else:
+        proxies = declared_proxy_set(deck.spec, units)
     compiler_options = {
         "family_candidates": tuple(request.families),
         "family_filter_reason": REQUESTED_FAMILY_FILTER_REASON,

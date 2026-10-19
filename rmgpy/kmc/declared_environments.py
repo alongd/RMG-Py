@@ -118,6 +118,8 @@ def covering_period(support: Mapping[str, Sequence[str]], k: int) -> Tuple[str, 
         raise ValueError(f"a covering period needs k >= 2, got {k}")
     names = sorted(support)
     successors = {a: tuple(sorted(support[a])) for a in names}
+    if len(names) == 1 and successors[names[0]] == tuple(names):
+        return tuple(names)
     if all(successors[a] == tuple(names) for a in names):
         return tuple(names[i] for i in _de_bruijn(len(names), int(k)))
     nodes = [(a,) for a in names]
@@ -230,14 +232,13 @@ def _ball(rows, heavy, root, reach):
     return distance, ball
 
 
-def period_environments(residues: Mapping, junctions: Mapping, locality_policy: Mapping,
-                        period: Sequence[str], whole_chain: bool = False) -> Dict[str, List[tuple]]:
-    """Site-class key -> sorted occurrences ``(word, residue, atom key)`` over
-    the heavy atoms of the middle copy of the periodic chain of ``period``.
-
-    ``word`` lists, in chain order, the residues whose atoms lie within the
-    environment's reach (radius + 1 bonds). ``whole_chain`` extracts every
-    key on the whole chain instead of a ball."""
+def _occurrences(residues: Mapping, junctions: Mapping, locality_policy: Mapping,
+                 period: Sequence[str], whole_chain: bool = False) -> List[tuple]:
+    """``(site key, word, position, residue, atom key, start)`` for every
+    heavy atom of the middle copy of the periodic chain of ``period``:
+    ``word`` the residues within the environment's reach, ``position`` the
+    atom's residue in it, ``start`` the period index of the word's first
+    residue (any integer; read modulo ``len(period)``)."""
     from rmgpy.kmc.rmg_moves import molecule_from_rows
     from rmgpy.kmc.site_class import extract_site_class
 
@@ -248,21 +249,36 @@ def period_environments(residues: Mapping, junctions: Mapping, locality_policy: 
     policy = dc.site_class_policy(locality_policy, MAX_HEAVY_ATOMS)
     whole = molecule_from_rows(rows) if whole_chain else None
     whole_atoms = {atom.id: atom for atom in whole.atoms} if whole_chain else None
-    found: Dict[str, set] = {}
+    out = []
     for index, name, table in occurrences[q * len(period):(q + 1) * len(period)]:
         for key, root in sorted(table.items()):
             if root not in heavy:
                 continue
             distance, ball = _ball(rows, heavy, root, radius + BALL_EXTRA)
-            word = tuple(period[i % len(period)] for i in sorted(
-                {occurrence_of[j] for j, d in distance.items() if d <= radius + 1}))
+            reach = sorted({occurrence_of[j] for j, d in distance.items() if d <= radius + 1})
+            word = tuple(period[i % len(period)] for i in reach)
             if whole_chain:
                 site, _mapping, _pattern = extract_site_class(whole, [("site", whole_atoms[root])], policy)
             else:
                 molecule = molecule_from_rows(ball)
                 atom = next(a for a in molecule.atoms if a.id == root)
                 site, _mapping, _pattern = extract_site_class(molecule, [("site", atom)], policy)
-            found.setdefault(site, set()).add((word, name, key))
+            out.append((site, word, reach.index(index), name, key, reach[0]))
+    return out
+
+
+def period_environments(residues: Mapping, junctions: Mapping, locality_policy: Mapping,
+                        period: Sequence[str], whole_chain: bool = False) -> Dict[str, List[tuple]]:
+    """Site-class key -> sorted occurrences ``(word, residue, atom key)`` over
+    the heavy atoms of the middle copy of the periodic chain of ``period``.
+
+    ``word`` lists, in chain order, the residues whose atoms lie within the
+    environment's reach (radius + 1 bonds). ``whole_chain`` extracts every
+    key on the whole chain instead of a ball."""
+    found: Dict[str, set] = {}
+    for site, word, _position, name, key, _start in _occurrences(
+            residues, junctions, locality_policy, period, whole_chain):
+        found.setdefault(site, set()).add((word, name, key))
     return {site: sorted(items) for site, items in sorted(found.items())}
 
 
@@ -272,6 +288,22 @@ def sequence_environments(spec) -> Dict[str, List[tuple]]:
     ``spec_word_order``."""
     period = covering_period(dict(spec.sequence_support), spec_word_order(spec))
     return period_environments(dict(spec.residues), spec.junctions, spec.locality_policy, period)
+
+
+def environment_witnesses(spec) -> Tuple[Tuple[str, ...], Dict[str, List[tuple]]]:
+    """``(period, witnesses)``: the covering period of ``sequence_environments``
+    and, per site-class key, its occurrences ``(word, position, atom key,
+    start)`` sorted shortest word first (``position``: the atom's residue in
+    the word; ``start``: the period index of the word's first residue, read
+    modulo the period, for the context on either side)."""
+    period = covering_period(dict(spec.sequence_support), spec_word_order(spec))
+    found: Dict[str, set] = {}
+    for site, word, position, _name, key, start in _occurrences(
+            dict(spec.residues), spec.junctions, spec.locality_policy, period):
+        found.setdefault(site, set()).add((word, position, key, start % len(period)))
+    witnesses = {site: sorted(items, key=lambda item: (len(item[0]),) + item)
+                 for site, items in sorted(found.items())}
+    return period, witnesses
 
 
 def word_frequencies(spec, k: int) -> Dict[Tuple[str, ...], Fraction]:
