@@ -106,11 +106,17 @@ def _rmg_for_sidecar_save(tmp_path, pool, extra_species):
     return rmg
 
 
-def _save_over_prior_sidecar(rmg, tmp_path):
+def _save_sidecar(rmg, tmp_path):
     path = tmp_path / "polymer_pools.json"
-    path.write_text('{"pools": [{"label": "old"}]}')
     rmg.save_everything()
     return path, json.loads(path.read_text()) if path.exists() else None
+
+
+def _save_good_sidecar(rmg, tmp_path):
+    path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc.get("refused") is not True
+    assert [pool["label"] for pool in doc["pools"]] == ["PE"]
+    return path
 
 
 def _malformed_species():
@@ -125,6 +131,7 @@ def test_save_path_replaces_prior_sidecar_when_identity_is_undecidable(
         tmp_path, pe_pool, monkeypatch):
     undecidable = _spc("O", "undecidable", index=7)
     rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [undecidable])
+    _save_good_sidecar(rmg, tmp_path)
     original = polymer_module._CoreStructure.identity_verdict
 
     def force_undecidable(structure, other):
@@ -133,7 +140,7 @@ def test_save_path_replaces_prior_sidecar_when_identity_is_undecidable(
         return original(structure, other)
 
     monkeypatch.setattr(polymer_module._CoreStructure, "identity_verdict", force_undecidable)
-    _path, doc = _save_over_prior_sidecar(rmg, tmp_path)
+    _path, doc = _save_sidecar(rmg, tmp_path)
     assert doc == {
         "refused": True,
         "reason": "core_topology_identity",
@@ -143,9 +150,12 @@ def test_save_path_replaces_prior_sidecar_when_identity_is_undecidable(
 
 def test_save_path_replaces_prior_sidecar_when_structure_is_unreadable(
         tmp_path, pe_pool):
+    readable = _spc("CC", "unreadable", index=8)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
     unreadable = Species(label="unreadable", index=8)
-    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [unreadable])
-    _path, doc = _save_over_prior_sidecar(rmg, tmp_path)
+    rmg.reaction_model.core.species[-1] = unreadable
+    _path, doc = _save_sidecar(rmg, tmp_path)
     assert doc == {
         "refused": True,
         "reason": "unreadable_core_structure",
@@ -155,9 +165,12 @@ def test_save_path_replaces_prior_sidecar_when_structure_is_unreadable(
 
 def test_save_path_replaces_prior_sidecar_when_structure_is_malformed(
         tmp_path, pe_pool):
+    readable = _spc("CC", "malformed", index=9)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
     malformed = _malformed_species()
-    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [malformed])
-    _path, doc = _save_over_prior_sidecar(rmg, tmp_path)
+    rmg.reaction_model.core.species[-1] = malformed
+    _path, doc = _save_sidecar(rmg, tmp_path)
     assert doc == {
         "refused": True,
         "reason": "core_topology_identity",
@@ -165,28 +178,52 @@ def test_save_path_replaces_prior_sidecar_when_structure_is_malformed(
     }
 
 
+def test_save_path_replaces_prior_sidecar_when_registry_audit_fails(
+        tmp_path, pe_pool, monkeypatch):
+    readable = _spc("CC", "readable", index=10)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
+
+    def fail_registry(*species_lists):
+        raise RuntimeError("registry unavailable")
+
+    monkeypatch.setattr(polymer_module, "collect_polymer_pool_registry", fail_registry)
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "registry unavailable",
+        "species": [],
+    }
+
+
 def test_save_path_marks_prior_sidecar_stale_when_refusal_write_fails(
         tmp_path, pe_pool, monkeypatch, caplog):
+    readable = _spc("CC", "malformed", index=9)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
     malformed = _malformed_species()
-    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [malformed])
+    rmg.reaction_model.core.species[-1] = malformed
 
     def fail_refusal(*args, **kwargs):
         raise OSError("disk full")
 
     monkeypatch.setattr(polymer_module, "write_refused_polymer_pools_sidecar", fail_refusal)
     with caplog.at_level(logging.WARNING):
-        path, _doc = _save_over_prior_sidecar(rmg, tmp_path)
+        path, _doc = _save_sidecar(rmg, tmp_path)
     stale = tmp_path / "polymer_pools.json.stale"
     assert not path.exists()
-    assert json.loads(stale.read_text()) == {"pools": [{"label": "old"}]}
+    assert json.loads(stale.read_text())["pools"][0]["label"] == "PE"
     assert str(path) in caplog.text
     assert str(stale) in caplog.text
 
 
 def test_save_path_never_leaves_a_partial_refusal(
         tmp_path, pe_pool, monkeypatch):
+    readable = _spc("CC", "malformed", index=9)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
     malformed = _malformed_species()
-    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [malformed])
+    rmg.reaction_model.core.species[-1] = malformed
     original_dump = polymer_module.json.dump
 
     def partial_dump(payload, stream, *args, **kwargs):
@@ -196,11 +233,10 @@ def test_save_path_never_leaves_a_partial_refusal(
         return original_dump(payload, stream, *args, **kwargs)
 
     monkeypatch.setattr(polymer_module.json, "dump", partial_dump)
-    path, _doc = _save_over_prior_sidecar(rmg, tmp_path)
+    path, _doc = _save_sidecar(rmg, tmp_path)
     assert not path.exists()
-    assert json.loads((tmp_path / "polymer_pools.json.stale").read_text()) == {
-        "pools": [{"label": "old"}],
-    }
+    stale = json.loads((tmp_path / "polymer_pools.json.stale").read_text())
+    assert stale["pools"][0]["label"] == "PE"
     assert list(tmp_path.glob("polymer_pools.json.tmp-*")) == []
 
 

@@ -2252,6 +2252,10 @@ class RMG(util.Subject):
         # (~/Code/TA) can pick up pool semantics + compiled flux terms.
         # Normative contract: docs/polymer_moments_format.md.
         sidecar_target = None
+        if self.output_directory:
+            chemkin_dir = os.path.join(self.output_directory, "chemkin")
+            sidecar_target = (chemkin_dir if os.path.isdir(chemkin_dir)
+                              else self.output_directory)
         try:
             from rmgpy.polymer import (Polymer, write_polymer_pools_sidecar,
                                        write_refused_polymer_pools_sidecar,
@@ -2268,9 +2272,7 @@ class RMG(util.Subject):
                 self.reaction_model.new_species_list,
             )
             if pool_registry and self.output_directory:
-                chemkin_dir = os.path.join(self.output_directory, "chemkin")
-                target_dir = chemkin_dir if os.path.isdir(chemkin_dir) else self.output_directory
-                sidecar_target = target_dir
+                target_dir = sidecar_target
 
                 core_species = self.reaction_model.core.species
                 core_reactions = self.reaction_model.core.reactions
