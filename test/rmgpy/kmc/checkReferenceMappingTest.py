@@ -84,7 +84,8 @@ def _check(tmp_path, monkeypatch, records, *, certify, record_key, prior, limit=
     artifact = tmp_path / "artifact.json"
     artifact.write_text(json.dumps({"records": records}))
     spec = SimpleNamespace(repeat_unit=object())
-    monkeypatch.setattr(CHECKER, "read_deck", lambda _path: SimpleNamespace(spec=spec))
+    monkeypatch.setattr(CHECKER, "read_deck", lambda _path: SimpleNamespace(spec=spec,
+                                                                            digests=lambda: {}))
     monkeypatch.setattr(CHECKER.emit, "match_provider", lambda _graph: object())
     monkeypatch.setattr(CHECKER.emit, "reference_systems", lambda *_args, **_kwargs:
                         SimpleNamespace(systems={}, sha256="hash"))
@@ -102,7 +103,7 @@ def _check(tmp_path, monkeypatch, records, *, certify, record_key, prior, limit=
     monkeypatch.setattr(CHECKER, "prior_unmapped", lambda _path: set(prior))
     args = SimpleNamespace(artifact=artifact, deck="deck.py", database="database",
                            old_rows="rows.jsonl", roster_out=None, dps=(1, 2, 3, 8),
-                           limit=limit)
+                           limit=limit, legacy_artifact=True)
     return CHECKER.check(args)
 
 
@@ -238,14 +239,18 @@ def test_emit_and_the_checker_name_a_certification_refusal_identically(tmp_path,
 # -- I-193: any declaration's artifact; prior-unmapped rows are optional
 
 
-def _pe_check(tmp_path, monkeypatch, records, old_rows=None):
+def _pe_check(tmp_path, monkeypatch, records, old_rows=None, provenance=None, legacy_artifact=True):
     """The checker on the PE toy declaration's real deck, roster and
-    reference systems; certification, keys and cases stubbed (no database)."""
+    reference systems; certification, keys and cases stubbed (no database).
+    ``provenance`` None: a legacy artifact without one."""
     from rmgpy.kmc.event_record import EventRecord
     from meltRunTest import pe_deck
 
     artifact = tmp_path / "artifact.json"
-    artifact.write_text(json.dumps({"records": records}))
+    document = {"records": records}
+    if provenance is not None:
+        document["provenance"] = provenance
+    artifact.write_text(json.dumps(document))
     monkeypatch.setattr(CHECKER.emit, "load_database", lambda *_args:
                         SimpleNamespace(kinetics=SimpleNamespace(families={})))
     monkeypatch.setattr(CHECKER.cm, "Certifier", lambda *_args, **_kwargs: object())
@@ -255,7 +260,8 @@ def _pe_check(tmp_path, monkeypatch, records, old_rows=None):
                         lambda *_args: ({("found",): [object()]}, {}))
     monkeypatch.setattr(CHECKER.emit, "record_key", lambda *_args: ("found",))
     args = SimpleNamespace(artifact=artifact, deck=pe_deck(tmp_path), database="database",
-                           old_rows=old_rows, roster_out=None, dps=(1, 2, 3), limit=None)
+                           old_rows=old_rows, roster_out=None, dps=(1, 2, 3), limit=None,
+                           legacy_artifact=legacy_artifact)
     return CHECKER.check(args)
 
 
@@ -288,3 +294,76 @@ def test_duplicate_event_ids_are_refused_by_name(tmp_path, monkeypatch):
     records[4]["event_id"] = records[1]["event_id"]
     with pytest.raises(RuntimeError, match=r"refused:artifact: duplicate event id event-1"):
         _pe_check(tmp_path, monkeypatch, records)
+
+
+# -- I-195: a deck and an artifact compiled from another declaration never combine
+
+
+def _deck_source(path):
+    from rmgpy.kmc.run import read_deck
+    deck = read_deck(path)
+    return {"kind": "declaration", "label": deck.label, "deck_sha256": deck.sha256,
+            **deck.digests(), "proxy_units": 3, "proxy_set": "declared"}
+
+
+def _refuse_expensive_steps(monkeypatch):
+    def expensive(*_args, **_kwargs):
+        raise AssertionError("an expensive step ran before the binding refused")
+    monkeypatch.setattr(CHECKER.emit, "reference_systems", expensive)
+    monkeypatch.setattr(CHECKER.emit, "load_database", expensive)
+
+
+def test_a_pe_deck_with_a_ps_artifact_is_refused_by_name(tmp_path, monkeypatch):
+    import pytest
+    from meltRunTest import ps_deck
+
+    provenance = {"proxy_source": _deck_source(ps_deck(tmp_path))}
+    _refuse_expensive_steps(monkeypatch)
+    with pytest.raises(CHECKER.emit.ArtifactBindingRefusal,
+                       match=r"refused:declaration: .*declaration_sha256"):
+        _pe_check(tmp_path, monkeypatch, _artifact_records(5), provenance=provenance,
+                  legacy_artifact=False)
+
+
+def test_the_legacy_flag_does_not_admit_another_declaration(tmp_path, monkeypatch):
+    import pytest
+    from meltRunTest import ps_deck
+
+    provenance = {"proxy_source": _deck_source(ps_deck(tmp_path))}
+    _refuse_expensive_steps(monkeypatch)
+    with pytest.raises(CHECKER.emit.ArtifactBindingRefusal, match=r"refused:declaration"):
+        _pe_check(tmp_path, monkeypatch, _artifact_records(5), provenance=provenance,
+                  legacy_artifact=True)
+
+
+def test_the_deck_of_the_artifacts_declaration_is_accepted(tmp_path, monkeypatch, capsys):
+    from meltRunTest import pe_deck
+
+    provenance = {"proxy_source": _deck_source(pe_deck(tmp_path))}
+    status = _pe_check(tmp_path, monkeypatch, _artifact_records(5), provenance=provenance,
+                       legacy_artifact=False)
+    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert status == 0 and summary["found"] == 5
+    assert summary["artifact_bound_by"] == ["chemistry_sha256", "declaration_sha256"]
+    assert summary["legacy_artifact"] is False
+
+
+def test_a_legacy_artifact_is_refused_unless_flagged(tmp_path, monkeypatch, capsys):
+    import pytest
+
+    _refuse_expensive_steps(monkeypatch)
+    with pytest.raises(CHECKER.emit.ArtifactBindingRefusal,
+                       match=r"refused:unbound_artifact: .*--legacy-artifact"):
+        _pe_check(tmp_path, monkeypatch, _artifact_records(5), legacy_artifact=False)
+    monkeypatch.undo()
+    status = _pe_check(tmp_path, monkeypatch, _artifact_records(5), legacy_artifact=True)
+    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert status == 0 and summary["artifact_bound_by"] == [] and summary["legacy_artifact"] is True
+
+
+def test_the_checker_has_the_legacy_artifact_flag(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["check", "artifact.json", "deck.py", "--database", "db",
+                                     "--legacy-artifact"])
+    assert CHECKER.parse_args().legacy_artifact is True
+    monkeypatch.setattr("sys.argv", ["check", "artifact.json", "deck.py", "--database", "db"])
+    assert CHECKER.parse_args().legacy_artifact is False

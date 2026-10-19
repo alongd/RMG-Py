@@ -1220,3 +1220,94 @@ def test_a_raising_collision_resolution_refuses_the_catalog(tmp_path, monkeypatc
                for f in failures), failures
     assert catalog["payloads"] == [] and catalog["complete"] is False
     assert balance_stubs["derive"] == balance_stubs["cycles"] == 0
+
+
+# -- I-195: an artifact compiled from another declaration is never emitted against this roster
+
+
+class _Reached(Exception):
+    """Raised by the first expensive step: the binding let the run through."""
+
+
+def _digests(kind):
+    from rmgpy.kmc.run import chemistry_sha256, declaration_sha256
+    from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
+    spec = normalized_linear_homopolymer_spec(polymer_mapping(kind))
+    return {"chemistry_sha256": chemistry_sha256(spec), "declaration_sha256": declaration_sha256(spec)}
+
+
+def _bound_artifact(tmp_path, proxy_source):
+    """An artifact whose provenance carries ``proxy_source`` (None: a legacy
+    compile without one)."""
+    provenance = {} if proxy_source is None else {"proxy_source": proxy_source}
+    path = tmp_path / "artifact.json"
+    path.write_text(json.dumps({"provenance": provenance, "records": []}))
+    return path
+
+
+def _declared_source(kind):
+    return {"kind": "declaration", "label": kind, "deck_sha256": "deck", **_digests(kind),
+            "proxy_units": 3, "proxy_set": "declared"}
+
+
+def _emit_cli(tmp_path, monkeypatch, artifact, *flags):
+    def reached(_roster):
+        raise _Reached
+    monkeypatch.setattr(emit, "build_reference_systems", reached)
+    roster = write_roster(tmp_path, "pe", {"a": [chain(2)]})
+    return emit.main([str(artifact), str(roster), "--database", "db",
+                      "--out", str(tmp_path / "rows.jsonl"), *flags])
+
+
+def test_a_roster_carries_the_digests_of_the_declaration_it_was_built_from(tmp_path):
+    from meltRunTest import pe_deck
+    from rmgpy.kmc.run import read_deck
+
+    deck = read_deck(pe_deck(tmp_path))
+    generated = emit.reference_systems(deck.spec, emit.match_provider(deck.spec.repeat_unit),
+                                       dps=(1, 2))
+    written = emit.write_roster(generated, tmp_path / "roster.json")
+    assert generated.digests() == written.digests() == deck.digests()
+    assert emit.load_roster(write_roster(tmp_path, "pe", {"a": [chain(2)]})).digests() == _digests("pe")
+
+
+def test_emit_refuses_a_roster_of_another_declaration_before_any_expensive_step(
+        tmp_path, monkeypatch, capsys):
+    artifact = _bound_artifact(tmp_path, _declared_source("ps"))
+    assert _emit_cli(tmp_path, monkeypatch, artifact) == 1
+    out = capsys.readouterr().out
+    assert "refused:declaration" in out and "declaration_sha256" in out
+    assert not (tmp_path / "rows.jsonl").exists()
+
+
+def test_emit_refuses_another_declaration_even_with_the_legacy_flag(tmp_path, monkeypatch, capsys):
+    artifact = _bound_artifact(tmp_path, _declared_source("ps"))
+    assert _emit_cli(tmp_path, monkeypatch, artifact, "--legacy-artifact") == 1
+    assert "refused:declaration" in capsys.readouterr().out
+
+
+def test_emit_accepts_the_roster_of_the_artifacts_declaration(tmp_path, monkeypatch):
+    artifact = _bound_artifact(tmp_path, _declared_source("pe"))
+    with pytest.raises(_Reached):
+        _emit_cli(tmp_path, monkeypatch, artifact)
+
+
+@pytest.mark.parametrize("source", [None, {"kind": "built-in", "proxy_set": "built-in",
+                                           "proxy_units": None, "reason": "no deck was given"}])
+def test_emit_refuses_a_legacy_artifact_unless_flagged(tmp_path, monkeypatch, capsys, source):
+    artifact = _bound_artifact(tmp_path, source)
+    assert _emit_cli(tmp_path, monkeypatch, artifact) == 1
+    out = capsys.readouterr().out
+    assert "refused:unbound_artifact" in out and "--legacy-artifact" in out
+    with pytest.raises(_Reached):
+        _emit_cli(tmp_path, monkeypatch, artifact, "--legacy-artifact")
+
+
+@pytest.mark.parametrize("key", ["chemistry_sha256", "declaration_sha256"])
+def test_each_carried_digest_binds(key):
+    source = dict(_declared_source("pe"), **{key: "0" * 64})
+    with pytest.raises(emit.ArtifactBindingRefusal, match=rf"refused:declaration: .*{key}"):
+        emit.bind_artifact({"provenance": {"proxy_source": source}}, _digests("pe"), "the roster")
+    assert emit.bind_artifact({"provenance": {"proxy_source": _declared_source("pe")}},
+                              _digests("pe"), "the roster") == ("chemistry_sha256",
+                                                                "declaration_sha256")
