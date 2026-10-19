@@ -1327,12 +1327,19 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
                        "templates": [], "contexts": []})
     rec_r = record_graph_rows(record, "reactant_graphs")
     rec_species = counter.species_of_rows(record_graph_rows(record, "product_graphs"))
+    rec_reac = counter.species_of_rows(rec_r)
     cands, ctx_rows = [], []
     for case, row, (results, merges) in members:
-        case_species = counter.species_of_rows(dict(case.witness.reactant_rows()))
-        rec_reac = counter.species_of_rows(rec_r)
-        rev = case_species != rec_reac
-        if rev and counter.species_of_rows(dict(case.witness.product_rows())) != rec_reac:
+        if rec_reac == rec_species:
+            # a degenerate exchange: one species on both sides cannot say
+            # which side the member's witness stands on.  The member was
+            # generated with its template side as the case-direction
+            # reactants, and the record's template side is its orientation's
+            rev = (case.direction != "forward") != template_on_products(record)
+        else:
+            rev = counter.species_of_rows(dict(case.witness.reactant_rows())) != rec_reac
+        on_record_reactants = case.witness.product_rows() if rev else case.witness.reactant_rows()
+        if counter.species_of_rows(dict(on_record_reactants)) != rec_reac:
             return finish({**head, "status": "refused",
                            "refusal": {"by": "emission", "status": "refused:orientation",
                                        "reason": "the member's witness carries neither the "
