@@ -280,17 +280,29 @@ def test_declared_provider_builds_the_declarations_caps_through_emit(tmp_path):
         "ports": {"cap": {"atom": "methyl", "bond_order": 1}},
         "electronic_state": {"multiplicity": 1}}
     spec = LinearHomopolymerSpec.from_mapping(mapping)
-    provider = dc.DeclaredChainProvider(spec)
-    try:
-        roster = emit.reference_systems(spec, provider, dps=(3,), small=False, monomer=False,
-                                        molecularity={1})
-        systems, refusals = emit.build_reference_systems(
-            emit.write_roster(roster, tmp_path / "declared-pe.json"))
-        assert refusals == []
-        molecule = systems["single:chain:dp3:declared"][0].build("declared").molecule
-        assert molecule.get_formula() == "C7H16"
-    finally:
-        b.PROVIDERS.pop(provider.name, None)
+    roster = emit.reference_systems(spec, emit.match_provider(spec.repeat_unit), dps=(3,),
+                                    small=False, monomer=False, molecularity={1})
+    systems, refusals = emit.build_reference_systems(
+        emit.write_roster(roster, tmp_path / "declared-pe.json"))
+    assert refusals == []
+    molecule = systems["single:chain:dp3:declared"][0].build("declared").molecule
+    assert molecule.get_formula() == "C7H16"
+
+
+def test_generated_roster_skips_an_unbuildable_interior_radical(monkeypatch):
+    spec = LinearHomopolymerSpec.from_mapping(polymer_mapping("pe"))
+    provider = emit.match_provider(spec.repeat_unit)
+    original = provider.spec_from_declaration
+
+    def without_interior(dp, head=None, tail=None, interior_radical=None):
+        if interior_radical is not None:
+            raise b.ExtensionRefused("no hydrogen-bearing interior backbone atom")
+        return original(dp, head, tail, interior_radical)
+
+    monkeypatch.setattr(provider, "spec_from_declaration", without_interior)
+    roster = emit.reference_systems(spec, provider, dps=(2,), small=False, monomer=False,
+                                    molecularity={1})
+    assert not any("interior-radical" in name for name in roster.systems)
 
 
 def test_generated_explicit_species_are_valid_window_specs(tmp_path):

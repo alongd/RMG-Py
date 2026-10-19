@@ -366,7 +366,7 @@ class DeclaredSpec:
 
 
 class SmallSpeciesProvider(b.BoundaryProvider):
-    """The small declared species (``small_build``): no ports, no repeat
+    """A named or explicit small species: no ports, no repeat
     coordinates, no backbone (no span check), no interior atoms, no
     extension fragment and no growth unit."""
 
@@ -377,21 +377,8 @@ class SmallSpeciesProvider(b.BoundaryProvider):
     def build(self, spec, name="p"):
         if len(spec) == 2:
             return small_build(spec[1])
-        from rmgpy.molecule.molecule import Molecule
         kind, value = spec[1:]
-        molecule = Molecule(smiles=value) if kind == "smiles" else \
-            Molecule().from_adjacency_list(value)
-        multiplicity = molecule.multiplicity
-        objects = list(molecule.atoms)
-        molecule.update()
-        molecule.multiplicity = multiplicity
-        molecule.assign_atom_ids()
-        rows = dict(b.rows_of_molecule(molecule))
-        heavy = sorted(a for a, row in rows.items() if row[0] != "H")
-        metadata = b.BoundaryMetadata("small", (),
-                                      tuple((a, k, 0) for k, a in enumerate(heavy)))
-        metadata.check(rows, name)
-        return b.ProxyBuild(name, molecule, metadata, tuple(atom.id for atom in objects))
+        return b.explicit_species_build(name, **{kind: value})
 
     def fragment(self, port, coordinate):
         raise b.ExtensionRefused("a small species has no ports")

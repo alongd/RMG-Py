@@ -354,6 +354,24 @@ class BoundaryProvider:
         return None if built is None else built[0]
 
 
+def explicit_species_build(name, *, smiles=None, adjacency_list=None):
+    """Build an explicit, port-free species while preserving declared spin."""
+    from rmgpy.molecule.molecule import Molecule
+    molecule = Molecule(smiles=smiles) if smiles is not None else \
+        Molecule().from_adjacency_list(adjacency_list)
+    multiplicity = molecule.multiplicity
+    objects = list(molecule.atoms)
+    molecule.update()
+    molecule.multiplicity = multiplicity
+    molecule.assign_atom_ids()
+    rows = dict(rows_of_molecule(molecule))
+    heavy = sorted(a for a, row in rows.items() if row[0] != "H")
+    metadata = BoundaryMetadata("small", (),
+                                tuple((a, k, 0) for k, a in enumerate(heavy)))
+    metadata.check(rows, name)
+    return ProxyBuild(name, molecule, metadata, tuple(atom.id for atom in objects))
+
+
 # the two extension probes of the named providers: a tail port on unit 0
 # position 1 and a head port on unit 0 position 0 (``windows`` facts)
 LEGACY_PROBE_PORTS = ((Port("p", 0, (1,), "backbone_tail", "artificial"), (0, 1)),
