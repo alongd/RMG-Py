@@ -2241,8 +2241,10 @@ class RMG(util.Subject):
         # chemkin / cantera outputs so the TA-side mechanism loader
         # (~/Code/TA) can pick up pool semantics + compiled flux terms.
         # Normative contract: docs/polymer_moments_format.md.
+        sidecar_target = None
         try:
             from rmgpy.polymer import (Polymer, write_polymer_pools_sidecar,
+                                       write_refused_polymer_pools_sidecar,
                                        _artifact_species_label, collect_polymer_pool_registry,
                                        derive_condensed_species,
                                        core_topology_signature)
@@ -2258,6 +2260,7 @@ class RMG(util.Subject):
             if pool_registry and self.output_directory:
                 chemkin_dir = os.path.join(self.output_directory, "chemkin")
                 target_dir = chemkin_dir if os.path.isdir(chemkin_dir) else self.output_directory
+                sidecar_target = target_dir
 
                 core_species = self.reaction_model.core.species
                 core_reactions = self.reaction_model.core.reactions
@@ -2480,6 +2483,11 @@ class RMG(util.Subject):
                 )
         except Exception as e:
             logging.warning(f"Failed to write polymer_pools.json sidecar: {e}", exc_info=True)
+            if sidecar_target is not None:
+                try:
+                    write_refused_polymer_pools_sidecar(sidecar_target, str(e))
+                except Exception:
+                    logging.warning("Failed to write refused polymer_pools.json sidecar", exc_info=True)
 
         self.save_profiler_info()
 

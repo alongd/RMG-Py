@@ -8364,13 +8364,17 @@ class CoreTopologySignature(object):
         return not self.__eq__(other)
 
     def undecidable_species(self, other):
-        """Labels whose identity needs resonance expansion RMG cannot do."""
+        """Labels whose identity cannot safely establish a topology match."""
         if not isinstance(other, CoreTopologySignature):
             return []
         undecidable = []
         for (label, index, here), (other_label, other_index, there) in zip(self.species, other.species):
-            if label == other_label and index == other_index and \
-                    here.identity_verdict(there) is _species_identity.UNDECIDABLE:
+            if label != other_label or index != other_index:
+                continue
+            if isinstance(here, _UnreadableStructure) or isinstance(there, _UnreadableStructure):
+                continue
+            verdict = here.identity_verdict(there)
+            if verdict in (_species_identity.UNDECIDABLE, _species_identity.MALFORMED):
                 undecidable.append(f"{label}({index})")
         return undecidable
 
@@ -8505,8 +8509,30 @@ def write_polymer_pools_sidecar(
         stale_unreadable=stale_unreadable,
     )
     path = os.path.join(output_dir, filename)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, default=str)
+    temp_path = f"{path}.tmp-{os.getpid()}"
+    try:
+        with open(temp_path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, default=str)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+    return path
+
+
+def write_refused_polymer_pools_sidecar(output_dir, reason, species=None,
+                                        filename=POLYMER_POOLS_SIDECAR_FILENAME):
+    """Atomically replace a previous sidecar with a named refusal."""
+    path = os.path.join(output_dir, filename)
+    temp_path = f"{path}.tmp-{os.getpid()}"
+    payload = {"refused": True, "reason": str(reason), "species": list(species or ())}
+    try:
+        with open(temp_path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
     return path
 
 
