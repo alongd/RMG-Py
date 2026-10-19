@@ -1086,6 +1086,7 @@ class Candidate:
     refusal: Optional[str] = None
     unextended: Any = None
     sources: list = field(default_factory=list)
+    reverse: bool = False
 
 
 def context_candidates(case, results, merges, *, family, pathway, direction, reverse,
@@ -1130,7 +1131,8 @@ def context_candidates(case, results, merges, *, family, pathway, direction, rev
             except b.BoundaryError as error:
                 refusal = refusal or f"refused:end: {error}"
         cands.append(Candidate(cut, case.label, k, assignment, r.witness,
-                               frozenset(r.window.atoms), cert, k == 0, refusal, unextended))
+                               frozenset(r.window.atoms), cert, k == 0, refusal, unextended,
+                               reverse=reverse))
         row["emission"] = "candidate" if refusal is None else refusal
         row["context"] = context
         rows.append(row)
@@ -1358,7 +1360,10 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
     for k, cand in enumerate(cands):
         templates.append(emit_candidate(
             cand, record=record, family=fam, direction=direction, pathway=pathway,
-            cpath=cpath, reverse=reverse, counter=counter, rates=rates, weights=weights,
+            # each candidate is counted on its own member's witness, read in
+            # that member's orientation (members of both orientations mix)
+            cpath=count_pathway(fam, pathway, cand.reverse), reverse=cand.reverse,
+            counter=counter, rates=rates, weights=weights,
             temperatures=rate["T"], providers=providers, ceiling=ceiling,
             owner_rate_source=owner_rate_source, kc=kc, record_map=next((record_map.get(f"probe{i}") for i, c in enumerate(base)
                              if c is cand), None)))
@@ -1472,13 +1477,7 @@ def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, 
                          "accepted": ok and worst <= LOCALITY_TOLERANCE_LOG10}
     if not ok:
         mismatch = [r for r in rows if r["status"] == "refused:count_mismatch"]
-        empty = [r for r in rows if r["status"] == "refused:zero_transitions"]
-        if empty and not mismatch:
-            entry.update(status="refused", refusal={
-                "status": "refused:zero_transitions",
-                "reason": f"context {entry['context_index']} {entry['context']}: "
-                          f"{'; '.join(r['reason'] for r in empty)}"[:400]})
-        elif mismatch:
+        if mismatch:
             r0 = mismatch[0]
             entry.update(status="refused", refusal={
                 "status": "refused:count_mismatch",
@@ -1515,13 +1514,6 @@ def witness_row(template, witness, *, label, vector, family, direction, pathway,
                 "reason": str(error)[:200]}
     row = {"label": label, "vector": list(vector), "counts": count.as_dict(),
            "heavy_atoms": witness.heavy_count()}
-    if count.matcher == 0 and count.rmg == 0:
-        # RMG reads no move of the record's channel here either: the witness
-        # lies outside the channel, so the template has no weight to carry on it
-        row.update(status="refused:zero_transitions",
-                   reason=f"T_ch = 0 on witness {label!r}: neither the template nor RMG makes "
-                          f"a transition of the record's channel on it (rmg_moves: 0)")
-        return row
     if count.matcher == 0:
         raise EmissionError(f"T_ch = 0 on witness {label!r}: the template makes no transition "
                             f"of the witness's own channel (rmg_moves: {count.rmg})")
