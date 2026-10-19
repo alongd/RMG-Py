@@ -12,6 +12,16 @@ implements this document with numpy + Cantera reproduces the oracle's per-pool
 `test/rmgpy/tools/numpy_moments_consumer.py`; the reference runner (drives the
 oracle itself) at `rmgpy/tools/polymer_moments_runner.py`.
 
+The public standalone sidecar writers are transactional. If either writer
+fails before publishing its requested payload, the canonical path MUST NOT
+continue to expose an older successful artifact as current. The writer first
+publishes the fixed whole-file refusal
+`{"refused":true,"reason":"sidecar_write_failed","species":[]}`; if that
+cannot be published, it removes or stales the canonical path. If neither
+invalidation is possible, it raises `PolymerPoolsSidecarInvalidationError`.
+This whole-file refusal is an operational failure marker, not a
+schema-versioned moments artifact.
+
 **Versioning policy:** minor bump = additive term types / fields; major bump
 = breaking. Acceptance is STRICT-MINOR (ratified at 2.2, superseding the
 earlier minor-permissive rule): a consumer accepts only the schema minors it

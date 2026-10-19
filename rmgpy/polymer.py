@@ -8452,7 +8452,8 @@ def _take_sidecar_write_ticket(path):
         return _SidecarWriteTicket(target_path, state.issued)
 
 
-def _write_sidecar_atomically(path, write_payload, ticket=None):
+def _write_sidecar_atomically(
+        path, write_payload, ticket=None, discard_if_newer_issued=True):
     """Publish a sidecar through a unique, durable temp file."""
     path = os.path.abspath(path)
     if ticket is None:
@@ -8473,13 +8474,17 @@ def _write_sidecar_atomically(path, write_payload, ticket=None):
             os.fsync(fh.fileno())
         with _SIDECAR_WRITE_LOCK:
             state = _SIDECAR_WRITE_STATES[path]
-            if state.issued > ticket.sequence:
+            superseding_sequence = (
+                state.issued if discard_if_newer_issued else state.committed
+            )
+            if superseding_sequence > ticket.sequence:
                 logging.warning(
                     "Discarded superseded sidecar write for %s "
-                    "(ticket %d; latest issued ticket %d)",
+                    "(ticket %d; latest %s ticket %d)",
                     path,
                     ticket.sequence,
-                    state.issued,
+                    "issued" if discard_if_newer_issued else "committed",
+                    superseding_sequence,
                 )
                 return
             os.replace(temp_path, path)
@@ -8506,6 +8511,7 @@ def _invalidate_failed_standalone_sidecar_write(path, ticket):
             path,
             lambda fh: fh.write(_FAILED_SIDECAR_REFUSAL),
             ticket=ticket,
+            discard_if_newer_issued=False,
         )
         return
     except Exception:
@@ -8517,7 +8523,7 @@ def _invalidate_failed_standalone_sidecar_write(path, ticket):
     stale_path = path + ".stale"
     with _SIDECAR_WRITE_LOCK:
         state = _SIDECAR_WRITE_STATES[path]
-        if state.issued > ticket.sequence:
+        if state.committed > ticket.sequence:
             return
         try:
             if os.path.exists(path):
