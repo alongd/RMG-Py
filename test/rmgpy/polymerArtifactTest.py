@@ -5,6 +5,7 @@ format doc: docs/polymer_moments_format.md)."""
 
 import json
 import logging
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -125,6 +126,55 @@ def test_standalone_write_raises_named_error_when_invalidation_fails(
     with pytest.raises(RuntimeError) as exc_info:
         write_polymer_pools_sidecar([], str(tmp_path))
     assert exc_info.type.__name__ == "PolymerPoolsSidecarInvalidationError"
+
+
+def test_failed_standalone_write_invalidates_while_newer_writer_is_pending(
+        tmp_path, monkeypatch):
+    path = tmp_path / "polymer_pools.json"
+    path.write_text('{"pools": [{"label": "old"}]}')
+    newer_started = threading.Event()
+    release_newer = threading.Event()
+    failures = {}
+
+    def interleaved_build(*args, **kwargs):
+        if threading.current_thread().name == "older-sidecar-writer":
+            assert newer_started.wait(timeout=5)
+            raise RuntimeError("older construction failed")
+        newer_started.set()
+        assert release_newer.wait(timeout=5)
+        return {"newer": True}
+
+    def write_sidecar(name):
+        try:
+            write_polymer_pools_sidecar([], str(tmp_path))
+        except RuntimeError as error:
+            failures[name] = str(error)
+
+    monkeypatch.setattr(
+        polymer_module,
+        "build_polymer_moments_artifact",
+        interleaved_build,
+    )
+    older = threading.Thread(target=write_sidecar, args=("older",),
+                             name="older-sidecar-writer")
+    newer = threading.Thread(target=write_sidecar, args=("newer",),
+                             name="newer-sidecar-writer")
+    older.start()
+    newer.start()
+    older.join(timeout=5)
+    assert not older.is_alive()
+    assert failures == {"older": "older construction failed"}
+    while_newer_pending = json.loads(path.read_text())
+
+    release_newer.set()
+    newer.join(timeout=5)
+    assert not newer.is_alive()
+    assert while_newer_pending == {
+        "refused": True,
+        "reason": "sidecar_write_failed",
+        "species": [],
+    }
+    assert json.loads(path.read_text()) == {"newer": True}
 
 
 def test_unreadable_signature_is_stale_not_an_identity_crash():
