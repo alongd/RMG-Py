@@ -89,12 +89,22 @@ def polymer_mapping(kind):
     }
 
 
-def chain(dp, head=None, tail=None, radical_unit=None):
-    return {"chain": {"dp": dp, "head": head, "tail": tail, "radical_unit": radical_unit}}
+def chain(dp, head=None, tail=None, radical_unit=None, owner=None):
+    value = {"dp": dp, "head": head, "tail": tail, "radical_unit": radical_unit}
+    if owner is not None:
+        value["owner"] = owner
+    return {"chain": value}
 
 
 def write_roster(tmp_path, kind, systems, name="roster.json"):
     path = tmp_path / name
+    default_owner = {"ps": "polystyrene", "pe": "linear_alkane",
+                     "pp": "missing-provider"}[kind]
+    systems = copy.deepcopy(systems)
+    for entries in systems.values():
+        for entry in entries:
+            if "chain" in entry:
+                entry["chain"].setdefault("owner", default_owner)
     path.write_text(json.dumps({"schema": emit.ROSTER_SCHEMA, "polymer": polymer_mapping(kind),
                                 "systems": systems}))
     return path
@@ -176,10 +186,10 @@ def test_pe_declaration_with_ends_is_the_alkane_end_spec(tmp_path):
                       win.build_spec(("alkane", 6, "primary_radical", "methyl", None)))
 
 
-def test_unregistered_repeat_unit_is_refused_with_a_row(tmp_path):
+def test_unregistered_vocabulary_owner_is_refused_with_a_row(tmp_path):
     systems, refusals = systems_of(tmp_path, "pp", {"pp8": [chain(8)]})
     assert systems == {} or systems.get("pp8") in (None, [])
-    assert [r["status"] for r in refusals] == ["refused:no_provider"]
+    assert [r["status"] for r in refusals] == ["refused:owner"]
     assert refusals[0]["system"] == "pp8" and refusals[0]["reason"]
 
 

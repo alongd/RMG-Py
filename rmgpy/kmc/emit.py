@@ -23,15 +23,14 @@ refusal and timing.  An error is a row (``status: error``), never silent.  The
 first line of a rows file is its header (artifact, database, code, roster and
 shard identity).
 
-**Roster.** A JSON file ``{"schema": "kmc-reference-roster/1", "polymer":
+**Roster.** A JSON file ``{"schema": "kmc-reference-roster/2", "polymer":
 <LinearHomopolymerSpec mapping>, "systems": {name: [participant, ...]}}``.  A
-participant is ``{"chain": {"dp", "head", "tail", "radical_unit"}}`` (a chain of
-the declared repeat unit; ``head``/``tail`` name an end variant of the matched
-provider's ``END_CHEMISTRIES`` vocabulary, ``null`` the artificial H-capped end),
+participant is ``{"chain": {"owner", "dp", "head", "tail", "radical_unit"}}``
+(a chain of the declared repeat unit; ``owner`` names the exact registered provider whose
+``END_CHEMISTRIES`` vocabulary owns ``head``/``tail``, ``null`` the artificial H-capped end),
 ``{"smiles": ...}`` or ``{"adjacency_list": ...}``.  The declared repeat unit is
-matched to a registered provider (``boundaries.PROVIDERS``, ``REPEAT_UNIT`` and
-``spec_from_declaration``) by graph isomorphism; a declaration no provider
-matches is refused (``refused:no_provider``), never dropped.
+rebuilt by a declaration provider registered from the embedded polymer; each chain's vocabulary
+owner must be registered and declare that repeat unit, or it is refused (``refused:owner``).
 
 **Assemble.** Merge the shards, then ``resolve_collisions``, ``derive_weights``
 and ``check_cycles`` over the whole set.  The catalog is written even when a gate
@@ -61,7 +60,7 @@ from rmgpy.kmc import windows as win
 
 SCHEMA = "kmc-template-catalog/1"
 ROWS_SCHEMA = "kmc-emit-rows/1"
-ROSTER_SCHEMA = "kmc-reference-roster/1"
+ROSTER_SCHEMA = "kmc-reference-roster/2"
 # Kept equal to the acceptance harness' labels so that rows of the two agree
 # (neither string selects data: the Kc label tags the reference thermo, the
 # rate label tags the production-rate provenance)
@@ -122,6 +121,7 @@ def load_roster(path) -> Roster:
     systems = data["systems"]
     if not isinstance(systems, dict) or not all(isinstance(v, list) for v in systems.values()):
         raise RosterRefusal("refused:roster", "systems must map a name to a participant list")
+    declared_provider(polymer)
     return Roster(polymer, systems, hashlib.sha256(raw).hexdigest(), str(path))
 
 
@@ -146,8 +146,8 @@ def _adjacency_entry(molecule) -> dict:
     return {"adjacency_list": molecule.to_adjacency_list()}
 
 
-def _chain_entry(dp, head=None, tail=None, radical_unit=None) -> dict:
-    return {"chain": {"dp": dp, "head": head, "tail": tail,
+def _chain_entry(owner, dp, head=None, tail=None, radical_unit=None) -> dict:
+    return {"chain": {"owner": owner, "dp": dp, "head": head, "tail": tail,
                       "radical_unit": radical_unit}}
 
 
@@ -157,7 +157,7 @@ def _reference_chain_entries(provider, dps, phases, declared=None) -> list:
     out = []
 
     def add(label, dp, head=None, tail=None, radical_unit=None):
-        entry = _chain_entry(dp, head, tail, radical_unit)
+        entry = _chain_entry(provider.name, dp, head, tail, radical_unit)
         spec = provider.spec_for_declared_provider(
             declared, dp, head, tail, radical_unit)
         participant = Participant(label, spec, lambda name, s=spec: win.build_spec(s, name))
@@ -166,7 +166,7 @@ def _reference_chain_entries(provider, dps, phases, declared=None) -> list:
 
     def add_interior_radical(dp):
         for unit in range(dp):
-            entry = _chain_entry(dp, radical_unit=unit)
+            entry = _chain_entry(provider.name, dp, radical_unit=unit)
             try:
                 spec = provider.spec_for_declared_provider(
                     declared, dp, interior_radical=unit)
@@ -254,9 +254,8 @@ def reference_systems(spec, provider, *, dps=(1, 2, 3, 8), phases=True,
     """
     from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
     spec = normalized_linear_homopolymer_spec(spec)
-    if provider is None:
-        raise RosterRefusal("refused:no_provider", "the declaration has no reference provider")
     declared = declared_provider(spec)
+    provider = declared if provider is None else provider
     dps = tuple(dps)
     if not dps or any(isinstance(dp, bool) or not isinstance(dp, int) or dp < 1 for dp in dps):
         raise RosterRefusal("refused:roster", f"reference DPs must be positive integers: {dps!r}")
@@ -418,30 +417,44 @@ def explicit_build(name, smiles=None, adjacency_list=None):
     return b.explicit_species_build(name, smiles=smiles, adjacency_list=adjacency_list)
 
 
-CHAIN_KEYS = {"dp", "head", "tail", "radical_unit"}
+CHAIN_KEYS = {"owner", "dp", "head", "tail", "radical_unit"}
 
 
-def _participant(provider, graph, entry, label, reference_provider=None):
+def _owns_declaration(provider, graph):
+    exact = getattr(provider, "spec", None)
+    if exact is not None:
+        return exact == graph
+    unit = getattr(provider, "REPEAT_UNIT", None)
+    if unit is None:
+        return False
+    from rmgpy.polymer_spec import GraphDeclaration
+    return isomorphic(graph.repeat_unit,
+                      GraphDeclaration.from_mapping(unit, required_ports=("head", "tail")))
+
+
+def _participant(provider, graph, entry, label):
     if not isinstance(entry, dict) or len(entry) != 1:
         raise RosterRefusal("refused:roster", f"{label}: exactly one of chain, smiles, adjacency_list")
     (kind, value), = entry.items()
     if kind == "chain":
-        if not isinstance(value, dict) or "dp" not in value or set(value) - CHAIN_KEYS:
-            raise RosterRefusal("refused:roster", f"{label}: a chain declares dp and optionally "
-                                                  f"head, tail, radical_unit")
-        if provider is None:
-            raise RosterRefusal("refused:no_provider",
-                                f"{label}: no registered provider declares this repeat unit "
-                                f"(registered: {sorted(b.PROVIDERS)})")
+        if not isinstance(value, dict) or not {"owner", "dp"} <= set(value) or \
+                set(value) - CHAIN_KEYS:
+            raise RosterRefusal("refused:roster", f"{label}: a chain declares owner, dp and "
+                                                  f"optionally head, tail, radical_unit")
+        owner_name = value["owner"]
+        if not isinstance(owner_name, str) or not owner_name:
+            raise RosterRefusal("refused:owner", f"{label}: owner must be a non-empty name")
+        owner = b.PROVIDERS.get(owner_name)
+        if owner is None:
+            raise RosterRefusal("refused:owner", f"{label}: vocabulary owner {owner_name!r} "
+                                                 "is not registered")
+        if not _owns_declaration(owner, graph):
+            raise RosterRefusal("refused:owner", f"{label}: vocabulary owner {owner_name!r} "
+                                                 "does not declare this roster's repeat unit")
         try:
-            if reference_provider is None:
-                spec = provider.spec_from_declaration(
-                    value["dp"], value.get("head"), value.get("tail"),
-                    value.get("radical_unit"))
-            else:
-                spec = reference_provider.spec_for_declared_provider(
-                    provider, value["dp"], value.get("head"), value.get("tail"),
-                    value.get("radical_unit"))
+            spec = owner.spec_for_declared_provider(
+                provider, value["dp"], value.get("head"), value.get("tail"),
+                value.get("radical_unit"))
             participant = Participant(label, spec, lambda name, s=spec: win.build_spec(s, name))
             participant.build("roster_check")
         except RosterRefusal:
@@ -465,15 +478,14 @@ def build_reference_systems(roster: Roster):
     system with a refused participant is left out and each refusal is a row
     (``kind: roster_refusal``, system, participant, status, reason)."""
     from rmgpy.polymer_spec import GraphDeclaration  # noqa: F401  (documents the declaration)
-    reference_provider = match_provider(roster.polymer.repeat_unit)
-    provider = None if reference_provider is None else declared_provider(roster.polymer)
+    provider = declared_provider(roster.polymer)
     systems, refusals = {}, []
     for name, entries in roster.systems.items():
         built, bad = [], []
         for index, entry in enumerate(entries):
             try:
                 built.append(_participant(provider, roster.polymer, entry,
-                                          f"{name}[{index}]", reference_provider))
+                                          f"{name}[{index}]"))
             except RosterRefusal as error:
                 bad.append({"kind": "roster_refusal", "system": name, "participant": index,
                             "status": error.status, "reason": error.reason})

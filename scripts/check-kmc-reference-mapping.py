@@ -79,6 +79,7 @@ def check(args):
     required = old & selected_ids
     counts = Counter()
     required_missing = []
+    missing = []
     for record in records:
         refusal = named_refusal(record)
         try:
@@ -98,6 +99,8 @@ def check(args):
             counts[group + (("prior_unmapped_found" if found else "prior_unmapped_missing"),)] += 1
             if not found and (key_error or refusal is None):
                 required_missing.append(record["event_id"])
+        if not found and (key_error or refusal is None):
+            missing.append(record["event_id"])
 
     print("site_type\torientation\tfound\tnot_found\tnamed_refusal\tprior_unmapped_found\tprior_unmapped_missing")
     groups = sorted({key[:2] for key in counts})
@@ -110,6 +113,8 @@ def check(args):
         "records": len(records),
         "found": sum(v for key, v in counts.items() if key[2] == "found"),
         "not_found": sum(v for key, v in counts.items() if key[2] == "not_found"),
+        "named_refused": sum(v for key, v in counts.items() if key[2] == "named_refusal"),
+        "missing": missing,
         "prior_unmapped_in_rows": len(old),
         "prior_unmapped_selected": len(required),
         "prior_unmapped_missing": required_missing,
@@ -118,7 +123,7 @@ def check(args):
         "written_systems": len(roster.systems),
         "roster_sha256": roster.sha256,
     }, sort_keys=True))
-    return 1 if required_missing else 0
+    return 1 if missing else 0
 
 
 def parse_args():
