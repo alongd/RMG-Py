@@ -32,6 +32,29 @@ def prior_unmapped(path):
     return out
 
 
+# what the check reads of every record (certification, upstream refusal, key)
+RECORD_FIELDS = ("event_id", "family", "status", "orientation", "template", "reactant_graphs",
+                 "product_graphs")
+
+
+def artifact_problems(records):
+    """Why the artifact cannot be checked: no records, a record lacking a
+    field the check reads, or an event id carried twice (empty: none)."""
+    if not records:
+        return ["refused:artifact: the artifact has no records"]
+    out, seen = [], set()
+    for index, record in enumerate(records):
+        lacking = [field for field in RECORD_FIELDS if field not in record]
+        if lacking:
+            out.append(f"refused:artifact: record {record.get('event_id', f'#{index}')} lacks "
+                       f"{', '.join(lacking)}")
+        event_id = record.get("event_id")
+        if event_id in seen:
+            out.append(f"refused:artifact: duplicate event id {event_id}")
+        seen.add(event_id)
+    return out
+
+
 def named_refusal(record, store, by_id):
     """Production's upstream refusal of a certified record (None: it fires)."""
     return te.upstream_refusal(record, emit.record_certificate(record, store), by_id)
@@ -50,8 +73,9 @@ def reference_dps(records, requested):
 def check(args):
     artifact = json.loads(Path(args.artifact).read_text())
     all_records = artifact["records"]
-    if len(all_records) != 762:
-        raise RuntimeError(f"expected the 762-record verifier artifact, got {len(all_records)}")
+    problems = artifact_problems(all_records)
+    if problems:
+        raise RuntimeError("; ".join(problems[:5]))
     deck = read_deck(args.deck)
     provider = emit.match_provider(deck.spec.repeat_unit)
     roster = emit.reference_systems(deck.spec, provider, dps=reference_dps(all_records, args.dps))
@@ -74,13 +98,16 @@ def check(args):
     species = chm.SpeciesKeys()
     cases, case_stats = emit.reference_cases(certifier, fam, systems, species)
 
-    old = {replacements.get(event_id, event_id) for event_id in prior_unmapped(args.old_rows)}
-    unknown_old = old - set(by_id)
-    if not old or unknown_old:
-        raise RuntimeError(f"old rows identify {len(old)} prior-unmapped records; "
-                           f"{len(unknown_old)} are absent from the artifact")
+    # prior rows are optional: without them there is no prior-unmapped report
+    old = None
+    if args.old_rows is not None:
+        old = {replacements.get(event_id, event_id) for event_id in prior_unmapped(args.old_rows)}
+        unknown_old = old - set(by_id)
+        if not old or unknown_old:
+            raise RuntimeError(f"old rows identify {len(old)} prior-unmapped records; "
+                               f"{len(unknown_old)} are absent from the artifact")
     selected_ids = {record["event_id"] for record in records}
-    required = old & selected_ids
+    required = old & selected_ids if old is not None else set()
     counts = Counter()
     by_status, by_reason = Counter(), Counter()
     key_errors = {}
@@ -108,13 +135,15 @@ def check(args):
         if outcome == "uncovered":
             missing.append(record["event_id"])
 
-    fields = ("found", "uncovered", "named_refusal", "prior_unmapped_found",
-              "prior_unmapped_uncovered", "prior_unmapped_named_refusal")
+    fields = ("found", "uncovered", "named_refusal")
+    if old is not None:
+        fields += ("prior_unmapped_found", "prior_unmapped_uncovered",
+                   "prior_unmapped_named_refusal")
     print("\t".join(("site_type", "orientation") + fields))
     for site_type, orientation in sorted({key[:2] for key in counts}):
         values = [counts[(site_type, orientation, field)] for field in fields]
         print("\t".join(map(str, (site_type, orientation, *values))))
-    print(json.dumps({
+    summary = {
         "records": len(records),
         "artifact_records": len(all_records),
         "found": sum(v for key, v in counts.items() if key[2] == "found"),
@@ -124,14 +153,15 @@ def check(args):
         "named_refused_by_reason": dict(by_reason),
         "key_errors": key_errors,
         "missing": missing,
-        "prior_unmapped_in_rows": len(old),
-        "prior_unmapped_selected": len(required),
-        "prior_unmapped_missing": required_missing,
         "case_stats": case_stats,
         "reference_systems": len(systems),
         "written_systems": len(roster.systems),
         "roster_sha256": roster.sha256,
-    }, sort_keys=True))
+    }
+    if old is not None:
+        summary.update(prior_unmapped_in_rows=len(old), prior_unmapped_selected=len(required),
+                       prior_unmapped_missing=required_missing)
+    print(json.dumps(summary, sort_keys=True))
     return 1 if missing else 0
 
 
@@ -140,7 +170,8 @@ def parse_args():
     parser.add_argument("artifact")
     parser.add_argument("deck")
     parser.add_argument("--database", required=True)
-    parser.add_argument("--old-rows", required=True)
+    parser.add_argument("--old-rows", help="earlier emission rows; their refused:unmapped "
+                        "records are reported as prior-unmapped")
     parser.add_argument("--roster-out")
     parser.add_argument("--dps", type=lambda value: tuple(int(x) for x in value.split(",")),
                         default=(1, 2, 3, 8))
