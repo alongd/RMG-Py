@@ -63,12 +63,18 @@ uniformly among the ``n1 - n1(c)`` sites outside it.
 Branching leak
 --------------
 A transition whose formed bond would give a backbone-origin atom a third
-backbone-origin neighbour is refused at the transition level.  Unimolecular
-transitions are checked one by one.  A bimolecular site carries a kind (per
-cross-participant formed bond: whether its atom is backbone and its backbone
-degree after the participant's own edits); a kind pair is allowed or leak, so
-the leak and allowed pair counts are exact.  Leak propensity accrues to the
-leak integral (``leak_num``) and never fires.
+backbone-origin neighbour is refused at the transition level.  So is a bond
+formed at a heavy atom off the backbone (a side group or ring atom, e.g. a
+phenyl carbon) when both of its atoms stay on a piece that carries a backbone
+atom: two chains joined through a side group, or a ring closed between two
+residues (``_grafts``).  A side group or small species released without a
+backbone atom (a halogen, a phenyl or methyl radical, H) still attaches
+freely.  Unimolecular transitions are checked one by one.  A bimolecular site
+carries a kind (per cross-participant formed bond: whether its atom is
+backbone, its backbone degree after the participant's own edits, and for a
+heavy atom off the backbone whether it stays on a backbone-carrying piece);
+a kind pair is allowed or leak, so the leak and allowed pair counts are exact.
+Leak propensity accrues to the leak integral (``leak_num``) and never fires.
 
 The leak fraction (``LEAK_ESTIMATOR``, ``LEAK_DEFINITION``) is
 ``leak_num / leak_den`` with ``leak_den = leak_num + non_thinned + phi_sum``:
@@ -591,9 +597,50 @@ def _bb_degree(state, a, removed=(), added=0):
     return sum(1 for b in edges if origin[b].is_backbone and b not in removed) + added
 
 
+def _reaches_backbone(state, a, removed=None, goal=None) -> bool:
+    """Whether atom ``a``, with the bonds in ``removed`` (atom -> partners)
+    broken, is connected to a backbone-origin atom (or to ``goal`` when given)."""
+    origin, atoms = state.origin, state.atoms
+    removed = removed or {}
+    seen, stack = {a}, [a]
+    while stack:
+        x = stack.pop()
+        if (x == goal) if goal is not None else origin[x].is_backbone:
+            return True
+        cut = removed.get(x, ())
+        for y in atoms[x].edges:
+            if y not in seen and y not in cut and atoms[y].element != "H":
+                seen.add(y)
+                stack.append(y)
+    return False
+
+
+def _off_backbone_carrier(state, a, removed=None) -> bool:
+    """A heavy atom off the backbone that stays on a backbone-carrying piece."""
+    return (not state.origin[a].is_backbone and state.atoms[a].element != "H"
+            and _reaches_backbone(state, a, removed))
+
+
+def _grafts(state, a, b, broken) -> bool:
+    """A bond formed between ``a`` and ``b`` in one molecule (``broken``: the
+    transition's broken bonds) joins two backbone-carrying pieces at an atom
+    off the backbone, or closes a ring through one between two residues."""
+    if "H" in (state.atoms[a].element, state.atoms[b].element):
+        return False
+    if not (_off_backbone_carrier(state, a, broken) or _off_backbone_carrier(state, b, broken)):
+        return False
+    if not (_reaches_backbone(state, a, broken) and _reaches_backbone(state, b, broken)):
+        return False
+    if not _reaches_backbone(state, a, broken, goal=b):
+        return True
+    oa, ob = state.origin[a], state.origin[b]
+    return (oa.kind, oa.ordinal, oa.segment) != (ob.kind, ob.ordinal, ob.segment)
+
+
 def _creates_branch(state, edits) -> bool:
     """A formed bond leaves some backbone-origin atom with >= 3 backbone-origin
-    neighbours (edits are concrete ``SetBond``s on state atoms)."""
+    neighbours, or grafts at an atom off the backbone (``_grafts``); edits are
+    concrete ``SetBond``s on state atoms."""
     origin = state.origin
     formed, broken = {}, {}
     for e in edits:
@@ -602,6 +649,8 @@ def _creates_branch(state, edits) -> bool:
             target.setdefault(e.a, set()).add(e.b)
             target.setdefault(e.b, set()).add(e.a)
     for a, partners in formed.items():
+        if any(a < b and _grafts(state, a, b, broken) for b in partners):
+            return True
         if not origin[a].is_backbone:
             continue
         gained = sum(1 for b in partners if origin[b].is_backbone)
@@ -612,7 +661,8 @@ def _creates_branch(state, edits) -> bool:
 
 def _site_kind(state, cls: _Class, t: wm.Template, participant: int, site) -> Tuple:
     """Branching kind of a bimolecular site: (internal leak, ((template atom,
-    backbone?, backbone degree after this participant's own edits), ...))."""
+    backbone?, backbone degree after this participant's own edits[, True for a
+    heavy atom off the backbone on a backbone-carrying piece]), ...))."""
     pos = {ti: a for ti, a in zip(t.edited[participant], site)}
     removed, added = {}, {}
     internal_formed = []
@@ -634,12 +684,16 @@ def _site_kind(state, cls: _Class, t: wm.Template, participant: int, site) -> Tu
         return _bb_degree(state, a, removed.get(a, ()), added.get(a, 0))
 
     internal_leak = any(origin[x].is_backbone and degree(x) >= 3
-                        for a, b in internal_formed for x in (a, b))
+                        for a, b in internal_formed for x in (a, b)) \
+        or any(_grafts(state, a, b, removed) for a, b in internal_formed)
     cross = []
     for i0, i1 in cls.cross_bonds:
         ti = i0 if participant == 0 else i1
         a = pos[ti]
-        cross.append((ti, bool(origin[a].is_backbone), degree(a)))
+        item = (ti, bool(origin[a].is_backbone), degree(a))
+        # a heavy atom off the backbone that stays on a backbone-carrying piece
+        # (after this participant's own edits): a bond to another chain grafts
+        cross.append(item + (True,) if _off_backbone_carrier(state, a, removed) else item)
     return (internal_leak, tuple(sorted(set(cross))))
 
 
@@ -647,8 +701,13 @@ def _pair_leak(cls: _Class, kind0: Tuple, kind1: Tuple) -> bool:
     if kind0[0] or kind1[0]:
         return True
     info = {}
-    for ti, bb, deg in kind0[1] + kind1[1]:
-        info[ti] = (bb, deg)
+    for ti, bb, deg, *carrier in kind0[1] + kind1[1]:
+        info[ti] = (bb, deg, bool(carrier))
+    for i0, i1 in cls.cross_bonds:
+        # a bond at an atom off the backbone between two backbone-carrying pieces
+        (bb0, _d0, off0), (bb1, _d1, off1) = info[i0], info[i1]
+        if (off0 or off1) and (bb0 or off0) and (bb1 or off1):
+            return True
     gained = Counter()
     for i0, i1 in cls.cross_bonds:
         if info[i1][0]:
