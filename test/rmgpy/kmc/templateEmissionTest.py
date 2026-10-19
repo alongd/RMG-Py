@@ -2455,20 +2455,30 @@ class _ChannelUpTo(ToyCounter):
         return super().channel(family, molecules, direction, pathway, product_species)
 
 
-def test_a_witness_outside_the_record_channel_refuses_the_template():
-    """T_ch = 0 on a locality witness where RMG too reads no move of the
-    record's channel is a refusal of that template, named with the witness,
-    not a compile error of the record."""
-    out = emit(homolysis(10, (3, 4)), counter=_ChannelUpTo(10))
-    t = base_template(out)
-    assert t["status"] == "refused"
-    assert t["refusal"]["status"] == "refused:zero_transitions"
-    assert "port 0:" in t["refusal"]["reason"] and "rmg_moves: 0" in t["refusal"]["reason"]
-    rows = {r["label"]: r for r in t["locality"]["rows"]}
-    assert rows["emitted"]["status"] == "ok"
-    assert rows["port 0:head +1"]["status"] == "refused:zero_transitions"
-    assert out["status"] == "refused" and "refused:zero_transitions" in out["refusal"]["reason"]
-    te.validate_payload(out)
+def test_a_witness_outside_the_record_channel_is_a_compile_error():
+    """RETRACTED (I-188 read T_ch = 0 with rmg_moves 0 as a witness outside the
+    channel and refused the template): the catalog rows that showed it were
+    candidates counted in another member's orientation.  T_ch = 0 stays a
+    compile error, whatever RMG counts."""
+    with pytest.raises(te.EmissionError, match="T_ch = 0 on witness 'port 0:head"):
+        emit(homolysis(10, (3, 4)), counter=_ChannelUpTo(10))
+
+
+def test_each_candidate_is_counted_in_its_own_members_orientation():
+    """One record, two members of opposite orientation (its own homolysis
+    witness and the recombination that forms the same bond): each candidate
+    is counted on its member's witness read in that member's orientation, in
+    either member order."""
+    h, r = homolysis(12, (3, 4)), recombination(4, 8)
+    for members in ([member(h), member(r, direction="forward")],
+                    [member(r, direction="forward"), member(h)]):
+        out = te.emit_record(toy_record(h, 1), family=ToyFamily, members=members,
+                             counter=ToyCounter(), rates=_pair_rates({"reversed": K_RULE}),
+                             check_upstream=False)
+        assert out["status"] == "emitted", out["templates"]
+        t = base_template(out)
+        assert len(t["sources"]) == 2
+        assert {r["status"] for r in t["locality"]["rows"]} <= {"ok", "not_applicable"}
 
 
 # --------------------------------------------------------------------------
