@@ -560,6 +560,25 @@ def reference_cases(certifier, fam, systems, species):
     return out, dict(stats)
 
 
+def certified_records(records, fam, certifier):
+    """The artifact's records as the certified compile publishes them
+    (``certify_records`` with ``required``: a required record that does not
+    certify is republished refused by status under a new event id).  Returns
+    (record dicts in input order, certificate store, replacements old id ->
+    new id)."""
+    from rmgpy.kmc import certificates as cm
+    from rmgpy.kmc.event_record import EventRecord
+    records = [EventRecord.from_dict(r) for r in records]
+    certified, store, replacements = cm.certify_records(records, fam, certifier, required=True)
+    return ([r.to_dict() if hasattr(r, "to_dict") else r for r in certified], store,
+            replacements)
+
+
+def record_certificate(record, store):
+    """The stored certificate a certified record references (None: none)."""
+    return store.get((record.get("rate_certificate") or {}).get("sha256"))
+
+
 def record_key(certifier, record, species):
     """(family, template-side species, template, other-side species): the
     record's channel (members of other channels on the same species and
@@ -788,7 +807,6 @@ class Emitter:
     def init(self):
         from rmgpy.kmc import certificates as cm
         from rmgpy.kmc import channels as chm
-        from rmgpy.kmc.event_record import EventRecord
         from rmgpy.kmc.reference_thermo import GasPhaseRMGReferenceThermo
         S = self.state
         art = json.loads(self.artifact.read_text())
@@ -804,9 +822,7 @@ class Emitter:
         S.update(db=db, fam=fam, families=families, load_s=round(time.time() - t, 1))
         certifier = cm.Certifier(fam, max_channel_sets=8, max_entries=1024)
         t = time.time()
-        records = [EventRecord.from_dict(r) for r in art["records"]]
-        certified, store, _replacements = cm.certify_records(records, fam, certifier, required=True)
-        certified = [r.to_dict() if hasattr(r, "to_dict") else r for r in certified]
+        certified, store, _replacements = certified_records(art["records"], fam, certifier)
         S.update(certify_s=round(time.time() - t, 1), records=certified, store=store,
                  by_id={r["event_id"]: r for r in certified}, certifier=certifier)
         species = chm.SpeciesKeys()
@@ -830,7 +846,7 @@ class Emitter:
         contexts = self.contexts
         certifier, fam = S["certifier"], S["fam"]
         start, cpu = time.time(), time.process_time()
-        rc = S["store"].get((record.get("rate_certificate") or {}).get("sha256"))
+        rc = record_certificate(record, S["store"])
         row = {"kind": "row", "event_id": record["event_id"][:24], "family": record["family"],
                "orientation": record["orientation"], "template": record["template"][:100],
                "record_status": record["status"], "rate_kind": (record.get("rate_source") or {})
