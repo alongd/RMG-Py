@@ -6,7 +6,11 @@ module's CLI, the test fixture driver) share it, so there is exactly one
 definition of what a cold compile does.
 
 Nothing here is specific to one polymer: the family candidate list, the family
-universe and the proxy size are inputs.  Caching is not part of this module;
+universe and the proxy size are inputs.  With a deck (``--deck``) the proxies
+are the declared polymer's own (``declared_proxies.declared_proxy_set``) and
+every requested family is a candidate on them; without one the built-in proxy
+set is compiled as before.  The artifact's provenance names the source
+(``proxy_source``: the deck's declaration digests, or the built-in set).  Caching is not part of this module;
 the only seam is ``generation_provider``, a callable with the signature of
 ``RMGDatabase.kinetics.generate_reactions_from_families`` that every reaction
 generation of the compile goes through (default: the database's own method).
@@ -15,7 +19,7 @@ CLI::
 
     python -m rmgpy.kmc.compile DATABASE OUTPUT (--families FILE.json | --family F)
         [--family-universe FILE.json] [--database-sha SHA]
-        [--barrier-e0-fixed-b K] [--proxy-units N]
+        [--barrier-e0-fixed-b K] [--proxy-units N] [--deck DECK.py]
 
 ``--family F`` (exactly one family) compiles that family's artifact alone: the
 one-element form of ``--families``.  ``F`` must be one family directory of the
@@ -46,6 +50,7 @@ from rmgpy.data.rmg import RMGDatabase
 from rmgpy.kmc.barrier_e0 import FixedBBarrierE0Provider
 from rmgpy.kmc.compiler import (
     DEFAULT_T_GRID,
+    REQUESTED_FAMILY_FILTER_REASON,
     EventSetCompiler,
     prepare_rate_rules,
     ps_proxy_set,
@@ -70,6 +75,8 @@ class CompileRequest:
     # None uses the compiler's own proxy-set default.
     proxy_units: Optional[int] = None
     temperature_grid: tuple[float, ...] = tuple(DEFAULT_T_GRID)
+    # a deck file declaring the polymer; None compiles the built-in proxy set
+    deck: Optional[str] = None
 
 
 def enumerate_family_universe(database_path: str | Path) -> list[str]:
@@ -97,6 +104,8 @@ def compile_artifact(
     a factory the database's own method is used and nothing is cached.
     """
     database_path = Path(request.database_path)
+    # the declaration is read before anything loads
+    proxies, proxy_source, compiler_options, discovery_options = _proxy_inputs(request)
     family_universe = (
         list(request.family_universe)
         if request.family_universe is not None
@@ -130,17 +139,13 @@ def compile_artifact(
         else None
     )
     print("discovering chemistry", flush=True)
-    proxies = (
-        ps_proxy_set(request.proxy_units)
-        if request.proxy_units is not None
-        else ps_proxy_set()
-    )
     active, excluded, reactions = EventSetCompiler.discover_family_reactions(
         database.kinetics,
         proxies,
         request.families,
         family_universe=family_universe,
         generation_provider=generation_provider,
+        **discovery_options,
     )
     compiler = EventSetCompiler(
         database.kinetics,
@@ -154,6 +159,8 @@ def compile_artifact(
         barrier_e0_provider=barrier_e0_provider,
         temperature_grid=request.temperature_grid,
         generation_provider=generation_provider,
+        proxy_source=proxy_source,
+        **compiler_options,
     )
     print(
         f"compiling {sum(len(value) for value in reactions.values())} generated reactions",
@@ -161,6 +168,44 @@ def compile_artifact(
     )
     path, _ = compiler.write_artifact(request.output_dir)
     return Path(path), Path(path).stem
+
+
+def _proxy_inputs(request: CompileRequest):
+    """(proxies, proxy source, compiler options, discovery options) of a
+    request: the declared polymer's proxies and its requested families as the
+    candidates, or the built-in set and its own candidates."""
+    if request.deck is None:
+        proxies = (
+            ps_proxy_set(request.proxy_units)
+            if request.proxy_units is not None
+            else ps_proxy_set()
+        )
+        source = {
+            "kind": "built-in",
+            "proxy_set": f"{ps_proxy_set.__module__}.{ps_proxy_set.__qualname__}",
+            "proxy_units": request.proxy_units,
+            "reason": "no deck was given",
+        }
+        return proxies, source, {}, {}
+    from rmgpy.kmc.declared_proxies import DEFAULT_PROXY_UNITS, declared_proxy_set
+    from rmgpy.kmc.run import read_deck
+
+    deck = read_deck(request.deck)
+    units = request.proxy_units if request.proxy_units is not None else DEFAULT_PROXY_UNITS
+    proxies = declared_proxy_set(deck.spec, units)
+    source = {
+        "kind": "declaration",
+        "label": deck.label,
+        "deck_sha256": deck.sha256,
+        **deck.digests(),
+        "proxy_units": units,
+        "proxy_set": f"{declared_proxy_set.__module__}.{declared_proxy_set.__qualname__}",
+    }
+    compiler_options = {
+        "family_candidates": tuple(request.families),
+        "family_filter_reason": REQUESTED_FAMILY_FILTER_REASON,
+    }
+    return proxies, source, compiler_options, {"proxy_set_name": "declared proxy set"}
 
 
 def _watch_parent(parent_pid: int) -> None:
@@ -273,6 +318,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="opt in to fixed-B Wilhoit E0 values for compiler barrier floors only",
     )
     parser.add_argument("--proxy-units", type=int, help="proxy chain length")
+    parser.add_argument("--deck", help="RMG deck declaring the polymer: compile its own "
+                        "proxies with every requested family as a candidate")
     args = parser.parse_args(argv)
     if args.family is not None:
         if len(args.family) != 1 or not args.family[0]:
@@ -293,6 +340,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             database_sha=args.database_sha,
             barrier_e0_fixed_b=args.barrier_e0_fixed_b,
             proxy_units=args.proxy_units,
+            deck=str(Path(args.deck).resolve()) if args.deck else None,
         )
         path, artifact_id = compile_in_child(request)
     except Exception:
