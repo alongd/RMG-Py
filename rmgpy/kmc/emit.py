@@ -156,21 +156,25 @@ def _reference_chain_entries(provider, dps, phases, declared=None) -> list:
     physical-end and interior-radical reference chains."""
     out = []
 
-    def add(label, dp, head=None, tail=None, radical_unit=None, owner=None):
+    def add(label, dp, head=None, tail=None, radical_unit=None):
         entry = _chain_entry(dp, head, tail, radical_unit)
-        built = _participant(owner or provider, None, entry, label).build("reference_check")
+        spec = provider.spec_for_declared_provider(
+            declared, dp, head, tail, radical_unit)
+        participant = Participant(label, spec, lambda name, s=spec: win.build_spec(s, name))
+        built = participant.build("reference_check")
         out.append((label, entry, bool(built.molecule.get_radical_count())))
 
     def add_interior_radical(dp):
         for unit in range(dp):
             entry = _chain_entry(dp, radical_unit=unit)
             try:
-                built = _participant(provider, None, entry, "interior-radical").build(
-                    "reference_check")
-            except RosterRefusal:
+                spec = provider.spec_for_declared_provider(
+                    declared, dp, interior_radical=unit)
+                built = win.build_spec(spec, "reference_check")
+            except (b.BoundaryError, ValueError):
                 continue
             rows = dict(b.rows_of_molecule(built.molecule))
-            indices = provider.witness_backbone_indices(rows, built.metadata)
+            indices = declared.witness_backbone_indices(rows, built.metadata)
             radicals = [atom for atom, row in rows.items()
                         if row[0] != "H" and row[3] and atom in indices]
             if any({indices[atom] - 1, indices[atom] + 1} <=
@@ -191,7 +195,7 @@ def _reference_chain_entries(provider, dps, phases, declared=None) -> list:
     for dp in dps:
         add(f"chain:dp{dp}:capped", dp)
         if phases and closed_head is not None and closed_tail is not None:
-            add(f"chain:dp{dp}:declared", dp, "declared", "declared", owner=declared)
+            add(f"chain:dp{dp}:declared", dp, "declared", "declared")
             for end in head_ends:
                 if end in radical_ends:
                     add(f"chain:dp{dp}:end-radical:head:{end}", dp, end, closed_tail)
@@ -417,7 +421,7 @@ def explicit_build(name, smiles=None, adjacency_list=None):
 CHAIN_KEYS = {"dp", "head", "tail", "radical_unit"}
 
 
-def _participant(provider, graph, entry, label):
+def _participant(provider, graph, entry, label, reference_provider=None):
     if not isinstance(entry, dict) or len(entry) != 1:
         raise RosterRefusal("refused:roster", f"{label}: exactly one of chain, smiles, adjacency_list")
     (kind, value), = entry.items()
@@ -429,11 +433,15 @@ def _participant(provider, graph, entry, label):
             raise RosterRefusal("refused:no_provider",
                                 f"{label}: no registered provider declares this repeat unit "
                                 f"(registered: {sorted(b.PROVIDERS)})")
-        if graph is not None and "declared" in (value.get("head"), value.get("tail")):
-            provider = declared_provider(graph)
         try:
-            spec = provider.spec_from_declaration(value["dp"], value.get("head"), value.get("tail"),
-                                                  value.get("radical_unit"))
+            if reference_provider is None:
+                spec = provider.spec_from_declaration(
+                    value["dp"], value.get("head"), value.get("tail"),
+                    value.get("radical_unit"))
+            else:
+                spec = reference_provider.spec_for_declared_provider(
+                    provider, value["dp"], value.get("head"), value.get("tail"),
+                    value.get("radical_unit"))
             participant = Participant(label, spec, lambda name, s=spec: win.build_spec(s, name))
             participant.build("roster_check")
         except RosterRefusal:
@@ -457,14 +465,15 @@ def build_reference_systems(roster: Roster):
     system with a refused participant is left out and each refusal is a row
     (``kind: roster_refusal``, system, participant, status, reason)."""
     from rmgpy.polymer_spec import GraphDeclaration  # noqa: F401  (documents the declaration)
-    provider = match_provider(roster.polymer.repeat_unit)
+    reference_provider = match_provider(roster.polymer.repeat_unit)
+    provider = None if reference_provider is None else declared_provider(roster.polymer)
     systems, refusals = {}, []
     for name, entries in roster.systems.items():
         built, bad = [], []
         for index, entry in enumerate(entries):
             try:
                 built.append(_participant(provider, roster.polymer, entry,
-                                          f"{name}[{index}]"))
+                                          f"{name}[{index}]", reference_provider))
             except RosterRefusal as error:
                 bad.append({"kind": "roster_refusal", "system": name, "participant": index,
                             "status": error.status, "reason": error.reason})

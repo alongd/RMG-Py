@@ -133,15 +133,16 @@ def isomorphic(build_a, build_b):
 # --------------------------------------------------------------------------
 # item 1: reference systems from a declaration
 # --------------------------------------------------------------------------
-def test_ps_declaration_specs_equal_the_harness_specs(tmp_path):
+def test_ps_roster_chains_use_one_declared_provider(tmp_path):
     systems, refusals = systems_of(tmp_path, "ps", {
         "dp8_closed": [chain(8)],
         "dp4+pe": [chain(4), chain(1, tail="benzylic_radical")],
         "pe2_identical": [chain(2, tail="benzylic_radical"), chain(2, tail="benzylic_radical")]})
     assert refusals == []
-    assert [p.spec for p in systems["dp8_closed"]] == [S(8)]
-    assert [p.spec for p in systems["dp4+pe"]] == [S(4), S(1, tail_end="benzylic_radical")]
-    assert [p.spec for p in systems["pe2_identical"]] == [S(2, tail_end="benzylic_radical")] * 2
+    specs = [participant.spec for participants in systems.values() for participant in participants]
+    assert all(isinstance(spec, win.DeclaredSpec) for spec in specs)
+    assert len({spec.provider for spec in specs}) == 1
+    assert specs[0].provider.startswith("declared:")
 
 
 def test_ps_declaration_molecules_are_isomorphic_to_the_harness_ones(tmp_path):
@@ -159,7 +160,8 @@ def test_pe_declaration_is_the_n_alkane(tmp_path):
     systems, refusals = systems_of(tmp_path, "pe", {"c16": [chain(8)]})
     assert refusals == []
     (participant,) = systems["c16"]
-    assert participant.spec == ("alkane", 16)
+    assert isinstance(participant.spec, win.DeclaredSpec)
+    assert participant.spec.provider.startswith("declared:")
     build = participant.build("p0")
     assert isomorphic(build, win.build_spec(("alkane", 16), "p0"))
     assert build.molecule.get_formula() == "C16H34"
@@ -167,7 +169,10 @@ def test_pe_declaration_is_the_n_alkane(tmp_path):
 
 def test_pe_declaration_with_ends_is_the_alkane_end_spec(tmp_path):
     systems, _ = systems_of(tmp_path, "pe", {"r": [chain(3, head="primary_radical", tail="methyl")]})
-    assert systems["r"][0].spec == ("alkane", 6, "primary_radical", "methyl", None)
+    participant = systems["r"][0]
+    assert isinstance(participant.spec, win.DeclaredSpec)
+    assert isomorphic(participant.build("declared"),
+                      win.build_spec(("alkane", 6, "primary_radical", "methyl", None)))
 
 
 def test_unregistered_repeat_unit_is_refused_with_a_row(tmp_path):
@@ -187,7 +192,7 @@ def test_interior_radical_on_the_alkane_is_built_open_shell(tmp_path):
     systems, refusals = systems_of(tmp_path, "pe", {"r": [chain(5, radical_unit=2)]})
     assert refusals == []
     participant = systems["r"][0]
-    assert participant.spec == ("alkane", 10, None, None, 4)
+    assert isinstance(participant.spec, win.DeclaredSpec)
     molecule = participant.build("r").molecule
     assert molecule.get_formula() == "C10H21"
     assert molecule.get_radical_count() == 1
@@ -195,7 +200,10 @@ def test_interior_radical_on_the_alkane_is_built_open_shell(tmp_path):
 
 def test_ps_interior_radical_is_the_radical_unit_spec(tmp_path):
     systems, _ = systems_of(tmp_path, "ps", {"r": [chain(5, radical_unit=2)]})
-    assert systems["r"][0].spec == S(5, radical_units=(2,))
+    participant = systems["r"][0]
+    assert isinstance(participant.spec, win.DeclaredSpec)
+    assert isomorphic(participant.build("declared"),
+                      win.build_spec(S(5, radical_units=(2,))))
 
 
 def test_a_refused_participant_refuses_its_whole_system(tmp_path):
@@ -306,14 +314,14 @@ def test_declared_provider_builds_the_declarations_caps_through_emit(tmp_path):
 def test_generated_roster_skips_an_unbuildable_interior_radical(monkeypatch):
     spec = LinearHomopolymerSpec.from_mapping(polymer_mapping("pe"))
     provider = emit.match_provider(spec.repeat_unit)
-    original = provider.spec_from_declaration
+    original = provider.spec_for_declared_provider
 
-    def without_interior(dp, head=None, tail=None, interior_radical=None):
+    def without_interior(declared, dp, head=None, tail=None, interior_radical=None):
         if interior_radical is not None:
             raise b.ExtensionRefused("no hydrogen-bearing interior backbone atom")
-        return original(dp, head, tail, interior_radical)
+        return original(declared, dp, head, tail, interior_radical)
 
-    monkeypatch.setattr(provider, "spec_from_declaration", without_interior)
+    monkeypatch.setattr(provider, "spec_for_declared_provider", without_interior)
     roster = emit.reference_systems(spec, provider, dps=(2,), small=False, monomer=False,
                                     molecularity={1})
     assert not any("interior-radical" in name for name in roster.systems)

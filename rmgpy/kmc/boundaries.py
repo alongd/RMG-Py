@@ -339,6 +339,33 @@ class BoundaryProvider:
         needed to represent a provider's shorter-than-one-repeat species."""
         return ()
 
+    def spec_for_declared_provider(self, declared, dp, head=None, tail=None,
+                                   interior_radical=None):
+        """Translate this provider's reference vocabulary to ``declared``.
+
+        Closed and radical end names have declaration-owned equivalents.
+        Providers with phase-shifted or unsaturated ends override this adapter.
+        """
+        radicals = set(self.RADICAL_END_CHEMISTRIES)
+        alkenes = set(self.ALKENE_END_CHEMISTRIES)
+
+        def end_kind(end, port):
+            if end is None or end in ("declared", "radical"):
+                return end
+            allowed = set(self.END_CHEMISTRIES.get(port, ()))
+            if end not in allowed:
+                raise ValueError(f"{end!r} is not a declared {port} end "
+                                 f"(declared: {sorted(allowed)})")
+            if end in radicals:
+                return "radical"
+            if end in alkenes:
+                raise ExtensionRefused(f"declared provider has no adapter for alkene end {end!r}")
+            return "declared"
+
+        return declared.spec_from_declaration(
+            dp, end_kind(head, "backbone_head"), end_kind(tail, "backbone_tail"),
+            interior_radical)
+
     def reference_monomer(self, spec):
         """Build the explicitly declared addition monomer, or derive it by
         raising the repeat-unit port bond when no monomer is declared."""
@@ -1634,6 +1661,68 @@ class PolystyreneProvider(BoundaryProvider):
         extra = {} if interior_radical is None else {"radical_units": (int(interior_radical),)}
         return PsChainSpec(dp, head_end=head, tail_end=tail, head_shift=head in TAIL_ENDS,
                            tail_shift=tail in HEAD_ENDS, **extra)
+
+    def spec_for_declared_provider(self, declared, dp, head=None, tail=None,
+                                   interior_radical=None):
+        """Translate a generated PS reference shape to the declaration's
+        primitive-period ``ChainSpec``; the resulting build is owned entirely
+        by ``declared`` even when this provider supplied the phase vocabulary."""
+        from rmgpy.kmc.declared_chain import ChainSpec, EditOp
+        from rmgpy.kmc.windows import DeclaredSpec
+
+        generic_head = {"declared": "methyl", "radical": "primary_radical"}
+        generic_tail = {"declared": "benzyl", "radical": "benzylic_radical"}
+        head = generic_head.get(head, head)
+        tail = generic_tail.get(tail, tail)
+        spec = self.spec_from_declaration(dp, head, tail, interior_radical)
+        if spec.ring_radical_unit is not None or spec.secondary_radical_units or \
+                spec.pendant_loss_units or spec.monomer:
+            raise ExtensionRefused(f"unsupported generated PS reference shape {spec!r}")
+
+        ports = dict(declared.spec.repeat_unit.ports)
+        keys = (ports["head"].atom, ports["tail"].atom)
+        phase = next((item.index for item in declared.geometry.phases
+                      if set(item.bond) == set(keys)), None)
+        if (spec.head_shift or spec.tail_shift) and phase is None:
+            raise ExtensionRefused("the declaration has no phase between its port atoms")
+
+        units = spec.units + int(spec.tail_shift)
+        head_kind = "radical" if spec.radical_end or spec.head_end in RADICAL_ENDS else \
+            "declared" if spec.head_end else "artificial"
+        tail_kind = "radical" if spec.benzylic_end or spec.tail_end in RADICAL_ENDS else \
+            "declared" if spec.tail_end else "artificial"
+        edits = []
+        for unit in sorted(set(spec.radical_units)):
+            edits += [EditOp("remove_h", unit, keys[1]),
+                      EditOp("set_radical", unit, keys[1], 1)]
+
+        backbone = []
+        for unit in range(spec.units):
+            if not (unit == 0 and spec.head_shift):
+                backbone.append((unit, 0))
+            backbone.append((unit, 1))
+        if spec.tail_shift:
+            backbone.append((spec.units, 0))
+        doubles = []
+        for end, pair in ((spec.head_end, backbone[:2]),
+                          (spec.tail_end, backbone[-2:])):
+            if end in ALKENE_ENDS:
+                if len(pair) < 2:
+                    raise ExtensionRefused(f"{end}: one backbone carbon")
+                pair = tuple(sorted(pair))
+                if pair not in doubles:
+                    doubles.append(pair)
+        if len(doubles) == 2 and set(doubles[0]) & set(doubles[1]):
+            raise ExtensionRefused("two alkene ends share a backbone carbon")
+        for (u1, k1), (u2, k2) in doubles:
+            edits += [EditOp("remove_h", u1, keys[k1]),
+                      EditOp("remove_h", u2, keys[k2]),
+                      EditOp("set_bond_order", u1, keys[k1], 2,
+                             other=(u2, keys[k2]))]
+        return DeclaredSpec(declared.name, ChainSpec(
+            units, head=head_kind, tail=tail_kind,
+            head_phase=phase if spec.head_shift else 0,
+            tail_phase=phase if spec.tail_shift else 0, edits=tuple(edits)))
 
     def reference_special_declarations(self) -> tuple:
         return (("methane", 0, "methyl", "methyl", None),
