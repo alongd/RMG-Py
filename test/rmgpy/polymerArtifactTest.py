@@ -278,6 +278,42 @@ def test_save_path_marks_topology_stale_without_live_engine(tmp_path, pe_pool):
     assert doc["conventions"]["stale_topology"] is True
 
 
+def test_save_path_marks_topology_stale_when_any_engine_lacks_a_signature(
+        tmp_path, pe_pool):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [])
+    matching = rmg.reaction_systems[0]
+    unsigned = SimpleNamespace(
+        polymer_pools=matching.polymer_pools,
+        gas_species_mask=matching.gas_species_mask,
+        initial_explicit_species=None,
+        V_poly=None,
+    )
+    rmg.reaction_systems = [matching, unsigned]
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc["conventions"]["stale_topology"] is True
+
+
+def test_newer_reentrant_save_supersedes_older_save(tmp_path, pe_pool, caplog):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [])
+    rmg.reaction_model.iteration_num = 2
+    nested = False
+
+    def save_newer_iteration():
+        nonlocal nested
+        if nested:
+            return
+        nested = True
+        rmg.reaction_model.iteration_num = 3
+        rmg.save_everything()
+        rmg.reaction_model.iteration_num = 2
+
+    rmg.notify = save_newer_iteration
+    with caplog.at_level(logging.WARNING):
+        _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc["rmg_iteration"] == 3
+    assert "superseded" in caplog.text
+
+
 def test_newer_reentrant_refusal_supersedes_older_write(
         tmp_path, monkeypatch, caplog):
     original_dump = polymer_module.json.dump
