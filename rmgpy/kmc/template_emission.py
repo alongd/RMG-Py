@@ -700,6 +700,16 @@ class InversePathway(tuple):
     own-reverse family counted on the side opposite to its template)."""
 
 
+def template_on_products(record) -> bool:
+    """Whether the record (or its payload) runs opposite to the reaction RMG
+    generated, so its template (the node labels RMG read) sits on its product
+    side.  Every count of the record's channel is made on its reactants in its
+    direction, whichever member a witness came from, so this, never a
+    member's orientation, says whether the count reads the template through
+    the inverse (``count_pathway``)."""
+    return record.get("orientation", "as_generated") != "as_generated"
+
+
 def count_pathway(family, pathway, reverse: bool):
     """The pathway filter of the channel count: the record's template.  For a
     family that is its own reverse, counted on the side opposite to its
@@ -1300,7 +1310,6 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
                            "templates": [], "contexts": []})
     rec_r = record_graph_rows(record, "reactant_graphs")
     rec_species = counter.species_of_rows(record_graph_rows(record, "product_graphs"))
-    reverse = None
     cands, ctx_rows = [], []
     for case, row, (results, merges) in members:
         case_species = counter.species_of_rows(dict(case.witness.reactant_rows()))
@@ -1312,13 +1321,12 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
                                        "reason": "the member's witness carries neither the "
                                                  "record's reactant nor its product species"},
                            "templates": [], "contexts": []})
-        reverse = rev
         c, rows = context_candidates(case, results, merges, family=fam.label, pathway=pathway,
                                      direction=direction, reverse=rev, providers=providers)
         cands.extend(c)
         ctx_rows.extend(dict(r, member=case.label[-120:]) for r in rows)
     cands = dedupe(cands)
-    cpath = count_pathway(fam, pathway, reverse)
+    cpath = count_pathway(fam, pathway, template_on_products(record))
     # item 2 on the record's own witness: the base templates jointly
     base = [c for c in cands if c.base and c.refusal is None and c.cut is not None]
     if not base:
@@ -1361,14 +1369,15 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
         templates.append(emit_candidate(
             cand, record=record, family=fam, direction=direction, pathway=pathway,
             # each candidate is counted on its own member's witness, read in
-            # that member's orientation (members of both orientations mix)
-            cpath=count_pathway(fam, pathway, cand.reverse), reverse=cand.reverse,
+            # that member's orientation (members of both orientations mix),
+            # through the record's recipe filter
+            cpath=cpath, reverse=cand.reverse,
             counter=counter, rates=rates, weights=weights,
             temperatures=rate["T"], providers=providers, ceiling=ceiling,
             owner_rate_source=owner_rate_source, kc=kc, record_map=next((record_map.get(f"probe{i}") for i, c in enumerate(base)
                              if c is cand), None)))
     status, refusal = record_status(templates)
-    out = {**head, "status": status, "refusal": refusal, "member_reverse": bool(reverse),
+    out = {**head, "status": status, "refusal": refusal,
            "counts": {"record": record_count},
            "weight_source": "record" if weights is not None else "emitted_witness",
            "weight": {"T": rate["T"], "w": weights} if weights is not None else None,
@@ -1404,7 +1413,10 @@ def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, 
     entry = {"member": cand.member[-120:], "context_index": cand.context_index,
              "context": [[p[0], p[1], e] for p, e in cand.assignment if e],
              "base": cand.base, "sources": [[m[-120:], i] for m, i in cand.sources],
-             "certificate": cand.certificate}
+             "certificate": cand.certificate,
+             # the witnesses below are stored in template direction; this is
+             # the side their member was generated on
+             "member_reverse": bool(cand.reverse)}
     if cand.cut is None or cand.refusal:
         entry.update(status="refused", refusal={"status": status_of(cand.refusal),
                                                 "reason": cand.refusal})
@@ -2409,7 +2421,7 @@ class _Loaded:
         channel = counter.channel(
             fam, molecules_of(rows), direction,
             count_pathway(fam, tuple(payload.get("pathway") or ()),
-                          bool(payload.get("member_reverse"))),
+                          template_on_products(payload)),
             counter.species_of_rows(target_rows))
         keys = set(channel.keys)
         entries = self.by.get((fam.label if hasattr(fam, "label") else payload["family"],

@@ -742,10 +742,16 @@ def midpoint_entries(record, payload, rates_for) -> dict:
             out[t["key"]] = {"status": "unavailable",
                              "reason": "no emitted witness or record to regenerate on"}
             continue
+        if not isinstance(t.get("member_reverse"), bool):
+            out[t["key"]] = {"status": "unavailable",
+                             "reason": "the template names no generation side for its witness"}
+            continue
         temps = t["weight"]["T"]
         mids = tuple((a + b) / 2.0 for a, b in zip(temps, temps[1:]))
         r_rows, p_rows = te.rows_from_json(wit["r"]), te.rows_from_json(wit["p"])
-        gen, prods = (p_rows, r_rows) if payload.get("member_reverse") else (r_rows, p_rows)
+        # the witness is stored in template direction: regenerate on the side
+        # the template's own member was generated on
+        gen, prods = (p_rows, r_rows) if t["member_reverse"] else (r_rows, p_rows)
         # the regenerated k is the EMITTED witness's, so its own count (the one the
         # weight was calibrated with) is the denominator, not the record's
         tch = (lrow.get("counts") or {}).get("matcher")

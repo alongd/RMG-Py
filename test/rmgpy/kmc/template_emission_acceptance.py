@@ -546,7 +546,7 @@ def midpoint_table(payloads):
                     _S["db"], sorted({r["family"] for r in _S["records"]}), database_path=DATABASE,
                     database_sha="i138-reference", temperature_grid=mids)
             r_rows, p_rows = te.rows_from_json(wit["r"]), te.rows_from_json(wit["p"])
-            gen, prods = (p_rows, r_rows) if p.get("member_reverse") else (r_rows, p_rows)
+            gen, prods = (p_rows, r_rows) if t.get("member_reverse") else (r_rows, p_rows)
             # the regenerated k is the EMITTED witness's, so its own count (the one the
             # weight was calibrated with) is the denominator, not the record's
             tch = (lrow.get("counts") or {}).get("matcher")
