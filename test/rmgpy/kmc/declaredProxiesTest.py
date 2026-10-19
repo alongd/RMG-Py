@@ -273,3 +273,43 @@ def test_a_compiler_without_archived_junctions_adds_none(tmp_path):
     off = EventSetCompiler(_Database(_Reaction(molecule)), proxies, ["R_Recombination"],
                            temperature_grid=[600.0, 700.0], archived_junctions=False)
     assert off._para_junction_records({}) == [] and off._ortho_junction_records({}) == []
+
+
+def _artifact_without_junctions(tmp_path):
+    """An R_Recombination artifact of a compiler that leaves out the archived
+    ring junctions."""
+    from compilerTest import _Database, _Molecule, _Reaction, _Species
+    from rmgpy.kmc.compiler import SiteProxy
+
+    molecule = _Molecule()
+    compiler = EventSetCompiler(_Database(_Reaction(molecule)),
+                                [SiteProxy("interior", [_Species(molecule)])],
+                                ["R_Recombination"], temperature_grid=[600.0, 700.0],
+                                archived_junctions=False)
+    _path, artifact = compiler.write_artifact(tmp_path)
+    return artifact
+
+
+def _without_flag(artifact):
+    """The artifact as if it did not say it leaves the junctions out."""
+    provenance = {k: v for k, v in artifact["provenance"].items() if k != "archived_junctions"}
+    records = [dict(r, provenance={k: v for k, v in r["provenance"].items()
+                                   if k != "archived_junctions"})
+               for r in artifact["records"]]
+    return dict(artifact, provenance=provenance, records=records)
+
+
+def test_an_artifact_that_leaves_out_the_archived_junctions_validates_without_them(
+        tmp_path, monkeypatch):
+    from rmgpy.kmc.compiler import validate_artifact
+
+    off = _artifact_without_junctions(tmp_path)
+    assert off["provenance"]["archived_junctions"] is False
+    assert "archived_j_para_rate" not in off["provenance"]
+    validate_artifact(off)
+    with pytest.raises(ValueError, match="J_ortho completeness"):
+        validate_artifact(_without_flag(off))
+    # an artifact that leaves them out cannot carry their rate provenance
+    forged = dict(off, provenance=dict(off["provenance"], archived_j_para_rate={}))
+    with pytest.raises(ValueError, match="archived"):
+        validate_artifact(forged)
