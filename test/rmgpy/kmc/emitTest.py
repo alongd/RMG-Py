@@ -231,6 +231,20 @@ def test_generated_roster_counts_are_pinned_per_declaration(tmp_path):
     assert pe.sha256 == pe_written.sha256
 
 
+@pytest.mark.parametrize("kind", ("ps", "pe"))
+def test_every_generated_system_uses_only_its_declaration_chain_provider(tmp_path, kind):
+    _roster, _written, systems = generated_of(tmp_path, kind, dps=(1, 2, 3, 5, 8))
+    chain_providers = set()
+    for name, participants in systems.items():
+        builds = [participant.build(f"{name}:{index}")
+                  for index, participant in enumerate(participants)]
+        win._builds_policy(builds)
+        chain_providers.update(build.metadata.provider for build in builds
+                               if build.metadata.provider != "small")
+    assert len(chain_providers) == 1
+    assert next(iter(chain_providers)).startswith("declared:")
+
+
 def test_ps_generated_roster_contains_the_recombination_legacy_oracle(tmp_path):
     _roster, _written, systems = generated_of(tmp_path, "ps", dps=(1, 2))
     participants = generated_participants(systems)
