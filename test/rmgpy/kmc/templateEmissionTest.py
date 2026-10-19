@@ -565,10 +565,17 @@ def test_equal_weight_collision_is_one_template():
     after = _per_outcome(te.loaded_templates(merged, 700.0), rows)
     assert set(after) == set(before) and set(after.values()) == {1}
     assert [r["disposition"] for r in table] == ["merged"] and table[0]["copies"] == 2
-    owner, other = (base_template(p) for p in merged)
+    # the representative is the copy of the least partition-free identity,
+    # never the least record id, and whatever the input order
+    by_identity = [p["record_event_id"] for p in sorted(payloads, key=lambda p: te._template_identity(
+        te.partition_free_identity(p), p, base_template(p)))]
+    assert sorted(by_identity) == ["evt_" + "1" * 64, "evt_" + "2" * 64]
+    assert te.resolve_collisions(payloads[::-1])[1] == table
+    by_record = {p["record_event_id"]: base_template(p) for p in merged}
+    owner, other = by_record[by_identity[0]], by_record[by_identity[1]]
     assert owner["status"] == "emitted"
-    assert owner["collision"]["records"] == ["evt_" + "1" * 64, "evt_" + "2" * 64]
-    assert other["status"] == "merged" and other["merged_into"]["record"] == "evt_" + "1" * 64
+    assert owner["collision"]["records"] == by_identity
+    assert other["status"] == "merged" and other["merged_into"]["record"] == by_identity[0]
     assert [p["status"] for p in merged] == ["emitted", "emitted"]
     for p in merged:
         te.validate_payload(p)
