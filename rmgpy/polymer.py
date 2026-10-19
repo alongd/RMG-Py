@@ -101,6 +101,7 @@ import logging
 import math
 import os
 import tempfile
+import threading
 
 import numpy as np
 from collections import defaultdict
@@ -125,6 +126,13 @@ LABELS_1, LABELS_2 = ('1', '*1'), ('2', '*2')
 # terminus out of the stitcher's *1/*2 label resolution (restored before the
 # strict end-radical assertion runs).
 _END_RADICAL_PARKED_LABEL = '*er'
+
+# Reentrant writers in this process take monotonically increasing tickets per
+# absolute target path. Cross-process saves to one directory remain out of
+# scope and must be serialized by their caller.
+_SIDECAR_WRITE_LOCK = threading.Lock()
+_SIDECAR_WRITE_SEQUENCE = defaultdict(int)
+_SIDECAR_COMMITTED_SEQUENCE = defaultdict(int)
 
 
 class PolymerCrosslinkError(Exception):
@@ -8415,9 +8423,10 @@ def core_topology_signature(core_species, core_reactions):
 
 def _write_json_atomically(path, payload, default=None):
     """Write JSON through a unique, durable temp file beside ``path``."""
-    # Unique names make nested writers in one process independent. Locking
-    # concurrent RMG processes that target one directory is intentionally out
-    # of scope; callers must serialize those saves externally.
+    path = os.path.abspath(path)
+    with _SIDECAR_WRITE_LOCK:
+        _SIDECAR_WRITE_SEQUENCE[path] += 1
+        ticket = _SIDECAR_WRITE_SEQUENCE[path]
     fd, temp_path = tempfile.mkstemp(
         prefix=f".{os.path.basename(path)}.tmp-",
         dir=os.path.dirname(path) or ".",
@@ -8428,7 +8437,19 @@ def _write_json_atomically(path, payload, default=None):
             json.dump(payload, fh, indent=2, default=default)
             fh.flush()
             os.fsync(fh.fileno())
-        os.replace(temp_path, path)
+        with _SIDECAR_WRITE_LOCK:
+            committed = _SIDECAR_COMMITTED_SEQUENCE[path]
+            if committed > ticket:
+                logging.warning(
+                    "Discarded superseded sidecar write for %s "
+                    "(ticket %d; committed ticket %d)",
+                    path,
+                    ticket,
+                    committed,
+                )
+                return
+            os.replace(temp_path, path)
+            _SIDECAR_COMMITTED_SEQUENCE[path] = ticket
     finally:
         if os.path.exists(temp_path):
             os.unlink(temp_path)

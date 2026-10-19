@@ -2351,6 +2351,23 @@ class RMG(util.Subject):
 
                 core_species = self.reaction_model.core.species
                 core_reactions = self.reaction_model.core.reactions
+                current_sig = core_topology_signature(core_species, core_reactions)
+                undecidable = current_sig.undecidable_species(current_sig)
+                if undecidable:
+                    raise _PolymerPoolsSidecarRefusal(
+                        "core_topology_identity",
+                        undecidable,
+                        "polymer_pools.json: cannot audit current core topology for %s: "
+                        "identity is undecidable or malformed" % ", ".join(undecidable),
+                    )
+                unreadable = current_sig.unreadable
+                if unreadable:
+                    raise _PolymerPoolsSidecarRefusal(
+                        "unreadable_core_structure",
+                        unreadable,
+                        "polymer_pools.json: core structures cannot be read for %s"
+                        % ", ".join(unreadable),
+                    )
 
                 # Cantera index map: recompute the exact filter/ordering the
                 # CanteraWriter listener (notify() above) just used on the
@@ -2396,7 +2413,9 @@ class RMG(util.Subject):
                 initial_explicit_by_pool = None
                 generation_mass_transfer = None
                 generation_v_poly_m3 = None
-                sidecar_stale_topology = False
+                # Without a live engine signature there is no proof that this
+                # artifact describes the topology the solver integrated.
+                sidecar_stale_topology = True
                 for system in (self.reaction_systems or []):
                     engine = getattr(system, "solver", None) or system
                     pools_cfg = getattr(engine, "polymer_pools", None)
@@ -2427,7 +2446,6 @@ class RMG(util.Subject):
                     engine_sig = getattr(
                         engine, "core_topology_signature", None)
                     try:
-                        current_sig = core_topology_signature(core_species, core_reactions)
                         undecidable = (engine_sig.undecidable_species(current_sig)
                                        if engine_sig is not None else [])
                         if undecidable:
@@ -2436,14 +2454,6 @@ class RMG(util.Subject):
                                 undecidable,
                                 "polymer_pools.json: cannot compare core topology for %s: "
                                 "identity is undecidable or malformed" % ", ".join(undecidable),
-                            )
-                        unreadable = current_sig.unreadable
-                        if unreadable:
-                            raise _PolymerPoolsSidecarRefusal(
-                                "unreadable_core_structure",
-                                unreadable,
-                                "polymer_pools.json: core structures cannot be read for %s"
-                                % ", ".join(unreadable),
                             )
                         sidecar_stale_topology = engine_sig is None or engine_sig != current_sig
                     except (TypeError, ValueError):
