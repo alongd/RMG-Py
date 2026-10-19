@@ -247,7 +247,39 @@ def test_save_path_refuses_malformed_species_reordered_from_engine_signature(
     }
 
 
-def test_refused_sidecar_uses_unique_fsynced_temp_files(tmp_path, monkeypatch):
+def test_save_path_refuses_malformed_species_without_engine_signature(
+        tmp_path, pe_pool):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [_malformed_species()])
+    del rmg.reaction_systems[0].core_topology_signature
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["malformed(9)"],
+    }
+
+
+def test_save_path_refuses_malformed_species_without_live_engine(
+        tmp_path, pe_pool):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [_malformed_species()])
+    rmg.reaction_systems = []
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["malformed(9)"],
+    }
+
+
+def test_save_path_marks_topology_stale_without_live_engine(tmp_path, pe_pool):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [])
+    rmg.reaction_systems = []
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc["conventions"]["stale_topology"] is True
+
+
+def test_newer_reentrant_refusal_supersedes_older_write(
+        tmp_path, monkeypatch, caplog):
     original_dump = polymer_module.json.dump
     nested = False
     fsynced = []
@@ -261,14 +293,17 @@ def test_refused_sidecar_uses_unique_fsynced_temp_files(tmp_path, monkeypatch):
 
     monkeypatch.setattr(polymer_module.json, "dump", interleaved_dump)
     monkeypatch.setattr(polymer_module.os, "fsync", fsynced.append)
-    write_refused_polymer_pools_sidecar(str(tmp_path), "outer")
+    with caplog.at_level(logging.WARNING):
+        write_refused_polymer_pools_sidecar(str(tmp_path), "outer")
     assert json.loads((tmp_path / "polymer_pools.json").read_text()) == {
         "refused": True,
-        "reason": "outer",
+        "reason": "inner",
         "species": [],
     }
     assert len(fsynced) == 2
     assert sorted(item.name for item in tmp_path.iterdir()) == ["polymer_pools.json"]
+    assert str(tmp_path / "polymer_pools.json") in caplog.text
+    assert "superseded" in caplog.text
 
 
 def test_save_path_refuses_existing_sidecar_when_registry_becomes_empty(
