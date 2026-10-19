@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 from rmgpy.kmc import boundaries as b
+from rmgpy.kmc import declared_chain as dc
 from rmgpy.kmc import emit
 from rmgpy.kmc import template_emission as te
 from rmgpy.kmc import windows as win
@@ -35,9 +36,9 @@ S = b.PsChainSpec
 # --------------------------------------------------------------------------
 # declared polymers
 # --------------------------------------------------------------------------
-def _atom(key, element="C", hydrogens=0):
+def _atom(key, element="C", hydrogens=0, radicals=0):
     return {"key": key, "element": element, "hydrogens": hydrogens,
-            "electronic_state": {"radical_electrons": 0}}
+            "electronic_state": {"radical_electrons": radicals}}
 
 
 def _cap():
@@ -253,6 +254,108 @@ def test_generated_radical_pairs_have_both_orders_and_identical_pairs(tmp_path):
                for participants in pairs.values())
     assert any(isomorphic(participants[0].build("a"), participants[1].build("b"))
                for participants in pairs.values())
+
+
+def test_generated_radicals_pair_with_every_chain_role_in_both_orders():
+    spec = LinearHomopolymerSpec.from_mapping(polymer_mapping("ps"))
+    roster = emit.reference_systems(spec, emit.match_provider(spec.repeat_unit), dps=(1,))
+    singles = {name.removeprefix("single:"): entries[0]
+               for name, entries in roster.systems.items()
+               if name.startswith("single:chain:")}
+    radicals = {label: entry for label, entry in singles.items()
+                if "radical" in label}
+    assert radicals
+    for radical_label, radical in radicals.items():
+        for chain_label, chain_entry in singles.items():
+            assert any(entries == [radical, chain_entry]
+                       for entries in roster.systems.values()), (radical_label, chain_label, "left")
+            assert any(entries == [chain_entry, radical]
+                       for entries in roster.systems.values()), (radical_label, chain_label, "right")
+
+
+def test_declared_provider_builds_the_declarations_caps_through_emit(tmp_path):
+    mapping = polymer_mapping("pe")
+    mapping["end_groups"]["head"] = {
+        "atoms": [_atom("methyl", hydrogens=3)], "bonds": [],
+        "ports": {"cap": {"atom": "methyl", "bond_order": 1}},
+        "electronic_state": {"multiplicity": 1}}
+    spec = LinearHomopolymerSpec.from_mapping(mapping)
+    provider = dc.DeclaredChainProvider(spec)
+    try:
+        roster = emit.reference_systems(spec, provider, dps=(3,), small=False, monomer=False,
+                                        molecularity={1})
+        systems, refusals = emit.build_reference_systems(
+            emit.write_roster(roster, tmp_path / "declared-pe.json"))
+        assert refusals == []
+        molecule = systems["single:chain:dp3:declared"][0].build("declared").molecule
+        assert molecule.get_formula() == "C7H16"
+    finally:
+        b.PROVIDERS.pop(provider.name, None)
+
+
+def test_generated_explicit_species_are_valid_window_specs(tmp_path):
+    mapping = polymer_mapping("pe")
+    mapping["small_species"] = {
+        "methane": {"graph": {"atoms": [_atom("c", hydrogens=4)], "bonds": [],
+                                "ports": {}, "electronic_state": {"multiplicity": 1}},
+                    "disposition": "mobile"}}
+    spec = LinearHomopolymerSpec.from_mapping(mapping)
+    roster = emit.reference_systems(spec, emit.match_provider(spec.repeat_unit), dps=(1,))
+    systems, refusals = emit.build_reference_systems(
+        emit.write_roster(roster, tmp_path / "small-window.json"))
+    assert refusals == []
+    for name, formula in (("single:small:H", "H"), ("single:small:methane", "CH4")):
+        participant = systems[name][0]
+        (rebuilt,) = win.builds_of([participant.spec])
+        assert rebuilt.molecule.get_formula() == formula
+
+
+def test_declared_small_species_multiplicity_survives_roster_round_trip(tmp_path):
+    mapping = polymer_mapping("pe")
+    atoms = [_atom("a", hydrogens=2, radicals=1),
+             _atom("b", hydrogens=2, radicals=1)]
+    mapping["small_species"] = {
+        name: {"graph": {"atoms": atoms, "bonds": [{"atoms": ["a", "b"], "order": 1}],
+                         "ports": {}, "electronic_state": {"multiplicity": multiplicity}},
+               "disposition": "mobile"}
+        for name, multiplicity in (("singlet", 1), ("triplet", 3))}
+    spec = LinearHomopolymerSpec.from_mapping(mapping)
+    roster = emit.reference_systems(spec, emit.match_provider(spec.repeat_unit), dps=(1,))
+    systems, refusals = emit.build_reference_systems(
+        emit.write_roster(roster, tmp_path / "multiplicity.json"))
+    assert refusals == []
+    assert systems["single:small:singlet"][0].build("s").molecule.multiplicity == 1
+    assert systems["single:small:triplet"][0].build("t").molecule.multiplicity == 3
+
+
+def test_generated_interior_radical_is_not_a_terminal_backbone_atom(tmp_path):
+    _roster, _written, systems = generated_of(tmp_path, "pe", dps=(1, 2))
+    assert "single:chain:dp1:interior-radical" not in systems
+    molecule = systems["single:chain:dp2:interior-radical"][0].build("r").molecule
+    (radical,) = [atom for atom in molecule.atoms if atom.radical_electrons]
+    assert sum(not atom.is_hydrogen() for atom in radical.bonds) == 2
+
+
+def test_mismatched_explicit_monomer_is_a_named_refusal():
+    mapping = polymer_mapping("pe")
+    mapping["monomer_product"] = {
+        "atoms": [_atom("a", hydrogens=3), _atom("b", hydrogens=3)],
+        "bonds": [{"atoms": ["a", "b"], "order": 1}], "ports": {},
+        "electronic_state": {"multiplicity": 1}}
+    spec = LinearHomopolymerSpec.from_mapping(mapping)
+    with pytest.raises(emit.RosterRefusal, match="refused:monomer"):
+        emit.reference_systems(spec, emit.match_provider(spec.repeat_unit), dps=(1,))
+
+
+def test_declared_small_species_cannot_shadow_builtin_h():
+    mapping = polymer_mapping("pe")
+    mapping["small_species"] = {
+        "H": {"graph": {"atoms": [_atom("h", "H", radicals=1)], "bonds": [],
+                          "ports": {}, "electronic_state": {"multiplicity": 2}},
+              "disposition": "mobile"}}
+    spec = LinearHomopolymerSpec.from_mapping(mapping)
+    with pytest.raises(emit.RosterRefusal, match="refused:small_name_collision"):
+        emit.reference_systems(spec, emit.match_provider(spec.repeat_unit), dps=(1,))
 
 
 def test_pe_generated_roster_has_the_same_core_roles_without_ps_provider(tmp_path, monkeypatch):
