@@ -2463,3 +2463,73 @@ def test_a_witness_outside_the_record_channel_refuses_the_template():
     assert rows["port 0:head +1"]["status"] == "refused:zero_transitions"
     assert out["status"] == "refused" and "refused:zero_transitions" in out["refusal"]["reason"]
     te.validate_payload(out)
+
+
+# --------------------------------------------------------------------------
+# I-190: one executable is one key; a refused copy never stands for it
+# --------------------------------------------------------------------------
+def test_the_canonical_executable_is_blind_to_the_metadata():
+    """A five-carbon path: marking one atom next to the centre in the
+    metadata (a boundary label, an RMG label) must not change which executable
+    serialization is canonical, so equal executables get one key."""
+    edges = {(0, 1): "1", (1, 2): "1", (0, 3): "1", (3, 4): "1"}
+    plain = ["m"] * 5
+    for v in range(5):
+        marked = list(plain)
+        marked[v] = "physical"
+        assert te._canonical_order(5, ["C"] * 5, marked, edges)[1][0] == \
+            te._canonical_order(5, ["C"] * 5, plain, edges)[1][0], v
+
+
+def _record_candidates(witness):
+    case, _row, (results, merges) = member(witness)
+    return te.context_candidates(case, results, merges, family="toy_cc", pathway=("toy",),
+                                 direction="reverse", reverse=False)[0]
+
+
+def test_one_executable_has_one_key_whatever_its_port_reaches():
+    """C10 bond 4-5 cut with the record's RMG labels on two witnesses whose
+    windows are equal and whose head port reaches a physical end on one, the
+    artificial end on the other: one executable, one key."""
+    (phys,) = _record_candidates(homolysis(10, (4, 5), head="methyl"))
+    (art,) = _record_candidates(homolysis(10, (4, 5)))
+    ex_p, ex_a = phys.cut.executable(), art.cut.executable()
+    assert sorted(map(json.dumps, ex_p["atoms"])) == sorted(map(json.dumps, ex_a["atoms"]))
+    assert len(ex_p["bonds"]) == len(ex_a["bonds"])
+    assert phys.refusal.startswith("refused:whole_species_guard") and art.refusal is None
+    assert phys.cut.key == art.cut.key
+
+
+def _two_member_emit(witnesses):
+    plain = homolysis(10, (4, 5))
+    oracle = ToyCounter().channel(ToyFamily, te.molecules_of(dict(plain.reactant_rows())),
+                                  "reverse", None, ToyCounter().species_of_rows(plain.product_rows()))
+    return te.emit_record(toy_record(plain, oracle.transitions), family=ToyFamily,
+                          members=[member(w) for w in witnesses], counter=ToyCounter(),
+                          rates=stub_rates(ToyCounter()), check_upstream=False)
+
+
+def _partition(payload):
+    return sorted((t["status"], t.get("key"), t["base"], sorted(map(tuple, t["sources"])))
+                  for t in payload["templates"])
+
+
+def test_a_refused_copy_does_not_stand_for_an_accepted_executable():
+    """The whole-species guard reads the candidate's own witness (its port
+    reaches a physical end); an equal executable accepted on another witness
+    is the template, and the refused copy is one more of its sources."""
+    out = _two_member_emit([homolysis(10, (4, 5), head="methyl"), homolysis(10, (4, 5))])
+    assert out["status"] == "emitted", out["refusal"]
+    (t,) = out["templates"]
+    assert t["status"] == "emitted" and t["base"]
+    assert len(t["sources"]) == 2
+
+
+def test_the_member_order_does_not_change_the_emitted_partition():
+    """The two records of a reciprocal pair draw their candidates from the
+    same members; the templates, their statuses and sources must not follow
+    the order the members come in."""
+    witnesses = [homolysis(10, (4, 5), head="methyl"), homolysis(10, (4, 5))]
+    one, two = _two_member_emit(witnesses), _two_member_emit(witnesses[::-1])
+    assert _partition(one) == _partition(two)
+    assert (one["status"], one["refusal"]) == (two["status"], two["refusal"])
