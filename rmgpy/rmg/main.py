@@ -90,6 +90,16 @@ from rmgpy.tools.plot import plot_sensitivity
 from rmgpy.tools.uncertainty import Uncertainty, process_local_results
 from rmgpy.yml import RMSWriter
 
+
+class _PolymerPoolsSidecarRefusal(RuntimeError):
+    """A sidecar refusal with a stable machine reason and named species."""
+
+    def __init__(self, reason, species, message):
+        super().__init__(message)
+        self.reason = reason
+        self.species = list(species)
+
+
 ################################################################################
 
 # This module uses the HDF5 data format, which can cause problems on files systems that use NFS (common for network
@@ -2344,8 +2354,20 @@ class RMG(util.Subject):
                         undecidable = (engine_sig.undecidable_species(current_sig)
                                        if engine_sig is not None else [])
                         if undecidable:
-                            raise RuntimeError("polymer_pools.json: cannot compare core topology for %s: "
-                                               "resonance expansion is unavailable" % ", ".join(undecidable))
+                            raise _PolymerPoolsSidecarRefusal(
+                                "core_topology_identity",
+                                undecidable,
+                                "polymer_pools.json: cannot compare core topology for %s: "
+                                "identity is undecidable or malformed" % ", ".join(undecidable),
+                            )
+                        unreadable = current_sig.unreadable
+                        if unreadable:
+                            raise _PolymerPoolsSidecarRefusal(
+                                "unreadable_core_structure",
+                                unreadable,
+                                "polymer_pools.json: core structures cannot be read for %s"
+                                % ", ".join(unreadable),
+                            )
                         sidecar_stale_topology = engine_sig is None or engine_sig != current_sig
                     except (TypeError, ValueError):
                         sidecar_stale_topology = True
@@ -2452,16 +2474,19 @@ class RMG(util.Subject):
                     if fresh:
                         recorded_masks.append({"reactor": number, "mask": [bool(g) for g in mask]})
 
-                # a species whose structure cannot be read equals nothing: the
-                # artifact is stale, and names it
+                # A species whose structure cannot be read equals nothing; a
+                # prior sidecar must therefore be replaced by a named refusal.
                 try:
                     unreadable = core_topology_signature(core_species, core_reactions).unreadable
                 except (TypeError, ValueError):
                     unreadable = []
                 if unreadable:
-                    sidecar_stale_topology = True
-                    logging.warning("polymer_pools.json: stale, the structures of %s cannot be read",
-                                    ", ".join(unreadable))
+                    raise _PolymerPoolsSidecarRefusal(
+                        "unreadable_core_structure",
+                        unreadable,
+                        "polymer_pools.json: core structures cannot be read for %s"
+                        % ", ".join(unreadable),
+                    )
 
                 write_polymer_pools_sidecar(
                     pool_registry=pool_registry,
@@ -2485,9 +2510,40 @@ class RMG(util.Subject):
             logging.warning(f"Failed to write polymer_pools.json sidecar: {e}", exc_info=True)
             if sidecar_target is not None:
                 try:
-                    write_refused_polymer_pools_sidecar(sidecar_target, str(e))
+                    write_refused_polymer_pools_sidecar(
+                        sidecar_target,
+                        getattr(e, "reason", str(e)),
+                        getattr(e, "species", None),
+                    )
                 except Exception:
                     logging.warning("Failed to write refused polymer_pools.json sidecar", exc_info=True)
+                    sidecar_path = os.path.join(sidecar_target, "polymer_pools.json")
+                    stale_path = sidecar_path + ".stale"
+                    try:
+                        if os.path.exists(sidecar_path):
+                            os.replace(sidecar_path, stale_path)
+                            logging.warning(
+                                "Moved stale polymer sidecar %s to %s",
+                                sidecar_path,
+                                stale_path,
+                            )
+                    except Exception:
+                        logging.warning(
+                            "Failed to move stale polymer sidecar %s to %s; removing the current path",
+                            sidecar_path,
+                            stale_path,
+                            exc_info=True,
+                        )
+                        try:
+                            os.unlink(sidecar_path)
+                        except FileNotFoundError:
+                            pass
+                        except Exception:
+                            logging.warning(
+                                "Failed to remove stale polymer sidecar %s",
+                                sidecar_path,
+                                exc_info=True,
+                            )
 
         self.save_profiler_info()
 
