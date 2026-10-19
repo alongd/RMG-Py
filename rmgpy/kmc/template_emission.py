@@ -2202,8 +2202,9 @@ def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG
     final = {}
     for p in out:
         for t in p.get("templates", []):
-            if t.get("base"):
-                final[t["key"]] = t["status"] if t["status"] != "merged" else "emitted"
+            if not t.get("base") or t["status"] == "refused" and "key" not in t:
+                continue          # refused at emission: never cut, so in no unit
+            final[t["key"]] = t["status"] if t["status"] != "merged" else "emitted"
     for (_rid, key), (_rev, rkey) in links.items():
         a, b = final.get(key), final.get(rkey)
         if a is not None and b is not None and (a == "refused") != (b == "refused"):

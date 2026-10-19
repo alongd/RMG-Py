@@ -1189,8 +1189,10 @@ def assemble(paths, *, database=None, services=None) -> dict:
     try:
         merged, collisions = te.resolve_collisions(payloads)
     except Exception as error:    # a split reciprocal pair, a bad weight
+        # the catalog is refused: unmerged copies would load as independent
+        # templates and fail (or fake) every gate after this one
         failures.append(f"catalog consistency: {type(error).__name__}: {error}"[:600])
-        merged = payloads
+        have, merged = [], []
     refused_collisions = [c for c in collisions if c["disposition"] != "merged"]
     for c in refused_collisions:
         failures.append(f"{c['disposition']} {c['key'][:16]}: {c['copies']} copies, "
