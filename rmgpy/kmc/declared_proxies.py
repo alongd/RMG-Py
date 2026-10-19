@@ -7,32 +7,43 @@ own chain provider (``emit.declared_provider``) through the vocabulary
 adapter of the provider whose repeat unit it declares (``emit.match_provider``,
 ``spec_for_declared_provider``), and the monomer the declaration names or
 derives (``reference_monomer``).  Nothing here names a polymer.
+``declared_structures`` gives the same structures with their witness specs;
+the roster of a declared artifact is built from it
+(``emit.declared_reference_systems``).
 
 The structures, at ``units`` repeat units with artificial (capped) ends:
 
 - ``pristine``: the closed chain;
-- ``interior_radical``: one radical on the centre unit's backbone;
+- one radical per class of hydrogen-bearing heavy atoms of the primitive
+  period (``radical_sites``: the orbits of ``ChainGeometry.atom_classes``):
+  ``interior_radical:<i>`` for a backbone class, on the centre unit
+  (``emit.centred_radical_unit``), and ``pendant_radical:<i>`` for a
+  side-group class, on the first unit; ``i`` counts the classes of that
+  kind in order of their least key;
 - ``doubly_featured``: radicals on the backbone of the first two units;
 - ``head_end_radical`` / ``tail_end_radical``: a radical end at the head or
-  the tail (the other end artificial); the tail one is dropped when it is the
-  head one read backwards (same molecule, same port kinds);
-- ``pendant_radical``: one radical on the first unit's side-group atom
-  farthest from the backbone (the least key when several are equally far;
-  none for a chain without a hydrogen-bearing side-group atom);
+  the tail (the other end artificial);
+- ``head_group_radical:<i>`` / ``tail_group_radical:<i>``: the declared end
+  group attached at that end (the other end artificial) with a radical on
+  its ``i``-th hydrogen-bearing heavy atom (none for a hydrogen cap);
 - ``monomer``: the declared or derived monomer (no ports).
 
+A structure that is an earlier one (same molecule, same port kinds; a chain
+read backwards is the same structure) is dropped, so each class of
+equivalent sites gives one structure.
+
 Proxies: every structure but the monomer alone; every pair of single-radical
-structures (``interior_radical``, the end radicals, ``pendant_radical``),
-itself included; every single-radical structure with ``pristine``; every
-single-radical structure at ``units - 1`` (its ``_short`` variant) with the
-monomer.  Each proxy is repeated at ``units + 2`` as ``<site type>@<units +
-2>`` (the full contexts of the radius-one completeness bound).  No proxy
-names family candidates: the compile tries the requested families on all.
+structures, itself included; every single-radical structure with
+``pristine``; every single-radical structure with the monomer, at full
+length (``<radical>+monomer``) and at ``units - 1``
+(``<radical>_short+monomer``).  Each proxy is repeated at ``units + 2`` as
+``<site type>@<units + 2>`` (the full contexts of the radius-one
+completeness bound).  No proxy names family candidates: the compile tries
+the requested families on all.
 """
 
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import replace
 
 from rmgpy.kmc import boundaries as b
@@ -45,59 +56,99 @@ from rmgpy.kmc.proxy_padding import RepeatUnitGraph
 DEFAULT_PROXY_UNITS = 3
 # the extra units of the full-context copies
 COVERAGE_EXTRA_UNITS = 2
-SINGLE_RADICALS = ("interior_radical", "head_end_radical", "tail_end_radical",
-                   "pendant_radical")
+SHORT = "_short"
+SINGLE_RADICALS = ("interior_radical", "pendant_radical", "head_end_radical",
+                   "tail_end_radical", "head_group_radical", "tail_group_radical")
 CONTEXT_CLASS = {"pristine": "pristine", "interior_radical": "featured",
                  "doubly_featured": "featured", "head_end_radical": "end-proximal",
-                 "tail_end_radical": "end-proximal", "pendant_radical": "pendant",
+                 "tail_end_radical": "end-proximal", "head_group_radical": "end-proximal",
+                 "tail_group_radical": "end-proximal", "pendant_radical": "pendant",
                  "monomer": "monomer"}
+
+
+def radical_sites(declared) -> tuple:
+    """``((kind, keys), ...)``: one entry per class of hydrogen-bearing heavy
+    atoms of the declared primitive period (``ChainGeometry.atom_classes``:
+    orbits under the locality policy's site classes); ``kind`` is
+    ``interior`` for a backbone class and ``pendant`` otherwise; interior
+    classes first, each kind in order of its least key."""
+    g = declared.geometry
+    bonded_h = {key for left, right in g.bonds for key, other in ((left, right), (right, left))
+                if g.atoms[other].element == "H"}
+    out = []
+    for _site, positions in g.atom_classes:
+        keys = tuple(sorted(g.keys[p] for p in positions))
+        atom = g.atoms[keys[0]]
+        if atom.element == "H" or not (atom.hydrogens or keys[0] in bonded_h):
+            continue
+        out.append(("interior" if keys[0] in g.backbone_offsets else "pendant", keys))
+    return tuple(sorted(out, key=lambda item: (item[0] != "interior", item[1][0])))
 
 
 def declared_proxy_set(spec, units: int = DEFAULT_PROXY_UNITS) -> tuple:
     """The compile proxies of a linear-homopolymer declaration at ``units``
     repeat units, with their ``units + 2`` full-context copies (module doc)."""
-    from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
-
-    if isinstance(units, bool) or not isinstance(units, int) or units < 2:
-        raise ValueError(f"declared proxies need at least two units (a short variant has "
-                         f"units - 1), got {units!r}")
-    spec = normalized_linear_homopolymer_spec(spec)
+    builder = _Builder.of(spec, units)
     wide = units + COVERAGE_EXTRA_UNITS
     extended = tuple(replace(proxy, site_type=f"{proxy.site_type}@{wide}",
                              metadata={**proxy.metadata, "coverage_site_type": proxy.site_type})
-                     for proxy in _proxies(spec, wide))
-    return _proxies(spec, units) + extended
+                     for proxy in _proxies(builder, wide))
+    return _proxies(builder, units) + extended
 
 
-def _proxies(spec, units: int) -> tuple:
-    from rmgpy.species import Species
+def declared_structures(spec, units: int = DEFAULT_PROXY_UNITS) -> tuple:
+    """``(structures, proxies)`` of ``declared_proxy_set(spec, units)``:
+    ``structures`` maps a participant name (``<name>@<depth>``) to
+    ``(witness spec or None, build)`` (None: the portless monomer, an
+    explicit build); ``proxies`` maps each site type to its participant
+    names, in order."""
+    builder = _Builder.of(spec, units)
+    wide = units + COVERAGE_EXTRA_UNITS
+    structures, proxies = {}, {}
+    for depth, suffix in ((units, ""), (wide, f"@{wide}")):
+        builds = builder.builds(depth)
+        for name, item in builds.items():
+            structures[f"{name}@{depth}"] = item
+        for site_type, participants in _declarations(builds):
+            proxies[site_type + suffix] = tuple(f"{name}@{depth}" for name in participants)
+    return structures, proxies
 
-    builder = _Builder(spec)
-    builds = builder.structures(units)
-    radicals = [name for name in SINGLE_RADICALS if name in builds]
-    short = builder.structures(units - 1, only=radicals) if "monomer" in builds else {}
-    builds.update({f"{name}_short": build for name, build in short.items()})
-    species = {name: Species(molecule=[build.molecule]) for name, build in builds.items()}
 
+def _is_single_radical(name) -> bool:
+    return not name.endswith(SHORT) and name.split(":")[0] in SINGLE_RADICALS
+
+
+def _declarations(builds) -> list:
+    """(site type, participant names) of every proxy over ``builds``."""
+    radicals = [name for name in builds if _is_single_radical(name)]
     declarations = [(name, (name,)) for name in builds
-                    if name != "monomer" and not name.endswith("_short")]
+                    if name != "monomer" and not name.endswith(SHORT)]
     for i, first in enumerate(radicals):
         for second in radicals[i:]:
             declarations.append((f"{first}+{second}", (first, second)))
     for radical in radicals:
         declarations.append((f"{radical}+pristine", (radical, "pristine")))
-    for radical in radicals:
-        if f"{radical}_short" in builds:
-            declarations.append((f"{radical}+monomer", (f"{radical}_short", "monomer")))
+    if "monomer" in builds:
+        for radical in radicals:
+            declarations.append((f"{radical}+monomer", (radical, "monomer")))
+            if radical + SHORT in builds:
+                declarations.append((f"{radical}{SHORT}+monomer", (radical + SHORT, "monomer")))
+    return declarations
 
+
+def _proxies(builder, units: int) -> tuple:
+    from rmgpy.species import Species
+
+    builds = {name: build for name, (_spec, build) in builder.builds(units).items()}
+    species = {name: Species(molecule=[build.molecule]) for name, build in builds.items()}
     proxies = []
-    for site_type, participants in declarations:
+    for site_type, participants in _declarations(builds):
         boundaries = tuple(
             port
             for index, name in enumerate(participants)
             for port in construction_ports(name, builds[name].molecule, index,
                                            builds[name].metadata))
-        site_types = tuple(name[:-len("_short")] if name.endswith("_short") else name
+        site_types = tuple(name[:-len(SHORT)] if name.endswith(SHORT) else name
                            for name in participants)
         proxies.append(SiteProxy(
             site_type,
@@ -106,7 +157,8 @@ def _proxies(spec, units: int) -> tuple:
             artificial_boundaries=boundaries,
             repeat_unit=builder.repeat_unit if boundaries else None,
             boundary_builds=tuple(builds[name] for name in participants),
-            metadata={"centred": True, "context_class": CONTEXT_CLASS[site_types[0]],
+            metadata={"centred": True,
+                      "context_class": CONTEXT_CLASS[site_types[0].split(":")[0]],
                       "proxy_units": units, "declaration": builder.declared.name},
         ))
     return tuple(proxies)
@@ -120,46 +172,96 @@ class _Builder:
         self.declared = emit.declared_provider(spec)
         self.provider = emit.match_provider(spec.repeat_unit) or self.declared
         self.repeat_unit = self._repeat_unit()
+        self.sites = radical_sites(self.declared)
+        self._builds = {}
+
+    @classmethod
+    def of(cls, spec, units):
+        from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
+
+        if isinstance(units, bool) or not isinstance(units, int) or units < 2:
+            raise ValueError(f"declared proxies need at least two units (a short variant has "
+                             f"units - 1), got {units!r}")
+        return cls(normalized_linear_homopolymer_spec(spec))
 
     def chain(self, units, head=None, tail=None, radical_unit=None):
         return self.provider.spec_for_declared_provider(self.declared, units, head, tail,
                                                         radical_unit)
 
-    @staticmethod
-    def build(spec, name):
-        return win.build_spec(spec, name)
+    def builds(self, units: int) -> dict:
+        """name -> (witness spec or None, build) of every structure at
+        ``units``, with the ``_short`` single radicals at ``units - 1``."""
+        if units not in self._builds:
+            builds = self.structures(units)
+            radicals = [name for name in builds if _is_single_radical(name)]
+            if "monomer" in builds:
+                short = self.structures(units - 1, only=radicals)
+                builds.update({name + SHORT: item for name, item in short.items()})
+            self._builds[units] = builds
+        return self._builds[units]
 
     def structures(self, units: int, only=None) -> dict:
-        """name -> ``ProxyBuild`` of every structure buildable at ``units``."""
-        recipes = {
-            "pristine": lambda: [self.chain(units)],
-            "interior_radical": lambda: [self.chain(units,
-                                                    radical_unit=emit.centred_radical_unit(units))],
-            "doubly_featured": lambda: [self._joined(self.chain(units, radical_unit=0),
-                                                     self.chain(units, radical_unit=1))]
-            if units > 1 else [],
-            "head_end_radical": lambda: [self.chain(units, head="radical")],
-            "tail_end_radical": lambda: [self.chain(units, tail="radical")],
-            "pendant_radical": lambda: self._pendant(units),
-        }
+        """name -> (witness spec, build) of every structure buildable at
+        ``units`` (the monomer's spec is None)."""
+        recipes = [("pristine", lambda: self.chain(units))]
+        recipes += self._site_recipes(units, "interior")
+        recipes.append(("doubly_featured", lambda: self._joined(
+            self.chain(units, radical_unit=0), self.chain(units, radical_unit=1))))
+        recipes += [("head_end_radical", lambda: self.chain(units, head="radical")),
+                    ("tail_end_radical", lambda: self.chain(units, tail="radical"))]
+        recipes += self._site_recipes(units, "pendant")
+        recipes += self._group_recipes(units)
         out = {}
-        for name, recipe in recipes.items():
+        for name, recipe in recipes:
             if only is not None and name not in only:
                 continue
             try:
-                specs = recipe()
+                spec = recipe()
+                build = win.build_spec(spec, name)
             except (b.BoundaryError, ValueError):
                 continue
-            for spec in specs:
-                build = self.build(spec, name)
-                if not any(_same_structure(build, other) for other in out.values()):
-                    out[name] = build
-                    break
+            if not any(_same_structure(build, other) for _spec, other in out.values()):
+                out[name] = (spec, build)
         if only is None:
             monomer = self._monomer()
             if monomer is not None:
-                out["monomer"] = monomer
+                out["monomer"] = (None, monomer)
         return out
+
+    def _site_recipes(self, units, kind) -> list:
+        """One radical per class of ``kind`` (``radical_sites``): a backbone
+        class on the centre unit, a side-group class on the first."""
+        unit = emit.centred_radical_unit(units) * self.declared.periods_per_repeat \
+            if kind == "interior" else 0
+        classes = [keys for k, keys in self.sites if k == kind]
+        return [(f"{kind}_radical:{i}",
+                 lambda keys=keys: self._edited(self.chain(units), unit, keys[0]))
+                for i, keys in enumerate(classes)]
+
+    def _group_recipes(self, units) -> list:
+        """One radical per hydrogen-bearing heavy atom of each declared end
+        group, the group attached at its end (equivalent atoms give one
+        structure: an equal one is dropped)."""
+        out = []
+        for side, graph in (("head", self.spec.head_end_group),
+                            ("tail", self.spec.tail_end_group)):
+            hydrogens = {atom.key for atom in graph.atoms if atom.element == "H"}
+            bonded_h = {key for bond in graph.bonds for key in bond.atoms
+                        if key not in hydrogens and set(bond.atoms) & hydrogens}
+            keys = sorted(atom.key for atom in graph.atoms if atom.element != "H"
+                          and (atom.hydrogens or atom.key in bonded_h))
+            for i, key in enumerate(keys):
+                def recipe(side=side, key=key):
+                    spec = self.chain(units, **{side: "declared"})
+                    return self._edited(spec, -1 if side == "head" else spec.chain.units, key)
+                out.append((f"{side}_group_radical:{i}", recipe))
+        return out
+
+    @staticmethod
+    def _edited(spec, unit, key):
+        """``spec`` with one radical on (``unit``, ``key``)."""
+        return replace(spec, chain=replace(spec.chain, edits=spec.chain.edits + (
+            EditOp("remove_h", unit, key), EditOp("set_radical", unit, key, 1))))
 
     @staticmethod
     def _joined(first, second):
@@ -168,33 +270,6 @@ class _Builder:
             raise ValueError("the two radical specs are not one chain")
         return replace(first, chain=replace(first.chain,
                                             edits=first.chain.edits + second.chain.edits))
-
-    def _pendant(self, units) -> list:
-        """The pristine chain with one radical on a side-group atom of its first
-        unit, per side-group atom farthest from the backbone."""
-        g = self.declared.geometry
-        backbone = set(g.backbone_offsets)
-        neighbours = {key: set() for key in g.keys}
-        for left, right in g.bonds:
-            neighbours[left].add(right)
-            neighbours[right].add(left)
-        distance = {key: 0 for key in backbone}
-        queue = deque(sorted(backbone))
-        while queue:
-            key = queue.popleft()
-            for other in sorted(neighbours[key]):
-                if other not in distance:
-                    distance[other] = distance[key] + 1
-                    queue.append(other)
-        sites = [key for key in g.keys if key not in backbone and key in distance
-                 and g.atoms[key].element != "H" and g.atoms[key].hydrogens]
-        if not sites:
-            return []
-        far = max(distance[key] for key in sites)
-        pristine = self.chain(units)
-        return [replace(pristine, chain=replace(pristine.chain, edits=pristine.chain.edits + (
-            EditOp("remove_h", 0, key), EditOp("set_radical", 0, key, 1))))
-            for key in sorted(sites) if distance[key] == far]
 
     def _monomer(self):
         molecule = self.provider.reference_monomer(self.spec)

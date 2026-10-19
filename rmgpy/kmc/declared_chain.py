@@ -117,7 +117,8 @@ def _is_int(value) -> bool:
 class EditOp:
     """One explicit, coordinate-addressed edit.  ``unit`` and ``key``
     address an atom of the chain (``key``: a declaration atom key of the
-    primitive period).  ``set_radical``: the atom's radical electrons become
+    primitive period; of a declared end group's heavy atom at unit -1, the
+    head, or ``units``, the tail).  ``set_radical``: the atom's radical electrons become
     ``value``; ``remove_h`` / ``add_h``: ``value`` hydrogens (0 means one;
     caps are never removed); ``delete_atom``: the atom and its hydrogens;
     ``set_bond_order``: the bond to ``other`` = (unit, key) gets order
@@ -1349,6 +1350,7 @@ class DeclaredChainProvider(BoundaryProvider):
                     raise MetadataError(f"end-group hydrogen {key!r} needs one heavy neighbour")
                 owner = handles[neighbours[0]]
             handles[key] = asm.add_h(owner, 3, _attrs(atoms[key]), (side, key))
+        return {key: handles[key] for key in heavy}
 
     def build(self, name: str, chain: ChainSpec) -> ProxyBuild:
         """The proxy of ``chain`` (see ChainSpec); RMG's default multiplicity
@@ -1380,7 +1382,11 @@ class DeclaredChainProvider(BoundaryProvider):
             elif end == "radical":
                 asm.attrs[handle][3] += int(order)
             else:
-                self._end_group(asm, side, handle, order, -1 if side == "head" else units)
+                group_unit = -1 if side == "head" else units
+                for key, atom in self._end_group(asm, side, handle, order, group_unit).items():
+                    # an edit addresses a declared end group's heavy atom as
+                    # (-1, key) at the head and (units, key) at the tail
+                    sites[(group_unit, key)] = atom
             ports.append((side, handle, caps, tag,
                           "artificial" if end == "artificial" else "physical"))
         port_handles = {h for _s, h, _c, _t, _p in ports}
@@ -1401,6 +1407,8 @@ class DeclaredChainProvider(BoundaryProvider):
         g = self.geometry
 
         def locate(unit, key):
+            if unit in (-1, units) and (unit, key) in sites:
+                return sites[(unit, key)]
             if not 0 <= unit < units:
                 raise EditError(f"{edit}: unit {unit} is outside the chain (0..{units - 1})")
             if key not in g.positions:
