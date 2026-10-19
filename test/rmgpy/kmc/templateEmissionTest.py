@@ -585,11 +585,17 @@ def test_unequal_weight_collision_is_refused():
     out, table = te.resolve_collisions(payloads)
     assert [r["disposition"] for r in table] == ["refused:collision"]
     assert table[0]["log10_diameter"] == pytest.approx(math.log10(1.1), rel=1e-9)
+    # copies are listed by partition-free identity, never by record id (the
+    # ids carry the artifact's family list), and whatever the input order
+    by_identity = [p["record_event_id"] for p in sorted(payloads, key=lambda p: te._template_identity(
+        te.partition_free_identity(p), p, base_template(p)))]
+    assert sorted(by_identity) == ["evt_" + "1" * 64, "evt_" + "2" * 64]
+    assert te.resolve_collisions(payloads[::-1])[1] == table
     for p in out:
         t = base_template(p)
         assert t["status"] == "refused" and t["refusal"]["status"] == "refused:collision"
         assert t["refusal"]["keys"] == [t["key"]] and len(t["refusal"]["weights"]) == 2
-        assert t["refusal"]["records"] == ["evt_" + "1" * 64, "evt_" + "2" * 64]
+        assert t["refusal"]["records"] == by_identity
         assert p["status"] == "refused" and p["refusal"]["status"] == "refused:collision"
         te.validate_payload(p)
     assert te.loaded_templates(out, 700.0) == []
@@ -2104,7 +2110,7 @@ def test_an_acceptance_selection_that_matches_nothing_gates():
 # pair, the representative of a collision and the cycle-check temperatures
 # must not change with them.
 # --------------------------------------------------------------------------
-def _relabel(payloads, mapping):
+def _relabel_records(payloads, mapping):
     """``payloads`` with every record id (own, reverse link, rate provenance)
     renamed by ``mapping``: the same chemistry under other ids."""
     out = []
@@ -2138,7 +2144,7 @@ def test_the_primary_of_a_reciprocal_pair_does_not_follow_the_record_ids():
     the same primary, and every loaded weight is the same (the reviewer's
     repro moved a loaded weight at 650 K from 1.002965894 to 1)."""
     payloads, counter = _toy_pair()
-    swapped = _relabel(payloads, {_rid(1): _rid(2), _rid(2): _rid(1)})
+    swapped = _relabel_records(payloads, {_rid(1): _rid(2), _rid(2): _rid(1)})
     temps = list(OFF_GRID) + [650.0]
     a = _loaded_weights(_res(payloads, counter), temps)
     b = _loaded_weights(_res(swapped, counter), temps)
@@ -2153,7 +2159,7 @@ def test_the_collision_representative_does_not_follow_the_record_ids():
     ids = [p["record_event_id"] for p in members]
     seen = set()
     for perm in itertools.permutations(ids):
-        out, table = te.resolve_collisions(_relabel(members, dict(zip(ids, perm))))
+        out, table = te.resolve_collisions(_relabel_records(members, dict(zip(ids, perm))))
         assert [r["disposition"] for r in table] == ["merged"]
         loaded = [base_template(p) for p in out if base_template(p)["status"] == "emitted"]
         assert len(loaded) == 1
@@ -2169,7 +2175,7 @@ def test_the_representative_pair_of_a_reciprocal_unit_does_not_follow_the_record
     payloads = _reciprocal([kf, kf], [kr, kr], (0.003, 0.0))
     swap = {_rid(1): _rid(2), _rid(2): _rid(1), _rid(5): _rid(6), _rid(6): _rid(5)}
     seen = []
-    for ps in (payloads, _relabel(payloads, swap)):
+    for ps in (payloads, _relabel_records(payloads, swap)):
         out, table = te.resolve_collisions(ps)
         assert sorted(r["disposition"] for r in table) == ["merged", "merged"]
         seen.append(sorted((t["key"], te.canonical_json(t["weight"])) for p in out
@@ -2179,7 +2185,7 @@ def test_the_representative_pair_of_a_reciprocal_unit_does_not_follow_the_record
 
 def test_the_cycle_check_temperatures_do_not_follow_the_record_ids(monkeypatch):
     payloads, counter = _toy_pair()
-    renamed = _relabel(payloads, {_rid(1): _rid(10), _rid(2): _rid(11)})
+    renamed = _relabel_records(payloads, {_rid(1): _rid(10), _rid(2): _rid(11)})
     original = te.check_temperatures
     used = []
 
@@ -2204,7 +2210,7 @@ def test_the_identity_is_every_stored_field_but_the_record_ids():
     payloads, _counter = _toy_pair()
     p = payloads[0]
     t = base_template(p)
-    renamed = _relabel(payloads, {_rid(1): _rid(12), _rid(2): _rid(13)})[0]
+    renamed = _relabel_records(payloads, {_rid(1): _rid(12), _rid(2): _rid(13)})[0]
     assert te.partition_free_identity(renamed) == te.partition_free_identity(p)
     assert te.partition_free_identity(renamed, base_template(renamed)) == \
         te.partition_free_identity(p, t)
@@ -2243,7 +2249,7 @@ def test_copies_that_differ_only_in_thermo_choose_by_thermo_never_by_id():
     swap = {_rid(1): _rid(2), _rid(2): _rid(1), _rid(5): _rid(6), _rid(6): _rid(5)}
     temps = list(OFF_GRID) + [650.0]
     seen = []
-    for ps in (payloads, _relabel(payloads, swap)):
+    for ps in (payloads, _relabel_records(payloads, swap)):
         out = _res(ps, counter)
         thermo = sorted(te.canonical_json(t.get("thermo")) for p in out for t in p["templates"]
                         if t.get("status") == "emitted")
@@ -2299,7 +2305,7 @@ def test_free_text_masks_exactly_the_id_forms_the_code_writes():
         q["refusal"] = {"status": "refused:cycle", "reason": text}
         return q
     rid = p["record_event_id"]
-    renamed = _relabel([p], {rid: _rid(14)})[0]
+    renamed = _relabel_records([p], {rid: _rid(14)})[0]
     for form in (lambda r: r, lambda r: r[:16]):
         assert te.partition_free_identity(with_reason(p, f"reverse record {form(rid)} x")) == \
             te.partition_free_identity(with_reason(renamed, f"reverse record {form(_rid(14))} x"))
@@ -2317,7 +2323,7 @@ def test_the_retained_rule_does_not_follow_the_ids_when_labels_look_like_ids():
     ids = [p["record_event_id"] for p in members]
     kept = set()
     for mapping in ({}, dict(zip(ids, reversed(ids)))):
-        out, table = te.resolve_collisions(_relabel(members, mapping))
+        out, table = te.resolve_collisions(_relabel_records(members, mapping))
         assert [r["disposition"] for r in table] == ["merged"]
         (rep,) = [p for p in out if base_template(p)["status"] == "emitted"]
         kept.add(rep["rate"]["provenance"]["selection"]["entry"])
