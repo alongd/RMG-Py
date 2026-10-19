@@ -314,6 +314,35 @@ def test_newer_reentrant_save_supersedes_older_save(tmp_path, pe_pool, caplog):
     assert "superseded" in caplog.text
 
 
+def test_failed_newer_reentrant_refusal_supersedes_older_save(
+        tmp_path, pe_pool, monkeypatch):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [])
+    nested = False
+
+    def save_newer_refusal():
+        nonlocal nested
+        if nested:
+            return
+        nested = True
+        rmg.reaction_model.core.species.append(_malformed_species())
+        try:
+            rmg.save_everything()
+        finally:
+            rmg.reaction_model.core.species.pop()
+
+    def fail_refusal(*args, **kwargs):
+        raise OSError("disk full")
+
+    rmg.notify = save_newer_refusal
+    monkeypatch.setattr(
+        polymer_module,
+        "write_refused_polymer_pools_sidecar",
+        fail_refusal,
+    )
+    rmg.save_everything()
+    assert not (tmp_path / "polymer_pools.json").exists()
+
+
 def test_newer_reentrant_refusal_supersedes_older_write(
         tmp_path, monkeypatch, caplog):
     original_dump = polymer_module.json.dump
