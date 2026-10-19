@@ -134,7 +134,7 @@ from rmgpy.molecule.fragment import Fragment
 from rmgpy.molecule.group import Group, GroupAtom, GroupBond
 from rmgpy.molecule.resonance import generate_resonance_structures
 from rmgpy.polymer_mass import moments_from_observables, observables_from_moments
-from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
+from rmgpy.polymer_spec import SchemaV2Refusal, normalized_linear_homopolymer_spec, refuse_schema_v2
 from rmgpy.species import Species
 from rmgpy.thermo import Wilhoit, NASA, ThermoData
 
@@ -273,6 +273,7 @@ class Polymer(Species):
                  side_group_homolysis: Optional[list] = None,
                  side_loss_channel: Optional[str] = None,
                  linear_homopolymer_spec=None,
+                 polymer_spec=None,
                  **kwargs,
                  ):
         # k_unzip/k_scission/radical_qssa_unzip/k_homolysis/end_radical_site
@@ -280,6 +281,10 @@ class Polymer(Species):
         # appear in kwargs; assign them directly. discrete_dp_threshold (below) is
         # popped from kwargs before Species.__init__, which does not accept it and
         # would raise TypeError.
+        # the method of moments reads v1 (LinearHomopolymerSpec) declarations only
+        if polymer_spec is not None:
+            raise SchemaV2Refusal("Polymer")
+        refuse_schema_v2(linear_homopolymer_spec, "Polymer")
         self.linear_homopolymer_spec = (
             normalized_linear_homopolymer_spec(linear_homopolymer_spec)
             if linear_homopolymer_spec is not None else None

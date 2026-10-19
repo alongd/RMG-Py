@@ -1022,7 +1022,8 @@ class MeltEngine:
 
     def __init__(self, spec, catalog, temperature: float, rng, *, state=None, volume_m3=None,
                  quotient: bool = True, temperature_range=None):
-        from rmgpy.polymer_spec import LinearHomopolymerSpec
+        from rmgpy.polymer_spec import LinearHomopolymerSpec, refuse_schema_v2
+        refuse_schema_v2(spec, "MeltEngine")
         if not isinstance(spec, LinearHomopolymerSpec):
             raise DeclarationError(
                 f"only LinearHomopolymerSpec declarations are supported, got {type(spec).__name__}")

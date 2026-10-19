@@ -991,3 +991,729 @@ def normalized_linear_homopolymer_spec(value: Any) -> LinearHomopolymerSpec:
             object_pairs_hook=_reject_duplicate_json_pairs,
         )
     return LinearHomopolymerSpec.from_mapping(value)
+
+
+# ---------------------------------------------------------------------------
+# schema v2: linear statistical copolymers (``PolymerSpec``)
+# ---------------------------------------------------------------------------
+# A v2 declaration names residues with typed sites, the links that join a
+# site of one class to a site of another, and the sequence support (which
+# residue may follow which along a chain).  The support is chemistry: it
+# decides which local environments exist.  Composition and sequence
+# statistics are the initial state and live in ``initial_ensemble``, outside
+# the chemistry digest.  ``LinearHomopolymerSpec`` (v1) is untouched; every
+# v1 consumer refuses a v2 declaration by name (``refuse_schema_v2``).
+SCHEMA_VERSION_V2 = 2
+TOPOLOGY_VOCABULARY = {
+    "architecture": ("linear", "branched", "network"),
+    "sequence_models": ("ideal_random", "alternating", "markov1"),
+    "network_generators": ("random_bond_v1",),
+}
+SAMPLER_V1 = "markov_chain_v1"
+VACANCIES = ("forbidden", "H")
+_V1_ENSEMBLE_FIELDS = ("dp_number_fractions", "dp_counts", "representative_chain_count", "rounding")
+
+
+class SchemaV2Refusal(ValueError):
+    """A consumer that reads v1 declarations only was given a v2 one."""
+
+    status = "refused:schema_v2"
+
+    def __init__(self, consumer: str):
+        super().__init__(f"{self.status}: {consumer} reads v1 declarations only")
+        self.consumer = consumer
+
+
+def is_schema_v2(value: Any) -> bool:
+    """Whether ``value`` is a v2 declaration: a ``PolymerSpec``, or a mapping
+    (or its JSON text) declaring schema_version 2."""
+    if isinstance(value, PolymerSpec):
+        return True
+    if isinstance(value, (str, bytes, bytearray)):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return False
+    if not isinstance(value, Mapping):
+        return False
+    try:
+        return _integer(value.get("schema_version"), "schema_version") == SCHEMA_VERSION_V2
+    except (TypeError, ValueError):
+        return False
+
+
+def refuse_schema_v2(value: Any, consumer: str) -> Any:
+    """``value`` unchanged, or ``SchemaV2Refusal`` naming ``consumer`` if it
+    is a v2 declaration."""
+    if is_schema_v2(value):
+        raise SchemaV2Refusal(consumer)
+    return value
+
+
+def _exact(value: Any, name: str) -> Fraction:
+    """An exact rational: ``{"numerator", "denominator"}`` integers or an
+    integer.  Floats are refused, including inside the mapping."""
+    if isinstance(value, Mapping) and set(value) == {"numerator", "denominator"}:
+        numerator, denominator = value["numerator"], value["denominator"]
+        if all(isinstance(x, int) and not isinstance(x, bool) for x in (numerator, denominator)) \
+                and denominator > 0:
+            return Fraction(numerator, denominator)
+    elif isinstance(value, int) and not isinstance(value, bool):
+        return Fraction(value)
+    raise ValueError(f"{name} must be an exact rational ({{numerator, denominator}} integers, "
+                     f"denominator > 0) or an integer, got {value!r}")
+
+
+def _rational(value: Fraction) -> Dict[str, int]:
+    return {"numerator": value.numerator, "denominator": value.denominator}
+
+
+def _names(value: Any, name: str) -> Tuple[str, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, str):
+        raise ValueError(f"{name} must be a list of names")
+    if any(not isinstance(item, str) or not item for item in value):
+        raise ValueError(f"{name} entries must be non-empty strings")
+    return tuple(value)
+
+
+def _link_order(value: Any, name: str) -> float:
+    order = _finite(value, name)
+    if order not in (1.0, 2.0, 3.0):
+        raise ValueError(f"{name} must be 1, 2 or 3 (a vacant end is capped by hydrogens)")
+    return order
+
+
+def _order_data(order: float):
+    return int(order) if order.is_integer() else order
+
+
+@dataclass(frozen=True)
+class SiteDeclaration:
+    atom: str
+    bond_order: float
+    site_class: str
+    vacancy: str
+
+    @classmethod
+    def from_mapping(cls, value: Mapping, name: str) -> "SiteDeclaration":
+        if not isinstance(value, Mapping) or set(value) != {"atom", "bond_order", "class", "vacancy"}:
+            raise ValueError(f"site {name} requires exactly atom, bond_order, class and vacancy")
+        atom, site_class, vacancy = value["atom"], value["class"], value["vacancy"]
+        if not isinstance(atom, str) or not atom:
+            raise ValueError(f"site {name}: atom must be a non-empty atom key")
+        if not isinstance(site_class, str) or not site_class:
+            raise ValueError(f"site {name}: class must be a non-empty string")
+        if vacancy not in VACANCIES:
+            raise ValueError(f"site {name}: vacancy must be one of {list(VACANCIES)}")
+        if vacancy != "forbidden":
+            raise ValueError(f"refused:vacancy: site {name} declares vacancy {vacancy!r}; a linear "
+                             "chain occupies every site, capped sites arrive with branched chains")
+        return cls(atom, _link_order(value["bond_order"], f"site {name} bond_order"), site_class, vacancy)
+
+    def as_mapping(self) -> Dict[str, Any]:
+        return {"atom": self.atom, "bond_order": _order_data(self.bond_order),
+                "class": self.site_class, "vacancy": self.vacancy}
+
+
+@dataclass(frozen=True)
+class ResidueDeclaration:
+    """A residue: its graph with every site occupied (hydrogens counted as
+    a v1 repeat unit counts them with its ports joined) and its sites.
+    ``graph.ports`` are the sites (atom, bond order), so the v1 graph rules
+    (connectivity, valence with every site occupied) apply unchanged."""
+
+    graph: GraphDeclaration
+    sites: Tuple[Tuple[str, SiteDeclaration], ...]
+
+    @classmethod
+    def from_mapping(cls, value: Mapping, name: str = "residue") -> "ResidueDeclaration":
+        if not isinstance(value, Mapping) or set(value) != {"graph", "sites"}:
+            raise ValueError(f"residue {name} requires exactly graph and sites")
+        graph, sites = value["graph"], value["sites"]
+        if not isinstance(graph, Mapping) or "ports" in graph:
+            raise ValueError(f"residue {name}: the graph is a mapping without ports (sites declare them)")
+        if not isinstance(sites, Mapping) or not sites:
+            raise ValueError(f"residue {name} declares no sites")
+        parsed = tuple(sorted((str(site), SiteDeclaration.from_mapping(item, f"{name}.{site}"))
+                              for site, item in sites.items()))
+        ports = {site: {"atom": item.atom, "bond_order": item.bond_order} for site, item in parsed}
+        return cls(GraphDeclaration.from_mapping(dict(graph, ports=ports)), parsed)
+
+    def as_mapping(self) -> Dict[str, Any]:
+        graph = self.graph.as_mapping()
+        del graph["ports"]
+        return {"graph": graph, "sites": {name: site.as_mapping() for name, site in self.sites}}
+
+
+@dataclass(frozen=True)
+class LinkDeclaration:
+    """A link joins a site of class ``source`` on one residue to a site of
+    class ``target`` on the next one along a chain."""
+
+    source: str
+    target: str
+    bond_order: float
+
+    @classmethod
+    def from_mapping(cls, value: Mapping, name: str = "link") -> "LinkDeclaration":
+        if not isinstance(value, Mapping) or not {"from", "to", "bond_order"} <= set(value) \
+                or set(value) - {"from", "to", "bond_order", "bridge"}:
+            raise ValueError(f"link {name} requires from, to and bond_order (and optionally bridge)")
+        if value.get("bridge") is not None:
+            raise ValueError(f"refused:bridge: link {name} declares a bridge graph; bridged links "
+                             "arrive with networks")
+        source, target = value["from"], value["to"]
+        if not all(isinstance(item, str) and item for item in (source, target)):
+            raise ValueError(f"link {name}: from and to must be site classes")
+        return cls(source, target, _link_order(value["bond_order"], f"link {name} bond_order"))
+
+    def as_mapping(self) -> Dict[str, Any]:
+        return {"from": self.source, "to": self.target, "bond_order": _order_data(self.bond_order)}
+
+
+def _entry_and_exit(residue: ResidueDeclaration, links: Mapping[str, LinkDeclaration]):
+    targets = {link.target for link in links.values()}
+    sources = {link.source for link in links.values()}
+    entries = [(name, site) for name, site in residue.sites if site.site_class in targets]
+    exits = [(name, site) for name, site in residue.sites if site.site_class in sources]
+    return entries, exits
+
+
+def _junction_rules(residues, a, b, bonds) -> None:
+    """Rules 2 and 2b of the declared chain on the joined pair ``a`` -> ``b``:
+    no inter-residue bond on a cycle, no pi system across a link."""
+    first, second = residues[a].graph, residues[b].graph
+    adjacency, orders = {}, {}
+
+    def connect(x, y, order):
+        adjacency.setdefault(x, set()).add(y)
+        adjacency.setdefault(y, set()).add(x)
+        orders[x] = max(orders.get(x, 0.0), order)
+        orders[y] = max(orders.get(y, 0.0), order)
+
+    for side, graph in ((0, first), (1, second)):
+        for atom in graph.atoms:
+            adjacency.setdefault((side, atom.key), set())
+        for bond in graph.bonds:
+            connect((side, bond.atoms[0]), (side, bond.atoms[1]), bond.order)
+    inter = [((0, x), (1, y), order) for x, y, order in bonds]
+    for x, y, order in inter:
+        connect(x, y, order)
+    for x, y, _order in inter:
+        seen, stack = {x}, [x]
+        while stack:
+            node = stack.pop()
+            for nxt in adjacency[node]:
+                if {node, nxt} != {x, y} and nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+        if y in seen:
+            raise ValueError(f"rule 2: the inter-residue bond {a}.{x[1]}-{b}.{y[1]} lies on a cycle "
+                             "of the joined pair (ladder or spiro)")
+    radical = {(side, atom.key) for side, graph in ((0, first), (1, second))
+               for atom in graph.atoms if atom.radical_electrons}
+    for x, y, _order in inter:
+        if all(node in radical or orders.get(node, 0.0) > 1.0 for node in (x, y)):
+            raise ValueError(f"rule 2b: the link {a}.{x[1]}-{b}.{y[1]} joins two atoms of one pi "
+                             "system across residues")
+
+
+def linear_junctions(residues: Mapping[str, ResidueDeclaration], links: Mapping[str, LinkDeclaration],
+                     support: Mapping[str, Sequence[str]]) -> Dict[Tuple[str, str], Tuple[str, str, float]]:
+    """``(a, b) -> (exit atom of a, entry atom of b, bond order)`` for every
+    pair of the support: the one bond a declared link forms when residue
+    ``b`` follows residue ``a`` along a chain."""
+    by_classes = {}
+    for name, link in sorted(links.items()):
+        key = (link.source, link.target)
+        if key in by_classes:
+            raise ValueError(f"links {by_classes[key][0]} and {name} both join {key[0]} to {key[1]}")
+        by_classes[key] = (name, link)
+    both = sorted({link.source for link in links.values()} & {link.target for link in links.values()})
+    if both:
+        raise ValueError(f"site classes {both} both leave and enter a link (a network link); a linear "
+                         "chain enters each residue through one class and leaves through another")
+    classes = {c for key in by_classes for c in key}
+    for rname, residue in sorted(residues.items()):
+        for sname, site in residue.sites:
+            if site.site_class not in classes:
+                raise ValueError(f"site {rname}.{sname} of class {site.site_class!r} takes no declared link")
+    out = {}
+    for a in sorted(support):
+        for b in sorted(support[a]):
+            _entries, exits = _entry_and_exit(residues[a], links)
+            entries, _exits = _entry_and_exit(residues[b], links)
+            bonds, used = [], set()
+            for sname, site in exits:
+                partners = [(tname, target) for tname, target in entries
+                            if (site.site_class, target.site_class) in by_classes]
+                if len(partners) != 1:
+                    raise ValueError(f"junction {a}->{b}: site {a}.{sname} matches {len(partners)} "
+                                     f"entry sites of {b}; a junction needs exactly one")
+                tname, target = partners[0]
+                lname, link = by_classes[(site.site_class, target.site_class)]
+                if not site.bond_order == target.bond_order == link.bond_order:
+                    raise ValueError(f"junction {a}->{b}: link {lname} has bond order "
+                                     f"{link.bond_order:g}, sites {site.bond_order:g} and "
+                                     f"{target.bond_order:g}")
+                used.add(tname)
+                bonds.append((site.atom, target.atom, link.bond_order))
+            if not bonds or used != {tname for tname, _site in entries}:
+                raise ValueError(f"junction {a}->{b}: the exit sites of {a} and the entry sites of "
+                                 f"{b} do not pair one to one through the declared links")
+            _junction_rules(residues, a, b, bonds)
+            out[(a, b)] = bonds[0]
+    return out
+
+
+def _strongly_connected(nodes, successors) -> bool:
+    nodes = sorted(nodes)
+    if not nodes:
+        return False
+
+    def reach(start, step):
+        seen, stack = {start}, [start]
+        while stack:
+            for nxt in step(stack.pop()):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+        return seen
+    predecessors = {n: [m for m in nodes if n in successors(m)] for n in nodes}
+    return reach(nodes[0], successors) == set(nodes) == reach(nodes[0], predecessors.__getitem__)
+
+
+@dataclass(frozen=True)
+class SequenceStatistics:
+    """``ideal_random`` (Bernoulli: P(next = j) = x_j), ``alternating`` (a
+    fixed ``cycle``) or ``markov1`` (first-order ``transition`` rows over the
+    residues present, zero entries dropped)."""
+
+    model: str
+    cycle: Tuple[str, ...] = ()
+    transition: Tuple[Tuple[str, Tuple[Tuple[str, Fraction], ...]], ...] = ()
+
+    def as_mapping(self) -> Dict[str, Any]:
+        result: Dict[str, Any] = {"model": self.model}
+        if self.model == "alternating":
+            result["cycle"] = list(self.cycle)
+        if self.model == "markov1":
+            result["transition"] = {row: {col: _rational(p) for col, p in entries}
+                                    for row, entries in self.transition}
+        return result
+
+
+def _statistics(value, composition: Mapping[str, Fraction],
+                support: Mapping[str, Sequence[str]]) -> SequenceStatistics:
+    if not isinstance(value, Mapping) or "model" not in value:
+        raise ValueError("sequence_statistics must be a mapping with a model")
+    model = value["model"]
+    present = sorted(r for r, x in composition.items() if x > 0)
+    fields = {"ideal_random": {"model"}, "alternating": {"model", "cycle"},
+              "markov1": {"model", "transition"}}
+    if model not in fields:
+        raise ValueError(f"unknown sequence model {model!r}; known: {sorted(fields)}")
+    if set(value) != fields[model]:
+        raise ValueError(f"sequence model {model} takes exactly {sorted(fields[model])}")
+    if model == "ideal_random":
+        for i in present:
+            for j in present:
+                if j not in support[i]:
+                    raise ValueError(f"ideal_random needs every pair of present residues in "
+                                     f"sequence_support; {i}->{j} is missing")
+        return SequenceStatistics(model)
+    if model == "alternating":
+        cycle = _names(value["cycle"], "alternating cycle")
+        if len(cycle) < 2 or set(cycle) - set(composition):
+            raise ValueError("an alternating cycle lists at least two declared residues")
+        realized = {r: Fraction(cycle.count(r), len(cycle)) for r in composition}
+        if realized != dict(composition):
+            raise ValueError(f"the alternating cycle {list(cycle)} has composition "
+                             f"{ {r: str(x) for r, x in sorted(realized.items())} }, not the declared one")
+        for i, j in zip(cycle, cycle[1:] + cycle[:1]):
+            if j not in support[i]:
+                raise ValueError(f"the alternating cycle step {i}->{j} is outside sequence_support")
+        return SequenceStatistics(model, cycle=cycle)
+    rows = value["transition"]
+    if not isinstance(rows, Mapping) or set(rows) != set(present):
+        raise ValueError(f"markov1 transition rows must be exactly the present residues {present}")
+    matrix = {}
+    for i in present:
+        row = rows[i]
+        if not isinstance(row, Mapping) or set(row) - set(composition):
+            raise ValueError(f"markov1 row {i} must map declared residues to rationals")
+        entries = {j: _exact(p, f"transition {i}->{j}") for j, p in row.items()}
+        if any(p < 0 for p in entries.values()):
+            raise ValueError(f"markov1 row {i} has a negative entry")
+        total = sum(entries.values(), Fraction(0))
+        if total != 1:
+            raise ValueError(f"markov1 row {i} sums to {total}, not 1")
+        for j, p in entries.items():
+            if p and j not in support[i]:
+                raise ValueError(f"markov1 transition {i}->{j} > 0 is outside sequence_support")
+            if p and j not in present:
+                raise ValueError(f"markov1 transition {i}->{j} > 0 leads to an absent residue")
+        matrix[i] = {j: p for j, p in sorted(entries.items()) if p}
+    if not _strongly_connected(present, lambda i: matrix[i]):
+        raise ValueError("the markov1 chain is not irreducible over the present residues")
+    for j in present:
+        flow = sum((composition[i] * matrix[i].get(j, Fraction(0)) for i in present), Fraction(0))
+        if flow != composition[j]:
+            raise ValueError(f"the markov1 stationary distribution differs from the composition at "
+                             f"{j} ({flow} != {composition[j]})")
+    return SequenceStatistics(model, transition=tuple(
+        (i, tuple(matrix[i].items())) for i in present))
+
+
+@dataclass(frozen=True)
+class CopolymerEnsemble:
+    """The v1 chain-length ensemble plus composition, sequence statistics,
+    sampler and seed (every number an exact rational or integer)."""
+
+    chains: InitialEnsemble
+    composition: Tuple[Tuple[str, Fraction], ...]
+    statistics: SequenceStatistics
+    sampler: str
+    seed: int
+
+    @classmethod
+    def from_mapping(cls, value: Mapping, residues: Sequence[str],
+                     support: Mapping[str, Sequence[str]]) -> "CopolymerEnsemble":
+        if not isinstance(value, Mapping):
+            raise ValueError("initial_ensemble must be a mapping")
+        new = {"composition", "sequence_statistics", "sampler", "seed"}
+        unknown = set(value) - set(_V1_ENSEMBLE_FIELDS) - new
+        if unknown:
+            raise ValueError(f"unknown initial_ensemble fields: {sorted(unknown)}")
+        if new - set(value):
+            raise ValueError(f"a v2 initial_ensemble requires {sorted(new - set(value))}")
+        chains = InitialEnsemble.from_mapping({k: value[k] for k in _V1_ENSEMBLE_FIELDS if k in value})
+        raw = value["composition"]
+        if not isinstance(raw, Mapping) or set(raw) != set(residues):
+            raise ValueError(f"composition must give every residue {sorted(residues)} a mole fraction")
+        composition = {r: _exact(x, f"composition {r}") for r, x in raw.items()}
+        if any(x < 0 for x in composition.values()):
+            raise ValueError("composition mole fractions cannot be negative")
+        if sum(composition.values(), Fraction(0)) != 1:
+            raise ValueError("composition mole fractions must sum exactly to one")
+        statistics = _statistics(value["sequence_statistics"], composition, support)
+        if value["sampler"] != SAMPLER_V1:
+            raise ValueError(f"sampler must be the literal {SAMPLER_V1!r}")
+        seed = value["seed"]
+        if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+            raise ValueError(f"seed must be a non-negative integer, got {seed!r}")
+        return cls(chains, tuple(sorted(composition.items())), statistics, SAMPLER_V1, seed)
+
+    def as_mapping(self) -> Dict[str, Any]:
+        return dict(self.chains.as_mapping(),
+                    composition={r: _rational(x) for r, x in self.composition},
+                    sequence_statistics=self.statistics.as_mapping(),
+                    sampler=self.sampler, seed=self.seed)
+
+
+def _capped_chain_molecule(pieces, joins) -> Molecule:
+    """``pieces`` (graphs) joined by ``joins`` ((piece, atom key, piece,
+    atom key, order)), every declared hydrogen explicit."""
+    molecule, maps = Molecule(), []
+    for graph in pieces:
+        by_key = {}
+        for declaration in graph.atoms:
+            atom = Atom(element=get_element(declaration.element, declaration.isotope),
+                        radical_electrons=declaration.radical_electrons,
+                        charge=declaration.charge, lone_pairs=declaration.lone_pairs)
+            molecule.add_atom(atom)
+            by_key[declaration.key] = atom
+            for _index in range(declaration.hydrogens):
+                hydrogen = Atom(element=get_element("H"), lone_pairs=0)
+                molecule.add_atom(hydrogen)
+                molecule.add_bond(Bond(atom, hydrogen, 1.0))
+        for bond in graph.bonds:
+            molecule.add_bond(Bond(by_key[bond.atoms[0]], by_key[bond.atoms[1]], bond.order))
+        maps.append(by_key)
+    for left, left_key, right, right_key, order in joins:
+        molecule.add_bond(Bond(maps[left][left_key], maps[right][right_key], order))
+    molecule.update_multiplicity()
+    return molecule
+
+
+def _check_electronic_state(molecule: Molecule, where: str) -> None:
+    try:
+        for atom in molecule.atoms:
+            ConsistencyChecker.check_partial_charge(atom)
+            ConsistencyChecker.check_hund_rule(atom, molecule.multiplicity)
+        ConsistencyChecker.check_multiplicity(molecule.get_radical_count(), molecule.multiplicity)
+    except Exception as exc:
+        raise ValueError(f"declared electronic state is inconsistent in {where}") from exc
+
+
+def _small_species(value) -> Tuple[Tuple[str, GraphDeclaration, str], ...]:
+    if not isinstance(value, Mapping):
+        raise ValueError("small_species must be a mapping")
+    out = []
+    for name, declaration in sorted(value.items()):
+        if not isinstance(name, str) or not name:
+            raise ValueError("small-species labels must be non-empty strings")
+        if not isinstance(declaration, Mapping) or set(declaration) != {"graph", "disposition"}:
+            raise ValueError("each small species requires graph and disposition")
+        graph = GraphDeclaration.from_mapping(declaration["graph"])
+        if graph.ports:
+            raise ValueError("small physical species cannot contain connection ports")
+        disposition = declaration["disposition"]
+        if not isinstance(disposition, str) or not disposition:
+            raise ValueError("small-species disposition must be a non-empty string")
+        out.append((name, graph, disposition))
+    return tuple(out)
+
+
+def _v1_locality(locality, repeat, head, tail, monomer=None, small=()) -> None:
+    """The v1 locality-coverage rules on one residue (as the repeat unit),
+    the end groups and the free species."""
+    from types import SimpleNamespace
+    LinearHomopolymerSpec._validate_locality_coverage(SimpleNamespace(
+        locality_policy=locality, repeat_unit=repeat, head_end_group=head, tail_end_group=tail,
+        monomer_product=monomer, small_species=small))
+
+
+@dataclass(frozen=True)
+class PolymerSpec:
+    schema_version: int
+    label: str
+    architecture: str
+    residues: Tuple[Tuple[str, ResidueDeclaration], ...]
+    links: Tuple[Tuple[str, LinkDeclaration], ...]
+    sequence_support: Tuple[Tuple[str, Tuple[str, ...]], ...]
+    head_end_group: GraphDeclaration
+    tail_end_group: GraphDeclaration
+    monomer_products: Tuple[Tuple[str, GraphDeclaration], ...]
+    small_species: Tuple[Tuple[str, GraphDeclaration, str], ...]
+    initial_ensemble: CopolymerEnsemble
+    initial_mass_kg: float
+    density_kg_m3: float
+    density_basis: str
+    initial_mobile_counts: Tuple[Tuple[str, int], ...]
+    locality_policy: Mapping[str, Any]
+    family_manifest: Mapping[str, Any]
+    library_manifest: Mapping[str, Any]
+    transport_model: Mapping[str, Any]
+    diagnostics: Mapping[str, Any]
+    junction_table: Tuple[Tuple[Tuple[str, str], Tuple[str, str, float]], ...]
+
+    @property
+    def junctions(self) -> Dict[Tuple[str, str], Tuple[str, str, float]]:
+        """``(a, b) -> (exit atom of a, entry atom of b, bond order)``."""
+        return dict(self.junction_table)
+
+    @classmethod
+    def from_mapping(cls, value: Mapping) -> "PolymerSpec":
+        if not isinstance(value, Mapping):
+            raise ValueError("PolymerSpec input must be a mapping")
+        version = _integer(value.get("schema_version"), "schema_version", 1)
+        if version != SCHEMA_VERSION_V2:
+            raise ValueError(f"PolymerSpec reads schema_version {SCHEMA_VERSION_V2}, got {version} "
+                             "(schema_version 1 is a LinearHomopolymerSpec)")
+        required = {
+            "schema_version", "label", "architecture", "residues", "links", "sequence_support",
+            "end_groups", "small_species", "initial_ensemble", "initial_mass_kg", "density_kg_m3",
+            "locality_policy", "family_manifest", "library_manifest", "transport_model", "diagnostics",
+        }
+        optional = {"monomer_products", "density_basis", "initial_mobile_counts"}
+        missing = required - set(value)
+        unknown = set(value) - required - optional
+        if missing:
+            raise ValueError(f"missing PolymerSpec fields: {sorted(missing)}")
+        if unknown:
+            raise ValueError(f"unknown PolymerSpec fields: {sorted(unknown)}")
+        label = value["label"]
+        if not isinstance(label, str) or not label:
+            raise ValueError("spec label must be a non-empty display string")
+        architecture = value["architecture"]
+        if architecture not in TOPOLOGY_VOCABULARY["architecture"]:
+            raise ValueError(f"unknown architecture {architecture!r}")
+        if architecture != "linear":
+            raise ValueError(f"refused:architecture: {architecture} chains are not declarable yet; "
+                             "schema v2 declares linear chains")
+
+        raw_residues = value["residues"]
+        if not isinstance(raw_residues, Mapping) or not raw_residues:
+            raise ValueError("residues must be a non-empty mapping")
+        residues = {str(name): ResidueDeclaration.from_mapping(item, str(name))
+                    for name, item in raw_residues.items()}
+        if len(residues) == 1:
+            raise ValueError("a linear chain of one residue is a homopolymer: declare it as v1 "
+                             "(schema_version 1, linear_homopolymer_spec)")
+        raw_links = value["links"]
+        if not isinstance(raw_links, Mapping) or not raw_links:
+            raise ValueError("links must be a non-empty mapping")
+        links = {str(name): LinkDeclaration.from_mapping(item, str(name)) for name, item in raw_links.items()}
+
+        locality = _validated_locality_policy(value["locality_policy"])
+        bounds = locality["bounds"]
+        classes = set(bounds["attachment_classes"])
+        for rname, residue in sorted(residues.items()):
+            for sname, site in residue.sites:
+                if site.site_class not in classes:
+                    raise ValueError(f"site class {site.site_class!r} of {rname}.{sname} is not in "
+                                     "locality_policy.bounds.attachment_classes")
+        for lname, link in sorted(links.items()):
+            for site_class in (link.source, link.target):
+                if site_class not in classes:
+                    raise ValueError(f"link {lname} class {site_class!r} is not in "
+                                     "locality_policy.bounds.attachment_classes")
+        vocabulary = bounds["topology_metadata_schema"]
+        if set(vocabulary) - set(TOPOLOGY_VOCABULARY):
+            raise ValueError(f"unknown topology_metadata_schema keys: "
+                             f"{sorted(set(vocabulary) - set(TOPOLOGY_VOCABULARY))}")
+        for key, names in vocabulary.items():
+            if set(_names(names, f"topology_metadata_schema {key}")) - set(TOPOLOGY_VOCABULARY[key]):
+                raise ValueError(f"topology_metadata_schema {key} names outside "
+                                 f"{list(TOPOLOGY_VOCABULARY[key])}")
+        if architecture not in vocabulary.get("architecture", ()):
+            raise ValueError(f"architecture {architecture!r} is not in "
+                             "locality_policy.bounds.topology_metadata_schema")
+
+        raw_support = value["sequence_support"]
+        if not isinstance(raw_support, Mapping) or set(raw_support) != set(residues):
+            raise ValueError(f"sequence_support must list the successors of every residue {sorted(residues)}")
+        support = {}
+        for name, successors in raw_support.items():
+            successors = _names(successors, f"sequence_support {name}")
+            if len(successors) != len(set(successors)) or set(successors) - set(residues):
+                raise ValueError(f"sequence_support {name} must name distinct declared residues")
+            support[name] = tuple(sorted(successors))
+        if not _strongly_connected(residues, support.__getitem__):
+            raise ValueError("sequence_support must be strongly connected: every residue reachable "
+                             "from every other along a chain")
+        junctions = linear_junctions(residues, links, support)
+        for name, residue in sorted(residues.items()):
+            entries, exits = _entry_and_exit(residue, links)
+            if len(entries) != 1 or len(exits) != 1:
+                raise ValueError(f"residue {name}: a linear residue has exactly one entry site and "
+                                 "one exit site")
+
+        ends = value["end_groups"]
+        if not isinstance(ends, Mapping) or set(ends) != {"head", "tail"}:
+            raise ValueError("end_groups must contain exactly head and tail")
+        head = GraphDeclaration.from_mapping(ends["head"], single_connection_port=True)
+        tail = GraphDeclaration.from_mapping(ends["tail"], single_connection_port=True)
+        for name, residue in sorted(residues.items()):
+            entries, exits = _entry_and_exit(residue, links)
+            if head.ports[0][1].bond_order != entries[0][1].bond_order:
+                raise ValueError(f"head end-group port bond order does not complement {name}'s entry site")
+            if tail.ports[0][1].bond_order != exits[0][1].bond_order:
+                raise ValueError(f"tail end-group port bond order does not complement {name}'s exit site")
+
+        raw_products = value.get("monomer_products", {})
+        if not isinstance(raw_products, Mapping) or set(raw_products) - set(residues):
+            raise ValueError("monomer_products maps declared residues to physical species")
+        products = []
+        for name, graph in sorted(raw_products.items()):
+            graph = GraphDeclaration.from_mapping(graph)
+            if graph.ports:
+                raise ValueError("a monomer product is a physical species and cannot contain ports")
+            products.append((name, graph))
+        small_species = _small_species(value["small_species"])
+        mobile = value.get("initial_mobile_counts", {})
+        if not isinstance(mobile, Mapping):
+            raise ValueError("initial_mobile_counts must be a mapping")
+        mobile_counts = tuple(sorted((str(name), _integer(count, "representative mobile count", 0))
+                                     for name, count in mobile.items()))
+        if not {name for name, _count in mobile_counts} <= {name for name, _g, _d in small_species}:
+            raise ValueError("initial_mobile_counts names a species absent from small_species")
+        density_basis = value.get("density_basis", "dry_polymer")
+        if density_basis not in ("dry_polymer", "whole_initial_mixture"):
+            raise ValueError("density_basis must be dry_polymer or whole_initial_mixture")
+        if any(count for _name, count in mobile_counts) and density_basis != "whole_initial_mixture":
+            raise ValueError("mobile representative counts require whole_initial_mixture density")
+        ensemble = CopolymerEnsemble.from_mapping(value["initial_ensemble"], tuple(residues), support)
+        if ensemble.statistics.model not in vocabulary.get("sequence_models", ()):
+            raise ValueError(f"sequence model {ensemble.statistics.model!r} is not in "
+                             "locality_policy.bounds.topology_metadata_schema")
+        policies = []
+        for name in ("family_manifest", "library_manifest", "transport_model", "diagnostics"):
+            if not isinstance(value[name], Mapping):
+                raise ValueError(f"{name} must be a mapping")
+            policies.append(_canonical_data(value[name]))
+        spec = cls(
+            SCHEMA_VERSION_V2, label, architecture, tuple(sorted(residues.items())),
+            tuple(sorted(links.items())), tuple(sorted(support.items())), head, tail, tuple(products),
+            small_species, ensemble, _finite(value["initial_mass_kg"], "initial_mass_kg"),
+            _finite(value["density_kg_m3"], "density_kg_m3"), density_basis, mobile_counts, locality,
+            *policies, tuple(sorted(junctions.items())),
+        )
+        if spec.initial_mass_kg < 0.0:
+            raise ValueError("initial_mass_kg cannot be negative")
+        if spec.density_kg_m3 <= 0.0:
+            raise ValueError("density_kg_m3 must be positive")
+        spec._validate_coverage_and_states()
+        return spec
+
+    def _validate_coverage_and_states(self) -> None:
+        residues = dict(self.residues)
+        for _name, residue in self.residues:
+            _v1_locality(self.locality_policy, residue.graph, self.head_end_group, self.tail_end_group)
+        first = self.residues[0][1].graph
+        for _name, product in self.monomer_products:
+            _v1_locality(self.locality_policy, first, self.head_end_group, self.tail_end_group,
+                         monomer=product)
+        _v1_locality(self.locality_policy, first, self.head_end_group, self.tail_end_group,
+                     small=self.small_species)
+        for name, graph in list(self.monomer_products) + [(n, g) for n, g, _d in self.small_species]:
+            molecule = graph.to_legacy_molecule({})
+            molecule.multiplicity = graph.multiplicity
+            _check_electronic_state(molecule, f"species {name}")
+        links = dict(self.links)
+        sites = {name: _entry_and_exit(residue, links) for name, residue in self.residues}
+        _head_name, head_port = self.head_end_group.ports[0]
+        _tail_name, tail_port = self.tail_end_group.ports[0]
+        for (a, b), (exit_atom, entry_atom, order) in self.junction_table:
+            molecule = _capped_chain_molecule(
+                (self.head_end_group, residues[a].graph, residues[b].graph, self.tail_end_group),
+                ((0, head_port.atom, 1, sites[a][0][0][1].atom, head_port.bond_order),
+                 (1, exit_atom, 2, entry_atom, order),
+                 (2, sites[b][1][0][1].atom, 3, tail_port.atom, tail_port.bond_order)))
+            _check_electronic_state(molecule, f"the capped pair {a}-{b}")
+
+    @property
+    def normalized_json(self) -> bytes:
+        return json.dumps(
+            self.as_mapping(), sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode("utf-8")
+
+    def as_mapping(self) -> Dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "architecture": self.architecture,
+            "residues": {name: residue.as_mapping() for name, residue in self.residues},
+            "links": {name: link.as_mapping() for name, link in self.links},
+            "sequence_support": {name: list(successors) for name, successors in self.sequence_support},
+            "end_groups": {
+                "head": self.head_end_group.as_mapping(canonical_end_port=True),
+                "tail": self.tail_end_group.as_mapping(canonical_end_port=True),
+            },
+            "monomer_products": {name: graph.as_mapping() for name, graph in self.monomer_products},
+            "small_species": {
+                name: {"graph": graph.as_mapping(), "disposition": disposition}
+                for name, graph, disposition in self.small_species
+            },
+            "initial_ensemble": self.initial_ensemble.as_mapping(),
+            "initial_mass_kg": self.initial_mass_kg,
+            "density_kg_m3": self.density_kg_m3,
+            "density_basis": self.density_basis,
+            "initial_mobile_counts": {name: count for name, count in self.initial_mobile_counts},
+            "locality_policy": self.locality_policy,
+            "family_manifest": self.family_manifest,
+            "library_manifest": self.library_manifest,
+            "transport_model": self.transport_model,
+            "diagnostics": self.diagnostics,
+        }
+
+
+def normalized_polymer_spec(value: Any) -> PolymerSpec:
+    """A v2 declaration from a ``PolymerSpec``, a mapping or its JSON text.
+    JSON floats parse as floats, so ``normalized_json`` is a fixed point."""
+    if isinstance(value, PolymerSpec):
+        return value
+    if isinstance(value, (str, bytes, bytearray)):
+        value = json.loads(value, object_pairs_hook=_reject_duplicate_json_pairs)
+    return PolymerSpec.from_mapping(value)

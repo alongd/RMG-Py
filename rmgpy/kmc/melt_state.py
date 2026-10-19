@@ -927,8 +927,9 @@ def materialize(spec) -> MeltState:
     any process.  An initially mobile molecule that is the declared
     ``monomer_product`` gets backbone origin through its unique map onto the
     repeat unit (``monomer_backbone_keys``; ambiguous: ``AncestryError``)."""
-    from rmgpy.polymer_spec import LinearHomopolymerSpec
+    from rmgpy.polymer_spec import LinearHomopolymerSpec, refuse_schema_v2
 
+    refuse_schema_v2(spec, "melt_state.materialize")
     if not isinstance(spec, LinearHomopolymerSpec):
         raise MeltStateError(
             f"only LinearHomopolymerSpec declarations are supported, got {type(spec).__name__}")

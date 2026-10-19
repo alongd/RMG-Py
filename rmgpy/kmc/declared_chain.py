@@ -578,6 +578,9 @@ class ChainGeometry:
 
     @staticmethod
     def of(spec) -> "ChainGeometry":
+        from rmgpy.polymer_spec import refuse_schema_v2
+
+        refuse_schema_v2(spec, "ChainGeometry.of")
         _require_closed_shell(spec)
         digest = hashlib.sha256(spec.normalized_json).hexdigest()
         cached = _GEOMETRY_CACHE.get(digest)

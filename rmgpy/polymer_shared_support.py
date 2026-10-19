@@ -120,7 +120,8 @@ def _authoritative_spec(pool):
             "authoritative LinearHomopolymerSpec for graph and inventory "
             "validation"
         )
-    return spec
+    from rmgpy.polymer_spec import refuse_schema_v2
+    return refuse_schema_v2(spec, "polymer_shared_support._authoritative_spec")
 
 
 def _verify_core_destination(

@@ -17,16 +17,20 @@ global / nonlocal, parameters, ``except ... as``).  Its arguments bind like
 are refused, and the arguments read are ``ast.literal_eval``-ed: a non-literal
 one is refused.  ``linear_homopolymer_spec`` (a literal mapping or JSON
 string) is normalized by ``rmgpy.polymer_spec.normalized_linear_homopolymer_spec``
-(the input file's own reader); a missing declaration, a label that differs
-from the declaration's, or legacy chemistry arguments beside it are refused.
+(the input file's own reader), a schema-2 ``polymer_spec`` by
+``normalized_polymer_spec``; a deck carries exactly one of the two.  A missing
+declaration, both, a label that differs from the declaration's, or legacy
+chemistry arguments beside it are refused.  The melt kMC itself reads v1
+declarations only: ``run`` refuses a ``polymer_spec`` deck by name
+(``refused:schema_v2``) before anything is written.
 From the same call the run reads ``cutoff`` (the MoM hybrid threshold ``xs``,
 default as in ``polymer()``) and ``side_group_homolysis`` (the MoM side-group
 channels), so the observables are partitioned exactly as the MoM run of the
 same deck.  The rest of the deck is never evaluated.
 
-**Declaration digests.**  ``declaration_sha256`` = sha256 of
-``LinearHomopolymerSpec.normalized_json`` (the bytes of the normalized
-declaration).  ``chemistry_sha256`` = sha256 of the compact sorted-key JSON
+**Declaration digests.**  ``declaration_sha256`` = sha256 of the
+declaration's ``normalized_json`` (``LinearHomopolymerSpec`` or
+``PolymerSpec``: the bytes of the normalized declaration).  ``chemistry_sha256`` = sha256 of the compact sorted-key JSON
 (``separators=(",", ":")``) of the normalized declaration MINUS the fields in
 ``CHEMISTRY_EXCLUDED`` (``chemistry_digest``); every other field, including
 any field the declaration grows later, enters it.  Excluded, each because it
@@ -35,9 +39,11 @@ unit and the roster's systems) and is a size, scale or runtime block of one
 particular run:
 
 * ``label``: a display string; no code reads chemistry from it;
-* ``initial_ensemble`` (dp_counts), ``initial_mobile_counts``: population
-  sizes; templates are local windows and emission builds its reference
-  systems from the roster's ``systems``, not from the ensemble;
+* ``initial_ensemble`` (dp_counts; for a ``PolymerSpec`` also composition,
+  sequence statistics, sampler and seed), ``initial_mobile_counts``:
+  population sizes and the initial state; templates are local windows and
+  emission builds its reference systems from the roster's ``systems``, not
+  from the ensemble;
 * ``initial_mass_kg``: the macroscopic scale (``scale_factor``) only;
 * ``Mn_g_mol``, ``Mw_g_mol``: summary statistics of the declared ensemble
   (validated against it);
@@ -51,7 +57,9 @@ particular run:
 
 Included therefore: schema_version, repeat_unit, end_groups, small_species
 and monomer_product (declared species change species identity and MET
-bypass, hence rates), locality_policy, family_manifest, library_manifest.
+bypass, hence rates), locality_policy, family_manifest, library_manifest;
+for a ``PolymerSpec`` also architecture, residues, links, sequence_support
+(it decides which local environments exist) and monomer_products.
 Both digests are written to ``run.json`` (``deck``) and are the values an
 emitter writes into a catalog's ``provenance`` under the same names.
 
@@ -192,14 +200,15 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy
 
 from rmgpy.kmc import catalog_set as cs
 from rmgpy.kmc import melt_engine as me
 from rmgpy.kmc import melt_observables as mo
-from rmgpy.polymer_spec import LinearHomopolymerSpec, normalized_linear_homopolymer_spec
+from rmgpy.polymer_spec import (LinearHomopolymerSpec, PolymerSpec, SchemaV2Refusal,
+                                normalized_linear_homopolymer_spec, normalized_polymer_spec)
 
 RUN_SCHEMA = "kmc-melt-run/1"
 COMPARISON_SCHEMA = "kmc-melt-comparison/1"
@@ -210,7 +219,7 @@ POLYMER_PARAMETERS = (
     "label", "monomer", "end_groups", "cutoff", "Mn", "Mw", "moments", "initial_mass", "k_unzip",
     "k_scission", "discrete_dp_threshold", "monomer_product", "radical_qssa_unzip", "explicit_dp",
     "k_homolysis", "k_depropagation", "side_group_homolysis", "thermal_analysis_inputs",
-    "linear_homopolymer_spec")
+    "linear_homopolymer_spec", "polymer_spec")
 POLYMER_CUTOFF_DEFAULT = 4
 LEGACY_CHEMISTRY = ("monomer", "end_groups", "moments", "Mn", "Mw", "monomer_product")
 # the declaration fields that do NOT enter chemistry_sha256 (module docstring: why each one)
@@ -244,7 +253,7 @@ def _plain(value):
         raise RunError(f"not JSON-representable: {error}") from error
 
 
-def declaration_sha256(spec: LinearHomopolymerSpec) -> str:
+def declaration_sha256(spec: Union[LinearHomopolymerSpec, PolymerSpec]) -> str:
     return _sha256(spec.normalized_json)
 
 
@@ -254,7 +263,7 @@ def chemistry_digest(normalized: Dict[str, Any]) -> str:
                               sort_keys=True, separators=(",", ":")).encode())
 
 
-def chemistry_sha256(spec: LinearHomopolymerSpec) -> str:
+def chemistry_sha256(spec: Union[LinearHomopolymerSpec, PolymerSpec]) -> str:
     return chemistry_digest(json.loads(spec.normalized_json))
 
 
@@ -265,7 +274,7 @@ def chemistry_sha256(spec: LinearHomopolymerSpec) -> str:
 class Deck:
     path: str
     sha256: str
-    spec: LinearHomopolymerSpec
+    spec: Union[LinearHomopolymerSpec, PolymerSpec]
     label: str
     xs: int
     side_group_homolysis: Optional[list]
@@ -363,17 +372,23 @@ def read_deck(path) -> Deck:
     if "label" not in nodes:
         raise RunError(f"deck {path}: polymer() is missing its label")
     label = literal("label")
-    value = literal("linear_homopolymer_spec")
-    if value is None:
-        raise RunError(f"deck {path}: polymer({label!r}) carries no linear_homopolymer_spec")
+    declared = {name: literal(name) for name in ("linear_homopolymer_spec", "polymer_spec")}
+    declared = {name: value for name, value in declared.items() if value is not None}
+    if not declared:
+        raise RunError(f"deck {path}: polymer({label!r}) carries no linear_homopolymer_spec or polymer_spec")
+    if len(declared) > 1:
+        raise RunError(f"deck {path}: polymer({label!r}) carries both linear_homopolymer_spec and "
+                       "polymer_spec; a deck declares exactly one")
+    (keyword, value), = declared.items()
     legacy = [k for k in LEGACY_CHEMISTRY if k in nodes and not _is_none(nodes[k])]
     if legacy:
-        raise RunError(f"deck {path}: polymer({label!r}) combines linear_homopolymer_spec "
+        raise RunError(f"deck {path}: polymer({label!r}) combines {keyword} "
                        f"with legacy arguments {legacy}")
+    normalize = normalized_polymer_spec if keyword == "polymer_spec" else normalized_linear_homopolymer_spec
     try:
-        spec = normalized_linear_homopolymer_spec(value)
+        spec = normalize(value)
     except (TypeError, ValueError, KeyError) as error:
-        raise RunError(f"deck {path}: linear_homopolymer_spec refused: {error}") from error
+        raise RunError(f"deck {path}: {keyword} refused: {error}") from error
     if label != spec.label:
         raise RunError(f"deck {path}: polymer label {label!r} differs from the declaration "
                        f"label {spec.label!r}")
@@ -1005,6 +1020,8 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
     seed that fails is recorded and the status is ``failed``."""
     start = time.perf_counter()
     deck = read_deck(deck)
+    if isinstance(deck.spec, PolymerSpec):
+        raise RunError(str(SchemaV2Refusal("rmgpy.kmc.run")))
     temperature = float(temperature)
     if not math.isfinite(temperature) or temperature <= 0.0:
         raise RunError(f"the temperature must be finite and positive, got {temperature!r}")

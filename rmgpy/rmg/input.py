@@ -49,7 +49,7 @@ from rmgpy.molecule.fragment import Fragment
 from rmgpy.molecule.group import Group
 from rmgpy.quantity import Energy, Quantity, RateCoefficient, SurfaceConcentration, Concentration
 from rmgpy.polymer import Polymer, validate_thermal_analysis_inputs
-from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
+from rmgpy.polymer_spec import normalized_linear_homopolymer_spec, normalized_polymer_spec
 from rmgpy.rmg.model import CoreEdgeReactionModel
 from rmgpy.rmg.polymer_input import (
     HybridPolymerReactor,
@@ -271,6 +271,7 @@ def polymer(label: str,
             side_group_homolysis: Optional[list] = None,
             thermal_analysis_inputs: Optional[dict] = None,
             linear_homopolymer_spec=None,
+            polymer_spec=None,
             ):
     """
     Helper function exposed in the input file to define a Polymer Pool.
@@ -389,6 +390,19 @@ def polymer(label: str,
             k_scission (mu1-preserving backbone scission).
             Default None (kernel absent).
     """
+    if polymer_spec is not None:
+        # a schema-2 declaration (linear statistical copolymer): validated
+        # here, then refused by name where the method of moments would read it
+        if linear_homopolymer_spec is not None:
+            raise InputError(
+                f"Polymer {label!r} carries both linear_homopolymer_spec and polymer_spec; "
+                "declare exactly one.")
+        copolymer = normalized_polymer_spec(polymer_spec)
+        if label != copolymer.label:
+            raise InputError(
+                f"Polymer label {label!r} differs from shared declaration label "
+                f"{copolymer.label!r}; the shared declaration is the single input source.")
+        Polymer(label=label, monomer=None, polymer_spec=copolymer)
     shared_spec = None
     if linear_homopolymer_spec is not None:
         shared_spec = normalized_linear_homopolymer_spec(linear_homopolymer_spec)

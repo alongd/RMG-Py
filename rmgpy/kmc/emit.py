@@ -134,7 +134,7 @@ ROSTER_FIELDS = {ROSTER_SCHEMA: {"schema", "polymer", "systems"},
 
 
 def load_roster(path) -> Roster:
-    from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
+    from rmgpy.polymer_spec import normalized_linear_homopolymer_spec, refuse_schema_v2
     raw = Path(path).read_bytes()
     data = json.loads(raw)
     schema = data.get("schema") if isinstance(data, dict) else None
@@ -148,7 +148,7 @@ def load_roster(path) -> Roster:
     if schema == ROSTER_SCHEMA_V3 and (isinstance(units, bool) or not isinstance(units, int)
                                        or units < 2):
         raise RosterRefusal("refused:roster", f"proxy_units must be an integer >= 2, got {units!r}")
-    polymer = normalized_linear_homopolymer_spec(data["polymer"])
+    polymer = normalized_linear_homopolymer_spec(refuse_schema_v2(data["polymer"], "emit.load_roster"))
     systems = data["systems"]
     if not isinstance(systems, dict) or not all(isinstance(v, list) for v in systems.values()):
         raise RosterRefusal("refused:roster", "systems must map a name to a participant list")
@@ -273,9 +273,9 @@ def declared_reference_systems(spec, units: int) -> Roster:
     declaration's provider), the monomer an explicit species."""
     from dataclasses import asdict
     from rmgpy.kmc.declared_proxies import declared_structures
-    from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
+    from rmgpy.polymer_spec import normalized_linear_homopolymer_spec, refuse_schema_v2
 
-    spec = normalized_linear_homopolymer_spec(spec)
+    spec = normalized_linear_homopolymer_spec(refuse_schema_v2(spec, "emit.declared_reference_systems"))
     declared = declared_provider(spec)
     structures, proxies = declared_structures(spec, units)
     entries = {}
@@ -432,8 +432,8 @@ def reference_systems(spec, provider, *, dps=(1, 2, 3, 8), phases=True,
     identical species), both orders of chain plus H or a declared small
     species, and both orders of chain plus the provider-built monomer.
     """
-    from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
-    spec = normalized_linear_homopolymer_spec(spec)
+    from rmgpy.polymer_spec import normalized_linear_homopolymer_spec, refuse_schema_v2
+    spec = normalized_linear_homopolymer_spec(refuse_schema_v2(spec, "emit.reference_systems"))
     declared = declared_provider(spec)
     provider = declared if provider is None else provider
     dps = tuple(dps)
@@ -584,6 +584,8 @@ def match_provider(graph, declaration=None):
 
 def declared_provider(spec):
     """The chain provider owned by this exact normalized declaration."""
+    from rmgpy.polymer_spec import refuse_schema_v2
+    refuse_schema_v2(spec, "emit.declared_provider")
     exact = match_provider(spec.repeat_unit, spec)
     if exact is not None and getattr(exact, "spec", None) == spec:
         return exact

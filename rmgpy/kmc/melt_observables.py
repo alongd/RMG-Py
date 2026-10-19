@@ -121,6 +121,7 @@ from rmgpy.kmc.melt_engine import (BUILTIN_SPECIES, MeltEngine, SpeciesIdentity,
 from rmgpy.kmc.melt_state import _Builder, _backbone_keys, _element_mass
 from rmgpy.polymer_mass import (Composition, EvolvedPoolMass, ExplicitInventory, InventoryTerm,
                                 observables_from_moments)
+from rmgpy.polymer_spec import refuse_schema_v2
 
 OBSERVABLES_SCHEMA = "kmc-melt-observables/6"
 STOP_SCHEMA = "kmc-melt-stop/1"
@@ -616,7 +617,7 @@ class MeltObserver:
                  side_group_homolysis=None):
         if isinstance(xs, bool) or not isinstance(xs, int) or xs < 0:
             raise ObservablesError(f"xs must be a non-negative integer, got {xs!r}")
-        self.spec = spec
+        self.spec = refuse_schema_v2(spec, "MeltObserver")
         self.xs = xs
         self.b = backbone_atoms_per_unit(spec)
         self.repeat = _from_declared(spec.repeat_unit.composition)

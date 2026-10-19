@@ -177,8 +177,9 @@ class _Builder:
 
     @classmethod
     def of(cls, spec, units):
-        from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
+        from rmgpy.polymer_spec import normalized_linear_homopolymer_spec, refuse_schema_v2
 
+        refuse_schema_v2(spec, "declared_proxies")
         if isinstance(units, bool) or not isinstance(units, int) or units < 2:
             raise ValueError(f"declared proxies need at least two units (a short variant has "
                              f"units - 1), got {units!r}")
