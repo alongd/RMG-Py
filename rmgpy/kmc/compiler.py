@@ -84,6 +84,8 @@ PS_FAMILY_FILTER_REASON = (
     "outside the documented PS radical-growth family filter "
     "(H transfer, radical addition/recombination/disproportionation, and migration)"
 )
+# the family filter of a compile whose candidates are the requested families
+REQUESTED_FAMILY_FILTER_REASON = "outside the requested family candidates"
 LINK_PLACEHOLDER = "evt_" + "0" * 64
 PERSISTENT_CARBENE_POLICY_VERSION = "persistent-carbene-applicability/2"
 APPLICABILITY_GENERATION_CACHE_LIMIT = 4
@@ -2615,6 +2617,30 @@ def ps_repeat_unit() -> RepeatUnitGraph:
 _ORIENTATION_OF_TAG = {"backbone_head": "head", "backbone_tail": "tail"}
 
 
+def construction_ports(name: str, molecule, participant_index: int, metadata):
+    """The artificial truncation ports of one participant, read from its
+    construction ``metadata`` (``rmgpy.kmc.boundaries``): orientation from
+    the port tag, the declared caps, in the molecule's atom order; physical
+    ends are not ports."""
+    position = {atom.id: index for index, atom in enumerate(molecule.atoms)}
+    ports = []
+    for port in metadata.ports:
+        if not port.artificial:
+            continue
+        if port.tag not in _ORIENTATION_OF_TAG:
+            raise ValueError(f"{name} port {port.port_id} has no chain orientation")
+        ports.append(
+            BoundaryPort(
+                atom_id=port.atom_id,
+                orientation=_ORIENTATION_OF_TAG[port.tag],
+                participant_index=participant_index,
+                cap_atom_ids=tuple(port.cap_atom_ids),
+                source="construction",
+            )
+        )
+    return tuple(sorted(ports, key=lambda port: position[port.atom_id]))
+
+
 def _ps_artificial_ports(
     name: str, molecule, participant_index: int, metadata=None
 ):
@@ -2626,23 +2652,7 @@ def _ps_artificial_ports(
     inference from phenyl attachment and proxy names is used, and every port
     it returns is flagged ``source="inferred"``."""
     if metadata is not None:
-        position = {atom.id: index for index, atom in enumerate(molecule.atoms)}
-        ports = []
-        for port in metadata.ports:
-            if not port.artificial:
-                continue
-            if port.tag not in _ORIENTATION_OF_TAG:
-                raise ValueError(f"{name} port {port.port_id} has no PS orientation")
-            ports.append(
-                BoundaryPort(
-                    atom_id=port.atom_id,
-                    orientation=_ORIENTATION_OF_TAG[port.tag],
-                    participant_index=participant_index,
-                    cap_atom_ids=tuple(port.cap_atom_ids),
-                    source="construction",
-                )
-            )
-        return tuple(sorted(ports, key=lambda port: position[port.atom_id]))
+        return construction_ports(name, molecule, participant_index, metadata)
     if name == "styrene":
         return ()
     backbone = [
@@ -4330,7 +4340,15 @@ class EventSetCompiler:
         barrier_e0_provider: FixedBBarrierE0Provider | None = None,
         generation_provider=None,
         certify_rates: bool = False,
+        family_filter_reason: str = PS_FAMILY_FILTER_REASON,
+        proxy_source: dict | None = None,
     ):
+        # ``proxy_source``: where the proxies came from (a declaration and its
+        # digests, or the built-in set), recorded in the provenance when given;
+        # ``family_filter_reason``: why a loaded family outside the candidates
+        # is excluded (the artifact's ``inputs.family_filter``).
+        self.proxy_source = None if proxy_source is None else dict(proxy_source)
+        self.family_filter_reason = family_filter_reason
         # ``certify_rates``: attach a rate-selection certificate reference to
         # every published record (rmgpy.kmc.certificates), certified from the
         # record's actual rate source (the padded rate witness when padded),
@@ -5521,8 +5539,13 @@ class EventSetCompiler:
         candidate_families: Iterable[str] = PS_FAMILY_CANDIDATES,
         family_universe: Iterable[str] | None = None,
         generation_provider=None,
+        proxy_set_name: str | None = None,
     ) -> tuple[list[str], dict[str, str], dict[str, Sequence[Any]]]:
         """Account for every database family, generating only the loaded PS filter.
+
+        ``proxy_set_name`` names a proxy set other than the built-in one (a
+        declared polymer's): the exclusion reasons then name it and the
+        requested candidates instead of the built-in filter.
 
         ``generation_provider`` has the signature of
         ``generate_reactions_from_families`` and defaults to the database's
@@ -5585,6 +5608,15 @@ class EventSetCompiler:
         active = sorted(active_set)
         excluded = {}
         for family in sorted(universe - active_set):
+            if proxy_set_name is not None:
+                excluded[family] = (
+                    REQUESTED_FAMILY_FILTER_REASON
+                    if family not in candidates
+                    else f"no proxy of the {proxy_set_name} is offered this family"
+                    if family not in scheduled_set
+                    else f"no reaction on the {proxy_set_name} with resonance enabled"
+                )
+                continue
             excluded[family] = (
                 PS_FAMILY_FILTER_REASON
                 if family not in candidates
@@ -5651,6 +5683,11 @@ class EventSetCompiler:
                 "database_sha": self.database_provenance["rmg_database_sha"],
             },
             "applicability_policy_version": PERSISTENT_CARBENE_POLICY_VERSION,
+            **(
+                {"proxy_source": self.proxy_source}
+                if self.proxy_source is not None
+                else {}
+            ),
             **(
                 {
                     "proxy_boundary_padding": {
@@ -5830,7 +5867,7 @@ class EventSetCompiler:
                 "families": list(self.families),
                 "family_filter": {
                     "candidates": list(self.family_candidates),
-                    "excluded_loaded_family_reason": PS_FAMILY_FILTER_REASON,
+                    "excluded_loaded_family_reason": self.family_filter_reason,
                 },
                 "proxies": proxy_inputs,
                 "temperature_grid": list(self.temperature_grid),
