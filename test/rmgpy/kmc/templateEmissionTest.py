@@ -865,11 +865,22 @@ def test_forbidden_outcomes_are_never_produced(rmg, dp3):
 @pytest.fixture(scope="module")
 def compile_db():
     """H abstraction and disproportionation loaded the compile's way (the
-    production rate path checks the rate-rule preparation policy)."""
+    production rate path checks the rate-rule preparation policy).  Not the
+    process's cached load (``channelsTest.database``): that one is prepared
+    without the verbose kinetics comments the compile keeps, and the
+    compiler refuses it; the tests using this load run in their own process
+    (``in_own_process``)."""
     import template_emission_acceptance as acc
     if not acc.DATABASE.is_dir():
         pytest.skip(f"needs the RMG database at {acc.DATABASE}")
     return acc.load_database(["H_Abstraction", "Disproportionation"])
+
+
+# A second database beside the cached one does not fit the 6 GB test limit:
+# a test needing both runs alone in a child process (the child sets the flag)
+OWN_PROCESS = os.environ.get("RMG_KMC_OWN_PROCESS") == "1"
+in_own_process = pytest.mark.skipif(
+    not OWN_PROCESS, reason="runs in its own process (test_compile_way_database_test_alone)")
 
 
 def _rates(compile_db, family):
@@ -884,6 +895,7 @@ def _request(family, case, witness, orientation="as_generated"):
                           "emitted", ())
 
 
+@in_own_process
 def test_identity_transfer_gets_an_executable_rate(rmg, dp3, compile_db):
     """The DP3 benzylic H transfer (central benzylic H, C/H/Cs2Cb;C_rad/CbCs2)
     whose products are its reactants: RMG's generator drops it, the explicit
@@ -913,6 +925,7 @@ def test_identity_transfer_gets_an_executable_rate(rmg, dp3, compile_db):
     assert [x["ok"] for x in entry["calibration"]] == [True] * 3
 
 
+@in_own_process
 def test_explicit_rate_equals_production_rate_off_identity(rmg, compile_db):
     """The explicit labelled-reaction path against RMG's generator on
     non-identity transfers (CH2 and CH3 donors: degeneracy 2 and 3) and on a
@@ -949,6 +962,27 @@ def test_explicit_rate_equals_production_rate_off_identity(rmg, compile_db):
             if len(seen) == n:
                 break
     assert checked == 4
+
+
+@pytest.mark.parametrize("name", ["test_identity_transfer_gets_an_executable_rate",
+                                  "test_explicit_rate_equals_production_rate_off_identity"])
+def test_compile_way_database_test_alone(name, tmp_path):
+    """The compile-way database tests, each run alone in a child process
+    (whatever other database this process holds), and required to pass."""
+    if OWN_PROCESS:
+        pytest.skip("the child runs the test itself")
+    import rmg_moves_harness as harness
+    if not harness.DATABASE.is_dir():
+        pytest.skip(f"needs the RMG database at {harness.DATABASE}")
+    out = subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "--no-cov", "-q",
+         f"--basetemp={tmp_path / 'child'}", f"{__file__}::{name}"],
+        env=dict(os.environ, RMG_KMC_OWN_PROCESS="1"), capture_output=True, text=True,
+        timeout=580)
+    tail = out.stdout.strip().splitlines()[-1] if out.stdout.strip() else ""
+    # the summary line names exactly one passed test and nothing else
+    assert out.returncode == 0 and tail.strip("= ").split(" in ")[0] == "1 passed", \
+        out.stdout[-3000:] + out.stderr[-2000:]
 
 
 def test_c16_two_record_collision_fires_once_after_the_gate(rmg):
