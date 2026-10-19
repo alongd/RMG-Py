@@ -51,7 +51,8 @@ def _records(refused_status=()):
     return [{"event_id": f"event-{index}",
              "status": "refused" if index in refused_status else "enabled",
              "site_type": "pristine", "orientation": "as_generated", "family": "family",
-             "template": "template", "rate_source": {"kind": "RMG family estimate"}}
+             "template": "template", "reactant_graphs": ["g"], "product_graphs": ["g"],
+             "rate_source": {"kind": "RMG family estimate"}}
             for index in range(762)]
 
 
@@ -232,3 +233,58 @@ def test_emit_and_the_checker_name_a_certification_refusal_identically(tmp_path,
     row = emitter.run_record(certified[0])
     assert row["refusal"] == "refused:record_status"
     assert named == {row["payload"]["refusal"]["reason"]: 1}
+
+
+# -- I-193: any declaration's artifact; prior-unmapped rows are optional
+
+
+def _pe_check(tmp_path, monkeypatch, records, old_rows=None):
+    """The checker on the PE toy declaration's real deck, roster and
+    reference systems; certification, keys and cases stubbed (no database)."""
+    from rmgpy.kmc.event_record import EventRecord
+    from meltRunTest import pe_deck
+
+    artifact = tmp_path / "artifact.json"
+    artifact.write_text(json.dumps({"records": records}))
+    monkeypatch.setattr(CHECKER.emit, "load_database", lambda *_args:
+                        SimpleNamespace(kinetics=SimpleNamespace(families={})))
+    monkeypatch.setattr(CHECKER.cm, "Certifier", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(CHECKER.cm, "certify_records", _certify())
+    monkeypatch.setattr(EventRecord, "from_dict", staticmethod(dict))
+    monkeypatch.setattr(CHECKER.emit, "reference_cases",
+                        lambda *_args: ({("found",): [object()]}, {}))
+    monkeypatch.setattr(CHECKER.emit, "record_key", lambda *_args: ("found",))
+    args = SimpleNamespace(artifact=artifact, deck=pe_deck(tmp_path), database="database",
+                           old_rows=old_rows, roster_out=None, dps=(1, 2, 3), limit=None)
+    return CHECKER.check(args)
+
+
+def _artifact_records(n):
+    return _records()[:n]
+
+
+def test_another_declarations_artifact_of_any_size_checks_without_prior_rows(tmp_path,
+                                                                            monkeypatch, capsys):
+    status = _pe_check(tmp_path, monkeypatch, _artifact_records(5))
+    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert status == 0
+    assert (summary["records"], summary["found"], summary["uncovered"]) == (5, 5, 0)
+    assert not any(key.startswith("prior_unmapped") for key in summary)
+
+
+def test_a_record_without_a_field_the_check_reads_is_refused_by_name(tmp_path, monkeypatch):
+    import pytest
+
+    records = _artifact_records(5)
+    del records[3]["template"]
+    with pytest.raises(RuntimeError, match=r"refused:artifact: record event-3 lacks template"):
+        _pe_check(tmp_path, monkeypatch, records)
+
+
+def test_duplicate_event_ids_are_refused_by_name(tmp_path, monkeypatch):
+    import pytest
+
+    records = _artifact_records(5)
+    records[4]["event_id"] = records[1]["event_id"]
+    with pytest.raises(RuntimeError, match=r"refused:artifact: duplicate event id event-1"):
+        _pe_check(tmp_path, monkeypatch, records)

@@ -2769,3 +2769,63 @@ def test_reversing_the_member_order_gives_a_byte_identical_payload():
     assert te.canonical_json(one) == te.canonical_json(two)
     mixed = [_shift_pair(m)[0] for m in (_mixed_shift_members(), _mixed_shift_members()[::-1])]
     assert te.canonical_json(mixed[0]) == te.canonical_json(mixed[1])
+
+
+# --------------------------------------------------------------------------
+# I-193: a degenerate identity exchange keeps the record's own orientation
+# --------------------------------------------------------------------------
+DEGENERATE = ("R3H", "s_rad", "s_H")
+
+
+def _degenerate_shift_witness(n=15):
+    """The C``n`` (odd ``n``, both ends artificial) 1,3 H shift between the
+    two secondary carbons one off the middle (n = 15: carbon 8 takes an H from
+    carbon 6, the window clear of both ends): reactant and product are one
+    species, so only the atom map tells the two sides apart."""
+    alkane_ = b.PROVIDERS["linear_alkane"]
+    rad, donor = (n + 1) // 2, (n - 3) // 2
+    mols, parts = b.witness_reactants([alkane_.build(n, interior_radical=rad)])
+    rows = rm.molecule_rows(mols[0])
+    return b.make_witness(tuple(sorted(rows.items())),
+                          tuple(sorted(_shifted(rows, rad, donor).items())), parts,
+                          label=f"C{n}|degenerate")
+
+
+def _channel_rates(counter, pathway):
+    """Toy production rates as RMG's path degeneracy makes them: ``K_RULE`` per
+    transition of the witness's channel read in the record's own direction (a
+    reversed record's k_f / Kc carries the symmetry numbers, so its degeneracy
+    is the one on its own reactants, the generation's products); a symmetric
+    extension doubles it."""
+    def rates(req):
+        source, target = (req.products, req.generation) if req.orientation == "reversed" else \
+            (req.generation, req.products)
+        target = counter.species_of_rows(target)
+        n = sum(tuple(m.template) == pathway and counter.species_of_rows(m.product_rows()) == target
+                for m in counter.moves(_Fam, te.molecules_of(source), "forward"))
+        return te.RateResult(GRID, tuple(k * n for k in K_RULE), 1.0, {}, ())
+    return rates
+
+
+def test_a_degenerate_exchange_keeps_the_records_own_orientation():
+    """An own-reverse family's member is generated on the record's template
+    side: the as_generated record's reactants, the reversed record's
+    products.  When both sides of the record are one species the species
+    cannot say which side the member's witness stands on; the record's own
+    orientation does, and the template carries it."""
+    counter = _ShiftCounter()
+    w = _degenerate_shift_witness()
+    assert counter.species_of_rows(dict(w.reactant_rows())) == \
+        counter.species_of_rows(dict(w.product_rows()))
+    for orientation in ("as_generated", "reversed"):
+        record = toy_record(w, 2, orientation=orientation)    # one donor carbon, two H
+        record.update(family=_Fam.label, template=";".join(DEGENERATE), event_id=_rid(1))
+        if orientation == "reversed":
+            # the template side (the member's witness reactants) is the record's products
+            record["reactant_graphs"], record["product_graphs"] = \
+                record["product_graphs"], record["reactant_graphs"]
+        out = te.emit_record(record, family=_Fam, members=[_shift_member(w, "a|degenerate")],
+                             counter=counter, rates=_channel_rates(counter, DEGENERATE),
+                             check_upstream=False)
+        assert out["status"] == "emitted", out.get("refusal")
+        assert {t["member_reverse"] for t in out["templates"]} == {orientation == "reversed"}
