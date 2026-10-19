@@ -1250,11 +1250,11 @@ def _declared_source(kind):
             "proxy_units": 3, "proxy_set": "declared"}
 
 
-def _emit_cli(tmp_path, monkeypatch, artifact, *flags):
+def _emit_cli(tmp_path, monkeypatch, artifact, *flags, roster=None):
     def reached(_roster):
         raise _Reached
+    roster = roster or write_roster(tmp_path, "pe", {"a": [chain(2)]})
     monkeypatch.setattr(emit, "build_reference_systems", reached)
-    roster = write_roster(tmp_path, "pe", {"a": [chain(2)]})
     return emit.main([str(artifact), str(roster), "--database", "db",
                       "--out", str(tmp_path / "rows.jsonl"), *flags])
 
@@ -1286,10 +1286,37 @@ def test_emit_refuses_another_declaration_even_with_the_legacy_flag(tmp_path, mo
     assert "refused:declaration" in capsys.readouterr().out
 
 
+def _v3_roster(tmp_path, kind, units):
+    from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
+    spec = normalized_linear_homopolymer_spec(polymer_mapping(kind))
+    path = tmp_path / f"{kind}.v3.json"
+    emit.write_roster(emit.declared_reference_systems(spec, units), path)
+    return path
+
+
 def test_emit_accepts_the_roster_of_the_artifacts_declaration(tmp_path, monkeypatch):
     artifact = _bound_artifact(tmp_path, _declared_source("pe"))
     with pytest.raises(_Reached):
-        _emit_cli(tmp_path, monkeypatch, artifact)
+        _emit_cli(tmp_path, monkeypatch, artifact, roster=_v3_roster(tmp_path, "pe", 3))
+
+
+@pytest.mark.parametrize("units", (None, 2))
+def test_a_declared_artifact_refuses_a_roster_not_built_from_its_compile_structures(
+        tmp_path, monkeypatch, capsys, units):
+    """A v2 roster, or the v3 roster of other proxy units, is refused by
+    name before anything is built."""
+    artifact = _bound_artifact(tmp_path, _declared_source("pe"))
+    roster = None if units is None else _v3_roster(tmp_path, "pe", units)
+    assert _emit_cli(tmp_path, monkeypatch, artifact, roster=roster) == 1
+    out = capsys.readouterr().out
+    assert "refused:roster" in out and "kmc-reference-roster/3" in out
+
+
+def test_a_legacy_artifact_refuses_a_v3_roster(tmp_path, monkeypatch, capsys):
+    artifact = _bound_artifact(tmp_path, None)
+    assert _emit_cli(tmp_path, monkeypatch, artifact, "--legacy-artifact",
+                     roster=_v3_roster(tmp_path, "pe", 2)) == 1
+    assert "refused:roster" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("source", [None, {"kind": "built-in", "proxy_set": "built-in",

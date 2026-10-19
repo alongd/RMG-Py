@@ -8,7 +8,10 @@ whether that key has a provider.  Every selected record is one of: a named
 refusal (production's own upstream refusal, never emitted), found, or
 uncovered; the exit status is non-zero when any record is uncovered.
 
-The deck must be the declaration the artifact was compiled from: a carried
+The roster of an artifact compiled from a deck is built from its own
+compile structures (``reference_roster``); ``--roster-out`` writes the
+roster emit takes.  The deck must be the declaration the artifact was
+compiled from: a carried
 declaration digest that differs is refused by name, and an artifact carrying
 none (a compile without a deck) is refused unless ``--legacy-artifact``
 (``emit.bind_artifact``, as emit binds its roster), before anything is built.
@@ -75,6 +78,19 @@ def reference_dps(records, requested):
     return tuple(sorted(depths))
 
 
+def reference_roster(artifact, spec, dps):
+    """The roster the check (and emit) takes: for an artifact compiled from
+    a deck, the v3 roster of its own compile structures
+    (``emit.declared_reference_systems`` at its proxy units); for a legacy
+    artifact, the roster generated at ``dps`` plus the artifact's proxy
+    depths."""
+    units = emit.declared_roster_units(artifact)
+    if units is not None:
+        return emit.declared_reference_systems(spec, units)
+    provider = emit.match_provider(spec.repeat_unit)
+    return emit.reference_systems(spec, provider, dps=reference_dps(artifact["records"], dps))
+
+
 def check(args):
     artifact = json.loads(Path(args.artifact).read_text())
     all_records = artifact["records"]
@@ -84,8 +100,7 @@ def check(args):
     deck = read_deck(args.deck)
     bound_by = emit.bind_artifact(artifact, deck.digests(), f"the deck {args.deck}",
                                   args.legacy_artifact)
-    provider = emit.match_provider(deck.spec.repeat_unit)
-    roster = emit.reference_systems(deck.spec, provider, dps=reference_dps(all_records, args.dps))
+    roster = reference_roster(artifact, deck.spec, args.dps)
     if args.roster_out:
         roster = emit.write_roster(roster, args.roster_out)
     systems, refusals = emit.build_reference_systems(roster)

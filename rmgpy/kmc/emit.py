@@ -55,7 +55,7 @@ import sys
 import time
 import traceback
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import combinations
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -68,6 +68,8 @@ from rmgpy.kmc import windows as win
 SCHEMA = "kmc-template-catalog/1"
 ROWS_SCHEMA = "kmc-emit-rows/1"
 ROSTER_SCHEMA = "kmc-reference-roster/2"
+# a declared artifact's roster: its compile structures (``declared_reference_systems``)
+ROSTER_SCHEMA_V3 = "kmc-reference-roster/3"
 # Kept equal to the acceptance harness' labels so that rows of the two agree
 # (neither string selects data: the Kc label tags the reference thermo, the
 # rate label tags the production-rate provenance)
@@ -100,6 +102,9 @@ class Roster:
     systems: dict
     sha256: str
     path: str
+    schema: str = ROSTER_SCHEMA
+    # v3: the proxy units of the compile whose structures the roster holds
+    proxy_units: Optional[int] = None
 
     def digests(self) -> dict:
         """The digests of the declaration the roster carries (``run``'s
@@ -124,20 +129,31 @@ class Participant:
         return self.make(name)
 
 
+ROSTER_FIELDS = {ROSTER_SCHEMA: {"schema", "polymer", "systems"},
+                 ROSTER_SCHEMA_V3: {"schema", "polymer", "proxy_units", "systems"}}
+
+
 def load_roster(path) -> Roster:
     from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
     raw = Path(path).read_bytes()
     data = json.loads(raw)
-    if not isinstance(data, dict) or data.get("schema") != ROSTER_SCHEMA:
-        raise RosterRefusal("refused:roster", f"roster schema must be {ROSTER_SCHEMA!r}")
-    if set(data) != {"schema", "polymer", "systems"}:
-        raise RosterRefusal("refused:roster", "a roster has exactly schema, polymer and systems")
+    schema = data.get("schema") if isinstance(data, dict) else None
+    if schema not in ROSTER_FIELDS:
+        raise RosterRefusal("refused:roster", f"roster schema must be one of "
+                                              f"{sorted(ROSTER_FIELDS)}, got {schema!r}")
+    if set(data) != ROSTER_FIELDS[schema]:
+        raise RosterRefusal("refused:roster", f"a {schema} roster has exactly "
+                                              f"{', '.join(sorted(ROSTER_FIELDS[schema]))}")
+    units = data.get("proxy_units")
+    if schema == ROSTER_SCHEMA_V3 and (isinstance(units, bool) or not isinstance(units, int)
+                                       or units < 2):
+        raise RosterRefusal("refused:roster", f"proxy_units must be an integer >= 2, got {units!r}")
     polymer = normalized_linear_homopolymer_spec(data["polymer"])
     systems = data["systems"]
     if not isinstance(systems, dict) or not all(isinstance(v, list) for v in systems.values()):
         raise RosterRefusal("refused:roster", "systems must map a name to a participant list")
     declared_provider(polymer)
-    return Roster(polymer, systems, hashlib.sha256(raw).hexdigest(), str(path))
+    return Roster(polymer, systems, hashlib.sha256(raw).hexdigest(), str(path), schema, units)
 
 
 # the declaration digests an artifact compiled from a deck carries in
@@ -215,9 +231,72 @@ def make_certifier(fam, rules: dict):
 def roster_bytes(roster: Roster) -> bytes:
     """Canonical bytes of a reference roster, used for both writing and its
     provenance hash."""
-    document = {"schema": ROSTER_SCHEMA, "polymer": roster.polymer.as_mapping(),
+    document = {"schema": roster.schema, "polymer": roster.polymer.as_mapping(),
                 "systems": roster.systems}
+    if roster.schema == ROSTER_SCHEMA_V3:
+        document["proxy_units"] = roster.proxy_units
     return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def declared_roster_units(artifact: dict) -> Optional[int]:
+    """The proxy units of an artifact compiled from a deck (its roster is
+    built from those compile structures); None for a legacy artifact."""
+    if not artifact_declaration(artifact):
+        return None
+    units = artifact["provenance"]["proxy_source"].get("proxy_units")
+    if isinstance(units, bool) or not isinstance(units, int):
+        raise RosterRefusal("refused:roster", f"an artifact compiled from a deck carries no "
+                                              f"proxy_units in its proxy_source ({units!r})")
+    return units
+
+
+def check_roster_for_artifact(roster: Roster, artifact: dict) -> None:
+    """A declared artifact is emitted against the v3 roster of its own
+    compile structures (same proxy units), a legacy artifact against a v2
+    roster; refused by name otherwise."""
+    units = declared_roster_units(artifact)
+    if units is None and roster.schema != ROSTER_SCHEMA:
+        raise RosterRefusal("refused:roster", f"a legacy artifact takes a {ROSTER_SCHEMA} roster, "
+                                              f"got {roster.schema}")
+    if units is not None and (roster.schema != ROSTER_SCHEMA_V3 or roster.proxy_units != units):
+        raise RosterRefusal("refused:roster", f"an artifact compiled from a deck takes the "
+                                              f"{ROSTER_SCHEMA_V3} roster of its compile structures "
+                                              f"at proxy_units {units}, got {roster.schema} at "
+                                              f"{roster.proxy_units}")
+
+
+def declared_reference_systems(spec, units: int) -> Roster:
+    """The v3 roster of a declared artifact: one system per compile proxy
+    of ``declared_proxies.declared_structures(spec, units)`` (its
+    participants; both orders for two different structures), every chain
+    participant its exact witness spec (``declared_chain``: a chain of the
+    declaration's provider), the monomer an explicit species."""
+    from dataclasses import asdict
+    from rmgpy.kmc.declared_proxies import declared_structures
+    from rmgpy.polymer_spec import normalized_linear_homopolymer_spec
+
+    spec = normalized_linear_homopolymer_spec(spec)
+    declared = declared_provider(spec)
+    structures, proxies = declared_structures(spec, units)
+    entries = {}
+    for name, (witness, build) in structures.items():
+        if witness is None:
+            entries[name] = _adjacency_entry(build.molecule)
+        elif isinstance(witness, win.DeclaredSpec) and witness.provider == declared.name:
+            entries[name] = {"declared_chain": asdict(witness.chain)}
+        else:
+            raise RosterRefusal("refused:roster", f"{name}: a compile structure that is not a "
+                                                  f"chain of the declaration ({witness!r})")
+    systems = {}
+    for site_type, names in proxies.items():
+        if len(names) == 1:
+            systems[f"single:{site_type}"] = [entries[names[0]]]
+        else:
+            systems[f"pair:{site_type}:left"] = [entries[n] for n in names]
+            if len(set(names)) > 1:
+                systems[f"pair:{site_type}:right"] = [entries[n] for n in reversed(names)]
+    provisional = Roster(spec, systems, "", "", ROSTER_SCHEMA_V3, units)
+    return replace(provisional, sha256=hashlib.sha256(roster_bytes(provisional)).hexdigest())
 
 
 def write_roster(roster: Roster, path) -> Roster:
@@ -535,8 +614,19 @@ def _owns_declaration(provider, graph):
 
 def _participant(provider, graph, entry, label):
     if not isinstance(entry, dict) or len(entry) != 1:
-        raise RosterRefusal("refused:roster", f"{label}: exactly one of chain, smiles, adjacency_list")
+        raise RosterRefusal("refused:roster", f"{label}: exactly one of chain, declared_chain, "
+                                              "smiles, adjacency_list")
     (kind, value), = entry.items()
+    if kind == "declared_chain":
+        # a v3 participant: the exact chain of the roster's declaration
+        from rmgpy.kmc.declared_chain import ChainSpec
+        try:
+            spec = win.DeclaredSpec(provider.name, ChainSpec.from_mapping(value))
+            participant = Participant(label, spec, lambda name, s=spec: win.build_spec(s, name))
+            participant.build("roster_check")
+        except Exception as error:   # reported as a refusal, never dropped
+            raise RosterRefusal("refused:variant", f"{label}: {type(error).__name__}: {error}")
+        return participant
     if kind == "chain":
         if not isinstance(value, dict) or not {"owner", "dp"} <= set(value) or \
                 set(value) - CHAIN_KEYS:
@@ -1047,9 +1137,11 @@ def run_emit(args):
     roster = load_roster(args.roster)
     # the roster's declaration must be the artifact's, before anything is built
     try:
-        bound_by = bind_artifact(json.loads(Path(args.artifact).read_text()), roster.digests(),
-                                 f"the roster {args.roster}", args.legacy_artifact)
-    except ArtifactBindingRefusal as error:
+        artifact = json.loads(Path(args.artifact).read_text())
+        bound_by = bind_artifact(artifact, roster.digests(), f"the roster {args.roster}",
+                                 args.legacy_artifact)
+        check_roster_for_artifact(roster, artifact)
+    except (ArtifactBindingRefusal, RosterRefusal) as error:
         print("REFUSED", error, flush=True)
         return 1
     print("BINDING", {"bound_by": list(bound_by), "legacy_artifact": not bound_by}, flush=True)

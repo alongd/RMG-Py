@@ -275,8 +275,9 @@ def selection_of(monkeypatch, tmp_path, artifact_families, **args):
     artifact = tmp_path / "artifact.json"
     artifact.write_text("{}")
     monkeypatch.setattr(emit, "Emitter", FakeEmitter)
-    monkeypatch.setattr(emit, "load_roster", lambda path: SimpleNamespace(sha256="r" * 64,
-                                                                          digests=lambda: {}))
+    monkeypatch.setattr(emit, "load_roster", lambda path: SimpleNamespace(
+        sha256="r" * 64, digests=lambda: {}, schema=emit.ROSTER_SCHEMA, proxy_units=None,
+        polymer=None))
     monkeypatch.setattr(emit, "build_reference_systems", lambda roster: ({}, []))
     monkeypatch.setattr(emit, "git_head", lambda path: "d" * 40)
     out = tmp_path / "rows.jsonl"
