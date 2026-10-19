@@ -342,16 +342,13 @@ def test_declared_proxies_refuse_a_v2_declaration():
             function(v2_spec(), 3)
 
 
-@pytest.mark.parametrize("function, args", [
-    ("declared_provider", ()),
-    ("declared_reference_systems", (3,)),
-    ("reference_systems", (None,)),
-])
-def test_emit_refuses_a_v2_declaration(function, args):
+def test_emit_refuses_a_v2_declaration_in_a_legacy_roster():
+    """``declared_provider`` and ``declared_reference_systems`` read v2
+    (``sequenceProxiesTest``); the legacy DP roster does not."""
     from rmgpy.kmc import emit
 
-    with pytest.raises(SchemaV2Refusal, match=REFUSED.format(rf"emit\.{function}")):
-        getattr(emit, function)(v2_spec(), *args)
+    with pytest.raises(SchemaV2Refusal, match=REFUSED.format(r"emit\.reference_systems")):
+        emit.reference_systems(v2_spec(), None)
 
 
 def test_load_roster_refuses_a_v2_declaration(tmp_path):
