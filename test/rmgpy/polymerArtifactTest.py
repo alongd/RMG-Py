@@ -4,9 +4,13 @@
 format doc: docs/polymer_moments_format.md)."""
 
 import json
+import logging
+from types import SimpleNamespace
 
 import pytest
 
+from rmgpy import polymer as polymer_module
+from rmgpy import species_identity
 from rmgpy.kinetics import Arrhenius, MultiArrhenius
 from rmgpy.molecule import Molecule
 from rmgpy.polymer import (
@@ -19,6 +23,7 @@ from rmgpy.polymer import (
     _serialize_pool_for_sidecar,
     build_polymer_moments_artifact,
     compile_polymer_reaction_entries,
+    core_topology_signature,
     derive_condensed_species,
     is_midrun_spawned_pool_daughter,
     validate_thermal_analysis_inputs,
@@ -26,6 +31,7 @@ from rmgpy.polymer import (
     write_refused_polymer_pools_sidecar,
 )
 from rmgpy.reaction import Reaction
+from rmgpy.rmg.main import RMG
 from rmgpy.species import Species
 
 
@@ -77,6 +83,125 @@ def test_malformed_identity_verdict_is_named_for_refusal():
     after.species = [("mixed", 2, mixed)]
     assert species_identity.MALFORMED is not None
     assert before.undecidable_species(after) == ["mixed(2)"]
+
+
+def _rmg_for_sidecar_save(tmp_path, pool, extra_species):
+    core_species = [pool] + list(extra_species)
+    engine = SimpleNamespace(
+        polymer_pools=[SimpleNamespace(label=pool.label, monomer_poly_index=None)],
+        gas_species_mask=[False] + [True] * len(extra_species),
+        core_topology_signature=core_topology_signature(core_species, []),
+        initial_explicit_species=None,
+        V_poly=None,
+    )
+    model = SimpleNamespace(
+        core=SimpleNamespace(species=core_species, reactions=[]),
+        edge=SimpleNamespace(species=[]),
+        new_species_list=[],
+        iteration_num=1,
+    )
+    rmg = RMG(output_directory=str(tmp_path))
+    rmg.reaction_model = model
+    rmg.reaction_systems = [engine]
+    return rmg
+
+
+def _save_over_prior_sidecar(rmg, tmp_path):
+    path = tmp_path / "polymer_pools.json"
+    path.write_text('{"pools": [{"label": "old"}]}')
+    rmg.save_everything()
+    return path, json.loads(path.read_text()) if path.exists() else None
+
+
+def _malformed_species():
+    malformed = Species(molecule=[Molecule().from_smiles("C")])
+    malformed.molecule.append(Molecule().from_smiles("[CH3]"))
+    malformed.label = "malformed"
+    malformed.index = 9
+    return malformed
+
+
+def test_save_path_replaces_prior_sidecar_when_identity_is_undecidable(
+        tmp_path, pe_pool, monkeypatch):
+    undecidable = _spc("O", "undecidable", index=7)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [undecidable])
+    original = polymer_module._CoreStructure.identity_verdict
+
+    def force_undecidable(structure, other):
+        if structure.molecules[0].get_formula() == "H2O":
+            return species_identity.UNDECIDABLE
+        return original(structure, other)
+
+    monkeypatch.setattr(polymer_module._CoreStructure, "identity_verdict", force_undecidable)
+    _path, doc = _save_over_prior_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["undecidable(7)"],
+    }
+
+
+def test_save_path_replaces_prior_sidecar_when_structure_is_unreadable(
+        tmp_path, pe_pool):
+    unreadable = Species(label="unreadable", index=8)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [unreadable])
+    _path, doc = _save_over_prior_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "unreadable_core_structure",
+        "species": ["unreadable(8)"],
+    }
+
+
+def test_save_path_replaces_prior_sidecar_when_structure_is_malformed(
+        tmp_path, pe_pool):
+    malformed = _malformed_species()
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [malformed])
+    _path, doc = _save_over_prior_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["malformed(9)"],
+    }
+
+
+def test_save_path_marks_prior_sidecar_stale_when_refusal_write_fails(
+        tmp_path, pe_pool, monkeypatch, caplog):
+    malformed = _malformed_species()
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [malformed])
+
+    def fail_refusal(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(polymer_module, "write_refused_polymer_pools_sidecar", fail_refusal)
+    with caplog.at_level(logging.WARNING):
+        path, _doc = _save_over_prior_sidecar(rmg, tmp_path)
+    stale = tmp_path / "polymer_pools.json.stale"
+    assert not path.exists()
+    assert json.loads(stale.read_text()) == {"pools": [{"label": "old"}]}
+    assert str(path) in caplog.text
+    assert str(stale) in caplog.text
+
+
+def test_save_path_never_leaves_a_partial_refusal(
+        tmp_path, pe_pool, monkeypatch):
+    malformed = _malformed_species()
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [malformed])
+    original_dump = polymer_module.json.dump
+
+    def partial_dump(payload, stream, *args, **kwargs):
+        if payload.get("refused"):
+            stream.write('{"refused":')
+            raise OSError("interrupted refusal write")
+        return original_dump(payload, stream, *args, **kwargs)
+
+    monkeypatch.setattr(polymer_module.json, "dump", partial_dump)
+    path, _doc = _save_over_prior_sidecar(rmg, tmp_path)
+    assert not path.exists()
+    assert json.loads((tmp_path / "polymer_pools.json.stale").read_text()) == {
+        "pools": [{"label": "old"}],
+    }
+    assert list(tmp_path.glob("polymer_pools.json.tmp-*")) == []
 
 
 def _spc(smiles, label, index=-1):
