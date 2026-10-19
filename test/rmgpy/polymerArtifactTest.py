@@ -31,6 +31,7 @@ from rmgpy.polymer import (
     write_refused_polymer_pools_sidecar,
 )
 from rmgpy.reaction import Reaction
+from rmgpy.rmg import main as rmg_main_module
 from rmgpy.rmg.main import RMG
 from rmgpy.species import Species
 
@@ -198,6 +199,115 @@ def test_save_path_replaces_prior_sidecar_when_registry_audit_fails(
         "reason": "registry unavailable",
         "species": [],
     }
+
+
+def test_save_path_invalidates_before_output_listeners_run(tmp_path, pe_pool):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [])
+    path = _save_good_sidecar(rmg, tmp_path)
+
+    def fail_listener():
+        (tmp_path / "chemkin-output-changed").write_text("new output")
+        raise RuntimeError("listener failed")
+
+    rmg.notify = fail_listener
+    with pytest.raises(RuntimeError, match="listener failed"):
+        rmg.save_everything()
+    assert json.loads(path.read_text()) == {
+        "refused": True,
+        "reason": "save_in_progress",
+        "species": [],
+    }
+
+
+def test_save_path_refuses_malformed_species_appended_after_engine_signature(
+        tmp_path, pe_pool):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [])
+    _save_good_sidecar(rmg, tmp_path)
+    rmg.reaction_model.core.species.append(_malformed_species())
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["malformed(9)"],
+    }
+
+
+def test_save_path_refuses_malformed_species_reordered_from_engine_signature(
+        tmp_path, pe_pool):
+    first = _spc("CC", "first", index=8)
+    formerly_readable = _spc("C", "malformed", index=9)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [first, formerly_readable])
+    _save_good_sidecar(rmg, tmp_path)
+    rmg.reaction_model.core.species[:] = [pe_pool, _malformed_species(), first]
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["malformed(9)"],
+    }
+
+
+def test_refused_sidecar_uses_unique_fsynced_temp_files(tmp_path, monkeypatch):
+    original_dump = polymer_module.json.dump
+    nested = False
+    fsynced = []
+
+    def interleaved_dump(payload, stream, *args, **kwargs):
+        nonlocal nested
+        if payload.get("reason") == "outer" and not nested:
+            nested = True
+            write_refused_polymer_pools_sidecar(str(tmp_path), "inner")
+        return original_dump(payload, stream, *args, **kwargs)
+
+    monkeypatch.setattr(polymer_module.json, "dump", interleaved_dump)
+    monkeypatch.setattr(polymer_module.os, "fsync", fsynced.append)
+    write_refused_polymer_pools_sidecar(str(tmp_path), "outer")
+    assert json.loads((tmp_path / "polymer_pools.json").read_text()) == {
+        "refused": True,
+        "reason": "outer",
+        "species": [],
+    }
+    assert len(fsynced) == 2
+    assert sorted(item.name for item in tmp_path.iterdir()) == ["polymer_pools.json"]
+
+
+def test_save_path_refuses_existing_sidecar_when_registry_becomes_empty(
+        tmp_path, pe_pool):
+    readable = _spc("CC", "readable", index=10)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
+    rmg.reaction_model.core.species[:] = [readable]
+    rmg.reaction_model.edge.species[:] = []
+    rmg.reaction_model.new_species_list[:] = []
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "no_polymer_pools",
+        "species": [],
+    }
+
+
+def test_save_path_raises_when_sidecar_cannot_be_invalidated(
+        tmp_path, pe_pool, monkeypatch):
+    readable = _spc("CC", "malformed", index=9)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
+    rmg.reaction_model.core.species[-1] = _malformed_species()
+
+    def fail_refusal(*args, **kwargs):
+        raise OSError("refusal failed")
+
+    def fail_rename(*args, **kwargs):
+        raise OSError("rename failed")
+
+    def fail_unlink(*args, **kwargs):
+        raise OSError("unlink failed")
+
+    monkeypatch.setattr(polymer_module, "write_refused_polymer_pools_sidecar", fail_refusal)
+    monkeypatch.setattr(rmg_main_module.os, "replace", fail_rename)
+    monkeypatch.setattr(rmg_main_module.os, "unlink", fail_unlink)
+    with pytest.raises(RuntimeError, match="cannot invalidate polymer_pools.json"):
+        rmg.save_everything()
 
 
 def test_save_path_marks_prior_sidecar_stale_when_refusal_write_fails(
