@@ -58,6 +58,23 @@ def test_reconstruction_refuses_malformed_species_by_name():
     with pytest.raises(mp.ProducerError, match="reconstructed phase: mixed.*malformed"):
         mp.core_phases(["time", "volume", "mixed"], doc, [mixed], "profile.csv")
 
+
+def test_reconstruction_refuses_undecidable_species_by_name(monkeypatch):
+    undecidable = Species(
+        molecule=[Molecule().from_smiles("O")],
+        label="undecidable",
+    )
+    doc = {"pools": [{"label": "pool", "monomer_mw_g_mol": 1.0}],
+           "conventions": {"condensed_species": []}}
+    monkeypatch.setattr(
+        mp,
+        "_same_structure",
+        lambda _first, _second: mp._species_identity.UNDECIDABLE,
+    )
+    with pytest.raises(mp.ProducerError, match="reconstructed phase: undecidable.*resonance"):
+        mp.core_phases(["time", "volume", "undecidable"], doc, [undecidable], "profile.csv")
+
+
 GOLDEN = '''polymer(
     label='toylinearp',
     monomer="""multiplicity 3
