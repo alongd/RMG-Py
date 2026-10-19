@@ -58,6 +58,27 @@ def test_refused_sidecar_atomically_replaces_prior_artifact(tmp_path):
     }
 
 
+def test_unreadable_signature_is_stale_not_an_identity_crash():
+    from rmgpy.polymer import CoreTopologySignature, _UnreadableStructure
+    before = CoreTopologySignature.__new__(CoreTopologySignature)
+    after = CoreTopologySignature.__new__(CoreTopologySignature)
+    before.species = [("unreadable", 1, _UnreadableStructure("unreadable(1)"))]
+    after.species = [("unreadable", 1, _UnreadableStructure("unreadable(1)"))]
+    assert before.undecidable_species(after) == []
+
+
+def test_malformed_identity_verdict_is_named_for_refusal():
+    from rmgpy.polymer import CoreTopologySignature, _CoreStructure
+    from rmgpy import species_identity
+    mixed = _CoreStructure([Molecule().from_smiles("[CH3]"), Molecule().from_smiles("C")])
+    before = CoreTopologySignature.__new__(CoreTopologySignature)
+    after = CoreTopologySignature.__new__(CoreTopologySignature)
+    before.species = [("mixed", 2, mixed)]
+    after.species = [("mixed", 2, mixed)]
+    assert species_identity.MALFORMED is not None
+    assert before.undecidable_species(after) == ["mixed(2)"]
+
+
 def _spc(smiles, label, index=-1):
     s = Species(molecule=[Molecule().from_smiles(smiles)])
     s.label = label
