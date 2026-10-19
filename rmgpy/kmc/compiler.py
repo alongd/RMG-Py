@@ -3333,7 +3333,19 @@ def validate_artifact(artifact: dict[str, Any], families=None) -> None:
             continue
         if operation.get("junction_kind") in {"J_ortho_S6", "J_ortho_S7"}:
             ortho_records.append((record, operation))
-    if "R_Recombination" in artifact.get("families", []) or ortho_records:
+    # a compile that leaves out the built-in set's archived ring junctions
+    # says so (``archived_junctions: false``) and carries none of them
+    archived = (artifact.get("provenance") or {}).get("archived_junctions", True)
+    if archived is not True and (
+        archived is not False
+        or ortho_records
+        or "archived_j_para_rate" in artifact.get("provenance", {})
+    ):
+        raise ValueError(
+            "an artifact without archived ring junctions carries archived junction "
+            "records or their rate provenance"
+        )
+    if (archived and "R_Recombination" in artifact.get("families", [])) or ortho_records:
         expected_labels = {"S6", "S7"}
         forwards_by_label = {
             label: [
@@ -5688,6 +5700,7 @@ class EventSetCompiler:
                 "database_sha": self.database_provenance["rmg_database_sha"],
             },
             "applicability_policy_version": PERSISTENT_CARBENE_POLICY_VERSION,
+            **({} if self.archived_junctions else {"archived_junctions": False}),
             **(
                 {"proxy_source": self.proxy_source}
                 if self.proxy_source is not None
