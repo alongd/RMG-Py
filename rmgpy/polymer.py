@@ -100,6 +100,7 @@ import json
 import logging
 import math
 import os
+import tempfile
 
 import numpy as np
 from collections import defaultdict
@@ -8368,14 +8369,25 @@ class CoreTopologySignature(object):
         if not isinstance(other, CoreTopologySignature):
             return []
         undecidable = []
+        # Audit every CURRENT species independently of its position in the
+        # old signature. Added/reordered species are stale topology, but a
+        # malformed or undecidable current structure must still be refused.
+        for label, index, there in other.species:
+            if isinstance(there, _UnreadableStructure):
+                continue
+            verdict = there.identity_verdict(there)
+            if verdict in (_species_identity.UNDECIDABLE, _species_identity.MALFORMED):
+                undecidable.append(f"{label}({index})")
         for (label, index, here), (other_label, other_index, there) in zip(self.species, other.species):
             if label != other_label or index != other_index:
                 continue
             if isinstance(here, _UnreadableStructure) or isinstance(there, _UnreadableStructure):
                 continue
             verdict = here.identity_verdict(there)
-            if verdict in (_species_identity.UNDECIDABLE, _species_identity.MALFORMED):
-                undecidable.append(f"{label}({index})")
+            name = f"{label}({index})"
+            if verdict in (_species_identity.UNDECIDABLE, _species_identity.MALFORMED) \
+                    and name not in undecidable:
+                undecidable.append(name)
         return undecidable
 
 
@@ -8399,6 +8411,27 @@ def core_topology_signature(core_species, core_reactions):
     than the bare count equality this replaces.
     """
     return CoreTopologySignature(core_species, core_reactions)
+
+
+def _write_json_atomically(path, payload, default=None):
+    """Write JSON through a unique, durable temp file beside ``path``."""
+    # Unique names make nested writers in one process independent. Locking
+    # concurrent RMG processes that target one directory is intentionally out
+    # of scope; callers must serialize those saves externally.
+    fd, temp_path = tempfile.mkstemp(
+        prefix=f".{os.path.basename(path)}.tmp-",
+        dir=os.path.dirname(path) or ".",
+        text=True,
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, default=default)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
 
 
 def write_polymer_pools_sidecar(
@@ -8509,14 +8542,7 @@ def write_polymer_pools_sidecar(
         stale_unreadable=stale_unreadable,
     )
     path = os.path.join(output_dir, filename)
-    temp_path = f"{path}.tmp-{os.getpid()}"
-    try:
-        with open(temp_path, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2, default=str)
-        os.replace(temp_path, path)
-    finally:
-        if os.path.exists(temp_path):
-            os.unlink(temp_path)
+    _write_json_atomically(path, payload, default=str)
     return path
 
 
@@ -8524,15 +8550,8 @@ def write_refused_polymer_pools_sidecar(output_dir, reason, species=None,
                                         filename=POLYMER_POOLS_SIDECAR_FILENAME):
     """Atomically replace a previous sidecar with a named refusal."""
     path = os.path.join(output_dir, filename)
-    temp_path = f"{path}.tmp-{os.getpid()}"
     payload = {"refused": True, "reason": str(reason), "species": list(species or ())}
-    try:
-        with open(temp_path, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2)
-        os.replace(temp_path, path)
-    finally:
-        if os.path.exists(temp_path):
-            os.unlink(temp_path)
+    _write_json_atomically(path, payload)
     return path
 
 

@@ -100,6 +100,53 @@ class _PolymerPoolsSidecarRefusal(RuntimeError):
         self.species = list(species)
 
 
+class _PolymerPoolsSidecarInvalidationError(RuntimeError):
+    """The canonical sidecar could not be made visibly non-current."""
+
+
+def _refuse_or_invalidate_polymer_sidecar(target, reason, species, writer):
+    """Write a refusal, falling back to rename/unlink or a fatal error."""
+    try:
+        writer(target, reason, species)
+        return
+    except Exception:
+        logging.warning("Failed to write refused polymer_pools.json sidecar", exc_info=True)
+
+    sidecar_path = os.path.join(target, "polymer_pools.json")
+    stale_path = sidecar_path + ".stale"
+    try:
+        if os.path.exists(sidecar_path):
+            os.replace(sidecar_path, stale_path)
+            logging.warning(
+                "Moved stale polymer sidecar %s to %s",
+                sidecar_path,
+                stale_path,
+            )
+        return
+    except Exception:
+        logging.warning(
+            "Failed to move stale polymer sidecar %s to %s; removing the current path",
+            sidecar_path,
+            stale_path,
+            exc_info=True,
+        )
+
+    try:
+        os.unlink(sidecar_path)
+    except FileNotFoundError:
+        pass
+    except Exception as unlink_error:
+        logging.warning(
+            "Failed to remove stale polymer sidecar %s",
+            sidecar_path,
+            exc_info=True,
+        )
+        raise _PolymerPoolsSidecarInvalidationError(
+            "cannot invalidate polymer_pools.json at %s after refusal, rename, and unlink failed"
+            % sidecar_path
+        ) from unlink_error
+
+
 ################################################################################
 
 # This module uses the HDF5 data format, which can cause problems on files systems that use NFS (common for network
@@ -2244,6 +2291,26 @@ class RMG(util.Subject):
 
         self.exec_time.append(time.time() - self.initialization_time)
 
+        # Invalidate an existing canonical sidecar BEFORE output listeners can
+        # rewrite Chemkin/Cantera files. A successful sidecar is written only
+        # after every listener and audit below succeeds.
+        sidecar_target = None
+        sidecar_existed = False
+        from rmgpy.polymer import write_refused_polymer_pools_sidecar
+        if self.output_directory:
+            chemkin_dir = os.path.join(self.output_directory, "chemkin")
+            sidecar_target = (chemkin_dir if os.path.isdir(chemkin_dir)
+                              else self.output_directory)
+            sidecar_path = os.path.join(sidecar_target, "polymer_pools.json")
+            sidecar_existed = os.path.exists(sidecar_path)
+            if sidecar_existed:
+                _refuse_or_invalidate_polymer_sidecar(
+                    sidecar_target,
+                    "save_in_progress",
+                    None,
+                    write_refused_polymer_pools_sidecar,
+                )
+
         # Notify registered listeners:
         self.notify()
 
@@ -2251,7 +2318,7 @@ class RMG(util.Subject):
         # chemkin / cantera outputs so the TA-side mechanism loader
         # (~/Code/TA) can pick up pool semantics + compiled flux terms.
         # Normative contract: docs/polymer_moments_format.md.
-        sidecar_target = None
+        # A listener may create the chemkin directory on the first save.
         if self.output_directory:
             chemkin_dir = os.path.join(self.output_directory, "chemkin")
             sidecar_target = (chemkin_dir if os.path.isdir(chemkin_dir)
@@ -2271,7 +2338,15 @@ class RMG(util.Subject):
                 self.reaction_model.edge.species,
                 self.reaction_model.new_species_list,
             )
-            if pool_registry and self.output_directory:
+            if not pool_registry:
+                if sidecar_existed and sidecar_target is not None:
+                    _refuse_or_invalidate_polymer_sidecar(
+                        sidecar_target,
+                        "no_polymer_pools",
+                        None,
+                        write_refused_polymer_pools_sidecar,
+                    )
+            elif self.output_directory:
                 target_dir = sidecar_target
 
                 core_species = self.reaction_model.core.species
@@ -2511,41 +2586,12 @@ class RMG(util.Subject):
         except Exception as e:
             logging.warning(f"Failed to write polymer_pools.json sidecar: {e}", exc_info=True)
             if sidecar_target is not None:
-                try:
-                    write_refused_polymer_pools_sidecar(
-                        sidecar_target,
-                        getattr(e, "reason", str(e)),
-                        getattr(e, "species", None),
-                    )
-                except Exception:
-                    logging.warning("Failed to write refused polymer_pools.json sidecar", exc_info=True)
-                    sidecar_path = os.path.join(sidecar_target, "polymer_pools.json")
-                    stale_path = sidecar_path + ".stale"
-                    try:
-                        if os.path.exists(sidecar_path):
-                            os.replace(sidecar_path, stale_path)
-                            logging.warning(
-                                "Moved stale polymer sidecar %s to %s",
-                                sidecar_path,
-                                stale_path,
-                            )
-                    except Exception:
-                        logging.warning(
-                            "Failed to move stale polymer sidecar %s to %s; removing the current path",
-                            sidecar_path,
-                            stale_path,
-                            exc_info=True,
-                        )
-                        try:
-                            os.unlink(sidecar_path)
-                        except FileNotFoundError:
-                            pass
-                        except Exception:
-                            logging.warning(
-                                "Failed to remove stale polymer sidecar %s",
-                                sidecar_path,
-                                exc_info=True,
-                            )
+                _refuse_or_invalidate_polymer_sidecar(
+                    sidecar_target,
+                    getattr(e, "reason", str(e)),
+                    getattr(e, "species", None),
+                    write_refused_polymer_pools_sidecar,
+                )
 
         self.save_profiler_info()
 

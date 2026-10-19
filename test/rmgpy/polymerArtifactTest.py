@@ -293,18 +293,31 @@ def test_save_path_raises_when_sidecar_cannot_be_invalidated(
     rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
     _save_good_sidecar(rmg, tmp_path)
     rmg.reaction_model.core.species[-1] = _malformed_species()
+    original_refusal = polymer_module.write_refused_polymer_pools_sidecar
+    original_replace = rmg_main_module.os.replace
+    refusal_calls = 0
 
-    def fail_refusal(*args, **kwargs):
+    def fail_refusal_after_preinvalidation(*args, **kwargs):
+        nonlocal refusal_calls
+        refusal_calls += 1
+        if refusal_calls == 1:
+            return original_refusal(*args, **kwargs)
         raise OSError("refusal failed")
 
-    def fail_rename(*args, **kwargs):
-        raise OSError("rename failed")
+    def fail_stale_rename(source, target):
+        if str(source).endswith("polymer_pools.json"):
+            raise OSError("rename failed")
+        return original_replace(source, target)
 
     def fail_unlink(*args, **kwargs):
         raise OSError("unlink failed")
 
-    monkeypatch.setattr(polymer_module, "write_refused_polymer_pools_sidecar", fail_refusal)
-    monkeypatch.setattr(rmg_main_module.os, "replace", fail_rename)
+    monkeypatch.setattr(
+        polymer_module,
+        "write_refused_polymer_pools_sidecar",
+        fail_refusal_after_preinvalidation,
+    )
+    monkeypatch.setattr(rmg_main_module.os, "replace", fail_stale_rename)
     monkeypatch.setattr(rmg_main_module.os, "unlink", fail_unlink)
     with pytest.raises(RuntimeError, match="cannot invalidate polymer_pools.json"):
         rmg.save_everything()
