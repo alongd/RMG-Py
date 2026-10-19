@@ -81,25 +81,25 @@ def check(args):
     required_missing = []
     missing = []
     for record in records:
-        refusal = named_refusal(record)
+        status_refusal = named_refusal(record)
+        refusal = status_refusal
         try:
             key = emit.record_key(certifier, record, species)
             found = bool(cases.get(key))
         except Exception as error:
             found = False
-            refusal = f"refused:key:{type(error).__name__}:{error}"
-            key_error = True
-        else:
-            key_error = False
+            if refusal is None:
+                refusal = f"refused:key:{type(error).__name__}:{error}"
         group = (record.get("site_type") or "<none>", record.get("orientation") or "<none>")
         counts[group + (("found" if found else "not_found"),)] += 1
         if not found and refusal:
             counts[group + ("named_refusal",)] += 1
+        uncovered = not found and status_refusal is None
         if record["event_id"] in required:
             counts[group + (("prior_unmapped_found" if found else "prior_unmapped_missing"),)] += 1
-            if not found and (key_error or refusal is None):
+            if uncovered:
                 required_missing.append(record["event_id"])
-        if not found and (key_error or refusal is None):
+        if uncovered:
             missing.append(record["event_id"])
 
     print("site_type\torientation\tfound\tnot_found\tnamed_refusal\tprior_unmapped_found\tprior_unmapped_missing")
