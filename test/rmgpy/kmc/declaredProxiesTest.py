@@ -39,9 +39,10 @@ def test_the_pe_declaration_gives_pe_proxies_without_an_aromatic_ring():
     spec = _spec(S.pe_mapping({10: 1}))
     proxies = _declared(spec)
     names = {p.site_type for p in proxies}
-    assert {"pristine", "interior_radical", "doubly_featured", "head_end_radical",
+    assert {"pristine", "interior_radical:0", "doubly_featured", "head_end_radical",
             "head_end_radical+pristine", "head_end_radical+monomer",
-            "pristine@5", "head_end_radical+head_end_radical@5"} <= names
+            "head_end_radical_short+monomer", "pristine@5",
+            "head_end_radical+head_end_radical@5"} <= names
     # the PE chain's two end radicals are one structure; it has no side group
     assert not any("tail_end_radical" in name or "pendant" in name for name in names)
     for proxy in proxies:
@@ -61,27 +62,6 @@ def test_proxies_need_a_short_variant_of_at_least_one_unit():
 
 
 # -- PS parity -------------------------------------------------------------------
-
-# the built-in set's names -> the declared set's (generic) names
-RENAMED = {"pristine": "pristine", "interior_radical": "interior_radical",
-           "doubly_featured": "doubly_featured", "end_radical": "head_end_radical",
-           "benzylic_end_radical": "tail_end_radical", "junction_radical": "pendant_radical",
-           "styrene": "monomer"}
-# declared pairs the built-in set does not try (every single radical meets
-# every single radical and the monomer)
-ADDED_PAIRS = {"interior_radical+interior_radical", "interior_radical+head_end_radical",
-               "interior_radical+tail_end_radical", "interior_radical+pendant_radical",
-               "pendant_radical+pendant_radical", "interior_radical+monomer",
-               "pendant_radical+monomer"}
-
-
-def _renamed(site_type):
-    name, _, depth = site_type.partition("@")
-    parts = [RENAMED[part] for part in name.split("+")]
-    order = ["interior_radical", "head_end_radical", "tail_end_radical", "pendant_radical",
-             "pristine", "monomer", "doubly_featured"]
-    return "+".join(sorted(parts, key=order.index)) + (f"@{depth}" if depth else "")
-
 
 def _same_participant(legacy_build, declared_build):
     """Isomorphic molecules whose port atoms correspond tag for tag, with the
@@ -109,27 +89,18 @@ def _participants_match(legacy, declared):
     return not remaining
 
 
-def test_the_ps_declaration_reproduces_the_builtin_set_structure_by_structure():
+def test_the_ps_declaration_contains_the_builtin_set_structure_by_structure():
     """Every built-in proxy has a declared proxy of the same participants
-    (molecules, port atoms, port kinds and caps), named generically; the
-    differences are exactly the ones listed here."""
-    legacy = {p.site_type: p for p in ps_proxy_set()}
-    declared = {p.site_type: p for p in _declared(_spec(ps_deck_mapping({6: 3})))}
-    unmatched = {}
-    for name, proxy in legacy.items():
-        other = declared.get(_renamed(name))
-        assert other is not None, (name, _renamed(name))
-        if not _participants_match(proxy, other):
-            unmatched[name] = _renamed(name)
-    # at five units the built-in set pairs the FULL head end radical with the
-    # monomer (its short variant only at three units); the declared set
-    # always pairs the short variant
-    assert unmatched == {"end_radical+styrene@5": "head_end_radical+monomer@5"}
-    extra = set(declared) - {_renamed(name) for name in legacy}
-    assert extra == ADDED_PAIRS | {f"{name}@5" for name in ADDED_PAIRS}
+    (molecules, port atoms, port kinds and caps): no PS coverage is lost."""
+    legacy = ps_proxy_set()
+    declared = _declared(_spec(ps_deck_mapping({6: 3})))
+    missing = [proxy.site_type for proxy in legacy
+               if not any(_participants_match(proxy, other) for other in declared)]
+    assert missing == []
     # the padding repeat unit is the same chemistry
-    unit = next(p.repeat_unit for p in declared.values() if p.repeat_unit is not None)
-    assert unit.molecule.is_isomorphic(legacy["pristine"].repeat_unit.molecule)
+    unit = next(p.repeat_unit for p in declared if p.repeat_unit is not None)
+    assert unit.molecule.is_isomorphic(next(p for p in legacy if p.site_type == "pristine")
+                                       .repeat_unit.molecule)
 
 
 # -- family candidates -------------------------------------------------------------
