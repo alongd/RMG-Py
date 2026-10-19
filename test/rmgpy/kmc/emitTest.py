@@ -1338,3 +1338,89 @@ def test_each_carried_digest_binds(key):
     assert emit.bind_artifact({"provenance": {"proxy_source": _declared_source("pe")}},
                               _digests("pe"), "the roster") == ("chemistry_sha256",
                                                                 "declaration_sha256")
+
+
+# -- the catalog carries the declaration it was emitted for, so the runner binds it to the deck
+
+
+class _StubEmitter:
+    """An emitter with no records: enough for the shard header."""
+
+    def __init__(self, artifact, database, systems, **kwargs):
+        self.artifact, self.database, self.systems = Path(artifact), database, systems
+        self.records, self.state = [], {}
+
+    def init(self):
+        self.state.update(artifact_records=0, families=["R_Recombination"])
+
+
+def _emitted_header(tmp_path, monkeypatch, artifact, *flags, roster):
+    monkeypatch.setattr(emit, "build_reference_systems", lambda roster: ({}, []))
+    monkeypatch.setattr(emit, "Emitter", _StubEmitter)
+    monkeypatch.setattr(emit, "database_content_sha256", lambda path: "h" * 64)
+    out = tmp_path / "rows.jsonl"
+    assert emit.main([str(artifact), str(roster), "--database", str(tmp_path),
+                      "--out", str(out), *flags]) == 0
+    return json.loads(out.read_text().splitlines()[0])
+
+
+def test_a_bound_shard_header_carries_the_chemistry_digest_only(tmp_path, monkeypatch):
+    artifact = _bound_artifact(tmp_path, _declared_source("pe"))
+    head = _emitted_header(tmp_path, monkeypatch, artifact, roster=_v3_roster(tmp_path, "pe", 3))
+    assert head["chemistry_sha256"] == _digests("pe")["chemistry_sha256"]
+    assert "declaration_sha256" not in head
+
+
+def test_a_legacy_shard_header_carries_no_declaration_digest(tmp_path, monkeypatch):
+    artifact = _bound_artifact(tmp_path, None)
+    head = _emitted_header(tmp_path, monkeypatch, artifact, "--legacy-artifact",
+                           roster=write_roster(tmp_path, "pe", {"a": [chain(2)]}))
+    assert not set(emit.BINDING_KEYS) & set(head)
+
+
+def test_the_catalog_of_bound_shards_binds_to_the_deck_of_its_declaration(tmp_path):
+    from meltRunTest import pe_deck
+    from rmgpy.kmc import run as kmc_run
+
+    deck = kmc_run.read_deck(pe_deck(tmp_path))
+    catalog = run(shards(tmp_path, chemistry_sha256=deck.digests()["chemistry_sha256"]))
+    assert catalog["provenance"]["chemistry_sha256"] == deck.digests()["chemistry_sha256"]
+    assert catalog["complete"] is True
+    assert kmc_run._bound_by("catalog.json", catalog["provenance"], deck, False) == \
+        ("chemistry_sha256",)
+
+
+def test_the_catalog_of_unbound_shards_carries_no_declaration_digest(tmp_path):
+    catalog = run(shards(tmp_path))
+    assert not set(emit.BINDING_KEYS) & set(catalog["provenance"])
+
+
+def test_shards_bound_to_different_declarations_are_a_listed_failure(tmp_path):
+    paths = shards(tmp_path, chemistry_sha256=_digests("pe")["chemistry_sha256"])
+    other = json.loads(paths[1].read_text().splitlines()[0])
+    other["chemistry_sha256"] = _digests("ps")["chemistry_sha256"]
+    lines = paths[1].read_text().splitlines()
+    paths[1].write_text("\n".join([json.dumps(other)] + lines[1:]) + "\n")
+    catalog = run(paths)
+    assert catalog["complete"] is False
+    assert any("chemistry_sha256" in failure for failure in catalog["gates"]["failures"])
+
+
+def test_the_catalog_binds_to_every_deck_of_its_chemistry(tmp_path, monkeypatch):
+    """Emission reads only the declaration's chemistry, so a catalog emitted
+    for one population and transport block runs on a deck that changes them."""
+    from meltRunTest import S, pe_deck, write_deck
+    from rmgpy.kmc import run as kmc_run
+
+    emitted_for = kmc_run.read_deck(pe_deck(tmp_path))
+    other = S.pe_mapping({30: 4}, d_ref=3.0e-17)
+    other["initial_mass_kg"], other["density_kg_m3"] = 2.0, 900.0
+    deck = kmc_run.read_deck(write_deck(tmp_path / "other_deck.py", other))
+    assert deck.digests()["declaration_sha256"] != emitted_for.digests()["declaration_sha256"]
+    artifact = _bound_artifact(tmp_path, dict(_declared_source("pe"), **emitted_for.digests()))
+    roster = emit.write_roster(emit.declared_reference_systems(emitted_for.spec, 3),
+                               tmp_path / "roster.json")
+    head = _emitted_header(tmp_path, monkeypatch, artifact, roster=roster.path)
+    catalog = run(shards(tmp_path, **{key: head[key] for key in emit.BINDING_KEYS if key in head}))
+    assert kmc_run._bound_by("catalog.json", catalog["provenance"], deck, False) == \
+        ("chemistry_sha256",)
