@@ -1063,12 +1063,16 @@ def locality_witnesses(witness, providers=None, *, ceiling=None, plan=None) -> l
 
 
 def spread(rows, temperatures) -> tuple:
-    """(per-temperature max - min of log10 w over the rows, max)."""
+    """(per-temperature max - min of log10 w over the rows, max).  A
+    temperature no row measures (no ok row) or measures as non-finite has
+    ``None``, and then so has the max: an unmeasured spread is never written
+    as inf or NaN, which no payload can carry."""
     per = []
     for i, _t in enumerate(temperatures):
         values = [math.log10(r["w"][i]) for r in rows]
-        per.append(max(values) - min(values) if values else float("inf"))
-    return per, (max(per) if per else float("inf"))
+        d = max(values) - min(values) if values else None
+        per.append(d if d is not None and math.isfinite(d) else None)
+    return per, (max(per) if per and None not in per else None)
 
 
 # ---------------------------------------------------------------------------
@@ -1486,7 +1490,8 @@ def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, 
     entry["maps"]["witnesses"] = {r["label"]: r.pop("witness") for r in rows if "witness" in r}
     entry["locality"] = {"rows": [record_row] + rows, "spread_log10": per,
                          "max_spread_log10": worst, "tolerance_log10": LOCALITY_TOLERANCE_LOG10,
-                         "accepted": ok and worst <= LOCALITY_TOLERANCE_LOG10}
+                         "accepted": ok and worst is not None and
+                         worst <= LOCALITY_TOLERANCE_LOG10}
     if not ok:
         mismatch = [r for r in rows if r["status"] == "refused:count_mismatch"]
         if mismatch:
@@ -1504,6 +1509,11 @@ def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, 
         entry.update(status="refused", refusal={
             "status": "refused:non_transferable",
             "reason": f"{bad['label']}: {bad['orbit']['problem']}"[:400]})
+    elif worst is None:
+        entry.update(status="refused", refusal={
+            "status": "refused:locality_spread",
+            "reason": "no ok locality row measures the weight" if not good else
+                      "a locality row's log10 w is not finite"})
     elif worst > LOCALITY_TOLERANCE_LOG10:
         entry.update(status="refused", refusal={
             "status": "refused:non_local_kinetics",
@@ -3136,7 +3146,8 @@ BEYOND_PROXY = "emitted:beyond_proxy"
 # emission refusals are named, but an RMG-only move they leave is not an
 # upstream explanation (the acceptance fails on it)
 EMISSION_FAILURE_STATUSES = ("refused:count_mismatch", "refused:non_local_kinetics",
-                             "refused:locality_witness", "refused:base_template",
+                             "refused:locality_witness", "refused:locality_spread",
+                             "refused:base_template",
                              "refused:no_base_template", "refused:orientation",
                              "refused:unmapped")
 
