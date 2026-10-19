@@ -264,9 +264,11 @@ def _witness_ports(witness) -> dict:
 def _canonical_order(n, exec_labels, meta_labels, edges):
     """The atom order minimizing (executable serialization, metadata
     serialization) over individualization-refinement (``edges``:
-    {(i, j): label} with string labels).  Interchangeable hydrogen leaves
-    (degree one, same neighbour and bond, same labels) are automorphic and
-    are not branched."""
+    {(i, j): label} with string labels).  The refinement starts from the
+    executable labels alone: the metadata only breaks ties between orders of
+    equal executable serialization, so equal executables get one key whatever
+    their metadata.  Interchangeable hydrogen leaves (degree one, same
+    neighbour and bond, same labels) are automorphic and are not branched."""
     nbrs = [[] for _ in range(n)]
     for (i, j), lab in edges.items():
         nbrs[i].append((j, lab))
@@ -311,14 +313,15 @@ def _canonical_order(n, exec_labels, meta_labels, edges):
             if not best or ser < best[0][0]:
                 best[:] = [(ser, order)]
             return
-        if all(len(nbrs[v]) == 1 for v in target) and len({nbrs[v][0] for v in target}) == 1:
+        if all(len(nbrs[v]) == 1 for v in target) and len({nbrs[v][0] for v in target}) == 1 \
+                and len({meta_labels[v] for v in target}) == 1:
             choices = [min(target)]   # automorphic leaves: one branch serializes them all
         else:
             choices = sorted(target)
         for v in choices:
             search(refine(rank([(c, 0 if u == v else 1) for u, c in enumerate(colors)])))
 
-    search(refine(rank([(exec_labels[v], meta_labels[v]) for v in range(n)])))
+    search(refine(rank(list(exec_labels))))
     return best[0][1], best[0][0]
 
 
