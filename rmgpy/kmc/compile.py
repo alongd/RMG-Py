@@ -204,6 +204,8 @@ def _proxy_inputs(request: CompileRequest):
     compiler_options = {
         "family_candidates": tuple(request.families),
         "family_filter_reason": REQUESTED_FAMILY_FILTER_REASON,
+        # the built-in set's archived ring-junction oracle is not this polymer's
+        "archived_junctions": False,
     }
     return proxies, source, compiler_options, {"proxy_set_name": "declared proxy set"}
 

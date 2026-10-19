@@ -4342,6 +4342,7 @@ class EventSetCompiler:
         certify_rates: bool = False,
         family_filter_reason: str = PS_FAMILY_FILTER_REASON,
         proxy_source: dict | None = None,
+        archived_junctions: bool = True,
     ):
         # ``proxy_source``: where the proxies came from (a declaration and its
         # digests, or the built-in set), recorded in the provenance when given;
@@ -4349,6 +4350,10 @@ class EventSetCompiler:
         # is excluded (the artifact's ``inputs.family_filter``).
         self.proxy_source = None if proxy_source is None else dict(proxy_source)
         self.family_filter_reason = family_filter_reason
+        # ``archived_junctions``: add the built-in proxy set's archived
+        # ring-junction records (and their rate provenance) to an
+        # R_Recombination compile; off for proxies of another declaration
+        self.archived_junctions = bool(archived_junctions)
         # ``certify_rates``: attach a rate-selection certificate reference to
         # every published record (rmgpy.kmc.certificates), certified from the
         # record's actual rate source (the padded rate witness when padded),
@@ -5498,7 +5503,7 @@ class EventSetCompiler:
 
     def _para_junction_records(self, provenance: dict[str, Any]) -> list[EventRecord]:
         """Compile the archived g=1 para capture and exact reverse."""
-        if "R_Recombination" not in self.families:
+        if "R_Recombination" not in self.families or not self.archived_junctions:
             return []
         proxy = _para_junction_proxy()
         return list(
@@ -5507,7 +5512,7 @@ class EventSetCompiler:
 
     def _ortho_junction_records(self, provenance: dict[str, Any]) -> list[EventRecord]:
         """Compile the archived g=2 ortho channel as S6/S7 half-rate records."""
-        if "R_Recombination" not in self.families:
+        if "R_Recombination" not in self.families or not self.archived_junctions:
             return []
         proxy = _ortho_junction_proxy()
         reaction = _archived_ortho_reaction(proxy)
@@ -5716,7 +5721,7 @@ class EventSetCompiler:
                 else {}
             ),
         }
-        if "R_Recombination" in self.families:
+        if "R_Recombination" in self.families and self.archived_junctions:
             provenance["archived_j_para_rate"] = copy.deepcopy(
                 ARCHIVED_J_PARA_RATE_PROVENANCE
             )
