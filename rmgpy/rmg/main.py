@@ -104,10 +104,11 @@ class _PolymerPoolsSidecarInvalidationError(RuntimeError):
     """The canonical sidecar could not be made visibly non-current."""
 
 
-def _refuse_or_invalidate_polymer_sidecar(target, reason, species, writer):
+def _refuse_or_invalidate_polymer_sidecar(
+        target, reason, species, writer, ticket=None):
     """Write a refusal, falling back to rename/unlink or a fatal error."""
     try:
-        writer(target, reason, species)
+        writer(target, reason, species, _ticket=ticket)
         return
     except Exception:
         logging.warning("Failed to write refused polymer_pools.json sidecar", exc_info=True)
@@ -2277,6 +2278,20 @@ class RMG(util.Subject):
         """
         Saves the output HTML and the Chemkin file. If the job is being profiled this is saved as well.
         """
+        sidecar_tickets = {}
+        if self.output_directory:
+            from rmgpy.polymer import _take_sidecar_write_ticket
+            possible_targets = {
+                os.path.abspath(self.output_directory),
+                os.path.abspath(os.path.join(self.output_directory, "chemkin")),
+            }
+            sidecar_tickets = {
+                target: _take_sidecar_write_ticket(
+                    os.path.join(target, "polymer_pools.json")
+                )
+                for target in possible_targets
+            }
+
         # If the user specifies it, add unused reaction library reactions to
         # an additional output species and reaction list which is written to the output HTML
         # file as well as the chemkin file
@@ -2309,6 +2324,7 @@ class RMG(util.Subject):
                     "save_in_progress",
                     None,
                     write_refused_polymer_pools_sidecar,
+                    sidecar_tickets[os.path.abspath(sidecar_target)],
                 )
 
         # Notify registered listeners:
@@ -2345,6 +2361,7 @@ class RMG(util.Subject):
                         "no_polymer_pools",
                         None,
                         write_refused_polymer_pools_sidecar,
+                        sidecar_tickets[os.path.abspath(sidecar_target)],
                     )
             elif self.output_directory:
                 target_dir = sidecar_target
@@ -2592,6 +2609,7 @@ class RMG(util.Subject):
                     stale_topology=sidecar_stale_topology,
                     solver_gas_masks=[] if unreadable else recorded_masks,
                     stale_unreadable=unreadable,
+                    _ticket=sidecar_tickets[os.path.abspath(target_dir)],
                 )
         except Exception as e:
             logging.warning(f"Failed to write polymer_pools.json sidecar: {e}", exc_info=True)
@@ -2601,6 +2619,7 @@ class RMG(util.Subject):
                     getattr(e, "reason", str(e)),
                     getattr(e, "species", None),
                     write_refused_polymer_pools_sidecar,
+                    sidecar_tickets[os.path.abspath(sidecar_target)],
                 )
 
         self.save_profiler_info()

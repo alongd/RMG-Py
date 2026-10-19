@@ -127,12 +127,26 @@ LABELS_1, LABELS_2 = ('1', '*1'), ('2', '*2')
 # strict end-radical assertion runs).
 _END_RADICAL_PARKED_LABEL = '*er'
 
-# Reentrant writers in this process take monotonically increasing tickets per
-# absolute target path. Cross-process saves to one directory remain out of
-# scope and must be serialized by their caller.
+@dataclass
+class _SidecarWriteState:
+    """In-process sequencing state for one absolute sidecar path."""
+
+    issued: int = 0
+    committed: int = 0
+
+
+@dataclass(frozen=True)
+class _SidecarWriteTicket:
+    """The ordering claim taken when a sidecar save begins."""
+
+    target_path: str
+    sequence: int
+
+
+# Cross-process saves to one directory remain out of scope and must be
+# serialized by their caller.
 _SIDECAR_WRITE_LOCK = threading.Lock()
-_SIDECAR_WRITE_SEQUENCE = defaultdict(int)
-_SIDECAR_COMMITTED_SEQUENCE = defaultdict(int)
+_SIDECAR_WRITE_STATES = defaultdict(_SidecarWriteState)
 
 
 class PolymerCrosslinkError(Exception):
@@ -8421,12 +8435,24 @@ def core_topology_signature(core_species, core_reactions):
     return CoreTopologySignature(core_species, core_reactions)
 
 
-def _write_json_atomically(path, payload, default=None):
+def _take_sidecar_write_ticket(path):
+    """Take the next in-process ticket for an absolute sidecar path."""
+    target_path = os.path.abspath(path)
+    with _SIDECAR_WRITE_LOCK:
+        state = _SIDECAR_WRITE_STATES[target_path]
+        state.issued += 1
+        return _SidecarWriteTicket(target_path, state.issued)
+
+
+def _write_json_atomically(path, payload, default=None, ticket=None):
     """Write JSON through a unique, durable temp file beside ``path``."""
     path = os.path.abspath(path)
-    with _SIDECAR_WRITE_LOCK:
-        _SIDECAR_WRITE_SEQUENCE[path] += 1
-        ticket = _SIDECAR_WRITE_SEQUENCE[path]
+    if ticket is None:
+        ticket = _take_sidecar_write_ticket(path)
+    elif ticket.target_path != path:
+        raise ValueError(
+            f"sidecar ticket for {ticket.target_path!r} cannot commit {path!r}"
+        )
     fd, temp_path = tempfile.mkstemp(
         prefix=f".{os.path.basename(path)}.tmp-",
         dir=os.path.dirname(path) or ".",
@@ -8438,18 +8464,18 @@ def _write_json_atomically(path, payload, default=None):
             fh.flush()
             os.fsync(fh.fileno())
         with _SIDECAR_WRITE_LOCK:
-            committed = _SIDECAR_COMMITTED_SEQUENCE[path]
-            if committed > ticket:
+            state = _SIDECAR_WRITE_STATES[path]
+            if state.committed > ticket.sequence:
                 logging.warning(
                     "Discarded superseded sidecar write for %s "
                     "(ticket %d; committed ticket %d)",
                     path,
-                    ticket,
-                    committed,
+                    ticket.sequence,
+                    state.committed,
                 )
                 return
             os.replace(temp_path, path)
-            _SIDECAR_COMMITTED_SEQUENCE[path] = ticket
+            state.committed = ticket.sequence
     finally:
         if os.path.exists(temp_path):
             os.unlink(temp_path)
@@ -8474,6 +8500,7 @@ def write_polymer_pools_sidecar(
     stale_topology=False,
     solver_gas_masks=None,
     stale_unreadable=None,
+    _ticket=None,
 ) -> str:
     """Emit ``polymer_pools.json`` alongside ``chem.yaml`` (design doc §6).
 
@@ -8563,16 +8590,17 @@ def write_polymer_pools_sidecar(
         stale_unreadable=stale_unreadable,
     )
     path = os.path.join(output_dir, filename)
-    _write_json_atomically(path, payload, default=str)
+    _write_json_atomically(path, payload, default=str, ticket=_ticket)
     return path
 
 
 def write_refused_polymer_pools_sidecar(output_dir, reason, species=None,
-                                        filename=POLYMER_POOLS_SIDECAR_FILENAME):
+                                        filename=POLYMER_POOLS_SIDECAR_FILENAME,
+                                        _ticket=None):
     """Atomically replace a previous sidecar with a named refusal."""
     path = os.path.join(output_dir, filename)
     payload = {"refused": True, "reason": str(reason), "species": list(species or ())}
-    _write_json_atomically(path, payload)
+    _write_json_atomically(path, payload, ticket=_ticket)
     return path
 
 
