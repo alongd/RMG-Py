@@ -1174,35 +1174,47 @@ def reaches_beyond(cut, witness, unextended) -> bool:
     return not reach <= have
 
 
+def candidate_order(c) -> tuple:
+    """A total order on candidates read from the candidates themselves: the
+    member label, the context index, then the canonical content (witness,
+    window, context, certificate, unextended witness, orientation, refusal),
+    which also orders members that share a label.  Never the order the
+    members come in."""
+    def rows(w):
+        return None if w is None else [rows_json(w.reactant_rows()), rows_json(w.product_rows())]
+    content = [rows(c.witness), sorted(c.window_atoms),
+               [[list(p), e] for p, e in c.assignment], c.certificate, rows(c.unextended),
+               c.reverse, c.refusal]
+    return (c.member, c.context_index, canonical_json(content))
+
+
 def dedupe(cands) -> list:
     """Candidates with equal executable keys are one template (sources kept).
 
     An accepted candidate stands for the template whenever the key has one: a
     cut refusal that reads the candidate's own witness (a port reaching a
     physical end) does not refuse an equal executable accepted on another
-    witness.  Which templates exist, and whether each is refused, therefore
-    follow the candidate set, not the order the members come in (the two
-    records of a reciprocal pair draw the same members)."""
-    out, by = [], {}
+    witness.  The representative is the least accepted copy in
+    ``candidate_order`` (the least refused one when none is accepted), the
+    sources are every copy's, sorted, and the templates come base first, then
+    by key.  Which templates exist, whether each is refused, which witness
+    represents it and the order they are listed in therefore follow the
+    candidate set, not the order the members come in (the two records of a
+    reciprocal pair draw the same members)."""
+    groups, out = {}, []
     for c in cands:
         if c.cut is None:
+            c.sources = [(c.member, c.context_index)]
             out.append(c)
-            continue
-        if c.cut.key in by:
-            first = by[c.cut.key]
-            if first.refusal is not None and c.refusal is None:
-                c.sources = first.sources + [(c.member, c.context_index)]
-                c.base = c.base or first.base
-                out[next(k for k, x in enumerate(out) if x is first)] = c
-                by[c.cut.key] = c
-                continue
-            first.sources.append((c.member, c.context_index))
-            first.base = first.base or c.base
-            continue
-        c.sources.append((c.member, c.context_index))
-        by[c.cut.key] = c
-        out.append(c)
-    return out
+        else:
+            groups.setdefault(c.cut.key, []).append(c)
+    for copies in groups.values():
+        rep = min([c for c in copies if c.refusal is None] or copies, key=candidate_order)
+        rep.sources = sorted((c.member, c.context_index) for c in copies)
+        rep.base = any(c.base for c in copies)
+        out.append(rep)
+    return sorted(out, key=lambda c: (not c.base, c.cut.key if c.cut else "",
+                                      candidate_order(c)))
 
 
 # ---------------------------------------------------------------------------
@@ -1303,15 +1315,16 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
                        "refusal": {"by": "upstream", "status": "refused:unmapped",
                                    "reason": "no provider member carries the record's channel"},
                        "templates": [], "contexts": []})
-    for case, row, _ctx in members:
-        if row.get("status") != "fixed_point":
-            return finish({**head, "status": "refused",
-                           "refusal": {"by": "upstream", "status": f"refused:window",
-                                       "reason": f"member {case.label[-80:]}: {row.get('status')}"
-                                                 f" {str(row.get('reason', ''))[:160]}",
-                                       "window_status": row.get("status"),
-                                       "covered": row.get("covered")},
-                           "templates": [], "contexts": []})
+    failing = [{"reason": f"member {case.label[-80:]}: {row.get('status')}"
+                          f" {str(row.get('reason', ''))[:160]}",
+                "window_status": row.get("status"), "covered": row.get("covered")}
+               for case, row, _ctx in members if row.get("status") != "fixed_point"]
+    if failing:
+        # the member named is the least by its own content, not the first
+        return finish({**head, "status": "refused",
+                       "refusal": {"by": "upstream", "status": "refused:window",
+                                   **min(failing, key=canonical_json)},
+                       "templates": [], "contexts": []})
     rec_r = record_graph_rows(record, "reactant_graphs")
     rec_species = counter.species_of_rows(record_graph_rows(record, "product_graphs"))
     cands, ctx_rows = [], []
@@ -1330,6 +1343,7 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
         cands.extend(c)
         ctx_rows.extend(dict(r, member=case.label[-120:]) for r in rows)
     cands = dedupe(cands)
+    ctx_rows.sort(key=lambda r: (r["member"], r["index"], canonical_json(r)))
     cpath = count_pathway(fam, pathway, template_on_products(record))
     # item 2 on the record's own witness: the base templates jointly
     base = [c for c in cands if c.base and c.refusal is None and c.cut is not None]
