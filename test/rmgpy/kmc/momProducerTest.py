@@ -28,6 +28,7 @@ from rmgpy.kmc import melt_observables as mo
 from rmgpy.kmc import mom_producer as mp
 from rmgpy.kmc import run as kr
 from rmgpy.molecule import Molecule
+from rmgpy.species import Species
 from rmgpy.polymer_spec import LinearHomopolymerSpec
 
 CHECKOUT = "/nonexistent/mom-checkout"   # never run here; only recorded
@@ -46,6 +47,16 @@ def test_refused_sidecar_is_not_treated_as_missing(tmp_path):
                                 "species": ["bad(7)"]}))
     with pytest.raises(mp.ProducerError, match="refused:core_topology_identity.*bad\\(7\\)"):
         mp.read_pools(path)
+
+
+def test_reconstruction_refuses_malformed_species_by_name():
+    mixed = Species(molecule=[Molecule().from_smiles("C")])
+    mixed.molecule.append(Molecule().from_smiles("[CH3]"))
+    mixed.label = "mixed"
+    doc = {"pools": [{"label": "pool", "monomer_mw_g_mol": 1.0}],
+           "conventions": {"condensed_species": []}}
+    with pytest.raises(mp.ProducerError, match="reconstructed phase: mixed.*malformed"):
+        mp.core_phases(["time", "volume", "mixed"], doc, [mixed], "profile.csv")
 
 GOLDEN = '''polymer(
     label='toylinearp',
