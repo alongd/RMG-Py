@@ -1159,7 +1159,14 @@ def reaches_beyond(cut, witness, unextended) -> bool:
 
 
 def dedupe(cands) -> list:
-    """Candidates with equal executable keys are one template (sources kept)."""
+    """Candidates with equal executable keys are one template (sources kept).
+
+    An accepted candidate stands for the template whenever the key has one: a
+    cut refusal that reads the candidate's own witness (a port reaching a
+    physical end) does not refuse an equal executable accepted on another
+    witness.  Which templates exist, and whether each is refused, therefore
+    follow the candidate set, not the order the members come in (the two
+    records of a reciprocal pair draw the same members)."""
     out, by = [], {}
     for c in cands:
         if c.cut is None:
@@ -1167,6 +1174,12 @@ def dedupe(cands) -> list:
             continue
         if c.cut.key in by:
             first = by[c.cut.key]
+            if first.refusal is not None and c.refusal is None:
+                c.sources = first.sources + [(c.member, c.context_index)]
+                c.base = c.base or first.base
+                out[next(k for k, x in enumerate(out) if x is first)] = c
+                by[c.cut.key] = c
+                continue
             first.sources.append((c.member, c.context_index))
             first.base = first.base or c.base
             continue
