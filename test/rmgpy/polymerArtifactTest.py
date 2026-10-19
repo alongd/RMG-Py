@@ -65,6 +65,68 @@ def test_refused_sidecar_atomically_replaces_prior_artifact(tmp_path):
     }
 
 
+def test_standalone_artifact_failure_replaces_prior_sidecar_with_refusal(
+        tmp_path, monkeypatch):
+    path = tmp_path / "polymer_pools.json"
+    path.write_text('{"pools": [{"label": "old"}]}')
+
+    def fail_build(*args, **kwargs):
+        raise RuntimeError("artifact construction failed")
+
+    monkeypatch.setattr(
+        polymer_module,
+        "build_polymer_moments_artifact",
+        fail_build,
+    )
+    with pytest.raises(RuntimeError, match="artifact construction failed"):
+        write_polymer_pools_sidecar([], str(tmp_path))
+    assert json.loads(path.read_text()) == {
+        "refused": True,
+        "reason": "sidecar_write_failed",
+        "species": [],
+    }
+
+
+def test_standalone_refusal_serialization_failure_replaces_prior_sidecar(
+        tmp_path, monkeypatch):
+    path = tmp_path / "polymer_pools.json"
+    path.write_text('{"pools": [{"label": "old"}]}')
+
+    def fail_serialization(*args, **kwargs):
+        raise TypeError("refusal serialization failed")
+
+    monkeypatch.setattr(polymer_module.json, "dump", fail_serialization)
+    with pytest.raises(TypeError, match="refusal serialization failed"):
+        write_refused_polymer_pools_sidecar(str(tmp_path), "original refusal")
+    assert json.loads(path.read_text()) == {
+        "refused": True,
+        "reason": "sidecar_write_failed",
+        "species": [],
+    }
+
+
+def test_standalone_write_raises_named_error_when_invalidation_fails(
+        tmp_path, monkeypatch):
+    path = tmp_path / "polymer_pools.json"
+    path.mkdir()
+    (path / "current").write_text("cannot replace a nonempty directory")
+    stale = tmp_path / "polymer_pools.json.stale"
+    stale.mkdir()
+    (stale / "prior").write_text("cannot replace another nonempty directory")
+
+    def fail_build(*args, **kwargs):
+        raise RuntimeError("artifact construction failed")
+
+    monkeypatch.setattr(
+        polymer_module,
+        "build_polymer_moments_artifact",
+        fail_build,
+    )
+    with pytest.raises(RuntimeError) as exc_info:
+        write_polymer_pools_sidecar([], str(tmp_path))
+    assert exc_info.type.__name__ == "PolymerPoolsSidecarInvalidationError"
+
+
 def test_unreadable_signature_is_stale_not_an_identity_crash():
     from rmgpy.polymer import CoreTopologySignature, _UnreadableStructure
     before = CoreTopologySignature.__new__(CoreTopologySignature)
