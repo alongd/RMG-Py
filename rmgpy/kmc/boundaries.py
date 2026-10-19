@@ -340,10 +340,14 @@ class BoundaryProvider:
         return ()
 
     def reference_monomer(self, spec):
-        """Build the declaration's addition monomer by raising the bond
-        between its repeat-unit ports.  ``None`` names the unsupported case
-        where those ports do not share a bond."""
-        from rmgpy.kmc.declared_chain import _declaration_molecule
+        """Build the explicitly declared addition monomer, or derive it by
+        raising the repeat-unit port bond when no monomer is declared."""
+        from rmgpy.kmc.declared_chain import bind_monomer, _declaration_molecule
+        if spec.monomer_product is not None:
+            binding = bind_monomer(spec.repeat_unit, spec.monomer_product)
+            if binding.keys is None:
+                raise ExtensionRefused(binding.refusal)
+            return _declaration_molecule(spec.monomer_product)[0]
         ports = dict(spec.repeat_unit.ports)
         built = _declaration_molecule(
             spec.repeat_unit, (ports["head"].atom, ports["tail"].atom))

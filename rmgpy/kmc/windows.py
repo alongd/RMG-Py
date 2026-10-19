@@ -374,8 +374,24 @@ class SmallSpeciesProvider(b.BoundaryProvider):
     SPECIES = ("H", "H2")
     END_CHEMISTRIES: dict = {}
 
-    def build(self, name):
-        return small_build(name)
+    def build(self, spec, name="p"):
+        if len(spec) == 2:
+            return small_build(spec[1])
+        from rmgpy.molecule.molecule import Molecule
+        kind, value = spec[1:]
+        molecule = Molecule(smiles=value) if kind == "smiles" else \
+            Molecule().from_adjacency_list(value)
+        multiplicity = molecule.multiplicity
+        objects = list(molecule.atoms)
+        molecule.update()
+        molecule.multiplicity = multiplicity
+        molecule.assign_atom_ids()
+        rows = dict(b.rows_of_molecule(molecule))
+        heavy = sorted(a for a, row in rows.items() if row[0] != "H")
+        metadata = b.BoundaryMetadata("small", (),
+                                      tuple((a, k, 0) for k, a in enumerate(heavy)))
+        metadata.check(rows, name)
+        return b.ProxyBuild(name, molecule, metadata, tuple(atom.id for atom in objects))
 
     def fragment(self, port, coordinate):
         raise b.ExtensionRefused("a small species has no ports")
@@ -386,6 +402,9 @@ class SmallSpeciesProvider(b.BoundaryProvider):
         shape; ValueError for a malformed one."""
         if not isinstance(spec, tuple) or not spec or spec[0] != cls.name:
             return None
+        if len(spec) == 3 and spec[1] in ("smiles", "adjacency_list") and \
+                isinstance(spec[2], str) and spec[2]:
+            return spec
         if len(spec) != 2 or spec[1] not in cls.SPECIES:
             raise ValueError(f"undeclared small species spec {spec!r} (declared: {cls.SPECIES})")
         return spec
@@ -2416,7 +2435,7 @@ def build_spec(spec, name="p"):
             spec[1], head_end=fields[0], tail_end=fields[1],
             interior_radical=fields[2])
     if isinstance(spec, tuple) and spec[0] == "small":
-        return small_build(spec[1])
+        return SMALL_PROVIDER.build(spec, name)
     return b.PROVIDERS["polystyrene"].build(name, spec)
 
 

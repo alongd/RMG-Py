@@ -8,6 +8,7 @@ whether that key has a provider.
 
 import argparse
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -29,10 +30,19 @@ def prior_unmapped(path):
 
 def named_refusal(record):
     status = record.get("status")
-    if status and status != "enabled":
+    if status not in cm.FIRING_STATUSES:
         return f"refused:record_status:{status}"
-    reason = record.get("status_reason")
-    return None if not reason else f"refused:record_status:{reason}"
+    return None
+
+
+def reference_dps(records, requested):
+    """Requested DPs plus numeric proxy depths recorded as ``site_type@N``."""
+    depths = set(requested)
+    for record in records:
+        match = re.search(r"@(\d+)$", record.get("site_type") or "")
+        if match:
+            depths.add(int(match.group(1)))
+    return tuple(sorted(depths))
 
 
 def check(args):
@@ -45,7 +55,7 @@ def check(args):
         records = records[:args.limit]
     deck = read_deck(args.deck)
     provider = emit.match_provider(deck.spec.repeat_unit)
-    roster = emit.reference_systems(deck.spec, provider, dps=args.dps)
+    roster = emit.reference_systems(deck.spec, provider, dps=reference_dps(all_records, args.dps))
     if args.roster_out:
         roster = emit.write_roster(roster, args.roster_out)
     systems, refusals = emit.build_reference_systems(roster)

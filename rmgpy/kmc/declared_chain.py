@@ -1064,6 +1064,7 @@ class DeclaredChainProvider(BoundaryProvider):
         self.spec = spec
         self.geometry = ChainGeometry.of(spec)
         self.name = "declared:" + _canonical_digest(spec)[:16]
+        self.REPEAT_UNIT = spec.repeat_unit.as_mapping()
         self.END_CHEMISTRIES = {"backbone_head": ("declared", "radical"),
                                 "backbone_tail": ("declared", "radical")}
         self.monomer_binding = None if spec.monomer_product is None else \
@@ -1226,6 +1227,33 @@ class DeclaredChainProvider(BoundaryProvider):
             if atom.hydrogens:
                 counts["H"] = counts.get("H", 0) + atom.hydrogens
         return tuple(sorted(counts.items()))
+
+    def spec_from_declaration(self, dp, head=None, tail=None, interior_radical=None):
+        """A window ``DeclaredSpec`` for one generated roster chain."""
+        if isinstance(dp, bool) or not isinstance(dp, int) or dp < 1:
+            raise ValueError(f"degree of polymerization must be a positive integer, got {dp!r}")
+        for end in (head, tail):
+            if end is not None and end not in ("declared", "radical"):
+                raise ValueError(f"{end!r} is not a declared-chain end")
+        edits = ()
+        if interior_radical is not None:
+            if isinstance(interior_radical, bool) or not isinstance(interior_radical, int) or \
+                    not 0 <= interior_radical < dp:
+                raise ValueError(f"interior radical unit must be in 0..{dp - 1}, got "
+                                 f"{interior_radical!r}")
+            candidates = [key for key in self.geometry.keys
+                          if key in self.geometry.backbone_offsets and
+                          self.geometry.atoms[key].element != "H" and
+                          self.geometry.atoms[key].hydrogens]
+            if not candidates:
+                raise ValueError("the declared repeat has no hydrogen-bearing backbone atom")
+            key = min(candidates, key=lambda k: (self.geometry.backbone_offsets[k], k))
+            unit = interior_radical * self.d_rep
+            edits = (EditOp("remove_h", unit, key), EditOp("set_radical", unit, key, 1))
+        from rmgpy.kmc.windows import DeclaredSpec
+        return DeclaredSpec(self.name, ChainSpec(
+            dp * self.d_rep, head="artificial" if head is None else head,
+            tail="artificial" if tail is None else tail, edits=edits))
 
     def declared_elements(self) -> frozenset:
         """Every element this declaration names: the repeat unit, both end

@@ -143,7 +143,6 @@ def write_roster(roster: Roster, path) -> Roster:
 
 
 def _adjacency_entry(molecule) -> dict:
-    molecule.update()
     return {"adjacency_list": molecule.to_adjacency_list()}
 
 
@@ -161,6 +160,21 @@ def _reference_chain_entries(provider, dps, phases) -> list:
         entry = _chain_entry(dp, head, tail, radical_unit)
         built = _participant(provider, None, entry, label).build("reference_check")
         out.append((label, entry, bool(built.molecule.get_radical_count())))
+
+    def add_interior_radical(dp):
+        for unit in range(dp):
+            entry = _chain_entry(dp, radical_unit=unit)
+            built = _participant(provider, None, entry, "interior-radical").build(
+                "reference_check")
+            rows = dict(b.rows_of_molecule(built.molecule))
+            indices = provider.witness_backbone_indices(rows, built.metadata)
+            radicals = [atom for atom, row in rows.items()
+                        if row[0] != "H" and row[3] and atom in indices]
+            if any({indices[atom] - 1, indices[atom] + 1} <=
+                   {indices[n] for n, _order in rows[atom][5] if n in indices}
+                   for atom in radicals):
+                out.append((f"chain:dp{dp}:interior-radical", entry, True))
+                return
 
     end_table = getattr(provider, "END_CHEMISTRIES", {})
     head_ends = tuple(end_table.get("backbone_head", ()))
@@ -186,7 +200,7 @@ def _reference_chain_entries(provider, dps, phases) -> list:
                 elif end in alkene_ends:
                     add(f"chain:dp{dp}:alkene:tail:{end}", dp, closed_head, end)
         if dp > 1:
-            add(f"chain:dp{dp}:interior-radical", dp, radical_unit=(dp - 1) // 2)
+            add_interior_radical(dp)
     if phases:
         for label, dp, head, tail, radical_unit in provider.reference_special_declarations():
             add(f"chain:special:{label}", dp, head, tail, radical_unit)
@@ -200,6 +214,10 @@ def _reference_small_entries(spec, small) -> list:
         return []
     selected = None if small is True else set(small)
     declared = {name: graph for name, graph, _disposition in spec.small_species}
+    collisions = sorted(set(declared) & {"H", "H2"})
+    if collisions:
+        raise RosterRefusal("refused:small_name_collision",
+                            f"declared small species shadow built-ins: {collisions}")
     out = []
     builtins = {
         "H": "1 H u1 p0 c0\n",
@@ -246,7 +264,10 @@ def reference_systems(spec, provider, *, dps=(1, 2, 3, 8), phases=True,
 
     monomer_item = None
     if monomer:
-        molecule = provider.reference_monomer(spec)
+        try:
+            molecule = provider.reference_monomer(spec)
+        except b.BoundaryError as error:
+            raise RosterRefusal("refused:monomer", str(error)) from error
         if molecule is not None:
             monomer_item = ("monomer", _adjacency_entry(molecule),
                             bool(molecule.get_radical_count()), "monomer")
@@ -257,10 +278,13 @@ def reference_systems(spec, provider, *, dps=(1, 2, 3, 8), phases=True,
         for label, entry, _radical, _kind in participants:
             systems[f"single:{label}"] = [entry]
     if 2 in molecularity:
-        radicals = [item for item in participants if item[2] and item[3] == "chain"]
-        for left in radicals:
-            for right in radicals:
-                systems[f"pair:radical:{left[0]}:{right[0]}"] = [left[1], right[1]]
+        chains = [item for item in participants if item[3] == "chain"]
+        radicals = [item for item in chains if item[2]]
+        for radical in radicals:
+            for chain in chains:
+                prefix = f"pair:radical:{radical[0]}:{chain[0]}"
+                systems[f"{prefix}:left"] = [radical[1], chain[1]]
+                systems[f"{prefix}:right"] = [chain[1], radical[1]]
         h_item = next((item for item in participants if item[0] == "small:H"), None)
         for chain in [item for item in participants if item[3] == "chain"]:
             if h_item is not None:
@@ -354,10 +378,15 @@ def isomorphic(first, second) -> bool:
     return mapping[pa["tail"]] == pb["tail"]
 
 
-def match_provider(graph):
+def match_provider(graph, declaration=None):
     """The registered provider whose ``REPEAT_UNIT`` is the declared repeat unit,
-    or None."""
+    preferring the provider of this exact declaration when supplied, or None."""
     from rmgpy.polymer_spec import GraphDeclaration
+    if declaration is not None:
+        exact = [provider for provider in b.PROVIDERS.values()
+                 if getattr(provider, "spec", None) == declaration]
+        if exact:
+            return min(exact, key=lambda provider: provider.name)
     for name in sorted(b.PROVIDERS):
         unit = getattr(b.PROVIDERS[name], "REPEAT_UNIT", None)
         if unit is not None and isomorphic(
@@ -374,8 +403,10 @@ def explicit_build(name, smiles=None, adjacency_list=None):
         molecule = Molecule(smiles=smiles)
     else:
         molecule = Molecule().from_adjacency_list(adjacency_list)
+    multiplicity = molecule.multiplicity
     objects = list(molecule.atoms)
     molecule.update()
+    molecule.multiplicity = multiplicity
     molecule.assign_atom_ids()
     rows = dict(b.rows_of_molecule(molecule))
     heavy = sorted(a for a, row in rows.items() if row[0] != "H")
@@ -416,7 +447,7 @@ def _participant(provider, graph, entry, label):
             make("roster_check")
         except Exception as error:
             raise RosterRefusal("refused:variant", f"{label}: {type(error).__name__}: {error}")
-        return Participant(label, ("small", f"{kind}:{value}"), make)
+        return Participant(label, ("small", kind, value), make)
     raise RosterRefusal("refused:roster", f"{label}: unknown participant kind {kind!r}")
 
 
@@ -425,7 +456,7 @@ def build_reference_systems(roster: Roster):
     system with a refused participant is left out and each refusal is a row
     (``kind: roster_refusal``, system, participant, status, reason)."""
     from rmgpy.polymer_spec import GraphDeclaration  # noqa: F401  (documents the declaration)
-    provider = match_provider(roster.polymer.repeat_unit)
+    provider = match_provider(roster.polymer.repeat_unit, roster.polymer)
     systems, refusals = {}, []
     for name, entries in roster.systems.items():
         built, bad = [], []
