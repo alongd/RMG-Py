@@ -8465,13 +8465,13 @@ def _write_json_atomically(path, payload, default=None, ticket=None):
             os.fsync(fh.fileno())
         with _SIDECAR_WRITE_LOCK:
             state = _SIDECAR_WRITE_STATES[path]
-            if state.committed > ticket.sequence:
+            if state.issued > ticket.sequence:
                 logging.warning(
                     "Discarded superseded sidecar write for %s "
-                    "(ticket %d; committed ticket %d)",
+                    "(ticket %d; latest issued ticket %d)",
                     path,
                     ticket.sequence,
-                    state.committed,
+                    state.issued,
                 )
                 return
             os.replace(temp_path, path)
