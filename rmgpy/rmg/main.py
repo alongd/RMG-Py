@@ -2422,6 +2422,33 @@ class RMG(util.Subject):
                 # is only the FALLBACK when the engine mask is unavailable/length-
                 # mismatched, and is then keyed on the CONFIGURED pools (not the
                 # full registry) so the fallback mirrors the same demotion.
+                # Audit every live polymer engine, not merely the first one
+                # selected below for pool configuration. One absent or stale
+                # rebuild signature makes the aggregate artifact stale.
+                engine_signatures = []
+                for system in (self.reaction_systems or []):
+                    engine = getattr(system, "solver", None) or system
+                    if not getattr(engine, "polymer_pools", None):
+                        continue
+                    engine_sig = getattr(engine, "core_topology_signature", None)
+                    engine_signatures.append(engine_sig)
+                    if engine_sig is not None:
+                        undecidable = engine_sig.undecidable_species(current_sig)
+                        if undecidable:
+                            raise _PolymerPoolsSidecarRefusal(
+                                "core_topology_identity",
+                                undecidable,
+                                "polymer_pools.json: cannot compare core topology for %s: "
+                                "identity is undecidable or malformed" % ", ".join(undecidable),
+                            )
+                sidecar_stale_topology = not engine_signatures
+                for engine_sig in engine_signatures:
+                    try:
+                        sidecar_stale_topology = sidecar_stale_topology or \
+                            engine_sig is None or engine_sig != current_sig
+                    except (TypeError, ValueError):
+                        sidecar_stale_topology = True
+
                 configured = None
                 routing = {}
                 explicit_dp_species_by_pool = {}
@@ -2430,51 +2457,12 @@ class RMG(util.Subject):
                 initial_explicit_by_pool = None
                 generation_mass_transfer = None
                 generation_v_poly_m3 = None
-                # Without a live engine signature there is no proof that this
-                # artifact describes the topology the solver integrated.
-                sidecar_stale_topology = True
                 for system in (self.reaction_systems or []):
                     engine = getattr(system, "solver", None) or system
                     pools_cfg = getattr(engine, "polymer_pools", None)
                     if not pools_cfg:
                         continue
                     engine_pools_cfg = pools_cfg
-                    # P1-4 stale-sidecar tripwire (regen-#2 forensics):
-                    # save_everything() runs AFTER enlarge but BEFORE the
-                    # next solver rebuild, so every engine-frozen surface
-                    # read below (polymer_pools, gas_species_mask, per-pool
-                    # index maps) plus the rebuild-stamped refusal state on
-                    # the Reaction objects can describe a core the engine
-                    # has never seen (regen #2: all 8 conduit rows emitted
-                    # refused=true/dst_pool null while the post-rebuild
-                    # solver ran 5 live). Round-27 P1-C predicate: compare
-                    # the ENGINE REBUILD SIGNATURE the solver captured at
-                    # initialize_model (stable (label, index) identity keys
-                    # of the core species + reactions it was built against;
-                    # rmgpy.polymer.core_topology_signature) with the same
-                    # signature of the CURRENT core. Bare count equality is
-                    # NOT enough -- a same-count species/reaction swap or
-                    # restamp between rebuilds must be caught. Signature
-                    # unavailable (pre-P1-C engine, or an engine never
-                    # rebuilt) => stale. Forcing initialize_model here
-                    # instead would clobber live filter-threshold state
-                    # mid-run, so the honest marker is the non-perturbing
-                    # fix.
-                    engine_sig = getattr(
-                        engine, "core_topology_signature", None)
-                    try:
-                        undecidable = (engine_sig.undecidable_species(current_sig)
-                                       if engine_sig is not None else [])
-                        if undecidable:
-                            raise _PolymerPoolsSidecarRefusal(
-                                "core_topology_identity",
-                                undecidable,
-                                "polymer_pools.json: cannot compare core topology for %s: "
-                                "identity is undecidable or malformed" % ", ".join(undecidable),
-                            )
-                        sidecar_stale_topology = engine_sig is None or engine_sig != current_sig
-                    except (TypeError, ValueError):
-                        sidecar_stale_topology = True
                     solver_mask = getattr(engine, "gas_species_mask", None)
                     # Stage-A explicit-DP loadings ({pool_label: {dp: moles}},
                     # the exact shape set_initial_conditions step 2 seeds) —
