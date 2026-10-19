@@ -1,9 +1,12 @@
 #!/usr/bin/env python
 """Check compiled-record keys against declaration-generated reference cases.
 
-This deliberately stops before binding or rate emission: it builds the same
-reference-case index as emit, computes each record's member key, and reports
-whether that key has a provider.
+This deliberately stops before binding or rate emission: it certifies the
+artifact and refuses records upstream exactly as emit does, builds the same
+reference-case index, computes each firing record's member key, and reports
+whether that key has a provider.  Every selected record is one of: a named
+refusal (production's own upstream refusal, never emitted), found, or
+uncovered; the exit status is non-zero when any record is uncovered.
 """
 
 import argparse
@@ -15,6 +18,7 @@ from pathlib import Path
 from rmgpy.kmc import channels as chm
 from rmgpy.kmc import certificates as cm
 from rmgpy.kmc import emit
+from rmgpy.kmc import template_emission as te
 from rmgpy.kmc.run import read_deck
 
 
@@ -28,11 +32,9 @@ def prior_unmapped(path):
     return out
 
 
-def named_refusal(record):
-    status = record.get("status")
-    if status not in cm.FIRING_STATUSES:
-        return f"refused:record_status:{status}"
-    return None
+def named_refusal(record, store, by_id):
+    """Production's upstream refusal of a certified record (None: it fires)."""
+    return te.upstream_refusal(record, emit.record_certificate(record, store), by_id)
 
 
 def reference_dps(records, requested):
@@ -50,9 +52,6 @@ def check(args):
     all_records = artifact["records"]
     if len(all_records) != 762:
         raise RuntimeError(f"expected the 762-record verifier artifact, got {len(all_records)}")
-    records = all_records
-    if args.limit is not None:
-        records = records[:args.limit]
     deck = read_deck(args.deck)
     provider = emit.match_provider(deck.spec.repeat_unit)
     roster = emit.reference_systems(deck.spec, provider, dps=reference_dps(all_records, args.dps))
@@ -62,58 +61,68 @@ def check(args):
     if refusals:
         raise RuntimeError(f"generated roster has refusals: {refusals}")
 
-    families = sorted({record["family"] for record in records})
+    # certification decides which records fire, and a reverse record's
+    # requirement reads its rate owner: certify the whole artifact, as emit
+    # does, whatever --limit selects
+    families = sorted({record["family"] for record in all_records})
     database = emit.load_database(families, args.database)
     fam = database.kinetics.families
     certifier = cm.Certifier(fam, max_channel_sets=8, max_entries=1024)
+    certified, store, replacements = emit.certified_records(all_records, fam, certifier)
+    by_id = {record["event_id"]: record for record in certified}
+    records = certified if args.limit is None else certified[:args.limit]
     species = chm.SpeciesKeys()
     cases, case_stats = emit.reference_cases(certifier, fam, systems, species)
 
-    old = prior_unmapped(args.old_rows)
-    all_ids = {record["event_id"] for record in all_records}
-    unknown_old = old - all_ids
+    old = {replacements.get(event_id, event_id) for event_id in prior_unmapped(args.old_rows)}
+    unknown_old = old - set(by_id)
     if not old or unknown_old:
         raise RuntimeError(f"old rows identify {len(old)} prior-unmapped records; "
                            f"{len(unknown_old)} are absent from the artifact")
     selected_ids = {record["event_id"] for record in records}
     required = old & selected_ids
     counts = Counter()
+    by_status, by_reason = Counter(), Counter()
+    key_errors = {}
     required_missing = []
     missing = []
     for record in records:
-        status_refusal = named_refusal(record)
-        refusal = status_refusal
-        try:
-            key = emit.record_key(certifier, record, species)
-            found = bool(cases.get(key))
-        except Exception as error:
-            found = False
-            if refusal is None:
-                refusal = f"refused:key:{type(error).__name__}:{error}"
         group = (record.get("site_type") or "<none>", record.get("orientation") or "<none>")
-        counts[group + (("found" if found else "not_found"),)] += 1
-        if not found and refusal:
-            counts[group + ("named_refusal",)] += 1
-        uncovered = not found and status_refusal is None
+        why = named_refusal(record, store, by_id)
+        if why is not None:
+            outcome = "named_refusal"
+            by_status[te.status_of(why)] += 1
+            by_reason[why] += 1
+        else:
+            try:
+                key = emit.record_key(certifier, record, species)
+                outcome = "found" if cases.get(key) else "uncovered"
+            except Exception as error:   # production's row is error:exception
+                outcome = "uncovered"
+                key_errors[record["event_id"]] = f"{type(error).__name__}: {error}"[:300]
+        counts[group + (outcome,)] += 1
         if record["event_id"] in required:
-            counts[group + (("prior_unmapped_found" if found else "prior_unmapped_missing"),)] += 1
-            if uncovered:
+            counts[group + ("prior_unmapped_" + outcome,)] += 1
+            if outcome == "uncovered":
                 required_missing.append(record["event_id"])
-        if uncovered:
+        if outcome == "uncovered":
             missing.append(record["event_id"])
 
-    print("site_type\torientation\tfound\tnot_found\tnamed_refusal\tprior_unmapped_found\tprior_unmapped_missing")
-    groups = sorted({key[:2] for key in counts})
-    for site_type, orientation in groups:
-        values = [counts[(site_type, orientation, field)] for field in
-                  ("found", "not_found", "named_refusal", "prior_unmapped_found",
-                   "prior_unmapped_missing")]
+    fields = ("found", "uncovered", "named_refusal", "prior_unmapped_found",
+              "prior_unmapped_uncovered", "prior_unmapped_named_refusal")
+    print("\t".join(("site_type", "orientation") + fields))
+    for site_type, orientation in sorted({key[:2] for key in counts}):
+        values = [counts[(site_type, orientation, field)] for field in fields]
         print("\t".join(map(str, (site_type, orientation, *values))))
     print(json.dumps({
         "records": len(records),
+        "artifact_records": len(all_records),
         "found": sum(v for key, v in counts.items() if key[2] == "found"),
-        "not_found": sum(v for key, v in counts.items() if key[2] == "not_found"),
-        "named_refused": sum(v for key, v in counts.items() if key[2] == "named_refusal"),
+        "uncovered": sum(v for key, v in counts.items() if key[2] == "uncovered"),
+        "named_refused": sum(by_status.values()),
+        "named_refused_by_status": dict(by_status),
+        "named_refused_by_reason": dict(by_reason),
+        "key_errors": key_errors,
         "missing": missing,
         "prior_unmapped_in_rows": len(old),
         "prior_unmapped_selected": len(required),

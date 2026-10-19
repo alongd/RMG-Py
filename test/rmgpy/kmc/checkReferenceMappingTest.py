@@ -13,11 +13,17 @@ SPEC.loader.exec_module(CHECKER)
 
 
 def test_firing_statuses_are_not_named_refusals_even_with_a_reason():
-    assert CHECKER.named_refusal({"status": "enabled", "status_reason": "diagnostic"}) is None
-    assert CHECKER.named_refusal({"status": "irreversible",
-                                  "status_reason": "RMG reaction is irreversible"}) is None
-    assert CHECKER.named_refusal({"status": "refused", "status_reason": "policy"}) == \
-        "refused:record_status:refused"
+    store = {"sha": {"certified": True, "gaps": []}}
+
+    def record(status, reason):
+        return {"event_id": status, "status": status, "status_reason": reason,
+                "rate_source": {"kind": "RMG family estimate"}, "rate_certificate": {"sha256": "sha"}}
+
+    for status in ("enabled", "irreversible"):
+        r = record(status, "diagnostic")
+        assert CHECKER.named_refusal(r, store, {r["event_id"]: r}) is None
+    r = record("refused", "policy")
+    assert CHECKER.named_refusal(r, store, {r["event_id"]: r}) == "refused:record_status: policy"
 
 
 def test_numeric_proxy_depths_are_added_from_artifact_site_types():
@@ -38,103 +44,6 @@ def test_proxy_depth_generates_the_corresponding_declared_chain():
     assert "single:chain:dp5:capped" in roster.systems
 
 
-def test_zero_matching_cases_for_required_records_exits_nonzero(tmp_path, monkeypatch):
-    records = [{"event_id": f"event-{index}", "status": "enabled",
-                "site_type": "pristine", "orientation": "as_generated",
-                "family": "family"}
-               for index in range(762)]
-    artifact = tmp_path / "artifact.json"
-    artifact.write_text(json.dumps({"records": records}))
-    spec = SimpleNamespace(repeat_unit=object())
-    monkeypatch.setattr(CHECKER, "read_deck", lambda _path: SimpleNamespace(spec=spec))
-    monkeypatch.setattr(CHECKER.emit, "match_provider", lambda _graph: object())
-    monkeypatch.setattr(CHECKER.emit, "reference_systems", lambda *_args, **_kwargs:
-                        SimpleNamespace(systems={}, sha256="hash"))
-    monkeypatch.setattr(CHECKER.emit, "build_reference_systems", lambda _roster: ({}, []))
-    monkeypatch.setattr(CHECKER.emit, "load_database", lambda *_args:
-                        SimpleNamespace(kinetics=SimpleNamespace(families={})))
-    monkeypatch.setattr(CHECKER.cm, "Certifier", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(CHECKER.chm, "SpeciesKeys", lambda: object())
-    monkeypatch.setattr(CHECKER.emit, "reference_cases", lambda *_args: ({}, {}))
-    monkeypatch.setattr(CHECKER.emit, "record_key", lambda *_args: ("missing",))
-    monkeypatch.setattr(CHECKER, "prior_unmapped",
-                        lambda _path: {record["event_id"] for record in records})
-    args = SimpleNamespace(artifact=artifact, deck="deck.py", database="database",
-                           old_rows="rows.jsonl", roster_out=None, dps=(1, 2, 3, 8),
-                           limit=None)
-    assert CHECKER.check(args) == 1
-
-
-def test_one_prior_match_does_not_hide_other_required_records(tmp_path, monkeypatch, capsys):
-    records = [{"event_id": f"event-{index}", "status": "enabled",
-                "site_type": "pristine", "orientation": "as_generated",
-                "family": "family"}
-               for index in range(762)]
-    artifact = tmp_path / "artifact.json"
-    artifact.write_text(json.dumps({"records": records}))
-    spec = SimpleNamespace(repeat_unit=object())
-    monkeypatch.setattr(CHECKER, "read_deck", lambda _path: SimpleNamespace(spec=spec))
-    monkeypatch.setattr(CHECKER.emit, "match_provider", lambda _graph: object())
-    monkeypatch.setattr(CHECKER.emit, "reference_systems", lambda *_args, **_kwargs:
-                        SimpleNamespace(systems={}, sha256="hash"))
-    monkeypatch.setattr(CHECKER.emit, "build_reference_systems", lambda _roster: ({}, []))
-    monkeypatch.setattr(CHECKER.emit, "load_database", lambda *_args:
-                        SimpleNamespace(kinetics=SimpleNamespace(families={})))
-    monkeypatch.setattr(CHECKER.cm, "Certifier", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(CHECKER.chm, "SpeciesKeys", lambda: object())
-    monkeypatch.setattr(CHECKER.emit, "reference_cases",
-                        lambda *_args: ({("found",): [object()]}, {}))
-    monkeypatch.setattr(CHECKER.emit, "record_key",
-                        lambda _certifier, record, _species:
-                        ("found",) if record["event_id"] == "event-0" else ("missing",))
-    monkeypatch.setattr(CHECKER, "prior_unmapped", lambda _path: {"event-0"})
-    args = SimpleNamespace(artifact=artifact, deck="deck.py", database="database",
-                           old_rows="rows.jsonl", roster_out=None, dps=(1, 2, 3, 8),
-                           limit=None)
-
-    assert CHECKER.check(args) == 1
-    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
-    assert (summary["found"], summary["not_found"], summary["named_refused"]) == (1, 761, 0)
-
-
-def test_status_refusal_stays_named_when_its_record_key_raises(tmp_path, monkeypatch, capsys):
-    records = [{"event_id": f"event-{index}",
-                "status": "refused" if index == 0 else "enabled",
-                "site_type": "pristine", "orientation": "as_generated",
-                "family": "family"}
-               for index in range(762)]
-    artifact = tmp_path / "artifact.json"
-    artifact.write_text(json.dumps({"records": records}))
-    spec = SimpleNamespace(repeat_unit=object())
-    monkeypatch.setattr(CHECKER, "read_deck", lambda _path: SimpleNamespace(spec=spec))
-    monkeypatch.setattr(CHECKER.emit, "match_provider", lambda _graph: object())
-    monkeypatch.setattr(CHECKER.emit, "reference_systems", lambda *_args, **_kwargs:
-                        SimpleNamespace(systems={}, sha256="hash"))
-    monkeypatch.setattr(CHECKER.emit, "build_reference_systems", lambda _roster: ({}, []))
-    monkeypatch.setattr(CHECKER.emit, "load_database", lambda *_args:
-                        SimpleNamespace(kinetics=SimpleNamespace(families={})))
-    monkeypatch.setattr(CHECKER.cm, "Certifier", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(CHECKER.chm, "SpeciesKeys", lambda: object())
-    monkeypatch.setattr(CHECKER.emit, "reference_cases",
-                        lambda *_args: ({("found",): [object()]}, {}))
-
-    def record_key(_certifier, record, _species):
-        if record["event_id"] == "event-0":
-            raise ValueError("a refused record needs no key")
-        return ("found",)
-
-    monkeypatch.setattr(CHECKER.emit, "record_key", record_key)
-    monkeypatch.setattr(CHECKER, "prior_unmapped", lambda _path: {"event-0"})
-    args = SimpleNamespace(artifact=artifact, deck="deck.py", database="database",
-                           old_rows="rows.jsonl", roster_out=None, dps=(1, 2, 3, 8),
-                           limit=None)
-
-    assert CHECKER.check(args) == 0
-    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
-    assert (summary["found"], summary["not_found"], summary["named_refused"]) == (761, 1, 1)
-    assert summary["missing"] == []
-
-
 # -- I-191: a firing record is one production certifies and does not refuse upstream
 
 
@@ -142,7 +51,7 @@ def _records(refused_status=()):
     return [{"event_id": f"event-{index}",
              "status": "refused" if index in refused_status else "enabled",
              "site_type": "pristine", "orientation": "as_generated", "family": "family",
-             "rate_source": {"kind": "RMG family estimate"}}
+             "template": "template", "rate_source": {"kind": "RMG family estimate"}}
             for index in range(762)]
 
 
@@ -257,3 +166,69 @@ def test_limit_certifies_every_record_and_reports_only_the_selection(tmp_path, m
     assert summary["records"] == 3
     assert (summary["found"], summary["uncovered"], summary["named_refused"]) == (2, 0, 1)
     assert summary["prior_unmapped_selected"] == 1
+
+
+def test_zero_matching_cases_for_required_records_exits_nonzero(tmp_path, monkeypatch):
+    records = _records()
+    assert _check(tmp_path, monkeypatch, records, certify=_certify(),
+                  record_key=lambda _record: ("missing",),
+                  prior={record["event_id"] for record in records}) == 1
+
+
+def test_one_prior_match_does_not_hide_other_required_records(tmp_path, monkeypatch, capsys):
+    records = _records()
+    status = _check(tmp_path, monkeypatch, records, certify=_certify(),
+                    record_key=lambda record: ("found",) if record["event_id"] == "event-0"
+                    else ("missing",),
+                    prior={"event-0"})
+    assert status == 1
+    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert (summary["found"], summary["uncovered"], summary["named_refused"]) == (1, 761, 0)
+
+
+def test_status_refusal_stays_named_when_its_record_key_raises(tmp_path, monkeypatch, capsys):
+    def record_key(record):
+        if record["event_id"] == "event-0":
+            raise ValueError("a refused record needs no key")
+        return ("found",)
+
+    status = _check(tmp_path, monkeypatch, _records(refused_status={0}), certify=_certify(),
+                    record_key=record_key, prior={"event-0"})
+    assert status == 0
+    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert (summary["found"], summary["uncovered"], summary["named_refused"]) == (761, 0, 1)
+    assert summary["named_refused_by_status"] == {"refused:record_status": 1}
+    assert summary["missing"] == [] and summary["key_errors"] == {}
+
+
+def test_a_firing_record_whose_key_raises_is_uncovered_not_refused(tmp_path, monkeypatch, capsys):
+    def record_key(record):
+        if record["event_id"] == "event-3":
+            raise ValueError("no template side")
+        return ("found",)
+
+    status = _check(tmp_path, monkeypatch, _records(), certify=_certify(),
+                    record_key=record_key, prior={"event-3"})
+    assert status == 1
+    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert (summary["found"], summary["uncovered"], summary["named_refused"]) == (761, 1, 0)
+    assert summary["key_errors"] == {"event-3": "ValueError: no template side"}
+
+
+def test_emit_and_the_checker_name_a_certification_refusal_identically(tmp_path, monkeypatch,
+                                                                       capsys):
+    """The emitter's upstream row for the record the checker names refused
+    carries the same refusal: one certification, one refusal function."""
+    from rmgpy.kmc import emit
+
+    records = _records()
+    _check(tmp_path, monkeypatch, records, certify=_certify(refuse={"event-0"}),
+           record_key=lambda _record: ("found",), prior={"event-0"})
+    named = json.loads(capsys.readouterr().out.splitlines()[-1])["named_refused_by_reason"]
+    certified, store, _replacements = emit.certified_records(records, {}, object())
+    emitter = emit.Emitter(tmp_path / "artifact.json", "database", {})
+    emitter.state.update(store=store, by_id={r["event_id"]: r for r in certified},
+                         certifier=object(), fam={"family": object()}, rates_by_grid=None)
+    row = emitter.run_record(certified[0])
+    assert row["refusal"] == "refused:record_status"
+    assert named == {row["payload"]["refusal"]["reason"]: 1}
