@@ -712,7 +712,7 @@ def load_database(families, path):
                      kinetics_families=list(families), kinetics_depositories=["training"])
     db.load_thermo(str(path / "input/thermo"), thermo_libraries=["primaryThermoLibrary"],
                    depository=True)
-    prepare_rate_rules(db.kinetics, db.thermo, verbose=True)
+    prepare_rate_rules(db.kinetics, db.thermo)
     return db
 
 

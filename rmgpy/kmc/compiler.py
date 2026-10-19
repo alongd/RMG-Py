@@ -427,9 +427,13 @@ def prepare_rate_rules(
     thermo_database,
     *,
     kinetics_depositories=("training",),
-    verbose=True,
+    verbose=False,
 ):
     """Apply RMG.load_database's non-ATG rate-rule preparation once per family.
+
+    Averaged rules keep RMG's short comments (``verboseComments`` defaults to
+    False): a verbose average nests every child's comment, so it grows
+    combinatorially up a hand-built tree.  Comments carry no rate.
 
     Training reactions must not inherit model-growth species/polymer limits.
     Keep the caller's global input and constraints intact, including on failure.
@@ -4402,7 +4406,6 @@ class EventSetCompiler:
             kinetics_database,
             thermo_database,
             kinetics_depositories=tuple(kinetics_depositories),
-            verbose=True,
         )
         self.database_provenance = database_provenance(
             self.database_path, rmg_database_sha

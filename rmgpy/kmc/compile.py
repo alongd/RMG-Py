@@ -131,7 +131,7 @@ def compile_artifact(
         depository=True,
     )
     print("preparing non-auto-generated rate rules from training", flush=True)
-    prepare_rate_rules(database.kinetics, database.thermo, verbose=True)
+    prepare_rate_rules(database.kinetics, database.thermo)
     database_commit = resolve_database_declaration(request.database_sha)
     generation_provider = (
         generation_provider_factory(database.kinetics.generate_reactions_from_families)
