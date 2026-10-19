@@ -8571,6 +8571,10 @@ def write_polymer_pools_sidecar(
     str
         Absolute path of the written file.
     """
+    path = os.path.join(output_dir, filename)
+    ticket = _ticket
+    if ticket is None:
+        ticket = _take_sidecar_write_ticket(path)
     payload = build_polymer_moments_artifact(
         pool_registry,
         core_species=core_species,
@@ -8589,8 +8593,7 @@ def write_polymer_pools_sidecar(
         solver_gas_masks=solver_gas_masks,
         stale_unreadable=stale_unreadable,
     )
-    path = os.path.join(output_dir, filename)
-    _write_json_atomically(path, payload, default=str, ticket=_ticket)
+    _write_json_atomically(path, payload, default=str, ticket=ticket)
     return path
 
 
@@ -8599,8 +8602,11 @@ def write_refused_polymer_pools_sidecar(output_dir, reason, species=None,
                                         _ticket=None):
     """Atomically replace a previous sidecar with a named refusal."""
     path = os.path.join(output_dir, filename)
+    ticket = _ticket
+    if ticket is None:
+        ticket = _take_sidecar_write_ticket(path)
     payload = {"refused": True, "reason": str(reason), "species": list(species or ())}
-    _write_json_atomically(path, payload, ticket=_ticket)
+    _write_json_atomically(path, payload, ticket=ticket)
     return path
 
 
