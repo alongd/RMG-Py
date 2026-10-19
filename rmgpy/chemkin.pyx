@@ -510,7 +510,7 @@ _KEYWORDS = ('LOW', 'HIGH', 'REV', 'TROE', 'SRI', 'PLOG', 'TCHEB', 'PCHEB', 'CHE
 
 def _is_float(token):
     try:
-        float(token)
+        float(token.replace('D', 'E').replace('d', 'e'))
     except ValueError:
         return False
     return True
@@ -1424,8 +1424,9 @@ def _is_end_keyword(line):
     return len(tokens) > 0 and tokens[0].upper() == 'END'
 
 
-_BLOCK_HEADERS = ('ELEMENTS', 'ELEM', 'SPECIES', 'SPEC', 'SITE', 'THERMO', 'THERM', 'THER', 'REACTIONS', 'REAC',
-                  'TRANSPORT', 'TRAN')
+_REACTION_QUANTITY_UNITS = ('MOLECULES', 'MOLES', 'MOLE', 'MOL', 'MOLECULE')
+_REACTION_ENERGY_UNITS = ('KCAL/MOLE', 'KCAL/MOL', 'CAL/MOLE', 'CAL/MOL', 'KJ/MOLE', 'KJ/MOL', 'J/MOLE',
+                          'J/MOL', 'KELVINS')
 
 
 def _is_thermo_entry_first_line(text):
@@ -1444,6 +1445,42 @@ def _is_thermo_entry_first_line(text):
     return True
 
 
+def _site_header_option(token):
+    """Whether a token is a SITE header's name or site-density option."""
+    upper = token.upper()
+    if upper.startswith('SDEN/') and upper.endswith('/'):
+        return _is_float(token[token.find('/') + 1:-1])
+    return token.startswith('/') and token.endswith('/') and len(token) > 2
+
+
+def _block_header(line):
+    """Return a syntactically valid block header's first token, else empty.
+
+    Header options are deliberately recognised per block so that species or
+    reaction records which merely begin with a keyword do not open a block.
+    """
+    text = remove_comment_from_line(line)[0]
+    tokens = text.split()
+    if not tokens or _is_thermo_entry_first_line(text):
+        return ''
+    head = tokens[0].upper()
+    options = tokens[1:]
+    if head in ('ELEMENTS', 'ELEM'):
+        return head if all(option.upper() == 'END' or _is_element_record(option) for option in options) else ''
+    if head in ('SPECIES', 'SPEC', 'TRANSPORT', 'TRAN'):
+        return head if not options else ''
+    if head in ('THERMO', 'THERM', 'THER'):
+        return head if not options or (len(options) == 1 and options[0].upper() == 'ALL') else ''
+    if head in ('REACTIONS', 'REAC'):
+        allowed = _REACTION_QUANTITY_UNITS + _REACTION_ENERGY_UNITS
+        return head if all(option.upper() in allowed for option in options) else ''
+    if head == 'SITE':
+        return head if all(_site_header_option(option) for option in options) else ''
+    if head.startswith('SITE/') and head.endswith('/'):
+        return head if all(_site_header_option(option) for option in options) else ''
+    return ''
+
+
 def _opens_block(line):
     """Whether a Chemkin line opens a block: decided by its first token
     (comments removed), a block header in any case (SITE also as
@@ -1451,14 +1488,7 @@ def _opens_block(line):
     first line of a thermo entry by its full layout
     (``_is_thermo_entry_first_line``: an entry of a species named REAC opens
     nothing)."""
-    text = remove_comment_from_line(line)[0]
-    tokens = text.split()
-    if not tokens:
-        return False
-    head = tokens[0].upper()
-    if not (head in _BLOCK_HEADERS or head.startswith('SITE/')):
-        return False
-    return not _is_thermo_entry_first_line(text)
+    return bool(_block_header(line))
 
 
 def _unterminated_block(header, line):
@@ -1473,21 +1503,19 @@ def _block_at_end_of_file(header, species=None):
     return ChemkinError('The {0} block ends at the end of the file{1}, before its END'.format(header, where))
 
 
-def _opens_block_inside_species(f, line):
+def _opens_block_inside_species(f, line, species_dict):
     """Whether ``line`` starts a block instead of naming a species.
 
-    A keyword is a header only when it is alone on its line and the next
-    meaningful line has that block's distinctive content signature.  The
-    peek restores the stream position so that species parsing keeps every
-    line it examines.
+    A keyword plus only recognised header options is a candidate.  A declared
+    lone keyword remains a species; otherwise the next meaningful line must
+    have the candidate block's distinctive content signature.  The peek
+    restores the stream position so species parsing keeps every line examined.
     """
     tokens = remove_comment_from_line(line)[0].split()
-    if len(tokens) != 1:
+    header = _block_header(line)
+    if not header:
         return False
-    header = tokens[0].upper()
-    if header in ('SPECIES', 'SPEC', 'SITE') or header.startswith('SITE/'):
-        return False
-    if header not in _BLOCK_HEADERS:
+    if len(tokens) == 1 and _declared_species(tokens[0], species_dict) is not None:
         return False
 
     position = f.tell()
@@ -1510,11 +1538,25 @@ def _has_block_content_signature(header, text):
         return (len(tokens) == 7 and tokens[1] in ('0', '1', '2')
                 and all(_is_float(token) for token in tokens[2:]))
     if header in ('ELEMENTS', 'ELEM'):
-        try:
-            return bool(tokens) and all(get_element(token) for token in tokens)
-        except ElementError:
-            return False
+        return bool(tokens) and all(_is_element_record(token) for token in tokens)
+    if header == 'SITE' or header.startswith('SITE/'):
+        return bool(tokens) and all(_site_header_option(token) and token.upper().startswith('SDEN/')
+                                    for token in tokens)
     return False
+
+
+def _is_element_record(token):
+    """Whether a token is an element symbol with an optional atomic weight."""
+    match = re.match(r'^([A-Za-z][A-Za-z]?)(?:/([^/]+)/)?$', token)
+    if not match or (match.group(2) is not None and not _is_float(match.group(2))):
+        return False
+    symbol = match.group(1).capitalize()
+    if symbol in ('D', 'T'):
+        return True
+    try:
+        return bool(get_element(symbol))
+    except ElementError:
+        return False
 
 
 def read_species_block(f, species_dict, species_aliases, species_list):
@@ -1539,7 +1581,7 @@ def read_species_block(f, species_dict, species_aliases, species_list):
         line = f.readline()
         if line == '':
             raise _block_at_end_of_file('SITE' if first_token.startswith('SITE') else 'SPECIES')
-        if _opens_block_inside_species(f, line):
+        if _opens_block_inside_species(f, line, species_dict):
             raise _unterminated_block('SITE' if first_token.startswith('SITE') else 'SPECIES', line)
         # If the line contains only one species, and also contains
         # a comment with only one token, assume that token is 
@@ -1792,6 +1834,10 @@ def read_reactions_block(f, species_dict, read_comments=True):
     line = f.readline()
     ended = False
     while line != '':
+        header = _block_header(line)
+        if header:
+            raise _unterminated_block('REACTIONS', line)
+
         line_starts_with_comment = line.lstrip().startswith('!') or line.lstrip().startswith('//')
         line, comment = remove_comment_from_line(line)
         line = line.strip()
