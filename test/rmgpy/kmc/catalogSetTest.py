@@ -275,13 +275,14 @@ def selection_of(monkeypatch, tmp_path, artifact_families, **args):
     artifact = tmp_path / "artifact.json"
     artifact.write_text("{}")
     monkeypatch.setattr(emit, "Emitter", FakeEmitter)
-    monkeypatch.setattr(emit, "load_roster", lambda path: SimpleNamespace(sha256="r" * 64))
+    monkeypatch.setattr(emit, "load_roster", lambda path: SimpleNamespace(sha256="r" * 64,
+                                                                          digests=lambda: {}))
     monkeypatch.setattr(emit, "build_reference_systems", lambda roster: ({}, []))
     monkeypatch.setattr(emit, "git_head", lambda path: "d" * 40)
     out = tmp_path / "rows.jsonl"
     database = args.pop("database", "/db")
     ns = SimpleNamespace(roster="r", artifact=str(artifact), database=database, out=str(out), chunk=None,
-                         family=None, limit=None, no_contexts=True)
+                         family=None, limit=None, no_contexts=True, legacy_artifact=True)
     for k, v in args.items():
         if k != "whole_header":
             setattr(ns, k, v)

@@ -7,6 +7,11 @@ reference-case index, computes each firing record's member key, and reports
 whether that key has a provider.  Every selected record is one of: a named
 refusal (production's own upstream refusal, never emitted), found, or
 uncovered; the exit status is non-zero when any record is uncovered.
+
+The deck must be the declaration the artifact was compiled from: a carried
+declaration digest that differs is refused by name, and an artifact carrying
+none (a compile without a deck) is refused unless ``--legacy-artifact``
+(``emit.bind_artifact``, as emit binds its roster), before anything is built.
 """
 
 import argparse
@@ -77,6 +82,8 @@ def check(args):
     if problems:
         raise RuntimeError("; ".join(problems[:5]))
     deck = read_deck(args.deck)
+    bound_by = emit.bind_artifact(artifact, deck.digests(), f"the deck {args.deck}",
+                                  args.legacy_artifact)
     provider = emit.match_provider(deck.spec.repeat_unit)
     roster = emit.reference_systems(deck.spec, provider, dps=reference_dps(all_records, args.dps))
     if args.roster_out:
@@ -157,6 +164,8 @@ def check(args):
         "reference_systems": len(systems),
         "written_systems": len(roster.systems),
         "roster_sha256": roster.sha256,
+        "artifact_bound_by": list(bound_by),
+        "legacy_artifact": not bound_by,
     }
     if old is not None:
         summary.update(prior_unmapped_in_rows=len(old), prior_unmapped_selected=len(required),
@@ -176,6 +185,9 @@ def parse_args():
     parser.add_argument("--dps", type=lambda value: tuple(int(x) for x in value.split(",")),
                         default=(1, 2, 3, 8))
     parser.add_argument("--limit", type=int)
+    parser.add_argument(emit.LEGACY_ARTIFACT_FLAG, action="store_true",
+                        help="check an artifact that carries no declaration digest (a compile "
+                             "without --deck) against the deck, unbound")
     return parser.parse_args()
 
 

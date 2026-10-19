@@ -5,7 +5,7 @@ gate-checked ``kmc-template-catalog/1`` file the melt engine can load.
 Two steps, both from the command line::
 
     python -m rmgpy.kmc.emit ARTIFACT ROSTER --database DB --out rows.jsonl
-        [--chunk i/n] [--family F]... [--limit N] [--no-contexts]
+        [--chunk i/n] [--family F]... [--limit N] [--no-contexts] [--legacy-artifact]
     python -m rmgpy.kmc.emit assemble ROWS... --out catalog.json [--database DB]
     python -m rmgpy.kmc.emit catalog-set CATALOG... --out SET.json
 
@@ -31,6 +31,13 @@ participant is ``{"chain": {"owner", "dp", "head", "tail", "radical_unit"}}``
 ``{"smiles": ...}`` or ``{"adjacency_list": ...}``.  The declared repeat unit is
 rebuilt by a declaration provider registered from the embedded polymer; each chain's vocabulary
 owner must be registered and declare that repeat unit, or it is refused (``refused:owner``).
+
+**Binding.** An artifact compiled from a deck carries the declaration's
+``chemistry_sha256`` and ``declaration_sha256`` (``rmgpy.kmc.run``) in
+``provenance.proxy_source``; the roster's embedded declaration must have the
+same ones, or the run is refused (``refused:declaration``) before anything is
+built, whatever the flags.  An artifact carrying neither (a compile without a
+deck) is refused (``refused:unbound_artifact``) unless ``--legacy-artifact``.
 
 **Assemble.** Merge the shards, then ``resolve_collisions``, ``derive_weights``
 and ``check_cycles`` over the whole set.  The catalog is written even when a gate
@@ -94,6 +101,14 @@ class Roster:
     sha256: str
     path: str
 
+    def digests(self) -> dict:
+        """The digests of the declaration the roster carries (``run``'s
+        ``chemistry_sha256`` and ``declaration_sha256``; a deck of the same
+        declaration has the same ones)."""
+        from rmgpy.kmc.run import chemistry_sha256, declaration_sha256
+        return {"chemistry_sha256": chemistry_sha256(self.polymer),
+                "declaration_sha256": declaration_sha256(self.polymer)}
+
 
 @dataclass
 class Participant:
@@ -123,6 +138,53 @@ def load_roster(path) -> Roster:
         raise RosterRefusal("refused:roster", "systems must map a name to a participant list")
     declared_provider(polymer)
     return Roster(polymer, systems, hashlib.sha256(raw).hexdigest(), str(path))
+
+
+# the declaration digests an artifact compiled from a deck carries in
+# ``provenance.proxy_source`` and a deck or roster must match
+BINDING_KEYS = ("chemistry_sha256", "declaration_sha256")
+LEGACY_ARTIFACT_FLAG = "--legacy-artifact"
+
+
+class ArtifactBindingRefusal(ValueError):
+    """An artifact that cannot be combined with the given declaration
+    (``status`` names why)."""
+
+    def __init__(self, status, reason):
+        super().__init__(f"{status}: {reason}")
+        self.status = status
+        self.reason = reason
+
+
+def artifact_declaration(artifact: dict) -> dict:
+    """The declaration digests the artifact's proxies were built from (empty
+    for a compile without a deck: the built-in proxy set or no ``proxy_source``)."""
+    provenance = artifact.get("provenance")
+    source = provenance.get("proxy_source") if isinstance(provenance, dict) else None
+    source = source if isinstance(source, dict) else {}
+    return {key: source[key] for key in BINDING_KEYS if key in source}
+
+
+def bind_artifact(artifact: dict, digests: dict, against: str, legacy_artifact: bool = False) -> tuple:
+    """The declaration digests the artifact carries and ``digests`` (those of
+    ``against``, a deck or roster) match.  A carried digest that differs is
+    refused whatever the flags; an artifact carrying none (a legacy compile)
+    is refused unless ``legacy_artifact``, and then binds nothing."""
+    carried = artifact_declaration(artifact)
+    differ = [f"{key} {str(value)[:16]}... against {str(digests.get(key))[:16]}..."
+              for key, value in carried.items() if value != digests.get(key)]
+    if differ:
+        raise ArtifactBindingRefusal(
+            "refused:declaration",
+            f"the artifact's declaration digests differ from {against}'s ({'; '.join(differ)}): "
+            "the artifact was compiled from another declaration")
+    if not carried and not legacy_artifact:
+        raise ArtifactBindingRefusal(
+            "refused:unbound_artifact",
+            f"the artifact carries no declaration digest ({' / '.join(BINDING_KEYS)} in "
+            f"provenance.proxy_source), so nothing ties it to {against}'s declaration; pass "
+            f"{LEGACY_ARTIFACT_FLAG} to use it unbound")
+    return tuple(carried)
 
 
 def roster_bytes(roster: Roster) -> bytes:
@@ -942,6 +1004,14 @@ def is_partial_selection(only, limit, artifact_records, selected_records) -> boo
 
 def run_emit(args):
     roster = load_roster(args.roster)
+    # the roster's declaration must be the artifact's, before anything is built
+    try:
+        bound_by = bind_artifact(json.loads(Path(args.artifact).read_text()), roster.digests(),
+                                 f"the roster {args.roster}", args.legacy_artifact)
+    except ArtifactBindingRefusal as error:
+        print("REFUSED", error, flush=True)
+        return 1
+    print("BINDING", {"bound_by": list(bound_by), "legacy_artifact": not bound_by}, flush=True)
     systems, refusals = build_reference_systems(roster)
     for refusal in refusals:
         print("ROSTER", json.dumps(refusal), flush=True)
@@ -1374,6 +1444,9 @@ def main(argv=None):
                              "they are all the artifact's records)")
     parser.add_argument("--limit", type=int, default=None, help="at most N records (a partial catalog)")
     parser.add_argument("--no-contexts", action="store_true")
+    parser.add_argument(LEGACY_ARTIFACT_FLAG, action="store_true",
+                        help="emit an artifact that carries no declaration digest (a compile "
+                             "without --deck) against the roster's declaration, unbound")
     return run_emit(parser.parse_args(argv[1:] if argv and argv[0] == "run" else argv))
 
 
