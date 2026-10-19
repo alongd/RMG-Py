@@ -2322,3 +2322,144 @@ def test_the_retained_rule_does_not_follow_the_ids_when_labels_look_like_ids():
         (rep,) = [p for p in out if base_template(p)["status"] == "emitted"]
         kept.add(rep["rate"]["provenance"]["selection"]["entry"])
     assert len(kept) == 1
+
+
+# --------------------------------------------------------------------------
+# I-188: partial payloads, duplicate reciprocal copies, T_ch = 0 off the record
+# --------------------------------------------------------------------------
+I188_PAYLOADS = HERE / "fixtures" / "i188_reciprocal_partial_payloads.json"
+
+
+def _i188_payloads():
+    """Four records of a full emit: two reciprocal record pairs whose base
+    templates are the same two executables (each forward copy on both
+    forward records, each reverse copy on both reverse records), two of the
+    records ``partial`` with a base template refused at emission (no key)."""
+    return json.loads(I188_PAYLOADS.read_text())
+
+
+def _keyless(payloads):
+    return [t for p in payloads for t in p["templates"]
+            if t["status"] == "refused" and "key" not in t]
+
+
+def _emitted_keys(payloads):
+    from collections import Counter
+    return Counter(t["key"] for p in payloads for t in p["templates"] if t["status"] == "emitted")
+
+
+def test_a_keyless_refused_template_of_a_partial_payload_resolves_by_status():
+    """A template refused at emission was never cut, so it carries no key and
+    takes no part in a collision unit; resolving a catalog that holds one
+    reads its status, not its missing key."""
+    payloads = _i188_payloads()
+    refused = _keyless(payloads)
+    assert refused and all(t["base"] for t in refused)
+    assert {p["status"] for p in payloads} == {"partial", "emitted"}
+    out, table = te.resolve_collisions(payloads)
+    assert _keyless(out) == refused
+    assert table and {c["disposition"] for c in table} == {"merged"}
+
+
+def test_duplicate_copies_of_a_reciprocal_template_merge_to_one_loaded_template():
+    payloads = _i188_payloads()
+    copies = _emitted_keys(payloads)
+    duplicated = {k for k, n in copies.items() if n > 1}
+    assert len(duplicated) == 2
+    out, table = te.resolve_collisions(payloads)
+    assert {c["key"] for c in table} == duplicated
+    loaded = _emitted_keys(out)
+    assert set(loaded) == set(copies) and set(loaded.values()) == {1}
+    merged = [t for p in out for t in p["templates"] if t["status"] == "merged"]
+    assert sorted(t["key"] for t in merged) == sorted(duplicated)
+
+
+@pytest.fixture(scope="module")
+def i188_balance(rmg):
+    """The fixture family's RMG counter and the independent thermo Kc."""
+    import channelsTest as ct
+    from rmgpy.kmc.reference_thermo import GasPhaseRMGReferenceThermo
+    return rmg[2], te.ThermoKc(GasPhaseRMGReferenceThermo(ct.database().thermo,
+                                                          "test-only-database-commit"))
+
+
+def _derived_pairs(payloads):
+    """{(record, key) of a derived template: (record, key) of its primary}."""
+    return {(p["record_event_id"], t["key"]): (t["derived"]["primary"]["record"],
+                                               t["derived"]["primary"]["key"])
+            for p in payloads for t in p["templates"]
+            if t["status"] == "emitted" and t.get("derived")}
+
+
+def test_merged_reciprocal_copies_derive_one_reverse_from_one_primary(i188_balance):
+    """After merging, every loaded template of a reciprocal record pair has
+    exactly one inverse partner: one side is primary, the other derived
+    from it, as a bijection between the two records' loaded templates."""
+    counter, _kc = i188_balance
+    out = te.derive_weights(te.resolve_collisions(_i188_payloads())[0], counter=counter)
+    by_record = {p["record_event_id"]: p for p in out}
+    pairs = _derived_pairs(out)
+    assert pairs
+    loaded = {(p["record_event_id"], t["key"]) for p in out for t in p["templates"]
+              if t["status"] == "emitted"}
+    primaries = list(pairs.values())
+    assert len(set(primaries)) == len(primaries)
+    assert set(pairs) | set(primaries) == loaded and not set(pairs) & set(primaries)
+    for (rid, _key), (prid, _pkey) in pairs.items():
+        assert by_record[rid]["reverse_of"] == prid
+
+
+def test_a_template_with_several_inverse_partners_stays_independent(i188_balance):
+    """Unmerged, each forward copy is undone by two identical reverse
+    copies: no single primary exists, so neither direction is derived."""
+    counter, _kc = i188_balance
+    payloads = _i188_payloads()
+    duplicated = {k for k, n in _emitted_keys(payloads).items() if n > 1}
+    out = te.derive_weights(payloads, counter=counter)
+    assert not [key for _rid, key in _derived_pairs(out) if key in duplicated]
+
+
+def test_a_derived_reverse_balances_off_the_grid_within_the_cycle_tolerance(i188_balance):
+    """The merged catalog passes its own cycle check at the grid, the
+    midpoints and the random off-grid temperatures at ``CYCLE_RTOL``: the
+    derived weight evaluates Kc exactly at T."""
+    counter, kc = i188_balance
+    out = te.derive_weights(te.resolve_collisions(_i188_payloads())[0], counter=counter)
+    out, table = te.check_cycles(out, counter=counter, kc=kc, complete=True,
+                                 extra_temperatures=(312.5, 412.5, 612.5))
+    assert len(table) == 2 and {r["status"] for r in table} == {"ok"}, table
+    assert max(r["max_offgrid_error"] for r in table) <= te.CYCLE_RTOL
+    assert max(r["max_ratio_error"] for r in table) <= te.CYCLE_RTOL
+    assert te.cycle_gates(table, out) == []
+
+
+class _ChannelUpTo(ToyCounter):
+    """The toy oracle whose channel is empty on a witness of more than ``n``
+    carbons: RMG reads no move of the record's channel there."""
+
+    def __init__(self, n):
+        super().__init__()
+        self.n = n
+
+    def channel(self, family, molecules, direction, pathway, product_species):
+        carbons = sum(1 for m in molecules for x in rm.molecule_rows(m).values() if x[0] == "C")
+        if carbons > self.n:
+            self.calls += 1
+            return te.RmgChannel((), 0, (), ())
+        return super().channel(family, molecules, direction, pathway, product_species)
+
+
+def test_a_witness_outside_the_record_channel_refuses_the_template():
+    """T_ch = 0 on a locality witness where RMG too reads no move of the
+    record's channel is a refusal of that template, named with the witness,
+    not a compile error of the record."""
+    out = emit(homolysis(10, (3, 4)), counter=_ChannelUpTo(10))
+    t = base_template(out)
+    assert t["status"] == "refused"
+    assert t["refusal"]["status"] == "refused:zero_transitions"
+    assert "port 0:" in t["refusal"]["reason"] and "rmg_moves: 0" in t["refusal"]["reason"]
+    rows = {r["label"]: r for r in t["locality"]["rows"]}
+    assert rows["emitted"]["status"] == "ok"
+    assert rows["port 0:head +1"]["status"] == "refused:zero_transitions"
+    assert out["status"] == "refused" and "refused:zero_transitions" in out["refusal"]["reason"]
+    te.validate_payload(out)

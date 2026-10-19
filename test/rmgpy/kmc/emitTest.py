@@ -1146,3 +1146,47 @@ def test_load_services_records_its_database_digest(monkeypatch):
     import rmgpy.kmc.reference_thermo as rt
     monkeypatch.setattr(rt, "GasPhaseRMGReferenceThermo", lambda thermo, label: None)
     assert emit.load_services("/db", []).database_content_sha256 == "d" * 64
+
+
+# --------------------------------------------------------------------------
+# I-188: a catalog with partial payloads merges; a raising gate refuses it
+# --------------------------------------------------------------------------
+def i188_rows():
+    """Rows of four records of a full emit (``i188_reciprocal_partial_payloads``):
+    two reciprocal record pairs sharing two base templates, two records
+    partial with a base template refused at emission (no key)."""
+    payloads = json.loads((HERE / "fixtures" / "i188_reciprocal_partial_payloads.json").read_text())
+    rows = [{"event_id": p["record_event_id"][:24], "family": p["family"],
+             "orientation": p["orientation"], "status": p["status"], "refusal": None,
+             "payload": p} for p in payloads]
+    for row in rows:
+        row["midpoint"] = ok_midpoint(row)
+    return rows
+
+
+def test_partial_payloads_with_keyless_refused_templates_assemble_merged(tmp_path, balance_stubs):
+    rows = i188_rows()
+    assert any(t["status"] == "refused" and "key" not in t
+               for r in rows for t in r["payload"]["templates"])
+    catalog = run(shards(tmp_path, n=1, rows=rows, artifact_records=len(rows)))
+    failures = catalog["gates"]["failures"]
+    assert not [f for f in failures if f.startswith("catalog consistency")], failures
+    collisions = catalog["gates"]["collisions"]
+    assert collisions["keys"] == collisions["merged"] == 2 and collisions["refused"] == 0
+    keys = [t["key"] for p in catalog["payloads"] for t in p["templates"]]
+    assert keys and len(keys) == len(set(keys))
+    assert balance_stubs["derive"] == 1
+
+
+def test_a_raising_collision_resolution_refuses_the_catalog(tmp_path, monkeypatch, balance_stubs):
+    """No silent fallback to the unmerged payloads: the error is named and
+    nothing loads (no balance check runs on unmerged copies)."""
+    def split(payloads):
+        raise te.ReciprocalSplitError("reciprocal split: test")
+    monkeypatch.setattr(te, "resolve_collisions", split)
+    catalog = run(shards(tmp_path))
+    failures = catalog["gates"]["failures"]
+    assert any(f.startswith("catalog consistency: ReciprocalSplitError: reciprocal split: test")
+               for f in failures), failures
+    assert catalog["payloads"] == [] and catalog["complete"] is False
+    assert balance_stubs["derive"] == balance_stubs["cycles"] == 0
