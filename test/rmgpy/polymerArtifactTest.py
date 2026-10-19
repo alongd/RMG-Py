@@ -1342,16 +1342,20 @@ class TestSolverGasMaskRecord:
         assert core_topology_signature([_spc("CC", "X", index=13)], []) == \
             core_topology_signature([_spc("CC", "X", index=13)], [])
 
-    def test_a_structure_that_cannot_be_read_is_stale_by_name(self, tmp_path):
+    def test_a_structure_that_cannot_be_read_is_refused_by_name(self, tmp_path):
         """Spar r160 item 3: a species without a readable structure equals
-        nothing: stale, and the sidecar names it."""
+        nothing, so the sidecar is refused and names it."""
         rmg, _engines, model = self._rmg_with_engine(tmp_path, extra=self._species("CC"))
         blank = Species(label="X")
         blank.index = 13
         model.core.species[-1] = blank
-        conventions = self._saved(rmg, tmp_path)
-        assert conventions.get("stale_topology") is True and "solver_gas_mask" not in conventions
-        assert conventions.get("stale_topology_unreadable_structures") == ["X(13)"]
+        rmg.save_everything()
+        with open(tmp_path / "polymer_pools.json") as fh:
+            assert json.load(fh) == {
+                "refused": True,
+                "reason": "unreadable_core_structure",
+                "species": ["X(13)"],
+            }
 
     def test_a_polymer_reactor_after_a_gas_reactor_is_reactor_2(self, tmp_path):
         """Spar r156 item 1: the mask belongs to the second reaction system
