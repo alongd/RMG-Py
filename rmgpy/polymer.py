@@ -143,10 +143,18 @@ class _SidecarWriteTicket:
     sequence: int
 
 
+class PolymerPoolsSidecarInvalidationError(RuntimeError):
+    """A failed standalone write could not invalidate its prior sidecar."""
+
+
 # Cross-process saves to one directory remain out of scope and must be
 # serialized by their caller.
 _SIDECAR_WRITE_LOCK = threading.Lock()
 _SIDECAR_WRITE_STATES = defaultdict(_SidecarWriteState)
+
+_FAILED_SIDECAR_REFUSAL = (
+    '{"refused":true,"reason":"sidecar_write_failed","species":[]}\n'
+)
 
 
 class PolymerCrosslinkError(Exception):
@@ -8444,8 +8452,8 @@ def _take_sidecar_write_ticket(path):
         return _SidecarWriteTicket(target_path, state.issued)
 
 
-def _write_json_atomically(path, payload, default=None, ticket=None):
-    """Write JSON through a unique, durable temp file beside ``path``."""
+def _write_sidecar_atomically(path, write_payload, ticket=None):
+    """Publish a sidecar through a unique, durable temp file."""
     path = os.path.abspath(path)
     if ticket is None:
         ticket = _take_sidecar_write_ticket(path)
@@ -8460,7 +8468,7 @@ def _write_json_atomically(path, payload, default=None, ticket=None):
     )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2, default=default)
+            write_payload(fh)
             fh.flush()
             os.fsync(fh.fileno())
         with _SIDECAR_WRITE_LOCK:
@@ -8479,6 +8487,59 @@ def _write_json_atomically(path, payload, default=None, ticket=None):
     finally:
         if os.path.exists(temp_path):
             os.unlink(temp_path)
+
+
+def _write_json_atomically(path, payload, default=None, ticket=None):
+    """Write JSON through a unique, durable temp file beside ``path``."""
+    return _write_sidecar_atomically(
+        path,
+        lambda fh: json.dump(payload, fh, indent=2, default=default),
+        ticket=ticket,
+    )
+
+
+def _invalidate_failed_standalone_sidecar_write(path, ticket):
+    """Replace a failed standalone write with a fixed refusal or no file."""
+    path = os.path.abspath(path)
+    try:
+        _write_sidecar_atomically(
+            path,
+            lambda fh: fh.write(_FAILED_SIDECAR_REFUSAL),
+            ticket=ticket,
+        )
+        return
+    except Exception:
+        logging.warning(
+            "Failed to write fallback polymer_pools.json refusal",
+            exc_info=True,
+        )
+
+    stale_path = path + ".stale"
+    with _SIDECAR_WRITE_LOCK:
+        state = _SIDECAR_WRITE_STATES[path]
+        if state.issued > ticket.sequence:
+            return
+        try:
+            if os.path.exists(path):
+                os.replace(path, stale_path)
+            return
+        except Exception:
+            logging.warning(
+                "Failed to move stale polymer sidecar %s to %s; "
+                "removing the current path",
+                path,
+                stale_path,
+                exc_info=True,
+            )
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        except Exception as unlink_error:
+            raise PolymerPoolsSidecarInvalidationError(
+                "cannot invalidate polymer_pools.json at %s after fallback "
+                "refusal, rename, and unlink failed" % path
+            ) from unlink_error
 
 
 def write_polymer_pools_sidecar(
@@ -8572,28 +8633,34 @@ def write_polymer_pools_sidecar(
         Absolute path of the written file.
     """
     path = os.path.join(output_dir, filename)
+    standalone = _ticket is None
     ticket = _ticket
     if ticket is None:
         ticket = _take_sidecar_write_ticket(path)
-    payload = build_polymer_moments_artifact(
-        pool_registry,
-        core_species=core_species,
-        core_reactions=core_reactions,
-        configured_pool_labels=configured_pool_labels,
-        condensed_species=condensed_species,
-        monomer_routing_by_pool=monomer_routing_by_pool,
-        cantera_index_map=cantera_index_map,
-        iteration=iteration,
-        rmg_commit=rmg_commit,
-        initial_explicit_by_pool=initial_explicit_by_pool,
-        generation_mass_transfer=generation_mass_transfer,
-        generation_v_poly_m3=generation_v_poly_m3,
-        explicit_dp_species_by_pool=explicit_dp_species_by_pool,
-        stale_topology=stale_topology,
-        solver_gas_masks=solver_gas_masks,
-        stale_unreadable=stale_unreadable,
-    )
-    _write_json_atomically(path, payload, default=str, ticket=ticket)
+    try:
+        payload = build_polymer_moments_artifact(
+            pool_registry,
+            core_species=core_species,
+            core_reactions=core_reactions,
+            configured_pool_labels=configured_pool_labels,
+            condensed_species=condensed_species,
+            monomer_routing_by_pool=monomer_routing_by_pool,
+            cantera_index_map=cantera_index_map,
+            iteration=iteration,
+            rmg_commit=rmg_commit,
+            initial_explicit_by_pool=initial_explicit_by_pool,
+            generation_mass_transfer=generation_mass_transfer,
+            generation_v_poly_m3=generation_v_poly_m3,
+            explicit_dp_species_by_pool=explicit_dp_species_by_pool,
+            stale_topology=stale_topology,
+            solver_gas_masks=solver_gas_masks,
+            stale_unreadable=stale_unreadable,
+        )
+        _write_json_atomically(path, payload, default=str, ticket=ticket)
+    except Exception:
+        if standalone:
+            _invalidate_failed_standalone_sidecar_write(path, ticket)
+        raise
     return path
 
 
@@ -8602,11 +8669,21 @@ def write_refused_polymer_pools_sidecar(output_dir, reason, species=None,
                                         _ticket=None):
     """Atomically replace a previous sidecar with a named refusal."""
     path = os.path.join(output_dir, filename)
+    standalone = _ticket is None
     ticket = _ticket
     if ticket is None:
         ticket = _take_sidecar_write_ticket(path)
-    payload = {"refused": True, "reason": str(reason), "species": list(species or ())}
-    _write_json_atomically(path, payload, ticket=ticket)
+    try:
+        payload = {
+            "refused": True,
+            "reason": str(reason),
+            "species": list(species or ()),
+        }
+        _write_json_atomically(path, payload, ticket=ticket)
+    except Exception:
+        if standalone:
+            _invalidate_failed_standalone_sidecar_write(path, ticket)
+        raise
     return path
 
 
