@@ -1264,3 +1264,147 @@ def test_fallback_phi_cache_evicts_the_least_recently_used_entry(monkeypatch):
     r1 = engine.state.revision
     engine._fallback_phi(b)                      # one more entry: evicts the LRU, (b, r0)
     assert [k[:2] for k in engine._phi_fallback] == [(a, r0), (b, r1)]
+
+
+# --------------------------------------------------------------------------
+# I-202: a bond formed between two chains at a non-backbone atom (a ring
+# carbon off the declared head-to-tail path) is branching leak
+# --------------------------------------------------------------------------
+def _ring_members(state):
+    import networkx as nx
+    g = nx.Graph()
+    g.add_edges_from((a, b) for a, n in state.atoms.items() for b in n.edges if a < b)
+    return {a for cycle in nx.cycle_basis(g) for a in cycle}
+
+
+def _radical_window(state, atom, participant):
+    """The window of a radical ``atom`` as the matcher sees it: the atom and
+    its hydrogens closed, every heavy neighbour a port whose exterior is read
+    from the state, in the first resonance form that keeps the radical on
+    ``atom``.  Built from the state so a non-match cannot pass silently."""
+    from rmgpy.kmc import window_matcher as wm
+    from rmgpy.kmc.window_matcher import WindowAtom
+    cid = state.components.component_of(atom)
+    rows = next(r for r in (wm.form_rows(state, cid, f) for f in wm.component_forms(state, cid))
+                if r[atom][3] == 1)
+    ring = _ring_members(state)
+    element, _iso, charge, radical, lone_pairs, edges = rows[atom]
+    atoms = [WindowAtom(element, participant, radical=radical, charge=charge, lone_pairs=lone_pairs)]
+    bonds = []
+    for other, order in edges:
+        e, _i, c, r, lp, outer = rows[other]
+        if e == "H":
+            atoms.append(WindowAtom("H", participant))
+        else:
+            exterior = tuple((o, rows[x][0], x in ring) for x, o in outer if x != atom)
+            atoms.append(WindowAtom(e, participant, "port", exterior, charge=c, radical=r,
+                                    lone_pairs=lp))
+        bonds.append((0, len(atoms) - 1, order))
+    return atoms, bonds
+
+
+def _recombination(state, left, right, name):
+    """A recombination template joining the radical ``left`` (participant 0)
+    to the radical ``right`` (participant 1)."""
+    from rmgpy.kmc.window_matcher import AtomEdit, BondEdit, Template
+    a0, b0 = _radical_window(state, left, 0)
+    a1, b1 = _radical_window(state, right, 1)
+    n = len(a0)
+    bonds = b0 + [(i + n, j + n, o) for i, j, o in b1]
+    return Template(name, "toy_recombination", a0 + a1, bonds,
+                    [BondEdit(0, n, 1), AtomEdit(0, radical=0), AtomEdit(n, radical=0)],
+                    weight=1.0e-2)
+
+
+def _pair_counts(engine, left, right, name):
+    """(allowed, leak) transition counts of class ``name`` between the
+    components of ``left`` and ``right``; refused if the class never matched."""
+    comps = engine.state.components
+    key = tuple(sorted((comps.component_of(left), comps.component_of(right))))
+    index = [t.name for t in engine.templates].index(name)
+    rate = engine.pairs.get(key)
+    found = [(a, l) for ci, a, l in (rate.classes if rate else ()) if ci == index]
+    assert found and sum(found[0]) > 0, f"{name} did not match the prepared radicals"
+    return found[0]
+
+
+def _novolac_spec(counts):
+    from rmgpy.kmc.run import read_deck
+    deck = Path(__file__).resolve().parent / "fixtures" / "decks" / "novolac_deck.py"
+    mapping = read_deck(str(deck)).spec.as_mapping()
+    mapping["initial_ensemble"] = {"dp_counts": dict(counts)}
+    mapping["transport_model"] = {"met": S.pe_met()}
+    return S.LinearHomopolymerSpec.from_mapping(mapping)
+
+
+def _off_path_engine(spec, off_path, partner, control=None):
+    """An engine over ``spec`` with one H stripped from each named atom
+    (``(chain, unit, key)``; unit 1 / tail cap for an end atom) and a
+    recombination class per pair: ``off_path`` + ``partner`` and, if given,
+    ``control`` (a pair of atoms that must stay allowed)."""
+    from rmgpy.kmc.melt_state import materialize
+    from meltStateTest import chain_atom
+    state = materialize(spec)
+    atom = {name: chain_atom(state, *where) for name, where in
+            dict(off_path=off_path, partner=partner, **(control or {})).items()}
+    for a in atom.values():
+        S.strip_h(state, a)
+    templates = [_recombination(state, atom["off_path"], atom["partner"], "off_path_recombination")]
+    if control:
+        templates.append(_recombination(state, atom["left"], atom["right"], "linear_recombination"))
+    engine = me.MeltEngine(spec, S.ToyCatalog(builder=lambda _t: list(templates)), 700.0,
+                           np.random.default_rng(3), state=state)
+    return engine, atom
+
+
+def test_off_path_ring_bond_between_two_ps_chains_is_branching_leak():
+    """Chain 0's para ring carbon (off the declared CH2-CH path) recombining
+    with chain 1's head CH2 end radical grafts chain 1 onto a phenyl ring: a
+    branch.  The control (chain 2's head CH2 end + chain 1's benzylic tail
+    end, a tail-to-head junction of two backbone atoms) stays allowed."""
+    spec = S.ps_spec({4: 3})
+    engine, atom = _off_path_engine(spec, (0, 2, "p4"), (1, 1, "c1"),
+                                    control={"left": (2, 1, "c1"), "right": (1, 4, "c2")})
+    assert not engine.state.origin[atom["off_path"]].is_backbone
+    allowed, leak = _pair_counts(engine, atom["off_path"], atom["partner"], "off_path_recombination")
+    assert (allowed, leak) == (0, 1)
+    assert engine.propensities().leak > 0.0
+    allowed, leak = _pair_counts(engine, atom["left"], atom["right"], "linear_recombination")
+    assert allowed > 0 and leak == 0
+
+
+def test_off_path_ring_bond_between_two_novolac_chains_is_branching_leak():
+    """Novolac: chain 0's ring carbon r4 (off the m-r2-r1-r6 path) recombining
+    with chain 1's tail-end aryl radical (r6, backbone) is a branch."""
+    spec = _novolac_spec({3: 2})
+    engine, atom = _off_path_engine(spec, (0, 2, "r4"), (1, 3, "r6"))
+    assert not engine.state.origin[atom["off_path"]].is_backbone
+    assert engine.state.origin[atom["partner"]].is_backbone
+    allowed, leak = _pair_counts(engine, atom["off_path"], atom["partner"], "off_path_recombination")
+    assert (allowed, leak) == (0, 1)
+
+
+def test_off_path_ring_closure_inside_one_chain_is_branching_leak():
+    """Unimolecular: chain 0's head CH2 end radical bonding to the para ring
+    carbon of its own unit 3 closes a ring through a phenyl (residues 1 to 3),
+    a structure the linear declaration does not have."""
+    from rmgpy.kmc.melt_state import materialize
+    from rmgpy.kmc.window_matcher import AtomEdit, BondEdit, Template
+    from meltStateTest import chain_atom
+    spec = S.ps_spec({4: 1})
+    state = materialize(spec)
+    ring, end = chain_atom(state, 0, 3, "p4"), chain_atom(state, 0, 1, "c1")
+    for a in (ring, end):
+        S.strip_h(state, a)
+    a0, b0 = _radical_window(state, ring, 0)
+    a1, b1 = _radical_window(state, end, 0)
+    n = len(a0)
+    template = Template("off_path_closure", "toy_recombination", a0 + a1,
+                        b0 + [(i + n, j + n, o) for i, j, o in b1],
+                        [BondEdit(0, n, 1), AtomEdit(0, radical=0), AtomEdit(n, radical=0)],
+                        weight=1.0e-2)
+    engine = me.MeltEngine(spec, S.ToyCatalog(builder=lambda _t: [template]), 700.0,
+                           np.random.default_rng(3), state=state)
+    index = [t.name for t in engine.templates].index("off_path_closure")
+    assert engine.uni_allowed[index] + engine.uni_leak[index] > 0, "the closure did not match"
+    assert engine.uni_allowed[index] == 0
