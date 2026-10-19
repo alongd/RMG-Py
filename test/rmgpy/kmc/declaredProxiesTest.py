@@ -216,6 +216,8 @@ def test_compile_with_a_deck_uses_its_declared_proxies_and_names_its_digest(monk
     assert seen["candidates"] == ("R_Recombination", "1,2_shiftC")
     assert seen["kwargs"]["family_candidates"] == ("R_Recombination", "1,2_shiftC")
     assert seen["discover"]["proxy_set_name"] == "declared proxy set"
+    # the built-in set's archived ring-junction oracle is not the declaration's
+    assert seen["kwargs"]["archived_junctions"] is False
     assert "PS" not in seen["kwargs"]["family_filter_reason"]
     source = seen["kwargs"]["proxy_source"]
     assert source["kind"] == "declaration"
@@ -231,6 +233,7 @@ def test_compile_without_a_deck_keeps_the_builtin_set_and_says_so(monkeypatch, t
     assert seen["kwargs"]["proxy_source"]["kind"] == "built-in"
     assert "family_candidates" not in seen["kwargs"]
     assert "proxy_set_name" not in seen["discover"]
+    assert "archived_junctions" not in seen["kwargs"]
 
 
 def test_the_cli_passes_the_deck(monkeypatch, tmp_path):
@@ -257,3 +260,16 @@ def test_the_artifact_provenance_names_the_proxy_source(tmp_path):
                                 proxy_source=source)
     _path, artifact = compiler.write_artifact(tmp_path)
     assert artifact["provenance"]["proxy_source"] == source
+
+
+def test_a_compiler_without_archived_junctions_adds_none(tmp_path):
+    """The archived ring-junction records are the built-in set's oracle: a
+    compiler told to leave them out adds none, R_Recombination or not."""
+    from compilerTest import _Database, _Molecule, _Reaction, _Species
+    from rmgpy.kmc.compiler import SiteProxy
+
+    molecule = _Molecule()
+    proxies = [SiteProxy("interior", [_Species(molecule)])]
+    off = EventSetCompiler(_Database(_Reaction(molecule)), proxies, ["R_Recombination"],
+                           temperature_grid=[600.0, 700.0], archived_junctions=False)
+    assert off._para_junction_records({}) == [] and off._ortho_junction_records({}) == []
