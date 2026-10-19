@@ -23,6 +23,7 @@ from rmgpy.polymer import (
     is_midrun_spawned_pool_daughter,
     validate_thermal_analysis_inputs,
     write_polymer_pools_sidecar,
+    write_refused_polymer_pools_sidecar,
 )
 from rmgpy.reaction import Reaction
 from rmgpy.species import Species
@@ -42,6 +43,19 @@ SCHEMA_1_0_KEYS = {
     "spawn_event_metadata": dict,
     "mu_indices": (dict, type(None)),
 }
+
+
+def test_refused_sidecar_atomically_replaces_prior_artifact(tmp_path):
+    """A failed later save cannot leave a plausible earlier artifact behind."""
+    path = tmp_path / "polymer_pools.json"
+    path.write_text('{"pools": [{"label": "old"}]}')
+    write_refused_polymer_pools_sidecar(
+        str(tmp_path), "core_topology_identity", ["bad(7)"])
+    assert json.loads(path.read_text()) == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["bad(7)"],
+    }
 
 
 def _spc(smiles, label, index=-1):
