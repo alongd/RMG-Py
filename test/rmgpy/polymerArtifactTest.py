@@ -155,6 +155,10 @@ def test_save_path_replaces_prior_sidecar_when_structure_is_unreadable(
     _save_good_sidecar(rmg, tmp_path)
     unreadable = Species(label="unreadable", index=8)
     rmg.reaction_model.core.species[-1] = unreadable
+    rmg.reaction_systems[0].core_topology_signature = core_topology_signature(
+        rmg.reaction_model.core.species,
+        rmg.reaction_model.core.reactions,
+    )
     _path, doc = _save_sidecar(rmg, tmp_path)
     assert doc == {
         "refused": True,
