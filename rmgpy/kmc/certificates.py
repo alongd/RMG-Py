@@ -712,11 +712,19 @@ class Certifier:
     channel sets (``max_channel_sets``; the resonance forms of a channel set
     live and leave with it), descents with their node semantics, depository
     searches, record certificates, RMG selection checks and per-family
-    tables (``max_entries`` each)."""
+    tables (``max_entries`` each).
+
+    ``domain`` and ``repeat``: the species domain and the depository growth
+    unit of RECORD certification (``certify_record``) and of record-level
+    recertification (``recertify``) when none is given there; None keeps the
+    module domain and ``REPEAT_UNIT_FORMULA`` (an artifact compiled from a
+    declaration passes the declaration's own: ``emit.certification_rules``)."""
 
     def __init__(self, families, resonance: str = "all", max_channel_sets: int = 64,
-                 max_entries: int = 4096):
+                 max_entries: int = 4096, domain=None, repeat=None):
         self.families = families
+        self.domain = domain
+        self.repeat = repeat
         self.resonance = resonance
         self.max_channel_sets = max_channel_sets
         self._channel_sets = _Bounded(max_channel_sets)
@@ -1147,7 +1155,7 @@ class Certifier:
             species = chm.SpeciesKeys()
             products = tuple(sorted(species(m) for m in others))
             cert = self.certify(family, mols, pathway=pathway, products=products,
-                                species=species)
+                                species=species, repeat=self.repeat, domain=self.domain)
             self._records[rkey] = cert
         binding = self._bind(record, family, side, mols, others, cert, prs, problems,
                               owner_orientation)
@@ -1248,8 +1256,9 @@ class Certifier:
         re-derived on this certifier's database, successfully bound and
         certified (``record_certificate_refusals``: the artifact check, one
         code path); its inner certificate is never unwrapped otherwise.  See
-        ``recertify_certificate`` (``domain``: the new certificate's domain;
-        a change of domain policy is refused)."""
+        ``recertify_certificate`` (``domain``: the new certificate's domain,
+        default the certifier's; the growth unit is the certifier's; a change
+        of domain policy is refused)."""
         record = _as_dict(record)
         old = certificate if certificate is not None else \
             self.certify_record(record, rate_owner=rate_owner)
@@ -1258,7 +1267,8 @@ class Certifier:
         if refusals:
             return _refused_recertification(refusals)
         return self.recertify_certificate(self.families[record["family"]], old["certificate"],
-                                          witness, atom_map, domain=domain)
+                                          witness, atom_map, repeat=self.repeat,
+                                          domain=self.domain if domain is None else domain)
 
     def recertify_certificate(self, family, old_cert, witness, atom_map, repeat=None,
                               domain=None) -> dict:

@@ -98,7 +98,7 @@ def check(args):
     families = sorted({record["family"] for record in all_records})
     database = emit.load_database(families, args.database)
     fam = database.kinetics.families
-    certifier = cm.Certifier(fam, max_channel_sets=8, max_entries=1024)
+    certifier = emit.make_certifier(fam, emit.certification_rules(artifact, deck.spec))
     certified, store, replacements = emit.certified_records(all_records, fam, certifier)
     by_id = {record["event_id"]: record for record in certified}
     records = certified if args.limit is None else certified[:args.limit]

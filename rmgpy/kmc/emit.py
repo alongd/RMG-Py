@@ -187,6 +187,31 @@ def bind_artifact(artifact: dict, digests: dict, against: str, legacy_artifact: 
     return tuple(carried)
 
 
+def certification_rules(artifact: dict, spec) -> dict:
+    """The ``certificates.Certifier`` rules an artifact is certified under:
+    for an artifact compiled from a deck (it carries the declaration's
+    digests, ``artifact_declaration``), the declaration's own species domain
+    (``windows.declared_interim`` over its elements, the domain its windows
+    are evaluated under) and its depository growth unit; for a legacy
+    artifact none (the v1 rules).  ``spec`` is the declaration bound to the
+    artifact (``bind_artifact``)."""
+    if not artifact_declaration(artifact):
+        return {}
+    if spec is None:
+        raise ArtifactBindingRefusal("refused:declaration",
+                                     "an artifact compiled from a deck is certified under its "
+                                     "declaration, and none was given")
+    declared = declared_provider(spec)
+    policy = win.declared_interim(declared.declared_elements())
+    return {"domain": win.certificate_domain(policy), "repeat": declared.unit_formula()}
+
+
+def make_certifier(fam, rules: dict):
+    """The record certifier of emission and of the mapping check."""
+    from rmgpy.kmc import certificates as cm
+    return cm.Certifier(fam, max_channel_sets=8, max_entries=1024, **rules)
+
+
 def roster_bytes(roster: Roster) -> bytes:
     """Canonical bytes of a reference roster, used for both writing and its
     provenance hash."""
@@ -872,10 +897,12 @@ def midpoint_entries(record, payload, rates_for) -> dict:
 class Emitter:
     """The emission session of one artifact against a roster's systems."""
 
-    def __init__(self, artifact, database, systems, families=None, contexts=True):
+    def __init__(self, artifact, database, systems, families=None, contexts=True, polymer=None):
         self.artifact = Path(artifact)
         self.database = Path(database)
         self.systems = systems
+        # the roster's declaration: a declared artifact is certified under it
+        self.polymer = polymer
         self.only = list(families) if families else None
         self.contexts = contexts
         self.state = {}
@@ -896,7 +923,7 @@ class Emitter:
         db = load_database(families, self.database)
         fam = db.kinetics.families
         S.update(db=db, fam=fam, families=families, load_s=round(time.time() - t, 1))
-        certifier = cm.Certifier(fam, max_channel_sets=8, max_entries=1024)
+        certifier = make_certifier(fam, certification_rules(art, self.polymer))
         t = time.time()
         certified, store, _replacements = certified_records(art["records"], fam, certifier)
         S.update(certify_s=round(time.time() - t, 1), records=certified, store=store,
@@ -1030,7 +1057,7 @@ def run_emit(args):
     for refusal in refusals:
         print("ROSTER", json.dumps(refusal), flush=True)
     emitter = Emitter(args.artifact, args.database, systems, families=args.family,
-                      contexts=not args.no_contexts)
+                      contexts=not args.no_contexts, polymer=roster.polymer)
     t0 = time.time()
     emitter.init()
     picked = select_records(emitter.records, args.chunk, args.limit)

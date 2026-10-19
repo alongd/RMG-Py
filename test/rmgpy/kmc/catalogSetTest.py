@@ -252,7 +252,7 @@ def test_compile_family_zero_or_two_is_refused_before_anything_loads(spy, tmp_pa
 class FakeEmitter:
     families_in_artifact = ["R_Recombination"]
 
-    def __init__(self, artifact, database, systems, families=None, contexts=True):
+    def __init__(self, artifact, database, systems, families=None, contexts=True, polymer=None):
         self.artifact, self.database, self.systems = Path(artifact), database, systems
         self.only = list(families) if families else None
         self.state = {}
