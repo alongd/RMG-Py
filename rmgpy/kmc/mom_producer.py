@@ -801,6 +801,11 @@ def read_pools(path) -> dict:
         doc = json.loads(Path(path).read_text())
     except (OSError, ValueError) as error:
         raise ProducerError(f"pool table {path}: {error}") from error
+    if isinstance(doc, dict) and doc.get("refused"):
+        reason = doc.get("reason", "unspecified")
+        species = doc.get("species") or ()
+        named = f" for {', '.join(map(str, species))}" if species else ""
+        raise ProducerError(f"refused:{reason}{named}")
     pools = doc.get("pools") if isinstance(doc, dict) else None
     if not isinstance(pools, list) or not pools:
         raise ProducerError(f"pool table {path}: no pools")
@@ -1410,6 +1415,13 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
             "solver_mask"
 
     position = {key: j for j, (_i, key) in enumerate(order)}
+    for key, species in by_key.items():
+        molecules = [m for m in (species.molecule or []) if m is not None]
+        verdict = _same_structure(molecules, molecules)
+        if verdict is _species_identity.UNDECIDABLE:
+            raise ProducerError(f"reconstructed phase: {get_species_identifier(species)} cannot be compared because resonance expansion is unavailable")
+        if verdict is _species_identity.MALFORMED:
+            raise ProducerError(f"reconstructed phase: {get_species_identifier(species)} has a malformed mixed-spin molecule list")
     # pool members: the mu dummies, the species of the pool's base label, the explicit-DP species
     member_of, names_of = {}, {}
     root_proxies = []
