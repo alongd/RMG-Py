@@ -1092,6 +1092,12 @@ class DeclaredChainProvider(BoundaryProvider):
     def period(self) -> int:
         return self.geometry.period
 
+    @property
+    def periods_per_repeat(self) -> int:
+        """Primitive periods in one declared repeat unit (``d_rep`` backbone
+        bonds, ``period`` bonds each)."""
+        return self.geometry.d_rep // self.geometry.period
+
     def key_of(self, position: int) -> tuple:
         """(declaration key, orientation) of a coordinate position."""
         g = self.geometry
@@ -1248,11 +1254,11 @@ class DeclaredChainProvider(BoundaryProvider):
             if not candidates:
                 raise ValueError("the declared repeat has no hydrogen-bearing backbone atom")
             key = min(candidates, key=lambda k: (self.geometry.backbone_offsets[k], k))
-            unit = interior_radical * self.d_rep
+            unit = interior_radical * self.periods_per_repeat
             edits = (EditOp("remove_h", unit, key), EditOp("set_radical", unit, key, 1))
         from rmgpy.kmc.windows import DeclaredSpec
         return DeclaredSpec(self.name, ChainSpec(
-            dp * self.d_rep, head="artificial" if head is None else head,
+            dp * self.periods_per_repeat, head="artificial" if head is None else head,
             tail="artificial" if tail is None else tail, edits=edits))
 
     def declared_elements(self) -> frozenset:
