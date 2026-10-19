@@ -63,3 +63,35 @@ def test_zero_matching_cases_for_required_records_exits_nonzero(tmp_path, monkey
                            old_rows="rows.jsonl", roster_out=None, dps=(1, 2, 3, 8),
                            limit=None)
     assert CHECKER.check(args) == 1
+
+
+def test_one_prior_match_does_not_hide_other_required_records(tmp_path, monkeypatch, capsys):
+    records = [{"event_id": f"event-{index}", "status": "enabled",
+                "site_type": "pristine", "orientation": "as_generated",
+                "family": "family"}
+               for index in range(762)]
+    artifact = tmp_path / "artifact.json"
+    artifact.write_text(json.dumps({"records": records}))
+    spec = SimpleNamespace(repeat_unit=object())
+    monkeypatch.setattr(CHECKER, "read_deck", lambda _path: SimpleNamespace(spec=spec))
+    monkeypatch.setattr(CHECKER.emit, "match_provider", lambda _graph: object())
+    monkeypatch.setattr(CHECKER.emit, "reference_systems", lambda *_args, **_kwargs:
+                        SimpleNamespace(systems={}, sha256="hash"))
+    monkeypatch.setattr(CHECKER.emit, "build_reference_systems", lambda _roster: ({}, []))
+    monkeypatch.setattr(CHECKER.emit, "load_database", lambda *_args:
+                        SimpleNamespace(kinetics=SimpleNamespace(families={})))
+    monkeypatch.setattr(CHECKER.cm, "Certifier", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(CHECKER.chm, "SpeciesKeys", lambda: object())
+    monkeypatch.setattr(CHECKER.emit, "reference_cases",
+                        lambda *_args: ({("found",): [object()]}, {}))
+    monkeypatch.setattr(CHECKER.emit, "record_key",
+                        lambda _certifier, record, _species:
+                        ("found",) if record["event_id"] == "event-0" else ("missing",))
+    monkeypatch.setattr(CHECKER, "prior_unmapped", lambda _path: {"event-0"})
+    args = SimpleNamespace(artifact=artifact, deck="deck.py", database="database",
+                           old_rows="rows.jsonl", roster_out=None, dps=(1, 2, 3, 8),
+                           limit=None)
+
+    assert CHECKER.check(args) == 1
+    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert (summary["found"], summary["not_found"], summary["named_refused"]) == (1, 761, 0)

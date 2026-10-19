@@ -15,6 +15,7 @@ import copy
 import inspect
 import json
 import re
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -237,6 +238,81 @@ def test_generated_roster_counts_are_pinned_per_declaration(tmp_path):
     assert (len(pe.systems), len(pe_systems)) == (138, 138)
     assert ps.sha256 == ps_written.sha256
     assert pe.sha256 == pe_written.sha256
+
+
+def test_generated_pp_roster_loads_and_builds_in_a_fresh_process(tmp_path):
+    spec = LinearHomopolymerSpec.from_mapping(polymer_mapping("pp"))
+    roster = emit.reference_systems(spec, emit.match_provider(spec.repeat_unit), dps=(1, 2),
+                                    small=False, monomer=False, molecularity={1})
+    path = tmp_path / "pp.generated.roster.json"
+    emit.write_roster(roster, path)
+    script = """
+import json
+import sys
+from pathlib import Path
+from rmgpy.kmc import boundaries, emit
+
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+owners = {entry["chain"]["owner"] for entries in data["systems"].values()
+          for entry in entries if "chain" in entry}
+assert owners and not (owners & set(boundaries.PROVIDERS))
+roster = emit.load_roster(path)
+assert owners <= set(boundaries.PROVIDERS)
+systems, refusals = emit.build_reference_systems(roster)
+assert not refusals
+assert len(systems) == len(roster.systems)
+for name, participants in systems.items():
+    for index, participant in enumerate(participants):
+        participant.build(f"{name}:{index}")
+"""
+    result = subprocess.run([sys.executable, "-c", script, str(path)],
+                            cwd=Path(__file__).parents[3], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("kind", ("ps", "pe"))
+def test_generated_participants_round_trip_the_exact_vocabulary_owner(tmp_path, kind):
+    spec = LinearHomopolymerSpec.from_mapping(polymer_mapping(kind))
+    declared = emit.declared_provider(spec)
+    roster = emit.reference_systems(spec, declared, dps=(1, 2, 3, 5, 8), molecularity={1})
+    expected = {}
+    for name, (entry,) in roster.systems.items():
+        if "chain" in entry:
+            value = entry["chain"]
+            declared_spec = declared.spec_from_declaration(
+                value["dp"], value.get("head"), value.get("tail"),
+                value.get("radical_unit"))
+            build = win.build_spec(declared_spec, f"generated:{name}")
+        else:
+            (kind_, value), = entry.items()
+            build = emit.explicit_build(f"generated:{name}", **{kind_: value})
+        expected[name] = build.molecule.to_adjacency_list()
+
+    written = emit.write_roster(roster, tmp_path / f"{kind}.owner-round-trip.json")
+    systems, refusals = emit.build_reference_systems(written)
+    assert refusals == []
+    assert set(systems) == set(expected)
+    for name, participants in systems.items():
+        assert len(participants) == 1
+        assert participants[0].build(name).molecule.to_adjacency_list() == expected[name]
+
+
+def test_roster_refuses_a_vocabulary_owner_for_another_repeat_unit(tmp_path):
+    spec = LinearHomopolymerSpec.from_mapping(polymer_mapping("ps"))
+    roster = emit.reference_systems(spec, emit.declared_provider(spec), dps=(2,),
+                                    small=False, monomer=False, molecularity={1})
+    data = json.loads(emit.roster_bytes(roster))
+    name = "single:chain:dp2:interior-radical"
+    data["systems"] = {name: data["systems"][name]}
+    data["systems"][name][0]["chain"]["owner"] = "linear_alkane"
+    path = tmp_path / "wrong-owner.json"
+    path.write_text(json.dumps(data))
+
+    systems, refusals = emit.build_reference_systems(emit.load_roster(path))
+    assert systems == {}
+    assert [row["status"] for row in refusals] == ["refused:owner"]
+    assert "linear_alkane" in refusals[0]["reason"]
 
 
 @pytest.mark.parametrize("kind", ("ps", "pe"))
