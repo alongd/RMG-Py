@@ -1839,6 +1839,17 @@ class TestKeywordSpeciesAndBlockBoundaries:
         species, _reactions = self.read(tmp_path, "ELEMENTS H END\nSPECIES\nREAC\nH2\nEND\n")
         assert [species.label for species in species] == ["REAC", "H2"]
 
+    @pytest.mark.parametrize("body, keyword, labels", [
+        ("ELEM\nH O N", "ELEM", ["ELEM", "H", "O", "N"]),
+        ("THERM\n300 1000 5000", "THERM", ["THERM", "300", "1000", "5000"]),
+        ("TRAN\nH2 1 38 2.9 0 1.8 4", "TRAN", ["TRAN", "H2", "1", "38", "2.9", "0", "1.8", "4"]),
+    ])
+    def test_declared_keyword_species_with_a_block_signature_read(self, tmp_path, body, keyword, labels):
+        species, reactions = self.read(tmp_path, "ELEMENTS H END\nSPECIES\n" + body + "\nEND\n",
+                                       {keyword: "C"})
+        assert [species.label for species in species] == labels
+        assert reactions == []
+
     def test_keyword_named_reaction_and_efficiency_read(self, tmp_path):
         names = {"REAC": "C", "H": "[H]", "H2": "[H][H]", "CH4": "C"}
         text = ("ELEMENTS H C END\nSPECIES\nREAC H H2 CH4\nEND\nREACTIONS\n"
@@ -1863,3 +1874,32 @@ class TestKeywordSpeciesAndBlockBoundaries:
         predecessor = "SITE" if header.startswith("SITE") else "SPECIES"
         assert isinstance(outcome, ChemkinError)
         assert re.search(predecessor + r" block.*" + block, str(outcome))
+
+    @pytest.mark.parametrize("following, block", [
+        ("REACTIONS KCAL/MOLE MOLES\nH2=H+H 1.0 0 0", "REACTIONS"),
+        ("THERM ALL\n300 1000 5000", "THERM"),
+    ])
+    def test_unterminated_species_names_an_option_bearing_header(self, tmp_path, following, block):
+        with pytest.raises(ChemkinError, match=r"SPECIES block.*" + block):
+            self.read(tmp_path, "ELEMENTS H END\nSPECIES\nH2 H\n" + following + "\nEND\n")
+
+    @pytest.mark.parametrize("following, block", [
+        ("REACTIONS\nH2=H+H 1.0D+00 0D0 0D0", "REACTIONS"),
+        ("ELEM\nC/12.011/", "ELEM"),
+        ("ELEMENTS\nD", "ELEMENTS"),
+        ("ELEMENTS\nh o n", "ELEMENTS"),
+        ("SITE/SURF/\nSDEN/2.72E-9/\nX", "SITE/SURF/"),
+    ], ids=["fortran-d", "element-weight", "deuterium", "lower-case-elements", "named-site"])
+    def test_unterminated_species_recognizes_real_header_content(self, tmp_path, following, block):
+        with pytest.raises(ChemkinError, match=r"SPECIES block.*" + re.escape(block)):
+            self.read(tmp_path, "ELEMENTS H END\nSPECIES\nH2 H\n" + following + "\nEND\n")
+
+    @pytest.mark.parametrize("following, block", [
+        ("SPECIES\nH2 H", "SPECIES"),
+        ("THERM ALL\n300 1000 5000", "THERM"),
+    ])
+    def test_skipped_reaction_cannot_swallow_the_next_block(self, tmp_path, following, block):
+        text = ("ELEMENTS H END\nSPECIES\nH2 H\nEND\nREACTIONS\n"
+                "H2=0.5H2 1 0 0\n" + following + "\nEND\n")
+        with pytest.raises(ChemkinError, match=r"REACTIONS block.*" + block):
+            self.read(tmp_path, text)
