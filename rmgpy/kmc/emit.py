@@ -217,9 +217,10 @@ def certification_rules(artifact: dict, spec) -> dict:
     for an artifact compiled from a deck (it carries the declaration's
     digests, ``artifact_declaration``), the declaration's own species domain
     (``windows.declared_interim`` over its elements, the domain its windows
-    are evaluated under) and its depository growth unit; for a legacy
-    artifact none (the v1 rules).  ``spec`` is the declaration bound to the
-    artifact (``bind_artifact``)."""
+    are evaluated under), its depository growth unit and the declared chain
+    whose growth sites decide the depository exclusion by construction; for
+    a legacy artifact none (the v1 rules).  ``spec`` is the declaration bound
+    to the artifact (``bind_artifact``)."""
     if not artifact_declaration(artifact):
         return {}
     if spec is None:
@@ -228,7 +229,8 @@ def certification_rules(artifact: dict, spec) -> dict:
                                      "declaration, and none was given")
     declared = declared_provider(spec)
     policy = win.declared_interim(declared.declared_elements())
-    return {"domain": win.certificate_domain(policy), "repeat": declared.unit_formula()}
+    return {"domain": win.certificate_domain(policy), "repeat": declared.unit_formula(),
+            "growth": declared}
 
 
 def make_certifier(fam, rules: dict):
