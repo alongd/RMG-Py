@@ -144,6 +144,19 @@ def test_a_port_whose_every_check_is_a_depository_size_is_refused():
     assert res.status == "refused:override_checks", (res.status, res.reason)
 
 
+def test_an_extension_onto_a_matched_size_keeps_extending():
+    """The tail's certificate changes at depth 2, so the fixed point
+    re-extends the tail; its depth 1 IS a depository reaction (a catalog
+    override, unobservable as a rule window).  The re-extension passes over
+    it to depth 2, the first size the rule rates, instead of refusing."""
+    obs = DepositoryObserver(lambda w: {k: v for k, v in w.extension_counts if v} == {TAIL: 1})
+    obs.inner = stub(lambda w: "s1" if w.depth(TAIL) >= 2 else "s0")
+    res = win.fixed_point(toy(), obs)
+    assert res.status == "fixed_point", (res.status, res.reason)
+    assert dict(res.depths) == {HEAD: 0, TAIL: 2}
+    assert any(why == win.DEPOSITORY_MATCH_REFUSAL for _key, _n, why in res.history)
+
+
 def test_fixed_point_checks_every_port_independently():
     """The certificate changes when the TAIL is extended to depth 1 only: a
     single +1 check (or a joint extension of every port) accepts too early;
