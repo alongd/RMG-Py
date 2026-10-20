@@ -757,6 +757,38 @@ def test_assemble_runs_derive_weights_then_check_cycles(tmp_path, balance_stubs)
     assert balance_stubs == {"derive": 1, "cycles": 1}
 
 
+def test_assemble_resolves_overlaps_after_collisions_and_before_derive_weights(tmp_path,
+                                                                              monkeypatch):
+    calls = []
+    collisions, overlaps, derive = te.resolve_collisions, te.resolve_overlaps, te.derive_weights
+
+    def spy(name, fn):
+        def wrapped(*a, **k):
+            calls.append(name)
+            return fn(*a, **k)
+        return wrapped
+    monkeypatch.setattr(te, "resolve_collisions", spy("collisions", collisions))
+    monkeypatch.setattr(te, "resolve_overlaps", spy("overlaps", overlaps))
+    monkeypatch.setattr(te, "derive_weights", spy("derive", derive))
+    catalog = run(shards(tmp_path))
+    assert calls == ["collisions", "overlaps", "derive"]
+    assert set(catalog["gates"]["overlaps"]) >= {"components", "covered", "refused"}
+
+
+def test_a_refused_overlap_is_incomplete_with_the_failure_listed(tmp_path, monkeypatch):
+    def overlaps(payloads, **kw):
+        return payloads, [{"family": "R_Recombination", "direction": "forward",
+                           "templates": [{"record": "evt_" + "a" * 20, "key": "k" * 64}],
+                           "covered": [], "covered_by": [], "transitions": 2,
+                           "log10_diameter": 0.5, "disposition": "refused:class_overlap",
+                           "reason": "weights 0.5 decades apart"}]
+    monkeypatch.setattr(te, "resolve_overlaps", overlaps)
+    catalog = run(shards(tmp_path))
+    assert catalog["gates"]["overlaps"]["refused"] == 1
+    assert catalog["complete"] is False
+    assert any("class overlap" in f and "0.5 decades" in f for f in catalog["gates"]["failures"])
+
+
 def test_check_cycles_receives_completeness_of_coverage(tmp_path, monkeypatch):
     seen = []
 
