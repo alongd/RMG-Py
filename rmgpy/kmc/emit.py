@@ -42,6 +42,13 @@ recorded (``{"declared_sequence": SequenceChainSpec}`` participants).
 same ones, or the run is refused (``refused:declaration``) before anything is
 built, whatever the flags.  An artifact carrying neither (a compile without a
 deck) is refused (``refused:unbound_artifact``) unless ``--legacy-artifact``.
+Of the digests that bound, ``chemistry_sha256`` is written into each shard
+header and from there into the catalog's ``provenance``, which is how the
+runner ties the catalog to a deck.  It is the only one: emission reads the
+declaration's chemistry, never its population or transport block, so the
+catalog runs on every deck of that chemistry (``run.CHEMISTRY_EXCLUDED``).
+Shards bound to different chemistries do not assemble into a complete catalog,
+and an unbound emission writes no digest.
 
 **Assemble.** Merge the shards, then ``resolve_collisions``, ``resolve_overlaps``,
 ``derive_weights`` and ``check_cycles`` over the whole set.  The catalog is written even when a gate
@@ -83,10 +90,15 @@ ROSTER_SCHEMA_V4 = "kmc-reference-roster/4"
 REFERENCE_THERMO_LABEL = "i147-reference"
 REFERENCE_RATES_LABEL = "i138-reference"
 PAYLOAD_FIELDS = ("key", "name", "family", "status", "direction", "executable", "weight", "derived")
+# the declaration digests an artifact compiled from a deck carries in
+# ``provenance.proxy_source`` and a deck or roster must match
+BINDING_KEYS = ("chemistry_sha256", "declaration_sha256")
+# the one a catalog carries: emission depends on the chemistry fields only
+CATALOG_BINDING_KEYS = ("chemistry_sha256",)
 HEADER_MATCH = ("schema", "artifact_id", "artifact_sha256", "artifact_records", "families",
                 "database_path", "database_head", "database_content_sha256", "code_sha",
                 "code_sources_sha256", "code_extensions_sha256", "roster_sha256", "temperatures",
-                "selection")
+                "selection") + CATALOG_BINDING_KEYS
 CYCLE_REFUSED_FRACTION = 0.05
 MIDPOINT_THRESHOLD = 0.01     # the harness' gate on the primary-weight midpoint error
 
@@ -190,9 +202,6 @@ def load_roster(path) -> Roster:
                   data.get("pairs"))
 
 
-# the declaration digests an artifact compiled from a deck carries in
-# ``provenance.proxy_source`` and a deck or roster must match
-BINDING_KEYS = ("chemistry_sha256", "declaration_sha256")
 LEGACY_ARTIFACT_FLAG = "--legacy-artifact"
 
 
@@ -242,9 +251,10 @@ def certification_rules(artifact: dict, spec) -> dict:
     for an artifact compiled from a deck (it carries the declaration's
     digests, ``artifact_declaration``), the declaration's own species domain
     (``windows.declared_interim`` over its elements, the domain its windows
-    are evaluated under) and its depository growth unit; for a legacy
-    artifact none (the v1 rules).  ``spec`` is the declaration bound to the
-    artifact (``bind_artifact``)."""
+    are evaluated under), its depository growth unit and the declared chain
+    whose growth sites decide the depository exclusion by construction; for
+    a legacy artifact none (the v1 rules).  ``spec`` is the declaration bound
+    to the artifact (``bind_artifact``)."""
     if not artifact_declaration(artifact):
         return {}
     if spec is None:
@@ -253,7 +263,8 @@ def certification_rules(artifact: dict, spec) -> dict:
                                      "declaration, and none was given")
     declared = declared_provider(spec)
     policy = win.declared_interim(declared.declared_elements())
-    return {"domain": win.certificate_domain(policy), "repeat": declared.unit_formula()}
+    return {"domain": win.certificate_domain(policy), "repeat": declared.unit_formula(),
+            "growth": declared}
 
 
 def make_certifier(fam, rules: dict):
@@ -786,7 +797,7 @@ def load_database(families, path):
                      kinetics_families=list(families), kinetics_depositories=["training"])
     db.load_thermo(str(path / "input/thermo"), thermo_libraries=["primaryThermoLibrary"],
                    depository=True)
-    prepare_rate_rules(db.kinetics, db.thermo, verbose=True)
+    prepare_rate_rules(db.kinetics, db.thermo)
     return db
 
 
@@ -1189,7 +1200,7 @@ class Emitter:
         return row
 
 
-def shard_header(emitter, roster, refusals, picked, chunk, partial):
+def shard_header(emitter, roster, refusals, picked, chunk, partial, bound_by=()):
     from rmgpy.kmc.compiler import DEFAULT_T_GRID
     S = emitter.state
     artifact = emitter.artifact
@@ -1204,7 +1215,8 @@ def shard_header(emitter, roster, refusals, picked, chunk, partial):
             "temperatures": [float(t) for t in DEFAULT_T_GRID], "chunk": chunk,
             "selection": "partial" if partial else "all",
             "assigned": [r["event_id"] for r in picked], "roster_refusals": refusals,
-            "systems": {n: [p.label for p in ps] for n, ps in emitter.systems.items()}}
+            "systems": {n: [p.label for p in ps] for n, ps in emitter.systems.items()},
+            **{key: roster.digests()[key] for key in bound_by if key in CATALOG_BINDING_KEYS}}
 
 
 def is_partial_selection(only, limit, artifact_records, selected_records) -> bool:
@@ -1239,7 +1251,8 @@ def run_emit(args):
     header = shard_header(emitter, roster, refusals, picked, args.chunk,
                           partial=is_partial_selection(args.family, args.limit,
                                                        emitter.state["artifact_records"],
-                                                       len(emitter.records)))
+                                                       len(emitter.records)),
+                          bound_by=bound_by)
     print("INIT", {k: emitter.state.get(k) for k in ("load_s", "certify_s", "cases_s", "case_stats")},
           len(emitter.records), "records, selected", len(picked), flush=True)
     errors = 0
@@ -1599,7 +1612,8 @@ def assemble(paths, *, database=None, services=None) -> dict:
             "artifact_id", "artifact_sha256", "artifact_records", "database_path", "database_head",
             "database_content_sha256", "code_sha", "code_sources_sha256",
             "code_extensions_sha256", "roster_sha256",
-            "families", "temperatures", "systems")},
+            "families", "temperatures", "systems")} |
+                      {key: first[key] for key in CATALOG_BINDING_KEYS if key in first},
         "payloads": out_payloads,
         "refusals": refusals,
         "gates": {

@@ -1109,11 +1109,25 @@ class Candidate:
     reverse: bool = False
 
 
+def selection_flip(certificate, pathway) -> Optional[str]:
+    """``refused:selection_flip`` when no channel of a fixed point's
+    certificate carries the member's ``pathway``: growing the window
+    recertified the member through another tree node (a node the member read
+    only because its proxy ended in an artificial cap), so the record's
+    template makes no transition on that window and its rate is not RMG's
+    there.  None when the pathway is still selected."""
+    selected = sorted({";".join(ch["pathway"]) for ch in certificate.get("channels", [])})
+    if not selected or ";".join(pathway) in selected:
+        return None
+    return (f"refused:selection_flip: the fixed-point window selects {selected}, not the "
+            f"member's {';'.join(pathway)}")
+
+
 def context_candidates(case, results, merges, *, family, pathway, direction, reverse,
                        providers=None) -> tuple:
     """(candidates, context rows): one candidate per fixed-point context that
-    merged into no earlier one (the base first), refused ones named; every
-    other context's status reported."""
+    merged into no earlier one (the base first), refused ones named
+    (``selection_flip`` included); every other context's status reported."""
     from rmgpy.kmc import certificates as cm
     from rmgpy.kmc import windows as win
     merged = {j for _i, j in merges}
@@ -1132,9 +1146,10 @@ def context_candidates(case, results, merges, *, family, pathway, direction, rev
             row["emission"] = f"merged into context {into[k]}"
             rows.append(row)
             continue
-        cert = None
+        cert, flipped = None, None
         if r.observation is not None and r.observation.certificate is not None:
             cert = cm.certificate_sha256(r.observation.certificate)
+            flipped = selection_flip(r.observation.certificate, case.pathway)
         context = tuple((list(p), e) for p, e in assignment if e)
         try:
             cut = cut_template(r.witness, r.window.atoms, family=family, pathway=pathway,
@@ -1144,6 +1159,7 @@ def context_candidates(case, results, merges, *, family, pathway, direction, rev
             refusal = template_refusal(cut)
         except EmissionError as error:
             cut, refusal = None, f"error:{error}"
+        refusal = flipped or refusal
         unextended = case.witness
         if k:
             try:

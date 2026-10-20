@@ -305,8 +305,10 @@ class BoundaryProvider:
     ``RADICAL_END_CHEMISTRIES`` (the end chemistries that put an unpaired
     electron on the port atom), ``interior_atoms_rmg`` (perceived RMG atoms
     of an interior repeat, hydrogens included), ``probe_ports`` (port and
-    coordinate pairs whose fragments give the extension facts) and
-    ``unit_formula`` (the depository growth unit; None: no chain)."""
+    coordinate pairs whose fragments give the extension facts),
+    ``unit_formula`` (the depository growth unit; None: no chain) and
+    ``growth_sites`` (where one unit inserts in a bare molecule; None: the
+    provider cannot say)."""
 
     name = "abstract"
     coordinate_backbone_atoms: Optional[int] = None
@@ -340,6 +342,13 @@ class BoundaryProvider:
         return ()
 
     def unit_formula(self) -> Optional[tuple]:
+        return None
+
+    def growth_sites(self, molecule) -> Optional[tuple]:
+        """((Port, coordinate), ...): the artificial ends of ``molecule`` (its
+        atoms carry ids) at which ``fragment`` inserts one unit; None when the
+        provider cannot say where a unit inserts in a molecule without
+        metadata."""
         return None
 
     def reference_special_declarations(self) -> tuple:

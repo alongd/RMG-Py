@@ -222,6 +222,210 @@ def test_depository_exclusion_by_formula_and_refusal(fam):
 
 
 # --------------------------------------------------------------------------
+# depository exclusion decided by construction: the declared chain grows the
+# witness at its own growth sites and every analogue is compared by
+# Reaction.is_isomorphic (formula equality only selects the candidates)
+# --------------------------------------------------------------------------
+BACKBONE_SCISSION = ("Cds-HH_Cds-CsH", "CsJ-CsHH")
+CH2 = (("C", 1), ("H", 2))
+# sha256 of json.dumps(verdict, sort_keys=True) at the base (a8c5a9f91), no
+# growth provider: /home/alon/runs/i208/probe/pin_probe.py
+LEGACY_HABS_DIGEST = "500c30e0a7e0965425372065d7a4b04b9b012005ee3cf2d52705f756cf49ca1f"
+LEGACY_SCISSION_PS_DIGEST = "093bf239be4d5a90d789cb907ed70e7bdba966c36eb90bbd1000c5f986b5b007"
+LEGACY_SCISSION_CH2_DIGEST = "c0d8b5f2b849ca4f0aa72ed4df0d115d9534d3b74108d127880b0334032477ba"
+
+
+@pytest.fixture(scope="module")
+def pe_chain():
+    import declared_parity_support as sup
+    from rmgpy.kmc import declared_chain as dc
+    return dc.DeclaredChainProvider(sup.pe_declaration())
+
+
+def _digest(value):
+    import hashlib
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def _backbone_scission(family):
+    """The backbone beta-scission of a PE mid-chain radical in the family
+    template direction (1-pentene + n-propyl -> oct-4-yl, the compiled PE
+    witness): reactants and products with shared atom ids."""
+    cs = chm.build_channels(family, [mol("C=CCCC", 0), mol("[CH2]CC", 20)])
+    for ch in cs.find(pathway=BACKBONE_SCISSION):
+        rep = ch.representatives[0]
+        products = [rm.molecule_from_rows(p) for p in rm.split_rows(rep.product_rows())]
+        if [p.to_smiles() for p in products] == ["CCC[CH]CCCC"]:
+            return list(cs.reactants), products, cs, ch
+    raise AssertionError("no backbone beta-scission channel on the witness")
+
+
+def _training(family, indices):
+    (training,) = [d for d in family.depositories if d.label.endswith("training")]
+    found = [e for e in training.entries.values() if int(e.index) in indices]
+    assert sorted(int(e.index) for e in found) == sorted(indices)
+    return found
+
+
+def _stub_family(family, entries, tag="stub"):
+    """``family`` reduced to one depository holding only ``entries``."""
+    from types import SimpleNamespace
+    depository = SimpleNamespace(label=f"{family.label}/{tag}",
+                                 entries={int(e.index): e for e in entries})
+    return SimpleNamespace(label=f"{family.label}|{tag}", depositories=[depository])
+
+
+def _reversed(entry):
+    """The entry stored the other way round (products -> reactants)."""
+    from types import SimpleNamespace
+    from rmgpy.reaction import Reaction
+    return SimpleNamespace(index=int(entry.index), label=entry.label, rank=entry.rank,
+                           item=Reaction(reactants=list(entry.item.products),
+                                         products=list(entry.item.reactants)))
+
+
+def test_a_declared_chain_names_where_a_period_inserts(pe_chain):
+    """The declared chain's growth sites are its capped artificial ends: a whole
+    terminal period whose join is capped by hydrogen, read from the declared
+    geometry.  Both methyl ends of oct-4-yl, the methyl end of n-propyl and of
+    1-pentene; none on a species without such an end (methyl, ethylene, H; the
+    radical and vinyl ends are physical).  Each site extends by the provider's
+    own fragment.  A legacy provider names none: None, it cannot say."""
+    from rmgpy.kmc import boundaries as b
+    counts = {}
+    for smiles in ("CCC[CH]CCCC", "[CH2]CC", "C=CCCC", "[CH3]", "C=C", "[H]"):
+        molecule = mol(smiles, 0)
+        by_id = {a.id: a for a in molecule.atoms}
+        sites = pe_chain.growth_sites(molecule)
+        counts[smiles] = len(sites)
+        for port, coordinate in sites:
+            atom = by_id[port.atom_id]
+            assert atom.is_carbon() and atom.radical_electrons == 0
+            assert sum(1 for n in atom.bonds if n.is_hydrogen()) == 3
+            assert len(port.cap_atom_ids) == 1 and by_id[port.cap_atom_ids[0]] in atom.bonds
+            assert port.artificial
+            pe_chain.fragment(port, coordinate)     # the declared extension path
+    assert counts == {"CCC[CH]CCCC": 2, "[CH2]CC": 1, "C=CCCC": 1, "[CH3]": 0, "C=C": 0,
+                      "[H]": 0}
+    for provider in b.LEGACY_PROVIDERS:
+        assert provider.growth_sites(mol("CCC[CH]CCCC", 0)) is None
+
+
+def test_growth_never_touches_a_reacting_atom(fam, pe_chain):
+    """H abstraction from a methyl end of propane: the reacting methyl is no
+    growth site of the reaction (its H leaves); the other methyl end is.  The
+    methyl radical has no chain end."""
+    family = fam["H_Abstraction"]
+    cs = chm.build_channels(family, [mol("CCC", 0), mol("[CH3]", 20)])
+    ch = only(cs.find(pathway=("C/H3/Cs\\H2\\Cs", "C_methyl")))
+    for move in [m for m in cs.moves if m.template is not None
+                 and tuple(m.template) == ch.pathway and m.products is not None]:
+        products = [rm.molecule_from_rows(p) for p in rm.split_rows(move.product_rows())]
+        sites = cm.reaction_growth_sites(pe_chain, list(cs.reactants), products)
+        reacting = {a for a in rm.molecule_rows(cs.reactants[0])
+                    if rm.molecule_rows(cs.reactants[0])[a] !=
+                    {k: v for p in products for k, v in rm.molecule_rows(p).items()}.get(a)}
+        assert len(sites) == 1
+        ((species, port, _coordinate),) = sites
+        assert species == 0 and port.atom_id not in reacting
+        assert not set(port.cap_atom_ids) & reacting
+
+
+def test_pe_backbone_beta_scission_is_decided_and_matched_by_name(fam, pe_chain):
+    """The formula argument refuses the PE backbone beta-scission (nine
+    candidates, ``refused:unknown``).  Grown at its declared sites, the
+    witness IS training 2915-2919 (n-alkyl + 1-alkene -> a linear dodecyl
+    radical) at the sizes listed, and none of the formula-only candidates
+    (456, 636 and the branched 653, 654): ``matched:``, refused by name."""
+    family = fam["R_Addition_MultipleBond"]
+    reactants, products, cs, ch = _backbone_scission(family)
+    legacy = cm.depository_exclusion(family, reactants, products, repeat=CH2)
+    assert legacy["verdict"] == "refused:unknown"
+    assert sorted(c["index"] for c in legacy["candidates"]) == \
+        [456, 636, 653, 654, 2915, 2916, 2917, 2918, 2919]
+    ex = cm.depository_exclusion(family, reactants, products, repeat=CH2, growth=pe_chain)
+    assert ex["verdict"].startswith("matched:"), ex
+    sizes = {m["index"]: (m["orientation"], m["species_heavy_atoms"]) for m in ex["matches"]}
+    assert sizes == {2915: ("forward", {"reactants": [5, 7], "products": [12]}),
+                     2916: ("forward", {"reactants": [3, 9], "products": [12]}),
+                     2917: ("forward", {"reactants": [6, 6], "products": [12]}),
+                     2918: ("forward", {"reactants": [4, 8], "products": [12]}),
+                     2919: ("forward", {"reactants": [5, 7], "products": [12]})}, ex["matches"]
+    assert all(str(index) in ex["verdict"] for index in sizes)
+    assert ex["analogues_compared"] >= 5
+    # the certificate keeps it refused (a named verdict, not unknown)
+    certifier = cm.Certifier(fam, repeat=CH2, growth=pe_chain)
+    cert = certifier.certify_channel(family, cs, ch)
+    (c,) = cert["channels"]
+    assert c["depository_exclusion"]["verdict"] == ex["verdict"]
+    assert cert["depository_exclusion_refused"] == [";".join(BACKBONE_SCISSION)]
+
+
+def test_formula_only_candidates_are_excluded_by_isomorphism(fam, pe_chain):
+    """The same witness against a depository of only its formula-only
+    candidates (456, 636, the branched 653 and 654): the formula argument
+    refuses it; no grown analogue is any of them, so it is excluded by
+    isomorphism and certifies under the rule estimate like
+    ``excluded:formula``."""
+    family = fam["R_Addition_MultipleBond"]
+    reactants, products, _cs, _ch = _backbone_scission(family)
+    stub = _stub_family(family, _training(family, (456, 636, 653, 654)))
+    assert cm.depository_exclusion(stub, reactants, products,
+                                   repeat=CH2)["verdict"] == "refused:unknown"
+    ex = cm.depository_exclusion(stub, reactants, products, repeat=CH2, growth=pe_chain)
+    assert ex["verdict"] == "excluded:isomorphism", ex
+    assert ex["matches"] == [] and ex["analogues_compared"] > 0
+    assert not cm.exclusion_refused(ex)
+
+
+def test_a_reversed_entry_is_matched_in_reverse(fam, pe_chain):
+    """An entry stored products -> reactants matches the grown analogue only
+    in the reverse orientation."""
+    family = fam["R_Addition_MultipleBond"]
+    reactants, products, _cs, _ch = _backbone_scission(family)
+    stub = _stub_family(family, [_reversed(e) for e in _training(family, (2916,))])
+    ex = cm.depository_exclusion(stub, reactants, products, repeat=CH2, growth=pe_chain)
+    assert ex["verdict"].startswith("matched:"), ex
+    ((index, orientation),) = {(m["index"], m["orientation"]) for m in ex["matches"]}
+    assert (index, orientation) == (2916, "reverse")
+
+
+@pytest.mark.parametrize("index, grown", [(2915, "[CH2]CCCCCC"), (2916, "C=CCCCCCCC")])
+def test_every_declared_growth_site_is_grown(fam, pe_chain, index, grown):
+    """2915 needs the radical grown (n-heptyl + 1-pentene), 2916 the alkene
+    (n-propyl + 1-nonene): growth at one fixed position finds at most one."""
+    family = fam["R_Addition_MultipleBond"]
+    reactants, products, _cs, _ch = _backbone_scission(family)
+    stub = _stub_family(family, _training(family, (index,)))
+    ex = cm.depository_exclusion(stub, reactants, products, repeat=CH2, growth=pe_chain)
+    assert ex["verdict"] == f"matched:{stub.depositories[0].label}#{index}", ex
+    assert any(grown in m["reactants"] for m in ex["matches"]), ex["matches"]
+
+
+def test_a_provider_without_growth_sites_keeps_the_formula_refusal(fam, pe_chain):
+    """No growth provider, or one that names no sites (the legacy linear
+    alkane): the verdict is the formula argument's, byte-identical to the base
+    (the PS rules included); a provider that cannot say refuses as unknown and
+    says why."""
+    from rmgpy.kmc import boundaries as b
+    habs = cm.depository_exclusion(fam["H_Abstraction"], [mol("[CH3]", 0), mol("CC", 10)],
+                                   [mol("C", 20), mol("C[CH2]", 30)])
+    assert _digest(habs) == LEGACY_HABS_DIGEST
+    family = fam["R_Addition_MultipleBond"]
+    reactants, products, _cs, _ch = _backbone_scission(family)
+    assert _digest(cm.depository_exclusion(family, reactants, products)) == \
+        LEGACY_SCISSION_PS_DIGEST
+    legacy = cm.depository_exclusion(family, reactants, products, repeat=CH2)
+    assert _digest(legacy) == LEGACY_SCISSION_CH2_DIGEST
+    alkane = b.PROVIDERS[b.LinearAlkaneProvider.name]
+    ex = cm.depository_exclusion(family, reactants, products, repeat=CH2, growth=alkane)
+    assert ex["verdict"] == "refused:unknown"
+    assert ex["candidates"] == legacy["candidates"]
+    assert "names no growth sites" in ex["argument"]
+    assert cm.exclusion_refused(ex) and cm.exclusion_refused(legacy)
+
+
+# --------------------------------------------------------------------------
 # item 1: every member, every mapping
 # --------------------------------------------------------------------------
 def test_every_member_and_mapping_is_certified(fam, certifier):

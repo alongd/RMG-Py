@@ -2505,6 +2505,47 @@ def test_a_witness_outside_the_record_channel_is_a_compile_error():
         emit(homolysis(10, (3, 4)), counter=_ChannelUpTo(10))
 
 
+def _selecting(witness, pathway):
+    """The toy member whose fixed-point certificate selects ``pathway`` (the
+    member channel of its window's own recertification)."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+    case, row, ((ctx,), merges) = member(witness)
+    cert = {"channels": [{"pathway": list(pathway), "members": []}]}
+    return case, row, ((replace(ctx, observation=SimpleNamespace(certificate=cert)),), merges)
+
+
+def test_a_fixed_point_selected_through_another_node_is_refused_by_name():
+    """A proxy's artificial cap next to a labelled atom can make RMG read a
+    node that the real chain never reaches: grown back (the fixed point keeps
+    a recertification flip), the window selects a deeper node and the
+    record's template makes no transition there (the PE 1,3-H shift of
+    oct-4-yl, Cs_H_out_H/NonDeC on the proxy, Cs_H_out_H/(NonDeC/Cs) on
+    undecan-5-yl).  The candidate is refused by name before any count, so
+    the record is refused, not an emission error; a window that still
+    selects the member's node is a candidate, and T_ch = 0 on it stays a
+    compile error."""
+    w = homolysis(10, (4, 5))
+    case, _row, (results, merges) = _selecting(w, ("deeper",))
+    (cand,), _rows = te.context_candidates(case, results, merges, family="toy_cc",
+                                           pathway=("toy",), direction="reverse", reverse=False)
+    assert cand.refusal and cand.refusal.startswith("refused:selection_flip"), cand.refusal
+    assert "deeper" in cand.refusal and "toy" in cand.refusal
+    out = te.emit_record(toy_record(w, 1), family=ToyFamily,
+                         members=[_selecting(w, ("deeper",))], counter=_ChannelUpTo(0),
+                         rates=stub_rates(ToyCounter()), check_upstream=False)
+    assert out["status"] == "refused"
+    assert "refused:selection_flip" in json.dumps(out["refusal"]), out["refusal"]
+    case, _row, (results, merges) = _selecting(w, ("toy",))
+    (cand,), _rows = te.context_candidates(case, results, merges, family="toy_cc",
+                                           pathway=("toy",), direction="reverse", reverse=False)
+    assert cand.refusal is None
+    with pytest.raises(te.EmissionError, match="T_ch = 0"):
+        te.emit_record(toy_record(w, 1), family=ToyFamily, members=[_selecting(w, ("toy",))],
+                       counter=_ChannelUpTo(0), rates=stub_rates(ToyCounter()),
+                       check_upstream=False)
+
+
 def test_each_candidate_is_counted_in_its_own_members_orientation():
     """One record, two members of opposite orientation (its own homolysis
     witness and the recombination that forms the same bond): each candidate

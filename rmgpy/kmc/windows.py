@@ -1114,6 +1114,8 @@ def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] 
     ``element_count`` guard read on a certificate molecule without such an
     atom is extension invariant (no extension adds to that molecule).  None
     (the default): every molecule takes every provider's step delta."""
+    from rmgpy.kmc import certificates as cm
+
     entries = member_entries(cert, wanted)
     if not entries:
         return Support(frozenset(), refusal="refused:member: no certified member carries the "
@@ -1252,7 +1254,7 @@ def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] 
                     refusal = refusal or "refused:whole_species: depository match"
                 else:
                     verdict = (ch.get("depository_exclusion") or {}).get("verdict", "")
-                    if verdict.startswith("refused") or not verdict:
+                    if cm.exclusion_refused(ch.get("depository_exclusion")):
                         dispositions[("global", name)] = ("refused", f"depository exclusion "
                                                           f"{verdict or 'missing'}")
                         refusal = refusal or f"refused:depository_exclusion: {verdict}"

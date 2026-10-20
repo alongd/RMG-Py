@@ -40,8 +40,10 @@ match; only then does it estimate from the tree.  Every search is recorded
 depository match makes the certificate ``whole_species``: its support is the
 whole reactant and product species, never a window.  For a rule-estimated
 channel ``depository_exclusion`` states, per record, whether any depository
-entry could match a long-chain analogue (see its docstring); unknown is
-refused.  The tree estimate (rate rules, averages, auto-generated walk) is
+entry could match a long-chain analogue (see its docstring); with a growth
+provider the analogues are built at the declared growth sites and compared by
+isomorphism.  Anything but an ``excluded:`` verdict (unknown, matched) is
+refused (``exclusion_refused``).  The tree estimate (rate rules, averages, auto-generated walk) is
 recorded as in ``channels.selection_certificate``.
 
 Spin and domain: every species of the channel carries its spin verdict
@@ -515,8 +517,177 @@ def _depository_formulas(family):
     return rows
 
 
+def exclusion_refused(exclusion) -> bool:
+    """Whether a depository exclusion refuses its channel: every verdict but
+    an ``excluded:`` argument (``refused:unknown``, ``matched:...``, none)."""
+    return not (exclusion or {}).get("verdict", "").startswith("excluded:")
+
+
+def reaction_growth_sites(growth, reactants, products) -> Optional[tuple]:
+    """((reactant index, Port, coordinate), ...): the provider's growth sites
+    on each reactant (``growth.growth_sites``) that the reaction leaves
+    alone (port atom and caps have the same row, bonds included, on both
+    sides); None when the provider cannot say for some reactant."""
+    before = {a: row for m in reactants for a, row in rm.molecule_rows(m).items()}
+    after = {a: row for m in products for a, row in rm.molecule_rows(m).items()}
+    out = []
+    for k, mol in enumerate(reactants):
+        sites = growth.growth_sites(mol)
+        if sites is None:
+            return None
+        for port, coordinate in sites:
+            if all(before[a] == after.get(a) for a in (port.atom_id,) + port.cap_atom_ids):
+                out.append((k, port, coordinate))
+    return tuple(out)
+
+
+def _insert_unit(side, port, fragment, ids) -> None:
+    """Replace ``port``'s caps by ``fragment`` (local index k -> ``ids[k]``)
+    in ``side`` (atom id -> [attributes, {neighbour: order}])."""
+    for cap in port.cap_atom_ids:
+        for other in side.pop(cap)[1]:
+            if other in side:
+                side[other][1].pop(cap, None)
+    for k, attrs in enumerate(fragment.atoms):
+        side[ids[k]] = [tuple(attrs), {}]
+    bonds = [(ids[i], ids[j], o) for i, j, o in fragment.bonds]
+    bonds += [(port.atom_id, ids[i], o) for i, o in fragment.attachments]
+    for a, b, o in bonds:
+        side[a][1][b] = float(o)
+        side[b][1][a] = float(o)
+
+
+def grown_analogue(growth, reactants, products, sites, vector) -> tuple:
+    """(reactants, products) of the analogue that inserts ``vector[i]``
+    periods at site ``i`` (``reaction_growth_sites``) on both sides alike,
+    each through the provider's ``fragment``; fresh ids above every witness
+    id."""
+    from dataclasses import replace
+    sides = [{a: [row[:5], dict(row[5])] for m in mols for a, row in rm.molecule_rows(m).items()}
+             for mols in (reactants, products)]
+    fresh = max(max(side) for side in sides) + 1
+    for (_k, port, coordinate), count in zip(sites, vector):
+        for _ in range(count):
+            fragment = growth.fragment(port, coordinate)
+            ids = list(range(fresh, fresh + len(fragment.atoms)))
+            fresh += len(fragment.atoms)
+            for side in sides:
+                _insert_unit(side, port, fragment, ids)
+            coordinate = next((u, p) for i, u, p in fragment.coordinates
+                              if i == fragment.new_port)
+            port = replace(port, atom_id=ids[fragment.new_port],
+                           cap_atom_ids=tuple(ids[c] for c in fragment.new_caps))
+    return tuple(tuple(rm.molecule_from_rows(part) for part in rm.split_rows(
+        {a: tuple(attrs) + (tuple(sorted(bonds.items())),) for a, (attrs, bonds) in side.items()}))
+        for side in sides)
+
+
+def _heavy(mol) -> int:
+    return sum(1 for a in mol.atoms if not a.is_hydrogen())
+
+
+def _growth_vectors(sites, reactants, products, unit_heavy, hmax):
+    """Every vector of periods per site, at least one in total, that keeps
+    every grown species within ``hmax`` heavy atoms."""
+    product_of = {a.id: j for j, m in enumerate(products) for a in m.atoms}
+    owners = [(k, product_of[port.atom_id]) for k, port, _c in sites]
+    sizes = ([_heavy(m) for m in reactants], [_heavy(m) for m in products])
+    vector = [0] * len(sites)
+
+    def fits():
+        grown = ([0] * len(reactants), [0] * len(products))
+        for (k, j), count in zip(owners, vector):
+            grown[0][k] += count * unit_heavy
+            grown[1][j] += count * unit_heavy
+        return all(base + extra <= hmax for side in (0, 1)
+                   for base, extra in zip(sizes[side], grown[side]))
+
+    def walk(i):
+        if i == len(sites):
+            if any(vector):
+                yield tuple(vector)
+            return
+        vector[i] = 0
+        while fits():
+            yield from walk(i + 1)
+            vector[i] += 1
+        vector[i] = 0
+
+    yield from walk(0)
+
+
+def _depository_entries(family) -> dict:
+    return {(depository.label, int(entry.index)): entry
+            for depository in family.depositories for entry in depository.entries.values()}
+
+
+def _side_formulas(mols, extra) -> tuple:
+    out = []
+    for mol, count in zip(mols, extra):
+        f = _formula(mol)
+        for element, n in count.items():
+            f[element] = f.get(element, 0) + n
+        out.append(tuple(sorted(f.items())))
+    return tuple(sorted(out))
+
+
+def decide_by_construction(family, reactants, products, growth, unit, hmax, candidates, cache):
+    """The analogues of this reaction at the growth provider's sites, each
+    compared with every formula candidate by ``Reaction.is_isomorphic`` in
+    the orientation(s) its formulas allow (forward: the entry's reactants are
+    the analogue's reactants; reverse: its products).  Returns (sites,
+    analogues compared, matches); sites None when the provider cannot say."""
+    from rmgpy.reaction import Reaction
+    sites = reaction_growth_sites(growth, reactants, products)
+    if sites is None:
+        return None, 0, []
+    ekey = ("entries", family.label)
+    if ekey not in cache:
+        cache[ekey] = _depository_entries(family)
+    entries = cache[ekey]
+    fkey = ("formulas", family.label)
+    rows = {(label, index): (er, ep) for label, index, er, ep in cache[fkey]}
+    wanted = [(c["depository"], c["index"]) for c in candidates]
+    unit_heavy = sum(v for k, v in unit.items() if k != "H")
+    product_of = {a.id: j for j, m in enumerate(products) for a in m.atoms}
+    compared, matches, seen = 0, [], set()
+    for vector in _growth_vectors(sites, reactants, products, unit_heavy, hmax):
+        extra = ([defaultdict(int) for _ in reactants], [defaultdict(int) for _ in products])
+        for (k, port, _c), count in zip(sites, vector):
+            for element, n in unit.items():
+                extra[0][k][element] += count * n
+                extra[1][product_of[port.atom_id]][element] += count * n
+        grown = (_side_formulas(reactants, extra[0]), _side_formulas(products, extra[1]))
+        tests = [(key, orientation) for key in wanted
+                 for orientation, sides in (("forward", rows[key]), ("reverse", rows[key][::-1]))
+                 if tuple(sides) == grown]
+        if not tests:
+            continue
+        new_r, new_p = grown_analogue(growth, reactants, products, sites, vector)
+        forward = Reaction(reactants=[_species(m) for m in new_r],
+                           products=[_species(m) for m in new_p])
+        reverse = Reaction(reactants=forward.products, products=forward.reactants)
+        compared += 1
+        for (label, index), orientation in tests:
+            rxn = forward if orientation == "forward" else reverse
+            if not entries[(label, index)].item.is_isomorphic(rxn, either_direction=False):
+                continue
+            smiles = (sorted(m.to_smiles() for m in new_r), sorted(m.to_smiles() for m in new_p))
+            key = (label, index, orientation, tuple(smiles[0]), tuple(smiles[1]))
+            if key in seen:
+                continue
+            seen.add(key)
+            matches.append({"depository": label, "index": index,
+                            "label": entries[(label, index)].label, "orientation": orientation,
+                            "periods": list(vector), "reactants": smiles[0],
+                            "products": smiles[1],
+                            "species_heavy_atoms": {"reactants": sorted(map(_heavy, new_r)),
+                                                    "products": sorted(map(_heavy, new_p))}})
+    return sites, compared, matches
+
+
 def depository_exclusion(family, reactants, products, *, cache=None,
-                         repeat=REPEAT_UNIT_FORMULA) -> dict:
+                         repeat=REPEAT_UNIT_FORMULA, growth=None) -> dict:
     """Can any depository entry match a long-chain analogue of this reaction?
 
     A long-chain analogue adds ``n_i >= 0`` repeat units (``repeat``, C8H8 for
@@ -532,7 +703,18 @@ def depository_exclusion(family, reactants, products, *, cache=None,
        species formula multisets of ANY growth vector (each species grown
        independently on both sides, bounded by ``H_max``; a superset of the
        real analogues, so the exclusion is sound).
-    3. Otherwise ``refused:unknown`` with the candidate entries."""
+    3. Without a ``growth`` provider: ``refused:unknown`` with the candidate
+       entries.  With one (the declared chain, ``emit.certification_rules``)
+       the analogues are built, not counted: the provider names the growth
+       sites of each reactant (``growth_sites``; none at an atom the reaction
+       edits), every vector of whole periods at those sites within ``H_max``
+       is inserted on both sides alike through the provider's ``fragment``,
+       and each analogue whose formulas are a candidate's is compared with it
+       by ``Reaction.is_isomorphic`` (``decide_by_construction``).
+       ``excluded:isomorphism`` when none matches; ``matched:<depository>#<index>,...``
+       (refused, ``matches`` lists each analogue: periods per site, species
+       and heavy-atom sizes, orientation) when one does; ``refused:unknown``
+       when the provider names no growth sites or grows by another unit."""
     cache = {} if cache is None else cache
     key = ("hmax", family.label)
     if key not in cache:
@@ -594,9 +776,43 @@ def depository_exclusion(family, reactants, products, *, cache=None,
                                 "largest depository species); formula equality is necessary "
                                 "for Reaction.is_isomorphic"})
         return out
-    out.update({"verdict": "refused:unknown", "candidates": candidates,
-                "argument": "a depository entry has the formulas of a grown witness; whether "
-                            "it is isomorphic to an actual long-chain analogue is not decided"})
+    if growth is None:
+        out.update({"verdict": "refused:unknown", "candidates": candidates,
+                    "argument": "a depository entry has the formulas of a grown witness; "
+                                "whether it is isomorphic to an actual long-chain analogue is "
+                                "not decided"})
+        return out
+    out.update({"candidates": candidates, "growth_provider": growth.name})
+    if dict(growth.unit_formula() or ()) != rep:
+        out.update({"verdict": "refused:unknown",
+                    "argument": f"the growth provider {growth.name} grows by "
+                                f"{dict(growth.unit_formula() or ())}, not by the witness's "
+                                f"growth unit {rep}: the analogues are not decided"})
+        return out
+    sites, compared, matches = decide_by_construction(
+        family, reactants, products, growth, rep, hmax, candidates, cache)
+    if sites is None:
+        out.update({"verdict": "refused:unknown",
+                    "argument": f"the growth provider {growth.name} names no growth sites for "
+                                "a witness species: where a unit inserts is not known, so the "
+                                "analogues are not decided"})
+        return out
+    out.update({"growth_sites": [{"reactant": k, "atom": port.atom_id, "tag": port.tag}
+                                 for k, port, _c in sites],
+                "analogues_compared": compared, "matches": matches})
+    if not matches:
+        out.update({"verdict": "excluded:isomorphism",
+                    "argument": "every long-chain analogue (whole periods inserted at the "
+                                "declared growth sites, on both sides, within the largest "
+                                "depository species) whose formulas are a candidate's was "
+                                "compared with it by Reaction.is_isomorphic in both "
+                                "orientations: none is isomorphic"})
+        return out
+    named = sorted({(m["depository"], m["index"]) for m in matches})
+    out.update({"verdict": "matched:" + ",".join(f"{d}#{i}" for d, i in named),
+                "argument": "a long-chain analogue is isomorphic to a depository entry (sizes "
+                            "in matches): RMG would rate that oligomer from the depository; "
+                            "refused by name"})
     return out
 
 
@@ -718,13 +934,17 @@ class Certifier:
     unit of RECORD certification (``certify_record``) and of record-level
     recertification (``recertify``) when none is given there; None keeps the
     module domain and ``REPEAT_UNIT_FORMULA`` (an artifact compiled from a
-    declaration passes the declaration's own: ``emit.certification_rules``)."""
+    declaration passes the declaration's own: ``emit.certification_rules``).
+    ``growth``: the provider whose growth sites decide every depository
+    exclusion by construction (``depository_exclusion``; its unit is the
+    growth unit where none is given); None keeps the formula argument."""
 
     def __init__(self, families, resonance: str = "all", max_channel_sets: int = 64,
-                 max_entries: int = 4096, domain=None, repeat=None):
+                 max_entries: int = 4096, domain=None, repeat=None, growth=None):
         self.families = families
         self.domain = domain
         self.repeat = repeat
+        self.growth = growth
         self.resonance = resonance
         self.max_channel_sets = max_channel_sets
         self._channel_sets = _Bounded(max_channel_sets)
@@ -860,8 +1080,7 @@ class Certifier:
         # could switch the rate to a depository entry is a separate verdict
         cert["depository_exclusion_refused"] = [
             ";".join(ch["pathway"]) for ch in cert["channels"]
-            if not ch.get("whole_species")
-            and (ch.get("depository_exclusion") or {}).get("verdict", "").startswith("refused")]
+            if not ch.get("whole_species") and exclusion_refused(ch.get("depository_exclusion"))]
         # domain eligibility: its own disposition, consumed by record
         # certification (certified) and by recertification
         cert["eligible"] = bool(cert["channels"]) and not input_refusals and all(
@@ -962,9 +1181,12 @@ class Certifier:
         else:
             out["whole_species"] = False
             out["support_scope"] = TREE
+            if repeat is None:
+                repeat = REPEAT_UNIT_FORMULA if self.growth is None else \
+                    self.growth.unit_formula()
             out["depository_exclusion"] = depository_exclusion(
-                family, reactants, products, cache=self.cache,
-                repeat=REPEAT_UNIT_FORMULA if repeat is None else repeat)
+                family, reactants, products, cache=self.cache, repeat=repeat,
+                growth=self.growth)
             try:
                 kind, sel = self._tree_selection(family, ch)
                 out["source_kind"], out["selection"] = kind, sel
@@ -2494,8 +2716,7 @@ def _derivation_problems(record: dict, body: dict) -> list:
             (ch.get("eligibility") or {}).get("disposition") == "eligible" for ch in channels)
         refused = [";".join(ch["pathway"]) for ch in channels
                    if not ch.get("whole_species")
-                   and (ch.get("depository_exclusion") or {}).get("verdict", "").startswith(
-                       "refused")]
+                   and exclusion_refused(ch.get("depository_exclusion"))]
         for key, value in (("complete", complete), ("eligible", eligible),
                            ("depository_exclusion_refused", refused)):
             if cert.get(key) != value:

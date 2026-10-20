@@ -1059,6 +1059,49 @@ def bind_monomer(unit, monomer) -> MonomerBinding:
     return MonomerBinding(first)
 
 
+def _match_end(pattern, exact, root, target, anchor) -> Optional[dict]:
+    """One embedding of an end ``pattern`` (atom id -> row) into ``target``
+    rows with ``root`` on ``anchor``: ``exact`` atoms keep their attributes
+    and their degree (every neighbour is in the pattern), the others (join
+    neighbours) their element; every pattern bond is a target bond of the
+    same order.  None when there is none."""
+    def fits(p, t):
+        if p in exact:
+            return target[t][:5] == pattern[p][:5] and len(target[t][5]) == len(pattern[p][5])
+        return target[t][0] == pattern[p][0]
+
+    if not fits(root, anchor):
+        return None
+    order, parent = [root], {}
+    for p in order:
+        for q, _o in pattern[p][5]:
+            if q in pattern and q not in parent and q != root:
+                parent[q] = p
+                order.append(q)
+    image, used = {root: anchor}, {anchor}
+
+    def extend(k):
+        if k == len(order):
+            return True
+        p = order[k]
+        bond = dict(pattern[parent[p]][5])[p]
+        for t, o in target[image[parent[p]]][5]:
+            if t in used or o != bond or not fits(p, t):
+                continue
+            bonds = dict(target[t][5])
+            if any(bonds.get(image[r]) != o2 for r, o2 in pattern[p][5] if r in image):
+                continue
+            image[p] = t
+            used.add(t)
+            if extend(k + 1):
+                return True
+            del image[p]
+            used.discard(t)
+        return False
+
+    return dict(image) if extend(1) else None
+
+
 class DeclaredChainProvider(BoundaryProvider):
     """Chain proxies of one declaration (module doc).  Registered in
     ``boundaries.PROVIDERS`` under ``declared:<sha256[:16]>`` of the
@@ -1237,6 +1280,55 @@ class DeclaredChainProvider(BoundaryProvider):
             if atom.hydrogens:
                 counts["H"] = counts.get("H", 0) + atom.hydrogens
         return tuple(sorted(counts.items()))
+
+    def _growth_patterns(self) -> tuple:
+        """The provider's own capped artificial ends, from a three-period
+        build: per port (sorted by id) the port, its coordinate, the rows of
+        the port's whole period with all its hydrogens (``exact``: every
+        neighbour is in the pattern) and the join neighbours outside it
+        (matched by element and bond order only)."""
+        cached = self.__dict__.get("_growth")
+        if cached is None:
+            from rmgpy.kmc.rmg_moves import molecule_rows
+            build = self.build("growth", ChainSpec(units=3))
+            rows = molecule_rows(build.molecule)
+            cached = []
+            for port in build.metadata.ports:
+                if not port.artificial:
+                    continue
+                unit, _position = build.metadata.coordinate(port.atom_id)
+                period = {a for a, u, _k in build.metadata.coordinates if u == unit}
+                exact = period | {h for a in period for h, _o in rows[a][5] if rows[h][0] == "H"}
+                stubs = {n for a in exact for n, _o in rows[a][5] if n not in exact}
+                cached.append((port, build.metadata.coordinate(port.atom_id),
+                               {a: rows[a] for a in exact | stubs}, frozenset(exact)))
+            cached = tuple(cached)
+            self.__dict__["_growth"] = cached
+        return cached
+
+    def growth_sites(self, molecule) -> tuple:
+        """Where one period inserts in ``molecule`` (atoms carry ids): every
+        capped end, i.e. a whole terminal period of the declared geometry
+        whose join is capped by hydrogen, matched exactly against the
+        provider's own artificial end (period atoms with every neighbour;
+        the join neighbour by element and bond order).  One site per end
+        atom: ((Port, coordinate), ...) in the molecule's ids, extended by
+        ``fragment``.  A radical end, a phase cut or any end chemistry that
+        is not a capped period is no site; a declared end group with the
+        graph of a cap is one (a superset of the analogues)."""
+        from rmgpy.kmc.rmg_moves import molecule_rows
+        target = molecule_rows(molecule)
+        sites = {}
+        for port, coordinate, pattern, exact in self._growth_patterns():
+            for anchor in sorted(target):
+                if anchor in sites:
+                    continue
+                image = _match_end(pattern, exact, port.atom_id, target, anchor)
+                if image is not None:
+                    sites[anchor] = (Port(f"growth:{anchor}", anchor,
+                                          tuple(image[c] for c in port.cap_atom_ids),
+                                          port.tag, "artificial"), coordinate)
+        return tuple(sites[a] for a in sorted(sites))
 
     def spec_from_declaration(self, dp, head=None, tail=None, interior_radical=None):
         """A window ``DeclaredSpec`` for one generated roster chain."""

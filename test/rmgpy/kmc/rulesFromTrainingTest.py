@@ -30,7 +30,7 @@ def test_rmg_preparation_conditions_constraints_and_reuse(monkeypatch, excluded)
     def fill(*, verbose):
         assert owner.species_constraints is constraints
         assert owner.polymer_constraints is polymer
-        assert verbose is True
+        assert verbose is False
         calls.append("average")
 
     family = SimpleNamespace(auto_generated=False, rules=SimpleNamespace(entries={}),
@@ -221,3 +221,61 @@ def test_tree_family_structures_and_source_nodes_survive_rate_correction(
     # ArrheniusBM dHrxn=0 evaluation. Rates and conversion provenance must now
     # change, while chemical rewrites and selected source nodes remain exact.
     assert counts == {"Disproportionation": 12680, "R_Recombination": 594}
+
+
+# -- averaged rules keep RMG's short comments: a verbose comment nests every child's
+# comment, so it grows combinatorially up a hand-built tree (tens of MB, or MemoryError)
+
+
+def test_default_preparation_averages_without_verbose_comments(monkeypatch):
+    monkeypatch.setattr(rmg_input, "rmg", None)
+    seen = []
+    family = SimpleNamespace(auto_generated=False, rules=SimpleNamespace(entries={}),
+                             add_rules_from_training=lambda **kwargs: None,
+                             fill_rules_by_averaging_up=lambda *, verbose: seen.append(verbose))
+    result = prepare_rate_rules(SimpleNamespace(families={"ordinary": family}), "thermo")
+    assert seen == [False]
+    assert result["families"]["ordinary"]["policy"]["verbose"] is False
+
+
+class _Prepared(Exception):
+    """Raised by the recording preparation: nothing after it runs."""
+
+
+class _StubDatabase:
+    kinetics = thermo = None
+
+    def load_kinetics(self, *args, **kwargs):
+        pass
+
+    def load_thermo(self, *args, **kwargs):
+        pass
+
+
+def test_compile_emit_and_the_compiler_prepare_without_verbose_comments(monkeypatch, tmp_path):
+    """The three preparations of one compile and emit share one policy, so a
+    family prepared by one is reused by the next (a changed policy is refused)."""
+    import inspect
+
+    from rmgpy.kmc import compile as kmc_compile
+    from rmgpy.kmc import compiler, emit
+
+    default = inspect.signature(prepare_rate_rules).parameters["verbose"].default
+    verbose = []
+
+    def record(*args, **kwargs):
+        verbose.append(kwargs.get("verbose", default))
+        raise _Prepared
+
+    monkeypatch.setattr(compiler, "prepare_rate_rules", record)
+    monkeypatch.setattr(kmc_compile, "prepare_rate_rules", record)
+    monkeypatch.setattr("rmgpy.data.rmg.RMGDatabase", _StubDatabase)
+    monkeypatch.setattr(kmc_compile, "RMGDatabase", _StubDatabase)
+    with pytest.raises(_Prepared):
+        compiler.EventSetCompiler(None, [], [])
+    with pytest.raises(_Prepared):
+        emit.load_database(["F"], tmp_path)
+    with pytest.raises(_Prepared):
+        kmc_compile.compile_artifact(kmc_compile.CompileRequest(
+            str(tmp_path), str(tmp_path / "out"), ("F",), family_universe=("F",)))
+    assert verbose == [False, False, False]
