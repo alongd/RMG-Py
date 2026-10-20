@@ -129,6 +129,7 @@ import math
 import weakref
 from collections import Counter, OrderedDict
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from rmgpy import constants
@@ -212,7 +213,13 @@ class TransportLaw:
     ``D(n) = D0(T) / n`` (Rouse) or ``D0 N_e / n^2`` above ``N_e`` (crossover).
     ``M0`` (g/mol) is the declared repeat unit's molar mass and ``b`` its
     backbone atom count (head-port to tail-port path); every other number is
-    read from ``transport_model["met"]`` (schema ``MET_SCHEMA``)."""
+    read from ``transport_model["met"]`` (schema ``MET_SCHEMA``).  A
+    component's MET length is ``floor(B_c / b)`` (at least 1).
+
+    A linear statistical copolymer (``PolymerSpec``) has no one repeat unit:
+    ``M0`` is the mean residue molar mass ``Mbar0 = sum x_i M_i``
+    (``melt_sequence``) and the MET length is mass-based,
+    ``floor(M_c / Mbar0)`` (at least 1), ``M_c`` the component's molar mass."""
 
     segment_diffusivity: Tuple
     chain_scaling: Tuple
@@ -221,6 +228,8 @@ class TransportLaw:
     spin_factor: float
     repeat_unit_molar_mass_g_mol: float
     backbone_atoms_per_unit: int
+    # PolymerSpec: the exact mean residue molar mass (g/mol) of the mass-based length
+    mean_residue_molar_mass_g_mol: Optional[Fraction] = None
 
     @classmethod
     def from_spec(cls, spec) -> "TransportLaw":
@@ -275,13 +284,20 @@ class TransportLaw:
         spin = _number(met["spin_factor"], "spin_factor")
         if not SPIN_FACTOR_RANGE[0] <= spin <= SPIN_FACTOR_RANGE[1]:
             raise DeclarationError(f"spin_factor must lie in {SPIN_FACTOR_RANGE}, got {spin}")
-        repeat = spec.repeat_unit
-        m0 = float(repeat.composition.molar_mass_g_mol())
-        b = len(_backbone_keys(repeat))
+        from rmgpy.polymer_spec import PolymerSpec
+        mean = None
+        if isinstance(spec, PolymerSpec):
+            from rmgpy.kmc.melt_sequence import mean_residue_molar_mass
+            mean = mean_residue_molar_mass(spec)
+            m0, b = float(mean), 0
+        else:
+            repeat = spec.repeat_unit
+            m0 = float(repeat.composition.molar_mass_g_mol())
+            b = len(_backbone_keys(repeat))
         return cls(d0_values, scaling_values,
                    _number(met["mean_square_end_to_end_per_molar_mass_m2_mol_per_g"],
                            "mean_square_end_to_end_per_molar_mass_m2_mol_per_g"),
-                   _number(met["contact_radius_m"], "contact_radius_m"), spin, m0, b)
+                   _number(met["contact_radius_m"], "contact_radius_m"), spin, m0, b, mean)
 
     def d0(self, temperature: float) -> float:
         t = float(temperature)
@@ -308,7 +324,11 @@ class TransportLaw:
         return (4.0 * math.pi * constants.Na * self.spin_factor
                 * (self.diffusivity(temperature, n1) + self.diffusivity(temperature, n2)) * radius)
 
-    def met_length(self, backbone_atoms: int) -> int:
+    def met_length(self, backbone_atoms: int, molar_mass_g_mol=None) -> int:
+        """The MET length of a component: ``floor(B_c / b)``, or for a
+        copolymer ``floor(M_c / Mbar0)`` (``molar_mass_g_mol``, exact)."""
+        if self.mean_residue_molar_mass_g_mol is not None:
+            return max(1, math.floor(Fraction(molar_mass_g_mol) / self.mean_residue_molar_mass_g_mol))
         return max(1, backbone_atoms // self.backbone_atoms_per_unit)
 
     def check_range(self, t_low: float, t_high: float, samples: int = 64):
@@ -852,19 +872,28 @@ def _isomorphic(g, h) -> bool:
                             edge_match=lambda x, y: x["order"] == y["order"])
 
 
+def monomer_product_species(spec) -> List[Tuple[str, Any]]:
+    """(label, graph) of the declared monomer products: ``monomer_product``
+    (v1), or ``monomer_product.<residue>`` per ``monomer_products`` entry (v2)."""
+    if hasattr(spec, "monomer_products"):
+        return [(f"monomer_product.{name}", graph) for name, graph in spec.monomer_products]
+    monomer = getattr(spec, "monomer_product", None)
+    return [] if monomer is None else [("monomer_product", monomer)]
+
+
 class SpeciesIdentity:
     """Exact isomorphism (under resonance) against the declared species."""
 
     def __init__(self, spec):
         declared = [(name, graph) for name, graph, _d in spec.small_species]
-        reserved = set(BUILTIN_SPECIES) | {"monomer_product"}
+        products = monomer_product_species(spec)
+        reserved = set(BUILTIN_SPECIES) | {"monomer_product"} | {name for name, _g in products}
         collide = sorted(name for name, _g in declared if name in reserved)
         if collide:
             raise DeclarationError(
                 f"declared small species labels {collide} collide with built-in labels {sorted(reserved)}; "
                 "rename them")
-        if getattr(spec, "monomer_product", None) is not None:
-            declared.append(("monomer_product", spec.monomer_product))
+        declared.extend(products)
         self.forms = []
         for name, graph in declared:
             builder = _Builder()
@@ -914,6 +943,17 @@ class SpeciesIdentity:
                 break
         bucket.append((g, found))
         return found
+
+
+def declared_initialization(spec):
+    """The representative masses, volume and scale factor of the declared melt:
+    ``spec.initialization()`` (v1), or those of the sampled copolymer melt
+    (``melt_sequence.initialization``)."""
+    from rmgpy.polymer_spec import PolymerSpec
+    if isinstance(spec, PolymerSpec):
+        from rmgpy.kmc.melt_sequence import initialization
+        return initialization(spec)
+    return spec.initialization()
 
 
 def refuse_initial_species_overlap(spec, identity: SpeciesIdentity, state=None):
@@ -1022,11 +1062,11 @@ class MeltEngine:
 
     def __init__(self, spec, catalog, temperature: float, rng, *, state=None, volume_m3=None,
                  quotient: bool = True, temperature_range=None):
-        from rmgpy.polymer_spec import LinearHomopolymerSpec, refuse_schema_v2
-        refuse_schema_v2(spec, "MeltEngine")
-        if not isinstance(spec, LinearHomopolymerSpec):
+        from rmgpy.polymer_spec import LinearHomopolymerSpec, PolymerSpec
+        if not isinstance(spec, (LinearHomopolymerSpec, PolymerSpec)):
             raise DeclarationError(
-                f"only LinearHomopolymerSpec declarations are supported, got {type(spec).__name__}")
+                "only LinearHomopolymerSpec and PolymerSpec declarations are supported, "
+                f"got {type(spec).__name__}")
         self.spec = spec
         self.quotient = bool(quotient)
         self.transport = TransportLaw.from_spec(spec)
@@ -1045,7 +1085,9 @@ class MeltEngine:
         isotopes = sorted({n.isotope for n in self.state.atoms.values() if n.isotope is not None})
         if isotopes:
             raise DeclarationError(f"non-natural isotopes are refused in v1 (found mass numbers {isotopes})")
-        self.volume = float(spec.initialization().volume_m3 if volume_m3 is None else volume_m3)
+        if volume_m3 is None:
+            volume_m3 = declared_initialization(spec).volume_m3
+        self.volume = float(volume_m3)
         if not math.isfinite(self.volume) or self.volume <= 0.0:
             raise DeclarationError("the volume must be finite and positive")
         self.nav = constants.Na * self.volume
@@ -1179,7 +1221,10 @@ class MeltEngine:
                         for kind, ss in grouped.items():
                             sites[(cls.index, p, kind)] = tuple(sorted(ss))
             backbone = state.components.backbone_count(cid)
-            out[cid] = _Entry(cid, atoms, uni, sites, backbone, self.transport.met_length(backbone),
+            length = (self.transport.met_length(backbone)
+                      if self.transport.mean_residue_molar_mass_g_mol is None
+                      else self.transport.met_length(backbone, state.components.molar_mass_g_mol(cid)))
+            out[cid] = _Entry(cid, atoms, uni, sites, backbone, length,
                               state.components.radical_count(cid), self.identity.identify(state, cid))
         return out
 

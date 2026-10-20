@@ -808,7 +808,12 @@ class _Builder:
 def _backbone_keys(repeat) -> frozenset:
     """Atom keys on the shortest head-port -> tail-port path of the repeat unit."""
     ports = dict(repeat.ports)
-    start, goal = ports["head"].atom, ports["tail"].atom
+    return _path_keys(repeat, ports["head"].atom, ports["tail"].atom)
+
+
+def _path_keys(repeat, start, goal) -> frozenset:
+    """Atom keys on the shortest ``start`` -> ``goal`` path of a declared graph
+    (breadth first, neighbours in key order)."""
     neighbours = {atom.key: [] for atom in repeat.atoms}
     for bond in repeat.bonds:
         a, b = bond.atoms
@@ -833,21 +838,26 @@ def _backbone_keys(repeat) -> frozenset:
     return frozenset(path)
 
 
-def _normalized_forms(graph, closing: bool = False):
+def _normalized_forms(graph, closing: bool = False, ends=None):
     """(origin keys by atom id, [labelled networkx graph per resonance form],
     backbone atom ids) of one declaration materialized like the melt: every
     hydrogen explicit (declared as atoms or as counts), aromatic rings in
     every supported form (Kekule and 1.5 declarations give the same forms).
     ``closing``: ``graph`` is a repeat unit whose head-tail bond is raised by
-    the port bond order (the polymerized C=C restored)."""
+    the port bond order (the polymerized C=C restored); ``ends``: its (head,
+    tail) ports when they are not the graph's ``head`` / ``tail`` ports (a
+    v2 residue's entry and exit sites)."""
     import networkx as nx
     from rmgpy.kmc import window_matcher as wm
     builder = _Builder()
-    backbone = _backbone_keys(graph) if closing else frozenset()
-    ids = builder.add_segment(graph, "mobile", 0, "declaration", backbone)
     if closing:
         ports = dict(graph.ports)
-        head, tail = ports["head"], ports["tail"]
+        head, tail = (ports["head"], ports["tail"]) if ends is None else ends
+        backbone = _path_keys(graph, head.atom, tail.atom)
+    else:
+        backbone = frozenset()
+    ids = builder.add_segment(graph, "mobile", 0, "declaration", backbone)
+    if closing:
         a, b = ids[head.atom], ids[tail.atom]
         if b not in builder.atoms[a]["edges"] or head.bond_order != tail.bond_order:
             raise AncestryError(
@@ -898,6 +908,9 @@ def monomer_backbone_keys(spec, graph) -> Optional[frozenset]:
     Refused (``AncestryError``) when the head and tail atoms are not bonded,
     the ports differ in order, no isomorphism exists, or two isomorphisms
     flag different atoms (ambiguous)."""
+    from rmgpy.polymer_spec import PolymerSpec
+    if isinstance(spec, PolymerSpec):
+        return _sequence_monomer_backbone_keys(spec, graph)
     monomer = getattr(spec, "monomer_product", None)
     if monomer is None:
         return None
@@ -907,6 +920,35 @@ def monomer_backbone_keys(spec, graph) -> Optional[frozenset]:
     if not any(next(_isomorphisms(query, form), None) is not None for form in monomer_forms):
         return None
     _k, closed_forms, backbone = _normalized_forms(spec.repeat_unit, closing=True)
+    return _unique_ancestry(keys, query, closed_forms, backbone)
+
+
+def _sequence_monomer_backbone_keys(spec, graph) -> Optional[frozenset]:
+    """``monomer_backbone_keys`` of a v2 declaration: ``graph`` against every
+    declared ``monomer_products`` entry, each closed onto its residue between
+    the residue's entry and exit sites.  A graph that is the monomer of two
+    residues is ambiguous (``AncestryError``)."""
+    from rmgpy.kmc.melt_sequence import residue_sites
+    if not spec.monomer_products:
+        return None
+    keys, species_forms, _none = _normalized_forms(graph)
+    query = species_forms[0]
+    residues = dict(spec.residues)
+    found = []
+    for name, monomer in spec.monomer_products:
+        _k, monomer_forms, _none = _normalized_forms(monomer)
+        if any(next(_isomorphisms(query, form), None) is not None for form in monomer_forms):
+            _k, closed_forms, backbone = _normalized_forms(residues[name].graph, closing=True,
+                                                           ends=residue_sites(spec, name))
+            found.append((name, _unique_ancestry(keys, query, closed_forms, backbone)))
+    if len(found) > 1:
+        raise AncestryError(
+            "initial mobile monomer refused: it is the monomer product of residues "
+            f"{sorted(name for name, _keys in found)}, so its ancestry is ambiguous")
+    return found[0][1] if found else None
+
+
+def _unique_ancestry(keys, query, closed_forms, backbone) -> frozenset:
     flagged = {frozenset(keys[k] for k, v in iso.items() if v in backbone)
                for form in closed_forms for iso in _isomorphisms(query, form)}
     if not flagged:
@@ -920,39 +962,36 @@ def monomer_backbone_keys(spec, graph) -> Optional[frozenset]:
     return next(iter(flagged))
 
 
+def segment_residue(segment: str) -> Optional[str]:
+    """The residue a chain atom's ``Origin.segment`` names (``unit <k>
+    <residue>``, a v2 declaration's unit), or None (an end group, a v1
+    ``unit <k>``, a mobile species)."""
+    parts = segment.split(" ", 2)
+    return parts[2] if len(parts) == 3 and parts[0] == "unit" else None
+
+
 def materialize(spec) -> MeltState:
     """Materialize the declared melt: chains by (DP, declaration ordinal), then
     the initial mobile molecules in declaration order.  Atom ids are 0..N-1 in
     canonical order, so the same declaration gives identical ids and bytes in
     any process.  An initially mobile molecule that is the declared
     ``monomer_product`` gets backbone origin through its unique map onto the
-    repeat unit (``monomer_backbone_keys``; ambiguous: ``AncestryError``)."""
-    from rmgpy.polymer_spec import LinearHomopolymerSpec, refuse_schema_v2
+    repeat unit (``monomer_backbone_keys``; ambiguous: ``AncestryError``).
 
-    refuse_schema_v2(spec, "melt_state.materialize")
-    if not isinstance(spec, LinearHomopolymerSpec):
+    A ``PolymerSpec`` (linear statistical copolymer) samples each chain's
+    residue sequence (``melt_sequence``: ``markov_chain_v1`` with the declared
+    seed; a realized composition outside the declared tolerance is refused);
+    residues are joined head to tail by the declared junctions and a unit's
+    segment is ``unit <k> <residue>``."""
+    from rmgpy.polymer_spec import LinearHomopolymerSpec, PolymerSpec
+
+    if isinstance(spec, PolymerSpec):
+        builder, molecules = _sequence_chains(spec)
+    elif isinstance(spec, LinearHomopolymerSpec):
+        builder, molecules = _homopolymer_chains(spec)
+    else:
         raise MeltStateError(
-            f"only LinearHomopolymerSpec declarations are supported, got {type(spec).__name__}")
-    repeat, head, tail = spec.repeat_unit, spec.head_end_group, spec.tail_end_group
-    repeat_ports = dict(repeat.ports)
-    backbone = _backbone_keys(repeat)
-    builder = _Builder()
-    molecules = 0
-    chain = 0
-    for dp, count in sorted(spec.initial_ensemble.counts.items()):
-        if dp < 1:
-            raise MeltStateError(f"chains need DP >= 1, got {dp}")
-        for _ in range(count):
-            previous = builder.add_segment(head, "chain", chain, "head_end")
-            joint = (previous[head.ports[0][1].atom], head.ports[0][1].bond_order)
-            for unit in range(1, dp + 1):
-                ids = builder.add_segment(repeat, "chain", chain, f"unit {unit}", backbone)
-                builder.bond(joint[0], ids[repeat_ports["head"].atom], joint[1])
-                joint = (ids[repeat_ports["tail"].atom], repeat_ports["tail"].bond_order)
-            ids = builder.add_segment(tail, "chain", chain, "tail_end")
-            builder.bond(joint[0], ids[tail.ports[0][1].atom], joint[1])
-            chain += 1
-            molecules += 1
+            f"only LinearHomopolymerSpec and PolymerSpec declarations are supported, got {type(spec).__name__}")
     small = {name: graph for name, graph, _disposition in spec.small_species}
     mobile = 0
     for name, count in spec.initial_mobile_counts:
@@ -968,3 +1007,54 @@ def materialize(spec) -> MeltState:
         raise MeltStateError(
             f"declaration yields {len(state.components)} connected molecules, expected {molecules}")
     return state
+
+
+def _homopolymer_chains(spec):
+    repeat, head, tail = spec.repeat_unit, spec.head_end_group, spec.tail_end_group
+    repeat_ports = dict(repeat.ports)
+    backbone = _backbone_keys(repeat)
+    builder = _Builder()
+    chain = 0
+    for dp, count in sorted(spec.initial_ensemble.counts.items()):
+        if dp < 1:
+            raise MeltStateError(f"chains need DP >= 1, got {dp}")
+        for _ in range(count):
+            previous = builder.add_segment(head, "chain", chain, "head_end")
+            joint = (previous[head.ports[0][1].atom], head.ports[0][1].bond_order)
+            for unit in range(1, dp + 1):
+                ids = builder.add_segment(repeat, "chain", chain, f"unit {unit}", backbone)
+                builder.bond(joint[0], ids[repeat_ports["head"].atom], joint[1])
+                joint = (ids[repeat_ports["tail"].atom], repeat_ports["tail"].bond_order)
+            ids = builder.add_segment(tail, "chain", chain, "tail_end")
+            builder.bond(joint[0], ids[tail.ports[0][1].atom], joint[1])
+            chain += 1
+    return builder, chain
+
+
+def _sequence_chains(spec):
+    from rmgpy.kmc import melt_sequence as msq
+    sequences = msq.sample_sequences(spec)
+    msq.check_composition(spec, msq.realized_composition(spec, sequences))
+    residues = dict(spec.residues)
+    sites = {name: msq.residue_sites(spec, name) for name in residues}
+    backbone = {name: msq.residue_backbone_keys(spec, name) for name in residues}
+    junctions = spec.junctions
+    head, tail = spec.head_end_group, spec.tail_end_group
+    builder = _Builder()
+    for chain, sequence in enumerate(sequences):
+        previous = builder.add_segment(head, "chain", chain, "head_end")
+        port = head.ports[0][1]
+        joint = (previous[port.atom], port.bond_order)
+        last = None
+        for unit, name in enumerate(sequence, start=1):
+            ids = builder.add_segment(residues[name].graph, "chain", chain, f"unit {unit} {name}",
+                                      backbone[name])
+            if last is None:
+                builder.bond(joint[0], ids[sites[name][0].atom], joint[1])
+            else:
+                exit_atom, entry_atom, order = junctions[(last[0], name)]
+                builder.bond(last[1][exit_atom], ids[entry_atom], order)
+            last = (name, ids)
+        ids = builder.add_segment(tail, "chain", chain, "tail_end")
+        builder.bond(last[1][sites[last[0]][1].atom], ids[tail.ports[0][1].atom], tail.ports[0][1].bond_order)
+    return builder, len(sequences)

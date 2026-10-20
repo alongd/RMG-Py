@@ -1368,13 +1368,18 @@ def _statistics(value, composition: Mapping[str, Fraction],
 @dataclass(frozen=True)
 class CopolymerEnsemble:
     """The v1 chain-length ensemble plus composition, sequence statistics,
-    sampler and seed (every number an exact rational or integer)."""
+    sampler and seed (every number an exact rational or integer), and the
+    optional ``composition_relative_tolerance``: the largest relative
+    deviation of the sampled melt's composition from the declared one that
+    the melt kMC accepts (``rmgpy.kmc.melt_sequence``; absent, the kMC
+    refuses to sample)."""
 
     chains: InitialEnsemble
     composition: Tuple[Tuple[str, Fraction], ...]
     statistics: SequenceStatistics
     sampler: str
     seed: int
+    composition_tolerance: Optional[Fraction] = None
 
     @classmethod
     def from_mapping(cls, value: Mapping, residues: Sequence[str],
@@ -1382,7 +1387,7 @@ class CopolymerEnsemble:
         if not isinstance(value, Mapping):
             raise ValueError("initial_ensemble must be a mapping")
         new = {"composition", "sequence_statistics", "sampler", "seed"}
-        unknown = set(value) - set(_V1_ENSEMBLE_FIELDS) - new
+        unknown = set(value) - set(_V1_ENSEMBLE_FIELDS) - new - {"composition_relative_tolerance"}
         if unknown:
             raise ValueError(f"unknown initial_ensemble fields: {sorted(unknown)}")
         if new - set(value):
@@ -1402,13 +1407,21 @@ class CopolymerEnsemble:
         seed = value["seed"]
         if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
             raise ValueError(f"seed must be a non-negative integer, got {seed!r}")
-        return cls(chains, tuple(sorted(composition.items())), statistics, SAMPLER_V1, seed)
+        tolerance = value.get("composition_relative_tolerance")
+        if tolerance is not None:
+            tolerance = _exact(tolerance, "composition_relative_tolerance")
+            if tolerance < 0:
+                raise ValueError("composition_relative_tolerance cannot be negative")
+        return cls(chains, tuple(sorted(composition.items())), statistics, SAMPLER_V1, seed, tolerance)
 
     def as_mapping(self) -> Dict[str, Any]:
-        return dict(self.chains.as_mapping(),
-                    composition={r: _rational(x) for r, x in self.composition},
-                    sequence_statistics=self.statistics.as_mapping(),
-                    sampler=self.sampler, seed=self.seed)
+        result = dict(self.chains.as_mapping(),
+                      composition={r: _rational(x) for r, x in self.composition},
+                      sequence_statistics=self.statistics.as_mapping(),
+                      sampler=self.sampler, seed=self.seed)
+        if self.composition_tolerance is not None:
+            result["composition_relative_tolerance"] = _rational(self.composition_tolerance)
+        return result
 
 
 def _capped_chain_molecule(pieces, joins) -> Molecule:

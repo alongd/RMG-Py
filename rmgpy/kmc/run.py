@@ -20,9 +20,12 @@ string) is normalized by ``rmgpy.polymer_spec.normalized_linear_homopolymer_spec
 (the input file's own reader), a schema-2 ``polymer_spec`` by
 ``normalized_polymer_spec``; a deck carries exactly one of the two.  A missing
 declaration, both, a label that differs from the declaration's, or legacy
-chemistry arguments beside it are refused.  The melt kMC itself reads v1
-declarations only: ``run`` refuses a ``polymer_spec`` deck by name
-(``refused:schema_v2``) before anything is written.
+chemistry arguments beside it are refused.  A ``polymer_spec`` deck (linear
+statistical copolymer) runs on the melt sampled from its declared sequence
+statistics (``melt_sequence``); ``run.json`` carries its declared and
+realized composition (``composition``).  It has no MoM counterpart yet: a
+``--mom`` file is refused and no comparison is written
+(``refused:schema_v2_mom``, ``comparison_refused``).
 From the same call the run reads ``cutoff`` (the MoM hybrid threshold ``xs``,
 default as in ``polymer()``) and ``side_group_homolysis`` (the MoM side-group
 channels), so the observables are partitioned exactly as the MoM run of the
@@ -207,8 +210,8 @@ import numpy
 from rmgpy.kmc import catalog_set as cs
 from rmgpy.kmc import melt_engine as me
 from rmgpy.kmc import melt_observables as mo
-from rmgpy.polymer_spec import (LinearHomopolymerSpec, PolymerSpec, SchemaV2Refusal,
-                                normalized_linear_homopolymer_spec, normalized_polymer_spec)
+from rmgpy.polymer_spec import (LinearHomopolymerSpec, PolymerSpec, normalized_linear_homopolymer_spec,
+                                normalized_polymer_spec)
 
 RUN_SCHEMA = "kmc-melt-run/1"
 COMPARISON_SCHEMA = "kmc-melt-comparison/1"
@@ -850,7 +853,7 @@ class _LabelledObserver(mo.MeltObserver):
 
 @dataclass(frozen=True)
 class _Context:
-    spec: LinearHomopolymerSpec
+    spec: Union[LinearHomopolymerSpec, PolymerSpec]
     catalog: me.PayloadCatalog
     temperature: float
     times: Tuple[float, ...]
@@ -1006,6 +1009,21 @@ def write_comparison(path, rows: List[dict], labels: Dict[str, Any]):
 # --------------------------------------------------------------------------
 # the run
 # --------------------------------------------------------------------------
+def sequence_composition(spec: PolymerSpec) -> dict:
+    """The declared and realized composition of a copolymer deck's sampled
+    melt (exact rationals as strings) and the declared tolerance."""
+    from rmgpy.kmc import melt_sequence as msq
+    realized = msq.realized_composition(spec)
+    declared = dict(spec.initial_ensemble.composition)
+    worst = max((abs(realized[r] - x) / x for r, x in declared.items() if x > 0), default=0)
+    tolerance = spec.initial_ensemble.composition_tolerance
+    return {"sampler": spec.initial_ensemble.sampler, "seed": spec.initial_ensemble.seed,
+            "declared": {r: str(x) for r, x in sorted(declared.items())},
+            "realized": {r: str(x) for r, x in sorted(realized.items())},
+            "max_relative_deviation": float(worst),
+            "relative_tolerance": None if tolerance is None else str(tolerance)}
+
+
 def _write_manifest(out: Path, manifest: dict):
     tmp = out / "run.json.tmp"
     tmp.write_text(json.dumps(manifest, sort_keys=True, indent=1, allow_nan=False) + "\n")
@@ -1020,8 +1038,9 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
     seed that fails is recorded and the status is ``failed``."""
     start = time.perf_counter()
     deck = read_deck(deck)
-    if isinstance(deck.spec, PolymerSpec):
-        raise RunError(str(SchemaV2Refusal("rmgpy.kmc.run")))
+    sequence = isinstance(deck.spec, PolymerSpec)
+    if sequence and mom is not None:
+        raise RunError(f"{mo.MOM_V2_REFUSAL} (--mom {mom})")
     temperature = float(temperature)
     if not math.isfinite(temperature) or temperature <= 0.0:
         raise RunError(f"the temperature must be finite and positive, got {temperature!r}")
@@ -1081,8 +1100,11 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
         "leak": {"estimator": me.LEAK_ESTIMATOR + "/pooled", "definition": me.LEAK_DEFINITION,
                  "note": LEAK_NOTE, "per_seed": [], "excluded_seeds": [],
                  "pooled": me.pooled_leak_fraction([])},
-        "mom": mom_record, "comparison": "comparison.csv", "wall_s": None,
+        "mom": mom_record, "comparison": None if sequence else "comparison.csv", "wall_s": None,
     }, **labels)
+    if sequence:
+        manifest["comparison_refused"] = mo.MOM_V2_REFUSAL
+        manifest["composition"] = sequence_composition(deck.spec)
     _write_manifest(out, manifest)
 
     def record(result):
@@ -1113,10 +1135,11 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
             with _executor(jobs, context) as pool:
                 for result in pool.map(_seed_task, seeds):
                     record(result)
-        observations = {r["seed"]: [json.loads(x) for x in _observation_lines((out / r["path"]).read_text())]
-                        if (out / r["path"]).exists() else [] for r in manifest["runs"]}
-        write_comparison(out / "comparison.csv",
-                         comparison_rows(observations, times, mom_by_time, len(seeds)), labels)
+        if not sequence:
+            observations = {r["seed"]: [json.loads(x) for x in _observation_lines((out / r["path"]).read_text())]
+                            if (out / r["path"]).exists() else [] for r in manifest["runs"]}
+            write_comparison(out / "comparison.csv",
+                             comparison_rows(observations, times, mom_by_time, len(seeds)), labels)
     except BaseException as error:
         manifest["status"] = "failed"
         manifest["error"] = f"{type(error).__name__}: {error}"
@@ -1135,7 +1158,7 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m rmgpy.kmc.run",
-        description="Isothermal melt kMC of the deck's linear_homopolymer_spec over emitted catalogs.")
+        description="Isothermal melt kMC of the deck's linear_homopolymer_spec or polymer_spec over emitted catalogs.")
     parser.add_argument("deck", help="RMG input file with one polymer(..., linear_homopolymer_spec=...)")
     parser.add_argument("catalogs", nargs="+",
                         help="kmc-template-catalog/1 files, or kmc-catalog-set/1 manifests (their members)")
