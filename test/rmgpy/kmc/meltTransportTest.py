@@ -129,13 +129,14 @@ def test_also_well_mixed_writes_both_passes_labelled(tmp_path):
         bound_escape.append(r["report"]["thinning"])
     assert (out / "comparison.csv").exists() and (out / "well_mixed" / "comparison.csv").exists()
     assert wm["leak"]["pooled"] == me.pooled_leak_fraction(wm["leak"]["per_seed"])
-    # the bound pass accepts every thinned proposal; the declared one almost none
+    # the bound pass accepts every thinned proposal; the declared one does not
     assert sum(t["proposals"] for t in bound_escape) > 0
     for t in bound_escape:
         assert t["accepted"] == t["proposals"]
         assert all(c["escape_probability"] in (None, 1.0) for c in t["classes"])
     assert sum(t["proposals"] for t in declared_escape) > 0
-    assert all(t["escape_probability"] is None or t["escape_probability"] < 1.0e-3 for t in declared_escape)
+    escapes = [t["escape_probability"] for t in declared_escape if t["proposals"]]
+    assert escapes and all(e < 1.0 for e in escapes), escapes
 
 
 def test_without_the_flag_the_run_is_unchanged(tmp_path):

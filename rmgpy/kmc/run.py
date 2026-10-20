@@ -153,6 +153,24 @@ seeds still run and the run's status is ``failed``.
     mom: null | {path, sha256, times, header (the --mom file's header, null for the list forms)}
     comparison: "comparison.csv"
     wall_s
+    [--also-well-mixed only:]
+    transport: {passes: ["declared", "well_mixed_bound"],
+                declared: {met, sources (transport_sources, null when uncited)},
+                well_mixed_bound: {met, definition, WELL_MIXED_D0_M2_S}}
+    well_mixed: {status, path: "well_mixed", runs (paths under well_mixed/), censoring, leak,
+                 comparison: "well_mixed/comparison.csv"}
+
+``--also-well-mixed``: the same seeds, catalogs and times run a second time on
+the deck with only its segment diffusivity at ``WELL_MIXED_D0_M2_S`` (every
+Collins-Kimball escape factor exactly 1, no encounter limit:
+``WELL_MIXED_DEFINITION``); every observation and comparison row of a run
+with the flag carries ``transport`` = ``declared`` or ``well_mixed_bound``,
+and ``status`` covers both passes.  Without the flag nothing of this appears.
+
+**Transport sources.** ``transport_model["sources"]`` (optional, beside
+``met``) maps each of ``CITED_MET_FIELDS`` to its citations; present, it must
+cite every field and no other (``transport_sources``).  Like the rest of
+``transport_model`` it is outside ``chemistry_sha256``.
 
 The run's leak number is ``leak.pooled.fraction`` only: per seed the
 manifest carries the additive parts, never a single-run fraction.  Rerunning
@@ -212,7 +230,7 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy
 
@@ -247,6 +265,18 @@ COMPARISON_COLUMNS = ("time_s", "quantity", "tier", "seeds_requested", "seeds", 
                       "kmc_stderr", "censored_kmc_mean", "censored_kmc_stderr", "mom", "difference",
                       "relative_difference", "note", "mom_flags")
 MOM_TIME_RELATIVE = 1.0e-12
+# the MET fields a ``transport_model["sources"]`` mapping cites (every one, nothing else)
+CITED_MET_FIELDS = ("segment_diffusivity", "chain_scaling",
+                    "mean_square_end_to_end_per_molar_mass_m2_mol_per_g", "contact_radius_m", "spin_factor")
+# the well-mixed bound's segment diffusivity (m^2/s): k_D ~ 1e215 m^3 mol^-1 s^-1 or more, so
+# phi = k_D / (k_D + k_act) rounds to exactly 1.0 for any k_act below ~1e199 (finite: no inf/inf)
+WELL_MIXED_D0_M2_S = 1.0e200
+TRANSPORT_PASSES = ("declared", "well_mixed_bound")
+WELL_MIXED_DEFINITION = (
+    "the declared deck with only transport_model.met.segment_diffusivity replaced by arrhenius "
+    "D_ref_m2_s = WELL_MIXED_D0_M2_S (Ea 0, T_ref the run temperature) and chain_scaling rouse: every "
+    "Collins-Kimball escape factor is exactly 1.0 and no encounter limits a MET pair (the encounter "
+    "limit is off); same catalogs, seeds and times")
 
 
 class RunError(ValueError):
@@ -404,6 +434,10 @@ def read_deck(path) -> Deck:
     if label != spec.label:
         raise RunError(f"deck {path}: polymer label {label!r} differs from the declaration "
                        f"label {spec.label!r}")
+    try:
+        transport_sources(spec)
+    except RunError as error:
+        raise RunError(f"deck {path}: {error}") from error
     xs = literal("cutoff", POLYMER_CUTOFF_DEFAULT)
     if isinstance(xs, bool) or not isinstance(xs, int) or xs < 0:
         raise RunError(f"deck {path}: polymer cutoff must be a non-negative integer, got {xs!r}")
@@ -414,6 +448,46 @@ def read_deck(path) -> Deck:
         except RunError as error:
             raise RunError(f"deck {path}: side_group_homolysis {error}") from error
     return Deck(str(path), _sha256(raw), spec, spec.label, xs, sgh)
+
+
+def transport_sources(spec) -> Optional[Dict[str, List[str]]]:
+    """``transport_model["sources"]`` as {MET field: [citation, ...]}, or None
+    when the deck cites nothing.  When present it cites every field of
+    ``CITED_MET_FIELDS`` with at least one non-empty string and names no other
+    field (``RunError``).  Outside ``chemistry_sha256`` like the rest of
+    ``transport_model``; the engine reads only ``met``."""
+    model = getattr(spec, "transport_model", None) or {}
+    if "sources" not in model:
+        return None
+    sources = model["sources"]
+    if not isinstance(sources, Mapping):
+        raise RunError("transport_model.sources must map MET fields to citations")
+    missing = sorted(set(CITED_MET_FIELDS) - set(sources))
+    unknown = sorted(set(sources) - set(CITED_MET_FIELDS))
+    if missing or unknown:
+        raise RunError(f"transport_model.sources must cite exactly {list(CITED_MET_FIELDS)}: "
+                       f"missing {missing}, unknown {unknown}")
+    out = {}
+    for name in CITED_MET_FIELDS:
+        value = sources[name]
+        cites = [value] if isinstance(value, str) else list(value) if isinstance(value, (list, tuple)) else None
+        if not cites or not all(isinstance(c, str) and c.strip() for c in cites):
+            raise RunError(f"transport_model.sources.{name} needs at least one citation (a non-empty string)")
+        out[name] = cites
+    return out
+
+
+def well_mixed_spec(spec, temperature: float):
+    """``spec`` with its MET segment diffusivity at the well-mixed bound
+    (``WELL_MIXED_DEFINITION``); sources dropped (nothing cites the bound).
+    The chemistry digest is unchanged (``transport_model`` is outside it)."""
+    mapping = spec.as_mapping()
+    met = dict(mapping["transport_model"]["met"])
+    met["segment_diffusivity"] = {"law": "arrhenius", "D_ref_m2_s": WELL_MIXED_D0_M2_S,
+                                  "T_ref_K": float(temperature), "Ea_J_mol": 0.0}
+    met["chain_scaling"] = {"law": "rouse"}
+    mapping["transport_model"] = {"met": met}
+    return type(spec).from_mapping(mapping)
 
 
 # --------------------------------------------------------------------------
@@ -1105,10 +1179,17 @@ def _write_manifest(out: Path, manifest: dict):
 
 def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], seeds: Sequence[int], out, *,
         max_events: Optional[int] = None, allow_incomplete: bool = False, allow_unbound_catalog: bool = False,
-        allow_unmatched_catalog: bool = False, mom=None, jobs: int = 1) -> dict:
+        allow_unmatched_catalog: bool = False, mom=None, jobs: int = 1, also_well_mixed: bool = False) -> dict:
     """Run every seed and write the outputs (module docstring); returns the
     manifest.  Inputs are refused (``RunError``) before anything is written; a
-    seed that fails is recorded and the status is ``failed``."""
+    seed that fails is recorded and the status is ``failed``.
+
+    ``also_well_mixed``: then run the same seeds again on ``well_mixed_spec``
+    (``WELL_MIXED_DEFINITION``) into ``<out>/well_mixed/``; the manifest
+    gains ``transport`` (both passes' MET blocks and the declared sources)
+    and ``well_mixed`` (that pass's status, runs, censoring, leak and
+    comparison), and every observation and comparison carries the label
+    ``transport`` (``TRANSPORT_PASSES``).  The run's ``status`` covers both."""
     start = time.perf_counter()
     deck = read_deck(deck)
     sequence = isinstance(deck.spec, PolymerSpec)
@@ -1131,6 +1212,11 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
                                else ([None] * len(times), None))
     try:   # the declaration as the engine and the observables read it, before any output
         me.TransportLaw.from_spec(deck.spec).check_range(temperature, temperature)
+        bound_spec = well_mixed_spec(deck.spec, temperature) if also_well_mixed else None
+        if bound_spec is not None:
+            me.TransportLaw.from_spec(bound_spec).check_range(temperature, temperature)
+            if chemistry_sha256(bound_spec) != chemistry_sha256(deck.spec):
+                raise RunError("the well-mixed bound changed the chemistry digest")
         mo.MeltObserver(deck.spec, xs=deck.xs, side_group_homolysis=deck.side_group_homolysis)
         initial = me.MeltEngine(deck.spec, catalog, temperature, numpy.random.default_rng(0))
         matched = initial_match(initial)
@@ -1158,8 +1244,11 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
     labels = {"catalog_complete": complete, "catalog_gate_failures": failures,
               "catalog_bound": all(r.bound_by for r in records),
               "catalog_matches_initial_state": matched["templates"] > 0}
+    def pass_labels(name):
+        return dict(labels, transport=name) if also_well_mixed else dict(labels)
+
     context = _Context(deck.spec, catalog, temperature, tuple(times), deck.xs, deck.side_group_homolysis,
-                       max_events, out, tuple(sorted(labels.items())))
+                       max_events, out, tuple(sorted(pass_labels("declared").items())))
     manifest = dict({
         "schema": RUN_SCHEMA, "status": "running",
         "deck": deck.manifest(),
@@ -1170,63 +1259,102 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
         "code": code_identity(),
         "environment": {"python": platform.python_version(), "numpy": numpy.__version__,
                         "PYTHONHASHSEED": os.environ.get("PYTHONHASHSEED")},
-        "runs": [],
-        "censoring": {"seeds_requested": len(seeds), "stopped_early": [], "censored_times_s": []},
-        "leak": {"estimator": me.LEAK_ESTIMATOR + "/pooled", "definition": me.LEAK_DEFINITION,
-                 "note": LEAK_NOTE, "per_seed": [], "excluded_seeds": [],
-                 "pooled": me.pooled_leak_fraction([])},
-        "mom": mom_record, "comparison": None if sequence else "comparison.csv", "wall_s": None,
-    }, **labels)
+        "mom": mom_record, "wall_s": None,
+    }, **labels, **_pass_section(seeds, None if sequence else "comparison.csv"))
     if sequence:
         manifest["comparison_refused"] = mo.MOM_V2_REFUSAL
         manifest["composition"] = sequence_composition(deck.spec)
+    if also_well_mixed:
+        declared = json.loads(deck.spec.normalized_json)["transport_model"]
+        manifest["transport"] = {
+            "passes": list(TRANSPORT_PASSES),
+            "declared": {"met": declared["met"], "sources": transport_sources(deck.spec)},
+            "well_mixed_bound": {"met": json.loads(bound_spec.normalized_json)["transport_model"]["met"],
+                                 "definition": WELL_MIXED_DEFINITION,
+                                 "WELL_MIXED_D0_M2_S": WELL_MIXED_D0_M2_S}}
+        manifest["well_mixed"] = dict({"status": "pending", "path": "well_mixed"},
+                                      **_pass_section(seeds, None if sequence else "well_mixed/comparison.csv"))
     _write_manifest(out, manifest)
 
-    def record(result):
-        leak = result.pop("leak")
-        last = result.pop("last_observed_time_s")
-        manifest["runs"].append(result)
-        if leak is None:
-            manifest["leak"]["excluded_seeds"].append(result["seed"])
-        else:
-            manifest["leak"]["per_seed"].append(leak)
-        manifest["leak"]["pooled"] = me.pooled_leak_fraction(manifest["leak"]["per_seed"])
-        if result["observations"] < len(times):
-            manifest["censoring"]["stopped_early"].append(
-                {"seed": result["seed"], "stop_reason": result["stop_reason"],
-                 "observations": result["observations"], "last_observed_time_s": last,
-                 "engine_time_s": result["engine_time_s"]})
-            manifest["censoring"]["censored_times_s"] = [
-                t for k, t in enumerate(times) if any(r["observations"] <= k for r in manifest["runs"])]
+    def flush():
         manifest["wall_s"] = time.perf_counter() - start
         _write_manifest(out, manifest)
 
-    _install(context)
     try:
-        if jobs == 1:
-            for seed in seeds:
-                record(_run_seed(context, seed))
-        else:
-            with _executor(jobs, context) as pool:
-                for result in pool.map(_seed_task, seeds):
-                    record(result)
-        if not sequence:
-            observations = {r["seed"]: [json.loads(x) for x in _observation_lines((out / r["path"]).read_text())]
-                            if (out / r["path"]).exists() else [] for r in manifest["runs"]}
-            write_comparison(out / "comparison.csv",
-                             comparison_rows(observations, times, mom_by_time, len(seeds),
-                                             sorted(((mom_record or {}).get("header") or {}).get("flags", {}))),
-                             labels)
+        _run_pass(context, manifest, seeds, jobs, times, "", mom_by_time, mom_record, pass_labels("declared"),
+                  sequence, flush)
+        if also_well_mixed:
+            (out / "well_mixed").mkdir()
+            bound = _Context(bound_spec, catalog, temperature, tuple(times), deck.xs, deck.side_group_homolysis,
+                             max_events, out / "well_mixed", tuple(sorted(pass_labels("well_mixed_bound").items())))
+            section = manifest["well_mixed"]
+            section["status"] = "running"
+            _run_pass(bound, section, seeds, jobs, times, "well_mixed/", mom_by_time, mom_record,
+                      pass_labels("well_mixed_bound"), sequence, flush)
+            section["status"] = "failed" if any(r["stop_reason"] == "error" for r in section["runs"]) \
+                else "complete"
     except BaseException as error:
         manifest["status"] = "failed"
         manifest["error"] = f"{type(error).__name__}: {error}"
-        manifest["wall_s"] = time.perf_counter() - start
-        _write_manifest(out, manifest)
+        flush()
         raise
-    manifest["status"] = "failed" if any(r["stop_reason"] == "error" for r in manifest["runs"]) else "complete"
-    manifest["wall_s"] = time.perf_counter() - start
-    _write_manifest(out, manifest)
+    runs = manifest["runs"] + (manifest["well_mixed"]["runs"] if also_well_mixed else [])
+    manifest["status"] = "failed" if any(r["stop_reason"] == "error" for r in runs) else "complete"
+    flush()
     return json.loads(json.dumps(manifest, sort_keys=True))
+
+
+def _pass_section(seeds, comparison) -> dict:
+    """The per-pass part of the manifest (module docstring), before any seed."""
+    return {"runs": [],
+            "censoring": {"seeds_requested": len(seeds), "stopped_early": [], "censored_times_s": []},
+            "leak": {"estimator": me.LEAK_ESTIMATOR + "/pooled", "definition": me.LEAK_DEFINITION,
+                     "note": LEAK_NOTE, "per_seed": [], "excluded_seeds": [],
+                     "pooled": me.pooled_leak_fraction([])},
+            "comparison": comparison}
+
+
+def _run_pass(context: _Context, section: dict, seeds, jobs, times, prefix: str, mom_by_time, mom_record,
+              labels, sequence: bool, flush):
+    """Run every seed of one pass into ``context.out``, recording into
+    ``section`` (the manifest itself, or its ``well_mixed`` part; seed paths
+    relative to the run directory, hence ``prefix``) and its comparison."""
+    def record(result):
+        leak = result.pop("leak")
+        last = result.pop("last_observed_time_s")
+        result["path"] = prefix + result["path"]
+        section["runs"].append(result)
+        if leak is None:
+            section["leak"]["excluded_seeds"].append(result["seed"])
+        else:
+            section["leak"]["per_seed"].append(leak)
+        section["leak"]["pooled"] = me.pooled_leak_fraction(section["leak"]["per_seed"])
+        if result["observations"] < len(times):
+            section["censoring"]["stopped_early"].append(
+                {"seed": result["seed"], "stop_reason": result["stop_reason"],
+                 "observations": result["observations"], "last_observed_time_s": last,
+                 "engine_time_s": result["engine_time_s"]})
+            section["censoring"]["censored_times_s"] = [
+                t for k, t in enumerate(times) if any(r["observations"] <= k for r in section["runs"])]
+        flush()
+
+    _install(context)
+    if jobs == 1:
+        for seed in seeds:
+            record(_run_seed(context, seed))
+    else:
+        with _executor(jobs, context) as pool:
+            for result in pool.map(_seed_task, seeds):
+                record(result)
+    if not sequence:
+        out = context.out
+        observations = {r["seed"]: [json.loads(x) for x in _observation_lines(
+            (out / r["path"][len(prefix):]).read_text())]
+            if (out / r["path"][len(prefix):]).exists() else [] for r in section["runs"]}
+        write_comparison(out / "comparison.csv",
+                         comparison_rows(observations, times, mom_by_time, len(seeds),
+                                         sorted(((mom_record or {}).get("header") or {}).get("flags", {}))),
+                         labels)
 
 
 # --------------------------------------------------------------------------
@@ -1254,19 +1382,25 @@ def main(argv=None) -> int:
                         help="run when no template matches the initial state, labelled")
     parser.add_argument("--mom", default=None, help="MoM reported quantities at the observation times")
     parser.add_argument("--jobs", type=int, default=1, help="worker processes (default 1: sequential)")
+    parser.add_argument("--also-well-mixed", action="store_true",
+                        help="also run the same seeds at the well-mixed bound (every escape factor 1) into "
+                             "<out>/well_mixed/, both passes labelled in one run.json")
     args = parser.parse_args(argv)
     try:
         times = observation_times(args.times, args.end, args.snapshots)
         manifest = run(args.deck, args.catalogs, args.temperature, times, args.seeds, args.out,
                        max_events=args.max_events, allow_incomplete=args.allow_incomplete,
                        allow_unbound_catalog=args.allow_unbound_catalog,
-                       allow_unmatched_catalog=args.allow_unmatched_catalog, mom=args.mom, jobs=args.jobs)
+                       allow_unmatched_catalog=args.allow_unmatched_catalog, mom=args.mom, jobs=args.jobs,
+                       also_well_mixed=args.also_well_mixed)
     except RunError as error:
         print(f"refused: {error}", file=sys.stderr, flush=True)
         return 2
-    for r in manifest["runs"]:
+    passes = [("", manifest["runs"])] + ([("well_mixed_bound ", manifest["well_mixed"]["runs"])]
+                                          if "well_mixed" in manifest else [])
+    for name, r in ((name, r) for name, runs in passes for r in runs):
         when = "-" if r["engine_time_s"] is None else f"{r['engine_time_s']:.6g} s"
-        print(f"seed {r['seed']}: {r['stop_reason']} at {when}, {r['events']} events, "
+        print(f"{name}seed {r['seed']}: {r['stop_reason']} at {when}, {r['events']} events, "
               f"{r['observations']} observations, {r['wall_s']:.1f} s wall"
               + (f" ({r['error']})" if "error" in r else ""), flush=True)
     pooled = manifest["leak"]["pooled"]
