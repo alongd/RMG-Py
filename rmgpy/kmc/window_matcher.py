@@ -52,7 +52,7 @@ weight.
 import math
 import weakref
 from dataclasses import dataclass
-from typing import Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from rmgpy.kmc.melt_state import BOND_ORDERS, SetBond, SetCharge, SetLonePairs, SetRadical
 from rmgpy.molecule.element import PeriodicSystem
@@ -178,6 +178,36 @@ class PathPredicate:
     maximum: int
 
 
+@dataclass(frozen=True, eq=False)
+class Override:
+    """A size-conditioned weight of a template (``template_emission``'s
+    depository overrides): a transition of the template whose reaction is
+    this one -- its reactant components isomorphic to ``reactants`` and its
+    product components to ``products`` (atom id -> ``rmg_moves`` row, every
+    species of the side) -- carries ``weight`` instead of the template's.
+    The condition is read from the molecules at the event (the melt engine),
+    never from a size or label."""
+
+    name: str
+    reactants: Any
+    products: Any
+    weight: float
+
+    def __post_init__(self):
+        try:
+            weight = float(self.weight)
+        except (TypeError, ValueError):
+            raise TemplateError(f"override {self.name}: weight must be a number") from None
+        if not math.isfinite(weight) or weight <= 0:
+            raise TemplateError(f"override {self.name}: weight must be finite and positive, "
+                                f"got {self.weight!r}")
+        object.__setattr__(self, "weight", weight)
+        object.__setattr__(self, "reactants", dict(self.reactants))
+        object.__setattr__(self, "products", dict(self.products))
+        if not self.reactants or not self.products:
+            raise TemplateError(f"override {self.name}: both sides need atoms")
+
+
 @dataclass(frozen=True)
 class _Piece:
     plan: Tuple  # ((template atom, parent or None, ((earlier atom, bonded?), ...)), ...)
@@ -190,9 +220,12 @@ class Template:
     an edit; a participant's site is the image of those atoms.
     """
 
-    def __init__(self, name, family, atoms, bonds, edits, *, weight, paths=()):
+    def __init__(self, name, family, atoms, bonds, edits, *, weight, paths=(), overrides=()):
         if not isinstance(name, str) or not name:
             raise TemplateError("a template needs a name")
+        self.overrides = tuple(overrides)
+        if not all(isinstance(o, Override) for o in self.overrides):
+            raise TemplateError(f"{name}: overrides must be Override")
         self.name = name
         self.family = str(family)
         self.atoms = tuple(atoms)

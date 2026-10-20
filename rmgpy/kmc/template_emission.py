@@ -136,6 +136,19 @@ stored witnesses against independent RMG thermo (``ThermoKc``).
 ``loaded_templates`` is what a catalog loads; the reference comparison fails
 when a transition is produced more than once.
 
+Depository overrides (I-211)
+----------------------------
+A certificate ``excluded:except_matched`` names finite analogues of a channel
+that ARE depository reactions; the payload carries them
+(``depository_matches``).  A locality witness RMG rates from a depository
+(``depository_row``) is a ``depository`` row: named, out of the spread,
+never a failure.  At assembly ``depository_overrides`` rates each such
+reaction on the loaded catalog (``OVERRIDE_RULE``): RMG's production rate
+over the loaded transitions of its channel, the reverse derived through the
+stored Kc form, attached to every template making it (``overrides``;
+``override_weight``, ``matcher_from_payload`` loads them as
+``window_matcher.Override``).
+
 Schema (item 6)
 ---------------
 ``executable_payload`` / ``validate_payload``; ``attach`` sets
@@ -1429,7 +1442,26 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
            "weight_source": "record" if weights is not None else "emitted_witness",
            "weight": {"T": rate["T"], "w": weights} if weights is not None else None,
            "calibration": cal, "templates": templates, "contexts": ctx_rows}
+    matches = depository_matches(record_certificate)
+    if matches:
+        out["depository_matches"] = matches
     return finish(out)
+
+
+def depository_matches(record_certificate) -> list:
+    """The matched analogues a record's certificate certifies with
+    (``excluded:except_matched``; family template direction, adjacency lists,
+    no witness ids): the reactions assembly rates at RMG's depository rate
+    (``depository_overrides``)."""
+    from rmgpy.kmc import certificates as cm
+    cert = (record_certificate or {}).get("certificate") or {}
+    out = {}
+    for ch in cert.get("channels", []):
+        for m in cm.exclusion_matches(ch.get("depository_exclusion")):
+            item = {k: m.get(k) for k in ("depository", "index", "label", "orientation", "rank",
+                                          "kinetics", "reaction")}
+            out[canonical_json(item)] = item
+    return [out[k] for k in sorted(out)]
 
 
 def record_status(templates) -> tuple:
@@ -1500,7 +1532,7 @@ def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, 
                           direction=direction, pathway=cpath, reverse=reverse, counter=counter,
                           rates=rates, record=record, owner_rate_source=owner_rate_source)
         rows.append(row)
-        if row["status"] != "ok":
+        if row["status"] not in ("ok", "depository"):
             ok = False
             reasons.append(f"{label}: {row['status']}: {row.get('reason', '')[:120]}")
     emitted_row = next((r for r in rows if r["label"] == "emitted"), None)
@@ -1567,6 +1599,17 @@ def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, 
     return entry
 
 
+def depository_row(family, reactant_rows, product_rows) -> Optional[dict]:
+    """The depository entry RMG would rate a witness's reaction from
+    (``certificates.depository_selection``; None for none, and for a family
+    without depositories)."""
+    from rmgpy.kmc import certificates as cm
+    if not getattr(family, "depositories", None):
+        return None
+    return cm.depository_selection(family, molecules_of(reactant_rows),
+                                   molecules_of(product_rows))
+
+
 def witness_row(template, witness, *, label, vector, family, direction, pathway, reverse,
                 counter, rates, record, owner_rate_source=None) -> dict:
     """One locality row: counts by both counters on the witness's own target,
@@ -1590,6 +1633,14 @@ def witness_row(template, witness, *, label, vector, family, direction, pathway,
     if not count.target_found:
         row.update(status="refused:target", reason="the witness's own mapped product is not "
                                                    "among the template's transitions")
+        return row
+    selected = depository_row(family, r, p)
+    if selected is not None:
+        # RMG rates this size from a depository entry: an override site of
+        # the catalog (``depository_overrides``), not a row of the rule weight
+        row.update(status="depository", depository=selected,
+                   reason="RMG rates the witness's reaction from a depository entry",
+                   witness={"r": rows_json(r), "p": rows_json(p)})
         return row
     rs = (record or {}).get("rate_source")
     result = rates(RateRequest(family.label if hasattr(family, "label") else family,
@@ -1706,6 +1757,11 @@ def validate_payload(payload: dict) -> None:
         w = t["weight"]["w"]
         if not all(math.isfinite(x) and x > 0 for x in w):
             raise EmissionError("non-finite or non-positive weight")
+        for o in t.get("overrides") or ():
+            if not all(math.isfinite(x) and x > 0 for x in o["weight"]["w"]) or \
+                    not o["reaction"]["reactants"] or not o["reaction"]["products"]:
+                raise EmissionError("a depository override needs a reaction and a finite, "
+                                    "positive weight")
         loc = t["locality"]
         if not loc["accepted"] or loc["max_spread_log10"] > LOCALITY_TOLERANCE_LOG10:
             raise EmissionError("an emitted template without an accepted locality table")
@@ -1723,8 +1779,15 @@ def matcher_from_payload(template: dict, temperature: float, *, name=None, prima
     template; extrapolation refused; ``weight`` overrides it when only the
     structure matters)."""
     ex = template["executable"]
+    overrides = ()
     if weight is None:
         weight = weight_at(template, temperature, primary)
+        # the size-conditioned weights (depository overrides) load with it
+        overrides = tuple(wm.Override(f"{name or template['name']}#o{k}",
+                                      rows_from_json(o["reaction"]["reactants"]),
+                                      rows_from_json(o["reaction"]["products"]),
+                                      override_weight(o, temperature))
+                          for k, o in enumerate(template.get("overrides") or ()))
     atoms = [wm.WindowAtom(element=a["element"], participant=a["participant"], kind=a["kind"],
                            exterior=tuple(tuple(x) for x in a["exterior"]),
                            isotope=a["isotope"], charge=a["charge"], radical=a["radical"],
@@ -1733,7 +1796,7 @@ def matcher_from_payload(template: dict, temperature: float, *, name=None, prima
     edits = [wm.BondEdit(i, j, y) for i, j, x, y in ex["bonds"] if x != y]
     edits += [wm.AtomEdit(i, **a["final"]) for i, a in enumerate(ex["atoms"]) if a["final"]]
     return wm.Template(name or template["name"], template.get("family", "") or "", atoms,
-                       bonds, edits, weight=weight)
+                       bonds, edits, weight=weight, overrides=overrides)
 
 
 def weight_at(template: dict, temperature: float, primary=None) -> float:
@@ -3155,6 +3218,274 @@ def cycle_not_evaluable(table) -> list:
     """The pairs a partial catalog could not evaluate (not gates)."""
     return [f"{r['forward'][:16]}/{r['reverse'][:16]}: {r['reason']}"
             for r in table if r["status"] == "not_evaluable"]
+
+
+# ---------------------------------------------------------------------------
+# depository overrides (I-211)
+# ---------------------------------------------------------------------------
+OVERRIDE_RULE = (
+    "a loaded transition whose reaction (reactant and product components, whole species) is "
+    "isomorphic to a depository reaction RMG rates from that depository carries RMG's own "
+    "production rate for it: w = ssa k / T over the T loaded transitions of its channel; the "
+    "reverse of a loaded pair is derived from the forward through the stored Kc form "
+    "(w_r = w_f (T_f / T_r) / (ssa_ratio Kc)); every other transition keeps its template weight")
+
+
+def _adjacency_rows(adjacency_lists, start=0):
+    from rmgpy.molecule import Molecule
+    rows, k = {}, start
+    for adj in adjacency_lists:
+        mol = Molecule().from_adjacency_list(adj)
+        for atom in mol.atoms:
+            atom.id, k = k, k + 1
+        rows.update(rm.molecule_rows(mol))
+    return rows
+
+
+def _override_reactions(payloads) -> dict:
+    """{family: {species key: (forward-side rows, other-side rows, sources)}}:
+    every certificate match (``depository_matches``, family template
+    direction) and every ``depository`` locality row of an emitted template
+    (its witness in template direction: the forward side is its reactants
+    for a ``forward`` template, its products for a ``reverse`` one)."""
+    out = defaultdict(dict)
+
+    def add(family, a, b, source):
+        key = canonical_json([rows_json(a), rows_json(b)])
+        slot = out[family].setdefault(key, (a, b, []))
+        slot[2].append(source)
+
+    for p in payloads:
+        family = p.get("family")
+        for m in p.get("depository_matches") or ():
+            a = _adjacency_rows(m["reaction"]["reactants"])
+            b = _adjacency_rows(m["reaction"]["products"], start=1 + max(a))
+            add(family, a, b, {"certificate": p.get("record_event_id"), "depository":
+                               m.get("depository"), "index": m.get("index"),
+                               "label": m.get("label")})
+        for t in p.get("templates", []):
+            if t.get("status") != "emitted":
+                continue
+            wit = (t.get("maps") or {}).get("witnesses") or {}
+            for r in (t.get("locality") or {}).get("rows", []):
+                if r.get("status") != "depository" or r.get("label") not in wit:
+                    continue
+                rr, pp = rows_from_json(wit[r["label"]]["r"]), rows_from_json(wit[r["label"]]["p"])
+                a, b = (rr, pp) if t.get("direction") == "forward" else (pp, rr)
+                add(family, a, b, {"row": r["label"], "template": t.get("key"),
+                                   "record": p.get("record_event_id"),
+                                   **{k: (r.get("depository") or {}).get(k)
+                                      for k in ("depository", "index", "label")}})
+    return out
+
+
+def override_weight(override: dict, temperature: float) -> float:
+    """The weight an override loads at ``temperature``: its own table (ln w
+    linear in 1/T), or, derived, ``w_f(T) (T_f / T_r) / (ssa_ratio Kc(T))``
+    with ``Kc`` exactly at T from the stored form; extrapolation refused."""
+    t = float(temperature)
+    d = override.get("derived")
+    if d is None:
+        return _interpolate(override["weight"]["T"], override["weight"]["w"], t)
+    ts = [float(x) for x in override["weight"]["T"]]
+    if t < ts[0] or t > ts[-1]:
+        raise EmissionError(f"temperature {t} K outside the override table (extrapolation refused)")
+    wp = _interpolate(d["primary_weight"]["T"], d["primary_weight"]["w"], t)
+    return wp * d["counts_ratio"] / (d["ssa_ratio"] * kc_at(d["thermo"], t))
+
+
+def depository_overrides(payloads, *, counter, rates, kc) -> tuple:
+    """(payloads, table, failures): every reaction a certificate matched
+    (``excluded:except_matched``) or a template's locality met as a
+    ``depository`` row, rated on the LOADED catalog (``OVERRIDE_RULE``).
+
+    Per reaction A -> B (family template direction) and per direction the
+    loaded templates make it in (``forward``: A -> B; ``reverse``: B -> A),
+    per channel (the payload pathway): ``T`` = the loaded transitions of the
+    channel on the reaction's reactants (``_Loaded.total``), equal to RMG's
+    count (``counter.channel``); ``k`` from RMG's production path
+    (``rates``: generated on A, as_generated for forward and reversed for
+    reverse) whose selection must be a depository of the family; then the
+    override (reaction rows, entry, counts, weight or derived form, the
+    production rate) is attached to every loaded template making one of
+    those transitions.  A reverse override with a loaded forward is derived
+    through ``kc``'s stored form and must equal the production reverse on
+    the grid (``CYCLE_RTOL``); the pair's balance is checked at
+    ``check_temperatures``.  Without any such reaction the payloads come back
+    unchanged.  An own-reverse family, a count mismatch, a production
+    selection that is not a depository, or a depository row left without an
+    override are failures (never a fallback to the rule weight)."""
+    reactions = _override_reactions(payloads)
+    if not reactions:
+        return payloads, [], []
+    out = [json.loads(canonical_json(p)) for p in payloads]
+    loaded = _Loaded(out)
+    by_record = {id(t): p for p in out for t in p.get("templates", [])}
+    table, failures, changed = [], [], set()
+    attached = defaultdict(list)          # id(template dict) -> overrides
+    for family_label in sorted(reactions):
+        fam = counter.family(family_label)
+        own = getattr(fam, "reverse_template", "x") is None
+        depositories = {str(d) for d in getattr(fam, "depositories", ())}
+        found = {}
+        for (a_src, b_src, sources) in _rekey(reactions[family_label], counter).values():
+            key = canonical_json([sorted(counter.species_of_rows(a_src)),
+                                  sorted(counter.species_of_rows(b_src))])
+            if own:
+                failures.append(f"depository override {family_label}: an own-reverse family "
+                                "(one template both ways) is not supported; refused")
+                break
+            events = {}
+            for direction, orientation, r_rows, p_rows in (
+                    ("forward", "as_generated", a_src, b_src),
+                    ("reverse", "reversed", b_src, a_src)):
+                entries = loaded.by.get((family_label, direction), [])
+                pathways = sorted({tuple(by_record[id(t)].get("pathway") or ()) for t in entries})
+                for pathway in pathways:
+                    exemplar = next(by_record[id(t)] for t in entries
+                                    if tuple(by_record[id(t)].get("pathway") or ()) == pathway)
+                    _s, inside, _state = loaded.total(counter, r_rows, exemplar, direction,
+                                                      p_rows, [])
+                    if not inside:
+                        continue
+                    channel = counter.channel(fam, molecules_of(r_rows), direction,
+                                              count_pathway(fam, pathway, False),
+                                              counter.species_of_rows(p_rows))
+                    owners = sorted({int(tr.template[1:]) for tr in inside})
+                    events[(direction, pathway)] = dict(
+                        direction=direction, orientation=orientation, pathway=pathway,
+                        r=r_rows, p=p_rows, count=len(inside), rmg=channel.transitions,
+                        owners=[entries[i] for i in owners])
+            for ev in events.values():
+                name = f"{family_label}|{ev['direction']}|{';'.join(ev['pathway'])}|{key}"
+                row = {"family": family_label, "direction": ev["direction"],
+                       "pathway": list(ev["pathway"]), "reaction": sha256_json(key)[:16],
+                       "counts": {"matcher": ev["count"], "rmg": ev["rmg"]},
+                       "templates": len(ev["owners"]), "sources": sources}
+                if ev["count"] != ev["rmg"]:
+                    failures.append(f"depository override {name[:160]}: loaded transitions "
+                                    f"{ev['count']} vs RMG {ev['rmg']}")
+                    table.append(dict(row, status="refused:count_mismatch"))
+                    continue
+                if rates is None:
+                    failures.append(f"depository override {name[:160]}: no production rates")
+                    table.append(dict(row, status="refused:no_rates"))
+                    continue
+                result = rates(RateRequest(family_label, ";".join(ev["pathway"]),
+                                           ev["orientation"], a_src, b_src))
+                sel = (result.provenance or {}).get("selection") or {}
+                forward_sel = sel if ev["orientation"] == "as_generated" else \
+                    (sel.get("forward") or {})
+                if result.problems or forward_sel.get("source") not in depositories:
+                    failures.append(
+                        f"depository override {name[:160]}: the production path selects "
+                        f"{forward_sel.get('source')!r} ({'; '.join(result.problems)[:120]}), "
+                        "not a depository of the family: a certified match RMG does not rate "
+                        "from a depository")
+                    table.append(dict(row, status="refused:not_depository"))
+                    continue
+                w = weight_table(result.temperatures, result.k, result.ssa_multiplier,
+                                 ev["count"])
+                found[(key, ev["direction"], ev["pathway"])] = dict(
+                    ev, row=row, grid=list(result.temperatures), w=w,
+                    ssa=result.ssa_multiplier, selection=sel,
+                    production={"T": list(result.temperatures), "k": list(result.k),
+                                "ssa": result.ssa_multiplier},
+                    entry=_selected_entry(fam, forward_sel))
+        for (key, direction, pathway), ev in sorted(found.items(), key=lambda kv: canonical_json(
+                [kv[0][0], kv[0][1], list(kv[0][2])])):
+            override = {"family": family_label, "direction": direction, "pathway": list(pathway),
+                        "reaction": {"reactants": rows_json(ev["r"]), "products": rows_json(ev["p"])},
+                        "entry": ev["entry"], "selection": ev["selection"],
+                        "counts": {"matcher": ev["count"], "rmg": ev["rmg"]},
+                        "weight": {"T": ev["grid"], "w": list(ev["w"])},
+                        "production": ev["production"], "rule": OVERRIDE_RULE}
+            row = dict(ev["row"], status="ok")
+            partner = found.get((key, "forward", pathway)) if direction == "reverse" else None
+            if partner is not None:
+                a_rows, b_rows = partner["r"], partner["p"]
+                form = kc.form(a_rows, b_rows, ev["grid"])
+                if form.get("kind") != KC_FORM:
+                    failures.append(f"depository override {key[:120]}: no storable thermo form")
+                    table.append(dict(row, status="refused:thermo"))
+                    continue
+                ratio = ssa_of_rows(a_rows, counter) / ssa_of_rows(b_rows, counter)
+                override["derived"] = {
+                    "primary_weight": {"T": partner["grid"], "w": list(partner["w"])},
+                    "counts_ratio": partner["count"] / ev["count"], "ssa_ratio": ratio,
+                    "thermo": form}
+                override["weight"]["w"] = [override_weight(override, T) for T in ev["grid"]]
+                grid_error = max(abs(x / y - 1.0) for x, y in zip(override["weight"]["w"], ev["w"]))
+                temps = check_temperatures(ev["grid"], (key,))
+                kcs = kc(a_rows, b_rows, temps)
+                balance = max(abs((override_weight({"weight": {"T": partner["grid"],
+                                                               "w": partner["w"]}}, T)
+                                   * partner["count"])
+                                  / (override_weight(override, T) * ev["count"])
+                                  / (ratio * c) - 1.0) for T, c in zip(temps, kcs))
+                row.update(grid_error=grid_error, max_ratio_error=balance,
+                           temperatures=len(temps))
+                if grid_error > DERIVED_RTOL or balance > CYCLE_RTOL:
+                    failures.append(f"depository override {key[:120]}: the derived reverse is "
+                                    f"off the production reverse ({grid_error:.3g}) or the "
+                                    f"balance ({balance:.3g})")
+                    table.append(dict(row, status="refused:cycle"))
+                    continue
+            table.append(row)
+            for t in ev["owners"]:
+                attached[id(t)].append(override)
+    for i, p in enumerate(out):
+        for t in p.get("templates", []):
+            if id(t) in attached:
+                t["overrides"] = sorted(attached[id(t)], key=canonical_json)
+                changed.add(i)
+    # every depository row is an override of its own template
+    for p in out:
+        for t in p.get("templates", []):
+            if t.get("status") != "emitted":
+                continue
+            wit = (t.get("maps") or {}).get("witnesses") or {}
+            have = {canonical_json([sorted(counter.species_of_rows(rows_from_json(o["reaction"][s])))
+                                    for s in ("reactants", "products")])
+                    for o in t.get("overrides", [])}
+            for r in (t.get("locality") or {}).get("rows", []):
+                if r.get("status") != "depository" or r.get("label") not in wit:
+                    continue
+                rr, pp = rows_from_json(wit[r["label"]]["r"]), rows_from_json(wit[r["label"]]["p"])
+                mine = canonical_json([sorted(counter.species_of_rows(rr)),
+                                       sorted(counter.species_of_rows(pp))])
+                if mine not in have:
+                    failures.append(f"depository row {r['label']} of template {t['key'][:12]} "
+                                    f"(record {str(p.get('record_event_id'))[:16]}) has no "
+                                    "override: that size would fire at the rule weight")
+    return [finish(p) if k in changed else p for k, p in enumerate(out)], table, \
+        list(dict.fromkeys(failures))
+
+
+def _rekey(items, counter) -> dict:
+    """The reactions of one family keyed by their species (sources merged)."""
+    out = {}
+    for _k, (a, b, sources) in items.items():
+        key = canonical_json([sorted(counter.species_of_rows(a)), sorted(counter.species_of_rows(b))])
+        if key in out:
+            out[key][2].extend(sources)
+        else:
+            out[key] = (a, b, list(sources))
+    return out
+
+
+def _selected_entry(family, selection) -> dict:
+    """The depository entry a production selection names (by its depository
+    and label), with its index."""
+    for d in getattr(family, "depositories", ()):
+        if str(d) != selection.get("source"):
+            continue
+        for e in d.entries.values():
+            if str(e.label) == selection.get("entry"):
+                return {"depository": d.label, "index": int(e.index), "label": e.label,
+                        "rank": getattr(e, "rank", None)}
+    return {"depository": selection.get("source"), "index": None, "label": selection.get("entry"),
+            "rank": selection.get("rank")}
 
 
 def class_overlaps(templates, rows_or_state) -> list:

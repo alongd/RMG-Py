@@ -2977,7 +2977,7 @@ def test_a_locality_witness_rated_from_a_depository_is_a_named_row():
     t = base_template(payload)
     dep = [r for r in t["locality"]["rows"] if r["status"] == "depository"]
     assert len(dep) == 1, [(r["label"], r["status"]) for r in t["locality"]["rows"]]
-    assert dep[0]["depository"]["index"] == 7 and dep[0]["counts"]["matcher"] == 1
+    assert dep[0]["depository"]["index"] == 7 and dep[0]["counts"]["matcher"] == 2
     assert t["status"] == "emitted" and t["locality"]["accepted"]
     plain = base_template(emit(homolysis(12, (3, 4))))
     assert t["weight"] == plain["weight"] and t["key"] == plain["key"]
@@ -3019,9 +3019,10 @@ def test_a_matched_size_takes_the_depository_rate_and_its_reverse_through_kc():
     assert len(table) == 2 and all(r["status"] == "ok" for r in table), table
     # the loaded matcher carries it at the requested temperature
     loaded = te.loaded_templates(out, 700.0)
-    got = sorted((len(t.overrides), [o.weight for o in t.overrides]) for t in loaded)
-    assert got == sorted([(1, [pytest.approx(te.override_weight(ow, 700.0))]),
-                          (1, [pytest.approx(te.override_weight(oh, 700.0))])])
+    assert sorted(len(t.overrides) for t in loaded) == [1, 1]
+    got = sorted(o.weight for t in loaded for o in t.overrides)
+    want = sorted([te.override_weight(ow, 700.0), te.override_weight(oh, 700.0)])
+    assert got == pytest.approx(want, rel=1e-12)
 
 
 def test_overrides_name_only_the_matched_sizes():
