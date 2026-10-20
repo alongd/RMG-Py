@@ -383,7 +383,7 @@ def test_time_series_is_written_at_requested_times_without_perturbing_the_run(tm
         assert key in mom
     # a MoM run that reports exactly the kMC state agrees on every compared row
     rows = mo.side_by_side(last, mom)
-    assert {r["tier"] for r in rows} == {1, 3}
+    assert {r["tier"] for r in rows} == {1, 2, 3}       # 2: the whole-ensemble moments (I-170)
     assert all(r["agreement"] in ("equal", "not_a_comparison") for r in rows), rows
 
 
@@ -1366,3 +1366,69 @@ def test_an_observation_reached_exactly_at_the_event_cap_is_written(tmp_path):
     # a later requested time the cap keeps the engine from reaching
     more = mo.write_time_series(engine(), [0.0, t, 5.0], tmp_path / "more.jsonl", xs=3, max_events=1)
     assert [x["time_s"] for x in more] == [0.0, t] and more.stop_reason == "max_events"
+
+
+# --------------------------------------------------------------------------
+# I-170: whole-ensemble moments
+# --------------------------------------------------------------------------
+WHOLE = ("whole_mu0_mol", "whole_mu1_mol", "whole_mu2_mol", "whole_Mn_g_mol", "whole_Mw_g_mol")
+
+
+def _ae(spec):
+    return spec.repeat_unit.composition.molar_mass_g_mol(), spec.end_composition.molar_mass_g_mol()
+
+
+def _polymer_masses(spec, xs, state):
+    observer = mo.MeltObserver(spec, xs=xs)
+    return [r.molar_mass_g_mol for r in observer.components(state) if r.category == "polymer"]
+
+
+def test_whole_ensemble_moments_count_ladder_and_tail_chains():
+    """DP 2, 3, 3 (ladder, xs = 4) and 8 (tail), capped: the mass DP
+    (M - e) / a of each chain is its DP."""
+    spec = S.pe_spec({2: 1, 3: 2, 8: 1})
+    o = mo.MeltObserver(spec, xs=4).observe(materialize(spec))
+    q = mo.mom_reported_quantities(o)
+    u = spec.initialization().scale_factor / constants.Na
+    whole = [u * 4, u * (2 + 3 + 3 + 8), u * (4 + 9 + 9 + 64)]
+    assert [q["whole_mu0_mol"], q["whole_mu1_mol"], q["whole_mu2_mol"]] == pytest.approx(whole, rel=1e-12)
+    assert q["mu0_mol"] == pytest.approx(u, rel=1e-12)              # the tail is the DP-8 chain alone
+
+
+def test_whole_ensemble_moments_are_mass_dp_moments_of_the_polymer_class():
+    """A DP-6 chain homolysed at its end beside a DP-3 chain: CH3. (n = 0,
+    light) is out; the C11 radical counts with its mass DP (M - e) / a, not
+    its backbone count; whole Mn / Mw are the direct mass averages."""
+    spec = S.pe_spec({6: 1, 3: 1})
+    state = materialize(spec)
+    end = S.end_carbons(state, 0)[0]
+    nxt = next(b for b in state.atoms[end].edges if state.atoms[b].element == "C")
+    homolyse(state, end, nxt)
+    o = mo.MeltObserver(spec, xs=2).observe(state)
+    q = mo.mom_reported_quantities(o)
+    u = spec.initialization().scale_factor / constants.Na
+    a, e = _ae(spec)
+    masses = _polymer_masses(spec, 2, state)
+    assert len(masses) == 2
+    n_m = [(m - e) / a for m in masses]
+    assert any(abs(x - round(x)) > 0.1 for x in n_m)               # the radical's mass DP is fractional
+    whole = [u * len(n_m), u * math.fsum(n_m), u * math.fsum(x * x for x in n_m)]
+    assert [q["whole_mu0_mol"], q["whole_mu1_mol"], q["whole_mu2_mol"]] == pytest.approx(whole, rel=1e-12)
+    mn = math.fsum(masses) / len(masses)
+    mw = math.fsum(m * m for m in masses) / math.fsum(masses)
+    assert q["whole_Mn_g_mol"] == pytest.approx(mn, rel=1e-12)
+    assert q["whole_Mw_g_mol"] == pytest.approx(mw, rel=1e-12)
+    assert q["whole_Mn_g_mol"] == pytest.approx(o["tier2"]["Mn_g_mol"], rel=1e-12)
+
+
+def test_tail_keys_are_unchanged_by_the_whole_ensemble_keys():
+    from rmgpy.polymer_mass import observables_from_moments
+    spec = S.pe_spec({2: 1, 3: 2, 8: 1})
+    o = mo.MeltObserver(spec, xs=4).observe(materialize(spec))
+    q = mo.mom_reported_quantities(o)
+    tail = list(o["tier3"]["tail"]["dp_moments_mol"])
+    conv = observables_from_moments(tail, *_ae(spec))
+    assert [q["mu0_mol"], q["mu1_mol"], q["mu2_mol"]] == tail
+    assert q["Mn_g_mol"] == conv.mn_g_mol and q["Mw_g_mol"] == conv.mw_g_mol
+    rows = {r["quantity"]: r for r in mo.side_by_side(o, q)}
+    assert all(rows[k]["agreement"] == "equal" and rows[k]["tier"] == 2 for k in WHOLE)

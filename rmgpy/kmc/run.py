@@ -150,7 +150,7 @@ seeds still run and the run's status is ``failed``.
            per_seed: [{seed, leak_num, leak_den, non_thinned_integral, phi_sum,
                        thinned_proposals, open_thinned, open_phi_source}],
            pooled (melt_engine.pooled_leak_fraction over per_seed)}
-    mom: null | {path, sha256, times}
+    mom: null | {path, sha256, times, header (the --mom file's header, null for the list forms)}
     comparison: "comparison.csv"
     wall_s
 
@@ -159,7 +159,7 @@ manifest carries the additive parts, never a single-run fraction.  Rerunning
 with the same inputs gives byte-identical observation files and a manifest
 that differs only in the ``wall_s`` entries.
 
-**Comparison** ``<out>/comparison.csv`` (``kmc-melt-comparison/1``; a first
+**Comparison** ``<out>/comparison.csv`` (``kmc-melt-comparison/2``; a first
 ``#`` line carries the schema and the labels): one row per observation time
 and ``melt_observables.side_by_side`` quantity.  ``seeds_requested``;
 ``seeds`` = the seeds that reached the time with a value; ``censored`` =
@@ -171,7 +171,9 @@ for one seed), the MoM value, ``difference = kmc_mean - mom`` and
 empty and gives the statistics of the seeds that reached the time only as
 ``censored_kmc_mean`` / ``censored_kmc_stderr``.  ``explicit_dp_mol.*`` and
 ``species_mol.*`` absent from a seed count as 0 (as in ``side_by_side``).
-Without ``--mom`` the MoM columns are empty.
+``mom_flags``: the names of the MoM run's flags (the header form's
+``header.flags``), sorted and ";"-joined, on every row.  Without ``--mom`` the
+MoM columns are empty.
 
 ``--mom FILE``: JSON (a list) or JSON lines of ``{"time_s": t, "quantities":
 {...}}`` with ``quantities`` keyed like ``mom_reported_quantities`` (the
@@ -179,7 +181,14 @@ format ``side_by_side`` takes): every value a finite JSON number (not a
 string, boolean or null) or a mapping of such numbers.  A MoM time matches the
 observation time within relative ``MOM_TIME_RELATIVE`` (1e-12, float
 round-off only) of it; a finite time matching none, or more than one, is
-refused, and so is a non-finite one.
+refused, and so is a non-finite one.  Header form: one JSON object
+``{"header": {"flags": {name: details}, ...}, "entries": [...]}`` (what
+``rmgpy.kmc.mom_producer`` writes), refused unless ``header.producer.deck_sha256``
+is the sha256 of the deck being run, ``header.conventions_sha256`` that of
+the ``conventions.json`` beside the file, and ``header.run`` the run's
+temperature and last observation time (``horizon_s``); the entries as above, the header copied
+whole into ``run.json`` (``mom.header``) and its flag names onto every
+comparison row.
 
 Nothing here names a polymer: the chemistry is the deck's declaration and the
 catalogs' templates.
@@ -214,7 +223,7 @@ from rmgpy.polymer_spec import (LinearHomopolymerSpec, PolymerSpec, normalized_l
                                 normalized_polymer_spec)
 
 RUN_SCHEMA = "kmc-melt-run/1"
-COMPARISON_SCHEMA = "kmc-melt-comparison/1"
+COMPARISON_SCHEMA = "kmc-melt-comparison/2"
 CATALOG_SCHEMA = "kmc-template-catalog/1"     # rmgpy.kmc.emit.SCHEMA
 CATALOG_KEYS = ("schema", "provenance", "payloads", "gates", "complete")
 # rmgpy.rmg.input.polymer's parameters, in order (positional binding), and its cutoff default
@@ -236,7 +245,7 @@ LEAK_PARTS = ("leak_num", "leak_den", "non_thinned_integral", "phi_sum", "thinne
               "open_thinned", "open_phi_source")
 COMPARISON_COLUMNS = ("time_s", "quantity", "tier", "seeds_requested", "seeds", "censored", "kmc_mean",
                       "kmc_stderr", "censored_kmc_mean", "censored_kmc_stderr", "mom", "difference",
-                      "relative_difference", "note")
+                      "relative_difference", "note", "mom_flags")
 MOM_TIME_RELATIVE = 1.0e-12
 
 
@@ -763,9 +772,29 @@ def _quantities_problem(quantities: dict) -> Optional[str]:
     return None
 
 
-def load_mom(path, times: Sequence[float]) -> Tuple[List[Optional[dict]], dict]:
+def _non_finite(value, where: str = "header") -> List[str]:
+    """The paths of every number in a decoded JSON value that is not finite
+    (JSON decoding accepts NaN and Infinity)."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return [f"{where} = {value!r}"]
+    if isinstance(value, dict):
+        return [x for k, v in value.items() for x in _non_finite(v, f"{where}.{k}")]
+    if isinstance(value, list):
+        return [x for i, v in enumerate(value) for x in _non_finite(v, f"{where}[{i}]")]
+    return []
+
+
+def load_mom(path, times: Sequence[float], *, deck_sha256: Optional[str] = None,
+             temperature_K: Optional[float] = None) -> Tuple[List[Optional[dict]], dict]:
     """Per observation time the MoM quantities (None where the file has none);
-    matching in the module docstring."""
+    matching in the module docstring.  A header-form file is bound to the
+    deck being run (``deck_sha256``, the sha256 of its bytes: refused when
+    absent or different from ``header.producer.deck_sha256``) and to the
+    ``conventions.json`` beside it (refused when missing or when its sha256
+    is not ``header.conventions_sha256``) and to the run's conditions
+    (``header.run``: ``temperature_K`` equal to ``temperature_K``,
+    ``horizon_s`` the last observation time within ``MOM_TIME_RELATIVE``;
+    the pressure is the deck's, bound by its digest)."""
     path = Path(path)
     try:
         raw = path.read_bytes()
@@ -779,7 +808,44 @@ def load_mom(path, times: Sequence[float]) -> Tuple[List[Optional[dict]], dict]:
             doc = [json.loads(line) for line in text.splitlines() if line.strip()]
         except ValueError as error:
             raise RunError(f"MoM file {path}: neither JSON nor JSON lines ({error})") from error
-    if isinstance(doc, dict):
+    header = None
+    if isinstance(doc, dict) and set(doc) == {"header", "entries"}:
+        header, doc = doc["header"], doc["entries"]
+        if not isinstance(header, dict) or not isinstance(header.get("flags"), dict):
+            raise RunError(f"MoM file {path}: the header must be an object with an object of flags "
+                           "({\"flags\": {name: details}, ...})")
+        if not isinstance(doc, list):
+            raise RunError(f"MoM file {path}: entries must be a list of {{time_s, quantities}} entries")
+        non_finite = _non_finite(header)
+        if non_finite:
+            raise RunError(f"MoM file {path}: header values {non_finite} are not finite numbers")
+        producer = header.get("producer")
+        bound = producer.get("deck_sha256") if isinstance(producer, dict) else None
+        if deck_sha256 is None or bound != deck_sha256:
+            raise RunError(f"MoM file {path}: the header's deck digest {bound!r} is not the deck being run "
+                           f"({deck_sha256!r}): the MoM run is not of this deck")
+        conventions = path.parent / "conventions.json"
+        try:
+            digest = _sha256(conventions.read_bytes())
+        except OSError as error:
+            raise RunError(f"MoM file {path}: no conventions.json beside it to bind the header to "
+                           f"({error})") from error
+        if header.get("conventions_sha256") != digest:
+            raise RunError(f"MoM file {path}: the header's conventions digest {header.get('conventions_sha256')!r} "
+                           f"is not the sha256 of {conventions} ({digest})")
+        conditions = header.get("run") if isinstance(header.get("run"), dict) else {}
+        mom_t = conditions.get("temperature_K")
+        if temperature_K is None or isinstance(mom_t, bool) or not isinstance(mom_t, (int, float)) \
+                or float(mom_t) != float(temperature_K):
+            raise RunError(f"MoM file {path}: the MoM run's temperature {mom_t!r} K is not the run's "
+                           f"({temperature_K!r} K)")
+        horizon = conditions.get("horizon_s")
+        last = float(times[-1]) if len(times) else None
+        if (last is None or isinstance(horizon, bool) or not isinstance(horizon, (int, float))
+                or abs(float(horizon) - last) > MOM_TIME_RELATIVE * max(abs(float(horizon)), abs(last))):
+            raise RunError(f"MoM file {path}: the MoM run's horizon {horizon!r} s is not the run's last "
+                           f"observation time ({last!r} s)")
+    elif isinstance(doc, dict):
         doc = [doc]
     if not isinstance(doc, list):
         raise RunError(f"MoM file {path}: expected a list of {{time_s, quantities}} entries")
@@ -807,7 +873,8 @@ def load_mom(path, times: Sequence[float]) -> Tuple[List[Optional[dict]], dict]:
         if out[k] is not None:
             raise RunError(f"MoM file {path}: two entries at time {times[k]} s")
         out[k] = entry["quantities"]
-    return out, {"path": str(path), "sha256": _sha256(raw), "times": sum(q is not None for q in out)}
+    return out, {"path": str(path), "sha256": _sha256(raw), "times": sum(q is not None for q in out),
+                 "header": header}
 
 
 # --------------------------------------------------------------------------
@@ -941,11 +1008,14 @@ def _executor(jobs: int, context: _Context):
 # side by side
 # --------------------------------------------------------------------------
 def comparison_rows(observations: Dict[int, List[dict]], times: Sequence[float],
-                    mom: Sequence[Optional[dict]], seeds_requested: Optional[int] = None) -> List[dict]:
+                    mom: Sequence[Optional[dict]], seeds_requested: Optional[int] = None,
+                    mom_flags: Sequence[str] = ()) -> List[dict]:
     """Per time and ``side_by_side`` quantity: the seed mean and standard
     error of the kMC value, the MoM value and their difference; a time that
-    fewer than ``seeds_requested`` seeds reached gives censored rows."""
+    fewer than ``seeds_requested`` seeds reached gives censored rows.  Every
+    row carries the MoM run's flag names (``mom_flags``, ";"-joined, sorted)."""
     requested = len(observations) if seeds_requested is None else seeds_requested
+    flags = ";".join(sorted(mom_flags))
     rows = []
     for k, t in enumerate(times):
         seeds = [s for s, obs in observations.items() if len(obs) > k]
@@ -973,7 +1043,7 @@ def comparison_rows(observations: Dict[int, List[dict]], times: Sequence[float],
                    "seeds": n, "censored": censored, "kmc_mean": None, "kmc_stderr": None,
                    "censored_kmc_mean": None, "censored_kmc_stderr": None, "mom": m, "difference": None,
                    "relative_difference": None,
-                   "note": "not_a_comparison" if quantity == "convention_gap_g" else ""}
+                   "note": "not_a_comparison" if quantity == "convention_gap_g" else "", "mom_flags": flags}
             if censored:
                 row["censored_kmc_mean"], row["censored_kmc_stderr"] = mean, stderr
             else:
@@ -1053,7 +1123,9 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
         raise RunError(f"jobs must be a positive integer, got {jobs!r}")
     catalog, records = load_catalogs(catalogs, temperature, allow_incomplete=allow_incomplete, deck=deck,
                                      allow_unbound=allow_unbound_catalog)
-    mom_by_time, mom_record = load_mom(mom, times) if mom is not None else ([None] * len(times), None)
+    mom_by_time, mom_record = (load_mom(mom, times, deck_sha256=deck.sha256, temperature_K=temperature)
+                               if mom is not None
+                               else ([None] * len(times), None))
     try:   # the declaration as the engine and the observables read it, before any output
         me.TransportLaw.from_spec(deck.spec).check_range(temperature, temperature)
         mo.MeltObserver(deck.spec, xs=deck.xs, side_group_homolysis=deck.side_group_homolysis)
@@ -1139,7 +1211,9 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
             observations = {r["seed"]: [json.loads(x) for x in _observation_lines((out / r["path"]).read_text())]
                             if (out / r["path"]).exists() else [] for r in manifest["runs"]}
             write_comparison(out / "comparison.csv",
-                             comparison_rows(observations, times, mom_by_time, len(seeds)), labels)
+                             comparison_rows(observations, times, mom_by_time, len(seeds),
+                                             sorted(((mom_record or {}).get("header") or {}).get("flags", {}))),
+                             labels)
     except BaseException as error:
         manifest["status"] = "failed"
         manifest["error"] = f"{type(error).__name__}: {error}"
