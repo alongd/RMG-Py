@@ -3232,10 +3232,15 @@ OVERRIDE_RULE = (
 
 
 def _adjacency_rows(adjacency_lists, start=0):
+    """Rows of RMG adjacency lists, atom ids from ``start``; aromatic rings
+    in a Kekule form, as the melt holds them (a fused ring carbon written with
+    three benzene bonds has no melt valence)."""
     from rmgpy.molecule import Molecule
     rows, k = {}, start
     for adj in adjacency_lists:
         mol = Molecule().from_adjacency_list(adj)
+        if any(bond.is_benzene() for bond in mol.get_all_edges()):
+            mol.kekulize()
         for atom in mol.atoms:
             atom.id, k = k, k + 1
         rows.update(rm.molecule_rows(mol))
@@ -3250,7 +3255,8 @@ def _override_reactions(payloads, counter=None) -> dict:
     for a ``forward`` template, its products for a ``reverse`` one) and, for
     a family with a certified match, every entry of its depositories (both
     sides as the forward side; the loaded templates decide which one, if
-    any, they make)."""
+    any, they make) but those with an element no melt holds
+    (``melt_state.SUPPORTED_ELEMENTS``), which can never occur."""
     out = defaultdict(dict)
 
     def add(family, a, b, source):
@@ -3279,6 +3285,7 @@ def _override_reactions(payloads, counter=None) -> dict:
                                    "record": p.get("record_event_id"),
                                    **{k: (r.get("depository") or {}).get(k)
                                       for k in ("depository", "index", "label")}})
+    from rmgpy.kmc.melt_state import SUPPORTED_ELEMENTS
     matched = sorted({p.get("family") for p in payloads if p.get("depository_matches")})
     for family in matched if counter is not None else ():
         fam = counter.family(family)
@@ -3286,6 +3293,9 @@ def _override_reactions(payloads, counter=None) -> dict:
             for entry in depository.entries.values():
                 sides = [[spc.molecule[0] if hasattr(spc, "molecule") else spc for spc in side]
                          for side in (entry.item.reactants, entry.item.products)]
+                if any(a.element.symbol not in SUPPORTED_ELEMENTS for side in sides for m in side
+                       for a in m.atoms):
+                    continue
                 adj = [[m.to_adjacency_list() for m in side] for side in sides]
                 for one, other in ((adj[0], adj[1]), (adj[1], adj[0])):
                     a = _adjacency_rows(one)
