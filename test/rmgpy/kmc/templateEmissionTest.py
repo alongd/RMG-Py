@@ -3094,3 +3094,22 @@ def test_every_depository_reaction_the_loaded_templates_make_is_overridden():
         t = base_template(p)
         named = sorted(o["entry"]["index"] for o in t["overrides"])
         assert named == [7, 8], (p["orientation"], named)
+
+
+def test_the_whole_depository_is_read_as_a_melt_holds_it():
+    """The family's depository also holds a fused aromatic entry (a ring
+    carbon with three benzene bonds, valence 4.5 as written) and a sulfur
+    entry the loaded templates would make.  The melt holds rings in a Kekule
+    form and never holds sulfur: the aromatic entry is read Kekule, the
+    sulfur one can never occur, and neither stops the overrides."""
+    entry, match = _c13_match()
+    aromatic = toy_entry(9, ["c1ccc2ccccc2c1", "[CH3]"], ["Cc1cccc2ccccc12"])
+    sulfur = toy_entry(10, ["CS[CH2]", "[CH3]"], ["CCSC"])
+    counter = DepositoryCounter([ToyDepository([entry, aromatic, sulfur])])
+    payloads, counter = _toy_pair(counter=counter, certificate=_certificate(match))
+    resolved = _res(payloads, counter)
+    out, _table, failures = te.depository_overrides(
+        resolved, counter=counter, rates=_depository_rates(counter, None), kc=toy_kc)
+    assert failures == [], failures
+    for p in out:
+        assert sorted(o["entry"]["index"] for o in base_template(p)["overrides"]) == [7]
