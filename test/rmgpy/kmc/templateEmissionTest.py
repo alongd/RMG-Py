@@ -2934,13 +2934,14 @@ def _certificate(*matches):
 K_DEP = tuple(30.0 * k for k in K_RULE)      # the toy depository rate (not the rule's)
 
 
-def _depository_rates(counter, base, k_dep=K_DEP):
+def _depository_rates(counter, base, k_dep=K_DEP, reactants=None, products=None):
     """Production rates: the C13 reaction (generated on its recombination
-    side) from the toy depository, its reverse k_dep / Kc; anything else
-    ``base``."""
-    a = counter.species_of_rows(_rows(C13_R))
+    side; or ``reactants`` -> ``products``) from the toy depository, its
+    reverse k_dep / Kc; anything else ``base``."""
+    reactants, products = reactants or C13_R, products or C13_P
+    a = counter.species_of_rows(_rows(reactants))
     fwd = {"kind": "RMG family estimate", "source": "Kinetics Depository toy_cc/training",
-           "entry": " + ".join(C13_R) + " <=> " + " + ".join(C13_P), "rank": 3,
+           "entry": " + ".join(reactants) + " <=> " + " + ".join(products), "rank": 3,
            "family_template_direction": "forward"}
 
     def rates(req):
@@ -3059,3 +3060,37 @@ def test_a_catalog_without_matches_is_untouched():
     out, table, failures = te.depository_overrides(resolved, counter=counter, rates=None,
                                                    kc=toy_kc)
     assert out == resolved and table == [] and failures == []
+
+
+# n-heptyl + n-octyl -> n-pentadecane: no certificate match and no locality
+# row of the pair's templates (their rows reach C13, C14 and C16 only)
+C14_R, C14_P = ["[CH2]CCCCCC", "[CH2]CCCCCCC"], ["CCCCCCCCCCCCCCC"]
+
+
+def test_every_depository_reaction_the_loaded_templates_make_is_overridden():
+    """A family with a certified match is rated over its whole depository:
+    n-heptyl + n-octyl -> n-pentadecane is an entry no certificate or
+    locality row named, yet the loaded templates make it, so RMG would rate
+    it from the depository there too; it gets its override (the reverse
+    derived)."""
+    entry, match = _c13_match()
+    other = toy_entry(8, C14_R, C14_P)
+    counter = DepositoryCounter([ToyDepository([entry, other])])
+    payloads, counter = _toy_pair(counter=counter, certificate=_certificate(match))
+    resolved = _res(payloads, counter)
+    c13, c14 = _depository_rates(counter, None), _depository_rates(
+        counter, None, reactants=C14_R, products=C14_P)
+    base = _pair_rates({"reversed": K_RULE, "as_generated": K_RULE})
+
+    def rates(req):
+        for f, smiles in ((c13, C13_R), (c14, C14_R)):
+            if counter.species_of_rows(req.generation) == counter.species_of_rows(_rows(smiles)):
+                return f(req)
+        return base(req)
+    out, _table, failures = te.depository_overrides(resolved, counter=counter, rates=rates,
+                                                    kc=toy_kc)
+    assert failures == [], failures
+    for p in out:
+        t = base_template(p)
+        named = sorted(o["entry"]["index"] for o in t["overrides"])
+        assert named == [7, 8], (p["orientation"], named)

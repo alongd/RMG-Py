@@ -93,6 +93,57 @@ def test_fixed_point_pins():
     assert res.window.atoms >= ball(toy(), 3, 1)
 
 
+class DepositoryObserver:
+    """A stub observer (``stub``) whose observation at the extension sizes in
+    ``matched`` is refused as a whole-species depository match (RMG rates that
+    size from a depository entry), with a base certificate of the given
+    exclusion verdict."""
+
+    def __init__(self, matched, verdict="excluded:except_matched"):
+        self.matched = matched
+        self.base = {"channels": [{"depository_exclusion": {"verdict": verdict}}]}
+        self.inner = stub(lambda w: "same")
+
+    def __call__(self, witness):
+        obs = self.inner(witness)
+        if self.matched(witness):
+            return win.Observation(support=win.Support(frozenset()), viewer=obs.viewer,
+                                   refusal=win.DEPOSITORY_MATCH_REFUSAL)
+        return obs
+
+
+def test_a_check_at_a_matched_size_is_a_depository_check():
+    """The certificate is ``excluded:except_matched``: the head extended by
+    two repeats IS a depository reaction (RMG rates that size from the entry,
+    a catalog override).  That check is named ``depository`` and is no
+    evidence against the rule estimate's window: the fixed point stands on
+    the other checks."""
+    obs = DepositoryObserver(lambda w: dict(w.extension_counts).get(HEAD, 0) == 2)
+    res = win.fixed_point(toy(), obs)
+    assert res.status == "fixed_point", res.reason
+    dep = [c for c in res.checks[-1] if c.get("depository")]
+    assert [(c["ports"], c["step"]) for c in dep] == [((HEAD,), 2)]
+    assert all(c["same_window"] and c["same_certificate"] for c in res.checks[-1]
+               if not c.get("depository"))
+
+
+def test_a_depository_check_without_a_certified_match_stays_unstable():
+    """Under ``excluded:isomorphism`` no analogue may be a depository
+    reaction: a check that is one contradicts the certificate and refuses."""
+    obs = DepositoryObserver(lambda w: dict(w.extension_counts).get(HEAD, 0) == 2,
+                             verdict="excluded:isomorphism")
+    res = win.fixed_point(toy(), obs)
+    assert res.status == "certificate_unstable" and win.DEPOSITORY_MATCH_REFUSAL in res.reason
+
+
+def test_a_port_whose_every_check_is_a_depository_size_is_refused():
+    """Both alone checks of the head are depository sizes: nothing measures
+    the head's window, so the member is refused by name."""
+    obs = DepositoryObserver(lambda w: dict(w.extension_counts).get(HEAD, 0) in (1, 2))
+    res = win.fixed_point(toy(), obs)
+    assert res.status == "refused:override_checks", (res.status, res.reason)
+
+
 def test_fixed_point_checks_every_port_independently():
     """The certificate changes when the TAIL is extended to depth 1 only: a
     single +1 check (or a joint extension of every port) accepts too early;
