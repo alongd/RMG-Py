@@ -336,6 +336,8 @@ RING_LIMIT = 8
 PORT_DEPTH_LIMIT = 6
 FIXED_POINT_RETRIES = 3
 CHECK_STEPS = (1, 2)
+# a witness whose reaction RMG rates from a depository entry (whole species)
+DEPOSITORY_MATCH_REFUSAL = "refused:whole_species: depository match"
 CLOSURE_EXTENSION = 1
 ISOMORPHISM_LIMIT = 256
 LOOP_STATUSES = ("fixed_point", "no_fixed_point", "ceiling_exceeded", "certificate_unstable")
@@ -1251,7 +1253,7 @@ def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] 
                 if ch.get("whole_species"):
                     dispositions[("global", name)] = ("whole_species", "a depository entry "
                                                       "matched the whole species")
-                    refusal = refusal or "refused:whole_species: depository match"
+                    refusal = refusal or DEPOSITORY_MATCH_REFUSAL
                 else:
                     verdict = (ch.get("depository_exclusion") or {}).get("verdict", "")
                     if cm.exclusion_refused(ch.get("depository_exclusion")):
@@ -1567,11 +1569,32 @@ def check_groups(ports) -> tuple:
     return tuple(out)
 
 
+def override_size(observe, observation) -> bool:
+    """Whether an extension witness is a matched depository size of the
+    member: RMG rates it from a depository entry (``DEPOSITORY_MATCH_REFUSAL``)
+    and the member's base certificate is ``excluded:except_matched`` (it
+    certified exactly such finite sizes, which the catalog overrides).  Under
+    any other verdict no analogue may be a depository reaction, so it is not."""
+    from rmgpy.kmc import certificates as cm
+    if observation.refusal != DEPOSITORY_MATCH_REFUSAL:
+        return False
+    base = getattr(observe, "base", None) or {}
+    return any((ch.get("depository_exclusion") or {}).get("verdict") == cm.EXCEPT_MATCHED
+               for ch in base.get("channels", []))
+
+
 def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PORT_DEPTH_LIMIT,
                 retries=FIXED_POINT_RETRIES, closure=None) -> FixedPointResult:
     """The recertified fixed point of ``witness`` under ``observe`` (see the
     module docstring): every round checks every artificial port alone at +1
-    and +2 repeats and all ports jointly at +1 and +2 (``check_groups``)."""
+    and +2 repeats and all ports jointly at +1 and +2 (``check_groups``).  A
+    check witness at a matched depository size (``override_size``) is a
+    ``depository`` check: RMG rates that size from the entry (a catalog
+    override), so it is no evidence about the rule estimate's window; every
+    port keeps at least one other alone check (else
+    ``refused:override_checks``).  An extension of the witness itself that
+    lands on such a size keeps extending the same ports: the matched sizes
+    are finite, and the window is measured at the sizes the rule rates."""
     closure = closure or close
     limit = b._ceiling(ceiling)
     ports = b.vector_ports(witness)
@@ -1618,6 +1641,17 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
                               f"be extended: {error}", w)
         return w, None
 
+    def settle(w, keys):
+        # an extension that lands on a matched depository size (a catalog
+        # override, no rule window to observe) keeps extending the same ports
+        obs, win = look(w)
+        while obs.refusal and override_size(observe, obs):
+            w, failure = grow(w, keys)
+            if failure:
+                return w, obs, win, failure
+            obs, win = look(w)
+        return w, obs, win, None
+
     current = witness
     obs, win = look(current)
     if obs.refusal or win.refusal:
@@ -1630,7 +1664,9 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
             current, failure = grow(current, inside)
             if failure:
                 return failure
-            obs, win = look(current)
+            current, obs, win, failure = settle(current, inside)
+            if failure:
+                return failure
             if obs.refusal or win.refusal:
                 return stop(obs.refusal or win.refusal, "refused on extension", current, win,
                             obs, rounds, used)
@@ -1644,6 +1680,10 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
                     return failure
                 return stop(failure.status, failure.reason, current, None, obs, rounds, used)
             o2, w2 = look(other)
+            if o2.refusal and override_size(observe, o2):
+                checks.append({"ports": tuple(group), "step": step, "joint": joint,
+                               "depository": True, "reason": o2.refusal})
+                continue
             if o2.refusal or w2.refusal:
                 return stop("certificate_unstable", f"+{step} at {list(group)}: "
                             f"{o2.refusal or w2.refusal}", current, None, obs, rounds, used)
@@ -1652,7 +1692,14 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
                            "same_certificate": view == o2.view(w2.atoms),
                            "window_atoms": len(w2.atoms)})
         rounds.append(tuple(checks))
-        failed = [c for c in checks if not (c["same_window"] and c["same_certificate"])]
+        blind = [p for p in ports if all(c.get("depository") for c in checks
+                                         if not c["joint"] and c["ports"] == (p,))]
+        if blind:
+            return stop("refused:override_checks", f"every alone check of port {blind[0]} is a "
+                        "matched depository size: nothing measures its window", current, None,
+                        obs, rounds, used)
+        failed = [c for c in checks if not c.get("depository")
+                  and not (c["same_window"] and c["same_certificate"])]
         if not failed:
             return stop("fixed_point", "", current, win, obs, rounds, used)
         if used >= retries:
@@ -1668,7 +1715,9 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
         current, failure = grow(current, alone or sorted(ports))
         if failure:
             return failure
-        obs, win = look(current)
+        current, obs, win, failure = settle(current, alone or sorted(ports))
+        if failure:
+            return failure
         if obs.refusal or win.refusal:
             return stop(obs.refusal or win.refusal, "refused on re-extension", current, win, obs,
                         rounds, used)

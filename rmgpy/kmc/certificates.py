@@ -487,6 +487,36 @@ def depository_search(family, reactants, products):
             "stops_at_first_depository_with_a_match": True}
 
 
+_SELECTION_TABLES = {}
+
+
+def depository_selection(family, reactants, products) -> Optional[dict]:
+    """RMG's depository selection on one reaction (``depository_search``'s
+    ``selected``: the entry RMG would rate it from, None for none), searched
+    only over the entries whose species formula multisets equal the
+    reaction's on one orientation (necessary for ``Reaction.is_isomorphic``),
+    so a reaction no entry can match costs no isomorphism test.  The tables
+    are kept per family object."""
+    from types import SimpleNamespace
+    held = _SELECTION_TABLES.get(id(family))
+    if held is None or held[0] is not family:
+        held = (family, _depository_formulas(family), max_depository_heavy_atoms(family))
+        _SELECTION_TABLES[id(family)] = held
+    _family, rows, hmax = held
+    if any(_heavy(m) > hmax for m in list(reactants) + list(products)):
+        return None
+    r = _side_formulas(reactants, [{}] * len(reactants))
+    p = _side_formulas(products, [{}] * len(products))
+    wanted = {(label, index) for label, index, er, ep in rows if (er, ep) in ((r, p), (p, r))}
+    if not wanted:
+        return None
+    stub = SimpleNamespace(depositories=[
+        SimpleNamespace(label=d.label, entries={k: e for k, e in d.entries.items()
+                                                if (d.label, int(e.index)) in wanted})
+        for d in family.depositories])
+    return depository_search(stub, reactants, products)["selected"]
+
+
 def max_depository_heavy_atoms(family) -> int:
     """Largest heavy-atom count of any species of any depository entry."""
     best = 0
@@ -517,10 +547,23 @@ def _depository_formulas(family):
     return rows
 
 
+EXCEPT_MATCHED = "excluded:except_matched"
+
+
 def exclusion_refused(exclusion) -> bool:
     """Whether a depository exclusion refuses its channel: every verdict but
-    an ``excluded:`` argument (``refused:unknown``, ``matched:...``, none)."""
+    an ``excluded:`` argument (``refused:unknown``, none).  An
+    ``excluded:except_matched`` channel certifies: its finite matched sizes
+    are depository overrides (``exclusion_matches``)."""
     return not (exclusion or {}).get("verdict", "").startswith("excluded:")
+
+
+def exclusion_matches(exclusion) -> list:
+    """The matched analogues an ``excluded:except_matched`` exclusion
+    certifies with (each one a depository override), else []."""
+    exclusion = exclusion or {}
+    return list(exclusion.get("matches") or ()) if exclusion.get("verdict") == EXCEPT_MATCHED \
+        else []
 
 
 def reaction_growth_sites(growth, reactants, products) -> Optional[tuple]:
@@ -677,12 +720,17 @@ def decide_by_construction(family, reactants, products, growth, unit, hmax, cand
             if key in seen:
                 continue
             seen.add(key)
+            entry = entries[(label, index)]
             matches.append({"depository": label, "index": index,
-                            "label": entries[(label, index)].label, "orientation": orientation,
+                            "label": entry.label, "orientation": orientation,
                             "periods": list(vector), "reactants": smiles[0],
                             "products": smiles[1],
                             "species_heavy_atoms": {"reactants": sorted(map(_heavy, new_r)),
-                                                    "products": sorted(map(_heavy, new_p))}})
+                                                    "products": sorted(map(_heavy, new_p))},
+                            "rank": entry.rank, "kinetics": repr(getattr(entry, "data", None)),
+                            # the analogue itself, family template direction
+                            "reaction": {"reactants": sorted(m.to_adjacency_list() for m in new_r),
+                                         "products": sorted(m.to_adjacency_list() for m in new_p)}})
     return sites, compared, matches
 
 
@@ -711,9 +759,12 @@ def depository_exclusion(family, reactants, products, *, cache=None,
        is inserted on both sides alike through the provider's ``fragment``,
        and each analogue whose formulas are a candidate's is compared with it
        by ``Reaction.is_isomorphic`` (``decide_by_construction``).
-       ``excluded:isomorphism`` when none matches; ``matched:<depository>#<index>,...``
-       (refused, ``matches`` lists each analogue: periods per site, species
-       and heavy-atom sizes, orientation) when one does; ``refused:unknown``
+       ``excluded:isomorphism`` when none matches; ``excluded:except_matched``
+       when some do (``matched`` names the entries; ``matches`` lists each
+       analogue: periods per site, species and heavy-atom sizes, orientation,
+       the entry's rank and kinetics as RMG reads them, the analogue's
+       adjacency lists): certified, RMG rates those finite sizes from the
+       depository and the catalog overrides them there; ``refused:unknown``
        when the provider names no growth sites or grows by another unit."""
     cache = {} if cache is None else cache
     key = ("hmax", family.label)
@@ -809,10 +860,15 @@ def depository_exclusion(family, reactants, products, *, cache=None,
                                 "orientations: none is isomorphic"})
         return out
     named = sorted({(m["depository"], m["index"]) for m in matches})
-    out.update({"verdict": "matched:" + ",".join(f"{d}#{i}" for d, i in named),
-                "argument": "a long-chain analogue is isomorphic to a depository entry (sizes "
-                            "in matches): RMG would rate that oligomer from the depository; "
-                            "refused by name"})
+    out.update({"verdict": EXCEPT_MATCHED,
+                "matched": [f"{d}#{i}" for d, i in named],
+                "argument": "every long-chain analogue was compared as for excluded:isomorphism; "
+                            "the analogues in matches (each a finite size: species within the "
+                            "largest depository species) ARE depository entries, so RMG rates "
+                            "exactly those oligomers from the depository (entry kinetics as RMG "
+                            "reads them in matches) and every other analogue by the rule "
+                            "estimate: certified, with the catalog carrying each match as a "
+                            "size-conditioned override (template_emission.depository_overrides)"})
     return out
 
 

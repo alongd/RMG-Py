@@ -53,6 +53,24 @@ Propensities
   built-ins H and H2) bypasses MET in both directions (``phi = 1``) and is
   counted.
 
+Depository overrides
+--------------------
+A loaded template may carry overrides (``window_matcher.Override``): the
+reactions RMG rates from a depository at finite sizes, each with its own
+weight.  The condition is read from the molecules at the event, never from a
+size: a unimolecular transition is overridden when its component IS the
+override's reactant and the transition makes its products (exact labelled
+isomorphism under resonance); it then sits in its own channel
+``("uni_o", class, override)`` at the override's weight.  A bimolecular site
+on a component that is an override's participant carries a tag in its kind
+(the override and the marked class of the site: the participant with the
+site atoms marked), and a kind pair whose classes make the override's
+reaction (found on the override's own reactants when the catalog loads)
+takes the override's weight in the pair aggregates and in the MET
+activation (one MET class row per class and override).  Everything else
+keeps the template weight; a template without overrides indexes exactly as
+before.
+
 Exact pair sampler
 ------------------
 ``ComponentPairSampler``: the left component is drawn with weight
@@ -127,8 +145,8 @@ from __future__ import annotations
 
 import math
 import weakref
-from collections import Counter, OrderedDict
-from dataclasses import dataclass
+from collections import Counter, OrderedDict, defaultdict
+from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
@@ -600,6 +618,9 @@ class _Entry:
     met_length: int
     radicals: int
     species: Optional[str]
+    # (class, override) -> (allowed, leak count): unimolecular transitions at a
+    # matched size (a template's depository override), out of ``uni``
+    uni_o: Dict[Tuple[int, int], Tuple[Tuple[EngineTransition, ...], int]] = field(default_factory=dict)
 
     def counts(self) -> Dict[Tuple[int, int, Tuple], int]:
         return {k: len(v) for k, v in self.sites.items()}
@@ -608,7 +629,8 @@ class _Entry:
         return (self.atoms,
                 tuple(sorted((k, tuple(t.edit_key for t in v[0]), v[1]) for k, v in self.uni.items())),
                 tuple(sorted(self.sites.items())), self.backbone, self.met_length,
-                self.radicals, self.species)
+                self.radicals, self.species,
+                tuple(sorted((k, tuple(t.edit_key for t in v[0]), v[1]) for k, v in self.uni_o.items())))
 
 
 def _bb_degree(state, a, removed=(), added=0):
@@ -735,6 +757,139 @@ def _pair_leak(cls: _Class, kind0: Tuple, kind1: Tuple) -> bool:
         if info[i0][0]:
             gained[i1] += 1
     return any(info[ti][0] and info[ti][1] + g >= 3 for ti, g in gained.items())
+
+
+# --------------------------------------------------------------------------
+# depository overrides: a template's weight at the matched molecules
+# --------------------------------------------------------------------------
+def _rows_state(rows) -> MeltState:
+    """A MeltState of ``rows`` (atom id -> rmg_moves row), one component per
+    connected part, atom ids kept."""
+    from rmgpy.kmc import rmg_moves as rm
+    from rmgpy.kmc.melt_state import Node, Origin
+    nodes, origin = {}, {}
+    for k, part in enumerate(rm.split_rows(dict(rows))):
+        for a, row in part.items():
+            nodes[a] = Node(row[0], row[1], int(row[2]), int(row[3]), int(row[4]),
+                            {n: float(o) for n, o in row[5]})
+            origin[a] = Origin("chain", k, "override", str(a), False)
+    return MeltState(nodes, origin)
+
+
+def _comp_key(state, cid) -> Tuple:
+    return tuple(sorted(state.components.composition(cid).items(), key=str))
+
+
+def _first_rows(state, cid):
+    return wm.form_rows(state, cid, wm.component_forms(state, cid)[0])
+
+
+def _marked(rows, marks=None):
+    """The labelled graph of ``rows`` with ``marks`` (atom -> site position)
+    added to the atom labels."""
+    g = _graph(rows)
+    for a, m in (marks or {}).items():
+        g.nodes[a]["label"] = tuple(g.nodes[a]["label"]) + (("site", m),)
+    return g
+
+
+def _species_forms(rows) -> Tuple:
+    """((composition, [graph of every resonance form]), ...) per component."""
+    state = _rows_state(rows)
+    return tuple((_comp_key(state, cid),
+                  [_graph(wm.form_rows(state, cid, f)) for f in wm.component_forms(state, cid)])
+                 for cid in state.components.ids())
+
+
+def _species_of_rows(rows) -> Tuple:
+    """((composition, graph of the first form), ...) per component."""
+    state = _rows_state(rows)
+    return tuple((_comp_key(state, cid), _graph(_first_rows(state, cid)))
+                 for cid in state.components.ids())
+
+
+def _same_species(query, stored) -> bool:
+    """Whether the components ``query`` ((composition, graph), ...) are the
+    species ``stored`` ((composition, [form graphs]), ...) as multisets
+    (exact labelled-graph isomorphism under resonance)."""
+    if len(query) != len(stored):
+        return False
+    used = set()
+    for key, g in query:
+        hit = next((i for i, (k, forms) in enumerate(stored)
+                    if i not in used and k == key and any(_isomorphic(g, h) for h in forms)), None)
+        if hit is None:
+            return False
+        used.add(hit)
+    return True
+
+
+@dataclass
+class _Overrides:
+    """The overrides of one loaded template, prepared for matching at the
+    event: per override its weight, reactant and product species and, for a
+    bimolecular template, the marked site classes of each participant and
+    the class pairs whose transition is the override's reaction."""
+
+    weights: Tuple[float, ...]
+    reactants: Tuple
+    products: Tuple
+    classes: Tuple = ()
+    allowed: Tuple = ()
+
+
+def _prepare_overrides(t: wm.Template, index: int, quotient: bool) -> Optional[_Overrides]:
+    if not t.overrides:
+        return None
+    reactants = tuple(_species_forms(o.reactants) for o in t.overrides)
+    products = tuple(_species_forms(o.products) for o in t.overrides)
+    classes, allowed = [], []
+    if len(t.participants) == 2:
+        for o, prods in zip(t.overrides, products):
+            state = _rows_state(o.reactants)
+            view = _LocalView(state, state.components.ids())
+            mine = {0: [], 1: []}
+
+            def class_of(p, cid, site):
+                g = _marked(_first_rows(state, cid), {a: k for k, a in enumerate(site)})
+                key = _comp_key(state, cid)
+                for c, (k, forms) in enumerate(mine[p]):
+                    if k == key and any(_isomorphic(g, h) for h in forms):
+                        return c
+                mine[p].append((key, [_marked(wm.form_rows(state, cid, f),
+                                              {a: m for m, a in enumerate(site)})
+                                      for f in wm.component_forms(state, cid)]))
+                return len(mine[p]) - 1
+
+            e0 = participant_embeddings(view, t, 0, quotient=quotient)
+            e1 = participant_embeddings(view, t, 1, quotient=quotient)
+            pairs = set()
+            for a in e0:
+                for b in e1:
+                    if a.cid == b.cid:
+                        continue
+                    s0 = tuple(a.mapping[x] for x in t.edited[0])
+                    s1 = tuple(b.mapping[x] for x in t.edited[1])
+                    mapping = tuple(x if x is not None else y for x, y in zip(a.mapping, b.mapping))
+                    comps = tuple(sorted((a.cid, b.cid)))
+                    for ca in a.choices:
+                        for cb in b.choices:
+                            _ek, _id, _ed, delta, _fb, _fr = wm._evaluate(view, t, index, mapping,
+                                                                         comps, ca + cb)
+                            if _transition_is(view, state, comps, delta, prods):
+                                pairs.add((class_of(0, a.cid, s0), class_of(1, b.cid, s1)))
+            classes.append((tuple(mine[0]), tuple(mine[1])))
+            allowed.append(frozenset(pairs))
+    return _Overrides(tuple(o.weight for o in t.overrides), reactants, products, tuple(classes),
+                      tuple(allowed))
+
+
+def _transition_is(view, state, comps, delta, products) -> bool:
+    """Whether a transition on components ``comps`` (its ``delta``) makes the
+    product species ``products`` (the reactants are matched by the caller)."""
+    rows = {a: view.base_row(a) for c in comps for a in state.components.atoms(c)}
+    rows.update(dict(delta))
+    return _same_species(_species_of_rows(rows), products)
 
 
 # --------------------------------------------------------------------------
@@ -1137,9 +1292,16 @@ class MeltEngine:
             for old, new in zip(self.templates, templates):
                 if (old.atoms, old.bond, old.edits) != (new.atoms, new.bond, new.edits):
                     raise EngineError(f"template {new.name} changed structure with temperature")
+        if self.templates:
+            for old, new in zip(self.templates, templates):
+                if [(o.name, o.reactants, o.products) for o in old.overrides] != \
+                        [(o.name, o.reactants, o.products) for o in new.overrides]:
+                    raise EngineError(f"template {new.name} changed its overrides with temperature")
         self.templates = templates
         self.classes = tuple(_classify(i, t) for i, t in enumerate(templates))
         self.weights = tuple(t.weight for t in templates)
+        self._ovr = {i: o for i, o in ((i, _prepare_overrides(t, i, self.quotient))
+                                       for i, t in enumerate(templates)) if o is not None}
         self.temperature = float(temperature)
 
     def _declared_mobile_participation(self) -> Dict[str, List[str]]:
@@ -1156,6 +1318,7 @@ class MeltEngine:
             names = set()
             for entry in self._scan(alone.components.ids(), state=alone).values():
                 names.update(self.templates[ci].name for ci in entry.uni)
+                names.update(self.templates[ci].name for ci, _o in entry.uni_o)
                 names.update(self.templates[key[0]].name for key in entry.sites)
             if not names:
                 idle.append(name)
@@ -1188,7 +1351,7 @@ class MeltEngine:
         for cid in cids:
             view = _LocalView(state, [cid])
             atoms = state.components.atoms(cid)
-            uni, sites = {}, {}
+            uni, sites, uni_o, seen = {}, {}, {}, {}
             for cls, t in zip(self.classes, self.templates):
                 if only is not None and cls.index not in only:
                     continue
@@ -1210,14 +1373,23 @@ class MeltEngine:
                                     delta, _creates_branch(state, edits_))
                     if found:
                         trs = sorted(found.values(), key=lambda x: x.edit_key)
+                        which = self._uni_overrides(state, view, cid, cls.index, trs, seen)
+                        for o in sorted(set(which.values())):
+                            mine = [x for x in trs if which.get(x.edit_key) == o]
+                            allowed = tuple(x for x in mine if not x.leak)
+                            uni_o[(cls.index, o)] = (allowed, len(mine) - len(allowed))
+                        trs = [x for x in trs if x.edit_key not in which]
                         allowed = tuple(x for x in trs if not x.leak)
-                        uni[cls.index] = (allowed, len(trs) - len(allowed))
+                        if trs:
+                            uni[cls.index] = (allowed, len(trs) - len(allowed))
                 else:
                     for p in (0, 1):
                         by = wm._sites(t, p, participant_embeddings(view, t, p, quotient=quotient)).get(cid, ())
                         grouped = {}
                         for site in by:
-                            grouped.setdefault(_site_kind(state, cls, t, p, site), []).append(site)
+                            kind = _site_kind(state, cls, t, p, site)
+                            tag = self._site_tag(state, cid, cls.index, p, site, seen)
+                            grouped.setdefault(kind if tag is None else kind + (tag,), []).append(site)
                         for kind, ss in grouped.items():
                             sites[(cls.index, p, kind)] = tuple(sorted(ss))
             backbone = state.components.backbone_count(cid)
@@ -1225,8 +1397,78 @@ class MeltEngine:
                       if self.transport.mean_residue_molar_mass_g_mol is None
                       else self.transport.met_length(backbone, state.components.molar_mass_g_mol(cid)))
             out[cid] = _Entry(cid, atoms, uni, sites, backbone, length,
-                              state.components.radical_count(cid), self.identity.identify(state, cid))
+                              state.components.radical_count(cid), self.identity.identify(state, cid),
+                              uni_o)
         return out
+
+    # -- depository overrides ------------------------------------------------
+    def _component(self, state, cid, seen):
+        """(composition, first-form rows) of a component, once per scan."""
+        if ("rows", cid) not in seen:
+            seen[("rows", cid)] = (_comp_key(state, cid), _first_rows(state, cid))
+        return seen[("rows", cid)]
+
+    def _uni_overrides(self, state, view, cid, ci, trs, seen) -> Dict[Tuple, int]:
+        """edit key -> override index of every unimolecular transition of
+        class ``ci`` on component ``cid`` whose reaction is one of its
+        template's overrides: the component IS the override's reactant and
+        the transition makes its products (exact isomorphism, whole
+        species)."""
+        ov = self._ovr.get(ci)
+        if ov is None:
+            return {}
+        key, rows = self._component(state, cid, seen)
+        candidates = [o for o, side in enumerate(ov.reactants) if len(side) == 1 and side[0][0] == key]
+        if not candidates:
+            return {}
+        g = _graph(rows)
+        candidates = [o for o in candidates if _same_species(((key, g),), ov.reactants[o])]
+        out = {}
+        for tr in trs:
+            for o in candidates:
+                if _transition_is(view, state, (cid,), tr.delta, ov.products[o]):
+                    out[tr.edit_key] = o
+                    break
+        return out
+
+    def _site_tag(self, state, cid, ci, p, site, seen) -> Optional[Tuple]:
+        """((override, class), ...) of a bimolecular site whose component is
+        an override's participant ``p`` with the site in one of that
+        override's marked classes; None for none (the kind is unchanged)."""
+        ov = self._ovr.get(ci)
+        if ov is None or not ov.classes:
+            return None
+        key, rows = self._component(state, cid, seen)
+        hits, g = [], None
+        for o, per in enumerate(ov.classes):
+            for c, (k, forms) in enumerate(per[p]):
+                if k != key:
+                    continue
+                if g is None:
+                    g = _marked(rows, {a: m for m, a in enumerate(site)})
+                if any(_isomorphic(g, h) for h in forms):
+                    hits.append((o, c))
+                    break
+        return tuple(sorted(hits)) or None
+
+    def _pair_override(self, ci, k0, k1) -> int:
+        """The override a kind pair of class ``ci`` makes (-1: none)."""
+        ov = self._ovr.get(ci)
+        if ov is None or len(k0) < 3 or len(k1) < 3:
+            return -1
+        for o0, c0 in k0[2]:
+            for o1, c1 in k1[2]:
+                if o0 == o1 and (c0, c1) in ov.allowed[o0]:
+                    return o0
+        return -1
+
+    def _kind_weight(self, ci, k0, k1) -> float:
+        o = self._pair_override(ci, k0, k1)
+        return self.weights[ci] if o < 0 else self._ovr[ci].weights[o]
+
+    def _row_weight(self, row) -> float:
+        """The weight of a MET class row: (class, T, T leak[, override])."""
+        return self.weights[row[0]] if len(row) == 3 else self._ovr[row[0]].weights[row[3]]
 
     def _phi_scan(self, cids) -> Dict[int, _Entry]:
         """Partial entries carrying exactly what ``pair_rate`` reads: the
@@ -1258,6 +1500,9 @@ class MeltEngine:
         self.uni_trees = {c.index: _Fenwick(size) for c in self.classes if not c.bimolecular}
         self.uni_allowed = Counter()
         self.uni_leak = Counter()
+        self.uni_o_allowed: Counter = Counter()
+        self.uni_o_leak: Counter = Counter()
+        self.uni_o_cids: Dict[Tuple[int, int], set] = defaultdict(set)
         self.met_comps: Dict[int, Dict] = {}
         self.pairs: Dict[Tuple[int, int], PairRate] = {}
         for entry in self._scan(self.state.components.ids()).values():
@@ -1300,6 +1545,11 @@ class MeltEngine:
                 self.uni_trees[ci].add(cid, len(allowed))
             self.uni_allowed[ci] += len(allowed)
             self.uni_leak[ci] += leak
+        for key, (allowed, leak) in entry.uni_o.items():
+            self.uni_o_allowed[key] += len(allowed)
+            self.uni_o_leak[key] += leak
+            if allowed:
+                self.uni_o_cids[key].add(cid)
         for (ci, p, kind), sites in entry.sites.items():
             self.S[(ci, p, kind)] += len(sites)
             self._ensure_kind(ci, p, kind)
@@ -1320,6 +1570,10 @@ class MeltEngine:
                 self.uni_trees[ci].add(cid, -len(allowed))
             self.uni_allowed[ci] -= len(allowed)
             self.uni_leak[ci] -= leak
+        for key, (allowed, leak) in entry.uni_o.items():
+            self.uni_o_allowed[key] -= len(allowed)
+            self.uni_o_leak[key] -= leak
+            self.uni_o_cids[key].discard(cid)
         for key, sites in entry.sites.items():
             self.S[key] -= len(sites)
         self._x_terms(entry, -1)
@@ -1346,14 +1600,15 @@ class MeltEngine:
                 for (cj, q, k1), n1 in y.items():
                     if cj != ci or q != 1:
                         continue
-                    slot = per.setdefault(ci, [0, 0])
+                    slot = per.setdefault((ci, self._pair_override(ci, k0, k1)), [0, 0])
                     slot[1 if _pair_leak(cls, k0, k1) else 0] += n0 * n1
         if not per:
             return None
+        # one row per class (and per override of it: (class, T, T leak, override))
         classes = tuple((ci, a / self.classes[ci].divisor, l / self.classes[ci].divisor)
-                        for ci, (a, l) in sorted(per.items()))
-        k_allowed = math.fsum(self.weights[ci] * a for ci, a, _l in classes)
-        k_leak = math.fsum(self.weights[ci] * l for ci, _a, l in classes)
+                        + (() if o < 0 else (o,)) for (ci, o), (a, l) in sorted(per.items()))
+        k_allowed = math.fsum(self._row_weight(r) * r[1] for r in classes)
+        k_leak = math.fsum(self._row_weight(r) * r[2] for r in classes)
         k_act = k_allowed + k_leak
         if k_act <= 0.0:
             return None
@@ -1392,11 +1647,17 @@ class MeltEngine:
             elif not cls.met_forward:
                 for (ci, k0, k1) in sorted((k for k in self.channels if k[0] == cls.index), key=repr):
                     pairs = (self.S[(ci, 0, k0)] * self.S[(ci, 1, k1)] - self.X[(ci, k0, k1)])
-                    a = w * pairs / (cls.divisor * self.nav)
+                    a = self._kind_weight(ci, k0, k1) * pairs / (cls.divisor * self.nav)
                     if _pair_leak(cls, k0, k1):
                         leak.append(a)
                     else:
                         channels.append((("bi", ci, k0, k1), a))
+        for key in sorted(k for k in set(self.uni_o_allowed) | set(self.uni_o_leak)
+                          if self.uni_o_allowed[k] or self.uni_o_leak[k]):
+            ci, o = key
+            w = self._ovr[ci].weights[o]
+            channels.append((("uni_o", ci, o), w * self.uni_o_allowed[key]))
+            leak.append(w * self.uni_o_leak[key])
         met = math.fsum(r.allowed for r in self.pairs.values())
         channels.append((("met",), met))
         leak.append(math.fsum(r.leak for r in self.pairs.values()))
@@ -1417,6 +1678,10 @@ class MeltEngine:
                                 for k, v in self.channels.items() if v.n0 and v.n1))
         uni = tuple(sorted((k, self.uni_allowed[k], self.uni_leak[k], self.uni_trees[k].prefix(self._size))
                            for k in self.uni_trees))
+        uni += tuple(sorted((("o",) + k, self.uni_o_allowed[k], self.uni_o_leak[k],
+                             tuple(sorted(self.uni_o_cids[k])))
+                            for k in set(self.uni_o_allowed) | set(self.uni_o_leak)
+                            if self.uni_o_allowed[k] or self.uni_o_leak[k]))
         pairs = tuple(sorted((k, (v.classes, v.k_act, v.k_d, v.phi, v.bypass, v.allowed, v.leak))
                              for k, v in self.pairs.items()))
         prop = self.propensities()
@@ -1430,7 +1695,7 @@ class MeltEngine:
         other.__dict__.update({k: v for k, v in self.__dict__.items()
                                if k in ("spec", "transport", "catalog", "rng", "state", "volume", "nav",
                                         "identity", "temperature", "templates", "classes", "weights",
-                                        "quotient", "temperature_range")})
+                                        "quotient", "temperature_range", "_ovr")})
         other._index_revision = 0
         other.rebuild()
         return other.snapshot()
@@ -1444,6 +1709,9 @@ class MeltEngine:
         for ci, tree in self.uni_trees.items():
             if tree.prefix(self._size) != self.uni_allowed[ci]:
                 raise EngineError(f"template {ci}: unimolecular tree != count")
+        for key, total in self.uni_o_allowed.items():
+            if sum(len(self.entries[c].uni_o[key][0]) for c in self.uni_o_cids[key]) != total:
+                raise EngineError(f"override {key}: unimolecular components != count")
 
     # -- building and applying transitions -----------------------------------
     def _pair_transition(self, ci, c0, s0, c1, s1) -> Tuple[EngineTransition, Any]:
@@ -1610,6 +1878,18 @@ class MeltEngine:
         tr = allowed[r]
         return tr, _LocalView(self.state, [cid])
 
+    def _draw_uni_override(self, ci, o) -> Tuple[EngineTransition, Any]:
+        """A transition drawn uniformly among the override's unimolecular
+        transitions (components in id order)."""
+        key = (ci, o)
+        g = int(self.rng.integers(self.uni_o_allowed[key]))
+        for cid in sorted(self.uni_o_cids[key]):
+            allowed = self.entries[cid].uni_o[key][0]
+            if g < len(allowed):
+                return allowed[g], _LocalView(self.state, [cid])
+            g -= len(allowed)
+        raise EngineError("override draw fell through")
+
     def _draw_met(self, total: float) -> Tuple[EngineTransition, Any, PairRate]:
         r = self.rng.random() * total
         pairs = sorted(self.pairs.items())
@@ -1622,14 +1902,15 @@ class MeltEngine:
                 break
             r -= rate.allowed
         (a, b), rate = chosen
-        weights = [(ci, self.weights[ci] * t_a) for ci, t_a, _l in rate.classes if t_a > 0]
+        weights = [(row, self._row_weight(row) * row[1]) for row in rate.classes if row[1] > 0]
         r = self.rng.random() * math.fsum(w for _c, w in weights)
-        ci = weights[-1][0]
+        row = weights[-1][0]
         for c, w in weights:
             if r < w:
-                ci = c
+                row = c
                 break
             r -= w
+        ci, o = row[0], (row[3] if len(row) > 3 else -1)
         cls = self.classes[ci]
         ea, eb = self.entries[a], self.entries[b]
         options = []
@@ -1638,7 +1919,8 @@ class MeltEngine:
                 if cj != ci or p != 0:
                     continue
                 for (ck, q, k1), s1 in y.sites.items():
-                    if ck == ci and q == 1 and not _pair_leak(cls, k0, k1):
+                    if ck == ci and q == 1 and not _pair_leak(cls, k0, k1) and \
+                            self._pair_override(ci, k0, k1) == o:
                         options.append((x.cid, s0, y.cid, s1))
         options.sort(key=lambda o: (o[0], o[2], o[1], o[3]))
         total_pairs = sum(len(s0) * len(s1) for _x, s0, _y, s1 in options)
@@ -1824,6 +2106,10 @@ class MeltEngine:
         if kind == "uni":
             ci = key[1]
             tr, view = self._draw_uni(ci)
+            return self._fire(tr, view, "uni", self.classes[ci].met_reverse)
+        if kind == "uni_o":
+            _k, ci, o = key
+            tr, view = self._draw_uni_override(ci, o)
             return self._fire(tr, view, "uni", self.classes[ci].met_reverse)
         if kind == "bi":
             _k, ci, k0, k1 = key

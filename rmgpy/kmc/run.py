@@ -665,9 +665,11 @@ def cross_catalog_site(engine: me.MeltEngine, owner: Dict[str, int]) -> Optional
     pair_sites: Dict[int, List[set]] = {}
     for cid in sorted(engine.entries):
         entry = engine.entries[cid]
-        for ci in sorted(entry.uni):
+        per_class = [(ci, entry.uni[ci][0]) for ci in sorted(entry.uni)] + \
+            [(ci, entry.uni_o[(ci, o)][0]) for ci, o in sorted(entry.uni_o)]
+        for ci, transitions in per_class:
             name = engine.templates[ci].name
-            for tr in entry.uni[ci][0]:
+            for tr in transitions:
                 key = frozenset(_edit_key(e) for e in tr.edits)
                 seen = uni.setdefault(key, (owner[name], name))
                 if seen[0] != owner[name]:
@@ -703,7 +705,8 @@ def initial_match(engine: me.MeltEngine) -> dict:
     participant site; ``sites`` counts both."""
     classes, sites = set(), 0
     for entry in engine.entries.values():
-        for ci, (allowed, leak) in entry.uni.items():
+        for (ci, *_o), (allowed, leak) in [((ci,), v) for ci, v in entry.uni.items()] + \
+                list(entry.uni_o.items()):
             if allowed or leak:
                 classes.add(ci)
                 sites += len(allowed) + leak

@@ -89,7 +89,8 @@ ROSTER_SCHEMA_V4 = "kmc-reference-roster/4"
 # rate label tags the production-rate provenance)
 REFERENCE_THERMO_LABEL = "i147-reference"
 REFERENCE_RATES_LABEL = "i138-reference"
-PAYLOAD_FIELDS = ("key", "name", "family", "status", "direction", "executable", "weight", "derived")
+PAYLOAD_FIELDS = ("key", "name", "family", "status", "direction", "executable", "weight", "derived",
+                  "overrides")
 # the declaration digests an artifact compiled from a deck carries in
 # ``provenance.proxy_source`` and a deck or roster must match
 BINDING_KEYS = ("chemistry_sha256", "declaration_sha256")
@@ -1285,6 +1286,24 @@ class Services:
     kc: Any
     # the content digest of the database the counter and thermo come from
     database_content_sha256: Optional[str] = None
+    # RMG's production rates (``te.ProductionRates``): the depository overrides
+    rates: Any = None
+
+
+class LazyRates:
+    """``te.ProductionRates`` on the services' database, built on first use
+    (only a catalog with depository matches asks for a rate)."""
+
+    def __init__(self, db, families, database):
+        self.args = (db, families, database)
+        self.rates = None
+
+    def __call__(self, request):
+        if self.rates is None:
+            db, families, database = self.args
+            self.rates = te.ProductionRates(db, families, database_path=database,
+                                            database_sha=REFERENCE_RATES_LABEL)
+        return self.rates(request)
 
 
 def load_services(database, families):
@@ -1292,7 +1311,7 @@ def load_services(database, families):
     db = load_database(families, database)
     return Services(te.RmgCounter(db.kinetics.families),
                     te.ThermoKc(GasPhaseRMGReferenceThermo(db.thermo, REFERENCE_THERMO_LABEL)),
-                    database_content_sha256(database))
+                    database_content_sha256(database), LazyRates(db, families, database))
 
 
 def dumps(catalog) -> str:
@@ -1542,6 +1561,17 @@ def assemble(paths, *, database=None, services=None) -> dict:
         except Exception as error:   # reported, never hidden
             failures.append(f"balance check could not run: {type(error).__name__}: "
                             f"{str(error)[:500]}")
+    override_table = []
+    if payloads:
+        # the matched sizes at RMG's depository rate, on the loaded catalog
+        try:
+            payloads, override_table, override_failures = te.depository_overrides(
+                payloads, counter=services.counter, rates=getattr(services, "rates", None),
+                kc=services.kc)
+            failures += override_failures
+        except Exception as error:   # reported, never hidden
+            failures.append(f"depository overrides could not run: {type(error).__name__}: "
+                            f"{str(error)[:500]}")
     for k, payload in zip(have, payloads):
         rows[k]["payload"] = payload
         rows[k]["status"] = payload["status"]
@@ -1630,6 +1660,9 @@ def assemble(paths, *, database=None, services=None) -> dict:
                        "not_evaluable": len(te.cycle_not_evaluable(cycle_table)),
                        "by_status": dict(Counter(r.get("status") for r in cycle_table))},
             "balance": balance,
+            "overrides": {"overrides": len(override_table),
+                          "refused": sum(1 for r in override_table if r.get("status") != "ok"),
+                          "table": override_table},
             "round_trip": round_trip,
             "coverage": {"complete": complete_coverage, "rows": len(rows),
                          "assigned": len(assigned)},

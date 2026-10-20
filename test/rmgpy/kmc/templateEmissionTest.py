@@ -1321,7 +1321,7 @@ def _pair_rates(by_orientation):
     return rates
 
 
-def _toy_pair(hid=None, wid=None, scale=1.0, h_scale=1.0, counter=None):
+def _toy_pair(hid=None, wid=None, scale=1.0, h_scale=1.0, counter=None, certificate=None):
     """Homolysis H of C12 at (3,4) (reversed record) and the recombination W
     of its two products (as_generated), linked by ``reverse_of``;
     ``k_W = Kc * k_H`` times ``scale`` both ways, ``h_scale`` on H alone."""
@@ -1340,10 +1340,12 @@ def _toy_pair(hid=None, wid=None, scale=1.0, h_scale=1.0, counter=None):
     counter = counter or ToyCounter()
     case_h, row_h, ctx_h = member(h)
     p_h = te.emit_record(rec_h, family=ToyFamily, members=[(case_h, row_h, ctx_h)],
-                         counter=counter, rates=rates, check_upstream=False, kc=toy_kc)
+                         counter=counter, rates=rates, check_upstream=False, kc=toy_kc,
+                         record_certificate=certificate)
     case_w, row_w, ctx_w = member(r, direction="forward")
     p_w = te.emit_record(rec_w, family=ToyFamily, members=[(case_w, row_w, ctx_w)],
-                         counter=counter, rates=rates, check_upstream=False, kc=toy_kc)
+                         counter=counter, rates=rates, check_upstream=False, kc=toy_kc,
+                         record_certificate=certificate)
     return [p_h, p_w], counter
 
 
@@ -2870,3 +2872,244 @@ def test_a_degenerate_exchange_keeps_the_records_own_orientation():
                              check_upstream=False)
         assert out["status"] == "emitted", out.get("refusal")
         assert {t["member_reverse"] for t in out["templates"]} == {orientation == "reversed"}
+
+
+# --------------------------------------------------------------------------
+# depository overrides (I-211): a certified channel whose analogues are
+# depository reactions at finite sizes fires there at RMG's own production
+# rate (the depository entry; its reverse through Kc), the rule elsewhere
+# --------------------------------------------------------------------------
+class ToyDepository:
+    label = "toy_cc/training"
+
+    def __init__(self, entries):
+        self.entries = {e.index: e for e in entries}
+
+    def __str__(self):
+        return f"Kinetics Depository {self.label}"
+
+
+def toy_entry(index, reactants, products, rank=3):
+    from types import SimpleNamespace
+    from rmgpy.reaction import Reaction
+    from rmgpy.species import Species
+    return SimpleNamespace(index=index, rank=rank, data=None,
+                           label=" + ".join(reactants) + " <=> " + " + ".join(products),
+                           item=Reaction(reactants=[Species().from_smiles(x) for x in reactants],
+                                         products=[Species().from_smiles(x) for x in products]))
+
+
+class DepositoryCounter(ToyCounter):
+    """The toy oracle on a toy family that has a depository."""
+
+    def __init__(self, depositories, **kw):
+        super().__init__(**kw)
+        self._family = type("ToyDepositoryFamily", (ToyFamily,),
+                            {"depositories": list(depositories)})
+
+    def family(self, name):
+        return self._family
+
+
+# n-pentyl + n-octyl -> n-tridecane: one size the C12 pair's templates reach
+C13_R, C13_P = ["[CH2]CCCC", "[CH2]CCCCCCC"], ["CCCCCCCCCCCCC"]
+
+
+def _c13_match(index=7):
+    from rmgpy.molecule import Molecule
+    entry = toy_entry(index, C13_R, C13_P)
+    return entry, {"depository": "toy_cc/training", "index": index, "label": entry.label,
+                   "orientation": "forward", "rank": 3, "kinetics": "None",
+                   "reaction": {"reactants": [Molecule(smiles=x).to_adjacency_list() for x in C13_R],
+                                "products": [Molecule(smiles=x).to_adjacency_list() for x in C13_P]}}
+
+
+def _certificate(*matches):
+    return {"certified": True, "certificate": {"channels": [{"depository_exclusion": {
+        "verdict": "excluded:except_matched", "matched": [f"toy_cc/training#{m['index']}"
+                                                          for m in matches],
+        "matches": list(matches)}}]}}
+
+
+K_DEP = tuple(30.0 * k for k in K_RULE)      # the toy depository rate (not the rule's)
+
+
+def _depository_rates(counter, base, k_dep=K_DEP, reactants=None, products=None):
+    """Production rates: the C13 reaction (generated on its recombination
+    side; or ``reactants`` -> ``products``) from the toy depository, its
+    reverse k_dep / Kc; anything else ``base``."""
+    reactants, products = reactants or C13_R, products or C13_P
+    a = counter.species_of_rows(_rows(reactants))
+    fwd = {"kind": "RMG family estimate", "source": "Kinetics Depository toy_cc/training",
+           "entry": " + ".join(reactants) + " <=> " + " + ".join(products), "rank": 3,
+           "family_template_direction": "forward"}
+
+    def rates(req):
+        if counter.species_of_rows(req.generation) != a:
+            return base(req)
+        if req.orientation == "as_generated":
+            return te.RateResult(GRID, k_dep, 1.0, {"selection": fwd}, ())
+        return te.RateResult(GRID, tuple(k / c for k, c in zip(k_dep, _kc())), 1.0,
+                             {"selection": {"kind": "reference-thermo reverse",
+                                            "reference": "k_family / Kc", "forward": fwd}}, ())
+    return rates
+
+
+def _rows(smiles):
+    from rmgpy.molecule import Molecule
+    rows, k = {}, 0
+    for x in smiles:
+        m = Molecule(smiles=x)
+        for a in m.atoms:
+            a.id, k = k, k + 1
+        rows.update(rm.molecule_rows(m))
+    return rows
+
+
+def test_a_locality_witness_rated_from_a_depository_is_a_named_row():
+    """An extension witness of the C12 homolysis (n-tridecane -> n-pentyl +
+    n-octyl) IS a depository reaction: RMG rates it from the depository, so
+    it is no locality row of the rule weight.  It is named (``depository``,
+    the entry) and leaves the template emitted on the other rows; nothing
+    else changes."""
+    entry, _match = _c13_match()
+    counter = DepositoryCounter([ToyDepository([entry])])
+    payload = emit(homolysis(12, (3, 4)), counter=counter)
+    t = base_template(payload)
+    dep = [r for r in t["locality"]["rows"] if r["status"] == "depository"]
+    assert len(dep) == 1, [(r["label"], r["status"]) for r in t["locality"]["rows"]]
+    assert dep[0]["depository"]["index"] == 7 and dep[0]["counts"]["matcher"] == 2
+    assert t["status"] == "emitted" and t["locality"]["accepted"]
+    plain = base_template(emit(homolysis(12, (3, 4))))
+    assert t["weight"] == plain["weight"] and t["key"] == plain["key"]
+    assert [r for r in plain["locality"]["rows"] if r["status"] == "depository"] == []
+
+
+def _override_pair():
+    entry, match = _c13_match()
+    counter = DepositoryCounter([ToyDepository([entry])])
+    payloads, counter = _toy_pair(counter=counter, certificate=_certificate(match))
+    resolved = _res(payloads, counter)
+    rates = _depository_rates(counter, _pair_rates({"reversed": K_RULE, "as_generated": K_RULE}))
+    out, table, failures = te.depository_overrides(resolved, counter=counter, rates=rates,
+                                                   kc=toy_kc)
+    by = {p["orientation"]: base_template(p) for p in out}
+    return out, table, failures, by["reversed"], by["as_generated"]
+
+
+def test_a_matched_size_takes_the_depository_rate_and_its_reverse_through_kc():
+    """At catalog assembly the certificate's matched analogue (n-pentyl +
+    n-octyl -> n-tridecane) is rated by RMG's production path: the
+    recombination template, whose one transition makes it, carries
+    w = ssa k_depository / T; the homolysis template, two transitions on
+    n-tridecane, carries the reverse derived through the stored Kc, so the
+    pair balances at any temperature (S_f / S_r = ssa_ratio Kc) and equals
+    the production reverse (k_depository / Kc) on the grid."""
+    out, table, failures, h, w = _override_pair()
+    assert failures == [], failures
+    (ow,), (oh,) = w["overrides"], h["overrides"]
+    assert ow["counts"] == {"matcher": 1, "rmg": 1} and oh["counts"] == {"matcher": 2, "rmg": 2}
+    assert ow["entry"]["index"] == 7 and oh["entry"]["index"] == 7
+    assert ow["weight"]["w"] == pytest.approx(K_DEP, rel=1e-12)
+    assert "derived" in oh and "derived" not in ow
+    for T in (612.5, 777.7, 999.0):
+        wf, wr = te.override_weight(ow, T), te.override_weight(oh, T)
+        assert wf * 1 / (wr * 2) == pytest.approx(te.kc_at(toy_form(False), T), rel=1e-12)
+    rev = [k / c for k, c in zip(K_DEP, _kc())]
+    assert [x * 2 for x in oh["weight"]["w"]] == pytest.approx(rev, rel=1e-9)
+    assert len(table) == 2 and all(r["status"] == "ok" for r in table), table
+    # the loaded matcher carries it at the requested temperature
+    loaded = te.loaded_templates(out, 700.0)
+    assert sorted(len(t.overrides) for t in loaded) == [1, 1]
+    got = sorted(o.weight for t in loaded for o in t.overrides)
+    want = sorted([te.override_weight(ow, 700.0), te.override_weight(oh, 700.0)])
+    assert got == pytest.approx(want, rel=1e-12)
+
+
+def test_overrides_name_only_the_matched_sizes():
+    """Every override is the matched reaction itself (one unit longer, or any
+    other size the templates reach, keeps the rule weight: no override)."""
+    out, _table, _failures, h, w = _override_pair()
+    for t in (h, w):
+        for o in t["overrides"]:
+            sides = [sorted(m.to_smiles() for m in te.molecules_of(te.rows_from_json(o["reaction"][k])))
+                     for k in ("reactants", "products")]
+            assert sorted(map(tuple, sides)) == sorted([tuple(sorted(C13_R)), tuple(C13_P)])
+
+
+def test_an_override_needs_the_depository_selected_by_production():
+    """The production path must select the depository entry the match names;
+    a rule selection there (RMG would not use the depository) is a named
+    gate failure, never an override at the rule rate."""
+    entry, match = _c13_match()
+    counter = DepositoryCounter([ToyDepository([entry])])
+    payloads, counter = _toy_pair(counter=counter, certificate=_certificate(match))
+    resolved = _res(payloads, counter)
+    rule = _pair_rates({"reversed": K_RULE, "as_generated": K_RULE})
+    out, _table, failures = te.depository_overrides(resolved, counter=counter, rates=rule,
+                                                    kc=toy_kc)
+    assert failures and all("depository" in f for f in failures), failures
+    assert all(not t.get("overrides") for p in out for t in p["templates"])
+
+
+def test_a_catalog_without_matches_is_untouched():
+    """No certified match and no depository row: the payloads come back
+    byte-identical (the PS catalogs)."""
+    payloads, counter = _toy_pair()
+    resolved = _res(payloads, counter)
+    out, table, failures = te.depository_overrides(resolved, counter=counter, rates=None,
+                                                   kc=toy_kc)
+    assert out == resolved and table == [] and failures == []
+
+
+# n-heptyl + n-octyl -> n-pentadecane: no certificate match and no locality
+# row of the pair's templates (their rows reach C13, C14 and C16 only)
+C14_R, C14_P = ["[CH2]CCCCCC", "[CH2]CCCCCCC"], ["CCCCCCCCCCCCCCC"]
+
+
+def test_every_depository_reaction_the_loaded_templates_make_is_overridden():
+    """A family with a certified match is rated over its whole depository:
+    n-heptyl + n-octyl -> n-pentadecane is an entry no certificate or
+    locality row named, yet the loaded templates make it, so RMG would rate
+    it from the depository there too; it gets its override (the reverse
+    derived)."""
+    entry, match = _c13_match()
+    other = toy_entry(8, C14_R, C14_P)
+    counter = DepositoryCounter([ToyDepository([entry, other])])
+    payloads, counter = _toy_pair(counter=counter, certificate=_certificate(match))
+    resolved = _res(payloads, counter)
+    c13, c14 = _depository_rates(counter, None), _depository_rates(
+        counter, None, reactants=C14_R, products=C14_P)
+    base = _pair_rates({"reversed": K_RULE, "as_generated": K_RULE})
+
+    def rates(req):
+        for f, smiles in ((c13, C13_R), (c14, C14_R)):
+            if counter.species_of_rows(req.generation) == counter.species_of_rows(_rows(smiles)):
+                return f(req)
+        return base(req)
+    out, _table, failures = te.depository_overrides(resolved, counter=counter, rates=rates,
+                                                    kc=toy_kc)
+    assert failures == [], failures
+    for p in out:
+        t = base_template(p)
+        named = sorted(o["entry"]["index"] for o in t["overrides"])
+        assert named == [7, 8], (p["orientation"], named)
+
+
+def test_the_whole_depository_is_read_as_a_melt_holds_it():
+    """The family's depository also holds a fused aromatic entry (a ring
+    carbon with three benzene bonds, valence 4.5 as written) and a sulfur
+    entry the loaded templates would make.  The melt holds rings in a Kekule
+    form and never holds sulfur: the aromatic entry is read Kekule, the
+    sulfur one can never occur, and neither stops the overrides."""
+    entry, match = _c13_match()
+    aromatic = toy_entry(9, ["c1ccc2ccccc2c1", "[CH3]"], ["Cc1cccc2ccccc12"])
+    sulfur = toy_entry(10, ["CS[CH2]", "[CH3]"], ["CCSC"])
+    counter = DepositoryCounter([ToyDepository([entry, aromatic, sulfur])])
+    payloads, counter = _toy_pair(counter=counter, certificate=_certificate(match))
+    resolved = _res(payloads, counter)
+    out, _table, failures = te.depository_overrides(
+        resolved, counter=counter, rates=_depository_rates(counter, None), kc=toy_kc)
+    assert failures == [], failures
+    for p in out:
+        assert sorted(o["entry"]["index"] for o in base_template(p)["overrides"]) == [7]
