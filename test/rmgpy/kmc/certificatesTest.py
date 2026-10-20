@@ -331,12 +331,16 @@ def test_growth_never_touches_a_reacting_atom(fam, pe_chain):
         assert not set(port.cap_atom_ids) & reacting
 
 
-def test_pe_backbone_beta_scission_is_decided_and_matched_by_name(fam, pe_chain):
+def test_pe_backbone_beta_scission_certifies_except_at_its_matched_sizes(fam, pe_chain):
     """The formula argument refuses the PE backbone beta-scission (nine
     candidates, ``refused:unknown``).  Grown at its declared sites, the
     witness IS training 2915-2919 (n-alkyl + 1-alkene -> a linear dodecyl
     radical) at the sizes listed, and none of the formula-only candidates
-    (456, 636 and the branched 653, 654): ``matched:``, refused by name."""
+    (456, 636 and the branched 653, 654).  Those are finite sizes RMG rates
+    from the depository: ``excluded:except_matched`` names them, each match
+    carrying the entry's kinetics as RMG reads them and the analogue itself,
+    and the channel certifies."""
+    from rmgpy.molecule import Molecule
     family = fam["R_Addition_MultipleBond"]
     reactants, products, cs, ch = _backbone_scission(family)
     legacy = cm.depository_exclusion(family, reactants, products, repeat=CH2)
@@ -344,21 +348,47 @@ def test_pe_backbone_beta_scission_is_decided_and_matched_by_name(fam, pe_chain)
     assert sorted(c["index"] for c in legacy["candidates"]) == \
         [456, 636, 653, 654, 2915, 2916, 2917, 2918, 2919]
     ex = cm.depository_exclusion(family, reactants, products, repeat=CH2, growth=pe_chain)
-    assert ex["verdict"].startswith("matched:"), ex
+    assert ex["verdict"] == "excluded:except_matched", ex
     sizes = {m["index"]: (m["orientation"], m["species_heavy_atoms"]) for m in ex["matches"]}
     assert sizes == {2915: ("forward", {"reactants": [5, 7], "products": [12]}),
                      2916: ("forward", {"reactants": [3, 9], "products": [12]}),
                      2917: ("forward", {"reactants": [6, 6], "products": [12]}),
                      2918: ("forward", {"reactants": [4, 8], "products": [12]}),
                      2919: ("forward", {"reactants": [5, 7], "products": [12]})}, ex["matches"]
-    assert all(str(index) in ex["verdict"] for index in sizes)
+    label = "R_Addition_MultipleBond/training"
+    assert ex["matched"] == [f"{label}#{i}" for i in sorted(sizes)]
+    entries = {int(e.index): e for e in _training(family, tuple(sizes))}
+    for m in ex["matches"]:
+        entry = entries[m["index"]]
+        assert m["kinetics"] == repr(entry.data) and m["rank"] == entry.rank
+        # the analogue round-trips from its adjacency lists to the listed species
+        for side in ("reactants", "products"):
+            got = sorted(Molecule().from_adjacency_list(a).to_smiles()
+                         for a in m["reaction"][side])
+            assert got == sorted(m[side])
+    assert cm.exclusion_matches(ex) == ex["matches"] and not cm.exclusion_refused(ex)
     assert ex["analogues_compared"] >= 5
-    # the certificate keeps it refused (a named verdict, not unknown)
+    # the certificate certifies it (no refused exclusion left)
     certifier = cm.Certifier(fam, repeat=CH2, growth=pe_chain)
     cert = certifier.certify_channel(family, cs, ch)
     (c,) = cert["channels"]
-    assert c["depository_exclusion"]["verdict"] == ex["verdict"]
-    assert cert["depository_exclusion_refused"] == [";".join(BACKBONE_SCISSION)]
+    assert c["depository_exclusion"]["verdict"] == "excluded:except_matched"
+    assert c["depository_exclusion"]["matches"] == ex["matches"]
+    assert cert["depository_exclusion_refused"] == []
+
+
+def test_an_undecided_exclusion_still_refuses(fam, pe_chain):
+    """Only a decided exclusion certifies: the formula candidates without a
+    growth provider, or with one that cannot say where a unit inserts, stay
+    ``refused:unknown`` and carry no matches to override."""
+    from rmgpy.kmc import boundaries as b
+    family = fam["R_Addition_MultipleBond"]
+    reactants, products, _cs, _ch = _backbone_scission(family)
+    alkane = b.PROVIDERS[b.LinearAlkaneProvider.name]
+    for ex in (cm.depository_exclusion(family, reactants, products, repeat=CH2),
+               cm.depository_exclusion(family, reactants, products, repeat=CH2, growth=alkane)):
+        assert ex["verdict"] == "refused:unknown"
+        assert cm.exclusion_refused(ex) and cm.exclusion_matches(ex) == []
 
 
 def test_formula_only_candidates_are_excluded_by_isomorphism(fam, pe_chain):
@@ -385,7 +415,7 @@ def test_a_reversed_entry_is_matched_in_reverse(fam, pe_chain):
     reactants, products, _cs, _ch = _backbone_scission(family)
     stub = _stub_family(family, [_reversed(e) for e in _training(family, (2916,))])
     ex = cm.depository_exclusion(stub, reactants, products, repeat=CH2, growth=pe_chain)
-    assert ex["verdict"].startswith("matched:"), ex
+    assert ex["verdict"] == "excluded:except_matched", ex
     ((index, orientation),) = {(m["index"], m["orientation"]) for m in ex["matches"]}
     assert (index, orientation) == (2916, "reverse")
 
@@ -398,7 +428,8 @@ def test_every_declared_growth_site_is_grown(fam, pe_chain, index, grown):
     reactants, products, _cs, _ch = _backbone_scission(family)
     stub = _stub_family(family, _training(family, (index,)))
     ex = cm.depository_exclusion(stub, reactants, products, repeat=CH2, growth=pe_chain)
-    assert ex["verdict"] == f"matched:{stub.depositories[0].label}#{index}", ex
+    assert ex["verdict"] == "excluded:except_matched", ex
+    assert ex["matched"] == [f"{stub.depositories[0].label}#{index}"]
     assert any(grown in m["reactants"] for m in ex["matches"]), ex["matches"]
 
 

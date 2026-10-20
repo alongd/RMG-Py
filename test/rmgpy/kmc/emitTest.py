@@ -641,6 +641,26 @@ def run(paths, **kw):
     return emit.assemble([str(p) for p in paths], services=Services(), **kw)
 
 
+def test_assembly_derives_depository_overrides_and_gates_them(tmp_path, monkeypatch):
+    """Assembly derives the depository overrides on the loaded catalog
+    (``te.depository_overrides``, after the balance check) and every failure
+    it names is a catalog gate failure; its table is reported."""
+    calls = []
+
+    def overrides(payloads, *, counter, rates, kc):
+        calls.append(len(payloads))
+        return payloads, [{"status": "refused:override", "reason": "stub"}], \
+            ["depository override: stub refusal"]
+    monkeypatch.setattr(te, "depository_overrides", overrides)
+    catalog = run(shards(tmp_path))
+    assert calls and calls[0] > 0
+    assert "depository override: stub refusal" in catalog["gates"]["failures"]
+    assert catalog["gates"]["overrides"] == {"overrides": 1, "refused": 1,
+                                             "table": [{"status": "refused:override",
+                                                        "reason": "stub"}]}
+    assert catalog["complete"] is False
+
+
 def test_catalog_schema_and_provenance(tmp_path):
     catalog = run(shards(tmp_path))
     assert catalog["schema"] == "kmc-template-catalog/1"

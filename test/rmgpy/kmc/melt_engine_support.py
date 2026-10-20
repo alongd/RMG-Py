@@ -265,11 +265,10 @@ def end_carbons(state, ordinal):
     return [c for c in cs if sum(1 for b in state.atoms[c].edges if state.atoms[b].element == "C") == 1]
 
 
-def witness_state(smiles):
-    """A MeltState of the given molecules (explicit H, atom ids 0..N-1)."""
+def smiles_rows(smiles):
+    """atom id -> rmg_moves row of the given molecules (explicit H, ids 0..N-1)."""
     from rmgpy.molecule import Molecule
     from rmgpy.kmc import rmg_moves as rm
-    from rmgpy.kmc import template_emission as te
     rows = {}
     for s in smiles:
         mol = Molecule(smiles=s)
@@ -277,7 +276,21 @@ def witness_state(smiles):
         for i, atom in enumerate(mol.atoms):
             atom.id = offset + i
         rows.update(rm.molecule_rows(mol))
-    return te.melt_state(rows)
+    return rows
+
+
+def witness_state(smiles):
+    """A MeltState of the given molecules (explicit H, atom ids 0..N-1)."""
+    from rmgpy.kmc import template_emission as te
+    return te.melt_state(smiles_rows(smiles))
+
+
+def component_smiles(state, cid):
+    from rmgpy.kmc import rmg_moves as rm
+    rows = {a: (n.element, n.isotope, n.charge, n.radical, n.lone_pairs,
+                tuple(sorted((b, float(o)) for b, o in n.edges.items())))
+            for a in state.components.atoms(cid) for n in (state.atoms[a],)}
+    return rm.molecule_from_rows(rows).to_smiles()
 
 
 PE2_RADICAL = "CC(c1ccccc1)C[CH]c1ccccc1"   # the pe2_identical witness radical

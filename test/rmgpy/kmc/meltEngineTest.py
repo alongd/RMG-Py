@@ -1408,3 +1408,100 @@ def test_off_path_ring_closure_inside_one_chain_is_branching_leak():
     index = [t.name for t in engine.templates].index("off_path_closure")
     assert engine.uni_allowed[index] + engine.uni_leak[index] > 0, "the closure did not match"
     assert engine.uni_allowed[index] == 0
+
+
+# --------------------------------------------------------------------------
+# depository overrides (I-211): a template's weight at the matched sizes,
+# decided at the event from the molecules, the rule weight everywhere else
+# --------------------------------------------------------------------------
+DODECYL, TRIDECYL = "CCC[CH]CCCCCCCC", "CCC[CH]CCCCCCCCC"   # 4-dodecyl, 4-tridecyl
+
+
+def _with_overrides(template, overrides):
+    from rmgpy.kmc.window_matcher import Template
+    bonds = [(i, j, o) for (i, j), o in sorted(template.bond.items())]
+    return Template(template.name, template.family, template.atoms, bonds, template.edits,
+                    weight=template.weight, overrides=tuple(overrides))
+
+
+def _override(name, reactants, products, weight):
+    from rmgpy.kmc.window_matcher import Override
+    return Override(name, S.smiles_rows(reactants), S.smiles_rows(products), weight)
+
+
+def _override_engine(name, overrides, smiles, seed=1):
+    def builder(temperature):
+        return [_with_overrides(t, overrides) for t in S.pe_templates(temperature)
+                if t.name == name]
+    return me.MeltEngine(S.pe_spec({10: 1}), S.ToyCatalog(builder=builder), 700.0,
+                         np.random.default_rng(seed), state=S.witness_state(smiles))
+
+
+def _by_smiles(engine):
+    return {S.component_smiles(engine.state, c): c for c in engine.state.components.ids()}
+
+
+def test_a_unimolecular_override_fires_at_its_matched_size_only():
+    """beta scission of 4-dodecyl to 1-pentene + n-heptyl IS a depository
+    reaction (the override, weight 50); 4-tridecyl, one unit longer, makes the
+    same local transition at the rule weight (5).  Each is one transition."""
+    o = _override("2915", [DODECYL], ["C=CCCC", "[CH2]CCCCCC"], 50.0)
+    engine = _override_engine("beta_scission", [o], [DODECYL, TRIDECYL])
+    channels = dict(engine.propensities().channels)
+    assert channels[("uni", 0)] == pytest.approx(S.PE_WEIGHTS["beta_scission"])
+    assert channels[("uni_o", 0, 0)] == pytest.approx(50.0)
+    before = _by_smiles(engine)
+    event = engine._fire_channel(("uni_o", 0, 0), channels[("uni_o", 0, 0)])
+    assert event.components == (before[DODECYL],)
+    assert sorted(S.component_smiles(engine.state, c) for c in event.products) == \
+        ["C=CCCC", "[CH2]CCCCCC"]
+    engine.check_consistency()
+    assert engine.snapshot() == engine.fresh_snapshot()
+
+
+def test_an_override_needs_the_matched_products_too():
+    """The same reactant with other products (a reaction the depository does
+    not hold) keeps the rule weight: the event is matched whole."""
+    o = _override("other", [DODECYL], ["C=CCCCC", "[CH2]CCCCC"], 50.0)
+    engine = _override_engine("beta_scission", [o], [DODECYL, TRIDECYL])
+    channels = dict(engine.propensities().channels)
+    assert channels[("uni", 0)] == pytest.approx(2 * S.PE_WEIGHTS["beta_scission"])
+    assert ("uni_o", 0, 0) not in channels
+
+
+def test_a_met_pair_override_takes_the_matched_pair_only():
+    """n-heptyl + n-pentyl -> n-dodecane is the override (weight 10x the
+    rule's); n-hexyl pairs with either at the rule weight.  The activation
+    is summed per component pair as before."""
+    w = S.PE_WEIGHTS["recombination"]
+    o = _override("rec", ["[CH2]CCCCCC", "[CH2]CCCC"], ["CCCCCCCCCCCC"], 10 * w)
+    engine = _override_engine("recombination", [o], ["[CH2]CCCCCC", "[CH2]CCCC", "[CH2]CCCCC"])
+    names = {c: s for s, c in _by_smiles(engine).items()}
+    k = {frozenset((names[a], names[b])): r.k_act for (a, b), r in engine.met_pair_rates().items()}
+    hep, pen, hexyl = "[CH2]CCCCCC", "[CH2]CCCC", "[CH2]CCCCC"
+    assert k[frozenset((hep, pen))] == pytest.approx(10 * k[frozenset((hep, hexyl))], rel=1e-12)
+    assert k[frozenset((pen, hexyl))] == pytest.approx(k[frozenset((hep, hexyl))], rel=1e-12)
+    engine.check_consistency()
+    assert engine.snapshot() == engine.fresh_snapshot()
+
+
+def test_a_bimolecular_override_takes_the_matched_site_pairs_only():
+    """H abstraction by n-pentyl: from n-pentane (two H at C3, pent-3-yl) the
+    override (100x), from n-hexane (four H at C3/C4, hex-3-yl) the rule
+    weight, both through the exact pair aggregates."""
+    w = S.PE_WEIGHTS["h_abstraction"]
+    o = _override("habs", ["[CH2]CCCC", "CCCCC"], ["CCCCC", "CC[CH]CC"], 100 * w)
+    engine = _override_engine("h_abstraction", [o], ["[CH2]CCCC", "CCCCC", "CCCCCC"])
+    channels = dict(engine.propensities().channels)
+    bi = {k: a * engine.nav for k, a in channels.items() if k[0] == "bi" and a > 0}
+    assert sorted(bi.values()) == pytest.approx(sorted([4 * w, 2 * 100 * w]), rel=1e-12), bi
+    engine.check_consistency()
+    assert engine.snapshot() == engine.fresh_snapshot()
+
+
+def test_templates_without_overrides_load_and_index_as_before():
+    """The PS path: no override, no tag, the same channels."""
+    engine = _override_engine("beta_scission", [], [DODECYL, TRIDECYL])
+    channels = dict(engine.propensities().channels)
+    assert channels[("uni", 0)] == pytest.approx(2 * S.PE_WEIGHTS["beta_scission"])
+    assert not any(k[0] == "uni_o" for k in channels)
