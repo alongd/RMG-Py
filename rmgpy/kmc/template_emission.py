@@ -2421,6 +2421,51 @@ def calibration_thermo(kc, counter, rows, weight_source, grid) -> dict:
             "convention": "S_f/S_r = ssa_ratio * Kc (template direction, calibration witness)"}
 
 
+def loaded_transitions(templates, state) -> tuple:
+    """``window_matcher.match(templates, state).transitions``, enumerated
+    under the melt engine's hydrogen-leaf quotient
+    (``melt_engine.participant_embeddings``): embeddings that differ only by
+    permuting interchangeable, unedited hydrogen leaves are one.  Every
+    transition (template, components, identity, delta, edit key) is the
+    matcher's; only ``embeddings`` counts the quotient's embeddings, which no
+    balance check reads.  A window over n CH2 groups otherwise evaluates 2**n
+    copies of each transition."""
+    from rmgpy.kmc.melt_engine import participant_embeddings
+    templates = tuple(templates)
+    if len({t.name for t in templates}) != len(templates):
+        raise wm.TemplateError("template names must be unique")
+    view = wm._view_for(state)
+    state_hash = view.full_hash()
+    out = []
+    for index, template in enumerate(templates):
+        embeddings = [participant_embeddings(view, template, p) for p in template.participants]
+        if len(template.participants) == 2:
+            candidates = wm._joint(embeddings)
+        else:
+            candidates = ((e.mapping, (e.cid,), e.choices, e.per_choice) for e in embeddings[0])
+        found = {}
+        for mapping, comps, choices, count in candidates:
+            for choice in choices:
+                edit_key, identity, edits, delta, fb, fr = wm._evaluate(
+                    view, template, index, mapping, comps, choice)
+                previous = found.get(identity)
+                if previous is None or edit_key < previous[0]:
+                    found[identity] = (edit_key, count + (previous[1] if previous else 0), mapping,
+                                       comps, edits, delta, fb, fr)
+                else:
+                    found[identity] = previous[:1] + (previous[1] + count,) + previous[2:]
+        mine = sorted((wm.Transition(template.name, template.family, index, edit_key, comps, mapping,
+                                     edits, fb, fr, identity, delta, count, template.weight,
+                                     view.revision, state_hash)
+                       for identity, (edit_key, count, mapping, comps, edits, delta, fb, fr)
+                       in found.items()), key=lambda t: t.edit_key)
+        for a, b in zip(mine, mine[1:]):
+            if a.edit_key == b.edit_key:
+                raise wm.WindowMatcherError(f"{template.name}: two outcomes share edit key {a.edit_key}")
+        out.extend(mine)
+    return tuple(sorted(out, key=lambda t: t.edit_key))
+
+
 class _Loaded:
     """The templates a catalog loads (``emitted``), by (family, direction),
     with the weights they have at any requested temperature."""
@@ -2462,7 +2507,7 @@ class _Loaded:
         state = melt_state(rows)
         inside = []
         if templates:
-            inside = [tr for tr in wm.match(templates, state).transitions
+            inside = [tr for tr in loaded_transitions(templates, state)
                       if rm.product_key(wm.product_rows(state, tr)) in keys]
         sums = [math.fsum(self.weight(entries[int(tr.template[1:])], T) for tr in inside)
                 for T in temperatures]
@@ -2488,7 +2533,7 @@ def _inverse_counts(loaded, counter, rows, state, inside, payload, direction):
         after.update(touched)
         check = melt_state(after)
         back = 0
-        for rt in wm.match(templates, check).transitions if templates else []:
+        for rt in loaded_transitions(templates, check) if templates else []:
             got = wm.product_rows(check, rt)
             if set(got) == set(touched) and \
                     all(_norm_row(got[a]) == _norm_row(first[a]) for a in got):
@@ -2552,7 +2597,7 @@ def _inverse_partners(loaded, counter, rows, state, inside, payload, direction) 
         after = dict(rows)
         after.update(touched)
         check = melt_state(after)
-        for rt in wm.match(templates, check).transitions if templates else []:
+        for rt in loaded_transitions(templates, check) if templates else []:
             got = wm.product_rows(check, rt)
             if set(got) == set(touched) and \
                     all(_norm_row(got[a]) == _norm_row(first[a]) for a in got):
