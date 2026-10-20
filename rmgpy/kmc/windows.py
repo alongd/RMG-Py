@@ -1592,7 +1592,9 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
     ``depository`` check: RMG rates that size from the entry (a catalog
     override), so it is no evidence about the rule estimate's window; every
     port keeps at least one other alone check (else
-    ``refused:override_checks``)."""
+    ``refused:override_checks``).  An extension of the witness itself that
+    lands on such a size keeps extending the same ports: the matched sizes
+    are finite, and the window is measured at the sizes the rule rates."""
     closure = closure or close
     limit = b._ceiling(ceiling)
     ports = b.vector_ports(witness)
@@ -1639,6 +1641,17 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
                               f"be extended: {error}", w)
         return w, None
 
+    def settle(w, keys):
+        # an extension that lands on a matched depository size (a catalog
+        # override, no rule window to observe) keeps extending the same ports
+        obs, win = look(w)
+        while obs.refusal and override_size(observe, obs):
+            w, failure = grow(w, keys)
+            if failure:
+                return w, obs, win, failure
+            obs, win = look(w)
+        return w, obs, win, None
+
     current = witness
     obs, win = look(current)
     if obs.refusal or win.refusal:
@@ -1651,7 +1664,9 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
             current, failure = grow(current, inside)
             if failure:
                 return failure
-            obs, win = look(current)
+            current, obs, win, failure = settle(current, inside)
+            if failure:
+                return failure
             if obs.refusal or win.refusal:
                 return stop(obs.refusal or win.refusal, "refused on extension", current, win,
                             obs, rounds, used)
@@ -1700,7 +1715,9 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
         current, failure = grow(current, alone or sorted(ports))
         if failure:
             return failure
-        obs, win = look(current)
+        current, obs, win, failure = settle(current, alone or sorted(ports))
+        if failure:
+            return failure
         if obs.refusal or win.refusal:
             return stop(obs.refusal or win.refusal, "refused on re-extension", current, win, obs,
                         rounds, used)
