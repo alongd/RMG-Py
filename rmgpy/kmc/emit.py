@@ -43,8 +43,8 @@ same ones, or the run is refused (``refused:declaration``) before anything is
 built, whatever the flags.  An artifact carrying neither (a compile without a
 deck) is refused (``refused:unbound_artifact``) unless ``--legacy-artifact``.
 
-**Assemble.** Merge the shards, then ``resolve_collisions``, ``derive_weights``
-and ``check_cycles`` over the whole set.  The catalog is written even when a gate
+**Assemble.** Merge the shards, then ``resolve_collisions``, ``resolve_overlaps``,
+``derive_weights`` and ``check_cycles`` over the whole set.  The catalog is written even when a gate
 fails; ``complete`` is true only when every gate passes and no record errored.
 """
 
@@ -1505,6 +1505,18 @@ def assemble(paths, *, database=None, services=None) -> dict:
     for c in refused_collisions:
         failures.append(f"{c['disposition']} {c['key'][:16]}: {c['copies']} copies, "
                         f"log10 diameter {c['log10_diameter']} (records {c['records']})")
+    overlaps = []
+    if merged:
+        try:
+            merged, overlaps = te.resolve_overlaps(merged)
+        except Exception as error:    # two templates would make one transition unchecked
+            failures.append(f"class overlap: {type(error).__name__}: {error}"[:600])
+            have, merged = [], []
+    refused_overlaps = [o for o in overlaps if o["disposition"] != "covered"]
+    for o in refused_overlaps:
+        failures.append(f"class overlap {o['family']} {o['direction']} "
+                        f"{[t['key'][:12] for t in o['templates']]}: {o['disposition']}: "
+                        f"{o['reason']}"[:600])
     payloads = merged
     cycle_table = []
     if payloads:
@@ -1597,6 +1609,9 @@ def assemble(paths, *, database=None, services=None) -> dict:
                            "copies": sum(c["copies"] for c in collisions),
                            "tolerance_log10": te.LOCALITY_TOLERANCE_LOG10,
                            "entry_keys": entry_keys},
+            "overlaps": {"components": len(overlaps),
+                         "covered": sum(len(o["covered"]) for o in overlaps),
+                         "refused": len(refused_overlaps), "table": overlaps},
             "cycles": {"pairs": len(cycle_table), "refused": len(refused_pairs),
                        "not_evaluable": len(te.cycle_not_evaluable(cycle_table)),
                        "by_status": dict(Counter(r.get("status") for r in cycle_table))},

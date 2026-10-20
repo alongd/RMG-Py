@@ -125,7 +125,13 @@ every grid temperature (the weight of the copy of least
 ``partition_free_identity``, never chosen by record id; every source listed) and
 refuses the rest.  Reciprocal (``reverse_of``) groups are admitted or refused
 together and their representatives come from one source record pair.
-``check_cycles`` then tests the LOADED catalog's detailed balance on the
+Templates with different keys can still make one transition: a family that
+is its own reverse loads its as_generated and reversed records in one
+(family, direction), and the two records of a reciprocal pair can partition
+one region of transitions twice.  ``resolve_overlaps`` matches the loaded
+templates on every stored witness: the reversed side of two such partitions
+is ``covered`` (``OVERLAP_RULE``), any other overlap refused
+``refused:class_overlap``.  ``check_cycles`` then tests the LOADED catalog's detailed balance on the
 stored witnesses against independent RMG thermo (``ThermoKc``).
 ``loaded_templates`` is what a catalog loads; the reference comparison fails
 when a transition is produced more than once.
@@ -169,7 +175,7 @@ CALIBRATION_RTOL = 1e-9
 EXTENSION_STEPS = (1, 2)
 CANONICAL_LEAF_LIMIT = 20000
 BOUNDARY_LABELS = ("artificial", "physical", "interior")
-TEMPLATE_STATUSES = ("emitted", "merged", "refused")
+TEMPLATE_STATUSES = ("emitted", "merged", "covered", "refused")
 RECORD_STATUSES = ("emitted", "partial", "refused")
 ESTIMATE_KINDS = ("RMG family estimate", "reference-thermo reverse",
                   "synthetic:unchanged_species")
@@ -1412,10 +1418,11 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
 
 def record_status(templates) -> tuple:
     """(status, refusal) of a record from its templates: ``emitted`` when the
-    base template carries the rate (emitted, or merged into an equal template
-    of another record) and every template does; ``partial`` when only the
-    base does; else ``refused`` naming the base templates' refusals."""
-    live = ("emitted", "merged")
+    base template carries the rate (emitted, merged into an equal template of
+    another record, or covered by other records' templates) and every
+    template does; ``partial`` when only the base does; else ``refused``
+    naming the base templates' refusals."""
+    live = ("emitted", "merged", "covered")
     base_ok = any(t["status"] in live and t["base"] for t in templates)
     if not base_ok:
         reasons = [t["refusal"]["status"] for t in templates if t["base"] and t.get("refusal")]
@@ -1659,6 +1666,10 @@ def validate_payload(payload: dict) -> None:
             if not (t.get("refusal") or {}).get("status"):
                 raise EmissionError("a refused template needs a refusal status")
             continue
+        if t["status"] == "covered":
+            by = t.get("covered_by") or []
+            if not by or not all(c.get("record") and c.get("key") for c in by):
+                raise EmissionError("a covered template needs the templates that cover it")
         if t["status"] == "merged":
             into = t.get("merged_into") or {}
             if not into.get("record") or into.get("key") != t.get("key") or \
@@ -1985,6 +1996,7 @@ def _pair_deviation(pf, tf, pr, tr, rep_wf, rep_wr) -> tuple:
 # Where a record id lives (schema slots), masked whole as ``evt_*``: on the
 # payload ``record_event_id``, ``reverse_of``, ``rate.provenance.event_id``,
 # ``carried_for`` (carry_owners); on a template ``merged_into.record``,
+# ``covered_by[].record`` (resolve_overlaps),
 # ``derived.primary.record``, ``collision.records[]``,
 # ``collision.pair_deviations[].forward/.reverse``, ``reverse.records[]``,
 # ``refusal.records[]`` and ``refusal.weights[].record`` (resolve_collisions),
@@ -1992,7 +2004,8 @@ def _pair_deviation(pf, tf, pr, tr, rep_wf, rep_wr) -> tuple:
 # witness row, ``rate_of``: the id of the record the rate was taken from).
 PAYLOAD_ID_SLOTS = (("record_event_id",), ("reverse_of",), ("rate", "provenance", "event_id"),
                     ("carried_for",))
-TEMPLATE_ID_SLOTS = (("merged_into", "record"), ("derived", "primary", "record"),
+TEMPLATE_ID_SLOTS = (("merged_into", "record"), ("covered_by", "*", "record"),
+                     ("derived", "primary", "record"),
                      ("collision", "records", "*"),
                      ("collision", "pair_deviations", "*", "forward"),
                      ("collision", "pair_deviations", "*", "reverse"),
@@ -2560,8 +2573,10 @@ def beyond_tolerance(distance_log10: float, tolerance_log10: float = LOCALITY_TO
 
 
 def _loads(payload) -> bool:
-    """The record loads a template (its own, or its representative's)."""
-    return any(t.get("status") in ("emitted", "merged") for t in payload.get("templates", []))
+    """The record loads a template (its own, its representative's, or the
+    templates that cover it)."""
+    return any(t.get("status") in ("emitted", "merged", "covered")
+               for t in payload.get("templates", []))
 
 
 def one_way_problems(payloads, complete: bool = True) -> list:
@@ -2603,6 +2618,159 @@ def _inverse_partners(loaded, counter, rows, state, inside, payload, direction) 
                     all(_norm_row(got[a]) == _norm_row(first[a]) for a in got):
                 found.add(loaded.owner[id(entries[int(rt.template[1:])])])
     return found
+
+
+OVERLAP_RULE = (
+    "loaded templates of one family and direction that make one transition on a stored "
+    "witness are two partitions of one region when their overlap component splits into the "
+    "templates of as_generated records and those of reversed records, every transition made "
+    "twice is made by one template of each side, every transition a reversed-side template "
+    "makes is made by an as_generated-side template, and the two weights of every such "
+    "transition are within the locality tolerance at every grid temperature: the reversed "
+    "side is covered (it does not load; its witnesses are still checked)")
+
+
+def _union_find(groups) -> list:
+    """The connected components of the sets in ``groups``."""
+    parent = {}
+
+    def find(x):
+        while parent.setdefault(x, x) != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    for group in groups:
+        first, *rest = sorted(group)
+        for x in rest:
+            parent[find(x)] = find(first)
+    out = defaultdict(set)
+    for x in list(parent):
+        out[find(x)].add(x)
+    return list(out.values())
+
+
+def resolve_overlaps(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG10) -> tuple:
+    """One catalog's payloads with no transition made by two loaded templates.
+
+    ``resolve_collisions`` merges copies of one executable; templates with
+    different executables can still make one transition (one edit on one set
+    of atoms), each with its record's whole weight, so the transition fires
+    twice (I-147: a class overlap is never a silent double count).  A family
+    that is its own reverse loads its as_generated and its reversed records
+    in one (family, direction): their contexts cut the windows along
+    different participants, so a reciprocal pair can partition one region of
+    transitions twice.
+
+    Every loaded template (``emitted``) is matched, within its (family,
+    direction), on the stored ``context`` and ``emitted`` witnesses (both
+    sides) of every template of that (family, direction); templates that
+    make one transition are linked, and each linked component is resolved
+    by ``OVERLAP_RULE``: the reversed side becomes ``covered`` (with
+    ``covered_by``, the as_generated-side templates that make its
+    transitions), and so do the merged copies of its templates.  Any other
+    component is refused whole (``refused:class_overlap``, with the
+    reason), merged copies included.  Nothing chooses by record id.
+    Returns (new payloads, one row per component)."""
+    out = [json.loads(canonical_json(p)) for p in payloads]
+    loaded = _Loaded(out)
+    orientation = {p.get("record_event_id"): p.get("orientation") for p in out}
+    owners = defaultdict(set)       # (family, direction, state, transition) -> templates
+    made = defaultdict(set)         # template -> the transitions it makes
+    for (family, direction), entries in sorted(loaded.by.items()):
+        if len(entries) < 2:
+            continue
+        templates = [matcher_from_payload(dict(t, family=family), 0.0, weight=1.0, name=f"L{k}")
+                     for k, t in enumerate(entries)]
+        seen = set()
+        for p in out:
+            for t in p.get("templates", []):
+                if t.get("status") not in ("emitted", "merged") or \
+                        (t.get("family") or p.get("family"), t.get("direction")) != (family, direction):
+                    continue
+                for lr in (t.get("locality") or {}).get("rows", []):
+                    wit = ((t.get("maps") or {}).get("witnesses") or {}).get(lr.get("label"))
+                    if lr.get("label") not in CHECK_LABELS or lr.get("status") != "ok" or wit is None:
+                        continue
+                    for side in ("r", "p"):
+                        rows = rows_from_json(wit[side])
+                        sig = rm._signature(rows)
+                        if sig in seen:
+                            continue
+                        seen.add(sig)
+                        for tr in loaded_transitions(templates, melt_state(rows)):
+                            where = (family, direction, sig, tr.identity[1:])
+                            owner = loaded.owner[id(entries[int(tr.template[1:])])]
+                            owners[where].add(owner)
+                            made[owner].add(where)
+    twice = {w: o for w, o in owners.items() if len(o) > 1}
+    table, covered, refused = [], {}, {}
+    for component in sorted(_union_find(twice.values()), key=lambda c: sorted(k for _r, k in c)):
+        members = sorted(component, key=lambda o: o[1])
+        shared = [w for w, o in twice.items() if o <= component]
+        keep = {o for o in members if orientation.get(o[0]) == "as_generated"}
+        drop = [o for o in members if o not in keep]
+        problems, diameter = [], 0.0
+        if any(len(owners[w]) != 2 or len(owners[w] & keep) != 1 for w in shared):
+            problems.append("a transition is made by more than two templates or by two templates "
+                            "of records of one orientation")
+        lost = sorted({o[1][:12] for o in drop for w in made[o] if len(owners[w] & keep) == 0})
+        if lost:
+            problems.append(f"transitions of {lost} are not made by any template of an "
+                            "as_generated record")
+        for w in shared:
+            a, b = (loaded.index[o]["weight"] for o in sorted(owners[w], key=lambda o: o[1]))
+            if [float(x) for x in a["T"]] != [float(x) for x in b["T"]]:
+                problems.append("templates making one transition are on different temperature grids")
+                break
+            diameter = max(diameter, max(abs(math.log10(x) - math.log10(y))
+                                         for x, y in zip(a["w"], b["w"])))
+        if beyond_tolerance(diameter, tolerance_log10):
+            problems.append(f"weights of one transition {diameter:.3g} decades apart > "
+                            f"{tolerance_log10:.3g}")
+        family, direction = shared[0][:2]
+        row = {"family": family, "direction": direction,
+               "templates": [{"record": r, "key": k, "orientation": orientation.get(r)}
+                             for r, k in members],
+               "covered": [], "covered_by": [], "transitions": len(shared),
+               "log10_diameter": diameter}
+        if problems or not drop:
+            reason = (f"templates {[k[:12] for _r, k in members]} make {len(shared)} transitions "
+                      f"twice: " + "; ".join(problems or ["no side may be dropped"]))
+            row.update(disposition="refused:class_overlap", reason=reason)
+            for o in members:
+                refused[o] = reason
+        else:
+            for o in drop:
+                covered[o] = sorted({x for w in made[o] for x in owners[w] if x in keep},
+                                    key=lambda x: x[1])
+            row.update(disposition="covered", reason=OVERLAP_RULE,
+                       covered=[{"record": r, "key": k} for r, k in drop],
+                       covered_by=[{"record": r, "key": k} for r, k in sorted(keep, key=lambda x: x[1])])
+        table.append(row)
+    changed = set()
+    for i, p in enumerate(out):
+        rid = p.get("record_event_id")
+        for t in p.get("templates", []):
+            if t.get("status") == "emitted":
+                ref = (rid, t["key"])
+            elif t.get("status") == "merged":
+                ref = (t["merged_into"]["record"], t["merged_into"]["key"])
+            else:
+                continue
+            if ref in covered:
+                t["status"] = "covered"
+                t["covered_by"] = [{"record": r, "key": k} for r, k in covered[ref]]
+            elif ref in refused:
+                t["status"] = "refused"
+                t["refusal"] = {"status": "refused:class_overlap", "reason": refused[ref][:600]}
+            else:
+                continue
+            t.pop("merged_into", None)
+            changed.add(i)
+    for i in sorted(changed):
+        out[i]["status"], out[i]["refusal"] = record_status(out[i]["templates"])
+        out[i] = finish(out[i])
+    return out, table
 
 
 def primary_order(payload, template, record_id) -> tuple:
@@ -2712,7 +2880,8 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
     Applies to every payload with a ``reverse_of`` record that loads (or
     merges) a template.  For each ``context`` and ``emitted`` locality row of
     each such template, ``emitted`` or ``merged`` (the row stores its
-    witness's template-direction reactants ``r`` and products ``p``), at the
+    witness's template-direction reactants ``r`` and products ``p``; a
+    ``covered`` template's rows are checked the same way), at the
     grid temperatures, the grid midpoints, ``OFFGRID_RANDOM`` seeded random
     in-range temperatures per pair and ``extra_temperatures``:
 
@@ -2727,7 +2896,9 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
       concentration units, never the records' k_F / k_R) and ``ssa`` 2 for an
       identical-species pair.  Tolerance ``rtol`` (1e-12) on an ``emitted``
       template's rows; a ``merged`` copy's rows may deviate by the locality
-      tolerance, and the deviation is reported;
+      tolerance, and the deviation is reported; so may a ``covered``
+      template's rows, whose record kinetics must be within that tolerance of every
+      covering template's loaded weight;
     * a derived template's stored (record) weights equal its derivation at
       the grid to ``DERIVED_RTOL`` (a pair whose own kinetics are not
       reverse-by-Kc is refused, not silently replaced).
@@ -2736,8 +2907,8 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
     witness or thermo, no loaded reverse transition) is a refusal, not a
     skip; with ``complete=False`` an absent reverse is ``not_evaluable``.  A
     failing pair refuses every emitted template of both records, the
-    representatives behind their merged copies, and every merged copy of
-    those; a record whose reverse record loads nothing is refused the same
+    representatives behind their merged copies, the covers of their covered
+    templates, and every merged or covered template of those; a record whose reverse record loads nothing is refused the same
     way; repeated until stable.  Returns (new payloads, one row per
     reciprocal record pair)."""
     out = [json.loads(canonical_json(p)) for p in payloads]
@@ -2756,7 +2927,8 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
             if rev is None:
                 continue
             pair = tuple(sorted((rid, rev)))
-            mine = [t for t in p.get("templates", []) if t.get("status") in ("emitted", "merged")]
+            mine = [t for t in p.get("templates", [])
+                    if t.get("status") in ("emitted", "merged", "covered")]
             if not mine:
                 continue
             row = rows_out.setdefault(pair, {
@@ -2800,6 +2972,22 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                                  f"{LOCALITY_TOLERANCE_LOG10:.3g}")
                     except EmissionError as error:
                         fail(f"merged template {t['key'][:12]}: {error}")
+                if t.get("status") == "covered":
+                    # the record's own kinetics against the loaded weight of
+                    # every template that covers it, within the locality tolerance
+                    for ref in t["covered_by"]:
+                        owner = loaded.index.get((ref["record"], ref["key"]))
+                        try:
+                            if owner is None:
+                                raise EmissionError(f"its cover {ref['key'][:12]} is not loaded")
+                            bad = max(abs(math.log10(loaded.weight(owner, T) / w))
+                                      for T, w in zip(t["weight"]["T"], t["weight"]["w"]))
+                            if beyond_tolerance(bad):
+                                fail(f"covered template {t['key'][:12]}: the record's own kinetics "
+                                     f"differ from the loaded weight of {ref['key'][:12]} by "
+                                     f"{bad:.3g} decades > {LOCALITY_TOLERANCE_LOG10:.3g}")
+                        except EmissionError as error:
+                            fail(f"covered template {t['key'][:12]}: {error}")
                 if t.get("status") == "emitted" and t.get("derived"):
                     try:
                         grid = t["weight"]["T"]
@@ -2897,6 +3085,9 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                     dead[(rid, t["key"])] = why
                 elif t.get("status") == "merged":
                     dead[(t["merged_into"]["record"], t["merged_into"]["key"])] = why
+                elif t.get("status") == "covered":
+                    for ref in t["covered_by"]:
+                        dead[(ref["record"], ref["key"])] = why
         for pair, why in refuse.items():
             for rid in pair:
                 if rid in by_record:
@@ -2912,11 +3103,16 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                 elif t.get("status") == "merged" and (
                         t["merged_into"]["record"], t["merged_into"]["key"]) in dead:
                     why = dead[(t["merged_into"]["record"], t["merged_into"]["key"])]
+                elif t.get("status") == "covered" and any(
+                        (ref["record"], ref["key"]) in dead for ref in t["covered_by"]):
+                    why = next(dead[(ref["record"], ref["key"])] for ref in t["covered_by"]
+                               if (ref["record"], ref["key"]) in dead)
                 else:
                     continue
                 t["status"] = "refused"
                 t["refusal"] = {"status": "refused:cycle", "reason": str(why)[:600]}
                 t.pop("merged_into", None)
+                t.pop("covered_by", None)
                 changed.add(i)
         for i in sorted(changed):
             out[i]["status"], out[i]["refusal"] = record_status(out[i]["templates"])
@@ -2985,6 +3181,13 @@ def loaded_templates(payloads, temperature: float, *, name=None) -> list:
                         f"orphaned merged template {t['key'][:16]} of record "
                         f"{str(p.get('record_event_id'))[:16]}: its owner "
                         f"{into['record'][:16]} is not loaded")
+            if t.get("status") == "covered":
+                for ref in t["covered_by"]:
+                    if (ref["record"], ref["key"]) not in have:
+                        raise EmissionError(
+                            f"orphaned covered template {t['key'][:16]} of record "
+                            f"{str(p.get('record_event_id'))[:16]}: its cover {ref['key'][:16]} "
+                            f"of record {ref['record'][:16]} is not loaded")
     index = {(p.get("record_event_id"), t["key"]): t for p in payloads
              for t in p.get("templates", []) if t.get("status") == "emitted"}
     out = []
@@ -3007,9 +3210,10 @@ def loaded_templates(payloads, temperature: float, *, name=None) -> list:
 
 def carry_owners(selected, catalog) -> list:
     """``selected`` payloads (a subset of ``catalog``) plus, for each merged
-    template in them whose owner is not selected, and for each derived
-    template whose primary is not selected, a payload of that one template
-    (not the other templates of its record)."""
+    template in them whose owner is not selected, each covered template's
+    covers that are not selected, and each derived template whose primary is
+    not selected, a payload of that one template (not the other templates of
+    its record)."""
     have = {(p.get("record_event_id"), t.get("key")) for p in selected
             for t in p.get("templates", []) if t.get("status") == "emitted"}
     by_record = {p.get("record_event_id"): p for p in catalog}
@@ -3018,24 +3222,27 @@ def carry_owners(selected, catalog) -> list:
     while todo:
         p, t = todo.pop()
         if t.get("status") == "merged":
-            ref = t["merged_into"]
+            refs = [t["merged_into"]]
+        elif t.get("status") == "covered":
+            refs = list(t["covered_by"])
         elif t.get("status") == "emitted" and t.get("derived"):
-            ref = t["derived"]["primary"]
+            refs = [t["derived"]["primary"]]
         else:
             continue
-        if (ref["record"], ref["key"]) in have or (ref["record"], ref["key"]) in extra:
-            continue
-        owner = by_record.get(ref["record"])
-        mine = [x for x in (owner or {}).get("templates", [])
-                if x.get("key") == ref["key"] and x.get("status") == "emitted"]
-        if not mine:
-            raise EmissionError(f"owner {ref['record'][:16]} of template {t['key'][:16]} "
-                                f"is not in the catalog")
-        extra[(ref["record"], ref["key"])] = {
-            "record_event_id": ref["record"], "family": owner.get("family"),
-            "status": "emitted", "carried_for": p.get("record_event_id"),
-            "templates": [mine[0]]}
-        todo.append((extra[(ref["record"], ref["key"])], mine[0]))
+        for ref in refs:
+            if (ref["record"], ref["key"]) in have or (ref["record"], ref["key"]) in extra:
+                continue
+            owner = by_record.get(ref["record"])
+            mine = [x for x in (owner or {}).get("templates", [])
+                    if x.get("key") == ref["key"] and x.get("status") == "emitted"]
+            if not mine:
+                raise EmissionError(f"owner {ref['record'][:16]} of template {t['key'][:16]} "
+                                    f"is not in the catalog")
+            extra[(ref["record"], ref["key"])] = {
+                "record_event_id": ref["record"], "family": owner.get("family"),
+                "status": "emitted", "carried_for": p.get("record_event_id"),
+                "templates": [mine[0]]}
+            todo.append((extra[(ref["record"], ref["key"])], mine[0]))
     return list(selected) + [extra[k] for k in sorted(extra)]
 
 

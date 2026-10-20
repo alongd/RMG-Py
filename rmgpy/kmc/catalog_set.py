@@ -54,7 +54,7 @@ KNOWN_INPUTS = ("database_path", "database_content_sha256", "code_sources_sha256
 GIT_INPUTS = ("database_head", "code_sha")
 SHARED_INPUTS = KNOWN_INPUTS + GIT_INPUTS
 SET_KEYS = ("schema", "shared", "catalogs", "dependencies")
-TEMPLATE_LINKS = ("merged_into", "derived_primary")
+TEMPLATE_LINKS = ("merged_into", "covered_by", "derived_primary")
 
 
 class CatalogSetError(ValueError):
@@ -76,6 +76,8 @@ def payload_links(payloads) -> List[tuple]:
         for t in p.get("templates", []):
             if t.get("status") == "merged" and t.get("merged_into"):
                 out.append(("merged_into", rid, t["merged_into"]["record"], t["merged_into"].get("key")))
+            elif t.get("status") == "covered":
+                out += [("covered_by", rid, c["record"], c.get("key")) for c in t.get("covered_by", [])]
             elif t.get("status") == "emitted" and t.get("derived"):
                 primary = t["derived"]["primary"]
                 out.append(("derived_primary", rid, primary["record"], primary.get("key")))
@@ -212,7 +214,7 @@ def _cross_links(members: Sequence[dict], records: Dict[str, tuple]) -> List[dic
             if kind in TEMPLATE_LINKS:
                 raise CatalogSetError(
                     f"{kind}: record {rid} (family {records[rid][1]}) of {m['path']} requires record {req} "
-                    f"(family {target[1]}) of {members[target[0]]['path']}; a merged or derived template loads "
+                    f"(family {target[1]}) of {members[target[0]]['path']}; a merged, covered or derived template loads "
                     "only inside its own catalog, so its owner must be in the same catalog")
             found[(kind, rid, req)] = {"kind": kind, "record_event_id": rid, "family": records[rid][1],
                                        "requires_record_event_id": req, "requires_family": target[1]}
