@@ -118,7 +118,7 @@ def test_a_check_at_a_matched_size_is_a_depository_check():
     a catalog override).  That check is named ``depository`` and is no
     evidence against the rule estimate's window: the fixed point stands on
     the other checks."""
-    obs = DepositoryObserver(lambda w: dict(w.extension_counts).get(HEAD, 0) == 2)
+    obs = DepositoryObserver(lambda w: {k: v for k, v in w.extension_counts if v} == {HEAD: 2})
     res = win.fixed_point(toy(), obs)
     assert res.status == "fixed_point", res.reason
     dep = [c for c in res.checks[-1] if c.get("depository")]

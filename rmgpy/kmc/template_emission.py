@@ -3242,12 +3242,15 @@ def _adjacency_rows(adjacency_lists, start=0):
     return rows
 
 
-def _override_reactions(payloads) -> dict:
+def _override_reactions(payloads, counter=None) -> dict:
     """{family: {species key: (forward-side rows, other-side rows, sources)}}:
     every certificate match (``depository_matches``, family template
-    direction) and every ``depository`` locality row of an emitted template
+    direction), every ``depository`` locality row of an emitted template
     (its witness in template direction: the forward side is its reactants
-    for a ``forward`` template, its products for a ``reverse`` one)."""
+    for a ``forward`` template, its products for a ``reverse`` one) and, for
+    a family with a certified match, every entry of its depositories (both
+    sides as the forward side; the loaded templates decide which one, if
+    any, they make)."""
     out = defaultdict(dict)
 
     def add(family, a, b, source):
@@ -3276,6 +3279,19 @@ def _override_reactions(payloads) -> dict:
                                    "record": p.get("record_event_id"),
                                    **{k: (r.get("depository") or {}).get(k)
                                       for k in ("depository", "index", "label")}})
+    matched = sorted({p.get("family") for p in payloads if p.get("depository_matches")})
+    for family in matched if counter is not None else ():
+        fam = counter.family(family)
+        for depository in getattr(fam, "depositories", ()):
+            for entry in depository.entries.values():
+                sides = [[spc.molecule[0] if hasattr(spc, "molecule") else spc for spc in side]
+                         for side in (entry.item.reactants, entry.item.products)]
+                adj = [[m.to_adjacency_list() for m in side] for side in sides]
+                for one, other in ((adj[0], adj[1]), (adj[1], adj[0])):
+                    a = _adjacency_rows(one)
+                    b = _adjacency_rows(other, start=1 + max(a))
+                    add(family, a, b, {"depository": depository.label, "index": int(entry.index),
+                                       "label": entry.label, "enumerated": True})
     return out
 
 
@@ -3315,7 +3331,7 @@ def depository_overrides(payloads, *, counter, rates, kc) -> tuple:
     unchanged.  An own-reverse family, a count mismatch, a production
     selection that is not a depository, or a depository row left without an
     override are failures (never a fallback to the rule weight)."""
-    reactions = _override_reactions(payloads)
+    reactions = _override_reactions(payloads, counter)
     if not reactions:
         return payloads, [], []
     out = [json.loads(canonical_json(p)) for p in payloads]
@@ -3328,6 +3344,12 @@ def depository_overrides(payloads, *, counter, rates, kc) -> tuple:
         own = getattr(fam, "reverse_template", "x") is None
         depositories = {str(d) for d in getattr(fam, "depositories", ())}
         found = {}
+        matchers = {}
+        for direction in ("forward", "reverse"):
+            entries = loaded.by.get((family_label, direction), [])
+            matchers[direction] = (entries, [
+                matcher_from_payload(dict(t, family=family_label), 0.0, weight=1.0, name=f"L{k}")
+                for k, t in enumerate(entries)])
         for (a_src, b_src, sources) in _rekey(reactions[family_label], counter).values():
             key = canonical_json([sorted(counter.species_of_rows(a_src)),
                                   sorted(counter.species_of_rows(b_src))])
@@ -3339,18 +3361,27 @@ def depository_overrides(payloads, *, counter, rates, kc) -> tuple:
             for direction, orientation, r_rows, p_rows in (
                     ("forward", "as_generated", a_src, b_src),
                     ("reverse", "reversed", b_src, a_src)):
-                entries = loaded.by.get((family_label, direction), [])
+                entries, templates = matchers[direction]
+                if not templates:
+                    continue
+                state = melt_state(r_rows)
+                made = loaded_transitions(templates, state)
+                target = counter.species_of_rows(p_rows)
+                made = [tr for tr in made
+                        if counter.species_of_rows(wm.product_rows(state, tr) | {
+                            a: row for a, row in r_rows.items()
+                            if a not in wm.product_rows(state, tr)}) == target]
+                if not made:
+                    continue
                 pathways = sorted({tuple(by_record[id(t)].get("pathway") or ()) for t in entries})
                 for pathway in pathways:
-                    exemplar = next(by_record[id(t)] for t in entries
-                                    if tuple(by_record[id(t)].get("pathway") or ()) == pathway)
-                    _s, inside, _state = loaded.total(counter, r_rows, exemplar, direction,
-                                                      p_rows, [])
+                    channel = counter.channel(fam, molecules_of(r_rows), direction,
+                                              count_pathway(fam, pathway, False), target)
+                    keys = set(channel.keys)
+                    inside = [tr for tr in made
+                              if rm.product_key(wm.product_rows(state, tr)) in keys]
                     if not inside:
                         continue
-                    channel = counter.channel(fam, molecules_of(r_rows), direction,
-                                              count_pathway(fam, pathway, False),
-                                              counter.species_of_rows(p_rows))
                     owners = sorted({int(tr.template[1:]) for tr in inside})
                     events[(direction, pathway)] = dict(
                         direction=direction, orientation=orientation, pathway=pathway,
