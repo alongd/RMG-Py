@@ -1,0 +1,171 @@
+{
+ "leak": {
+  "pooled": {
+   "estimator": "ratio_of_unbiased_integrals/pooled",
+   "fraction": 0.17096817018036953,
+   "leak_den": 27847.168533980723,
+   "leak_num": 4760.979448959048,
+   "runs": 4
+  }
+ },
+ "runs": [
+  {
+   "report": {
+    "family_counts": {
+     "Disproportionation": 5211,
+     "H_Abstraction": 3,
+     "R_Recombination": 445,
+     "intra_H_migration": 3
+    },
+    "template_counts": {
+     "1af8fada657a:e977ec702e62": 187,
+     "2c53349d6fdc:e06bf2aa4935": 2180,
+     "477dfc25f43d:4e45d9f87435": 1,
+     "495d68bd5766:a859581e53b1": 2178,
+     "4d9c7c3a70ba:5f8d5d73ce56": 8,
+     "5a88d9573d8b:f5338ad0db2e": 258,
+     "6b104c2262a4:489df2dd3302": 4,
+     "6b104c2262a4:87daf7b57eb2": 55,
+     "6b104c2262a4:9c4501174460": 67,
+     "6b104c2262a4:a21ada0709b4": 142,
+     "91aa95b1414f:a698b1e60138": 114,
+     "a4dd4629fb0e:9d989203b6f1": 3,
+     "aa718cb49cf5:6ed4c60cc61f": 4,
+     "c3a8200dd22a:29e43207589f": 3,
+     "c99d163c0776:1f38e7431166": 56,
+     "c99d163c0776:cf21bca075d0": 3,
+     "c99d163c0776:de9faeceddb1": 2,
+     "db6eddf0cfaa:145971dbc55e": 3,
+     "e0184a27f3d7:c5099fb7da65": 58,
+     "e3353daf0630:b8f293e8037c": 67,
+     "e8de0ed9093a:1fc6c53eff06": 138,
+     "e8de0ed9093a:bfb3fbe72456": 55,
+     "e8de0ed9093a:c5153e058b6c": 70,
+     "e8de0ed9093a:f2a2473016b1": 4,
+     "f4aab3d10b1a:354a1791578a": 2
+    }
+   },
+   "seed": 1
+  },
+  {
+   "report": {
+    "family_counts": {
+     "Disproportionation": 5314,
+     "H_Abstraction": 4,
+     "R_Recombination": 450,
+     "intra_H_migration": 4
+    },
+    "template_counts": {
+     "1af8fada657a:e977ec702e62": 185,
+     "2c53349d6fdc:e06bf2aa4935": 2209,
+     "477dfc25f43d:4e45d9f87435": 2,
+     "495d68bd5766:a859581e53b1": 2191,
+     "4d9c7c3a70ba:5f8d5d73ce56": 10,
+     "5a88d9573d8b:f5338ad0db2e": 265,
+     "6b104c2262a4:489df2dd3302": 8,
+     "6b104c2262a4:87daf7b57eb2": 52,
+     "6b104c2262a4:9c4501174460": 81,
+     "6b104c2262a4:a21ada0709b4": 131,
+     "91aa95b1414f:a698b1e60138": 127,
+     "a4dd4629fb0e:9d989203b6f1": 4,
+     "aa718cb49cf5:6ed4c60cc61f": 6,
+     "c3a8200dd22a:29e43207589f": 3,
+     "c99d163c0776:1f38e7431166": 60,
+     "c99d163c0776:cf21bca075d0": 4,
+     "c99d163c0776:de9faeceddb1": 2,
+     "db6eddf0cfaa:145971dbc55e": 4,
+     "e0184a27f3d7:c5099fb7da65": 67,
+     "e3353daf0630:b8f293e8037c": 74,
+     "e8de0ed9093a:1fc6c53eff06": 144,
+     "e8de0ed9093a:bfb3fbe72456": 66,
+     "e8de0ed9093a:c5153e058b6c": 68,
+     "e8de0ed9093a:f2a2473016b1": 8,
+     "f4aab3d10b1a:354a1791578a": 1
+    }
+   },
+   "seed": 2
+  },
+  {
+   "report": {
+    "family_counts": {
+     "Disproportionation": 5971,
+     "H_Abstraction": 3,
+     "R_Recombination": 475,
+     "intra_H_migration": 9
+    },
+    "template_counts": {
+     "1af8fada657a:e977ec702e62": 198,
+     "2c53349d6fdc:e06bf2aa4935": 2455,
+     "3a00bbbbcd7a:171263349183": 1,
+     "477dfc25f43d:4e45d9f87435": 1,
+     "495d68bd5766:a859581e53b1": 2448,
+     "4d9c7c3a70ba:5f8d5d73ce56": 10,
+     "5a88d9573d8b:f5338ad0db2e": 277,
+     "6b104c2262a4:489df2dd3302": 7,
+     "6b104c2262a4:7cde8010a6ff": 2,
+     "6b104c2262a4:87daf7b57eb2": 77,
+     "6b104c2262a4:9c4501174460": 83,
+     "6b104c2262a4:a21ada0709b4": 151,
+     "91aa95b1414f:a698b1e60138": 157,
+     "a4dd4629fb0e:9d989203b6f1": 9,
+     "aa718cb49cf5:6ed4c60cc61f": 8,
+     "c3a8200dd22a:29e43207589f": 9,
+     "c99d163c0776:1f38e7431166": 71,
+     "c99d163c0776:cf21bca075d0": 3,
+     "c99d163c0776:de9faeceddb1": 3,
+     "db6eddf0cfaa:145971dbc55e": 1,
+     "db6eddf0cfaa:a98c1e9749e9": 1,
+     "e0184a27f3d7:c5099fb7da65": 92,
+     "e3353daf0630:b8f293e8037c": 71,
+     "e8de0ed9093a:1fc6c53eff06": 154,
+     "e8de0ed9093a:597056d4e8ad": 2,
+     "e8de0ed9093a:bfb3fbe72456": 79,
+     "e8de0ed9093a:c5153e058b6c": 80,
+     "e8de0ed9093a:f2a2473016b1": 7,
+     "f4aab3d10b1a:354a1791578a": 1
+    }
+   },
+   "seed": 3
+  },
+  {
+   "report": {
+    "family_counts": {
+     "Disproportionation": 4785,
+     "H_Abstraction": 2,
+     "R_Recombination": 451,
+     "intra_H_migration": 3
+    },
+    "template_counts": {
+     "1af8fada657a:e977ec702e62": 189,
+     "2c53349d6fdc:e06bf2aa4935": 2002,
+     "3a00bbbbcd7a:171263349183": 1,
+     "477dfc25f43d:4e45d9f87435": 1,
+     "495d68bd5766:a859581e53b1": 1992,
+     "4d9c7c3a70ba:5f8d5d73ce56": 6,
+     "5a88d9573d8b:f5338ad0db2e": 262,
+     "6b104c2262a4:489df2dd3302": 4,
+     "6b104c2262a4:87daf7b57eb2": 51,
+     "6b104c2262a4:9c4501174460": 60,
+     "6b104c2262a4:a21ada0709b4": 125,
+     "91aa95b1414f:a698b1e60138": 103,
+     "a4dd4629fb0e:9d989203b6f1": 3,
+     "aa718cb49cf5:6ed4c60cc61f": 5,
+     "c3a8200dd22a:29e43207589f": 6,
+     "c99d163c0776:1f38e7431166": 55,
+     "c99d163c0776:cf21bca075d0": 2,
+     "c99d163c0776:de9faeceddb1": 6,
+     "db6eddf0cfaa:145971dbc55e": 1,
+     "e0184a27f3d7:c5099fb7da65": 50,
+     "e3353daf0630:b8f293e8037c": 68,
+     "e8de0ed9093a:1fc6c53eff06": 132,
+     "e8de0ed9093a:bfb3fbe72456": 60,
+     "e8de0ed9093a:c5153e058b6c": 53,
+     "e8de0ed9093a:f2a2473016b1": 4
+    }
+   },
+   "seed": 4
+  }
+ ],
+ "schema": "kmc-melt-run/1",
+ "source": "i207 PE well-mixed run (4 seeds, 700 K): template counts and pooled leak only"
+}
