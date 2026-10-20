@@ -59,6 +59,9 @@ def test_a_declared_artifact_is_certified_under_its_declarations_rules():
     rules = emit.certification_rules(_declared_artifact(pp), pp)
     assert rules["domain"].name == "declared_interim_v1"
     assert rules["repeat"] == emit.declared_provider(pp).unit_formula()
+    # the depository exclusion grows the witness at the declared chain's sites
+    assert rules["growth"].name == emit.declared_provider(pp).name
+    assert rules["growth"].unit_formula() == rules["repeat"]
     assert emit.certification_rules(_declared_artifact(novolac), novolac)["domain"].name == \
         "declared_interim_v1[C,H,O]"
 
