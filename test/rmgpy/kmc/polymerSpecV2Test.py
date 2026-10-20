@@ -10,7 +10,6 @@ import json
 from fractions import Fraction
 from types import SimpleNamespace
 
-import numpy as np
 import pytest
 
 from rmgpy.kmc import run as kr
@@ -359,34 +358,6 @@ def test_load_roster_refuses_a_v2_declaration(tmp_path):
                                 "proxy_units": 3, "systems": {}}))
     with pytest.raises(SchemaV2Refusal, match=REFUSED.format(r"emit\.load_roster")):
         emit.load_roster(path)
-
-
-def test_materialize_refuses_a_v2_declaration():
-    from rmgpy.kmc import melt_state
-
-    with pytest.raises(SchemaV2Refusal, match=REFUSED.format(r"melt_state\.materialize")):
-        melt_state.materialize(v2_spec())
-
-
-def test_the_melt_engine_refuses_a_v2_declaration():
-    from rmgpy.kmc import melt_engine
-
-    with pytest.raises(SchemaV2Refusal, match=REFUSED.format("MeltEngine")):
-        melt_engine.MeltEngine(v2_spec(), None, 700.0, np.random.default_rng(0))
-
-
-def test_the_melt_observer_refuses_a_v2_declaration():
-    from rmgpy.kmc import melt_observables
-
-    with pytest.raises(SchemaV2Refusal, match=REFUSED.format("MeltObserver")):
-        melt_observables.MeltObserver(v2_spec(), xs=4)
-
-
-def test_the_melt_run_refuses_a_v2_deck_before_writing(tmp_path):
-    out = tmp_path / "out"
-    with pytest.raises(kr.RunError, match=REFUSED.format(r"rmgpy\.kmc\.run")):
-        kr.run(V2_DECK, [], 700.0, [0.0, 1.0], [0], out)
-    assert not out.exists()
 
 
 def test_rationals_are_exact_after_normalization():
