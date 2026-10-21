@@ -1914,7 +1914,17 @@ def orbit_problem(rows, edit_sets) -> Optional[str]:
     maps the edits of one onto the edits of the other: the graph with each
     edit written on its atoms and bonds (what the atom ends as, the bond
     order it ends at) is isomorphic to the other's.  An orbit is transitive,
-    so every transition is compared with the first."""
+    so every transition is compared with the first.
+
+    The graphs are compared with their leaves folded: a leaf (one neighbour,
+    itself of two or more) is removed and counted on its neighbour's label
+    per (leaf label, bond label).  Exact: an isomorphism keeps degrees, so it
+    maps leaves onto leaves of the same key at the image of their neighbour
+    (the folded graphs are isomorphic); leaves of one key at one atom are
+    exchanged by an automorphism, so an isomorphism of the folded graphs
+    extends to the leaves (the graphs are isomorphic).  Without it the
+    matcher backtracks over every permutation of the interchangeable
+    hydrogens of a symmetric witness."""
     edit_sets = list(edit_sets)
     if len(edit_sets) < 2:
         return None
@@ -1940,7 +1950,20 @@ def orbit_problem(rows, edit_sets) -> Optional[str]:
                 marks[e.atom].append((type(e).__name__, e.new))
         for a, m in marks.items():
             g.nodes[a]["lab"] = g.nodes[a]["lab"] + repr(tuple(sorted(m)))
-        return g
+        return folded(g)
+
+    def folded(g):
+        leaves = defaultdict(Counter)
+        for a in g.nodes:
+            if g.degree(a) == 1:
+                (n,) = g.neighbors(a)
+                if g.degree(n) > 1:
+                    leaves[n][(g.nodes[a]["lab"], g.edges[a, n]["elab"])] += 1
+        out = g.copy()
+        for n, keys in leaves.items():
+            out.remove_nodes_from([a for a in g.neighbors(n) if g.degree(a) == 1])
+            out.nodes[n]["lab"] = g.nodes[n]["lab"] + repr(sorted(keys.items()))
+        return out
 
     first = annotated(edit_sets[0])
     h0 = nx.weisfeiler_lehman_graph_hash(first, node_attr="lab", edge_attr="elab", iterations=5)
