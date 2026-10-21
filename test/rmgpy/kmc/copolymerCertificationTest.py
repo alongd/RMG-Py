@@ -289,12 +289,12 @@ def test_the_window_facts_of_a_copolymer_are_its_residue_steps(ep):
     assert {tuple(sorted(f["delta"].items())) for f in facts.values()} == {E, P}
 
 
-def test_an_event_needing_a_longer_copolymer_chain_is_refused_by_name(fam, ep):
+def test_an_event_needing_a_longer_copolymer_chain_covers_every_residue(fam, ep):
     """1-hexyl as an E/P chain (EEE, the radical on its capped head atom):
-    the intra-molecular H shifts that read the head port need the chain one
-    residue longer there, which a copolymer chain cannot be (its next residue
-    is not fixed): every such event is a named ``refused:extension`` gap,
-    never an exception."""
+    the intra-molecular H shifts that read the head port stand for events on
+    the chain one residue longer there.  The residue before E is not fixed:
+    each event is covered once per residue the support allows (E and P),
+    the row naming its branch, and none is refused at extension."""
     from rmgpy.kmc.declared_chain import EditOp
     family = fam["intra_H_migration"]
     certifier = cm.Certifier(fam)
@@ -306,10 +306,11 @@ def test_an_event_needing_a_longer_copolymer_chain_is_refused_by_name(fam, ep):
     assert cases
     covers = win.reacting_port_covers(certifier, family, cases[0], specs=specs)
     interior = [row for row in covers if row["kind"] != "physical"]
-    assert interior
+    assert sorted(row["branch"] for row in interior) == ["0:head+E", "0:head+P"]
     for row in interior:
-        assert row["status"] == "refused:extension" and row["verdict"] == "gap", row
-        assert "refused:sequence_extension" in row["reason"]
+        assert row.get("status") != "refused:extension", row
+        assert "refused:sequence_extension" not in row.get("reason", ""), row
+    assert all("branch" not in row for row in covers if row["kind"] == "physical")
 
 
 # -- the v1 homopolymers stay byte-identical -------------------------------------------
