@@ -2919,8 +2919,8 @@ def derive_weights(payloads, *, counter) -> list:
     for i, p in enumerate(out):
         rid, rev = p.get("record_event_id"), p.get("reverse_of")
         q = by_record.get(rev)
-        if q is None:
-            continue
+        if q is None or not _loads(q):
+            continue                 # no loaded reverse: the cycle gate names it
         for t in p.get("templates", []):
             if t.get("status") != "emitted" or t.get("derived"):
                 continue
