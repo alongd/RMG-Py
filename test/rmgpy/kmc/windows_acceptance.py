@@ -341,6 +341,7 @@ def bind_record(certifier, record, rc, case, owner):
     """``recertify`` the record on the proxy member's template side through an
     RMG isomorphism of the template sides."""
     from rmgpy.kmc import certificates as cm
+    from rmgpy.kmc import emit
     from rmgpy.kmc import windows as win
     _side, mols, _others = certifier.template_side(record)
     proxy = win.template_molecules(case.witness, "reverse")
@@ -351,10 +352,10 @@ def bind_record(certifier, record, rc, case, owner):
         for k, mp in enumerate(roots_p):
             if k in used or len(mp.atoms) != len(mr.atoms):
                 continue
-            maps = mr.find_isomorphism(mp, strict=False)
-            if maps:
+            found = emit.one_isomorphism(mr, mp)
+            if found is not None:
                 used.add(k)
-                amap.update({a.id: c.id for a, c in maps[0].items()})
+                amap.update({a.id: c.id for a, c in found.items()})
                 break
         else:
             return {"same_selection": False, "reason": "no isomorphic proxy fragment"}

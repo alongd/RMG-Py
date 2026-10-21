@@ -51,6 +51,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from rmgpy.kmc.emit import match_sides  # noqa: E402  (``bind`` below is emit's, verbatim)
+
 DATABASE = Path(os.environ.get("RMG_KMC_I138_DATABASE", "/home/alon/runs/phase2b/database"))
 COMPILES = Path(os.environ.get("RMG_KMC_I138_COMPILES", "/home/alon/runs/i138/compile"))
 _S = {}
@@ -148,20 +150,11 @@ def bind(certifier, record, rc, case, owner):
     from rmgpy.kmc import windows as win
     _side, mols, _others = certifier.template_side(record)
     proxy = win.template_molecules(case.witness, case.direction)
-    roots_r = [cm.aromatic_root(m) for m in mols]
-    roots_p = [cm.aromatic_root(m) for m in proxy]
-    amap, order = {}, []
-    for mr in roots_r:
-        for k, mp in enumerate(roots_p):
-            if k in order or len(mp.atoms) != len(mr.atoms):
-                continue
-            maps = mr.find_isomorphism(mp, strict=False)
-            if maps:
-                order.append(k)
-                amap.update({a.id: c.id for a, c in maps[0].items()})
-                break
-        else:
-            return {"same_selection": False, "reason": "no isomorphic member fragment"}
+    matched = match_sides([cm.aromatic_root(m) for m in mols],
+                          [cm.aromatic_root(m) for m in proxy])
+    if matched is None:
+        return {"same_selection": False, "reason": "no isomorphic member fragment"}
+    amap, order = matched
     # the member's molecules in the record's reactant order: a certificate
     # mapping's identity carries the reactant index, so an unequal order
     # (the member's components go by least atom id) swaps the roles
