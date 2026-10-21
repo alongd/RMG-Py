@@ -24,11 +24,12 @@ from polymer_spec_v2_support import (
     DECKS, EP_COMPOSITION, EP_ROWS, V2_DECK, markov, polymer_keyword, q, v2_mapping, v2_spec)
 
 
-# declaration / chemistry sha256 of the v1 decks before schema v2 existed
+# declaration / chemistry sha256 of the v1 decks before schema v2 existed (PE and PP declarations
+# re-pinned when their transport_model gained cited values; their chemistry pins are the originals)
 PINS = {
-    "pe_toy_deck.py": ("f67ba4eb4c3c3e73a01f37574e70a661ecc185db9df2f794c3d1cdf45eeafd26",
+    "pe_toy_deck.py": ("fa994b4868a4392bccc9199e3bd3b7d308a510d94206d2f8efcc91eb3c69a4c6",
                        "0f20e6eade428a907610eb8a36696142dc1b5e6d4623e6fd96992e63d2a9f82c"),
-    "pp_deck.py": ("b67a2ed8c6f47d9732265be47372e160cba094a730d2600af47813cd767c510b",
+    "pp_deck.py": ("6a4b6f421de35fe5afc86e521943a19d5b4386899e3c31129d342cdf8bf88f4d",
                    "8b978f4744f96c096087b29ec12c77d9fe515dbecfc3f8394216a5b085c43ad1"),
     "epdm_deck.py": ("9d5fa1dfc9708f0a57d1383cd6b4d96d7a97f085dac45ae5a7e5faeb8e46feac",
                      "25ca8f7d516f36885617b66d6076c71476296df9a29f6cd3a3b1cc631fdf1dcc"),

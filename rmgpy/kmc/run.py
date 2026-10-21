@@ -148,12 +148,50 @@ seeds still run and the run's status is ``failed``.
                                  last_observed_time_s, engine_time_s}]}
     leak: {estimator, definition, note, excluded_seeds (seeds that failed),
            per_seed: [{seed, leak_num, leak_den, non_thinned_integral, phi_sum,
-                       thinned_proposals, open_thinned, open_phi_source}],
-           pooled (melt_engine.pooled_leak_fraction over per_seed)}
+                       thinned_proposals, open_thinned, open_phi_source, excluded_num}],
+           pooled (melt_engine.pooled_leak_fraction over per_seed),
+           excluded: {definition (melt_engine.EXCLUDED_DEFINITION), templates,
+                      excluded_num (summed over per_seed)}}
+    template_selection: {restricted: false} | {restricted: true, definition,
+                        source: {kind, path, sha256[, temperature_K]},
+                        classes (null for a template list)[, kernels],
+                        templates, excluded, loaded}
     mom: null | {path, sha256, times, header (the --mom file's header, null for the list forms)}
     comparison: "comparison.csv"
     rows: "rows.json" (or rows_refused: why the rows could not be mapped)
     wall_s
+    [--also-well-mixed only:]
+    transport: {passes: ["declared", "well_mixed_bound"],
+                declared: {met, sources (transport_sources, null when uncited)},
+                well_mixed_bound: {met, definition, WELL_MIXED_D0_M2_S}}
+    well_mixed: {status, path: "well_mixed", runs (paths under well_mixed/), censoring, leak,
+                 comparison: "well_mixed/comparison.csv",
+                 rows: "well_mixed/rows.json" (or rows_refused)}
+
+``--also-well-mixed``: the same seeds, catalogs and times run a second time on
+the deck with only its segment diffusivity at ``WELL_MIXED_D0_M2_S`` (every
+Collins-Kimball escape factor exactly 1, no encounter limit:
+``WELL_MIXED_DEFINITION``); every observation and comparison row of a run
+with the flag carries ``transport`` = ``declared`` or ``well_mixed_bound``,
+and ``status`` covers both passes.  Without the flag nothing of this appears.
+
+``--templates SEL [--template-classes C ...]``: the run is restricted to a
+subset of the loaded templates (``template_selection``): from a
+``kmc-kernel-rates/1`` table (``rmgpy.kmc.kernel_rates``; built for the
+deck's chemistry), every template of the kernels whose type or id is named
+(every kernel when none is), or from a template list (a JSON list of loaded
+template names, or one per line, ``#`` comments).  The other loaded templates
+are the engine's ``excluded`` (``melt_engine`` module docstring, Excluded
+templates): weights unchanged, never fired, no part of the MET activation,
+their hazard in ``leak.excluded``, not in leak.  A name that is not loaded, a
+class no kernel has, or a selection that takes part of a reciprocal group
+(``reciprocal_groups``) is refused by name.  Selecting every loaded template
+gives the unrestricted run's observation files byte for byte.
+
+**Transport sources.** ``transport_model["sources"]`` (optional, beside
+``met``) maps each of ``CITED_MET_FIELDS`` to its citations; present, it must
+cite every field and no other (``transport_sources``).  Like the rest of
+``transport_model`` it is outside ``chemistry_sha256``.
 
 The run's leak number is ``leak.pooled.fraction`` only: per seed the
 manifest carries the additive parts, never a single-run fraction.  Rerunning
@@ -180,7 +218,9 @@ MoM columns are empty.
 (``comparison_rows.kmc_rows``, ``kmc-comparison-rows/1``: element inventory
 and residual, mass, declared species, the ladder and length distribution in
 primitive periods, whole-ensemble moments), joined with a kernel reference's
-or a MoM file's rows by ``python -m rmgpy.kmc.comparison_rows join``.
+or a MoM file's rows by ``python -m rmgpy.kmc.comparison_rows join``.  With
+``--also-well-mixed`` the well-mixed bound's rows are ``<out>/well_mixed/rows.json``
+(pass ``well_mixed_bound``).
 
 ``--mom FILE``: JSON (a list) or JSON lines of ``{"time_s": t, "quantities":
 {...}}`` with ``quantities`` keyed like ``mom_reported_quantities`` (the
@@ -219,7 +259,7 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy
 
@@ -254,6 +294,23 @@ COMPARISON_COLUMNS = ("time_s", "quantity", "tier", "seeds_requested", "seeds", 
                       "kmc_stderr", "censored_kmc_mean", "censored_kmc_stderr", "mom", "difference",
                       "relative_difference", "note", "mom_flags")
 MOM_TIME_RELATIVE = 1.0e-12
+# the MET fields a ``transport_model["sources"]`` mapping cites (every one, nothing else)
+CITED_MET_FIELDS = ("segment_diffusivity", "chain_scaling",
+                    "mean_square_end_to_end_per_molar_mass_m2_mol_per_g", "contact_radius_m", "spin_factor")
+# the well-mixed bound's segment diffusivity (m^2/s): k_D ~ 1e215 m^3 mol^-1 s^-1 or more, so
+# phi = k_D / (k_D + k_act) rounds to exactly 1.0 for any k_act below ~1e199 (finite: no inf/inf)
+WELL_MIXED_D0_M2_S = 1.0e200
+TRANSPORT_PASSES = ("declared", "well_mixed_bound")
+KERNEL_RATES_SCHEMA = "kmc-kernel-rates/1"    # rmgpy.kmc.kernel_rates.SCHEMA
+SELECTION_DEFINITION = (
+    "the run fires only the selected loaded templates; the excluded ones keep their weights, are matched "
+    "and indexed, never fire, take no part in the MET activation, and their intrinsic hazard is "
+    "leak.excluded (not leak); a reciprocal group (reciprocal_groups) is selected whole or not at all")
+WELL_MIXED_DEFINITION = (
+    "the declared deck with only transport_model.met.segment_diffusivity replaced by arrhenius "
+    "D_ref_m2_s = WELL_MIXED_D0_M2_S (Ea 0, T_ref the run temperature) and chain_scaling rouse: every "
+    "Collins-Kimball escape factor is exactly 1.0 and no encounter limits a MET pair (the encounter "
+    "limit is off); same catalogs, seeds and times")
 
 
 class RunError(ValueError):
@@ -411,6 +468,10 @@ def read_deck(path) -> Deck:
     if label != spec.label:
         raise RunError(f"deck {path}: polymer label {label!r} differs from the declaration "
                        f"label {spec.label!r}")
+    try:
+        transport_sources(spec)
+    except RunError as error:
+        raise RunError(f"deck {path}: {error}") from error
     xs = literal("cutoff", POLYMER_CUTOFF_DEFAULT)
     if isinstance(xs, bool) or not isinstance(xs, int) or xs < 0:
         raise RunError(f"deck {path}: polymer cutoff must be a non-negative integer, got {xs!r}")
@@ -421,6 +482,46 @@ def read_deck(path) -> Deck:
         except RunError as error:
             raise RunError(f"deck {path}: side_group_homolysis {error}") from error
     return Deck(str(path), _sha256(raw), spec, spec.label, xs, sgh)
+
+
+def transport_sources(spec) -> Optional[Dict[str, List[str]]]:
+    """``transport_model["sources"]`` as {MET field: [citation, ...]}, or None
+    when the deck cites nothing.  When present it cites every field of
+    ``CITED_MET_FIELDS`` with at least one non-empty string and names no other
+    field (``RunError``).  Outside ``chemistry_sha256`` like the rest of
+    ``transport_model``; the engine reads only ``met``."""
+    model = getattr(spec, "transport_model", None) or {}
+    if "sources" not in model:
+        return None
+    sources = model["sources"]
+    if not isinstance(sources, Mapping):
+        raise RunError("transport_model.sources must map MET fields to citations")
+    missing = sorted(set(CITED_MET_FIELDS) - set(sources))
+    unknown = sorted(set(sources) - set(CITED_MET_FIELDS))
+    if missing or unknown:
+        raise RunError(f"transport_model.sources must cite exactly {list(CITED_MET_FIELDS)}: "
+                       f"missing {missing}, unknown {unknown}")
+    out = {}
+    for name in CITED_MET_FIELDS:
+        value = sources[name]
+        cites = [value] if isinstance(value, str) else list(value) if isinstance(value, (list, tuple)) else None
+        if not cites or not all(isinstance(c, str) and c.strip() for c in cites):
+            raise RunError(f"transport_model.sources.{name} needs at least one citation (a non-empty string)")
+        out[name] = cites
+    return out
+
+
+def well_mixed_spec(spec, temperature: float):
+    """``spec`` with its MET segment diffusivity at the well-mixed bound
+    (``WELL_MIXED_DEFINITION``); sources dropped (nothing cites the bound).
+    The chemistry digest is unchanged (``transport_model`` is outside it)."""
+    mapping = spec.as_mapping()
+    met = dict(mapping["transport_model"]["met"])
+    met["segment_diffusivity"] = {"law": "arrhenius", "D_ref_m2_s": WELL_MIXED_D0_M2_S,
+                                  "T_ref_K": float(temperature), "Ea_J_mol": 0.0}
+    met["chain_scaling"] = {"law": "rouse"}
+    mapping["transport_model"] = {"met": met}
+    return type(spec).from_mapping(mapping)
 
 
 # --------------------------------------------------------------------------
@@ -591,6 +692,125 @@ def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool
         except cs.CatalogSetError as error:
             raise RunError(f"the catalogs loaded together are not one consistent set: {error}") from error
     return me.PayloadCatalog(payloads), records
+
+
+def _loaded_label(payload, template) -> str:
+    """The name ``template_emission.loaded_templates`` gives an emitted template."""
+    return f"{(payload.get('record_event_id') or '')[4:16]}:{template['key'][:12]}"
+
+
+def reciprocal_groups(payloads, names: Sequence[str]) -> List[Tuple[str, ...]]:
+    """The loaded templates (``names``) a selection takes or leaves together:
+    the loaded templates carrying a record's templates (an emitted template
+    itself and its ``derived`` primary and ``reverse`` partners, a merged
+    template's owner, a covered template's covers) are one group with those of
+    its ``reverse_of`` record.  Each group sorted; a loaded name that is no
+    emitted template of ``payloads`` is refused."""
+    by_ref = {(p.get("record_event_id"), t.get("key")): _loaded_label(p, t)
+              for p in payloads for t in p.get("templates", []) if t.get("status") == "emitted"}
+    missing = sorted(set(names) - set(by_ref.values()))
+    if missing:
+        raise RunError(f"loaded templates {missing} are no emitted template of the catalogs' payloads")
+    parent = {n: n for n in names}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def resolve(ref):
+        return by_ref.get((ref.get("record"), ref.get("key")))
+
+    carried: Dict[Any, List[str]] = {}
+    for p in payloads:
+        rid = p.get("record_event_id")
+        mine = carried.setdefault(rid, [])
+        for t in p.get("templates", []):
+            status = t.get("status")
+            if status == "emitted":
+                mine.append(by_ref[(rid, t["key"])])
+                if t.get("derived"):
+                    mine.append(resolve(t["derived"]["primary"]))
+            elif status == "merged":
+                mine.append(resolve(t["merged_into"]))
+            elif status == "covered":
+                mine.extend(resolve(ref) for ref in t.get("covered_by") or [])
+            if status in ("emitted", "merged") and t.get("reverse"):
+                mine.extend(resolve({"record": r, "key": t["reverse"]["key"]}) for r in t["reverse"]["records"])
+    for p in payloads:
+        group = [n for n in carried[p.get("record_event_id")] + carried.get(p.get("reverse_of"), [])
+                 if n in parent]
+        for n in group[1:]:
+            parent[find(n)] = find(group[0])
+    groups: Dict[str, List[str]] = {}
+    for n in names:
+        groups.setdefault(find(n), []).append(n)
+    return sorted(tuple(sorted(g)) for g in groups.values())
+
+
+def template_selection(path, classes: Optional[Sequence[str]], payloads, names: Sequence[str],
+                       deck: Deck) -> dict:
+    """The ``template_selection`` manifest entry of ``--templates`` (module
+    docstring): the selected and excluded loaded templates and the source."""
+    path = Path(path)
+    try:
+        raw = path.read_bytes()
+    except OSError as error:
+        raise RunError(f"template selection {path}: unreadable ({error})") from error
+    try:
+        doc = json.loads(raw)
+    except ValueError:
+        doc = None
+    extra = {}
+    if isinstance(doc, dict):
+        if doc.get("schema") != KERNEL_RATES_SCHEMA or not isinstance(doc.get("kernels"), dict):
+            raise RunError(f"template selection {path}: a JSON object must be a {KERNEL_RATES_SCHEMA} table "
+                           f"(schema {doc.get('schema')!r})")
+        bound = (doc.get("catalog") or {}).get("chemistry_sha256")
+        if bound != deck.digests()["chemistry_sha256"]:
+            raise RunError(f"kernel table {path} was built for the chemistry {str(bound)[:16]}..., not the "
+                           f"deck's chemistry_sha256 {deck.digests()['chemistry_sha256'][:16]}...")
+        kernels = doc["kernels"]
+        if classes is None:
+            chosen = sorted(kernels)
+        else:
+            types = sorted({k.get("type") for k in kernels.values()})
+            unknown = [c for c in classes if c not in kernels and c not in types]
+            if unknown:
+                raise RunError(f"kernel table {path} has no kernel type or id {unknown} (types: {types})")
+            chosen = sorted(k for k, v in kernels.items() if k in classes or v.get("type") in classes)
+        selected = {x["template"] for k in chosen for x in kernels[k]["templates"]}
+        source = {"kind": KERNEL_RATES_SCHEMA, "path": str(path), "sha256": _sha256(raw),
+                  "temperature_K": doc.get("temperature_K")}
+        extra["kernels"] = chosen
+    else:
+        if classes is not None:
+            raise RunError(f"template selection {path}: --template-classes selects from a {KERNEL_RATES_SCHEMA} "
+                           "table, not from a template list")
+        if isinstance(doc, list):
+            ids = doc
+        else:
+            try:
+                text = raw.decode()
+            except UnicodeDecodeError as error:
+                raise RunError(f"template selection {path}: not a template list ({error})") from error
+            ids = [x.strip() for x in text.splitlines() if x.strip() and not x.strip().startswith("#")]
+        if not all(isinstance(x, str) and x for x in ids):
+            raise RunError(f"template selection {path}: a template list holds template names only")
+        selected = set(ids)
+        source = {"kind": "template_list", "path": str(path), "sha256": _sha256(raw)}
+    unknown = sorted(selected - set(names))
+    if unknown:
+        raise RunError(f"template selection {path}: {unknown} are not templates the catalogs load")
+    for group in reciprocal_groups(payloads, names):
+        inside = [n for n in group if n in selected]
+        if inside and len(inside) != len(group):
+            raise RunError(f"template selection {path} splits a reciprocal group: it takes {inside} but not "
+                           f"{[n for n in group if n not in selected]}; both directions are selected together")
+    return dict({"restricted": True, "definition": SELECTION_DEFINITION, "source": source,
+                 "classes": None if classes is None else list(classes)}, **extra,
+                templates=sorted(selected), excluded=sorted(set(names) - selected), loaded=len(names))
 
 
 def _template_graph(t):
@@ -939,6 +1159,7 @@ class _Context:
     max_events: Optional[int]
     out: Path
     label: Tuple[Tuple[str, Any], ...]
+    excluded: Tuple[str, ...] = ()
 
 
 def _observation_lines(text: str) -> List[str]:
@@ -957,7 +1178,7 @@ def _run_seed(context: _Context, seed: int) -> dict:
     report = leak = None
     try:
         engine = me.MeltEngine(context.spec, context.catalog, context.temperature,
-                               numpy.random.default_rng(seed))
+                               numpy.random.default_rng(seed), excluded=context.excluded)
         observer = _LabelledObserver(context.spec, xs=context.xs, identity=engine.identity,
                                      side_group_homolysis=context.side_group_homolysis,
                                      label=dict(context.label, seed=seed))
@@ -970,6 +1191,7 @@ def _run_seed(context: _Context, seed: int) -> dict:
             report.pop(key, None)
         leak = {"seed": seed}
         leak.update({k: estimate[k] for k in LEAK_PARTS})
+        leak["excluded_num"] = report.pop("excluded")["excluded_num"]
         report, leak = _plain(report), _plain(leak)
     except Exception as exc:   # recorded as the seed's stop; the run's status becomes failed
         stop = "error"
@@ -1112,10 +1334,21 @@ def _write_manifest(out: Path, manifest: dict):
 
 def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], seeds: Sequence[int], out, *,
         max_events: Optional[int] = None, allow_incomplete: bool = False, allow_unbound_catalog: bool = False,
-        allow_unmatched_catalog: bool = False, mom=None, jobs: int = 1) -> dict:
+        allow_unmatched_catalog: bool = False, mom=None, jobs: int = 1, also_well_mixed: bool = False,
+        templates=None, template_classes: Optional[Sequence[str]] = None) -> dict:
     """Run every seed and write the outputs (module docstring); returns the
     manifest.  Inputs are refused (``RunError``) before anything is written; a
-    seed that fails is recorded and the status is ``failed``."""
+    seed that fails is recorded and the status is ``failed``.
+
+    ``also_well_mixed``: then run the same seeds again on ``well_mixed_spec``
+    (``WELL_MIXED_DEFINITION``) into ``<out>/well_mixed/``; the manifest
+    gains ``transport`` (both passes' MET blocks and the declared sources)
+    and ``well_mixed`` (that pass's status, runs, censoring, leak and
+    comparison), and every observation and comparison carries the label
+    ``transport`` (``TRANSPORT_PASSES``).  The run's ``status`` covers both.
+
+    ``templates`` (``template_classes``): restrict both passes to a selection
+    of the loaded templates (``template_selection``)."""
     start = time.perf_counter()
     deck = read_deck(deck)
     sequence = isinstance(deck.spec, PolymerSpec)
@@ -1131,15 +1364,25 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
         raise RunError(f"the event cap must be a positive integer, got {max_events!r}")
     if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1:
         raise RunError(f"jobs must be a positive integer, got {jobs!r}")
+    if template_classes is not None and templates is None:
+        raise RunError("template classes select from a kernel-rates table: give it as the template selection")
     catalog, records = load_catalogs(catalogs, temperature, allow_incomplete=allow_incomplete, deck=deck,
                                      allow_unbound=allow_unbound_catalog)
+    selection = {"restricted": False} if templates is None else template_selection(
+        templates, template_classes, catalog.payloads, [n for r in records for n in r.template_names], deck)
+    excluded = tuple(selection.get("excluded", ()))
     mom_by_time, mom_record = (load_mom(mom, times, deck_sha256=deck.sha256, temperature_K=temperature)
                                if mom is not None
                                else ([None] * len(times), None))
     try:   # the declaration as the engine and the observables read it, before any output
         me.TransportLaw.from_spec(deck.spec).check_range(temperature, temperature)
+        bound_spec = well_mixed_spec(deck.spec, temperature) if also_well_mixed else None
+        if bound_spec is not None:
+            me.TransportLaw.from_spec(bound_spec).check_range(temperature, temperature)
+            if chemistry_sha256(bound_spec) != chemistry_sha256(deck.spec):
+                raise RunError("the well-mixed bound changed the chemistry digest")
         mo.MeltObserver(deck.spec, xs=deck.xs, side_group_homolysis=deck.side_group_homolysis)
-        initial = me.MeltEngine(deck.spec, catalog, temperature, numpy.random.default_rng(0))
+        initial = me.MeltEngine(deck.spec, catalog, temperature, numpy.random.default_rng(0), excluded=excluded)
         matched = initial_match(initial)
     except ValueError as error:
         raise RunError(f"deck {deck.path}: {error}") from error
@@ -1165,8 +1408,11 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
     labels = {"catalog_complete": complete, "catalog_gate_failures": failures,
               "catalog_bound": all(r.bound_by for r in records),
               "catalog_matches_initial_state": matched["templates"] > 0}
+    def pass_labels(name):
+        return dict(labels, transport=name) if also_well_mixed else dict(labels)
+
     context = _Context(deck.spec, catalog, temperature, tuple(times), deck.xs, deck.side_group_homolysis,
-                       max_events, out, tuple(sorted(labels.items())))
+                       max_events, out, tuple(sorted(pass_labels("declared").items())), excluded)
     manifest = dict({
         "schema": RUN_SCHEMA, "status": "running",
         "deck": deck.manifest(),
@@ -1177,71 +1423,126 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
         "code": code_identity(),
         "environment": {"python": platform.python_version(), "numpy": numpy.__version__,
                         "PYTHONHASHSEED": os.environ.get("PYTHONHASHSEED")},
-        "runs": [],
-        "censoring": {"seeds_requested": len(seeds), "stopped_early": [], "censored_times_s": []},
-        "leak": {"estimator": me.LEAK_ESTIMATOR + "/pooled", "definition": me.LEAK_DEFINITION,
-                 "note": LEAK_NOTE, "per_seed": [], "excluded_seeds": [],
-                 "pooled": me.pooled_leak_fraction([])},
-        "mom": mom_record, "comparison": None if sequence else "comparison.csv", "wall_s": None,
-    }, **labels)
+        "mom": mom_record, "template_selection": selection, "wall_s": None,
+    }, **labels, **_pass_section(seeds, None if sequence else "comparison.csv", excluded))
     if sequence:
         manifest["comparison_refused"] = mo.MOM_V2_REFUSAL
         manifest["composition"] = sequence_composition(deck.spec)
+    if also_well_mixed:
+        declared = json.loads(deck.spec.normalized_json)["transport_model"]
+        manifest["transport"] = {
+            "passes": list(TRANSPORT_PASSES),
+            "declared": {"met": declared["met"], "sources": transport_sources(deck.spec)},
+            "well_mixed_bound": {"met": json.loads(bound_spec.normalized_json)["transport_model"]["met"],
+                                 "definition": WELL_MIXED_DEFINITION,
+                                 "WELL_MIXED_D0_M2_S": WELL_MIXED_D0_M2_S}}
+        manifest["well_mixed"] = dict({"status": "pending", "path": "well_mixed"},
+                                      **_pass_section(seeds, None if sequence else "well_mixed/comparison.csv",
+                                                      excluded))
     _write_manifest(out, manifest)
 
-    def record(result):
-        leak = result.pop("leak")
-        last = result.pop("last_observed_time_s")
-        manifest["runs"].append(result)
-        if leak is None:
-            manifest["leak"]["excluded_seeds"].append(result["seed"])
-        else:
-            manifest["leak"]["per_seed"].append(leak)
-        manifest["leak"]["pooled"] = me.pooled_leak_fraction(manifest["leak"]["per_seed"])
-        if result["observations"] < len(times):
-            manifest["censoring"]["stopped_early"].append(
-                {"seed": result["seed"], "stop_reason": result["stop_reason"],
-                 "observations": result["observations"], "last_observed_time_s": last,
-                 "engine_time_s": result["engine_time_s"]})
-            manifest["censoring"]["censored_times_s"] = [
-                t for k, t in enumerate(times) if any(r["observations"] <= k for r in manifest["runs"])]
+    def flush():
         manifest["wall_s"] = time.perf_counter() - start
         _write_manifest(out, manifest)
 
-    _install(context)
     try:
-        if jobs == 1:
-            for seed in seeds:
-                record(_run_seed(context, seed))
-        else:
-            with _executor(jobs, context) as pool:
-                for result in pool.map(_seed_task, seeds):
-                    record(result)
+        _run_pass(context, manifest, seeds, jobs, times, "", mom_by_time, mom_record, pass_labels("declared"),
+                  sequence, flush)
+        if also_well_mixed:
+            (out / "well_mixed").mkdir()
+            bound = _Context(bound_spec, catalog, temperature, tuple(times), deck.xs, deck.side_group_homolysis,
+                             max_events, out / "well_mixed", tuple(sorted(pass_labels("well_mixed_bound").items())),
+                             excluded)
+            section = manifest["well_mixed"]
+            section["status"] = "running"
+            _run_pass(bound, section, seeds, jobs, times, "well_mixed/", mom_by_time, mom_record,
+                      pass_labels("well_mixed_bound"), sequence, flush)
+            section["status"] = "failed" if any(r["stop_reason"] == "error" for r in section["runs"]) \
+                else "complete"
         if not sequence:
-            observations = {r["seed"]: [json.loads(x) for x in _observation_lines((out / r["path"]).read_text())]
-                            if (out / r["path"]).exists() else [] for r in manifest["runs"]}
-            write_comparison(out / "comparison.csv",
-                             comparison_rows(observations, times, mom_by_time, len(seeds),
-                                             sorted(((mom_record or {}).get("header") or {}).get("flags", {}))),
-                             labels)
-            from rmgpy.kmc import comparison_rows as cr
-            try:
-                rows = cr.kmc_rows(out, deck=deck.path)
-            except cr.ComparisonRowsError as error:
-                manifest["rows_refused"] = str(error)
-            else:
-                (out / "rows.json").write_text(json.dumps(rows, sort_keys=True, indent=1, allow_nan=False) + "\n")
-                manifest["rows"] = "rows.json"
+            _write_rows(out, manifest, deck, "declared", "rows.json")
+            if also_well_mixed:
+                _write_rows(out, manifest["well_mixed"], deck, "well_mixed_bound", "well_mixed/rows.json")
     except BaseException as error:
         manifest["status"] = "failed"
         manifest["error"] = f"{type(error).__name__}: {error}"
-        manifest["wall_s"] = time.perf_counter() - start
-        _write_manifest(out, manifest)
+        flush()
         raise
-    manifest["status"] = "failed" if any(r["stop_reason"] == "error" for r in manifest["runs"]) else "complete"
-    manifest["wall_s"] = time.perf_counter() - start
-    _write_manifest(out, manifest)
+    runs = manifest["runs"] + (manifest["well_mixed"]["runs"] if also_well_mixed else [])
+    manifest["status"] = "failed" if any(r["stop_reason"] == "error" for r in runs) else "complete"
+    flush()
     return json.loads(json.dumps(manifest, sort_keys=True))
+
+
+def _pass_section(seeds, comparison, excluded=()) -> dict:
+    """The per-pass part of the manifest (module docstring), before any seed."""
+    return {"runs": [],
+            "censoring": {"seeds_requested": len(seeds), "stopped_early": [], "censored_times_s": []},
+            "leak": {"estimator": me.LEAK_ESTIMATOR + "/pooled", "definition": me.LEAK_DEFINITION,
+                     "note": LEAK_NOTE, "per_seed": [], "excluded_seeds": [],
+                     "pooled": me.pooled_leak_fraction([]),
+                     "excluded": {"definition": me.EXCLUDED_DEFINITION, "templates": sorted(excluded),
+                                  "excluded_num": 0.0}},
+            "comparison": comparison}
+
+
+def _run_pass(context: _Context, section: dict, seeds, jobs, times, prefix: str, mom_by_time, mom_record,
+              labels, sequence: bool, flush):
+    """Run every seed of one pass into ``context.out``, recording into
+    ``section`` (the manifest itself, or its ``well_mixed`` part; seed paths
+    relative to the run directory, hence ``prefix``) and its comparison."""
+    def record(result):
+        leak = result.pop("leak")
+        last = result.pop("last_observed_time_s")
+        result["path"] = prefix + result["path"]
+        section["runs"].append(result)
+        if leak is None:
+            section["leak"]["excluded_seeds"].append(result["seed"])
+        else:
+            section["leak"]["per_seed"].append(leak)
+        section["leak"]["pooled"] = me.pooled_leak_fraction(section["leak"]["per_seed"])
+        section["leak"]["excluded"]["excluded_num"] = math.fsum(
+            x["excluded_num"] for x in section["leak"]["per_seed"])
+        if result["observations"] < len(times):
+            section["censoring"]["stopped_early"].append(
+                {"seed": result["seed"], "stop_reason": result["stop_reason"],
+                 "observations": result["observations"], "last_observed_time_s": last,
+                 "engine_time_s": result["engine_time_s"]})
+            section["censoring"]["censored_times_s"] = [
+                t for k, t in enumerate(times) if any(r["observations"] <= k for r in section["runs"])]
+        flush()
+
+    _install(context)
+    if jobs == 1:
+        for seed in seeds:
+            record(_run_seed(context, seed))
+    else:
+        with _executor(jobs, context) as pool:
+            for result in pool.map(_seed_task, seeds):
+                record(result)
+    if not sequence:
+        out = context.out
+        observations = {r["seed"]: [json.loads(x) for x in _observation_lines(
+            (out / r["path"][len(prefix):]).read_text())]
+            if (out / r["path"][len(prefix):]).exists() else [] for r in section["runs"]}
+        write_comparison(out / "comparison.csv",
+                         comparison_rows(observations, times, mom_by_time, len(seeds),
+                                         sorted(((mom_record or {}).get("header") or {}).get("flags", {}))),
+                         labels)
+
+
+def _write_rows(out: Path, section: dict, deck: Deck, pass_name: str, path: str):
+    """``path`` (relative to the run directory): the comparison rows of one
+    pass (``comparison_rows.kmc_rows``), named in ``section``; when they
+    cannot be mapped, ``section["rows_refused"]`` says why."""
+    from rmgpy.kmc import comparison_rows as cr
+    try:
+        rows = cr.kmc_rows(out, pass_name=pass_name, deck=deck.path)
+    except cr.ComparisonRowsError as error:
+        section["rows_refused"] = str(error)
+    else:
+        (out / path).write_text(json.dumps(rows, sort_keys=True, indent=1, allow_nan=False) + "\n")
+        section["rows"] = path
 
 
 # --------------------------------------------------------------------------
@@ -1269,19 +1570,31 @@ def main(argv=None) -> int:
                         help="run when no template matches the initial state, labelled")
     parser.add_argument("--mom", default=None, help="MoM reported quantities at the observation times")
     parser.add_argument("--jobs", type=int, default=1, help="worker processes (default 1: sequential)")
+    parser.add_argument("--also-well-mixed", action="store_true",
+                        help="also run the same seeds at the well-mixed bound (every escape factor 1) into "
+                             "<out>/well_mixed/, both passes labelled in one run.json")
+    parser.add_argument("--templates", default=None,
+                        help="restrict the run to a template selection: a kmc-kernel-rates/1 table or a "
+                             "template list (one loaded template name per line, or a JSON list)")
+    parser.add_argument("--template-classes", nargs="+", default=None,
+                        help="with a kernel-rates table: the kernel types or ids to select (default: every kernel)")
     args = parser.parse_args(argv)
     try:
         times = observation_times(args.times, args.end, args.snapshots)
         manifest = run(args.deck, args.catalogs, args.temperature, times, args.seeds, args.out,
                        max_events=args.max_events, allow_incomplete=args.allow_incomplete,
                        allow_unbound_catalog=args.allow_unbound_catalog,
-                       allow_unmatched_catalog=args.allow_unmatched_catalog, mom=args.mom, jobs=args.jobs)
+                       allow_unmatched_catalog=args.allow_unmatched_catalog, mom=args.mom, jobs=args.jobs,
+                       also_well_mixed=args.also_well_mixed, templates=args.templates,
+                       template_classes=args.template_classes)
     except RunError as error:
         print(f"refused: {error}", file=sys.stderr, flush=True)
         return 2
-    for r in manifest["runs"]:
+    passes = [("", manifest["runs"])] + ([("well_mixed_bound ", manifest["well_mixed"]["runs"])]
+                                          if "well_mixed" in manifest else [])
+    for name, r in ((name, r) for name, runs in passes for r in runs):
         when = "-" if r["engine_time_s"] is None else f"{r['engine_time_s']:.6g} s"
-        print(f"seed {r['seed']}: {r['stop_reason']} at {when}, {r['events']} events, "
+        print(f"{name}seed {r['seed']}: {r['stop_reason']} at {when}, {r['events']} events, "
               f"{r['observations']} observations, {r['wall_s']:.1f} s wall"
               + (f" ({r['error']})" if "error" in r else ""), flush=True)
     pooled = manifest["leak"]["pooled"]

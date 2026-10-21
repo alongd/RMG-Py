@@ -1,5 +1,6 @@
 # Polypropylene, tacticity not declared; H caps.
-# Structure only: no rate, yield or kinetic parameter.  The density is the deck's volume basis only.
+# Structure and a declared MET block: no rate, yield or kinetic parameter.
+# MET transport: literature values, each field cited in transport_model.sources.  The density is the deck's volume basis only.
 database(
     thermoLibraries=['primaryThermoLibrary'],
     reactionLibraries=[],
@@ -66,7 +67,64 @@ polymer('polypropylene (CH2-CH(CH3))', linear_homopolymer_spec={'schema_version'
                                 'topology_metadata_schema': {}}},
  'family_manifest': {},
  'library_manifest': {},
- 'transport_model': {},
+ 'transport_model': {'met': {'chain_scaling': {'entanglement_units': 133.3192, 'law': 'crossover'},
+          'contact_radius_m': 5.447745e-10,
+          'mean_square_end_to_end_per_molar_mass_m2_mol_per_g': 6.78e-21,
+          'schema': 'kmc-met-transport/1',
+          'segment_diffusivity': {'D_ref_m2_s': 1.859145e-10,
+                                  'Ea_J_mol': 40000.0,
+                                  'T_ref_K': 362.0,
+                                  'law': 'arrhenius'},
+          'spin_factor': 1.0},
+  'sources': {'chain_scaling': ['N_e = N_eK M_K / 42.081 = 30.59 x 183.40 / 42.081 (a-PP(463)): R. Everaers, '
+                                "H. A. Karimi-Varzaneh, F. Fleck, N. Hojdis, C. Svaneborg, 'Kremer-Grest "
+                                'models for commodity polymer melts: linking theory, experiment, and '
+                                "simulation at the Kuhn scale', Macromolecules 53, 1901-1916 (2020), "
+                                'doi:10.1021/acs.macromol.9b02428 (arXiv:1808.03509v3), Table 1'],
+              'contact_radius_m': ['sigma = 2 r, r the radius of a sphere of the McGowan volume of the '
+                                   "radical site C3H7 (3 C, 7 H, 9 bonds): M. H. Abraham, J. C. McGowan, 'The "
+                                   'use of characteristic volumes to measure cavity terms in reversed phase '
+                                   "liquid chromatography', Chromatographia 23, 243-246 (1987), Table 2 (C "
+                                   '16.35, H 8.71, minus 6.56 per bond, cm3/mol), as implemented in RMG-Py '
+                                   'rmgpy/data/solvation.py set_mcgowan_volume'],
+              'mean_square_end_to_end_per_molar_mass_m2_mol_per_g': ['<R^2>/M = 0.678 A^2 mol/g (a-PP, '
+                                                                     '298-463 K rows): R. Everaers, H. A. '
+                                                                     'Karimi-Varzaneh, F. Fleck, N. Hojdis, '
+                                                                     "C. Svaneborg, 'Kremer-Grest models for "
+                                                                     'commodity polymer melts: linking '
+                                                                     'theory, experiment, and simulation at '
+                                                                     "the Kuhn scale', Macromolecules 53, "
+                                                                     '1901-1916 (2020), '
+                                                                     'doi:10.1021/acs.macromol.9b02428 '
+                                                                     '(arXiv:1808.03509v3), Table 1'],
+              'segment_diffusivity': ['anchor D0(348 K) = l_K^2 M_K / (3 pi^2 tau_K M0) = 4.628e-11 m2/s from '
+                                      'the Kuhn time tau_K(348 K) = 3.99 ns (a-PP, from the experimental '
+                                      'entanglement time) with l_K = 11.20 A, M_K = 183.40 g/mol (a-PP(348)): '
+                                      'R. Everaers, H. A. Karimi-Varzaneh, F. Fleck, N. Hojdis, C. Svaneborg, '
+                                      "'Kremer-Grest models for commodity polymer melts: linking theory, "
+                                      "experiment, and simulation at the Kuhn scale', Macromolecules 53, "
+                                      '1901-1916 (2020), doi:10.1021/acs.macromol.9b02428 '
+                                      '(arXiv:1808.03509v3), Tables 1 and 3, Eq. 6',
+                                      '348 -> 362 K (T_g + 100, T_g = 262 K) by the universal Vogel-Fulcher '
+                                      'shift, C_VF = 2072 K, T_VF = T_g - 51.6 K: R. Everaers, H. A. '
+                                      "Karimi-Varzaneh, F. Fleck, N. Hojdis, C. Svaneborg, 'Kremer-Grest "
+                                      'models for commodity polymer melts: linking theory, experiment, and '
+                                      "simulation at the Kuhn scale', Macromolecules 53, 1901-1916 (2020), "
+                                      'doi:10.1021/acs.macromol.9b02428 (arXiv:1808.03509v3), Eqs. 34-35',
+                                      'above 362 K Arrhenius with Ea = 40 kJ/mol, the middle of the 36-44 '
+                                      'kJ/mol reported for isotactic PP melts (no atactic value given): J. A. '
+                                      "Resch, 'Elastic and viscous properties of polyolefin melts with "
+                                      "different molecular structures investigated in shear and elongation', "
+                                      'Dr.-Ing. thesis, Universitaet Erlangen-Nuernberg (2010), p. 25 '
+                                      '(review, citing Laun 1987, Gabriel 2001, Stadler et al. 2008; '
+                                      'Wasserman and Graessley 1996, Eckstein et al. 1997, Auhl 2006), '
+                                      'https://d-nb.info/1001254694/34'],
+              'spin_factor': ['upper end of the bracket [1/4, 1] of polymer-pm report R-003 v2 (2026-09-24) '
+                              'section (b): 1/4 is the singlet fraction of two uncorrelated doublets; the RMG '
+                              'rates entering as k_act are thermal bulk rate constants that may already '
+                              'contain spin statistics, so 1/4 on k_D could double count; 1.0 as the PS '
+                              'reference arm (rmgpy/kmc/met.py); the --also-well-mixed bound brackets '
+                              'transport from above']}},
  'diagnostics': {}}, cutoff=4)
 
 simpleReactor(

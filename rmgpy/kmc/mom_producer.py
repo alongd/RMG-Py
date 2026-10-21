@@ -62,9 +62,15 @@ families is live (``ACTIVITY_RULE``) the run is refused (``status = "refused:ina
 file) unless ``--allow-inactive``, and then flagged.  The flags are written to
 ``conventions.json``, ``producer.json`` and the ``--mom`` file's header (the
 runner copies the header into ``run.json`` and the flag names onto every
-comparison row): ``inactive_chemistry`` and ``kinetics_not_comparable`` (a declared mobile
-species' concentration per amount in MoM's gas phase over kMC's melt at
+comparison row): ``inactive_chemistry`` and ``kinetics_not_comparable`` (a declared
+species' concentration per amount in MoM, at its residence, over kMC's melt at
 t = 0 differs from 1 by more than the deck's ``observable_relative_tolerance``).
+
+**Residence.**  ``polymer_phase(residence=...)`` carries where each species
+lives (``species_residence``): the declared species, H and H2 at the
+declaration's residence (melt), ``'*'`` (every other reactive species) melt,
+the bath gas.  MoM condenses the melt species in its gas mask under kMC's
+single convention (gas thermo, Kc at C0 = P0/RT, melt concentrations).
 
 **Conversion.**  The final-core solver profile ``rmg/solver/simulation_1_<N>.csv``
 (highest ``N``; columns are mol), the pool table ``rmg/chemkin/polymer_pools.json``
@@ -105,6 +111,7 @@ from rmgpy.kmc.event_record import same_species
 from rmgpy.molecule import Molecule
 from rmgpy import species_identity as _species_identity
 from rmgpy.molecule.molecule import Bond
+from rmgpy.polymer_spec import DEFAULT_RESIDENCE
 from rmgpy.quantity import Quantity
 
 SCHEMA = "kmc-mom-producer/1"
@@ -531,23 +538,37 @@ def _parse_constraints(items: Sequence[str]) -> Dict[str, Any]:
     return out
 
 
-def phase_kinetics(spec, species: Sequence[str], initial: Dict[str, float], polymer: str,
-                   temperature: float, pressure: Tuple[float, str]) -> dict:
-    """Per declared species, its concentration per amount in MoM's gas phase
-    over kMC's melt at t = 0: ``V_kMC / V_gas`` (MoM: c = n / V_gas, V_gas the
-    ideal-gas volume of the gas moles, 1 m^3 when there are none; kMC: c =
-    n / V, V the melt volume of the declaration)."""
+def phase_kinetics(spec, species: Sequence[str], initial: Dict[str, float], gas: Sequence[str],
+                   temperature: float, pressure: Tuple[float, str], *, v_poly: float,
+                   residence: Dict[str, str]) -> dict:
+    """Per declared species, its concentration per amount in MoM over kMC's
+    melt at t = 0: ``V_kMC / V_poly`` for a melt-resident species (MoM: c =
+    n / V_poly, its polymer volume), ``V_kMC / V_gas`` for a gas one (c = n /
+    V_gas, the ideal-gas volume of the gas moles, 1 m^3 when there are none);
+    kMC: c = n / V, V the melt volume of the declaration."""
     init = spec.initialization()
     v_kmc = init.volume_m3 * init.scale_factor
-    n_gas = math.fsum(v for k, v in initial.items() if k != polymer)
+    n_gas = math.fsum(initial[k] for k in gas if k in initial)
     p_pa = Quantity(pressure[0], pressure[1]).value_si
     v_gas = constants.R * float(temperature) * n_gas / p_pa if n_gas > 0 else 1.0
-    ratio = v_kmc / v_gas
     tolerance = spec.observable_relative_tolerance
-    ratios = {name: ratio for name in species}
-    return {"ratio_by_species": ratios, "V_kmc_m3": v_kmc, "V_gas_m3": v_gas, "gas_mol": n_gas,
-            "tolerance": tolerance,
+    ratios = {name: v_kmc / (v_poly if residence.get(name, residence["*"]) == "melt" else v_gas)
+              for name in species}
+    return {"ratio_by_species": ratios, "V_kmc_m3": v_kmc, "V_poly_m3": v_poly, "V_gas_m3": v_gas,
+            "gas_mol": n_gas, "tolerance": tolerance,
             "not_comparable": sorted(n for n, r in ratios.items() if abs(r - 1.0) > tolerance)}
+
+
+def species_residence(spec, species: Sequence[str], bath: Sequence[str]) -> Dict[str, str]:
+    """The ``polymer_phase(residence=...)`` MoM takes: every declared species
+    (H and H2 included) at its declared residence, ``'*'`` (every other
+    reactive species, the undeclared lights and generated ones) at the
+    declaration's default, the bath gas (kMC has no gas phase; the bath only
+    sets MoM's gas volume)."""
+    out = {"*": DEFAULT_RESIDENCE}
+    out.update({name: spec.residence(name) for name in species})
+    out.update({name: "gas" for name in bath})
+    return dict(sorted(out.items()))
 
 
 def build_input(deck, context: dict, *, temperature: float, end: float, families: Sequence[str],
@@ -580,6 +601,8 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
     initial.update({name: amount for name, amount in sorted(mobile.items())})
     initial.update({name: x * BATH_GAS_TOTAL_MOL for name, x in context["bath"].items()})
     pressure = context["pressure"] or DEFAULT_PRESSURE
+    residence = species_residence(spec, sorted(species), sorted(context["bath"]))
+    v_poly = (a * mu[1] / 1000.0 + math.fsum(mobile_kg[n] for n in phase[1:])) / spec.density_kg_m3
     constraints = dict(constraints or {})
     if constraints:
         constraints.setdefault("allowed", ["input species"])   # the declared species stay admissible
@@ -609,7 +632,7 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
         f"    initial_mass={a * mu[1] / 1000.0!r},",
         ")",
         f"phase = polymer_phase(label={label + '_melt'!r}, species={phase!r}, solvent={label!r}, "
-        f"density=({spec.density_kg_m3!r}, 'kg/m^3'))",
+        f"density=({spec.density_kg_m3!r}, 'kg/m^3'), residence={residence!r})",
         "hybridPolymerReactor(",
         f"    temperature=({float(temperature)!r}, 'K'),",
         f"    pressure=({pressure[0]!r}, {pressure[1]!r}),",
@@ -635,7 +658,9 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
              "constraints": constraints, "families": sorted(set(families)),
              "volume_ratio_mom_over_kmc": (a * mu[1] / 1000.0 + math.fsum(
                  mobile_kg[n] for n in phase[1:])) / (spec.initial_mass_kg + math.fsum(mobile_kg.values())),
-             "phase_kinetics": phase_kinetics(spec, sorted(species), initial, label, temperature, pressure)}
+             "residence": residence,
+             "phase_kinetics": phase_kinetics(spec, sorted(species), initial, sorted(context["bath"]), temperature,
+                                              pressure, v_poly=v_poly, residence=residence)}
     return "\n".join(lines) + "\n", facts
 
 
@@ -701,12 +726,18 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
         ("phase_species", facts["phase_species"],
          "density_basis " + spec.density_basis + ": species whose mass enters V_poly"),
         ("declared_species", facts["species"],
-         "every name kMC reports under species_mol is a reactive MoM input species (gas phase in MoM, "
-         "melt in kMC); initial amount count x scale / N_A from initial_mobile_counts, else 0"),
+         "every name kMC reports under species_mol is a reactive MoM input species (at its residence in "
+         "MoM, melt in kMC); initial amount count x scale / N_A from initial_mobile_counts, else 0"),
+        ("residence", facts["residence"],
+         "polymer_phase(residence=...): each declared species (H, H2 included) at the declaration's "
+         "residence (LinearHomopolymerSpec.residence: melt), '*' (every other reactive species, generated "
+         "ones included) melt, the bath gas; MoM condenses melt species in its gas mask (n / V_poly, gas "
+         "thermo, Kc at C0 = P0/RT: kMC's single convention) and, the convention declared, passes wholly "
+         "melt rows through its reference-state tripwire"),
         ("phase_kinetics", facts["phase_kinetics"],
-         "concentration per amount of each declared species, MoM gas (n / V_gas) over kMC melt (n / V), "
-         "at t = 0; kinetics_not_comparable when a ratio differs from 1 by more than the deck's "
-         "observable_relative_tolerance"),
+         "concentration per amount of each declared species, MoM (melt: n / V_poly; gas: n / V_gas) over "
+         "kMC melt (n / V), at t = 0; kinetics_not_comparable when a ratio differs from 1 by more than the "
+         "deck's observable_relative_tolerance"),
         ("bath_gas", facts["initial_moles"], f"the deck's simpleReactor mole fractions x "
                                              f"{BATH_GAS_TOTAL_MOL} mol (MoM gas phase; kMC has none): "
                                              "outside every polymer row and closed on its own"),
