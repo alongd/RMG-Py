@@ -1,7 +1,8 @@
 """A run restricted to a declared subset of the loaded templates.
 
 ``run(..., templates=PATH[, template_classes=...])`` selects loaded templates
-from a ``kmc-kernel-rates/1`` table (every template of the named kernel types
+from a kernel-rates table of a version the selection reads
+(``run.KERNEL_RATES_SCHEMAS``; every template of the named kernel types
 or kernel ids, every kernel when none is named) or from a list of template
 ids.  The rest stay loaded with their weights but never fire, take no part in
 the MET activation, and their hazard is integrated as ``excluded``, never as
@@ -17,7 +18,9 @@ import pytest
 
 import melt_engine_support as S
 from meltRunTest import lines, pe_deck, toy_payloads, write_catalog, write_deck, PE_LIVE
+from meltTransportTest import cited
 
+from rmgpy.kmc import comparison_rows as cr
 from rmgpy.kmc import kernel_rates as krt
 from rmgpy.kmc import melt_engine as me
 from rmgpy.kmc import run as kr
@@ -220,7 +223,7 @@ def test_selection_from_kernel_rates_classes(tmp_path, kernel_table):
     want = sorted({x["template"] for k in doc["kernels"].values() if k["type"] in ("homolysis", "recombination")
                    for x in k["templates"]})
     assert sel["templates"] == want and len(want) == 2
-    assert sel["source"] == {"kind": "kmc-kernel-rates/1", "path": str(table),
+    assert sel["source"] == {"kind": krt.SCHEMA, "path": str(table),
                              "sha256": kr._sha256(table.read_bytes()), "temperature_K": T}
     assert sel["classes"] == ["homolysis", "recombination"]
     assert sorted(sel["kernels"]) == sorted(k for k, v in doc["kernels"].items()
@@ -248,6 +251,63 @@ def test_a_kernel_table_of_another_chemistry_is_refused(tmp_path, kernel_table):
     with pytest.raises(kr.RunError, match="chemistry"):
         kr.run(write_deck(tmp_path / "pe.py", S.pe_mapping({10: 2})), [catalog], T, [0.0, 1.0], [1],
                tmp_path / "out", templates=other)
+
+
+def test_kernel_rates_versions_the_selection_reads(tmp_path, kernel_table):
+    """The selection reads a table's schema, chemistry binding, kernel types
+    and template names, which every version in ``KERNEL_RATES_SCHEMAS``
+    carries alike: the producer's current version is one of them and drives
+    the selection, the first stays readable, any other is refused by name."""
+    catalog, table = kernel_table
+    doc = json.loads(table.read_text())
+    assert doc["schema"] == krt.SCHEMA and krt.SCHEMA in kr.KERNEL_RATES_SCHEMAS
+    assert "kmc-kernel-rates/1" in kr.KERNEL_RATES_SCHEMAS
+    deck = write_deck(tmp_path / "pe.py", S.pe_mapping({10: 2, 20: 2}))
+    pair = ["homolysis", "recombination"]
+    sel = kr.run(deck, [catalog], T, [0.0, 1.0], [1], tmp_path / "current", templates=table,
+                 template_classes=pair)["template_selection"]
+    assert sel["source"]["kind"] == krt.SCHEMA and len(sel["templates"]) == 2
+    first = tmp_path / "first.json"
+    first.write_text(json.dumps(dict(doc, schema="kmc-kernel-rates/1")))
+    old = kr.run(deck, [catalog], T, [0.0, 1.0], [1], tmp_path / "first", templates=first,
+                 template_classes=pair)["template_selection"]
+    assert old["templates"] == sel["templates"] and old["source"]["kind"] == "kmc-kernel-rates/1"
+    for schema in ("kmc-kernel-rates/99", "kmc-kernel-rates", None):
+        other = tmp_path / "other.json"
+        other.write_text(json.dumps(dict(doc, schema=schema)))
+        with pytest.raises(kr.RunError, match=f"schema {schema!r}"):
+            kr.run(deck, [catalog], T, [0.0, 1.0], [1], tmp_path / f"refused-{schema}", templates=other,
+                   template_classes=pair)
+        assert not (tmp_path / f"refused-{schema}" / "run.json").exists()
+
+
+def test_selection_well_mixed_pass_and_rows_compose(tmp_path, kernel_table):
+    """One run restricted by a current kernel table, with the well-mixed
+    bound pass, writes each pass's comparison rows beside its observations."""
+    catalog, table = kernel_table
+    deck = write_deck(tmp_path / "pe.py", cited(S.pe_mapping({10: 2, 20: 2})))
+    out = tmp_path / "out"
+    manifest = kr.run(deck, [catalog], T, [0.0, 1.0, 3.0], [1, 2], out, templates=table,
+                      template_classes=["homolysis", "recombination"], also_well_mixed=True)
+    assert manifest["status"] == "complete" and manifest["template_selection"]["restricted"]
+    assert manifest["rows"] == "rows.json" and manifest["well_mixed"]["rows"] == "well_mixed/rows.json"
+    assert "rows_refused" not in manifest and "rows_refused" not in manifest["well_mixed"]
+    for section, pass_name in ((manifest, cr.PASS_DECLARED), (manifest["well_mixed"], cr.PASS_WELL_MIXED)):
+        doc = json.loads((out / section["rows"]).read_text())
+        assert doc == json.loads(json.dumps(cr.kmc_rows(out, pass_name=pass_name)))
+        assert doc["binding"]["pass"] == pass_name
+        assert doc["producer"]["observables_sha256"] == {str(r["seed"]): r["observables_sha256"]
+                                                         for r in section["runs"]}
+    # the command line writes each pass's rows where the runner does, byte for byte
+    for section, pass_name in ((manifest, cr.PASS_DECLARED), (manifest["well_mixed"], cr.PASS_WELL_MIXED)):
+        written = (out / section["rows"]).read_bytes()
+        (out / section["rows"]).unlink()
+        assert cr.main(["kmc", str(out), "--pass", pass_name]) == 0
+        assert (out / section["rows"]).read_bytes() == written
+    declared = cr.kmc_rows(out, pass_name=cr.PASS_DECLARED)
+    bound = cr.kmc_rows(out, pass_name=cr.PASS_WELL_MIXED)
+    with pytest.raises(cr.ComparisonRowsError, match="pass"):
+        cr.join(declared, bound)
 
 
 def test_cli_templates(tmp_path):
