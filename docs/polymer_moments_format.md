@@ -1,7 +1,7 @@
-# Polymer Moments Artifact — Normative Format Spec (`polymer_moments_format/3.3`)
+# Polymer Moments Artifact — Normative Format Spec (`polymer_moments_format/3.4`)
 
 **Artifact:** `polymer_pools.json`, emitted next to `chem.yaml` at the end of an
-RMG run (`save_everything`). **Schema versions:** `2.0`–`2.9` and `3.0`–`3.3`,
+RMG run (`save_everything`). **Schema versions:** `2.0`–`2.9` and `3.0`–`3.4`,
 stamped per
 artifact by the strongest vocabulary present (`conventions.format_doc` mirrors
 the stamp, e.g. `polymer_moments_format/2.3`; 2.0 was the major bump over the
@@ -30,7 +30,7 @@ hypothetical `"2.10"` would collide with 3.0's ordinal and is illegal —
 every rung after 2.9 lives on the 3.x line. 3.0 was the SGH kernel-v2 MAJOR
 (breaking: state-vector shape + mass contract); subsequent 3.x minors are
 ADDITIVE again under the same strict-minor acceptance (3.1 = the
-moment-credit conduit vocabulary, §14; 3.2 = catalog-driven pool kernels, §15; 3.3 = their pair transfer, §15).
+moment-credit conduit vocabulary, §14; 3.2 = catalog-driven pool kernels, §15; 3.3 = their pair transfer, §15; 3.4 = pool moves and growing sites, §15).
 
 **2.9 is TA-only vocabulary (r42 P2 lockstep note).** The producer stamps
 `"2.9"` (thermal-analysis inputs / explicit-DP inventory, §13) but neither
@@ -1402,3 +1402,15 @@ disproportionation (end radicals into a dead chain and a terminal alkene) and it
 reverse (× phi). A terminal-alkene pool declares `end_alkene_site`. The emitter stamps
 `"3.3"` exactly when a pool carries `"transfer"`; a 3.2 reader would replay the pools
 without it, so the reference runner refuses 3.3 the same way.
+
+**Schema 3.4** = 3.3 + a `"move"` key in `catalog_kernels` and `"transfer"` terms that
+carry `sites` and `periods_per_unit`. A move term (`validate_kernel_move`) takes one
+chain of this pool into the `product` pool, length unchanged, at `k*(a*n + b)` per
+chain, n in periods (backbiting: an end radical into a mid-chain radical, and its
+reverse). A transfer term with `sites` [c00, c10, c01, c11] reacts a pair of n and m
+periods at `k_pair*phi*(c00 + c10*n + c01*m + c11*n*m)`, so a chain is picked in
+proportion to its sites (H transfer from a dead chain's interior, end-mid reverse
+disproportionation). Mid-chain pools declare `interior_feature` ('radical' or
+'alkene'). The emitter stamps `"3.4"` exactly when a pool carries either; a 3.3 reader
+would replay the pools without the moves or with constant sites, so the reference
+runner refuses 3.4 the same way.

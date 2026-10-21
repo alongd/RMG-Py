@@ -990,7 +990,7 @@ def test_the_deck_declares_interior_radical_and_alkene_pools():
     (dict(interior_feature="middle"), "interior_feature"),
     (dict(end_radical_site="primary"), "interior_feature.*end_radical_site"),
     (dict(end_alkene_site="primary"), "interior_feature.*end_alkene_site"),
-    (dict(kernel_move=[bb_term(k=-1.0)]), "k=-1.0"),
+    (dict(kernel_move=[bb_term(k=-1.0, product="Re")]), "k=-1.0"),
 ])
 def test_the_deck_refuses_a_malformed_interior_pool(change, match):
     with pytest.raises(InputError, match=match):

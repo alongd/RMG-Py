@@ -752,6 +752,9 @@ KERNEL_RECOMBINATION_KEYS = ("template", "k_pair", "sites_per_chain",
                              "periods_per_unit", "product")
 KERNEL_TRANSFER_KEYS = ("template", "k_pair", "phi", "partner", "product",
                         "partner_product")
+# S5 d: a transfer term whose sites grow with a chain carries both.
+KERNEL_TRANSFER_SITE_KEYS = ("sites", "periods_per_unit")
+KERNEL_MOVE_KEYS = ("template", "k", "a", "b", "periods_per_unit", "product")
 
 
 def _kernel_number(pool_label, kernel, template, key, value, *, positive=False,
@@ -777,16 +780,20 @@ def _kernel_integer(pool_label, kernel, template, key, value):
     return int(value)
 
 
-def _kernel_terms(pool_label, kernel, terms, keys, target_key):
-    """The shared shape rules of a kernel term list; yields (template, term)."""
+def _kernel_terms(pool_label, kernel, terms, keys, target_key, optional=()):
+    """The shared shape rules of a kernel term list; yields (template, term).
+    `optional` keys come all together or not at all."""
     if not isinstance(terms, (list, tuple)) or not terms:
         raise ValueError(f"Pool {pool_label}: {kernel} must be a non-empty "
                          f"list of term dicts, got {terms!r}.")
+    allowed = [set(keys)] + ([set(keys) | set(optional)] if optional else [])
     seen = set()
     for term in terms:
-        if not isinstance(term, dict) or set(term) != set(keys):
+        if not isinstance(term, dict) or set(term) not in allowed:
+            extra = (f" (or with all of {list(optional)} too)"
+                     if optional else "")
             raise ValueError(f"Pool {pool_label}: {kernel} term {term!r} must "
-                             f"have exactly the keys {list(keys)}.")
+                             f"have exactly the keys {list(keys)}{extra}.")
         template = term["template"]
         if not isinstance(template, str) or not template:
             raise ValueError(f"Pool {pool_label}: {kernel} template "
@@ -879,14 +886,37 @@ def validate_kernel_transfer(pool_label, terms):
     [mol/m^3], k_pair [m^3/(mol s)] > 0 the coefficient per ordered chain
     pair in MoM's concentration convention (the sites folded in: the
     producer maps a kernel only where they are the same on every chain),
-    phi in [0, 1] the cage-escape factor of a radical-creating kernel."""
+    phi in [0, 1] the cage-escape factor of a radical-creating kernel.
+
+    S5 d: a term may also carry `sites` [c00, c10, c01, c11] (finite, not all
+    zero) and `periods_per_unit`, both or neither: the rate per ordered pair
+    of a chain of n periods here and one of m periods in the partner pool is
+    then k_pair*phi*(c00 + c10*n + c01*m + c11*n*m) (sites that grow with a
+    chain, e.g. a dead chain's interior H; the chain is picked in proportion
+    to them). Without them the rate is k_pair*phi per pair, as before."""
     out = []
     for template, term in _kernel_terms(pool_label, "kernel_transfer", terms,
-                                        KERNEL_TRANSFER_KEYS, "product"):
+                                        KERNEL_TRANSFER_KEYS, "product",
+                                        optional=KERNEL_TRANSFER_SITE_KEYS):
         num = lambda key, **kw: _kernel_number(pool_label, "kernel_transfer",
                                                template, key, term[key], **kw)
         k_pair = num("k_pair", positive=True)
         phi = num("phi", unit_interval=True)
+        site_law = {}
+        if "sites" in term:
+            sites = term["sites"]
+            if not isinstance(sites, (list, tuple)) or len(sites) != 4 or any(
+                    isinstance(c, bool) or not isinstance(c, (int, float))
+                    or not math.isfinite(c) for c in sites) \
+                    or not any(sites):
+                raise ValueError(f"Pool {pool_label}: kernel_transfer term "
+                                 f"{template!r}: sites={sites!r} must be four "
+                                 f"finite numbers [c00, c10, c01, c11], not "
+                                 f"all zero.")
+            site_law = {"sites": [float(c) for c in sites],
+                        "periods_per_unit": _kernel_integer(
+                            pool_label, "kernel_transfer", template,
+                            "periods_per_unit", term["periods_per_unit"])}
         partner, partner_product = term["partner"], term["partner_product"]
         if not isinstance(partner, str) or not partner:
             raise ValueError(f"Pool {pool_label}: kernel_transfer term "
@@ -900,7 +930,35 @@ def validate_kernel_transfer(pool_label, terms):
                              f"than the partner {partner!r}.")
         out.append({"template": template, "k_pair": k_pair, "phi": phi,
                     "partner": partner, "product": term["product"],
-                    "partner_product": partner_product})
+                    "partner_product": partner_product, **site_law})
+    return out
+
+
+def validate_kernel_move(pool_label, terms):
+    """Validate a kernel_move term list and return it normalized (shared like
+    validate_kernel_homolysis).
+
+    Each term (S5 d) is one kernel of a kernel-rates table whose events take
+    one chain of this pool into the `product` pool, length unchanged
+    (backbiting: an end radical becomes a mid-chain radical, and its
+    reverse), at k*(a*n + b) per chain [1/s], n in periods
+    (`periods_per_unit` per monomer unit), k > 0, a and b finite, not both
+    zero."""
+    out = []
+    for template, term in _kernel_terms(pool_label, "kernel_move", terms,
+                                        KERNEL_MOVE_KEYS, "product"):
+        num = lambda key, **kw: _kernel_number(pool_label, "kernel_move",
+                                               template, key, term[key], **kw)
+        k, a, b = num("k", positive=True), num("a"), num("b")
+        if a == 0.0 and b == 0.0:
+            raise ValueError(f"Pool {pool_label}: kernel_move term "
+                             f"{template!r}: a and b are both zero (no site "
+                             f"on any chain).")
+        out.append({"template": template, "k": k, "a": a, "b": b,
+                    "periods_per_unit": _kernel_integer(
+                        pool_label, "kernel_move", template,
+                        "periods_per_unit", term["periods_per_unit"]),
+                    "product": term["product"]})
     return out
 
 
@@ -1334,6 +1392,9 @@ class PolymerPoolConfig:
     # Pair transfer (S5 c + e) per validate_kernel_transfer: one chain of
     # this pool and one of its partner change pool, lengths unchanged.
     kernel_transfer: Optional[List[Dict[str, object]]] = None
+    # Pool move (S5 d) per validate_kernel_move: one chain of this pool
+    # changes pool, length unchanged (backbiting and its reverse).
+    kernel_move: Optional[List[Dict[str, object]]] = None
 
     # Exact per-chain mass defect [g/mol] of an X-loss feature pool (FR1-K1
     # mass contract, the round-70 #1 P1 trap): the feature pool keeps the
@@ -2308,6 +2369,10 @@ class HybridPolymerSystem(ReactionSystem):
                 object.__setattr__(pool, 'kernel_transfer',
                                    validate_kernel_transfer(
                                        pool.label, pool.kernel_transfer))
+            if pool.kernel_move is not None:
+                object.__setattr__(pool, 'kernel_move',
+                                   validate_kernel_move(
+                                       pool.label, pool.kernel_move))
 
             # Radical-homolysis kernel invariants (Stage 1, adjudicated round
             # 66). LAST line of defense, same rationale as above: the deck
@@ -2565,6 +2630,19 @@ class HybridPolymerSystem(ReactionSystem):
                             f"{sorted(label_to_pool)}.")
                     slots.append(tuple(target.mu_indices))
                 self.kernel_transfer_terms[i].append((dict(term), *slots))
+        # kernel_move: (term, product) moment slots, the same refusal.
+        self.kernel_move_terms = [[] for _ in self.polymer_pools]
+        for i, pool in enumerate(self.polymer_pools):
+            for term in pool.kernel_move or ():
+                target = label_to_pool.get(term["product"])
+                if target is None:
+                    raise ValueError(
+                        f"Pool {pool.label}: kernel_move term "
+                        f"{term['template']!r} names the product pool "
+                        f"{term['product']!r}, which is not among the "
+                        f"configured solver pools {sorted(label_to_pool)}.")
+                self.kernel_move_terms[i].append(
+                    (dict(term), tuple(target.mu_indices)))
 
     def _flatten_depropagation_state(self):
         """Flatten each pool's validated+normalized k_depropagation triplet
@@ -7893,6 +7971,17 @@ class HybridPolymerSystem(ReactionSystem):
             #   this    dmu_j -= k phi mu_j mu0'   -> product
             #   partner dmu_j' -= k phi mu0 mu_j'  -> partner_product
             # (partner == this pool: both debits land on it, ordered pairs).
+            # S5 d, a term with `sites` (c00, c10, c01, c11) in its period
+            # (m_j = c^j mu_j here, n_j = c^j nu_j in the partner): a pair of
+            # n and m periods reacts at k phi (c00 + c10 n + c01 m + c11 n m),
+            # so each chain is picked in proportion to its sites:
+            #   this    dm_j -= k phi (c00 m_j n0 + c10 m_{j+1} n0
+            #                          + c01 m_j n1 + c11 m_{j+1} n1)
+            #   partner dn_j -= k phi (c00 m0 n_j + c10 m1 n_j
+            #                          + c01 m0 n_{j+1} + c11 m1 n_{j+1})
+            # exact but for m3 / n3 on a side whose sites grow (the
+            # log-Lagrange closure); a flow outside the law's domain (a
+            # negative or unbounded moment) is skipped, loudly.
             if mu0 > 0.0:
                 for term, (q0, q1, q2), (a0, a1, a2), (b0, b1, b2) in \
                         self.kernel_transfer_terms[pool_i]:
@@ -7904,12 +7993,41 @@ class HybridPolymerSystem(ReactionSystem):
                         continue
                     nu1 = _softclamp(y[q1], self._softclamp_lam) / V_poly
                     nu2 = _softclamp(y[q2], self._softclamp_lam) / V_poly
-                    own = (kphi * mu0 * nu0 * V_poly,
-                           kphi * mu1 * nu0 * V_poly,
-                           kphi * mu2 * nu0 * V_poly)
-                    other = (kphi * mu0 * nu0 * V_poly,
-                             kphi * mu0 * nu1 * V_poly,
-                             kphi * mu0 * nu2 * V_poly)
+                    sites = term.get("sites")
+                    if sites is None:
+                        own = (kphi * mu0 * nu0 * V_poly,
+                               kphi * mu1 * nu0 * V_poly,
+                               kphi * mu2 * nu0 * V_poly)
+                        other = (kphi * mu0 * nu0 * V_poly,
+                                 kphi * mu0 * nu1 * V_poly,
+                                 kphi * mu0 * nu2 * V_poly)
+                    else:
+                        c00, c10, c01, c11 = sites
+                        c_k = float(term["periods_per_unit"])
+                        m = (mu0, c_k * mu1, c_k * c_k * mu2,
+                             c_k ** 3 * mu3)
+                        n = (nu0, c_k * nu1, c_k * c_k * nu2,
+                             c_k ** 3 * _safe_mu3_from_mu012(nu0, nu1, nu2))
+                        own = tuple([kphi * (c00 * m[j] * n[0]
+                                             + c10 * m[j + 1] * n[0]
+                                             + c01 * m[j] * n[1]
+                                             + c11 * m[j + 1] * n[1])
+                                     / c_k ** j * V_poly for j in range(3)])
+                        other = tuple([kphi * (c00 * m[0] * n[j]
+                                               + c10 * m[1] * n[j]
+                                               + c01 * m[0] * n[j + 1]
+                                               + c11 * m[1] * n[j + 1])
+                                       / c_k ** j * V_poly for j in range(3)])
+                        if not all([np.isfinite(v) and v >= 0.0
+                                    for v in own + other]):
+                            if pool.label not in self._kernel_guard_warned:
+                                self._kernel_guard_warned.add(pool.label)
+                                logging.warning(
+                                    "Polymer pool '%s': kernel_transfer term "
+                                    "%s skipped -- flows %s / %s outside its "
+                                    "site law's domain.", pool.label,
+                                    term["template"], own, other)
+                            continue
                     dmu0_dt -= own[0] / V_poly
                     dmu1_dt -= own[1] / V_poly
                     dmu2_dt -= own[2] / V_poly
@@ -7922,6 +8040,34 @@ class HybridPolymerSystem(ReactionSystem):
                     dn_dt[b0] += other[0]
                     dn_dt[b1] += other[1]
                     dn_dt[b2] += other[2]
+
+            # kernel_move (S5 d): a chain of n periods leaves for the product
+            # pool, length unchanged, at k*(a n + b) (m_j = c^j mu_j):
+            #   this dm_j -= k (a m_{j+1} + b m_j) -> product
+            # exact but for m3 when a != 0 (the log-Lagrange closure); a flow
+            # outside the law's domain is skipped, loudly.
+            if mu0 > 0.0:
+                for term, (p0, p1, p2) in self.kernel_move_terms[pool_i]:
+                    c_k = float(term["periods_per_unit"])
+                    m = (mu0, c_k * mu1, c_k * c_k * mu2, c_k ** 3 * mu3)
+                    flow = tuple([term["k"] * (term["a"] * m[j + 1]
+                                               + term["b"] * m[j])
+                                  / c_k ** j for j in range(3)])
+                    if not all([np.isfinite(v) and v >= 0.0 for v in flow]):
+                        if pool.label not in self._kernel_guard_warned:
+                            self._kernel_guard_warned.add(pool.label)
+                            logging.warning(
+                                "Polymer pool '%s': kernel_move term %s "
+                                "skipped -- flows %s outside its site "
+                                "law's domain.", pool.label,
+                                term["template"], flow)
+                        continue
+                    dmu0_dt -= flow[0]
+                    dmu1_dt -= flow[1]
+                    dmu2_dt -= flow[2]
+                    dn_dt[p0] += flow[0] * V_poly
+                    dn_dt[p1] += flow[1] * V_poly
+                    dn_dt[p2] += flow[2] * V_poly
 
             # Side-group homolysis initiation kernel (SGH kernel-v2, explicit
             # Br-inventory depletion; adjudicated spar r103 / plan r104).

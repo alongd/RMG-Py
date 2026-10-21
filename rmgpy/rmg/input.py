@@ -73,6 +73,7 @@ from rmgpy.solver.polymer import (validate_k_depropagation,
                                   validate_kernel_homolysis,
                                   validate_kernel_recombination,
                                   validate_kernel_transfer,
+                                  validate_kernel_move,
                                   validate_radical_qssa_unzip,
                                   validate_side_group_homolysis)
 from rmgpy.solver.simple import SimpleReactor
@@ -277,6 +278,8 @@ def polymer(label: str,
             kernel_recombination: Optional[list] = None,
             end_alkene_site: Optional[str] = None,
             kernel_transfer: Optional[list] = None,
+            interior_feature: Optional[str] = None,
+            kernel_move: Optional[list] = None,
             ):
     """
     Helper function exposed in the input file to define a Polymer Pool.
@@ -416,12 +419,23 @@ def polymer(label: str,
             this pool and one of the `partner` pool move, lengths unchanged,
             into the `product` and `partner_product` pools (end + end
             disproportionation, its reverse), each term exactly {template,
-            k_pair, phi, partner, product, partner_product}
+            k_pair, phi, partner, product, partner_product}, optionally with
+            {sites, periods_per_unit} for sites that grow with a chain
             (validate_kernel_transfer).
+        interior_feature (str): 'radical' or 'alkene' declares this pool an
+            explicit mid-chain pool: its proxy is the dead chain's oligomer
+            with an interior radical or an internal C=C at its most central
+            backbone position. Mutually exclusive with end_radical_site and
+            end_alkene_site. Default None.
+        kernel_move (list): catalog-driven pool move: one chain of this pool
+            into the `product` pool, length unchanged, at k*(a n + b) per
+            chain (backbiting and its reverse), each term exactly {template,
+            k, a, b, periods_per_unit, product} (validate_kernel_move).
     """
-    # Catalog-driven pool kernels (S5 a + b, c + e): the shared validators,
-    # re-raised as deck errors; kernel_homolysis carries this pool's backbone
-    # homolysis, so a second representation of it on the same pool is refused.
+    # Catalog-driven pool kernels (S5 a + b, c + e, d): the shared
+    # validators, re-raised as deck errors; kernel_homolysis carries this
+    # pool's backbone homolysis, so a second representation of it on the same
+    # pool is refused.
     try:
         if kernel_homolysis is not None:
             kernel_homolysis = validate_kernel_homolysis(label, kernel_homolysis)
@@ -429,6 +443,8 @@ def polymer(label: str,
             kernel_recombination = validate_kernel_recombination(label, kernel_recombination)
         if kernel_transfer is not None:
             kernel_transfer = validate_kernel_transfer(label, kernel_transfer)
+        if kernel_move is not None:
+            kernel_move = validate_kernel_move(label, kernel_move)
     except ValueError as e:
         raise InputError(str(e))
     if kernel_homolysis is not None:
@@ -710,10 +726,12 @@ def polymer(label: str,
         thermal_analysis_inputs=thermal_analysis_inputs,
         end_radical_site=end_radical_site,
         end_alkene_site=end_alkene_site,
+        interior_feature=interior_feature,
     )
     poly_obj.kernel_homolysis = kernel_homolysis
     poly_obj.kernel_recombination = kernel_recombination
     poly_obj.kernel_transfer = kernel_transfer
+    poly_obj.kernel_move = kernel_move
 
     # 1b. Round-72 P1 STRUCTURAL layer of the side-group channel law,
     #     enforced against the PARSED monomer at deck-read time: the

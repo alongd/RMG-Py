@@ -41,7 +41,7 @@ from rmgpy.solver.termination import TerminationPolymerConversion
 from rmgpy.solver.polymer import (HybridPolymerSystem, MassTransferConfig, PolymerPoolConfig,
                                   validate_k_depropagation, validate_k_homolysis,
                                   validate_kernel_homolysis, validate_kernel_recombination,
-                                  validate_kernel_transfer,
+                                  validate_kernel_transfer, validate_kernel_move,
                                   validate_radical_qssa_unzip,
                                   validate_side_group_homolysis)
 from rmgpy.polymer import strip_rmg_index_suffix
@@ -1286,6 +1286,7 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
                 kernel_recombination=getattr(spc, 'kernel_recombination',
                                              None),
                 kernel_transfer=getattr(spc, 'kernel_transfer', None),
+                kernel_move=getattr(spc, 'kernel_move', None),
             )
             pools.append(pool)
         else:
@@ -1375,16 +1376,18 @@ class PolymerPool(object):
                  kernel_homolysis: Optional[list] = None,
                  kernel_recombination: Optional[list] = None,
                  kernel_transfer: Optional[list] = None,
+                 kernel_move: Optional[list] = None,
                  ):
         self.label = label
         self.xs = xs
-        # Catalog-driven pool kernels (S5 a + b, c + e): term lists,
+        # Catalog-driven pool kernels (S5 a + b, c + e, d): term lists,
         # validated + normalized in to_config (validate_kernel_homolysis /
-        # validate_kernel_recombination / validate_kernel_transfer); targets
-        # resolve in the solver.
+        # validate_kernel_recombination / validate_kernel_transfer /
+        # validate_kernel_move); targets resolve in the solver.
         self.kernel_homolysis = kernel_homolysis
         self.kernel_recombination = kernel_recombination
         self.kernel_transfer = kernel_transfer
+        self.kernel_move = kernel_move
         self.monomer = monomer
         self.explicit_map = explicit_map
         self.mu_species = mu_species
@@ -1660,6 +1663,8 @@ class PolymerPool(object):
                                   validate_kernel_recombination(self.label, self.kernel_recombination)),
             kernel_transfer=(None if self.kernel_transfer is None else
                              validate_kernel_transfer(self.label, self.kernel_transfer)),
+            kernel_move=(None if self.kernel_move is None else
+                         validate_kernel_move(self.label, self.kernel_move)),
             repeat_unit_atoms=_element_count_tuple(self.monomer),
             end_group_atoms=_end_group_atoms(
                 getattr(self.proxy_species, "end_groups", None)),
@@ -1898,6 +1903,8 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
                                   else validate_kernel_recombination(b, spc.kernel_recombination)),
             kernel_transfer=(None if getattr(spc, "kernel_transfer", None) is None
                              else validate_kernel_transfer(b, spc.kernel_transfer)),
+            kernel_move=(None if getattr(spc, "kernel_move", None) is None
+                         else validate_kernel_move(b, spc.kernel_move)),
             # FR1-K1 mass contract: an X-loss feature daughter's exact
             # per-chain defect (M_X of the spawning channel's gas_product,
             # pinned by generate_side_loss_daughters) must survive config

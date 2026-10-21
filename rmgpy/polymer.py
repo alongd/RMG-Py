@@ -257,6 +257,7 @@ class Polymer(Species):
                  side_group_homolysis: Optional[list] = None,
                  side_loss_channel: Optional[str] = None,
                  end_alkene_site: Optional[str] = None,
+                 interior_feature: Optional[str] = None,
                  **kwargs,
                  ):
         # k_unzip/k_scission/radical_qssa_unzip/k_homolysis/end_radical_site
@@ -309,6 +310,23 @@ class Polymer(Species):
                 f"Polymer '{label}': end_alkene_site and end_radical_site "
                 f"are mutually exclusive (one pool is one end type).")
         self.end_alkene_site = end_alkene_site
+        # interior_feature marks an explicit mid-chain pool (S5 d): 'radical'
+        # (an interior radical, the H-transfer and backbiting product) or
+        # 'alkene' (an internal C=C, the mid-chain disproportionation
+        # donor's product). Its proxy is the dead chain's oligomer with the
+        # feature at the most central backbone position (interior_proxy);
+        # the fingerprint carries an _Interior segment.
+        if interior_feature not in (None, 'radical', 'alkene'):
+            raise InputError(
+                f"Polymer '{label}': interior_feature must be None, "
+                f"'radical' or 'alkene', got {interior_feature!r}.")
+        for other, value in (('end_radical_site', end_radical_site),
+                             ('end_alkene_site', end_alkene_site)):
+            if interior_feature is not None and value is not None:
+                raise InputError(
+                    f"Polymer '{label}': interior_feature and {other} are "
+                    f"mutually exclusive (one pool is one chain type).")
+        self.interior_feature = interior_feature
         # Side-group homolysis initiation kernel (FR1-K1, adjudicated round
         # 70): LIST of channel dicts (each exactly {label, A, n, Ea,
         # site_selector, sites_per_unit, gas_product}; site_selector is the
@@ -437,6 +455,9 @@ class Polymer(Species):
             # Terminal-alkene pool: the same reason (distinct from the
             # dead-chain pool's trimer).
             reactive_proxy = self.end_alkene_proxy
+        elif self.interior_feature is not None:
+            # Mid-chain pools (S5 d): the same reason.
+            reactive_proxy = self.interior_proxy
         else:
             reactive_proxy = self.feature_proxy or self.baseline_proxy
         self.molecule = reactive_proxy.molecule
@@ -577,7 +598,10 @@ class Polymer(Species):
                     # Terminal-alkene pools (S5 c + e): distinct from the
                     # dead-chain and end-radical pools of the same monomer.
                     feat += f'_EndAlkene-{self.end_alkene_site}'
-                eg ='_'.join(eg.fingerprint for eg in self.end_groups) if self.end_groups else ''
+                if getattr(self, 'interior_feature', None):
+                    # Mid-chain pools (S5 d): the same reason.
+                    feat += f'_Interior-{self.interior_feature}'
+                eg = '_'.join(eg.fingerprint for eg in self.end_groups) if self.end_groups else ''
                 self._fingerprint = f'Polymer_{self.monomer.fingerprint}{feat}_EG-{eg}_{self.cutoff}'
         return self._fingerprint
 
@@ -644,6 +668,64 @@ class Polymer(Species):
             spc.is_polymer_proxy = True
             self._end_alkene_proxy = spc
         return getattr(self, '_end_alkene_proxy', None)
+
+    @property
+    def interior_proxy(self) -> Optional[Species]:
+        """The cached mid-chain oligomer proxy (interior_feature pools only,
+        else None): the dead chain's capped oligomer (baseline_proxy) with,
+        at its most central hydrogen-bearing backbone atom (fewest bonds to
+        the farthest heavy atom; two or more heavy neighbours), one H off
+        and a radical ('radical'), or a C=C to its most central such
+        neighbour, one H off each ('alkene') -- what H transfer and
+        mid-chain disproportionation make of a chain's interior."""
+        feature = getattr(self, 'interior_feature', None)
+        if feature and getattr(self, '_interior_proxy', None) is None:
+            base = self.baseline_proxy
+            if base is None:
+                return None
+            mol = base.molecule[0].copy(deep=True)
+            heavy = [a for a in mol.atoms if not a.is_hydrogen()]
+            far = {}
+            for atom in heavy:
+                seen, frontier, depth = {atom}, [atom], 0
+                while frontier:
+                    nxt = [b for a in frontier for b in a.edges if not b.is_hydrogen() and b not in seen]
+                    seen.update(nxt)
+                    frontier, depth = nxt, depth + (1 if nxt else 0)
+                far[atom] = depth
+
+            def inner(a):
+                return (sum(1 for b in a.edges if not b.is_hydrogen()) >= 2
+                        and any(b.is_hydrogen() for b in a.edges))
+
+            sites = sorted((a for a in heavy if inner(a)), key=lambda a: (far[a], mol.atoms.index(a)))
+            if not sites:
+                raise ValueError(f"Polymer '{self.label}': the dead chain's oligomer has no interior "
+                                 f"hydrogen-bearing backbone atom for an interior {feature}.")
+            centre = sites[0]
+            mol.remove_atom(next(b for b in centre.edges if b.is_hydrogen()))
+            if feature == 'radical':
+                centre.increment_radical()
+            else:
+                partners = sorted((b for b in centre.edges if not b.is_hydrogen() and inner(b)
+                                   and mol.get_bond(centre, b).is_single()),
+                                  key=lambda a: (far[a], mol.atoms.index(a)))
+                if not partners:
+                    raise ValueError(f"Polymer '{self.label}': the most central backbone atom has no "
+                                     f"interior hydrogen-bearing neighbour for an internal C=C.")
+                partner = partners[0]
+                mol.remove_atom(next(b for b in partner.edges if b.is_hydrogen()))
+                mol.get_bond(centre, partner).increment_order()
+            mol.update()
+            # a fresh graph, as in end_alkene_proxy
+            mol = Molecule().from_adjacency_list(mol.to_adjacency_list())
+            mol.assign_atom_ids()
+            spc = Species(molecule=[mol])
+            spc.molecule = generate_resonance_structures(mol, clar_structures=False, keep_isomorphic=False,
+                                                         filter_structures=True, save_order=True)
+            spc.is_polymer_proxy = True
+            self._interior_proxy = spc
+        return getattr(self, '_interior_proxy', None)
 
     @property
     def backbone_group(self) -> 'Group':
@@ -800,11 +882,13 @@ class Polymer(Species):
                                                  None))
         other.end_radical_site = getattr(self, 'end_radical_site', None)
         other.end_alkene_site = getattr(self, 'end_alkene_site', None)
-        # Catalog-driven pool kernels (S5 a + b, c + e): losing a term list on
-        # copy would silently disable the kernel.
+        other.interior_feature = getattr(self, 'interior_feature', None)
+        # Catalog-driven pool kernels (S5 a + b, c + e, d): losing a term list
+        # on copy would silently disable the kernel.
         other.kernel_homolysis = deepcopy(getattr(self, 'kernel_homolysis', None))
         other.kernel_recombination = deepcopy(getattr(self, 'kernel_recombination', None))
         other.kernel_transfer = deepcopy(getattr(self, 'kernel_transfer', None))
+        other.kernel_move = deepcopy(getattr(self, 'kernel_move', None))
         # Side-group homolysis kernel channels + X-loss feature-pool
         # identity + exact mass-defect contract (FR1-K1): losing the
         # channel list on copy would silently disable the kernel; losing
@@ -1118,6 +1202,8 @@ class Polymer(Species):
             return self.end_radical_proxy
         elif getattr(self, 'end_alkene_site', None):
             return self.end_alkene_proxy
+        elif getattr(self, 'interior_feature', None):
+            return self.interior_proxy
         else:
             return self.feature_proxy or self.baseline_proxy
 
@@ -6338,6 +6424,11 @@ POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_KERNELS = "3.2"
 # unchanged). Stamped iff any pool carries it; a 3.2 reader would replay the
 # pools without the transfer, so the minor bumps.
 POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_TRANSFER = "3.3"
+# Schema 3.4 (S5 d): `catalog_kernels` may carry "move" (the normalized
+# kernel_move terms) and "transfer" terms with `sites` (a rate that grows
+# with a chain). Stamped iff any pool carries either; a 3.3 reader would
+# replay them without the move or with constant sites.
+POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_MOVE = "3.4"
 POLYMER_POOLS_SIDECAR_FILENAME = "polymer_pools.json"
 
 # Recognized thermal_analysis_inputs fields (schema 2.9). Per-pool fields
@@ -8212,12 +8303,13 @@ def _serialize_pool_for_sidecar(pool: 'Polymer',
     if homolysis_block is not None:
         d["homolysis_initiation"] = homolysis_block
     # Catalog-driven pool kernels (schema 3.2, S5 a + b; "transfer" 3.3,
-    # S5 c + e). Absent -> emit nothing (kernel-free pools stay
-    # byte-identical, presence-gated).
+    # S5 c + e; "move" 3.4, S5 d). Absent -> emit nothing (kernel-free pools
+    # stay byte-identical, presence-gated).
     catalog_kernels = {name: deepcopy(terms) for name, terms in (
         ("homolysis", getattr(pool, "kernel_homolysis", None)),
         ("recombination", getattr(pool, "kernel_recombination", None)),
-        ("transfer", getattr(pool, "kernel_transfer", None))) if terms is not None}
+        ("transfer", getattr(pool, "kernel_transfer", None)),
+        ("move", getattr(pool, "kernel_move", None))) if terms is not None}
     if catalog_kernels:
         d["catalog_kernels"] = catalog_kernels
     # Side-group homolysis block (schema 2.7, FR1-K2). Absent -> emit
@@ -9331,6 +9423,11 @@ def build_polymer_moments_artifact(pool_registry,
     # Pair transfer (schema 3.3, S5 c + e) -- the rung above 3.2.
     if any("transfer" in p.get("catalog_kernels", {}) for p in pools):
         schema_version = POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_TRANSFER
+    # Pool moves and growing sites (schema 3.4, S5 d) -- the rung above 3.3.
+    if any("move" in p.get("catalog_kernels", {})
+           or any("sites" in t for t in p.get("catalog_kernels", {}).get("transfer", ()))
+           for p in pools):
+        schema_version = POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_MOVE
 
     # conventions.condensed_species closure (schema 2.5): a spawned pool's
     # phase_species (canonical proxy + mu-dummies collected from the same
