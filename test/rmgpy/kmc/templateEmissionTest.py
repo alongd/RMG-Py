@@ -3113,3 +3113,48 @@ def test_the_whole_depository_is_read_as_a_melt_holds_it():
     assert failures == [], failures
     for p in out:
         assert sorted(o["entry"]["index"] for o in base_template(p)["overrides"]) == [7]
+
+
+def _production_pair(estimates):
+    """ProductionRates on a stubbed pair: the forward estimate (its source the
+    toy depository) and the compiler's reference-thermo reverse, which names
+    no forward source (the compiler attaches ``forward_rate_source`` only to
+    a source with a verbose comment)."""
+    from types import SimpleNamespace
+    fwd = {"kind": "RMG family estimate", "reference": "forward RMG family estimate",
+           "source": "Kinetics Depository toy_cc/training", "entry": "C5H11 + C8H17 <=> C13H28",
+           "rank": 6, "family_template_direction": "forward"}
+
+    def record(orientation, rate_source, k):
+        return SimpleNamespace(orientation=orientation, template="T", rate_source=rate_source,
+                               k_table={"T": list(GRID), "k": list(k)}, ssa_multiplier=1.0,
+                               event_id=orientation, status="emitted")
+    records = [record("as_generated", dict(fwd), K_DEP) for _ in range(estimates)] + [
+        record("reversed", {"kind": "reference-thermo reverse", "reference": "k_family / Kc"}, K_RULE)]
+    rates = te.ProductionRates.__new__(te.ProductionRates)
+    rates.calls = 0
+    rates._pair = lambda request: (tuple(records), "", "generator")
+    return rates, fwd
+
+
+def test_the_production_reverse_names_the_forward_selection_it_inverts():
+    """The reverse of a depository-rated pair is k_depository / Kc: the
+    probe names the pair's forward estimate as its forward selection, so the
+    gate sees the depository RMG rates it from."""
+    rates, fwd = _production_pair(1)
+    req = te.RateRequest("toy_cc", "T", "reversed", {}, {})
+    got = rates(req)
+    assert got.problems == ()
+    assert got.provenance["selection"]["kind"] == "reference-thermo reverse"
+    assert got.provenance["selection"]["forward"] == te._selection(fwd)
+    ahead = rates(te.RateRequest("toy_cc", "T", "as_generated", {}, {}))
+    assert ahead.provenance["selection"] == te._selection(fwd) and "forward" not in ahead.provenance["selection"]
+
+
+def test_a_production_reverse_without_one_estimate_names_no_forward_selection():
+    """No (or no single) forward estimate in the pair: no forward selection is
+    invented, so the gate refuses the override by name."""
+    for estimates in (0, 2):
+        rates, _fwd = _production_pair(estimates)
+        got = rates(te.RateRequest("toy_cc", "T", "reversed", {}, {}))
+        assert "forward" not in got.provenance["selection"]
