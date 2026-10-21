@@ -89,7 +89,7 @@ GOLDEN = '''polymer(
     moments=[2.3651094350938804, 35.47664152640821, 591.2773587734702],
     initial_mass=0.9952320765335197,
 )
-phase = polymer_phase(label='toylinearp_melt', species=['toylinearp'], solvent='toylinearp', density=(850.0, 'kg/m^3'))
+phase = polymer_phase(label='toylinearp_melt', species=['toylinearp'], solvent='toylinearp', density=(850.0, 'kg/m^3'), residence={'*': 'melt', 'H': 'melt', 'H2': 'melt', 'N2': 'gas'})
 hybridPolymerReactor(
     temperature=(700.0, 'K'),
     pressure=(1.0, 'bar'),
@@ -630,8 +630,12 @@ def test_phase_kinetics_ratio_is_recorded_and_flagged(setup):
     conv = json.loads((out / "conventions.json").read_text())
     names = {c["name"]: c["value"] for c in conv["conventions"]}
     v_kmc = 1.0 / 850.0                                 # 1 kg dry polymer at 850 kg/m^3
-    v_gas = 1.0 * constants.R * 700.0 / 1.0e5          # 1 mol bath at 700 K, 1 bar
-    ratio = v_kmc / v_gas
+    # H and H2 are melt-resident: MoM's concentration is n / V_poly, its pool
+    # mass a mu1 (no end groups) over the density -- not 1, so still flagged
+    facts = json.loads((out / "producer.json").read_text())["facts"]
+    v_poly = facts["a_g_mol"] * facts["moments_mol"][1] / 1000.0 / 850.0
+    ratio = v_kmc / v_poly
+    assert abs(ratio - 1.0) > 1.0e-6
     kinetics = names["phase_kinetics"]
     assert set(kinetics["ratio_by_species"]) == {"H", "H2"}
     for value in kinetics["ratio_by_species"].values():
