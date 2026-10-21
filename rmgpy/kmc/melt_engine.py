@@ -107,6 +107,17 @@ divided by the sum of ``leak_den`` (a ratio of unbiased ensemble sums,
 consistent in the number of runs).  Nothing else is added: the open segment's thinned hazard estimate
 (``open_thinned``) is reported as a labelled hint only.
 
+Excluded templates
+------------------
+``excluded`` (template names) restricts the chemistry to the other loaded
+templates, their weights unchanged: an excluded template is still matched and
+indexed, but it never fires, it is no MET class row (so no part of ``k_act``
+or of any escape factor), and its propensity (allowed and leak transitions
+alike, intrinsic: no escape factor) accrues to ``excluded_num``, an exact
+integral to the clock outside ``leak_num`` and ``leak_den``
+(``EXCLUDED_DEFINITION``).  With nothing excluded every quantity is the
+unrestricted engine's.
+
 Matching cost: structural matches use the matcher's own embedding, finish
 and evaluate steps on a component-local view, with one optimization: hydrogen
 leaves that no edit names are enumerated in increasing atom order only
@@ -180,6 +191,9 @@ LEAK_DEFINITION = (
     "never committed, NOT part of leak_den) = the open segment's thinned proposal hazard x the "
     "running mean phi of each channel, a hint whose source is labelled (a sampled mean before a "
     "channel's first proposal is labelled sampled)")
+EXCLUDED_DEFINITION = (
+    "excluded_num = int of the intrinsic propensity (allowed and leak transitions, no escape factor) of the "
+    "excluded templates dt; they never fire and are no part of k_act, so it is outside leak_num and leak_den")
 SPIN_FACTOR_RANGE = (0.25, 1.0)
 BUILTIN_SPECIES = ("H", "H2")
 
@@ -1151,13 +1165,15 @@ class Propensities:
     """``enabled``: the proposal hazard of every firing channel; ``thinned``:
     the part of it proposed at intrinsic weight and accepted with the phi of
     its product pair (its physical hazard is ``thinned * E[phi]``); ``leak``:
-    refused branch-creating transitions (physical rates, never fired)."""
+    refused branch-creating transitions (physical rates, never fired);
+    ``excluded``: the intrinsic propensity of the excluded templates (never fired)."""
 
     enabled: float
     leak: float
     channels: Tuple[Tuple[Tuple, float], ...]
     thinned: float = 0.0
     non_thinned: float = 0.0   # fsum of the non-thinned channels (no subtraction of rounded totals)
+    excluded: float = 0.0
 
     @property
     def total(self) -> float:
@@ -1174,6 +1190,7 @@ class PairRate:
     allowed: float        # propensity (1/s) of the allowed MET transitions of the pair
     leak: float           # propensity (1/s) of the refused (branching) ones
     classes: Tuple[Tuple[int, float, float], ...]   # (class, T allowed, T leak)
+    excluded: float = 0.0  # intrinsic propensity (1/s) of the excluded templates' rows, outside k_act
 
 
 @dataclass(frozen=True)
@@ -1213,10 +1230,12 @@ class MeltEngine:
     ``templates(temperature)`` (``PayloadCatalog``); ``rng``: a
     ``numpy.random.Generator``; ``state``: a ``MeltState`` (default: the
     declaration materialized, declared contents only); ``volume_m3``: the
-    constant volume (default: the declaration's representative volume)."""
+    constant volume (default: the declaration's representative volume);
+    ``excluded``: names of loaded templates that never fire (module docstring,
+    Excluded templates)."""
 
     def __init__(self, spec, catalog, temperature: float, rng, *, state=None, volume_m3=None,
-                 quotient: bool = True, temperature_range=None):
+                 quotient: bool = True, temperature_range=None, excluded: Iterable[str] = ()):
         from rmgpy.polymer_spec import LinearHomopolymerSpec, PolymerSpec
         if not isinstance(spec, (LinearHomopolymerSpec, PolymerSpec)):
             raise DeclarationError(
@@ -1252,10 +1271,16 @@ class MeltEngine:
         self.templates: Tuple[wm.Template, ...] = ()
         self.classes: Tuple[_Class, ...] = ()
         self._load(temperature)
+        excluded = set(excluded)
+        unknown = sorted(excluded - {t.name for t in self.templates})
+        if unknown:
+            raise DeclarationError(f"excluded templates {unknown} are not loaded")
+        self.excluded = frozenset(c.index for c in self.classes if c.name in excluded)
         self.declared_mobile_participation = self._declared_mobile_participation()
         # clock
         self.time = 0.0
         self.leak_num = self.leak_den = 0.0
+        self.excluded_num = self._excluded_num_c = 0.0
         self.non_thinned = self.open_thinned = 0.0
         self._non_thinned_c = 0.0
         self.phi_sum = 0.0
@@ -1607,16 +1632,22 @@ class MeltEngine:
         # one row per class (and per override of it: (class, T, T leak, override))
         classes = tuple((ci, a / self.classes[ci].divisor, l / self.classes[ci].divisor)
                         + (() if o < 0 else (o,)) for (ci, o), (a, l) in sorted(per.items()))
+        excluded = 0.0
+        if self.excluded:
+            excluded = math.fsum(self._row_weight(r) * (r[1] + r[2]) for r in classes
+                                 if r[0] in self.excluded) / self.nav
+            classes = tuple(r for r in classes if r[0] not in self.excluded)
         k_allowed = math.fsum(self._row_weight(r) * r[1] for r in classes)
         k_leak = math.fsum(self._row_weight(r) * r[2] for r in classes)
         k_act = k_allowed + k_leak
-        if k_act <= 0.0:
-            return None
-        k_d = self.transport.k_diffusion(self.temperature, e0.met_length, e1.met_length)
         bypass = e0.species is not None or e1.species is not None
+        if k_act <= 0.0:
+            # only excluded rows: no MET class pairs them in the restricted chemistry
+            return PairRate(0.0, 0.0, 0.0, 1.0, bypass, 0.0, 0.0, (), excluded) if excluded > 0.0 else None
+        k_d = self.transport.k_diffusion(self.temperature, e0.met_length, e1.met_length)
         phi = 1.0 if bypass else escape_factor(k_act, k_d)
         return PairRate(k_act, k_allowed, k_d, phi, bypass, phi * k_allowed / self.nav,
-                        phi * k_leak / self.nav, classes)
+                        phi * k_leak / self.nav, classes, excluded)
 
     def _refresh_met(self, changed: Optional[Iterable[int]] = None):
         comps = sorted(self.met_comps)
@@ -1638,17 +1669,23 @@ class MeltEngine:
 
     # -- propensities ---------------------------------------------------------
     def propensities(self) -> Propensities:
-        channels, leak = [], []
+        channels, leak, excluded = [], [], []
         for cls in self.classes:
             w = self.weights[cls.index]
+            out = cls.index in self.excluded
             if not cls.bimolecular:
+                if out:
+                    excluded += [w * self.uni_allowed[cls.index], w * self.uni_leak[cls.index]]
+                    continue
                 channels.append((("uni", cls.index), w * self.uni_allowed[cls.index]))
                 leak.append(w * self.uni_leak[cls.index])
             elif not cls.met_forward:
                 for (ci, k0, k1) in sorted((k for k in self.channels if k[0] == cls.index), key=repr):
                     pairs = (self.S[(ci, 0, k0)] * self.S[(ci, 1, k1)] - self.X[(ci, k0, k1)])
                     a = self._kind_weight(ci, k0, k1) * pairs / (cls.divisor * self.nav)
-                    if _pair_leak(cls, k0, k1):
+                    if out:
+                        excluded.append(a)
+                    elif _pair_leak(cls, k0, k1):
                         leak.append(a)
                     else:
                         channels.append((("bi", ci, k0, k1), a))
@@ -1656,16 +1693,20 @@ class MeltEngine:
                           if self.uni_o_allowed[k] or self.uni_o_leak[k]):
             ci, o = key
             w = self._ovr[ci].weights[o]
+            if ci in self.excluded:
+                excluded += [w * self.uni_o_allowed[key], w * self.uni_o_leak[key]]
+                continue
             channels.append((("uni_o", ci, o), w * self.uni_o_allowed[key]))
             leak.append(w * self.uni_o_leak[key])
         met = math.fsum(r.allowed for r in self.pairs.values())
         channels.append((("met",), met))
         leak.append(math.fsum(r.leak for r in self.pairs.values()))
+        excluded.append(math.fsum(r.excluded for r in self.pairs.values()))
         thinned = math.fsum(a for k, a in channels if k[0] != "met" and self.classes[k[1]].met_reverse)
         non_thinned = math.fsum(a for k, a in channels
                                 if k[0] == "met" or not self.classes[k[1]].met_reverse)
         return Propensities(math.fsum(a for _k, a in channels), math.fsum(leak), tuple(channels),
-                            thinned, non_thinned)
+                            thinned, non_thinned, math.fsum(excluded))
 
     # -- snapshots (incremental == full recompute) ---------------------------
     def snapshot(self):
@@ -1695,7 +1736,7 @@ class MeltEngine:
         other.__dict__.update({k: v for k, v in self.__dict__.items()
                                if k in ("spec", "transport", "catalog", "rng", "state", "volume", "nav",
                                         "identity", "temperature", "templates", "classes", "weights",
-                                        "quotient", "temperature_range", "_ovr")})
+                                        "quotient", "temperature_range", "_ovr", "excluded")})
         other._index_revision = 0
         other.rebuild()
         return other.snapshot()
@@ -2021,6 +2062,10 @@ class MeltEngine:
                 "thinned_proposals": self.thinned_proposals, "open_thinned": self.open_thinned,
                 "open_phi_source": self._open_phi_source if self.open_thinned else "none"}
 
+    def excluded_estimate(self) -> dict:
+        return {"definition": EXCLUDED_DEFINITION, "excluded_num": self.excluded_num,
+                "templates": sorted(self.classes[i].name for i in self.excluded)}
+
     # -- clock ----------------------------------------------------------------
     def _token(self):
         return (id(self.state), self.state.state_hash(), self.temperature, self.volume,
@@ -2033,8 +2078,9 @@ class MeltEngine:
     def _set_den(self):
         self.leak_den = self.leak_num + self.non_thinned + self.phi_sum
 
-    def _integrate(self, elapsed, leak, non_thinned):
+    def _integrate(self, elapsed, leak, non_thinned, excluded=0.0):
         self.leak_num = self._leak_num_c + leak * elapsed
+        self.excluded_num = self._excluded_num_c + excluded * elapsed
         self.non_thinned = self._non_thinned_c + non_thinned * elapsed
         self.open_thinned = 0.0
         self._set_den()
@@ -2044,6 +2090,7 @@ class MeltEngine:
     def _commit(self):
         self._segment_start = self.time
         self._leak_num_c = self.leak_num
+        self._excluded_num_c = self.excluded_num
         self._non_thinned_c = self.non_thinned
         self.open_thinned = 0.0   # a view-only hint, never committed
         self._set_den()
@@ -2052,6 +2099,7 @@ class MeltEngine:
     def _view_to_horizon(self, until, leak, non_thinned, thinned=0.0, prop=None):
         elapsed = until - self._segment_start
         self.leak_num = self._leak_num_c + leak * elapsed
+        self.excluded_num = self._excluded_num_c + (prop.excluded if prop else 0.0) * elapsed
         self.non_thinned = self._non_thinned_c + non_thinned * elapsed
         self.open_thinned = self._open_thinned_rate(prop) * elapsed if (prop and thinned > 0) else 0.0
         self._set_den()
@@ -2084,7 +2132,7 @@ class MeltEngine:
                 self._pending = _Pending(pending.elapsed, pending.absorbing, enabled, leak,
                                          self.time, self._token())
                 return None
-            self._integrate(pending.elapsed, leak, prop.non_thinned)
+            self._integrate(pending.elapsed, leak, prop.non_thinned, prop.excluded)
             r = self.rng.random() * enabled
             key = None
             for k, a in prop.channels:
@@ -2159,6 +2207,7 @@ class MeltEngine:
             "leak_fraction": self.leak_num / self.leak_den if self.leak_den else 0.0,
             "leak_definition": LEAK_DEFINITION,
             "leak_estimate": self.leak_estimate(),
+            "excluded": self.excluded_estimate(),
             "family_counts": dict(self.family_counts), "template_counts": dict(self.template_counts),
             "met": dict(self.met_counts), "conservation_checks": self.conservation_checks,
             "components": len(comps), "composition": {f"{k[0]}{k[1] or ''}": v for k, v in sorted(total.items(), key=str)},
@@ -2199,6 +2248,6 @@ class MeltEngine:
 
 __all__ = [
     "ComponentPairSampler", "DeclarationError", "EngineError", "EngineTransition", "Event",
-    "LEAK_ESTIMATOR", "MET_SCHEMA", "MeltEngine", "PairRate", "PayloadCatalog", "Propensities", "RunResult",
+    "EXCLUDED_DEFINITION", "LEAK_ESTIMATOR", "MET_SCHEMA", "MeltEngine", "PairRate", "PayloadCatalog", "Propensities", "RunResult",
     "SpeciesIdentity", "TransportLaw", "escape_factor", "pooled_leak_fraction", "refuse_initial_species_overlap",
 ]

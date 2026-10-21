@@ -148,8 +148,14 @@ seeds still run and the run's status is ``failed``.
                                  last_observed_time_s, engine_time_s}]}
     leak: {estimator, definition, note, excluded_seeds (seeds that failed),
            per_seed: [{seed, leak_num, leak_den, non_thinned_integral, phi_sum,
-                       thinned_proposals, open_thinned, open_phi_source}],
-           pooled (melt_engine.pooled_leak_fraction over per_seed)}
+                       thinned_proposals, open_thinned, open_phi_source, excluded_num}],
+           pooled (melt_engine.pooled_leak_fraction over per_seed),
+           excluded: {definition (melt_engine.EXCLUDED_DEFINITION), templates,
+                      excluded_num (summed over per_seed)}}
+    template_selection: {restricted: false} | {restricted: true, definition,
+                        source: {kind, path, sha256[, temperature_K]},
+                        classes (null for a template list)[, kernels],
+                        templates, excluded, loaded}
     mom: null | {path, sha256, times, header (the --mom file's header, null for the list forms)}
     comparison: "comparison.csv"
     wall_s
@@ -166,6 +172,19 @@ Collins-Kimball escape factor exactly 1, no encounter limit:
 ``WELL_MIXED_DEFINITION``); every observation and comparison row of a run
 with the flag carries ``transport`` = ``declared`` or ``well_mixed_bound``,
 and ``status`` covers both passes.  Without the flag nothing of this appears.
+
+``--templates SEL [--template-classes C ...]``: the run is restricted to a
+subset of the loaded templates (``template_selection``): from a
+``kmc-kernel-rates/1`` table (``rmgpy.kmc.kernel_rates``; built for the
+deck's chemistry), every template of the kernels whose type or id is named
+(every kernel when none is), or from a template list (a JSON list of loaded
+template names, or one per line, ``#`` comments).  The other loaded templates
+are the engine's ``excluded`` (``melt_engine`` module docstring, Excluded
+templates): weights unchanged, never fired, no part of the MET activation,
+their hazard in ``leak.excluded``, not in leak.  A name that is not loaded, a
+class no kernel has, or a selection that takes part of a reciprocal group
+(``reciprocal_groups``) is refused by name.  Selecting every loaded template
+gives the unrestricted run's observation files byte for byte.
 
 **Transport sources.** ``transport_model["sources"]`` (optional, beside
 ``met``) maps each of ``CITED_MET_FIELDS`` to its citations; present, it must
@@ -272,6 +291,11 @@ CITED_MET_FIELDS = ("segment_diffusivity", "chain_scaling",
 # phi = k_D / (k_D + k_act) rounds to exactly 1.0 for any k_act below ~1e199 (finite: no inf/inf)
 WELL_MIXED_D0_M2_S = 1.0e200
 TRANSPORT_PASSES = ("declared", "well_mixed_bound")
+KERNEL_RATES_SCHEMA = "kmc-kernel-rates/1"    # rmgpy.kmc.kernel_rates.SCHEMA
+SELECTION_DEFINITION = (
+    "the run fires only the selected loaded templates; the excluded ones keep their weights, are matched "
+    "and indexed, never fire, take no part in the MET activation, and their intrinsic hazard is "
+    "leak.excluded (not leak); a reciprocal group (reciprocal_groups) is selected whole or not at all")
 WELL_MIXED_DEFINITION = (
     "the declared deck with only transport_model.met.segment_diffusivity replaced by arrhenius "
     "D_ref_m2_s = WELL_MIXED_D0_M2_S (Ea 0, T_ref the run temperature) and chain_scaling rouse: every "
@@ -660,6 +684,125 @@ def load_catalogs(paths: Sequence, temperature: float, *, allow_incomplete: bool
     return me.PayloadCatalog(payloads), records
 
 
+def _loaded_label(payload, template) -> str:
+    """The name ``template_emission.loaded_templates`` gives an emitted template."""
+    return f"{(payload.get('record_event_id') or '')[4:16]}:{template['key'][:12]}"
+
+
+def reciprocal_groups(payloads, names: Sequence[str]) -> List[Tuple[str, ...]]:
+    """The loaded templates (``names``) a selection takes or leaves together:
+    the loaded templates carrying a record's templates (an emitted template
+    itself and its ``derived`` primary and ``reverse`` partners, a merged
+    template's owner, a covered template's covers) are one group with those of
+    its ``reverse_of`` record.  Each group sorted; a loaded name that is no
+    emitted template of ``payloads`` is refused."""
+    by_ref = {(p.get("record_event_id"), t.get("key")): _loaded_label(p, t)
+              for p in payloads for t in p.get("templates", []) if t.get("status") == "emitted"}
+    missing = sorted(set(names) - set(by_ref.values()))
+    if missing:
+        raise RunError(f"loaded templates {missing} are no emitted template of the catalogs' payloads")
+    parent = {n: n for n in names}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def resolve(ref):
+        return by_ref.get((ref.get("record"), ref.get("key")))
+
+    carried: Dict[Any, List[str]] = {}
+    for p in payloads:
+        rid = p.get("record_event_id")
+        mine = carried.setdefault(rid, [])
+        for t in p.get("templates", []):
+            status = t.get("status")
+            if status == "emitted":
+                mine.append(by_ref[(rid, t["key"])])
+                if t.get("derived"):
+                    mine.append(resolve(t["derived"]["primary"]))
+            elif status == "merged":
+                mine.append(resolve(t["merged_into"]))
+            elif status == "covered":
+                mine.extend(resolve(ref) for ref in t.get("covered_by") or [])
+            if status in ("emitted", "merged") and t.get("reverse"):
+                mine.extend(resolve({"record": r, "key": t["reverse"]["key"]}) for r in t["reverse"]["records"])
+    for p in payloads:
+        group = [n for n in carried[p.get("record_event_id")] + carried.get(p.get("reverse_of"), [])
+                 if n in parent]
+        for n in group[1:]:
+            parent[find(n)] = find(group[0])
+    groups: Dict[str, List[str]] = {}
+    for n in names:
+        groups.setdefault(find(n), []).append(n)
+    return sorted(tuple(sorted(g)) for g in groups.values())
+
+
+def template_selection(path, classes: Optional[Sequence[str]], payloads, names: Sequence[str],
+                       deck: Deck) -> dict:
+    """The ``template_selection`` manifest entry of ``--templates`` (module
+    docstring): the selected and excluded loaded templates and the source."""
+    path = Path(path)
+    try:
+        raw = path.read_bytes()
+    except OSError as error:
+        raise RunError(f"template selection {path}: unreadable ({error})") from error
+    try:
+        doc = json.loads(raw)
+    except ValueError:
+        doc = None
+    extra = {}
+    if isinstance(doc, dict):
+        if doc.get("schema") != KERNEL_RATES_SCHEMA or not isinstance(doc.get("kernels"), dict):
+            raise RunError(f"template selection {path}: a JSON object must be a {KERNEL_RATES_SCHEMA} table "
+                           f"(schema {doc.get('schema')!r})")
+        bound = (doc.get("catalog") or {}).get("chemistry_sha256")
+        if bound != deck.digests()["chemistry_sha256"]:
+            raise RunError(f"kernel table {path} was built for the chemistry {str(bound)[:16]}..., not the "
+                           f"deck's chemistry_sha256 {deck.digests()['chemistry_sha256'][:16]}...")
+        kernels = doc["kernels"]
+        if classes is None:
+            chosen = sorted(kernels)
+        else:
+            types = sorted({k.get("type") for k in kernels.values()})
+            unknown = [c for c in classes if c not in kernels and c not in types]
+            if unknown:
+                raise RunError(f"kernel table {path} has no kernel type or id {unknown} (types: {types})")
+            chosen = sorted(k for k, v in kernels.items() if k in classes or v.get("type") in classes)
+        selected = {x["template"] for k in chosen for x in kernels[k]["templates"]}
+        source = {"kind": KERNEL_RATES_SCHEMA, "path": str(path), "sha256": _sha256(raw),
+                  "temperature_K": doc.get("temperature_K")}
+        extra["kernels"] = chosen
+    else:
+        if classes is not None:
+            raise RunError(f"template selection {path}: --template-classes selects from a {KERNEL_RATES_SCHEMA} "
+                           "table, not from a template list")
+        if isinstance(doc, list):
+            ids = doc
+        else:
+            try:
+                text = raw.decode()
+            except UnicodeDecodeError as error:
+                raise RunError(f"template selection {path}: not a template list ({error})") from error
+            ids = [x.strip() for x in text.splitlines() if x.strip() and not x.strip().startswith("#")]
+        if not all(isinstance(x, str) and x for x in ids):
+            raise RunError(f"template selection {path}: a template list holds template names only")
+        selected = set(ids)
+        source = {"kind": "template_list", "path": str(path), "sha256": _sha256(raw)}
+    unknown = sorted(selected - set(names))
+    if unknown:
+        raise RunError(f"template selection {path}: {unknown} are not templates the catalogs load")
+    for group in reciprocal_groups(payloads, names):
+        inside = [n for n in group if n in selected]
+        if inside and len(inside) != len(group):
+            raise RunError(f"template selection {path} splits a reciprocal group: it takes {inside} but not "
+                           f"{[n for n in group if n not in selected]}; both directions are selected together")
+    return dict({"restricted": True, "definition": SELECTION_DEFINITION, "source": source,
+                 "classes": None if classes is None else list(classes)}, **extra,
+                templates=sorted(selected), excluded=sorted(set(names) - selected), loaded=len(names))
+
+
 def _template_graph(t):
     """The labelled graph of a loaded ``window_matcher.Template`` (module
     docstring): equal executables give isomorphic graphs whatever their order."""
@@ -1006,6 +1149,7 @@ class _Context:
     max_events: Optional[int]
     out: Path
     label: Tuple[Tuple[str, Any], ...]
+    excluded: Tuple[str, ...] = ()
 
 
 def _observation_lines(text: str) -> List[str]:
@@ -1024,7 +1168,7 @@ def _run_seed(context: _Context, seed: int) -> dict:
     report = leak = None
     try:
         engine = me.MeltEngine(context.spec, context.catalog, context.temperature,
-                               numpy.random.default_rng(seed))
+                               numpy.random.default_rng(seed), excluded=context.excluded)
         observer = _LabelledObserver(context.spec, xs=context.xs, identity=engine.identity,
                                      side_group_homolysis=context.side_group_homolysis,
                                      label=dict(context.label, seed=seed))
@@ -1037,6 +1181,7 @@ def _run_seed(context: _Context, seed: int) -> dict:
             report.pop(key, None)
         leak = {"seed": seed}
         leak.update({k: estimate[k] for k in LEAK_PARTS})
+        leak["excluded_num"] = report.pop("excluded")["excluded_num"]
         report, leak = _plain(report), _plain(leak)
     except Exception as exc:   # recorded as the seed's stop; the run's status becomes failed
         stop = "error"
@@ -1179,7 +1324,8 @@ def _write_manifest(out: Path, manifest: dict):
 
 def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], seeds: Sequence[int], out, *,
         max_events: Optional[int] = None, allow_incomplete: bool = False, allow_unbound_catalog: bool = False,
-        allow_unmatched_catalog: bool = False, mom=None, jobs: int = 1, also_well_mixed: bool = False) -> dict:
+        allow_unmatched_catalog: bool = False, mom=None, jobs: int = 1, also_well_mixed: bool = False,
+        templates=None, template_classes: Optional[Sequence[str]] = None) -> dict:
     """Run every seed and write the outputs (module docstring); returns the
     manifest.  Inputs are refused (``RunError``) before anything is written; a
     seed that fails is recorded and the status is ``failed``.
@@ -1189,7 +1335,10 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
     gains ``transport`` (both passes' MET blocks and the declared sources)
     and ``well_mixed`` (that pass's status, runs, censoring, leak and
     comparison), and every observation and comparison carries the label
-    ``transport`` (``TRANSPORT_PASSES``).  The run's ``status`` covers both."""
+    ``transport`` (``TRANSPORT_PASSES``).  The run's ``status`` covers both.
+
+    ``templates`` (``template_classes``): restrict both passes to a selection
+    of the loaded templates (``template_selection``)."""
     start = time.perf_counter()
     deck = read_deck(deck)
     sequence = isinstance(deck.spec, PolymerSpec)
@@ -1205,8 +1354,13 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
         raise RunError(f"the event cap must be a positive integer, got {max_events!r}")
     if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1:
         raise RunError(f"jobs must be a positive integer, got {jobs!r}")
+    if template_classes is not None and templates is None:
+        raise RunError("template classes select from a kernel-rates table: give it as the template selection")
     catalog, records = load_catalogs(catalogs, temperature, allow_incomplete=allow_incomplete, deck=deck,
                                      allow_unbound=allow_unbound_catalog)
+    selection = {"restricted": False} if templates is None else template_selection(
+        templates, template_classes, catalog.payloads, [n for r in records for n in r.template_names], deck)
+    excluded = tuple(selection.get("excluded", ()))
     mom_by_time, mom_record = (load_mom(mom, times, deck_sha256=deck.sha256, temperature_K=temperature)
                                if mom is not None
                                else ([None] * len(times), None))
@@ -1218,7 +1372,7 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
             if chemistry_sha256(bound_spec) != chemistry_sha256(deck.spec):
                 raise RunError("the well-mixed bound changed the chemistry digest")
         mo.MeltObserver(deck.spec, xs=deck.xs, side_group_homolysis=deck.side_group_homolysis)
-        initial = me.MeltEngine(deck.spec, catalog, temperature, numpy.random.default_rng(0))
+        initial = me.MeltEngine(deck.spec, catalog, temperature, numpy.random.default_rng(0), excluded=excluded)
         matched = initial_match(initial)
     except ValueError as error:
         raise RunError(f"deck {deck.path}: {error}") from error
@@ -1248,7 +1402,7 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
         return dict(labels, transport=name) if also_well_mixed else dict(labels)
 
     context = _Context(deck.spec, catalog, temperature, tuple(times), deck.xs, deck.side_group_homolysis,
-                       max_events, out, tuple(sorted(pass_labels("declared").items())))
+                       max_events, out, tuple(sorted(pass_labels("declared").items())), excluded)
     manifest = dict({
         "schema": RUN_SCHEMA, "status": "running",
         "deck": deck.manifest(),
@@ -1259,8 +1413,8 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
         "code": code_identity(),
         "environment": {"python": platform.python_version(), "numpy": numpy.__version__,
                         "PYTHONHASHSEED": os.environ.get("PYTHONHASHSEED")},
-        "mom": mom_record, "wall_s": None,
-    }, **labels, **_pass_section(seeds, None if sequence else "comparison.csv"))
+        "mom": mom_record, "template_selection": selection, "wall_s": None,
+    }, **labels, **_pass_section(seeds, None if sequence else "comparison.csv", excluded))
     if sequence:
         manifest["comparison_refused"] = mo.MOM_V2_REFUSAL
         manifest["composition"] = sequence_composition(deck.spec)
@@ -1273,7 +1427,8 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
                                  "definition": WELL_MIXED_DEFINITION,
                                  "WELL_MIXED_D0_M2_S": WELL_MIXED_D0_M2_S}}
         manifest["well_mixed"] = dict({"status": "pending", "path": "well_mixed"},
-                                      **_pass_section(seeds, None if sequence else "well_mixed/comparison.csv"))
+                                      **_pass_section(seeds, None if sequence else "well_mixed/comparison.csv",
+                                                      excluded))
     _write_manifest(out, manifest)
 
     def flush():
@@ -1286,7 +1441,8 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
         if also_well_mixed:
             (out / "well_mixed").mkdir()
             bound = _Context(bound_spec, catalog, temperature, tuple(times), deck.xs, deck.side_group_homolysis,
-                             max_events, out / "well_mixed", tuple(sorted(pass_labels("well_mixed_bound").items())))
+                             max_events, out / "well_mixed", tuple(sorted(pass_labels("well_mixed_bound").items())),
+                             excluded)
             section = manifest["well_mixed"]
             section["status"] = "running"
             _run_pass(bound, section, seeds, jobs, times, "well_mixed/", mom_by_time, mom_record,
@@ -1304,13 +1460,15 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
     return json.loads(json.dumps(manifest, sort_keys=True))
 
 
-def _pass_section(seeds, comparison) -> dict:
+def _pass_section(seeds, comparison, excluded=()) -> dict:
     """The per-pass part of the manifest (module docstring), before any seed."""
     return {"runs": [],
             "censoring": {"seeds_requested": len(seeds), "stopped_early": [], "censored_times_s": []},
             "leak": {"estimator": me.LEAK_ESTIMATOR + "/pooled", "definition": me.LEAK_DEFINITION,
                      "note": LEAK_NOTE, "per_seed": [], "excluded_seeds": [],
-                     "pooled": me.pooled_leak_fraction([])},
+                     "pooled": me.pooled_leak_fraction([]),
+                     "excluded": {"definition": me.EXCLUDED_DEFINITION, "templates": sorted(excluded),
+                                  "excluded_num": 0.0}},
             "comparison": comparison}
 
 
@@ -1329,6 +1487,8 @@ def _run_pass(context: _Context, section: dict, seeds, jobs, times, prefix: str,
         else:
             section["leak"]["per_seed"].append(leak)
         section["leak"]["pooled"] = me.pooled_leak_fraction(section["leak"]["per_seed"])
+        section["leak"]["excluded"]["excluded_num"] = math.fsum(
+            x["excluded_num"] for x in section["leak"]["per_seed"])
         if result["observations"] < len(times):
             section["censoring"]["stopped_early"].append(
                 {"seed": result["seed"], "stop_reason": result["stop_reason"],
@@ -1385,6 +1545,11 @@ def main(argv=None) -> int:
     parser.add_argument("--also-well-mixed", action="store_true",
                         help="also run the same seeds at the well-mixed bound (every escape factor 1) into "
                              "<out>/well_mixed/, both passes labelled in one run.json")
+    parser.add_argument("--templates", default=None,
+                        help="restrict the run to a template selection: a kmc-kernel-rates/1 table or a "
+                             "template list (one loaded template name per line, or a JSON list)")
+    parser.add_argument("--template-classes", nargs="+", default=None,
+                        help="with a kernel-rates table: the kernel types or ids to select (default: every kernel)")
     args = parser.parse_args(argv)
     try:
         times = observation_times(args.times, args.end, args.snapshots)
@@ -1392,7 +1557,8 @@ def main(argv=None) -> int:
                        max_events=args.max_events, allow_incomplete=args.allow_incomplete,
                        allow_unbound_catalog=args.allow_unbound_catalog,
                        allow_unmatched_catalog=args.allow_unmatched_catalog, mom=args.mom, jobs=args.jobs,
-                       also_well_mixed=args.also_well_mixed)
+                       also_well_mixed=args.also_well_mixed, templates=args.templates,
+                       template_classes=args.template_classes)
     except RunError as error:
         print(f"refused: {error}", file=sys.stderr, flush=True)
         return 2
