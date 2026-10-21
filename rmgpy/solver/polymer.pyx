@@ -813,9 +813,10 @@ def _kernel_terms(pool_label, kernel, terms, keys, target_key, optional=()):
     allowed = [set(keys)] + ([set(keys) | set(optional)] if optional else [])
     seen = set()
     for term in terms:
-        if not isinstance(term, dict) or set(term) not in allowed:
+        if not isinstance(term, dict) or set(term) - {KERNEL_VALIDITY_KEY} not in allowed:
             extra = (f" (or with all of {list(optional)} too)"
                      if optional else "")
+            extra += f", and optionally {KERNEL_VALIDITY_KEY!r}"
             raise ValueError(f"Pool {pool_label}: {kernel} term {term!r} must "
                              f"have exactly the keys {list(keys)}{extra}.")
         template = term["template"]
@@ -831,6 +832,22 @@ def _kernel_terms(pool_label, kernel, terms, keys, target_key, optional=()):
             raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
                              f"{target_key}={target!r} must name another pool.")
         yield template, term
+
+
+def _kernel_validity(pool_label, kernel, template, term, floor=None,
+                     floor_name=None):
+    """The term's declared validity length {KERNEL_VALIDITY_KEY: n} (an
+    integer >= 1, and >= the law's own `floor` where it has one), or {}."""
+    if KERNEL_VALIDITY_KEY not in term:
+        return {}
+    n = _kernel_integer(pool_label, kernel, template, KERNEL_VALIDITY_KEY,
+                        term[KERNEL_VALIDITY_KEY])
+    if floor is not None and n < floor:
+        raise ValueError(
+            f"Pool {pool_label}: {kernel} term {template!r}: "
+            f"{KERNEL_VALIDITY_KEY}={n} is below {floor_name} = {floor}, "
+            f"where the site law already counts negative sites.")
+    return {KERNEL_VALIDITY_KEY: n}
 
 
 def validate_kernel_homolysis(pool_label, terms):
@@ -868,7 +885,10 @@ def validate_kernel_homolysis(pool_label, terms):
                 f"integrates.")
         out.append({"template": template, "w": w, "phi": phi, "a": a, "b": b,
                     "min_fragment": e, "periods_per_unit": c,
-                    "daughter": term["daughter"]})
+                    "daughter": term["daughter"],
+                    **_kernel_validity(pool_label, "kernel_homolysis", template,
+                                       term, 2 * e - 1,
+                                       "2*min_fragment - 1")})
     return out
 
 
@@ -894,7 +914,9 @@ def validate_kernel_recombination(pool_label, terms):
                     "periods_per_unit": _kernel_integer(
                         pool_label, "kernel_recombination", template,
                         "periods_per_unit", term["periods_per_unit"]),
-                    "product": term["product"]})
+                    "product": term["product"],
+                    **_kernel_validity(pool_label, "kernel_recombination",
+                                       template, term)})
     return out
 
 
@@ -954,7 +976,9 @@ def validate_kernel_transfer(pool_label, terms):
                              f"than the partner {partner!r}.")
         out.append({"template": template, "k_pair": k_pair, "phi": phi,
                     "partner": partner, "product": term["product"],
-                    "partner_product": partner_product, **site_law})
+                    "partner_product": partner_product, **site_law,
+                    **_kernel_validity(pool_label, "kernel_transfer", template,
+                                       term)})
     return out
 
 
@@ -982,7 +1006,9 @@ def validate_kernel_move(pool_label, terms):
                     "periods_per_unit": _kernel_integer(
                         pool_label, "kernel_move", template,
                         "periods_per_unit", term["periods_per_unit"]),
-                    "product": term["product"]})
+                    "product": term["product"],
+                    **_kernel_validity(pool_label, "kernel_move", template,
+                                       term)})
     return out
 
 
@@ -2642,6 +2668,25 @@ class HybridPolymerSystem(ReactionSystem):
                         f"has {what} {x!r}, pool {dst!r} {y!r} "
                         f"(the moments count units, not atoms; undeclared "
                         f"on one side cannot be checked).")
+        # Each term's validity length, the shortest chain (periods) its site
+        # law counts correctly: declared, or homolysis' own 2e - 1. Below it
+        # the law miscounts (a chain of 4 periods under sites n - 7 counts
+        # -3); that is the method's, reported here for the comparison side
+        # (which knows the distribution) to weigh -- never corrected.
+        self.kernel_validity = []
+        for pool in self.polymer_pools:
+            for kernel in CATALOG_KERNELS:
+                for term in getattr(pool, kernel, None) or ():
+                    n = term.get(KERNEL_VALIDITY_KEY)
+                    source = "declared"
+                    if n is None and kernel == "kernel_homolysis":
+                        n, source = 2 * term["min_fragment"] - 1, "derived"
+                    elif n is None:
+                        source = "undeclared"
+                    self.kernel_validity.append(
+                        {"pool": pool.label, "kernel": kernel,
+                         "template": term["template"],
+                         "valid_from_periods": n, "source": source})
         self._kernel_guard_warned = set()
         self.kernel_homolysis_terms = [[] for _ in self.polymer_pools]
         self.kernel_recombination_terms = [[] for _ in self.polymer_pools]
