@@ -89,6 +89,35 @@ molecule, matches no state built here: a small species that no piece of a
 declared chain is), ``no_site_on_declared_states`` (any other participant
 with no site on any state built here, e.g. a homolysis at a branch point).
 
+**Product laws** (``kmc-kernel-rates/2``, I-214; what the kernel references
+of ``kernel_reference`` integrate).  Each kernel term carries ``law``: per
+participant (``S0``/``S1`` in the sorted order) what every counted site
+makes, read by firing the melt engine's own transitions on declared probe
+states (``_Probes``: the first n periods of a materialized chain, cut and
+capped, with the feature built as above) and classifying each product as a
+declared state (pool family, label, n; isomorphic to the probe of that
+state, refused otherwise).  A bimolecular participant's product is read with
+a partner of the other class and must not depend on the partner's site; a
+product holding both whole reactants is a join (``["join", family,
+gamma]``, length n0 + n1 + gamma backbone atoms).  ``anchor``: ``chain``
+(sites along a pristine chain), ``end`` (an end feature) or ``interior``.
+Chain and end laws give ``exact`` outcomes ``[[multiplicity, [[label, n],
+...]], ...]`` on every n up to ``exact_to_n`` and a far rule beyond
+(``predict``): products as ``[family, alpha, beta, gamma]``, length ``alpha*L
++ beta*k + gamma`` backbone atoms for a reactant of L with the site anchored
+at backbone atom k (``bulk``, and the anchors within ``edge`` of either end,
+``first``/``last``), required to reproduce the exact outcomes on the
+trailing lengths.  Interior laws give the far-field outcomes relative to the
+feature position.  ``law_inert``: an interior participant with no far-field
+site (the rate law above gives 0); ``law_refused``: a product that is no
+declared state (e.g. a vinyl radical).  ``families``: per pool family its
+label per length, the molar-mass offset (M = n * unit mass + offset) and
+the lengths that are declared species.  ``overrides``: each depository
+override of the term's template at its exact sizes (reactant states with
+interior positions, products, matched multiplicity, weight); an override
+placed in no term is listed in ``overrides_unplaced``.  A site count is the
+template's whatever weight a matched size carries.
+
 With a ``kmc-melt-run/1`` manifest, ``hazard`` gives the fired counts per
 template, kernel and kMC-only entry (gross), the counts netted over each
 reciprocal record pair (``reverse_of``), and the run's pooled leak fraction.
@@ -99,16 +128,18 @@ import json
 import math
 import sys
 from collections import Counter, defaultdict
+from fractions import Fraction
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy
 
 from rmgpy.kmc import melt_engine as me
+from rmgpy.kmc import window_matcher as wm
 from rmgpy.kmc.declared_chain import ChainGeometry
 from rmgpy.kmc.melt_state import SetBond, SetRadical, materialize
 
-SCHEMA = "kmc-kernel-rates/1"
+SCHEMA = "kmc-kernel-rates/2"
 EXACT_POINTS = 3          # trailing lengths on which a polynomial / feature count must hold exactly
 EXTRA_UNITS = 3           # chain length beyond twice the largest window, in primitive periods
 
@@ -244,6 +275,17 @@ def _remove_h(state, a) -> list:
 # --------------------------------------------------------------------------
 # counting through the melt engine's own index
 # --------------------------------------------------------------------------
+def _uni_all(entry) -> Dict[int, Tuple[tuple, int]]:
+    """class index -> (allowed transitions, leak count) of an index entry, the
+    transitions a depository override re-weights included: a site count is the
+    template's, whatever weight a matched size carries."""
+    out = {ci: (tuple(allowed), leak) for ci, (allowed, leak) in entry.uni.items()}
+    for (ci, _o), (allowed, leak) in sorted(entry.uni_o.items()):
+        mine, n = out.get(ci, ((), 0))
+        out[ci] = (tuple(sorted(mine + tuple(allowed), key=lambda t: t.edit_key)), n + leak)
+    return out
+
+
 class _Counter:
     def __init__(self, engine):
         self.engine = engine
@@ -255,7 +297,7 @@ class _Counter:
         include a feature atom.  Unimolecular: participant 0, kind None."""
         entry = self.engine._scan([cid], state=state)[cid]
         out = Counter()
-        for ci, (allowed, leak) in entry.uni.items():
+        for ci, (allowed, leak) in _uni_all(entry).items():
             self.leak[ci] += leak
             for tr in allowed:
                 touched = set()
@@ -266,7 +308,7 @@ class _Counter:
         for (ci, p, kind), sites in entry.sites.items():
             n = sum(1 for s in sites if not feature or set(s) & feature)
             if n:
-                out[(ci, p, kind)] += n
+                out[(ci, p, kind[:2])] += n       # a depository override's tag is a weight, not a site class
         return out
 
 
@@ -381,6 +423,606 @@ def _features(spec, units, counter, features, far_ok):
 
 
 # --------------------------------------------------------------------------
+# product laws (I-214): what every counted site makes
+# --------------------------------------------------------------------------
+END_FAMILIES = ("radical_end", "alkene_terminal")
+INTERIOR_FAMILIES = ("radical_interior", "alkene_internal")
+FAMILIES = ("chain",) + END_FAMILIES + INTERIOR_FAMILIES
+
+
+class _OffDeclared(KernelRatesError):
+    """A product (or a probe) that is no declared state."""
+
+
+def family_of(label: str) -> str:
+    return label.split(":")[0]
+
+
+def _chains_spec(spec, units: int, chains: int):
+    from rmgpy.polymer_spec import LinearHomopolymerSpec
+    mapping = json.loads(json.dumps(spec.as_mapping()))
+    mapping["initial_ensemble"] = {"dp_counts": {units: chains}}
+    mapping["initial_mobile_counts"] = {}
+    return LinearHomopolymerSpec.from_mapping(mapping)
+
+
+def _walk(state, bb) -> List[int]:
+    """The atoms ``bb`` as a simple path, from its smaller end; refused when
+    they are not one."""
+    bb = set(bb)
+    nbrs = {a: [b for b in state.atoms[a].edges if b in bb] for a in bb}
+    ends = sorted(a for a in bb if len(nbrs[a]) <= 1)
+    if not bb or (len(bb) > 1 and len(ends) != 2) or any(len(v) > 2 for v in nbrs.values()):
+        raise _OffDeclared("a backbone that is not a simple path")
+    path, prev = [ends[0]], None
+    while len(path) < len(bb):
+        nxt = [b for b in nbrs[path[-1]] if b != prev]
+        if not nxt:
+            raise _OffDeclared("a backbone that is not connected")
+        prev = path[-1]
+        path.append(nxt[0])
+    return path
+
+
+def _paths(state) -> List[List[int]]:
+    """The backbone path of every component of a materialized melt, in
+    component order."""
+    origin = state.origin
+    return [_walk(state, [a for a in state.components.atoms(cid)
+                          if origin[a].kind == "chain" and origin[a].is_backbone])
+            for cid in state.components.ids()]
+
+
+def _heavy_touched(tr) -> set:
+    touched = set()
+    for e in tr.edits:
+        touched.update((e.a, e.b) if isinstance(e, SetBond) else (e.atom,))
+    return touched
+
+
+class _Probes:
+    """Declared probe states of the product laws.  A probe is the first n
+    periods of a materialized chain cut from the rest: ``chain`` (the cut end
+    takes an H of the rest, whose cut atoms close a pi bond), ``radical_end``
+    and ``alkene_terminal`` (the feature at the cut end, as ``_features``
+    builds it), ``radical_interior`` / ``alkene_internal`` (on the chain
+    probe, at backbone atom / bond ``x`` from the declared end).  Every probe
+    sits on chain 0 of a two-chain melt of ``units`` declared units, so the
+    atom ids of one probe are the same in every state that holds it (chain 1
+    carries a partner for bimolecular sites).  A chain probe at a whole number
+    of declared units must be the declared chain (isomorphism), or no chain
+    probe is declared."""
+
+    def __init__(self, spec, engine, ppu: int, nbb: int, units: int):
+        self.spec, self.engine, self.ppu, self.nbb, self.units = spec, engine, ppu, nbb, units
+        self.unit_mass = Fraction(spec.repeat_unit.composition.molar_mass_g_mol()) / ppu
+        self._forms: Dict[Tuple, Tuple] = {}
+        self._verified = set()
+        self.labels: Dict[Tuple[str, int], str] = {}
+        self.offsets: Dict[str, set] = defaultdict(set)
+        self.species: Dict[Tuple[str, int], str] = {}
+        self._entries: Dict[Tuple, Any] = {}
+        declared = materialize(_single_chain_spec(spec, 1))
+        dcid = declared.components.ids()[0]
+        key, forms = self.forms("chain", ppu)
+        g = me._graph(me._first_rows(declared, dcid))
+        if me._comp_key(declared, dcid) != key or not any(me._isomorphic(g, h) for h in forms):
+            raise KernelRatesError("a cut chain capped by an H of its neighbour is not the declared chain: "
+                                   "the declared ends are not hydrogen")
+
+    # -- building -----------------------------------------------------------
+    def melt(self):
+        state = materialize(_chains_spec(self.spec, self.units, 2))
+        return state, _paths(state)
+
+    def put(self, state, path, family, n, x=None) -> Tuple[List[int], Tuple[int, ...]]:
+        """Edits making (family, n[, x]) of the first n periods of ``path``;
+        (its backbone, its feature atoms)."""
+        L = n * self.nbb
+        if L < 1 or L + 2 > len(path):
+            raise _OffDeclared(f"no {family} probe of {n} periods on a chain of {len(path)} backbone atoms")
+        u, v, q = path[L - 1], path[L], path[L + 1]
+        seg = list(path[:L])
+        if state.atoms[u].edges.get(v) != 1.0 or state.atoms[v].edges.get(q) != 1.0:
+            raise _OffDeclared(f"no single bond to cut after {n} periods")
+        rad = lambda a, d: SetRadical(a, state.atoms[a].radical, state.atoms[a].radical + d)
+        if family in END_FAMILIES:
+            edits = [SetBond(u, v, 1.0, 0.0), rad(v, 1)]
+            if family == "radical_end":
+                state.apply(edits + [rad(u, 1)])
+                return seg, (u,)
+            w = path[L - 2] if L >= 2 else None
+            hw = _hydrogens(state, w) if w is not None else []
+            if not hw or state.atoms[u].edges.get(w) != 1.0:
+                raise _OffDeclared(f"no terminal pi bond on {n} periods")
+            state.apply(edits + [SetBond(w, hw[0], 1.0, 0.0), SetRadical(hw[0], 0, 1), SetBond(u, w, 1.0, 2.0)])
+            return seg, (u, w)
+        hq = _hydrogens(state, q)
+        if not hq:
+            raise _OffDeclared("no hydrogen to cap a cut chain")
+        state.apply([SetBond(u, v, 1.0, 0.0), SetBond(q, hq[0], 1.0, 0.0), SetBond(u, hq[0], 0.0, 1.0),
+                     SetBond(v, q, 1.0, 2.0)])
+        if family == "chain":
+            return seg, ()
+        if family == "radical_interior":
+            if x is None or not 1 <= x <= L - 2 or not _hydrogens(state, seg[x]):
+                raise _OffDeclared(f"no interior radical at {x} on {n} periods")
+            state.apply(_remove_h(state, seg[x]))
+            return seg, (seg[x],)
+        if family == "alkene_internal":
+            if x is None or not (1 <= x and x + 1 <= L - 2):
+                raise _OffDeclared(f"no internal pi bond at {x} on {n} periods")
+            a, b = seg[x], seg[x + 1]
+            ha, hb = _hydrogens(state, a), _hydrogens(state, b)
+            if not (ha and hb) or state.atoms[a].edges.get(b) != 1.0:
+                raise _OffDeclared(f"no internal pi bond at {x} on {n} periods")
+            state.apply([SetBond(a, ha[0], 1.0, 0.0), SetBond(b, hb[0], 1.0, 0.0),
+                         SetBond(ha[0], hb[0], 0.0, 1.0), SetBond(a, b, 1.0, 2.0)])
+            return seg, (a, b)
+        raise KernelRatesError(f"unknown family {family}")
+
+    def positions(self, family, n) -> List[int]:
+        """The canonical interior positions (nearer the declared end) of a family on n periods."""
+        L = n * self.nbb
+        if family == "radical_interior":
+            return [x for x in range(1, L - 1) if x <= L - 1 - x]
+        if family == "alkene_internal":
+            return [x for x in range(1, L - 2) if x <= L - 2 - x]
+        return [None]
+
+    def entry(self, family, n, x=None, chain=0):
+        """(seg, feature, index entry) of a probe on chain ``chain`` (the
+        other chain left whole); the scan is kept."""
+        key = (family, n, x, chain)
+        if key not in self._entries:
+            state, paths = self.melt()
+            seg, feature = self.put(state, paths[chain], family, n, x)
+            cid = state.components.component_of(seg[0])
+            self._note(state, cid, family, n, feature)
+            self._entries[key] = (seg, feature, self.engine._scan([cid], state=state)[cid])
+        seg, feature, entry = self._entries[key]
+        return seg, feature, entry
+
+    def _note(self, state, cid, family, n, feature):
+        label = family if family == "chain" else f"{family}:{_label(state, feature)}"
+        old = self.labels.setdefault((family, n), label)
+        if old != label and family not in INTERIOR_FAMILIES:
+            raise KernelRatesError(f"{family} on {n} periods has two labels ({old}, {label})")
+        self.offsets[family].add(Fraction(state.components.molar_mass_g_mol(cid)) - self.unit_mass * n)
+        name = self.engine.identity.identify(state, cid)
+        if name is not None:
+            self.species[(label, n)] = name
+
+    def forms(self, family, n, x=None):
+        key = (family, n, x)
+        if key not in self._forms:
+            state, paths = self.melt()
+            seg, feature = self.put(state, paths[0], family, n, x)
+            cid = state.components.component_of(seg[0])
+            self._note(state, cid, family, n, feature)
+            self._forms[key] = (me._comp_key(state, cid),
+                                [me._graph(wm.form_rows(state, cid, f)) for f in wm.component_forms(state, cid)])
+        return self._forms[key]
+
+    def label(self, family, n):
+        if (family, n) not in self.labels:
+            xs = self.positions(family, n)
+            if not xs:
+                raise _OffDeclared(f"no {family} position on {n} periods")
+            self.forms(family, n, xs[0])
+        return self.labels[(family, n)]
+
+    # -- reading products ---------------------------------------------------
+    def classify(self, state, cid, segs) -> Tuple:
+        """(family, label, n, ends) of a component made from the probe
+        backbones ``segs``: ``ends`` per segment, (holds its first atom, holds
+        its last atom, holds any of it).  The component must be the declared
+        probe of its family, length and position (isomorphism, once per
+        backbone signature)."""
+        atoms = set(state.components.atoms(cid))
+        path = _walk(state, [a for seg in segs for a in seg if a in atoms])
+        L = len(path)
+        if L % self.nbb:
+            raise _OffDeclared(f"a product of {L} backbone atoms is off the period grid")
+        n = L // self.nbb
+        nodes = state.atoms
+        on = set(path)
+        rad = [a for a in atoms if nodes[a].element != "H" and nodes[a].radical]
+        pis = [i for i in range(L - 1) if nodes[path[i]].edges.get(path[i + 1]) == 2.0]
+        if len(rad) + len(pis) > 1 or any(a not in on for a in rad) or any(nodes[a].radical > 1 for a in rad):
+            raise _OffDeclared("a product with more than one feature, or a feature off the backbone")
+        x = None
+        if rad:
+            i = path.index(rad[0])
+            if i in (0, L - 1):
+                family, feature = "radical_end", (rad[0],)
+            else:
+                family, feature, x = "radical_interior", (rad[0],), min(i, L - 1 - i)
+        elif pis:
+            i = pis[0]
+            if i == 0 or i + 1 == L - 1:
+                family = "alkene_terminal"
+                feature = (path[0], path[1]) if i == 0 else (path[L - 1], path[L - 2])
+            else:
+                family, feature, x = "alkene_internal", (path[i], path[i + 1]), min(i, L - 2 - i)
+        else:
+            family, feature = "chain", ()
+        label = family if family == "chain" else f"{family}:{_label(state, feature)}"
+        signature = (family, n, x, me._comp_key(state, cid),
+                     min(tuple(_label(state, [a]) for a in path), tuple(_label(state, [a]) for a in reversed(path))))
+        if signature not in self._verified:
+            key, forms = self.forms(family, n, x)
+            g = me._graph(me._first_rows(state, cid))
+            if me._comp_key(state, cid) != key or not any(me._isomorphic(g, h) for h in forms):
+                raise _OffDeclared(f"a product is not the declared {family} of {n} periods")
+            if self.label(family, n) != label and family not in INTERIOR_FAMILIES:
+                raise _OffDeclared(f"a product labelled {label}, the probe {self.label(family, n)}")
+            self._verified.add(signature)
+        ends = tuple((seg[0] in atoms, seg[-1] in atoms, any(a in atoms for a in seg)) for seg in segs)
+        return family, label, n, ends
+
+    def identify(self, state, cid) -> Tuple:
+        """(label, n, positions) of a component with no backbone origin (a
+        depository molecule): the probe it is isomorphic to, its length from
+        its molar mass and the family's mass offset."""
+        mass = Fraction(state.components.molar_mass_g_mol(cid))
+        g = me._graph(me._first_rows(state, cid))
+        key = me._comp_key(state, cid)
+        for family in FAMILIES:
+            for off in sorted(self.offsets.get(family, ())):
+                n = (mass - off) / self.unit_mass
+                if n.denominator != 1 or n < 1:
+                    continue
+                n = int(n)
+                hits = []
+                for x in self.positions(family, n):
+                    try:
+                        k, forms = self.forms(family, n, x)
+                    except _OffDeclared:
+                        continue
+                    if k == key and any(me._isomorphic(g, h) for h in forms):
+                        hits.append(x)
+                if hits:
+                    return self.label(family, n), n, (None if hits == [None] else hits)
+        raise _OffDeclared("a depository molecule that is no declared state")
+
+
+def _fired(engine, state, tr, view, segs, probes) -> List[Tuple]:
+    """The classified product components of firing ``tr`` on ``state``
+    (rolled back)."""
+    saved, engine.state = engine.state, state
+    try:
+        tx, cids = engine._begin_apply(tr, view)
+        try:
+            return [probes.classify(state, c, segs) for c in cids]
+        finally:
+            tx.rollback()
+    finally:
+        engine.state = saved
+
+
+def _relative(product, L, k, nbb) -> Tuple:
+    """(family, alpha, beta, gamma) of a product of one reactant of L
+    backbone atoms with anchor k: its length is alpha*L + beta*k + gamma
+    backbone atoms (the piece holding the reactant's first atom, its last,
+    both or neither)."""
+    family, _label, n, ends = product
+    first, last, _any = ends[0]
+    lp = n * nbb
+    if first and last:
+        return (family, 1, 0, lp - L)
+    if first:
+        return (family, 0, 1, lp - k)
+    if last:
+        return (family, 1, -1, lp - L + k)
+    return (family, 0, 0, lp)
+
+
+def _absolute(product) -> Tuple:
+    family, label, n, _ends = product
+    return (label, n)
+
+
+def _outcome_list(counter: Counter) -> list:
+    return [[m, [list(p) for p in outcome]] for outcome, m in sorted(counter.items())]
+
+
+class _Laws:
+    """The product law of every kernel term (module doc, product laws)."""
+
+    def __init__(self, engine, probes, n_hi):
+        self.engine, self.probes, self.n_hi = engine, probes, n_hi
+        self.nbb = probes.nbb
+        self._partners = {}
+
+    # -- the states of one participant class ---------------------------------
+    def _states(self, label):
+        """[(n, x)] the law reads for a participant class: every length of a
+        chain or end family whose label is ``label``, and the far-field
+        interior positions."""
+        family = family_of(label)
+        if family in INTERIOR_FAMILIES:     # the middle of the two longest probes
+            xs = self.probes.positions(family, self.n_hi)
+            return [(self.n_hi, xs[-1]), (self.n_hi, xs[-2]),
+                    (self.n_hi - 1, self.probes.positions(family, self.n_hi - 1)[-1])]
+        return [(n, None) for n in range(1, self.n_hi + 1) if self._label_ok(family, n, label)]
+
+    def _label_ok(self, family, n, label):
+        try:
+            return self.probes.label(family, n) == label
+        except _OffDeclared:
+            return False
+
+    # -- measuring --------------------------------------------------------------
+    def _uni(self, ci, label, n, x):
+        """[(anchor, products)] of every allowed transition of class ``ci`` at
+        the feature of probe (label, n, x)."""
+        family = family_of(label)
+        seg, feature, entry = self.probes.entry(family, n, x)
+        allowed = _uni_all(entry).get(ci, ((), 0))[0]
+        if not allowed:
+            return seg, []
+        state, paths = self.probes.melt()
+        self.probes.put(state, paths[0], family, n, x)
+        cid = state.components.component_of(seg[0])
+        view = me._LocalView(state, [cid])
+        out = []
+        for tr in allowed:
+            touched = _heavy_touched(tr)
+            if feature and not touched & set(feature):
+                continue
+            k = min(seg.index(a) for a in touched if a in seg)
+            out.append((k, _fired(self.engine, state, tr, view, [seg], self.probes)))
+        return seg, out
+
+    def _partner(self, ci, q, label):
+        """(family, n, x, sites) of a probe with sites of participant ``q`` of
+        class ``ci`` in class ``label``: the far field first."""
+        key = (ci, q, label)
+        if key not in self._partners:
+            found = None
+            for n, x in sorted(self._states(label), key=lambda s: -s[0]) + \
+                    [(self.n_hi, xx) for xx in self.probes.positions(family_of(label), self.n_hi)]:
+                seg, feature, entry = self.probes.entry(family_of(label), n, x, chain=1)
+                sites = [(kind, s) for (cj, p, kind), ss in sorted(entry.sites.items(), key=repr)
+                         if cj == ci and p == q for s in ss if not feature or set(s) & set(feature)]
+                if sites:
+                    found = (family_of(label), n, x, sites)
+                    break
+            if found is None:
+                raise _OffDeclared(f"no partner site of class {label}")
+            self._partners[key] = found
+        return self._partners[key]
+
+    def _bi(self, ci, p, label, n, x, partner_label, check=False):
+        """[(anchor, product)] of every site of participant ``p`` at the
+        feature of probe (label, n, x), each fired with a partner of class
+        ``partner_label``; the product is participant p's (``("join", family,
+        gamma)`` when one component holds both)."""
+        family = family_of(label)
+        seg, feature, entry = self.probes.entry(family, n, x)
+        cls = self.engine.classes[ci]
+        mine = [(kind, s) for (cj, pp, kind), ss in sorted(entry.sites.items(), key=repr)
+                if cj == ci and pp == p for s in ss if not feature or set(s) & set(feature)]
+        if not mine:
+            return seg, []
+        q = 1 - p
+        pf, pn, px, theirs = self._partner(ci, q, partner_label)
+        state, paths = self.probes.melt()
+        self.probes.put(state, paths[0], family, n, x)
+        pseg, _pfeat = self.probes.put(state, paths[1], pf, pn, px)
+        ca, cb = state.components.component_of(seg[0]), state.components.component_of(pseg[0])
+        out = []
+        for kind, site in mine:
+            usable = [(kb, sb) for kb, sb in theirs
+                      if not me._pair_leak(cls, *((kind, kb) if p == 0 else (kb, kind)))]
+            if not usable:
+                raise _OffDeclared("a site whose every partner leaks")
+            seen = set()
+            for kb, sb in usable[:2 if check else 1]:
+                c0, s0, c1, s1 = (ca, site, cb, sb) if p == 0 else (cb, sb, ca, site)
+                saved, self.engine.state = self.engine.state, state
+                try:
+                    tr, view = self.engine._pair_transition(ci, c0, s0, c1, s1)
+                finally:
+                    self.engine.state = saved
+                if tr.leak:
+                    raise _OffDeclared("a leaking pair")
+                prods = _fired(self.engine, state, tr, view, [seg, pseg], self.probes)
+                own = [r for r in prods if r[3][0][2]]
+                if len(own) != 1:
+                    raise _OffDeclared("a participant split over several products")
+                (r,) = own
+                if r[3][1][2]:
+                    if not (r[3][0][0] and r[3][0][1] and r[3][1][0] and r[3][1][1]):
+                        raise _OffDeclared("a joined product that is not both whole reactants")
+                    seen.add(("join", r[0], r[2] * self.nbb - len(seg) - len(pseg)))
+                else:
+                    seen.add(r)
+            if len(seen) != 1:
+                raise _OffDeclared("a participant's product depends on its partner's site")
+            k = min(seg.index(a) for a in site if a in seg)
+            out.append((k, next(iter(seen))))
+        return seg, out
+
+    # -- the law of one participant ------------------------------------------
+    def participant(self, ci, p, label, partner_label=None) -> dict:
+        family = family_of(label)
+        anchor = "chain" if family == "chain" else "end" if family in END_FAMILIES else "interior"
+
+        def measure(n, x, check=False):
+            if partner_label is None:
+                seg, rows = self._uni(ci, label, n, x)
+                rows = [(k, tuple(sorted(prods, key=repr))) for k, prods in rows]
+            else:
+                seg, rows = self._bi(ci, p, label, n, x, partner_label, check)
+                rows = [(k, (prod,)) for k, prod in rows]
+            L = len(seg)
+            if anchor == "end":
+                rows = [(L - 1, r) for _k, r in rows]
+            elif anchor == "interior":
+                rows = [(x, r) for _k, r in rows]
+
+            def code(prods, k, rel):
+                out = []
+                for r in prods:
+                    if r[0] == "join":
+                        out.append(r)
+                    else:
+                        out.append(_relative(r, L, k, self.nbb) if rel else _absolute(r))
+                return tuple(sorted(out))
+            rel = [(k, code(prods, k, True)) for k, prods in rows]
+            ab = Counter(code(prods, k, False) for k, prods in rows)
+            return L, rel, ab
+
+        law = {"class": label, "family": family, "anchor": anchor}
+        if anchor == "interior":
+            got = [Counter(r for _k, r in measure(n, x, check=(i == 0))[1]) for i, (n, x) in enumerate(self._states(label))]
+            if any(g != got[0] for g in got[1:]):
+                raise KernelRatesError(f"{label}: the far-field products of class {ci} differ between "
+                                       "neighbouring positions")
+            law["far"] = {"outcomes": _outcome_list(got[0])}
+            return law
+        exact, rel_hi = {}, {}
+        states = self._states(label)
+        for n, x in states:
+            L, rel, ab = measure(n, x, check=(n == self.n_hi))
+            exact[n] = ab
+            rel_hi[n] = (L, rel)
+        if anchor == "end":
+            L, rel = rel_hi[self.n_hi]
+            far = Counter(r for _k, r in rel)
+            law["far"] = {"outcomes": _outcome_list(far)}
+        else:
+            L, rel = rel_hi[self.n_hi]
+            by_k = defaultdict(Counter)
+            for k, r in rel:
+                by_k[k][r] += 1
+            bulk = by_k.get(L // 2, Counter())
+            odd = [k for k in range(L) if by_k.get(k, Counter()) != bulk]
+            edge = max([min(k, L - 1 - k) + 1 for k in odd], default=0)
+            if 2 * edge >= L:
+                raise KernelRatesError(f"class {ci}: end effects reach the middle of the longest probe")
+            law["far"] = {"edge": edge, "bulk": _outcome_list(bulk),
+                          "first": {str(k): _outcome_list(by_k.get(k, Counter())) for k in range(edge)},
+                          "last": {str(k): _outcome_list(by_k.get(L - 1 - k, Counter())) for k in range(edge)}}
+        for n in sorted(exact)[-EXACT_POINTS:]:
+            if len(exact) < EXACT_POINTS or predict(law, n, self.nbb, self.probes.label) != exact[n]:
+                raise KernelRatesError(f"class {ci} {label}: the far-field law does not hold at {n} periods")
+        law["exact"] = {str(n): _outcome_list(c) for n, c in sorted(exact.items())}
+        law["exact_to_n"] = max(exact) if exact else 0
+        return law
+
+
+def _expand(outcomes, L, k, nbb, label_of) -> Counter:
+    """Absolute outcomes of relative ones at reactant length L (backbone
+    atoms) and anchor k; joins pass through."""
+    out = Counter()
+    for m, prods in outcomes:
+        coded = []
+        for p in prods:
+            if p[0] == "join":
+                coded.append(tuple(p))
+                continue
+            family, alpha, beta, gamma = p
+            lp = alpha * L + beta * k + gamma
+            if lp < 1 or lp % nbb:
+                return None
+            coded.append((label_of(family, lp // nbb), lp // nbb))
+        out[tuple(sorted(coded))] += m
+    return out
+
+
+def predict(law: dict, n: int, nbb: int, label_of=None) -> Counter:
+    """The absolute outcomes (Counter of product tuples) of a chain or end
+    law's far rule on n periods."""
+    label_of = label_of or (lambda family, m: family)
+    L = n * nbb
+    far = law["far"]
+    total = Counter()
+    if law["anchor"] == "end":
+        got = _expand(far["outcomes"], L, L - 1, nbb, label_of)
+        return Counter() if got is None else got
+    edge = far["edge"]
+    for k in range(L):
+        if k < edge:
+            rows = far["first"][str(k)]
+        elif L - 1 - k < edge:
+            rows = far["last"][str(L - 1 - k)]
+        else:
+            rows = far["bulk"]
+        got = _expand(rows, L, k, nbb, label_of)
+        if got is None:
+            raise KernelRatesError(f"a far-field law gives an impossible product at {n} periods")
+        total.update(got)
+    return total
+
+
+def _template_overrides(engine, probes, t, ci) -> list:
+    """The depository overrides of one template at their exact sizes:
+    per override its weight, its reactant states (label, n, interior
+    positions or None; unordered for a bimolecular term), the products of a
+    matched transition and the matched multiplicity (transitions on the
+    reactant; for two reactants, ordered cross-component site pairs, the
+    engine's count before its divisor).  Read on the override's own molecules
+    with the melt engine's matching (``_uni_overrides``, ``_pair_override``).
+    An override whose molecules are no declared state is kept with its
+    reason (``refused``)."""
+    out = []
+    for o, ov in enumerate(t.overrides):
+        try:
+            out.append(_one_override(engine, probes, t, ci, o, ov))
+        except _OffDeclared as error:
+            out.append({"name": ov.name, "refused": str(error)})
+    return out
+
+
+def _one_override(engine, probes, t, ci, o, ov) -> dict:
+    """One override of class ``ci`` (``_template_overrides``)."""
+    state = me._rows_state(ov.reactants)
+    comps = list(state.components.ids())
+    if len(comps) != len(t.participants):
+        raise _OffDeclared(f"override {ov.name}: {len(comps)} reactants for a "
+                           f"{len(t.participants)}-participant template")
+    reactants = [probes.identify(state, c) for c in comps]
+    entries = engine._scan(comps, state=state)
+    saved, engine.state = engine.state, state
+    try:
+        if len(comps) == 1:
+            allowed = entries[comps[0]].uni_o.get((ci, o), ((), 0))[0]
+            m = len(allowed)
+            fire = (allowed[0], me._LocalView(state, comps)) if allowed else None
+        else:
+            m, fire = 0, None
+            for ca, cb in ((comps[0], comps[1]), (comps[1], comps[0])):
+                for (cj, p0, k0), s0 in sorted(entries[ca].sites.items(), key=repr):
+                    if cj != ci or p0 != 0:
+                        continue
+                    for (ck, p1, k1), s1 in sorted(entries[cb].sites.items(), key=repr):
+                        if ck == ci and p1 == 1 and engine._pair_override(ci, k0, k1) == o:
+                            m += len(s0) * len(s1)
+                            if fire is None:
+                                fire = engine._pair_transition(ci, ca, s0[0], cb, s1[0])
+    finally:
+        engine.state = saved
+    if not m:
+        raise _OffDeclared(f"override {ov.name}: no transition of the template is its reaction")
+    tr, view = fire
+    saved, engine.state = engine.state, state
+    try:
+        tx, cids = engine._begin_apply(tr, view)
+        try:
+            products = sorted([list(probes.identify(state, c)[:2]) for c in cids])
+        finally:
+            tx.rollback()
+    finally:
+        engine.state = saved
+    return {"name": ov.name, "weight": float(ov.weight), "multiplicity": m,
+            "reactants": sorted([lab, n, pos] for lab, n, pos in reactants),
+            "products": products}
+
+
+# --------------------------------------------------------------------------
 # the table
 # --------------------------------------------------------------------------
 def _load(doc, spec, temperature, allow_unbound):
@@ -469,6 +1111,7 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
 
     kernels: Dict[str, dict] = {}
     kmc_only: List[dict] = []
+    jobs = []                 # (term, class index, classes, role order): the product laws
     template_rows = []
     for ci, (t, cls) in enumerate(zip(templates, classes)):
         ktype = kernel_type(t, cls)
@@ -532,6 +1175,7 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
                 if partial:
                     term["partially_leaking"] = True
             k["templates"].append(term)
+            jobs.append((term, ci, combo, order))
             row["kernels"].append(kid)
             placed = True
         if not placed:
@@ -547,12 +1191,65 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
         else:
             k["rate_law"] = "R = sum (w_over_divisor)*S0*S1/V (mol/s; S_p in mol of sites, V in m3)"
     unit_mass = spec.repeat_unit.composition.molar_mass_g_mol() / ppu
+    if bb_per_unit % ppu:
+        raise KernelRatesError("the declared unit's backbone is not a whole number of primitive periods")
+    nbb = bb_per_unit // ppu
+    n_hi = units_hi * ppu
+    probes = _Probes(spec, engine, ppu, nbb, 2 * units_hi + 3)
+    laws = _Laws(engine, probes, n_hi)
+    measured, placed_overrides = {}, set()
+    for term, ci, combo, order in jobs:
+        t = templates[ci]
+        counts = [term] if len(combo) == 1 else [term["S0"], term["S1"]]
+        if any(family_of(c) in INTERIOR_FAMILIES and (x.get("per_feature") == 0 or x.get("k_per_feature") == 0)
+               for c, x in zip([combo[p] for p in order], counts)):
+            # an interior participant with no far-field site: the kernel rate is 0
+            term["law"], term["law_inert"] = None, "an interior participant with no far-field site"
+            term["overrides"] = []
+            continue
+        try:
+            if len(combo) == 1:
+                term["law"] = laws.participant(ci, 0, combo[0])
+            else:
+                term["law"] = {f"S{slot}": laws.participant(ci, p, combo[p], combo[1 - p])
+                               for slot, p in enumerate(order)}
+        except _OffDeclared as error:
+            term["law"], term["law_refused"] = None, str(error)
+        if ci not in measured:
+            measured[ci] = _template_overrides(engine, probes, t, ci)
+        term["overrides"] = [o for o in measured[ci] if "refused" not in o
+                             and sorted(r[0] for r in o["reactants"]) == sorted(combo)]
+        placed_overrides.update((t.name, o["name"]) for o in term["overrides"])
+    unplaced = [dict(o, template=templates[ci].name) for ci, rows in sorted(measured.items()) for o in rows
+                if (templates[ci].name, o["name"]) not in placed_overrides]
+    families = {}
+    for family in FAMILIES:
+        labels = {}
+        for n in range(1, n_hi + 1):
+            try:
+                labels[n] = probes.label(family, n)
+            except _OffDeclared:
+                continue
+        offsets = probes.offsets.get(family, set())
+        if len(offsets) > 1:
+            raise KernelRatesError(f"{family}: the molar mass is not affine in n ({sorted(offsets)})")
+        if not labels:
+            continue
+        far = labels[max(labels)]
+        families[family] = {
+            "label_far": far, "min_n": min(labels),
+            "labels": {str(n): v for n, v in sorted(labels.items()) if v != far},
+            "molar_mass_offset_g_mol": float(next(iter(offsets))),
+            "declared_species": {f"{lab}@{n}": name for (lab, n), name in sorted(probes.species.items())
+                                 if family_of(lab) == family}}
     out = {"schema": SCHEMA, "temperature_K": float(temperature),
            "catalog": {"chemistry_sha256": (doc.get("provenance") or {}).get("chemistry_sha256"),
                        "templates": len(templates)},
            "moment_unit": {"periods_per_declared_unit": ppu, "molar_mass_g_mol": unit_mass,
+                           "backbone_atoms_per_period": nbb,
                            "definition": "n counts primitive periods of the declared backbone"},
            "chain_lengths_probed": [n * ppu for n in n_values],
+           "families": families, "laws_exact_to_n": n_hi, "overrides_unplaced": unplaced,
            "kernels": dict(sorted(kernels.items())), "kmc_only": kmc_only, "templates": template_rows}
     if run is not None:
         out["hazard"] = hazard(doc, out, run)
