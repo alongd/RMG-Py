@@ -1,7 +1,7 @@
 """Kernel references (I-214, slice S2 of the shared-chemistry design): an
 exact length-resolved population balance (V0) and a length-level stochastic
 simulation (V1) of one kernel set, both read from a kernel-rates table
-(``kernel_rates``, ``kmc-kernel-rates/2``) and a deck's initial ensemble.
+(``kernel_rates``, ``kmc-kernel-rates/3``) and a deck's initial ensemble.
 
 **The kernel model.** A molecule is a state (family, n): its pool family
 (``chain``, ``radical_end``, ``alkene_terminal``, ``radical_interior``,
@@ -45,7 +45,18 @@ sites with same-molecule rejection.
 **Observables**: the ``whole_*`` keys of ``melt_observables.
 mom_reported_quantities`` (``WHOLE_ENSEMBLE_DEFINITION``): mass-DP moments
 of every polymer-derived state (not a declared species, at least one
-declared unit of backbone), in mol.
+declared unit of backbone), in mol.  For the comparison rows
+(``comparison_rows``, I-217) every time also carries ``row``
+(``KernelModel.row_observation``): atoms per element (a state holds n *
+the period's composition + its family's offset, from the table), mass,
+declared species, polymer-derived states per length, overflow molecules.
+
+**Element balance**: at model build every term is checked to conserve each
+element exactly (rationals): a unimolecular outcome's products against its
+reactant, a join against both reactants, and a separable bimolecular term
+by the change of each participant, which must be one change per participant
+and sum to none.  A term that does not balance is listed
+(``KernelModel.unbalanced``) and both references then show the residual.
 """
 
 import argparse
@@ -54,6 +65,7 @@ import json
 import math
 import sys
 from collections import Counter, defaultdict
+from fractions import Fraction
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -65,7 +77,7 @@ from rmgpy import constants
 from rmgpy.kmc import kernel_rates as K
 from rmgpy.kmc.melt_observables import WHOLE_ENSEMBLE_KEYS, whole_averages
 
-SCHEMA = "kmc-kernel-reference/1"
+SCHEMA = "kmc-kernel-reference/2"
 
 
 class KernelReferenceError(ValueError):
@@ -112,6 +124,11 @@ class KernelModel:
         self.phi = float(phi)
         self.families = [f for f in K.FAMILIES if f in table["families"]]
         self.fam = {f: table["families"][f] for f in self.families}
+        self.period_composition = {el: Fraction(v) for el, v in unit["composition"].items()}
+        self.composition_offset = {f: {el: Fraction(v) for el, v in self.fam[f]["composition_offset"].items()}
+                                   for f in self.families}
+        self.species_of = {(f, int(key.rsplit("@", 1)[1])): name for f in self.families
+                           for key, name in self.fam[f]["declared_species"].items()}
         init = declared_initialization(spec)
         initial = Counter()
         for dp, count in init.dp_counts:
@@ -146,6 +163,22 @@ class KernelModel:
 
     def molar_mass(self, family, n) -> float:
         return self.unit_mass * n + self.fam[family]["molar_mass_offset_g_mol"]
+
+    def composition(self, family, n) -> Dict[str, Fraction]:
+        """Atoms per element of state (family, n): n periods plus the family's offset."""
+        offset = self.composition_offset[family]
+        return {el: v for el in sorted(set(self.period_composition) | set(offset))
+                if (v := n * self.period_composition.get(el, 0) + offset.get(el, 0))}
+
+    def _target_composition(self, target) -> Counter:
+        family, n = (self.families[target[1]], target[2]) if isinstance(target, tuple) else self.state(target)
+        return Counter(self.composition(family, n))
+
+    def _unbalanced(self, kernel, template, delta: Counter):
+        delta = {el: v for el, v in delta.items() if v}
+        if delta and not any(u["template"] == template for u in self.unbalanced):
+            self.unbalanced.append({"kernel": kernel, "template": template,
+                                    "delta": {el: str(v) for el, v in sorted(delta.items())}})
 
     def polymer(self, family, n) -> bool:
         label = self.label_of(family, n)
@@ -198,6 +231,7 @@ class KernelModel:
         self.bis: List[_Bi] = []
         self.pair_overrides: List[dict] = []
         self.not_modelled, self.inert, self.excluded, self.uni_terms = [], [], [], []
+        self.unbalanced: List[dict] = []
         uni_overrides = []
         for kid, kernel in sorted(table["kernels"].items()):
             if keep is not None and kid not in keep:
@@ -215,7 +249,7 @@ class KernelModel:
                 phi = self.phi if term["phi_thinned"] else 1.0
                 if kernel["molecularity"] == 1:
                     w = self._weight(table, name)
-                    self._add_uni(term["law"], w * phi)
+                    self._add_uni(term["law"], w * phi, kid, name)
                     self.uni_terms.append({"kernel": kid, "template": name})
                     uni_overrides += [(term["law"], w * phi, o, phi) for o in term.get("overrides", [])]
                 else:
@@ -233,12 +267,17 @@ class KernelModel:
         row = next(r for r in table["templates"] if r["template"] == name)
         return float(row["weight"])
 
-    def _add_uni(self, law, w):
+    def _add_uni(self, law, w, kernel=None, template=None):
         family = law["family"]
         for n in range(1, self.n_max + 1):
             for m, prods in self._outcomes(law, family, n):
                 targets = tuple(self._target(label, n2) for label, n2 in prods)
                 self.uni[self.index(family, n)].append((w * m, targets))
+                delta = Counter()
+                for tg in targets:
+                    delta.update(self._target_composition(tg))
+                delta.subtract(self.composition(family, n))
+                self._unbalanced(kernel, template, delta)
 
     def _add_bi(self, kid, name, law, k) -> _Bi:
         laws = [law["S0"], law["S1"]]
@@ -271,6 +310,29 @@ class KernelModel:
             if gamma % self.nbb:
                 raise KernelReferenceError(f"{name}: a joined product off the period grid")
             join = (self.families.index(family), gamma // self.nbb)
+            # affine in n: n0 + n1 + g periods of the joined family against the two reactants
+            delta = Counter(self.composition(family, gamma // self.nbb))
+            for slot_law in laws:
+                delta.subtract(self.composition(slot_law["family"], 0))
+            self._unbalanced(kid, name, delta)
+        else:
+            changes = []
+            for per in outcomes:
+                seen = set()
+                for i, kept in per.items():
+                    for _m, tg in kept:
+                        d = self._target_composition(tg)
+                        d.subtract(self._target_composition(i))
+                        seen.add(tuple(sorted((el, v) for el, v in d.items() if v)))
+                changes.append(seen)
+            if any(len(c) > 1 for c in changes):
+                self._unbalanced(kid, name, Counter({"(participant change depends on the site)": 1}))
+            else:
+                total = Counter()
+                for c in changes:
+                    for el, v in next(iter(c), ()):
+                        total[el] += v
+                self._unbalanced(kid, name, total)
         bi = _Bi(kid, name, k, sites, outcomes, join)
         self.bis.append(bi)
         return bi
@@ -391,6 +453,53 @@ class KernelModel:
         mn, mw = whole_averages(mu, a, e)
         return {"whole_mu0_mol": mu[0], "whole_mu1_mol": mu[1], "whole_mu2_mol": mu[2],
                 "whole_Mn_g_mol": mn, "whole_Mw_g_mol": mw}
+
+    def row_observation(self, counts: numpy.ndarray, over: Optional[numpy.ndarray] = None) -> dict:
+        """The comparison-row inputs of state counts (representative system):
+        atoms per element (exact integers when the counts are; else floats),
+        mass (g, representative), declared species by name, polymer-derived
+        states by length in periods (on the grid), overflow molecules, and
+        the ``whole_*`` observables."""
+        atoms = Counter()
+        mass = []
+        species = Counter()
+        species_mass = []
+        lengths = Counter()
+        exact = True
+        for i in numpy.flatnonzero(counts):
+            family, n = self.state(i)
+            c = counts[i]
+            exact = exact and float(c).is_integer()
+            k = int(c) if exact else Fraction(float(c))
+            for el, v in self.composition(family, n).items():
+                atoms[el] += k * v
+            m = c * self.molar_mass(family, n)
+            mass.append(m)
+            name = self.species_of.get((family, n))
+            if name is not None:
+                species[name] += c
+                species_mass.append(m)
+            elif self.polymer(family, n):
+                lengths[n] += c
+        overflow = 0.0
+        if over is not None:
+            for f, family in enumerate(self.families):
+                k0, k1, _k2 = over[3 * f: 3 * f + 3]
+                if not k0:
+                    continue
+                exact = exact and float(k0).is_integer() and float(k1).is_integer()
+                n0, n1 = (int(k0), int(k1)) if exact else (Fraction(float(k0)), Fraction(float(k1)))
+                for el in set(self.period_composition) | set(self.composition_offset[family]):
+                    atoms[el] += n1 * self.period_composition.get(el, 0) + n0 * self.composition_offset[family].get(el, 0)
+                mass.append(self.unit_mass * k1 + self.fam[family]["molar_mass_offset_g_mol"] * k0)
+                overflow += k0
+        elements = {el: (int(v) if exact and Fraction(v).denominator == 1 else float(v))
+                    for el, v in sorted(atoms.items())}
+        return {"elements": elements, "exact_counts": exact, "mass_g": math.fsum(mass),
+                "species": {k: float(v) for k, v in sorted(species.items())},
+                "species_mass_g": math.fsum(species_mass),
+                "lengths": {str(n): float(v) for n, v in sorted(lengths.items())},
+                "overflow_molecules": float(overflow), "whole": self.observables(counts, over)}
 
     def mass_periods(self, counts, over=None) -> float:
         """Total backbone periods held (conserved by every kernel)."""
@@ -570,7 +679,7 @@ def population_balance(model: KernelModel, times: Sequence[float], *, rtol: floa
         N, over = numpy.array(y[:model.size]), numpy.array(y[model.size:])
         row = {"time_s": t, **model.observables(N, over),
                "overflow_period_fraction": float(sum(over[3 * f + 1] for f in range(len(model.families))) / total),
-               "counts": N, "overflow": over}
+               "counts": N, "overflow": over, "row": model.row_observation(N, over)}
         out.append(row)
     return out
 
@@ -617,7 +726,7 @@ def stochastic(model: KernelModel, times: Sequence[float], seed: int, *,
             thin[id(po["term"])].append(po)
 
     def record():
-        out.append({"time_s": times[nxt], **model.observables(N, over)})
+        out.append({"time_s": times[nxt], **model.observables(N, over), "row": model.row_observation(N, over)})
 
     def make(target):
         if isinstance(target, tuple):
@@ -700,7 +809,8 @@ def ensemble(model: KernelModel, times, seeds: Sequence[int], **kw) -> dict:
             se = float(values.std(ddof=1) / math.sqrt(len(values))) if len(values) > 1 else float("nan")
             row[key] = {"mean": float(values.mean()), "se": se}
         rows.append(row)
-    return {"seeds": list(seeds), "events": [r[1] for r in runs], "rows": rows}
+    return {"seeds": list(seeds), "events": [r[1] for r in runs], "rows": rows,
+            "row_observations": [[x["row"] for x in r[0]] for r in runs]}
 
 
 def comparison(pbe_rows, ssa) -> List[dict]:
@@ -752,12 +862,22 @@ def main(argv=None) -> int:
     except (KernelReferenceError, K.KernelRatesError, kr.RunError, OSError, ValueError) as error:
         print(f"refused: {error}", file=sys.stderr)
         return 2
+    from rmgpy.kmc.melt_engine import SpeciesIdentity
+    from rmgpy.kmc.melt_observables import declared_species_names
+    observations = ssa.pop("row_observations")
     doc = {"schema": SCHEMA, "table": str(Path(args.table).resolve()),
            "table_sha256": hashlib.sha256(text.encode()).hexdigest(),
-           "temperature_K": table["temperature_K"], "phi": model.phi, "n_max": model.n_max,
-           "volume_m3": model.volume, "scale_factor": model.scale,
+           "deck": {"path": str(Path(args.deck).resolve()), "sha256": deck.sha256,
+                    "chemistry_sha256": kr.chemistry_sha256(deck.spec), "cutoff": deck.xs},
+           "temperature_K": table["temperature_K"], "times_s": list(times), "phi": model.phi,
+           "pass": "well_mixed_bound" if model.phi == 1.0 else f"phi={model.phi!r}", "n_max": model.n_max,
+           "volume_m3": model.volume, "scale_factor": model.scale, "unit_mol": model.u,
+           "geometry": {"periods_per_declared_unit": model.ppu, "backbone_atoms_per_period": model.nbb},
+           "declared_species": declared_species_names(deck.spec, SpeciesIdentity(deck.spec)),
            "excluded_kernels": model.excluded, "inert_terms": model.inert, "not_modelled_terms": model.not_modelled,
-           "pbe": [{k: v for k, v in r.items() if k not in ("counts", "overflow")} for r in pbe],
+           "unbalanced_terms": model.unbalanced,
+           "row_observations": {"pbe": [r["row"] for r in pbe], "ssa": {"seeds": ssa["seeds"], "runs": observations}},
+           "pbe": [{k: v for k, v in r.items() if k not in ("counts", "overflow", "row")} for r in pbe],
            "pbe_final_distribution": {f"{model.label_of(*model.state(i))}@{model.state(i)[1]}": float(v)
                                       for i, v in enumerate(pbe[-1]["counts"]) if v},
            "ssa": ssa, "comparison": comparison(pbe, ssa)}

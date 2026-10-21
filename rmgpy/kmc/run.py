@@ -152,6 +152,7 @@ seeds still run and the run's status is ``failed``.
            pooled (melt_engine.pooled_leak_fraction over per_seed)}
     mom: null | {path, sha256, times, header (the --mom file's header, null for the list forms)}
     comparison: "comparison.csv"
+    rows: "rows.json" (or rows_refused: why the rows could not be mapped)
     wall_s
 
 The run's leak number is ``leak.pooled.fraction`` only: per seed the
@@ -174,6 +175,12 @@ empty and gives the statistics of the seeds that reached the time only as
 ``mom_flags``: the names of the MoM run's flags (the header form's
 ``header.flags``), sorted and ";"-joined, on every row.  Without ``--mom`` the
 MoM columns are empty.
+
+**Rows** ``<out>/rows.json``: the run's comparison rows
+(``comparison_rows.kmc_rows``, ``kmc-comparison-rows/1``: element inventory
+and residual, mass, declared species, the ladder and length distribution in
+primitive periods, whole-ensemble moments), joined with a kernel reference's
+or a MoM file's rows by ``python -m rmgpy.kmc.comparison_rows join``.
 
 ``--mom FILE``: JSON (a list) or JSON lines of ``{"time_s": t, "quantities":
 {...}}`` with ``quantities`` keyed like ``mom_reported_quantities`` (the
@@ -1217,6 +1224,14 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
                              comparison_rows(observations, times, mom_by_time, len(seeds),
                                              sorted(((mom_record or {}).get("header") or {}).get("flags", {}))),
                              labels)
+            from rmgpy.kmc import comparison_rows as cr
+            try:
+                rows = cr.kmc_rows(out, deck=deck.path)
+            except cr.ComparisonRowsError as error:
+                manifest["rows_refused"] = str(error)
+            else:
+                (out / "rows.json").write_text(json.dumps(rows, sort_keys=True, indent=1, allow_nan=False) + "\n")
+                manifest["rows"] = "rows.json"
     except BaseException as error:
         manifest["status"] = "failed"
         manifest["error"] = f"{type(error).__name__}: {error}"

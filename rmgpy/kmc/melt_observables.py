@@ -54,6 +54,12 @@ Tiers (design §7)
    so the tail support invariant ``mu1 >= (xs + 1) mu0`` holds); diagnostic
    only.
 
+Inventory inputs (schema 7, for ``comparison_rows``): every class block of
+tier 1 (``polymer_derived``, ``undeclared_light``, each declared species)
+carries its ``composition`` (representative atom counts by element and
+isotope; the blocks sum to ``invariants.composition``), and tier 2 carries
+``backbone_distribution``: the polymer-derived molecules by ``B_c``.
+
 MoM mass law on the exported state (``mom_mass_law``)
 -----------------------------------------------------
 The exported MoM state is the tail moments ``mu``, the PHYSICAL end-group
@@ -140,7 +146,7 @@ from rmgpy.polymer_mass import (Composition, EvolvedPoolMass, ExplicitInventory,
                                 observables_from_moments)
 from rmgpy.polymer_spec import PolymerSpec
 
-OBSERVABLES_SCHEMA = "kmc-melt-observables/6"
+OBSERVABLES_SCHEMA = "kmc-melt-observables/7"
 STOP_SCHEMA = "kmc-melt-stop/1"
 # The reasons ``write_time_series`` can stop with: the last requested time was
 # reached ("horizon"), or the engine had no enabled channel when it was
@@ -218,6 +224,14 @@ def _key(counts: Mapping) -> Tuple:
 def _from_declared(composition: Composition) -> Counter:
     return Counter({(symbol, None if isotope == -1 else isotope): count
                     for symbol, isotope, count in composition.entries})
+
+
+def _element_counts(records) -> Dict[str, int]:
+    """Summed atom counts of components, keyed like ``invariants.composition``."""
+    total = Counter()
+    for r in records:
+        total.update(dict(r.composition))
+    return {f"{el}{iso or ''}": k for (el, iso), k in _key(total)}
 
 
 def _minus(counts: Mapping, *parts: Tuple[int, Mapping]) -> Tuple:
@@ -855,18 +869,20 @@ class MeltObserver:
             amount = u * len(rs)
             species[name] = {"molecules": len(rs), "amount_mol": amount,
                              "mass_g": u * _fsum(r.molar_mass_g_mol for r in rs),
+                             "composition": _element_counts(rs),
                              "mom_definition": None if self.sequence else {
                                  "amount_mol": amount, "mass_g": amount * self.declared_molar_mass[name]}}
         polymer_mass = u * _fsum(r.molar_mass_g_mol for r in polymer)
         tier1 = {
             "mom_definition_note": TIER1_NOTE,
             "polymer_derived": {"molecules": len(polymer), "amount_mol": u * len(polymer),
-                                "mass_g": polymer_mass,
+                                "mass_g": polymer_mass, "composition": _element_counts(polymer),
                                 "mom_definition": (None if self.sequence else
                                                    {"amount_mol": mom_amount, "mass_g": mom_mass})},
             "species": species,
             "undeclared_light": {"molecules": len(light), "amount_mol": u * len(light),
-                                 "mass_g": u * _fsum(r.molar_mass_g_mol for r in light)},
+                                 "mass_g": u * _fsum(r.molar_mass_g_mol for r in light),
+                                 "composition": _element_counts(light)},
             "total_mass_g": u * _fsum(r.molar_mass_g_mol for r in records),
         }
 
@@ -947,6 +963,7 @@ class MeltObserver:
             "M0_mol": u * len(polymer), "M1_g": u * m1, "M2_g2_mol": u * m2,
             "Mn_g_mol": m1 / len(polymer) if polymer else 0.0, "Mw_g_mol": m2 / m1 if m1 else 0.0,
             "dp_moments_representative": rep_all, "dp_moments_mol": mol_all,
+            "backbone_distribution": {str(b): k for b, k in sorted(Counter(r.backbone for r in polymer).items())},
             "mass_dp_moments_mol": [u * len(n_m), u * _fsum(n_m), u * _fsum(x * x for x in n_m)],
             "mom_convention": {"mass_g": conv.mass_g, "Mn_g_mol": conv.mn_g_mol, "Mw_g_mol": conv.mw_g_mol,
                                "M2_g2_mol": conv.mw_g_mol * conv.mass_g},

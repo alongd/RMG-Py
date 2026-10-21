@@ -111,8 +111,11 @@ trailing lengths.  Interior laws give the far-field outcomes relative to the
 feature position.  ``law_inert``: an interior participant with no far-field
 site (the rate law above gives 0); ``law_refused``: a product that is no
 declared state (e.g. a vinyl radical).  ``families``: per pool family its
-label per length, the molar-mass offset (M = n * unit mass + offset) and
-the lengths that are declared species.  ``overrides``: each depository
+label per length, the molar-mass offset (M = n * unit mass + offset), the
+element-composition offset (``kmc-kernel-rates/3``, I-217: atoms = n *
+``moment_unit.composition`` + ``composition_offset``, exact rationals as
+strings, keyed like the melt observables' compositions) and the lengths that
+are declared species.  ``overrides``: each depository
 override of the term's template at its exact sizes (reactant states with
 interior positions, products, matched multiplicity, weight); an override
 placed in no term is listed in ``overrides_unplaced``.  A site count is the
@@ -139,7 +142,7 @@ from rmgpy.kmc import window_matcher as wm
 from rmgpy.kmc.declared_chain import ChainGeometry
 from rmgpy.kmc.melt_state import SetBond, SetRadical, materialize
 
-SCHEMA = "kmc-kernel-rates/2"
+SCHEMA = "kmc-kernel-rates/3"
 EXACT_POINTS = 3          # trailing lengths on which a polynomial / feature count must hold exactly
 EXTRA_UNITS = 3           # chain length beyond twice the largest window, in primitive periods
 
@@ -434,6 +437,12 @@ class _OffDeclared(KernelRatesError):
     """A product (or a probe) that is no declared state."""
 
 
+def _declared_counts(composition) -> Counter:
+    """Atom counts of a declared composition by (element, isotope or None)."""
+    return Counter({(symbol, None if isotope == -1 else isotope): count
+                    for symbol, isotope, count in composition.entries})
+
+
 def family_of(label: str) -> str:
     return label.split(":")[0]
 
@@ -500,6 +509,9 @@ class _Probes:
         self._verified = set()
         self.labels: Dict[Tuple[str, int], str] = {}
         self.offsets: Dict[str, set] = defaultdict(set)
+        self.composition = {f"{el}{iso or ''}": Fraction(k, ppu)
+                            for (el, iso), k in _declared_counts(spec.repeat_unit.composition).items()}
+        self.composition_offsets: Dict[str, set] = defaultdict(set)
         self.species: Dict[Tuple[str, int], str] = {}
         self._entries: Dict[Tuple, Any] = {}
         declared = materialize(_single_chain_spec(spec, 1))
@@ -589,6 +601,10 @@ class _Probes:
         if old != label and family not in INTERIOR_FAMILIES:
             raise KernelRatesError(f"{family} on {n} periods has two labels ({old}, {label})")
         self.offsets[family].add(Fraction(state.components.molar_mass_g_mol(cid)) - self.unit_mass * n)
+        atoms = {f"{el}{iso or ''}": k for (el, iso), k in state.components.composition(cid).items()}
+        self.composition_offsets[family].add(tuple(sorted(
+            (el, v) for el in set(atoms) | set(self.composition)
+            if (v := atoms.get(el, 0) - n * self.composition.get(el, 0)))))
         name = self.engine.identity.identify(state, cid)
         if name is not None:
             self.species[(label, n)] = name
@@ -1233,6 +1249,9 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
         offsets = probes.offsets.get(family, set())
         if len(offsets) > 1:
             raise KernelRatesError(f"{family}: the molar mass is not affine in n ({sorted(offsets)})")
+        compositions = probes.composition_offsets.get(family, set())
+        if len(compositions) > 1:
+            raise KernelRatesError(f"{family}: the composition is not affine in n ({sorted(compositions)})")
         if not labels:
             continue
         far = labels[max(labels)]
@@ -1240,6 +1259,7 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
             "label_far": far, "min_n": min(labels),
             "labels": {str(n): v for n, v in sorted(labels.items()) if v != far},
             "molar_mass_offset_g_mol": float(next(iter(offsets))),
+            "composition_offset": {el: str(v) for el, v in next(iter(compositions))},
             "declared_species": {f"{lab}@{n}": name for (lab, n), name in sorted(probes.species.items())
                                  if family_of(lab) == family}}
     out = {"schema": SCHEMA, "temperature_K": float(temperature),
@@ -1247,6 +1267,7 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
                        "templates": len(templates)},
            "moment_unit": {"periods_per_declared_unit": ppu, "molar_mass_g_mol": unit_mass,
                            "backbone_atoms_per_period": nbb,
+                           "composition": {el: str(v) for el, v in sorted(probes.composition.items()) if v},
                            "definition": "n counts primitive periods of the declared backbone"},
            "chain_lengths_probed": [n * ppu for n in n_values],
            "families": families, "laws_exact_to_n": n_hi, "overrides_unplaced": unplaced,
