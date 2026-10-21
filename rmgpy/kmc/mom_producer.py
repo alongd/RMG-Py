@@ -702,21 +702,22 @@ def _bilinear(F: Dict[Tuple[int, int], float], floor: int, top: int) -> Tuple[Op
     (None if none), and worst the largest relative difference on the lengths
     below n0."""
     scale = max(abs(v) for v in F.values())
+    tol = SITE_LAW_RELATIVE * scale
     for n0 in range(floor, top - 1):
         f = lambda a, b: F[(a, b)]
-        c11 = f(n0 + 1, n0 + 1) - f(n0, n0 + 1) - f(n0 + 1, n0) + f(n0, n0)
-        c10 = f(n0 + 1, n0) - f(n0, n0) - c11 * n0
-        c01 = f(n0, n0 + 1) - f(n0, n0) - c11 * n0
-        tol = 1e-12 * scale
-        c11 = 0.0 if abs(c11) * top * top <= tol else c11
-        c10 = 0.0 if abs(c10) * top <= tol else c10
-        c01 = 0.0 if abs(c01) * top <= tol else c01
-        c00 = f(n0, n0) - c10 * n0 - c01 * n0 - c11 * n0 * n0
-        law = lambda a, b: c00 + c10 * a + c01 * b + c11 * a * b
-        if all(abs(law(a, b) - v) <= SITE_LAW_RELATIVE * scale for (a, b), v in F.items() if a >= n0 and b >= n0):
-            worst = max([abs(law(a, b) - v) / max(abs(law(a, b)), abs(v)) for (a, b), v in F.items()
-                         if (a < n0 or b < n0) and max(abs(law(a, b)), abs(v)) > 0.0], default=0.0)
-            return n0, [c00, c10, c01, c11], worst
+        raw11 = f(n0 + 1, n0 + 1) - f(n0, n0 + 1) - f(n0 + 1, n0) + f(n0, n0)
+        raw10 = f(n0 + 1, n0) - f(n0, n0) - raw11 * n0
+        raw01 = f(n0, n0 + 1) - f(n0, n0) - raw11 * n0
+        # a slope worth less than the fit tolerance over the checked lengths is rounding in the table's sums:
+        # the law without it is tried first, so a constant stays a constant
+        for c10, c01, c11 in ((0.0 if abs(raw10) * top <= tol else raw10, 0.0 if abs(raw01) * top <= tol else raw01,
+                               0.0 if abs(raw11) * top * top <= tol else raw11), (raw10, raw01, raw11)):
+            c00 = f(n0, n0) - c10 * n0 - c01 * n0 - c11 * n0 * n0
+            law = lambda a, b: c00 + c10 * a + c01 * b + c11 * a * b
+            if all(abs(law(a, b) - v) <= tol for (a, b), v in F.items() if a >= n0 and b >= n0):
+                worst = max([abs(law(a, b) - v) / max(abs(law(a, b)), abs(v)) for (a, b), v in F.items()
+                             if (a < n0 or b < n0) and max(abs(law(a, b)), abs(v)) > 0.0], default=0.0)
+                return n0, [c00, c10, c01, c11], worst
     return None, None, 0.0
 
 
@@ -724,14 +725,15 @@ def _affine(r: Dict[int, float], floor: int, top: int) -> Tuple[Optional[int], O
     """(n0, [B, A], worst) with r(n) = A n + B on every n in [n0, top]
     (_bilinear's rule in one length)."""
     scale = max(abs(v) for v in r.values())
+    tol = SITE_LAW_RELATIVE * scale
     for n0 in range(floor, top):
-        A = r[n0 + 1] - r[n0]
-        A = 0.0 if abs(A) * top <= 1e-12 * scale else A
-        B = r[n0] - A * n0
-        if all(abs(A * n + B - v) <= SITE_LAW_RELATIVE * scale for n, v in r.items() if n >= n0):
-            worst = max([abs(A * n + B - v) / max(abs(A * n + B), abs(v)) for n, v in r.items()
-                         if n < n0 and max(abs(A * n + B), abs(v)) > 0.0], default=0.0)
-            return n0, [B, A], worst
+        raw = r[n0 + 1] - r[n0]
+        for A in ((0.0 if abs(raw) * top <= tol else raw), raw):
+            B = r[n0] - A * n0
+            if all(abs(A * n + B - v) <= tol for n, v in r.items() if n >= n0):
+                worst = max([abs(A * n + B - v) / max(abs(A * n + B), abs(v)) for n, v in r.items()
+                             if n < n0 and max(abs(A * n + B), abs(v)) > 0.0], default=0.0)
+                return n0, [B, A], worst
     return None, None, 0.0
 
 
