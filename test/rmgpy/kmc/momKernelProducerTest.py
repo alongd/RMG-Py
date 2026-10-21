@@ -638,3 +638,41 @@ def test_every_term_declares_its_validity_length_with_its_families():
     families = {v["kernel"]: v["families"] for v in out["record"]["validity"]}
     assert families[D2E] == ["radical_end", "radical_interior"] and families[T1] == ["chain", "radical_end"]
     assert families[BB] == ["radical_end"]
+
+
+def test_kernel_mode_exports_mu2_and_mw_with_each_pools_physical_end_mass(setup):
+    """Homolysis: a chain (two H caps) becomes two end radicals (one H cap
+    each) -- the end-group mass of the chains is conserved, so every chain's
+    molar mass is its pool's a n + e_p and the whole mu2 and Mw are exact.
+    MoM's polymer() needs mono-radical end groups, so the producer declares
+    every pool with the deck's pair; the conversion must take each pool's
+    end mass from its kernel-rates family (radical_end: one H), or it books
+    an end-group deficit that is not there and withholds mu2 and Mw."""
+    out = setup["tmp"] / "out"
+    produce_kernels(setup, out)
+    mu = [float(x) for x in setup["spec"].macroscopic_moments_mol]
+    d = 1e-3
+
+    def chains(t):
+        return mu[0] - d * t, mu[1] - 3 * d * t, mu[2] - 40 * d * t
+
+    def radicals(t):
+        return 2 * d * t, 3 * d * t, 40 * d * t
+    write_run(out, times=[0.0, 10.0, 20.0, 40.0, 45.0], pools=[(LABEL, chains, 0.0), (RADICAL, radicals, 0.0)],
+              gas=ZERO_GAS, rows=[])
+    manifest = produce_kernels(setup, out, mode="convert")
+    offsets = {f: v["molar_mass_offset_g_mol"] for f, v in table()["families"].items()}
+    a, e = manifest["facts"]["a_g_mol"], manifest["facts"]["e_g_mol"]
+    assert offsets["chain"] == pytest.approx(e, rel=1e-12)
+    s = (offsets["radical_end"] - e) / a                         # the radical pool's mass-DP offset
+    for entry in mom_entries(out)[1:]:
+        q, t = entry["quantities"], entry["time_s"]
+        c, r = chains(t), radicals(t)
+        mu2 = c[2] + r[2] + 2 * s * r[1] + s * s * r[0]
+        assert q["whole_mu2_mol"] == pytest.approx(mu2, rel=1e-9)
+        mu1 = c[1] + r[1] + s * r[0]
+        assert q["whole_mu1_mol"] == pytest.approx(mu1, rel=1e-9)
+        assert q["whole_Mw_g_mol"] == pytest.approx(
+            (a * a * mu2 + 2 * a * e * mu1 + e * e * (c[0] + r[0])) / (a * mu1 + e * (c[0] + r[0])), rel=1e-9)
+    assert manifest["facts"]["kernels"]["record"]["pool_end_mass_g_mol"] == {
+        LABEL: offsets["chain"], RADICAL: offsets["radical_end"]}
