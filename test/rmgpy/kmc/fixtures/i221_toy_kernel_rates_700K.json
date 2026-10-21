@@ -1,0 +1,3177 @@
+{
+ "catalog": {
+  "chemistry_sha256": "0f20e6eade428a907610eb8a36696142dc1b5e6d4623e6fd96992e63d2a9f82c",
+  "templates": 10
+ },
+ "chain_lengths_probed": [
+  2,
+  4,
+  6,
+  8,
+  10,
+  12,
+  14,
+  16
+ ],
+ "families": {
+  "alkene_internal": {
+   "composition_offset": {},
+   "declared_species": {},
+   "label_far": "alkene_internal:CH=CH",
+   "labels": {},
+   "min_n": 4,
+   "molar_mass_offset_g_mol": 0.0
+  },
+  "alkene_terminal": {
+   "composition_offset": {},
+   "declared_species": {},
+   "label_far": "alkene_terminal:CH2=CH",
+   "labels": {
+    "2": "alkene_terminal:CH2=CH2"
+   },
+   "min_n": 2,
+   "molar_mass_offset_g_mol": 0.0
+  },
+  "chain": {
+   "composition_offset": {
+    "H": "2"
+   },
+   "declared_species": {},
+   "label_far": "chain",
+   "labels": {},
+   "min_n": 1,
+   "molar_mass_offset_g_mol": 2.015942009165883
+  },
+  "radical_end": {
+   "composition_offset": {
+    "H": "1"
+   },
+   "declared_species": {},
+   "label_far": "radical_end:CH2",
+   "labels": {
+    "1": "radical_end:CH3"
+   },
+   "min_n": 1,
+   "molar_mass_offset_g_mol": 1.0079710045829415
+  },
+  "radical_interior": {
+   "composition_offset": {
+    "H": "1"
+   },
+   "declared_species": {},
+   "label_far": "radical_interior:CH",
+   "labels": {},
+   "min_n": 3,
+   "molar_mass_offset_g_mol": 1.0079710045829415
+  }
+ },
+ "kernels": {
+  "beta_scission:substrate=radical_interior:CH": {
+   "classes": [
+    "radical_interior:CH"
+   ],
+   "k_per_feature": 9.999999999999996,
+   "molecularity": 1,
+   "rate_law": "R = k_per_feature*mu0(pool carrying the feature) (mol/s)",
+   "roles": [
+    "substrate"
+   ],
+   "templates": [
+    {
+     "k_per_feature": 9.999999999999996,
+     "law": {
+      "anchor": "interior",
+      "class": "radical_interior:CH",
+      "family": "radical_interior",
+      "far": {
+       "outcomes": [
+        [
+         1,
+         [
+          [
+           "alkene_terminal",
+           0,
+           1,
+           2
+          ],
+          [
+           "radical_end",
+           1,
+           -1,
+           -2
+          ]
+         ]
+        ],
+        [
+         1,
+         [
+          [
+           "alkene_terminal",
+           1,
+           -1,
+           1
+          ],
+          [
+           "radical_end",
+           0,
+           1,
+           -1
+          ]
+         ]
+        ]
+       ]
+      }
+     },
+     "overrides": [],
+     "phi_thinned": false,
+     "template": "beta_scissio:b7993facb4c6"
+    }
+   ],
+   "type": "beta_scission"
+  },
+  "disproportionation:acceptor=radical_end:CH2+donor=radical_end:CH2": {
+   "classes": [
+    "radical_end:CH2",
+    "radical_end:CH2"
+   ],
+   "molecularity": 2,
+   "rate_law": "R = sum (w_over_divisor)*S0*S1/V (mol/s; S_p in mol of sites, V in m3)",
+   "roles": [
+    "acceptor",
+    "donor"
+   ],
+   "templates": [
+    {
+     "S0": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ]
+      }
+     },
+     "S1": {
+      "per_feature": 2,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ],
+       "fragment_backbone_atoms=3": [
+        0
+       ]
+      }
+     },
+     "law": {
+      "S0": {
+       "anchor": "end",
+       "class": "radical_end:CH2",
+       "exact": {
+        "10": [
+         [
+          1,
+          [
+           [
+            "chain",
+            10
+           ]
+          ]
+         ]
+        ],
+        "11": [
+         [
+          1,
+          [
+           [
+            "chain",
+            11
+           ]
+          ]
+         ]
+        ],
+        "12": [
+         [
+          1,
+          [
+           [
+            "chain",
+            12
+           ]
+          ]
+         ]
+        ],
+        "13": [
+         [
+          1,
+          [
+           [
+            "chain",
+            13
+           ]
+          ]
+         ]
+        ],
+        "14": [
+         [
+          1,
+          [
+           [
+            "chain",
+            14
+           ]
+          ]
+         ]
+        ],
+        "15": [
+         [
+          1,
+          [
+           [
+            "chain",
+            15
+           ]
+          ]
+         ]
+        ],
+        "16": [
+         [
+          1,
+          [
+           [
+            "chain",
+            16
+           ]
+          ]
+         ]
+        ],
+        "2": [],
+        "3": [
+         [
+          1,
+          [
+           [
+            "chain",
+            3
+           ]
+          ]
+         ]
+        ],
+        "4": [
+         [
+          1,
+          [
+           [
+            "chain",
+            4
+           ]
+          ]
+         ]
+        ],
+        "5": [
+         [
+          1,
+          [
+           [
+            "chain",
+            5
+           ]
+          ]
+         ]
+        ],
+        "6": [
+         [
+          1,
+          [
+           [
+            "chain",
+            6
+           ]
+          ]
+         ]
+        ],
+        "7": [
+         [
+          1,
+          [
+           [
+            "chain",
+            7
+           ]
+          ]
+         ]
+        ],
+        "8": [
+         [
+          1,
+          [
+           [
+            "chain",
+            8
+           ]
+          ]
+         ]
+        ],
+        "9": [
+         [
+          1,
+          [
+           [
+            "chain",
+            9
+           ]
+          ]
+         ]
+        ]
+       },
+       "exact_to_n": 16,
+       "family": "radical_end",
+       "far": {
+        "outcomes": [
+         [
+          1,
+          [
+           [
+            "chain",
+            1,
+            0,
+            0
+           ]
+          ]
+         ]
+        ]
+       }
+      },
+      "S1": {
+       "anchor": "end",
+       "class": "radical_end:CH2",
+       "exact": {
+        "10": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            10
+           ]
+          ]
+         ]
+        ],
+        "11": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            11
+           ]
+          ]
+         ]
+        ],
+        "12": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            12
+           ]
+          ]
+         ]
+        ],
+        "13": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            13
+           ]
+          ]
+         ]
+        ],
+        "14": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            14
+           ]
+          ]
+         ]
+        ],
+        "15": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            15
+           ]
+          ]
+         ]
+        ],
+        "16": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            16
+           ]
+          ]
+         ]
+        ],
+        "2": [],
+        "3": [],
+        "4": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            4
+           ]
+          ]
+         ]
+        ],
+        "5": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            5
+           ]
+          ]
+         ]
+        ],
+        "6": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            6
+           ]
+          ]
+         ]
+        ],
+        "7": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            7
+           ]
+          ]
+         ]
+        ],
+        "8": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            8
+           ]
+          ]
+         ]
+        ],
+        "9": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            9
+           ]
+          ]
+         ]
+        ]
+       },
+       "exact_to_n": 16,
+       "family": "radical_end",
+       "far": {
+        "outcomes": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal",
+            1,
+            0,
+            0
+           ]
+          ]
+         ]
+        ]
+       }
+      }
+     },
+     "overrides": [],
+     "phi_thinned": false,
+     "template": "disproportio:8978b8b6f40a",
+     "w_over_divisor": 5.000000000000004e-05
+    },
+    {
+     "S0": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ]
+      }
+     },
+     "S1": {
+      "per_feature": 0,
+      "profile": {
+       "fragment_backbone_atoms=3": [
+        2
+       ]
+      }
+     },
+     "law": {
+      "S0": {
+       "anchor": "end",
+       "class": "radical_end:CH2",
+       "exact": {
+        "10": [
+         [
+          1,
+          [
+           [
+            "chain",
+            10
+           ]
+          ]
+         ]
+        ],
+        "11": [
+         [
+          1,
+          [
+           [
+            "chain",
+            11
+           ]
+          ]
+         ]
+        ],
+        "12": [
+         [
+          1,
+          [
+           [
+            "chain",
+            12
+           ]
+          ]
+         ]
+        ],
+        "13": [
+         [
+          1,
+          [
+           [
+            "chain",
+            13
+           ]
+          ]
+         ]
+        ],
+        "14": [
+         [
+          1,
+          [
+           [
+            "chain",
+            14
+           ]
+          ]
+         ]
+        ],
+        "15": [
+         [
+          1,
+          [
+           [
+            "chain",
+            15
+           ]
+          ]
+         ]
+        ],
+        "16": [
+         [
+          1,
+          [
+           [
+            "chain",
+            16
+           ]
+          ]
+         ]
+        ],
+        "2": [],
+        "3": [
+         [
+          1,
+          [
+           [
+            "chain",
+            3
+           ]
+          ]
+         ]
+        ],
+        "4": [
+         [
+          1,
+          [
+           [
+            "chain",
+            4
+           ]
+          ]
+         ]
+        ],
+        "5": [
+         [
+          1,
+          [
+           [
+            "chain",
+            5
+           ]
+          ]
+         ]
+        ],
+        "6": [
+         [
+          1,
+          [
+           [
+            "chain",
+            6
+           ]
+          ]
+         ]
+        ],
+        "7": [
+         [
+          1,
+          [
+           [
+            "chain",
+            7
+           ]
+          ]
+         ]
+        ],
+        "8": [
+         [
+          1,
+          [
+           [
+            "chain",
+            8
+           ]
+          ]
+         ]
+        ],
+        "9": [
+         [
+          1,
+          [
+           [
+            "chain",
+            9
+           ]
+          ]
+         ]
+        ]
+       },
+       "exact_to_n": 16,
+       "family": "radical_end",
+       "far": {
+        "outcomes": [
+         [
+          1,
+          [
+           [
+            "chain",
+            1,
+            0,
+            0
+           ]
+          ]
+         ]
+        ]
+       }
+      },
+      "S1": {
+       "anchor": "end",
+       "class": "radical_end:CH2",
+       "exact": {
+        "10": [],
+        "11": [],
+        "12": [],
+        "13": [],
+        "14": [],
+        "15": [],
+        "16": [],
+        "2": [],
+        "3": [
+         [
+          2,
+          [
+           [
+            "alkene_terminal:CH2=CH",
+            3
+           ]
+          ]
+         ]
+        ],
+        "4": [],
+        "5": [],
+        "6": [],
+        "7": [],
+        "8": [],
+        "9": []
+       },
+       "exact_to_n": 16,
+       "family": "radical_end",
+       "far": {
+        "outcomes": []
+       }
+      }
+     },
+     "overrides": [],
+     "phi_thinned": false,
+     "template": "disproportio:39f34c891af9",
+     "w_over_divisor": 5.000000000000004e-05
+    }
+   ],
+   "type": "disproportionation"
+  },
+  "h_transfer:acceptor=radical_end:CH2+donor=chain": {
+   "classes": [
+    "radical_end:CH2",
+    "chain"
+   ],
+   "molecularity": 2,
+   "rate_law": "R = sum (w_over_divisor)*S0*S1/V (mol/s; S_p in mol of sites, V in m3)",
+   "roles": [
+    "acceptor",
+    "donor"
+   ],
+   "templates": [
+    {
+     "S0": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ]
+      }
+     },
+     "S1": {
+      "a": 2.0,
+      "b": -8.0,
+      "exact_from_n": 6
+     },
+     "law": {
+      "S0": {
+       "anchor": "end",
+       "class": "radical_end:CH2",
+       "exact": {
+        "10": [
+         [
+          1,
+          [
+           [
+            "chain",
+            10
+           ]
+          ]
+         ]
+        ],
+        "11": [
+         [
+          1,
+          [
+           [
+            "chain",
+            11
+           ]
+          ]
+         ]
+        ],
+        "12": [
+         [
+          1,
+          [
+           [
+            "chain",
+            12
+           ]
+          ]
+         ]
+        ],
+        "13": [
+         [
+          1,
+          [
+           [
+            "chain",
+            13
+           ]
+          ]
+         ]
+        ],
+        "14": [
+         [
+          1,
+          [
+           [
+            "chain",
+            14
+           ]
+          ]
+         ]
+        ],
+        "15": [
+         [
+          1,
+          [
+           [
+            "chain",
+            15
+           ]
+          ]
+         ]
+        ],
+        "16": [
+         [
+          1,
+          [
+           [
+            "chain",
+            16
+           ]
+          ]
+         ]
+        ],
+        "2": [],
+        "3": [
+         [
+          1,
+          [
+           [
+            "chain",
+            3
+           ]
+          ]
+         ]
+        ],
+        "4": [
+         [
+          1,
+          [
+           [
+            "chain",
+            4
+           ]
+          ]
+         ]
+        ],
+        "5": [
+         [
+          1,
+          [
+           [
+            "chain",
+            5
+           ]
+          ]
+         ]
+        ],
+        "6": [
+         [
+          1,
+          [
+           [
+            "chain",
+            6
+           ]
+          ]
+         ]
+        ],
+        "7": [
+         [
+          1,
+          [
+           [
+            "chain",
+            7
+           ]
+          ]
+         ]
+        ],
+        "8": [
+         [
+          1,
+          [
+           [
+            "chain",
+            8
+           ]
+          ]
+         ]
+        ],
+        "9": [
+         [
+          1,
+          [
+           [
+            "chain",
+            9
+           ]
+          ]
+         ]
+        ]
+       },
+       "exact_to_n": 16,
+       "family": "radical_end",
+       "far": {
+        "outcomes": [
+         [
+          1,
+          [
+           [
+            "chain",
+            1,
+            0,
+            0
+           ]
+          ]
+         ]
+        ]
+       }
+      },
+      "S1": {
+       "anchor": "chain",
+       "class": "chain",
+       "exact": {
+        "1": [],
+        "10": [
+         [
+          12,
+          [
+           [
+            "radical_interior:CH",
+            10
+           ]
+          ]
+         ]
+        ],
+        "11": [
+         [
+          14,
+          [
+           [
+            "radical_interior:CH",
+            11
+           ]
+          ]
+         ]
+        ],
+        "12": [
+         [
+          16,
+          [
+           [
+            "radical_interior:CH",
+            12
+           ]
+          ]
+         ]
+        ],
+        "13": [
+         [
+          18,
+          [
+           [
+            "radical_interior:CH",
+            13
+           ]
+          ]
+         ]
+        ],
+        "14": [
+         [
+          20,
+          [
+           [
+            "radical_interior:CH",
+            14
+           ]
+          ]
+         ]
+        ],
+        "15": [
+         [
+          22,
+          [
+           [
+            "radical_interior:CH",
+            15
+           ]
+          ]
+         ]
+        ],
+        "16": [
+         [
+          24,
+          [
+           [
+            "radical_interior:CH",
+            16
+           ]
+          ]
+         ]
+        ],
+        "2": [],
+        "3": [],
+        "4": [],
+        "5": [
+         [
+          2,
+          [
+           [
+            "radical_interior:CH",
+            5
+           ]
+          ]
+         ]
+        ],
+        "6": [
+         [
+          4,
+          [
+           [
+            "radical_interior:CH",
+            6
+           ]
+          ]
+         ]
+        ],
+        "7": [
+         [
+          6,
+          [
+           [
+            "radical_interior:CH",
+            7
+           ]
+          ]
+         ]
+        ],
+        "8": [
+         [
+          8,
+          [
+           [
+            "radical_interior:CH",
+            8
+           ]
+          ]
+         ]
+        ],
+        "9": [
+         [
+          10,
+          [
+           [
+            "radical_interior:CH",
+            9
+           ]
+          ]
+         ]
+        ]
+       },
+       "exact_to_n": 16,
+       "family": "chain",
+       "far": {
+        "bulk": [
+         [
+          2,
+          [
+           [
+            "radical_interior",
+            1,
+            0,
+            0
+           ]
+          ]
+         ]
+        ],
+        "edge": 2,
+        "first": {
+         "0": [],
+         "1": []
+        },
+        "last": {
+         "0": [],
+         "1": []
+        }
+       }
+      }
+     },
+     "overrides": [],
+     "phi_thinned": false,
+     "template": "h_abstractio:9db8afa17070",
+     "w_over_divisor": 4.999999999999999e-06
+    }
+   ],
+   "type": "h_transfer"
+  },
+  "homolysis:substrate=chain": {
+   "classes": [
+    "chain"
+   ],
+   "k_mu0": -1.0000000000000004,
+   "k_mu1": 0.20000000000000007,
+   "molecularity": 1,
+   "rate_law": "R = k_mu1*mu1 + k_mu0*mu0 (mol/s; mu in mol, n in primitive periods)",
+   "roles": [
+    "substrate"
+   ],
+   "templates": [
+    {
+     "k_mu0": -1.0000000000000004,
+     "k_mu1": 0.20000000000000007,
+     "law": {
+      "anchor": "chain",
+      "class": "chain",
+      "exact": {
+       "1": [],
+       "10": [
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           3
+          ],
+          [
+           "radical_end:CH2",
+           7
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           4
+          ],
+          [
+           "radical_end:CH2",
+           6
+          ]
+         ]
+        ],
+        [
+         1,
+         [
+          [
+           "radical_end:CH2",
+           5
+          ],
+          [
+           "radical_end:CH2",
+           5
+          ]
+         ]
+        ]
+       ],
+       "11": [
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           3
+          ],
+          [
+           "radical_end:CH2",
+           8
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           4
+          ],
+          [
+           "radical_end:CH2",
+           7
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           5
+          ],
+          [
+           "radical_end:CH2",
+           6
+          ]
+         ]
+        ]
+       ],
+       "12": [
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           3
+          ],
+          [
+           "radical_end:CH2",
+           9
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           4
+          ],
+          [
+           "radical_end:CH2",
+           8
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           5
+          ],
+          [
+           "radical_end:CH2",
+           7
+          ]
+         ]
+        ],
+        [
+         1,
+         [
+          [
+           "radical_end:CH2",
+           6
+          ],
+          [
+           "radical_end:CH2",
+           6
+          ]
+         ]
+        ]
+       ],
+       "13": [
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           3
+          ],
+          [
+           "radical_end:CH2",
+           10
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           4
+          ],
+          [
+           "radical_end:CH2",
+           9
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           5
+          ],
+          [
+           "radical_end:CH2",
+           8
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           6
+          ],
+          [
+           "radical_end:CH2",
+           7
+          ]
+         ]
+        ]
+       ],
+       "14": [
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           3
+          ],
+          [
+           "radical_end:CH2",
+           11
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           4
+          ],
+          [
+           "radical_end:CH2",
+           10
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           5
+          ],
+          [
+           "radical_end:CH2",
+           9
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           6
+          ],
+          [
+           "radical_end:CH2",
+           8
+          ]
+         ]
+        ],
+        [
+         1,
+         [
+          [
+           "radical_end:CH2",
+           7
+          ],
+          [
+           "radical_end:CH2",
+           7
+          ]
+         ]
+        ]
+       ],
+       "15": [
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           3
+          ],
+          [
+           "radical_end:CH2",
+           12
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           4
+          ],
+          [
+           "radical_end:CH2",
+           11
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           5
+          ],
+          [
+           "radical_end:CH2",
+           10
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           6
+          ],
+          [
+           "radical_end:CH2",
+           9
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           7
+          ],
+          [
+           "radical_end:CH2",
+           8
+          ]
+         ]
+        ]
+       ],
+       "16": [
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           3
+          ],
+          [
+           "radical_end:CH2",
+           13
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           4
+          ],
+          [
+           "radical_end:CH2",
+           12
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           5
+          ],
+          [
+           "radical_end:CH2",
+           11
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           6
+          ],
+          [
+           "radical_end:CH2",
+           10
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           7
+          ],
+          [
+           "radical_end:CH2",
+           9
+          ]
+         ]
+        ],
+        [
+         1,
+         [
+          [
+           "radical_end:CH2",
+           8
+          ],
+          [
+           "radical_end:CH2",
+           8
+          ]
+         ]
+        ]
+       ],
+       "2": [],
+       "3": [],
+       "4": [],
+       "5": [],
+       "6": [
+        [
+         1,
+         [
+          [
+           "radical_end:CH2",
+           3
+          ],
+          [
+           "radical_end:CH2",
+           3
+          ]
+         ]
+        ]
+       ],
+       "7": [
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           3
+          ],
+          [
+           "radical_end:CH2",
+           4
+          ]
+         ]
+        ]
+       ],
+       "8": [
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           3
+          ],
+          [
+           "radical_end:CH2",
+           5
+          ]
+         ]
+        ],
+        [
+         1,
+         [
+          [
+           "radical_end:CH2",
+           4
+          ],
+          [
+           "radical_end:CH2",
+           4
+          ]
+         ]
+        ]
+       ],
+       "9": [
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           3
+          ],
+          [
+           "radical_end:CH2",
+           6
+          ]
+         ]
+        ],
+        [
+         2,
+         [
+          [
+           "radical_end:CH2",
+           4
+          ],
+          [
+           "radical_end:CH2",
+           5
+          ]
+         ]
+        ]
+       ]
+      },
+      "exact_to_n": 16,
+      "family": "chain",
+      "far": {
+       "bulk": [
+        [
+         1,
+         [
+          [
+           "radical_end",
+           0,
+           1,
+           1
+          ],
+          [
+           "radical_end",
+           1,
+           -1,
+           -1
+          ]
+         ]
+        ]
+       ],
+       "edge": 3,
+       "first": {
+        "0": [],
+        "1": [],
+        "2": [
+         [
+          1,
+          [
+           [
+            "radical_end",
+            0,
+            1,
+            1
+           ],
+           [
+            "radical_end",
+            1,
+            -1,
+            -1
+           ]
+          ]
+         ]
+        ]
+       },
+       "last": {
+        "0": [],
+        "1": [],
+        "2": []
+       }
+      }
+     },
+     "overrides": [],
+     "phi_thinned": true,
+     "template": "homolysis:df0166002a4b"
+    }
+   ],
+   "type": "homolysis"
+  },
+  "recombination:radical=radical_end:CH2+radical=radical_end:CH2": {
+   "classes": [
+    "radical_end:CH2",
+    "radical_end:CH2"
+   ],
+   "molecularity": 2,
+   "rate_law": "R = sum (w_over_divisor)*S0*S1/V (mol/s; S_p in mol of sites, V in m3)",
+   "roles": [
+    "radical",
+    "radical"
+   ],
+   "templates": [
+    {
+     "S0": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ]
+      }
+     },
+     "S1": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ]
+      }
+     },
+     "law": {
+      "S0": {
+       "anchor": "end",
+       "class": "radical_end:CH2",
+       "exact": {
+        "10": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "11": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "12": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "13": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "14": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "15": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "16": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "2": [],
+        "3": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "4": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "5": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "6": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "7": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "8": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "9": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ]
+       },
+       "exact_to_n": 16,
+       "family": "radical_end",
+       "far": {
+        "outcomes": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ]
+       }
+      },
+      "S1": {
+       "anchor": "end",
+       "class": "radical_end:CH2",
+       "exact": {
+        "10": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "11": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "12": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "13": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "14": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "15": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "16": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "2": [],
+        "3": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "4": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "5": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "6": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "7": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "8": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ],
+        "9": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ]
+       },
+       "exact_to_n": 16,
+       "family": "radical_end",
+       "far": {
+        "outcomes": [
+         [
+          1,
+          [
+           [
+            "join",
+            "chain",
+            0
+           ]
+          ]
+         ]
+        ]
+       }
+      }
+     },
+     "overrides": [],
+     "phi_thinned": false,
+     "template": "recombinatio:7867c7b1b3e1",
+     "w_over_divisor": 0.005000000000000002
+    }
+   ],
+   "type": "recombination"
+  },
+  "reverse_disproportionation:alkene=alkene_terminal:CH2=CH+donor=chain": {
+   "classes": [
+    "alkene_terminal:CH2=CH",
+    "chain"
+   ],
+   "molecularity": 2,
+   "rate_law": "R = sum (w_over_divisor)*S0*S1/V (mol/s; S_p in mol of sites, V in m3)",
+   "roles": [
+    "alkene",
+    "donor"
+   ],
+   "templates": [
+    {
+     "S0": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=3": [
+        0
+       ]
+      }
+     },
+     "S1": {
+      "a": 0.0,
+      "b": 6.0,
+      "exact_from_n": 4
+     },
+     "law": {
+      "S0": {
+       "anchor": "end",
+       "class": "alkene_terminal:CH2=CH",
+       "exact": {
+        "10": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            10
+           ]
+          ]
+         ]
+        ],
+        "11": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            11
+           ]
+          ]
+         ]
+        ],
+        "12": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            12
+           ]
+          ]
+         ]
+        ],
+        "13": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            13
+           ]
+          ]
+         ]
+        ],
+        "14": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            14
+           ]
+          ]
+         ]
+        ],
+        "15": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            15
+           ]
+          ]
+         ]
+        ],
+        "16": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            16
+           ]
+          ]
+         ]
+        ],
+        "3": [],
+        "4": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            4
+           ]
+          ]
+         ]
+        ],
+        "5": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            5
+           ]
+          ]
+         ]
+        ],
+        "6": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            6
+           ]
+          ]
+         ]
+        ],
+        "7": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            7
+           ]
+          ]
+         ]
+        ],
+        "8": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            8
+           ]
+          ]
+         ]
+        ],
+        "9": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            9
+           ]
+          ]
+         ]
+        ]
+       },
+       "exact_to_n": 16,
+       "family": "alkene_terminal",
+       "far": {
+        "outcomes": [
+         [
+          1,
+          [
+           [
+            "radical_end",
+            1,
+            0,
+            0
+           ]
+          ]
+         ]
+        ]
+       }
+      },
+      "S1": {
+       "anchor": "chain",
+       "class": "chain",
+       "exact": {
+        "1": [],
+        "10": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            10
+           ]
+          ]
+         ]
+        ],
+        "11": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            11
+           ]
+          ]
+         ]
+        ],
+        "12": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            12
+           ]
+          ]
+         ]
+        ],
+        "13": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            13
+           ]
+          ]
+         ]
+        ],
+        "14": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            14
+           ]
+          ]
+         ]
+        ],
+        "15": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            15
+           ]
+          ]
+         ]
+        ],
+        "16": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            16
+           ]
+          ]
+         ]
+        ],
+        "2": [],
+        "3": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            3
+           ]
+          ]
+         ]
+        ],
+        "4": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            4
+           ]
+          ]
+         ]
+        ],
+        "5": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            5
+           ]
+          ]
+         ]
+        ],
+        "6": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            6
+           ]
+          ]
+         ]
+        ],
+        "7": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            7
+           ]
+          ]
+         ]
+        ],
+        "8": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            8
+           ]
+          ]
+         ]
+        ],
+        "9": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            9
+           ]
+          ]
+         ]
+        ]
+       },
+       "exact_to_n": 16,
+       "family": "chain",
+       "far": {
+        "bulk": [],
+        "edge": 1,
+        "first": {
+         "0": [
+          [
+           3,
+           [
+            [
+             "radical_end",
+             1,
+             0,
+             0
+            ]
+           ]
+          ]
+         ]
+        },
+        "last": {
+         "0": [
+          [
+           3,
+           [
+            [
+             "radical_end",
+             1,
+             0,
+             0
+            ]
+           ]
+          ]
+         ]
+        }
+       }
+      }
+     },
+     "overrides": [],
+     "phi_thinned": true,
+     "template": "reverse_disp:5ecaafb44583",
+     "w_over_divisor": 9.999999999999994e-08
+    },
+    {
+     "S0": {
+      "per_feature": 0,
+      "profile": {
+       "fragment_backbone_atoms=3": [
+        1
+       ]
+      }
+     },
+     "S1": {
+      "a": 0.0,
+      "b": 6.0,
+      "exact_from_n": 4
+     },
+     "law": {
+      "S0": {
+       "anchor": "end",
+       "class": "alkene_terminal:CH2=CH",
+       "exact": {
+        "10": [],
+        "11": [],
+        "12": [],
+        "13": [],
+        "14": [],
+        "15": [],
+        "16": [],
+        "3": [
+         [
+          1,
+          [
+           [
+            "radical_end:CH2",
+            3
+           ]
+          ]
+         ]
+        ],
+        "4": [],
+        "5": [],
+        "6": [],
+        "7": [],
+        "8": [],
+        "9": []
+       },
+       "exact_to_n": 16,
+       "family": "alkene_terminal",
+       "far": {
+        "outcomes": []
+       }
+      },
+      "S1": {
+       "anchor": "chain",
+       "class": "chain",
+       "exact": {
+        "1": [],
+        "10": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            10
+           ]
+          ]
+         ]
+        ],
+        "11": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            11
+           ]
+          ]
+         ]
+        ],
+        "12": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            12
+           ]
+          ]
+         ]
+        ],
+        "13": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            13
+           ]
+          ]
+         ]
+        ],
+        "14": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            14
+           ]
+          ]
+         ]
+        ],
+        "15": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            15
+           ]
+          ]
+         ]
+        ],
+        "16": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            16
+           ]
+          ]
+         ]
+        ],
+        "2": [],
+        "3": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            3
+           ]
+          ]
+         ]
+        ],
+        "4": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            4
+           ]
+          ]
+         ]
+        ],
+        "5": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            5
+           ]
+          ]
+         ]
+        ],
+        "6": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            6
+           ]
+          ]
+         ]
+        ],
+        "7": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            7
+           ]
+          ]
+         ]
+        ],
+        "8": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            8
+           ]
+          ]
+         ]
+        ],
+        "9": [
+         [
+          6,
+          [
+           [
+            "radical_end:CH2",
+            9
+           ]
+          ]
+         ]
+        ]
+       },
+       "exact_to_n": 16,
+       "family": "chain",
+       "far": {
+        "bulk": [],
+        "edge": 1,
+        "first": {
+         "0": [
+          [
+           3,
+           [
+            [
+             "radical_end",
+             1,
+             0,
+             0
+            ]
+           ]
+          ]
+         ]
+        },
+        "last": {
+         "0": [
+          [
+           3,
+           [
+            [
+             "radical_end",
+             1,
+             0,
+             0
+            ]
+           ]
+          ]
+         ]
+        }
+       }
+      }
+     },
+     "overrides": [],
+     "phi_thinned": true,
+     "template": "reverse_disp:ecd8a296d972",
+     "w_over_divisor": 9.999999999999994e-08
+    }
+   ],
+   "type": "reverse_disproportionation"
+  }
+ },
+ "kmc_only": [
+  {
+   "family": "toy_branching",
+   "reason": "branching",
+   "template": "mid_end_reco:b4e9d35f75d3"
+  },
+  {
+   "family": "toy_branching",
+   "reason": "no_kernel",
+   "template": "intra_mid_en:9fa1159a3aa4"
+  }
+ ],
+ "laws_exact_to_n": 16,
+ "moment_unit": {
+  "backbone_atoms_per_period": 1,
+  "composition": {
+   "C": "1",
+   "H": "2"
+  },
+  "definition": "n counts primitive periods of the declared backbone",
+  "molar_mass_g_mol": 14.026582473888993,
+  "periods_per_declared_unit": 2
+ },
+ "overrides_unplaced": [],
+ "schema": "kmc-kernel-rates/3",
+ "temperature_K": 700.0,
+ "templates": [
+  {
+   "divisor": 1,
+   "family": "toy_homolysis",
+   "kernels": [
+    "homolysis:substrate=chain"
+   ],
+   "participants": [
+    {
+     "chain": {
+      "a": 1.0,
+      "b": -5.0,
+      "exact_from_n": 6
+     }
+    }
+   ],
+   "phi_thinned": true,
+   "template": "homolysis:df0166002a4b",
+   "type": "homolysis",
+   "weight": 0.20000000000000007,
+   "weight_units": "1/s per matched transition"
+  },
+  {
+   "divisor": 2,
+   "family": "toy_recombination",
+   "kernels": [
+    "recombination:radical=radical_end:CH2+radical=radical_end:CH2"
+   ],
+   "participants": [
+    {
+     "radical_end:CH2": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ]
+      }
+     }
+    },
+    {
+     "radical_end:CH2": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ]
+      }
+     }
+    }
+   ],
+   "phi_thinned": false,
+   "template": "recombinatio:7867c7b1b3e1",
+   "type": "recombination",
+   "weight": 0.010000000000000004,
+   "weight_units": "m3/(mol*s) per matched transition"
+  },
+  {
+   "divisor": 1,
+   "family": "toy_h_abstraction",
+   "kernels": [
+    "h_transfer:acceptor=radical_end:CH2+donor=chain"
+   ],
+   "participants": [
+    {
+     "radical_end:CH2": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ]
+      }
+     }
+    },
+    {
+     "chain": {
+      "a": 2.0,
+      "b": -8.0,
+      "exact_from_n": 6
+     }
+    }
+   ],
+   "phi_thinned": false,
+   "template": "h_abstractio:9db8afa17070",
+   "type": "h_transfer",
+   "weight": 4.999999999999999e-06,
+   "weight_units": "m3/(mol*s) per matched transition"
+  },
+  {
+   "divisor": 1,
+   "family": "toy_disproportionation",
+   "kernels": [
+    "disproportionation:acceptor=radical_end:CH2+donor=radical_end:CH2"
+   ],
+   "participants": [
+    {
+     "radical_end:CH2": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ]
+      }
+     }
+    },
+    {
+     "radical_end:CH2": {
+      "per_feature": 2,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ],
+       "fragment_backbone_atoms=3": [
+        0
+       ]
+      }
+     }
+    }
+   ],
+   "phi_thinned": false,
+   "template": "disproportio:8978b8b6f40a",
+   "type": "disproportionation",
+   "weight": 5.000000000000004e-05,
+   "weight_units": "m3/(mol*s) per matched transition"
+  },
+  {
+   "divisor": 1,
+   "family": "toy_branching",
+   "kernels": [],
+   "participants": [
+    {
+     "radical_interior:CH": {
+      "per_feature": 1,
+      "profile": {
+       "chain_backbone_atoms=10,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=12,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=14,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=16,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=4,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=6,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=8,end_distance=1": [
+        0
+       ]
+      }
+     }
+    },
+    {
+     "radical_end:CH2": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ]
+      }
+     }
+    }
+   ],
+   "phi_thinned": false,
+   "template": "mid_end_reco:b4e9d35f75d3",
+   "type": "recombination",
+   "weight": 0.019999999999999993,
+   "weight_units": "m3/(mol*s) per matched transition"
+  },
+  {
+   "divisor": 1,
+   "family": "toy_branching",
+   "kernels": [],
+   "participants": [
+    {}
+   ],
+   "phi_thinned": false,
+   "template": "intra_mid_en:9fa1159a3aa4",
+   "type": null,
+   "weight": 0.3,
+   "weight_units": "1/s per matched transition"
+  },
+  {
+   "divisor": 1,
+   "family": "toy_beta_scission",
+   "kernels": [
+    "beta_scission:substrate=radical_interior:CH"
+   ],
+   "participants": [
+    {
+     "radical_interior:CH": {
+      "per_feature": 2,
+      "profile": {
+       "chain_backbone_atoms=10,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=10,end_distance=2": [
+        1
+       ],
+       "chain_backbone_atoms=10,end_distance=3": [
+        1
+       ],
+       "chain_backbone_atoms=12,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=12,end_distance=2": [
+        1
+       ],
+       "chain_backbone_atoms=12,end_distance=3": [
+        1
+       ],
+       "chain_backbone_atoms=14,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=14,end_distance=2": [
+        1
+       ],
+       "chain_backbone_atoms=14,end_distance=3": [
+        1
+       ],
+       "chain_backbone_atoms=16,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=16,end_distance=2": [
+        1
+       ],
+       "chain_backbone_atoms=16,end_distance=3": [
+        1
+       ],
+       "chain_backbone_atoms=4,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=6,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=6,end_distance=2": [
+        0
+       ],
+       "chain_backbone_atoms=8,end_distance=1": [
+        0
+       ],
+       "chain_backbone_atoms=8,end_distance=2": [
+        1
+       ],
+       "chain_backbone_atoms=8,end_distance=3": [
+        1
+       ]
+      }
+     }
+    }
+   ],
+   "phi_thinned": false,
+   "template": "beta_scissio:b7993facb4c6",
+   "type": "beta_scission",
+   "weight": 4.999999999999998,
+   "weight_units": "1/s per matched transition"
+  },
+  {
+   "divisor": 1,
+   "family": "toy_disproportionation",
+   "kernels": [
+    "disproportionation:acceptor=radical_end:CH2+donor=radical_end:CH2"
+   ],
+   "participants": [
+    {
+     "radical_end:CH2": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=2": [
+        0
+       ]
+      }
+     }
+    },
+    {
+     "radical_end:CH2": {
+      "per_feature": 0,
+      "profile": {
+       "fragment_backbone_atoms=3": [
+        2
+       ]
+      }
+     }
+    }
+   ],
+   "phi_thinned": false,
+   "template": "disproportio:39f34c891af9",
+   "type": "disproportionation",
+   "weight": 5.000000000000004e-05,
+   "weight_units": "m3/(mol*s) per matched transition"
+  },
+  {
+   "divisor": 1,
+   "family": "toy_disproportionation",
+   "kernels": [
+    "reverse_disproportionation:alkene=alkene_terminal:CH2=CH+donor=chain"
+   ],
+   "participants": [
+    {
+     "alkene_terminal:CH2=CH": {
+      "per_feature": 1,
+      "profile": {
+       "fragment_backbone_atoms=3": [
+        0
+       ]
+      }
+     }
+    },
+    {
+     "chain": {
+      "a": 0.0,
+      "b": 6.0,
+      "exact_from_n": 4
+     }
+    }
+   ],
+   "phi_thinned": true,
+   "template": "reverse_disp:5ecaafb44583",
+   "type": "reverse_disproportionation",
+   "weight": 9.999999999999994e-08,
+   "weight_units": "m3/(mol*s) per matched transition"
+  },
+  {
+   "divisor": 1,
+   "family": "toy_disproportionation",
+   "kernels": [
+    "reverse_disproportionation:alkene=alkene_terminal:CH2=CH+donor=chain"
+   ],
+   "participants": [
+    {
+     "alkene_terminal:CH2=CH": {
+      "per_feature": 0,
+      "profile": {
+       "fragment_backbone_atoms=3": [
+        1
+       ]
+      }
+     }
+    },
+    {
+     "chain": {
+      "a": 0.0,
+      "b": 6.0,
+      "exact_from_n": 4
+     }
+    }
+   ],
+   "phi_thinned": true,
+   "template": "reverse_disp:ecd8a296d972",
+   "type": "reverse_disproportionation",
+   "weight": 9.999999999999994e-08,
+   "weight_units": "m3/(mol*s) per matched transition"
+  }
+ ]
+}

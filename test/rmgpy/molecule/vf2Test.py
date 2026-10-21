@@ -88,3 +88,14 @@ class TestVF2:
         for atom in self.mol.atoms:
             assert atom.mapping is None
             assert not atom.terminal
+
+    def test_save_order_on_graphs_compared_before(self):
+        """A save_order comparison of graphs the matcher compared just before
+        (it keeps them and does not re-sort) restores their order, never
+        raises on an order it did not save."""
+        a = Molecule().from_smiles("[CH2]CCC")
+        b = Molecule().from_smiles("[CH2]CCC")
+        assert self.vf2.is_isomorphic(a, b, None)
+        order_a, order_b = list(a.atoms), list(b.atoms)
+        assert self.vf2.is_isomorphic(a, b, None, save_order=True)
+        assert a.atoms == order_a and b.atoms == order_b
