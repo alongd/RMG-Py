@@ -187,3 +187,87 @@ def test_the_toy_homolysis_counts_two_ch2_neighbours_on_each_side(toy):
 def test_a_copolymer_declaration_is_refused():
     with pytest.raises(kr_.KernelRatesError, match="linear homopolymer"):
         kr_.kernel_rates({"schema": "kmc-template-catalog/1", "payloads": []}, object(), T)
+
+
+# --------------------------------------------------------------------------
+# I-214: product laws, families and depository overrides
+# --------------------------------------------------------------------------
+def law_sites(rows):
+    return sum(m for m, _p in rows)
+
+
+def test_the_pe_homolysis_law_cuts_four_periods_from_either_end(pe):
+    (term,) = pe["table"]["kernels"]["homolysis:substrate=chain"]["templates"]
+    law = term["law"]
+    assert law["anchor"] == "chain" and law["far"]["edge"] == 4
+    assert all(law["exact"][str(n)] == [] for n in range(1, 8))
+    assert law["exact"]["8"] == [[1, [["radical_end:CH2", 4], ["radical_end:CH2", 4]]]]
+    assert law["far"]["bulk"] == [[1, [["radical_end", 0, 1, 1], ["radical_end", 1, -1, -1]]]]
+
+
+def test_every_law_has_the_tables_site_count(pe):
+    """A law's multiplicities are the counted sites: the chain polynomial on
+    every length it holds, an end feature's profile or far count on every
+    fragment, an interior feature's far count."""
+    nbb = pe["table"]["moment_unit"]["backbone_atoms_per_period"]
+    checked = 0
+    for kernel in pe["table"]["kernels"].values():
+        for term in kernel["templates"]:
+            if term["law"] is None:
+                continue
+            if kernel["molecularity"] == 1:
+                pairs = [(term["law"], next(r for r in pe["table"]["templates"]
+                                            if r["template"] == term["template"])["participants"][0])]
+            else:
+                pairs = [(term["law"]["S0"], {term["law"]["S0"]["class"]: term["S0"]}),
+                         (term["law"]["S1"], {term["law"]["S1"]["class"]: term["S1"]})]
+            for law, counts in pairs:
+                c = counts[law["class"]]
+                if law["anchor"] == "chain":
+                    for n, rows in law["exact"].items():
+                        if int(n) >= c["exact_from_n"]:
+                            assert law_sites(rows) == c["a"] * int(n) + c["b"]
+                elif law["anchor"] == "end":
+                    for n, rows in law["exact"].items():
+                        want = c["profile"].get(f"fragment_backbone_atoms={int(n) * nbb}", [c["per_feature"]])
+                        assert [law_sites(rows)] == want, (term["template"], n)
+                else:
+                    assert law_sites(law["far"]["outcomes"]) == c["per_feature"]
+                checked += 1
+    assert checked >= 30
+
+
+def test_terms_without_a_law_say_why(pe):
+    terms = [t for k in pe["table"]["kernels"].values() for t in k["templates"]]
+    inert = [t for t in terms if t.get("law_inert")]
+    refused = [t for t in terms if t.get("law_refused")]
+    assert len(terms) == 59 and len(inert) == 34
+    assert [t["template"][:12] for t in refused] == ["55593e44e6ca"]       # ethylene donor -> vinyl radical
+    assert "more than one feature" in refused[0]["law_refused"]
+
+
+def test_the_families_of_the_declared_states(toy):
+    fam = toy["families"]
+    assert fam["radical_end"]["labels"] == {"1": "radical_end:CH3"}
+    assert fam["alkene_terminal"]["labels"] == {"2": "alkene_terminal:CH2=CH2"}
+    assert fam["alkene_terminal"]["min_n"] == 2 and fam["radical_interior"]["min_n"] == 3
+    h = 1.00797
+    assert fam["chain"]["molar_mass_offset_g_mol"] == pytest.approx(2 * h, rel=1e-3)
+    assert fam["radical_end"]["molar_mass_offset_g_mol"] == pytest.approx(h, rel=1e-3)
+    assert fam["alkene_internal"]["molar_mass_offset_g_mol"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_an_override_does_not_change_the_counted_sites(tmp_path):
+    """The depository's 4-dodecyl and pentyl/heptyl are the template's sites
+    at another weight: the counts are those of the catalog without them."""
+    from kernelReferenceTest import override_payloads, toy_table
+    (tmp_path / "o").mkdir()
+    (tmp_path / "p").mkdir()
+    with_o = toy_table(tmp_path / "o", override_payloads(S.pe_spec({1: 1})))
+    without = toy_table(tmp_path / "p")
+    for kid in ("beta_scission:substrate=radical_interior:CH",
+                "recombination:radical=radical_end:CH2+radical=radical_end:CH2"):
+        a, b = with_o["kernels"][kid]["templates"][0], without["kernels"][kid]["templates"][0]
+        assert {k: a[k] for k in ("S0", "S1", "k_per_feature") if k in a} == \
+            {k: b[k] for k in ("S0", "S1", "k_per_feature") if k in b}
+        assert a["overrides"] and not b["overrides"]
