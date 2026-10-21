@@ -835,9 +835,10 @@ def _relabel_transition(tr, m, cid):
 
 
 def _relabel_candidate(c, m):
-    """A unimolecular candidate (``MeltEngine._uni_candidates``) moved through ``m``."""
+    """A unimolecular candidate (``MeltEngine._uni_candidates``) moved through
+    ``m``; a candidate of several pieces has no root (None) and keeps none."""
     root, seq, edit_key, delta, edits, fb, fr = c
-    return (m[root], seq, (edit_key[0],) + tuple(m[a] for a in edit_key[1:]), _relabel_delta(delta, m),
+    return (None if root is None else m[root], seq, (edit_key[0],) + tuple(m[a] for a in edit_key[1:]), _relabel_delta(delta, m),
             _relabel_edits(edits, m), tuple((m[a], m[b], o) for a, b, o in fb), tuple((m[a], r) for a, r in fr))
 
 
