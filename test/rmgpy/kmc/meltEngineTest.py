@@ -1658,6 +1658,51 @@ def test_an_incremental_rescan_equals_a_match_after_every_event():
         assert engine.events_fired > 0 and engine.scan_reuse_hits > 0
 
 
+def test_a_kept_site_keeps_its_prior_kind_only_when_clean_and_walk_free():
+    """An incremental rescan takes a site's kind from the prior entry only
+    when no atom of the site is dirty and the kind reads no walk (its
+    cross-bond atoms on the backbone or hydrogen, no bond formed inside the
+    participant); every other site gets its kind computed on the state.  The
+    prior's kinds are marked so the two are told apart.  One clean site's
+    carbon cross-bond atom is taken off the backbone (in the origin both scans
+    read), so some kinds walk."""
+    from dataclasses import replace
+    reused = recomputed = walked = 0
+    for engine in _incremental_engines():
+        for _ in range(6):
+            engine.step()
+        state = engine.state
+        cid, flip = next((cid, site[k]) for cid, entry in sorted(engine.entries.items())
+                         for (ci, p, _kind), ss in sorted(entry.sites.items(), key=repr) if ci not in engine._ovr
+                         and me._kind_reads(engine.classes[ci], engine.templates[ci], p) is not None
+                         for site in ss for k in me._kind_reads(engine.classes[ci], engine.templates[ci], p)
+                         if state.atoms[site[k]].element == "C" and state.origin[site[k]].is_backbone)
+        full = engine._scan_component(state, cid, None)
+        firsts = [site for ss in full.sites.values() for site in ss if flip not in site][:3]
+        dirty = frozenset(a for site in firsts for a in site)
+        state._origin[flip] = replace(state.origin[flip], is_backbone=False)
+        full = engine._scan_component(state, cid, None)
+        marked = me._Entry(full.cid, full.atoms, full.uni,
+                           {(ci, p, ("prior",) + kind): ss for (ci, p, kind), ss in full.sites.items()},
+                           full.backbone, full.met_length, full.radicals, full.species, full.uni_o, full.reuse)
+        got = engine._scan_component(state, cid, None, prior=[marked], dirty=dirty)
+        true = {(ci, p, site): kind for (ci, p, kind), ss in full.sites.items() for site in ss}
+        for (ci, p, kind), ss in got.sites.items():
+            cls, t = engine.classes[ci], engine.templates[ci]
+            reads = None if ci in engine._ovr else me._kind_reads(cls, t, p)
+            for site in ss:
+                free = reads is not None and all(state.origin[site[k]].is_backbone
+                                                 or state.atoms[site[k]].element == "H" for k in reads)
+                if free and not dirty & set(site):
+                    assert kind == ("prior",) + true[(ci, p, site)], (ci, p, site)
+                    reused += 1
+                else:
+                    assert kind == true[(ci, p, site)], (ci, p, site)
+                    recomputed += 1
+                    walked += not free
+    assert reused and recomputed and walked
+
+
 def test_dirty_atoms_cover_changed_nodes_and_their_conjugated_subsystems():
     """The atoms an event makes dirty: every atom whose node changed, and
     every atom of a conjugated subsystem (before or after) that holds one."""
