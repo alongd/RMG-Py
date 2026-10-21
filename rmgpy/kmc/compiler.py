@@ -3793,11 +3793,11 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
     rewritten_molecule = next(
         molecule for molecule in rewritten if rewritten_root in molecule.atoms
     )
-    correspondence_verified = any(
-        mapping.get(rewritten_root) is mapped_product_atom
-        for mapping in rewritten_molecule.find_isomorphism(
-            mapped_product_molecule, save_order=True
-        )
+    # one isomorphism with the root pinned, never every one (6^k with k methyls)
+    correspondence_verified = rewritten_molecule.is_isomorphic(
+        mapped_product_molecule,
+        initial_map={rewritten_root: mapped_product_atom},
+        save_order=True,
     )
     if not correspondence_verified:
         return {

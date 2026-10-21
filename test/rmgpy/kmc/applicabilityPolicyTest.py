@@ -346,6 +346,50 @@ def test_unsupported_persistent_carbene_refuses_both_directions():
     assert refusal["rate_source"] == _source(persistent=False)
 
 
+def _methyl_rich_record(smiles="[CH2]C(C)(C)C(C)(C)C(C)C"):
+    """``_h_abstraction_record`` with the methyl radical replaced by a radical
+    carrying six methyls (6^6 hydrogen permutations alone), built from SMILES:
+    NH2 takes an H from the radical carbon, leaving a triplet carbene."""
+    radical = Molecule(smiles=smiles)
+    root = next(atom for atom in radical.atoms if atom.radical_electrons == 1)
+    hydrogens = [atom for atom in root.edges if atom.is_hydrogen()]
+    radical.atoms = [root] + hydrogens + [atom for atom in radical.atoms
+                                          if atom is not root and atom not in hydrogens]
+    root.label = "*1"
+    record = _h_abstraction_record()
+    amine = Molecule().from_adjacency_list(record["reactant_graphs"][1])
+    carbene = radical.copy(deep=True)
+    carbene.remove_atom(carbene.atoms[len(hydrogens)])
+    carbene.atoms[0].radical_electrons = 2
+    carbene.multiplicity = 3
+    moved, nitrogen = len(hydrogens), len(radical.atoms)
+    heavy = sum(1 for atom in radical.atoms if not atom.is_hydrogen()) + 1
+    record.update(
+        reactant_graphs=[radical.to_adjacency_list(), amine.to_adjacency_list()],
+        product_graphs=[carbene.to_adjacency_list(), record["product_graphs"][1]],
+        atom_map={k: k for k in range(heavy)},
+        bond_ops=[{"action": "break", "atoms": [0, moved], "order": "1.0"},
+                  {"action": "form", "atoms": [nitrogen, moved], "order": "1.0"},
+                  {"action": "set_radical", "atom": 0, "value": 2},
+                  {"action": "set_radical", "atom": nitrogen, "value": 0}])
+    return record
+
+
+def test_the_mapped_root_is_verified_without_enumerating_every_automorphism():
+    """The stored atom map's root is checked against the rewrite by ONE
+    isomorphism that pins it, not by enumerating every isomorphism (over 6^k
+    on a radical with k methyls): the methyl-rich record decides as the
+    methyl radical does, within a small memory bound."""
+    small = classify_persistent_carbene(_pair()[0], _root(), None)
+    tracemalloc.start()
+    decision = classify_persistent_carbene(_methyl_rich_record(), _root(), None)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert decision["mapped_root"]["mapping_verified"] is True, decision
+    assert decision["disposition"] == small["disposition"]
+    assert peak < 20e6, peak
+
+
 def test_prepublication_pair_is_refused_atomically_before_links_exist():
     pair = _pair()
     for record in pair:
