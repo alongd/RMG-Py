@@ -113,13 +113,19 @@ cdef class VF2:
         """
         cdef int call_depth, index1, index2
 
+        # A graph kept from the previous call is not re-sorted, so its order
+        # must still be saved here for restore_vertex_order
         if self.graph1 is not graph1:
             self.graph1 = graph1
             graph1.sort_vertices(save_order)
+        elif save_order:
+            graph1.ordered_vertices = graph1.vertices[:]
 
         if self.graph2 is not graph2:
             self.graph2 = graph2
             graph2.sort_vertices(save_order)
+        elif save_order:
+            graph2.ordered_vertices = graph2.vertices[:]
 
         self.initial_mapping = initial_mapping
         self.subgraph = subgraph

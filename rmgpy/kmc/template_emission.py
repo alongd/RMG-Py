@@ -1018,9 +1018,19 @@ class ProductionRates:
                 problems += [f"rate owner: {p}" for p in
                              rebind_problems(request.owner_rate_source, owners[0].rate_source)]
         problems = tuple(problems)
+        selection = _selection(rec.rate_source)
+        if "forward" not in selection and \
+                (rec.rate_source or {}).get("kind") == "reference-thermo reverse":
+            # the compiler names the forward source on a reverse only when that
+            # source carries a verbose comment; the reverse is k_forward / Kc of
+            # the pair's one forward estimate, so that estimate's selection is it
+            estimates = [x for x in records if x is not rec and x.template == request.template
+                         and (x.rate_source or {}).get("kind") == "RMG family estimate"]
+            if len(estimates) == 1:
+                selection["forward"] = _selection(estimates[0].rate_source)
         return RateResult(tuple(rec.k_table["T"]), tuple(rec.k_table["k"]),
                           float(rec.ssa_multiplier),
-                          {"selection": _selection(rec.rate_source), "event_id": rec.event_id,
+                          {"selection": selection, "event_id": rec.event_id,
                            "status": rec.status, "path": path}, problems)
 
 
