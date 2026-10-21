@@ -277,6 +277,23 @@ def test_the_mom_rows_report_moments_and_withhold_what_the_file_lacks(mom):
         assert rows[(t0, f"ladder_mol.{p}")]["kind"] == "withheld"
 
 
+def test_a_withheld_mom_row_carries_the_producers_reason(mom, tmp_path):
+    """A whole-ensemble row the producer withheld at a time says why (its
+    mom_diagnostics.json), not only that the file lacks it."""
+    setup, path, _run = mom
+    doc = json.loads(path.read_text())
+    t = doc["entries"][1]["time_s"]
+    doc["entries"][1]["quantities"].pop("whole_mu2_mol", None)
+    (tmp_path / "mom.json").write_text(json.dumps(doc))
+    shutil.copy(path.parent / "conventions.json", tmp_path / "conventions.json")
+    why = "the end-group ledger books 1 g/mol x mol"
+    (tmp_path / "mom_diagnostics.json").write_text(json.dumps([{"time_s": t, "whole_withheld": {
+        "whole_mu2_mol": why}}]))
+    rows = by_name(cr.mom_rows(tmp_path / "mom.json", setup["deck"]))
+    assert rows[(t, "whole_mu2_mol")]["kind"] == "withheld"
+    assert rows[(t, "whole_mu2_mol")]["reason"] == f"withheld by the MoM producer: {why}"
+
+
 def test_a_mom_file_of_another_deck_is_refused(mom, tmp_path):
     setup, path, _run = mom
     doc = json.loads(path.read_text())

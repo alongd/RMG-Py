@@ -1124,6 +1124,18 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
                 phase.remove(name)
         alkene_label, mid_label, internal_label = (p if p in touched else None
                                                    for p in (alkene_label, mid_label, internal_label))
+        # Each pool's chain end mass, from its kernel-rates family (a chain of n periods weighs n periods
+        # plus the family's offset): MoM's polymer() takes only mono-radical end groups, so every pool is
+        # declared with the deck's pair, and the conversion reads the pool's true end mass here.
+        families = kernels["table"]["families"]
+        ends = {pool: float(families[fam]["molar_mass_offset_g_mol"])
+                for fam, pool in (("chain", label), ("radical_end", radical_label),
+                                  ("alkene_terminal", alkene_label), ("radical_interior", mid_label),
+                                  ("alkene_internal", internal_label)) if pool is not None}
+        if abs(ends[label] - e) > MASS_RELATIVE * e:
+            raise ProducerError(f"the table's chain family carries {ends[label]!r} g/mol of end groups, the deck "
+                                f"{e!r} g/mol")
+        terms["record"]["pool_end_mass_g_mol"] = ends
 
     def transfer_line(pool):
         return ([f"    kernel_transfer={terms['transfer'][pool]!r},"] if terms and pool in terms["transfer"] else []) \
@@ -2325,10 +2337,16 @@ def whole_moments(row, first, pools, columns, ends, shift, polymer_cols, n_mass,
 
 
 def whole_ledger(row, first, pools, columns, ends) -> Tuple[float, bool]:
-    """(sum of e_p L_p, whether it is zero within MoM's floors: 2 f per pool's e_p)."""
+    """(sum of e_p L_p, whether it is zero within what MoM resolves of each
+    pool's mu0 at both times: its floor f plus the simulator's relative
+    tolerance, e_p (2 f + rtol (|mu0(0)| + |mu0(t)|)) summed over the pools).
+    A conserving kernel set leaves only the integrator's noise (~1e-13 g on
+    a run of ~3 mol of chains); a real end-group deficit is events x
+    end masses."""
     ledger = math.fsum(ends[p["label"]] * (first[columns[p["label"]][0]] - row[columns[p["label"]][0]])
                        for p in pools)
-    tolerance = math.fsum(ends[p["label"]] for p in pools) * 2.0 * MOM_MOMENT_FLOOR
+    tolerance = math.fsum(ends[p["label"]] * (2.0 * MOM_MOMENT_FLOOR + SIMULATOR_RTOL * (
+        abs(first[columns[p["label"]][0]]) + abs(row[columns[p["label"]][0]]))) for p in pools)
     return ledger, abs(ledger) <= tolerance
 
 
@@ -2551,6 +2569,8 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
     if abs(m_u - a) > MASS_RELATIVE * a:
         raise ProducerError(f"MoM repeat-unit mass {m_u!r} differs from the deck's {a!r} g/mol")
     columns, ends = {}, {}
+    # kernel mode: the pools' end masses from their families (build_input), not their declared end groups
+    pool_ends = ((facts.get("kernels") or {}).get("record") or {}).get("pool_end_mass_g_mol") or {}
     for p in pools:
         cols = []
         for k in range(3):
@@ -2562,7 +2582,7 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
         groups = p.get("end_groups")
         if not isinstance(groups, list) or len(groups) != 2:
             raise ProducerError(f"pool {p['label']!r}: no end groups in {pools_path}")
-        ends[p["label"]] = _end_mass(groups)
+        ends[p["label"]] = pool_ends.get(p["label"], _end_mass(groups))
     used = {i for cols in columns.values() for i in cols}
     stray = [h for i, h in enumerate(header) if re.search(r"_mu[0-9]+$", h) and i not in used]
     if stray:

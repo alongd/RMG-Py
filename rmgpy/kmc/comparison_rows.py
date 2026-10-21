@@ -398,6 +398,12 @@ def mom_rows(path, deck) -> dict:
         conventions = json.loads(conventions_path.read_text())
         if header.get("conventions_sha256") == _sha256(conventions_path.read_bytes()):
             not_produced = conventions.get("not_produced") or {}
+    # the producer's reason for a whole-ensemble row it withheld at a time
+    diagnostics_path = path.parent / "mom_diagnostics.json"
+    withheld_at = {}
+    if diagnostics_path.exists():
+        withheld_at = {float(d["time_s"]): d.get("whole_withheld") or {}
+                       for d in json.loads(diagnostics_path.read_text())}
     ppu, nbb = geometry(declared.spec)
     cut = declared.xs * ppu
     names = declared_species_names(declared.spec, SpeciesIdentity(declared.spec))
@@ -417,8 +423,10 @@ def mom_rows(path, deck) -> dict:
             if key in q:
                 rows.append(_row(t, key, "mom", "exact", value=float(q[key])))
             else:
+                why = withheld_at.get(t, {}).get(key)
                 rows.append(_row(t, key, "mom", "withheld",
-                                 reason=not_produced.get(key) or "not exported by the MoM producer"))
+                                 reason=(f"withheld by the MoM producer: {why}" if why else
+                                         not_produced.get(key) or "not exported by the MoM producer")))
         for name in ("total_mass_g", "mass_outside_species_g"):
             rows.append(_row(t, name, "mom", "withheld", reason=MOM_NO_INVENTORY))
         rows += [_row(t, f"ladder_mol.{p}", "mom", "withheld", reason=ladder) for p in range(1, cut + 1)]

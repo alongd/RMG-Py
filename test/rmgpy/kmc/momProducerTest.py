@@ -1636,16 +1636,20 @@ def test_a_pool_with_no_chains_and_units_left_is_corrupt(tmp_path, keep_mu1):
     assert "units without chains" in json.loads((out / "mom_diagnostics.json").read_text())[-1]["polymer_withheld"]
 
 
-def test_a_ledger_just_above_its_tolerance_withholds_mu2_and_mw(setup):
-    """Survivor ledger-tol-loose: 10x the ledger tolerance (sum of e_p x 2f)."""
+@pytest.mark.parametrize("factor, withheld", [(10.0, True), (0.1, False)])
+def test_a_ledger_above_its_tolerance_withholds_mu2_and_mw(setup, factor, withheld):
+    """Survivor ledger-tol-loose: the ledger tolerance is what MoM resolves
+    of the pool's mu0 at both times, e (2 f + rtol (|mu0(0)| + |mu0(t)|));
+    10x it withholds mu2 and Mw, a tenth of it does not (the I-226 PE dry
+    run's integration noise, ~1e-13 g, was withheld under 2 f alone)."""
     out = setup["tmp"] / "out"
     produce(setup, out, end=10.0, snapshots=2)
     mu = declared(setup["spec"])
-    row = (mu[0] - 20 * FLOOR, mu[1], mu[2])
+    row = (mu[0] - factor * (2 * FLOOR + 2 * mp.SIMULATOR_RTOL * mu[0]), mu[1], mu[2])
     write_run(out, times=[0.0, 10.0], pools=[(LABEL, lambda t: mu if t == 0.0 else row, 0.0)], gas=TRACE)
     produce(setup, out, end=10.0, snapshots=2, mode="convert")
     q = mom_entries(out)[-1]["quantities"]
-    assert "whole_mu2_mol" not in q and "whole_Mw_g_mol" not in q and "whole_Mn_g_mol" in q
+    assert ("whole_mu2_mol" not in q and "whole_Mw_g_mol" not in q) is withheld and "whole_Mn_g_mol" in q
 
 
 @pytest.mark.parametrize("depth, clamped", [(0.5, True), (10.0, False)])

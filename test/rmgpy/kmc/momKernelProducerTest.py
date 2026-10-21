@@ -676,3 +676,17 @@ def test_kernel_mode_exports_mu2_and_mw_with_each_pools_physical_end_mass(setup)
             (a * a * mu2 + 2 * a * e * mu1 + e * e * (c[0] + r[0])) / (a * mu1 + e * (c[0] + r[0])), rel=1e-9)
     assert manifest["facts"]["kernels"]["record"]["pool_end_mass_g_mol"] == {
         LABEL: offsets["chain"], RADICAL: offsets["radical_end"]}
+
+
+def test_the_end_group_ledger_is_zero_within_what_mom_resolves_of_each_pools_chains():
+    """Integration noise on a conserving run (the PE dry run: ~1e-13 g of
+    'ledger' on ~3 mol of chains) is not an end-group deficit; one event's
+    end mass is."""
+    pools = [{"label": "P"}, {"label": "R"}]
+    columns, ends = {"P": [0], "R": [1]}, {"P": 2.016, "R": 1.008}
+    first = [1.2, 0.0]
+    row = [0.6 + 1e-13, 1.2]                           # 0.6 mol of chains cut into 1.2 mol of radicals
+    ledger, zero = mp.whole_ledger(row, first, pools, columns, ends)
+    assert abs(ledger) < 1e-12 and zero
+    row = [0.6, 1.2 + 1e-6]                            # a micromole of radicals from nowhere
+    assert not mp.whole_ledger(row, first, pools, columns, ends)[1]
