@@ -19,6 +19,7 @@ case with a bound and checked against the base code's own outputs:
 import gzip
 import json
 import random
+import signal
 import time
 from pathlib import Path
 
@@ -94,6 +95,43 @@ def test_match_on_the_slowest_emitted_witness_is_within_its_time_bound():
     wm.match([template], state)   # warm the view
     assert _cpu(lambda: wm.match([template], te.melt_state(te.rows_from_json(case["rows"]))),
                 repeat=3) < 0.9
+
+
+class Late(Exception):
+    pass
+
+
+def _within(seconds, fn):
+    def alarm(_signum, _frame):
+        raise Late(f"over {seconds} s")
+    previous = signal.signal(signal.SIGALRM, alarm)
+    signal.alarm(seconds)
+    try:
+        return fn()
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def test_match_on_a_whole_witness_window_is_within_its_time_bound():
+    """A PP intra_H_migration template whose window is its whole 46-atom
+    witness: 2985984 embeddings of 2 transitions (each methyl's hydrogens
+    in 3! orders, each CH2's in 2!).  The base listed every one and died of
+    MemoryError under 6 GB; the hydrogen-leaf quotient keeps one per order
+    class and counts the rest."""
+    doc = json.loads((FIXTURES / "window_matcher" / "whole_witness_window.json").read_text())
+    t = doc["template"]
+    atoms = [wm.WindowAtom(**{**a, "exterior": tuple(tuple(x) for x in a["exterior"])})
+             for a in t["atoms"]]
+    edits = [wm.BondEdit(**e["bond"]) if "bond" in e else wm.AtomEdit(**e["atom"])
+             for e in t["edits"]]
+    template = wm.Template(t["name"], t["family"], atoms, [tuple(b) for b in t["bonds"]], edits,
+                           weight=1.0)
+    state = te.melt_state(te.rows_from_json(doc["rows"]))
+    result = _within(10, lambda: wm.match([template], state))
+    assert len(result.transitions) == 2
+    stats = result.classes[template.name]
+    assert stats.embeddings == stats.evaluated == 2985984
 
 
 # ---------------------------------------------------------------------------

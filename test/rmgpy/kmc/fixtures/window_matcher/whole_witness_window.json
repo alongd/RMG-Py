@@ -1,0 +1,1550 @@
+{
+"note": "the window of a PP intra_H_migration record's emitted template, which covers its whole 46-atom witness (the rows); at i235's base the matcher listed every embedding and died of MemoryError under 6 GB",
+"template": {
+"name": "t",
+"family": "intra_H_migration",
+"atoms": [
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 1,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "C",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+},
+{
+"element": "H",
+"participant": 0,
+"kind": "closed",
+"exterior": [],
+"isotope": null,
+"charge": 0,
+"radical": 0,
+"lone_pairs": 0
+}
+],
+"bonds": [
+[
+0,
+2,
+1.0
+],
+[
+0,
+3,
+1.0
+],
+[
+0,
+4,
+1.0
+],
+[
+1,
+5,
+1.0
+],
+[
+1,
+6,
+1.0
+],
+[
+1,
+15,
+1.0
+],
+[
+1,
+16,
+1.0
+],
+[
+2,
+7,
+1.0
+],
+[
+2,
+17,
+1.0
+],
+[
+2,
+18,
+1.0
+],
+[
+3,
+8,
+1.0
+],
+[
+3,
+19,
+1.0
+],
+[
+3,
+20,
+1.0
+],
+[
+4,
+21,
+1.0
+],
+[
+4,
+22,
+1.0
+],
+[
+4,
+23,
+1.0
+],
+[
+5,
+9,
+1.0
+],
+[
+5,
+24,
+1.0
+],
+[
+5,
+25,
+1.0
+],
+[
+6,
+26,
+1.0
+],
+[
+6,
+27,
+1.0
+],
+[
+6,
+28,
+1.0
+],
+[
+7,
+10,
+1.0
+],
+[
+7,
+11,
+1.0
+],
+[
+7,
+29,
+1.0
+],
+[
+8,
+12,
+1.0
+],
+[
+8,
+13,
+1.0
+],
+[
+8,
+30,
+1.0
+],
+[
+9,
+10,
+1.0
+],
+[
+9,
+14,
+1.0
+],
+[
+9,
+31,
+1.0
+],
+[
+10,
+32,
+1.0
+],
+[
+10,
+33,
+1.0
+],
+[
+11,
+34,
+1.0
+],
+[
+11,
+35,
+1.0
+],
+[
+11,
+36,
+1.0
+],
+[
+12,
+37,
+1.0
+],
+[
+12,
+38,
+1.0
+],
+[
+12,
+39,
+1.0
+],
+[
+13,
+40,
+1.0
+],
+[
+13,
+41,
+1.0
+],
+[
+13,
+42,
+1.0
+],
+[
+14,
+43,
+1.0
+],
+[
+14,
+44,
+1.0
+],
+[
+14,
+45,
+1.0
+]
+],
+"edits": [
+{
+"bond": {
+"a": 0,
+"b": 15,
+"order": 1.0
+}
+},
+{
+"bond": {
+"a": 1,
+"b": 15,
+"order": 0.0
+}
+},
+{
+"atom": {
+"atom": 0,
+"radical": 0,
+"charge": null,
+"lone_pairs": null
+}
+},
+{
+"atom": {
+"atom": 1,
+"radical": 1,
+"charge": null,
+"lone_pairs": null
+}
+}
+]
+},
+"rows": [
+[
+0,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+1,
+1.0
+],
+[
+15,
+1.0
+],
+[
+16,
+1.0
+],
+[
+999046,
+1.0
+]
+]
+],
+[
+1,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+0,
+1.0
+],
+[
+2,
+1.0
+],
+[
+3,
+1.0
+],
+[
+18,
+1.0
+]
+]
+],
+[
+2,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+1,
+1.0
+],
+[
+19,
+1.0
+],
+[
+20,
+1.0
+],
+[
+21,
+1.0
+]
+]
+],
+[
+3,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+1,
+1.0
+],
+[
+4,
+1.0
+],
+[
+22,
+1.0
+],
+[
+23,
+1.0
+]
+]
+],
+[
+4,
+"C",
+null,
+0,
+1,
+0,
+[
+[
+3,
+1.0
+],
+[
+5,
+1.0
+],
+[
+6,
+1.0
+]
+]
+],
+[
+5,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+4,
+1.0
+],
+[
+25,
+1.0
+],
+[
+26,
+1.0
+],
+[
+27,
+1.0
+]
+]
+],
+[
+6,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+4,
+1.0
+],
+[
+7,
+1.0
+],
+[
+28,
+1.0
+],
+[
+29,
+1.0
+]
+]
+],
+[
+7,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+6,
+1.0
+],
+[
+8,
+1.0
+],
+[
+9,
+1.0
+],
+[
+30,
+1.0
+]
+]
+],
+[
+8,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+7,
+1.0
+],
+[
+31,
+1.0
+],
+[
+32,
+1.0
+],
+[
+33,
+1.0
+]
+]
+],
+[
+9,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+7,
+1.0
+],
+[
+10,
+1.0
+],
+[
+34,
+1.0
+],
+[
+35,
+1.0
+]
+]
+],
+[
+10,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+9,
+1.0
+],
+[
+11,
+1.0
+],
+[
+12,
+1.0
+],
+[
+36,
+1.0
+]
+]
+],
+[
+11,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+10,
+1.0
+],
+[
+37,
+1.0
+],
+[
+38,
+1.0
+],
+[
+39,
+1.0
+]
+]
+],
+[
+12,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+10,
+1.0
+],
+[
+13,
+1.0
+],
+[
+40,
+1.0
+],
+[
+41,
+1.0
+]
+]
+],
+[
+13,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+12,
+1.0
+],
+[
+14,
+1.0
+],
+[
+24,
+1.0
+],
+[
+42,
+1.0
+]
+]
+],
+[
+14,
+"C",
+null,
+0,
+0,
+0,
+[
+[
+13,
+1.0
+],
+[
+43,
+1.0
+],
+[
+44,
+1.0
+],
+[
+45,
+1.0
+]
+]
+],
+[
+15,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+0,
+1.0
+]
+]
+],
+[
+16,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+0,
+1.0
+]
+]
+],
+[
+18,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+1,
+1.0
+]
+]
+],
+[
+19,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+2,
+1.0
+]
+]
+],
+[
+20,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+2,
+1.0
+]
+]
+],
+[
+21,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+2,
+1.0
+]
+]
+],
+[
+22,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+3,
+1.0
+]
+]
+],
+[
+23,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+3,
+1.0
+]
+]
+],
+[
+24,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+13,
+1.0
+]
+]
+],
+[
+25,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+5,
+1.0
+]
+]
+],
+[
+26,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+5,
+1.0
+]
+]
+],
+[
+27,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+5,
+1.0
+]
+]
+],
+[
+28,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+6,
+1.0
+]
+]
+],
+[
+29,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+6,
+1.0
+]
+]
+],
+[
+30,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+7,
+1.0
+]
+]
+],
+[
+31,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+8,
+1.0
+]
+]
+],
+[
+32,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+8,
+1.0
+]
+]
+],
+[
+33,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+8,
+1.0
+]
+]
+],
+[
+34,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+9,
+1.0
+]
+]
+],
+[
+35,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+9,
+1.0
+]
+]
+],
+[
+36,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+10,
+1.0
+]
+]
+],
+[
+37,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+11,
+1.0
+]
+]
+],
+[
+38,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+11,
+1.0
+]
+]
+],
+[
+39,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+11,
+1.0
+]
+]
+],
+[
+40,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+12,
+1.0
+]
+]
+],
+[
+41,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+12,
+1.0
+]
+]
+],
+[
+42,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+13,
+1.0
+]
+]
+],
+[
+43,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+14,
+1.0
+]
+]
+],
+[
+44,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+14,
+1.0
+]
+]
+],
+[
+45,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+14,
+1.0
+]
+]
+],
+[
+999046,
+"H",
+null,
+0,
+0,
+0,
+[
+[
+0,
+1.0
+]
+]
+]
+]
+}
