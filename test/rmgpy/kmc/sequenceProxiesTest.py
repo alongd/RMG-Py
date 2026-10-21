@@ -148,10 +148,10 @@ def test_the_windows_read_a_sequence_chain_as_a_declared_chain(provider):
         win.witness_spec(win.DeclaredSpec(provider.name, object()))
 
 
-def test_the_growth_unit_is_the_common_formula_of_the_residues(provider):
-    assert provider.unit_formula() == (("C", 1), ("H", 2))
-    with pytest.raises(ValueError, match="refused:growth_unit"):
-        sequence_provider(v2_spec()).unit_formula()
+def test_the_growth_unit_is_the_set_of_residue_formulas(provider):
+    assert provider.unit_formula() == ((("C", 2), ("H", 4)), (("C", 3), ("H", 6)))
+    assert sequence_provider(v2_spec()).unit_formula() == \
+        ((("C", 2), ("H", 4)), (("C", 3), ("H", 6)), (("C", 9), ("H", 12)))
 
 
 # -- the compile structures --------------------------------------------------------
@@ -461,7 +461,7 @@ def test_the_mapping_check_builds_the_v4_roster_from_the_artifact(ep):
 
 def test_a_v2_artifact_is_certified_under_its_declaration(ep):
     rules = emit.certification_rules(_artifact(ep), ep)
-    assert rules["repeat"] == (("C", 1), ("H", 2))
+    assert rules["repeat"] == ((("C", 2), ("H", 4)), (("C", 3), ("H", 6)))
     assert rules["domain"] is win.declared_interim({"C", "H"}).domain
 
 
