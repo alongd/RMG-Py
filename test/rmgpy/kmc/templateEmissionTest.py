@@ -1321,6 +1321,23 @@ def _pair_rates(by_orientation):
     return rates
 
 
+def test_a_reverse_refused_upstream_derives_nothing_and_is_a_one_way_gate():
+    """The reverse record refused before emission (the emitter's upstream
+    refusal: no family, no direction, no templates) loads nothing: the
+    forward's weights are derived from nothing and the cycle gate names the
+    one-way channel, as for a reverse whose templates were refused."""
+    payloads, counter = _toy_pair()
+    payloads[1] = te.finish({"schema": te.SCHEMA, "status": "refused",
+                             "record_event_id": payloads[1]["record_event_id"],
+                             "refusal": {"by": "upstream", "status": "refused:recertify",
+                                         "reason": "x"}, "templates": [], "contexts": []})
+    out = _res(payloads, counter)
+    assert not any(t.get("derived") for p in out for t in p.get("templates", []))
+    out, table = _check(out, counter)
+    assert te.loaded_templates(out, 700.0) == []
+    assert any("loads no template (one-way channel)" in r["reason"] for r in table), table
+
+
 def _toy_pair(hid=None, wid=None, scale=1.0, h_scale=1.0, counter=None, certificate=None):
     """Homolysis H of C12 at (3,4) (reversed record) and the recombination W
     of its two products (as_generated), linked by ``reverse_of``;

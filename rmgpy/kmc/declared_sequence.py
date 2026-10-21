@@ -32,17 +32,21 @@ periods.
 beyond an artificial port is not fixed by the declaration, so a sequence
 chain is never extended there (``fragment``, ``end_edit``).
 
-**The growth unit** (``unit_formula``) is the formula every residue formula
-is a whole multiple of.  Growth by its multiples is a superset of every
-combination of residues, so the depository exclusion stays sound.  When no
-such formula exists, the unit is refused by name
-(``refused:growth_unit``)."""
+**The growth unit** (``unit_formula``) of the depository exclusion is the
+set of residue formulas, one per residue: a long-chain analogue gains any
+non-negative integer combination of them (``certificates.growth_units``).
+The exclusion is decided by construction at the growth sites
+(``growth_sites``): every capped terminal residue of a witness species, read
+as every residue and side it matches; at each reading every residue word
+the sequence support allows next to it is an insertion
+(``growth_options``), built whole by ``growth_fragment``.  This growth is
+not the window extension above: it enumerates every allowed residue rather
+than fixing one."""
 
 from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from math import gcd
 from typing import Mapping
 
 from rmgpy.kmc import declared_chain as dc
@@ -51,13 +55,13 @@ from rmgpy.kmc.boundaries import (
     BoundaryMetadata,
     BoundaryProvider,
     ExtensionRefused,
+    Fragment,
     MetadataError,
     Port,
     ProxyBuild,
 )
 
 SEQUENCE_EXTENSION_REFUSAL = "refused:sequence_extension"
-GROWTH_UNIT_REFUSAL = "refused:growth_unit"
 
 
 @dataclass(frozen=True)
@@ -95,21 +99,6 @@ def _formula(graph) -> dict:
         if atom.hydrogens:
             counts["H"] = counts.get("H", 0) + atom.hydrogens
     return counts
-
-
-def common_growth_unit(formulas) -> tuple:
-    """The formula every one of ``formulas`` (element -> count) is a whole
-    multiple of, as ((element, count), ...) sorted; refused when none is."""
-    formulas = [dict(f) for f in formulas]
-    elements = sorted(set().union(*formulas))
-    divisors = [gcd(*(f.get(e, 0) for e in elements)) for f in formulas]
-    units = {tuple((e, f.get(e, 0) // d) for e in elements) for f, d in zip(formulas, divisors)}
-    if len(units) != 1:
-        raise ValueError(f"{GROWTH_UNIT_REFUSAL}: the residue formulas {sorted(units)} are not "
-                         "whole multiples of one formula; the depository growth by every "
-                         "combination of residues is not one growth unit")
-    (unit,) = units
-    return tuple((e, n) for e, n in unit if n)
 
 
 class SequenceChainProvider(BoundaryProvider):
@@ -268,8 +257,139 @@ class SequenceChainProvider(BoundaryProvider):
         return frozenset(atom.element for graph in graphs for atom in graph.atoms)
 
     def unit_formula(self) -> tuple:
-        """The depository growth unit (module doc)."""
-        return common_growth_unit(_formula(residue.graph) for residue in self.residues.values())
+        """The depository growth units (module doc): one formula per residue,
+        each ((element, count), ...) sorted, the set sorted."""
+        return tuple(sorted({tuple(sorted(_formula(residue.graph).items()))
+                             for residue in self.residues.values()}))
+
+    # -- depository growth (module doc) ------------------------------------------
+    def _preceding(self) -> dict:
+        return {name: tuple(a for a in sorted(self.support) if name in self.support[a])
+                for name in self.residues}
+
+    def _growth_patterns(self) -> tuple:
+        """(side, residue, port, pattern rows, exact atoms) of every capped
+        terminal residue: the residue at the artificial ``side`` of a
+        two-residue chain with each neighbour the support allows, and of the
+        residue alone; its atoms with every hydrogen exact, the join
+        neighbour matched by element and bond order (``declared_chain``'s
+        end patterns)."""
+        cached = self.__dict__.get("_growth")
+        if cached is None:
+            from rmgpy.kmc.rmg_moves import molecule_rows
+            preceding = self._preceding()
+            cached = []
+            for name in sorted(self.residues):
+                words = [("tail", (q, name)) for q in preceding[name]]
+                words += [("head", (name, q)) for q in self.support[name]]
+                words += [("head", (name,)), ("tail", (name,))]
+                for side, word in words:
+                    build = self.build("growth", SequenceChainSpec(word))
+                    rows = molecule_rows(build.molecule)
+                    unit = 0 if side == "head" else len(word) - 1
+                    atoms = {a for a, u, _k in build.metadata.coordinates if u == unit}
+                    exact = atoms | {h for a in atoms for h, _o in rows[a][5] if rows[h][0] == "H"}
+                    stubs = {n for a in exact for n, _o in rows[a][5] if n not in exact}
+                    cached.append((side, name, build.metadata.port(side),
+                                   {a: rows[a] for a in exact | stubs}, frozenset(exact)))
+            cached = tuple(cached)
+            self.__dict__["_growth"] = cached
+        return cached
+
+    def growth_sites(self, molecule) -> tuple:
+        """Where residues insert in ``molecule`` (atoms carry ids): every atom
+        that is the capped end of a whole terminal residue (``_growth_patterns``),
+        one site per end atom; its coordinate lists every reading
+        ``(side, residue, caps)`` it matches, the site's port caps are all
+        their caps.  A radical end, a vinyl end or a species without a whole
+        residue is no site."""
+        from rmgpy.kmc.rmg_moves import molecule_rows
+        target = molecule_rows(molecule)
+        readings = {}
+        for side, name, port, pattern, exact in self._growth_patterns():
+            for anchor in sorted(target):
+                if (side, name) in readings.get(anchor, {}):
+                    continue
+                image = dc._match_end(pattern, exact, port.atom_id, target, anchor)
+                if image is not None:
+                    readings.setdefault(anchor, {})[(side, name)] = \
+                        tuple(sorted(image[c] for c in port.cap_atom_ids))
+        out = []
+        for anchor in sorted(readings):
+            coordinate = tuple((side, name, caps)
+                               for (side, name), caps in sorted(readings[anchor].items()))
+            caps = tuple(sorted({c for _s, _n, cs in coordinate for c in cs}))
+            out.append((Port(f"growth:{anchor}", anchor, caps, f"backbone_{coordinate[0][0]}",
+                             "artificial"), coordinate))
+        return tuple(out)
+
+    def _site_order(self, name, side) -> float:
+        return self._order(name, (self.entry if side == "head" else self.exit)[name])
+
+    def growth_options(self, coordinate, budget):
+        """Every insertion at a growth site (``growth_sites``): per reading
+        (side, residue, caps) of the site, every non-empty word of residues
+        the sequence support allows next to that residue on that side
+        (appended after it at a tail, prepended before it at a head; chain
+        order), adding at most ``budget`` heavy atoms.  Yields ((reading,
+        word), formula added, heavy atoms added), shorter words first; a
+        word whose junction order is not the reading's cap count is no
+        insertion."""
+        preceding = self._preceding()
+        formulas = {name: _formula(residue.graph) for name, residue in self.residues.items()}
+        heavy = {name: sum(n for e, n in f.items() if e != "H") for name, f in formulas.items()}
+        for reading in coordinate:
+            side, name, caps = reading
+            frontier = [((), 0)]
+            while frontier:
+                grown = []
+                for word, size in frontier:
+                    edge = name if not word else word[-1] if side == "tail" else word[0]
+                    for nxt in (self.support[edge] if side == "tail" else preceding[edge]):
+                        if size + heavy[nxt] > budget:
+                            continue
+                        new = word + (nxt,) if side == "tail" else (nxt,) + word
+                        grown.append((new, size + heavy[nxt]))
+                for word, size in grown:
+                    first, last = (name, word[0]) if side == "tail" else (word[-1], name)
+                    if int(self.junctions[(first, last)][2]) != len(caps):
+                        continue
+                    added = {}
+                    for r in word:
+                        for e, n in formulas[r].items():
+                            added[e] = added.get(e, 0) + n
+                    outer = word[-1] if side == "tail" else word[0]
+                    caps_added = int(self._site_order(outer, side)) - len(caps)
+                    if caps_added:
+                        added["H"] = added.get("H", 0) + caps_added
+                    yield (reading, word), added, size
+                frontier = grown
+
+    def growth_fragment(self, option) -> Fragment:
+        """The word of a ``growth_options`` insertion as one fragment: its
+        residues joined as a chain, the end facing the site bonded to the
+        site's atom by the declared junction, the far end capped."""
+        (side, name, caps), word = option
+        key = (side, name, len(caps), word)
+        cache = self.__dict__.setdefault("_fragments", {})
+        if key not in cache:
+            from rmgpy.kmc.rmg_moves import molecule_rows
+            build = self.build("growth", SequenceChainSpec(word))
+            rows = molecule_rows(build.molecule)
+            attach = build.metadata.port("head" if side == "tail" else "tail")
+            new = build.metadata.port(side)
+            first, last = (name, word[0]) if side == "tail" else (word[-1], name)
+            order = float(self.junctions[(first, last)][2])
+            kept = sorted(a for a in rows if a not in attach.cap_atom_ids)
+            local = {a: i for i, a in enumerate(kept)}
+            cache[key] = Fragment(
+                tuple(tuple(rows[a][:5]) for a in kept),
+                tuple(sorted((local[a], local[b], float(o)) for a in kept for b, o in rows[a][5]
+                             if b in local and local[a] < local[b])),
+                ((local[attach.atom_id], order),), local[new.atom_id],
+                tuple(local[c] for c in new.cap_atom_ids),
+                tuple((local[a], u, k) for a, u, k in build.metadata.coordinates if a in local))
+        return cache[key]
 
     def _neighbours(self, name) -> tuple:
         before = min(a for a in sorted(self.support) if name in self.support[a])

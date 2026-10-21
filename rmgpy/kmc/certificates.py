@@ -58,6 +58,7 @@ import hashlib
 import json
 import re
 from collections import OrderedDict, defaultdict
+from collections.abc import Mapping
 from typing import Dict, Iterable, Optional, Sequence, Tuple
 
 from rmgpy.kmc import channels as chm
@@ -604,12 +605,23 @@ def grown_analogue(growth, reactants, products, sites, vector) -> tuple:
     """(reactants, products) of the analogue that inserts ``vector[i]``
     periods at site ``i`` (``reaction_growth_sites``) on both sides alike,
     each through the provider's ``fragment``; fresh ids above every witness
-    id."""
+    id.  A residue-word provider's ``vector[i]`` is one of its
+    ``growth_options`` (None: nothing inserted), inserted whole through its
+    ``growth_fragment`` in place of the caps of that option's parse."""
     from dataclasses import replace
     sides = [{a: [row[:5], dict(row[5])] for m in mols for a, row in rm.molecule_rows(m).items()}
              for mols in (reactants, products)]
     fresh = max(max(side) for side in sides) + 1
     for (_k, port, coordinate), count in zip(sites, vector):
+        if not isinstance(count, int):
+            if count is not None:
+                fragment = growth.growth_fragment(count)
+                ids = list(range(fresh, fresh + len(fragment.atoms)))
+                fresh += len(fragment.atoms)
+                (_side, _end, caps), _word = count
+                for side in sides:
+                    _insert_unit(side, replace(port, cap_atom_ids=caps), fragment, ids)
+            continue
         for _ in range(count):
             fragment = growth.fragment(port, coordinate)
             ids = list(range(fresh, fresh + len(fragment.atoms)))
@@ -659,6 +671,125 @@ def _growth_vectors(sites, reactants, products, unit_heavy, hmax):
     yield from walk(0)
 
 
+def _unit_insertions(sites, reactants, products, unit, hmax):
+    """(insertions per site, element counts added per species) for every
+    vector of whole periods of one ``unit`` (``_growth_vectors``): each site's
+    insertions the one count of periods."""
+    product_of = {a.id: j for j, m in enumerate(products) for a in m.atoms}
+    unit_heavy = sum(v for k, v in unit.items() if k != "H")
+    for vector in _growth_vectors(sites, reactants, products, unit_heavy, hmax):
+        extra = ([defaultdict(int) for _ in reactants], [defaultdict(int) for _ in products])
+        for (k, port, _c), count in zip(sites, vector):
+            for element, n in unit.items():
+                extra[0][k][element] += count * n
+                extra[1][product_of[port.atom_id]][element] += count * n
+        yield [[count] for count in vector], extra
+
+
+def _word_insertions(growth, sites, reactants, products, hmax):
+    """(insertions per site, element counts added per species) for a
+    residue-word provider: per site its ``growth_options`` grouped by the
+    formula they add (nothing inserted is a group too), one group per site,
+    at least one non-empty, every grown species within ``hmax`` heavy atoms;
+    the insertions of a group all add the same atoms, so the formula argument
+    reads the group and only a candidate's groups are ever built."""
+    product_of = {a.id: j for j, m in enumerate(products) for a in m.atoms}
+    owners = [(k, product_of[port.atom_id]) for k, port, _c in sites]
+    sizes = ([_heavy(m) for m in reactants], [_heavy(m) for m in products])
+    groups = []
+    for (k, j), (_k, _port, coordinate) in zip(owners, sites):
+        by_formula = defaultdict(list)
+        for option, formula, heavy in growth.growth_options(
+                coordinate, hmax - max(sizes[0][k], sizes[1][j])):
+            by_formula[(heavy, tuple(sorted(formula.items())))].append(option)
+        groups.append([(0, (), [None])] + [(heavy, formula, options) for (heavy, formula), options
+                                           in sorted(by_formula.items())])
+    chosen = [None] * len(sites)
+
+    def fits():
+        grown = ([0] * len(reactants), [0] * len(products))
+        for (k, j), group in zip(owners, chosen):
+            if group is not None:
+                grown[0][k] += group[0]
+                grown[1][j] += group[0]
+        return all(base + extra <= hmax for side in (0, 1)
+                   for base, extra in zip(sizes[side], grown[side]))
+
+    def walk(i):
+        if i == len(sites):
+            if any(group[0] for group in chosen):
+                extra = ([defaultdict(int) for _ in reactants], [defaultdict(int) for _ in products])
+                for (k, j), (_heavy_atoms, formula, _options) in zip(owners, chosen):
+                    for element, n in formula:
+                        extra[0][k][element] += n
+                        extra[1][j][element] += n
+                yield [group[2] for group in chosen], extra
+            return
+        for group in groups[i]:     # ascending heavy atoms: the first misfit ends the site
+            chosen[i] = group
+            if not fits():
+                break
+            yield from walk(i + 1)
+        chosen[i] = None
+
+    yield from walk(0)
+
+
+def _inserted(vector) -> list:
+    """The ``periods`` of a match: per site the count of periods, or the
+    residue word inserted (``side`` of the residue ``end`` it was inserted
+    at, ``residues`` in chain order; None: nothing)."""
+    return [step if isinstance(step, int) else None if step is None else
+            {"side": step[0][0], "end": step[0][1], "residues": list(step[1])} for step in vector]
+
+
+def _one_formula(repeat) -> bool:
+    """A growth unit given as one formula (a mapping, or ((element, count),
+    ...)); otherwise it is a set of formulas (a copolymer's residues)."""
+    return isinstance(repeat, Mapping) or not repeat or isinstance(repeat[0][0], str)
+
+
+def growth_units(repeat) -> tuple:
+    """The growth units of a depository ``repeat``: one formula gives itself,
+    a copolymer's set (a sequence of formulas, one per residue:
+    ``declared_sequence.SequenceChainProvider.unit_formula``) each distinct
+    one; every unit ((element, count), ...) sorted, the set sorted."""
+    if _one_formula(repeat):
+        return (tuple(sorted(dict(repeat).items())),)
+    return tuple(sorted({tuple(sorted(dict(unit).items())) for unit in repeat}))
+
+
+def _unit_text(repeat) -> str:
+    return str(dict(repeat)) if _one_formula(repeat) else str([dict(u) for u in repeat])
+
+
+def _unit_combinations(units, budget):
+    """(units added, element counts added) for every non-negative integer
+    combination of the growth ``units`` adding at most ``budget`` heavy
+    atoms; only the elements the combination adds are counted (a species
+    keeps its own formula: an H atom grown by no unit has no carbon)."""
+    heavy = [sum(n for element, n in unit if element != "H") for unit in units]
+    if not all(heavy):
+        raise ValueError(f"a growth unit without heavy atoms ({units}) bounds no growth")
+    counts = [0] * len(units)
+
+    def walk(i, left):
+        if i == len(units):
+            added = defaultdict(int)
+            for unit, count in zip(units, counts):
+                for element, n in unit:
+                    added[element] += count * n
+            yield sum(counts), {element: n for element, n in added.items() if n}
+            return
+        while counts[i] * heavy[i] <= left:
+            yield from walk(i + 1, left - counts[i] * heavy[i])
+            counts[i] += 1
+        counts[i] = 0
+
+    if budget >= 0:
+        yield from walk(0, budget)
+
+
 def _depository_entries(family) -> dict:
     return {(depository.label, int(entry.index)): entry
             for depository in family.depositories for entry in depository.entries.values()}
@@ -670,16 +801,21 @@ def _side_formulas(mols, extra) -> tuple:
         f = _formula(mol)
         for element, n in count.items():
             f[element] = f.get(element, 0) + n
-        out.append(tuple(sorted(f.items())))
+        out.append(tuple(sorted((element, n) for element, n in f.items() if n)))
     return tuple(sorted(out))
 
 
-def decide_by_construction(family, reactants, products, growth, unit, hmax, candidates, cache):
+def decide_by_construction(family, reactants, products, growth, units, hmax, candidates, cache):
     """The analogues of this reaction at the growth provider's sites, each
     compared with every formula candidate by ``Reaction.is_isomorphic`` in
     the orientation(s) its formulas allow (forward: the entry's reactants are
-    the analogue's reactants; reverse: its products).  Returns (sites,
+    the analogue's reactants; reverse: its products).  A provider of one
+    unit (``units``, one formula) inserts whole periods; a residue-word
+    provider (``growth_options``: a linear copolymer) every residue word its
+    sequence support allows at each parse of each site.  Returns (sites,
     analogues compared, matches); sites None when the provider cannot say."""
+    import itertools
+
     from rmgpy.reaction import Reaction
     sites = reaction_growth_sites(growth, reactants, products)
     if sites is None:
@@ -691,47 +827,48 @@ def decide_by_construction(family, reactants, products, growth, unit, hmax, cand
     fkey = ("formulas", family.label)
     rows = {(label, index): (er, ep) for label, index, er, ep in cache[fkey]}
     wanted = [(c["depository"], c["index"]) for c in candidates]
-    unit_heavy = sum(v for k, v in unit.items() if k != "H")
-    product_of = {a.id: j for j, m in enumerate(products) for a in m.atoms}
+    if hasattr(growth, "growth_options"):
+        insertions = _word_insertions(growth, sites, reactants, products, hmax)
+    else:
+        insertions = _unit_insertions(sites, reactants, products, dict(units[0]), hmax)
     compared, matches, seen = 0, [], set()
-    for vector in _growth_vectors(sites, reactants, products, unit_heavy, hmax):
-        extra = ([defaultdict(int) for _ in reactants], [defaultdict(int) for _ in products])
-        for (k, port, _c), count in zip(sites, vector):
-            for element, n in unit.items():
-                extra[0][k][element] += count * n
-                extra[1][product_of[port.atom_id]][element] += count * n
+    for choices, extra in insertions:
         grown = (_side_formulas(reactants, extra[0]), _side_formulas(products, extra[1]))
         tests = [(key, orientation) for key in wanted
                  for orientation, sides in (("forward", rows[key]), ("reverse", rows[key][::-1]))
                  if tuple(sides) == grown]
         if not tests:
             continue
-        new_r, new_p = grown_analogue(growth, reactants, products, sites, vector)
-        forward = Reaction(reactants=[_species(m) for m in new_r],
-                           products=[_species(m) for m in new_p])
-        reverse = Reaction(reactants=forward.products, products=forward.reactants)
-        compared += 1
-        for (label, index), orientation in tests:
-            rxn = forward if orientation == "forward" else reverse
-            if not entries[(label, index)].item.is_isomorphic(rxn, either_direction=False):
-                continue
-            smiles = (sorted(m.to_smiles() for m in new_r), sorted(m.to_smiles() for m in new_p))
-            key = (label, index, orientation, tuple(smiles[0]), tuple(smiles[1]))
-            if key in seen:
-                continue
-            seen.add(key)
-            entry = entries[(label, index)]
-            matches.append({"depository": label, "index": index,
-                            "label": entry.label, "orientation": orientation,
-                            "periods": list(vector), "reactants": smiles[0],
-                            "products": smiles[1],
-                            "species_heavy_atoms": {"reactants": sorted(map(_heavy, new_r)),
-                                                    "products": sorted(map(_heavy, new_p))},
-                            "rank": entry.rank, "kinetics": repr(getattr(entry, "data", None)),
-                            # the analogue itself, family template direction
-                            "reaction": {"reactants": sorted(m.to_adjacency_list() for m in new_r),
-                                         "products": sorted(m.to_adjacency_list() for m in new_p)}})
+        for vector in itertools.product(*choices):
+            new_r, new_p = grown_analogue(growth, reactants, products, sites, vector)
+            forward = Reaction(reactants=[_species(m) for m in new_r],
+                               products=[_species(m) for m in new_p])
+            reverse = Reaction(reactants=forward.products, products=forward.reactants)
+            compared += 1
+            for (label, index), orientation in tests:
+                rxn = forward if orientation == "forward" else reverse
+                if not entries[(label, index)].item.is_isomorphic(rxn, either_direction=False):
+                    continue
+                smiles = (sorted(m.to_smiles() for m in new_r),
+                          sorted(m.to_smiles() for m in new_p))
+                key = (label, index, orientation, tuple(smiles[0]), tuple(smiles[1]))
+                if key in seen:
+                    continue
+                seen.add(key)
+                matches.append(_match(entries[(label, index)], label, index, orientation,
+                                      vector, smiles, new_r, new_p))
     return sites, compared, matches
+
+
+def _match(entry, label, index, orientation, vector, smiles, new_r, new_p) -> dict:
+    return {"depository": label, "index": index, "label": entry.label, "orientation": orientation,
+            "periods": _inserted(vector), "reactants": smiles[0], "products": smiles[1],
+            "species_heavy_atoms": {"reactants": sorted(map(_heavy, new_r)),
+                                    "products": sorted(map(_heavy, new_p))},
+            "rank": entry.rank, "kinetics": repr(getattr(entry, "data", None)),
+            # the analogue itself, family template direction
+            "reaction": {"reactants": sorted(m.to_adjacency_list() for m in new_r),
+                         "products": sorted(m.to_adjacency_list() for m in new_p)}}
 
 
 def depository_exclusion(family, reactants, products, *, cache=None,
@@ -740,6 +877,9 @@ def depository_exclusion(family, reactants, products, *, cache=None,
 
     A long-chain analogue adds ``n_i >= 0`` repeat units (``repeat``, C8H8 for
     PS) to species ``i``, at least one unit in total, and never removes atoms.
+    A linear copolymer's ``repeat`` is its set of residue formulas
+    (``growth_units``): species ``i`` then gains any non-negative integer
+    combination of them, and the arguments below hold for every combination.
     ``Reaction.is_isomorphic`` needs every species of the entry isomorphic to
     a species of the reaction, so (a) equal heavy-atom counts and (b) equal
     formulas.  Argument, in order:
@@ -756,9 +896,12 @@ def depository_exclusion(family, reactants, products, *, cache=None,
        the analogues are built, not counted: the provider names the growth
        sites of each reactant (``growth_sites``; none at an atom the reaction
        edits), every vector of whole periods at those sites within ``H_max``
-       is inserted on both sides alike through the provider's ``fragment``,
-       and each analogue whose formulas are a candidate's is compared with it
-       by ``Reaction.is_isomorphic`` (``decide_by_construction``).
+       is inserted on both sides alike through the provider's ``fragment``
+       (a copolymer's provider: every residue word its sequence support
+       allows at each reading of the site's terminal residue,
+       ``growth_options``), and each analogue whose formulas are a
+       candidate's is compared with it by ``Reaction.is_isomorphic``
+       (``decide_by_construction``).
        ``excluded:isomorphism`` when none matches; ``excluded:except_matched``
        when some do (``matched`` names the entries; ``matches`` lists each
        analogue: periods per site, species and heavy-atom sizes, orientation,
@@ -772,8 +915,11 @@ def depository_exclusion(family, reactants, products, *, cache=None,
         cache[key] = max_depository_heavy_atoms(family)
     hmax = cache[key]
     heavy = [sum(1 for a in m.atoms if not a.is_hydrogen()) for m in list(reactants) + list(products)]
-    out = {"repeat_unit": dict(repeat), "depository_max_heavy_atoms": hmax,
-           "witness_max_heavy_atoms": max(heavy) if heavy else 0}
+    units = growth_units(repeat)
+    out = {"repeat_unit": dict(repeat)} if _one_formula(repeat) else \
+        {"repeat_units": [dict(unit) for unit in units]}
+    out.update({"depository_max_heavy_atoms": hmax,
+                "witness_max_heavy_atoms": max(heavy) if heavy else 0})
     if heavy and max(heavy) > hmax:
         out.update({"verdict": "excluded:size",
                     "argument": f"a witness species has {max(heavy)} heavy atoms > {hmax}, the "
@@ -785,23 +931,19 @@ def depository_exclusion(family, reactants, products, *, cache=None,
     if fkey not in cache:
         cache[fkey] = _depository_formulas(family)
     rows = cache[fkey]
-    rep = dict(repeat)
-    rep_heavy = sum(v for k, v in rep.items() if k != "H")
 
     def growths(mols):
         options = []
         for m in mols:
             f = _formula(m)
             h = sum(v for k, v in f.items() if k != "H")
-            per = []
-            n = 0
-            while h + n * rep_heavy <= hmax:
+            per = {}
+            for n, added in _unit_combinations(units, hmax - h):
                 g = dict(f)
-                for k, v in rep.items():
-                    g[k] = g.get(k, 0) + n * v
-                per.append((n, tuple(sorted(g.items()))))
-                n += 1
-            options.append(per)
+                for k, v in added.items():
+                    g[k] = g.get(k, 0) + v
+                per.setdefault((n > 0, tuple(sorted(g.items()))), None)
+            options.append(list(per))
         return options
 
     def side_sets(mols):
@@ -834,14 +976,15 @@ def depository_exclusion(family, reactants, products, *, cache=None,
                                 "not decided"})
         return out
     out.update({"candidates": candidates, "growth_provider": growth.name})
-    if dict(growth.unit_formula() or ()) != rep:
+    if growth_units(growth.unit_formula() or ()) != units:
         out.update({"verdict": "refused:unknown",
                     "argument": f"the growth provider {growth.name} grows by "
-                                f"{dict(growth.unit_formula() or ())}, not by the witness's "
-                                f"growth unit {rep}: the analogues are not decided"})
+                                f"{_unit_text(growth.unit_formula() or ())}, not by the witness's "
+                                f"growth unit {_unit_text(repeat)}: the analogues are not "
+                                "decided"})
         return out
     sites, compared, matches = decide_by_construction(
-        family, reactants, products, growth, rep, hmax, candidates, cache)
+        family, reactants, products, growth, units, hmax, candidates, cache)
     if sites is None:
         out.update({"verdict": "refused:unknown",
                     "argument": f"the growth provider {growth.name} names no growth sites for "
@@ -1089,7 +1232,8 @@ class Certifier:
         keys), or by ``member_labels`` (a set of frozensets of (label, atom id):
         every channel with a member one of whose mappings has those labels).
         ``repeat``: the growth unit of ``depository_exclusion`` (element,
-        count) pairs; None keeps ``REPEAT_UNIT_FORMULA``.  ``domain``: the
+        count) pairs, or a copolymer's set of them (``growth_units``); None keeps
+        ``REPEAT_UNIT_FORMULA``.  ``domain``: the
         species domain of the channel eligibility (an object with ``name``,
         ``check`` and ``spin_verdict``, ``windows.PolicyDomain``); None is the
         module domain (``domain.check``) and leaves the certificate as it
