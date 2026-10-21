@@ -2617,6 +2617,31 @@ class HybridPolymerSystem(ReactionSystem):
         reads only these. HARD ERROR when a term's daughter or product pool
         is not configured: its fragments or products would vanish."""
         label_to_pool = {p.label: p for p in self.polymer_pools}
+        # One repeat unit across every chain move: the moments count units,
+        # so a move between pools of different units keeps the count and
+        # books the wrong atoms and mass (a C2 -> C1 move loses carbon). A
+        # unit declared on one side only cannot be checked: refused too.
+        for pool in self.polymer_pools:
+            for kernel, template, src, dst in catalog_kernel_connections(pool):
+                a, b = label_to_pool.get(src), label_to_pool.get(dst)
+                if a is None or b is None:
+                    continue                    # named below
+                atoms = [None if p.repeat_unit_atoms is None
+                         else sorted(p.repeat_unit_atoms) for p in (a, b)]
+                mass = [float(p.monomer_mw_g_mol or 0.0) or None for p in (a, b)]
+                for what, (x, y), same in (
+                        ("atoms", atoms, atoms[0] == atoms[1]),
+                        ("molar mass [g/mol]", mass,
+                         None not in mass and math.isclose(
+                             mass[0], mass[1], rel_tol=1e-9, abs_tol=0.0))):
+                    if (x is None and y is None) or same:
+                        continue
+                    raise ValueError(
+                        f"Pool {pool.label}: {kernel} term {template!r} "
+                        f"moves chains across a repeat unit: pool {src!r} "
+                        f"has {what} {x!r}, pool {dst!r} {y!r} "
+                        f"(the moments count units, not atoms; undeclared "
+                        f"on one side cannot be checked).")
         self._kernel_guard_warned = set()
         self.kernel_homolysis_terms = [[] for _ in self.polymer_pools]
         self.kernel_recombination_terms = [[] for _ in self.polymer_pools]
