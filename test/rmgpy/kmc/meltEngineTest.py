@@ -1606,3 +1606,50 @@ def test_shared_participant_patterns_give_each_templates_own_sites(monkeypatch):
         monkeypatch.undo()
         assert {c: _entry_fields(e) for c, e in shared.items()} == {c: _entry_fields(e) for c, e in alone.items()}
         assert len(set(signatures)) < len(signatures)
+
+
+def _incremental_engines():
+    """PE and PS melts with chains long enough that an event leaves most of a
+    chain outside the rescanned region; the scan memo is off, so every rescan
+    after an event goes through the incremental path."""
+    out = []
+    for spec, catalog, seed in ((S.pe_spec({30: 3}), S.ToyCatalog(), 5), (S.ps_spec({12: 3}), S.ps_catalog(), 8)):
+        engine = me.MeltEngine(spec, catalog, 700.0, np.random.default_rng(seed))
+        engine._scan_memo = None
+        out.append(engine)
+    return out
+
+
+def test_an_incremental_rescan_equals_a_match_after_every_event():
+    """After an event, a changed component keeps the prior sites rooted far
+    from the changed atoms and matches afresh only near them: every entry
+    equals matching the component afresh, field for field, after every event."""
+    for engine in _incremental_engines():
+        for _ in range(40):
+            if engine.step() is None:
+                break
+            ids = engine.state.components.ids()
+            assert {c: _entry_fields(engine.entries[c]) for c in ids} == \
+                {c: _entry_fields(e) for c, e in _matched(engine, ids).items()}, engine.events_fired
+        assert engine.events_fired > 0 and engine.scan_reuse_hits > 0
+
+
+def test_dirty_atoms_cover_changed_nodes_and_their_conjugated_subsystems():
+    """The atoms an event makes dirty: every atom whose node changed, and
+    every atom of a conjugated subsystem (before or after) that holds one."""
+    engine = _scan_engines()[1]
+    state = engine.state
+    alpha = next(b for a in sorted(state.atoms)
+                 if state.atoms[a].element == "C" and any(o != 1.0 for o in state.atoms[a].edges.values())
+                 for b in state.atoms[a].edges
+                 if state.atoms[b].element == "C" and all(o == 1.0 for o in state.atoms[b].edges.values())
+                 and state.origin[b].is_backbone)
+    h = next(x for x in state.atoms[alpha].edges if state.atoms[x].element == "H")
+    old = {a: state.atoms[a] for a in (alpha, h)}
+    state.apply([me.SetBond(alpha, h, 1.0, 0.0), me.SetRadical(alpha, 0, 1), me.SetRadical(h, 0, 1)])
+    dirty = me._dirty_atoms(state, old)
+    view = me._LocalView(state, [state.components.component_of(alpha)])
+    assert {alpha, h} <= dirty
+    assert set(view.subs[view.sub_of[alpha]].atoms) <= dirty
+    assert not any(state.atoms[a].element == "C" and state.origin[a].is_backbone and a != alpha
+                   and all(o == 1.0 for o in state.atoms[a].edges.values()) for a in dirty)
