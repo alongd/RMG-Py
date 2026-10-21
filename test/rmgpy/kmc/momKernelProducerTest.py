@@ -213,3 +213,164 @@ def test_kernel_mode_refuses_a_flat_run_as_inactive(setup):
     constant_run(out, setup["spec"], flat=True, rows=[])
     with pytest.raises(mp.ProducerError, match="inactive"):
         produce_kernels(setup, out, mode="convert")
+
+
+# --------------------------------------------------------------------------
+# pair transfer (S5 c + e): end + end disproportionation and its reverse
+# --------------------------------------------------------------------------
+# The I-221 toy table: the toy catalog plus declared toy templates (a propyl
+# donor for D1, end-end reverse disproportionation on a terminal alkene and on
+# a propene), from rmgpy.kmc.kernel_rates at kmc-i188 e43ae940f; generator
+# /home/alon/runs/i221/toy/make_toy.py.  Each kernel is two templates whose
+# sites are uniform only together (as PE's are).
+TABLE2 = Path(__file__).parent / "fixtures" / "i221_toy_kernel_rates_700K.json"
+D1 = "disproportionation:acceptor=radical_end:CH2+donor=radical_end:CH2"
+DR = "reverse_disproportionation:alkene=alkene_terminal:CH2=CH+donor=chain"
+ALKENE = LABEL + "_ut"
+
+
+def table2():
+    return json.loads(TABLE2.read_text())
+
+
+def terms2(kernels, *, doc=None, phi=1.0, counts=BASE, ratio=1.0):
+    return mp.kernel_input(table2() if doc is None else doc, spec_of(counts), list(kernels), temperature=700.0,
+                           phi=phi, label=LABEL, radical_label=RADICAL, alkene_label=ALKENE, volume_ratio=ratio)
+
+
+def names(doc, kernel):
+    return sorted(t["template"] for t in doc["kernels"][kernel]["templates"])
+
+
+def pair_coefficient(doc, kernel):
+    """w / divisor of the kernel's templates (one value for the toy's pairs)."""
+    rows = {r["template"]: r for r in doc["templates"]}
+    (k,) = {round(rows[n]["weight"] / rows[n]["divisor"], 18) for n in names(doc, kernel)}
+    return k
+
+
+def only(doc, kernel, keep):
+    """The table with ``kernel`` reduced to its templates in ``keep``."""
+    doc["kernels"][kernel]["templates"] = [t for t in doc["kernels"][kernel]["templates"] if t["template"] in keep]
+    return doc
+
+
+def test_disproportionation_maps_its_templates_together_onto_the_radical_pool():
+    """Acceptor 1 site, donor 2 sites on every length the run makes (the
+    propyl donor's own template at 3 periods): one term per chain pair."""
+    doc = table2()
+    out = terms2([H, C, D1], ratio=0.97)
+    (term,) = out["transfer"][RADICAL]
+    assert term == {"template": "+".join(names(doc, D1)), "k_pair": pytest.approx(2.0 * pair_coefficient(doc, D1) * 0.97,
+                                                                                   rel=1e-12),
+                    "phi": 1.0, "partner": RADICAL, "product": LABEL, "partner_product": ALKENE}
+    assert set(out["transfer"]) == {RADICAL}
+    assert out["record"]["unmapped"] == []
+    assert out["record"]["checks"][term["template"]]["reachable_from_periods"] == 3
+
+
+def test_reverse_disproportionation_maps_onto_the_alkene_pool_times_phi():
+    doc = table2()
+    out = terms2([H, C, D1, DR], phi=0.25)
+    (term,) = out["transfer"][ALKENE]
+    assert term == {"template": "+".join(names(doc, DR)), "k_pair": pytest.approx(6.0 * pair_coefficient(doc, DR),
+                                                                                   rel=1e-12),
+                    "phi": 0.25, "partner": LABEL, "product": RADICAL, "partner_product": RADICAL}
+    assert out["transfer"][RADICAL][0]["phi"] == 1.0          # disproportionation creates no radicals
+
+
+def test_a_template_whose_sites_differ_on_a_reachable_length_is_listed_not_dropped():
+    """Without the propyl donor's template the donor has no site at 3
+    periods, a length homolysis makes: the kernel has no moment form."""
+    doc = table2()
+    main = next(n for n in names(doc, D1) if
+                next(t for t in doc["kernels"][D1]["templates"] if t["template"] == n)["law"]["S1"]["far"]["outcomes"])
+    out = terms2([H, C, D1], doc=only(doc, D1, {main}))
+    assert out["transfer"] == {}
+    (listed,) = out["record"]["unmapped"]
+    assert listed["kernel"] == D1 and listed["templates"] == [main]
+    assert "not one constant" in listed["reason"] and "3" in listed["reason"]
+
+
+def test_the_reachable_floor_is_the_shortest_length_the_kernels_make():
+    """Without homolysis no radical is shorter than the initial chains (20
+    periods): the one template is uniform there."""
+    doc = table2()
+    main = next(n for n in names(doc, D1) if
+                next(t for t in doc["kernels"][D1]["templates"] if t["template"] == n)["law"]["S1"]["far"]["outcomes"])
+    out = terms2([C, D1], doc=only(doc, D1, {main}))
+    (term,) = out["transfer"][RADICAL]
+    assert term["template"] == main and out["record"]["unmapped"] == []
+    assert out["record"]["checks"][main]["reachable_from_periods"] == 20
+
+
+def test_templates_whose_products_have_no_pool_are_listed():
+    """A product class MoM carries no pool for (a mid-chain radical) cannot be
+    mapped: listed with its reason, and the sibling it leaves non-uniform too."""
+    doc = table2()
+    short = next(n for n in names(doc, DR) if
+                 next(t for t in doc["kernels"][DR]["templates"] if t["template"] == n)["S0"]["per_feature"] == 0)
+    term = next(t for t in doc["kernels"][DR]["templates"] if t["template"] == short)
+    law = term["law"]["S1"]
+    for n, outs in law["exact"].items():
+        law["exact"][n] = [[m, [["radical_interior:CH", int(n)]]] for m, _p in outs]
+    for side in ("first", "last"):
+        for pos, outs in law["far"][side].items():
+            law["far"][side][pos] = [[m, [["radical_interior", 1, 0, 0]]] for m, _p in outs]
+    out = terms2([H, C, D1, DR], doc=doc)
+    assert ALKENE not in out["transfer"]
+    reasons = {tuple(x["templates"]): x["reason"] for x in out["record"]["unmapped"]}
+    assert "radical_interior" in reasons[(short,)]
+    assert any("not one constant" in r for t, r in reasons.items() if short not in t)
+
+
+def test_a_kernel_on_a_class_moms_pools_do_not_carry_is_refused():
+    doc = table2()
+    doc["kernels"][D1]["classes"][1] = "radical_interior:CH"
+    with pytest.raises(mp.ProducerError, match="radical_interior"):
+        terms2([H, C, D1], doc=doc)
+
+
+def test_kernel_mode_writes_the_alkene_pool_and_the_transfer_kernels(setup):
+    out = setup["tmp"] / "out"
+    manifest = produce_kernels(setup, out, kernel_rates=str(TABLE2), kernels=[H, C, D1, DR])
+    pools = polymers(out)
+    assert set(pools) == {LABEL, RADICAL, ALKENE}
+    record = manifest["facts"]["kernels"]
+    assert pools[RADICAL]["kernel_transfer"] == record["transfer"][RADICAL]
+    assert pools[ALKENE]["kernel_transfer"] == record["transfer"][ALKENE]
+    assert pools[ALKENE]["end_alkene_site"] == "primary"
+    assert pools[ALKENE]["moments"] == [0.0, 0.0, 0.0] and pools[ALKENE]["initial_mass"] == 0.0
+    assert pools[ALKENE]["end_groups"] == pools[LABEL]["end_groups"]
+    assert manifest["facts"]["alkene_pool"] == ALKENE
+    conventions = {c["name"]: c["value"] for c in json.loads((out / "conventions.json").read_text())["conventions"]}
+    assert conventions["kernels"]["transfer"] == record["transfer"]
+    assert conventions["kernels"]["record"]["unmapped"] == []
+
+
+def test_kernel_mode_writes_no_alkene_pool_without_a_transfer_into_it(setup):
+    out = setup["tmp"] / "out"
+    manifest = produce_kernels(setup, out, kernel_rates=str(TABLE2), kernels=[H, C])
+    assert set(polymers(out)) == {LABEL, RADICAL}
+    assert manifest["facts"]["alkene_pool"] is None
+
+
+def test_kernel_mode_converts_a_run_with_an_alkene_pool(setup):
+    out = setup["tmp"] / "out"
+    produce_kernels(setup, out, kernel_rates=str(TABLE2), kernels=[H, C, D1, DR])
+    mu = [float(x) for x in setup["spec"].macroscopic_moments_mol]
+    d = 1e-3
+
+    def chains(t):
+        return mu[0] - d * t, mu[1] - 3 * d * t, mu[2] - 40 * d * t
+
+    def radicals(t):
+        return d * t, 2 * d * t, 20 * d * t
+
+    def alkenes(t):
+        return d * t, d * t, 20 * d * t
+    write_run(out, times=[0.0, 10.0, 20.0, 40.0, 45.0],
+              pools=[(LABEL, chains, 0.0), (RADICAL, radicals, 0.0), (ALKENE, alkenes, 0.0)], gas=ZERO_GAS, rows=[])
+    manifest = produce_kernels(setup, out, mode="convert", kernel_rates=str(TABLE2), kernels=[H, C, D1, DR])
+    assert manifest["status"] == "converted"
+    assert manifest["census"]["mode"] == "kernels" and manifest["census"]["profile_changes"]
