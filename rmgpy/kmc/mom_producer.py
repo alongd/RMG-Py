@@ -26,8 +26,11 @@ mismatch is recorded in ``conventions.json`` and ``producer.json``.
 families, no catalogs): the chemistry is the kernel-rates table's homolysis and
 end-recombination kernels (``kernel_input``) as polymer-mom's ``kernel_homolysis``
 on the chain pool and ``kernel_recombination`` on an explicit end-radical pool
-``<label>_re``, at the table's temperature; the run is active when its profile
-moves (``kernel_census``).
+``<label>_re``, and its two-participant transfer kernels (end + end
+disproportionation, its reverse) as ``kernel_transfer`` between those pools
+and an explicit terminal-alkene pool ``<label>_ut`` (templates it cannot map
+listed in the record), at the table's temperature; the run is active when its
+profile moves (``kernel_census``).
 
 **Modes.**  ``--write-only`` (default) writes ``<out>/rmg/input.py``,
 ``<out>/rmg/rmgrc`` (the kinetics database: ``--database`` or the catalogs'
@@ -145,6 +148,7 @@ STATUS_INACTIVE = "refused:inactive_chemistry"
 BUILTIN_STRUCTURES = {"H": "[H]", "H2": "[H][H]"}
 KERNEL_RATES_SCHEMAS = ("kmc-kernel-rates/2", "kmc-kernel-rates/3")
 RADICAL_POOL_SUFFIX = "_re"      # the explicit end-radical pool of kernel mode: <label>_re
+ALKENE_POOL_SUFFIX = "_ut"       # the explicit terminal-alkene pool of kernel mode: <label>_ut
 
 QUANTITY_SOURCES = {
     "polymer_condensed_mass_g": (
@@ -609,11 +613,54 @@ def _uniform_cut(law: dict, a: float, radical: Optional[str], where: str) -> Tup
     return e, classes.pop()
 
 
+class _Unmapped(Exception):
+    """A template (group) of a pair-transfer kernel with no exact moment form: listed, never dropped."""
+
+
+def _transfer_law(law: dict, floor: int, family_of: Dict[str, str]) -> Tuple[Any, Optional[str], int]:
+    """(sites(n), product family, exact_to_n) of one participant's law in a
+    pair-transfer kernel: on every length n >= ``floor`` each outcome is one
+    product of the same length (family from the table's class labels), its
+    sites the outcomes' multiplicities; beyond the exact law, the far rule's,
+    which must not grow with n (no bulk positions).  _Unmapped otherwise."""
+    top = int(law["exact_to_n"])
+    exact = {int(n): outs for n, outs in law["exact"].items()}
+    counts, products = {}, set()
+    for n in range(floor, top + 1):
+        if n not in exact:
+            raise _Unmapped(f"no exact law at {n} periods")
+        counts[n] = 0
+        for m, prods in exact[n]:
+            if len(prods) != 1 or int(prods[0][1]) != n:
+                raise _Unmapped(f"at {n} periods an outcome {prods} is not one product of the same length")
+            if prods[0][0] not in family_of:
+                raise _Unmapped(f"product class {prods[0][0]!r} is no family of the table")
+            products.add(family_of[prods[0][0]])
+            counts[n] += m
+    far = law["far"]
+    if "outcomes" in far:
+        outs = far["outcomes"]
+    else:
+        if far.get("bulk"):
+            raise _Unmapped("its sites grow with the chain (bulk positions), not one count per chain")
+        outs = [o for side in ("first", "last") for pos in sorted(far.get(side, {})) for o in far[side][pos]]
+    beyond = 0
+    for m, prods in outs:
+        if len(prods) != 1 or list(prods[0][1:]) != [1, 0, 0]:
+            raise _Unmapped(f"its far outcome {prods} is not one product of the same length")
+        products.add(prods[0][0])
+        beyond += m
+    if len(products) > 1:
+        raise _Unmapped(f"products of families {sorted(products)}, not one")
+    return (lambda n: counts[n] if n <= top else beyond), (products.pop() if products else None), top
+
+
 def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: float, phi: float, label: str,
-                 radical_label: str, volume_ratio: float) -> dict:
-    """polymer-mom's ``kernel_homolysis`` and ``kernel_recombination`` terms
-    of the requested kernels of a kernel-rates table, and the record of the
-    checks that make their moment laws exact on this deck.
+                 radical_label: str, volume_ratio: float, alkene_label: Optional[str] = None) -> dict:
+    """polymer-mom's ``kernel_homolysis``, ``kernel_recombination`` and
+    ``kernel_transfer`` terms of the requested kernels of a kernel-rates
+    table, and the record of the checks that make their moment laws exact on
+    this deck.
 
     Homolysis (``homolysis``, a chain class): per template the table's weight
     w, its sites a*n + b (n in the table's period, ``periods_per_unit`` per
@@ -628,6 +675,21 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     V_poly / V, kMC's per-pair coefficient in MoM's concentration n / V_poly;
     sites_per_chain the table's per_feature, whose profile (zero sites at
     short radicals) must lie below e, the shortest radical homolysis makes.
+    Pair transfer (any other two-participant kernel, e.g. end + end
+    disproportionation and its reverse): each participant changes family,
+    length unchanged, into a pool kernel mode carries (``chain`` the chain
+    pool, ``radical_end`` the end-radical pool, ``alkene_terminal`` the
+    terminal-alkene pool ``alkene_label``); the term is per kernel and
+    product pair, not per template, because a table splits one site set over
+    templates by context (a short donor's own template): its templates map
+    together when sum_T (w/divisor)_T s_T0(n) s_T1(m) is one constant K on
+    every pair of lengths n, m from the reachable floor (the shortest length
+    the requested kernels and the deck make: homolysis' min_fragment, else the
+    shortest initial chain) up to past every exact law; k_pair = K V_poly / V,
+    phi on phi_thinned templates (one value per group).  A template (group)
+    that fails this, or whose products have no pool, is listed under
+    ``unmapped`` with its reason, never dropped silently; a kernel whose
+    participant classes have no pool is refused.
     Refused: another schema, temperature or chemistry digest, kernels not in
     the table or of another type, inert or unmodelled laws, depository
     overrides (sizes moments cannot single out)."""
@@ -653,13 +715,15 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         raise ProducerError(f"kernels {unknown or 'none'} not in the table (kernels {sorted(table['kernels'])})")
     rows = {r["template"]: r for r in table["templates"]}
     n_min = min(dp for dp, _c in declared_initialization(spec).dp_counts) * ppu
-    by_type = {"homolysis": [], "recombination": []}
+    by_type = {"homolysis": [], "recombination": [], "transfer": []}
     for kid in sorted(set(kernels)):
         kernel = table["kernels"][kid]
-        if kernel["type"] not in by_type:
-            raise ProducerError(f"{kid}: no MoM kernel carries type {kernel['type']!r} (homolysis and "
-                                "recombination only)")
-        by_type[kernel["type"]].append((kid, kernel))
+        kind = kernel["type"] if kernel["type"] in ("homolysis", "recombination") else (
+            "transfer" if len(kernel["classes"]) == 2 else None)
+        if kind is None:
+            raise ProducerError(f"{kid}: no MoM kernel carries type {kernel['type']!r} (homolysis, "
+                                "recombination and two-participant pair transfer only)")
+        by_type[kind].append((kid, kernel))
     radical = None
     for kid, kernel in by_type["recombination"]:
         if len(set(kernel["classes"])) != 1 or not kernel["classes"][0].startswith("radical_end:"):
@@ -720,10 +784,68 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             recombination.append({"template": name, "k_pair": k * float(volume_ratio), "sites_per_chain": c,
                                   "periods_per_unit": ppu, "product": label})
             checks[name] = {"w_over_divisor": k, "zero_site_periods": sorted(zero)}
+    floor = n_min if e_min is None else min(n_min, e_min)
+    families = table["families"]
+    family_of = {lab: fam for fam, f in families.items() for lab in [f["label_far"], *f.get("labels", {}).values()]}
+    pools = {"chain": label, "radical_end": radical_label, "alkene_terminal": alkene_label}
+    transfer, unmapped = {}, []
+    for kid, kernel in by_type["transfer"]:
+        owners = []
+        for cls in kernel["classes"]:
+            fam = family_of.get(cls)
+            if fam not in pools or pools[fam] is None or cls != families[fam]["label_far"]:
+                raise ProducerError(f"{kid}: no MoM pool carries its participant class {cls!r} (pools: "
+                                    f"{sorted(f for f, p in pools.items() if p)} at their far classes)")
+            if fam == "radical_end":
+                radical = cls if radical is None else radical
+                if cls != radical:
+                    raise ProducerError(f"{kid}: a second end-radical class {cls!r} ({radical!r})")
+            owners.append(fam)
+        groups = {}
+        for term in kernel["templates"]:
+            name = term["template"]
+            try:
+                if term.get("law") is None or term.get("law_inert") or term.get("overrides"):
+                    raise _Unmapped("an inert, unmodelled or overridden law has no moment form")
+                laws = [_transfer_law(term["law"][slot], floor, family_of) for slot in ("S0", "S1")]
+                for (_s, fam, _top), owner in zip(laws, owners):
+                    if fam is not None and pools.get(fam) is None:
+                        raise _Unmapped(f"products of family {fam!r}: no MoM pool carries it")
+                    if fam == owner:
+                        raise _Unmapped(f"a participant stays in its family {fam!r}")
+            except _Unmapped as why:
+                unmapped.append({"kernel": kid, "templates": [name], "reason": str(why)})
+                continue
+            row = rows[name]
+            key = (laws[0][1], laws[1][1], bool(row["phi_thinned"]))
+            groups.setdefault(key, []).append((name, float(row["weight"]) / float(row["divisor"]), laws))
+        for (fam0, fam1, thinned), members in sorted(groups.items(), key=lambda x: [str(v) for v in x[0]]):
+            names = sorted(n for n, _k, _l in members)
+            top = max(floor, max(law[2] for _n, _k, laws in members for law in laws) + 1)
+            grid = {(n, m): math.fsum(k * laws[0][0](n) * laws[1][0](m) for _n, k, laws in members)
+                    for n in range(floor, top + 1) for m in range(floor, top + 1)}
+            lo, hi = min(grid, key=grid.get), max(grid, key=grid.get)
+            if fam0 is None or fam1 is None or grid[hi] <= 0.0:
+                unmapped.append({"kernel": kid, "templates": names,
+                                 "reason": f"no site on lengths from {floor} periods (inert on this deck)"})
+                continue
+            if grid[hi] - grid[lo] > 1e-9 * grid[hi]:
+                unmapped.append({"kernel": kid, "templates": names, "reason": (
+                    f"sum_T (w/divisor) s0(n) s1(m) is not one constant on lengths from {floor} periods: "
+                    f"{grid[lo]!r} at (n, m) = {lo}, {grid[hi]!r} at {hi}")})
+                continue
+            joined = "+".join(names)
+            transfer.setdefault(pools[owners[0]], []).append({
+                "template": joined, "k_pair": grid[hi] * float(volume_ratio),
+                "phi": float(phi) if thinned else 1.0, "partner": pools[owners[1]],
+                "product": pools[fam0], "partner_product": pools[fam1]})
+            checks[joined] = {"kernel": kid, "templates": names, "w_over_divisor_sites": grid[hi],
+                              "reachable_from_periods": floor, "checked_to_periods": top}
     record = {"kernels": sorted(set(kernels)), "excluded_kernels": sorted(set(table["kernels"]) - set(kernels)),
               "temperature_K": float(table["temperature_K"]), "phi": float(phi), "moment_unit": unit,
-              "volume_ratio_mom_over_kmc": float(volume_ratio), "radical_class": radical, "checks": checks}
-    return {"homolysis": homolysis, "recombination": recombination, "record": record}
+              "volume_ratio_mom_over_kmc": float(volume_ratio), "radical_class": radical, "checks": checks,
+              "unmapped": unmapped}
+    return {"homolysis": homolysis, "recombination": recombination, "transfer": transfer, "record": record}
 
 
 def build_input(deck, context: dict, *, temperature: float, end: float, families: Sequence[str],
@@ -745,7 +867,8 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
     scale = spec.initialization().scale_factor
     species = declared_species(spec)
     radical_label = label + RADICAL_POOL_SUFFIX if kernels is not None else None
-    pools = [label] + ([radical_label] if radical_label else [])
+    alkene_label = label + ALKENE_POOL_SUFFIX if kernels is not None else None
+    pools = [label] + [p for p in (radical_label, alkene_label) if p]
     generated = {f"{label}_melt"} | {p + s for p in pools for s in ("", "_mu0", "_mu1", "_mu2")}
     clash = sorted((set(species) & generated) | ((set(species) | generated) & set(context["species"])))
     if clash:
@@ -767,8 +890,18 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
     terms = None
     if kernels is not None:
         terms = kernel_input(kernels["table"], spec, kernels["ids"], temperature=temperature, phi=kernels["phi"],
-                             label=label, radical_label=radical_label, volume_ratio=volume_ratio)
+                             label=label, radical_label=radical_label, alkene_label=alkene_label,
+                             volume_ratio=volume_ratio)
         terms["record"].update(kernels["source"])
+        # the terminal-alkene pool exists only when a transfer term moves chains into or out of it
+        if not any(alkene_label in (owner, t["partner"], t["product"], t["partner_product"])
+                   for owner, ts in terms["transfer"].items() for t in ts):
+            pools.remove(alkene_label)
+            phase.remove(alkene_label)
+            alkene_label = None
+
+    def transfer_line(pool):
+        return [f"    kernel_transfer={terms['transfer'][pool]!r},"] if terms and pool in terms["transfer"] else []
     constraints = dict(constraints or {})
     if constraints:
         constraints.setdefault("allowed", ["input species"])   # the declared species stay admissible
@@ -799,7 +932,7 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
     ]
     if terms is not None and terms["homolysis"]:
         lines.append(f"    kernel_homolysis={terms['homolysis']!r},")
-    lines.append(")")
+    lines += transfer_line(label) + [")"]
     if terms is not None:
         lines += [
             "polymer(",
@@ -810,7 +943,19 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
             "    moments=[0.0, 0.0, 0.0],",
             "    initial_mass=0.0,",
             "    end_radical_site='primary',",
-        ] + ([f"    kernel_recombination={terms['recombination']!r},"] if terms["recombination"] else []) + [")"]
+        ] + ([f"    kernel_recombination={terms['recombination']!r},"] if terms["recombination"] else []) + \
+            transfer_line(radical_label) + [")"]
+    if alkene_label is not None:
+        lines += [
+            "polymer(",
+            f"    label={alkene_label!r},",
+            f"    monomer=\"\"\"{repeat.to_adjacency_list()}\"\"\",",
+            f"    end_groups=[{head.to_smiles()!r}, {tail.to_smiles()!r}],",
+            f"    cutoff={deck.xs},",
+            "    moments=[0.0, 0.0, 0.0],",
+            "    initial_mass=0.0,",
+            "    end_alkene_site='primary',",
+        ] + transfer_line(alkene_label) + [")"]
     lines += [
         f"phase = polymer_phase(label={label + '_melt'!r}, species={phase!r}, solvent={label!r}, "
         f"density=({spec.density_kg_m3!r}, 'kg/m^3'), residence={residence!r})",
@@ -842,7 +987,7 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
              "phase_kinetics": phase_kinetics(spec, sorted(species), initial, sorted(context["bath"]), temperature,
                                               pressure, v_poly=v_poly, residence=residence)}
     if terms is not None:
-        facts.update({"kernels": terms, "radical_pool": radical_label})
+        facts.update({"kernels": terms, "radical_pool": radical_label, "alkene_pool": alkene_label})
     return "\n".join(lines) + "\n", facts
 
 
@@ -962,14 +1107,19 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
         record = facts["kernels"]["record"]
         rows += [
             ("kernels", {"homolysis": facts["kernels"]["homolysis"],
-                         "recombination": facts["kernels"]["recombination"], "record": record},
+                         "recombination": facts["kernels"]["recombination"],
+                         "transfer": facts["kernels"]["transfer"], "record": record},
              "kernel mode: kineticsFamilies 'none'; the kernel-rates table's homolysis kernel on the chain "
              f"pool and end recombination on the explicit end-radical pool {facts['radical_pool']!r} "
              "(polymer(end_radical_site='primary'), born empty, the chain pool's end groups), per template: "
              "w, a, b (sites a*n + b, n in the table's period, periods_per_unit per declared unit) and "
              "min_fragment from its exact law, which must be the uniform cut; recombination per_feature "
-             "sites, joined into one chain of n0 + n1 periods; refusals in mom_producer.kernel_input; "
-             "isothermal at the table's temperature (no k(T))"),
+             "sites, joined into one chain of n0 + n1 periods; pair transfer (end + end disproportionation, "
+             "its reverse) per kernel and product pair, lengths unchanged, k_pair the constant sum_T "
+             "(w/divisor) s0 s1 on every reachable length pair, into the chain, end-radical and "
+             f"terminal-alkene pool {facts.get('alkene_pool')!r} (polymer(end_alkene_site='primary'), born "
+             "empty, the chain pool's end groups); templates it cannot map are listed in record.unmapped; "
+             "refusals in mom_producer.kernel_input; isothermal at the table's temperature (no k(T))"),
             ("kernel_phi", record["phi"],
              "cage-escape factor on the radical-creating (phi_thinned) templates; 1 is the well-mixed bound"),
             ("kernel_volume", record["volume_ratio_mom_over_kmc"],
