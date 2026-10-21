@@ -361,6 +361,31 @@ class HybridPolymerReactor(ReactionSystem):
         prospective_seed = self.polymerPhase.get_gas_mask(
             list(core_species) + list(edge_species))
 
+        # One inventory for the volume and the mask: every species the mask
+        # condenses with initial moles must be in the mass V_poly counts
+        # (calculate_volume: the phase species, and the pools' moments),
+        # with the same moles -- otherwise its concentration n / V_poly, and
+        # every bimolecular rate, rests on a volume that omits it.
+        pool_owned = set()
+        for pool in self.polymerPhase.pools:
+            pool_owned.update(id(s) for s in [getattr(pool, "proxy_species", None),
+                                              *(pool.mu_species or []),
+                                              *(pool.explicit_map or {}).values()] if s is not None)
+        for spc, moles in self.initialMoles.items():
+            if not moles or gas_mask[spc_map[spc]] or id(spc) in pool_owned \
+                    or spc.label in self.polymerPhase.initial_moments:
+                continue
+            listed = self.polymerPhase.initial_explicit.get(spc)
+            if listed is None:
+                raise ValueError(
+                    f"Species {spc.label!r} is condensed (melt) with {float(moles):g} mol initially, but it is not "
+                    f"a polymer-phase species: its mass is not in V_poly while its concentration is n / V_poly. "
+                    f"List it in polymer_phase(species=...) or declare it gas.")
+            if not math.isclose(float(listed), float(moles), rel_tol=1e-12, abs_tol=0.0):
+                raise ValueError(
+                    f"Species {spc.label!r} is listed in the polymer phase with {float(listed):g} mol but starts "
+                    f"with {float(moles):g} mol (initialMoles): V_poly and the state disagree.")
+
         # 3. Calculate Initial Gas Volume (Headspace)
         # Logic: Sum MOLES of species that are actually in the gas phase.
         total_gas_moles = 0.0
