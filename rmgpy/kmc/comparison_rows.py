@@ -70,10 +70,21 @@ DEFINITIONS = {
     "mwd_mol.<p>": "the same above the cutoff: the length distribution (mol)",
     "mwd_overflow_mol": "polymer-derived molecules longer than a reference's length grid (mol)",
     "whole_<key>": "melt_observables.WHOLE_ENSEMBLE_DEFINITION",
-    "law_domain_mu0_fraction.<template>@<family>": "diagnostic (population balance, given the MoM kernels' "
-                                                    "validity lengths): the fraction of the family's chains "
-                                                    "shorter than the MoM term's validity length, where its "
-                                                    "moment law miscounts sites",
+    "mom_end_group_ledger_g": "diagnostic (MoM producer): the end-group mass MoM's pools gained or lost since t = 0 "
+                              "(sum over pools of e_p (mu0_p(0) - mu0_p(t)), g); mu2 and Mw are withheld when it "
+                              "exceeds mom_end_group_ledger_threshold_g",
+    "mom_end_group_ledger_threshold_g": "diagnostic (MoM producer): the largest ledger called zero at this time, "
+                                        "e_p (2 floor + rtol (|mu0_p(0)| + |mu0_p(t)|)) summed over pools (g)",
+    "law_domain_mu0_fraction.<template>@<family>.S<slot>": "diagnostic (population balance, given the MoM "
+                                                           "producer's term record): the fraction of the "
+                                                           "participant family's chains shorter than the length "
+                                                           "from which the MoM term's moment law is exact",
+    "law_attribution_mol_s.<template>.S<slot>.mu<k>": "diagnostic (population balance, given the MoM term laws): "
+                                                      "the MoM law's propensity minus the exact one, summed over "
+                                                      "the balance's chains and weighted by the participant's "
+                                                      "length^k in declared units -- the error in the rate the "
+                                                      "term moves mu_k out of the participant's family (mol/s)",
+    "law_exact_mol_s.<template>.S<slot>.mu<k>": "diagnostic: the exact counterpart of law_attribution_mol_s",
 }
 ROW_FIELDS = ("time_s", "row", "producer", "kind", "value", "stderr", "lower", "upper", "seeds", "basis",
               "reason")
@@ -352,8 +363,17 @@ def reference_rows(path, producer: str) -> dict:
                 basis["law_domain_mu0_fraction"] = f"validity lengths of {doc['law_domain']['source']}"
                 for f in doc["law_domain"]["pbe"][k]:
                     if f["mu0_fraction_below"] is not None:
-                        values[f"law_domain_mu0_fraction.{f['template']}@{f['family']}"] = (
+                        slot = f".S{f['slot']}" if "slot" in f else ""
+                        values[f"law_domain_mu0_fraction.{f['template']}@{f['family']}{slot}"] = (
                             "diagnostic", f["mu0_fraction_below"])
+                for term in (doc["law_domain"].get("attribution") or [[]] * len(times))[k]:
+                    basis["law_attribution_mol_s"] = f"MoM term laws of {doc['law_domain']['source']}"
+                    for slot in term["slots"]:
+                        for mk, m in slot["moments"].items():
+                            stem = f"{term['template']}.S{slot['slot']}.mu{mk}"
+                            if m["law_minus_exact_mol_s"] is not None:
+                                values[f"law_attribution_mol_s.{stem}"] = ("diagnostic", m["law_minus_exact_mol_s"])
+                                values[f"law_exact_mol_s.{stem}"] = ("diagnostic", m["exact_mol_s"])
             per_seed.append(values)
         rows += _aggregate(t, f"kernel_{producer}", per_seed, basis)
     binding = {"deck_sha256": doc["deck"]["sha256"], "chemistry_sha256": doc["deck"]["chemistry_sha256"],
@@ -398,12 +418,24 @@ def mom_rows(path, deck) -> dict:
         conventions = json.loads(conventions_path.read_text())
         if header.get("conventions_sha256") == _sha256(conventions_path.read_bytes()):
             not_produced = conventions.get("not_produced") or {}
-    # the producer's reason for a whole-ensemble row it withheld at a time
+    # the producer's diagnostics at each time (its reasons for a withheld whole-ensemble row, its end-group
+    # ledger), bound to this file by the header's digest and present at every time of it
     diagnostics_path = path.parent / "mom_diagnostics.json"
-    withheld_at = {}
-    if diagnostics_path.exists():
-        withheld_at = {float(d["time_s"]): d.get("whole_withheld") or {}
-                       for d in json.loads(diagnostics_path.read_text())}
+    bound_diagnostics = header.get("diagnostics_sha256")
+    diagnostics_at = {}
+    if diagnostics_path.exists() or bound_diagnostics:
+        if not diagnostics_path.exists():
+            raise ComparisonRowsError(f"{path}: its header digests a mom_diagnostics.json that is not beside it")
+        raw_diagnostics = diagnostics_path.read_bytes()
+        if bound_diagnostics != _sha256(raw_diagnostics):
+            raise ComparisonRowsError(f"{diagnostics_path}: not the mom_diagnostics.json its {path.name} header "
+                                      f"digests ({bound_diagnostics!r})")
+        diagnostics_at = {float(d["time_s"]): d for d in json.loads(raw_diagnostics)}
+        missing = sorted(float(e["time_s"]) for e in entries if float(e["time_s"]) not in diagnostics_at)
+        if missing:
+            raise ComparisonRowsError(f"{diagnostics_path}: no diagnostics at {missing} s of {path.name} "
+                                      "(a partial sidecar)")
+    withheld_at = {t: d.get("whole_withheld") or {} for t, d in diagnostics_at.items()}
     ppu, nbb = geometry(declared.spec)
     cut = declared.xs * ppu
     names = declared_species_names(declared.spec, SpeciesIdentity(declared.spec))
@@ -429,6 +461,10 @@ def mom_rows(path, deck) -> dict:
                                          not_produced.get(key) or "not exported by the MoM producer")))
         for name in ("total_mass_g", "mass_outside_species_g"):
             rows.append(_row(t, name, "mom", "withheld", reason=MOM_NO_INVENTORY))
+        for name, key in (("mom_end_group_ledger_g", "end_group_ledger_g"),
+                          ("mom_end_group_ledger_threshold_g", "end_group_ledger_threshold_g")):
+            if diagnostics_at.get(t, {}).get(key) is not None:
+                rows.append(_row(t, name, "mom", "diagnostic", value=float(diagnostics_at[t][key])))
         rows += [_row(t, f"ladder_mol.{p}", "mom", "withheld", reason=ladder) for p in range(1, cut + 1)]
     binding = {"deck_sha256": declared.sha256, "chemistry_sha256": kr.chemistry_sha256(declared.spec),
                "temperature_K": float((header.get("run") or {}).get("temperature_K")), "times_s": times,

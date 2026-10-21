@@ -688,24 +688,204 @@ def population_balance(model: KernelModel, times: Sequence[float], *, rtol: floa
 # V1: the stochastic simulation
 # --------------------------------------------------------------------------
 def law_domain_fractions(model: KernelModel, counts, overflow, validity: Sequence[dict]) -> List[dict]:
-    """The law-domain diagnostic of a MoM kernel set on one population: per
-    declared validity length (the MoM producer's record ``validity``: kernel,
-    template, families, ``valid_from_periods``) and participant family, the
-    fraction of the family's chains (mu0; the overflow, longer than the grid,
-    included) shorter than it -- where that term's moment law miscounts its
-    sites.  None for a family the model lacks or that holds no chain."""
+    """The law-domain number diagnostic of a MoM kernel set on one
+    population: per declared term (the MoM producer's record ``validity``)
+    and participant, the fraction of the participant family's chains (mu0;
+    the overflow, longer than the grid, included) shorter than the length
+    from which the term's moment law is exact (``participants``:
+    ``exact_from_periods`` per slot; an older record's single
+    ``valid_from_periods`` for every family).  None for a family the model
+    lacks or that holds no chain; withheld (None, ``withheld``) when that
+    length lies past the grid, where the overflow keeps no lengths."""
     out = []
     for v in validity:
-        for family in v["families"]:
+        if v.get("participants"):
+            slots = [(p["family"], int(p["exact_from_periods"]), {"slot": p["slot"]}) for p in v["participants"]]
+        else:
+            slots = [(family, int(v["valid_from_periods"]), {}) for family in v["families"]]
+        for family, length, extra in slots:
+            entry = {"kernel": v["kernel"], "template": v["template"], "family": family, **extra,
+                     "valid_from_periods": int(v["valid_from_periods"])}
+            if extra:
+                entry["exact_from_periods"] = length
             total = below = None
             if family in model.families:
                 j = model.families.index(family)
                 block = numpy.asarray(counts[j * model.n_max:(j + 1) * model.n_max], dtype=float)
                 total = float(block.sum() + overflow[3 * j])
-                below = float(block[:max(0, min(int(v["valid_from_periods"]) - 1, model.n_max))].sum())
-            out.append({"kernel": v["kernel"], "template": v["template"], "family": family,
-                        "valid_from_periods": int(v["valid_from_periods"]),
-                        "mu0_fraction_below": below / total if total else None})
+                below = float(block[:max(0, min(length - 1, model.n_max))].sum())
+                if length - 1 > model.n_max and overflow[3 * j] > 0.0:
+                    entry["withheld"] = (f"the exact length {length} lies past the grid ({model.n_max} periods), "
+                                         "where the overflow keeps no lengths")
+                    total = None
+            entry["mu0_fraction_below"] = below / total if total else None
+            out.append(entry)
+    return out
+
+
+ATTRIBUTION_MOMENTS = (0, 1, 2)
+
+
+def bind_mom_kernels(model: KernelModel, table: dict, record: dict) -> None:
+    """Refuse, by name, a MoM producer's kernel record (``producer.json``
+    facts.kernels.record) that is not of this table, temperature, geometry,
+    phi and chemistry, names a template the model does not carry, or lacks
+    the term laws the attribution reads."""
+    if not isinstance(record, dict) or not isinstance(record.get("laws"), list) or "validity" not in record:
+        raise KernelReferenceError("no MoM law record (facts.kernels.record.laws and validity of a MoM producer "
+                                   "manifest): the attribution cannot be bound")
+    if float(record.get("temperature_K", float("nan"))) != float(table["temperature_K"]):
+        raise KernelReferenceError(f"the MoM record is at temperature {record.get('temperature_K')!r} K, the table "
+                                   f"at {table['temperature_K']!r} K")
+    mine, theirs = table["moment_unit"], record.get("moment_unit") or {}
+    for key in ("periods_per_declared_unit", "backbone_atoms_per_period", "molar_mass_g_mol"):
+        if theirs.get(key) != mine[key]:
+            raise KernelReferenceError(f"the MoM record's period geometry {key} = {theirs.get(key)!r} is not the "
+                                       f"table's {mine[key]!r}")
+    chemistry = (table.get("catalog") or {}).get("chemistry_sha256")
+    if record.get("chemistry_sha256") != chemistry:
+        raise KernelReferenceError(f"the MoM record's chemistry {record.get('chemistry_sha256')!r} is not the "
+                                   f"table's {chemistry!r}")
+    if float(record.get("phi", float("nan"))) != model.phi:
+        raise KernelReferenceError(f"the MoM record's phi {record.get('phi')!r} is not the reference's {model.phi!r}")
+    carried = {t["template"]: kid for kid, k in table["kernels"].items() if kid not in model.excluded
+               for t in k["templates"]}
+    names = [n for law in record["laws"] for n in law["templates"]]
+    missing = sorted({n for n in names if n not in carried})
+    if missing:
+        raise KernelReferenceError(f"the MoM record's templates {missing} are not terms the reference carries")
+    if K.template_rows_sha256(table, names) != record.get("table_templates_sha256"):
+        raise KernelReferenceError("the MoM record's template rows (weights, sites, laws) are not this table's "
+                                   f"(table_templates_sha256 {record.get('table_templates_sha256')!r})")
+    terms = {(v["kernel"], v["template"]) for v in record["validity"]}
+    unlisted = sorted(law["template"] for law in record["laws"] if (law["kernel"], law["template"]) not in terms)
+    if unlisted:
+        raise KernelReferenceError(f"the MoM record's terms {unlisted} have no validity entry (a partial record)")
+
+
+def read_mom_kernels(path) -> dict:
+    """The MoM kernel record of a producer manifest (``producer.json``)."""
+    doc = json.loads(Path(path).read_text())
+    record = (((doc.get("facts") or {}).get("kernels") or {}).get("record") if isinstance(doc, dict) else None)
+    if not isinstance(record, dict):
+        raise KernelReferenceError(f"{path}: not a MoM producer manifest with facts.kernels.record")
+    return record
+
+
+def _site_series(model: KernelModel, law: dict, family: str, product: Optional[str]) -> Tuple[numpy.ndarray, Optional[tuple]]:
+    """A participant law's sites on (family, n) as the balance reads them
+    (``_outcomes``), counting only outcomes into ``product`` when given: the
+    grid's values and, past the grid, (gamma, delta) with sites = gamma +
+    delta n (None when they are not affine there)."""
+    key = (id(law), family, product)
+    cache = model.__dict__.setdefault("_site_series", {})
+    if key in cache:
+        return cache[key]
+
+    def at(n):
+        total = 0.0
+        for m, prods in model._outcomes(law, family, n):
+            if product is None or (len(prods) == 1 and prods[0][0] != "join"
+                                   and K.family_of(prods[0][0]) == product):
+                total += m
+        return total
+    grid = numpy.array([at(n) for n in range(1, model.n_max + 1)])
+    a, b, c = (at(model.n_max + i) for i in (1, 2, 3))
+    delta = b - a
+    beyond = (a - delta * (model.n_max + 1), delta) if abs(c - b - delta) <= 1e-12 * max(abs(a), abs(b), abs(c), 1.0) \
+        else None
+    cache[key] = (grid, beyond)
+    return grid, beyond
+
+
+def _weighted(model: KernelModel, family: str, grid: numpy.ndarray, beyond, k: int, counts, overflow):
+    """(sum over the family's chains of f(n) n^k / ppu^k, why not): the grid
+    exactly, the overflow from its mu0..mu2 where f is affine past the grid
+    and the power needed is at most 2."""
+    j = model.families.index(family)
+    n = numpy.arange(1, model.n_max + 1, dtype=float)
+    block = numpy.asarray(counts[j * model.n_max:(j + 1) * model.n_max], dtype=float)
+    total = float(numpy.dot(grid * n ** k, block)) / model.ppu ** k
+    o = [float(x) for x in overflow[3 * j:3 * j + 3]]
+    if o[0] == 0.0:
+        return total, None
+    if beyond is None:
+        return None, f"{o[0]!r} chains of {family} past the grid, where its sites are not affine"
+    gamma, delta = beyond
+    if delta != 0.0 and k + 1 > 2:
+        return None, f"{o[0]!r} chains of {family} past the grid: n^{k + 1} needs the overflow's third moment"
+    over = gamma * o[k] + (delta * o[k + 1] if delta != 0.0 else 0.0)
+    return total + over / model.ppu ** k, None
+
+
+def law_attribution(model: KernelModel, table: dict, record: dict, counts, overflow) -> List[dict]:
+    """The law-domain attribution of a MoM kernel set on one population of
+    the balance: per MoM term (``record["laws"]``: the moment law MoM
+    integrates, per chain or per pair in the balance's units) and
+    participant, the signed difference between the law's propensity and the
+    exact one (the balance's own sites of the term's templates, into the
+    term's product families), summed over the population and weighted by
+    the participant's length^k (declared units), k = 0, 1, 2 -- the rate at
+    which the term moves mu_k out of the participant's family -- in mol/s;
+    with the exact value and the number fraction below the participant's
+    exact-from length.  A moment the overflow cannot carry is withheld
+    (None, ``withheld``)."""
+    entries = {t["template"]: t for k in table["kernels"].values() for t in k["templates"]}
+    rows = {r["template"]: r for r in table["templates"]}
+    fractions = {(f["template"], f.get("slot")): f for f in law_domain_fractions(model, counts, overflow,
+                                                                                    record["validity"])}
+    one = (numpy.ones(model.n_max), (1.0, 0.0))
+    ramp = (numpy.arange(1, model.n_max + 1, dtype=float), (0.0, 1.0))
+    out = []
+    for law in record["laws"]:
+        fams, products, c = law["families"], law.get("products"), law["coefficients"]
+        phi = [model.phi if entries[t]["phi_thinned"] else 1.0 for t in law["templates"]]
+        if law["kind"] == "uni":
+            (family,) = fams
+            product = products[0] if products else None
+            exact = [(float(rows[t]["weight"]) * f, [_site_series(model, entries[t]["law"], family, product)])
+                     for t, f in zip(law["templates"], phi)]
+            law_parts = [(c[0], [one]), (c[1], [ramp])]
+            scale = model.u
+        else:
+            exact = []
+            for t, f in zip(law["templates"], phi):
+                slot_laws = (entries[t]["law"]["S0"], entries[t]["law"]["S1"])
+                exact.append((float(entries[t]["w_over_divisor"]) * f,
+                              [_site_series(model, slot_laws[p], fams[p], products[p] if products else None)
+                               for p in (0, 1)]))
+            law_parts = [(c[0], [one, one]), (c[1], [ramp, one]), (c[2], [one, ramp]), (c[3], [ramp, ramp])]
+            scale = model.u / model.nav
+        slots = []
+        for p, family in enumerate(fams):
+            moments, withheld = {}, {}
+            for k in ATTRIBUTION_MOMENTS:
+                def total(parts):
+                    acc = 0.0
+                    for coef, series in parts:
+                        if coef == 0.0:
+                            continue
+                        prod = coef
+                        for q, (grid, beyond) in enumerate(series):
+                            value, why = _weighted(model, fams[q], grid, beyond, k if q == p else 0, counts,
+                                                   overflow)
+                            if value is None:
+                                return None, why
+                            prod *= value
+                        acc += prod
+                    return acc * scale, None
+                x, why_x = total(exact)
+                m, why_m = total(law_parts)
+                if x is None or m is None:
+                    withheld[str(k)] = why_x or why_m
+                    moments[str(k)] = {"law_minus_exact_mol_s": None, "exact_mol_s": None}
+                else:
+                    moments[str(k)] = {"law_minus_exact_mol_s": m - x, "exact_mol_s": x}
+            f = fractions.get((law["template"], p)) or {}
+            slots.append({"slot": p, "family": family, "exact_from_periods": f.get("exact_from_periods"),
+                          "mu0_fraction_below": f.get("mu0_fraction_below"), "moments": moments,
+                          "withheld": withheld})
+        out.append({"kernel": law["kernel"], "template": law["template"], "kind": law["kind"], "slots": slots})
     return out
 
 
@@ -885,8 +1065,9 @@ def main(argv=None) -> int:
     parser.add_argument("--out", default=None, help="default: <table stem>.reference.json beside it")
     parser.add_argument("--allow-unbound-table", action="store_true")
     parser.add_argument("--validity", default=None,
-                        help="a MoM producer.json (or list): report the fraction of each family's chains below "
-                             "each kernel term's validity length (law_domain)")
+                        help="a MoM producer.json: per MoM term, the law-domain attribution (law minus exact "
+                             "propensity, weighted by mu0..mu2) and the fraction of each participant family's "
+                             "chains below its exact-from length (law_domain), bound to the producer's record")
     args = parser.parse_args(argv)
     try:
         deck = kr.read_deck(args.deck)
@@ -895,7 +1076,9 @@ def main(argv=None) -> int:
         model = KernelModel(table, deck.spec, phi=args.phi, n_max=args.n_max, kernels=args.kernel,
                             allow_unbound=args.allow_unbound_table)
         times = kr.observation_times(None, args.end, args.snapshots)
-        validity = read_validity(args.validity) if args.validity else None
+        record = read_mom_kernels(args.validity) if args.validity else None
+        if record is not None:
+            bind_mom_kernels(model, table, record)
         pbe = population_balance(model, times)
         ssa = ensemble(model, times, list(range(args.seeds)), max_events=args.max_events)
     except (KernelReferenceError, K.KernelRatesError, kr.RunError, OSError, ValueError) as error:
@@ -920,10 +1103,14 @@ def main(argv=None) -> int:
            "pbe_final_distribution": {f"{model.label_of(*model.state(i))}@{model.state(i)[1]}": float(v)
                                       for i, v in enumerate(pbe[-1]["counts"]) if v},
            "ssa": ssa, "comparison": comparison(pbe, ssa)}
-    if validity is not None:
-        doc["law_domain"] = {"source": str(Path(args.validity).resolve()), "validity": validity,
-                             "pbe": [law_domain_fractions(model, r["counts"], r["overflow"], validity)
-                                     for r in pbe]}
+    if record is not None:
+        doc["law_domain"] = {
+            "source": str(Path(args.validity).resolve()),
+            "identity": {k: record.get(k) for k in ("table_templates_sha256", "chemistry_sha256", "temperature_K",
+                                                    "moment_unit", "phi", "table_sha256")},
+            "validity": record["validity"],
+            "pbe": [law_domain_fractions(model, r["counts"], r["overflow"], record["validity"]) for r in pbe],
+            "attribution": [law_attribution(model, table, record, r["counts"], r["overflow"]) for r in pbe]}
     out = Path(args.out) if args.out else Path(args.table).with_suffix(".reference.json")
     out.write_text(json.dumps(doc, indent=1, sort_keys=True, default=float) + "\n")
     worst = max((abs(r["z"]) for r in doc["comparison"]), default=0.0)

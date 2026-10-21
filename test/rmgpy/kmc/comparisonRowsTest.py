@@ -184,23 +184,31 @@ def test_the_population_balance_rows_carry_the_law_domain_diagnostic(tmp_path):
     """Given the MoM kernels' validity lengths, the balance's rows report,
     per time, the fraction of each family's chains below each (diagnostic,
     never compared); without them, no such row."""
+    from rmgpy.kmc import mom_producer as mp
+    doc = toy_table(tmp_path)
     table = tmp_path / "toy.kernel_rates.json"
-    table.write_text(json.dumps(toy_table(tmp_path)))
+    table.write_text(json.dumps(doc))
     deck = write_deck(tmp_path / "deck.py", S.pe_mapping({10: 60}), cutoff=4)
-    validity = tmp_path / "validity.json"
-    validity.write_text(json.dumps([{"kernel": HOMOLYSIS, "template": "h", "families": ["chain", "radical_end"],
-                                     "valid_from_periods": 5}]))
+    terms = mp.kernel_input(doc, kr.read_deck(deck).spec, [HOMOLYSIS, RECOMBINATION], temperature=T, phi=1.0,
+                            label="P", radical_label="Re", volume_ratio=1.0)
+    producer = tmp_path / "producer.json"
+    producer.write_text(json.dumps({"facts": {"kernels": {"record": terms["record"]}}}))
     assert R.main([str(deck), str(table), "--end", "0.2", "--snapshots", "3", "--seeds", "2", "--n-max", "20",
-                   "--kernel", HOMOLYSIS, "--kernel", RECOMBINATION, "--validity", str(validity)]) == 0
+                   "--kernel", HOMOLYSIS, "--kernel", RECOMBINATION, "--validity", str(producer)]) == 0
     path = tmp_path / "toy.kernel_rates.reference.json"
+    (h,), (c,) = terms["homolysis"], terms["recombination"]
     rows = [r for r in cr.reference_rows(path, "pbe")["rows"] if r["row"].startswith("law_domain")]
     t0 = [r for r in rows if r["time_s"] == 0.0]
-    assert {r["row"] for r in t0} == {"law_domain_mu0_fraction.h@chain"}   # no radicals yet
+    assert {r["row"] for r in t0} == {f"law_domain_mu0_fraction.{h['template']}@chain.S0"}   # no radicals yet
     assert t0[0]["kind"] == "diagnostic" and t0[0]["value"] == 0.0          # 60-unit chains, all long
     later = [r for r in rows if r["time_s"] > 0.0]
-    assert {r["row"] for r in later} == {"law_domain_mu0_fraction.h@chain", "law_domain_mu0_fraction.h@radical_end"}
+    assert {r["row"] for r in later} == {f"law_domain_mu0_fraction.{h['template']}@chain.S0",
+                                         f"law_domain_mu0_fraction.{c['template']}@radical_end.S0",
+                                         f"law_domain_mu0_fraction.{c['template']}@radical_end.S1"}
     assert all(0.0 <= r["value"] <= 1.0 for r in later)
-    assert not any(r["row"].startswith("law_domain") for r in cr.reference_rows(path, "ssa")["rows"])
+    attribution = {r["row"] for r in cr.reference_rows(path, "pbe")["rows"] if r["row"].startswith("law_attr")}
+    assert f"law_attribution_mol_s.{h['template']}.S0.mu1" in attribution
+    assert not any(r["row"].startswith(("law_domain", "law_attr")) for r in cr.reference_rows(path, "ssa")["rows"])
 
 
 def test_the_reference_records_its_binding_and_row_observations(reference):
@@ -284,11 +292,13 @@ def test_a_withheld_mom_row_carries_the_producers_reason(mom, tmp_path):
     doc = json.loads(path.read_text())
     t = doc["entries"][1]["time_s"]
     doc["entries"][1]["quantities"].pop("whole_mu2_mol", None)
-    (tmp_path / "mom.json").write_text(json.dumps(doc))
     shutil.copy(path.parent / "conventions.json", tmp_path / "conventions.json")
     why = "the end-group ledger books 1 g/mol x mol"
-    (tmp_path / "mom_diagnostics.json").write_text(json.dumps([{"time_s": t, "whole_withheld": {
-        "whole_mu2_mol": why}}]))
+    raw = json.dumps([{"time_s": e["time_s"], "whole_withheld": {"whole_mu2_mol": why} if e["time_s"] == t else {}}
+                      for e in doc["entries"]]).encode()
+    (tmp_path / "mom_diagnostics.json").write_bytes(raw)
+    doc["header"]["diagnostics_sha256"] = cr._sha256(raw)
+    (tmp_path / "mom.json").write_text(json.dumps(doc))
     rows = by_name(cr.mom_rows(tmp_path / "mom.json", setup["deck"]))
     assert rows[(t, "whole_mu2_mol")]["kind"] == "withheld"
     assert rows[(t, "whole_mu2_mol")]["reason"] == f"withheld by the MoM producer: {why}"

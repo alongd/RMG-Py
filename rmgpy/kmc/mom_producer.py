@@ -737,6 +737,59 @@ def _affine(r: Dict[int, float], floor: int, top: int) -> Tuple[Optional[int], O
     return None, None, 0.0
 
 
+def _exact_down(n0: int, good) -> int:
+    """The shortest length L <= n0 with good(n) on every n in [L, n0): the
+    scan down from a law's fit start, stopping at its first miscount."""
+    length = n0
+    while length > 1 and good(length - 1):
+        length -= 1
+    return length
+
+
+def _site_or_none(law, n, nbb, label_of, family_of) -> Optional[Dict[str, float]]:
+    try:
+        return _sites_at(law, n, nbb, label_of, family_of)
+    except _Unmapped:
+        return None
+
+
+def _pair_exact_from(members, laws, fam0, fam1, c, n0, top, F, nbb, label_of, family_of) -> List[int]:
+    """Per participant, the shortest length from which a pair term's law
+    c00 + c10 n + c01 m + c11 n m is the table's sum_T (w/divisor) s0(n)
+    s1(m) for every length of the other participant from the fit start n0
+    to the checked top (the scan goes below the reachable floor, down to the
+    first miscount or a length the table has no state for)."""
+    tol = SITE_LAW_RELATIVE * max(abs(v) for v in F.values())
+    cache = {}
+
+    def site(name, slot, n):
+        if (name, slot, n) not in cache:
+            cache[(name, slot, n)] = _site_or_none(laws[name][slot], n, nbb, label_of, family_of)
+        return cache[(name, slot, n)]
+
+    def ok(n, m):
+        terms = []
+        for name, k, _s in members:
+            s0, s1 = site(name, 0, n), site(name, 1, m)
+            if s0 is None or s1 is None:
+                return False
+            terms.append(k * s0.get(fam0, 0.0) * s1.get(fam1, 0.0))
+        return abs(c[0] + c[1] * n + c[2] * m + c[3] * n * m - math.fsum(terms)) <= tol
+    return [_exact_down(n0, lambda n: all(ok(n, m) for m in range(n0, top + 1))),
+            _exact_down(n0, lambda m: all(ok(n, m) for n in range(n0, top + 1)))]
+
+
+def _move_exact_at(members, laws, fam, c, n, r, nbb, label_of, family_of) -> bool:
+    """A move term's law c0 + c1 n is the table's sum_T w s(n) at n."""
+    terms = []
+    for name, w, _s in members:
+        s = _site_or_none(laws[name], n, nbb, label_of, family_of)
+        if s is None:
+            return False
+        terms.append(w * s.get(fam, 0.0))
+    return abs(c[0] + c[1] * n - math.fsum(terms)) <= SITE_LAW_RELATIVE * max(abs(v) for v in r.values())
+
+
 def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: float, phi: float, label: str,
                  radical_label: str, volume_ratio: float, alkene_label: Optional[str] = None,
                  interior_radical_label: Optional[str] = None, interior_alkene_label: Optional[str] = None,
@@ -800,6 +853,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     the table or of another type, inert or unmodelled homolysis or
     recombination laws, depository overrides (sizes moments cannot single
     out)."""
+    from rmgpy.kmc import kernel_rates as K
     from rmgpy.kmc.melt_engine import declared_initialization
     if table.get("schema") not in KERNEL_RATES_SCHEMAS:
         raise ProducerError(f"not a kernel-rates table of {KERNEL_RATES_SCHEMAS} (got {table.get('schema')!r})")
@@ -840,7 +894,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         radical = kernel["classes"][0] if radical is None else radical
         if kernel["classes"][0] != radical:
             raise ProducerError(f"{kid}: a second end-radical class {kernel['classes'][0]!r} ({radical!r})")
-    homolysis, recombination, checks, e_min, validity = [], [], {}, None, []
+    homolysis, recombination, checks, e_min, validity, laws_out = [], [], {}, None, [], []
     for kid, kernel in by_type["homolysis"]:
         if kernel["classes"] != ["chain"]:
             raise ProducerError(f"{kid}: no MoM kernel cuts class {kernel['classes']} (the chain class only)")
@@ -861,8 +915,14 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                               "phi": float(phi) if rows[name]["phi_thinned"] else 1.0, "a": a, "b": b,
                               "min_fragment": e, "periods_per_unit": ppu, "daughter": radical_label,
                               "valid_from_periods": 2 * e - 1})
+            # a n + b = a (n - 2e + 1) counts the cuts leaving both fragments at least e long from 2e - 1
+            # (zero there); shorter chains have no cut while the law goes negative
             validity.append({"kernel": kid, "template": name, "families": ["chain"],
-                             "valid_from_periods": 2 * e - 1})
+                             "valid_from_periods": 2 * e - 1, "fit_from_periods": 2 * e - 1,
+                             "participants": [{"slot": 0, "family": "chain", "exact_from_periods": 2 * e - 1}]})
+            w_h = float(rows[name]["weight"]) * (float(phi) if rows[name]["phi_thinned"] else 1.0)
+            laws_out.append({"kernel": kid, "template": name, "templates": [name], "kind": "uni",
+                             "families": ["chain"], "products": None, "coefficients": [w_h * b, w_h * a]})
             checks[name] = {"min_fragment": e, "exact_to_n": term["law"]["exact_to_n"],
                             "exact_from_n": sites.get("exact_from_n"), "initial_min_periods": n_min}
             e_min = e if e_min is None else min(e_min, e)
@@ -897,7 +957,12 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             recombination.append({"template": name, "k_pair": k * float(volume_ratio), "sites_per_chain": c,
                                   "periods_per_unit": ppu, "product": label, "valid_from_periods": valid})
             validity.append({"kernel": kid, "template": name, "families": ["radical_end"],
-                             "valid_from_periods": valid})
+                             "valid_from_periods": valid, "fit_from_periods": valid,
+                             "participants": [{"slot": p, "family": "radical_end", "exact_from_periods": valid}
+                                              for p in (0, 1)]})
+            laws_out.append({"kernel": kid, "template": name, "templates": [name], "kind": "pair",
+                             "families": ["radical_end", "radical_end"], "products": None,
+                             "coefficients": [k * c * c, 0.0, 0.0, 0.0]})
             checks[name] = {"w_over_divisor": k, "zero_site_periods": sorted(zero)}
     floor = n_min if e_min is None else min(n_min, e_min)
     families = table["families"]
@@ -995,8 +1060,14 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             joined = "+".join(names)
             entry = {"template": joined, "phi": float(phi) if thinned else 1.0, "partner": pools[owners[1]],
                      "product": pools[fam0], "partner_product": pools[fam1], "valid_from_periods": n0}
+            exact = _pair_exact_from(members, laws, fam0, fam1, c, n0, top, F, nbb, label_of, family_of)
             validity.append({"kernel": kid, "template": joined, "families": sorted(set(owners)),
-                             "valid_from_periods": n0})
+                             "valid_from_periods": n0, "fit_from_periods": n0,
+                             "participants": [{"slot": p, "family": owners[p], "exact_from_periods": exact[p]}
+                                              for p in (0, 1)]})
+            laws_out.append({"kernel": kid, "template": joined, "templates": names, "kind": "pair",
+                             "families": list(owners), "products": [fam0, fam1],
+                             "coefficients": [entry["phi"] * x for x in c]})
             check = {"kernel": kid, "templates": names, "reachable_from_periods": floor, "law_from_periods": n0,
                      "checked_to_periods": top}
             if not any(c[1:]):
@@ -1053,14 +1124,22 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             move.setdefault(pools[owner], []).append({"template": joined, "k": scale, "a": c[1] / scale,
                                                       "b": c[0] / scale, "periods_per_unit": ppu,
                                                       "product": pools[fam], "valid_from_periods": n0})
-            validity.append({"kernel": kid, "template": joined, "families": [owner], "valid_from_periods": n0})
+            exact = _exact_down(n0, lambda n: _move_exact_at(members, laws, fam, c, n, r, nbb, label_of, family_of))
+            validity.append({"kernel": kid, "template": joined, "families": [owner], "valid_from_periods": n0,
+                             "fit_from_periods": n0,
+                             "participants": [{"slot": 0, "family": owner, "exact_from_periods": exact}]})
+            laws_out.append({"kernel": kid, "template": joined, "templates": names, "kind": "uni",
+                             "families": [owner], "products": [fam], "coefficients": [c[0], c[1]]})
             checks[joined] = {"kernel": kid, "templates": names, "reachable_from_periods": floor,
                               "law_from_periods": n0, "checked_to_periods": top, "rate_law": [c[0], c[1]]}
     record = {"kernels": sorted(set(kernels)), "excluded_kernels": sorted(set(table["kernels"]) - set(kernels)),
               "temperature_K": float(table["temperature_K"]), "phi": float(phi), "moment_unit": unit,
               "volume_ratio_mom_over_kmc": float(volume_ratio), "radical_class": radical, "checks": checks,
               "far_law": bool(far_law), "unmapped": unmapped, "inert": inert, "identity": identity,
-              "short_lengths": short, "validity": validity}
+              "short_lengths": short, "validity": validity, "laws": laws_out,
+              "chemistry_sha256": bound,
+              "table_templates_sha256": K.template_rows_sha256(table, [n for law in laws_out
+                                                                       for n in law["templates"]])}
     return {"homolysis": homolysis, "recombination": recombination, "transfer": transfer, "move": move,
             "record": record}
 
@@ -1128,14 +1207,22 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
         # plus the family's offset): MoM's polymer() takes only mono-radical end groups, so every pool is
         # declared with the deck's pair, and the conversion reads the pool's true end mass here.
         families = kernels["table"]["families"]
-        ends = {pool: float(families[fam]["molar_mass_offset_g_mol"])
-                for fam, pool in (("chain", label), ("radical_end", radical_label),
-                                  ("alkene_terminal", alkene_label), ("radical_interior", mid_label),
-                                  ("alkene_internal", internal_label)) if pool is not None}
+        pool_family = {pool: fam for fam, pool in (("chain", label), ("radical_end", radical_label),
+                                                   ("alkene_terminal", alkene_label),
+                                                   ("radical_interior", mid_label),
+                                                   ("alkene_internal", internal_label)) if pool is not None}
+        ends = {pool: float(families[fam]["molar_mass_offset_g_mol"]) for pool, fam in pool_family.items()}
         if abs(ends[label] - e) > MASS_RELATIVE * e:
             raise ProducerError(f"the table's chain family carries {ends[label]!r} g/mol of end groups, the deck "
                                 f"{e!r} g/mol")
         terms["record"]["pool_end_mass_g_mol"] = ends
+        # kMC's identity of each family's states (the table's probes): a pool chain that kMC classes as a
+        # declared species, by its length in periods
+        terms["record"]["pool_family"] = pool_family
+        terms["record"]["declared_species_by_pool"] = {
+            pool: sorted([name, int(key.rsplit("@", 1)[1])]
+                         for key, name in (families[fam].get("declared_species") or {}).items())
+            for pool, fam in pool_family.items()}
 
     def transfer_line(pool):
         return ([f"    kernel_transfer={terms['transfer'][pool]!r},"] if terms and pool in terms["transfer"] else []) \
@@ -2345,9 +2432,14 @@ def whole_ledger(row, first, pools, columns, ends) -> Tuple[float, bool]:
     end masses."""
     ledger = math.fsum(ends[p["label"]] * (first[columns[p["label"]][0]] - row[columns[p["label"]][0]])
                        for p in pools)
-    tolerance = math.fsum(ends[p["label"]] * (2.0 * MOM_MOMENT_FLOOR + SIMULATOR_RTOL * (
+    return ledger, abs(ledger) <= ledger_threshold(row, first, pools, columns, ends)
+
+
+def ledger_threshold(row, first, pools, columns, ends) -> float:
+    """The largest end-group ledger (g) whole_ledger calls zero at this row:
+    e_p (2 f + rtol (|mu0(0)| + |mu0(t)|)) summed over the pools."""
+    return math.fsum(ends[p["label"]] * (2.0 * MOM_MOMENT_FLOOR + SIMULATOR_RTOL * (
         abs(first[columns[p["label"]][0]]) + abs(row[columns[p["label"]][0]]))) for p in pools)
-    return ledger, abs(ledger) <= tolerance
 
 
 def pool_state(row, pools, columns, floor: float = MOM_MOMENT_FLOOR) -> Tuple[Dict[str, List[float]], List[str]]:
@@ -2423,15 +2515,36 @@ def _capped_chain(repeat, heads: Sequence[str], n: int) -> Optional[Molecule]:
 
 
 def pool_species_candidates(pools, structures: Dict[str, Molecule], masses: Dict[str, float],
-                            deck_repeat) -> Dict[str, List[Tuple[str, int, float]]]:
+                            deck_repeat, *, kernel_record: Optional[dict] = None
+                            ) -> Dict[str, List[Tuple[str, int, float]]]:
     """Per pool, the declared species a chain of it may be (kMC's class
     "species" comes before "polymer"): a species whose molar mass is the
     pool's chain mass a_p n + e_p - defect_p at a whole DP n >= 1.  For a pool
     without defect the chain's structure is built from the pool's declared
     repeat unit (else the deck's) and end groups and must be the species
     (``same_species``); a defect pool keeps no structure, so its formula
-    match stands as a candidate that can never be booked (``convert``)."""
+    match stands as a candidate that can never be booked (``convert``).
+    In kernel mode (``kernel_record`` with ``pool_family``) a pool's chains
+    are its family's states, whose end mass is the family's, not the declared
+    caps': the candidates are the states kMC identifies as declared species
+    (``declared_species_by_pool``, periods), at a whole number of units, each
+    checked against the pool's chain mass and refused by name off it."""
     out = {}
+    if kernel_record and kernel_record.get("pool_family"):
+        ppu = int(kernel_record["moment_unit"]["periods_per_declared_unit"])
+        period = float(kernel_record["moment_unit"]["molar_mass_g_mol"])
+        for p in pools:
+            label = p["label"]
+            found = []
+            for name, periods in kernel_record["declared_species_by_pool"].get(label, []):
+                expected = period * periods + float(kernel_record["pool_end_mass_g_mol"][label])
+                if abs(masses[name] - expected) > 1e-6 * expected:
+                    raise ProducerError(f"declared species {name!r} is {periods} periods of pool {label!r}'s "
+                                        f"family, {expected!r} g/mol, but weighs {masses[name]!r} g/mol")
+                if periods % ppu == 0:            # MoM's pools hold whole units only
+                    found.append((name, periods // ppu, masses[name]))
+            out[label] = found
+        return out
     for p in pools:
         a_p = p["monomer_mw_g_mol"]
         e_p = _end_mass(p["end_groups"])
@@ -2639,7 +2752,8 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
     bath_first, _m = mass_of(first, list(bath.values()))
     species_mass = {name: m.get_molecular_weight() * 1000.0 for name, m in species_structures(facts).items()}
     candidates = pool_species_candidates(pools, species_structures(facts), species_mass,
-                                         classes.observer.spec.legacy_molecules()[0])
+                                         classes.observer.spec.legacy_molecules()[0],
+                                         kernel_record=(facts.get("kernels") or {}).get("record"))
     light_pools = {}
     for r in pool_doc.get("reactions") or ():
         units = (r.get("params") or {}).get("eject_units")
@@ -2680,7 +2794,7 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
         booked_as, blocked = {}, []
         corrupt_pools = {label for label in pm if any(c.startswith(f"pool {label} ") for c in corrupt)}
         unresolved = {}                       # pool label -> why its chains are not booked
-        ledger_zero = whole_ledger(row, first, pools, columns, ends)[1]
+        end_ledger, ledger_zero = whole_ledger(row, first, pools, columns, ends)
         for label, cands in candidates.items():  # classified at every row, t = 0 included
             m = pm[label]
             if not cands or (label not in corrupt_pools and all(abs(x) <= MOM_MOMENT_FLOOR for x in m)):
@@ -2770,6 +2884,8 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
                          - row[columns[p["label"]][0]] * float(p.get("chain_mass_defect_g_mol") or 0.0)
                          for p in pools)
         diagnostics.append({"time_s": t, "volume_m3": row[1], "whole_ensemble_moments_mol": mu,
+                            "end_group_ledger_g": end_ledger,
+                            "end_group_ledger_threshold_g": ledger_threshold(row, first, pools, columns, ends),
                             "booked_pool_mass_g": mass, "polymer_class_species_mass_g": oligomer_mass,
                             "code_condensed_mass_g": code, "kmc_inventory_species_mass_g": gas,
                             "species_without_structure": missing or missing_first,
@@ -2954,13 +3070,15 @@ def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: i
                                 f"{manifest['census']['unattributed']}; {ACTIVITY_RULE}); pass "
                                 "--allow-inactive to convert it anyway, flagged")
     finish()                                   # conventions.json as the header digests it
+    raw_diagnostics = (json.dumps(diagnostics, indent=1, allow_nan=False) + "\n").encode()
     header = {"flags": flags, "conventions_sha256": _sha256((out / "conventions.json").read_bytes()),
+              "diagnostics_sha256": _sha256(raw_diagnostics),
               "run": {"temperature_K": temperature, "pressure": list(facts["pressure"]), "horizon_s": times[-1]},
               "producer": {"schema": SCHEMA, "deck_sha256": deck.sha256, "input_sha256": manifest["input_sha256"],
                            "mom_checkout": manifest["mom_checkout"]}}
     (out / "mom.json").write_text(json.dumps({"header": header, "entries": entries}, indent=1, allow_nan=False)
                                   + "\n")
-    (out / "mom_diagnostics.json").write_text(json.dumps(diagnostics, indent=1, allow_nan=False) + "\n")
+    (out / "mom_diagnostics.json").write_bytes(raw_diagnostics)
     manifest.update({"read": read, "mom_file": str(out / "mom.json"),
                      "mom_sha256": _sha256((out / "mom.json").read_bytes())})
     finish("converted")

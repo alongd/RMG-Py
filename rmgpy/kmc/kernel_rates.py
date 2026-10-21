@@ -127,13 +127,14 @@ reciprocal record pair (``reverse_of``), and the run's pooled leak fraction.
 """
 
 import argparse
+import hashlib
 import json
 import math
 import sys
 from collections import Counter, defaultdict
 from fractions import Fraction
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy
 
@@ -1275,6 +1276,20 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
     if run is not None:
         out["hazard"] = hazard(doc, out, run)
     return out
+
+
+def template_rows_sha256(table: dict, names: Sequence[str]) -> str:
+    """The digest of what a table states for the templates ``names``: each
+    one's row (weight, divisor, participants) and its kernel term (product
+    law, overrides), canonical JSON in name order -- the same in a copy of
+    the table cut to fewer kernels or templates."""
+    rows = {r["template"]: r for r in table["templates"]}
+    terms = {t["template"]: dict(t, kernel=kid) for kid, k in table["kernels"].items() for t in k["templates"]}
+    missing = sorted(set(names) - (set(rows) & set(terms)))
+    if missing:
+        raise KernelRatesError(f"templates {missing} are not in the table")
+    body = [[rows[n], terms[n]] for n in sorted(set(names))]
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def hazard(doc: dict, table: dict, run: dict) -> dict:
