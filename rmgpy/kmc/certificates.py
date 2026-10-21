@@ -766,20 +766,20 @@ def _unit_text(repeat) -> str:
 def _unit_combinations(units, budget):
     """(units added, element counts added) for every non-negative integer
     combination of the growth ``units`` adding at most ``budget`` heavy
-    atoms; every element of every unit is counted, 0 included."""
+    atoms; only the elements the combination adds are counted (a species
+    keeps its own formula: an H atom grown by no unit has no carbon)."""
     heavy = [sum(n for element, n in unit if element != "H") for unit in units]
     if not all(heavy):
         raise ValueError(f"a growth unit without heavy atoms ({units}) bounds no growth")
-    elements = sorted({element for unit in units for element, _n in unit})
     counts = [0] * len(units)
 
     def walk(i, left):
         if i == len(units):
-            added = dict.fromkeys(elements, 0)
+            added = defaultdict(int)
             for unit, count in zip(units, counts):
                 for element, n in unit:
                     added[element] += count * n
-            yield sum(counts), added
+            yield sum(counts), {element: n for element, n in added.items() if n}
             return
         while counts[i] * heavy[i] <= left:
             yield from walk(i + 1, left - counts[i] * heavy[i])
@@ -801,7 +801,7 @@ def _side_formulas(mols, extra) -> tuple:
         f = _formula(mol)
         for element, n in count.items():
             f[element] = f.get(element, 0) + n
-        out.append(tuple(sorted(f.items())))
+        out.append(tuple(sorted((element, n) for element, n in f.items() if n)))
     return tuple(sorted(out))
 
 
