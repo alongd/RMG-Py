@@ -226,9 +226,11 @@ def test_a_length_past_the_grid_withholds_the_number_fraction(pe_mom):
     assert f["mu0_fraction_below"] is None and "grid" in f["withheld"]
 
 
-def test_the_overflow_withholds_only_the_moments_its_own_moments_cannot_carry(pe_mom):
+def test_the_overflow_bounds_the_moments_its_own_moments_cannot_carry(pe_mom):
     """Chains past the grid: their mu0..mu2 are known, mu3 is not; the
-    exact homolysis rate weighted by n^2 needs n^3 there."""
+    exact homolysis rate weighted by n^2 needs n^3 there, bounded by
+    o2^2 / o1 below and (every period of the system) o2 above -- the value
+    is withheld and its bounds bracket the truth (here two chains of 500)."""
     model, terms = pe_mom["model"], pe_mom["terms"]
     (h,) = terms["homolysis"]
     counts, over = _state(model, {("chain", 60): 5})
@@ -241,7 +243,12 @@ def test_the_overflow_withholds_only_the_moments_its_own_moments_cannot_carry(pe
     n_over = h["a"] * 2.0 * 500 + h["b"] * 2.0
     assert slot["moments"]["0"]["exact_mol_s"] == pytest.approx(h["w"] * (n_grid + n_over) * model.u, rel=1e-12)
     assert slot["moments"]["0"]["law_minus_exact_mol_s"] == pytest.approx(0.0, abs=1e-30)
-    assert slot["moments"]["2"]["exact_mol_s"] is None and "third moment" in slot["withheld"]["2"]
+    m2 = slot["moments"]["2"]
+    assert m2["exact_mol_s"] is None and "bounded" in slot["withheld"]["2"]
+    truth = h["w"] * (5 * (h["a"] * 60 + h["b"]) * 60 ** 2 + 2 * (h["a"] * 500 + h["b"]) * 500 ** 2) / 4 * model.u
+    lo, hi = m2["exact_bounds_mol_s"]
+    assert lo * (1 - 1e-12) <= truth <= hi * (1 + 1e-12)
+    assert m2["law_minus_exact_bounds_mol_s"] == pytest.approx([0.0, 0.0], abs=1e-12 * hi)
 
 
 # --------------------------------------------------------------------------

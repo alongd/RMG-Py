@@ -798,10 +798,11 @@ def _site_series(model: KernelModel, law: dict, family: str, product: Optional[s
     return grid, beyond
 
 
-def _weighted(model: KernelModel, family: str, grid: numpy.ndarray, beyond, k: int, counts, overflow):
+def _weighted(model: KernelModel, family: str, grid: numpy.ndarray, beyond, k: int, counts, overflow,
+              o3: Optional[float] = None):
     """(sum over the family's chains of f(n) n^k / ppu^k, why not): the grid
     exactly, the overflow from its mu0..mu2 where f is affine past the grid
-    and the power needed is at most 2."""
+    (its sum of n^3, which the overflow does not keep, given as ``o3``)."""
     j = model.families.index(family)
     n = numpy.arange(1, model.n_max + 1, dtype=float)
     block = numpy.asarray(counts[j * model.n_max:(j + 1) * model.n_max], dtype=float)
@@ -812,9 +813,9 @@ def _weighted(model: KernelModel, family: str, grid: numpy.ndarray, beyond, k: i
     if beyond is None:
         return None, f"{o[0]!r} chains of {family} past the grid, where its sites are not affine"
     gamma, delta = beyond
-    if delta != 0.0 and k + 1 > 2:
+    if delta != 0.0 and k + 1 > 2 and o3 is None:
         return None, f"{o[0]!r} chains of {family} past the grid: n^{k + 1} needs the overflow's third moment"
-    over = gamma * o[k] + (delta * o[k + 1] if delta != 0.0 else 0.0)
+    over = gamma * o[k] + (delta * (o[k + 1] if k + 1 <= 2 else o3) if delta != 0.0 else 0.0)
     return total + over / model.ppu ** k, None
 
 
@@ -834,6 +835,15 @@ def law_attribution(model: KernelModel, table: dict, record: dict, counts, overf
     rows = {r["template"]: r for r in table["templates"]}
     fractions = {(f["template"], f.get("slot")): f for f in law_domain_fractions(model, counts, overflow,
                                                                                     record["validity"])}
+    # the overflow's sum of n^3 per family, bounded: at least o2^2 / o1 (Cauchy-Schwarz) and (n_max + 1) o2,
+    # at most (all periods of the system) o2 -- no chain is longer than every period there is
+    n = numpy.arange(1, model.n_max + 1, dtype=float)
+    periods = sum(float(numpy.dot(n, counts[j * model.n_max:(j + 1) * model.n_max])) + float(overflow[3 * j + 1])
+                  for j in range(len(model.families)))
+    o3 = {}
+    for j, family in enumerate(model.families):
+        o0, o1, o2 = (float(x) for x in overflow[3 * j:3 * j + 3])
+        o3[family] = (0.0, 0.0) if o0 == 0.0 else (max(o2 * o2 / o1, (model.n_max + 1) * o2), periods * o2)
     one = (numpy.ones(model.n_max), (1.0, 0.0))
     ramp = (numpy.arange(1, model.n_max + 1, dtype=float), (0.0, 1.0))
     out = []
@@ -860,7 +870,7 @@ def law_attribution(model: KernelModel, table: dict, record: dict, counts, overf
         for p, family in enumerate(fams):
             moments, withheld = {}, {}
             for k in ATTRIBUTION_MOMENTS:
-                def total(parts):
+                def total(parts, third):
                     acc = 0.0
                     for coef, series in parts:
                         if coef == 0.0:
@@ -868,19 +878,27 @@ def law_attribution(model: KernelModel, table: dict, record: dict, counts, overf
                         prod = coef
                         for q, (grid, beyond) in enumerate(series):
                             value, why = _weighted(model, fams[q], grid, beyond, k if q == p else 0, counts,
-                                                   overflow)
+                                                   overflow, third)
                             if value is None:
                                 return None, why
                             prod *= value
                         acc += prod
                     return acc * scale, None
-                x, why_x = total(exact)
-                m, why_m = total(law_parts)
-                if x is None or m is None:
+                # linear in the weighted family's overflow sum of n^3: evaluated at both of its bounds
+                (x_lo, why_x), (m_lo, why_m) = total(exact, o3[family][0]), total(law_parts, o3[family][0])
+                (x_hi, _w), (m_hi, _v) = total(exact, o3[family][1]), total(law_parts, o3[family][1])
+                if x_lo is None or m_lo is None:
                     withheld[str(k)] = why_x or why_m
                     moments[str(k)] = {"law_minus_exact_mol_s": None, "exact_mol_s": None}
+                elif abs(x_hi - x_lo) <= 1e-12 * abs(x_lo) and abs((m_hi - x_hi) - (m_lo - x_lo)) <= 1e-12 * max(
+                        abs(m_lo - x_lo), abs(x_lo)):
+                    moments[str(k)] = {"law_minus_exact_mol_s": m_lo - x_lo, "exact_mol_s": x_lo}
                 else:
-                    moments[str(k)] = {"law_minus_exact_mol_s": m - x, "exact_mol_s": x}
+                    moments[str(k)] = {"law_minus_exact_mol_s": None, "exact_mol_s": None,
+                                       "law_minus_exact_bounds_mol_s": sorted([m_lo - x_lo, m_hi - x_hi]),
+                                       "exact_bounds_mol_s": sorted([x_lo, x_hi])}
+                    withheld[str(k)] = (f"chains of {family} past the grid: their sum of n^3 (the overflow keeps "
+                                        f"n^0..n^2) only bounded, {list(o3[family])}; the value lies in the bounds")
             f = fractions.get((law["template"], p)) or {}
             slots.append({"slot": p, "family": family, "exact_from_periods": f.get("exact_from_periods"),
                           "mu0_fraction_below": f.get("mu0_fraction_below"), "moments": moments,
