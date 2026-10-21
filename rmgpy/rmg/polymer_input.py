@@ -56,6 +56,37 @@ def _base_label(label):
     return strip_rmg_index_suffix(label)
 
 
+# Declared residence of non-pool species (polymer_phase(residence=...)).
+# 'melt': condensed in the gas mask (n / V_poly, gas thermo and Kc at
+# C0 = P0/RT like every species: the kinetic Monte Carlo's single convention);
+# 'gas': as the classifier decides without a declaration.  'volatile'
+# (removed on formation) is a later extension.
+RESIDENCES = ("melt", "gas")
+RESIDENCE_DEFAULT_KEY = "*"
+
+
+def validated_residence(residence):
+    """``residence`` (None, or a mapping of species label -- or ``'*'``, every
+    plain reactive species not named -- to one of ``RESIDENCES``) checked, as
+    a plain dict; None stays None."""
+    if residence is None:
+        return None
+    if not isinstance(residence, dict):
+        raise ValueError(f"polymer_phase residence must be a mapping of species label (or "
+                         f"{RESIDENCE_DEFAULT_KEY!r}) to one of {RESIDENCES}, got {type(residence).__name__}")
+    out = {}
+    for label, where in residence.items():
+        if not isinstance(label, str) or not label:
+            raise ValueError(f"polymer_phase residence labels must be non-empty strings, got {label!r}")
+        if where == "volatile":
+            raise ValueError(f"residence of {label!r}: 'volatile' (removed on formation) is a later extension "
+                             "and is not supported")
+        if where not in RESIDENCES:
+            raise ValueError(f"residence of {label!r}: {where!r} is not one of {RESIDENCES}")
+        out[label] = where
+    return out
+
+
 class HybridPolymerReactor(ReactionSystem):
     """
     A biphasic reactor input specification for polymer pyrolysis and degradation simulations.
@@ -511,6 +542,9 @@ class HybridPolymerReactor(ReactionSystem):
             pdep_collider_kinetics=pdep_kinetics,
             collider_efficiencies=collider_eff,
             allow_unpaired_reference_state=self.allow_unpaired_reference_state,
+            # a deck that declares residence declares the single convention
+            # (validated_residence) for every melt-resident species
+            declared_melt_convention=getattr(self.polymerPhase, "residence", None) is not None,
             # Round-20 increment 7 plumbing (Codex round-22 P1): the deck's
             # filterThreshold reaches this reactor as an attribute stamped
             # by RMG.initialize (rmgpy/rmg/main.py) -- forward it so the
@@ -629,12 +663,14 @@ class PolymerPhase(object):
                  initial_explicit,
                  pools,
                  mass_transfer=None,
+                 residence=None,
                  ):
         self.density = density
         self.initial_moments = initial_moments
         self.initial_explicit = initial_explicit
         self.pools = pools
         self.mass_transfer = mass_transfer or list()
+        self.residence = validated_residence(residence)
 
     def calculate_volume(self):
         """
@@ -789,6 +825,32 @@ class PolymerPhase(object):
             for i, spc in enumerate(core_species):
                 label = getattr(spc, "label", None)
                 if label and _base_label(label) in h_loss_bases:
+                    mask[i] = False
+
+        # E. Declared residence (validated_residence): a melt-resident species
+        #    is condensed. '*' covers every plain reactive species not named
+        #    (moment dummies and Polymer objects stay with the pool rules
+        #    above); a named gas the rules above condense is a contradiction.
+        #    Applied here, in the one stage-1 classifier, so the core mask and
+        #    the prospective seed agree (R1).
+        if self.residence is not None:
+            from rmgpy.polymer import Polymer
+            default = self.residence.get(RESIDENCE_DEFAULT_KEY)
+            pool_labels = {p.label for p in self.pools}
+            for i, spc in enumerate(core_species):
+                label = getattr(spc, "label", None)
+                named = self.residence.get(_base_label(label)) if label else None
+                if named == "gas":
+                    # the configured proxy (base label = pool label) is
+                    # condensed by the solver's pool-label pass, after this one
+                    if not mask[i] or _base_label(label) in pool_labels:
+                        raise ValueError(
+                            f"residence declares {label!r} gas, but it is a polymer-phase species of the "
+                            "pools (proxy, moment or condensed daughter)")
+                    continue
+                plain = (getattr(spc, "reactive", True) and not getattr(spc, "is_moment_dummy", False)
+                         and not isinstance(spc, Polymer))
+                if named == "melt" or (named is None and default == "melt" and plain):
                     mask[i] = False
 
         return mask
@@ -951,19 +1013,22 @@ class PolymerPhaseBlueprint(object):
                  solvent: str,
                  density: Union[float, tuple] = (1000.0, 'kg/m^3'),
                  mass_transfer: Optional[List['MassTransfer']] = None,
+                 residence: Optional[Dict[str, str]] = None,
                  ):
         self.label = label
         self.species_labels = species
         self.solvent_label = solvent
         self.density = density
         self.mass_transfer = mass_transfer or list()
+        self.residence = validated_residence(residence)
 
 
 def polymer_phase(label: str,
                   species: List[str],
                   solvent: str,
                   density: Union[float, tuple] = (1000.0, 'kg/m^3'),
-                  mass_transfer: Optional[List['MassTransfer']] = None):
+                  mass_transfer: Optional[List['MassTransfer']] = None,
+                  residence: Optional[Dict[str, str]] = None):
     """
     Input file helper to define the polymer phase contents.
     Returns a blueprint that hybrid_polymer_reactor will compile into a real PolymerPhase.
@@ -971,8 +1036,14 @@ def polymer_phase(label: str,
     Args:
         mass_transfer (Optional[List[MassTransfer]]): MassTransfer objects describing
             gas <-> polymer-melt transport for dissolved species. Defaults to an empty list.
+        residence (Optional[Dict[str, str]]): where non-pool species live, label (or '*': every
+            plain reactive species not named) -> 'melt' | 'gas' (validated_residence). A melt
+            species is condensed in the gas mask; declaring residence declares the single
+            reference convention (gas thermo, Kc at C0 = P0/RT, melt concentrations) for the
+            melt species, so the reference-state tripwire passes rows that are wholly melt.
+            None (default): no declaration, the classifier alone decides.
     """
-    return PolymerPhaseBlueprint(label, species, solvent, density, mass_transfer)
+    return PolymerPhaseBlueprint(label, species, solvent, density, mass_transfer, residence)
 
 
 def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
@@ -1221,7 +1292,8 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
         initial_moments=initial_moments,
         initial_explicit=initial_explicit,
         pools=pools,
-        mass_transfer=mass_transfer
+        mass_transfer=mass_transfer,
+        residence=blueprint.residence,
     )
 
 

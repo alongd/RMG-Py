@@ -1681,6 +1681,7 @@ class HybridPolymerSystem(ReactionSystem):
         collider_efficiencies: Optional[np.ndarray] = None,
         debug_check_realizability: bool = False,
         allow_unpaired_reference_state: bool = False,
+        declared_melt_convention: bool = False,
         allow_unstamped_proxy_rows: bool = False,
         qssa_kout_floor_s: float = 0.0,
         polymer_scoped_jacobian: bool = False,
@@ -1785,6 +1786,14 @@ class HybridPolymerSystem(ReactionSystem):
         self.allow_unpaired_reference_state = bool(allow_unpaired_reference_state)
         self.reference_state_census = []
         self.reference_state_max_decades = 0.0
+        # Declared single convention (polymer_phase residence, shared-chemistry
+        # slice S4): the deck states that every melt-resident (condensed)
+        # species takes the gas reference at its melt concentration, as the
+        # kinetic Monte Carlo does. A reversible row wholly condensed is then
+        # listed in reference_state_declared_convention [(rxn, U)] instead of
+        # refused; rows across the phase boundary are refused as before.
+        self.declared_melt_convention = bool(declared_melt_convention)
+        self.reference_state_declared_convention = []
         self.initial_explicit_species = initial_explicit_species or {}
         self.polymer_species_labels = set(polymer_species_labels) if polymer_species_labels else set()
 
@@ -2839,6 +2848,7 @@ class HybridPolymerSystem(ReactionSystem):
         T = self.T.value_si
         self.reference_state_census = []
         self.reference_state_max_decades = 0.0
+        self.reference_state_declared_convention = []
 
         mask = self.gas_species_mask
 
@@ -3097,7 +3107,16 @@ class HybridPolymerSystem(ReactionSystem):
                     "docs/multi_pool_design.md).",
                     rxn, u, T, REFERENCE_STATE_CENSUS_DECADES)
             if u > REFERENCE_STATE_REFUSE_DECADES:
-                offenders.append((rxn, u))
+                # Declared single convention (polymer_phase residence): every
+                # participant condensed in the mask means every participant
+                # takes the gas reference at its melt concentration, the
+                # convention the deck declared -- nothing is unpaired against
+                # another phase, so the row is listed, not refused. A row
+                # with a gas-masked participant is checked as before.
+                if self.declared_melt_convention and not any(mask[k] for k in r_idx + p_idx):
+                    self.reference_state_declared_convention.append((rxn, u))
+                else:
+                    offenders.append((rxn, u))
 
             # Provenance sensor (spec §5.3): counterparty set = melt
             # participants + gas participants inside the shared chain-scale
