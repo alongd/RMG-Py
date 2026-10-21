@@ -2692,6 +2692,54 @@ class HybridPolymerSystem(ReactionSystem):
                         f"configured solver pools {sorted(label_to_pool)}.")
                 self.kernel_move_terms[i].append(
                     (dict(term), tuple(target.mu_indices)))
+        self._assert_catalog_kernels_count_once()
+
+    def _assert_catalog_kernels_count_once(self):
+        """One event, one count: refuse a catalog template listed on two
+        pools (each listing fires), and a live core reaction row that moves
+        chains along a catalog term's connection (source -> target pool;
+        both directions of a reversible row) -- the generated row and the
+        kernel would both integrate the same events."""
+        owner = {}
+        for pool in self.polymer_pools:
+            for kernel in CATALOG_KERNELS:
+                for term in getattr(pool, kernel, None) or ():
+                    first = owner.setdefault((kernel, term["template"]),
+                                             pool.label)
+                    if first != pool.label:
+                        raise ValueError(
+                            f"{kernel} template {term['template']!r} is "
+                            f"listed on pools {first!r} and {pool.label!r}: "
+                            f"each listing fires, so its events would count "
+                            f"twice.")
+        index = {p.label: i for i, p in enumerate(self.polymer_pools)}
+        moves = {}
+        for pool in self.polymer_pools:
+            for kernel, template, src, dst in catalog_kernel_connections(pool):
+                moves.setdefault((index[src], index[dst]), []).append(
+                    (kernel, template, src, dst))
+        arch = getattr(self, "reaction_flux_archetype", None)
+        if not moves or arch is None:
+            return
+        refused = getattr(self, "reaction_refused", None)
+        reversible = getattr(self, "_core_row_reversible", None)
+        for r in range(min(arch.shape[0], self.num_core_reactions)):
+            if (refused is not None and refused[r]) or arch[r] not in (
+                    FLUX_MIGRATION, FLUX_SCISSION_FRAGMENT,
+                    FLUX_VOLATILE_EJECTION):
+                continue
+            s, d = int(self.reaction_src_pool[r]), int(self.reaction_dst_pool[r])
+            legs = [(s, d)]
+            if reversible is None or reversible[r]:
+                legs.append((d, s))
+            for leg in legs:
+                for kernel, template, src, dst in moves.get(leg, ()):
+                    raise ValueError(
+                        f"{kernel} term {template!r} moves chains {src!r} "
+                        f"-> {dst!r}, and so does the live core reaction "
+                        f"row {r} (flux archetype {int(arch[r])}): both "
+                        f"would integrate the same events. Keep one of "
+                        f"them.")
 
     def _flatten_depropagation_state(self):
         """Flatten each pool's validated+normalized k_depropagation triplet
@@ -4551,6 +4599,10 @@ class HybridPolymerSystem(ReactionSystem):
         # initialize_model; no keying set needed.
         self._static_phase_gate_census(core_species, core_reactions)
 
+        # read by the catalog-kernel overlap check (a reversible row moves
+        # chains both ways)
+        self._core_row_reversible = [bool(getattr(rxn, "reversible", False))
+                                     for rxn in core_reactions]
         self.validate_configuration()
 
         # radical_qssa_unzip double-count census (M2). QSSA initiation is
