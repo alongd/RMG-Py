@@ -138,6 +138,30 @@ def test_an_extension_step_adds_one_named_residue_and_verifies(fam, certifier, e
         b.extend(witness, tail, residue="X")
 
 
+def test_the_locality_witnesses_of_a_copolymer_cover_every_residue_word(fam, certifier, ep):
+    """The locality check of an emitted template recounts it on extension
+    witnesses (each port alone, jointly, per participant, at +1 and +2): on a
+    copolymer each vector is built once per residue word the support allows
+    (2 ** residues added), labelled by its branch, and none is refused for
+    want of a residue."""
+    case = _member(certifier, fam["intra_H_migration"], ep,
+                   _radical_chain(("E", "P", "E", "P", "E"), 1, "p2"),
+                   "R2H_S;C_rad_out_Cs2;Cs_H_out_2H|[CH2]C(CCC)CCCC(C)CC|m0")
+    witnesses = te.locality_witnesses(case.witness)
+    assert all(x.status == "ok" for x in witnesses), \
+        [(x.label, x.status, x.reason) for x in witnesses if x.status != "ok"]
+    by_vector = {}
+    for x in witnesses:
+        by_vector.setdefault(x.vector, []).append(x.label)
+    assert by_vector[(0, 0)] == ["emitted"]
+    for vector, labels in by_vector.items():
+        assert len(labels) == 2 ** sum(vector), (vector, labels)
+    assert sorted(by_vector[(0, 2)]) == [
+        "port 0:tail +2 0:tail+E+E", "port 0:tail +2 0:tail+E+P",
+        "port 0:tail +2 0:tail+P+E", "port 0:tail +2 0:tail+P+P"]
+    assert all(x.witness.extension_words for x in witnesses if any(x.vector))
+
+
 def test_v1_homopolymer_fixed_points_are_byte_identical(fam, certifier):
     """PE (an H shift reading one repeat past the tail) and PP (one member at
     depths 3 and 2) fixed points and full member rows (contexts, covers) as at
