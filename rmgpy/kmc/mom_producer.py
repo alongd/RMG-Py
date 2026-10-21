@@ -789,6 +789,13 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     gives no law (``law_inert``, unmodelled) under ``inert`` (rate 0 by the
     table's own law, as in the kernel reference); never dropped silently; a
     kernel whose participant classes have no pool is refused.
+    Every term declares its validity length ``valid_from_periods``, the
+    shortest chain its site law counts correctly (homolysis 2e - 1, where the
+    cut count a*n + b turns negative below; recombination one past its
+    zero-site profile; a pair transfer or move the length its law is exact
+    from), and the record's ``validity`` lists them with the participant
+    families, for the kernel reference to report the fraction of each
+    family's chains below (``kernel_reference.law_domain_fractions``).
     Refused: another schema, temperature or chemistry digest, kernels not in
     the table or of another type, inert or unmodelled homolysis or
     recombination laws, depository overrides (sizes moments cannot single
@@ -833,7 +840,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         radical = kernel["classes"][0] if radical is None else radical
         if kernel["classes"][0] != radical:
             raise ProducerError(f"{kid}: a second end-radical class {kernel['classes'][0]!r} ({radical!r})")
-    homolysis, recombination, checks, e_min = [], [], {}, None
+    homolysis, recombination, checks, e_min, validity = [], [], {}, None, []
     for kid, kernel in by_type["homolysis"]:
         if kernel["classes"] != ["chain"]:
             raise ProducerError(f"{kid}: no MoM kernel cuts class {kernel['classes']} (the chain class only)")
@@ -852,7 +859,10 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                                     f"where a*n + b = {a * n_min + b!r} is not their site count")
             homolysis.append({"template": name, "w": float(rows[name]["weight"]),
                               "phi": float(phi) if rows[name]["phi_thinned"] else 1.0, "a": a, "b": b,
-                              "min_fragment": e, "periods_per_unit": ppu, "daughter": radical_label})
+                              "min_fragment": e, "periods_per_unit": ppu, "daughter": radical_label,
+                              "valid_from_periods": 2 * e - 1})
+            validity.append({"kernel": kid, "template": name, "families": ["chain"],
+                             "valid_from_periods": 2 * e - 1})
             checks[name] = {"min_fragment": e, "exact_to_n": term["law"]["exact_to_n"],
                             "exact_from_n": sites.get("exact_from_n"), "initial_min_periods": n_min}
             e_min = e if e_min is None else min(e_min, e)
@@ -883,8 +893,11 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                         outs != ([] if int(n) in zero else [join]) for n, outs in law["exact"].items()):
                     raise ProducerError(f"{where}: its {slot} law is not one chain of n0 + n1 periods per site")
             k = float(row["weight"]) / float(row["divisor"]) * (float(phi) if row["phi_thinned"] else 1.0)
+            valid = max(zero) + 1 if zero else 1
             recombination.append({"template": name, "k_pair": k * float(volume_ratio), "sites_per_chain": c,
-                                  "periods_per_unit": ppu, "product": label})
+                                  "periods_per_unit": ppu, "product": label, "valid_from_periods": valid})
+            validity.append({"kernel": kid, "template": name, "families": ["radical_end"],
+                             "valid_from_periods": valid})
             checks[name] = {"w_over_divisor": k, "zero_site_periods": sorted(zero)}
     floor = n_min if e_min is None else min(n_min, e_min)
     families = table["families"]
@@ -981,7 +994,9 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                 continue
             joined = "+".join(names)
             entry = {"template": joined, "phi": float(phi) if thinned else 1.0, "partner": pools[owners[1]],
-                     "product": pools[fam0], "partner_product": pools[fam1]}
+                     "product": pools[fam0], "partner_product": pools[fam1], "valid_from_periods": n0}
+            validity.append({"kernel": kid, "template": joined, "families": sorted(set(owners)),
+                             "valid_from_periods": n0})
             check = {"kernel": kid, "templates": names, "reachable_from_periods": floor, "law_from_periods": n0,
                      "checked_to_periods": top}
             if not any(c[1:]):
@@ -994,7 +1009,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                 check["sites_law"] = c
             transfer.setdefault(pools[owners[0]], []).append(
                 {key: entry[key] for key in ("template", "k_pair", "phi", "partner", "product", "partner_product",
-                                             "sites", "periods_per_unit") if key in entry})
+                                             "sites", "periods_per_unit", "valid_from_periods") if key in entry})
             checks[joined] = check
     for kid, kernel in by_type["move"]:
         (owner,) = owner_families(kid, kernel)
@@ -1037,14 +1052,15 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             scale = max(abs(x) for x in c)
             move.setdefault(pools[owner], []).append({"template": joined, "k": scale, "a": c[1] / scale,
                                                       "b": c[0] / scale, "periods_per_unit": ppu,
-                                                      "product": pools[fam]})
+                                                      "product": pools[fam], "valid_from_periods": n0})
+            validity.append({"kernel": kid, "template": joined, "families": [owner], "valid_from_periods": n0})
             checks[joined] = {"kernel": kid, "templates": names, "reachable_from_periods": floor,
                               "law_from_periods": n0, "checked_to_periods": top, "rate_law": [c[0], c[1]]}
     record = {"kernels": sorted(set(kernels)), "excluded_kernels": sorted(set(table["kernels"]) - set(kernels)),
               "temperature_K": float(table["temperature_K"]), "phi": float(phi), "moment_unit": unit,
               "volume_ratio_mom_over_kmc": float(volume_ratio), "radical_class": radical, "checks": checks,
               "far_law": bool(far_law), "unmapped": unmapped, "inert": inert, "identity": identity,
-              "short_lengths": short}
+              "short_lengths": short, "validity": validity}
     return {"homolysis": homolysis, "recombination": recombination, "transfer": transfer, "move": move,
             "record": record}
 

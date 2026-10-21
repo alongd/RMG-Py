@@ -687,6 +687,41 @@ def population_balance(model: KernelModel, times: Sequence[float], *, rtol: floa
 # --------------------------------------------------------------------------
 # V1: the stochastic simulation
 # --------------------------------------------------------------------------
+def law_domain_fractions(model: KernelModel, counts, overflow, validity: Sequence[dict]) -> List[dict]:
+    """The law-domain diagnostic of a MoM kernel set on one population: per
+    declared validity length (the MoM producer's record ``validity``: kernel,
+    template, families, ``valid_from_periods``) and participant family, the
+    fraction of the family's chains (mu0; the overflow, longer than the grid,
+    included) shorter than it -- where that term's moment law miscounts its
+    sites.  None for a family the model lacks or that holds no chain."""
+    out = []
+    for v in validity:
+        for family in v["families"]:
+            total = below = None
+            if family in model.families:
+                j = model.families.index(family)
+                block = numpy.asarray(counts[j * model.n_max:(j + 1) * model.n_max], dtype=float)
+                total = float(block.sum() + overflow[3 * j])
+                below = float(block[:max(0, min(int(v["valid_from_periods"]) - 1, model.n_max))].sum())
+            out.append({"kernel": v["kernel"], "template": v["template"], "family": family,
+                        "valid_from_periods": int(v["valid_from_periods"]),
+                        "mu0_fraction_below": below / total if total else None})
+    return out
+
+
+def read_validity(path) -> List[dict]:
+    """The validity lengths of a MoM producer manifest (``producer.json``:
+    facts.kernels.record.validity) or of a bare JSON list of them."""
+    doc = json.loads(Path(path).read_text())
+    if isinstance(doc, dict):
+        doc = (((doc.get("facts") or {}).get("kernels") or {}).get("record") or {}).get("validity")
+    if not isinstance(doc, list) or not all(
+            isinstance(v, dict) and {"kernel", "template", "families", "valid_from_periods"} <= set(v) for v in doc):
+        raise KernelReferenceError(f"{path}: no MoM kernel validity lengths (a producer.json with "
+                                   "facts.kernels.record.validity, or a list of them)")
+    return doc
+
+
 def _positive_overrides(model) -> list:
     return [po for po in model.pair_overrides if not po.get("skip") and po["delta"] > 0]
 
@@ -849,6 +884,9 @@ def main(argv=None) -> int:
     parser.add_argument("--max-events", type=int, default=None)
     parser.add_argument("--out", default=None, help="default: <table stem>.reference.json beside it")
     parser.add_argument("--allow-unbound-table", action="store_true")
+    parser.add_argument("--validity", default=None,
+                        help="a MoM producer.json (or list): report the fraction of each family's chains below "
+                             "each kernel term's validity length (law_domain)")
     args = parser.parse_args(argv)
     try:
         deck = kr.read_deck(args.deck)
@@ -857,6 +895,7 @@ def main(argv=None) -> int:
         model = KernelModel(table, deck.spec, phi=args.phi, n_max=args.n_max, kernels=args.kernel,
                             allow_unbound=args.allow_unbound_table)
         times = kr.observation_times(None, args.end, args.snapshots)
+        validity = read_validity(args.validity) if args.validity else None
         pbe = population_balance(model, times)
         ssa = ensemble(model, times, list(range(args.seeds)), max_events=args.max_events)
     except (KernelReferenceError, K.KernelRatesError, kr.RunError, OSError, ValueError) as error:
@@ -881,6 +920,10 @@ def main(argv=None) -> int:
            "pbe_final_distribution": {f"{model.label_of(*model.state(i))}@{model.state(i)[1]}": float(v)
                                       for i, v in enumerate(pbe[-1]["counts"]) if v},
            "ssa": ssa, "comparison": comparison(pbe, ssa)}
+    if validity is not None:
+        doc["law_domain"] = {"source": str(Path(args.validity).resolve()), "validity": validity,
+                             "pbe": [law_domain_fractions(model, r["counts"], r["overflow"], validity)
+                                     for r in pbe]}
     out = Path(args.out) if args.out else Path(args.table).with_suffix(".reference.json")
     out.write_text(json.dumps(doc, indent=1, sort_keys=True, default=float) + "\n")
     worst = max((abs(r["z"]) for r in doc["comparison"]), default=0.0)

@@ -70,6 +70,10 @@ DEFINITIONS = {
     "mwd_mol.<p>": "the same above the cutoff: the length distribution (mol)",
     "mwd_overflow_mol": "polymer-derived molecules longer than a reference's length grid (mol)",
     "whole_<key>": "melt_observables.WHOLE_ENSEMBLE_DEFINITION",
+    "law_domain_mu0_fraction.<template>@<family>": "diagnostic (population balance, given the MoM kernels' "
+                                                    "validity lengths): the fraction of the family's chains "
+                                                    "shorter than the MoM term's validity length, where its "
+                                                    "moment law miscounts sites",
 }
 ROW_FIELDS = ("time_s", "row", "producer", "kind", "value", "stderr", "lower", "upper", "seeds", "basis",
               "reason")
@@ -344,6 +348,12 @@ def reference_rows(path, producer: str) -> dict:
         per_seed, basis = [], {}
         for series in runs:
             values, basis = _reference_values(series[k], series[0], doc, producer, cut)
+            if producer == "pbe" and doc.get("law_domain"):
+                basis["law_domain_mu0_fraction"] = f"validity lengths of {doc['law_domain']['source']}"
+                for f in doc["law_domain"]["pbe"][k]:
+                    if f["mu0_fraction_below"] is not None:
+                        values[f"law_domain_mu0_fraction.{f['template']}@{f['family']}"] = (
+                            "diagnostic", f["mu0_fraction_below"])
             per_seed.append(values)
         rows += _aggregate(t, f"kernel_{producer}", per_seed, basis)
     binding = {"deck_sha256": doc["deck"]["sha256"], "chemistry_sha256": doc["deck"]["chemistry_sha256"],

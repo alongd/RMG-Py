@@ -359,3 +359,40 @@ def test_the_command_line_writes_both_time_series_beside_the_table(toy, tmp_path
     assert doc["schema"] == R.SCHEMA and len(doc["pbe"]) == 3 and len(doc["ssa"]["rows"]) == 3
     assert {r["quantity"] for r in doc["comparison"]} == set(WHOLE_ENSEMBLE_KEYS)
     assert "written" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------
+# the law-domain diagnostic of a MoM kernel set
+# --------------------------------------------------------------------------
+def test_law_domain_fractions_count_each_familys_chains_below_each_validity_length(toy):
+    """A MoM term's site law miscounts below its validity length (homolysis,
+    min_fragment 4: a chain of 4 periods under sites n - 7 counts -3); the
+    balance knows the distribution, so it reports the fraction of each
+    participant family's chains there."""
+    model = R.KernelModel(toy, S.pe_spec({10: 1}), n_max=20)
+    counts = numpy.zeros(model.size)
+    counts[model.index("chain", 4)] = 1.0
+    counts[model.index("chain", 20)] = 1.0
+    over = numpy.zeros(3 * len(model.families))
+    validity = [{"kernel": "k", "template": "t", "families": ["chain", "radical_end"], "valid_from_periods": 7}]
+    assert R.law_domain_fractions(model, counts, over, validity) == [
+        {"kernel": "k", "template": "t", "family": "chain", "valid_from_periods": 7, "mu0_fraction_below": 0.5},
+        {"kernel": "k", "template": "t", "family": "radical_end", "valid_from_periods": 7,
+         "mu0_fraction_below": None}]
+    over[3 * model.families.index("chain")] = 2.0          # chains past the grid are above any length
+    (chain, _end) = R.law_domain_fractions(model, counts, over, validity)
+    assert chain["mu0_fraction_below"] == 0.25
+    validity[0]["valid_from_periods"] = 4                  # strictly shorter only
+    assert R.law_domain_fractions(model, counts, over, validity)[0]["mu0_fraction_below"] == 0.0
+
+
+def test_the_validity_lengths_are_read_from_a_producer_manifest(tmp_path):
+    entry = {"kernel": "k", "template": "t", "families": ["chain"], "valid_from_periods": 5}
+    path = tmp_path / "producer.json"
+    path.write_text(json.dumps({"facts": {"kernels": {"record": {"validity": [entry]}}}}))
+    assert R.read_validity(path) == [entry]
+    path.write_text(json.dumps([entry]))
+    assert R.read_validity(path) == [entry]
+    path.write_text(json.dumps({"facts": {}}))
+    with pytest.raises(R.KernelReferenceError, match="validity"):
+        R.read_validity(path)

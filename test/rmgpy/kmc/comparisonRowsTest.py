@@ -180,6 +180,29 @@ def reference(tmp_path_factory):
     return tmp / "toy.kernel_rates.reference.json", deck
 
 
+def test_the_population_balance_rows_carry_the_law_domain_diagnostic(tmp_path):
+    """Given the MoM kernels' validity lengths, the balance's rows report,
+    per time, the fraction of each family's chains below each (diagnostic,
+    never compared); without them, no such row."""
+    table = tmp_path / "toy.kernel_rates.json"
+    table.write_text(json.dumps(toy_table(tmp_path)))
+    deck = write_deck(tmp_path / "deck.py", S.pe_mapping({10: 60}), cutoff=4)
+    validity = tmp_path / "validity.json"
+    validity.write_text(json.dumps([{"kernel": HOMOLYSIS, "template": "h", "families": ["chain", "radical_end"],
+                                     "valid_from_periods": 5}]))
+    assert R.main([str(deck), str(table), "--end", "0.2", "--snapshots", "3", "--seeds", "2", "--n-max", "20",
+                   "--kernel", HOMOLYSIS, "--kernel", RECOMBINATION, "--validity", str(validity)]) == 0
+    path = tmp_path / "toy.kernel_rates.reference.json"
+    rows = [r for r in cr.reference_rows(path, "pbe")["rows"] if r["row"].startswith("law_domain")]
+    t0 = [r for r in rows if r["time_s"] == 0.0]
+    assert {r["row"] for r in t0} == {"law_domain_mu0_fraction.h@chain"}   # no radicals yet
+    assert t0[0]["kind"] == "diagnostic" and t0[0]["value"] == 0.0          # 60-unit chains, all long
+    later = [r for r in rows if r["time_s"] > 0.0]
+    assert {r["row"] for r in later} == {"law_domain_mu0_fraction.h@chain", "law_domain_mu0_fraction.h@radical_end"}
+    assert all(0.0 <= r["value"] <= 1.0 for r in later)
+    assert not any(r["row"].startswith("law_domain") for r in cr.reference_rows(path, "ssa")["rows"])
+
+
 def test_the_reference_records_its_binding_and_row_observations(reference):
     path, deck = reference
     doc = json.loads(path.read_text())

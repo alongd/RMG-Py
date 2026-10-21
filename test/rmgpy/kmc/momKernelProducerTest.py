@@ -73,9 +73,11 @@ def test_the_terms_are_the_tables_coefficients():
     out = terms(doc)
     h, c = row(doc, H), row(doc, C)
     assert out["homolysis"] == [{"template": h["template"], "w": h["weight"], "phi": 1.0, "a": 1.0, "b": -5.0,
-                                 "min_fragment": 3, "periods_per_unit": 2, "daughter": RADICAL}]
+                                 "min_fragment": 3, "periods_per_unit": 2, "daughter": RADICAL,
+                                 "valid_from_periods": 5}]
     assert out["recombination"] == [{"template": c["template"], "k_pair": c["weight"] / c["divisor"],
-                                     "sites_per_chain": 1.0, "periods_per_unit": 2, "product": LABEL}]
+                                     "sites_per_chain": 1.0, "periods_per_unit": 2, "product": LABEL,
+                                     "valid_from_periods": 3}]
 
 
 def test_phi_thins_the_radical_creating_templates_only():
@@ -263,7 +265,8 @@ def test_disproportionation_maps_its_templates_together_onto_the_radical_pool():
     (term,) = out["transfer"][RADICAL]
     assert term == {"template": "+".join(names(doc, D1)), "k_pair": pytest.approx(2.0 * pair_coefficient(doc, D1) * 0.97,
                                                                                    rel=1e-12),
-                    "phi": 1.0, "partner": RADICAL, "product": LABEL, "partner_product": ALKENE}
+                    "phi": 1.0, "partner": RADICAL, "product": LABEL, "partner_product": ALKENE,
+                    "valid_from_periods": 3}
     assert set(out["transfer"]) == {RADICAL}
     assert out["record"]["unmapped"] == []
     assert out["record"]["checks"][term["template"]]["reachable_from_periods"] == 3
@@ -275,7 +278,8 @@ def test_reverse_disproportionation_maps_onto_the_alkene_pool_times_phi():
     (term,) = out["transfer"][ALKENE]
     assert term == {"template": "+".join(names(doc, DR)), "k_pair": pytest.approx(6.0 * pair_coefficient(doc, DR),
                                                                                    rel=1e-12),
-                    "phi": 0.25, "partner": LABEL, "product": RADICAL, "partner_product": RADICAL}
+                    "phi": 0.25, "partner": LABEL, "product": RADICAL, "partner_product": RADICAL,
+                    "valid_from_periods": 3}
     assert out["transfer"][RADICAL][0]["phi"] == 1.0          # disproportionation creates no radicals
 
 
@@ -430,14 +434,17 @@ def test_mid_chain_disproportionation_maps_onto_the_interior_pools():
     out = terms3([H, C, D2E, D2M, D3], ratio=0.9)
     (d2e,) = out["transfer"][RADICAL]
     assert d2e == {"template": names(doc, D2E)[0], "k_pair": pytest.approx(4.0 * weight(doc, D2E) * 0.9, rel=1e-12),
-                   "phi": 1.0, "partner": MIDR, "product": LABEL, "partner_product": INTERNAL}
+                   "phi": 1.0, "partner": MIDR, "product": LABEL, "partner_product": INTERNAL,
+                   "valid_from_periods": 4}
     mids = by_template(out["transfer"][MIDR])
     assert mids[names(doc, D2M)[0]] == {"template": names(doc, D2M)[0],
                                         "k_pair": pytest.approx(2.0 * weight(doc, D2M) * 0.9, rel=1e-12),
-                                        "phi": 1.0, "partner": RADICAL, "product": LABEL, "partner_product": ALKENE}
+                                        "phi": 1.0, "partner": RADICAL, "product": LABEL, "partner_product": ALKENE,
+                                        "valid_from_periods": 4}
     assert mids[names(doc, D3)[0]] == {"template": names(doc, D3)[0],
                                        "k_pair": pytest.approx(4.0 * weight(doc, D3) * 0.9, rel=1e-12),
-                                       "phi": 1.0, "partner": MIDR, "product": LABEL, "partner_product": INTERNAL}
+                                       "phi": 1.0, "partner": MIDR, "product": LABEL, "partner_product": INTERNAL,
+                                       "valid_from_periods": 4}
     assert out["record"]["unmapped"] == [] and out["record"]["inert"] == []
 
 
@@ -451,13 +458,14 @@ def test_h_transfer_maps_with_the_donors_growing_sites():
     w = weight(doc, T1)
     assert {k: v for k, v in t1.items() if k not in ("k_pair", "sites")} == {
         "template": names(doc, T1)[0], "phi": 1.0, "partner": LABEL, "product": LABEL, "partner_product": MIDR,
-        "periods_per_unit": 2}
+        "periods_per_unit": 2, "valid_from_periods": 4}
     assert [t1["k_pair"] * c for c in t1["sites"]] == pytest.approx([-8.0 * w * 0.5, 0.0, 2.0 * w * 0.5, 0.0],
                                                                      rel=1e-12, abs=1e-30)
     assert t1["sites"][1] == 0.0 and t1["sites"][3] == 0.0
     (t2,) = out["transfer"][MIDR]
     assert t2 == {"template": names(doc, T2)[0], "k_pair": pytest.approx(6.0 * weight(doc, T2) * 0.5, rel=1e-12),
-                  "phi": 1.0, "partner": LABEL, "product": LABEL, "partner_product": RADICAL}
+                  "phi": 1.0, "partner": LABEL, "product": LABEL, "partner_product": RADICAL,
+                  "valid_from_periods": 4}
     check = out["record"]["checks"][t1["template"]]
     assert check["law_from_periods"] == check["reachable_from_periods"] == 4
 
@@ -489,7 +497,7 @@ def test_backbiting_maps_as_a_move_and_its_inert_reverse_is_listed():
     (name,) = names(doc, BB)
     w = next(r["weight"] for r in doc["templates"] if r["template"] == name)
     assert move == {"template": name, "k": pytest.approx(2.0 * w, rel=1e-12), "a": 0.0, "b": 1.0,
-                    "periods_per_unit": 2, "product": MIDR}
+                    "periods_per_unit": 2, "product": MIDR, "valid_from_periods": 4}
     assert set(out["move"]) == {RADICAL}
     (inert,) = out["record"]["inert"]
     assert inert["kernel"] == BBR and inert["templates"] == names(doc, BBR)
@@ -511,7 +519,7 @@ def test_a_law_exact_only_from_a_longer_length_is_listed_unless_the_far_law_is_a
     far = terms3([H, C, T1], doc=doc, far_law=True)
     (t1,) = far["transfer"][RADICAL]
     assert far["record"]["unmapped"] == [] and far["record"]["far_law"] is True
-    assert far["record"]["checks"][t1["template"]]["law_from_periods"] == 5
+    assert far["record"]["checks"][t1["template"]]["law_from_periods"] == 5 == t1["valid_from_periods"]
     (short,) = far["record"]["short_lengths"]
     assert short["kernel"] == T1 and short["from_periods"] == 4 and short["law_from_periods"] == 5
     assert short["worst_relative"] > 0.0
@@ -526,7 +534,7 @@ def test_a_move_law_exact_only_from_a_longer_length_follows_the_same_rule():
     assert "affine" in strict["record"]["unmapped"][0]["reason"]
     far = terms3([H, C, BB], doc=doc, far_law=True)
     (move,) = far["move"][RADICAL]
-    assert far["record"]["checks"][move["template"]]["law_from_periods"] == 5
+    assert far["record"]["checks"][move["template"]]["law_from_periods"] == 5 == move["valid_from_periods"]
 
 
 def test_an_intramolecular_move_that_keeps_the_pool_is_recorded_as_identity():
@@ -608,3 +616,25 @@ def test_a_constant_law_with_rounding_noise_keeps_the_constant_term():
     r = {n: k * (1.0 + 1e-15 * (n % 3 - 1)) for n in range(4, 35)}
     n0, c, _w = mp._affine(r, 4, 34)
     assert n0 == 4 and c[1] == 0.0
+
+
+def test_every_term_declares_its_validity_length_with_its_families():
+    """The shortest chain each term's site law counts correctly, for the
+    kernel reference to report the fraction of each family's chains below:
+    homolysis 2*min_fragment - 1, recombination one past its zero-site
+    profile, a pair transfer or move the length its law is exact from."""
+    out = terms3([H, C, D2E, T1, BB])
+    record = {v["template"]: v for v in out["record"]["validity"]}
+    terms = [*out["homolysis"], *out["recombination"], *[t for ts in out["transfer"].values() for t in ts],
+             *[t for ts in out["move"].values() for t in ts]]
+    assert sorted(record) == sorted(t["template"] for t in terms)
+    for t in terms:
+        assert record[t["template"]]["valid_from_periods"] == t["valid_from_periods"]
+    (h,) = out["homolysis"]
+    assert h["valid_from_periods"] == 2 * h["min_fragment"] - 1 and record[h["template"]]["families"] == ["chain"]
+    (c,) = out["recombination"]
+    assert record[c["template"]]["families"] == ["radical_end"]
+    assert c["valid_from_periods"] == max(out["record"]["checks"][c["template"]]["zero_site_periods"]) + 1
+    families = {v["kernel"]: v["families"] for v in out["record"]["validity"]}
+    assert families[D2E] == ["radical_end", "radical_interior"] and families[T1] == ["chain", "radical_end"]
+    assert families[BB] == ["radical_end"]
