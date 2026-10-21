@@ -119,10 +119,21 @@ integral to the clock outside ``leak_num`` and ``leak_den``
 unrestricted engine's.
 
 Matching cost: structural matches use the matcher's own embedding, finish
-and evaluate steps on a component-local view, with one optimization: hydrogen
-leaves that no edit names are enumerated in increasing atom order only
-(``participant_embeddings``); this leaves every deduplicated transition and
-site unchanged (tested against the full enumeration).
+and evaluate steps on a component-local view, with optimizations that leave
+every transition, site and order unchanged (each tested against the plain
+computation):
+
+* hydrogen leaves that no edit names are enumerated in increasing atom order
+  only (``participant_embeddings``);
+* an enumeration starts only at roots that can give an embedding: near an
+  atom with free valence when the participant needs a radical or a multiple
+  bond, and near the drawn site when one transition is rebuilt (``_reach``);
+* participants of equal pattern share one enumeration per component scan
+  (``_pattern``);
+* a component whose scan key (everything the scan reads, positionally;
+  ``_scan_key``) was scanned before gets that entry relabelled by the
+  increasing positional atom map (``_relabel_entry``): the equal chains of a
+  declared melt are matched once.
 
 Transport declaration (``transport_model["met"]``, schema ``MET_SCHEMA``)::
 
@@ -195,6 +206,10 @@ EXCLUDED_DEFINITION = (
     "excluded_num = int of the intrinsic propensity (allowed and leak transitions, no escape factor) of the "
     "excluded templates dt; they never fire and are no part of k_act, so it is outside leak_num and leak_den")
 SPIN_FACTOR_RANGE = (0.25, 1.0)
+# Component scans kept for reuse (``MeltEngine._scan``; least recently used
+# evicted first).  A bound on memory, not a tuning knob: a kept scan is only
+# ever served to a component with the same scan key.
+SCAN_MEMO_LIMIT = 256
 BUILTIN_SPECIES = ("H", "H2")
 
 
@@ -533,51 +548,201 @@ def _h_order(template: wm.Template) -> Tuple:
     return out
 
 
-def _piece_embeddings_quotient(view, template, piece, order):
-    plan = piece.plan
-    root = plan[0][0]
+_REACH = weakref.WeakKeyDictionary()    # template -> per participant (edited depth, anchor depth)
+
+
+def _reach(template: wm.Template) -> Tuple:
+    """Per participant with one piece: (the largest plan depth of an edited
+    atom, the smallest plan depth of an atom that needs free valence: a
+    radical, or a bond or exterior bond of order other than 1; None for
+    none); None for a participant of several pieces.  An embedding's root is
+    within its plan depth of every mapped atom, and an atom without free
+    valence (``window_matcher._subsystems``) carries no radical and only single
+    bonds, so roots farther than these depths from the drawn site, or from
+    every atom with free valence, give no embedding (``participant_embeddings``
+    ``near``, ``_free_ball``)."""
+    cached = _REACH.get(template)
+    if cached is not None:
+        return cached
+    needs = set()
+    for i, atom in enumerate(template.atoms):
+        if atom.radical > 0 or (atom.kind == "port" and any(e[0] != 1.0 for e in atom.exterior)):
+            needs.add(i)
+    for (i, j), order in template.bond.items():
+        if order != 1.0:
+            needs.update((i, j))
+    out = []
+    for p, pieces in enumerate(template.pieces):
+        if len(pieces) != 1:
+            out.append(None)
+            continue
+        depth = {}
+        for t, parent, _checks in pieces[0].plan:
+            depth[t] = 0 if parent is None else depth[parent] + 1
+        anchored = [depth[t] for t in depth if t in needs]
+        out.append((max(depth[t] for t in template.edited[p]), min(anchored) if anchored else None))
+    out = tuple(out)
+    _REACH[template] = out
+    return out
+
+
+_PATTERN = weakref.WeakKeyDictionary()  # template -> per participant (signature, plan atoms, edited positions)
+
+
+def _pattern(template: wm.Template, participant: int) -> Optional[Tuple]:
+    """(signature, plan atoms, positions of the edited atoms in the plan) of
+    a one-piece participant; None for several pieces.  The signature holds,
+    per plan position, everything the enumeration and ``window_matcher._finish``
+    read of the template (signature, parent, adjacency checks, kind, radical,
+    exterior, exterior elements, the hydrogen-leaf order), and the
+    participant's bonds and paths by plan position: participants with equal
+    signatures have the same embeddings, atom for atom in plan order."""
+    cached = _PATTERN.get(template)
+    if cached is None:
+        cached = []
+        orders = _h_order(template)
+        for p, pieces in enumerate(template.pieces):
+            if len(pieces) != 1:
+                cached.append(None)
+                continue
+            plan = pieces[0].plan
+            atoms = tuple(t for t, _parent, _checks in plan)
+            pos = {t: k for k, t in enumerate(atoms)}
+            rows = []
+            for k, (t, parent, checks) in enumerate(plan):
+                a = template.atoms[t]
+                rows.append((template.sig[t], None if parent is None else pos[parent],
+                             tuple((pos[u], bonded) for u, bonded in checks), a.kind, a.radical, a.exterior,
+                             template.ext_sigma[t], tuple(pos[u] for u in orders[p][0][k])))
+            bonds = tuple(sorted((tuple(sorted((pos[i], pos[j]))), o) for (i, j), o in template.bond.items()
+                                 if i in pos and j in pos))
+            paths = tuple(sorted((pos[x.a], pos[x.b], x.minimum, x.maximum) for x in template.paths
+                                 if x.a in pos and x.b in pos))
+            cached.append(((tuple(rows), bonds, paths), atoms, tuple(pos[t] for t in template.edited[p])))
+        cached = tuple(cached)
+        _PATTERN[template] = cached
+    return cached[participant]
+
+
+def _ball(view, sources, radius: int) -> frozenset:
+    """Atoms of ``view`` within ``radius`` bonds of ``sources``."""
+    seen = set(sources)
+    frontier = list(seen)
+    for _ in range(radius):
+        nxt = []
+        for a in frontier:
+            for b in view.adj[a]:
+                if b not in seen:
+                    seen.add(b)
+                    nxt.append(b)
+        frontier = nxt
+    return frozenset(seen)
+
+
+def _free_ball(view, radius: int) -> frozenset:
+    """Atoms within ``radius`` bonds of an atom with free valence (a radical
+    or a bond of order other than 1), once per view and radius."""
+    balls = view.__dict__.setdefault("_free_balls", {})
+    if radius not in balls:
+        if "_free_atoms" not in view.__dict__:
+            nodes = view.node
+            view._free_atoms = frozenset(set(view.sub_of) | {
+                a for a in view.ids if nodes[a].radical or any(o != 1.0 for o in nodes[a].edges.values())})
+        balls[radius] = _ball(view, view._free_atoms, radius)
+    return balls[radius]
+
+
+_STEPS = weakref.WeakKeyDictionary()    # template -> {id(piece): plan steps by position}
+
+
+def _steps(template, piece, order) -> Tuple:
+    """Per plan position of a piece of ``template``: (template atom, parent
+    position, signature, earlier positions whose image must be smaller,
+    ((position, bonded?), ...))."""
+    per = _STEPS.get(template)
+    if per is None:
+        per = _STEPS[template] = {}
+    cached = per.get(id(piece))
+    if cached is None:
+        pos = {t: k for k, (t, _p, _c) in enumerate(piece.plan)}
+        cached = tuple((t, None if parent is None else pos[parent], template.sig[t],
+                        tuple(pos[u] for u in order[k]), tuple((pos[u], bonded) for u, bonded in checks))
+                       for k, (t, parent, checks) in enumerate(piece.plan))
+        per[id(piece)] = cached
+    return cached
+
+
+def _piece_embeddings_quotient(view, template, piece, order, roots=None):
+    steps = _steps(template, piece, order)
+    atoms = tuple(s[0] for s in steps)
+    n = len(steps)
     results = []
-    mapping = {}
+    image = [None] * n
     used = set()
-    nodes = view.node
+    nodes, adj, sigs = view.node, view.adj, view.sig
 
     def visit(pos):
-        if pos == len(plan):
-            results.append(tuple((t, mapping[t]) for t, _p, _c in plan))
+        if pos == n:
+            results.append(tuple(zip(atoms, image)))
             return
-        t, parent, checks = plan[pos]
-        before = order[pos]
-        sig = template.sig[t]
-        for a in view.adj[mapping[parent]]:
-            if a in used or view.sig[a] != sig:
+        _t, parent, sig, before, checks = steps[pos]
+        for a in adj[image[parent]]:
+            if a in used or sigs[a] != sig:
                 continue
-            if before and any(mapping[u] > a for u in before):
+            ok = True
+            for u in before:
+                if image[u] > a:
+                    ok = False
+                    break
+            if not ok:
                 continue
             edges = nodes[a].edges
-            if any((mapping[u] in edges) != bonded for u, bonded in checks):
+            for u, bonded in checks:
+                if (image[u] in edges) != bonded:
+                    ok = False
+                    break
+            if not ok:
                 continue
-            mapping[t] = a
+            image[pos] = a
             used.add(a)
             visit(pos + 1)
             used.discard(a)
-            del mapping[t]
+        image[pos] = None
 
-    for a in view.by_sig.get(template.sig[root], ()):
-        mapping[root] = a
+    for a in view.by_sig.get(steps[0][2], ()):
+        if roots is not None and a not in roots:
+            continue
+        image[0] = a
         used.add(a)
         visit(1)
         used.discard(a)
-        del mapping[root]
     return results
 
 
-def participant_embeddings(view, template, participant, *, quotient=True):
+def participant_embeddings(view, template, participant, *, quotient=True, near=None):
     """``window_matcher._participant_embeddings`` with the hydrogen-leaf
-    quotient (``quotient=False``: the matcher's own full enumeration)."""
+    quotient (``quotient=False``: the matcher's own full enumeration).
+
+    The quotient enumeration starts only at roots that can give an
+    embedding: within the plan depth of an atom with free valence when the
+    participant needs one, and, with ``near`` (atoms), within the edited
+    atoms' plan depth of every atom of ``near`` (the embeddings whose site
+    covers ``near`` are all kept).  Skipped roots give no embedding, so the
+    kept list is the full list's subsequence of those embeddings (``_reach``)."""
     if not quotient:
         return wm._participant_embeddings(view, template, participant)
     orders = _h_order(template)[participant]
-    per_piece = [_piece_embeddings_quotient(view, template, piece, order)
+    roots = None
+    reach = _reach(template)[participant]
+    if reach is not None:
+        edited, anchor = reach
+        if anchor is not None:
+            roots = _free_ball(view, anchor)
+        if near is not None:
+            for a in near:
+                ball = _ball(view, (a,), edited)
+                roots = ball if roots is None else roots & ball
+    per_piece = [_piece_embeddings_quotient(view, template, piece, order, roots)
                  for piece, order in zip(template.pieces[participant], orders)]
     if any(not p for p in per_piece):
         return []
@@ -599,6 +764,52 @@ def participant_embeddings(view, template, participant, *, quotient=True):
             if embedding is not None:
                 out.append(embedding)
     return out
+
+
+# --------------------------------------------------------------------------
+# scan reuse
+# --------------------------------------------------------------------------
+def _scan_key(state, cid) -> Tuple:
+    """Everything a component scan reads, positionally (atoms in increasing
+    id order): per atom its element, isotope, charge, radical electrons, lone
+    pairs, backbone flag and origin kind, its origin (kind, ordinal, segment)
+    numbered by first appearance (the scan only compares them), and its bonds
+    as (neighbour position, order).  Equal keys give the same entry up to the
+    positional atom map, which is increasing (``_relabel_entry``)."""
+    atoms = state.components.atoms(cid)
+    nodes, origin = state.atoms, state.origin
+    pos = {a: i for i, a in enumerate(atoms)}
+    triples, out = {}, []
+    for a in atoms:
+        n, o = nodes[a], origin[a]
+        out.append((n.element, n.isotope, n.charge, n.radical, n.lone_pairs, o.is_backbone, o.kind,
+                    triples.setdefault((o.kind, o.ordinal, o.segment), len(triples)),
+                    tuple(sorted((pos[b], order) for b, order in n.edges.items()))))
+    return tuple(out)
+
+
+def _relabel_transition(tr, m, cid):
+    edits = tuple(SetBond(m[e.a], m[e.b], e.old, e.new) if isinstance(e, SetBond)
+                  else type(e)(m[e.atom], e.old, e.new) for e in tr.edits)
+    delta = tuple((m[a], row[:5] + (tuple((m[b], o) for b, o in row[5]),)) for a, row in tr.delta)
+    return EngineTransition(tr.template, tr.family, tr.class_index,
+                            (tr.edit_key[0],) + tuple(m[a] for a in tr.edit_key[1:]), (cid,), edits,
+                            tuple((m[a], m[b], o) for a, b, o in tr.form_bonds),
+                            tuple((m[a], r) for a, r in tr.form_radicals), delta, tr.leak)
+
+
+def _relabel_entry(entry, cid, atoms):
+    """``entry`` of a component with the same scan key, moved onto the
+    component ``cid`` with ``atoms`` (the i-th atom onto the i-th atom)."""
+    if entry.cid == cid and entry.atoms == atoms:
+        return entry
+    m = dict(zip(entry.atoms, atoms))
+    uni = {k: (tuple(_relabel_transition(x, m, cid) for x in allowed), leak)
+           for k, (allowed, leak) in entry.uni.items()}
+    uni_o = {k: (tuple(_relabel_transition(x, m, cid) for x in allowed), leak)
+             for k, (allowed, leak) in entry.uni_o.items()}
+    sites = {k: tuple(tuple(m[a] for a in site) for site in ss) for k, ss in entry.sites.items()}
+    return _Entry(cid, atoms, uni, sites, entry.backbone, entry.met_length, entry.radicals, entry.species, uni_o)
 
 
 # --------------------------------------------------------------------------
@@ -1283,6 +1494,7 @@ class MeltEngine:
         self.temperature = None
         self.templates: Tuple[wm.Template, ...] = ()
         self.classes: Tuple[_Class, ...] = ()
+        self.scan_memo_hits = 0
         self._load(temperature)
         excluded = set(excluded)
         unknown = sorted(excluded - {t.name for t in self.templates})
@@ -1341,6 +1553,7 @@ class MeltEngine:
         self._ovr = {i: o for i, o in ((i, _prepare_overrides(t, i, self.quotient))
                                        for i, t in enumerate(templates)) if o is not None}
         self.temperature = float(temperature)
+        self._scan_memo: "OrderedDict[Tuple, _Entry]" = OrderedDict()
 
     def _declared_mobile_participation(self) -> Dict[str, List[str]]:
         """Per declared ``mobile`` small species, the loaded templates it takes
@@ -1382,62 +1595,96 @@ class MeltEngine:
         """The index entry of each component: every unimolecular transition and
         every bimolecular site of every loaded class.  ``only`` (a set of class
         indices) restricts the match to those classes; the entry then holds
-        only their transitions and sites (a partial entry, never indexed)."""
+        only their transitions and sites (a partial entry, never indexed).
+
+        A component whose scan key (``_scan_key``) equals one scanned before
+        gets that entry relabelled (``_relabel_entry``) instead of a match: the
+        scan reads nothing else, and the positional atom map between the two is
+        increasing, so every order the scan makes is kept."""
         state = self.state if state is None else state
-        quotient = self.quotient
+        memo = self.__dict__.get("_scan_memo")
         out = {}
         for cid in cids:
-            view = _LocalView(state, [cid])
-            atoms = state.components.atoms(cid)
-            uni, sites, uni_o, seen = {}, {}, {}, {}
-            for cls, t in zip(self.classes, self.templates):
-                if only is not None and cls.index not in only:
+            key = None
+            if memo is not None:
+                key = (only, self.quotient, _scan_key(state, cid))
+                known = memo.get(key)
+                if known is not None:
+                    memo.move_to_end(key)
+                    self.scan_memo_hits += 1
+                    out[cid] = _relabel_entry(known, cid, state.components.atoms(cid))
                     continue
-                if not cls.bimolecular:
-                    found, cache = {}, {}
-                    for emb in participant_embeddings(view, t, 0, quotient=quotient):
-                        edits = wm._concrete_edits(t, emb.mapping)
-                        for choice in emb.choices:
-                            key = (edits, choice)
-                            if key in cache:
-                                continue
-                            edit_key, identity, edits_, delta, fb, fr = wm._evaluate(
-                                view, t, cls.index, emb.mapping, (cid,), choice)
-                            cache[key] = identity
-                            prev = found.get(identity)
-                            if prev is None or edit_key < prev.edit_key:
-                                found[identity] = EngineTransition(
-                                    t.name, t.family, cls.index, edit_key, (cid,), edits_, fb, fr,
-                                    delta, _creates_branch(state, edits_))
-                    if found:
-                        trs = sorted(found.values(), key=lambda x: x.edit_key)
-                        which = self._uni_overrides(state, view, cid, cls.index, trs, seen)
-                        for o in sorted(set(which.values())):
-                            mine = [x for x in trs if which.get(x.edit_key) == o]
-                            allowed = tuple(x for x in mine if not x.leak)
-                            uni_o[(cls.index, o)] = (allowed, len(mine) - len(allowed))
-                        trs = [x for x in trs if x.edit_key not in which]
-                        allowed = tuple(x for x in trs if not x.leak)
-                        if trs:
-                            uni[cls.index] = (allowed, len(trs) - len(allowed))
-                else:
-                    for p in (0, 1):
-                        by = wm._sites(t, p, participant_embeddings(view, t, p, quotient=quotient)).get(cid, ())
-                        grouped = {}
-                        for site in by:
-                            kind = _site_kind(state, cls, t, p, site)
-                            tag = self._site_tag(state, cid, cls.index, p, site, seen)
-                            grouped.setdefault(kind if tag is None else kind + (tag,), []).append(site)
-                        for kind, ss in grouped.items():
-                            sites[(cls.index, p, kind)] = tuple(sorted(ss))
-            backbone = state.components.backbone_count(cid)
-            length = (self.transport.met_length(backbone)
-                      if self.transport.mean_residue_molar_mass_g_mol is None
-                      else self.transport.met_length(backbone, state.components.molar_mass_g_mol(cid)))
-            out[cid] = _Entry(cid, atoms, uni, sites, backbone, length,
-                              state.components.radical_count(cid), self.identity.identify(state, cid),
-                              uni_o)
+            entry = self._scan_component(state, cid, only)
+            if memo is not None:
+                memo[key] = entry
+                if len(memo) > SCAN_MEMO_LIMIT:
+                    memo.popitem(last=False)
+            out[cid] = entry
         return out
+
+    def _scan_component(self, state, cid, only) -> _Entry:
+        """One component's entry, matched (``_scan``)."""
+        quotient = self.quotient
+        view = _LocalView(state, [cid])
+        atoms = state.components.atoms(cid)
+        uni, sites, uni_o, seen = {}, {}, {}, {}
+        shared = {}     # participant signature -> embeddings in plan order (``_pattern``)
+        for cls, t in zip(self.classes, self.templates):
+            if only is not None and cls.index not in only:
+                continue
+            if not cls.bimolecular:
+                found, cache = {}, {}
+                for emb in participant_embeddings(view, t, 0, quotient=quotient):
+                    edits = wm._concrete_edits(t, emb.mapping)
+                    for choice in emb.choices:
+                        key = (edits, choice)
+                        if key in cache:
+                            continue
+                        edit_key, identity, edits_, delta, fb, fr = wm._evaluate(
+                            view, t, cls.index, emb.mapping, (cid,), choice)
+                        cache[key] = identity
+                        prev = found.get(identity)
+                        if prev is None or edit_key < prev.edit_key:
+                            found[identity] = EngineTransition(
+                                t.name, t.family, cls.index, edit_key, (cid,), edits_, fb, fr,
+                                delta, _creates_branch(state, edits_))
+                if found:
+                    trs = sorted(found.values(), key=lambda x: x.edit_key)
+                    which = self._uni_overrides(state, view, cid, cls.index, trs, seen)
+                    for o in sorted(set(which.values())):
+                        mine = [x for x in trs if which.get(x.edit_key) == o]
+                        allowed = tuple(x for x in mine if not x.leak)
+                        uni_o[(cls.index, o)] = (allowed, len(mine) - len(allowed))
+                    trs = [x for x in trs if x.edit_key not in which]
+                    allowed = tuple(x for x in trs if not x.leak)
+                    if trs:
+                        uni[cls.index] = (allowed, len(trs) - len(allowed))
+            else:
+                for p in (0, 1):
+                    pattern = _pattern(t, p)
+                    if pattern is None:
+                        by = wm._sites(t, p, participant_embeddings(view, t, p, quotient=quotient)).get(cid, ())
+                    else:
+                        signature, plan_atoms, edited = pattern
+                        found = shared.get(signature)
+                        if found is None:
+                            found = shared[signature] = [
+                                tuple(e.mapping[a] for a in plan_atoms)
+                                for e in participant_embeddings(view, t, p, quotient=quotient)]
+                        by = tuple(sorted({tuple(m[k] for k in edited) for m in found}))
+                    grouped = {}
+                    for site in by:
+                        kind = _site_kind(state, cls, t, p, site)
+                        tag = self._site_tag(state, cid, cls.index, p, site, seen)
+                        grouped.setdefault(kind if tag is None else kind + (tag,), []).append(site)
+                    for kind, ss in grouped.items():
+                        sites[(cls.index, p, kind)] = tuple(sorted(ss))
+        backbone = state.components.backbone_count(cid)
+        length = (self.transport.met_length(backbone)
+                  if self.transport.mean_residue_molar_mass_g_mol is None
+                  else self.transport.met_length(backbone, state.components.molar_mass_g_mol(cid)))
+        return _Entry(cid, atoms, uni, sites, backbone, length,
+                      state.components.radical_count(cid), self.identity.identify(state, cid), uni_o)
 
     # -- depository overrides ------------------------------------------------
     def _component(self, state, cid, seen):
@@ -1771,9 +2018,9 @@ class MeltEngine:
     def _pair_transition(self, ci, c0, s0, c1, s1) -> Tuple[EngineTransition, Any]:
         t = self.templates[ci]
         view = _LocalView(self.state, sorted({c0, c1}))
-        e0 = [e for e in participant_embeddings(view, t, 0, quotient=self.quotient)
+        e0 = [e for e in participant_embeddings(view, t, 0, quotient=self.quotient, near=s0)
               if e.cid == c0 and tuple(e.mapping[x] for x in t.edited[0]) == s0]
-        e1 = [e for e in participant_embeddings(view, t, 1, quotient=self.quotient)
+        e1 = [e for e in participant_embeddings(view, t, 1, quotient=self.quotient, near=s1)
               if e.cid == c1 and tuple(e.mapping[x] for x in t.edited[1]) == s1]
         comps = tuple(sorted((c0, c1)))
         found = {}
