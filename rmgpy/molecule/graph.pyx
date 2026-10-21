@@ -494,7 +494,7 @@ cdef class Graph(object):
         reorder the vertices to what they were before sorting
         if you saved the order
         """
-        if not self.ordered_vertices or len(self.vertices) != len(self.ordered_vertices):
+        if self.ordered_vertices is None or len(self.vertices) != len(self.ordered_vertices):
             raise ValueError('Number of vertices has changed cannot restore original vertex order')
         else:
             self.vertices = self.ordered_vertices
