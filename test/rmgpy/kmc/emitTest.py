@@ -1476,3 +1476,53 @@ def test_the_catalog_binds_to_every_deck_of_its_chemistry(tmp_path, monkeypatch)
     catalog = run(shards(tmp_path, **{key: head[key] for key in emit.BINDING_KEYS if key in head}))
     assert kmc_run._bound_by("catalog.json", catalog["provenance"], deck, False) == \
         ("chemistry_sha256",)
+
+
+# 2,4,6,8,10-pentamethylundecane: seven methyls, so its automorphisms number
+# over 6^7 (the hydrogens of each methyl alone), too many to enumerate
+BRANCHED = "CC(C)CC(C)CC(C)CC(C)CC(C)C"
+
+
+def _strict(smiles):
+    """A molecule whose ``find_isomorphism`` (every isomorphism) refuses."""
+    from rmgpy.molecule.molecule import Molecule
+
+    class OneOnly(Molecule):
+        def find_isomorphism(self, *_a, **_k):
+            raise AssertionError("every isomorphism enumerated where one is needed")
+    return OneOnly(smiles=smiles)
+
+
+def _is_isomorphism(a, b, mapping):
+    from rmgpy.molecule.graph import Graph
+    return (set(mapping) == set(a.atoms) and set(mapping.values()) == set(b.atoms)
+            and Graph.is_mapping_valid(a, b, mapping, True, False))
+
+
+def test_one_isomorphism_without_enumerating_the_automorphisms():
+    """The template sides are bound through ONE isomorphism: a branched chain's
+    automorphisms (hydrogen permutations on every methyl) are never
+    enumerated, and the mapping found is a whole, valid isomorphism."""
+    a, b = _strict(BRANCHED), _strict(BRANCHED)
+    b.atoms.reverse()
+    mapping = emit.one_isomorphism(a, b)
+    assert mapping is not None and _is_isomorphism(a, b, mapping)
+    r = _strict("[CH2]C(C)CC(C)CC(C)CC(C)CC(C)C")
+    assert emit.one_isomorphism(a, r) is None
+    assert emit.one_isomorphism(r, _strict("CC(C)CC(C)CC(C)CC(C)CC(C)[CH2]")) is not None
+
+
+def test_template_sides_match_without_enumerating():
+    """``match_sides``: each member molecule onto one proxy molecule of its
+    size through one isomorphism, in the member's order; None when a member
+    has no isomorphic proxy molecule."""
+    mols = [_strict(BRANCHED), _strict("[H]")]
+    proxy = [_strict("[H]"), _strict(BRANCHED)]
+    for k, m in enumerate(mols + proxy):
+        for i, atom in enumerate(m.atoms):
+            atom.id = 1000 * k + i
+    amap, order = emit.match_sides(mols, proxy)
+    assert order == [1, 0]
+    by_id = {a.id: a for m in proxy for a in m.atoms}
+    assert _is_isomorphism(mols[0], proxy[1], {a: by_id[amap[a.id]] for a in mols[0].atoms})
+    assert emit.match_sides([_strict("CCCC")], proxy) is None
