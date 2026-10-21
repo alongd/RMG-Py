@@ -15,10 +15,21 @@ byte-identical copy (``CROSS_METHOD_SHA256`` pins both).
 
 Per case: the explicit chains (pool -> {periods: count}), the kernel's MoM
 term, the engine's events per second over the term's templates (well-mixed:
-a MET pair's intrinsic k_allowed, before the cage factor), and, for a kernel
-whose two participants come from one pool, the engine's site pairs S0 S1 and
-its same-molecule pairs X (excluded from kMC events, present in the mean
-field): MoM's events are the engine's times S0 S1 / (S0 S1 - X).
+a MET pair's intrinsic k_allowed, before the cage factor), per template its
+k = w / divisor, site pairs S0 S1 and same-molecule pairs X (the engine
+counts k (S0 S1 - X) / N_A V) when both participants come from one pool,
+the mean field sum_T k S0 S1 / N_A V there and the engine's events with two
+pools (MoM's
+events where its law is exact; summed per template, never over templates'
+pooled sites, which invents cross-template pairs), and the MoM law's own
+events on those chains (the producer's term law, ``record.laws``), which is
+what MoM integrates everywhere.  ``law_exact`` says whether the chains lie
+where the law is exact (then law events = mean field).
+
+A chain carrying two radicals (``two_radical_chain``, not a MoM state): the
+catalog has no intramolecular radical-radical template (its families:
+Disproportionation, H_Abstraction, R_Recombination, intra_H_migration), and
+the engine excludes same-molecule pairs, so its two radicals never meet.
 
 Detailed balance: the D1 term's reverse (the thermo-derived reverse of its
 template) carries its record's thermo; Kc(700 K) of R + R -> P + U from it,
@@ -47,7 +58,7 @@ from rmgpy.thermo import ThermoData
 
 FIXTURES = Path(__file__).parent / "fixtures"
 FIXTURE = FIXTURES / "i230_cross_method_propensities.json"
-CROSS_METHOD_SHA256 = "8d07044b69583c68a08968d78cc502c98e5811016c1c4c3b6f5dbf2037c01255"
+CROSS_METHOD_SHA256 = "761840f5562848876eee3fcd9effa111e1623c54975dcc18af18fb7e63f8ebd4"
 T = 700.0
 VOLUME = 1.0e-24
 C = "recombination:radical=radical_end:CH2+radical=radical_end:CH2"
@@ -78,7 +89,11 @@ CASES = (
     ("d1_unlike", D1, "Re", {"Re": [radical(60), radical(66)]}),
     ("reverse_d1", DR, "Ut", {"Ut": [alkene(64)], "P": [alkane(70)]}),
     ("h_transfer", T1, "Re", {"Re": [radical(60)], "P": [alkane(70)]}),
+    ("d1_two_template_short", D1, "Re", {"Re": [radical(4), radical(60)]}),
 )
+DIRADICAL = "[CH2]" + "C" * 20 + "[CH]" + "C" * 38           # end radical and interior radical, 60 C
+INTRAMOLECULAR_RADICAL_FAMILIES = ("Birad_recombination", "Intra_Disproportionation", "Intra_R_Add_Endocyclic",
+                                   "Intra_R_Add_Exocyclic", "Birad_R_Recombination")
 
 
 def pe():
@@ -103,18 +118,48 @@ def per_template(engine):
     return out
 
 
-def site_pairs(engine, templates):
-    """(S0 S1, X) of the templates: all ordered site pairs of the state and
+def site_pairs(engine, template):
+    """(S0 S1, X) of one template: all ordered site pairs of the state and
     those inside one molecule, from the engine's index entries."""
     names = [c.name for c in engine.classes]
     s0 = s1 = x = 0
     for entry in engine.entries.values():
         n = [0, 0]
         for (ci, p, _kind), sites in entry.shape.sites.items():
-            if names[ci] in templates:
+            if names[ci] == template:
                 n[p] += len(sites)
         s0, s1, x = s0 + n[0], s1 + n[1], x + n[0] * n[1]
     return s0 * s1, x
+
+
+def site_totals(engine, template):
+    """[S0, S1] of one template over the state."""
+    names = [c.name for c in engine.classes]
+    out = [0, 0]
+    for entry in engine.entries.values():
+        for (ci, p, _kind), sites in entry.shape.sites.items():
+            if names[ci] == template:
+                out[p] += len(sites)
+    return out
+
+
+def template_k(engine, template):
+    """w / divisor of one template in the engine (no override on these states)."""
+    (cls,) = [c for c in engine.classes if c.name == template]
+    return engine.weights[cls.index] / cls.divisor
+
+
+def law_events(law, chains, pools_of, nav):
+    """Events per second of a MoM term's law (the producer's record.laws: per
+    pair over N_A V, lengths in periods) on explicit chains, ordered pairs."""
+    c = law["coefficients"]
+    f0, f1 = (pools_of[f] for f in law["families"])
+    total = 0.0
+    for n, a in chains.get(f0, {}).items():
+        for m, b in chains.get(f1, {}).items():
+            n_, m_ = int(n), int(m)
+            total += (c[0] + c[1] * n_ + c[2] * m_ + c[3] * n_ * m_) * a * b
+    return total / nav
 
 
 def kc(derived, temperature):
@@ -138,6 +183,10 @@ def cross_method_document():
     table = K.kernel_rates(doc, deck.spec, T)
     terms = mp.kernel_input(table, deck.spec, [C, D1, DR, T1], temperature=T, phi=1.0, volume_ratio=1.0,
                             **LABELS)
+    pools_of = {"chain": "P", "radical_end": "Re", "alkene_terminal": "Ut", "radical_interior": "Rm",
+                "alkene_internal": "Ui"}
+    laws = {law["template"]: law for law in terms["record"]["laws"]}
+
     by_owner = {"Re": terms["recombination"] + terms["transfer"].get("Re", []), "Ut": terms["transfer"]["Ut"]}
     kernel_of = {}
     for kid in (C, D1, DR, T1):
@@ -153,16 +202,56 @@ def cross_method_document():
             templates = term["template"].split("+")
             if kernel_of[templates[0]] != kernel:
                 continue
-            pairs, same = site_pairs(engine, set(templates))
             chains = {pool: {} for pool in molecules}
             for pool, ss in molecules.items():
                 for s in ss:
                     n = sum(1 for ch in s if ch == "C")
                     chains[pool][str(n)] = chains[pool].get(str(n), 0) + 1
+            # every template of the kernel (the term may carry fewer: one inert on the reachable lengths)
+            per = [{"template": t["template"], "in_term": t["template"] in templates,
+                    "kmc_events_per_s": rates.get(t["template"], 0.0)} for t in table["kernels"][kernel]["templates"]]
+            if len(molecules) == 1:
+                for entry in per:
+                    t = entry["template"]
+                    pairs, same = site_pairs(engine, t)
+                    entry.update(k=template_k(engine, t), site_pairs=pairs, same_molecule_pairs=same,
+                                 sites=site_totals(engine, t))
+                mean_field = math.fsum(e["k"] * e["site_pairs"] for e in per if e["in_term"]) / engine.nav
+            else:
+                # two pools: no molecule is in both, so the engine's distinct pairs are MoM's pool pairs (a
+                # participant's own sites of the other slot pair only with itself, which neither counts)
+                mean_field = math.fsum(e["kmc_events_per_s"] for e in per if e["in_term"])
+            law = laws[term["template"]]
+            shortest = {}
+            for v in [v for v in terms["record"]["validity"] if v["template"] == term["template"]]:
+                for p in v["participants"]:
+                    pool = pools_of[p["family"]]
+                    shortest[pool] = max(shortest.get(pool, 0), p["exact_from_periods"])
             cases.append({"name": name, "kernel": kernel, "owner": owner, "term": term["template"],
                           "chains": chains, "kmc_events_per_s": math.fsum(rates.get(t, 0.0) for t in templates),
-                          "site_pairs": pairs, "same_molecule_pairs": same,
+                          "templates": per,
+                          "mean_field_events_per_s": mean_field,
+                          "mom_law_events_per_s": law_events(law, chains, pools_of, engine.nav),
+                          "law_exact": all(int(n) >= shortest[pool] for pool, ns in chains.items() for n in ns),
                           "one_pool": len(molecules) == 1})
+    # the two-radical chain: every template's sites inside the one molecule, and what the engine offers it
+    engine = me.MeltEngine(deck.spec, me.PayloadCatalog(doc["payloads"]), T, np.random.default_rng(0),
+                           state=S.witness_state([DIRADICAL]), volume_m3=VOLUME)
+    names = [c.name for c in engine.classes]
+    channels = engine.propensities().channels
+    own = []
+    for kid in (C, D1, "disproportionation:acceptor=radical_end:CH2+donor=radical_interior:CH",
+                "disproportionation:acceptor=radical_interior:CH+donor=radical_end:CH2"):
+        for t in table["kernels"][kid]["templates"]:
+            pairs, same = site_pairs(engine, t["template"])
+            if same:
+                own.append({"kernel": kid, "template": t["template"], "same_molecule_pairs": same,
+                            "mean_field_events_per_s": template_k(engine, t["template"]) * pairs / engine.nav})
+    two_radical = {"smiles": DIRADICAL, "pairs_inside_the_molecule": own,
+                   "bimolecular_events_per_s": math.fsum(a for key, a in channels if key[0] in ("bi", "met")),
+                   "unimolecular_templates": sorted({names[key[1]] for key, a in channels
+                                                     if key[0] == "uni" and a > 0.0}),
+                   "catalog_families": sorted({p["family"] for p in doc["payloads"]})}
     # D1's term template and its thermo-derived reverse, by record
     payloads = {p["record_event_id"]: p for p in doc["payloads"]}
     (d1_term,) = [t for t in terms["transfer"]["Re"] if kernel_of[t["template"].split("+")[0]] == D1]
@@ -178,7 +267,7 @@ def cross_method_document():
             "volume_m3": VOLUME, "avogadro": constants.Na,
             "periods_per_unit": table["moment_unit"]["periods_per_declared_unit"],
             "terms": {"recombination": terms["recombination"], "transfer": terms["transfer"]},
-            "cases": cases,
+            "cases": cases, "two_radical_chain": two_radical,
             "detailed_balance": {"forward_term": forward, "reverse_term": dr_term["template"],
                                  "kc_forward": kc(derived, T), "reference_state": derived["thermo"]["kind"]}}
 
@@ -199,7 +288,70 @@ def test_every_case_has_events_and_its_term(document):
     for case in document["cases"]:
         assert case["kmc_events_per_s"] > 0.0
     like = [c for c in document["cases"] if c["one_pool"]]
-    assert all(c["same_molecule_pairs"] > 0 for c in like)          # the mean field's extra pairs
+    assert all(c["mean_field_events_per_s"] == c["kmc_events_per_s"] for c in document["cases"] if not c["one_pool"])
+    assert all(sum(t["same_molecule_pairs"] for t in c["templates"]) > 0 for c in like)   # the mean field's extra
+
+
+def test_each_templates_events_are_its_k_times_its_distinct_pairs(document):
+    """The engine's own form, per template, with its weight and divisor:
+    k (S0 S1 - X) / N_A V; the mean field drops X, template by template."""
+    nav = document["avogadro"] * document["volume_m3"]
+    for case in [c for c in document["cases"] if c["one_pool"]]:
+        for t in case["templates"]:
+            assert t["kmc_events_per_s"] == pytest.approx(t["k"] * (t["site_pairs"] - t["same_molecule_pairs"]) / nav,
+                                                          rel=1e-12), (case["name"], t["template"])
+        assert case["mean_field_events_per_s"] == pytest.approx(
+            math.fsum(t["k"] * t["site_pairs"] for t in case["templates"] if t["in_term"]) / nav, rel=1e-12)
+
+
+def test_pooling_sites_across_templates_invents_pairs(document):
+    """Radicals of 4 and 60 periods under D1's two templates, whose sites
+    differ by length: summing the sites over the templates before pairing
+    them counts template-A sites against template-B sites, pairs no event
+    has.  The per-template mean field is the one MoM's law must match.  (On
+    this deck's lengths, from 60 periods, one of the two is inert -- no site
+    on a long radical -- and MoM's term carries the other; the 4-period
+    radical is outside the reachable lengths, so both fire there.)"""
+    (case,) = [c for c in document["cases"] if c["name"] == "d1_two_template_short"]
+    assert len(case["templates"]) == 2 and case["one_pool"]
+    assert all(t["kmc_events_per_s"] > 0.0 for t in case["templates"])
+    pooled = math.prod(sum(t["sites"][p] for t in case["templates"]) for p in (0, 1))
+    per_template = sum(t["site_pairs"] for t in case["templates"])
+    assert pooled != per_template
+
+
+def test_the_mom_law_is_the_mean_field_where_it_is_exact(document):
+    """MoM integrates its term law (the producer's record) on every length;
+    where the chains lie past each participant's exact-from length it is
+    the mean field of the engine's templates.  The two-template case has a
+    4-period radical below the D1 law's exact length: there the law and the
+    mean field differ by what the law-domain attribution reports."""
+    for case in document["cases"]:
+        if case["law_exact"]:
+            assert case["mom_law_events_per_s"] == pytest.approx(case["mean_field_events_per_s"], rel=1e-9), \
+                case["name"]
+    (short,) = [c for c in document["cases"] if c["name"] == "d1_two_template_short"]
+    assert not short["law_exact"]
+    assert short["mom_law_events_per_s"] != pytest.approx(short["mean_field_events_per_s"], rel=1e-6)
+    assert all(c["law_exact"] for c in document["cases"] if c["name"] != "d1_two_template_short")
+
+
+def test_a_two_radical_chain_has_no_channel_between_its_radicals(document):
+    """One chain with an end and an interior radical: its templates count
+    pairs inside it (the mean field would react them), the engine excludes
+    same-molecule pairs and offers it no bimolecular event alone, and no
+    catalog family joins or disproportionates two radicals of one molecule:
+    only its unimolecular H shifts and homolysis remain.  A missing channel
+    (kMC only; no MoM pool holds a two-radical chain)."""
+    two = document["two_radical_chain"]
+    assert two["pairs_inside_the_molecule"]
+    assert all(p["mean_field_events_per_s"] > 0.0 for p in two["pairs_inside_the_molecule"])
+    assert two["bimolecular_events_per_s"] == 0.0
+    assert not set(two["catalog_families"]) & set(INTRAMOLECULAR_RADICAL_FAMILIES)
+    doc, _deck = pe()
+    family = {p["record_event_id"][4:16]: p["family"] for p in doc["payloads"]}
+    assert {family[t.split(":")[0]] for t in two["unimolecular_templates"]} <= {"intra_H_migration",
+                                                                               "R_Recombination"}
 
 
 def test_the_moms_forward_over_reverse_coefficient_is_kc(document):
