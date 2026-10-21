@@ -1086,6 +1086,19 @@ def _creates_branch(state, edits) -> bool:
     return False
 
 
+def _kind_reads(cls: _Class, t: wm.Template, participant: int) -> Optional[Tuple[int, ...]]:
+    """Positions in a site of participant ``participant`` of its cross-bond
+    atoms, when ``_site_kind`` forms no bond inside the participant; None
+    otherwise.  A site whose atoms at these positions are all on the backbone
+    or hydrogen has a kind that reads only its own atoms' bonds and the
+    (fixed) origin of their neighbours: no walk."""
+    for (i, _j), old, new in cls.internal:
+        if t.atoms[i].participant == participant and old == 0 and new != 0:
+            return None
+    edited = t.edited[participant]
+    return tuple(sorted({edited.index(i0 if participant == 0 else i1) for i0, i1 in cls.cross_bonds}))
+
+
 def _site_kind(state, cls: _Class, t: wm.Template, participant: int, site) -> Tuple:
     """Branching kind of a bimolecular site: (internal leak, ((template atom,
     backbone?, backbone degree after this participant's own edits[, True for a
@@ -1798,12 +1811,14 @@ class MeltEngine:
         distance; likewise the unimolecular candidates of a class without
         overrides (``_uni_candidates``), put back in enumeration order (root,
         then order within the root) before the per-outcome choice, and their
-        leak recomputed on the state.  An embedding reads only its mapped atoms, their neighbours
-        (with ring membership) and the conjugated subsystems of its mapped
-        atoms, all unchanged for a far root, and its atoms stay in its root's
-        component; distances to the dirty atoms are the same before and after,
-        since every changed bond has both ends dirty.  Sites are kept as sorted
-        sets, so the entry equals a full match."""
+        leak recomputed on the state.  An embedding reads only its mapped
+        atoms, their neighbours (with ring membership) and the conjugated
+        subsystems of its mapped atoms, all unchanged for a far root, and its
+        atoms stay in its root's component; distances to the dirty atoms are
+        the same before and after, since every changed bond has both ends
+        dirty.  Sites are kept as sorted sets, so the entry equals a full
+        match.  A site with no dirty atom whose kind reads no walk
+        (``_kind_reads``) keeps its prior kind."""
         quotient = self.quotient
         view = _LocalView(state, [cid])
         atoms = state.components.atoms(cid)
@@ -1815,6 +1830,7 @@ class MeltEngine:
         incremental = (only is None and quotient and prior is not None and dirty is not None
                        and all(e.reuse is not None for e in prior))
         if incremental:
+            origin, nodes = state.origin, state.atoms
             members = frozenset(atoms)
             ring = frozenset(view.in_ring)
             old_ring = frozenset().union(*(e.reuse[0] for e in prior))
@@ -1889,8 +1905,17 @@ class MeltEngine:
                                                               for m in found}))
                         by = tuple(sorted({site for _r, site in mine}))
                     grouped = {}
+                    known = self._prior_kinds(prior, cls, t, p) if incremental else None
                     for site in by:
-                        kind = _site_kind(state, cls, t, p, site)
+                        kind = None
+                        if known is not None and not any(a in seeds for a in site):
+                            kind = known.get(site)
+                            if kind is not None and not all(
+                                    origin[site[k]].is_backbone or nodes[site[k]].element == "H"
+                                    for k in known[None]):
+                                kind = None
+                        if kind is None:
+                            kind = _site_kind(state, cls, t, p, site)
                         tag = self._site_tag(state, cid, cls.index, p, site, seen)
                         grouped.setdefault(kind if tag is None else kind + (tag,), []).append(site)
                     for kind, ss in grouped.items():
@@ -1902,6 +1927,23 @@ class MeltEngine:
         reuse = (frozenset(view.in_ring), pairs, cands) if only is None and quotient else None
         return _Entry(cid, atoms, uni, sites, backbone, length,
                       state.components.radical_count(cid), self.identity.identify(state, cid), uni_o, reuse)
+
+    def _prior_kinds(self, prior, cls, t, p) -> Optional[Dict]:
+        """site -> kind of participant ``p`` of class ``cls`` over the prior
+        entries, with the positions ``_kind_reads`` checks under the key None;
+        None when the class carries override tags or its kinds may walk."""
+        if cls.index in self._ovr:
+            return None
+        reads = _kind_reads(cls, t, p)
+        if reads is None:
+            return None
+        out = {None: reads}
+        for e in prior:
+            for (ci, q, kind), ss in e.sites.items():
+                if ci == cls.index and q == p:
+                    for site in ss:
+                        out[site] = kind
+        return out
 
     def _uni_candidates(self, view, t, ci, cid, root, within=None) -> List[Tuple]:
         """Every (embedding, resonance choice) of the unimolecular template
