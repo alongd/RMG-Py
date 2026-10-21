@@ -737,6 +737,69 @@ def test_moment_columns_of_an_unknown_pool_are_refused(setup):
         produce(setup, out, mode="convert")
 
 
+def _add_pool_row(out, **row):
+    """Append a pool row to the run's pool table (the MoM writer lists every
+    registered pool, also one with no core species: its phase and bookkeeping
+    species are then empty and the solver holds no state for it)."""
+    path = out / "rmg" / "chemkin" / "polymer_pools.json"
+    doc = json.loads(path.read_text())
+    a, _e = masses()
+    doc["pools"].append({"label": "stateless_tail", "monomer_mw_g_mol": a, "end_groups": ["[H]", "[H]"],
+                         "phase_species": [], "bookkeeping_species": [], "moments": [0.0, 0.0, 0.0], **row})
+    path.write_text(json.dumps(doc))
+
+
+def test_a_pool_with_no_core_species_has_no_columns_and_converts(setup):
+    base = setup["tmp"] / "base"
+    produce(setup, base)
+    constant_run(base, setup["spec"])
+    produce(setup, base, mode="convert")
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    constant_run(out, setup["spec"])
+    _add_pool_row(out)
+    produce(setup, out, mode="convert")
+    assert mom_entries(out) == mom_entries(base)
+    read = json.loads((out / "producer.json").read_text())["read"]
+    assert read["pool_labels"] == [LABEL]
+    assert read["pools_without_state"] == ["stateless_tail"]
+
+
+def test_a_pool_with_no_core_species_but_moments_is_refused(setup):
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    constant_run(out, setup["spec"])
+    _add_pool_row(out, moments=[1e-3, 3e-2, 1.0])
+    with pytest.raises(mp.ProducerError, match="no core species but moments"):
+        produce(setup, out, mode="convert")
+
+
+def test_a_long_pool_label_maps_its_hashed_columns_through_the_species_comments(setup):
+    """RMG's verbose Chemkin writer names a long moment dummy by its 16-character
+    identifier and gives the full label in the comment, and RMG's reader takes
+    the comment as the label: the profile column is the identifier."""
+    base = setup["tmp"] / "base"
+    produce(setup, base)
+    moving_run(base, setup["spec"])
+    produce(setup, base, mode="convert")
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    comments = {mp.moment_column(f"{DAUGHTER}_mu{k}"): f"{DAUGHTER}_mu{k}" for k in range(3)}
+    assert all(len(full) > 16 and column != full for column, full in comments.items())
+    moving_run(out, setup["spec"], species_comments=comments)
+    produce(setup, out, mode="convert")
+    assert mom_entries(out) == mom_entries(base)
+
+
+def test_a_pool_with_core_species_and_no_columns_is_refused(setup):
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    constant_run(out, setup["spec"])
+    _add_pool_row(out, phase_species=["stateless_tail_mu0"], bookkeeping_species=["stateless_tail_mu0"])
+    with pytest.raises(mp.ProducerError, match="no column .* for pool 'stateless_tail'"):
+        produce(setup, out, mode="convert")
+
+
 def test_moment_column_follows_the_mom_writer_rule():
     assert mp.moment_column("PS_mu0") == "PS_mu0"
     assert mp.moment_column("toylinearp_mu2") == "toylinearp_mu2"            # <= 16: verbatim
