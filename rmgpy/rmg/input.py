@@ -70,6 +70,8 @@ from rmgpy.solver.liquid import LiquidReactor
 from rmgpy.solver.mbSampled import MBSampledReactor
 from rmgpy.solver.polymer import (validate_k_depropagation,
                                   validate_k_homolysis,
+                                  validate_kernel_homolysis,
+                                  validate_kernel_recombination,
                                   validate_radical_qssa_unzip,
                                   validate_side_group_homolysis)
 from rmgpy.solver.simple import SimpleReactor
@@ -269,6 +271,9 @@ def polymer(label: str,
             k_depropagation: Optional[dict] = None,
             side_group_homolysis: Optional[list] = None,
             thermal_analysis_inputs: Optional[dict] = None,
+            end_radical_site: Optional[str] = None,
+            kernel_homolysis: Optional[list] = None,
+            kernel_recombination: Optional[list] = None,
             ):
     """
     Helper function exposed in the input file to define a Polymer Pool.
@@ -386,7 +391,38 @@ def polymer(label: str,
             requires a STATIONARY mu1 on the carrier pool. MAY coexist with
             k_scission (mu1-preserving backbone scission).
             Default None (kernel absent).
+        end_radical_site (str): 'primary' or 'secondary' declares this pool
+            an explicit end-radical pool: its proxy is the end-radical
+            oligomer (as the k_homolysis daughters'), which keeps it distinct
+            from a dead-chain pool of the same monomer. Default None.
+        kernel_homolysis (list): catalog-driven backbone homolysis of this
+            pool's chains into an end-radical pool, one term per template of
+            a kernel-rates table, each exactly {template, w, phi, a, b,
+            min_fragment, periods_per_unit, daughter}
+            (rmgpy.solver.polymer.validate_kernel_homolysis). Mutually
+            exclusive with k_homolysis, k_scission > 0 and radical_qssa_unzip.
+        kernel_recombination (list): catalog-driven recombination of this
+            pool's end radicals into the `product` pool, each term exactly
+            {template, k_pair, sites_per_chain, periods_per_unit, product}
+            (validate_kernel_recombination).
     """
+    # Catalog-driven pool kernels (S5 a + b): the shared validators, re-raised
+    # as deck errors; kernel_homolysis carries this pool's backbone homolysis,
+    # so a second representation of it on the same pool is refused.
+    try:
+        if kernel_homolysis is not None:
+            kernel_homolysis = validate_kernel_homolysis(label, kernel_homolysis)
+        if kernel_recombination is not None:
+            kernel_recombination = validate_kernel_recombination(label, kernel_recombination)
+    except ValueError as e:
+        raise InputError(str(e))
+    if kernel_homolysis is not None:
+        for other, on in (("k_homolysis", k_homolysis is not None), ("k_scission", k_scission > 0.0),
+                          ("radical_qssa_unzip", radical_qssa_unzip is not None)):
+            if on:
+                raise InputError(f"Polymer pool '{label}': kernel_homolysis and {other} are mutually "
+                                 f"exclusive -- both carry the backbone homolysis of this pool's chains.")
+
     # HARD ERROR at deck-read time: a non-finite k_unzip/k_scission is not a
     # valid rate constant. NaN passes BOTH the `< 0` and `> 0` gates as
     # False, so it would make the channel SILENTLY INERT (a laundered
@@ -657,7 +693,10 @@ def polymer(label: str,
         side_group_homolysis=side_group_homolysis,
         discrete_dp_threshold=discrete_dp_threshold,
         thermal_analysis_inputs=thermal_analysis_inputs,
+        end_radical_site=end_radical_site,
     )
+    poly_obj.kernel_homolysis = kernel_homolysis
+    poly_obj.kernel_recombination = kernel_recombination
 
     # 1b. Round-72 P1 STRUCTURAL layer of the side-group channel law,
     #     enforced against the PARSED monomer at deck-read time: the

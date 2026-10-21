@@ -740,6 +740,131 @@ def validate_k_depropagation(pool_label, triplet):
                                               triplet)
 
 
+# Catalog-driven pool kernels (slice S5 a + b of the shared-chemistry design,
+# /home/alon/runs/i204/design.md §2.2): their coefficients are a kMC kernel-
+# rates table's, per template, at one temperature. Lengths in a term count
+# the term's period, `periods_per_unit` of them per monomer unit of the pool
+# (the pools keep their monomer unit; the mu3 closure is homogeneous in the
+# length scale, so working in periods is exact).
+KERNEL_HOMOLYSIS_KEYS = ("template", "w", "phi", "a", "b", "min_fragment",
+                         "periods_per_unit", "daughter")
+KERNEL_RECOMBINATION_KEYS = ("template", "k_pair", "sites_per_chain",
+                             "periods_per_unit", "product")
+
+
+def _kernel_number(pool_label, kernel, template, key, value, *, positive=False,
+                   unit_interval=False):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) \
+            or not math.isfinite(value):
+        raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
+                         f"{key}={value!r} must be a finite number.")
+    value = float(value)
+    if positive and not value > 0.0:
+        raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
+                         f"{key}={value!r} must be > 0.")
+    if unit_interval and not 0.0 <= value <= 1.0:
+        raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
+                         f"{key}={value!r} must be in [0, 1].")
+    return value
+
+
+def _kernel_integer(pool_label, kernel, template, key, value):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
+                         f"{key}={value!r} must be an integer >= 1.")
+    return int(value)
+
+
+def _kernel_terms(pool_label, kernel, terms, keys, target_key):
+    """The shared shape rules of a kernel term list; yields (template, term)."""
+    if not isinstance(terms, (list, tuple)) or not terms:
+        raise ValueError(f"Pool {pool_label}: {kernel} must be a non-empty "
+                         f"list of term dicts, got {terms!r}.")
+    seen = set()
+    for term in terms:
+        if not isinstance(term, dict) or set(term) != set(keys):
+            raise ValueError(f"Pool {pool_label}: {kernel} term {term!r} must "
+                             f"have exactly the keys {list(keys)}.")
+        template = term["template"]
+        if not isinstance(template, str) or not template:
+            raise ValueError(f"Pool {pool_label}: {kernel} template "
+                             f"{template!r} must be a non-empty string.")
+        if template in seen:
+            raise ValueError(f"Pool {pool_label}: {kernel} has a duplicate "
+                             f"template {template!r}.")
+        seen.add(template)
+        target = term[target_key]
+        if not isinstance(target, str) or not target or target == pool_label:
+            raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
+                             f"{target_key}={target!r} must name another pool.")
+        yield template, term
+
+
+def validate_kernel_homolysis(pool_label, terms):
+    """Validate a kernel_homolysis term list and return it normalized (single
+    source of truth, shared by the deck helper -- re-raised as InputError --
+    PolymerPool.to_config and the solver's validate_configuration).
+
+    Each term is one template of a kernel-rates table: a chain of n periods
+    has a*n + b sites (a > 0), each cut at a position k with
+    min_fragment <= k <= n - min_fragment, so b = a*(1 - 2*min_fragment)
+    (refused otherwise: the moment law below is that cut law); the event rate
+    per site is w*phi [1/s], w > 0 the table's weight, phi in [0, 1] the
+    template's cage-escape factor. Both fragments land in the `daughter`
+    pool. The law is exact in moments for chains of a*n + b >= 0 sites; the
+    producer refuses tables whose states leave that domain."""
+    out = []
+    for template, term in _kernel_terms(pool_label, "kernel_homolysis", terms,
+                                        KERNEL_HOMOLYSIS_KEYS, "daughter"):
+        num = lambda key, **kw: _kernel_number(pool_label, "kernel_homolysis",
+                                               template, key, term[key], **kw)
+        w = num("w", positive=True)
+        phi = num("phi", unit_interval=True)
+        a = num("a", positive=True)
+        b = num("b")
+        e = _kernel_integer(pool_label, "kernel_homolysis", template,
+                            "min_fragment", term["min_fragment"])
+        c = _kernel_integer(pool_label, "kernel_homolysis", template,
+                            "periods_per_unit", term["periods_per_unit"])
+        if not math.isclose(b, a * (1 - 2 * e), rel_tol=1e-12, abs_tol=0.0):
+            raise ValueError(
+                f"Pool {pool_label}: kernel_homolysis term {template!r}: "
+                f"b={b!r} is not b = a*(1 - 2*min_fragment) = "
+                f"{a * (1 - 2 * e)!r}; the sites a*n + b are not the cut "
+                f"positions min_fragment..n - min_fragment the moment law "
+                f"integrates.")
+        out.append({"template": template, "w": w, "phi": phi, "a": a, "b": b,
+                    "min_fragment": e, "periods_per_unit": c,
+                    "daughter": term["daughter"]})
+    return out
+
+
+def validate_kernel_recombination(pool_label, terms):
+    """Validate a kernel_recombination term list and return it normalized
+    (shared like validate_kernel_homolysis).
+
+    Each term is one template joining two chains of this pool, each with
+    `sites_per_chain` sites (> 0, the same on every chain), into one chain of
+    n0 + n1 periods in the `product` pool at k_pair*S**2 per volume, S the
+    pool's site concentration [mol/m^3] and k_pair [m^3/(mol s)] > 0 the
+    rate coefficient per ordered site pair in MoM's concentration
+    convention (n / V_poly)."""
+    out = []
+    for template, term in _kernel_terms(pool_label, "kernel_recombination",
+                                        terms, KERNEL_RECOMBINATION_KEYS,
+                                        "product"):
+        num = lambda key, **kw: _kernel_number(pool_label,
+                                               "kernel_recombination",
+                                               template, key, term[key], **kw)
+        out.append({"template": template, "k_pair": num("k_pair", positive=True),
+                    "sites_per_chain": num("sites_per_chain", positive=True),
+                    "periods_per_unit": _kernel_integer(
+                        pool_label, "kernel_recombination", template,
+                        "periods_per_unit", term["periods_per_unit"]),
+                    "product": term["product"]})
+    return out
+
+
 # Side-group homolysis initiation kernel (FR1-K1, adjudicated adversarial
 # round 70): pool-level side-group X-loss (e.g. aliphatic C-Br -> Br.(gas) +
 # mid-chain backbone radical; the chain length is UNCHANGED -- this is NOT a
@@ -1160,6 +1285,13 @@ class PolymerPoolConfig:
     # kernel-enabled pool without resolved indices is a hard config error --
     # the emitted X radical would silently vanish).
     side_group_gas_indices: Optional[Tuple[int, ...]] = None
+
+    # Catalog-driven pool kernels (slice S5 a + b): normalized term lists per
+    # validate_kernel_homolysis (this pool's chains cut into the `daughter`
+    # end-radical pool) and validate_kernel_recombination (this pool's
+    # chains join into the `product` pool), or None.
+    kernel_homolysis: Optional[List[Dict[str, object]]] = None
+    kernel_recombination: Optional[List[Dict[str, object]]] = None
 
     # Exact per-chain mass defect [g/mol] of an X-loss feature pool (FR1-K1
     # mass contract, the round-70 #1 P1 trap): the feature pool keeps the
@@ -2108,6 +2240,29 @@ class HybridPolymerSystem(ReactionSystem):
                         f"(enabling both would double-count the unzip flux). "
                         f"Set k_unzip=0 or remove radical_qssa_unzip.")
 
+            # Catalog-driven pool kernels (S5 a + b): normalized and stored
+            # back like the channels above. kernel_homolysis IS backbone
+            # homolysis, so k_homolysis, k_scission > 0 or the QSSA channel
+            # (whose initiation is homolysis) on the same pool would
+            # double-count the event.
+            if pool.kernel_homolysis is not None:
+                object.__setattr__(pool, 'kernel_homolysis',
+                                   validate_kernel_homolysis(
+                                       pool.label, pool.kernel_homolysis))
+                for other, on in (("k_homolysis", pool.k_homolysis is not None),
+                                  ("k_scission", pool.k_scission > 0.0),
+                                  ("radical_qssa_unzip",
+                                   pool.radical_qssa_unzip is not None)):
+                    if on:
+                        raise ValueError(
+                            f"Pool {pool.label}: kernel_homolysis and {other} "
+                            f"are mutually exclusive -- both carry the "
+                            f"backbone homolysis of this pool's chains.")
+            if pool.kernel_recombination is not None:
+                object.__setattr__(pool, 'kernel_recombination',
+                                   validate_kernel_recombination(
+                                       pool.label, pool.kernel_recombination))
+
             # Radical-homolysis kernel invariants (Stage 1, adjudicated round
             # 66). LAST line of defense, same rationale as above: the deck
             # helper and PolymerPool.to_config guard these shapes, but a
@@ -2316,6 +2471,37 @@ class HybridPolymerSystem(ReactionSystem):
         # and resolve each enabled pool's released-monomer gas destination
         # (r74 SS2). Same timing contract.
         self._flatten_depropagation_state()
+
+        # Flatten the (now validated + normalized) catalog-driven kernel
+        # terms and resolve their target pools (S5 a + b). Same timing.
+        self._flatten_catalog_kernel_state()
+
+    def _flatten_catalog_kernel_state(self):
+        """Flatten every pool's kernel_homolysis / kernel_recombination terms
+        into per-pool lists of (coefficients, target moment slots); the RHS
+        reads only these. HARD ERROR when a term's daughter or product pool
+        is not configured: its fragments or products would vanish."""
+        label_to_pool = {p.label: p for p in self.polymer_pools}
+        self._kernel_guard_warned = set()
+        self.kernel_homolysis_terms = [[] for _ in self.polymer_pools]
+        self.kernel_recombination_terms = [[] for _ in self.polymer_pools]
+        for i, pool in enumerate(self.polymer_pools):
+            for kernel, key, terms, out in (
+                    ("kernel_homolysis", "daughter", pool.kernel_homolysis,
+                     self.kernel_homolysis_terms[i]),
+                    ("kernel_recombination", "product",
+                     pool.kernel_recombination,
+                     self.kernel_recombination_terms[i])):
+                for term in terms or ():
+                    target = label_to_pool.get(term[key])
+                    if target is None:
+                        raise ValueError(
+                            f"Pool {pool.label}: {kernel} term "
+                            f"{term['template']!r} names the {key} pool "
+                            f"{term[key]!r}, which is not among the "
+                            f"configured solver pools "
+                            f"{sorted(label_to_pool)}.")
+                    out.append((dict(term), tuple(target.mu_indices)))
 
     def _flatten_depropagation_state(self):
         """Flatten each pool's validated+normalized k_depropagation triplet
@@ -7561,6 +7747,82 @@ class HybridPolymerSystem(ReactionSystem):
                         dn_dt[self.khom_sec_mu0[pool_i]] += frag_mu0
                         dn_dt[self.khom_sec_mu1[pool_i]] += frag_mu1
                         dn_dt[self.khom_sec_mu2[pool_i]] += frag_mu2
+
+            # Catalog-driven kernels (S5 a + b), per template, in the term's
+            # period: m_j = c^j mu_j (c = periods_per_unit); every move is
+            # converted back by c^-j. Read only the flattened term lists.
+            #
+            # kernel_homolysis: a chain of n periods has a*n + b sites, a cut
+            # at k in [e, n - e] (e = min_fragment) leaves k and n - k:
+            #   events  r0 = w*phi*(a*m1 + b*m0)
+            #   parent  dm_j -= w*phi*(a*m_{j+1} + b*m_j)        (j = 0, 1, 2)
+            #   daughter dm0 += 2*r0;  dm1 += w*phi*(a*m2 + b*m1)
+            #           dm2 += w*phi*2a*sum_n N_n sum_{k=e}^{n-e} k^2
+            #              = w*phi*(a/3)*(2*m3 + (3 - 6e)*m2
+            #                 + (6e^2 - 6e + 1)*m1 + (-4e^3 + 6e^2 - 2e)*m0)
+            # exact in moments but for m3, the log-Lagrange closure (exact on
+            # a monodisperse pool). Periods are conserved to rounding.
+            if mu0 > 0.0 and mu1 > 0.0:
+                for term, (d0, d1, d2) in self.kernel_homolysis_terms[pool_i]:
+                    wphi = term["w"] * term["phi"]
+                    if wphi == 0.0:
+                        continue
+                    a_k, b_k = term["a"], term["b"]
+                    e_k = float(term["min_fragment"])
+                    c_k = float(term["periods_per_unit"])
+                    m1_k, m2_k = c_k * mu1, c_k * c_k * mu2
+                    m3_k = c_k * c_k * c_k * mu3
+                    r0 = wphi * (a_k * m1_k + b_k * mu0)
+                    r1 = wphi * (a_k * m2_k + b_k * m1_k)
+                    r2 = wphi * (a_k * m3_k + b_k * m2_k)
+                    q2 = wphi * (a_k / 3.0) * (
+                        2.0 * m3_k + (3.0 - 6.0 * e_k) * m2_k
+                        + (6.0 * e_k * e_k - 6.0 * e_k + 1.0) * m1_k
+                        + (-4.0 * e_k ** 3 + 6.0 * e_k * e_k - 2.0 * e_k) * mu0)
+                    if not (np.isfinite(m3_k) and r0 >= 0.0 and r1 >= 0.0
+                            and r2 >= 0.0 and q2 >= 0.0):
+                        # outside the law's domain (chains shorter than the
+                        # sites allow, or a degenerate closure): no flux,
+                        # loudly, rather than negative chains
+                        if pool.label not in self._kernel_guard_warned:
+                            self._kernel_guard_warned.add(pool.label)
+                            logging.warning(
+                                "Polymer pool '%s': kernel_homolysis term %s "
+                                "skipped -- moments (%.6g, %.6g, %.6g, mu3 "
+                                "%.6g) give rates (%.6g, %.6g, %.6g, %.6g) "
+                                "outside the cut law's domain.", pool.label,
+                                term["template"], mu0, mu1, mu2, mu3, r0, r1,
+                                r2, q2)
+                        continue
+                    dmu0_dt -= r0
+                    dmu1_dt -= r1 / c_k
+                    dmu2_dt -= r2 / (c_k * c_k)
+                    dn_dt[d0] += 2.0 * r0 * V_poly
+                    dn_dt[d1] += (r1 / c_k) * V_poly
+                    dn_dt[d2] += (q2 / (c_k * c_k)) * V_poly
+
+            # kernel_recombination: two chains of this pool, s sites each,
+            # join into one chain of n0 + n1 periods in the product pool at
+            # k_pair*(s*m0)^2 per volume (coagulation, closed: no m3):
+            #   this    dm0 -= 2*r;  dm1 -= 2*k s^2 m0 m1;  dm2 -= 2*k s^2 m0 m2
+            #   product dm0 += r;    dm1 += 2*k s^2 m0 m1
+            #           dm2 += k s^2 (2*m0*m2 + 2*m1^2)
+            # (mu2 gains 2*(m1/m0)^2 per event beyond the transfer).
+            if mu0 > 0.0:
+                for term, (p0, p1, p2) in self.kernel_recombination_terms[pool_i]:
+                    c_k = float(term["periods_per_unit"])
+                    ks2 = (term["k_pair"] * term["sites_per_chain"]
+                           * term["sites_per_chain"])
+                    m1_k, m2_k = c_k * mu1, c_k * c_k * mu2
+                    r_ev = ks2 * mu0 * mu0
+                    g1 = 2.0 * ks2 * mu0 * m1_k
+                    dmu0_dt -= 2.0 * r_ev
+                    dmu1_dt -= g1 / c_k
+                    dmu2_dt -= 2.0 * ks2 * mu0 * m2_k / (c_k * c_k)
+                    dn_dt[p0] += r_ev * V_poly
+                    dn_dt[p1] += (g1 / c_k) * V_poly
+                    dn_dt[p2] += (ks2 * (2.0 * mu0 * m2_k + 2.0 * m1_k * m1_k)
+                                  / (c_k * c_k)) * V_poly
 
             # Side-group homolysis initiation kernel (SGH kernel-v2, explicit
             # Br-inventory depletion; adjudicated spar r103 / plan r104).

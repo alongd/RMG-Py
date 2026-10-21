@@ -40,6 +40,7 @@ from rmgpy.solver.base import ReactionSystem, TerminationConversion, Termination
 from rmgpy.solver.termination import TerminationPolymerConversion
 from rmgpy.solver.polymer import (HybridPolymerSystem, MassTransferConfig, PolymerPoolConfig,
                                   validate_k_depropagation, validate_k_homolysis,
+                                  validate_kernel_homolysis, validate_kernel_recombination,
                                   validate_radical_qssa_unzip,
                                   validate_side_group_homolysis)
 from rmgpy.polymer import strip_rmg_index_suffix
@@ -1280,6 +1281,9 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
                                              None),
                 side_group_gas_species=getattr(spc, 'side_group_gas_species',
                                                None),
+                kernel_homolysis=getattr(spc, 'kernel_homolysis', None),
+                kernel_recombination=getattr(spc, 'kernel_recombination',
+                                             None),
             )
             pools.append(pool)
         else:
@@ -1366,9 +1370,16 @@ class PolymerPool(object):
                  k_homolysis: Optional[dict] = None,
                  side_group_homolysis: Optional[list] = None,
                  side_group_gas_species: Optional[List[Species]] = None,
+                 kernel_homolysis: Optional[list] = None,
+                 kernel_recombination: Optional[list] = None,
                  ):
         self.label = label
         self.xs = xs
+        # Catalog-driven pool kernels (S5 a + b): term lists, validated +
+        # normalized in to_config (validate_kernel_homolysis /
+        # validate_kernel_recombination); targets resolve in the solver.
+        self.kernel_homolysis = kernel_homolysis
+        self.kernel_recombination = kernel_recombination
         self.monomer = monomer
         self.explicit_map = explicit_map
         self.mu_species = mu_species
@@ -1638,6 +1649,10 @@ class PolymerPool(object):
             k_homolysis=khom_channel,
             side_group_homolysis=sgh_channels,
             side_group_gas_indices=sgh_gas_indices,
+            kernel_homolysis=(None if self.kernel_homolysis is None else
+                              validate_kernel_homolysis(self.label, self.kernel_homolysis)),
+            kernel_recombination=(None if self.kernel_recombination is None else
+                                  validate_kernel_recombination(self.label, self.kernel_recombination)),
             repeat_unit_atoms=_element_count_tuple(self.monomer),
             end_group_atoms=_end_group_atoms(
                 getattr(self.proxy_species, "end_groups", None)),
@@ -1865,6 +1880,15 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
                 getattr(spc, "monomer", None)),
             radical_qssa_unzip=qssa_channel,
             k_depropagation=kdep_channel,
+            # Catalog-driven kernels (S5 a + b): a deck pool born empty (no
+            # initialMoles entry, e.g. an explicit end-radical pool) is
+            # configured HERE, not by compile_polymer_phase, so its terms
+            # must pass through (shared validators) or the kernel is a
+            # silent no-op.
+            kernel_homolysis=(None if getattr(spc, "kernel_homolysis", None) is None
+                              else validate_kernel_homolysis(b, spc.kernel_homolysis)),
+            kernel_recombination=(None if getattr(spc, "kernel_recombination", None) is None
+                                  else validate_kernel_recombination(b, spc.kernel_recombination)),
             # FR1-K1 mass contract: an X-loss feature daughter's exact
             # per-chain defect (M_X of the spawning channel's gas_product,
             # pinned by generate_side_loss_daughters) must survive config

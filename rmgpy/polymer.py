@@ -737,6 +737,10 @@ class Polymer(Species):
         other.k_depropagation = deepcopy(getattr(self, 'k_depropagation',
                                                  None))
         other.end_radical_site = getattr(self, 'end_radical_site', None)
+        # Catalog-driven pool kernels (S5 a + b): losing a term list on copy
+        # would silently disable the kernel.
+        other.kernel_homolysis = deepcopy(getattr(self, 'kernel_homolysis', None))
+        other.kernel_recombination = deepcopy(getattr(self, 'kernel_recombination', None))
         # Side-group homolysis kernel channels + X-loss feature-pool
         # identity + exact mass-defect contract (FR1-K1): losing the
         # channel list on copy would silently disable the kernel; losing
@@ -6257,6 +6261,12 @@ POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_SIDE_GROUP_V2 = "3.0"
 # in-place amendment of the conduit LAW is /2 on the archetype name, never
 # a recipe token.
 POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_MOMENT_CREDIT = "3.1"
+# Schema 3.2 (S5 a + b): a pool entry may carry `catalog_kernels`
+# ({"homolysis": [...], "recombination": [...]}, the normalized
+# kernel_homolysis / kernel_recombination terms of the solver config).
+# Stamped iff any pool carries the block; a consumer that does not integrate
+# these kernels refuses 3.2 by its known-version check.
+POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_KERNELS = "3.2"
 POLYMER_POOLS_SIDECAR_FILENAME = "polymer_pools.json"
 
 # Recognized thermal_analysis_inputs fields (schema 2.9). Per-pool fields
@@ -8130,6 +8140,13 @@ def _serialize_pool_for_sidecar(pool: 'Polymer',
     homolysis_block = _serialize_homolysis_initiation_block(pool)
     if homolysis_block is not None:
         d["homolysis_initiation"] = homolysis_block
+    # Catalog-driven pool kernels (schema 3.2, S5 a + b). Absent -> emit
+    # nothing (kernel-free pools stay byte-identical, presence-gated).
+    catalog_kernels = {name: deepcopy(terms) for name, terms in (
+        ("homolysis", getattr(pool, "kernel_homolysis", None)),
+        ("recombination", getattr(pool, "kernel_recombination", None))) if terms is not None}
+    if catalog_kernels:
+        d["catalog_kernels"] = catalog_kernels
     # Side-group homolysis block (schema 2.7, FR1-K2). Absent -> emit
     # nothing (kernel-free pools stay byte-identical, presence-gated).
     # POOL-LEVEL like homolysis_initiation; an old consumer is stopped by
@@ -9233,6 +9250,11 @@ def build_polymer_moments_artifact(pool_registry,
                 "blocks under major >= 3). Migrate the deck to the v2 "
                 "kernel first (DESIGN §1.3)." % sgh_v1_carriers)
         schema_version = POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_MOMENT_CREDIT
+    # Catalog-driven pool kernels (schema 3.2, S5 a + b) -- the last rung:
+    # a consumer that does not integrate them must refuse the artifact, not
+    # replay its pools without them. A kernel-free artifact keeps its stamp.
+    if any("catalog_kernels" in p for p in pools):
+        schema_version = POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_KERNELS
 
     # conventions.condensed_species closure (schema 2.5): a spawned pool's
     # phase_species (canonical proxy + mu-dummies collected from the same

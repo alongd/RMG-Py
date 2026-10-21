@@ -1,7 +1,7 @@
-# Polymer Moments Artifact — Normative Format Spec (`polymer_moments_format/3.1`)
+# Polymer Moments Artifact — Normative Format Spec (`polymer_moments_format/3.2`)
 
 **Artifact:** `polymer_pools.json`, emitted next to `chem.yaml` at the end of an
-RMG run (`save_everything`). **Schema versions:** `2.0`–`2.9` and `3.0`–`3.1`,
+RMG run (`save_everything`). **Schema versions:** `2.0`–`2.9` and `3.0`–`3.2`,
 stamped per
 artifact by the strongest vocabulary present (`conventions.format_doc` mirrors
 the stamp, e.g. `polymer_moments_format/2.3`; 2.0 was the major bump over the
@@ -30,7 +30,7 @@ hypothetical `"2.10"` would collide with 3.0's ordinal and is illegal —
 every rung after 2.9 lives on the 3.x line. 3.0 was the SGH kernel-v2 MAJOR
 (breaking: state-vector shape + mass contract); subsequent 3.x minors are
 ADDITIVE again under the same strict-minor acceptance (3.1 = the
-moment-credit conduit vocabulary, §14).
+moment-credit conduit vocabulary, §14; 3.2 = catalog-driven pool kernels, §15).
 
 **2.9 is TA-only vocabulary (r42 P2 lockstep note).** The producer stamps
 `"2.9"` (thermal-analysis inputs / explicit-DP inventory, §13) but neither
@@ -1376,3 +1376,19 @@ external-kMC certification, not in the loaders.
   moment write, and integrating the row without the pool credit would
   fabricate condensed-mass loss. The refusal is loud and names the missing
   arm.
+
+## 15. Catalog-driven pool kernels (schema 3.2)
+
+**Schema 3.2** = 3.1 + a pool-level `catalog_kernels` block: `{"homolysis":
+[...], "recombination": [...]}` (each key present only when the pool declares
+it), the normalized `kernel_homolysis` / `kernel_recombination` term lists of
+the solver config (`rmgpy.solver.polymer.validate_kernel_homolysis` /
+`validate_kernel_recombination`; lengths in each term's period,
+`periods_per_unit` per monomer unit). Homolysis cuts this pool's chains into
+the `daughter` pool at `w*phi*(a*n + b)` per chain, fragments uniform on
+`[min_fragment, n - min_fragment]`; recombination joins two chains of this
+pool into one chain of the `product` pool at `k_pair*S**2` per volume. The
+emitter stamps `"3.2"` exactly when a pool carries the block (the last rung);
+a kernel-free artifact keeps its stamp byte-identically. No consumer here
+integrates these kernels: the reference runner refuses 3.2 by its
+known-version check rather than replay the pools without them.
