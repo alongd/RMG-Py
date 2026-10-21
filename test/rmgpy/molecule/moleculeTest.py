@@ -1274,6 +1274,15 @@ multiplicity 2
         assert molecule1.is_isomorphic(molecule2, generate_initial_map=True)
         assert molecule2.is_isomorphic(molecule1, generate_initial_map=True)
 
+    def test_isomorphism_after_resetting_connectivity_values(self):
+        """A molecule whose connectivity values were reset after a comparison
+        is still isomorphic to the same molecule."""
+        molecule1 = Molecule(smiles="CCC")
+        molecule2 = Molecule(smiles="CCC")
+        assert molecule1.is_isomorphic(molecule2)
+        molecule1.reset_connectivity_values()
+        assert molecule1.is_isomorphic(molecule2)
+
     def test_subgraph_isomorphism(self):
         """
         Check the graph isomorphism functions.
