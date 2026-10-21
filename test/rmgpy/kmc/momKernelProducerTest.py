@@ -598,3 +598,13 @@ def test_kernel_mode_converts_a_run_with_interior_pools(setup):
     manifest = produce_kernels(setup, out, mode="convert", kernel_rates=str(TABLE3), kernels=ALL3)
     assert manifest["status"] == "converted"
     assert manifest["census"]["mode"] == "kernels" and manifest["census"]["profile_changes"]
+
+
+def test_a_constant_law_with_rounding_noise_keeps_the_constant_term():
+    k = 3.096853570259764e-13
+    F = {(n, m): k * (1.0 + 1e-15 * ((7 * n + 13 * m) % 5 - 2)) for n in range(4, 35) for m in range(4, 35)}
+    n0, c, worst = mp._bilinear(F, 4, 34)
+    assert n0 == 4 and c[1:] == [0.0, 0.0, 0.0] and c[0] == pytest.approx(k, rel=1e-14) and worst == 0.0
+    r = {n: k * (1.0 + 1e-15 * (n % 3 - 1)) for n in range(4, 35)}
+    n0, c, _w = mp._affine(r, 4, 34)
+    assert n0 == 4 and c[1] == 0.0
