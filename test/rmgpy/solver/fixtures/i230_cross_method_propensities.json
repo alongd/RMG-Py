@@ -9,11 +9,26 @@
    },
    "kernel": "recombination:radical=radical_end:CH2+radical=radical_end:CH2",
    "kmc_events_per_s": 23665342.714906998,
+   "law_exact": true,
+   "mean_field_events_per_s": 47330685.429813996,
+   "mom_law_events_per_s": 47330685.429813996,
    "name": "recombination_like",
    "one_pool": true,
    "owner": "Re",
-   "same_molecule_pairs": 2,
-   "site_pairs": 4,
+   "templates": [
+    {
+     "in_term": true,
+     "k": 7125802.466905674,
+     "kmc_events_per_s": 23665342.714906998,
+     "same_molecule_pairs": 2,
+     "site_pairs": 4,
+     "sites": [
+      2,
+      2
+     ],
+     "template": "1af8fada657a:e977ec702e62"
+    }
+   ],
    "term": "1af8fada657a:e977ec702e62"
   },
   {
@@ -25,11 +40,26 @@
    },
    "kernel": "recombination:radical=radical_end:CH2+radical=radical_end:CH2",
    "kmc_events_per_s": 23665342.714906998,
+   "law_exact": true,
+   "mean_field_events_per_s": 47330685.429813996,
+   "mom_law_events_per_s": 47330685.429813996,
    "name": "recombination_unlike",
    "one_pool": true,
    "owner": "Re",
-   "same_molecule_pairs": 2,
-   "site_pairs": 4,
+   "templates": [
+    {
+     "in_term": true,
+     "k": 7125802.466905674,
+     "kmc_events_per_s": 23665342.714906998,
+     "same_molecule_pairs": 2,
+     "site_pairs": 4,
+     "sites": [
+      2,
+      2
+     ],
+     "template": "1af8fada657a:e977ec702e62"
+    }
+   ],
    "term": "1af8fada657a:e977ec702e62"
   },
   {
@@ -40,11 +70,38 @@
    },
    "kernel": "disproportionation:acceptor=radical_end:CH2+donor=radical_end:CH2",
    "kmc_events_per_s": 9631124.942343816,
+   "law_exact": true,
+   "mean_field_events_per_s": 19262249.884687632,
+   "mom_law_events_per_s": 19262249.884687632,
    "name": "d1_like",
    "one_pool": true,
    "owner": "Re",
-   "same_molecule_pairs": 4,
-   "site_pairs": 8,
+   "templates": [
+    {
+     "in_term": false,
+     "k": 1450000.000000001,
+     "kmc_events_per_s": 0.0,
+     "same_molecule_pairs": 0,
+     "site_pairs": 0,
+     "sites": [
+      2,
+      0
+     ],
+     "template": "477dfc25f43d:4e45d9f87435"
+    },
+    {
+     "in_term": true,
+     "k": 1450000.000000001,
+     "kmc_events_per_s": 9631124.942343816,
+     "same_molecule_pairs": 4,
+     "site_pairs": 8,
+     "sites": [
+      4,
+      2
+     ],
+     "template": "e3353daf0630:b8f293e8037c"
+    }
+   ],
    "term": "e3353daf0630:b8f293e8037c"
   },
   {
@@ -56,11 +113,38 @@
    },
    "kernel": "disproportionation:acceptor=radical_end:CH2+donor=radical_end:CH2",
    "kmc_events_per_s": 9631124.942343816,
+   "law_exact": true,
+   "mean_field_events_per_s": 19262249.884687632,
+   "mom_law_events_per_s": 19262249.884687632,
    "name": "d1_unlike",
    "one_pool": true,
    "owner": "Re",
-   "same_molecule_pairs": 4,
-   "site_pairs": 8,
+   "templates": [
+    {
+     "in_term": false,
+     "k": 1450000.000000001,
+     "kmc_events_per_s": 0.0,
+     "same_molecule_pairs": 0,
+     "site_pairs": 0,
+     "sites": [
+      2,
+      0
+     ],
+     "template": "477dfc25f43d:4e45d9f87435"
+    },
+    {
+     "in_term": true,
+     "k": 1450000.000000001,
+     "kmc_events_per_s": 9631124.942343816,
+     "same_molecule_pairs": 4,
+     "site_pairs": 8,
+     "sites": [
+      4,
+      2
+     ],
+     "template": "e3353daf0630:b8f293e8037c"
+    }
+   ],
    "term": "e3353daf0630:b8f293e8037c"
   },
   {
@@ -74,11 +158,34 @@
    },
    "kernel": "reverse_disproportionation:alkene=alkene_terminal:CH2=CH+donor=chain",
    "kmc_events_per_s": 5.154763584260949e-13,
+   "law_exact": true,
+   "mean_field_events_per_s": 5.154763584260949e-13,
+   "mom_law_events_per_s": 5.154763584260949e-13,
    "name": "reverse_d1",
    "one_pool": false,
    "owner": "Ut",
-   "same_molecule_pairs": 3,
-   "site_pairs": 9,
+   "templates": [
+    {
+     "in_term": false,
+     "kmc_events_per_s": 0.0,
+     "template": "3be9bd0872a3:436e7ec65840"
+    },
+    {
+     "in_term": false,
+     "kmc_events_per_s": 1.3587879743177653e-11,
+     "template": "4d9c7c3a70ba:5f8d5d73ce56"
+    },
+    {
+     "in_term": false,
+     "kmc_events_per_s": 3.8133691718533607e-10,
+     "template": "91aa95b1414f:a698b1e60138"
+    },
+    {
+     "in_term": true,
+     "kmc_events_per_s": 5.154763584260949e-13,
+     "template": "e32a3d235fa1:bf2b850d268a"
+    }
+   ],
    "term": "e32a3d235fa1:bf2b850d268a"
   },
   {
@@ -92,11 +199,34 @@
    },
    "kernel": "reverse_disproportionation:alkene=alkene_terminal:CH2=CH+donor=chain",
    "kmc_events_per_s": 3.949247969285137e-10,
+   "law_exact": true,
+   "mean_field_events_per_s": 3.949247969285137e-10,
+   "mom_law_events_per_s": 3.949247969285137e-10,
    "name": "reverse_d1",
    "one_pool": false,
    "owner": "Ut",
-   "same_molecule_pairs": 240,
-   "site_pairs": 512,
+   "templates": [
+    {
+     "in_term": false,
+     "kmc_events_per_s": 0.0,
+     "template": "3be9bd0872a3:436e7ec65840"
+    },
+    {
+     "in_term": true,
+     "kmc_events_per_s": 1.3587879743177653e-11,
+     "template": "4d9c7c3a70ba:5f8d5d73ce56"
+    },
+    {
+     "in_term": true,
+     "kmc_events_per_s": 3.8133691718533607e-10,
+     "template": "91aa95b1414f:a698b1e60138"
+    },
+    {
+     "in_term": false,
+     "kmc_events_per_s": 5.154763584260949e-13,
+     "template": "e32a3d235fa1:bf2b850d268a"
+    }
+   ],
    "term": "4d9c7c3a70ba:5f8d5d73ce56+91aa95b1414f:a698b1e60138"
   },
   {
@@ -110,12 +240,78 @@
    },
    "kernel": "h_transfer:acceptor=radical_end:CH2+donor=chain",
    "kmc_events_per_s": 1740.1441301427349,
+   "law_exact": true,
+   "mean_field_events_per_s": 1740.1441301427349,
+   "mom_law_events_per_s": 1740.1441301427337,
    "name": "h_transfer",
    "one_pool": false,
    "owner": "Re",
-   "same_molecule_pairs": 2237,
-   "site_pairs": 4389,
+   "templates": [
+    {
+     "in_term": true,
+     "kmc_events_per_s": 51.180709710080436,
+     "template": "08d85244f832:c887a7291783"
+    },
+    {
+     "in_term": true,
+     "kmc_events_per_s": 51.180709710080436,
+     "template": "3a00bbbbcd7a:171263349183"
+    },
+    {
+     "in_term": true,
+     "kmc_events_per_s": 1586.6020010124935,
+     "template": "db6eddf0cfaa:145971dbc55e"
+    },
+    {
+     "in_term": true,
+     "kmc_events_per_s": 51.180709710080436,
+     "template": "db6eddf0cfaa:a98c1e9749e9"
+    }
+   ],
    "term": "08d85244f832:c887a7291783+3a00bbbbcd7a:171263349183+db6eddf0cfaa:145971dbc55e+db6eddf0cfaa:a98c1e9749e9"
+  },
+  {
+   "chains": {
+    "Re": {
+     "4": 1,
+     "60": 1
+    }
+   },
+   "kernel": "disproportionation:acceptor=radical_end:CH2+donor=radical_end:CH2",
+   "kmc_events_per_s": 4815562.471171908,
+   "law_exact": false,
+   "mean_field_events_per_s": 9631124.942343816,
+   "mom_law_events_per_s": 19262249.884687632,
+   "name": "d1_two_template_short",
+   "one_pool": true,
+   "owner": "Re",
+   "templates": [
+    {
+     "in_term": false,
+     "k": 1450000.000000001,
+     "kmc_events_per_s": 4815562.471171908,
+     "same_molecule_pairs": 2,
+     "site_pairs": 4,
+     "sites": [
+      2,
+      2
+     ],
+     "template": "477dfc25f43d:4e45d9f87435"
+    },
+    {
+     "in_term": true,
+     "k": 1450000.000000001,
+     "kmc_events_per_s": 4815562.471171908,
+     "same_molecule_pairs": 2,
+     "site_pairs": 4,
+     "sites": [
+      2,
+      2
+     ],
+     "template": "e3353daf0630:b8f293e8037c"
+    }
+   ],
+   "term": "e3353daf0630:b8f293e8037c"
   }
  ],
  "catalog": "i213_pe_catalog.json.zlib.b64",
@@ -197,6 +393,49 @@
     }
    ]
   }
+ },
+ "two_radical_chain": {
+  "bimolecular_events_per_s": 0.0,
+  "catalog_families": [
+   "Disproportionation",
+   "H_Abstraction",
+   "R_Recombination",
+   "intra_H_migration"
+  ],
+  "pairs_inside_the_molecule": [
+   {
+    "kernel": "recombination:radical=radical_end:CH2+radical=radical_end:CH2",
+    "mean_field_events_per_s": 11832671.357453499,
+    "same_molecule_pairs": 1,
+    "template": "1af8fada657a:e977ec702e62"
+   },
+   {
+    "kernel": "disproportionation:acceptor=radical_end:CH2+donor=radical_end:CH2",
+    "mean_field_events_per_s": 4815562.471171908,
+    "same_molecule_pairs": 2,
+    "template": "e3353daf0630:b8f293e8037c"
+   },
+   {
+    "kernel": "disproportionation:acceptor=radical_end:CH2+donor=radical_interior:CH",
+    "mean_field_events_per_s": 9631124.942343816,
+    "same_molecule_pairs": 4,
+    "template": "c99d163c0776:1f38e7431166"
+   },
+   {
+    "kernel": "disproportionation:acceptor=radical_interior:CH+donor=radical_end:CH2",
+    "mean_field_events_per_s": 9522677.834499286,
+    "same_molecule_pairs": 2,
+    "template": "e0184a27f3d7:c5099fb7da65"
+   }
+  ],
+  "smiles": "[CH2]CCCCCCCCCCCCCCCCCCCC[CH]CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+  "unimolecular_templates": [
+   "382cbadf34ae:47bcfd0d7d54",
+   "5a88d9573d8b:f5338ad0db2e",
+   "a4dd4629fb0e:9d989203b6f1",
+   "b25530372279:bd5837db9bde",
+   "d270fd7551b5:57d5ce9c6337"
+  ]
  },
  "volume_m3": 1e-24
 }

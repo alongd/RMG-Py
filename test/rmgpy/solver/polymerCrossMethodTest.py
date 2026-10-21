@@ -13,10 +13,15 @@ producer writes for those kernels (volume ratio 1, V_poly = the engine's
 volume), and Kc(700 K) of the D1 record's thermo.
 
 Each case puts its chains (count / N_A mol of chains of n periods) in MoM's
-pools and integrates nothing: MoM's events per second of the case's term are
-the engine's -- times S0 S1 / (S0 S1 - X) when both participants come from
-one pool, the mean field counting the X same-molecule site pairs the engine
-excludes (recombination and D1 of two radicals: exactly 2).
+pools and integrates nothing.  MoM's events per second of the case's term
+are its term law's on those chains (the producer's record, every case), and
+where the chains lie past each participant's exact-from length they are the
+engine's mean field: per template k S0 S1 / N_A V when both participants
+come from one pool -- the engine's k (S0 S1 - X) / N_A V plus the X
+same-molecule site pairs it excludes (recombination and D1 of two radicals:
+exactly 2) -- and the engine's events with two pools.  A radical of 4
+periods (``d1_two_template_short``) lies below the D1 law's exact length:
+there MoM integrates its law, not the mean field (the law-domain error).
 """
 
 import hashlib
@@ -32,7 +37,7 @@ from rmgpy.species import Species
 from rmgpy.molecule import Molecule
 
 FIXTURE = Path(__file__).parent / "fixtures" / "i230_cross_method_propensities.json"
-CROSS_METHOD_SHA256 = "8d07044b69583c68a08968d78cc502c98e5811016c1c4c3b6f5dbf2037c01255"
+CROSS_METHOD_SHA256 = "761840f5562848876eee3fcd9effa111e1623c54975dcc18af18fb7e63f8ebd4"
 POOLS = ("P", "Re", "Ut", "Rm", "Ui")
 
 
@@ -88,34 +93,42 @@ def mom_events(doc, case):
     return (lost / 2.0 if both_here else lost) * na
 
 
-def expected(case):
-    if case["one_pool"]:
-        return case["kmc_events_per_s"] * case["site_pairs"] / (case["site_pairs"] - case["same_molecule_pairs"])
-    return case["kmc_events_per_s"]
-
-
 def _ids(doc_cases):
     return [f"{c['name']}:{c['term'][:12]}" for c in doc_cases]
 
 
-CASE_NAMES = ("recombination_like", "recombination_unlike", "d1_like", "d1_unlike", "reverse_d1", "h_transfer")
+CASE_NAMES = ("recombination_like", "recombination_unlike", "d1_like", "d1_unlike", "reverse_d1", "h_transfer",
+              "d1_two_template_short")
 
 
 @pytest.mark.parametrize("name", CASE_NAMES)
-def test_moms_events_are_the_melt_engines_on_the_same_chains(doc, name):
+def test_moms_events_are_its_term_laws_on_the_same_chains(doc, name):
     cases = [c for c in doc["cases"] if c["name"] == name]
     assert cases
     for case in cases:
-        assert mom_events(doc, case) == pytest.approx(expected(case), rel=1e-9), case["term"]
+        assert mom_events(doc, case) == pytest.approx(case["mom_law_events_per_s"], rel=1e-9), case["term"]
+
+
+@pytest.mark.parametrize("name", CASE_NAMES)
+def test_moms_events_are_the_melt_engines_mean_field_where_the_law_is_exact(doc, name):
+    for case in [c for c in doc["cases"] if c["name"] == name]:
+        if case["law_exact"]:
+            assert mom_events(doc, case) == pytest.approx(case["mean_field_events_per_s"], rel=1e-9), case["term"]
+        else:
+            assert mom_events(doc, case) != pytest.approx(case["mean_field_events_per_s"], rel=1e-6)
 
 
 def test_a_pair_from_one_pool_differs_from_the_engine_by_its_same_molecule_pairs_only(doc):
     """Two radicals: the engine has one unordered pair, the mean field four
     ordered site pairs of which two are a radical with itself -- the factor 2
-    is the finite system, not a convention (it vanishes as 1/N)."""
+    is the finite system, not a convention (it vanishes as 1/N); summed per
+    template, with each template's own weight and divisor."""
     for case in doc["cases"]:
         if case["name"] in ("recombination_like", "d1_like"):
-            assert case["site_pairs"] / (case["site_pairs"] - case["same_molecule_pairs"]) == 2.0
+            term = [t for t in case["templates"] if t["in_term"]]
+            mean_field = sum(t["k"] * t["site_pairs"] for t in term)
+            engine = sum(t["k"] * (t["site_pairs"] - t["same_molecule_pairs"]) for t in term)
+            assert mean_field / engine == 2.0
 
 
 def test_the_forward_over_reverse_rate_coefficient_is_kc(doc):
