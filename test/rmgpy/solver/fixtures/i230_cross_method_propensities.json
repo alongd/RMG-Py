@@ -1,0 +1,202 @@
+{
+ "avogadro": 6.02214179e+23,
+ "cases": [
+  {
+   "chains": {
+    "Re": {
+     "60": 2
+    }
+   },
+   "kernel": "recombination:radical=radical_end:CH2+radical=radical_end:CH2",
+   "kmc_events_per_s": 23665342.714906998,
+   "name": "recombination_like",
+   "one_pool": true,
+   "owner": "Re",
+   "same_molecule_pairs": 2,
+   "site_pairs": 4,
+   "term": "1af8fada657a:e977ec702e62"
+  },
+  {
+   "chains": {
+    "Re": {
+     "60": 1,
+     "66": 1
+    }
+   },
+   "kernel": "recombination:radical=radical_end:CH2+radical=radical_end:CH2",
+   "kmc_events_per_s": 23665342.714906998,
+   "name": "recombination_unlike",
+   "one_pool": true,
+   "owner": "Re",
+   "same_molecule_pairs": 2,
+   "site_pairs": 4,
+   "term": "1af8fada657a:e977ec702e62"
+  },
+  {
+   "chains": {
+    "Re": {
+     "60": 2
+    }
+   },
+   "kernel": "disproportionation:acceptor=radical_end:CH2+donor=radical_end:CH2",
+   "kmc_events_per_s": 9631124.942343816,
+   "name": "d1_like",
+   "one_pool": true,
+   "owner": "Re",
+   "same_molecule_pairs": 4,
+   "site_pairs": 8,
+   "term": "e3353daf0630:b8f293e8037c"
+  },
+  {
+   "chains": {
+    "Re": {
+     "60": 1,
+     "66": 1
+    }
+   },
+   "kernel": "disproportionation:acceptor=radical_end:CH2+donor=radical_end:CH2",
+   "kmc_events_per_s": 9631124.942343816,
+   "name": "d1_unlike",
+   "one_pool": true,
+   "owner": "Re",
+   "same_molecule_pairs": 4,
+   "site_pairs": 8,
+   "term": "e3353daf0630:b8f293e8037c"
+  },
+  {
+   "chains": {
+    "P": {
+     "70": 1
+    },
+    "Ut": {
+     "64": 1
+    }
+   },
+   "kernel": "reverse_disproportionation:alkene=alkene_terminal:CH2=CH+donor=chain",
+   "kmc_events_per_s": 5.154763584260949e-13,
+   "name": "reverse_d1",
+   "one_pool": false,
+   "owner": "Ut",
+   "same_molecule_pairs": 3,
+   "site_pairs": 9,
+   "term": "e32a3d235fa1:bf2b850d268a"
+  },
+  {
+   "chains": {
+    "P": {
+     "70": 1
+    },
+    "Ut": {
+     "64": 1
+    }
+   },
+   "kernel": "reverse_disproportionation:alkene=alkene_terminal:CH2=CH+donor=chain",
+   "kmc_events_per_s": 3.949247969285137e-10,
+   "name": "reverse_d1",
+   "one_pool": false,
+   "owner": "Ut",
+   "same_molecule_pairs": 240,
+   "site_pairs": 512,
+   "term": "4d9c7c3a70ba:5f8d5d73ce56+91aa95b1414f:a698b1e60138"
+  },
+  {
+   "chains": {
+    "P": {
+     "70": 1
+    },
+    "Re": {
+     "60": 1
+    }
+   },
+   "kernel": "h_transfer:acceptor=radical_end:CH2+donor=chain",
+   "kmc_events_per_s": 1740.1441301427349,
+   "name": "h_transfer",
+   "one_pool": false,
+   "owner": "Re",
+   "same_molecule_pairs": 2237,
+   "site_pairs": 4389,
+   "term": "08d85244f832:c887a7291783+3a00bbbbcd7a:171263349183+db6eddf0cfaa:145971dbc55e+db6eddf0cfaa:a98c1e9749e9"
+  }
+ ],
+ "catalog": "i213_pe_catalog.json.zlib.b64",
+ "deck": "i213_pe_toy_deck.py",
+ "detailed_balance": {
+  "forward_term": "e3353daf0630:b8f293e8037c",
+  "kc_forward": 9.34196572249264e+18,
+  "reference_state": "ThermoData-Kc/1",
+  "reverse_term": "e32a3d235fa1:bf2b850d268a"
+ },
+ "generator": "test/rmgpy/kmc/momCrossMethodTest.py cross_method_document",
+ "periods_per_unit": 2,
+ "schema": "kmc-mom-cross-method/1",
+ "temperature_K": 700.0,
+ "terms": {
+  "recombination": [
+   {
+    "k_pair": 7125802.466905674,
+    "periods_per_unit": 2,
+    "product": "P",
+    "sites_per_chain": 1.0,
+    "template": "1af8fada657a:e977ec702e62",
+    "valid_from_periods": 4
+   }
+  ],
+  "transfer": {
+   "Re": [
+    {
+     "k_pair": 2900000.000000002,
+     "partner": "Re",
+     "partner_product": "Ut",
+     "phi": 1.0,
+     "product": "P",
+     "template": "e3353daf0630:b8f293e8037c",
+     "valid_from_periods": 60
+    },
+    {
+     "k_pair": 30.821749078690004,
+     "partner": "P",
+     "partner_product": "Rm",
+     "periods_per_unit": 2,
+     "phi": 1.0,
+     "product": "P",
+     "sites": [
+      -1.0,
+      0.0,
+      0.5000000000000535,
+      0.0
+     ],
+     "template": "08d85244f832:c887a7291783+3a00bbbbcd7a:171263349183+db6eddf0cfaa:145971dbc55e+db6eddf0cfaa:a98c1e9749e9",
+     "valid_from_periods": 60
+    }
+   ],
+   "Ut": [
+    {
+     "k_pair": 3.104271719834804e-13,
+     "partner": "P",
+     "partner_product": "Re",
+     "phi": 1.0,
+     "product": "Re",
+     "template": "e32a3d235fa1:bf2b850d268a",
+     "valid_from_periods": 60
+    },
+    {
+     "k_pair": 5.735155762484851e-12,
+     "partner": "P",
+     "partner_product": "Rm",
+     "periods_per_unit": 2,
+     "phi": 1.0,
+     "product": "Re",
+     "sites": [
+      -1.0,
+      0.0,
+      0.6066953620254872,
+      0.0
+     ],
+     "template": "4d9c7c3a70ba:5f8d5d73ce56+91aa95b1414f:a698b1e60138",
+     "valid_from_periods": 60
+    }
+   ]
+  }
+ },
+ "volume_m3": 1e-24
+}
