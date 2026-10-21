@@ -874,6 +874,68 @@ def record_key(certifier, record, species):
             tuple(sorted(species(m) for m in others)))
 
 
+def one_isomorphism(a, b, strict: bool = False) -> Optional[dict]:
+    """One isomorphism {atom of a: atom of b} (``find_isomorphism``'s
+    semantics at ``strict``), or None.  ``find_isomorphism`` enumerates them
+    all, and a chain with k methyls has over 6^k (hydrogen permutations
+    alone).  Here RMG's first-match ``is_isomorphic`` decides, then atoms are
+    pinned one at a time in breadth-first order, each onto a free neighbour of
+    its pinned neighbour's image, kept while the pins stay valid and still
+    extend to an isomorphism, so a whole one is reached without backtracking."""
+    from rmgpy.molecule.graph import Graph
+    if len(a.atoms) != len(b.atoms) or not a.is_isomorphic(b, strict=strict):
+        return None
+    pins, used = {}, set()
+    order, seen = [], set()
+    for start in a.atoms:
+        if start in seen:
+            continue
+        seen.add(start)
+        queue = [start]
+        while queue:
+            x = queue.pop(0)
+            order.append(x)
+            for y in x.edges:
+                if y not in seen:
+                    seen.add(y)
+                    queue.append(y)
+    for x in order:
+        anchor = next((y for y in x.edges if y in pins), None)
+        candidates = list(pins[anchor].edges) if anchor is not None else b.atoms
+        for c in candidates:
+            if c in used:
+                continue
+            trial = dict(pins)
+            trial[x] = c
+            if Graph.is_mapping_valid(a, b, trial, True, strict) and \
+                    Graph.is_isomorphic(a, b, trial, False, False, strict):
+                pins = trial
+                used.add(c)
+                break
+        else:
+            raise ValueError("isomorphic molecules left an atom without an image")
+    return pins
+
+
+def match_sides(mols, proxy) -> Optional[tuple]:
+    """(atom-id map, proxy order): each of ``mols`` onto a distinct ``proxy``
+    molecule of its size through ``one_isomorphism`` (non-strict), in
+    ``mols``' order; None when one has no isomorphic proxy molecule."""
+    amap, order = {}, []
+    for mr in mols:
+        for k, mp in enumerate(proxy):
+            if k in order or len(mp.atoms) != len(mr.atoms):
+                continue
+            found = one_isomorphism(mr, mp)
+            if found is not None:
+                order.append(k)
+                amap.update({a.id: c.id for a, c in found.items()})
+                break
+        else:
+            return None
+    return amap, order
+
+
 def bind(certifier, record, rc, case, owner):
     """``recertify`` the record on the member's template side through an RMG
     isomorphism of the template sides (``windows_acceptance.bind_record``,
@@ -882,20 +944,11 @@ def bind(certifier, record, rc, case, owner):
     from rmgpy.kmc import windows as win
     _side, mols, _others = certifier.template_side(record)
     proxy = win.template_molecules(case.witness, case.direction)
-    roots_r = [cm.aromatic_root(m) for m in mols]
-    roots_p = [cm.aromatic_root(m) for m in proxy]
-    amap, order = {}, []
-    for mr in roots_r:
-        for k, mp in enumerate(roots_p):
-            if k in order or len(mp.atoms) != len(mr.atoms):
-                continue
-            maps = mr.find_isomorphism(mp, strict=False)
-            if maps:
-                order.append(k)
-                amap.update({a.id: c.id for a, c in maps[0].items()})
-                break
-        else:
-            return {"same_selection": False, "reason": "no isomorphic member fragment"}
+    matched = match_sides([cm.aromatic_root(m) for m in mols],
+                          [cm.aromatic_root(m) for m in proxy])
+    if matched is None:
+        return {"same_selection": False, "reason": "no isomorphic member fragment"}
+    amap, order = matched
     # the member's molecules in the record's reactant order: a certificate
     # mapping's identity carries the reactant index, so an unequal order
     # (the member's components go by least atom id) swaps the roles
