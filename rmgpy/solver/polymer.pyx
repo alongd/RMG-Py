@@ -755,6 +755,30 @@ KERNEL_TRANSFER_KEYS = ("template", "k_pair", "phi", "partner", "product",
 # S5 d: a transfer term whose sites grow with a chain carries both.
 KERNEL_TRANSFER_SITE_KEYS = ("sites", "periods_per_unit")
 KERNEL_MOVE_KEYS = ("template", "k", "a", "b", "periods_per_unit", "product")
+# Any term may also declare the shortest chain (periods) its site law counts
+# correctly; homolysis' is 2*min_fragment - 1 when undeclared (the cut count
+# a*n + b turns negative below it). Reported, never acted on.
+KERNEL_VALIDITY_KEY = "valid_from_periods"
+CATALOG_KERNELS = ("kernel_homolysis", "kernel_recombination",
+                   "kernel_transfer", "kernel_move")
+
+
+def catalog_kernel_connections(pool):
+    """Every chain move of `pool`'s (validated) catalog kernel terms, as
+    (kernel, template, source pool label, target pool label): homolysis
+    pool -> daughter, recombination pool -> product, transfer pool ->
+    product and partner -> partner_product, move pool -> product."""
+    out = []
+    for kernel, moves in (("kernel_homolysis", (("", "daughter"),)),
+                          ("kernel_recombination", (("", "product"),)),
+                          ("kernel_transfer", (("", "product"),
+                                               ("partner", "partner_product"))),
+                          ("kernel_move", (("", "product"),))):
+        for term in getattr(pool, kernel, None) or ():
+            for src, dst in moves:
+                out.append((kernel, term["template"],
+                            term[src] if src else pool.label, term[dst]))
+    return out
 
 
 def _kernel_number(pool_label, kernel, template, key, value, *, positive=False,
@@ -2922,6 +2946,17 @@ class HybridPolymerSystem(ReactionSystem):
         # k_scission is intentionally NOT listed: it is mu1-PRESERVING
         # (dmu0_dt += k_s*(mu1-mu0); dmu2_dt += k_s*(mu1-mu3)/3; mu1 untouched,
         # no cross-pool routing). Verified against the RHS.
+
+        # Catalog pool kernels: every term moves whole chains (their mu1)
+        # off or onto a pool, and none carries the carrier's Z with them --
+        # whichever pool owns the term.
+        for other in self.polymer_pools:
+            for kernel, template, src, dst in catalog_kernel_connections(other):
+                if label in (src, dst):
+                    self._raise_sgh_mu1_mover(
+                        label, f"{kernel} term {template!r} of pool "
+                               f"{other.label!r} (moves chains {src!r} -> "
+                               f"{dst!r})")
 
         mu1_idx = int(pool.mu_indices[1])
 
