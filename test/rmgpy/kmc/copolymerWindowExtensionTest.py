@@ -100,17 +100,34 @@ def test_a_window_away_from_the_ports_holds_on_every_residue_beyond_them(fam, ce
 
 
 def test_branches_that_read_different_residues_are_refused_by_name(fam, certifier, ep):
-    """An H shift near the head of EEEEE reads past the head port: extended by
-    E and by P the windows differ, so the window depends on the residue the
-    declaration leaves open.  Refused by name with the breaking branch; never
-    the E window standing for both."""
+    """An H shift next to the tail of EEEE (the radical on the last
+    residue's e1) reads past the tail port: extended by E and by P the
+    windows differ (the next residue's atoms are in it), so the window
+    depends on the residue the declaration leaves open.  Refused by name
+    with the breaking branch; never the E window standing for both."""
+    family = fam["intra_H_migration"]
+    case = _member(certifier, family, ep, _radical_chain(("E",) * 4, 3, "e1"),
+                   "S;C_rad_out_H/NonDeC;Cs_H_out_H/(NonDeC/Cs)|CC[CH]CCCCC|m0")
+    fp = _fixed_point(certifier, family, case)
+    assert fp.status == "refused:extension_branches", (fp.status, fp.reason)
+    assert "change the window" in fp.reason, fp.reason
+    assert "0:tail+E" in fp.reason and "0:tail+P" in fp.reason, fp.reason
+    assert fp.window is None
+
+
+def test_a_window_near_an_end_holds_once_every_branch_is_past_the_depository(
+        fam, certifier, ep):
+    """An H shift in the middle of EEEEE: its window reaches the head port,
+    and at the first depths the residue words differ only in how the
+    depository exclusion is proved; it reaches its fixed point on every
+    branch, the branches named."""
     family = fam["intra_H_migration"]
     case = _member(certifier, family, ep, _radical_chain(("E",) * 5, 2, "e1"),
                    "|CCC[CH]CCCCCC|m0")
     fp = _fixed_point(certifier, family, case)
-    assert fp.status == "refused:extension_branches", (fp.status, fp.reason)
-    assert "0:head+E" in fp.reason and "0:head+P" in fp.reason, fp.reason
-    assert fp.window is None
+    assert fp.status == "fixed_point", (fp.status, fp.reason)
+    assert len(fp.branches) == 2 ** sum(depth for _port, depth in fp.depths) > 1
+    assert all(label.startswith("0:head+") for label in fp.branches)
 
 
 def test_branches_excluded_by_size_or_by_formula_are_one_outcome(fam, certifier, ep):

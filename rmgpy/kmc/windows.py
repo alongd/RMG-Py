@@ -1352,6 +1352,7 @@ def certificate_view(cert, wanted, inside, transport=None, *, transport_reacting
         selection[1] = None
         sel = tuple(selection) + (
             ch.get("support"), (ch.get("eligibility") or {}).get("disposition"),
+            # the exclusion verdict comes last (``outcome_view`` reads it there)
             ch.get("whole_species"), (ch.get("depository_exclusion") or {}).get("verdict"))
         for mp in mem["mappings"]:
             descents = cert["descents"].get(mp.get("descent"), []) if mp.get("descent") else []
@@ -1394,6 +1395,23 @@ def certificate_view(cert, wanted, inside, transport=None, *, transport_reacting
             out.append((key, sel, cm.descent_signature(descents), tuple(preds),
                         tuple(sorted(rows, key=repr))))
     return tuple(sorted(out, key=repr))
+
+
+# the exclusion proofs that certify no analogue is a depository reaction
+EXCLUSION_PROOFS = ("excluded:size", "excluded:formula", "excluded:isomorphism")
+EXCLUDED = "excluded"
+
+
+def outcome_view(view) -> tuple:
+    """A ``certificate_view`` with each channel's depository exclusion verdict
+    reduced to its outcome: a size, formula or isomorphism proof all certify
+    that no analogue is a depository reaction (``EXCLUDED``); a verdict with
+    matched sizes (``except_matched``), a refusal or none stays as it is.
+    Residue branches are compared this way (``fixed_point``): at one depth
+    they differ in size, so one may be proved by size and another by formula
+    with the same selection and rate source."""
+    return tuple(sorted(((key, sel[:-1] + (EXCLUDED if sel[-1] in EXCLUSION_PROOFS else sel[-1],))
+                         + tuple(rest) for key, sel, *rest in view), key=repr))
 
 
 # ---------------------------------------------------------------------------
@@ -1601,14 +1619,16 @@ def branch_label(witness) -> str:
 def branch_difference(first, obs_first, win_first, other, obs_other, win_other):
     """What two residue branches of one witness disagree on: their refusal,
     their window (``same_window``: support and closure) or their certificate
-    view (selection, descent, guards, outcome); None when they agree."""
+    view (selection, descent, guards, outcome; the depository exclusion by
+    its outcome, ``outcome_view``); None when they agree."""
     refused = obs_first.refusal or (win_first.refusal if win_first else None)
     refused_other = obs_other.refusal or (win_other.refusal if win_other else None)
     if refused or refused_other:
         return None if refused == refused_other else "refusal"
     if not same_window(first, win_first.atoms, other, win_other.atoms):
         return "window"
-    if obs_first.view(win_first.atoms) != obs_other.view(win_other.atoms):
+    if outcome_view(obs_first.view(win_first.atoms)) != \
+            outcome_view(obs_other.view(win_other.atoms)):
         return "certificate"
     return None
 
@@ -1634,11 +1654,16 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
     for the identical others (``FixedPointResult.branches`` names them all);
     a check holds only on every branch it grows (``branches``: their count).
     Branches that disagree refuse the member, ``refused:extension_branches``,
-    naming the breaking branch.  A provider with one repeat has one branch:
+    naming the breaking branch.  With residue branches every certificate is
+    compared by outcome (``outcome_view``: the branches of one depth differ
+    in size, and a size, formula or isomorphism proof of the depository
+    exclusion are one outcome).  A provider with one repeat has one branch:
     nothing here changes for it."""
     closure = closure or close
     limit = b._ceiling(ceiling)
     ports = b.vector_ports(witness)
+    # residue branches (a copolymer port) compare certificates by outcome
+    branching = any(b.extension_residues(witness, p, providers) != (None,) for p in ports)
     cache = {}
     history = []
 
@@ -1652,6 +1677,10 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
                      obs.refusal or (win.refusal if win else None))
             history.append(entry + (branch_label(w),) if w.extension_words else entry)
         return cache[key]
+
+    def seen(o, atoms):
+        view = o.view(atoms)
+        return outcome_view(view) if branching else view
 
     def look_all(ws):
         # the first branch's observation and window, and the first branch
@@ -1731,7 +1760,7 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
                 return stop(obs.refusal or win.refusal, "refused on extension", current[0], win,
                             obs, rounds, used)
             inside = [p for p in ports if any(port_inside(w, p, win.atoms) for w in current)]
-        view = obs.view(win.atoms)
+        view = seen(obs, win.atoms)
         checks = []
         for group, step, joint in check_groups(ports):
             others, failure = grow(current, group, step, slack=step - 1)
@@ -1760,7 +1789,7 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
             checks.append({"ports": tuple(group), "step": step, "joint": joint,
                            "same_window": all(same_window(current[0], win.atoms, other, w2.atoms)
                                               for other, (_o2, w2) in zip(others, looked)),
-                           "same_certificate": all(view == o2.view(w2.atoms)
+                           "same_certificate": all(view == seen(o2, w2.atoms)
                                                    for o2, w2 in looked),
                            "window_atoms": len(looked[0][1].atoms)})
             if len(others) > 1:
