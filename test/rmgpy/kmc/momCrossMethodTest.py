@@ -213,6 +213,27 @@ def test_the_moms_forward_over_reverse_coefficient_is_kc(document):
     assert kf / kr_ == pytest.approx(db["kc_forward"], rel=1e-9)
 
 
+def test_homolysis_over_recombination_is_kc_at_the_declared_reference_state():
+    """Detailed balance with a change in mole number (dn = -1), which the D1
+    test (dn = 0) cannot see: R + R -> P at 700 K and its thermo-derived
+    reverse, the homolysis template, as the catalog emits them.  MoM's
+    recombination coefficient per site pair (k_pair c^2, ordered pairs) over
+    its homolysis rate per cut position (w a) is Kc of the recombination
+    record's thermo at C0 = P0 / R T: an error in C0 moves the ratio by
+    (C0' / C0)^-1."""
+    doc, deck = pe()
+    table = K.kernel_rates(doc, deck.spec, T)
+    (homolysis,) = [k for k, v in table["kernels"].items() if v["type"] == "homolysis"]
+    terms = mp.kernel_input(table, deck.spec, [homolysis, C], temperature=T, phi=1.0, volume_ratio=1.0, **LABELS)
+    (h,), (c,) = terms["homolysis"], terms["recombination"]
+    payload = {p["record_event_id"][4:16]: p for p in doc["payloads"]}
+    hp, cp = payload[h["template"].split(":")[0]], payload[c["template"].split(":")[0]]
+    assert hp["reverse_of"] == cp["record_event_id"]               # the homolysis is the derived reverse
+    derived = hp["templates"][0]["derived"]
+    assert len(derived["thermo"]["reactants"]) == 2 and len(derived["thermo"]["products"]) == 1
+    assert c["k_pair"] * c["sites_per_chain"] ** 2 / (h["w"] * h["a"]) == pytest.approx(kc(derived, T), rel=1e-9)
+
+
 def write_fixture():
     """Regenerate the fixture (by hand, after a deliberate change)."""
     FIXTURE.write_text(json.dumps(cross_method_document(), indent=1, sort_keys=True) + "\n")
