@@ -4745,6 +4745,14 @@ class HybridPolymerSystem(ReactionSystem):
                     a_exh = float(np.max(atol_arr_exh))
                 self._pool_mu_floors[p, k] = max(
                     SMALL_EPS, EXHAUSTION_FLOOR_K * a_exh)
+        # Realizability census (record_realizability_census), per rebuild.
+        self.realizability_census = {
+            pool.label: {"accepted_steps": 0, "steps_outside": 0,
+                         "first_outside_t": None, "last_outside_t": None,
+                         "worst_variance_deficit": 0.0,
+                         "worst_cone_gap": 0.0, "excursions": []}
+            for pool in self.polymer_pools}
+        self._realizability_census_t = None
 
         # M18.2d: softclamp decay length = the r81 floor scale (scalar-atol
         # decks; uniform across slots -- per-state generalization deferred,
@@ -6677,7 +6685,84 @@ class HybridPolymerSystem(ReactionSystem):
         if self._scoped_jac_diag_stale:
             self.residual(self.t, np.array(self.y, copy=True),
                           np.array(self.dydt, copy=True))
+        self.record_realizability_census()
         return result
+
+    def step(self, tout):
+        """One integrator step (simulate's loop), then the realizability
+        census of the accepted state."""
+        result = super().step(tout)
+        self.record_realizability_census()
+        return result
+
+    def record_realizability_census(self):
+        """Census of the accepted state ``self.y`` (once per accepted time):
+        per pool, whether its moments lie outside the realizable set of a
+        chain-length distribution -- the cone mu1 >= mu0 >= 0 or
+        mu0*mu2 >= mu1^2, each within the moments' exhaustion floors (the
+        tolerances of the warn-once cone and variance censuses).  Pure
+        moments can leave it (a kernel's daughter flux need not be a
+        distribution's); that is a result to report, so nothing is changed:
+        ``realizability_census[label]`` counts the accepted steps and those
+        outside, the first and last time outside, the worst relative
+        variance deficit (mu0*mu2 - mu1^2) / mu1^2 and cone gap
+        (mu1 - mu0) / mu0, and the excursions [t_enter, t_leave or None];
+        entering and leaving are logged."""
+        census = getattr(self, "realizability_census", None)
+        if not census or self._pool_mu_floors is None \
+                or self._realizability_census_t == self.t:
+            return
+        self._realizability_census_t = self.t
+        y = self.y
+        for p, pool in enumerate(self.polymer_pools):
+            c = census[pool.label]
+            i0, i1, i2 = pool.mu_indices
+            m0, m1, m2 = float(y[i0]), float(y[i1]), float(y[i2])
+            f0, f1, f2 = (float(self._pool_mu_floors[p, k]) for k in range(3))
+            cone = m1 < m0 - (f0 + f1)
+            deficit = m0 * m2 - m1 * m1
+            variance = deficit < -(f0 * abs(m2) + f2 * abs(m0)
+                                   + 2.0 * f1 * abs(m1) + f0 * f2 + f1 * f1)
+            c["accepted_steps"] += 1
+            outside = cone or variance
+            if outside:
+                c["steps_outside"] += 1
+                if c["first_outside_t"] is None:
+                    c["first_outside_t"] = self.t
+                c["last_outside_t"] = self.t
+                if variance and m1 > 0.0:
+                    c["worst_variance_deficit"] = min(
+                        c["worst_variance_deficit"], deficit / (m1 * m1))
+                if cone and m0 > 0.0:
+                    c["worst_cone_gap"] = min(c["worst_cone_gap"],
+                                              (m1 - m0) / m0)
+            excursions = c["excursions"]
+            if outside and (not excursions or excursions[-1][1] is not None):
+                excursions.append([self.t, None])
+                logging.warning(
+                    "POOL REALIZABILITY CENSUS: pool %s left the realizable "
+                    "set at t = %.6g s (mu0=%.6e, mu1=%.6e, mu2=%.6e mol; "
+                    "%s). Recorded, not corrected.", pool.label, self.t, m0,
+                    m1, m2, "mu1 < mu0" if cone else "mu0*mu2 < mu1^2")
+            elif not outside and excursions and excursions[-1][1] is None:
+                excursions[-1][1] = self.t
+                logging.warning(
+                    "POOL REALIZABILITY CENSUS: pool %s re-entered the "
+                    "realizable set at t = %.6g s.", pool.label, self.t)
+
+    def realizability_summary(self):
+        """The census in one JSON-ready summary: per pool the accepted steps
+        and those outside the realizable set, and the pools ever outside."""
+        census = getattr(self, "realizability_census", None) or {}
+        steps = {label: c["accepted_steps"] for label, c in census.items()}
+        return {"accepted_steps": max(steps.values(), default=0),
+                "steps_outside": {label: c["steps_outside"]
+                                  for label, c in census.items()},
+                "pools_outside": sorted(label for label, c in census.items()
+                                        if c["steps_outside"]),
+                "first_outside_t": {label: c["first_outside_t"]
+                                    for label, c in census.items()
+                                    if c["steps_outside"]}}
 
     def request_scoped_jacobian(self, enable=True):
         """Toggle the scoped-Jacobian request on an already-constructed

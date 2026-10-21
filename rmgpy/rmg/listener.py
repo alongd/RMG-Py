@@ -28,6 +28,7 @@
 ###############################################################################
 
 import csv
+import json
 import os
 
 from rmgpy.chemkin import get_species_identifier
@@ -95,6 +96,14 @@ class SimulationProfileWriter(object):
 
             # add mole fractions:
             worksheet.writerows(reaction_system.snapshots)
+
+        # a polymer moment solver's realizability census, beside its profile
+        summary = getattr(reaction_system, 'realizability_summary', None)
+        if summary is not None:
+            census_file = os.path.join(self.output_directory, 'solver', 'realizability_{0}_{1:d}.json'.format(
+                self.reaction_sys_index + 1, len(self.core_species)))
+            with open(census_file, 'w') as f:
+                json.dump({'summary': summary(), 'pools': reaction_system.realizability_census}, f, indent=1)
 
 
 class SimulationProfilePlotter(object):
