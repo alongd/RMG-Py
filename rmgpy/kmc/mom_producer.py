@@ -853,6 +853,23 @@ def _positive(x) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) and x > 0
 
 
+def without_state(pool: dict) -> bool:
+    """Whether a pool-table row is a pool the solver holds no state for: MoM
+    lists every registered pool, also one whose proxy and moment dummies never
+    reached the core (``phase_species`` and ``bookkeeping_species`` both
+    present and empty), and the profile has no column for it.  Such a pool
+    must have zero moments (refused otherwise: amount with no state).  A row
+    without the keys (an artifact before them) is a pool with state."""
+    if "bookkeeping_species" not in pool or "phase_species" not in pool:
+        return False
+    if pool["bookkeeping_species"] or pool["phase_species"]:
+        return False
+    moments = pool.get("moments") or ()
+    if any(x != 0.0 for x in moments):
+        raise ProducerError(f"pool {pool['label']!r} has no core species but moments {list(moments)}")
+    return True
+
+
 def species_key(label: str) -> Tuple:
     """A species' identity across RMG's outputs: its index (``label(N)`` in
     the sidecar and chem.yaml, ``label(N)`` / ``formula(N)`` in Chemkin), else
@@ -1401,7 +1418,10 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
 
     by_key = {}
     for x in chemkin_species:
-        by_key.setdefault(species_key(get_species_identifier(x)), x)
+        # a long moment dummy: RMG's reader labels it by the SPECIES comment (its full label), the
+        # profile column is its 16-character identifier
+        key = identity(x.label) if x.index == -1 else species_key(get_species_identifier(x))
+        by_key.setdefault(key, x)
     order, unmapped = [], []
     for i, h in enumerate(header):            # MoM's core order: the profile's columns
         if i < 2:
@@ -1914,7 +1934,8 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
     pools_path = rmg_dir / "chemkin" / "polymer_pools.json"
     header, data = read_profile(profile)
     pool_doc = read_pools(pools_path)
-    pools = pool_doc["pools"]
+    stateless = [p["label"] for p in pool_doc["pools"] if without_state(p)]
+    pools = [p for p in pool_doc["pools"] if not without_state(p)]
     dictionary = read_species_dictionary(rmg_dir / "chemkin" / "species_dictionary.txt")
     a = facts["a_g_mol"]
     by_label = {p["label"]: p for p in pools}
@@ -2138,7 +2159,7 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
     read = {"profile": str(profile), "profile_sha256": _sha256(profile.read_bytes()),
             "profile_rows": len(data), "profile_time_range_s": [data[0][0], data[-1][0]],
             "pools": str(pools_path), "pools_sha256": _sha256(pools_path.read_bytes()),
-            "pool_labels": [p["label"] for p in pools],
+            "pool_labels": [p["label"] for p in pools], "pools_without_state": stateless,
             "species_columns": {name: header[i] for name, i in species.items()},
             "bath_columns": {label: header[i] for label, i in bath.items()},
             "species_classes": {header[i]: kind[i] for i in system},
