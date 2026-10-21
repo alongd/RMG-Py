@@ -979,9 +979,11 @@ class MatchResult:
                            swap=template.swap_positions, symmetry=template.edit_symmetry)
 
 
-def _piece_embeddings(view, template, piece):
+def _piece_embeddings(view, template, piece, before=None):
     """Every induced, signature-equal embedding of one connected piece, as
-    tuples of (template atom, state atom) in plan order."""
+    tuples of (template atom, state atom) in plan order.  ``before`` (per
+    plan position, template atoms; ``_leaf_order``): keep only the
+    embeddings whose image there is larger than theirs."""
     plan = piece.plan
     root = plan[0][0]
     results = []
@@ -995,6 +997,8 @@ def _piece_embeddings(view, template, piece):
         t, parent, checks = plan[pos]
         for a in view.adj[mapping[parent]]:
             if a in used or view.sig[a] != template.sig[t]:
+                continue
+            if before is not None and any(mapping[u] > a for u in before[pos]):
                 continue
             if any((mapping[u] in view.node[a].edges) != bonded for u, bonded in checks):
                 continue
@@ -1032,10 +1036,57 @@ def _piece_products(lists, view):
     yield from visit(0, [], frozenset())
 
 
+def _leaf_order(template, piece) -> tuple:
+    """(per plan position, the earlier template atoms its image must exceed;
+    the number of embeddings each kept one stands for).  Hydrogen leaves of
+    one parent with one signature, closed and not edited, are
+    interchangeable: permuting their images keeps every check, the edited
+    atoms' images, the components and the forms, so the embeddings with
+    increasing images there stand for all (k! each for k such leaves).
+    Adjacency is walked in increasing atom order, so the kept embedding of
+    a permutation class is the first one the full enumeration reaches."""
+    edited = set(template.edited_all)
+    groups, before = {}, []
+    for t, parent, _checks in piece.plan:
+        atom = template.atoms[t]
+        if atom.element == "H" and parent is not None and t not in edited and \
+                atom.kind == "closed" and len(template.neighbours[t]) == 1:
+            key = (parent, template.sig[t])
+            before.append(tuple(groups.get(key, ())))
+            groups.setdefault(key, []).append(t)
+        else:
+            before.append(())
+    copies = 1
+    for leaves in groups.values():
+        copies *= math.factorial(len(leaves))
+    return tuple(before), copies
+
+
+def _participant_quotient(view, template, participant) -> tuple:
+    """(embeddings, copies): ``_participant_embeddings`` with the
+    interchangeable hydrogen leaves of each piece in increasing order
+    (``_leaf_order``), and the number of full embeddings each stands for.
+    The kept embeddings are the full list's subsequence of the first
+    embedding of every permutation class (a window over k methyls has 6**k
+    embeddings per class)."""
+    per_piece, copies = [], 1
+    for piece in template.pieces[participant]:
+        before, n = _leaf_order(template, piece)
+        per_piece.append(_piece_embeddings(view, template, piece, before))
+        copies *= n
+    return _assemble(view, template, per_piece), copies
+
+
 def _participant_embeddings(view, template, participant):
     """Embeddings of one participant's window, with their consistent forms."""
     per_piece = [_piece_embeddings(view, template, piece)
                  for piece in template.pieces[participant]]
+    return _assemble(view, template, per_piece)
+
+
+def _assemble(view, template, per_piece):
+    """The participant embeddings of per-piece embeddings: disjoint,
+    non-adjacent combinations on one component that ``_finish`` keeps."""
     if any(not p for p in per_piece):
         return []
     by_comp = []
@@ -1262,23 +1313,23 @@ def _joint(embeddings):
             yield mapping, comps, choices, a.per_choice * b.per_choice
 
 
-def _outcome_classes(template, embeddings) -> list:
+def _outcome_classes(template, embeddings, copies: int = 1) -> list:
     """(first embedding, number of embeddings) per class of participant
     embeddings with the same outcomes, in order of first occurrence: equal
     component, edited atoms' images, form choices and full-form multiplicity
     (``_evaluate`` reads the mapping at the edited atoms only).  Embeddings
-    that differ elsewhere (interchangeable hydrogens, context atoms) are
-    copies: a window over n atoms carrying two interchangeable hydrogens
-    has 2**n of each.  A class stands for its copies in enumeration order,
-    so ``match`` keeps the first embedding of an outcome and counts every
-    one."""
+    that differ elsewhere (context atoms; interchangeable hydrogens, which
+    ``_participant_quotient`` folds before: each of ``embeddings`` stands for
+    ``copies``) are copies.  A class stands for its copies in enumeration
+    order, so ``match`` keeps the first embedding of an outcome and counts
+    every one."""
     classes = {}
     for e in embeddings:
         key = (e.cid, tuple(e.mapping[t] for t in template.edited_all), e.choices, e.per_choice)
         if key in classes:
-            classes[key][1] += 1
+            classes[key][1] += copies
         else:
-            classes[key] = [e, 1]
+            classes[key] = [e, copies]
     return [tuple(c) for c in classes.values()]
 
 
@@ -1310,21 +1361,26 @@ def match(templates: Sequence[Template], state, *, joint: bool = True) -> MatchR
     state_hash = view.full_hash()
     transitions, classes = [], {}
     for index, template in enumerate(templates):
-        embeddings = [_participant_embeddings(view, template, p) for p in template.participants]
+        # the embeddings up to interchangeable hydrogen leaves, each standing
+        # for ``leaves[p]`` (the sites are the full list's: leaves are not edited)
+        quotients = [_participant_quotient(view, template, p) for p in template.participants]
+        embeddings = [e for e, _n in quotients]
+        leaves = [n for _e, n in quotients]
         sites = tuple(_sites(template, p, embeddings[p]) for p in template.participants)
         two = len(template.participants) == 2
         found = {}
         total = evaluated = 0
         if not two:
             candidates = ((e.mapping, (e.cid,), e.choices, e.per_choice, copies)
-                          for e, copies in _outcome_classes(template, embeddings[0]))
+                          for e, copies in _outcome_classes(template, embeddings[0], leaves[0]))
         elif joint:
-            candidates = _joint_classes(_outcome_classes(template, embeddings[0]),
-                                        _outcome_classes(template, embeddings[1]))
+            candidates = _joint_classes(_outcome_classes(template, embeddings[0], leaves[0]),
+                                        _outcome_classes(template, embeddings[1], leaves[1]))
         else:
             candidates = ()
             total = sum(a.per_choice * len(a.choices) * b.per_choice * len(b.choices)
-                        for a in embeddings[0] for b in embeddings[1] if a.cid != b.cid)
+                        for a in embeddings[0] for b in embeddings[1] if a.cid != b.cid) * \
+                leaves[0] * leaves[1]
         # an outcome is decided by the edited atoms' images, the touched
         # components and the subsystem form (``_evaluate`` reads the mapping
         # at the edited atoms only)
