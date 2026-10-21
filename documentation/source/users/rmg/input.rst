@@ -1620,6 +1620,15 @@ non-empty strings.  ``path`` names a ``branches.json`` written by the branch sca
 resolved beside the input deck.  ``id`` is a branch id recorded in that file, such as
 ``'reactor-000'``.  Saving the input preserves the declaration.
 
+When generating this file with isolated scan workers, an interrupted start releases
+undecided children at its cleanup deadline and reaps a worker only after its PID
+report identifies it. A consumer registered before the fork also watches a
+60-second ``RUN_LEASE``, renewed by the scan's polling and start steps. If the
+calling thread stalls past that lease, a resumed scan raises ``RuntimeError``
+after cleanup and returns no results from adopted workers. The
+:doc:`branch scanner reference <../../reference/solver/branches>` describes late
+reaping and the limits on release warnings.
+
 When the reactor is built, the file is read and the branch must be *matchable* (below); otherwise
 the run stops with a ``PlasmaStateError`` before it starts.  The branch's recorded seed then replaces
 ``initialReducedField`` as the initial coordinate: the seed's ``u`` (the natural logarithm of the

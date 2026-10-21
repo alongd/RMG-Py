@@ -33356,7 +33356,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "bdf5964aa68b1a7f4db9142c55f96eba5d39660b0b9350cb3cde7aac9bfcf4a8"
+      "source_sha256": "1c9317f9f76f48e95ee0e15735d4afcb8aa842308d93ccaaf8c3c6f2f96d1d88"
     },
     "rmgpy/tools/eedf/branches.py:_public_state": {
       "verdict": "carried",
@@ -33800,11 +33800,11 @@
     },
     "rmgpy/tools/eedf/branches.py:_after_fork_in_child": {
       "verdict": "carried",
-      "reason": "At-fork hook: in a worker this module is starting (multiprocessing's own fork only), reports its pid and arms owner death; closes inherited lifeline and marker write ends that are still the registered pipes; restores the caller dispositions exactly in any other fork. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Records worker identity and owner-death behavior, closes identity-checked inherited writers, and replaces parent consumer state without acquiring or draining its queue. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "cef0d7eca859b04718588d0774a500b3acce205a6efe7d18faefc069a5902cec"
+      "source_sha256": "dde2201895bc91b5ae52fb108750811acf728fc92f5f4a35655f060a3999802f"
     },
     "rmgpy/tools/eedf/branches.py:_cancellation_deferred": {
       "verdict": "carried",
@@ -33816,11 +33816,11 @@
     },
     "rmgpy/tools/eedf/branches.py:_close_lifeline": {
       "verdict": "carried",
-      "reason": "Closes and unregisters one worker lifeline write end. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Closes a lifeline only while its descriptor identity still matches, without taking the fork-registry lock during interrupted cleanup. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "14d7b3f6c65784031370eadb84f4f1c5c04d4d8f917e8bbf4db51d521cd94280"
+      "source_sha256": "543644c72a4a2bedb48843a0c13c1c83f148872cd70ad9a4f9c39dfc8fd0938c"
     },
     "rmgpy/tools/eedf/branches.py:_exit_when_orphaned": {
       "verdict": "carried",
@@ -33840,11 +33840,11 @@
     },
     "rmgpy/tools/eedf/branches.py:_open_lifeline": {
       "verdict": "carried",
-      "reason": "Creates and registers one worker lifeline pipe. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Prunes stale writer identities and opens an owner lifeline while holding the fork registry before worker startup. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "3a31811c3d1af0b50a894f1c4fbd84164530634d607f43dfaed1ae8e99c48ff5"
+      "source_sha256": "efffe1b822fa08b2f14a37e7765f37db0aad3ebb7de3898363f8863a8c5a43d4"
     },
     "rmgpy/tools/eedf/branches.py:_record_signal": {
       "verdict": "carried",
@@ -33910,13 +33910,21 @@
       ],
       "source_sha256": "d9273ac28c4d937764afa715ddc1ab6f3aa4bbf0007a2c0154e9c6644f377c45"
     },
-    "rmgpy/tools/eedf/branches.py:_Start.open": {
+    "rmgpy/tools/eedf/branches.py:_state": {
       "verdict": "carried",
-      "reason": "Lists the children that exist before a start. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Reads from /proc whether a process is live, a zombie, or gone. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "3271ebdfe3547790cd161df856ce766dd77cdaa431865a3a197c00fba4c5e1cb"
+      "source_sha256": "170b9450483f0f4a3d55f6f233872e8e7974913ef47970d416ec2b817c5f8b5e"
+    },
+    "rmgpy/tools/eedf/branches.py:_exec_d": {
+      "verdict": "carried",
+      "reason": "Reports from /proc whether a live child now runs another program than this process. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "3866e693a1407a479f1f3010f12113b9b08d0bc7bfd4faa147174d5b3d887d65"
     },
     "rmgpy/tools/eedf/branches.py:_mapped_file": {
       "verdict": "carried",
@@ -33944,11 +33952,11 @@
     },
     "rmgpy/tools/eedf/branches.py:_Start.arm": {
       "verdict": "carried",
-      "reason": "Writes a start's nonce into its buffer just before the worker's fork. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Lists this process's children, then writes a start's nonce into its buffer, just before the worker's fork. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "f626d32993f03bd87b36cf619f1c3fd604eb83a5dc35c79b3d4f7270442bba77"
+      "source_sha256": "8222bd8ae668df23d029b5338b44f768f2c1fd6717a8c5364dc20933d36e54ec"
     },
     "rmgpy/tools/eedf/branches.py:_Start.disarm": {
       "verdict": "carried",
@@ -33958,21 +33966,13 @@
       ],
       "source_sha256": "d1eda25511dcb6ff73fa97a3c8798278ba068f5c9bcce8068c1b8d062af0ceaf"
     },
-    "rmgpy/tools/eedf/branches.py:_Start.new_children": {
-      "verdict": "carried",
-      "reason": "Lists the children that appeared since a start began. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/branchesTest.py"
-      ],
-      "source_sha256": "dd8ceff68cd94ce1772cb65be8691d6806c34ab82123654018e5bffdbfdb148e"
-    },
     "rmgpy/tools/eedf/branches.py:_WorkerPopen._launch": {
       "verdict": "carried",
-      "reason": "multiprocessing's fork launch, with the start's nonce set across the fork call alone. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Renews start ownership around arming the nonce and forks using the existing report-only worker identity protocol. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "757f243071db3f91396d48db110394c8ca026c836f342dc69fe417ad015e07ca"
+      "source_sha256": "28c0fa145b8b9b3eb089f1ef2b132734c039af19a46537f7ad528065f79f43b6"
     },
     "rmgpy/tools/eedf/branches.py:_read_child": {
       "verdict": "carried",
@@ -33981,14 +33981,6 @@
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
       "source_sha256": "ee6f549c0a914b32ff8b980b63cd016bf1d614a69d2dbb769b6d8e5152a45229"
-    },
-    "rmgpy/tools/eedf/branches.py:_alive": {
-      "verdict": "carried",
-      "reason": "Reports from /proc whether a process is alive and not a zombie. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/branchesTest.py"
-      ],
-      "source_sha256": "00d5ad9f7d0bb0dfc08ddab3c43ee685bac7adb40b2f832bd6c2888df2df0cef"
     },
     "rmgpy/tools/eedf/branches.py:_children": {
       "verdict": "carried",
@@ -34000,11 +33992,11 @@
     },
     "rmgpy/tools/eedf/branches.py:_kill_and_reap": {
       "verdict": "carried",
-      "reason": "Kills and reaps one child process within a bound. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Kills and waits on an exact reported pid with a bounded wait, returning any diagnostic without logging so consumer reaping cannot wait on an application handler lock. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "ca0a478b91bc014a2247e6889a005f8359dc503a80305b05a9d92fb9b7e8b387"
+      "source_sha256": "263dff69e136cbb7c059af0c7ddb580cceb3768624ab6fe21b08021edc20ad7c"
     },
     "rmgpy/tools/eedf/branches.py:_worker_fork": {
       "verdict": "carried",
@@ -34040,11 +34032,11 @@
     },
     "rmgpy/tools/eedf/branches.py:_Start.__init__": {
       "verdict": "carried",
-      "reason": "Creates the record of one worker start: a random nonce, the buffer it is written to across the worker's fork, the children snapshot slot, and a shared page for the pid its child reports. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Allocates worker identity/report storage and durable cleanup, registration, renewal, adoption and completion fields before fork. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "128a2523883ef5f800c609546049058ab6af9c35b574685230706f501bdfadd1"
+      "source_sha256": "e13daa8178c2df7a26d35c1285ec89f2307d2ba55f423d2247c8f217beedc6c0"
     },
     "rmgpy/tools/eedf/branches.py:_Start.pid": {
       "verdict": "carried",
@@ -34056,11 +34048,171 @@
     },
     "rmgpy/tools/eedf/branches.py:_reclaim": {
       "verdict": "carried",
-      "reason": "Kills and reaps the child of a start interrupted after its fork that multiprocessing never recorded, recognized by its copy of the start's nonce or its pid report; never kills or waits on another child, and waits on one it cannot read. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "reason": "Reaps only the pid reported by an interrupted start; a nonce read narrows candidates but never identifies a worker. At one cleanup deadline, publishes durable release records and resumes missing handoff steps after interrupts. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
       "evidence": [
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "1990b7a63728306b19b9277deb557443e0140904f3d48da161b94d84b7a7e1f1"
+      "source_sha256": "d0542515ab824229dceb80a4fb454be72acaee49a78a2e88f47e82ef4dc896e9"
+    },
+    "rmgpy/tools/eedf/branches.py:_defer_reap": {
+      "verdict": "carried",
+      "reason": "Idempotently submits each released candidate to the consumer pinned before fork without a fork-registry lock; genuine unavailable-thread fallback logs and leaves the child alone. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "7ab27ca06b7cd4bc4f584f099c029e7fda7e6db405bb653be8fb6647ed102d14"
+    },
+    "rmgpy/tools/eedf/branches.py:_reap_deferred": {
+      "verdict": "carried",
+      "reason": "Stamps registration with its own clock, adopts expired unfinished starts, and reaps only matching reported child pids. Completes reaping before warning emission, takes no main-held lock, and retires after obligations and its sole emitter finish. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "672e1802c4375cfbabd1377725031c963d4d6ab76a556719555a68dd8a7758d6"
+    },
+    "rmgpy/tools/eedf/branches.py:_ReaperLease.__init__": {
+      "verdict": "carried",
+      "reason": "Creates the pre-fork consumer lease and admission/adoption markers. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "871235878a32f3113f8eccde498d9e8ad1bbeb4d336193747fb8951a950d62dc"
+    },
+    "rmgpy/tools/eedf/branches.py:_ReaperService.__init__": {
+      "verdict": "carried",
+      "reason": "Creates the consumer-owned release queue, record sets and warning emitter state. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "f2a1f9c0b66e3d970b18a81b890f261158b66600ea676f3d3eae24a63d3f01d4"
+    },
+    "rmgpy/tools/eedf/branches.py:_lease_reaper": {
+      "verdict": "carried",
+      "reason": "Admits a scan to a live consumer before any worker fork, retrying a retired generation and retaining interrupted startup state. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "7f64a00a3ee9d4c2e47fae9a033c84c233fd03c181219c18fe479cba205ee886"
+    },
+    "rmgpy/tools/eedf/branches.py:_close_reaper_lease": {
+      "verdict": "carried",
+      "reason": "Idempotently queues closure of a scan consumer lease without a shared lock. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "a26459f1c45d09fe31ba795ccf0a278038e262144c4aed496e7f95d14657518c"
+    },
+    "rmgpy/tools/eedf/branches.py:_register_start": {
+      "verdict": "carried",
+      "reason": "Publishes a worker start to the consumer before a fork can leave a child behind. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "417dd4991c527e63f22a7a66336912c62c8cb05b82899474d30d3905c1e8e5f4"
+    },
+    "rmgpy/tools/eedf/branches.py:_start_expiry": {
+      "verdict": "carried",
+      "reason": "Computes a consumer-stamped ownership expiry from registration/renewal, shortened by cleanup and fixed on adoption. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "1f942ab6b844a24b8961cfe27c9962987a3692fcc0999fd30572c837573d18f5"
+    },
+    "rmgpy/tools/eedf/branches.py:_check_owner": {
+      "verdict": "carried",
+      "reason": "Rejects a resumed scan whose worker ownership has passed to the consumer. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "fd0586e46f7d68f6b193884cec0913d6349c5c98b71dffa7cea5924e986abe89"
+    },
+    "rmgpy/tools/eedf/branches.py:_renew_start": {
+      "verdict": "carried",
+      "reason": "Publishes one monotonic renewal store, checking adoption before and after. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "99d3e0c6ffda857c321fa28dda675f623648b7025ec91f7e24757b18b6198935"
+    },
+    "rmgpy/tools/eedf/branches.py:_renew_active": {
+      "verdict": "carried",
+      "reason": "Renews registered workers on every polling iteration and start step. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "460599c700992a892c626d1b500da52d4f244cae5d2a3a15eb724d068c7463e4"
+    },
+    "rmgpy/tools/eedf/branches.py:_adopt_start": {
+      "verdict": "carried",
+      "reason": "Takes an expired unfinished start even if cleanup never stored a deadline; retains report watching across a stalled before-fork hook and queues only report-based reaping. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "d034d5bb605563a8099b35322bd26e6f6d6d11897ad9521f25033d5decd75ea7"
+    },
+    "rmgpy/tools/eedf/branches.py:_Release.__init__": {
+      "verdict": "carried",
+      "reason": "Creates one stable candidate release with fixed deferred bound and completion/warning markers. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "95c4d9167387b5ae27553ab088b1654690d531b33b64646da49b8708ff248528"
+    },
+    "rmgpy/tools/eedf/branches.py:_release_record": {
+      "verdict": "carried",
+      "reason": "Publishes one per-start, per-pid release identity through builtin setdefault for idempotent main/consumer handoff. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "0356aec37a6d87086dddef5aa07b1035c07929ff731873458baba254b8da3eca"
+    },
+    "rmgpy/tools/eedf/branches.py:_warn_release": {
+      "verdict": "carried",
+      "reason": "Attempts the main-thread release warning synchronously and acknowledges only after logging returns. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "fb9a2e7eb6219ad75cfd5c8fe3466693f33a8b40ef3a35431caeffdec457cc68"
+    },
+    "rmgpy/tools/eedf/branches.py:_Warning.__init__": {
+      "verdict": "carried",
+      "reason": "Creates inert formatted warning data and a native emitter exit-sentinel slot. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "d7e978c3fcbf3ba73192de2d7555c580e9c57bf8dde90913305f0dc59348c79f"
+    },
+    "rmgpy/tools/eedf/branches.py:_emit_warning": {
+      "verdict": "carried",
+      "reason": "Emits one fallback warning on a separate daemon, isolating shared logging locks from report-based reaping. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "0d58b7ac9e15cf80591e88d12312e30a570e9ed38b95aa38eac9e45f6d5f0776"
+    },
+    "rmgpy/tools/eedf/branches.py:_queue_warning": {
+      "verdict": "carried",
+      "reason": "Formats and queues a release warning without calling logging or acquiring application locks. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "cab53d580489b84031a291211bc943431fb40e471407bbec0ae86f76255b8db2"
+    },
+    "rmgpy/tools/eedf/branches.py:_start_emitter": {
+      "verdict": "carried",
+      "reason": "Starts at most one native daemon emitter, querying its private exit sentinel without shared threading locks. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "11897fc1c08c634c12ff9d1f8c24908f3577fd75a00bff686ccf6281b9964591"
+    },
+    "rmgpy/tools/eedf/branches.py:_release_candidate": {
+      "verdict": "carried",
+      "reason": "Retries missing warning and queue handoff steps against one deadline, marking handoff only after publication and consumer readiness. Process lifecycle only: no thermo/group-tree lookup or implicit molecular-data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ],
+      "source_sha256": "7df94557e87ddb8113e84ee2b0de06f116a8c37b07567baa781fc9c0700037ff"
     }
   }
 }
