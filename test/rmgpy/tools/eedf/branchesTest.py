@@ -30,11 +30,13 @@
 import copy
 import ctypes
 import json
+import logging
 import multiprocessing
 import os
 import re
 import select
 import signal
+import struct
 import subprocess
 import sys
 import threading
@@ -2349,11 +2351,15 @@ def test_rdkits_reset_behind_an_ignored_sigint_still_reaps_every_worker(tmp_path
 
 # r258 P2-1: an application at-fork child hook registered before the scanner's.
 _INTERRUPTED_START = r"""
-import ctypes, json, os, signal, sys, threading, time
+import ctypes, json, logging, os, signal, sys, threading, time
 from pathlib import Path
 variant, output = sys.argv[1], sys.argv[2]
 local_owner = None
 WAITS = ('handler-fork-in-window', 'unreadable')  # the worker is known only by its report
+# An earlier hook holds the worker 12 s, past the 2 s reclaim deadline set here.
+HELD = ('as-written', 'idle-thread', 'renamed', 'rename-close', 'app-fork-python',
+        'app-fork-native', 'app-fork-thread-exits', 'new-thread-exits')
+HOOK = 1.5 if variant in WAITS else 12
 
 
 def app_child():
@@ -2365,11 +2371,38 @@ def app_child():
             ctypes.CDLL(None).prctl(15, b'app-child', 0, 0, 0)
             if variant == 'rename-close':
                 os.closerange(3, 1024)
-        time.sleep(1.5 if variant in WAITS else 12)
+        time.sleep(HOOK)
 
 
 os.register_at_fork(after_in_child=app_child)
 from rmgpy.tools.eedf import branches as b
+if variant in HELD:
+    b.WORKER_RECLAIM_TIMEOUT = 2.0
+messages = []
+
+
+class Capture(logging.Handler):
+    def emit(self, record):
+        messages.append(record.getMessage())
+
+
+logging.getLogger(b.__name__).addHandler(Capture())
+deferred, reaped = {}, []
+real_defer, real_reap = b._defer_reap, b._kill_and_reap
+
+
+def defer(start, pid):
+    deferred[pid] = start
+    real_defer(start, pid)
+
+
+def reap(pid):
+    if pid in deferred:
+        reaped.append((pid, deferred[pid].pid(), threading.current_thread().name))
+    real_reap(pid)
+
+
+b._defer_reap, b._kill_and_reap = defer, reap
 if variant.startswith('unreadable'):
     b._read_child = lambda pid, address, size=16: None  # e.g. Yama ptrace_scope 2
 
@@ -2459,6 +2492,7 @@ def trace(frame, event, arg):
     pid = getattr(frame.f_locals.get('self'), 'pid', None)
     if pid:
         late = True
+        app['worker'] = pid
         if variant in ('renamed', 'rename-close'):
             while Path('/proc/%d/comm' % pid).read_text() != 'app-child\n':
                 time.sleep(.001)
@@ -2479,18 +2513,44 @@ except BaseException as exc:
 finally:
     sys.settrace(None)
 elapsed = time.monotonic() - started
+
+
+def state(pid):
+    try:
+        return Path('/proc/%s/stat' % pid).read_text().rsplit(')', 1)[1].split()[0]
+    except OSError:
+        return 'gone'
+
+
 left = children()
-states = {pid: Path('/proc/%s/stat' % pid).read_text().rsplit(')', 1)[1].split()[0] for pid in left}
+states = {pid: state(pid) for pid in left}
+worker = str(app['worker']) if 'worker' in app else None
+gone_at = None
+if worker is not None and variant in HELD:
+    # Released alive at the deadline: the deferred reaper reaps it once it reports.
+    while time.monotonic() - started < HOOK + 4 and (worker in children() or state(worker) != 'gone'):
+        time.sleep(.01)
+    gone_at = time.monotonic() - started if state(worker) == 'gone' else None
+    end = time.monotonic() + 1
+    while time.monotonic() < end and any(t.name == 'eedf-scan-reaper' for t in threading.enumerate()):
+        time.sleep(.01)
+final = children()
 print(json.dumps({'outcome': outcome, 'fired': late, 'elapsed': elapsed,
                   'children_after_scan': left, 'states': states,
-                  'app_child': str(app['pid']) if 'pid' in app else None}))
-for pid in left:
+                  'app_child': str(app['pid']) if 'pid' in app else None, 'worker': worker,
+                  'messages': messages, 'worker_gone_at': gone_at, 'children_final': final,
+                  'deferred_reaps': reaped,
+                  'states_final': {pid: state(pid) for pid in final},
+                  'reapers_after': sum(t.name == 'eedf-scan-reaper' for t in threading.enumerate())}))
+for pid in final:
     os.kill(int(pid), signal.SIGKILL)
     os.waitpid(int(pid), 0)
 """
 _SURVIVES = ('app-fork-python', 'app-fork-native', 'app-fork-thread-exits', 'new-thread-exits',
              'handler-fork-before-python', 'handler-fork-before-native',
              'handler-fork-in-window', 'unreadable', 'unreadable-before')
+_HELD = ('as-written', 'idle-thread', 'renamed', 'rename-close', 'app-fork-python',
+         'app-fork-native', 'app-fork-thread-exits', 'new-thread-exits')
 
 
 @pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc children')
@@ -2500,15 +2560,18 @@ def test_an_interrupted_start_reaps_its_child_however_long_an_earlier_hook_runs(
         tmp_path, variant):
     """r258 P2-1, r261: a raising SIGUSR1 lands inside Process.start() while an
     earlier application hook keeps the worker busy. The owner recognizes the
-    worker by the nonce its memory copied at the fork, and reaps it before
-    the exception leaves scan(), however the hook renames it or closes its
-    descriptors. Any other new child survives, whoever forked it before or
-    after the worker's fork: an application thread (by os.fork or natively,
+    worker by its pid report alone, which the hook delays 12 s. R9.1: at the
+    reclaim deadline (2 s here) scan() raises with the worker released,
+    alive and logged; the deferred reaper kills and reaps it by its exact
+    pid once it reports, within the hook time plus 2 s, however the hook
+    renames it or closes its descriptors, leaving no zombie and no live
+    worker. Any other new child survives, whoever forked it before or after
+    the worker's fork: an application thread (by os.fork or natively,
     exiting or not, created during the start or not) or the raising handler
     itself. A child forked inside the worker's fork window, or one whose
     memory cannot be read, leaves the worker in doubt until it reports its
-    pid; then only the worker is killed. A start interrupted before the
-    worker's fork has no worker, and waits on nothing."""
+    pid (1.5 s); then only the worker is killed. A start interrupted before
+    the worker's fork has no worker, and waits on nothing."""
     script = tmp_path / 'interrupted.py'
     script.write_text(_INTERRUPTED_START)
     out = subprocess.run([sys.executable, str(script), variant, str(tmp_path / 'b.json')],
@@ -2516,45 +2579,1219 @@ def test_an_interrupted_start_reaps_its_child_however_long_an_earlier_hook_runs(
     assert out.returncode == 0, out.stderr
     row = json.loads(out.stdout.splitlines()[-1])
     assert row['outcome'] == 'AppSignal' and row['fired'], row
-    if variant in _SURVIVES:
-        assert row['children_after_scan'] == [row['app_child']], row
+    assert 'Exception ignored' not in out.stderr, out.stderr
+    app = [row['app_child']] if variant in _SURVIVES else []
+    if variant in _HELD:
+        worker = row['worker']
+        # R9.1 edit (was: children_after_scan == app, the worker reaped before
+        # scan() raised): the held worker is released alive at the deadline.
+        assert sorted(row['children_after_scan']) == sorted(app + [worker]), row
+        assert row['states'][worker] != 'Z', row
+        # R9.1 edit (was: elapsed < 4, recognized at once): released at the 2 s deadline.
+        assert 2. <= row['elapsed'] < 4., row
+        # R9.1 addition: the release is logged once, as an unreported nonce holder.
+        released = [m for m in row['messages'] if m.startswith('releasing child pid %s ' % worker)]
+        assert len(released) == 1 and 'no report' in released[0], row
+        # R9.1 addition: reported later, reaped by the deferred reaper within
+        # the hook's 12 s plus 2 s; no zombie, no live worker, the thread gone.
+        assert row['worker_gone_at'] is not None and row['worker_gone_at'] < 12. + 2., row
+        assert row['deferred_reaps'] == [[int(worker), int(worker), 'eedf-scan-reaper']], row
+        assert row['children_final'] == app and row['reapers_after'] == 0, row
+        if app:
+            assert row['states_final'][row['app_child']] != 'Z', row
+        return
+    assert row['children_after_scan'] == app, row
+    if app:
         assert row['states'][row['app_child']] != 'Z', row
-    else:
-        assert row['children_after_scan'] == [], row
     if variant in ('handler-fork-in-window', 'unreadable'):
         assert 1.5 <= row['elapsed'] < 4., row  # waited on until its report
     else:
-        assert row['elapsed'] < 4., row  # recognized at once, not waited for
+        assert row['elapsed'] < 4., row  # no worker forked: nothing waited for
 
 
-@pytest.mark.parametrize('case', ['unread-then-exits', 'unread-then-reports', 'zeros'])
-def test_reclaim_kills_only_the_nonce_or_the_report_and_waits_on_the_unread(monkeypatch, case):
-    """R7 decision rule: a new child that holds zeros is neither killed nor
-    waited on; one whose memory cannot be read is waited on, never killed on
-    that account, until it exits or reports itself as the worker."""
+@pytest.mark.parametrize('case', ['unread-then-exits', 'unread-then-reports', 'zeros',
+                                  'unread-until-deadline', 'two-holders-worker-dies',
+                                  'holder-beside-zeros', 'holder-beside-unread', 'reported-beside-holder'])
+def test_reclaim_kills_only_an_identified_worker_and_releases_the_rest(monkeypatch, caplog, case):
+    """R9 amendment and R9.1 decision rule. A pid report is identity, and
+    nothing else is: not a nonce its holder alone holds, not being the only
+    candidate, dead and never readable. A child reading zeros is the
+    application's: not killed, not waited on. Anything else waits for the
+    report and, at the deadline, is released and logged: not killed, not
+    reaped. Every released child goes to the deferred reaper (R9.2)."""
     from rmgpy.tools.eedf import branches
+    worker, app = 4242, 4343
     polls, killed = [0], []
-    child = 4242
+    candidates = {'holder-beside-zeros': [worker, app], 'holder-beside-unread': [worker, app],
+                  'two-holders-worker-dies': [worker, app],
+                  'reported-beside-holder': [worker, app]}.get(case, [worker])
     start = branches._Start()
-    start.children, start.armed = set(), True
+    start.children, start.armed = {1}, True
+    monkeypatch.setattr(branches, 'WORKER_RECLAIM_TIMEOUT', .2)
+    monkeypatch.setattr(branches, '_children', lambda: {1, *candidates})
 
-    def new_children(self):
-        polls[0] += 1
-        return {child}
-    monkeypatch.setattr(branches._Start, 'new_children', new_children)
+    def state(pid):
+        if case == 'unread-then-exits' or (case == 'two-holders-worker-dies' and pid == worker):
+            return 'zombie' if polls[0] >= 5 else 'live'
+        return 'live'
+
+    def read(pid, address, size=16):
+        if pid == worker:
+            polls[0] += 1
+        if state(pid) != 'live':
+            return None
+        if case in ('two-holders-worker-dies', 'holder-beside-zeros', 'holder-beside-unread',
+                    'reported-beside-holder'):
+            if pid == worker or case in ('two-holders-worker-dies', 'reported-beside-holder'):
+                return start.nonce
+            return bytes(16) if case == 'holder-beside-zeros' else None
+        return bytes(16) if case == 'zeros' else None
+    monkeypatch.setattr(branches, '_state', state)
+    monkeypatch.setattr(branches, '_read_child', read)
+    monkeypatch.setattr(branches, '_exec_d', lambda pid: False)
     monkeypatch.setattr(branches._Start, 'pid', lambda self: (
-        child if case == 'unread-then-reports' and polls[0] >= 5 else 0))
-    monkeypatch.setattr(branches, '_read_child', lambda pid, address, size=16: (
-        bytes(16) if case == 'zeros' else None))
-    monkeypatch.setattr(branches, '_alive', lambda pid: case != 'unread-then-exits' or polls[0] < 5)
+        worker if case in ('unread-then-reports', 'reported-beside-holder') and polls[0] >= 5 else 0))
     monkeypatch.setattr(branches, '_kill_and_reap', killed.append)
-    branches._reclaim(start)
-    if case == 'unread-then-reports':
-        assert killed == [child] and polls[0] == 5
-    elif case == 'unread-then-exits':
-        assert killed == [] and polls[0] == 5
+    deferred = []
+    monkeypatch.setattr(branches, '_defer_reap', lambda start, pid: deferred.append(pid))
+    with caplog.at_level(logging.WARNING, logger=branches.__name__):
+        branches._reclaim(start)
+    released = sorted(int(m.split()[3]) for m in caplog.messages if m.startswith('releasing child pid'))
+    if case in ('unread-then-reports', 'reported-beside-holder'):
+        assert killed == [worker] and released == [] and start.identified == worker
+    elif case == 'zeros':
+        assert killed == [] and released == [] and polls[0] == 1
+    elif case in ('unread-until-deadline', 'unread-then-exits'):
+        # R9 amendment edit for 'unread-then-exits' (was: killed == [worker],
+        # a sole never-read zombie identified): released, never read. R9.2:
+        # deferred too, so a late report can identify it safely.
+        assert killed == [] and released == [worker] and deferred == [worker]
+    elif case == 'holder-beside-zeros':
+        # R9 amendment edit (was: killed == [worker], a sole nonce holder
+        # identified): released at the deadline and handed to the reaper.
+        assert killed == [] and released == [worker] and deferred == [worker]
+    elif case == 'two-holders-worker-dies':
+        assert killed == [] and released == [worker, app] and deferred == [worker, app]
+    else:  # a holder beside an unreadable candidate: only the report decides
+        assert killed == [] and released == [worker, app] and deferred == [worker, app]
+
+
+# r267 / R8: identity is unique, a report is authoritative, cleanup is bounded.
+_RECLAIM_EDGES = r"""
+import ctypes, json, logging, os, resource, signal, sys, threading, time
+from pathlib import Path
+mode, output = sys.argv[1], sys.argv[2]
+DEADLINE = 2.0
+HOOK = 4.0  # 'sleeping-hook': longer than the deadline
+libc = ctypes.CDLL(None)
+local_owner = None
+fork_now, app_ready, nproc = threading.Event(), threading.Event(), []
+
+
+def app_child_hook():
+    # The application's own child initialization, registered before the scanner's.
+    if local_owner is None or os.getpid() == local_owner:
+        return
+    if mode == 'exec':
+        os.execv('/bin/sleep', ['sleep', '30'])  # the worker becomes another program
+    if mode in ('zombie', 'window-exited', 'window-app-unread'):
+        os._exit(0)  # dies before the scanner's hook can report it
+    if mode == 'two-holders':
+        time.sleep(30)  # never reports within the deadline
+    if mode == 'sleeping-hook':
+        time.sleep(HOOK)  # reports after the deadline
+
+
+def app_before():
+    # 'native-fork-error' (r267): an application thread forks natively inside
+    # the window, then the worker's own fork fails.
+    if mode == 'native-fork-error' and local_owner == os.getpid() and 'pid' not in app:
+        fork_now.set()
+        app_ready.wait(5)
+        nproc.append(resource.getrlimit(resource.RLIMIT_NPROC))
+        resource.setrlimit(resource.RLIMIT_NPROC, (0, nproc[0][1]))
+
+
+def app_after_in_parent():
+    if nproc:  # the failed fork is over: a transient EAGAIN
+        resource.setrlimit(resource.RLIMIT_NPROC, nproc.pop())
+
+
+os.register_at_fork(before=app_before, after_in_parent=app_after_in_parent,
+                    after_in_child=app_child_hook)
+from rmgpy.tools.eedf import branches as b
+b.WORKER_RECLAIM_TIMEOUT = DEADLINE
+if mode in ('report-zombie', 'app-unread-reported'):
+    # Registered after the scanner's hook: the worker reports, then dies.
+    os.register_at_fork(after_in_child=lambda: os._exit(0) if os.getpid() != local_owner else None)
+messages = []
+
+
+class Capture(logging.Handler):
+    def emit(self, record):
+        messages.append(record.getMessage())
+
+
+logging.getLogger(b.__name__).addHandler(Capture())
+
+
+class AppSignal(Exception):
+    pass
+
+
+raised = [0]
+
+
+def interrupted(signum, frame):
+    raised[0] += 1
+    if mode == 'window-no-worker' and 'pid' not in app:
+        fork_app()  # the handler forks inside the window; the worker never is
+    raise AppSignal()
+
+
+class Slow:
+    def integrate(self, seed, power=None):
+        time.sleep(30)
+
+
+app, worker, marks = {}, {}, {}
+
+
+def fork_app(unreadable=False):
+    pid = libc.fork()  # a native fork: no Python hooks run in it
+    if pid == 0:
+        if unreadable:
+            libc.prctl(4, 0, 0, 0, 0)  # PR_SET_DUMPABLE 0: its memory cannot be read
+        time.sleep(30)
+        os._exit(0)
+    app['pid'] = pid
+
+
+def state(pid):
+    try:
+        return Path('/proc/%d/stat' % pid).read_text().rsplit(')', 1)[1].split()[0]
+    except OSError:
+        return 'gone'
+
+
+def wait_until(condition, limit=5.):
+    end = time.monotonic() + limit
+    while not condition() and time.monotonic() < end:
+        time.sleep(.001)
+
+
+def trace(frame, event, arg):
+    if os.getpid() != local_owner:
+        return None
+    if event != 'line':
+        return trace
+    code = frame.f_code
+    if code is not b._WorkerPopen._launch.__code__ or 'interrupted' in marks:
+        return trace
+    line = Path(b.__file__).read_text().splitlines()[frame.f_lineno - 1].strip()
+    if mode == 'app-unread-reported' and 'pid' not in app:
+        fork_app(unreadable=True)  # before the worker's fork, so not a candidate
+    if line == 'self.pid = os.fork()' and 'pid' not in app and mode in (
+            'window-exited', 'window-app-unread', 'two-holders'):
+        fork_app(unreadable=mode == 'window-app-unread')  # inside the nonce window
+    if line == 'self.pid = os.fork()' and mode == 'window-no-worker':
+        marks['interrupted'] = time.monotonic()
+        os.kill(local_owner, signal.SIGUSR1)
+        return trace
+    pid = getattr(frame.f_locals.get('self'), 'pid', None)
+    if not pid:
+        return trace
+    worker['pid'] = pid
+    marks['forked'] = time.monotonic()
+    if mode == 'exec':
+        wait_until(lambda: os.readlink('/proc/%d/exe' % pid).endswith('/sleep'))
+    if mode in ('zombie', 'report-zombie', 'app-unread-reported', 'window-exited',
+                'window-app-unread'):
+        wait_until(lambda: state(pid) == 'Z')
+    if mode == 'window-app-unread':
+        start = b._STARTING.start
+        wait_until(lambda: b._read_child(app['pid'], ctypes.addressof(start.buffer)) is None)
+    if mode == 'interrupt-reclaim':
+        start = b._STARTING.start
+        wait_until(lambda: start.pid() == pid)
+    marks['interrupted'] = time.monotonic()
+    os.kill(local_owner, signal.SIGUSR1)
+    return trace
+
+
+if mode == 'interrupt-reclaim':
+    kill_and_reap = b._kill_and_reap
+
+    def interrupted_kill_and_reap(pid):
+        if 'reclaim' not in marks:
+            marks['reclaim'] = True
+            os.kill(local_owner, signal.SIGUSR1)  # a second interrupt, handling the report
+        kill_and_reap(pid)
+    b._kill_and_reap = interrupted_kill_and_reap
+local_owner = os.getpid()
+signal.signal(signal.SIGUSR1, interrupted)
+if mode == 'native-fork-error':
+    def native_fork_thread():
+        fork_now.wait()
+        fork_app()
+        app_ready.set()
+    threading.Thread(target=native_fork_thread, daemon=True).start()
+sys.settrace(trace)
+try:
+    b.scan(Slow(), (0, 0), output, u_steps=1, electron_density_decades=1, processes=1,
+           timeout=30, reference_power=.5, recheck_timeouts=False)
+    outcome = 'return'
+except BaseException as exc:
+    outcome = type(exc).__name__
+finally:
+    sys.settrace(None)
+returned = time.monotonic()
+left = set()
+for task in os.listdir('/proc/self/task'):
+    try:
+        left.update(int(p) for p in Path('/proc/self/task/%s/children' % task).read_text().split())
+    except OSError:
+        pass
+left_states = {str(p): state(p) for p in sorted(left)}
+
+
+def reapers():
+    return sum(t.name == 'eedf-scan-reaper' for t in threading.enumerate())
+
+
+later = {'reapers_at_return': reapers()}
+if mode in ('window-no-worker', 'native-fork-error'):
+    # The application child holds the nonce and never reports: the reaper
+    # watches it and leaves it alone.
+    time.sleep(1.)
+    later['app_state'] = state(app['pid'])
+    try:
+        later['app_wait'] = os.waitpid(app['pid'], os.WNOHANG)
+    except ChildProcessError:
+        later['app_wait'] = 'already-reaped-by-scan'
+    later['reapers'] = reapers()
+if mode == 'sleeping-hook':
+    # The worker reports once the hook returns; the reaper reaps it by its pid.
+    wait_until(lambda: state(worker['pid']) == 'gone', HOOK + 4)
+    later['worker_gone_after_fork'] = (time.monotonic() - marks['forked']
+                                       if state(worker['pid']) == 'gone' else None)
+    wait_until(lambda: not reapers(), 1.)
+    later['reapers'] = reapers()
+print(json.dumps({'outcome': outcome, 'raised': raised[0],
+                  'after_interrupt': returned - marks.get('interrupted', returned),
+                  'worker': worker.get('pid'), 'app': app.get('pid'),
+                  'left': left_states, 'messages': messages, 'later': later}))
+for p in left:
+    try:
+        os.kill(p, signal.SIGKILL)
+        os.waitpid(p, 0)
+    except (ProcessLookupError, ChildProcessError):
+        pass
+"""
+
+
+def _reclaim_edge(tmp_path, mode, outcome='AppSignal'):
+    script = tmp_path / 'edges.py'
+    script.write_text(_RECLAIM_EDGES)
+    out = subprocess.run([sys.executable, str(script), mode, str(tmp_path / 'b.json')],
+                         capture_output=True, env=_repository_env(), text=True, timeout=90)
+    assert out.returncode == 0, out.stderr
+    assert 'Exception ignored' not in out.stderr, out.stderr  # a live daemon reaper at exit
+    row = json.loads(out.stdout.splitlines()[-1])
+    assert row['outcome'] == outcome, row
+    return row
+
+
+def _released(row, pid):
+    return [m for m in row['messages'] if m.startswith('releasing child pid %s ' % pid)]
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc children')
+@pytest.mark.parametrize('mode', ['report-zombie', 'app-unread-reported'])
+def test_a_worker_that_dies_during_its_start_is_reaped_not_left_a_zombie(tmp_path, mode):
+    """r267 F1 / R8.1: the worker exits before registration completes. Its pid
+    report is identity on its own ('report-zombie', and 'app-unread-reported'
+    with an unreadable application child forked before the window). It is
+    reaped by its exact pid before the exception leaves scan(), and an
+    application child survives. R9 amendment edit: '[zombie]' (a sole
+    candidate dead before reporting) moved to the release test below."""
+    row = _reclaim_edge(tmp_path, mode)
+    assert str(row['worker']) not in row['left'], row
+    assert 'Z' not in row['left'].values(), row
+    if row['app']:
+        assert row['left'] == {str(row['app']): 'S'}, row
     else:
-        assert killed == [] and polls[0] == 1
+        assert row['left'] == {}, row
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc children')
+@pytest.mark.parametrize('mode', ['exec', 'zombie', 'window-app-unread', 'window-exited',
+                                  'two-holders'])
+def test_an_undecided_child_is_released_and_logged_at_the_reclaim_deadline(tmp_path, mode):
+    """r267 F2, F3 / R8.3, R9 amendment: no pid report identifies the worker: it
+    exec'd at once ('exec'), or died before reporting, alone ('zombie') or next
+    to an application child forked inside the nonce window that is unreadable
+    ('window-app-unread') or holds the nonce ('window-exited'), or two live
+    children hold the nonce ('two-holders'). Cleanup returns within the
+    deadline plus 1 s; every undecided child is logged as released and is
+    neither killed nor reaped; an application child lives on. A worker that
+    dies before reporting is never reaped by us: it stays a zombie."""
+    row = _reclaim_edge(tmp_path, mode)
+    assert row['after_interrupt'] < 2.0 + 1.0, row
+    undecided = [row['worker']] + ([row['app']] if row['app'] else [])
+    for pid in undecided:
+        assert str(pid) in row['left'], row  # not reaped
+        assert _released(row, pid), row
+    if mode == 'exec':
+        assert row['left'][str(row['worker'])] != 'Z', row  # not killed
+    elif mode == 'zombie':
+        # R9 amendment edit (was in the reap test: worker not in left, no 'Z'):
+        # never read, never reported, so released and left an unreaped zombie.
+        assert row['left'] == {str(row['worker']): 'Z'}, row
+    else:
+        assert row['left'][str(row['app'])] == 'S', row  # the application child lives
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc children')
+@pytest.mark.parametrize('mode', ['window-no-worker', 'native-fork-error'])
+def test_an_application_child_forked_in_the_window_survives_when_no_worker_is_forked(
+        tmp_path, mode):
+    """r267 replays, R9 amendment and R9.1: the worker is never forked: a raising
+    handler forks natively inside the nonce window before the worker's fork
+    call ('window-no-worker'), or an application thread forks natively inside
+    the window and the worker's own fork then fails ('native-fork-error'). The
+    application child is the only nonce holder and never reports; a nonce read
+    alone never identifies, so it is released and logged at the deadline,
+    handed to the deferred reaper, and neither killed nor reaped: the
+    application reaps it itself."""
+    row = _reclaim_edge(tmp_path, mode,
+                        'BlockingIOError' if mode == 'native-fork-error' else 'AppSignal')
+    assert row['worker'] is None and row['app'], row
+    assert row['after_interrupt'] < 2.0 + 1.0, row
+    assert row['left'] == {str(row['app']): 'S'}, row
+    released = _released(row, row['app'])
+    assert len(released) == 1 and 'no report' in released[0], row
+    later = row['later']
+    assert later['app_state'] == 'S' and later['app_wait'] == [0, 0], row
+    assert later['reapers'] == 1, row  # watched, not signalled
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc children')
+def test_a_worker_held_by_a_sleeping_hook_is_released_at_the_deadline_then_reaped(tmp_path):
+    """R9 amendment and R9.1: an earlier application hook sleeps 4 s in the
+    worker, past the 2 s deadline, so the worker cannot report in time. It is
+    undecided, then released at the deadline and logged; scan() raises with
+    it alive. Once the hook returns it reports, and the deferred reaper kills
+    it and reaps it by its exact pid within the hook time plus 2 s; no zombie
+    and no live child remain, and the reaper thread ends."""
+    row = _reclaim_edge(tmp_path, 'sleeping-hook')
+    worker = str(row['worker'])
+    assert 2.0 <= row['after_interrupt'] < 2.0 + 1.0, row
+    assert row['left'] == {worker: 'S'}, row  # released alive, not killed
+    released = _released(row, worker)
+    assert len(released) == 1 and 'no report' in released[0], row
+    later = row['later']
+    assert row['later']['reapers_at_return'] == 1, row
+    assert later['worker_gone_after_fork'] is not None, row
+    assert later['worker_gone_after_fork'] < 4.0 + 2.0, row
+    assert later['reapers'] == 0, row
+
+
+_HELD_CLEANUP = r"""
+import ctypes, json, logging, os, signal, sys, threading, time
+from pathlib import Path
+
+mode, output = sys.argv[1:]
+owner = os.getpid()
+worker = start = entered = None
+interrupts = 0
+warnings, reaped = [], []
+ready_r, ready_w = os.pipe()
+cleanup_event, warning_event = threading.Event(), threading.Event()
+
+
+def earlier_hook():
+    if os.getpid() != owner:
+        if mode == 'unreadable-held':
+            assert ctypes.CDLL(None).prctl(4, 0, 0, 0, 0) == 0  # PR_SET_DUMPABLE
+        os.write(ready_w, b'ready')
+        time.sleep(12 if mode == 'unreadable-held' else 6)
+
+
+os.register_at_fork(after_in_child=earlier_hook)
+from rmgpy.tools.eedf import branches as b
+if mode != 'unreadable-held':
+    b.WORKER_RECLAIM_TIMEOUT = 2
+
+
+class AppSignal(Exception):
+    pass
+
+
+def interrupted(signum, frame):
+    global interrupts
+    interrupts += 1
+    raise AppSignal(str(interrupts))
+
+
+signal.signal(signal.SIGUSR1, interrupted)
+
+
+class Log(logging.Handler):
+    def emit(self, record):
+        if record.getMessage().startswith('releasing child pid '):
+            warnings.append(record.getMessage())
+            if mode == 'interrupt-warning' and len(warnings) == 1:
+                warning_event.set()
+                time.sleep(.05)  # let the real second signal interrupt this warning
+
+
+b.logging.getLogger(b.__name__).addHandler(Log())
+real_reap = b._kill_and_reap
+
+
+def reap(pid):
+    reaped.append([pid, start.pid(), threading.current_thread().name])
+    return real_reap(pid)
+
+
+b._kill_and_reap = reap
+
+
+class Slow:
+    def integrate(self, seed, power=None):
+        time.sleep(60)
+
+
+def trace(frame, event, arg):
+    global worker, start
+    if os.getpid() != owner:
+        return None
+    if event == 'line' and frame.f_code is b._WorkerPopen._launch.__code__ and worker is None:
+        pid = getattr(frame.f_locals.get('self'), 'pid', None)
+        if pid:
+            worker, start = pid, b._STARTING.start
+            assert os.read(ready_r, 5) == b'ready'
+            os.kill(owner, signal.SIGUSR1)
+    return trace
+
+
+def profile(frame, event, arg):
+    global entered
+    if (os.getpid() == owner and event == 'call'
+            and frame.f_code is b._reclaim.__code__ and entered is None):
+        entered = time.monotonic()
+        cleanup_event.set()
+
+
+def second_signal():
+    if mode == 'interrupt-warning':
+        warning_event.wait()
+        time.sleep(.005)
+    else:
+        cleanup_event.wait()
+        time.sleep(1.5)
+    os.kill(owner, signal.SIGUSR1)
+
+
+if mode != 'unreadable-held':
+    threading.Thread(target=second_signal, daemon=True).start()
+begin = time.monotonic()
+sys.setprofile(profile)
+sys.settrace(trace)
+try:
+    b.scan(Slow(), (0, 0), output, u_steps=1, electron_density_decades=1,
+           processes=1, timeout=60, reference_power=.5, recheck_timeouts=False)
+    outcome = 'return'
+except BaseException as exc:
+    outcome = type(exc).__name__ + ': ' + str(exc)
+finally:
+    sys.settrace(None)
+    sys.setprofile(None)
+returned = time.monotonic()
+
+
+def state():
+    try:
+        return Path('/proc/%d/stat' % worker).read_text().rsplit(')', 1)[1].split()[0]
+    except FileNotFoundError:
+        return 'gone'
+
+
+row = dict(mode=mode, outcome=outcome, worker=worker, interrupts=interrupts,
+           cleanup_elapsed=returned-entered, deadline=b.WORKER_RECLAIM_TIMEOUT,
+           at_return=state(), report_at_return=start.pid(), warnings=warnings)
+# Observe without waiting on the child: only the scanner's reaper may reap it.
+until = begin + (15 if mode == 'unreadable-held' else 8)
+while time.monotonic() < until and state() != 'gone':
+    time.sleep(.01)
+row.update(after_hook=state(), report_after_hook=start.pid(), reaped=reaped,
+           observed_after=time.monotonic()-begin)
+print(json.dumps(row), flush=True)
+if worker in (b._children() or set()):
+    try:
+        os.kill(worker, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    try:
+        os.waitpid(worker, 0)
+    except ChildProcessError:
+        pass
+"""
+
+
+def _held_cleanup(tmp_path, mode):
+    script = tmp_path / 'held_cleanup.py'
+    script.write_text(_HELD_CLEANUP)
+    out = subprocess.run([sys.executable, str(script), mode, str(tmp_path / 'b.json')],
+                         capture_output=True, env=_repository_env(), text=True, timeout=45)
+    assert out.returncode == 0, out.stderr
+    assert 'Exception ignored' not in out.stderr, out.stderr
+    row = json.loads(out.stdout.splitlines()[-1])
+    print(json.dumps(row))
+    assert row['at_return'] not in ('gone', 'Z') and row['report_at_return'] == 0, row
+    return row
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='needs Linux prctl and /proc')
+def test_an_unreadable_held_worker_is_reaped_by_its_late_report(tmp_path):
+    """R9.2 / held-unreadable-held: a real unreadable worker reports at 12 s,
+    after the default cleanup deadline, and the daemon reaps it without a zombie."""
+    row = _held_cleanup(tmp_path, 'unreadable-held')
+    assert row['outcome'] == 'AppSignal: 1' and row['interrupts'] == 1, row
+    assert row['deadline'] <= row['cleanup_elapsed'] < row['deadline'] + .5, row
+    assert row['after_hook'] == 'gone' and row['observed_after'] < 14, row
+    assert row['reaped'] == [[row['worker'], row['worker'], 'eedf-scan-reaper']], row
+    assert len(row['warnings']) == 1 and 'unreadable' in row['warnings'][0], row
+    assert row['warnings'][0].endswith('reaped later if it reports'), row
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc children')
+def test_a_later_interrupt_does_not_restart_the_cleanup_deadline(tmp_path):
+    """R9.2 / held-retry-bound: two real raising signals share the first
+    cleanup entry's deadline, including when the second arrives while waiting."""
+    row = _held_cleanup(tmp_path, 'retry-bound')
+    assert row['outcome'] == 'AppSignal: 2' and row['interrupts'] == 2, row
+    assert row['deadline'] <= row['cleanup_elapsed'] < row['deadline'] + .5, row
+    assert len(row['warnings']) == 1, row
+    assert row['after_hook'] == 'gone', row
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc children')
+def test_an_interrupt_in_the_release_warning_preserves_it_without_extending_cleanup(tmp_path):
+    """R9.2 / held-interrupt-warning: a second signal inside the release
+    warning preserves at-least-once delivery without restarting the deadline (R10)."""
+    row = _held_cleanup(tmp_path, 'interrupt-warning')
+    assert row['outcome'] == 'AppSignal: 2' and row['interrupts'] == 2, row
+    assert row['warnings'], row  # R10: acknowledgment follows the write; duplicate allowed
+    assert row['deadline'] <= row['cleanup_elapsed'] < row['deadline'] + .5, row
+    assert row['after_hook'] == 'gone', row
+
+
+def _reaper_threads():
+    return [t for t in threading.enumerate() if t.name == 'eedf-scan-reaper']
+
+
+def _release_probe(tmp_path, mode):
+    script = Path(__file__).with_name('_release_probe.py')
+    out = subprocess.run([sys.executable, str(script), mode, str(tmp_path / 'release.json')],
+                         capture_output=True, env=_repository_env(), text=True, timeout=40)
+    assert out.returncode == 0, out.stderr
+    assert 'Exception ignored' not in out.stderr, out.stderr
+    row = json.loads(out.stdout.splitlines()[-1])
+    print(json.dumps(row))
+    return row
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='real Linux fork and signal probes')
+@pytest.mark.parametrize('mode', ['triple', 'triple-unreadable', 'handoff-before',
+                                  'handoff-after', 'warning-before'])
+def test_release_resumes_after_raising_application_signals(tmp_path, mode):
+    """R10: r273's third signal, torn handoff, and warning-before-write probes."""
+    row = _release_probe(tmp_path, mode)
+    assert row['outcome'].startswith('AppSignal:'), row
+    assert row['interrupts'] >= (3 if mode.startswith('triple') else 2), row
+    if not mode.startswith('triple'):
+        assert row['injected'], row
+    assert row['cleanup_elapsed'] < row['deadline'] + .5, row
+    assert row['after_hook'] == 'gone', row
+    assert row['warnings'], row
+    assert not any('pid None failed' in text for text in row['errors']), row
+    assert row['reaps'] == [[row['worker'], row['worker'], 'eedf-scan-reaper']], row
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='CPython opcode and Linux signals')
+@pytest.mark.parametrize('boundary', ['publish', 'queued', 'ready', 'handed', 'warned',
+                                      'reclaimed', 'delete', 'closed', 'lease'])
+def test_release_resumes_at_commit_and_acknowledgment_bytecodes(tmp_path, boundary):
+    row = _release_probe(tmp_path, 'opcode-' + boundary)
+    assert row['injected'] and row['interrupts'] == 2 and row['attacks'], row
+    assert row['cleanup_elapsed'] < row['deadline'] + .5, row
+    assert row['after_hook'] == 'gone' and row['warnings'], row
+    assert row['reaps'] == [[row['worker'], row['worker'], 'eedf-scan-reaper']], row
+
+
+def _measured_release_probe(tmp_path, mode):
+    """Run one fresh owner while counting every descendant, including import helpers."""
+    stop = threading.Event()
+    peak = [1, {os.getpid(): 'pytest'}]
+    test_peak = [1]
+
+    def measure():
+        while not stop.is_set():
+            found, pending = set(), [os.getpid()]
+            while pending:
+                pid = pending.pop()
+                if pid in found:
+                    continue
+                found.add(pid)
+                try:
+                    paths = list(Path('/proc/%d/task' % pid).glob('*/children'))
+                except OSError:
+                    continue  # the process may exit while its task list is read
+                for path in paths:
+                    try:
+                        pending.extend(map(int, path.read_text().split()))
+                    except FileNotFoundError:
+                        pass
+            commands = {}
+            for pid in sorted(found):
+                try:
+                    commands[pid] = Path('/proc/%d/cmdline' % pid).read_bytes().replace(b'\0', b' ').decode()
+                except FileNotFoundError:
+                    commands[pid] = 'exited during observation'
+            # The dispatch requires two tee loggers. Count them separately
+            # from pytest and the actual helpers, retaining the raw peak too.
+            count = sum(not cmd.startswith('tee ') for cmd in commands.values())
+            test_peak[0] = max(test_peak[0], count)
+            if len(found) > peak[0]:
+                peak[:] = [len(found), commands]
+            stop.wait(.005)
+
+    monitor = threading.Thread(target=measure, daemon=True)
+    monitor.start()
+    try:
+        row = _release_probe(tmp_path, mode)
+    finally:
+        monitoring = monitor.is_alive()
+        stop.set()
+        monitor.join()
+    assert monitoring, 'process sampler stopped before the probe finished'
+    print(json.dumps({'measured_peak_processes': peak[0], 'peak_pids': peak[1],
+                      'test_process_peak': test_peak[0]}))
+    assert test_peak[0] <= 3, peak
+    return row
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='real Linux signal retry boundaries')
+def test_release_survives_a_signal_in_the_retry_bookkeeping(tmp_path):
+    """R10.1: the consumer owns recovery after the main-thread retry unwinds."""
+    row = _measured_release_probe(tmp_path, 'retry-bookkeeping')
+    assert row['interrupts'] == 4, row
+    assert row['attacks'] == ['queue put interrupted', 'queue put interrupted',
+                              'retry bookkeeping interrupted'], row
+    assert row['report'] == row['worker'], row
+    assert row['after_hook'] == 'gone', row
+    assert row['warnings'], row
+    assert row['reaps'] == [[row['worker'], row['worker'], 'eedf-scan-reaper']], row
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='CPython logging lock boundary')
+def test_release_consumer_survives_a_signal_after_logging_lock_acquisition(tmp_path):
+    """A signal after Handler.acquire must not strand the consumer and its worker."""
+    row = _measured_release_probe(tmp_path, 'warning-lock')
+    assert row['injected'] and row['interrupts'] == 2, row
+    assert row['attacks'] == ['Handler.handle after acquire before try'], row
+    assert row['report'] == row['worker'], row
+    assert row['after_hook'] == 'gone', row
+    assert row['consumer_alive'], row
+    assert row['warnings'] or (row['warning_pending'] and row['emitter_outstanding']), row
+    assert row['reaps'] == [[row['worker'], row['worker'], 'eedf-scan-reaper']], row
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='real Linux fork hooks')
+@pytest.mark.parametrize('mode', ['lock', 'lock-quiet-fallback'])
+def test_release_handoff_never_waits_on_an_application_before_fork_hook(tmp_path, mode):
+    """R10 lock probe: pytest is the owner, so owner + worker + app = three."""
+    import runpy
+    probe = runpy.run_path(str(Path(__file__).with_name('_release_probe.py')))
+    row = probe['run'](mode, str(tmp_path / 'lock.json'), in_pytest=True)
+    print(json.dumps(row))
+    assert row['app_hook'] and row['interrupts'] >= 2, row
+    assert row['cleanup_elapsed'] < row['deadline'] + .5, row
+    assert row['application'] and row['application'][0][1] == 0, row
+    assert row['after_hook'] == 'gone' and row['warnings'], row
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='real Linux interrupted lease entry')
+@pytest.mark.parametrize('mode', ['lease-deadline-store', 'lease-cleanup-entry',
+                                  'lease-retained-exception'])
+def test_consumer_adopts_when_cleanup_never_stores_a_deadline(tmp_path, mode):
+    row = _measured_release_probe(tmp_path, mode)
+    assert row['interrupts'] == 3, row
+    assert len(row['attacks']) == row['interrupts'] - 1, row
+    assert row['owner_token_alive'] and row['retained_exception'] == 'AppSignal', row
+    assert row['report'] == row['worker'], row
+    assert row['after_hook'] == 'gone' and row['warnings'], row
+    assert row['observed_after_entry'] < row['run_lease'] + 2., row
+    assert row['reaps'] == [[row['worker'], row['worker'], 'eedf-scan-reaper']], row
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='fork lease controls')
+def test_a_healthy_scan_renews_workers_across_several_run_leases(tmp_path, monkeypatch):
+    from rmgpy.tools.eedf import branches
+    monkeypatch.setattr(branches, 'RUN_LEASE', .15, raising=False)
+    adopted = []
+    original = branches._adopt_start
+
+    def adopt(start):
+        adopted.append(start)
+        return original(start)
+
+    class Slow(_Branches):
+        def integrate(self, seed, power=None):
+            time.sleep(.65)
+            return super().integrate(seed, power)
+
+    monkeypatch.setattr(branches, '_adopt_start', adopt)
+    before = time.monotonic()
+    results = branches._integrate_many(Slow(0.), [Seed(0., 1.e16), Seed(1., 1.e16)],
+                                       processes=2, timeout=3, power=.5)
+    assert time.monotonic() - before > 4 * branches.RUN_LEASE
+    assert len(results) == 2 and all(status == 'ok' for status, _ in results), results
+    assert adopted == []
+    assert _wait_for(lambda: not _reaper_threads(), 2)
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='real main-thread stall after fork')
+@pytest.mark.parametrize('phase', ['after-fork', 'before-fork'])
+def test_a_stalled_scan_owner_cannot_return_adopted_results(tmp_path, monkeypatch, phase):
+    from rmgpy.tools.eedf import branches
+    monkeypatch.setattr(branches, 'RUN_LEASE', .15, raising=False)
+    original = branches._WorkerPopen._launch
+    stalled = []
+
+    def launch(popen, process):
+        original(popen, process)
+        # Main is blocked while the consumer can see the worker's PID report.
+        time.sleep(.5)
+        stalled.append(True)
+
+    if phase == 'after-fork':
+        monkeypatch.setattr(branches._WorkerPopen, '_launch', launch)
+    else:
+        def before_fork():
+            time.sleep(.5)
+            stalled.append(True)
+        sys._eedf_application_before_fork = before_fork
+    try:
+        with pytest.raises(RuntimeError, match='owner was unresponsive past RUN_LEASE'):
+            scan(_Branches(0.), (0., 0.), tmp_path / 'stalled.json', u_steps=1,
+                 electron_density_decades=1, processes=1, timeout=3,
+                 reference_power=.5, recheck_timeouts=False)
+    finally:
+        sys._eedf_application_before_fork = None
+    assert stalled
+    assert not (tmp_path / 'stalled.json').exists()
+    assert _wait_for(lambda: not _reaper_threads(), 2)
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='real Linux signal storms')
+def test_release_survives_twenty_fresh_signal_storms(tmp_path):
+    """R10: 300 ms of real raising SIGUSR1, at about 2 ms intervals, per owner."""
+    rows = [_release_probe(tmp_path, 'storm') for _ in range(20)]
+    for row in rows:
+        assert row['sent'] >= 50 and .25 <= row['storm_span'] < .5, row
+        assert row['interrupts'] >= 3, row
+        assert row['cleanup_elapsed'] < row['deadline'] + .5, row
+        assert row['after_hook'] == 'gone' and row['warnings'], row
+        assert row['reaps'] == [[row['worker'], row['worker'], 'eedf-scan-reaper']], row
+    print(json.dumps({'trials': len(rows), 'reaped': sum(r['after_hook'] == 'gone' for r in rows),
+                      'zombies': sum(r['after_hook'] == 'Z' for r in rows),
+                      'max_cleanup': max(r['cleanup_elapsed'] for r in rows)}))
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='real raising SIGUSR1 storms')
+def test_release_survives_twenty_storms_continuing_past_unwind(tmp_path):
+    """R10.1: no fixed storm end until scan unwinds, then another 200 ms."""
+    rows = [_release_probe(tmp_path, 'storm-unbounded') for _ in range(20)]
+    for row in rows:
+        assert row['post_interrupts'] >= 30, row
+        assert .18 <= row['last_signal_after_unwind'] < .3, row
+        assert row['cleanup_elapsed'] < row['deadline'] + .5, row
+        assert row['after_hook'] == 'gone' and row['warnings'], row
+        assert row['reaps'] == [[row['worker'], row['worker'], 'eedf-scan-reaper']], row
+    print(json.dumps({'unbounded_trials': len(rows),
+                      'reaped': sum(r['after_hook'] == 'gone' for r in rows),
+                      'zombies_or_live': sum(r['after_hook'] != 'gone' for r in rows),
+                      'max_cleanup': max(r['cleanup_elapsed'] for r in rows)}))
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='Linux child subreaper')
+def test_release_warning_is_written_when_the_owner_exits_immediately(tmp_path):
+    """C1: no grace period for a daemon to emit the release warning after scan raises."""
+    libc = ctypes.CDLL(None)
+    prior = ctypes.c_int()
+    assert libc.prctl(37, ctypes.byref(prior), 0, 0, 0) == 0
+    assert libc.prctl(36, 1, 0, 0, 0) == 0
+    worker = None
+    try:
+        out = subprocess.run([sys.executable, str(Path(__file__).with_name('_release_probe.py')),
+                              'exit-immediately', str(tmp_path / 'exit.json')],
+                             capture_output=True, env=_repository_env(), text=True, timeout=30)
+        assert out.returncode == 0, out.stderr
+        row = json.loads(out.stdout.splitlines()[-1])
+        worker = row['worker']
+        assert row['outcome'].startswith('AppSignal:'), row
+        assert 'releasing child pid %s ' % worker in out.stderr, out.stderr
+        assert 'Exception ignored' not in out.stderr, out.stderr
+    finally:
+        if worker is not None:
+            try:
+                os.kill(worker, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            os.waitpid(worker, 0)
+        assert libc.prctl(36, prior.value, 0, 0, 0) == 0
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='fork and CPython logging reinit')
+def test_a_worker_can_log_while_the_prefork_consumer_holds_a_logging_lock(tmp_path):
+    """C3: fork with a live consumer and logging emitter; child locks are reset."""
+    from rmgpy.tools.eedf import branches
+    entered, release = threading.Event(), threading.Event()
+    owner = os.getpid()
+    read_end, write_end = os.pipe()
+
+    class HeldLog(logging.Handler):
+        def emit(self, record):
+            if os.getpid() == owner and threading.current_thread() is not threading.main_thread():
+                entered.set()
+                release.wait(10)  # the emitter holds this handler's RLock across fork
+            elif os.getpid() != owner:
+                os.write(write_end, b'logged')
+
+    class Logs(_Branches):
+        def integrate(self, seed, power=None):
+            assert branches._REAPER_SERVICE is None and branches._DEFERRED == {}
+            logging.getLogger(branches.__name__).warning('worker logging after fork')
+            return super().integrate(seed, power)
+
+    handler = HeldLog()
+    logger = logging.getLogger(branches.__name__)
+    logger.addHandler(handler)
+    start = branches._Start()
+    start.lease = branches._ReaperLease()
+    branches._lease_reaper(start.lease)
+    start.deadline = time.monotonic()
+    record = branches._Release(start, 2147483647, 'no report')
+    record.fallback = True
+    start.releases = {record.pid: record}
+    try:
+        branches._defer_reap(start, record.pid)
+        assert entered.wait(2)
+        result = scan(Logs(0.), (0., 0.), tmp_path / 'fork-log.json', u_steps=1,
+                      electron_density_decades=1, processes=1, timeout=2,
+                      reference_power=.5, recheck_timeouts=False)
+        assert result['branches'], result
+        assert select.select([read_end], [], [], 1)[0]
+        assert os.read(read_end, 6) == b'logged'
+        assert not release.is_set()  # success did not wait for the parent handler lock
+    finally:
+        start.slot[:8] = struct.pack('q', 1)  # never identifies the synthetic candidate
+        release.set()
+        branches._close_reaper_lease(start.lease)
+        assert _wait_for(lambda: not _reaper_threads(), 3)
+        logger.removeHandler(handler)
+        os.close(read_end)
+        os.close(write_end)
+
+
+def _wait_for(condition, limit):
+    end = time.monotonic() + limit
+    while not condition() and time.monotonic() < end:
+        time.sleep(.01)
+    return condition()
+
+
+@pytest.mark.parametrize('when', ['before', 'after'])
+def test_interrupted_consumer_preflight_starts_no_worker_and_can_retry(tmp_path, monkeypatch, when):
+    from rmgpy.tools.eedf import branches
+    original = threading.Thread.start
+
+    class AppSignal(Exception):
+        pass
+
+    def interrupted_start(thread):
+        if thread.name != 'eedf-scan-reaper':
+            return original(thread)
+        if when == 'after':
+            original(thread)
+        raise AppSignal('interrupted preflight')
+
+    before = branches._children()
+    with monkeypatch.context() as patch:
+        patch.setattr(threading.Thread, 'start', interrupted_start)
+        with pytest.raises(AppSignal, match='interrupted preflight'):
+            scan(_Branches(0.), (0., 0.), tmp_path / 'preflight.json', u_steps=1,
+                 electron_density_decades=1, processes=1, timeout=2,
+                 reference_power=.5, recheck_timeouts=False)
+    assert branches._children() == before
+    assert _wait_for(lambda: not _reaper_threads(), 2)
+    lease = branches._ReaperLease()
+    branches._lease_reaper(lease)
+    assert lease.admitted is lease.service and lease.service.ready
+    branches._close_reaper_lease(lease)
+    assert _wait_for(lambda: not _reaper_threads(), 2)
+
+
+def test_preflight_retries_a_consumer_retiring_before_lease_admission(monkeypatch):
+    from rmgpy.tools.eedf import branches
+    idle, proceed = threading.Event(), threading.Event()
+    original = branches._start_emitter
+    first = branches._ReaperLease()
+    branches._lease_reaper(first)
+    old = first.service
+
+    def pause_at_retirement(service):
+        original(service)
+        if service is old and not service.leases:
+            idle.set()
+            assert proceed.wait(5)
+
+    monkeypatch.setattr(branches, '_start_emitter', pause_at_retirement)
+    second = branches._ReaperLease()
+    thread = None
+    try:
+        branches._close_reaper_lease(first)
+        assert idle.wait(2)
+        thread = threading.Thread(target=branches._lease_reaper, args=(second,))
+        thread.start()
+        assert _wait_for(lambda: not old.queue.empty(), 2)
+        proceed.set()
+        thread.join(3)
+        assert not thread.is_alive()
+        assert old.retired and second.service is not old
+        assert second.admitted is second.service and second.service.ready
+    finally:
+        proceed.set()
+        if thread is not None:
+            thread.join(3)
+        branches._close_reaper_lease(second)
+        assert _wait_for(lambda: not _reaper_threads(), 3)
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='report-only child reaping')
+def test_one_blocked_emitter_cannot_block_two_reaps_or_spawn_another_emitter():
+    from rmgpy.tools.eedf import branches
+    entered, proceed = threading.Event(), threading.Event()
+    messages = []
+
+    class Sink(logging.Handler):
+        def emit(self, record):
+            messages.append(record.getMessage())
+            entered.set()
+            assert proceed.wait(10)
+
+    logger = logging.getLogger(branches.__name__)
+    handler = Sink()
+    logger.addHandler(handler)
+    children = [subprocess.Popen(['sleep', '30']) for _ in range(2)]
+    starts = []
+    try:
+        for child in children:
+            start = branches._Start()
+            start.lease = branches._ReaperLease()
+            branches._lease_reaper(start.lease)
+            start.deadline = time.monotonic()
+            start.slot[:8] = struct.pack('q', child.pid)
+            record = branches._Release(start, child.pid, 'no report')
+            record.fallback = True
+            start.releases = {child.pid: record}
+            starts.append(start)
+        with branches._REAPER_LOCK, branches._LIFELINES_LOCK:
+            for start, child in zip(starts, children):
+                branches._defer_reap(start, child.pid)
+                branches._close_reaper_lease(start.lease)
+            assert entered.wait(2)
+            assert _wait_for(lambda: all(not Path('/proc/%d' % c.pid).exists() for c in children), 2)
+            service = starts[0].lease.service
+            assert service is starts[1].lease.service
+            assert len(messages) == 1 and len(service.warnings) == 1
+            assert service.emitter is not None and service.emitter.sentinel.locked()
+            assert service.ready and not service.pending
+        proceed.set()
+        assert _wait_for(lambda: not _reaper_threads(), 3)
+        assert len(messages) == 2
+    finally:
+        proceed.set()
+        for start in starts:
+            branches._close_reaper_lease(start.lease)
+        for child in children:
+            try:
+                os.kill(child.pid, signal.SIGKILL)
+                os.waitpid(child.pid, 0)
+            except (ChildProcessError, ProcessLookupError):
+                pass
+        _wait_for(lambda: not _reaper_threads(), 3)
+        logger.removeHandler(handler)
+
+
+def _queue_released(branches, start, pid):
+    """Exercise the same preflight lease and release record used by a scan."""
+    start.lease = branches._ReaperLease()
+    branches._lease_reaper(start.lease)
+    start.deadline = time.monotonic()
+    start.releases = {pid: branches._Release(start, pid, 'no report')}
+    try:
+        branches._release_candidate(start, pid)
+    finally:
+        branches._close_reaper_lease(start.lease)
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc children')
+def test_the_deferred_reaper_never_signals_a_child_that_has_not_reported(monkeypatch, caplog):
+    """R9.1: a released nonce holder whose start never reports, or reports
+    another pid, is never signalled: the reaper leaves it alone, logs the
+    unreported one once at WORKER_DEFERRED_REAP_TIMEOUT, and its thread ends
+    once nothing is left to watch."""
+    from rmgpy.tools.eedf import branches
+    silent = subprocess.Popen(['sleep', '30'])
+    other = subprocess.Popen(['sleep', '30'])
+    signalled, real_kill = [], os.kill
+
+    def kill(pid, signum):
+        if pid in (silent.pid, other.pid):
+            signalled.append((pid, signum))
+        return real_kill(pid, signum)
+    monkeypatch.setattr(branches.os, 'kill', kill)
+    monkeypatch.setattr(branches, 'WORKER_DEFERRED_REAP_TIMEOUT', .3)
+    reaped = []
+    real_reap = branches._kill_and_reap
+    monkeypatch.setattr(branches, '_kill_and_reap', lambda pid: (reaped.append(pid), real_reap(pid)))
+    never, elsewhere = branches._Start(), branches._Start()
+    elsewhere.slot[:8] = struct.pack('q', 1)  # its start reported another pid
+    try:
+        with caplog.at_level(logging.WARNING, logger=branches.__name__):
+            _queue_released(branches, never, silent.pid)
+            _queue_released(branches, elsewhere, other.pid)
+            assert len(_reaper_threads()) == 1  # one thread for every released child
+            assert _wait_for(lambda: not _reaper_threads(), 5.)
+        assert signalled == [] and reaped == []
+        assert silent.poll() is None and other.poll() is None  # alive, not reaped
+        bound = [m for m in caplog.messages if 'never reported' in m]
+        assert len(bound) == 1 and bound[0].startswith('released child pid %s ' % silent.pid)
+        assert branches._DEFERRED == {} and branches._REAPER is None
+    finally:
+        for child in (silent, other):
+            child.kill()
+            child.wait()
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc children')
+def test_the_deferred_reaper_reaps_a_late_report_by_its_exact_pid_then_exits():
+    """R9.1: a released nonce holder that reports after the deadline is killed,
+    being still this process's child, and reaped by its exact pid; a second
+    released child is left alone; the thread then ends."""
+    from rmgpy.tools.eedf import branches
+    worker = subprocess.Popen(['sleep', '30'])
+    bystander = subprocess.Popen(['sleep', '30'])
+    start = branches._Start()
+    try:
+        _queue_released(branches, start, worker.pid)
+        bystander_start = branches._Start()
+        _queue_released(branches, bystander_start, bystander.pid)
+        assert len(_reaper_threads()) == 1
+        time.sleep(.3)
+        assert os.path.exists('/proc/%d' % worker.pid)  # not reported yet: untouched
+        start.slot[:8] = struct.pack('q', worker.pid)  # the late report
+        assert _wait_for(lambda: not os.path.exists('/proc/%d' % worker.pid), 2.)
+        with pytest.raises(ChildProcessError):
+            os.waitpid(worker.pid, os.WNOHANG)  # reaped: no zombie left
+        assert bystander.poll() is None
+        assert set(branches._DEFERRED) == {bystander.pid}
+        # Its own start identifies another PID: the consumer drops this candidate.
+        bystander_start.slot[:8] = struct.pack('q', 1)
+        assert _wait_for(lambda: not _reaper_threads(), 2.)
+        assert branches._REAPER is None
+    finally:
+        bystander.kill()
+        bystander.wait()
+        if worker.returncode is None:
+            try:
+                worker.kill()
+            except ProcessLookupError:
+                pass
+
+
+def test_a_reaper_that_cannot_start_leaves_the_child_alone_and_logs_it(monkeypatch, caplog):
+    """R9.1: where no thread can be created (RLIMIT_NPROC, say), the released
+    child is left alone and logged; nothing is signalled."""
+    from rmgpy.tools.eedf import branches
+
+    class Unstartable:
+        def __init__(self, **kwargs):
+            pass
+
+        def start(self):
+            raise RuntimeError("can't start new thread")
+    monkeypatch.setattr(branches, 'threading', SimpleNamespace(
+        Thread=Unstartable, get_native_id=threading.get_native_id))
+    killed = []
+    monkeypatch.setattr(branches, '_kill_and_reap', killed.append)
+    with caplog.at_level(logging.WARNING, logger=branches.__name__):
+        _queue_released(branches, branches._Start(), 4242)
+    assert killed == [] and branches._DEFERRED == {} and branches._REAPER is None
+    assert [m for m in caplog.messages if m.startswith('released child pid 4242 is left alone')]
+
+
+_REAPER_AT_EXIT = r"""
+import struct, subprocess, sys, time
+from rmgpy.tools.eedf import branches as b
+moment = sys.argv[1]
+child = subprocess.Popen(['sleep', '5'])
+print(child.pid, flush=True)
+start = b._Start()
+start.lease = b._ReaperLease()
+b._lease_reaper(start.lease)
+start.deadline = time.monotonic()
+start.releases = {child.pid: b._Release(start, child.pid, 'no report')}
+b._release_candidate(start, child.pid)
+b._close_reaper_lease(start.lease)
+if moment == 'reaping':
+    real = b._kill_and_reap
+    b._kill_and_reap = lambda pid: (time.sleep(10), real(pid))  # still reaping at exit
+    start.slot[:8] = struct.pack('q', child.pid)
+    time.sleep(.3)
+"""
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc children')
+@pytest.mark.parametrize('moment', ['polling', 'reaping'])
+def test_a_live_daemon_reaper_leaves_nothing_at_interpreter_exit(tmp_path, moment):
+    """R9.1: the interpreter exits while the reaper still watches a child
+    ('polling') or is inside its kill and reap ('reaping'): the exit is clean,
+    with no 'Exception ignored' line and no traceback."""
+    script = tmp_path / 'at_exit.py'
+    script.write_text(_REAPER_AT_EXIT)
+    out = subprocess.run([sys.executable, str(script), moment], capture_output=True,
+                         env=_repository_env(), text=True, timeout=60)
+    child = int(out.stdout.split()[0])
+    try:
+        os.kill(child, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    assert out.returncode == 0, out.stderr
+    assert 'Exception ignored' not in out.stderr and 'Traceback' not in out.stderr, out.stderr
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc children')
+def test_an_interrupt_while_reaping_the_reported_worker_still_reaps_it(tmp_path):
+    """R8.4: a second raising signal arrives while cleanup kills the reported
+    worker; cleanup resumes, and the worker is reaped before scan() lets the
+    exception leave."""
+    row = _reclaim_edge(tmp_path, 'interrupt-reclaim')
+    assert row['raised'] == 2 and row['left'] == {}, row
 
 
 _OWNER_DIES_IN_AN_EARLIER_HOOK = r"""

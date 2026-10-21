@@ -3,12 +3,32 @@ import multiprocessing
 multiprocessing.set_start_method('fork')
 
 import os
+import sys
 
 import pytest
 
 from openbabel import pybel
 
 pybel.ob.obErrorLog.SetOutputLevel(0)
+
+
+# Registered before the scanner: its before-fork lock must already be held
+# when the enabled R10 application hook runs. Inactive for every other test.
+def _eedf_application_before_fork():
+    callback = getattr(sys, '_eedf_application_before_fork', None)
+    if callback is not None:
+        callback()
+
+
+def _eedf_application_after_fork():
+    callback = getattr(sys, '_eedf_application_after_fork', None)
+    if callback is not None:
+        callback()
+
+
+if hasattr(os, 'register_at_fork'):
+    os.register_at_fork(before=_eedf_application_before_fork,
+                        after_in_child=_eedf_application_after_fork)
 
 
 ################################################################################
