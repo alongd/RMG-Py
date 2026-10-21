@@ -2804,6 +2804,53 @@ def _entry_semantics(entry) -> dict:
     return nodes[entry.label]
 
 
+def same_node_semantics(stored, loaded) -> bool:
+    """Whether two recorded node semantics are the same node.  A group's
+    record lists its atoms in their in-memory order, which RMG's matcher
+    re-sorts (by connectivity) the first time it matches the group, so a
+    record made before that and one made after differ by an atom
+    permutation only: groups are the same iff such a permutation carries one
+    record's atoms (every field but the index) and bonds onto the other's."""
+    if stored == loaded:
+        return True
+    if not (isinstance(stored, dict) and isinstance(loaded, dict)
+            and stored.get("kind") == loaded.get("kind") == "group"):
+        return False
+    rest = ("atoms", "bonds")
+    if {k: v for k, v in stored.items() if k not in rest} != \
+            {k: v for k, v in loaded.items() if k not in rest}:
+        return False
+    a, b = stored.get("atoms") or [], loaded.get("atoms") or []
+
+    def attrs(atom):
+        return {k: v for k, v in atom.items() if k != "index"}
+
+    def bonds(record):
+        return {frozenset((i, j)): order for i, j, order in record.get("bonds") or []}
+
+    ba, bb = bonds(stored), bonds(loaded)
+    if len(a) != len(b) or len(ba) != len(bb):
+        return False
+    candidates = [[c for c, other in enumerate(b) if attrs(other) == attrs(atom)] for atom in a]
+
+    def extend(i, image):
+        # atoms 0..i-1 of ``stored`` placed; every bond between placed atoms
+        # (and every non-bond) carried onto ``loaded``
+        if i == len(a):
+            return True
+        for c in candidates[i]:
+            if c in image.values() or any(
+                    ba.get(frozenset((i, j))) != bb.get(frozenset((c, image[j]))) for j in image):
+                continue
+            image[i] = c
+            if extend(i + 1, image):
+                return True
+            del image[i]
+        return False
+
+    return extend(0, {})
+
+
 def tree_problems(family, cert, template=()) -> list:
     """Every way ``cert``'s stored derivation is not a derivation in the
     loaded family (empty: each stored claim resolves there): every label of
@@ -2830,7 +2877,7 @@ def tree_problems(family, cert, template=()) -> list:
         entry = entries.get(label)
         if entry is None:
             return f"node {label!r} does not exist in the family tree of {family.label}"
-        if nodes.get(label) != _entry_semantics(entry):
+        if not same_node_semantics(nodes.get(label), _entry_semantics(entry)):
             return f"node {label!r}: the stored semantics do not resolve in the family tree"
         return None
 
@@ -2855,7 +2902,8 @@ def tree_problems(family, cert, template=()) -> list:
     for label, semantics in sorted(nodes.items()):
         # tree nodes by label; anonymous logic components are keyed by their
         # repr and re-derived with their parents
-        if label in entries and semantics != _entry_semantics(entries[label]):
+        if label in entries and not same_node_semantics(semantics,
+                                                        _entry_semantics(entries[label])):
             out.append(f"node {label!r}: the stored semantics do not resolve in the family "
                        "tree")
     for ref, chain in sorted(descents.items()):
