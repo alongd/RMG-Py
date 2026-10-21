@@ -176,9 +176,9 @@ with the flag carries ``transport`` = ``declared`` or ``well_mixed_bound``,
 and ``status`` covers both passes.  Without the flag nothing of this appears.
 
 ``--templates SEL [--template-classes C ...]``: the run is restricted to a
-subset of the loaded templates (``template_selection``): from a
-``kmc-kernel-rates/1`` table (``rmgpy.kmc.kernel_rates``; built for the
-deck's chemistry), every template of the kernels whose type or id is named
+subset of the loaded templates (``template_selection``): from a kernel-rates
+table (``rmgpy.kmc.kernel_rates``; built for the deck's chemistry; of a
+version in ``KERNEL_RATES_SCHEMAS``, any other refused by name), every template of the kernels whose type or id is named
 (every kernel when none is), or from a template list (a JSON list of loaded
 template names, or one per line, ``#`` comments).  The other loaded templates
 are the engine's ``excluded`` (``melt_engine`` module docstring, Excluded
@@ -301,7 +301,10 @@ CITED_MET_FIELDS = ("segment_diffusivity", "chain_scaling",
 # phi = k_D / (k_D + k_act) rounds to exactly 1.0 for any k_act below ~1e199 (finite: no inf/inf)
 WELL_MIXED_D0_M2_S = 1.0e200
 TRANSPORT_PASSES = ("declared", "well_mixed_bound")
-KERNEL_RATES_SCHEMA = "kmc-kernel-rates/1"    # rmgpy.kmc.kernel_rates.SCHEMA
+# the kernel-rates versions a template selection reads (rmgpy.kmc.kernel_rates.SCHEMA is one): every one
+# carries the fields it reads alike (schema, catalog.chemistry_sha256, temperature_K, kernels.*.type,
+# kernels.*.templates[].template); /2 added product laws and overrides, /3 element compositions
+KERNEL_RATES_SCHEMAS = ("kmc-kernel-rates/1", "kmc-kernel-rates/2", "kmc-kernel-rates/3")
 SELECTION_DEFINITION = (
     "the run fires only the selected loaded templates; the excluded ones keep their weights, are matched "
     "and indexed, never fire, take no part in the MET activation, and their intrinsic hazard is "
@@ -764,9 +767,9 @@ def template_selection(path, classes: Optional[Sequence[str]], payloads, names: 
         doc = None
     extra = {}
     if isinstance(doc, dict):
-        if doc.get("schema") != KERNEL_RATES_SCHEMA or not isinstance(doc.get("kernels"), dict):
-            raise RunError(f"template selection {path}: a JSON object must be a {KERNEL_RATES_SCHEMA} table "
-                           f"(schema {doc.get('schema')!r})")
+        if doc.get("schema") not in KERNEL_RATES_SCHEMAS or not isinstance(doc.get("kernels"), dict):
+            raise RunError(f"template selection {path}: a JSON object must be a kernel-rates table of a version "
+                           f"the selection reads, {', '.join(KERNEL_RATES_SCHEMAS)} (schema {doc.get('schema')!r})")
         bound = (doc.get("catalog") or {}).get("chemistry_sha256")
         if bound != deck.digests()["chemistry_sha256"]:
             raise RunError(f"kernel table {path} was built for the chemistry {str(bound)[:16]}..., not the "
@@ -781,12 +784,12 @@ def template_selection(path, classes: Optional[Sequence[str]], payloads, names: 
                 raise RunError(f"kernel table {path} has no kernel type or id {unknown} (types: {types})")
             chosen = sorted(k for k, v in kernels.items() if k in classes or v.get("type") in classes)
         selected = {x["template"] for k in chosen for x in kernels[k]["templates"]}
-        source = {"kind": KERNEL_RATES_SCHEMA, "path": str(path), "sha256": _sha256(raw),
+        source = {"kind": doc["schema"], "path": str(path), "sha256": _sha256(raw),
                   "temperature_K": doc.get("temperature_K")}
         extra["kernels"] = chosen
     else:
         if classes is not None:
-            raise RunError(f"template selection {path}: --template-classes selects from a {KERNEL_RATES_SCHEMA} "
+            raise RunError(f"template selection {path}: --template-classes selects from a kernel-rates "
                            "table, not from a template list")
         if isinstance(doc, list):
             ids = doc
@@ -1574,7 +1577,7 @@ def main(argv=None) -> int:
                         help="also run the same seeds at the well-mixed bound (every escape factor 1) into "
                              "<out>/well_mixed/, both passes labelled in one run.json")
     parser.add_argument("--templates", default=None,
-                        help="restrict the run to a template selection: a kmc-kernel-rates/1 table or a "
+                        help="restrict the run to a template selection: a kernel-rates table or a "
                              "template list (one loaded template name per line, or a JSON list)")
     parser.add_argument("--template-classes", nargs="+", default=None,
                         help="with a kernel-rates table: the kernel types or ids to select (default: every kernel)")

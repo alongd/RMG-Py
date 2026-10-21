@@ -546,7 +546,8 @@ def main(argv=None) -> int:
     p.add_argument("run_dir")
     p.add_argument("--pass", dest="pass_name", default=PASS_DECLARED, choices=(PASS_DECLARED, PASS_WELL_MIXED))
     p.add_argument("--deck", default=None, help="the run's deck, when run.json's path moved")
-    p.add_argument("--out", default=None, help="default: <run_dir>/rows[.<pass>].json")
+    p.add_argument("--out", default=None, help="default: where the runner writes them, <run_dir>/rows.json or "
+                   "<run_dir>/well_mixed/rows.json")
     p = sub.add_parser("reference", help="rows of a kernel_reference output")
     p.add_argument("reference")
     p.add_argument("--producer", required=True, choices=("pbe", "ssa"))
@@ -563,8 +564,8 @@ def main(argv=None) -> int:
     try:
         if args.command == "kmc":
             doc = kmc_rows(args.run_dir, pass_name=args.pass_name, deck=args.deck)
-            suffix = "" if args.pass_name == PASS_DECLARED else f".{args.pass_name}"
-            out = Path(args.out) if args.out else Path(args.run_dir) / f"rows{suffix}.json"
+            where = "rows.json" if args.pass_name == PASS_DECLARED else "well_mixed/rows.json"
+            out = Path(args.out) if args.out else Path(args.run_dir) / where
         elif args.command == "reference":
             doc = reference_rows(args.reference, args.producer)
             out = Path(args.out) if args.out else Path(args.reference).with_suffix(f".{args.producer}.rows.json")

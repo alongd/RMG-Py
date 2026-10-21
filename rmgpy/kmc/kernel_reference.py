@@ -839,7 +839,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="python -m rmgpy.kmc.kernel_reference",
                                      description="exact population balance and kernel SSA of a kernel-rates table")
     parser.add_argument("deck")
-    parser.add_argument("table", help="a kmc-kernel-rates/2 JSON (python -m rmgpy.kmc.kernel_rates)")
+    parser.add_argument("table", help=f"a {K.SCHEMA} JSON (python -m rmgpy.kmc.kernel_rates)")
     parser.add_argument("--end", type=float, required=True)
     parser.add_argument("--snapshots", type=int, required=True)
     parser.add_argument("--seeds", type=int, default=8)
