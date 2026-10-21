@@ -23,6 +23,7 @@ from rmgpy.kmc import template_emission as te
 import melt_engine_support as S
 
 from rmgpy.kmc import melt_engine as me
+from rmgpy.kmc import window_matcher as wm
 
 ENGINE_SOURCE = Path(me.__file__).read_text()
 PE_LIVE = ("homolysis", "recombination", "h_abstraction", "disproportionation", "beta_scission",
@@ -1505,3 +1506,103 @@ def test_templates_without_overrides_load_and_index_as_before():
     channels = dict(engine.propensities().channels)
     assert channels[("uni", 0)] == pytest.approx(2 * S.PE_WEIGHTS["beta_scission"])
     assert not any(k[0] == "uni_o" for k in channels)
+
+
+# --------------------------------------------------------------------------
+# matching cost: scan reuse, root restriction, shared participant patterns
+# --------------------------------------------------------------------------
+def _scan_engines():
+    """A PE melt of equal chains on the toy catalog and a PS melt on the
+    loaded catalog, each stepped until it holds radicals."""
+    out = []
+    for spec, catalog, seed in ((S.pe_spec({10: 4}), S.ToyCatalog(), 5), (S.ps_spec({6: 3}), S.ps_catalog(), 8)):
+        engine = me.MeltEngine(spec, catalog, 700.0, np.random.default_rng(seed))
+        out.append(engine)
+    return out
+
+
+def _entry_fields(entry):
+    """Every field of an index entry, dict order included (transitions compared whole)."""
+    return (entry.cid, entry.atoms, list(entry.uni.items()), list(entry.sites.items()), list(entry.uni_o.items()),
+            entry.backbone, entry.met_length, entry.radicals, entry.species)
+
+
+def _matched(engine, cids):
+    return {c: engine._scan_component(engine.state, c, None) for c in cids}
+
+
+def test_a_reused_scan_equals_a_match_field_for_field():
+    """A component whose scan key was seen gets that entry relabelled: equal,
+    transitions, sites and dict order included, to matching it afresh; at
+    setup (equal chains) and after events (radicals, split and joined chains)."""
+    for engine in _scan_engines():
+        assert engine.scan_memo_hits > 0
+        ids = engine.state.components.ids()
+        assert {c: _entry_fields(e) for c, e in engine.entries.items()} == \
+            {c: _entry_fields(e) for c, e in _matched(engine, ids).items()}
+        hits = engine.scan_memo_hits
+        for _ in range(30):
+            if engine.step() is None:
+                break
+            ids = engine.state.components.ids()
+            assert {c: _entry_fields(engine.entries[c]) for c in ids} == \
+                {c: _entry_fields(e) for c, e in _matched(engine, ids).items()}
+        assert engine.events_fired > 0 and engine.scan_memo_hits >= hits
+
+
+def test_a_scan_key_differs_for_each_field_the_scan_reads():
+    """Changing a radical, a bond or the backbone flag changes the key."""
+    engine = _scan_engines()[0]
+    state = engine.state
+    a, b = state.components.ids()[:2]
+    assert me._scan_key(state, a) == me._scan_key(state, b)
+    atom = next(x for x in state.components.atoms(a) if state.atoms[x].element == "C")
+    h = next(x for x in state.atoms[atom].edges if state.atoms[x].element == "H")
+    state.apply([me.SetBond(atom, h, 1.0, 0.0), me.SetRadical(atom, 0, 1), me.SetRadical(h, 0, 1)])
+    c = state.components.component_of(atom)
+    assert me._scan_key(state, c) != me._scan_key(state, b)
+
+
+def test_root_restrictions_keep_every_embedding(monkeypatch):
+    """Roots far from free valence (anchored participants) or from a drawn
+    site (``near``) give no embedding: the restricted enumeration is the
+    unrestricted one, in the same order."""
+    for engine in _scan_engines():
+        for _ in range(10):
+            if engine.step() is None:
+                break
+        view = me._LocalView(engine.state, engine.state.components.ids())
+        restricted = {}
+        for t in engine.templates:
+            for p in range(len(t.participants)):
+                restricted[(t.name, p)] = me.participant_embeddings(view, t, p)
+                for site in sorted(wm._sites(t, p, restricted[(t.name, p)]).get(c, ()) for c in view.comp_forms)[:3]:
+                    for s in site[:5]:
+                        near = [e for e in me.participant_embeddings(view, t, p, near=s)
+                                if tuple(e.mapping[x] for x in t.edited[p]) == s]
+                        full = [e for e in restricted[(t.name, p)] if tuple(e.mapping[x] for x in t.edited[p]) == s]
+                        assert near == full, (t.name, p, s)
+        monkeypatch.setattr(me, "_reach", lambda t: tuple(None for _ in t.pieces))
+        for t in engine.templates:
+            for p in range(len(t.participants)):
+                assert me.participant_embeddings(view, t, p) == restricted[(t.name, p)], (t.name, p)
+        monkeypatch.undo()
+        assert any(restricted.values())
+
+
+def test_shared_participant_patterns_give_each_templates_own_sites(monkeypatch):
+    """Participants of equal pattern share one enumeration per scan; every
+    template's sites are those of its own enumeration."""
+    for engine in _scan_engines():
+        for _ in range(10):
+            if engine.step() is None:
+                break
+        ids = engine.state.components.ids()
+        shared = _matched(engine, ids)
+        signatures = [me._pattern(t, p)[0] for t in engine.templates for p in range(len(t.participants))
+                      if me._pattern(t, p) is not None]
+        monkeypatch.setattr(me, "_pattern", lambda t, p: None)
+        alone = _matched(engine, ids)
+        monkeypatch.undo()
+        assert {c: _entry_fields(e) for c, e in shared.items()} == {c: _entry_fields(e) for c, e in alone.items()}
+        assert len(set(signatures)) < len(signatures)
