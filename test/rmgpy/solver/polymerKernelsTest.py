@@ -20,6 +20,13 @@ into ``product`` and ``partner_product`` at ``k_pair*phi*N*N_partner/V``
 on the end-radical pool, and its reverse U_t + P -> R_e + R_e (x phi) on an
 explicit terminal-alkene pool (``end_alkene_site``).
 
+Mid-chain radicals (slice S5 d): explicit interior-radical and internal-alkene
+pools (``interior_feature``); pair transfer whose sites grow with a chain
+(``sites`` [c00, c10, c01, c11]: rate ``k_pair*phi*(c00 + c10 n + c01 m + c11
+n m)`` per ordered pair, n, m in periods), e.g. H transfer from a dead chain
+picked by its sites; and ``kernel_move``, a chain changing pool with its length
+at ``k*(a n + b)`` per chain (backbiting and its reverse).
+
 Every expected value below is an explicit sum over the chains of a discrete
 distribution, not the moment algebra under test.
 """
@@ -634,3 +641,400 @@ def test_the_pool_config_carries_the_transfer_kernel():
                        proxy_species=proxy, kernel_transfer=[t_term()])
     config = pool.to_config({s: i for i, s in enumerate([proxy] + mu)})
     assert config.kernel_transfer == SP.validate_kernel_transfer("Re", [t_term()])
+
+
+# --------------------------------------------------------------------------
+# mid-chain radicals (S5 d): sites that grow with a chain, pool moves
+# --------------------------------------------------------------------------
+LABELS5 = ("P", "Re", "Ut", "Rm", "Ui")
+PROXIES5 = {"P": "CCCC", "Re": "[CH2]CCC", "Ut": "C=CCC", "Rm": "C[CH]CC", "Ui": "CC=CC"}
+
+
+def system5(chains, *, transfer=None, move=None, V_poly=1.0):
+    """Core: N2, then per pool of LABELS5 its proxy and three mu slots (P 2-4,
+    Re 6-8, Ut 10-12, Rm 14-16, Ui 18-20); ``transfer`` and ``move`` map a
+    pool label to its term list."""
+    core, pools = [_spc("N#N", "N2")], []
+    for i, label in enumerate(LABELS5):
+        stem = "C" * (i + 1)
+        core += [_spc(PROXIES5[label], label), _spc(stem + "O", f"{label}_mu0"), _spc(stem + "N", f"{label}_mu1"),
+                 _spc(stem + "S", f"{label}_mu2")]
+        pools.append(PolymerPoolConfig(label=label, xs=2, explicit_dp_to_species_index={},
+                                       mu_indices=(2 + 4 * i, 3 + 4 * i, 4 + 4 * i),
+                                       kernel_transfer=(transfer or {}).get(label),
+                                       kernel_move=(move or {}).get(label)))
+    mask = np.array([s.label == "N2" for s in core], dtype=bool)
+    rs = HybridPolymerSystem(T=700.0, P=1.0e5, initial_mole_fractions={core[0]: 1.0}, V_poly=V_poly,
+                             polymer_pools=pools, mass_transfer=[], gas_species_mask=mask,
+                             constant_gas_volume=False,
+                             initial_polymer_moments={label: moments(chains.get(label, {})) for label in LABELS5},
+                             termination=[])
+    rs.initialize_model(core, [], [], [])
+    return rs
+
+
+def rates5(rs):
+    dn = rs.residual(0.0, rs.y, np.zeros_like(rs.y))[0]
+    return {label: np.array(dn[2 + 4 * i:5 + 4 * i]) for i, label in enumerate(LABELS5)}, dn
+
+
+def state5(rs):
+    y = np.asarray(rs.y)
+    return {label: np.array(y[2 + 4 * i:5 + 4 * i]) for i, label in enumerate(LABELS5)}
+
+
+def ht_term(**kw):
+    """H transfer on the end-radical pool: an end radical takes an H from a
+    dead chain, which becomes a mid-chain radical; the dead chain of m
+    periods has 2m - 4 sites."""
+    term = dict(template="h_transfer_t", k_pair=0.6, phi=1.0, partner="P", product="P", partner_product="Rm",
+                sites=[-4.0, 0.0, 2.0, 0.0], periods_per_unit=PPU)
+    term.update(kw)
+    return term
+
+
+def bb_term(**kw):
+    """Backbiting on the end-radical pool: an end radical becomes a mid-chain
+    radical of the same length at k*(a n + b) per chain."""
+    term = dict(template="backbiting_t", k=0.5, a=0.0, b=2.0, periods_per_unit=PPU, product="Rm")
+    term.update(kw)
+    return term
+
+
+def bilinear_sums(owner, partner, k, sites, V, same):
+    """pair_sums with the rate of an ordered pair (n, m periods)
+    k*(c00 + c10 n + c01 m + c11 n m)*N_n*N_m/V."""
+    c00, c10, c01, c11 = sites
+    out = [np.zeros(3) for _ in range(4)]
+    for i, Ni in owner.items():
+        for j, Nj in partner.items():
+            rate = k * (c00 + c10 * i + c01 * j + c11 * i * j) * Ni * Nj / V
+            for m in range(3):
+                out[0][m] -= rate * (i / PPU) ** m
+                out[1][m] -= rate * (j / PPU) ** m
+                out[2][m] += rate * (i / PPU) ** m
+                out[3][m] += rate * (j / PPU) ** m
+    if same:
+        out[0], out[1] = out[0] + out[1], out[0] + out[1]
+    return out
+
+
+def move_sums(chains, k, a, b):
+    """d(moments)/dt of the source pool by explicit sums: each chain of n
+    periods leaves at k*(a n + b)."""
+    return -np.array([math.fsum(k * (a * n + b) * N * (n / PPU) ** j for n, N in chains.items())
+                      for j in range(3)])
+
+
+def test_h_transfer_moment_law_is_the_site_weighted_pair_sum():
+    """A monodisperse donor pool (its mu3 closure exact): every pool's flow is
+    the explicit sum over ordered pairs at the donor's sites."""
+    radicals, dead = {8: 0.05, 14: 0.1, 23: 0.02}, {40: 0.5}
+    V = 1.5
+    rs = system5({"Re": radicals, "P": dead}, transfer={"Re": [ht_term()]}, V_poly=V)
+    got, dn = rates5(rs)
+    r_loss, p_loss, to_p, to_rm = bilinear_sums(radicals, dead, 0.6, (-4.0, 0.0, 2.0, 0.0), V, same=False)
+    assert got["Re"] == pytest.approx(r_loss, rel=1e-12)
+    assert got["P"] == pytest.approx(p_loss + to_p, rel=1e-12)
+    assert got["Rm"] == pytest.approx(to_rm, rel=1e-12)
+    assert np.all(got["Ut"] == 0.0) and np.all(got["Ui"] == 0.0)
+    assert sum(g[1] for g in got.values()) == pytest.approx(0.0, abs=1e-12 * abs(got["Re"][1]))
+    assert dn[0] == 0.0
+
+
+def test_h_transfer_picks_each_donor_chain_by_its_sites():
+    """A polydisperse donor pool: the chains that become mid-chain radicals
+    are picked in proportion to their sites 2m - 4, so the radical pool gains
+    sum_m (2m - 4) m^j N_m, not the pool's mean sites times its moments (exact
+    for j = 0, 1; j = 2 needs mu3, the log-Lagrange closure)."""
+    radicals, dead = {9: 0.1, 30: 0.04}, {12: 0.3, 60: 0.1, 33: 0.2}
+    rs = system5({"Re": radicals, "P": dead}, transfer={"Re": [ht_term()]})
+    got, _dn = rates5(rs)
+    _r, _p, _to_p, to_rm = bilinear_sums(radicals, dead, 0.6, (-4.0, 0.0, 2.0, 0.0), 1.0, same=False)
+    assert got["Rm"][:2] == pytest.approx(to_rm[:2], rel=1e-12)
+    m = [math.fsum(N * n ** j for n, N in dead.items()) for j in range(3)]       # periods
+    m3 = m[0] * (m[2] / m[1]) ** 3
+    k0 = 0.6 * moments(radicals)[0]
+    assert got["Rm"][2] == pytest.approx(k0 * (-4.0 * m[2] + 2.0 * m3) / PPU ** 2, rel=1e-12)
+    uniform = k0 * (-4.0 * m[0] + 2.0 * m[1]) / m[0] * m[1] / PPU
+    assert abs(got["Rm"][1] - uniform) > 1e-3 * abs(uniform)
+
+
+def test_sites_on_both_participants_sum_the_bilinear_law():
+    radicals, dead = {12: 0.2}, {30: 0.4}
+    sites = [1.5, 0.25, 0.5, 0.125]
+    rs = system5({"Re": radicals, "P": dead}, transfer={"Re": [ht_term(sites=sites, k_pair=0.3)]}, V_poly=0.7)
+    got, _dn = rates5(rs)
+    r_loss, p_loss, to_p, to_rm = bilinear_sums(radicals, dead, 0.3, sites, 0.7, same=False)
+    assert got["Re"] == pytest.approx(r_loss, rel=1e-12)
+    assert got["P"] == pytest.approx(p_loss + to_p, rel=1e-12)
+    assert got["Rm"] == pytest.approx(to_rm, rel=1e-12)
+
+
+def test_constant_sites_are_the_plain_pair_transfer():
+    chains = {"Re": {9: 0.1, 20: 0.2}, "P": {15: 0.3, 44: 0.2}}
+    plain = {k: v for k, v in ht_term(k_pair=1.2).items() if k not in ("sites", "periods_per_unit")}
+    a = rates5(system5(chains, transfer={"Re": [plain]}))[0]
+    b = rates5(system5(chains, transfer={"Re": [ht_term(k_pair=0.4, sites=[3.0, 0.0, 0.0, 0.0])]}))[0]
+    for label in LABELS5:
+        assert b[label] == pytest.approx(a[label], rel=1e-14, abs=0.0)
+
+
+def test_mid_mid_disproportionation_pairs_the_pool_with_itself():
+    """R_m + R_m -> P + U_i: the donor's length into the internal-alkene pool,
+    nothing into the terminal-alkene pool."""
+    mids = {7: 0.05, 18: 0.1, 40: 0.02}
+    term = dict(template="d3_t", k_pair=2.0, phi=1.0, partner="Rm", product="P", partner_product="Ui")
+    rs = system5({"Rm": mids}, transfer={"Rm": [term]}, V_poly=1.3)
+    got, _dn = rates5(rs)
+    loss, _same, to_p, to_ui = pair_sums(mids, mids, 2.0, 1.3, same=True)
+    assert got["Rm"] == pytest.approx(loss, rel=1e-12)
+    assert got["P"] == pytest.approx(to_p, rel=1e-12)
+    assert got["Ui"] == pytest.approx(to_ui, rel=1e-12)
+    assert np.all(got["Ut"] == 0.0)
+
+
+def test_end_mid_reverse_disproportionation_grows_with_the_donor():
+    """U_t + P -> R_e + R_m (x phi), the dead chain's sites 2m - 4."""
+    alkenes, dead = {10: 0.02, 26: 0.05}, {48: 0.3}
+    term = ht_term(template="reverse_em_t", k_pair=0.9, phi=0.25, product="Re", partner_product="Rm")
+    rs = system5({"Ut": alkenes, "P": dead}, transfer={"Ut": [term]})
+    got, _dn = rates5(rs)
+    u_loss, p_loss, to_re, to_rm = bilinear_sums(alkenes, dead, 0.9 * 0.25, (-4.0, 0.0, 2.0, 0.0), 1.0, same=False)
+    assert got["Ut"] == pytest.approx(u_loss, rel=1e-12)
+    assert got["P"] == pytest.approx(p_loss, rel=1e-12)
+    assert got["Re"] == pytest.approx(to_re, rel=1e-12)
+    assert got["Rm"] == pytest.approx(to_rm, rel=1e-12)
+
+
+def test_mid_mid_disproportionation_alone_follows_its_exact_solution():
+    mids = {6: 0.2, 11: 0.3, 25: 0.1}
+    k = 0.4
+    m0 = moments(mids)
+    term = dict(template="d3_t", k_pair=k, phi=1.0, partner="Rm", product="P", partner_product="Ui")
+    rs = system5({"Rm": mids}, transfer={"Rm": [term]})
+    alpha = 2.0 * k * m0[0]
+    for t in (0.5, 2.0, 6.0):
+        rs.advance(t)
+        y, f = state5(rs), 1.0 / (1.0 + alpha * t)
+        assert y["Rm"] == pytest.approx([m * f for m in m0], rel=1e-5)
+        assert y["P"] == pytest.approx([m * (1.0 - f) / 2.0 for m in m0], rel=1e-5)
+        assert y["Ui"] == pytest.approx([m * (1.0 - f) / 2.0 for m in m0], rel=1e-5)
+
+
+def test_backbiting_moment_law_is_the_per_chain_sum():
+    radicals = {8: 0.05, 14: 0.1, 23: 0.02}
+    rs = system5({"Re": radicals}, move={"Re": [bb_term()]})
+    got, dn = rates5(rs)
+    loss = move_sums(radicals, 0.5, 0.0, 2.0)
+    assert got["Re"] == pytest.approx(loss, rel=1e-12)
+    assert got["Rm"] == pytest.approx(-loss, rel=1e-12)
+    assert sum(np.abs(got[k]).sum() for k in ("P", "Ut", "Ui")) == 0.0 and dn[0] == 0.0
+
+
+def test_a_length_dependent_move_weights_each_chain_by_its_rate():
+    radicals = {8: 0.05, 14: 0.1, 23: 0.02}
+    rs = system5({"Re": radicals}, move={"Re": [bb_term(a=0.5, b=-1.0)]})
+    got, _dn = rates5(rs)
+    loss = move_sums(radicals, 0.5, 0.5, -1.0)
+    assert got["Re"][:2] == pytest.approx(loss[:2], rel=1e-12)
+    assert got["Rm"][:2] == pytest.approx(-loss[:2], rel=1e-12)
+    mono = {30: 0.2}
+    got = rates5(system5({"Re": mono}, move={"Re": [bb_term(a=0.5, b=-1.0)]}))[0]
+    assert got["Re"] == pytest.approx(move_sums(mono, 0.5, 0.5, -1.0), rel=1e-12)
+
+
+def test_backbiting_alone_follows_its_exact_solution():
+    radicals = {8: 0.05, 14: 0.1, 23: 0.02}
+    m0 = moments(radicals)
+    rs = system5({"Re": radicals}, move={"Re": [bb_term(k=0.3, b=2.0)]})
+    for t in (0.5, 2.0, 6.0):
+        rs.advance(t)
+        y, f = state5(rs), math.exp(-0.6 * t)
+        assert y["Re"] == pytest.approx([m * f for m in m0], rel=1e-5)
+        assert y["Rm"] == pytest.approx([m * (1.0 - f) for m in m0], rel=1e-5)
+
+
+def test_backbiting_and_its_reverse_reach_the_two_state_balance():
+    """R_e -> R_m at kf, R_m -> R_e at kr per chain: every chain flips
+    independently, R_e(t) = R_e(0) (kr + kf exp(-(kf + kr) t)) / (kf + kr)."""
+    radicals = {8: 0.05, 14: 0.1, 23: 0.02}
+    m0 = moments(radicals)
+    kf, kr = 0.6, 0.2
+    rs = system5({"Re": radicals}, move={"Re": [bb_term(k=0.3, b=2.0)],
+                                         "Rm": [bb_term(template="reverse_backbiting_t", k=0.1, b=2.0,
+                                                        product="Re")]})
+    for t in (0.5, 2.0, 6.0, 30.0):
+        rs.advance(t)
+        y = state5(rs)
+        f = (kr + kf * math.exp(-(kf + kr) * t)) / (kf + kr)
+        assert y["Re"] == pytest.approx([m * f for m in m0], rel=1e-5)
+        assert y["Rm"] == pytest.approx([m * (1.0 - f) for m in m0], rel=1e-5)
+
+
+def test_backbiting_only_leaves_the_dead_chains_alone():
+    chains = {"P": {60: 1.0, 70: 0.5}, "Re": {8: 0.05, 14: 0.1}}
+    rs = system5(chains, move={"Re": [bb_term()], "Rm": [bb_term(template="rev", k=0.1, product="Re")]})
+    p0, total0 = state5(rs)["P"], state5(rs)["Re"] + state5(rs)["Rm"]
+    rs.advance(10.0)
+    y = state5(rs)
+    assert np.array_equal(y["P"], p0)
+    assert y["Re"] + y["Rm"] == pytest.approx(total0, rel=1e-9)
+
+
+def test_no_radicals_and_no_unsaturation_is_flat_with_every_kernel():
+    d3 = dict(template="d3_t", k_pair=2.0, phi=1.0, partner="Rm", product="P", partner_product="Ui")
+    rev_i = ht_term(template="reverse_int_t", phi=0.5, product="Rm", partner_product="Rm")
+    rs = system5({"P": {60: 1.0, 70: 0.5}},
+                 transfer={"Re": [ht_term()], "Rm": [d3], "Ui": [rev_i],
+                           "Ut": [ht_term(template="reverse_em_t", product="Re", partner_product="Rm")]},
+                 move={"Re": [bb_term()], "Rm": [bb_term(template="rev", product="Re")]})
+    y0 = np.array(rs.y)
+    assert np.all(rates5(rs)[1] == 0.0)
+    rs.advance(10.0)
+    assert np.array_equal(np.asarray(rs.y), y0)
+
+
+def test_phi_zero_with_only_the_internal_reverse_is_flat():
+    rev_i = ht_term(template="reverse_int_t", phi=0.0, product="Rm", partner_product="Rm")
+    rs = system5({"P": {60: 1.0, 70: 0.5}, "Ui": {20: 0.3, 30: 0.1}}, transfer={"Ui": [rev_i]})
+    y0 = np.array(rs.y)
+    assert np.all(rates5(rs)[1] == 0.0)
+    rs.advance(10.0)
+    assert np.array_equal(np.asarray(rs.y), y0)
+
+
+@pytest.mark.parametrize("change, match", [
+    (dict(sites=[1.0, 2.0, 3.0]), "sites="),
+    (dict(sites=[1.0, float("nan"), 0.0, 0.0]), "sites="),
+    (dict(sites=[0.0, 0.0, 0.0, 0.0]), "sites="),
+    (dict(sites="1"), "sites="),
+    (dict(periods_per_unit=0), "periods_per_unit=0"),
+])
+def test_a_malformed_site_law_is_refused(change, match):
+    with pytest.raises(ValueError, match=match):
+        SP.validate_kernel_transfer("Re", [ht_term(**change)])
+
+
+def test_sites_need_their_period():
+    term = ht_term()
+    del term["periods_per_unit"]
+    with pytest.raises(ValueError, match="keys"):
+        SP.validate_kernel_transfer("Re", [term])
+
+
+@pytest.mark.parametrize("change, match", [
+    (dict(k=0.0), "k=0.0"),
+    (dict(a=0.0, b=0.0), "a.*b"),
+    (dict(a=float("inf")), "a=inf"),
+    (dict(product="Re"), "product"),
+    (dict(periods_per_unit=0), "periods_per_unit=0"),
+])
+def test_a_malformed_move_term_is_refused(change, match):
+    with pytest.raises(ValueError, match=match):
+        SP.validate_kernel_move("Re", [bb_term(**change)])
+
+
+def test_move_terms_need_exactly_the_keys():
+    term = bb_term()
+    del term["a"]
+    with pytest.raises(ValueError, match="keys"):
+        SP.validate_kernel_move("Re", [term])
+
+
+def test_a_move_naming_an_unconfigured_pool_is_refused():
+    with pytest.raises(ValueError, match="'Nowhere'"):
+        system5({"Re": {10: 1.0}}, move={"Re": [bb_term(product="Nowhere")]})
+
+
+def _deck_pool(**kw):
+    from unittest.mock import MagicMock
+    from rmgpy.rmg import input as rmg_input
+
+    mock_rmg = MagicMock()
+    mock_rmg.initial_species = []
+    mock_rmg.reaction_model.iteration_num = 0
+    mock_rmg.reaction_model.new_species_list = []
+    mock_rmg.reaction_model.make_new_species.side_effect = lambda obj, **_k: (obj, True)
+    old_rmg, old_sd = rmg_input.rmg, rmg_input.species_dict
+    rmg_input.rmg, rmg_input.species_dict = mock_rmg, {}
+    args = dict(label="Rm", monomer="[CH2][CH2]", end_groups=["[H]", "[H]"], cutoff=4, moments=[0.0, 0.0, 0.0],
+                initial_mass=0.0, interior_feature="radical",
+                kernel_move=[bb_term(template="rev", product="Re")])
+    args.update(kw)
+    try:
+        return rmg_input.polymer(**args)
+    finally:
+        rmg_input.rmg, rmg_input.species_dict = old_rmg, old_sd
+
+
+def test_the_deck_declares_interior_radical_and_alkene_pools():
+    """Their proxies are the dead chain's oligomer with the radical (or a C=C)
+    at its most central backbone position, so each pool is distinct from the
+    dead-chain, end-radical and terminal-alkene pools of the same monomer."""
+    rm = _deck_pool()
+    ui = _deck_pool(label="Ui", interior_feature="alkene", kernel_move=None)
+    p, r = _deck_polymers()
+    u = _deck_alkene_pool()
+    assert rm.interior_feature == "radical" and ui.interior_feature == "alkene"
+    assert rm.molecule[0].is_isomorphic(Molecule(smiles="CC[CH]CCC"))
+    assert ui.molecule[0].is_isomorphic(Molecule(smiles="CCC=CCC"))
+    assert len({x.fingerprint for x in (p, r, u, rm, ui)}) == 5
+    assert rm.kernel_move == SP.validate_kernel_move("Rm", [bb_term(template="rev", product="Re")])
+    copied = rm.copy(deep=True)
+    assert copied.kernel_move == rm.kernel_move and copied.interior_feature == "radical"
+    assert copied.fingerprint == rm.fingerprint
+
+
+@pytest.mark.parametrize("change, match", [
+    (dict(interior_feature="middle"), "interior_feature"),
+    (dict(end_radical_site="primary"), "interior_feature.*end_radical_site"),
+    (dict(end_alkene_site="primary"), "interior_feature.*end_alkene_site"),
+    (dict(kernel_move=[bb_term(k=-1.0)]), "k=-1.0"),
+])
+def test_the_deck_refuses_a_malformed_interior_pool(change, match):
+    with pytest.raises(InputError, match=match):
+        _deck_pool(**change)
+
+
+def test_the_artifact_records_moves_and_growing_sites_at_3_4():
+    from rmgpy.polymer import build_polymer_moments_artifact
+    from rmgpy.tools.polymer_moments_runner import _check_schema_version_known
+    p, r = _deck_polymers()
+    rm = _deck_pool()
+    artifact = build_polymer_moments_artifact([p, r, rm], core_species=None, core_reactions=[],
+                                              configured_pool_labels=["P", "Re", "Rm"], monomer_routing_by_pool={})
+    entries = {e["label"]: e for e in artifact["pools"]}
+    assert entries["Rm"]["catalog_kernels"] == {"move": rm.kernel_move}
+    assert artifact["schema_version"] == "3.4"
+    with pytest.raises(Exception, match="3.4"):
+        _check_schema_version_known(artifact)
+    u = _deck_alkene_pool(kernel_transfer=[ht_term(product="Re", partner_product="Rm")])
+    grown = build_polymer_moments_artifact([p, r, u], core_species=None, core_reactions=[],
+                                           configured_pool_labels=["P", "Re", "Ut"], monomer_routing_by_pool={})
+    assert grown["schema_version"] == "3.4"
+
+
+def test_a_born_empty_interior_pool_keeps_its_move_kernel():
+    from rmgpy.rmg.polymer_input import derive_daughter_pool_configs
+    rm = _deck_pool()
+    dummies = []
+    for k in range(3):
+        s = _spc("[Ne]", f"Rm_mu{k}")
+        s.reactive = False
+        s.is_moment_dummy = True
+        dummies.append(s)
+    core = [_spc("CCCC", "P"), rm] + dummies
+    (derived,) = derive_daughter_pool_configs(core, {s: i for i, s in enumerate(core)}, existing_pool_labels={"P"})
+    assert derived.label == "Rm"
+    assert derived.kernel_move == rm.kernel_move
+
+
+def test_the_pool_config_carries_the_move_kernel():
+    from rmgpy.rmg.polymer_input import PolymerPool
+    mu = [_spc("CO", "Re_mu0"), _spc("C=O", "Re_mu1"), _spc("C#N", "Re_mu2")]
+    proxy = _spc("[CH2]CCC", "Re")
+    pool = PolymerPool(label="Re", xs=4, monomer=_spc("C=C", "Re_repeat"), explicit_map={}, mu_species=mu,
+                       proxy_species=proxy, kernel_move=[bb_term()])
+    config = pool.to_config({s: i for i, s in enumerate([proxy] + mu)})
+    assert config.kernel_move == SP.validate_kernel_move("Re", [bb_term()])
