@@ -365,6 +365,28 @@ class SequenceChainProvider(BoundaryProvider):
                     yield (reading, word), added, size
                 frontier = grown
 
+    def fragment_facts(self) -> dict:
+        """The facts of one growth step the window guards read
+        (``windows._fragment_facts``): per side, residue end and residue the
+        support allows next to it, whether that residue's fragment
+        (``growth_fragment``) is closed shell and its net element delta
+        (fresh atoms minus the caps it replaces)."""
+        preceding = self._preceding()
+        out = {}
+        for name in sorted(self.residues):
+            for side, nexts in (("head", preceding[name]), ("tail", self.support[name])):
+                caps = tuple(range(int(self._site_order(name, side))))
+                for nxt in nexts:
+                    fragment = self.growth_fragment(((side, name, caps), (nxt,)))
+                    delta = {}
+                    for atom in fragment.atoms:
+                        delta[atom[0]] = delta.get(atom[0], 0) + 1
+                    delta["H"] = delta.get("H", 0) - len(caps)
+                    out[f"backbone_{side}:{name}:{nxt}"] = {
+                        "closed_shell": all(atom[3] == 0 for atom in fragment.atoms),
+                        "delta": {e: n for e, n in delta.items() if n}}
+        return out
+
     def growth_fragment(self, option) -> Fragment:
         """The word of a ``growth_options`` insertion as one fragment: its
         residues joined as a chain, the end facing the site bonded to the

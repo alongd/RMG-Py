@@ -1079,10 +1079,11 @@ def _interior_unit_atoms(provider) -> list:
 def _fragment_facts(providers=None) -> dict:
     """Per provider (objects; default the named pair): whether every extension
     fragment of its probes (``probe_ports``) is closed shell and the net
-    element delta of one step (fresh atoms minus the deleted caps).  A probe
-    that raises leaves that provider's facts undecided
-    (``{FACTS_UNDECIDED: reason}``).  Cached by the tuple of provider
-    names."""
+    element delta of one step (fresh atoms minus the deleted caps); a
+    provider that grows by more than one kind of step (a copolymer's residues)
+    states them itself (``fragment_facts``).  A probe that raises leaves that
+    provider's facts undecided (``{FACTS_UNDECIDED: reason}``).  Cached by the
+    tuple of provider names."""
     providers = tuple(provider_object(p) for p in (
         b.LEGACY_PROVIDERS if providers is None else providers))
     key = tuple(p.name for p in providers)
@@ -1091,7 +1092,9 @@ def _fragment_facts(providers=None) -> dict:
         for provider in providers:
             facts = {}
             try:
-                for port, coordinate in provider.probe_ports():
+                if hasattr(provider, "fragment_facts"):
+                    facts = provider.fragment_facts()
+                for port, coordinate in () if facts else provider.probe_ports():
                     fragment = provider.fragment(port, coordinate)
                     delta = defaultdict(int)
                     for atom in fragment.atoms:
@@ -4328,7 +4331,13 @@ def reacting_port_covers(certifier, family, case, *, bound=None, providers=None,
                "port": [list(p) for p in reacting] if len(reacting) > 1 else list(reacting[0]),
                "end": None if not ends else ends[0] if len(ends) == 1 else ends,
                "assignment": [[list(p), c] for p, c in assignment]}
-        especs, shift = (None, {}) if specs is None else event_specs(specs, assignment)
+        try:
+            especs, shift = (None, {}) if specs is None else event_specs(specs, assignment)
+        except b.ExtensionRefused as error:
+            # a chain that cannot be built longer there (a copolymer's next
+            # residue is not fixed): the event has no witness, a named gap
+            especs, shift = None, {}
+            row.update(route="spec", status="refused:extension", reason=str(error)[:200])
         built = None
         if especs is not None:
             row.update(route="spec", specs=[repr(x) for x in especs])
