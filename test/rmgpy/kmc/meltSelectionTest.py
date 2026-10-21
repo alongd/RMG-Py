@@ -151,8 +151,11 @@ def test_restricted_engine_is_the_filtered_chemistry(tmp_path):
     catalog_path = paired_catalog(tmp_path)
     catalog, _records = kr.load_catalogs([catalog_path], T)
     names = names_of(catalog_path)
-    excluded = named(names, "beta_scission", "intra_mid_end", "mid_end_recombination")
-    keep = [n for n in names if n not in excluded]
+    # every route an excluded hazard takes: unimolecular (beta scission,
+    # backbiting), bimolecular non-MET (H abstraction) and MET rows sharing a
+    # pair with the kept recombination (disproportionation)
+    keep = named(names, "homolysis", "recombination")
+    excluded = [n for n in names if n not in keep]
 
     class Filtered(me.PayloadCatalog):
         def templates(self, temperature):
@@ -161,19 +164,22 @@ def test_restricted_engine_is_the_filtered_chemistry(tmp_path):
     spec = S.pe_spec({10: 2, 20: 2})
     engine = me.MeltEngine(spec, catalog, T, numpy.random.default_rng(3), excluded=excluded)
     filtered = Filtered(catalog.payloads)
-    checked = 0
+    checked = shared = hazard = 0
     for _ in range(40):
         ref = me.MeltEngine(spec, filtered, T, numpy.random.default_rng(0), state=engine.state)
         mine, theirs = engine.propensities(), ref.propensities()
         assert (mine.enabled, mine.leak, mine.thinned, mine.non_thinned) == \
             (theirs.enabled, theirs.leak, theirs.thinned, theirs.non_thinned)
+        assert theirs.excluded == 0.0
         a = {k: (v.k_act, v.phi, v.allowed, v.leak) for k, v in engine.met_pair_rates().items() if v.k_act > 0}
         b = {k: (v.k_act, v.phi, v.allowed, v.leak) for k, v in ref.met_pair_rates().items()}
         assert a == b
         checked += bool(a)
+        shared += any(v.k_act > 0 and v.excluded > 0 for v in engine.met_pair_rates().values())
+        hazard += mine.excluded > 0
         if engine.run(max_events=1).events == 0:
             break
-    assert checked
+    assert checked and shared and hazard
     assert not set(engine.template_counts) & set(excluded)
 
 
