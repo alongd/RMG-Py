@@ -63,9 +63,9 @@ def _radical_chain(residues, unit, key):
                                               EditOp("set_radical", unit, key, 1)))
 
 
-def _member(certifier, family, provider, chain, suffix):
+def _member(certifier, family, provider, chain, suffix, direction="forward"):
     specs = (win.DeclaredSpec(provider.name, chain),)
-    cases = [c for c in win._cover_cases(certifier, family, specs, "forward")
+    cases = [c for c in win._cover_cases(certifier, family, specs, direction)
              if c.label.endswith(suffix)]
     assert cases, suffix
     return cases[0]
@@ -111,6 +111,25 @@ def test_branches_that_read_different_residues_are_refused_by_name(fam, certifie
     assert fp.status == "refused:extension_branches", (fp.status, fp.reason)
     assert "0:head+E" in fp.reason and "0:head+P" in fp.reason, fp.reason
     assert fp.window is None
+
+
+def test_branches_excluded_by_size_or_by_formula_are_one_outcome(fam, certifier, ep):
+    """Beta scission of an E/P adduct radical (EEEEPEE, the radical on e1 of
+    unit 3; 1-alkene + n-pentyl): at one depth the residue words differ in
+    size, so near the depository's sizes one branch is excluded by formula
+    and a larger one by size.  Both certify that no analogue is a depository
+    reaction (the rule estimate stands): the branches agree and the member
+    reaches its fixed point, it is not refused for a different proof."""
+    family = fam["R_Addition_MultipleBond"]
+    case = _member(certifier, family, ep, _radical_chain(("E",) * 4 + ("P", "E", "E"), 3, "e1"),
+                   "Cds-HH_Cds-CsH;CsJ-CsHH|C=CCCC(C)CCCC,[CH2]CCCC|m0", "reverse")
+    fp = _fixed_point(certifier, family, case)
+    assert fp.status == "fixed_point", (fp.status, fp.reason)
+    view = (("m", ("sel", "excluded:formula"), "descent"),)
+    assert win.outcome_view(view) == win.outcome_view((("m", ("sel", "excluded:size"),
+                                                        "descent"),))
+    assert win.outcome_view(view) != win.outcome_view((("m", ("sel", cm.EXCEPT_MATCHED),
+                                                        "descent"),))
 
 
 def test_an_extension_step_adds_one_named_residue_and_verifies(fam, certifier, ep):
