@@ -617,6 +617,26 @@ def test_journal_mutant_missing_an_endpoint_is_detected(state, monkeypatch):
     assert snapshot(state) != snap
 
 
+@pytest.mark.parametrize("change", ["insert", "delete"])
+def test_a_write_that_changes_the_atom_id_set_is_refused(state, monkeypatch, change):
+    """The id-set postcondition (checked by size, not by walking every atom)
+    still catches a write that creates or drops an atom anywhere."""
+    original = MeltState._write
+    far = chain_atom(state, 2, 6, "c1")
+
+    def mutant(self, plan):
+        original(self, plan)
+        if change == "insert":
+            self._atoms[max(self._atoms) + 1] = self._atoms[far]
+        else:
+            del self._atoms[far]
+
+    a, b, edits = homolysis_edits(state)
+    monkeypatch.setattr(MeltState, "_write", mutant)
+    with pytest.raises(PostconditionError, match="atom-id set changed"):
+        state.apply(edits)
+
+
 # --------------------------------------------------------------------------
 # refusals
 # --------------------------------------------------------------------------

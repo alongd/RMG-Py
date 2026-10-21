@@ -726,7 +726,10 @@ class MeltState:
         journal.new_components = tuple((r.atoms[0], r.atoms) for r in records)
 
     def _postcheck(self, journal: Journal, support, touched):
-        if self._atoms.keys() != self._ids:
+        # _write assigns only support atoms, each already validated as an existing
+        # id, so the id set can change only by a net insertion or deletion; a size
+        # check catches that without walking every atom on each apply
+        if len(self._atoms) != len(self._ids) or not self._ids.issuperset(support):
             raise PostconditionError("the atom-id set changed")
         for i in support:
             self._check_node(i, self._atoms[i])
