@@ -28,9 +28,10 @@
 ###############################################################################
 
 
+import pytest
 from numpy import testing
 
-from rmgpy.molecule.graph import get_vertex_connectivity_value
+from rmgpy.molecule.graph import Edge, Graph, Vertex, get_vertex_connectivity_value
 from rmgpy.molecule.molecule import Molecule
 from rmgpy.molecule.vf2 import VF2
 
@@ -99,3 +100,53 @@ class TestVF2:
         order_a, order_b = list(a.atoms), list(b.atoms)
         assert self.vf2.is_isomorphic(a, b, None, save_order=True)
         assert a.atoms == order_a and b.atoms == order_b
+
+    def test_a_kept_graph_whose_connectivity_was_reset_is_re_sorted(self):
+        """A graph the matcher kept from its previous call whose connectivity
+        values were reset since is re-sorted (its connectivity recomputed),
+        never matched with the reset values."""
+        a = Molecule().from_smiles("CCC")
+        b = Molecule().from_smiles("CCC")
+        assert self.vf2.is_isomorphic(a, b, None)
+        a.reset_connectivity_values()
+        assert self.vf2.is_isomorphic(a, b, None)
+
+    def test_a_kept_graph_whose_vertex_count_changed_is_re_sorted(self):
+        """A graph the matcher kept from its previous call that lost a vertex
+        since (its sorting labels still valid) is re-sorted, never matched
+        with its connectivity from before the change."""
+        def path(n):
+            graph = Graph()
+            vertices = [Vertex() for _ in range(n)]
+            for vertex in vertices:
+                graph.add_vertex(vertex)
+            for v1, v2 in zip(vertices, vertices[1:]):
+                graph.add_edge(Edge(v1, v2))
+            return graph, vertices
+
+        four, vertices = path(4)
+        assert self.vf2.is_isomorphic(four, path(4)[0], None)
+        four.remove_vertex(vertices[-1])
+        assert self.vf2.is_isomorphic(four, path(3)[0], None)
+
+    @pytest.mark.parametrize("subgraph", [False, True])
+    def test_save_order_restores_the_order_when_the_sizes_reject(self, subgraph):
+        """``save_order`` restores both graphs' order also when the sizes
+        alone reject the pair (an early return after sorting)."""
+        def pair():
+            big, small = Molecule().from_smiles("CCO"), Molecule().from_smiles("CC")
+            return (small, big) if subgraph else (big, small)
+
+        def compare(graph1, graph2, save_order):
+            if subgraph:
+                return VF2().is_subgraph_isomorphic(graph1, graph2, None, save_order=save_order)
+            return VF2().is_isomorphic(graph1, graph2, None, save_order=save_order)
+
+        graph1, graph2 = pair()
+        order = [list(graph1.vertices), list(graph2.vertices)]
+        assert not compare(graph1, graph2, False)
+        assert [list(graph1.vertices), list(graph2.vertices)] != order   # the call sorts them
+        graph1, graph2 = pair()
+        order = [list(graph1.vertices), list(graph2.vertices)]
+        assert not compare(graph1, graph2, True)
+        assert [list(graph1.vertices), list(graph2.vertices)] == order

@@ -3425,8 +3425,10 @@ def depository_overrides(payloads, *, counter, rates, kc) -> tuple:
                 result = rates(RateRequest(family_label, ";".join(ev["pathway"]),
                                            ev["orientation"], a_src, b_src))
                 sel = (result.provenance or {}).get("selection") or {}
-                forward_sel = sel if ev["orientation"] == "as_generated" else \
-                    (sel.get("forward") or {})
+                # the record owning the estimate names its selection itself; a
+                # derived reverse names it as ``forward`` (either orientation:
+                # RMG may estimate the pair in its family's reverse direction)
+                forward_sel = (sel.get("forward") or {}) if "forward" in sel else sel
                 if result.problems or forward_sel.get("source") not in depositories:
                     failures.append(
                         f"depository override {name[:160]}: the production path selects "

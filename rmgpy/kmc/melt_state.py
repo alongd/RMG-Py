@@ -439,6 +439,34 @@ class Transaction:
         return False
 
 
+class _AtomTable(dict):
+    """The atom table: a dict that records every id it gains or loses after it
+    is built (``changed``), so the id-set postcondition reads only what changed
+    instead of walking every atom.  Atoms are never created or deleted, so any
+    recorded id is a fault.  Bulk mutators are refused: every write goes
+    through ``__setitem__``."""
+
+    __slots__ = ("changed",)
+
+    def __init__(self, items=()):
+        super().__init__(items)
+        self.changed = set()
+
+    def __setitem__(self, key, value):
+        if key not in self:
+            self.changed.add(key)
+        dict.__setitem__(self, key, value)
+
+    def __delitem__(self, key):
+        self.changed.add(key)
+        dict.__delitem__(self, key)
+
+    def _refused(self, *_args, **_kw):
+        raise TypeError("the atom table is written one atom at a time")
+
+    pop = popitem = clear = update = setdefault = _refused
+
+
 def _is_int(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -461,7 +489,7 @@ class MeltState:
                 raise MeltStateError(f"atom {i} is not a Node")
             if not isinstance(origin[i], Origin):
                 raise MeltStateError(f"atom {i} has no Origin")
-        self._atoms: Dict[int, Node] = {i: atoms[i] for i in sorted(atoms)}
+        self._atoms: Dict[int, Node] = _AtomTable((i, atoms[i]) for i in sorted(atoms))
         self._origin: Dict[int, Origin] = {i: origin[i] for i in sorted(origin)}
         self._ids = frozenset(self._atoms)
         for i, node in self._atoms.items():
@@ -569,7 +597,7 @@ class MeltState:
         atoms, origin, components, revision = state
         self._revision = revision
         self._tx = None
-        self._atoms = dict(atoms)
+        self._atoms = _AtomTable(atoms)
         self._origin = dict(origin)
         self._ids = frozenset(self._atoms)
         self.components = components
@@ -726,10 +754,10 @@ class MeltState:
         journal.new_components = tuple((r.atoms[0], r.atoms) for r in records)
 
     def _postcheck(self, journal: Journal, support, touched):
-        # _write assigns only support atoms, each already validated as an existing
-        # id, so the id set can change only by a net insertion or deletion; a size
-        # check catches that without walking every atom on each apply
-        if len(self._atoms) != len(self._ids) or not self._ids.issuperset(support):
+        # the atom table records every id it gained or lost (_AtomTable), so an
+        # insertion, a deletion or an equal-count swap anywhere is caught without
+        # walking every atom on each apply
+        if self._atoms.changed or len(self._atoms) != len(self._ids):
             raise PostconditionError("the atom-id set changed")
         for i in support:
             self._check_node(i, self._atoms[i])

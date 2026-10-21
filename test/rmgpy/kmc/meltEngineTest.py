@@ -1658,6 +1658,44 @@ def test_an_incremental_rescan_equals_a_match_after_every_event():
         assert engine.events_fired > 0 and engine.scan_reuse_hits > 0
 
 
+def _backbiting_templates(temperature):
+    """One intramolecular H shift: the toy H abstraction with both pieces on
+    one participant, joined by a 1,5 backbone path (two pieces: candidates
+    with no root)."""
+    from dataclasses import replace
+    base = next(t for t in S.pe_templates(temperature) if t.name == "h_abstraction")
+    return [wm.Template("backbiting", "toy_1_5_H_shift", [replace(a, participant=0) for a in base.atoms],
+                        base.bonds, base.edits, weight=1.0, paths=(wm.PathPredicate(0, 4, 4, 4),))]
+
+
+@pytest.mark.parametrize("case", ["backbiting", "intra_mid_end"])
+def test_identical_chains_with_an_intramolecular_window_rescan_their_reused_entries(case):
+    """Identical radical chains share one matched entry (the others relabel
+    it lazily); an event on a chain whose entry is relabelled rescans it from
+    that entry, including the unimolecular candidates of a window of several
+    pieces (no root).  Every entry equals a fresh match after every event, on
+    every seed."""
+    for seed in range(6):
+        if case == "backbiting":
+            spec, catalog = S.pe_spec({10: 2}), S.ToyCatalog(builder=_backbiting_templates)
+        else:
+            spec, catalog = S.pe_spec({10: 2}), S.ToyCatalog(names=PE_LIVE)
+        state = me.materialize(spec)
+        for c in (0, 1):
+            S.strip_h(state, S.end_carbons(state, c)[0])
+            if case == "intra_mid_end":
+                S.strip_h(state, S.carbons(state, c)[4])
+        engine = me.MeltEngine(spec, catalog, 700.0, np.random.default_rng(seed), state=state)
+        assert any(isinstance(e, me._LazyEntry) for e in engine.entries.values())
+        for _ in range(3):
+            if engine.step() is None:
+                break
+            ids = engine.state.components.ids()
+            assert {c: _entry_fields(engine.entries[c]) for c in ids} == \
+                {c: _entry_fields(e) for c, e in _matched(engine, ids).items()}, (seed, engine.events_fired)
+        assert engine.events_fired > 0
+
+
 def test_a_kept_site_keeps_its_prior_kind_only_when_clean_and_walk_free():
     """An incremental rescan takes a site's kind from the prior entry only
     when no atom of the site is dirty and the kind reads no walk (its
