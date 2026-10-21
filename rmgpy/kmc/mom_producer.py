@@ -22,6 +22,13 @@ families must equal the union of the kMC catalogs' ``provenance.families``;
 otherwise the producer refuses unless ``--allow-family-mismatch``, and then the
 mismatch is recorded in ``conventions.json`` and ``producer.json``.
 
+**Kernel mode** (``--kernel-rates TABLE --kernel ID ... [--phi PHI]``, no
+families, no catalogs): the chemistry is the kernel-rates table's homolysis and
+end-recombination kernels (``kernel_input``) as polymer-mom's ``kernel_homolysis``
+on the chain pool and ``kernel_recombination`` on an explicit end-radical pool
+``<label>_re``, at the table's temperature; the run is active when its profile
+moves (``kernel_census``).
+
 **Modes.**  ``--write-only`` (default) writes ``<out>/rmg/input.py``,
 ``<out>/rmg/rmgrc`` (the kinetics database: ``--database`` or the catalogs'
 common ``provenance.database_path``), ``conventions.json`` and
@@ -136,6 +143,8 @@ MOM_EXHAUSTION_FLOOR_K = 100.0   # rmgpy/solver/polymer.pyx:153 EXHAUSTION_FLOOR
 MOM_MOMENT_FLOOR = max(MOM_SMALL_EPS, MOM_EXHAUSTION_FLOOR_K * SIMULATOR_ATOL)
 STATUS_INACTIVE = "refused:inactive_chemistry"
 BUILTIN_STRUCTURES = {"H": "[H]", "H2": "[H][H]"}
+KERNEL_RATES_SCHEMAS = ("kmc-kernel-rates/2", "kmc-kernel-rates/3")
+RADICAL_POOL_SUFFIX = "_re"      # the explicit end-radical pool of kernel mode: <label>_re
 
 QUANTITY_SOURCES = {
     "polymer_condensed_mass_g": (
@@ -571,8 +580,155 @@ def species_residence(spec, species: Sequence[str], bath: Sequence[str]) -> Dict
     return dict(sorted(out.items()))
 
 
+def _uniform_cut(law: dict, a: float, radical: Optional[str], where: str) -> Tuple[int, str]:
+    """(min_fragment e, the radical class) of a homolysis law whose exact
+    outcomes are, on every n it was measured on, two radicals of one class,
+    k and n - k for every k in [e, n - e], a sites per position; refused
+    otherwise."""
+    fragments = [p for _n, outs in law["exact"].items() for _m, prods in outs for p in prods]
+    if not fragments:
+        raise ProducerError(f"{where}: the law cuts no chain up to n = {law['exact_to_n']}")
+    e = min(int(p[1]) for p in fragments)
+    classes = {p[0] for p in fragments}
+    if len(classes) != 1 or (radical is not None and classes != {radical}):
+        raise ProducerError(f"{where}: fragments of classes {sorted(classes)}, not one end-radical pool "
+                            f"{radical or ''}")
+    for n_text, outs in sorted(law["exact"].items(), key=lambda x: int(x[0])):
+        n, got, want = int(n_text), {}, {}
+        for m, prods in outs:
+            pair = tuple(sorted(int(p[1]) for p in prods))
+            if len(prods) != 2 or sum(pair) != n:
+                raise ProducerError(f"{where}: at n = {n} an outcome {prods} is not two fragments of n")
+            got[pair] = got.get(pair, 0) + m
+        for k in range(e, n - e + 1):
+            pair = tuple(sorted((k, n - k)))
+            want[pair] = want.get(pair, 0) + a
+        if got != want:
+            raise ProducerError(f"{where}: at n = {n} the outcomes {got} are not the uniform cut over "
+                                f"[{e}, {n - e}] with {a!r} sites per position ({want})")
+    return e, classes.pop()
+
+
+def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: float, phi: float, label: str,
+                 radical_label: str, volume_ratio: float) -> dict:
+    """polymer-mom's ``kernel_homolysis`` and ``kernel_recombination`` terms
+    of the requested kernels of a kernel-rates table, and the record of the
+    checks that make their moment laws exact on this deck.
+
+    Homolysis (``homolysis``, a chain class): per template the table's weight
+    w, its sites a*n + b (n in the table's period, ``periods_per_unit`` per
+    declared unit) and ``min_fragment`` e from its exact law, which must be
+    the uniform cut (``_uniform_cut``) with b = a*(1 - 2e); phi (``phi_thinned``
+    templates) the given cage-escape factor; the fragments into the end-radical
+    pool.  The sites are the count on every chain the H + C system holds only
+    if no initial chain is shorter than 2e - 1 periods (refused otherwise;
+    recombination products are at least 2e).
+    Recombination (``recombination``, two radicals of the fragments' class
+    joining into one chain, gamma 0): k_pair = (w / divisor) phi^thinned
+    V_poly / V, kMC's per-pair coefficient in MoM's concentration n / V_poly;
+    sites_per_chain the table's per_feature, whose profile (zero sites at
+    short radicals) must lie below e, the shortest radical homolysis makes.
+    Refused: another schema, temperature or chemistry digest, kernels not in
+    the table or of another type, inert or unmodelled laws, depository
+    overrides (sizes moments cannot single out)."""
+    from rmgpy.kmc.melt_engine import declared_initialization
+    if table.get("schema") not in KERNEL_RATES_SCHEMAS:
+        raise ProducerError(f"not a kernel-rates table of {KERNEL_RATES_SCHEMAS} (got {table.get('schema')!r})")
+    if float(table["temperature_K"]) != float(temperature):
+        raise ProducerError(f"the table is at temperature {table['temperature_K']!r} K, the run at {temperature!r} "
+                            "K: kernel mode is isothermal at the table's temperature")
+    bound = (table.get("catalog") or {}).get("chemistry_sha256")
+    if bound != kr.chemistry_sha256(spec):
+        raise ProducerError(f"the table's chemistry digest {bound!r} is not the deck's ({kr.chemistry_sha256(spec)})")
+    if isinstance(phi, bool) or not isinstance(phi, (int, float)) or not 0.0 <= phi <= 1.0:
+        raise ProducerError(f"phi {phi!r} must be in [0, 1]")
+    unit = table["moment_unit"]
+    ppu, nbb = int(unit["periods_per_declared_unit"]), int(unit["backbone_atoms_per_period"])
+    a_unit = spec.repeat_unit.composition.molar_mass_g_mol()
+    if abs(float(unit["molar_mass_g_mol"]) * ppu - a_unit) > MASS_RELATIVE * a_unit:
+        raise ProducerError(f"{ppu} periods of {unit['molar_mass_g_mol']!r} g/mol are not the declared unit's "
+                            f"{a_unit!r} g/mol")
+    unknown = sorted(set(kernels) - set(table["kernels"]))
+    if unknown or not kernels:
+        raise ProducerError(f"kernels {unknown or 'none'} not in the table (kernels {sorted(table['kernels'])})")
+    rows = {r["template"]: r for r in table["templates"]}
+    n_min = min(dp for dp, _c in declared_initialization(spec).dp_counts) * ppu
+    by_type = {"homolysis": [], "recombination": []}
+    for kid in sorted(set(kernels)):
+        kernel = table["kernels"][kid]
+        if kernel["type"] not in by_type:
+            raise ProducerError(f"{kid}: no MoM kernel carries type {kernel['type']!r} (homolysis and "
+                                "recombination only)")
+        by_type[kernel["type"]].append((kid, kernel))
+    radical = None
+    for kid, kernel in by_type["recombination"]:
+        if len(set(kernel["classes"])) != 1 or not kernel["classes"][0].startswith("radical_end:"):
+            raise ProducerError(f"{kid}: no MoM kernel joins classes {kernel['classes']} (one end-radical class)")
+        radical = kernel["classes"][0] if radical is None else radical
+        if kernel["classes"][0] != radical:
+            raise ProducerError(f"{kid}: a second end-radical class {kernel['classes'][0]!r} ({radical!r})")
+    homolysis, recombination, checks, e_min = [], [], {}, None
+    for kid, kernel in by_type["homolysis"]:
+        if kernel["classes"] != ["chain"]:
+            raise ProducerError(f"{kid}: no MoM kernel cuts class {kernel['classes']} (the chain class only)")
+        for term in kernel["templates"]:
+            name, where = term["template"], f"{kid} template {term['template']}"
+            if term.get("law") is None or term.get("law_inert") or term.get("overrides"):
+                raise ProducerError(f"{where}: an inert, unmodelled or overridden law has no moment form")
+            sites = rows[name]["participants"][0]["chain"]
+            a, b = float(sites["a"]), float(sites["b"])
+            e, radical = _uniform_cut(term["law"], a, radical, where)
+            if b != a * (1 - 2 * e):
+                raise ProducerError(f"{where}: sites a*n + b with b = {b!r}, not b = a*(1 - 2*min_fragment) = "
+                                    f"{a * (1 - 2 * e)!r} of its cut law")
+            if n_min < 2 * e - 1:
+                raise ProducerError(f"{where}: initial chains of {n_min} periods are shorter than {2 * e - 1}, "
+                                    f"where a*n + b = {a * n_min + b!r} is not their site count")
+            homolysis.append({"template": name, "w": float(rows[name]["weight"]),
+                              "phi": float(phi) if rows[name]["phi_thinned"] else 1.0, "a": a, "b": b,
+                              "min_fragment": e, "periods_per_unit": ppu, "daughter": radical_label})
+            checks[name] = {"min_fragment": e, "exact_to_n": term["law"]["exact_to_n"],
+                            "exact_from_n": sites.get("exact_from_n"), "initial_min_periods": n_min}
+            e_min = e if e_min is None else min(e_min, e)
+    for kid, kernel in by_type["recombination"]:
+        for term in kernel["templates"]:
+            name, where = term["template"], f"{kid} template {term['template']}"
+            if term.get("law") is None or term.get("law_inert") or term.get("overrides"):
+                raise ProducerError(f"{where}: an inert, unmodelled or overridden law has no moment form")
+            row = rows[name]
+            sites = [p[radical] for p in row["participants"]]
+            c = float(sites[0]["per_feature"])
+            zero = set()
+            for s in sites:
+                if float(s["per_feature"]) != c:
+                    raise ProducerError(f"{where}: participants with {s['per_feature']!r} and {c!r} sites")
+                for key, counts in s.get("profile", {}).items():
+                    m = re.fullmatch(r"fragment_backbone_atoms=(\d+)", key)
+                    if not m or list(counts) != [0] or int(m.group(1)) % nbb:
+                        raise ProducerError(f"{where}: a profile entry {key}: {counts} has no moment form")
+                    zero.add(int(m.group(1)) // nbb)
+            if e_min is not None and zero and max(zero) >= e_min:
+                raise ProducerError(f"{where}: its profile gives no site at {sorted(zero)} periods, where "
+                                    f"homolysis makes radicals (from {e_min})")
+            join = [c, [["join", "chain", 0]]]
+            for slot in ("S0", "S1"):
+                law = term["law"][slot]
+                if law["far"]["outcomes"] != [join] or any(
+                        outs != ([] if int(n) in zero else [join]) for n, outs in law["exact"].items()):
+                    raise ProducerError(f"{where}: its {slot} law is not one chain of n0 + n1 periods per site")
+            k = float(row["weight"]) / float(row["divisor"]) * (float(phi) if row["phi_thinned"] else 1.0)
+            recombination.append({"template": name, "k_pair": k * float(volume_ratio), "sites_per_chain": c,
+                                  "periods_per_unit": ppu, "product": label})
+            checks[name] = {"w_over_divisor": k, "zero_site_periods": sorted(zero)}
+    record = {"kernels": sorted(set(kernels)), "excluded_kernels": sorted(set(table["kernels"]) - set(kernels)),
+              "temperature_K": float(table["temperature_K"]), "phi": float(phi), "moment_unit": unit,
+              "volume_ratio_mom_over_kmc": float(volume_ratio), "radical_class": radical, "checks": checks}
+    return {"homolysis": homolysis, "recombination": recombination, "record": record}
+
+
 def build_input(deck, context: dict, *, temperature: float, end: float, families: Sequence[str],
-                constraints: Optional[Dict[str, Any]] = None) -> Tuple[str, dict]:
+                constraints: Optional[Dict[str, Any]] = None,
+                kernels: Optional[dict] = None) -> Tuple[str, dict]:
     """The MoM input text and the facts the conversion needs."""
     spec = deck.spec
     if deck.xs < 2:
@@ -588,7 +744,9 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
     mu = [float(x) for x in spec.macroscopic_moments_mol]
     scale = spec.initialization().scale_factor
     species = declared_species(spec)
-    generated = {label, f"{label}_melt"} | {f"{label}_mu{k}" for k in range(3)}
+    radical_label = label + RADICAL_POOL_SUFFIX if kernels is not None else None
+    pools = [label] + ([radical_label] if radical_label else [])
+    generated = {f"{label}_melt"} | {p + s for p in pools for s in ("", "_mu0", "_mu1", "_mu2")}
     clash = sorted((set(species) & generated) | ((set(species) | generated) & set(context["species"])))
     if clash:
         raise ProducerError(f"species labels {clash} collide with the MoM pool label {label!r}, its moment "
@@ -596,13 +754,21 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
     mobile = {name: count * scale / constants.Na for name, count in spec.initial_mobile_counts if count}
     graphs = {name: graph for name, graph, _d in spec.small_species}
     mobile_kg = {name: amount * graphs[name].composition.molar_mass_kg_mol() for name, amount in mobile.items()}
-    phase = [label] + (sorted(mobile) if spec.density_basis == "whole_initial_mixture" else [])
+    phase_mobile = sorted(mobile) if spec.density_basis == "whole_initial_mixture" else []
+    phase = pools + phase_mobile
     initial = {label: mu[0]}
     initial.update({name: amount for name, amount in sorted(mobile.items())})
     initial.update({name: x * BATH_GAS_TOTAL_MOL for name, x in context["bath"].items()})
     pressure = context["pressure"] or DEFAULT_PRESSURE
     residence = species_residence(spec, sorted(species), sorted(context["bath"]))
-    v_poly = (a * mu[1] / 1000.0 + math.fsum(mobile_kg[n] for n in phase[1:])) / spec.density_kg_m3
+    v_poly = (a * mu[1] / 1000.0 + math.fsum(mobile_kg[n] for n in phase_mobile)) / spec.density_kg_m3
+    volume_ratio = (a * mu[1] / 1000.0 + math.fsum(mobile_kg[n] for n in phase_mobile)) / (
+        spec.initial_mass_kg + math.fsum(mobile_kg.values()))
+    terms = None
+    if kernels is not None:
+        terms = kernel_input(kernels["table"], spec, kernels["ids"], temperature=temperature, phi=kernels["phi"],
+                             label=label, radical_label=radical_label, volume_ratio=volume_ratio)
+        terms["record"].update(kernels["source"])
     constraints = dict(constraints or {})
     if constraints:
         constraints.setdefault("allowed", ["input species"])   # the declared species stay admissible
@@ -614,7 +780,7 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
         "    reactionLibraries=[],",
         "    seedMechanisms=[],",
         "    kineticsDepositories='default',",
-        f"    kineticsFamilies={sorted(set(families))!r},",
+        f"    kineticsFamilies={'none' if terms is not None else sorted(set(families))!r},",
         "    kineticsEstimator='rate rules',",
         ")",
     ]
@@ -630,7 +796,22 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
         f"    cutoff={deck.xs},",
         f"    moments=[{mu[0]!r}, {mu[1]!r}, {mu[2]!r}],",
         f"    initial_mass={a * mu[1] / 1000.0!r},",
-        ")",
+    ]
+    if terms is not None and terms["homolysis"]:
+        lines.append(f"    kernel_homolysis={terms['homolysis']!r},")
+    lines.append(")")
+    if terms is not None:
+        lines += [
+            "polymer(",
+            f"    label={radical_label!r},",
+            f"    monomer=\"\"\"{repeat.to_adjacency_list()}\"\"\",",
+            f"    end_groups=[{head.to_smiles()!r}, {tail.to_smiles()!r}],",
+            f"    cutoff={deck.xs},",
+            "    moments=[0.0, 0.0, 0.0],",
+            "    initial_mass=0.0,",
+            "    end_radical_site='primary',",
+        ] + ([f"    kernel_recombination={terms['recombination']!r},"] if terms["recombination"] else []) + [")"]
+    lines += [
         f"phase = polymer_phase(label={label + '_melt'!r}, species={phase!r}, solvent={label!r}, "
         f"density=({spec.density_kg_m3!r}, 'kg/m^3'), residence={residence!r})",
         "hybridPolymerReactor(",
@@ -656,11 +837,12 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
              "phase_species": phase, "initial_moles": initial, "bath": sorted(context["bath"]),
              "pressure": list(pressure),
              "constraints": constraints, "families": sorted(set(families)),
-             "volume_ratio_mom_over_kmc": (a * mu[1] / 1000.0 + math.fsum(
-                 mobile_kg[n] for n in phase[1:])) / (spec.initial_mass_kg + math.fsum(mobile_kg.values())),
+             "volume_ratio_mom_over_kmc": volume_ratio,
              "residence": residence,
              "phase_kinetics": phase_kinetics(spec, sorted(species), initial, sorted(context["bath"]), temperature,
                                               pressure, v_poly=v_poly, residence=residence)}
+    if terms is not None:
+        facts.update({"kernels": terms, "radical_pool": radical_label})
     return "\n".join(lines) + "\n", facts
 
 
@@ -776,6 +958,24 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
          "time takes the row); derived quantities from the interpolated columns; outside the profile "
          "refused"),
     ]
+    if "kernels" in facts:
+        record = facts["kernels"]["record"]
+        rows += [
+            ("kernels", {"homolysis": facts["kernels"]["homolysis"],
+                         "recombination": facts["kernels"]["recombination"], "record": record},
+             "kernel mode: kineticsFamilies 'none'; the kernel-rates table's homolysis kernel on the chain "
+             f"pool and end recombination on the explicit end-radical pool {facts['radical_pool']!r} "
+             "(polymer(end_radical_site='primary'), born empty, the chain pool's end groups), per template: "
+             "w, a, b (sites a*n + b, n in the table's period, periods_per_unit per declared unit) and "
+             "min_fragment from its exact law, which must be the uniform cut; recombination per_feature "
+             "sites, joined into one chain of n0 + n1 periods; refusals in mom_producer.kernel_input; "
+             "isothermal at the table's temperature (no k(T))"),
+            ("kernel_phi", record["phi"],
+             "cage-escape factor on the radical-creating (phi_thinned) templates; 1 is the well-mixed bound"),
+            ("kernel_volume", record["volume_ratio_mom_over_kmc"],
+             "k_pair = (w / divisor) phi^thinned V_poly / V: kMC's pair rate (w / divisor) S0 S1 / V on MoM's "
+             "concentrations n / V_poly, V_poly / V this ratio (end groups excluded from V_poly)"),
+        ]
     return {"schema": CONVENTIONS_SCHEMA,
             "conventions": [{"name": n, "value": v, "statement": s} for n, v, s in rows],
             "quantity_sources": dict(QUANTITY_SOURCES), "not_produced": dict(NOT_PRODUCED),
@@ -1524,6 +1724,19 @@ def core_phases(header: Sequence[str], doc: dict, chemkin_species: Sequence[Any]
         "reconstructed"
 
 
+def kernel_census(rmg_dir, facts: dict, times: Sequence[float]) -> dict:
+    """Kernel mode's activity: the kernels written (no reaction rows: families
+    are off) and the profile's first change beyond both floors
+    (``profile_motion``), or none."""
+    rmg_dir = Path(rmg_dir)
+    header, data = read_profile(find_profile(rmg_dir))
+    doc = read_pools(rmg_dir / "chemkin" / "polymer_pools.json")
+    dictionary = read_species_dictionary(rmg_dir / "chemkin" / "species_dictionary.txt")
+    motion = profile_motion(header, data, doc["pools"], facts, dictionary, times)
+    return {"mode": "kernels", "kernels": facts["kernels"]["record"]["kernels"],
+            "profile_changes": motion is not None, "motion": motion}
+
+
 def census(rmg_dir, facts: dict, temperature: float, times: Sequence[float]) -> dict:
     """Pool-coupled reactions of the final mechanism per family (rows and
     admitted rows), the live rows and whether the profile moves
@@ -2219,8 +2432,14 @@ def _write_json(path, doc):
 def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: int, families: Sequence[str],
             catalogs: Sequence, out, mode: str = "write", allow_family_mismatch: bool = False,
             allow_inactive: bool = False, database: Optional[str] = None,
-            species_constraints: Sequence[str] = ()) -> dict:
-    """Write (and with ``mode`` "run" / "convert", run and convert); returns ``producer.json``."""
+            species_constraints: Sequence[str] = (), kernel_rates: Optional[str] = None,
+            kernels: Sequence[str] = (), phi: float = 1.0) -> dict:
+    """Write (and with ``mode`` "run" / "convert", run and convert); returns ``producer.json``.
+
+    Kernel mode (``kernel_rates``, a kernel-rates table, and ``kernels``, its
+    kernel ids): no families and no catalogs; ``kernel_input``'s terms at the
+    table's temperature, ``phi`` on radical-creating templates; the run is
+    active when its profile moves (no family census)."""
     if mode not in ("write", "run", "convert"):
         raise ProducerError(f"mode {mode!r}")
     out = Path(out)
@@ -2234,18 +2453,29 @@ def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: i
     if not math.isfinite(temperature) or temperature <= 0:
         raise ProducerError(f"temperature {temperature!r} must be positive")
     times = kr.observation_times(end=end, snapshots=snapshots)
-    if not families:
+    kernel_source = None
+    if kernel_rates is not None:
+        if families or catalogs:
+            raise ProducerError("kernel mode writes no families and reads no catalogs (the kernels are its "
+                                "chemistry)")
+        raw = Path(kernel_rates).read_bytes()
+        kernel_source = {"table": json.loads(raw), "ids": list(kernels), "phi": phi,
+                         "source": {"table": str(Path(kernel_rates).resolve()), "table_sha256": _sha256(raw)}}
+    elif not families:
         raise ProducerError("--families needs at least one family")
     try:
         deck = kr.read_deck(deck_path)
     except kr.RunError as error:
         raise ProducerError(str(error)) from error
     context = deck_context(deck_path)
-    catalog_families, catalog_databases = catalog_provenance(catalogs)
-    family = family_check(catalog_families, families, allow_family_mismatch)
+    if kernel_source is None:
+        catalog_families, catalog_databases = catalog_provenance(catalogs)
+        family = family_check(catalog_families, families, allow_family_mismatch)
+    else:
+        catalog_databases, family = [], {"mode": "kernels", "families": []}
     db = database_directory(database, catalog_databases)
     text, facts = build_input(deck, context, temperature=temperature, end=times[-1], families=families,
-                              constraints=_parse_constraints(species_constraints))
+                              constraints=_parse_constraints(species_constraints), kernels=kernel_source)
     flags = {}
     kinetics = facts["phase_kinetics"]
     if kinetics["not_comparable"]:
@@ -2286,8 +2516,18 @@ def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: i
             (out / stale).unlink()
     # the run's integrity first (its refusals take precedence), then its activity
     entries, diagnostics, read = convert(rmg_dir, times, facts, KmcClasses(deck.spec, deck.xs))
-    manifest["census"] = census(rmg_dir, facts, temperature, times)
-    if not manifest["census"]["live_rows"] or not manifest["census"]["profile_changes"]:
+    if kernel_source is not None:
+        manifest["census"] = kernel_census(rmg_dir, facts, times)
+        if not manifest["census"]["profile_changes"]:
+            flags["inactive_chemistry"] = manifest["census"]
+            if not allow_inactive:
+                finish(STATUS_INACTIVE)
+                raise ProducerError(f"{STATUS_INACTIVE}: the profile of the kernels "
+                                    f"{facts['kernels']['record']['kernels']} does not move ({ACTIVITY_RULE}); "
+                                    "pass --allow-inactive to convert it anyway, flagged")
+    else:
+        manifest["census"] = census(rmg_dir, facts, temperature, times)
+    if kernel_source is None and (not manifest["census"]["live_rows"] or not manifest["census"]["profile_changes"]):
         flags["inactive_chemistry"] = manifest["census"]
         if not allow_inactive:
             finish(STATUS_INACTIVE)
@@ -2320,8 +2560,12 @@ def main(argv=None) -> int:
     parser.add_argument("--temperature", type=float, required=True)
     parser.add_argument("--end", type=float, required=True)
     parser.add_argument("--snapshots", type=int, required=True)
-    parser.add_argument("--families", nargs="+", required=True)
-    parser.add_argument("--catalog", nargs="+", required=True)
+    parser.add_argument("--families", nargs="+", default=[])
+    parser.add_argument("--catalog", nargs="+", default=[])
+    parser.add_argument("--kernel-rates", help="kernel mode: a kernel-rates table (no --families, no --catalog)")
+    parser.add_argument("--kernel", action="append", default=[], help="kernel mode: a kernel id (repeatable)")
+    parser.add_argument("--phi", type=float, default=1.0,
+                        help="kernel mode: cage-escape factor of radical-creating templates (1: well mixed)")
     parser.add_argument("--out", required=True)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--run", action="store_const", dest="mode", const="run")
@@ -2337,7 +2581,8 @@ def main(argv=None) -> int:
                            snapshots=args.snapshots, families=args.families, catalogs=args.catalog,
                            out=args.out, mode=args.mode or "write",
                            allow_family_mismatch=args.allow_family_mismatch, allow_inactive=args.allow_inactive,
-                           database=args.database, species_constraints=args.species_constraint)
+                           database=args.database, species_constraints=args.species_constraint,
+                           kernel_rates=args.kernel_rates, kernels=args.kernel, phi=args.phi)
     except (ProducerError, kr.RunError) as error:
         print(f"refused: {error}", file=sys.stderr)
         return 2
