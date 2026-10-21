@@ -276,6 +276,42 @@ def test_the_insertions_are_the_support_words_within_the_budget(ep):
                      ("tail", "P"), ("tail", "PE"), ("tail", "PEP")]
 
 
+# -- the windows read the residue set too ----------------------------------------------
+
+
+def test_the_window_facts_of_a_copolymer_are_its_residue_steps(ep):
+    """The extension facts the window guards read (closed shell, net element
+    delta of one step) are decided for a copolymer: one residue per step,
+    closed shell, adding E's or P's atoms (never removing any)."""
+    facts = win._fragment_facts((ep,))[ep.name]
+    assert win.FACTS_UNDECIDED not in facts, facts
+    assert all(f["closed_shell"] for f in facts.values())
+    assert {tuple(sorted(f["delta"].items())) for f in facts.values()} == {E, P}
+
+
+def test_an_event_needing_a_longer_copolymer_chain_is_refused_by_name(fam, ep):
+    """1-hexyl as an E/P chain (EEE, the radical on its capped head atom):
+    the intra-molecular H shifts that read the head port need the chain one
+    residue longer there, which a copolymer chain cannot be (its next residue
+    is not fixed): every such event is a named ``refused:extension`` gap,
+    never an exception."""
+    from rmgpy.kmc.declared_chain import EditOp
+    family = fam["intra_H_migration"]
+    certifier = cm.Certifier(fam)
+    chain = SequenceChainSpec(("E", "E", "E"), edits=(EditOp("remove_h", 0, "e1"),
+                                                      EditOp("set_radical", 0, "e1", 1)))
+    specs = (win.DeclaredSpec(ep.name, chain),)
+    cases = [c for c in win._cover_cases(certifier, family, specs, "forward")
+             if win.reacting_ports(c.witness)]
+    assert cases
+    covers = win.reacting_port_covers(certifier, family, cases[0], specs=specs)
+    interior = [row for row in covers if row["kind"] != "physical"]
+    assert interior
+    for row in interior:
+        assert row["status"] == "refused:extension" and row["verdict"] == "gap", row
+        assert "refused:sequence_extension" in row["reason"]
+
+
 # -- the v1 homopolymers stay byte-identical -------------------------------------------
 
 
