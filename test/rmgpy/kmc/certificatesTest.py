@@ -2182,3 +2182,50 @@ def test_rewrite_compares_the_declared_bond_count(fam):
     problems = cm.rewrite_problems(replace(owner, product_graphs=[missing, owner.product_graphs[1]],
                                            event_id=""))
     assert any("do not reproduce the declared products" in p for p in problems), problems
+
+
+# intra_H_migration's R5HJ_2 as the database writes it: its file order is not
+# the order RMG's matcher sorts it into (by connectivity) on first use
+R5HJ_2 = """
+1 *1 R!H u1 {2,[S,D,T,B]}
+2 *4 R!H u0 {1,[S,D,T,B]} {3,[S,D,T,B]}
+3 *6 R!H u1 {2,[S,D,T,B]} {4,[S,D,T,B]}
+4 *5 R!H u0 {3,[S,D,T,B]} {5,[S,D,T,B]}
+5 *2 R!H u0 {4,[S,D,T,B]} {6,S}
+6 *3 H   u0 {5,S}
+"""
+
+
+def _one_node_family(adjacency):
+    from types import SimpleNamespace
+    from rmgpy.data.base import Entry
+    from rmgpy.molecule.group import Group
+    entry = Entry(label="N", item=Group().from_adjacency_list(adjacency))
+    groups = SimpleNamespace(entries={"N": entry}, top=[entry])
+    return SimpleNamespace(label="toy", groups=groups), entry
+
+
+def test_node_semantics_resolve_whatever_order_the_matcher_left_the_atoms_in():
+    """A node's semantics recorded before RMG's matcher sorted its atoms
+    resolve against the same node after (and the other way round): the
+    stored claim is the group, not the in-memory atom order."""
+    family, entry = _one_node_family(R5HJ_2)
+    stored = cm._entry_semantics(entry)
+    entry.item.sort_vertices()
+    assert cm._entry_semantics(entry) != stored        # the order did change
+    assert cm.tree_problems(family, {"nodes": {"N": stored}}) == []
+    family, entry = _one_node_family(R5HJ_2)
+    entry.item.atoms.reverse()
+    assert cm.tree_problems(family, {"nodes": {"N": stored}}) == []
+
+
+def test_node_semantics_of_another_group_still_do_not_resolve():
+    """A different group (one radical moved) is still a stored claim that
+    does not resolve, in any atom order."""
+    family, entry = _one_node_family(R5HJ_2)
+    other = R5HJ_2.replace("3 *6 R!H u1", "3 *6 R!H u0").replace("4 *5 R!H u0", "4 *5 R!H u1")
+    _f, moved = _one_node_family(other)
+    stored = cm._entry_semantics(moved)
+    for _ in range(2):
+        assert any("do not resolve" in p for p in cm.tree_problems(family, {"nodes": {"N": stored}}))
+        entry.item.sort_vertices()
