@@ -3026,6 +3026,46 @@ def test_a_matched_size_takes_the_depository_rate_and_its_reverse_through_kc():
     assert got == pytest.approx(want, rel=1e-12)
 
 
+def test_a_reverse_direction_estimate_takes_the_same_overrides():
+    """RMG may estimate the pair in its family's reverse direction
+    (``get_kinetics`` returns ``estimated_forward`` False): the compiler then
+    puts the estimate on the reversed record and its thermo inverse (k / Kc,
+    naming the estimate as ``forward``) on the as-generated one.  The gate
+    reads the depository selection from whichever record owns the estimate,
+    so both directions take the same overrides as a forward estimate."""
+    entry, match = _c13_match()
+    counter = DepositoryCounter([ToyDepository([entry])])
+    payloads, counter = _toy_pair(counter=counter, certificate=_certificate(match))
+    resolved = _res(payloads, counter)
+    a = counter.species_of_rows(_rows(C13_R))
+    estimate = {"kind": "RMG family estimate", "source": "Kinetics Depository toy_cc/training",
+                "entry": entry.label, "rank": 3, "family_template_direction": "reverse"}
+    base = _pair_rates({"reversed": K_RULE, "as_generated": K_RULE})
+
+    def rates(req):
+        if counter.species_of_rows(req.generation) != a:
+            return base(req)
+        if req.orientation == "reversed":
+            return te.RateResult(GRID, tuple(k / c for k, c in zip(K_DEP, _kc())), 1.0,
+                                 {"selection": estimate}, ())
+        return te.RateResult(GRID, K_DEP, 1.0, {"selection": {
+            "kind": "reference-thermo reverse", "reference": "k_family / Kc",
+            "forward": estimate}}, ())
+
+    out, table, failures = te.depository_overrides(resolved, counter=counter, rates=rates,
+                                                   kc=toy_kc)
+    assert failures == [], failures
+    assert len(table) == 2 and all(r["status"] == "ok" for r in table), table
+    by = {p["orientation"]: base_template(p) for p in out}
+    _out, _table, _failures, h, w = _override_pair()
+    for got, want in ((by["reversed"], h), (by["as_generated"], w)):
+        (o,), (o_forward,) = got["overrides"], want["overrides"]
+        assert o["entry"] == o_forward["entry"] and o["entry"]["index"] == 7
+        assert o["counts"] == o_forward["counts"]
+        assert o["weight"]["w"] == pytest.approx(o_forward["weight"]["w"], rel=1e-12)
+        assert ("derived" in o) == ("derived" in o_forward)
+
+
 def test_overrides_name_only_the_matched_sizes():
     """Every override is the matched reaction itself (one unit longer, or any
     other size the templates reach, keeps the rule weight: no override)."""
