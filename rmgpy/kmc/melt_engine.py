@@ -1055,26 +1055,39 @@ class SpeciesIdentity:
 
     def __init__(self, spec):
         declared = [(name, graph) for name, graph, _d in spec.small_species]
+        dispositions = {name: d for name, _g, d in spec.small_species}
         products = monomer_product_species(spec)
-        reserved = set(BUILTIN_SPECIES) | {"monomer_product"} | {name for name, _g in products}
+        reserved = {"monomer_product"} | {name for name, _g in products}
         collide = sorted(name for name, _g in declared if name in reserved)
         if collide:
             raise DeclarationError(
-                f"declared small species labels {collide} collide with built-in labels {sorted(reserved)}; "
-                "rename them")
+                f"declared small species labels {collide} collide with built-in labels "
+                f"{sorted(reserved | set(BUILTIN_SPECIES))}; rename them")
         declared.extend(products)
-        self.forms = []
+        states = []
         for name, graph in declared:
             builder = _Builder()
             builder.add_segment(graph, "mobile", 0, name)
-            self._add(name, builder.state())
+            states.append((name, builder.state()))
+        self.forms = []
+        for name, state in states:
+            if name not in BUILTIN_SPECIES:
+                self._add(name, state)
         from rmgpy.kmc.melt_state import Node, Origin
         h1 = {0: Node("H", None, 0, 1, 0, {})}
         h2 = {0: Node("H", None, 0, 0, 0, {1: 1.0}), 1: Node("H", None, 0, 0, 0, {0: 1.0})}
         self._add("H", MeltState(h1, {0: Origin("mobile", 0, "H", "H", False)}))
         self._add("H2", MeltState(h2, {i: Origin("mobile", 0, "H2", f"H{i}", False) for i in (0, 1)}))
         self.max_atoms = max(len(rows) for _n, _c, rows in self.forms)
+        # H and H2 may be declared (to state their residence), only as the
+        # built-ins themselves, which the forms above already are
         self._cache: Dict[Tuple, List] = {}
+        for name, state in states:
+            if name in BUILTIN_SPECIES and (dispositions.get(name) != "mobile"
+                                            or self.identify(state, state.components.ids()[0]) != name):
+                raise DeclarationError(
+                    f"declared small species {name!r} must be the built-in {name} (its graph, disposition "
+                    f"'mobile'); got disposition {dispositions.get(name)!r}")
 
     def _add(self, name, state):
         cid = state.components.ids()[0]
@@ -1335,7 +1348,7 @@ class MeltEngine:
         declared molecule alone).  A species in none is refused (design §5)."""
         out, idle = {}, []
         for name, graph, disposition in self.spec.small_species:
-            if disposition != "mobile":
+            if disposition != "mobile" or name in BUILTIN_SPECIES:   # a declared built-in may be idle
                 continue
             builder = _Builder()
             builder.add_segment(graph, "mobile", 0, name)

@@ -28,6 +28,12 @@ from rmgpy.polymer_mass import (
 
 SCHEMA_VERSION = 1
 ROUNDING_V1 = "largest_remainder_dp_ascending_v1"
+# Where a species lives (small_species.<name>.residence).  "melt": retained in
+# the closed melt, as the kinetic Monte Carlo keeps every species; the default
+# for every small species, H, H2 and every undeclared light.  "volatile"
+# (removed on formation) is a later extension.
+SMALL_SPECIES_RESIDENCES = ("melt",)
+DEFAULT_RESIDENCE = "melt"
 
 _LOCALITY_BOUND_FIELDS = {
     "elements", "isotopes", "formal_charges", "radical_electrons",
@@ -614,19 +620,7 @@ class LinearHomopolymerSpec:
         small = value["small_species"]
         if not isinstance(small, Mapping):
             raise ValueError("small_species must be a mapping")
-        small_species = []
-        for name, declaration in sorted(small.items()):
-            if not isinstance(name, str) or not name:
-                raise ValueError("small-species labels must be non-empty strings")
-            if not isinstance(declaration, Mapping) or set(declaration) != {"graph", "disposition"}:
-                raise ValueError("each small species requires graph and disposition")
-            graph = GraphDeclaration.from_mapping(declaration["graph"])
-            if graph.ports:
-                raise ValueError("small physical species cannot contain connection ports")
-            disposition = declaration["disposition"]
-            if not isinstance(disposition, str) or not disposition:
-                raise ValueError("small-species disposition must be a non-empty string")
-            small_species.append((name, graph, disposition))
+        small_species = [_small_species_entry(name, declaration) for name, declaration in sorted(small.items())]
         mobile_counts_value = value.get("initial_mobile_counts", {})
         if not isinstance(mobile_counts_value, Mapping):
             raise ValueError("initial_mobile_counts must be a mapping")
@@ -931,6 +925,12 @@ class LinearHomopolymerSpec:
         head = self.head_end_group.to_legacy_molecule({head_port_name: "*1"})
         tail = self.tail_end_group.to_legacy_molecule({tail_port_name: "*2"})
         return repeat, (head, tail)
+
+    def residence(self, name: str) -> str:
+        """Where species ``name`` lives: every small species, H, H2 and every
+        undeclared light is melt-resident (``DEFAULT_RESIDENCE``, the only
+        residence declared so far; ``small_species.<name>.residence``)."""
+        return DEFAULT_RESIDENCE
 
     def as_mapping(self) -> Dict[str, Any]:
         result = {
@@ -1459,23 +1459,35 @@ def _check_electronic_state(molecule: Molecule, where: str) -> None:
         raise ValueError(f"declared electronic state is inconsistent in {where}") from exc
 
 
+def _small_species_entry(name, declaration) -> Tuple[str, GraphDeclaration, str]:
+    """One ``small_species`` entry: graph, disposition and the optional
+    ``residence`` (``SMALL_SPECIES_RESIDENCES``; the default is canonical and
+    not stored, so stating it changes no digest)."""
+    if not isinstance(name, str) or not name:
+        raise ValueError("small-species labels must be non-empty strings")
+    if not isinstance(declaration, Mapping) or not (
+            {"graph", "disposition"} <= set(declaration) <= {"graph", "disposition", "residence"}):
+        raise ValueError("each small species requires graph and disposition (and may declare residence)")
+    residence = declaration.get("residence", DEFAULT_RESIDENCE)
+    if residence == "volatile":
+        raise ValueError(f"small species {name!r}: residence 'volatile' (removed from the melt on formation) "
+                         "is a later extension")
+    if residence not in SMALL_SPECIES_RESIDENCES:
+        raise ValueError(f"small species {name!r}: residence {residence!r} is not one of "
+                         f"{SMALL_SPECIES_RESIDENCES}")
+    graph = GraphDeclaration.from_mapping(declaration["graph"])
+    if graph.ports:
+        raise ValueError("small physical species cannot contain connection ports")
+    disposition = declaration["disposition"]
+    if not isinstance(disposition, str) or not disposition:
+        raise ValueError("small-species disposition must be a non-empty string")
+    return name, graph, disposition
+
+
 def _small_species(value) -> Tuple[Tuple[str, GraphDeclaration, str], ...]:
     if not isinstance(value, Mapping):
         raise ValueError("small_species must be a mapping")
-    out = []
-    for name, declaration in sorted(value.items()):
-        if not isinstance(name, str) or not name:
-            raise ValueError("small-species labels must be non-empty strings")
-        if not isinstance(declaration, Mapping) or set(declaration) != {"graph", "disposition"}:
-            raise ValueError("each small species requires graph and disposition")
-        graph = GraphDeclaration.from_mapping(declaration["graph"])
-        if graph.ports:
-            raise ValueError("small physical species cannot contain connection ports")
-        disposition = declaration["disposition"]
-        if not isinstance(disposition, str) or not disposition:
-            raise ValueError("small-species disposition must be a non-empty string")
-        out.append((name, graph, disposition))
-    return tuple(out)
+    return tuple(_small_species_entry(name, declaration) for name, declaration in sorted(value.items()))
 
 
 def _v1_locality(locality, repeat, head, tail, monomer=None, small=()) -> None:
@@ -1691,6 +1703,12 @@ class PolymerSpec:
         return json.dumps(
             self.as_mapping(), sort_keys=True, separators=(",", ":"), allow_nan=False
         ).encode("utf-8")
+
+    def residence(self, name: str) -> str:
+        """Where species ``name`` lives: every small species, H, H2 and every
+        undeclared light is melt-resident (``DEFAULT_RESIDENCE``, the only
+        residence declared so far; ``small_species.<name>.residence``)."""
+        return DEFAULT_RESIDENCE
 
     def as_mapping(self) -> Dict[str, Any]:
         return {

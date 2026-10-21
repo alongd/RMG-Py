@@ -613,7 +613,8 @@ def site_class(state, x, aromatic: Optional[frozenset] = None) -> Optional[str]:
 
 def declared_species_names(spec, identity: SpeciesIdentity) -> List[str]:
     """Every name the identity can return: small species, ``monomer_product``
-    (when it is not also a small species) and the built-ins."""
+    (when it is not also a small species) and the built-ins (once, declared
+    or not)."""
     names = [name for name, _g, _d in spec.small_species]
     for label, monomer in monomer_product_species(spec):
         builder = _Builder()
@@ -621,7 +622,7 @@ def declared_species_names(spec, identity: SpeciesIdentity) -> List[str]:
         alone = builder.state()
         if identity.identify(alone, alone.components.ids()[0]) == label:
             names.append(label)
-    return names + list(BUILTIN_SPECIES)
+    return names + [name for name in BUILTIN_SPECIES if name not in names]
 
 
 # --------------------------------------------------------------------------
