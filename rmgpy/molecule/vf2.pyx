@@ -50,7 +50,7 @@ cdef class VF2:
 
     @graphA.setter
     def graphA(self, value):
-        self.graph1 = value
+        self.graph1, self.size1 = value, len(value.vertices)
         self.graph1.sort_vertices()
 
     @property
@@ -59,7 +59,7 @@ cdef class VF2:
 
     @graphB.setter
     def graphB(self, value):
-        self.graph2 = value
+        self.graph2, self.size2 = value, len(value.vertices)
         self.graph2.sort_vertices()
 
     cpdef bint is_isomorphic(self, Graph graph1, Graph graph2, dict initial_mapping, bint save_order=False,
@@ -111,21 +111,32 @@ cdef class VF2:
         If `find_all` is ``True``, all isomorphisms are found; otherwise only
         the first is found.
         """
-        cdef int call_depth, index1, index2
+        # A graph kept from the previous call is sorted like any other:
+        # sort_vertices re-sorts only when a sorting label is invalid, which
+        # is cheap to check.  A kept graph whose vertex count changed (a
+        # removed vertex leaves the other labels valid) has its connectivity
+        # reset first, so that it is re-sorted
+        if self.graph1 is graph1 and len(graph1.vertices) != self.size1:
+            graph1.reset_connectivity_values()
+        if self.graph2 is graph2 and len(graph2.vertices) != self.size2:
+            graph2.reset_connectivity_values()
+        self.graph1, self.size1 = graph1, len(graph1.vertices)
+        self.graph2, self.size2 = graph2, len(graph2.vertices)
+        graph1.sort_vertices(save_order)
+        graph2.sort_vertices(save_order)
+        try:
+            self._isomorphism(graph1, graph2, initial_mapping, subgraph, find_all, strict)
+        finally:
+            if save_order:
+                graph1.restore_vertex_order()
+                graph2.restore_vertex_order()
 
-        # A graph kept from the previous call is not re-sorted, so its order
-        # must still be saved here for restore_vertex_order
-        if self.graph1 is not graph1:
-            self.graph1 = graph1
-            graph1.sort_vertices(save_order)
-        elif save_order:
-            graph1.ordered_vertices = graph1.vertices[:]
-
-        if self.graph2 is not graph2:
-            self.graph2 = graph2
-            graph2.sort_vertices(save_order)
-        elif save_order:
-            graph2.ordered_vertices = graph2.vertices[:]
+    cdef _isomorphism(self, Graph graph1, Graph graph2, dict initial_mapping, bint subgraph, bint find_all,
+                      bint strict):
+        """
+        The search of :meth:`isomorphism` on the sorted graphs.
+        """
+        cdef int call_depth
 
         self.initial_mapping = initial_mapping
         self.subgraph = subgraph
@@ -171,10 +182,6 @@ cdef class VF2:
             call_depth -= len(self.initial_mapping)
 
         self.match(call_depth)
-
-        if save_order:
-            graph1.restore_vertex_order()
-            graph2.restore_vertex_order()
 
         # We're done, so clear the mappings to prevent downstream effects
         for vertex1 in graph1.vertices:
