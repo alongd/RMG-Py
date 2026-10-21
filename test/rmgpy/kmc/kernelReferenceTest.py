@@ -109,9 +109,11 @@ def scission_table(spec, w):
     e = spec.end_composition.molar_mass_g_mol()
     return {"schema": K.SCHEMA, "temperature_K": T, "catalog": {"chemistry_sha256": kr.chemistry_sha256(spec)},
             "moment_unit": {"periods_per_declared_unit": 2, "backbone_atoms_per_period": 1,
-                            "molar_mass_g_mol": spec.repeat_unit.composition.molar_mass_g_mol() / 2},
+                            "molar_mass_g_mol": spec.repeat_unit.composition.molar_mass_g_mol() / 2,
+                            "composition": {"C": "1", "H": "2"}},
             "families": {"chain": {"label_far": "chain", "min_n": 1, "labels": {},
-                                   "molar_mass_offset_g_mol": e, "declared_species": {}}},
+                                   "molar_mass_offset_g_mol": e, "composition_offset": {"H": "2"},
+                                   "declared_species": {}}},
             "kernels": {HOMOLYSIS: {"type": "homolysis", "molecularity": 1, "classes": ["chain"],
                                     "templates": [{"template": "scission", "phi_thinned": False,
                                                    "law": law, "overrides": []}]}},
@@ -336,6 +338,7 @@ def test_inert_and_unmodelled_terms_are_listed_not_dropped(pe):
     terms = sum(len(k["templates"]) for k in pe["table"]["kernels"].values())
     assert len(model.inert) + len(model.not_modelled) + len(model.uni_terms) + len(model.bis) == terms
     assert [x["template"][:12] for x in model.not_modelled] == ["55593e44e6ca"]
+    assert model.unbalanced == []       # every measured law conserves each element
 
 
 def test_a_table_of_another_chemistry_is_refused(toy):
