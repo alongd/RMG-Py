@@ -40,6 +40,15 @@ Pinned policies
   fragment position) only, so applying one extension vector in any port
   order yields the same witness and the same map; composite maps keep their
   steps sorted by (port, depth).
+* **Residue branches.**  A residue-sequence chain (a copolymer) does not fix
+  the residue beyond an artificial port: its provider names every residue
+  one step may add there (``next_residues``, read through
+  ``extension_residues``) and builds the step only for a named one
+  (``extend(..., residue=)``).  The step records its residue and the witness
+  carries the residue word added per port (``Witness.extension_words``), so
+  a map verifies and replays exactly; which residues to try is the caller's
+  (the window fixed point tries all).  A provider with one repeat names
+  none: ``extension_residues`` is ``(None,)`` and nothing changes.
 * **Vectors.**  One integer per artificial port, ports ordered by
   (participant index, port id).  ``enumerate_vectors`` walks a stated box
   under a hard heavy-atom ceiling (``PROXY_PADDING_MAX_HEAVY_ATOMS`` unless
@@ -491,7 +500,11 @@ class Participant:
 
 @dataclass(frozen=True)
 class Witness:
-    """A mapped reaction witness on explicit-H rows plus its boundaries."""
+    """A mapped reaction witness on explicit-H rows plus its boundaries.
+
+    ``extension_words``: per port extended by named residues (a residue
+    sequence chain), the residues added there, innermost first (module doc,
+    residue branches); empty otherwise."""
 
     reactants: tuple
     products: tuple
@@ -499,6 +512,8 @@ class Witness:
     id_base: int
     extension_counts: tuple[tuple[tuple[int, str], int], ...] = ()
     label: str = ""
+    extension_words: tuple[tuple[tuple[int, str], tuple[str, ...]], ...] = field(
+        default=(), repr=False)
 
     def _memo(self, name, compute):
         # derived views are cached on the (immutable) instance; they are not
@@ -677,7 +692,8 @@ def witness_from_move(move, reactant_molecules, participants, *, resonance: str 
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class ExtensionStep:
-    """One repeat added at one port."""
+    """One repeat added at one port (``residue``: the named residue of a
+    residue-sequence step, else None)."""
 
     port_key: tuple[int, str]
     depth: int
@@ -686,6 +702,7 @@ class ExtensionStep:
     new_port: Port
     deleted: tuple[int, ...]
     fresh_ids: tuple[int, ...]  # in fragment-local order
+    residue: Optional[str] = field(default=None, repr=False)
 
     def sort_key(self):
         return (self.port_key, self.depth)
@@ -725,9 +742,35 @@ def _forbid_support_deletion(support, deleted, where: str) -> None:
         raise MapCheckError(f"{where}: deleting edit-support atoms {hit} is forbidden")
 
 
+def port_residue(witness: Witness, port_key) -> Optional[str]:
+    """The residue at an artificial port of a residue-sequence chain: the
+    last residue an extension added there, else the chain's own residue at
+    the port atom; None on a chain without residues."""
+    word = dict(witness.extension_words).get(tuple(port_key))
+    if word:
+        return word[-1]
+    metadata = witness.participant(port_key[0]).metadata
+    if metadata.residues is None:
+        return None
+    unit, _position = metadata.coordinate(witness.port(port_key).atom_id)
+    return metadata.residues[unit]
+
+
+def extension_residues(witness: Witness, port_key, providers=None) -> tuple:
+    """The residues one extension step at ``port_key`` may add (module doc,
+    residue branches): ``(None,)`` for a provider with one repeat."""
+    provider = _provider_for(witness, tuple(port_key), providers)
+    nexts = getattr(provider, "next_residues", None)
+    if nexts is None:
+        return (None,)
+    port = witness.port(port_key)
+    return tuple(nexts(port_residue(witness, port_key), port.tag, len(port.cap_atom_ids)))
+
+
 def plan_extension(witness: Witness, port_key, provider: BoundaryProvider,
-                   support=None) -> ExtensionMap:
-    """The map that extends ``port_key`` by one repeat (not yet applied)."""
+                   support=None, residue: Optional[str] = None) -> ExtensionMap:
+    """The map that extends ``port_key`` by one repeat (not yet applied);
+    ``residue``: the residue a residue-sequence step adds (module doc)."""
     port_key = tuple(port_key)
     if port_key not in witness.port_keys():
         raise BoundaryError(f"unknown port {port_key}")
@@ -745,7 +788,12 @@ def plan_extension(witness: Witness, port_key, provider: BoundaryProvider,
     caps = tuple(port.cap_atom_ids)
     reactant_rows = witness.reactant_rows()
     _forbid_support_deletion(support, caps, f"port {port_key}")
-    fragment = provider.fragment(port, metadata.coordinate(port.atom_id))
+    coordinate = metadata.coordinate(port.atom_id)
+    if residue is None:
+        fragment = provider.fragment(port, coordinate)
+    else:
+        fragment = provider.fragment(port, coordinate,
+                                     (port_residue(witness, port_key), residue))
     depth = witness.depth(port_key)
     ids = _fresh_ids(witness, port_key, depth, len(fragment.atoms))
     bonds = [(ids[i], ids[j], float(o)) for i, j, o in fragment.bonds]
@@ -753,7 +801,7 @@ def plan_extension(witness: Witness, port_key, provider: BoundaryProvider,
     bonds = tuple(sorted((min(a, b), max(a, b), o) for a, b, o in bonds))
     new_port = Port(port.port_id, ids[fragment.new_port],
                     tuple(ids[i] for i in fragment.new_caps), port.tag, port.physicality)
-    step = ExtensionStep(port_key, depth, provider.name, port, new_port, caps, ids)
+    step = ExtensionStep(port_key, depth, provider.name, port, new_port, caps, ids, residue)
     deleted = set(caps)
     return ExtensionMap(
         steps=(step,),
@@ -829,7 +877,17 @@ def apply_map(witness: Witness, record: ExtensionMap, *, support=None) -> Witnes
     for step in record.steps:
         counts[step.port_key] = counts.get(step.port_key, 0) + 1
     return Witness(reactants, products, tuple(participants), witness.id_base,
-                   tuple(sorted(counts.items())), witness.label)
+                   tuple(sorted(counts.items())), witness.label, _words(witness, record))
+
+
+def _words(witness: Witness, record: ExtensionMap) -> tuple:
+    """``witness.extension_words`` plus the named residues of ``record``'s
+    steps, in depth order per port."""
+    words = dict(witness.extension_words)
+    for step in sorted(record.steps, key=ExtensionStep.sort_key):
+        if step.residue is not None:
+            words[step.port_key] = words.get(step.port_key, ()) + (step.residue,)
+    return tuple(sorted(words.items()))
 
 
 def compose(first: ExtensionMap, second: ExtensionMap) -> ExtensionMap:
@@ -989,6 +1047,8 @@ def _verify_bookkeeping(original: Witness, record: ExtensionMap, extended: Witne
                             f"got {list(extended.extension_counts)})")
     if extended.label != original.label:
         raise MapCheckError("the witness label changed")
+    if extended.extension_words != _words(original, record):
+        raise MapCheckError("extension words are not the original's plus the steps' residues")
 
 
 def _verify_replay(original: Witness, record: ExtensionMap, extended: Witness,
@@ -999,7 +1059,7 @@ def _verify_replay(original: Witness, record: ExtensionMap, extended: Witness,
     for step in sorted(record.steps, key=ExtensionStep.sort_key):
         try:
             provider = providers[step.provider]
-            planned = plan_extension(current, step.port_key, provider)
+            planned = plan_extension(current, step.port_key, provider, residue=step.residue)
         except (KeyError, BoundaryError) as error:
             raise MapCheckError(f"replay of step {step.port_key} depth {step.depth} "
                                 f"failed: {error!r}") from error
@@ -1042,6 +1102,7 @@ def _verify_steps(original, record, extended, providers) -> None:
         steps = sorted(steps, key=ExtensionStep.sort_key)
         current = original.port(port_key)
         depth = original.depth(port_key)
+        residue = None if steps[0].residue is None else port_residue(original, port_key)
         for step in steps:
             if step.old_port != current:
                 raise MapCheckError(f"port {port_key}: step starts from {step.old_port}, "
@@ -1059,7 +1120,11 @@ def _verify_steps(original, record, extended, providers) -> None:
             coord = orig_coords.get(current.atom_id) or recorded_coords.get(current.atom_id)
             if coord is None:
                 raise MapCheckError(f"port {port_key}: port atom has no repeat coordinate")
-            fragment = provider.fragment(current, coord[1:])
+            if step.residue is None:
+                fragment = provider.fragment(current, coord[1:])
+            else:
+                fragment = provider.fragment(current, coord[1:], (residue, step.residue))
+                residue = step.residue
             ids = tuple(step.fresh_ids)
             if len(ids) != len(fragment.atoms):
                 raise MapCheckError(f"port {port_key}: step size differs from its fragment")
@@ -1154,12 +1219,13 @@ def _provider_for(witness, port_key, providers):
 
 
 def extend(witness: Witness, port_key, providers=None, *, ceiling=None, verify: bool = True,
-           support=None):
-    """Extend one artificial port by one repeat; returns (witness, map)."""
+           support=None, residue: Optional[str] = None):
+    """Extend one artificial port by one repeat; returns (witness, map).
+    ``residue``: the residue a residue-sequence step adds (module doc)."""
     provider = _provider_for(witness, tuple(port_key), providers)
     if support is None:
         support = edit_support(witness)
-    record = plan_extension(witness, port_key, provider, support)
+    record = plan_extension(witness, port_key, provider, support, residue)
     limit = _ceiling(ceiling)
     heavy = witness.heavy_count() + sum(
         1 for _a, attrs in record.fresh_atoms if attrs[0] != "H") - sum(
@@ -2219,7 +2285,7 @@ def reconstruct_end(witness: Witness, port_key, end: str, providers=None):
                                                      set(deleted)),
                                         atoms))
     extended = Witness(reactants, products, tuple(participants), witness.id_base,
-                       witness.extension_counts, witness.label)
+                       witness.extension_counts, witness.label, witness.extension_words)
     record = EndMap(port_key, end, port, new_port, tuple(sorted(deleted)), fresh_atoms,
                     fresh_bonds, tuple(sorted(radicals.items())), tuple(sorted(
                         (a, b, o) for (a, b), o in orders.items())), fresh_coordinates)
