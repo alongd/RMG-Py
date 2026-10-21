@@ -871,6 +871,28 @@ def _match(entry, label, index, orientation, vector, smiles, new_r, new_p) -> di
                          "products": sorted(m.to_adjacency_list() for m in new_p)}}
 
 
+def formula_candidates(rows, rs, ps) -> list:
+    """The depository entries (``rows``: label, index, reactant and product
+    formula multisets) whose formulas, in either orientation, are a growth
+    of the witness's sides (``rs``, ``ps``: sets of (grown, formula
+    multiset)) with at least one side grown, in ``rows`` order.  The growths
+    are indexed by formula multiset, so each entry is two lookups."""
+    def index(sides):
+        out = {}
+        for grown, formulas in sides:
+            out[formulas] = out.get(formulas, False) or grown
+        return out
+
+    r_grown, p_grown = index(rs), index(ps)
+    candidates = []
+    for label, index_, er, ep in rows:
+        for a, b in ((er, ep), (ep, er)):
+            if a in r_grown and b in p_grown and (r_grown[a] or p_grown[b]):
+                candidates.append({"depository": label, "index": index_})
+                break
+    return candidates
+
+
 def depository_exclusion(family, reactants, products, *, cache=None,
                          repeat=REPEAT_UNIT_FORMULA, growth=None) -> dict:
     """Can any depository entry match a long-chain analogue of this reaction?
@@ -953,15 +975,7 @@ def depository_exclusion(family, reactants, products, *, cache=None,
             sets.add((sum(n for n, _f in combo) > 0, tuple(sorted(f for _n, f in combo))))
         return sets
 
-    rs, ps = side_sets(reactants), side_sets(products)
-    candidates = []
-    for label, index, er, ep in rows:
-        for a, b in ((er, ep), (ep, er)):
-            hit_r = [g for g, f in rs if f == a]
-            hit_p = [g for g, f in ps if f == b]
-            if hit_r and hit_p and (any(hit_r) or any(hit_p)):
-                candidates.append({"depository": label, "index": index})
-                break
+    candidates = formula_candidates(rows, side_sets(reactants), side_sets(products))
     if not candidates:
         out.update({"verdict": "excluded:formula",
                     "argument": "no depository entry has the species formulas of any growth of "

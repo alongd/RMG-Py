@@ -123,6 +123,35 @@ def test_depository_exclusion_gives_the_base_result(families, case):
     assert json.dumps(out, sort_keys=True, default=str) == case["result"]
 
 
+def _list_scan(rows, rs, ps):
+    """The base's scan: for every entry and orientation, the growths of each
+    side with the entry's formulas, listed."""
+    out = []
+    for label, index, er, ep in rows:
+        for a, b in ((er, ep), (ep, er)):
+            hit_r = [g for g, f in rs if f == a]
+            hit_p = [g for g, f in ps if f == b]
+            if hit_r and hit_p and (any(hit_r) or any(hit_p)):
+                out.append({"depository": label, "index": index})
+                break
+    return out
+
+
+@pytest.mark.parametrize("seed", range(40))
+def test_formula_candidates_are_the_list_scans(seed):
+    rng = random.Random(seed)
+    formulas = [((("C", c), ("H", h)),) for c in range(1, 4) for h in range(0, 5)]
+    formulas += [tuple(sorted(rng.sample(formulas, 2))) for _ in range(6)]
+
+    def side():
+        return {(rng.random() < 0.5, rng.choice(formulas)) for _ in range(rng.randrange(0, 12))}
+
+    rows = [("training", k, rng.choice(formulas), rng.choice(formulas))
+            for k in range(rng.randrange(1, 60))]
+    rs, ps = side(), side()
+    assert cm.formula_candidates(rows, rs, ps) == _list_scan(rows, rs, ps)
+
+
 @pytestmark_db
 def test_depository_exclusion_of_the_slowest_witness_is_within_its_time_bound(families):
     """A PE witness: CH2 growth up to the 22 heavy atoms of the largest
