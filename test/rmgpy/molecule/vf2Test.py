@@ -130,6 +130,27 @@ class TestVF2:
         assert self.vf2.is_isomorphic(four, path(3)[0], None)
 
     @pytest.mark.parametrize("subgraph", [False, True])
+    @pytest.mark.parametrize("empty", ["both", "first", "second"])
+    def test_save_order_on_empty_graphs(self, subgraph, empty):
+        """``save_order`` on an empty graph (both, or either one) gives the
+        answer of the plain call and keeps both orders, never refuses to
+        restore the (empty) order it saved."""
+        def pair():
+            return (Graph() if empty in ("both", "first") else Molecule().from_smiles("CC"),
+                    Graph() if empty in ("both", "second") else Molecule().from_smiles("CC"))
+
+        def compare(graph1, graph2, save_order):
+            if subgraph:
+                return VF2().is_subgraph_isomorphic(graph1, graph2, None, save_order=save_order)
+            return VF2().is_isomorphic(graph1, graph2, None, save_order=save_order)
+
+        plain = compare(*pair(), False)
+        graph1, graph2 = pair()
+        order = [list(graph1.vertices), list(graph2.vertices)]
+        assert compare(graph1, graph2, True) == plain
+        assert [list(graph1.vertices), list(graph2.vertices)] == order
+
+    @pytest.mark.parametrize("subgraph", [False, True])
     def test_save_order_restores_the_order_when_the_sizes_reject(self, subgraph):
         """``save_order`` restores both graphs' order also when the sizes
         alone reject the pair (an early return after sorting)."""
