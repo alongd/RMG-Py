@@ -857,6 +857,30 @@ def test_phi_on_a_stride_subsample_is_labelled_a_sample():
     assert "exact" not in parts["open_phi_source"]          # 512+ transitions are sampled here
 
 
+def test_a_stride_sample_takes_the_strided_transitions_in_component_order(monkeypatch):
+    """Equal chains index as lazy entries, relabelling nothing; the fallback
+    reads only the sampled transitions, each the one at ``int(k * stride)`` of
+    every transition of the class in component order."""
+    engine = me.MeltEngine(S.pe_spec({5: 128}), S.ToyCatalog(names=("homolysis",)), 700.0,
+                           np.random.default_rng(1))
+    ci = next(c.index for c in engine.classes if c.met_reverse)
+    lazy = [e for e in engine.entries.values() if isinstance(e, me._LazyEntry)]
+    assert len(lazy) == len(engine.entries) - 1 and all(e._fields is None for e in lazy)
+    seen, real = [], me.MeltEngine._begin_apply
+
+    def spy(self, tr, view):
+        seen.append(tr)
+        return real(self, tr, view)
+
+    monkeypatch.setattr(me.MeltEngine, "_begin_apply", spy)
+    engine._fallback_phi(ci)
+    monkeypatch.undo()
+    assert sum(e._fields is not None for e in lazy) == 0
+    every = [tr for c in sorted(engine.entries) for tr in engine.entries[c].uni.get(ci, ((), 0))[0]]
+    stride = len(every) / me.PHI_FALLBACK_LIMIT
+    assert seen == [every[int(k * stride)] for k in range(me.PHI_FALLBACK_LIMIT)]
+
+
 def test_phi_over_few_transitions_is_exhaustive_and_labelled_exact():
     engine = me.MeltEngine(S.pe_spec({5: 4}), S.ToyCatalog(names=("homolysis",)), 700.0,
                            np.random.default_rng(1))
