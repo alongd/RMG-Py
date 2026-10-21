@@ -189,3 +189,53 @@ def test_h_plus_r_to_rh_all_melt_is_not_u_zero_but_passes_under_the_declaration(
 def test_the_solver_flag_defaults_off():
     params = inspect.signature(__import__("rmgpy.solver.polymer", fromlist=["x"]).HybridPolymerSystem).parameters
     assert params["declared_melt_convention"].default is False
+
+
+# --------------------------------------------------------------------------
+# the volume counts what the mask condenses
+# --------------------------------------------------------------------------
+def _two_butanes(listed, residence=None):
+    a, b = _spc("CCCC", "A"), _spc("CCCC", "B")
+    phase = PolymerPhase(density=Quantity(1000.0, "kg/m^3"), initial_moments={},
+                         initial_explicit={s: 1.0 for s in (a, b)[:listed]}, pools=[], mass_transfer=[],
+                         residence={"*": "melt"} if residence is None else residence)
+    reactor = HybridPolymerReactor(temperature=(800.0, "K"), pressure=(1.0e5, "Pa"), initialMoles={a: 1.0, b: 1.0},
+                                   polymerPhase=phase, terminationTime=(1.0, "s"))
+    return reactor.to_solver_object([a, b], [], [], [])
+
+
+def test_a_melt_species_whose_mass_the_volume_omits_is_refused():
+    """The review's case: two butanes, both declared melt with 1 mol each;
+    listing one of them as a phase species halved V_poly (and doubled every
+    concentration and bimolecular rate) while the gas masks agreed."""
+    rs = _two_butanes(2)
+    assert [bool(x) for x in rs.gas_species_mask] == [False, False]
+    v_one = 1.0 * _spc("CCCC", "x").molecular_weight.value_si * constants.Na / 1000.0
+    assert rs.V_poly == pytest.approx(2 * v_one, rel=1e-12)
+    with pytest.raises(ValueError, match=r"'B'.*melt.*1 mol.*V_poly"):
+        _two_butanes(1)
+
+
+def test_a_melt_species_without_initial_moles_needs_no_listing():
+    a, b = _spc("CCCC", "A"), _spc("CCCC", "B")
+    phase = PolymerPhase(density=Quantity(1000.0, "kg/m^3"), initial_moments={}, initial_explicit={a: 1.0},
+                         pools=[], mass_transfer=[], residence={"*": "melt"})
+    reactor = HybridPolymerReactor(temperature=(800.0, "K"), pressure=(1.0e5, "Pa"), initialMoles={a: 1.0},
+                                   polymerPhase=phase, terminationTime=(1.0, "s"))
+    rs = reactor.to_solver_object([a, b], [], [], [])
+    assert [bool(x) for x in rs.gas_species_mask] == [False, False]
+
+
+def test_a_gas_species_with_initial_moles_needs_no_listing():
+    rs = _two_butanes(1, residence={"A": "melt", "B": "gas"})
+    assert [bool(x) for x in rs.gas_species_mask] == [False, True]
+
+
+def test_listed_moles_that_differ_from_the_initial_moles_are_refused():
+    a = _spc("CCCC", "A")
+    phase = PolymerPhase(density=Quantity(1000.0, "kg/m^3"), initial_moments={}, initial_explicit={a: 0.5},
+                         pools=[], mass_transfer=[], residence={"*": "melt"})
+    reactor = HybridPolymerReactor(temperature=(800.0, "K"), pressure=(1.0e5, "Pa"), initialMoles={a: 1.0},
+                                   polymerPhase=phase, terminationTime=(1.0, "s"))
+    with pytest.raises(ValueError, match=r"'A'.*0.5 mol.*1 mol"):
+        reactor.to_solver_object([a], [], [], [])
