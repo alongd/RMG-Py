@@ -750,6 +750,8 @@ KERNEL_HOMOLYSIS_KEYS = ("template", "w", "phi", "a", "b", "min_fragment",
                          "periods_per_unit", "daughter")
 KERNEL_RECOMBINATION_KEYS = ("template", "k_pair", "sites_per_chain",
                              "periods_per_unit", "product")
+KERNEL_TRANSFER_KEYS = ("template", "k_pair", "phi", "partner", "product",
+                        "partner_product")
 
 
 def _kernel_number(pool_label, kernel, template, key, value, *, positive=False,
@@ -862,6 +864,43 @@ def validate_kernel_recombination(pool_label, terms):
                         pool_label, "kernel_recombination", template,
                         "periods_per_unit", term["periods_per_unit"]),
                     "product": term["product"]})
+    return out
+
+
+def validate_kernel_transfer(pool_label, terms):
+    """Validate a kernel_transfer term list and return it normalized (shared
+    like validate_kernel_homolysis).
+
+    Each term (S5 c + e) is one kernel of a kernel-rates table whose events
+    take one chain of this pool and one chain of the `partner` pool (this
+    pool too, e.g. end + end disproportionation) and move them, lengths
+    unchanged, into the `product` and `partner_product` pools at
+    k_pair*phi*c*c_partner per volume, c the pools' chain concentrations
+    [mol/m^3], k_pair [m^3/(mol s)] > 0 the coefficient per ordered chain
+    pair in MoM's concentration convention (the sites folded in: the
+    producer maps a kernel only where they are the same on every chain),
+    phi in [0, 1] the cage-escape factor of a radical-creating kernel."""
+    out = []
+    for template, term in _kernel_terms(pool_label, "kernel_transfer", terms,
+                                        KERNEL_TRANSFER_KEYS, "product"):
+        num = lambda key, **kw: _kernel_number(pool_label, "kernel_transfer",
+                                               template, key, term[key], **kw)
+        k_pair = num("k_pair", positive=True)
+        phi = num("phi", unit_interval=True)
+        partner, partner_product = term["partner"], term["partner_product"]
+        if not isinstance(partner, str) or not partner:
+            raise ValueError(f"Pool {pool_label}: kernel_transfer term "
+                             f"{template!r}: partner={partner!r} must name a "
+                             f"pool (this one included).")
+        if not isinstance(partner_product, str) or not partner_product \
+                or partner_product == partner:
+            raise ValueError(f"Pool {pool_label}: kernel_transfer term "
+                             f"{template!r}: partner_product="
+                             f"{partner_product!r} must name a pool other "
+                             f"than the partner {partner!r}.")
+        out.append({"template": template, "k_pair": k_pair, "phi": phi,
+                    "partner": partner, "product": term["product"],
+                    "partner_product": partner_product})
     return out
 
 
@@ -1292,6 +1331,9 @@ class PolymerPoolConfig:
     # chains join into the `product` pool), or None.
     kernel_homolysis: Optional[List[Dict[str, object]]] = None
     kernel_recombination: Optional[List[Dict[str, object]]] = None
+    # Pair transfer (S5 c + e) per validate_kernel_transfer: one chain of
+    # this pool and one of its partner change pool, lengths unchanged.
+    kernel_transfer: Optional[List[Dict[str, object]]] = None
 
     # Exact per-chain mass defect [g/mol] of an X-loss feature pool (FR1-K1
     # mass contract, the round-70 #1 P1 trap): the feature pool keeps the
@@ -2262,6 +2304,10 @@ class HybridPolymerSystem(ReactionSystem):
                 object.__setattr__(pool, 'kernel_recombination',
                                    validate_kernel_recombination(
                                        pool.label, pool.kernel_recombination))
+            if pool.kernel_transfer is not None:
+                object.__setattr__(pool, 'kernel_transfer',
+                                   validate_kernel_transfer(
+                                       pool.label, pool.kernel_transfer))
 
             # Radical-homolysis kernel invariants (Stage 1, adjudicated round
             # 66). LAST line of defense, same rationale as above: the deck
@@ -2502,6 +2548,23 @@ class HybridPolymerSystem(ReactionSystem):
                             f"configured solver pools "
                             f"{sorted(label_to_pool)}.")
                     out.append((dict(term), tuple(target.mu_indices)))
+        # kernel_transfer: (term, partner, product, partner_product) moment
+        # slots; every named pool must be configured or its chains vanish.
+        self.kernel_transfer_terms = [[] for _ in self.polymer_pools]
+        for i, pool in enumerate(self.polymer_pools):
+            for term in pool.kernel_transfer or ():
+                slots = []
+                for key in ("partner", "product", "partner_product"):
+                    target = label_to_pool.get(term[key])
+                    if target is None:
+                        raise ValueError(
+                            f"Pool {pool.label}: kernel_transfer term "
+                            f"{term['template']!r} names the {key} pool "
+                            f"{term[key]!r}, which is not among the "
+                            f"configured solver pools "
+                            f"{sorted(label_to_pool)}.")
+                    slots.append(tuple(target.mu_indices))
+                self.kernel_transfer_terms[i].append((dict(term), *slots))
 
     def _flatten_depropagation_state(self):
         """Flatten each pool's validated+normalized k_depropagation triplet
@@ -7823,6 +7886,42 @@ class HybridPolymerSystem(ReactionSystem):
                     dn_dt[p1] += (g1 / c_k) * V_poly
                     dn_dt[p2] += (ks2 * (2.0 * mu0 * m2_k + 2.0 * m1_k * m1_k)
                                   / (c_k * c_k)) * V_poly
+
+            # kernel_transfer (S5 c + e): one chain of this pool and one of
+            # the partner pool change pool, lengths unchanged, at
+            # k*phi*c*c_partner per volume (no closure, any length unit):
+            #   this    dmu_j -= k phi mu_j mu0'   -> product
+            #   partner dmu_j' -= k phi mu0 mu_j'  -> partner_product
+            # (partner == this pool: both debits land on it, ordered pairs).
+            if mu0 > 0.0:
+                for term, (q0, q1, q2), (a0, a1, a2), (b0, b1, b2) in \
+                        self.kernel_transfer_terms[pool_i]:
+                    kphi = term["k_pair"] * term["phi"]
+                    if kphi == 0.0:
+                        continue
+                    nu0 = _softclamp(y[q0], self._softclamp_lam) / V_poly
+                    if not nu0 > 0.0:
+                        continue
+                    nu1 = _softclamp(y[q1], self._softclamp_lam) / V_poly
+                    nu2 = _softclamp(y[q2], self._softclamp_lam) / V_poly
+                    own = (kphi * mu0 * nu0 * V_poly,
+                           kphi * mu1 * nu0 * V_poly,
+                           kphi * mu2 * nu0 * V_poly)
+                    other = (kphi * mu0 * nu0 * V_poly,
+                             kphi * mu0 * nu1 * V_poly,
+                             kphi * mu0 * nu2 * V_poly)
+                    dmu0_dt -= own[0] / V_poly
+                    dmu1_dt -= own[1] / V_poly
+                    dmu2_dt -= own[2] / V_poly
+                    dn_dt[a0] += own[0]
+                    dn_dt[a1] += own[1]
+                    dn_dt[a2] += own[2]
+                    dn_dt[q0] -= other[0]
+                    dn_dt[q1] -= other[1]
+                    dn_dt[q2] -= other[2]
+                    dn_dt[b0] += other[0]
+                    dn_dt[b1] += other[1]
+                    dn_dt[b2] += other[2]
 
             # Side-group homolysis initiation kernel (SGH kernel-v2, explicit
             # Br-inventory depletion; adjudicated spar r103 / plan r104).

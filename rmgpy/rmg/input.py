@@ -72,6 +72,7 @@ from rmgpy.solver.polymer import (validate_k_depropagation,
                                   validate_k_homolysis,
                                   validate_kernel_homolysis,
                                   validate_kernel_recombination,
+                                  validate_kernel_transfer,
                                   validate_radical_qssa_unzip,
                                   validate_side_group_homolysis)
 from rmgpy.solver.simple import SimpleReactor
@@ -274,6 +275,8 @@ def polymer(label: str,
             end_radical_site: Optional[str] = None,
             kernel_homolysis: Optional[list] = None,
             kernel_recombination: Optional[list] = None,
+            end_alkene_site: Optional[str] = None,
+            kernel_transfer: Optional[list] = None,
             ):
     """
     Helper function exposed in the input file to define a Polymer Pool.
@@ -405,15 +408,27 @@ def polymer(label: str,
             pool's end radicals into the `product` pool, each term exactly
             {template, k_pair, sites_per_chain, periods_per_unit, product}
             (validate_kernel_recombination).
+        end_alkene_site (str): 'primary' or 'secondary' declares this pool
+            an explicit terminal-alkene pool: its proxy is the end-radical
+            oligomer of that site with the radical end turned into a C=C.
+            Mutually exclusive with end_radical_site. Default None.
+        kernel_transfer (list): catalog-driven pair transfer: one chain of
+            this pool and one of the `partner` pool move, lengths unchanged,
+            into the `product` and `partner_product` pools (end + end
+            disproportionation, its reverse), each term exactly {template,
+            k_pair, phi, partner, product, partner_product}
+            (validate_kernel_transfer).
     """
-    # Catalog-driven pool kernels (S5 a + b): the shared validators, re-raised
-    # as deck errors; kernel_homolysis carries this pool's backbone homolysis,
-    # so a second representation of it on the same pool is refused.
+    # Catalog-driven pool kernels (S5 a + b, c + e): the shared validators,
+    # re-raised as deck errors; kernel_homolysis carries this pool's backbone
+    # homolysis, so a second representation of it on the same pool is refused.
     try:
         if kernel_homolysis is not None:
             kernel_homolysis = validate_kernel_homolysis(label, kernel_homolysis)
         if kernel_recombination is not None:
             kernel_recombination = validate_kernel_recombination(label, kernel_recombination)
+        if kernel_transfer is not None:
+            kernel_transfer = validate_kernel_transfer(label, kernel_transfer)
     except ValueError as e:
         raise InputError(str(e))
     if kernel_homolysis is not None:
@@ -694,9 +709,11 @@ def polymer(label: str,
         discrete_dp_threshold=discrete_dp_threshold,
         thermal_analysis_inputs=thermal_analysis_inputs,
         end_radical_site=end_radical_site,
+        end_alkene_site=end_alkene_site,
     )
     poly_obj.kernel_homolysis = kernel_homolysis
     poly_obj.kernel_recombination = kernel_recombination
+    poly_obj.kernel_transfer = kernel_transfer
 
     # 1b. Round-72 P1 STRUCTURAL layer of the side-group channel law,
     #     enforced against the PARSED monomer at deck-read time: the

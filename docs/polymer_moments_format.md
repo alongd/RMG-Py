@@ -1,7 +1,7 @@
-# Polymer Moments Artifact — Normative Format Spec (`polymer_moments_format/3.2`)
+# Polymer Moments Artifact — Normative Format Spec (`polymer_moments_format/3.3`)
 
 **Artifact:** `polymer_pools.json`, emitted next to `chem.yaml` at the end of an
-RMG run (`save_everything`). **Schema versions:** `2.0`–`2.9` and `3.0`–`3.2`,
+RMG run (`save_everything`). **Schema versions:** `2.0`–`2.9` and `3.0`–`3.3`,
 stamped per
 artifact by the strongest vocabulary present (`conventions.format_doc` mirrors
 the stamp, e.g. `polymer_moments_format/2.3`; 2.0 was the major bump over the
@@ -30,7 +30,7 @@ hypothetical `"2.10"` would collide with 3.0's ordinal and is illegal —
 every rung after 2.9 lives on the 3.x line. 3.0 was the SGH kernel-v2 MAJOR
 (breaking: state-vector shape + mass contract); subsequent 3.x minors are
 ADDITIVE again under the same strict-minor acceptance (3.1 = the
-moment-credit conduit vocabulary, §14; 3.2 = catalog-driven pool kernels, §15).
+moment-credit conduit vocabulary, §14; 3.2 = catalog-driven pool kernels, §15; 3.3 = their pair transfer, §15).
 
 **2.9 is TA-only vocabulary (r42 P2 lockstep note).** The producer stamps
 `"2.9"` (thermal-analysis inputs / explicit-DP inventory, §13) but neither
@@ -1392,3 +1392,13 @@ emitter stamps `"3.2"` exactly when a pool carries the block (the last rung);
 a kernel-free artifact keeps its stamp byte-identically. No consumer here
 integrates these kernels: the reference runner refuses 3.2 by its
 known-version check rather than replay the pools without them.
+
+**Schema 3.3** = 3.2 + a `"transfer"` key in `catalog_kernels`: the normalized
+`kernel_transfer` terms (`validate_kernel_transfer`). Each event takes one chain of
+this pool and one chain of the `partner` pool (this pool too) and moves them, lengths
+unchanged, into the `product` and `partner_product` pools at
+`k_pair*phi*c*c_partner` per volume (c the chain concentrations). This covers end + end
+disproportionation (end radicals into a dead chain and a terminal alkene) and its
+reverse (× phi). A terminal-alkene pool declares `end_alkene_site`. The emitter stamps
+`"3.3"` exactly when a pool carries `"transfer"`; a 3.2 reader would replay the pools
+without it, so the reference runner refuses 3.3 the same way.
