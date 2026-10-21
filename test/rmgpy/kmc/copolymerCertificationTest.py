@@ -192,6 +192,17 @@ def test_the_formula_argument_is_integer_feasibility_over_the_residues(radd, ep,
     assert ex["verdict"] == "excluded:formula", ex
 
 
+def test_a_residue_set_keeps_the_formula_of_a_species_without_its_elements(fam, ep):
+    """The copolymer form of the H atom check (``certificatesTest``): H +
+    oct-4-yl -> octane, grown by E residues at the methyl ends, IS training
+    160-162, 171 and 172."""
+    reactants, products = ctest.h_recombination(fam["R_Recombination"])
+    ex = cm.depository_exclusion(fam["R_Recombination"], reactants, products,
+                                 repeat=ep.unit_formula(), growth=ep)
+    assert ex["verdict"] == cm.EXCEPT_MATCHED, ex
+    assert ex["matched"] == ctest.H_RECOMBINATION_MATCHES
+
+
 def _alternating():
     mapping = polymer_keyword(DECKS / "ep_v2_deck.py", "polymer_spec")
     mapping["sequence_support"] = {"E": ["P"], "P": ["E"]}

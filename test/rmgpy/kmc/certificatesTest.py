@@ -433,6 +433,31 @@ def test_every_declared_growth_site_is_grown(fam, pe_chain, index, grown):
     assert any(grown in m["reactants"] for m in ex["matches"]), ex["matches"]
 
 
+H_RECOMBINATION_MATCHES = [f"R_Recombination/training#{i}" for i in (160, 161, 162, 171, 172)]
+
+
+def h_recombination(family):
+    """H + oct-4-yl -> octane: the H atom has no carbon."""
+    cs = chm.build_channels(family, [mol("[H]", 0), mol("CCC[CH]CCCC", 10)])
+    (ch,) = cs.channels
+    products = [rm.molecule_from_rows(p) for p in
+                rm.split_rows(ch.representatives[0].product_rows())]
+    return list(cs.reactants), products
+
+
+def test_a_species_without_an_element_of_the_unit_keeps_its_formula(fam, pe_chain):
+    """A species lacking an element of the growth unit (the H atom, no carbon)
+    keeps its own formula when grown by zero units: training 160-162, 171
+    and 172 (H + an n-decyl or n-dodecyl radical) ARE analogues of H +
+    oct-4-yl -> octane grown at its methyl ends, and the exclusion names them
+    instead of proving none matches."""
+    reactants, products = h_recombination(fam["R_Recombination"])
+    ex = cm.depository_exclusion(fam["R_Recombination"], reactants, products, repeat=CH2,
+                                 growth=pe_chain)
+    assert ex["verdict"] == cm.EXCEPT_MATCHED, ex
+    assert ex["matched"] == H_RECOMBINATION_MATCHES
+
+
 def test_a_provider_without_growth_sites_keeps_the_formula_refusal(fam, pe_chain):
     """No growth provider, or one that names no sites (the legacy linear
     alkane): the verdict is the formula argument's, byte-identical to the base
