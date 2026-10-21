@@ -1262,6 +1262,40 @@ def _joint(embeddings):
             yield mapping, comps, choices, a.per_choice * b.per_choice
 
 
+def _outcome_classes(template, embeddings) -> list:
+    """(first embedding, number of embeddings) per class of participant
+    embeddings with the same outcomes, in order of first occurrence: equal
+    component, edited atoms' images, form choices and full-form multiplicity
+    (``_evaluate`` reads the mapping at the edited atoms only).  Embeddings
+    that differ elsewhere (interchangeable hydrogens, context atoms) are
+    copies: a window over n atoms carrying two interchangeable hydrogens
+    has 2**n of each.  A class stands for its copies in enumeration order,
+    so ``match`` keeps the first embedding of an outcome and counts every
+    one."""
+    classes = {}
+    for e in embeddings:
+        key = (e.cid, tuple(e.mapping[t] for t in template.edited_all), e.choices, e.per_choice)
+        if key in classes:
+            classes[key][1] += 1
+        else:
+            classes[key] = [e, 1]
+    return [tuple(c) for c in classes.values()]
+
+
+def _joint_classes(classes0, classes1):
+    """``_joint`` over outcome classes: (mapping, components, choices, count
+    per pair, pairs), the pairs of two classes in the order their first pair
+    is enumerated."""
+    for a, n0 in classes0:
+        for b, n1 in classes1:
+            if a.cid == b.cid:
+                continue
+            mapping = tuple(x if x is not None else y for x, y in zip(a.mapping, b.mapping))
+            comps = tuple(sorted((a.cid, b.cid)))
+            choices = tuple(ca + cb for ca in a.choices for cb in b.choices)
+            yield mapping, comps, choices, a.per_choice * b.per_choice, n0 * n1
+
+
 def match(templates: Sequence[Template], state, *, joint: bool = True) -> MatchResult:
     """All transitions of ``templates`` on ``state`` (pure and deterministic).
 
@@ -1282,25 +1316,36 @@ def match(templates: Sequence[Template], state, *, joint: bool = True) -> MatchR
         found = {}
         total = evaluated = 0
         if not two:
-            candidates = ((e.mapping, (e.cid,), e.choices, e.per_choice) for e in embeddings[0])
+            candidates = ((e.mapping, (e.cid,), e.choices, e.per_choice, copies)
+                          for e, copies in _outcome_classes(template, embeddings[0]))
         elif joint:
-            candidates = _joint(embeddings)
+            candidates = _joint_classes(_outcome_classes(template, embeddings[0]),
+                                        _outcome_classes(template, embeddings[1]))
         else:
             candidates = ()
             total = sum(a.per_choice * len(a.choices) * b.per_choice * len(b.choices)
                         for a in embeddings[0] for b in embeddings[1] if a.cid != b.cid)
-        for mapping, comps, choices, count in candidates:
+        # an outcome is decided by the edited atoms' images, the touched
+        # components and the subsystem form (``_evaluate`` reads the mapping
+        # at the edited atoms only)
+        outcomes = {}
+        for mapping, comps, choices, count, copies in candidates:
+            images = tuple(mapping[t] for t in template.edited_all)
             for choice in choices:
-                evaluated += 1
-                total += count
-                edit_key, identity, edits, delta, fb, fr = _evaluate(
-                    view, template, index, mapping, comps, choice)
+                evaluated += copies
+                total += count * copies
+                outcome = outcomes.get((comps, choice, images))
+                if outcome is None:
+                    outcome = outcomes[(comps, choice, images)] = _evaluate(
+                        view, template, index, mapping, comps, choice)
+                edit_key, identity, edits, delta, fb, fr = outcome
                 previous = found.get(identity)
                 if previous is None or edit_key < previous[0]:
-                    merged = count + (previous[1] if previous else 0)
+                    merged = count * copies + (previous[1] if previous else 0)
                     found[identity] = (edit_key, merged, mapping, comps, edits, delta, fb, fr)
                 else:
-                    found[identity] = previous[:1] + (previous[1] + count,) + previous[2:]
+                    found[identity] = previous[:1] + (previous[1] + count * copies,) + \
+                        previous[2:]
         mine = []
         for identity, (edit_key, count, mapping, comps, edits, delta, fb, fr) in found.items():
             mine.append(Transition(template.name, template.family, index, edit_key, comps, mapping,
