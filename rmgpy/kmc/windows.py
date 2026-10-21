@@ -1593,9 +1593,9 @@ def override_size(observe, observation) -> bool:
 
 def branch_label(witness) -> str:
     """The residue words an extension added per port, e.g. ``0:head+E
-    0:tail+P+E`` (``Witness.extension_words``); "" when none."""
-    return " ".join(f"{i}:{port}" + "".join(f"+{r}" for r in word)
-                    for (i, port), word in witness.extension_words)
+    0:tail+P+E`` (``Witness.extension_words``, ``boundaries.words_label``);
+    "" when none."""
+    return b.words_label(dict(witness.extension_words))
 
 
 def branch_difference(first, obs_first, win_first, other, obs_other, win_other):

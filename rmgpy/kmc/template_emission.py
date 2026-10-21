@@ -90,9 +90,10 @@ Locality (item 3)
 Witnesses (``locality_witnesses``): the emitted one (the context's
 fixed-point witness) plus extension vectors from ``boundaries`` (every
 artificial port alone at +1 and +2, all ports jointly at +1 and +2, the
-ports of each participant at +1 and +2), deduplicated as marked graphs
-(``boundaries.marked_duplicates``; distinctness of the kept ones is
-asserted), plus the context's own unextended witness.  On each the target is
+ports of each participant at +1 and +2; over copolymer ports once per residue
+word the declaration allows, ``boundaries.residue_words``), deduplicated as
+marked graphs (``boundaries.marked_duplicates``; distinctness of the kept
+ones is asserted), plus the context's own unextended witness.  On each the target is
 that witness's own mapped product; ``k`` comes from the production path
 (``ProductionRates``: the compiler's own generation and
 ``_linked_family_pair``; the production selection is rebound to the
@@ -1072,7 +1073,10 @@ def locality_witnesses(witness, providers=None, *, ceiling=None, plan=None) -> l
     """The locality witnesses (``locality_plan`` built by
     ``boundaries.evaluate_vector``), equal vectors folded, the ok ones
     deduplicated as marked graphs (``boundaries.marked_duplicates``) with
-    the kept ones asserted distinct."""
+    the kept ones asserted distinct.  A vector over copolymer ports is built
+    once per residue word the declaration allows there
+    (``boundaries.residue_words``), its label naming the branch: the
+    template must be local on every one."""
     out, seen = [], {}
     for label, vector in (plan if plan is not None else locality_plan(witness)):
         if vector in seen:
@@ -1081,8 +1085,11 @@ def locality_witnesses(witness, providers=None, *, ceiling=None, plan=None) -> l
         if not any(vector):
             out.append(LocalityWitness(label, vector, "ok", "", witness))
             continue
-        res = b.evaluate_vector(witness, vector, providers, ceiling=ceiling)
-        out.append(LocalityWitness(label, vector, res.status, res.reason, res.witness))
+        for words in b.residue_words(witness, vector, providers):
+            res = b.evaluate_vector(witness, vector, providers, ceiling=ceiling,
+                                    words=words or None)
+            out.append(LocalityWitness(f"{label} {b.words_label(words)}" if words else label,
+                                       vector, res.status, res.reason, res.witness))
     ok = [(x.label, x.witness) for x in out if x.status == "ok"]
     dropped = {second for _first, second in b.marked_duplicates(ok)}
     kept = [x for x in out if x.label not in dropped]

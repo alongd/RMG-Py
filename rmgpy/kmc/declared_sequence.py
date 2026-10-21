@@ -483,6 +483,18 @@ class SequenceChainProvider(BoundaryProvider):
             return ()
         return tuple(sorted(nxt for pair, nxt in pairs if int(self.junctions[pair][2]) == caps))
 
+    def next_words(self, residue, tag, caps, length) -> tuple:
+        """Every word of ``length`` residues that ``length`` extension steps
+        may add at a port on ``residue`` (``next_residues`` step by step, each
+        new port's cap count its residue's site order), innermost first."""
+        side = "tail" if tag == "backbone_tail" else "head"
+        words = [((), residue, caps)]
+        for _step in range(length):
+            words = [(word + (nxt,), nxt, int(self._site_order(nxt, side)))
+                     for word, last, count in words
+                     for nxt in self.next_residues(last, tag, count)]
+        return tuple(word for word, _last, _count in words)
+
     def fragment(self, port, coordinate, residues=None):
         """One residue at an artificial port: ``residues`` is (the residue at
         the port, the residue added), an allowed step (``next_residues``)

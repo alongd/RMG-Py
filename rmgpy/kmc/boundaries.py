@@ -1243,14 +1243,44 @@ def vector_ports(witness: Witness) -> tuple[tuple[int, str], ...]:
     return witness.artificial_port_keys()
 
 
+def residue_words(witness: Witness, vector: Sequence[int], providers=None) -> tuple:
+    """Every assignment of residue words to the ports ``vector`` extends
+    (module doc, residue branches): {port key: word} per combination, a word
+    for each port whose provider names residues (``next_words``: every word of
+    the vector entry's length it allows there).  ``({},)`` when no port
+    branches; a port with no allowed word gets none (the vector then refuses
+    it by name)."""
+    from itertools import product
+    choices = []
+    for position, key in enumerate(vector_ports(witness)):
+        provider = _provider_for(witness, key, providers)
+        nexts = getattr(provider, "next_words", None)
+        if not vector[position] or nexts is None:
+            continue
+        port = witness.port(key)
+        words = nexts(port_residue(witness, key), port.tag, len(port.cap_atom_ids),
+                      vector[position])
+        if words:
+            choices.append([(key, word) for word in words])
+    return tuple(dict(combo) for combo in product(*choices))
+
+
+def words_label(words) -> str:
+    """A residue-word assignment as ``0:head+E 0:tail+P+E`` (sorted by port)."""
+    return " ".join(f"{i}:{port}" + "".join(f"+{r}" for r in word)
+                    for (i, port), word in sorted(words.items()))
+
+
 def extend_vector(witness: Witness, vector: Sequence[int], providers=None, *,
                   order: Optional[Sequence[int]] = None, ceiling=None, verify: bool = True,
-                  verify_steps: bool = False):
+                  verify_steps: bool = False, words=None):
     """Apply an extension vector port by port (in ``order``, default
     ascending); returns (witness, composite map).  With ``verify`` the
     composite map is verified against the original witness (which re-checks
     every step against its provider fragment) and must equal the sequential
-    application; ``verify_steps`` also verifies each single step."""
+    application; ``verify_steps`` also verifies each single step.  ``words``:
+    the residues a residue-sequence port adds, innermost first
+    (``residue_words``)."""
     ports = vector_ports(witness)
     if len(vector) != len(ports):
         raise BoundaryError(f"vector has {len(vector)} entries for {len(ports)} ports")
@@ -1263,10 +1293,13 @@ def extend_vector(witness: Witness, vector: Sequence[int], providers=None, *,
     # both sides), so the original support holds for every intermediate
     support = edit_support(witness)
     current, record = witness, identity_map(witness)
+    words = words or {}
     for position in order:
-        for _ in range(vector[position]):
+        word = words.get(ports[position])
+        for k in range(vector[position]):
             current, step = extend(current, ports[position], providers, ceiling=ceiling,
-                                   verify=verify_steps, support=support)
+                                   verify=verify_steps, support=support,
+                                   residue=None if word is None else word[k])
             record = compose(record, step)
     if verify and any(vector):
         once = apply_map(witness, record, support=support)
@@ -1285,8 +1318,9 @@ class VectorResult:
     record: Optional[ExtensionMap] = field(default=None, compare=False)
 
 
-def _vector_plan(witness: Witness, providers=None) -> tuple[dict, dict]:
-    """Per vector position: the refusal reason, or the heavy atoms one step adds."""
+def _vector_plan(witness: Witness, providers=None, words=None) -> tuple[dict, dict]:
+    """Per vector position: the refusal reason, or the heavy atoms one step
+    adds (0 for a port with a residue word: its size is enforced per step)."""
     support = edit_support(witness)
     rows = witness.reactant_rows()
     refusals, per_step = {}, {}
@@ -1294,6 +1328,9 @@ def _vector_plan(witness: Witness, providers=None) -> tuple[dict, dict]:
         port = witness.port(key)
         if port.atom_id in support:
             refusals[position] = f"port {key} atom {port.atom_id} is a reacting atom"
+            continue
+        if words and key in words:
+            per_step[position] = 0
             continue
         provider = _provider_for(witness, key, providers)
         coordinate = witness.participant(key[0]).metadata.coordinate(port.atom_id)
@@ -1309,18 +1346,19 @@ def _vector_plan(witness: Witness, providers=None) -> tuple[dict, dict]:
 
 def evaluate_vector(witness: Witness, vector: Sequence[int], providers=None, *,
                     ceiling=None, check_order: bool = True, verify: bool = True,
-                    plan=None) -> VectorResult:
+                    plan=None, words=None) -> VectorResult:
     """Status of one vector: ``refused`` (a non-zero entry on a port that may
     not be extended), ``ceiling_exceeded`` (the hard heavy-atom ceiling,
     projected before building and enforced per step) or ``ok``.  For an
     ``ok`` vector with several extended ports the reversed port order is
-    applied too and must give the same witness and map."""
+    applied too and must give the same witness and map.  ``words``: the
+    residue word of each residue-sequence port (``residue_words``)."""
     vector = tuple(vector)
     ports = vector_ports(witness)
     if len(vector) != len(ports):
         raise BoundaryError(f"vector has {len(vector)} entries for {len(ports)} ports")
     limit = _ceiling(ceiling)
-    refusals, per_step = _vector_plan(witness, providers) if plan is None else plan
+    refusals, per_step = _vector_plan(witness, providers, words) if plan is None else plan
     refused = [refusals[p] for p, v in enumerate(vector) if v and p in refusals]
     if refused:
         return VectorResult(vector, "refused", "; ".join(refused))
@@ -1330,13 +1368,13 @@ def evaluate_vector(witness: Witness, vector: Sequence[int], providers=None, *,
                             f"{projected} heavy atoms > ceiling {limit}")
     try:
         extended, record = extend_vector(witness, vector, providers, ceiling=limit,
-                                         verify=verify)
+                                         verify=verify, words=words)
     except CeilingExceeded as error:
         return VectorResult(vector, "ceiling_exceeded", str(error))
     if check_order and sum(1 for v in vector if v) > 1:
         other, other_record = extend_vector(
             witness, vector, providers, order=tuple(reversed(range(len(ports)))),
-            ceiling=limit, verify=False)
+            ceiling=limit, verify=False, words=words)
         if other != extended or other_record != record:
             raise MapCheckError(f"vector {vector}: port order changes the extension")
     return VectorResult(vector, "ok", "", extended, record)
