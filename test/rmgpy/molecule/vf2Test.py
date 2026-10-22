@@ -171,3 +171,90 @@ class TestVF2:
         order = [list(graph1.vertices), list(graph2.vertices)]
         assert not compare(graph1, graph2, True)
         assert [list(graph1.vertices), list(graph2.vertices)] == order
+
+
+def _numbered(smiles):
+    molecule = Molecule().from_smiles(smiles)
+    molecule.assign_atom_ids()
+    return molecule
+
+
+def _ids(mapping):
+    return None if mapping is None else {a.id: b.id for a, b in mapping.items()}
+
+
+FIRST_CASES = [
+    # (smiles a, smiles b, pinned atom indices, strict)
+    ("CC(C)(C)C", "CC(C)(C)C", (), False),
+    ("CC(C)(C)C", "CC(C)(C)C", ((1, 1),), True),
+    ("CC(C)C", "CC(C)C", ((0, 2),), False),
+    ("CC(C)C", "CC(C)C", ((0, 1),), False),          # a methyl pinned on the centre: none
+    ("[CH2]C=CC", "C=C[CH]C", (), False),
+    ("[CH2]C=CC", "C=C[CH]C", (), True),             # other resonance drawings, strict: none
+    ("c1ccccc1CC", "c1ccccc1CC", ((6, 6),), False),
+    ("FC(F)(F)C(F)(F)[C](F)C(F)(F)F", "FC(F)(F)C(F)(F)[C](F)C(F)(F)F", (), False),
+]
+
+
+class TestFindFirstIsomorphism:
+    """``find_first_isomorphism`` is ``find_isomorphism``'s first mapping (the
+    same search order: listing every mapping only continues past the first),
+    or with ``accept`` the first listed mapping it accepts, without listing
+    the others."""
+
+    @pytest.mark.parametrize("save_order", [False, True])
+    @pytest.mark.parametrize("smiles_a,smiles_b,pins,strict", FIRST_CASES)
+    def test_the_first_mapping_is_the_first_one_find_isomorphism_lists(
+            self, smiles_a, smiles_b, pins, strict, save_order):
+        a, b = _numbered(smiles_a), _numbered(smiles_b)
+
+        def initial(x, y):
+            return {x.atoms[i]: y.atoms[j] for i, j in pins} or None
+
+        x, y = a.copy(deep=True), b.copy(deep=True)
+        listed = VF2().find_isomorphism(x, y, initial(x, y), save_order=save_order, strict=strict)
+        x, y = a.copy(deep=True), b.copy(deep=True)
+        first = VF2().find_first_isomorphism(x, y, initial(x, y), save_order=save_order, strict=strict)
+        expected = _ids(listed[0]) if listed else None
+        assert _ids(first) == expected
+        x, y = a.copy(deep=True), b.copy(deep=True)
+        assert _ids(x.find_first_isomorphism(y, initial_map=initial(x, y), save_order=save_order,
+                                             strict=strict)) == expected
+
+    @pytest.mark.parametrize("smiles_a,smiles_b,pins,strict", FIRST_CASES)
+    def test_with_accept_it_is_the_first_listed_mapping_accepted(self, smiles_a, smiles_b, pins, strict):
+        a, b = _numbered(smiles_a), _numbered(smiles_b)
+        listed = a.copy(deep=True).find_isomorphism(b.copy(deep=True), strict=strict)
+        if not listed:
+            assert a.copy(deep=True).find_first_isomorphism(
+                b.copy(deep=True), strict=strict, accept=lambda m: True) is None
+            return
+        heavy = [atom.id for atom in a.atoms if not atom.is_hydrogen()]
+        # accept only mappings sending the last heavy atom onto the largest
+        # image any listed mapping gives it
+        target = max(_ids(m)[heavy[-1]] for m in listed)
+        seen = []
+
+        def accept(mapping):
+            seen.append(1)
+            return _ids(mapping)[heavy[-1]] == target
+
+        expected = next(_ids(m) for m in listed if _ids(m)[heavy[-1]] == target)
+        found = a.copy(deep=True).find_first_isomorphism(b.copy(deep=True), strict=strict, accept=accept)
+        assert _ids(found) == expected
+        # it stops at the accepted mapping: the ones before it, and that one
+        assert len(seen) == [_ids(m) for m in listed].index(expected) + 1
+        assert a.copy(deep=True).find_first_isomorphism(
+            b.copy(deep=True), strict=strict, accept=lambda m: False) is None
+
+    def test_none_when_not_isomorphic(self):
+        a, b = _numbered("CCO"), _numbered("COC")
+        assert VF2().find_first_isomorphism(a, b, None) is None
+        assert a.find_first_isomorphism(b) is None
+        assert _numbered("[CH2]C").find_first_isomorphism(_numbered("C=C")) is None   # the fingerprint differs
+
+    def test_the_vertex_order_is_kept_with_save_order(self):
+        a, b = _numbered("CC(C)(C)C"), _numbered("CC(C)(C)C")
+        order = [list(a.atoms), list(b.atoms)]
+        assert a.find_first_isomorphism(b, save_order=True) is not None
+        assert [list(a.atoms), list(b.atoms)] == order
