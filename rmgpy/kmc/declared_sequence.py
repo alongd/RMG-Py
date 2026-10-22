@@ -53,7 +53,7 @@ is one such insertion of one residue at a port."""
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Mapping
 
 from rmgpy.kmc import declared_chain as dc
@@ -374,17 +374,24 @@ class SequenceChainProvider(BoundaryProvider):
                 words = [("tail", (q, name)) for q in preceding[name]]
                 words += [("head", (name, q)) for q in self.support[name]]
                 words += [("head", (name,)), ("tail", (name,))]
+                if self.entry[name] == self.exit[name]:
+                    words.append(("both", (name,)))
                 for side, word in words:
                     build = self.build("growth", SequenceChainSpec(word))
                     rows = molecule_rows(build.molecule)
-                    unit = 0 if side == "head" else len(word) - 1
+                    unit = len(word) - 1 if side == "tail" else 0
                     atoms = {a for a, u, _k in build.metadata.coordinates if u == unit}
                     exact = atoms | {h for a in atoms for h, _o in rows[a][5] if rows[h][0] == "H"}
                     stubs = {n for a in exact for n, _o in rows[a][5] if n not in exact}
                     stub = min(stubs) if stubs else None
                     inner = None if stub is None else \
                         next(n for n, _o in rows[stub][5] if n in atoms)
-                    cached.append((side, name, build.metadata.port(side),
+                    port = build.metadata.port("head" if side == "both" else side)
+                    if side == "both":
+                        # one atom carries both ends: head caps, then tail caps
+                        port = replace(port, cap_atom_ids=port.cap_atom_ids +
+                                       build.metadata.port("tail").cap_atom_ids)
+                    cached.append((side, name, port,
                                    {a: rows[a] for a in exact | stubs}, frozenset(exact),
                                    stub, inner))
             cached = tuple(cached)
@@ -414,8 +421,10 @@ class SequenceChainProvider(BoundaryProvider):
                         target, heavy, image[stub], image[inner], name, side, memo):
                     image = None
                 if image is not None:
+                    caps = [image[c] for c in port.cap_atom_ids]
+                    split = int(self._site_order(name, "head")) if side == "both" else len(caps)
                     readings.setdefault(anchor, {})[(side, name)] = \
-                        tuple(sorted(image[c] for c in port.cap_atom_ids))
+                        tuple(sorted(caps[:split])) + tuple(sorted(caps[split:]))
         return tuple(self._site(anchor, readings[anchor]) for anchor in sorted(readings))
 
     @staticmethod
@@ -425,8 +434,9 @@ class SequenceChainProvider(BoundaryProvider):
         port's caps all their caps."""
         coordinate = tuple((side, name, caps) for (side, name), caps in sorted(readings.items()))
         caps = tuple(sorted({c for _s, _n, cs in coordinate for c in cs}))
-        return (Port(f"growth:{anchor}", anchor, caps, f"backbone_{coordinate[0][0]}",
-                     "artificial"), coordinate)
+        side = next(side for side, _n, _c in coordinate if side != "both")
+        return (Port(f"growth:{anchor}", anchor, caps, f"backbone_{side}", "artificial"),
+                coordinate)
 
     def _skeletons(self) -> dict:
         """The heavy-atom skeleton (key -> element, key -> heavy neighbour
@@ -517,36 +527,58 @@ class SequenceChainProvider(BoundaryProvider):
         order), adding at most ``budget`` heavy atoms.  Yields ((reading,
         word), formula added, heavy atoms added), shorter words first; a
         word whose junction order is not the reading's cap count is no
-        insertion."""
-        preceding = self._preceding()
-        formulas = {name: _formula(residue.graph) for name, residue in self.residues.items()}
-        heavy = {name: sum(n for e, n in f.items() if e != "H") for name, f in formulas.items()}
+        insertion.  A ``both`` reading (a residue alone whose entry and exit
+        are one atom, its head caps then its tail caps) inserts a pair of
+        words at once, (before it, after it), both non-empty: the one-sided
+        insertions are its head and tail readings."""
         for reading in coordinate:
             side, name, caps = reading
-            frontier = [((), 0)]
-            while frontier:
-                grown = []
-                for word, size in frontier:
-                    edge = name if not word else word[-1] if side == "tail" else word[0]
-                    for nxt in (self.support[edge] if side == "tail" else preceding[edge]):
-                        if size + heavy[nxt] > budget:
-                            continue
-                        new = word + (nxt,) if side == "tail" else (nxt,) + word
-                        grown.append((new, size + heavy[nxt]))
-                for word, size in grown:
-                    first, last = (name, word[0]) if side == "tail" else (word[-1], name)
-                    if int(self.junctions[(first, last)][2]) != len(caps):
-                        continue
-                    added = {}
-                    for r in word:
-                        for e, n in formulas[r].items():
-                            added[e] = added.get(e, 0) + n
-                    outer = word[-1] if side == "tail" else word[0]
-                    caps_added = int(self._site_order(outer, side)) - len(caps)
-                    if caps_added:
-                        added["H"] = added.get("H", 0) + caps_added
+            if side != "both":
+                for word, added, size in self._side_words(name, side, len(caps), budget):
                     yield (reading, word), added, size
-                frontier = grown
+                continue
+            split = int(self._site_order(name, "head"))
+            tails = list(self._side_words(name, "tail", len(caps) - split, budget))
+            for head, head_added, head_size in self._side_words(name, "head", split, budget):
+                for tail, tail_added, tail_size in tails:
+                    if head_size + tail_size <= budget:
+                        added = dict(head_added)
+                        for e, n in tail_added.items():
+                            added[e] = added.get(e, 0) + n
+                        yield (reading, (head, tail)), added, head_size + tail_size
+
+    def _side_words(self, name, side, caps, budget):
+        """(word, formula added, heavy atoms added) of every non-empty word
+        the support allows at the ``side`` end of residue ``name`` with
+        ``caps`` caps there, within ``budget`` heavy atoms, shorter words
+        first (``growth_options``)."""
+        preceding = self._preceding()
+        formulas = {r: _formula(residue.graph) for r, residue in self.residues.items()}
+        heavy = {r: sum(n for e, n in f.items() if e != "H") for r, f in formulas.items()}
+        frontier = [((), 0)]
+        while frontier:
+            grown = []
+            for word, size in frontier:
+                edge = name if not word else word[-1] if side == "tail" else word[0]
+                for nxt in (self.support[edge] if side == "tail" else preceding[edge]):
+                    if size + heavy[nxt] > budget:
+                        continue
+                    new = word + (nxt,) if side == "tail" else (nxt,) + word
+                    grown.append((new, size + heavy[nxt]))
+            for word, size in grown:
+                first, last = (name, word[0]) if side == "tail" else (word[-1], name)
+                if int(self.junctions[(first, last)][2]) != caps:
+                    continue
+                added = {}
+                for r in word:
+                    for e, n in formulas[r].items():
+                        added[e] = added.get(e, 0) + n
+                outer = word[-1] if side == "tail" else word[0]
+                caps_added = int(self._site_order(outer, side)) - caps
+                if caps_added:
+                    added["H"] = added.get("H", 0) + caps_added
+                yield word, added, size
+            frontier = grown
 
     def fragment_facts(self) -> dict:
         """The facts of one growth step the window guards read
@@ -573,8 +605,20 @@ class SequenceChainProvider(BoundaryProvider):
     def growth_fragment(self, option) -> Fragment:
         """The word of a ``growth_options`` insertion as one fragment: its
         residues joined as a chain, the end facing the site bonded to the
-        site's atom by the declared junction, the far end capped."""
+        site's atom by the declared junction, the far end capped.  A ``both``
+        insertion is its two words' fragments, both bonded to the site's
+        atom."""
         (side, name, caps), word = option
+        if side == "both":
+            split = int(self._site_order(name, "head"))
+            head = self.growth_fragment((("head", name, caps[:split]), word[0]))
+            tail = self.growth_fragment((("tail", name, caps[split:]), word[1]))
+            n = len(head.atoms)
+            return Fragment(head.atoms + tail.atoms,
+                            head.bonds + tuple((i + n, j + n, o) for i, j, o in tail.bonds),
+                            head.attachments + tuple((i + n, o) for i, o in tail.attachments),
+                            head.new_port, head.new_caps,
+                            head.coordinates + tuple((i + n, u, k) for i, u, k in tail.coordinates))
         key = (side, name, len(caps), word)
         cache = self.__dict__.setdefault("_fragments", {})
         if key not in cache:

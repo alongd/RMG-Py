@@ -125,14 +125,17 @@ def test_a_residue_with_one_backbone_atom_grows_at_both_ends_of_a_singleton(rrec
     analogues of CC <=> [H] + [CH2]C (the radical on the pendant carbon)
     grow at the head and the tail of that one atom at once.  XXX with the
     middle pendant radical, CCC(C)CC <=> [H] + [CH2]C(CC)CC, is one: built
-    and matched, its insertion naming both words."""
+    and matched, its insertion naming a word on each side (the same molecule
+    is E X E too: one match, whichever word is built first)."""
     x = _x_and_e()
     reactants, products = _recombination(rrec, "[CH2]C")
     stub = ctest._stub_family(rrec, [cct._entry(900102, ["[H]", "[CH2]C(CC)CC"], "CCC(C)CC")])
     for name, ex in _orientations(stub, reactants, products, x).items():
         assert ex["verdict"] == cm.EXCEPT_MATCHED, (name, ex)
-        assert [m["periods"] for m in ex["matches"]] == [
-            [{"side": "both", "end": "X", "residues": [["X"], ["X"]]}]], (name, ex["matches"])
+        (match,) = ex["matches"]
+        (step,) = match["periods"]
+        assert (step["side"], step["end"]) == ("both", "X"), (name, step)
+        assert [len(word) for word in step["residues"]] == [1, 1], (name, step)
     (_port, coordinate), = [s for s in x.growth_sites(mol("CC", 0)) if s[0].atom_id == 0]
     (caps,) = [caps for side, residue, caps in coordinate if (side, residue) == ("both", "X")]
     assert len(set(caps)) == 2

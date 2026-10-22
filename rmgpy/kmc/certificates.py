@@ -803,9 +803,12 @@ def _word_insertions(growth, sites, reactants, products, hmax):
 def _inserted(vector) -> list:
     """The ``periods`` of a match: per site the count of periods, or the
     residue word inserted (``side`` of the residue ``end`` it was inserted
-    at, ``residues`` in chain order; None: nothing)."""
+    at, ``residues`` in chain order; at a ``both`` side the pair of words,
+    before and after it; None: nothing)."""
     return [step if isinstance(step, int) else None if step is None else
-            {"side": step[0][0], "end": step[0][1], "residues": list(step[1])} for step in vector]
+            {"side": step[0][0], "end": step[0][1],
+             "residues": [list(w) for w in step[1]] if step[0][0] == "both" else list(step[1])}
+            for step in vector]
 
 
 def _one_formula(repeat) -> bool:
