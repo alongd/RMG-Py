@@ -2220,6 +2220,55 @@ def partition_free_identity(payload, template=None) -> str:
     return record if template is None else _template_identity(record, payload, template)
 
 
+def _refused_anywhere(out) -> set:
+    """One status per key: a template refused at emission on any record's
+    witnesses (its key's checks failed there) is refused on every record that
+    emits it, and so is every base template of those records' reverse
+    records, a reciprocal pair being decided together.  The refusal (that of
+    the least refusing record id) names every refusing record; copies refused
+    by the same key keep their own refusal and gain the names.  ``out`` is
+    changed in place; returns the indices of the payloads changed."""
+    refusing = defaultdict(dict)
+    for p in out:
+        for t in p.get("templates", []):
+            if t.get("status") == "refused" and t.get("key") and t.get("refusal"):
+                refusing[t["key"]][p.get("record_event_id") or ""] = t["refusal"]
+    by_record = {p.get("record_event_id"): p for p in out}
+    cause = {k: k for k in refusing}
+    frontier = sorted(refusing)
+    while frontier:
+        key = frontier.pop()
+        for p in out:
+            partner = by_record.get(p.get("reverse_of"))
+            if partner is None or not any(t.get("base") and t.get("key") == key
+                                          for t in p.get("templates", [])):
+                continue
+            for t in partner.get("templates", []):
+                if t.get("base") and t.get("key") and t["key"] not in cause:
+                    cause[t["key"]] = cause[key]
+                    frontier.append(t["key"])
+    changed = set()
+    for i, p in enumerate(out):
+        for t in p.get("templates", []):
+            key = t.get("key")
+            if key not in cause or t.get("status") not in ("emitted", "refused"):
+                continue
+            records = sorted(refusing[cause[key]])
+            if t["status"] == "refused" and key in refusing:
+                t["refusal"] = dict(t["refusal"], records=records)
+            else:
+                first = refusing[cause[key]][records[0]]
+                via = "" if key == cause[key] else \
+                    f"its reciprocal partner {cause[key][:16]} is refused: "
+                t["status"] = "refused"
+                t["refusal"] = {"status": first["status"], "records": records,
+                                "reason": (f"{via}refused at emission on the witnesses of "
+                                           f"{[r[:16] for r in records]}: "
+                                           f"{first.get('reason', '')}")[:400]}
+            changed.add(i)
+    return changed
+
+
 def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG10) -> tuple:
     """One catalog's payloads with equal executable keys made one template.
 
@@ -2245,13 +2294,16 @@ def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG
     loaded forward and reverse weights are one record pair's.  A partition that
     maps forward copies to more than one reverse template is a
     ``ReciprocalSplitError``.  A non-finite or non-positive weight, or
-    ``T_ch = 0``, is an ``EmissionError``.  Returns (new payloads, collision
-    table: one row per key with more than one copy)."""
+    ``T_ch = 0``, is an ``EmissionError``.  A key refused at emission on any
+    record is refused on every record first (``_refused_anywhere``).  Returns
+    (new payloads, collision table: one row per key with more than one
+    copy)."""
     for p in payloads:
         why = _weight_problem(p)
         if why:
             raise EmissionError(f"record {str(p.get('record_event_id'))[:16]}: {why}")
     out = [json.loads(canonical_json(p)) for p in payloads]
+    ruled = _refused_anywhere(out)
     groups = defaultdict(list)
     identity = {}
     for i, p in enumerate(out):
@@ -2267,7 +2319,7 @@ def resolve_collisions(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG
     partner_key = {}
     for (_rid, key), (_rev, rkey) in links.items():
         partner_key.setdefault(key, rkey)
-    table, touched, seen = [], set(), set()
+    table, touched, seen = [], set(ruled), set()
     plans = []
     for key in sorted(groups):
         if key in seen:
