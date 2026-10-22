@@ -753,22 +753,22 @@ def _unit_insertions(sites, reactants, products, unit, hmax):
 
 def _word_insertions(growth, sites, reactants, products, hmax):
     """(insertions per site, element counts added per species) for a
-    residue-word provider: per site its ``growth_options`` grouped by the
-    formula they add (nothing inserted is a group too), one group per site,
-    at least one non-empty, every grown species within ``hmax`` heavy atoms;
-    the insertions of a group all add the same atoms, so the formula argument
-    reads the group and only a candidate's groups are ever built."""
+    residue-word provider: per site its insertions grouped by the formula
+    they add (``growth_groups``; nothing inserted is a group too), one group
+    per site, at least one non-empty, every grown species within ``hmax``
+    heavy atoms.  The insertions of a group all add the same atoms, so the
+    formula argument reads the group; a group's words are built only when
+    asked for (each site's insertions a callable: ``decide_by_construction``
+    calls it for a candidate's formulas only)."""
+    from functools import partial
     product_of = {a.id: j for j, m in enumerate(products) for a in m.atoms}
     owners = [(k, product_of[port.atom_id]) for k, port, _c in sites]
     sizes = ([_heavy(m) for m in reactants], [_heavy(m) for m in products])
     groups = []
     for (k, j), (_k, _port, coordinate) in zip(owners, sites):
-        by_formula = defaultdict(list)
-        for option, formula, heavy in growth.growth_options(
-                coordinate, hmax - max(sizes[0][k], sizes[1][j])):
-            by_formula[(heavy, tuple(sorted(formula.items())))].append(option)
-        groups.append([(0, (), [None])] + [(heavy, formula, options) for (heavy, formula), options
-                                           in sorted(by_formula.items())])
+        groups.append([(0, (), lambda: [None])] + [
+            (heavy, formula, partial(growth.growth_group_options, group)) for heavy, formula, group
+            in growth.growth_groups(coordinate, hmax - max(sizes[0][k], sizes[1][j]))])
     chosen = [None] * len(sites)
 
     def fits():
@@ -943,8 +943,10 @@ def decide_by_construction(family, reactants, products, growth, units, hmax, can
     the orientation(s) its formulas allow (forward: the entry's reactants are
     the analogue's reactants; reverse: its products).  A provider of one
     unit (``units``, one formula) inserts whole periods; a residue-word
-    provider (``growth_options``: a linear copolymer) every residue word its
-    sequence support allows at each parse of each site.  Returns (sites,
+    provider (``growth_groups``: a linear copolymer) every residue word its
+    sequence support allows at each parse of each site, within the largest
+    species of any candidate, its words built only for a candidate's
+    formulas (``_word_insertions``).  Returns (sites,
     analogues compared, matches); sites None when the provider cannot say."""
     import itertools
 
@@ -959,8 +961,12 @@ def decide_by_construction(family, reactants, products, growth, units, hmax, can
     fkey = ("formulas", family_key(family))
     rows = {(label, index): (er, ep) for label, index, er, ep in cache[fkey]}
     wanted = [(c["depository"], c["index"]) for c in candidates]
-    if hasattr(growth, "growth_options"):
-        insertions = _word_insertions(growth, sites, reactants, products, hmax)
+    if hasattr(growth, "growth_groups"):
+        # an analogue species is isomorphic to a candidate's species, so no
+        # larger: the words are bounded by the candidates, not the depository
+        largest = max(sum(n for element, n in formula if element != "H")
+                      for key in wanted for side in rows[key] for formula in side)
+        insertions = _word_insertions(growth, sites, reactants, products, min(hmax, largest))
     else:
         insertions = _unit_insertions(sites, reactants, products, dict(units[0]), hmax)
     compared, matches, seen = 0, [], set()
@@ -971,6 +977,7 @@ def decide_by_construction(family, reactants, products, growth, units, hmax, can
                  if tuple(sides) == grown]
         if not tests:
             continue
+        choices = [c() if callable(c) else c for c in choices]
         for vector in itertools.product(*choices):
             new_r, new_p = grown_analogue(growth, reactants, products, sites, vector)
             forward = Reaction(reactants=[_species(m) for m in new_r],

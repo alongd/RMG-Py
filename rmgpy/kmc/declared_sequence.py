@@ -525,60 +525,135 @@ class SequenceChainProvider(BoundaryProvider):
         the sequence support allows next to that residue on that side
         (appended after it at a tail, prepended before it at a head; chain
         order), adding at most ``budget`` heavy atoms.  Yields ((reading,
-        word), formula added, heavy atoms added), shorter words first; a
-        word whose junction order is not the reading's cap count is no
-        insertion.  A ``both`` reading (a residue alone whose entry and exit
-        are one atom, its head caps then its tail caps) inserts a pair of
-        words at once, (before it, after it), both non-empty: the one-sided
-        insertions are its head and tail readings."""
+        word), formula added, heavy atoms added), group by group
+        (``growth_groups``); a word whose junction order is not the reading's
+        cap count is no insertion.  A ``both`` reading (a residue alone whose
+        entry and exit are one atom, its head caps then its tail caps)
+        inserts a pair of words at once, (before it, after it), both
+        non-empty: the one-sided insertions are its head and tail readings."""
+        for heavy, formula, group in self.growth_groups(coordinate, budget):
+            for option in self.growth_group_options(group):
+                yield option, dict(formula), heavy
+
+    def growth_groups(self, coordinate, budget) -> list:
+        """The insertions of ``growth_options`` grouped by the formula they
+        add, without building a word: [(heavy atoms added, formula added
+        ((element, count), ...) sorted, group)], sorted.  A word adds the sum
+        of its residues' formulas (and the caps its outer residue's site
+        takes beyond the reading's), so a group is decided by residue counts
+        (``_side_states``); ``growth_group_options`` builds the words of one
+        group, only when its formula is wanted."""
+        groups = {}
         for reading in coordinate:
             side, name, caps = reading
             if side != "both":
-                for word, added, size in self._side_words(name, side, len(caps), budget):
-                    yield (reading, word), added, size
+                for state, (formula, heavy) in self._side_states(name, side, len(caps),
+                                                                 budget).items():
+                    groups.setdefault((heavy, formula), {}).setdefault(reading, set()).add(state)
                 continue
             split = int(self._site_order(name, "head"))
-            tails = list(self._side_words(name, "tail", len(caps) - split, budget))
-            for head, head_added, head_size in self._side_words(name, "head", split, budget):
-                for tail, tail_added, tail_size in tails:
-                    if head_size + tail_size <= budget:
-                        added = dict(head_added)
-                        for e, n in tail_added.items():
-                            added[e] = added.get(e, 0) + n
-                        yield (reading, (head, tail)), added, head_size + tail_size
+            heads = self._side_states(name, "head", split, budget)
+            tails = self._side_states(name, "tail", len(caps) - split, budget)
+            for head, (head_formula, head_heavy) in heads.items():
+                for tail, (tail_formula, tail_heavy) in tails.items():
+                    if head_heavy + tail_heavy <= budget:
+                        formula = dict(head_formula)
+                        for e, n in tail_formula:
+                            formula[e] = formula.get(e, 0) + n
+                        groups.setdefault((head_heavy + tail_heavy, tuple(sorted(formula.items()))),
+                                          {}).setdefault(reading, set()).add((head, tail))
+        return [(heavy, formula, tuple((reading, frozenset(states))
+                                       for reading, states in by_reading.items()))
+                for (heavy, formula), by_reading in sorted(groups.items())]
 
-    def _side_words(self, name, side, caps, budget):
-        """(word, formula added, heavy atoms added) of every non-empty word
-        the support allows at the ``side`` end of residue ``name`` with
-        ``caps`` caps there, within ``budget`` heavy atoms, shorter words
-        first (``growth_options``)."""
-        preceding = self._preceding()
-        formulas = {r: _formula(residue.graph) for r, residue in self.residues.items()}
+    def growth_group_options(self, group) -> list:
+        """The insertions ((reading, word), ...) of one ``growth_groups``
+        group: per reading, its words shorter first (a ``both`` reading's
+        pairs per pair of word states)."""
+        out = []
+        for reading, states in group:
+            side, name, caps = reading
+            if side != "both":
+                out += [(reading, word) for word in self._state_words(name, side, states)]
+                continue
+            heads = {head: self._state_words(name, "head", {head})
+                     for head in {head for head, _tail in states}}
+            tails = {tail: self._state_words(name, "tail", {tail})
+                     for tail in {tail for _head, tail in states}}
+            out += [(reading, (h, t)) for head, tail in sorted(states)
+                    for h in heads[head] for t in tails[tail]]
+        return out
+
+    def _residue_formulas(self) -> tuple:
+        names = tuple(sorted(self.residues))
+        formulas = {r: _formula(self.residues[r].graph) for r in names}
         heavy = {r: sum(n for e, n in f.items() if e != "H") for r, f in formulas.items()}
-        frontier = [((), 0)]
+        return names, formulas, heavy
+
+    def _side_states(self, name, side, caps, budget) -> dict:
+        """{(first residue, outer residue, residue counts): (formula added,
+        heavy atoms added)} of every non-empty word the support allows at the
+        ``side`` end of residue ``name`` with ``caps`` caps there, within
+        ``budget`` heavy atoms (counts per residue in name order; ``first``
+        the residue joined to ``name``, ``outer`` the one at the far end)."""
+        names, formulas, heavy = self._residue_formulas()
+        nexts = self.support if side == "tail" else self._preceding()
+        index = {r: i for i, r in enumerate(names)}
+
+        def plus(counts, r):
+            return counts[:index[r]] + (counts[index[r]] + 1,) + counts[index[r] + 1:]
+
+        zero = (0,) * len(names)
+        frontier = {(r, r, plus(zero, r)) for r in nexts[name] if heavy[r] <= budget}
+        seen = set(frontier)
+        while frontier:
+            grown = set()
+            for first, outer, counts in frontier:
+                size = sum(c * heavy[r] for r, c in zip(names, counts))
+                for r in nexts[outer]:
+                    state = (first, r, plus(counts, r))
+                    if size + heavy[r] <= budget and state not in seen:
+                        grown.add(state)
+            seen |= grown
+            frontier = grown
+        out = {}
+        for first, outer, counts in seen:
+            if int(self.junctions[(name, first) if side == "tail" else (first, name)][2]) != caps:
+                continue
+            added = {}
+            for r, c in zip(names, counts):
+                for e, n in formulas[r].items() if c else ():
+                    added[e] = added.get(e, 0) + c * n
+            caps_added = int(self._site_order(outer, side)) - caps
+            if caps_added:
+                added["H"] = added.get("H", 0) + caps_added
+            out[(first, outer, counts)] = (tuple(sorted(added.items())),
+                                           sum(c * heavy[r] for r, c in zip(names, counts)))
+        return out
+
+    def _state_words(self, name, side, states) -> list:
+        """The words of ``_side_states`` ``states`` (chain order), shorter
+        first: grown outward from ``name`` one allowed residue at a time,
+        never past the residue counts of every state."""
+        names, _formulas, _heavy = self._residue_formulas()
+        nexts = self.support if side == "tail" else self._preceding()
+        index = {r: i for i, r in enumerate(names)}
+        bounds = [counts for _first, _outer, counts in states]
+        out, frontier = [], [((), (0,) * len(names))]
         while frontier:
             grown = []
-            for word, size in frontier:
+            for word, counts in frontier:
                 edge = name if not word else word[-1] if side == "tail" else word[0]
-                for nxt in (self.support[edge] if side == "tail" else preceding[edge]):
-                    if size + heavy[nxt] > budget:
-                        continue
-                    new = word + (nxt,) if side == "tail" else (nxt,) + word
-                    grown.append((new, size + heavy[nxt]))
-            for word, size in grown:
-                first, last = (name, word[0]) if side == "tail" else (word[-1], name)
-                if int(self.junctions[(first, last)][2]) != caps:
-                    continue
-                added = {}
-                for r in word:
-                    for e, n in formulas[r].items():
-                        added[e] = added.get(e, 0) + n
-                outer = word[-1] if side == "tail" else word[0]
-                caps_added = int(self._site_order(outer, side)) - caps
-                if caps_added:
-                    added["H"] = added.get("H", 0) + caps_added
-                yield word, added, size
+                for r in nexts[edge]:
+                    new_counts = counts[:index[r]] + (counts[index[r]] + 1,) + counts[index[r] + 1:]
+                    if any(all(c <= b for c, b in zip(new_counts, bound)) for bound in bounds):
+                        grown.append((word + (r,) if side == "tail" else (r,) + word, new_counts))
+            for word, counts in grown:
+                first, outer = (word[0], word[-1]) if side == "tail" else (word[-1], word[0])
+                if (first, outer, counts) in states:
+                    out.append(word)
             frontier = grown
+        return out
 
     def fragment_facts(self) -> dict:
         """The facts of one growth step the window guards read
