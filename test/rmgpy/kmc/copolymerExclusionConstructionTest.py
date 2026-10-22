@@ -142,15 +142,17 @@ def test_a_reading_needs_a_parse_of_its_species_in_the_declared_support(rrec, ep
     """Under an alternating E/P support n-pentyl is E then P (the radical on
     E's head): its methyl at the far end is P's pendant, and read as an E
     tail its species does not parse (the residue before that E would be a P
-    whose methine has no methyl).  So it is no E end, n-octyl is no analogue
-    and an [H] + n-octyl <=> n-octane entry is not matched; P's tail is still
-    read.  Under the statistical support the same methyl does parse as an E
-    end (n-pentyl as E E and one atom of a residue cut by a scission), and
+    whose methine has no methyl).  So it is no E tail, n-octyl is no analogue
+    and an [H] + n-octyl <=> n-octane entry is not matched.  P's tail is
+    still read, and so is the same methyl as an E head: n-pentyl is also E
+    then P with the radical on P's methyl, and words before that E end in P
+    (branched).  Under the statistical support the methyl does parse as an E
+    tail (n-pentyl as E E and one atom of a residue cut by a scission), and
     the entry is matched."""
     alternating = cct._alternating()
     readings = {port.atom_id: sorted((side, residue) for side, residue, _c in coordinate)
                 for port, coordinate in alternating.growth_sites(mol("[CH2]CCCC", 0))}
-    assert readings == {3: [("tail", "P")]}, readings
+    assert readings == {3: [("tail", "P")], 4: [("head", "E")]}, readings
     reactants, products = _recombination(rrec, "[CH2]CCCC")
     stub = ctest._stub_family(rrec, [cct._entry(900104, ["[H]", "[CH2]CCCCCCC"], "CCCCCCCC")])
     for name, ex in _orientations(stub, reactants, products, alternating).items():

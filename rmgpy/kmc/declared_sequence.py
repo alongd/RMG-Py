@@ -41,7 +41,11 @@ set of residue formulas, one per residue: a long-chain analogue gains any
 non-negative integer combination of them (``certificates.growth_units``).
 The exclusion is decided by construction at the growth sites
 (``growth_sites``): every capped terminal residue of a witness species, read
-as every residue and side it matches; at each reading every residue word
+as every residue and side it matches from which the whole species parses
+under the sequence support (``_parses``: residue by residue on the heavy
+skeleton, ending on a whole residue, the end group or a part of a residue a
+reaction cut; never a join checked by element alone), on either side of the
+reaction (``certificates.reaction_growth_sites``); at each reading every residue word
 the sequence support allows next to it is an insertion
 (``growth_options``), built whole by ``growth_fragment``; an extension step
 is one such insertion of one residue at a port."""
@@ -102,6 +106,88 @@ def _formula(graph) -> dict:
         if atom.hydrogens:
             counts["H"] = counts.get("H", 0) + atom.hydrogens
     return counts
+
+
+def _embed(elements, adjacent, root, inward, t, j, target, heavy, available):
+    """Every map of a residue skeleton (key -> element, key -> neighbour
+    keys) into the heavy atoms ``available`` of ``target`` rows (``heavy``:
+    atom -> heavy neighbours), ``root`` on ``t``, keeping elements and bonds,
+    whose image atoms have no heavy neighbour but the images of their
+    skeleton neighbours, ``j`` at the root and at most one more at
+    ``inward``: yields (image, that atom or None)."""
+    if target[t][0] != elements[root]:
+        return
+    order, parent = [root], {}
+    for k in order:
+        for r in sorted(adjacent[k]):
+            if r not in parent and r != root:
+                parent[r] = k
+                order.append(r)
+    if len(order) != len(elements):
+        return
+    image, used = {root: t}, {t}
+
+    def finish():
+        beyond = None
+        for k, a in image.items():
+            extra = set(heavy[a]) - {image[r] for r in adjacent[k]}
+            if k == root:
+                extra.discard(j)
+            if k == inward and len(extra) <= 1:
+                beyond = next(iter(extra), None)
+            elif extra:
+                return
+        yield dict(image), beyond
+
+    def extend(i):
+        if i == len(order):
+            yield from finish()
+            return
+        k = order[i]
+        for a in sorted(heavy[image[parent[k]]]):
+            if a in used or a not in available or target[a][0] != elements[k] or \
+                    any(r in image and image[r] not in heavy[a] for r in adjacent[k]):
+                continue
+            image[k] = a
+            used.add(a)
+            yield from extend(i + 1)
+            del image[k]
+            used.discard(a)
+
+    yield from extend(1)
+
+
+def _cut(elements, adjacent, root, t, target, heavy, available) -> bool:
+    """Whether the heavy atoms ``available`` (connected through ``t``) are a
+    connected part of a residue skeleton with ``t`` on its ``root``: elements
+    kept, every bond among them a skeleton bond."""
+    if target[t][0] != elements[root]:
+        return False
+    order, parent = [t], {}
+    for a in order:
+        for n in sorted(heavy[a]):
+            if n in available and n not in parent and n != t:
+                parent[n] = a
+                order.append(n)
+    image, used = {t: root}, {root}
+
+    def extend(i):
+        if i == len(order):
+            return True
+        a = order[i]
+        for k in sorted(adjacent[image[parent[a]]]):
+            if k in used or elements[k] != target[a][0] or \
+                    any(n in image and image[n] not in adjacent[k] for n in heavy[a]):
+                continue
+            image[a] = k
+            used.add(k)
+            if extend(i + 1):
+                return True
+            del image[a]
+            used.discard(k)
+        return False
+
+    return extend(1)
 
 
 class SequenceChainProvider(BoundaryProvider):
@@ -271,12 +357,14 @@ class SequenceChainProvider(BoundaryProvider):
                 for name in self.residues}
 
     def _growth_patterns(self) -> tuple:
-        """(side, residue, port, pattern rows, exact atoms) of every capped
-        terminal residue: the residue at the artificial ``side`` of a
-        two-residue chain with each neighbour the support allows, and of the
-        residue alone; its atoms with every hydrogen exact, the join
-        neighbour matched by element and bond order (``declared_chain``'s
-        end patterns)."""
+        """(side, residue, port, pattern rows, exact atoms, join neighbour,
+        joined atom) of every capped terminal residue: the residue at the
+        artificial ``side`` of a two-residue chain with each neighbour the
+        support allows, and of the residue alone; its atoms with every
+        hydrogen exact, the join neighbour matched by element and bond order
+        (``declared_chain``'s end patterns), the rest of the species parsed
+        from it (``_parses``).  The residue alone has no join neighbour
+        (None, None): its exact atoms are the whole species."""
         cached = self.__dict__.get("_growth")
         if cached is None:
             from rmgpy.kmc.rmg_moves import molecule_rows
@@ -293,27 +381,38 @@ class SequenceChainProvider(BoundaryProvider):
                     atoms = {a for a, u, _k in build.metadata.coordinates if u == unit}
                     exact = atoms | {h for a in atoms for h, _o in rows[a][5] if rows[h][0] == "H"}
                     stubs = {n for a in exact for n, _o in rows[a][5] if n not in exact}
+                    stub = min(stubs) if stubs else None
+                    inner = None if stub is None else \
+                        next(n for n, _o in rows[stub][5] if n in atoms)
                     cached.append((side, name, build.metadata.port(side),
-                                   {a: rows[a] for a in exact | stubs}, frozenset(exact)))
+                                   {a: rows[a] for a in exact | stubs}, frozenset(exact),
+                                   stub, inner))
             cached = tuple(cached)
             self.__dict__["_growth"] = cached
         return cached
 
     def growth_sites(self, molecule) -> tuple:
         """Where residues insert in ``molecule`` (atoms carry ids): every atom
-        that is the capped end of a whole terminal residue (``_growth_patterns``),
-        one site per end atom; its coordinate lists every reading
-        ``(side, residue, caps)`` it matches, the site's port caps are all
-        their caps.  A radical end, a vinyl end or a species without a whole
-        residue is no site."""
+        that is the capped end of a whole terminal residue (``_growth_patterns``)
+        from which the species parses under the sequence support
+        (``_parses``), one site per end atom; its coordinate lists every
+        reading ``(side, residue, caps)`` it matches, the site's port caps are
+        all their caps.  A radical end, a vinyl end, a species without a whole
+        residue or an end whose species does not parse is no site."""
         from rmgpy.kmc.rmg_moves import molecule_rows
         target = molecule_rows(molecule)
+        heavy = {a: frozenset(n for n, _o in row[5] if target[n][0] != "H")
+                 for a, row in target.items() if row[0] != "H"}
+        memo = {}
         readings = {}
-        for side, name, port, pattern, exact in self._growth_patterns():
+        for side, name, port, pattern, exact, stub, inner in self._growth_patterns():
             for anchor in sorted(target):
                 if (side, name) in readings.get(anchor, {}):
                     continue
                 image = dc._match_end(pattern, exact, port.atom_id, target, anchor)
+                if image is not None and stub is not None and not self._parses(
+                        target, heavy, image[stub], image[inner], name, side, memo):
+                    image = None
                 if image is not None:
                     readings.setdefault(anchor, {})[(side, name)] = \
                         tuple(sorted(image[c] for c in port.cap_atom_ids))
@@ -328,6 +427,76 @@ class SequenceChainProvider(BoundaryProvider):
         caps = tuple(sorted({c for _s, _n, cs in coordinate for c in cs}))
         return (Port(f"growth:{anchor}", anchor, caps, f"backbone_{coordinate[0][0]}",
                      "artificial"), coordinate)
+
+    def _skeletons(self) -> dict:
+        """The heavy-atom skeleton (key -> element, key -> heavy neighbour
+        keys) of every residue, and of the head and tail end groups
+        (``("end", side)``, with their port atom)."""
+        cached = self.__dict__.get("_skeleton")
+        if cached is None:
+            cached = {}
+            graphs = [(name, residue.graph, None) for name, residue in self.residues.items()]
+            graphs += [(("end", side), graph, graph.ports[0][1].atom) for side, graph in
+                       (("head", self.spec.head_end_group), ("tail", self.spec.tail_end_group))]
+            for name, graph, port in graphs:
+                elements = {atom.key: atom.element for atom in graph.atoms if atom.element != "H"}
+                adjacent = {key: set() for key in elements}
+                for bond in graph.bonds:
+                    x, y = bond.atoms
+                    if x in elements and y in elements:
+                        adjacent[x].add(y)
+                        adjacent[y].add(x)
+                cached[name] = (elements, {k: frozenset(v) for k, v in adjacent.items()}, port)
+            self.__dict__["_skeleton"] = cached
+        return cached
+
+    def _parses(self, target, heavy, t, j, prev, side, memo) -> bool:
+        """Whether the heavy atoms beyond the bond ``j``-``t`` (``j`` in
+        residue ``prev``, read at the ``side`` end) parse as the rest of a
+        chain of the declaration: residue after residue inward (before
+        ``prev`` toward the head from a tail end, after it toward the tail from
+        a head end), each one the sequence support allows next to the last,
+        joined at its declared entry and exit atoms, matched on the heavy
+        skeleton (elements and bonds: the reaction may change hydrogens,
+        radicals and bond orders); the parse ends where the atoms do, on a
+        whole residue, on the declared end group, or on a connected part of
+        one residue (a residue cut by the reaction).  Never by element alone:
+        an end whose neighbours are not the residue the support allows there
+        is no residue end."""
+        key = (t, j, prev, side)
+        if key in memo:
+            return memo[key]
+        memo[key] = False
+        available, frontier = {t}, [t]
+        while frontier:
+            a = frontier.pop()
+            for n in heavy[a]:
+                if n != j and n not in available:
+                    available.add(n)
+                    frontier.append(n)
+        skeletons = self._skeletons()
+        found = False
+        for q in (self._preceding()[prev] if side == "tail" else self.support[prev]):
+            elements, adjacent, _port = skeletons[q]
+            root, inward = (self.exit[q], self.entry[q]) if side == "tail" else \
+                (self.entry[q], self.exit[q])
+            for image, beyond in _embed(elements, adjacent, root, inward, t, j, target, heavy,
+                                        available):
+                if beyond is None or self._parses(target, heavy, beyond, image[inward], q,
+                                                  side, memo):
+                    found = True
+                    break
+            if found or (len(available) < len(elements) and
+                         _cut(elements, adjacent, root, t, target, heavy, available)):
+                found = True
+                break
+        if not found:
+            elements, adjacent, port = skeletons[("end", "head" if side == "tail" else "tail")]
+            found = port in elements and len(elements) == len(available) and any(
+                beyond is None for _image, beyond in
+                _embed(elements, adjacent, port, None, t, j, target, heavy, available))
+        memo[key] = found
+        return found
 
     def merged_site(self, first, second) -> tuple:
         """One growth site read on both sides of a reaction
