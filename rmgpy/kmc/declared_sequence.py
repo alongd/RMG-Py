@@ -317,14 +317,25 @@ class SequenceChainProvider(BoundaryProvider):
                 if image is not None:
                     readings.setdefault(anchor, {})[(side, name)] = \
                         tuple(sorted(image[c] for c in port.cap_atom_ids))
-        out = []
-        for anchor in sorted(readings):
-            coordinate = tuple((side, name, caps)
-                               for (side, name), caps in sorted(readings[anchor].items()))
-            caps = tuple(sorted({c for _s, _n, cs in coordinate for c in cs}))
-            out.append((Port(f"growth:{anchor}", anchor, caps, f"backbone_{coordinate[0][0]}",
-                             "artificial"), coordinate))
-        return tuple(out)
+        return tuple(self._site(anchor, readings[anchor]) for anchor in sorted(readings))
+
+    @staticmethod
+    def _site(anchor, readings) -> tuple:
+        """(Port, coordinate) of a growth site from its readings
+        {(side, residue): caps}: the coordinate every reading sorted, the
+        port's caps all their caps."""
+        coordinate = tuple((side, name, caps) for (side, name), caps in sorted(readings.items()))
+        caps = tuple(sorted({c for _s, _n, cs in coordinate for c in cs}))
+        return (Port(f"growth:{anchor}", anchor, caps, f"backbone_{coordinate[0][0]}",
+                     "artificial"), coordinate)
+
+    def merged_site(self, first, second) -> tuple:
+        """One growth site read on both sides of a reaction
+        (``certificates.reaction_growth_sites``): every reading of either,
+        a reading on both keeping ``first``'s caps."""
+        readings = {(side, name): caps for side, name, caps in second[1]}
+        readings.update({(side, name): caps for side, name, caps in first[1]})
+        return self._site(first[0].atom_id, readings)
 
     def _site_order(self, name, side) -> float:
         return self._order(name, (self.entry if side == "head" else self.exit)[name])

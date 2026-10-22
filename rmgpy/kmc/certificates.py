@@ -622,20 +622,32 @@ def exclusion_matches(exclusion) -> list:
 
 def reaction_growth_sites(growth, reactants, products) -> Optional[tuple]:
     """((reactant index, Port, coordinate), ...): the provider's growth sites
-    on each reactant (``growth.growth_sites``) that the reaction leaves
-    alone (port atom and caps have the same row, bonds included, on both
-    sides); None when the provider cannot say for some reactant."""
+    (``growth.growth_sites``) that the reaction leaves alone (port atom and
+    caps have the same row, bonds included, on both sides), read on the
+    reactants and on the products alike, each keyed by the reactant holding
+    its atom: an end the reaction leaves alone is a site whichever side shows
+    it whole, so a reaction and its reverse have the same sites.  An atom
+    named on both sides keeps the reactant side's site, merged with the
+    product side's by a provider that reads several residues there
+    (``merged_site``).  None when the provider cannot say for some species."""
     before = {a: row for m in reactants for a, row in rm.molecule_rows(m).items()}
     after = {a: row for m in products for a, row in rm.molecule_rows(m).items()}
-    out = []
-    for k, mol in enumerate(reactants):
+    owner = {a.id: k for k, m in enumerate(reactants) for a in m.atoms}
+    found = {}
+    for mol in list(reactants) + list(products):
         sites = growth.growth_sites(mol)
         if sites is None:
             return None
         for port, coordinate in sites:
-            if all(before[a] == after.get(a) for a in (port.atom_id,) + port.cap_atom_ids):
-                out.append((k, port, coordinate))
-    return tuple(out)
+            if not all(a in before and before[a] == after.get(a)
+                       for a in (port.atom_id,) + port.cap_atom_ids):
+                continue
+            if port.atom_id not in found:
+                found[port.atom_id] = (port, coordinate)
+            elif hasattr(growth, "merged_site"):
+                found[port.atom_id] = growth.merged_site(found[port.atom_id], (port, coordinate))
+    return tuple((owner[a], port, coordinate) for a, (port, coordinate)
+                 in sorted(found.items(), key=lambda item: (owner[item[0]], item[0])))
 
 
 def _insert_unit(side, port, fragment, ids) -> None:
@@ -1033,8 +1045,8 @@ def depository_exclusion(family, reactants, products, *, cache=None,
     3. Without a ``growth`` provider: ``refused:unknown`` with the candidate
        entries.  With one (the declared chain, ``emit.certification_rules``)
        the analogues are built, not counted: the provider names the growth
-       sites of each reactant (``growth_sites``; none at an atom the reaction
-       edits), every vector of whole periods at those sites within ``H_max``
+       sites of the species on either side (``reaction_growth_sites``; none
+       at an atom the reaction edits), every vector of whole periods at those sites within ``H_max``
        is inserted on both sides alike through the provider's ``fragment``
        (a copolymer's provider: every residue word its sequence support
        allows at each reading of the site's terminal residue,
