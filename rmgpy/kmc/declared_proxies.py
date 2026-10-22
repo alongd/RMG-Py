@@ -316,7 +316,8 @@ def _same_structure(first, second) -> bool:
         candidates = by_kind[(port.artificial, len(port.cap_atom_ids))]
         if len(candidates) == 1:
             pins[a_by_id[port.atom_id]] = c_by_id[candidates[0]]
-    return bool(a.find_isomorphism(c, initial_map=pins, strict=False)) if pins else True
+    # whether one pinned isomorphism exists: the first decides
+    return a.find_first_isomorphism(c, initial_map=pins, strict=False) is not None if pins else True
 
 
 # ---------------------------------------------------------------------------

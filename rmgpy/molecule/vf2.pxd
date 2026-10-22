@@ -42,6 +42,9 @@ cdef class VF2:
     
     cdef bint is_match
     cdef list mapping_list
+    cdef bint keep_first
+    cdef object accept
+    cdef dict first_mapping
     
     cpdef bint is_isomorphic(self, Graph graph1, Graph graph2, dict initial_mapping, bint save_order=?, bint strict=?) except -2
         
@@ -50,6 +53,9 @@ cdef class VF2:
     cpdef bint is_subgraph_isomorphic(self, Graph graph1, Graph graph2, dict initial_mapping, bint save_order=?) except -2
 
     cpdef list find_subgraph_isomorphisms(self, Graph graph1, Graph graph2, dict initial_mapping, bint save_order=?)
+
+    cpdef dict find_first_isomorphism(self, Graph graph1, Graph graph2, dict initial_mapping, bint save_order=?,
+                                      bint strict=?, object accept=?)
     
     cdef isomorphism(self, Graph graph1, Graph graph2, dict initial_mapping, bint subgraph, bint find_all, bint save_order=?, bint strict=?)
 

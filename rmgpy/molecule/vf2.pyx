@@ -102,6 +102,26 @@ cdef class VF2:
         self.isomorphism(graph1, graph2, initial_mapping, True, True, save_order)
         return self.mapping_list
 
+    cpdef dict find_first_isomorphism(self, Graph graph1, Graph graph2, dict initial_mapping, bint save_order=False,
+                                      bint strict=True, object accept=None):
+        """
+        Return the first mapping :meth:`find_isomorphism` would list (the
+        search order is the same: listing every mapping only continues past
+        the first), or None, without listing the others.  With `accept` (a
+        callable taking a mapping dict), return the first listed mapping it
+        accepts: it is called on each complete mapping in that order until
+        one is accepted.
+        """
+        self.keep_first = True
+        self.accept = accept
+        self.first_mapping = None
+        try:
+            self.isomorphism(graph1, graph2, initial_mapping, False, False, save_order=save_order, strict=strict)
+        finally:
+            self.keep_first = False
+            self.accept = None
+        return self.first_mapping if self.is_match else None
+
     cdef isomorphism(self, Graph graph1, Graph graph2, dict initial_mapping, bint subgraph, bint find_all,
                      bint save_order=False, bint strict=True):
         """
@@ -207,7 +227,7 @@ cdef class VF2:
 
         # Done if we have mapped to all vertices in graph
         if call_depth == 0:
-            if self.find_all:
+            if self.find_all or self.keep_first:
                 mapping = {}
                 for vertex2 in self.graph2.vertices:
                     if vertex2.ignore:
@@ -215,7 +235,13 @@ cdef class VF2:
                     assert vertex2.mapping is not None
                     assert vertex2.mapping.mapping is vertex2
                     mapping[vertex2.mapping] = vertex2
-                self.mapping_list.append(mapping)
+                if self.keep_first:
+                    # a mapping not accepted is passed over, as a listing would
+                    if self.accept is not None and not self.accept(mapping):
+                        return False
+                    self.first_mapping = mapping
+                else:
+                    self.mapping_list.append(mapping)
             self.is_match = True
             return True
 

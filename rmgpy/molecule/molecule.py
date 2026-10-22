@@ -1687,6 +1687,28 @@ class Molecule(Graph):
         result = Graph.find_isomorphism(self, other, initial_map, save_order=save_order, strict=strict)
         return result
 
+    def find_first_isomorphism(self, other, initial_map=None, save_order=False, strict=True, accept=None):
+        """
+        Returns the first mapping :meth:`find_isomorphism` would list, or
+        ``None``, without listing the others (a molecule with k methyl
+        groups has over 6**k).  With `accept` (a callable taking a mapping),
+        the first listed mapping it accepts.  The arguments and the checks
+        before the search are :meth:`find_isomorphism`'s.
+        """
+        if not isinstance(other, Molecule):
+            raise TypeError(
+                'Got a {0} object for parameter "other", when a Molecule object is required.'.format(other.__class__))
+        if self.fingerprint != other.fingerprint:
+            return None
+        if self.multiplicity != other.multiplicity:
+            return None
+        if self.metal != other.metal:
+            return None
+        if self.facet != other.facet:
+            return None
+        return Graph.find_first_isomorphism(self, other, initial_map, save_order=save_order, strict=strict,
+                                            accept=accept)
+
     def is_subgraph_isomorphic(self, other, initial_map=None, generate_initial_map=False, save_order=False):
         """
         Returns :data:`True` if `other` is subgraph isomorphic and :data:`False`

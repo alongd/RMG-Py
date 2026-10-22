@@ -538,6 +538,17 @@ cdef class Graph(object):
         """
         return vf2.find_isomorphism(self, other, initial_map, save_order=save_order, strict=strict)
 
+    cpdef dict find_first_isomorphism(self, Graph other, dict initial_map=None, bint save_order=False,
+                                      bint strict=True, object accept=None):
+        """
+        Returns the first mapping :meth:`find_isomorphism` would list, or
+        ``None``, without listing the others.  With `accept` (a callable
+        taking a mapping), the first listed mapping it accepts.
+        Uses the VF2 algorithm of Vento and Foggia.
+        """
+        return vf2.find_first_isomorphism(self, other, initial_map, save_order=save_order, strict=strict,
+                                          accept=accept)
+
     cpdef bint is_subgraph_isomorphic(self, Graph other, dict initial_map=None, bint save_order=False) except -2:
         """
         Returns :data:`True` if `other` is subgraph isomorphic and :data:`False`

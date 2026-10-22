@@ -1295,17 +1295,22 @@ def _transition_automorphism_exists(first, second, reactants, products=None) -> 
                 left_atoms[source]: right_atoms[target]
                 for source, target in pinned.items()
             }
-            for mapping in left_combined.find_isomorphism(
-                right_combined, initial_map=initial_map, save_order=True, strict=False
-            ):
+            def preserves(mapping):
                 sigma = {atom.id: image.id for atom, image in mapping.items()}
-                if _permutation_preserves_species(
+                return _permutation_preserves_species(
                     sigma, reactants, reactant_states
                 ) and (
                     products is None
                     or _permutation_preserves_species(sigma, products, product_states)
-                ):
-                    return True
+                )
+
+            # the first mapping that preserves the species decides: the
+            # others (exponential in the symmetric branches) are never listed
+            if left_combined.find_first_isomorphism(
+                right_combined, initial_map=initial_map, save_order=True, strict=False,
+                accept=preserves,
+            ) is not None:
+                return True
     return False
 
 
@@ -2590,19 +2595,20 @@ def _explicit_h_map(source_molecule, target_molecule, port_map) -> dict[int, int
     """Source atom id -> target atom id over EVERY atom (hydrogens included):
     an RMG isomorphism with the port atoms pinned (``port_map``: source port
     id -> target port id).  Deterministic: RMG's first isomorphism with the
-    atom order kept."""
+    atom order kept (``find_first_isomorphism``: the others, over 6**k for k
+    methyl groups, are never listed)."""
     by_id = {atom.id: atom for atom in target_molecule.atoms}
     source_by_id = {atom.id: atom for atom in source_molecule.atoms}
     initial = {source_by_id[a]: by_id[b] for a, b in port_map.items()}
-    maps = source_molecule.find_isomorphism(
+    first = source_molecule.find_first_isomorphism(
         target_molecule, initial_map=initial, save_order=True, strict=False
     )
-    if not maps:
+    if first is None:
         raise ValueError(
             "construction boundary metadata lost: no explicit-H isomorphism of the proxy "
             "participant onto the generated participant"
         )
-    full = {a.id: b.id for a, b in maps[0].items()}
+    full = {a.id: b.id for a, b in first.items()}
     if len(full) != len(source_molecule.atoms) or len(set(full.values())) != len(full):
         raise ValueError("construction boundary metadata lost: the explicit-H map is partial")
     return full
