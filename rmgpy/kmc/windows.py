@@ -100,7 +100,10 @@ ceiling ``PROXY_PADDING_MAX_HEAVY_ATOMS``.  Statuses: ``fixed_point``,
 ``no_fixed_point`` (a port is still in the window at its limit, or windows
 keep changing past the retries), ``ceiling_exceeded`` (never truncated),
 ``certificate_unstable`` (the certificate keeps changing past the retries),
-and ``refused:<reason>`` from the observation.
+and ``refused:<reason>`` from the observation.  A copolymer port's next
+residue is not declared: every extension there branches over each residue
+the sequence support allows, and the window must be the same on every
+branch (``refused:extension_branches`` otherwise, naming the branch).
 
 Span bound (item 4)
 -------------------
@@ -693,6 +696,8 @@ class FixedPointResult:
     retries: int = 0
     history: tuple = field(default=(), compare=False)
     flips: tuple = field(default=(), compare=False)
+    # the residue branches of a fixed point (``branch_label`` each; empty: one)
+    branches: tuple = field(default=(), compare=False, repr=False)
 
     @property
     def reached(self) -> bool:
@@ -1347,6 +1352,7 @@ def certificate_view(cert, wanted, inside, transport=None, *, transport_reacting
         selection[1] = None
         sel = tuple(selection) + (
             ch.get("support"), (ch.get("eligibility") or {}).get("disposition"),
+            # the exclusion verdict comes last (``outcome_view`` reads it there)
             ch.get("whole_species"), (ch.get("depository_exclusion") or {}).get("verdict"))
         for mp in mem["mappings"]:
             descents = cert["descents"].get(mp.get("descent"), []) if mp.get("descent") else []
@@ -1389,6 +1395,23 @@ def certificate_view(cert, wanted, inside, transport=None, *, transport_reacting
             out.append((key, sel, cm.descent_signature(descents), tuple(preds),
                         tuple(sorted(rows, key=repr))))
     return tuple(sorted(out, key=repr))
+
+
+# the exclusion proofs that certify no analogue is a depository reaction
+EXCLUSION_PROOFS = ("excluded:size", "excluded:formula", "excluded:isomorphism")
+EXCLUDED = "excluded"
+
+
+def outcome_view(view) -> tuple:
+    """A ``certificate_view`` with each channel's depository exclusion verdict
+    reduced to its outcome: a size, formula or isomorphism proof all certify
+    that no analogue is a depository reaction (``EXCLUDED``); a verdict with
+    matched sizes (``except_matched``), a refusal or none stays as it is.
+    Residue branches are compared this way (``fixed_point``): at one depth
+    they differ in size, so one may be proved by size and another by formula
+    with the same selection and rate source."""
+    return tuple(sorted(((key, sel[:-1] + (EXCLUDED if sel[-1] in EXCLUSION_PROOFS else sel[-1],))
+                         + tuple(rest) for key, sel, *rest in view), key=repr))
 
 
 # ---------------------------------------------------------------------------
@@ -1586,6 +1609,30 @@ def override_size(observe, observation) -> bool:
                for ch in base.get("channels", []))
 
 
+def branch_label(witness) -> str:
+    """The residue words an extension added per port, e.g. ``0:head+E
+    0:tail+P+E`` (``Witness.extension_words``, ``boundaries.words_label``);
+    "" when none."""
+    return b.words_label(dict(witness.extension_words))
+
+
+def branch_difference(first, obs_first, win_first, other, obs_other, win_other):
+    """What two residue branches of one witness disagree on: their refusal,
+    their window (``same_window``: support and closure) or their certificate
+    view (selection, descent, guards, outcome; the depository exclusion by
+    its outcome, ``outcome_view``); None when they agree."""
+    refused = obs_first.refusal or (win_first.refusal if win_first else None)
+    refused_other = obs_other.refusal or (win_other.refusal if win_other else None)
+    if refused or refused_other:
+        return None if refused == refused_other else "refusal"
+    if not same_window(first, win_first.atoms, other, win_other.atoms):
+        return "window"
+    if outcome_view(obs_first.view(win_first.atoms)) != \
+            outcome_view(obs_other.view(win_other.atoms)):
+        return "certificate"
+    return None
+
+
 def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PORT_DEPTH_LIMIT,
                 retries=FIXED_POINT_RETRIES, closure=None) -> FixedPointResult:
     """The recertified fixed point of ``witness`` under ``observe`` (see the
@@ -1597,72 +1644,111 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
     port keeps at least one other alone check (else
     ``refused:override_checks``).  An extension of the witness itself that
     lands on such a size keeps extending the same ports: the matched sizes
-    are finite, and the window is measured at the sizes the rule rates."""
+    are finite, and the window is measured at the sizes the rule rates.
+
+    Residue branches: a port whose next repeat the declaration leaves open (a
+    copolymer's, ``boundaries.extension_residues``) is extended by EVERY
+    residue allowed there, so the witness becomes a set of branches, one per
+    residue word.  A window is accepted only when every branch has the same
+    window and certificate (``branch_difference``), the first branch standing
+    for the identical others (``FixedPointResult.branches`` names them all);
+    a check holds only on every branch it grows (``branches``: their count).
+    Branches that disagree refuse the member, ``refused:extension_branches``,
+    naming the breaking branch.  With residue branches every certificate is
+    compared by outcome (``outcome_view``: the branches of one depth differ
+    in size, and a size, formula or isomorphism proof of the depository
+    exclusion are one outcome).  A provider with one repeat has one branch:
+    nothing here changes for it."""
     closure = closure or close
     limit = b._ceiling(ceiling)
     ports = b.vector_ports(witness)
+    # residue branches (a copolymer port) compare certificates by outcome
+    branching = any(b.extension_residues(witness, p, providers) != (None,) for p in ports)
     cache = {}
     history = []
 
     def look(w):
-        key = _key(w)
+        key = (_key(w), w.extension_words)
         if key not in cache:
             obs = observe(w)
             win = None if obs.refusal else closure(w, obs.support)
             cache[key] = (obs, win)
-            history.append((dict(key), None if win is None else len(win.atoms),
-                            obs.refusal or (win.refusal if win else None)))
+            entry = (dict(key[0]), None if win is None else len(win.atoms),
+                     obs.refusal or (win.refusal if win else None))
+            history.append(entry + (branch_label(w),) if w.extension_words else entry)
         return cache[key]
+
+    def seen(o, atoms):
+        view = o.view(atoms)
+        return outcome_view(view) if branching else view
+
+    def look_all(ws):
+        # the first branch's observation and window, and the first branch
+        # that disagrees with it (or None)
+        obs, win = look(ws[0])
+        for w in ws[1:]:
+            why = branch_difference(ws[0], obs, win, w, *look(w))
+            if why:
+                return obs, win, (w, why)
+        return obs, win, None
 
     def depths(w):
         return tuple((p, w.depth(p)) for p in ports)
 
-    def stop(status, reason, w=None, win=None, obs=None, checks=(), used=0):
+    def stop(status, reason, w=None, win=None, obs=None, checks=(), used=0, branches=()):
         return FixedPointResult(status, reason, depths(w or witness), w, win, obs,
                                 tuple(checks), used, tuple(history),
-                                tuple(getattr(observe, "flips", ())))
+                                tuple(getattr(observe, "flips", ())),
+                                tuple(branch_label(x) for x in branches)
+                                if len(branches) > 1 else ())
 
-    def grow(w, keys, steps=1, slack=0):
+    def split(ws, other, why, checks=(), used=0):
+        return stop("refused:extension_branches", f"the residues beyond the artificial ports "
+                    f"change the {why}: {branch_label(ws[0]) or 'no residue'} vs "
+                    f"{branch_label(other)}", ws[0], None, None, checks, used)
+
+    def grow(ws, keys, steps=1, slack=0):
         # ``slack``: a check witness may reach one repeat past the per-port
         # limit (its +2 step), the fixed point itself never
         for p in keys:
-            if w.depth(p) + steps > port_limit + slack:
+            if ws[0].depth(p) + steps > port_limit + slack:
                 return None, stop("no_fixed_point", f"port {p} reached the per-port limit "
-                                  f"{port_limit} without a fixed point", w)
+                                  f"{port_limit} without a fixed point", ws[0])
         try:
             for _step in range(steps):
                 for p in keys:
-                    w, _record = b.extend(w, p, providers, ceiling=limit)
+                    ws = tuple(b.extend(w, p, providers, ceiling=limit, residue=r)[0]
+                               for w in ws for r in b.extension_residues(w, p, providers))
         except b.CeilingExceeded as error:
-            return None, stop("ceiling_exceeded", f"{error} (never truncated)", w)
+            return None, stop("ceiling_exceeded", f"{error} (never truncated)", ws[0])
         except b.ExtensionRefused as error:
             if "reacting atom" in str(error):
                 return None, stop("refused:reacting_port", f"a reacting atom sits on an "
                                   f"artificial port (a cut-point event: its long-chain and "
-                                  f"physical-end analogues are other witnesses): {error}", w)
+                                  f"physical-end analogues are other witnesses): {error}", ws[0])
             return None, stop("refused:extension", f"an artificial port in the window cannot "
-                              f"be extended: {error}", w)
-        return w, None
+                              f"be extended: {error}", ws[0])
+        return ws, None
 
-    def settle(w, keys):
+    def settle(ws, keys):
         # an extension that lands on a matched depository size (a catalog
         # override, no rule window to observe) keeps extending the same ports
-        obs, win = look(w)
-        while obs.refusal and override_size(observe, obs):
-            w, failure = grow(w, keys)
+        obs, win, broken = look_all(ws)
+        while not broken and obs.refusal and override_size(observe, obs):
+            ws, failure = grow(ws, keys)
             if failure:
-                return w, obs, win, failure
-            obs, win = look(w)
-        return w, obs, win, None
+                return ws, obs, win, failure
+            obs, win, broken = look_all(ws)
+        return ws, obs, win, split(ws, *broken) if broken else None
 
-    current = witness
-    obs, win = look(current)
+    current = (witness,)
+    obs, win = look(witness)
     if obs.refusal or win.refusal:
-        return stop(obs.refusal or win.refusal, "refused", current, win, obs)
+        return stop(obs.refusal or win.refusal, "refused", witness, win, obs)
     rounds = []
     used = 0
     while True:
-        inside = [p for p in ports if port_inside(current, p, win.atoms)]
+        inside = [p for p in ports if any(port_inside(w, p, win.atoms) for w in current)]
         while inside:
             current, failure = grow(current, inside)
             if failure:
@@ -1671,45 +1757,59 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
             if failure:
                 return failure
             if obs.refusal or win.refusal:
-                return stop(obs.refusal or win.refusal, "refused on extension", current, win,
+                return stop(obs.refusal or win.refusal, "refused on extension", current[0], win,
                             obs, rounds, used)
-            inside = [p for p in ports if port_inside(current, p, win.atoms)]
-        view = obs.view(win.atoms)
+            inside = [p for p in ports if any(port_inside(w, p, win.atoms) for w in current)]
+        view = seen(obs, win.atoms)
         checks = []
         for group, step, joint in check_groups(ports):
-            other, failure = grow(current, group, step, slack=step - 1)
+            others, failure = grow(current, group, step, slack=step - 1)
             if failure:
                 if failure.status == "ceiling_exceeded":
                     return failure
-                return stop(failure.status, failure.reason, current, None, obs, rounds, used)
-            o2, w2 = look(other)
-            if o2.refusal and override_size(observe, o2):
+                return stop(failure.status, failure.reason, current[0], None, obs, rounds, used)
+            looked = [look(other) for other in others]
+            overrides = [bool(o2.refusal) and override_size(observe, o2) for o2, _w2 in looked]
+            if any(overrides) and not all(overrides):
+                other = others[overrides.index(not overrides[0])]
+                return split((others[0],), other, "depository match", rounds, used)
+            if all(overrides):
                 checks.append({"ports": tuple(group), "step": step, "joint": joint,
-                               "depository": True, "reason": o2.refusal})
+                               "depository": True, "reason": looked[0][0].refusal})
+                if len(others) > 1:
+                    checks[-1]["branches"] = len(others)
                 continue
-            if o2.refusal or w2.refusal:
-                return stop("certificate_unstable", f"+{step} at {list(group)}: "
-                            f"{o2.refusal or w2.refusal}", current, None, obs, rounds, used)
+            refused = next((k for k, (o2, w2) in enumerate(looked) if o2.refusal or w2.refusal),
+                           None)
+            if refused is not None:
+                o2, w2 = looked[refused]
+                where = f" ({branch_label(others[refused])})" if len(others) > 1 else ""
+                return stop("certificate_unstable", f"+{step} at {list(group)}{where}: "
+                            f"{o2.refusal or w2.refusal}", current[0], None, obs, rounds, used)
             checks.append({"ports": tuple(group), "step": step, "joint": joint,
-                           "same_window": same_window(current, win.atoms, other, w2.atoms),
-                           "same_certificate": view == o2.view(w2.atoms),
-                           "window_atoms": len(w2.atoms)})
+                           "same_window": all(same_window(current[0], win.atoms, other, w2.atoms)
+                                              for other, (_o2, w2) in zip(others, looked)),
+                           "same_certificate": all(view == seen(o2, w2.atoms)
+                                                   for o2, w2 in looked),
+                           "window_atoms": len(looked[0][1].atoms)})
+            if len(others) > 1:
+                checks[-1]["branches"] = len(others)
         rounds.append(tuple(checks))
         blind = [p for p in ports if all(c.get("depository") for c in checks
                                          if not c["joint"] and c["ports"] == (p,))]
         if blind:
             return stop("refused:override_checks", f"every alone check of port {blind[0]} is a "
-                        "matched depository size: nothing measures its window", current, None,
+                        "matched depository size: nothing measures its window", current[0], None,
                         obs, rounds, used)
         failed = [c for c in checks if not c.get("depository")
                   and not (c["same_window"] and c["same_certificate"])]
         if not failed:
-            return stop("fixed_point", "", current, win, obs, rounds, used)
+            return stop("fixed_point", "", current[0], win, obs, rounds, used, current)
         if used >= retries:
             unstable = any(not c["same_certificate"] for c in failed)
             return stop("certificate_unstable" if unstable else "no_fixed_point",
                         f"checks still fail after {used} re-extensions: "
-                        f"{[(list(c['ports']), c['step']) for c in failed]}", current, None,
+                        f"{[(list(c['ports']), c['step']) for c in failed]}", current[0], None,
                         obs, rounds, used)
         used += 1
         # failed independent checks extend their own port; a failure seen only
@@ -1722,8 +1822,8 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
         if failure:
             return failure
         if obs.refusal or win.refusal:
-            return stop(obs.refusal or win.refusal, "refused on re-extension", current, win, obs,
-                        rounds, used)
+            return stop(obs.refusal or win.refusal, "refused on re-extension", current[0], win,
+                        obs, rounds, used)
 
 
 # ---------------------------------------------------------------------------
@@ -4123,17 +4223,36 @@ def builds_of(specs):
     return [build_spec(spec, f"p{k}") for k, spec in enumerate(specs)]
 
 
-def _longer_declared(spec: DeclaredSpec, head: bool, k: int) -> DeclaredSpec:
+def _shifted(edits, k: int) -> tuple:
+    """``edits`` with every unit (and a bond edit's other unit) shifted by ``k``."""
+    from dataclasses import replace
+    return tuple(replace(e, unit=e.unit + k,
+                         other=None if e.other is None else (e.other[0] + k, e.other[1]))
+                 for e in edits)
+
+
+def _longer_declared(spec: DeclaredSpec, head: bool, k: int, word=None) -> DeclaredSpec:
     """A declared chain ``k`` periods longer at one end: a head move shifts
     every edit's unit (and a bond edit's other unit) by ``k`` and prepends
     ``k`` copies of the first orientation; a tail move appends ``k`` copies of
-    the last.  An end cut at a phase cannot move (``ExtensionRefused``)."""
+    the last.  An end cut at a phase cannot move (``ExtensionRefused``).  A
+    copolymer chain grows by the residues of ``word`` (``event_branches``,
+    innermost first); without one it cannot move: its next residue is not
+    declared."""
     from dataclasses import replace
     chain = spec.chain
     if isinstance(chain, ds.SequenceChainSpec):
-        raise b.ExtensionRefused(f"{ds.SEQUENCE_EXTENSION_REFUSAL}: {spec.provider}: the residue "
-                                 "beyond an end of a copolymer chain is not fixed by the "
-                                 "declaration")
+        if word is None:
+            raise b.ExtensionRefused(f"{ds.SEQUENCE_EXTENSION_REFUSAL}: {spec.provider}: the "
+                                     "residue beyond an end of a copolymer chain is not fixed "
+                                     "by the declaration (no allowed residue named)")
+        if len(word) != k:
+            raise WindowError(f"a residue word {word!r} for a move of {k}")
+        if head:
+            return DeclaredSpec(spec.provider, replace(
+                chain, residues=tuple(reversed(word)) + chain.residues,
+                edits=_shifted(chain.edits, k)))
+        return DeclaredSpec(spec.provider, replace(chain, residues=chain.residues + tuple(word)))
     phase = chain.head_phase if head else chain.tail_phase
     if phase:
         raise b.ExtensionRefused(f"the {'head' if head else 'tail'} of {spec.provider} is cut "
@@ -4143,19 +4262,44 @@ def _longer_declared(spec: DeclaredSpec, head: bool, k: int) -> DeclaredSpec:
     if head:
         if orientation:
             orientation = (orientation[0],) * k + orientation
-        edits = tuple(replace(e, unit=e.unit + k,
-                              other=None if e.other is None else (e.other[0] + k, e.other[1]))
-                      for e in edits)
+        edits = _shifted(edits, k)
     elif orientation:
         orientation = orientation + (orientation[-1],) * k
     return DeclaredSpec(spec.provider, replace(chain, units=chain.units + k,
                                                orientation=orientation, edits=edits))
 
 
-def longer_specs(specs, ports, k: int = 1):
+def event_branches(specs, ports) -> list:
+    """(label, words) per residue branch of the chain one repeat longer at
+    ``ports`` (participant, port id): a copolymer port (a sequence chain
+    spec) takes every residue its provider allows next to the chain's end
+    residue there (``next_residues``), one branch per combination, each
+    labelled as ``fixed_point`` labels its branches (``branch_label``); a
+    port with no allowed residue keeps None (``longer_specs`` refuses it by
+    name).  ``[("", None)]`` when no port branches."""
+    choices = []
+    for index, port_id in ports:
+        spec = None if specs is None else specs[index]
+        chain = getattr(spec, "chain", None)
+        if not isinstance(chain, ds.SequenceChainSpec):
+            continue
+        provider = provider_object(spec.provider)
+        end = chain.residues[0] if port_id == "head" else chain.residues[-1]
+        nexts = provider.next_residues(end, f"backbone_{port_id}",
+                                       int(provider._site_order(end, port_id)))
+        choices.append([((index, port_id), r) for r in nexts] or [((index, port_id), None)])
+    if not choices:
+        return [("", None)]
+    return [(" ".join(f"{i}:{p}+{r}" for (i, p), r in combo if r is not None),
+             {key: None if r is None else (r,) for key, r in combo})
+            for combo in product(*choices)]
+
+
+def longer_specs(specs, ports, k: int = 1, words=None):
     """``specs`` with every port in ``ports`` (participant, port id) moved
     ``k`` repeats outward (the chain is longer there; the port atom becomes
-    interior), and the unit shift of each participant's old coordinates."""
+    interior), and the unit shift of each participant's old coordinates.
+    ``words``: per copolymer port the residues it grows by (``event_branches``)."""
     from dataclasses import replace
     specs, shift = list(specs), defaultdict(int)
     for spec in specs:
@@ -4164,7 +4308,7 @@ def longer_specs(specs, ports, k: int = 1):
         spec = specs[index]
         head = port_id == "head"
         if isinstance(spec, DeclaredSpec):
-            specs[index] = _longer_declared(spec, head, k)
+            specs[index] = _longer_declared(spec, head, k, (words or {}).get((index, port_id)))
             if head:
                 shift[index] += k
             continue
@@ -4186,15 +4330,17 @@ def longer_specs(specs, ports, k: int = 1):
     return specs, dict(shift)
 
 
-def event_specs(specs, assignment):
+def event_specs(specs, assignment, words=None):
     """The witness specs of one event a reacting-port member stands for:
     ``assignment`` gives every reacting port either ``INTERIOR`` (the chain one
     repeat longer there: ``longer_specs``) or a declared end chemistry (that
     end built physical there by the provider).  (specs, unit shift); the specs
     are None when a participant's spec cannot carry the end (the alkane
-    carries them as ("alkane", n, head end, tail end))."""
+    carries them as ("alkane", n, head end, tail end)).  ``words``: the residues
+    of a copolymer's interior ports (``event_branches``)."""
     from dataclasses import replace
-    longer, shift = longer_specs(specs, [p for p, c in assignment if c == INTERIOR])
+    longer, shift = longer_specs(specs, [p for p, c in assignment if c == INTERIOR],
+                                 words=words)
     for (index, port_id), choice in assignment:
         if choice == INTERIOR:
             continue
@@ -4326,76 +4472,80 @@ def reacting_port_covers(certifier, family, case, *, bound=None, providers=None,
         assignment = tuple(zip(reacting, combo))
         interior = [p for p, c in assignment if c == INTERIOR]
         ends = [c for _p, c in assignment if c != INTERIOR]
-        row = {"event": ", ".join(f"{c}@{p[0]}:{p[1]}" for p, c in assignment),
-               "kind": "interior" if not ends else "physical" if not interior else "mixed",
-               "port": [list(p) for p in reacting] if len(reacting) > 1 else list(reacting[0]),
-               "end": None if not ends else ends[0] if len(ends) == 1 else ends,
-               "assignment": [[list(p), c] for p, c in assignment]}
-        try:
-            especs, shift = (None, {}) if specs is None else event_specs(specs, assignment)
-        except b.ExtensionRefused as error:
-            # a chain that cannot be built longer there (a copolymer's next
-            # residue is not fixed): the event has no witness, a named gap
-            especs, shift = None, {}
-            row.update(route="spec", status="refused:extension", reason=str(error)[:200])
-        built = None
-        if especs is not None:
-            row.update(route="spec", specs=[repr(x) for x in especs])
+        for branch, words in event_branches(specs, interior):
+            row = {"event": ", ".join(f"{c}@{p[0]}:{p[1]}" for p, c in assignment),
+                   "kind": "interior" if not ends else "physical" if not interior else "mixed",
+                   "port": [list(p) for p in reacting] if len(reacting) > 1 else list(reacting[0]),
+                   "end": None if not ends else ends[0] if len(ends) == 1 else ends,
+                   "assignment": [[list(p), c] for p, c in assignment]}
+            if branch:
+                row["branch"] = branch
             try:
-                builds = builds_of(especs)
-            except b.BoundaryError as error:
-                row.update(status="refused:end", reason=str(error)[:200])
-            else:
-                refusals = [(k, policy.domain.check(x.molecule)) for k, x in enumerate(builds)]
-                refusals = [(k, v) for k, v in refusals if not v.accepted]
-                if refusals:
-                    # the event's own reactants are outside the declared domain
-                    row.update(status="refused:domain", reason="; ".join(
-                        f"reactants species {k}: {v.reason}" for k, v in refusals)[:300])
+                especs, shift = (None, {}) if specs is None else \
+                    event_specs(specs, assignment, words)
+            except b.ExtensionRefused as error:
+                # a chain that cannot be built longer there (no residue the
+                # support allows): the event has no witness, a named gap
+                especs, shift = None, {}
+                row.update(route="spec", status="refused:extension", reason=str(error)[:200])
+            built = None
+            if especs is not None:
+                row.update(route="spec", specs=[repr(x) for x in especs])
+                try:
+                    builds = builds_of(especs)
+                except b.BoundaryError as error:
+                    row.update(status="refused:end", reason=str(error)[:200])
                 else:
-                    built = _cover_cases(certifier, family, especs, case.direction, policy)
-        if built is not None:
-            wanted = event_signatures(case, shift)
-            matches = [c for c in built if event_signatures(c) & wanted]
-            if not matches:
-                present = {(p.index, u, k) for p in built[0].witness.participants
-                           for _a, u, k in p.metadata.coordinates} if built else \
-                    {(i, u, k) for i, x in enumerate(builds) for _a, u, k in
-                     x.metadata.coordinates}
-                status, reason = unmatched_event(
-                    wanted, [(c.label, event_signatures(c)) for c in built], present)
-                row.update(status=status, reason=reason)
-            else:
-                members = []
-                for c in matches:
-                    # an event with a species outside the declared domain needs no
-                    # rate (proved by domain.check, reason stated), whatever else
-                    # refuses it first
-                    why = species_domain_refusal(c.witness, policy)
-                    res = {"status": "refused:domain", "reason": why} if why else \
-                        run_member(certifier, family, c, bound=bound, contexts=False,
-                                   providers=providers, covers=False, policy=policy, **loop)
-                    members.append({"label": c.label[-120:], "pathway": list(c.pathway),
-                                    "status": res["status"],
-                                    "reason": str(res.get("reason", ""))[:200],
-                                    "window_atoms": res.get("window_atoms")})
-                row["members"] = members
-                row["status"] = ",".join(sorted({m["status"] for m in members}))
-                row["reason"] = "; ".join(sorted({m["reason"] for m in members
-                                                  if m["reason"]}))[:300]
-                row["window_atoms"] = members[0]["window_atoms"]
-        elif "status" not in row and not interior:
-            r = run_context(certifier, family, case, tuple((p, dict(assignment).get(p))
-                                                           for p in ports),
-                            bound=bound, providers=providers, policy=policy, **loop)
-            row.update(route="reconstruct", status=r.status, reason=r.reason[:200],
-                       members=[{"status": r.status, "reason": r.reason[:200]}],
-                       window_atoms=len(r.window.atoms) if r.status == "fixed_point" else None)
-        elif "status" not in row:
-            row.update(status="no_witness", reason="the interior event needs the witness specs")
-        statuses = [m["status"] for m in row.get("members", ())] or [row["status"]]
-        row["verdict"] = _event_verdict(statuses)
-        covers.append(row)
+                    refusals = [(k, policy.domain.check(x.molecule)) for k, x in enumerate(builds)]
+                    refusals = [(k, v) for k, v in refusals if not v.accepted]
+                    if refusals:
+                        # the event's own reactants are outside the declared domain
+                        row.update(status="refused:domain", reason="; ".join(
+                            f"reactants species {k}: {v.reason}" for k, v in refusals)[:300])
+                    else:
+                        built = _cover_cases(certifier, family, especs, case.direction, policy)
+            if built is not None:
+                wanted = event_signatures(case, shift)
+                matches = [c for c in built if event_signatures(c) & wanted]
+                if not matches:
+                    present = {(p.index, u, k) for p in built[0].witness.participants
+                               for _a, u, k in p.metadata.coordinates} if built else \
+                        {(i, u, k) for i, x in enumerate(builds) for _a, u, k in
+                         x.metadata.coordinates}
+                    status, reason = unmatched_event(
+                        wanted, [(c.label, event_signatures(c)) for c in built], present)
+                    row.update(status=status, reason=reason)
+                else:
+                    members = []
+                    for c in matches:
+                        # an event with a species outside the declared domain needs no
+                        # rate (proved by domain.check, reason stated), whatever else
+                        # refuses it first
+                        why = species_domain_refusal(c.witness, policy)
+                        res = {"status": "refused:domain", "reason": why} if why else \
+                            run_member(certifier, family, c, bound=bound, contexts=False,
+                                       providers=providers, covers=False, policy=policy, **loop)
+                        members.append({"label": c.label[-120:], "pathway": list(c.pathway),
+                                        "status": res["status"],
+                                        "reason": str(res.get("reason", ""))[:200],
+                                        "window_atoms": res.get("window_atoms")})
+                    row["members"] = members
+                    row["status"] = ",".join(sorted({m["status"] for m in members}))
+                    row["reason"] = "; ".join(sorted({m["reason"] for m in members
+                                                      if m["reason"]}))[:300]
+                    row["window_atoms"] = members[0]["window_atoms"]
+            elif "status" not in row and not interior:
+                r = run_context(certifier, family, case, tuple((p, dict(assignment).get(p))
+                                                               for p in ports),
+                                bound=bound, providers=providers, policy=policy, **loop)
+                row.update(route="reconstruct", status=r.status, reason=r.reason[:200],
+                           members=[{"status": r.status, "reason": r.reason[:200]}],
+                           window_atoms=len(r.window.atoms) if r.status == "fixed_point" else None)
+            elif "status" not in row:
+                row.update(status="no_witness", reason="the interior event needs the witness specs")
+            statuses = [m["status"] for m in row.get("members", ())] or [row["status"]]
+            row["verdict"] = _event_verdict(statuses)
+            covers.append(row)
     return covers
 
 
@@ -4486,6 +4636,8 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
                retries=fp.retries, observations=observer.calls,
                flips=sorted({(n, o, w) for _k, n, o, w in fp.flips}),
                check_rounds=len(fp.checks))
+    if fp.branches:
+        out["branches"] = list(fp.branches)
     if not fp.reached:
         if fp.status == "refused:reacting_port" and covers:
             out["covers"] = reacting_port_covers(certifier, family, case, bound=bound,

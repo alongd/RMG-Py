@@ -28,9 +28,13 @@ residue name of every unit.  Aromatic (1.5) residues are built in one
 deterministic Kekule form per residue, as ``declared_chain`` builds its
 periods.
 
-**Extension is refused** (``refused:sequence_extension``): the residue
-beyond an artificial port is not fixed by the declaration, so a sequence
-chain is never extended there (``fragment``, ``end_edit``).
+**Extension names its residue**: the residue beyond an artificial port is
+not fixed by the declaration, so one extension step adds a NAMED residue,
+one the sequence support allows there (``next_residues``; ``fragment`` with
+``residues``), and a step without one is refused
+(``refused:sequence_extension``), as is an end edited onto a chain
+(``end_edit``).  The window fixed point tries every allowed residue
+(``windows.fixed_point``, residue branches).
 
 **The growth unit** (``unit_formula``) of the depository exclusion is the
 set of residue formulas, one per residue: a long-chain analogue gains any
@@ -39,9 +43,8 @@ The exclusion is decided by construction at the growth sites
 (``growth_sites``): every capped terminal residue of a witness species, read
 as every residue and side it matches; at each reading every residue word
 the sequence support allows next to it is an insertion
-(``growth_options``), built whole by ``growth_fragment``.  This growth is
-not the window extension above: it enumerates every allowed residue rather
-than fixing one."""
+(``growth_options``), built whole by ``growth_fragment``; an extension step
+is one such insertion of one residue at a port."""
 
 from __future__ import annotations
 
@@ -467,10 +470,53 @@ class SequenceChainProvider(BoundaryProvider):
                 return indices.get(a)
         return None
 
-    def fragment(self, port, coordinate):
-        raise ExtensionRefused(f"{SEQUENCE_EXTENSION_REFUSAL}: {self.name}: the residue beyond "
-                               "an artificial port of a copolymer chain is not fixed by the "
-                               "declaration")
+    def next_residues(self, residue, tag, caps) -> tuple:
+        """The residues one extension step may add at a port on ``residue``
+        (module doc): after it at a tail, before it at a head, every residue
+        the sequence support allows there whose junction order is the port's
+        cap count."""
+        if tag == "backbone_tail":
+            pairs = [((residue, nxt), nxt) for nxt in self.support[residue]]
+        elif tag == "backbone_head":
+            pairs = [((nxt, residue), nxt) for nxt in self._preceding()[residue]]
+        else:
+            return ()
+        return tuple(sorted(nxt for pair, nxt in pairs if int(self.junctions[pair][2]) == caps))
+
+    def next_words(self, residue, tag, caps, length) -> tuple:
+        """Every word of ``length`` residues that ``length`` extension steps
+        may add at a port on ``residue`` (``next_residues`` step by step, each
+        new port's cap count its residue's site order), innermost first."""
+        side = "tail" if tag == "backbone_tail" else "head"
+        words = [((), residue, caps)]
+        for _step in range(length):
+            words = [(word + (nxt,), nxt, int(self._site_order(nxt, side)))
+                     for word, last, count in words
+                     for nxt in self.next_residues(last, tag, count)]
+        return tuple(word for word, _last, _count in words)
+
+    def fragment(self, port, coordinate, residues=None):
+        """One residue at an artificial port: ``residues`` is (the residue at
+        the port, the residue added), an allowed step (``next_residues``)
+        joined by its declared junction, the new residue one unit outward.
+        Without ``residues`` the step is refused: the declaration does not fix
+        the residue beyond the port."""
+        if residues is None:
+            raise ExtensionRefused(f"{SEQUENCE_EXTENSION_REFUSAL}: {self.name}: the residue "
+                                   "beyond an artificial port of a copolymer chain is not fixed "
+                                   "by the declaration")
+        name, nxt = residues
+        if nxt not in self.residues:
+            raise ExtensionRefused(f"{self.name}: {nxt!r} is not a declared residue "
+                                   f"({sorted(self.residues)})")
+        if nxt not in self.next_residues(name, port.tag, len(port.cap_atom_ids)):
+            raise ExtensionRefused(f"{self.name}: {nxt} is not allowed next to {name} at a "
+                                   f"{port.tag} port with {len(port.cap_atom_ids)} caps")
+        side = "tail" if port.tag == "backbone_tail" else "head"
+        step = self.growth_fragment(((side, name, tuple(port.cap_atom_ids)), (nxt,)))
+        unit = coordinate[0] + (1 if side == "tail" else -1)
+        return Fragment(step.atoms, step.bonds, step.attachments, step.new_port, step.new_caps,
+                        tuple((i, unit, k) for i, _u, k in step.coordinates))
 
     def end_edit(self, metadata, port, end, rows, protected):
         raise ExtensionRefused(f"{SEQUENCE_EXTENSION_REFUSAL}: {self.name}: an end of a "

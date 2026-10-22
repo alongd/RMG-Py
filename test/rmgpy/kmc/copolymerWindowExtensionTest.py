@@ -1,0 +1,231 @@
+"""Window extension of a linear statistical copolymer (schema v2): past an
+artificial port the next residue is not fixed by the declaration, so the
+recertified fixed point extends a sequence chain over EVERY residue the
+sequence support allows there (one branch per residue word) and accepts a
+window only when every branch gives the same window and certificate
+(selection, support, outcome).  Branches that disagree are refused by name
+(``refused:extension_branches``) with the breaking branch; no residue stands
+for the others.
+
+The v1 homopolymer fixed points (a PE and a PP declared chain) are pinned
+byte-identical.
+
+Needs the RMG database (``rmg_moves_harness.DATABASE``)."""
+
+import hashlib
+import json
+
+import pytest
+
+import channelsTest as ct
+import declared_parity_support as sup
+import rmg_moves_harness as harness
+from polymer_spec_v2_support import DECKS
+from rmgpy.kmc import boundaries as b
+from rmgpy.kmc import certificates as cm
+from rmgpy.kmc import declared_chain as dc
+from rmgpy.kmc import template_emission as te
+from rmgpy.kmc import windows as win
+from rmgpy.kmc.declared_chain import EditOp
+from rmgpy.kmc.declared_sequence import SequenceChainSpec, sequence_provider
+from rmgpy.kmc.run import read_deck
+
+pytestmark = pytest.mark.skipif(not harness.DATABASE.is_dir(),
+                                reason=f"needs the RMG database at {harness.DATABASE}")
+
+# sha256 of json.dumps(value, sort_keys=True, default=repr) at 2d76fceb5 (before
+# the branching): /home/alon/runs/pk-i236/probe/p3_v1_pins.py
+V1_WINDOW_PINS = {
+    "pe_fixed_points": "ddd03c84ed851d78684a7dfa084df85600fea7432bb5d3c64e3c9748a24a339b",
+    "pe_member_row": "938a109f74287efd591ab1482a09bad3541d919b9b5d0bfe22546e0c15ad278c",
+    "pp_fixed_points": "8999e663286abd624103be7c67b74febc1e01b4ff80269249b173aaddb32889a",
+    "pp_member_row": "d76e95b34e0e5e9c14f0df6611c37079db72b8551976dff9d037d4e1868ca888",
+}
+
+
+@pytest.fixture(scope="module")
+def fam():
+    return ct.database().kinetics.families
+
+
+@pytest.fixture(scope="module")
+def certifier(fam):
+    return cm.Certifier(fam)
+
+
+@pytest.fixture(scope="module")
+def ep():
+    return sequence_provider(read_deck(DECKS / "ep_v2_deck.py").spec)
+
+
+def _radical_chain(residues, unit, key):
+    return SequenceChainSpec(residues, edits=(EditOp("remove_h", unit, key),
+                                              EditOp("set_radical", unit, key, 1)))
+
+
+def _member(certifier, family, provider, chain, suffix, direction="forward"):
+    specs = (win.DeclaredSpec(provider.name, chain),)
+    cases = [c for c in win._cover_cases(certifier, family, specs, direction)
+             if c.label.endswith(suffix)]
+    assert cases, suffix
+    return cases[0]
+
+
+def _fixed_point(certifier, family, case):
+    observer = win.MemberObserver(certifier, family, case.direction, case.wanted)
+    return win.fixed_point(case.witness, observer)
+
+
+def test_a_window_away_from_the_ports_holds_on_every_residue_beyond_them(fam, certifier, ep):
+    """An H shift in the middle of EPEPE (the radical on the first P's
+    methine): the window stays inside the chain, and every check (each port
+    alone and both jointly, at +1 and +2 residues) holds on every residue word
+    the support allows there, 2 ** (residues added) branches each.  The fixed
+    point cuts a local template."""
+    family = fam["intra_H_migration"]
+    case = _member(certifier, family, ep, _radical_chain(("E", "P", "E", "P", "E"), 1, "p2"),
+                   "R2H_S;C_rad_out_Cs2;Cs_H_out_2H|[CH2]C(CCC)CCCC(C)CC|m0")
+    fp = _fixed_point(certifier, family, case)
+    assert fp.status == "fixed_point", (fp.status, fp.reason)
+    assert all(depth == 0 for _port, depth in fp.depths)
+    checks = fp.checks[-1]
+    assert {(len(c["ports"]), c["step"]) for c in checks} == {(1, 1), (1, 2), (2, 1), (2, 2)}
+    for check in checks:
+        assert check["branches"] == 2 ** (len(check["ports"]) * check["step"]), check
+        assert check["same_window"] and check["same_certificate"], check
+    cut = te.cut_template(fp.witness, fp.window.atoms, family=family.label,
+                          pathway=case.pathway, direction=case.direction,
+                          labels=te.labels_of(case.moves[0]))
+    assert not cut.whole_species and cut.ports
+
+
+def test_branches_that_read_different_residues_are_refused_by_name(fam, certifier, ep):
+    """An H shift next to the tail of EEEE (the radical on the last
+    residue's e1) reads past the tail port: extended by E and by P the
+    windows differ (the next residue's atoms are in it), so the window
+    depends on the residue the declaration leaves open.  Refused by name
+    with the breaking branch; never the E window standing for both."""
+    family = fam["intra_H_migration"]
+    case = _member(certifier, family, ep, _radical_chain(("E",) * 4, 3, "e1"),
+                   "S;C_rad_out_H/NonDeC;Cs_H_out_H/(NonDeC/Cs)|CC[CH]CCCCC|m0")
+    fp = _fixed_point(certifier, family, case)
+    assert fp.status == "refused:extension_branches", (fp.status, fp.reason)
+    assert "change the window" in fp.reason, fp.reason
+    assert "0:tail+E" in fp.reason and "0:tail+P" in fp.reason, fp.reason
+    assert fp.window is None
+
+
+def test_a_window_near_an_end_holds_once_every_branch_is_past_the_depository(
+        fam, certifier, ep):
+    """An H shift in the middle of EEEEE: its window reaches the head port,
+    and at the first depths the residue words differ only in how the
+    depository exclusion is proved; it reaches its fixed point on every
+    branch, the branches named."""
+    family = fam["intra_H_migration"]
+    case = _member(certifier, family, ep, _radical_chain(("E",) * 5, 2, "e1"),
+                   "|CCC[CH]CCCCCC|m0")
+    fp = _fixed_point(certifier, family, case)
+    assert fp.status == "fixed_point", (fp.status, fp.reason)
+    assert len(fp.branches) == 2 ** sum(depth for _port, depth in fp.depths) > 1
+    assert all(label.startswith("0:head+") for label in fp.branches)
+
+
+def test_branches_excluded_by_size_or_by_formula_are_one_outcome(fam, certifier, ep):
+    """Beta scission of an E/P adduct radical (EEEEPEE, the radical on e1 of
+    unit 3; 1-alkene + n-pentyl): at one depth the residue words differ in
+    size, so near the depository's sizes one branch is excluded by formula
+    and a larger one by size.  Both certify that no analogue is a depository
+    reaction (the rule estimate stands): the branches agree and the member
+    reaches its fixed point, it is not refused for a different proof."""
+    family = fam["R_Addition_MultipleBond"]
+    case = _member(certifier, family, ep, _radical_chain(("E",) * 4 + ("P", "E", "E"), 3, "e1"),
+                   "Cds-HH_Cds-CsH;CsJ-CsHH|C=CCCC(C)CCCC,[CH2]CCCC|m0", "reverse")
+    fp = _fixed_point(certifier, family, case)
+    assert fp.status == "fixed_point", (fp.status, fp.reason)
+    view = (("m", ("sel", "excluded:formula"), "descent"),)
+    assert win.outcome_view(view) == win.outcome_view((("m", ("sel", "excluded:size"),
+                                                        "descent"),))
+    assert win.outcome_view(view) != win.outcome_view((("m", ("sel", cm.EXCEPT_MATCHED),
+                                                        "descent"),))
+
+
+def test_an_extension_step_adds_one_named_residue_and_verifies(fam, certifier, ep):
+    """One step at a sequence port adds the named residue (an allowed one)
+    by its declared junction: the step records it, the witness carries the
+    word per port, and the map verifies (replayed from the original witness).
+    Without a residue a copolymer port still refuses: the declaration does
+    not fix it."""
+    case = _member(certifier, fam["intra_H_migration"], ep,
+                   _radical_chain(("E", "P", "E", "P", "E"), 1, "p2"),
+                   "R2H_S;C_rad_out_Cs2;Cs_H_out_2H|[CH2]C(CCC)CCCC(C)CC|m0")
+    witness, tail = case.witness, (0, "tail")
+    assert b.extension_residues(witness, tail) == ("E", "P")
+    grown, record = b.extend(witness, tail, residue="P")
+    assert [step.residue for step in record.steps] == ["P"]
+    assert dict(grown.extension_words) == {tail: ("P",)}
+    longer, _record = b.extend(grown, tail, residue="E")
+    assert dict(longer.extension_words) == {tail: ("P", "E")}
+    added = longer.heavy_count() - witness.heavy_count()
+    assert added == 5        # P (3 carbons) then E (2)
+    assert grown != b.extend(witness, tail, residue="E")[0]
+    with pytest.raises(b.ExtensionRefused, match="refused:sequence_extension"):
+        b.extend(witness, tail)
+    with pytest.raises(b.ExtensionRefused, match="not a declared residue"):
+        b.extend(witness, tail, residue="X")
+
+
+def test_the_locality_witnesses_of_a_copolymer_cover_every_residue_word(fam, certifier, ep):
+    """The locality check of an emitted template recounts it on extension
+    witnesses (each port alone, jointly, per participant, at +1 and +2): on a
+    copolymer each vector is built once per residue word the support allows
+    (2 ** residues added), labelled by its branch, and none is refused for
+    want of a residue."""
+    case = _member(certifier, fam["intra_H_migration"], ep,
+                   _radical_chain(("E", "P", "E", "P", "E"), 1, "p2"),
+                   "R2H_S;C_rad_out_Cs2;Cs_H_out_2H|[CH2]C(CCC)CCCC(C)CC|m0")
+    witnesses = te.locality_witnesses(case.witness)
+    assert all(x.status == "ok" for x in witnesses), \
+        [(x.label, x.status, x.reason) for x in witnesses if x.status != "ok"]
+    by_vector = {}
+    for x in witnesses:
+        by_vector.setdefault(x.vector, []).append(x.label)
+    assert by_vector[(0, 0)] == ["emitted"]
+    for vector, labels in by_vector.items():
+        assert len(labels) == 2 ** sum(vector), (vector, labels)
+    assert sorted(by_vector[(0, 2)]) == [
+        "port 0:tail +2 0:tail+E+E", "port 0:tail +2 0:tail+E+P",
+        "port 0:tail +2 0:tail+P+E", "port 0:tail +2 0:tail+P+P"]
+    assert all(x.witness.extension_words for x in witnesses if any(x.vector))
+
+
+def test_v1_homopolymer_fixed_points_are_byte_identical(fam, certifier):
+    """PE (an H shift reading one repeat past the tail) and PP (one member at
+    depths 3 and 2) fixed points and full member rows (contexts, covers) as at
+    2d76fceb5: one repeat per step, no branch."""
+    family = fam["intra_H_migration"]
+    pe = dc.DeclaredChainProvider(sup.pe_declaration())
+    pp = dc.DeclaredChainProvider(read_deck(DECKS / "pp_deck.py").spec)
+    got = {}
+    for name, provider, chain in (
+            ("pe", pe, dc.ChainSpec(9, edits=(EditOp("remove_h", 4, "c1"),
+                                              EditOp("set_radical", 4, "c1", 1)))),
+            ("pp", pp, dc.ChainSpec(4, edits=(EditOp("remove_h", 1, "c2"),
+                                              EditOp("set_radical", 1, "c2", 1))))):
+        specs = (win.DeclaredSpec(provider.name, chain),)
+        cases = win._cover_cases(certifier, family, specs, "forward")
+        fps = []
+        for case in cases[:4]:
+            fp = _fixed_point(certifier, family, case)
+            fps.append([case.label, fp.status, fp.reason, repr(fp.depths), fp.retries,
+                        sorted(fp.window.atoms) if fp.reached else None,
+                        repr(fp.observation.view(fp.window.atoms)) if fp.reached else None,
+                        repr(fp.checks)])
+        row = win.run_member(certifier, family, cases[0], specs=specs)
+        row.pop("seconds", None)
+        got[f"{name}_fixed_points"] = _digest(fps)
+        got[f"{name}_member_row"] = _digest(row)
+    assert got == V1_WINDOW_PINS
+
+
+def _digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, default=repr).encode()).hexdigest()
