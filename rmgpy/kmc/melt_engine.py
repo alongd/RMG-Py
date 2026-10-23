@@ -517,40 +517,26 @@ class _LocalView(wm._View):
 
 
 # --------------------------------------------------------------------------
-# H-leaf quotient enumeration (a matcher optimization only)
+# symmetry quotient enumeration (a matcher optimization only)
 # --------------------------------------------------------------------------
 _H_ORDER = weakref.WeakKeyDictionary()   # template -> plan-position constraints
 
 
 def _h_order(template: wm.Template) -> Tuple:
-    """Per participant piece, per plan position: the plan positions of the
-    earlier interchangeable hydrogen leaves (same parent, not edited) whose
-    image must be smaller.  Embeddings that differ only by permuting such
-    leaves give the same edits, site, resonance choices and outcome, so
-    keeping the increasing assignment alone leaves every deduplicated
-    transition and every site unchanged (the embedding COUNT is not kept;
-    the engine never reads it).  Equivalence to full enumeration is tested."""
+    """Per participant piece, per plan position: the earlier template atoms
+    whose image must be smaller (``window_matcher._orbit_order``: the
+    branches a symmetry of the template fixing its edited atoms makes
+    interchangeable, hydrogen leaves of one parent the simplest).
+    Embeddings of one symmetry class give the same edits, site, resonance
+    choices and outcome, so keeping the class's first embedding alone
+    leaves every deduplicated transition and every site unchanged (the
+    embedding COUNT is not kept; the engine never reads it).  Equivalence
+    to full enumeration is tested."""
     cached = _H_ORDER.get(template)
     if cached is not None:
         return cached
-    edited = set(template.edited_all)
-    out = []
-    for pieces in template.pieces:
-        per_piece = []
-        for piece in pieces:
-            seen: Dict[int, List[int]] = {}
-            constraint = []
-            for t, parent, _checks in piece.plan:
-                atom = template.atoms[t]
-                if (atom.element == "H" and parent is not None and t not in edited
-                        and atom.kind == "closed" and len(template.neighbours[t]) == 1):
-                    constraint.append(tuple(seen.get(parent, ())))
-                    seen.setdefault(parent, []).append(t)
-                else:
-                    constraint.append(())
-            per_piece.append(tuple(constraint))
-        out.append(tuple(per_piece))
-    out = tuple(out)
+    out = tuple(tuple(wm._orbit_order(template, piece)[0] for piece in pieces)
+                for pieces in template.pieces)
     _H_ORDER[template] = out
     return out
 

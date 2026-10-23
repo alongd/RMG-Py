@@ -982,7 +982,7 @@ class MatchResult:
 def _piece_embeddings(view, template, piece, before=None):
     """Every induced, signature-equal embedding of one connected piece, as
     tuples of (template atom, state atom) in plan order.  ``before`` (per
-    plan position, template atoms; ``_leaf_order``): keep only the
+    plan position, template atoms; ``_orbit_order``): keep only the
     embeddings whose image there is larger than theirs."""
     plan = piece.plan
     root = plan[0][0]
@@ -1036,42 +1036,121 @@ def _piece_products(lists, view):
     yield from visit(0, [], frozenset())
 
 
-def _leaf_order(template, piece) -> tuple:
+_SYMMETRY = weakref.WeakKeyDictionary()   # template -> (atom labels, pair data, {id(piece): order})
+
+
+def _symmetry_data(template):
+    """(per atom, the label a symmetry keeps; per atom pair, (bond order,
+    final bond order, path bounds); per piece, its cached order): what
+    ``Template._restrictions`` compares, once per template."""
+    cached = _SYMMETRY.get(template)
+    if cached is None:
+        label = []
+        for i, a in enumerate(template.atoms):
+            final = template.atom_final.get(i, {})
+            label.append((a.element, a.isotope, a.charge, a.radical, a.lone_pairs, a.kind,
+                          a.exterior, tuple(sorted(final.items()))))
+        pair = {}
+        for k, o in template.bond.items():
+            pair.setdefault(k, [None, None, None])[0] = o
+        for k, o in template.bond_final.items():
+            pair.setdefault(k, [None, None, None])[1] = o
+        for p in template.paths:
+            pair.setdefault(_key(p.a, p.b), [None, None, None])[2] = (p.minimum, p.maximum)
+        cached = (tuple(label), {k: tuple(v) for k, v in pair.items()}, {})
+        _SYMMETRY[template] = cached
+    return cached
+
+
+def _orbit_order(template, piece) -> tuple:
     """(per plan position, the earlier template atoms its image must exceed;
-    the number of embeddings each kept one stands for).  Hydrogen leaves of
-    one parent with one signature, closed and not edited, are
-    interchangeable: permuting their images keeps every check, the edited
-    atoms' images, the components and the forms, so the embeddings with
-    increasing images there stand for all (k! each for k such leaves).
-    Adjacency is walked in increasing atom order, so the kept embedding of
-    a permutation class is the first one the full enumeration reaches."""
-    edited = set(template.edited_all)
-    groups, before = {}, []
-    for t, parent, _checks in piece.plan:
-        atom = template.atoms[t]
-        if atom.element == "H" and parent is not None and t not in edited and \
-                atom.kind == "closed" and len(template.neighbours[t]) == 1:
-            key = (parent, template.sig[t])
-            before.append(tuple(groups.get(key, ())))
-            groups.setdefault(key, []).append(t)
-        else:
-            before.append(())
+    the number of embeddings each kept one stands for).
+
+    ``G`` is the group of the template's symmetries that fix every edited
+    atom and every path end and map the piece onto itself, keeping atom
+    labels, bonds, bond edits and paths (``Template._restrictions``'s
+    comparison).  An embedding composed with one of them is an embedding
+    with the same edited atoms' images, image set, components and forms,
+    so the embeddings of one ``G``-orbit have one outcome.  With ``G_k`` the
+    symmetries that also fix the first ``k`` plan atoms, the orbit of plan
+    atom ``t_k`` under ``G_k`` lies among the later neighbours of its
+    (fixed) parent; an embedding whose image of ``t_k`` is smaller than that
+    of every other atom of this orbit, at every ``k``, is the
+    lexicographically first of its ``G``-orbit in plan order, which is the
+    first one the full enumeration reaches (adjacency is walked in
+    increasing atom order), and each such embedding stands for
+    ``|G| = prod_k |orbit_k|`` (one per symmetry).  Hydrogen leaves of one
+    parent are the simplest case (k! for k of them); fluorine or chlorine
+    leaves, interchangeable subtrees and ring flips are the same."""
+    label, pair, orders = _symmetry_data(template)
+    cached = orders.get(id(piece))
+    if cached is not None:
+        return cached
+    atoms = [t for t, _p, _c in piece.plan]
+    parent = {t: p for t, p, _c in piece.plan}
+    position = {t: k for k, t in enumerate(atoms)}
+    fixed = set(template.edited_all) | {x for p in template.paths for x in (p.a, p.b)}
+    fixed |= {atoms[0]}
+
+    def consistent(x, image, assigned):
+        return all(pair.get(_key(x, y)) == pair.get(_key(image, assigned[y])) for y in assigned)
+
+    def moves_onto(k, u):
+        """Whether a symmetry fixing the fixed atoms and plan atoms 0..k-1
+        maps plan atom k onto ``u`` (a search in plan order)."""
+        assigned = {a: a for a in atoms if position[a] < k or a in fixed}
+        t = atoms[k]
+        if not consistent(t, u, assigned):
+            return False
+        assigned[t] = u
+        used = set(assigned.values())
+        rest = [a for a in atoms[k + 1:] if a not in assigned]
+
+        def extend(i):
+            if i == len(rest):
+                return True
+            x = rest[i]
+            for c in template.neighbours[assigned[parent[x]]]:
+                if c in used or c not in position or label[c] != label[x] or \
+                        not consistent(x, c, assigned):
+                    continue
+                assigned[x] = c
+                used.add(c)
+                if extend(i + 1):
+                    return True
+                del assigned[x]
+                used.discard(c)
+            return False
+
+        return extend(0)
+
+    before = {t: [] for t in atoms}
     copies = 1
-    for leaves in groups.values():
-        copies *= math.factorial(len(leaves))
-    return tuple(before), copies
+    for k, t in enumerate(atoms):
+        if t in fixed:
+            continue
+        orbit = [u for u in template.neighbours[parent[t]]
+                 if position.get(u, -1) > k and u not in fixed and label[u] == label[t]
+                 and moves_onto(k, u)]
+        for u in orbit:
+            before[u].append(t)
+        copies *= 1 + len(orbit)
+    cached = (tuple(tuple(before[t]) for t in atoms), copies)
+    orders[id(piece)] = cached
+    return cached
 
 
 def _participant_quotient(view, template, participant) -> tuple:
     """(embeddings, copies): ``_participant_embeddings`` with the
-    interchangeable hydrogen leaves of each piece in increasing order
-    (``_leaf_order``), and the number of full embeddings each stands for.
+    interchangeable branches of each piece in increasing order
+    (``_orbit_order``), and the number of full embeddings each stands for.
     The kept embeddings are the full list's subsequence of the first
-    embedding of every permutation class (a window over k methyls has 6**k
-    embeddings per class)."""
+    embedding of every symmetry class (a window over k methyls has 6**k
+    embeddings per class, a central C-C cut of linear C22F46
+    2 * (3!)**2 * (2!)**20)."""
     per_piece, copies = [], 1
     for piece in template.pieces[participant]:
-        before, n = _leaf_order(template, piece)
+        before, n = _orbit_order(template, piece)
         per_piece.append(_piece_embeddings(view, template, piece, before))
         copies *= n
     return _assemble(view, template, per_piece), copies
@@ -1318,7 +1397,7 @@ def _outcome_classes(template, embeddings, copies: int = 1) -> list:
     embeddings with the same outcomes, in order of first occurrence: equal
     component, edited atoms' images, form choices and full-form multiplicity
     (``_evaluate`` reads the mapping at the edited atoms only).  Embeddings
-    that differ elsewhere (context atoms; interchangeable hydrogens, which
+    that differ elsewhere (context atoms; interchangeable branches, which
     ``_participant_quotient`` folds before: each of ``embeddings`` stands for
     ``copies``) are copies.  A class stands for its copies in enumeration
     order, so ``match`` keeps the first embedding of an outcome and counts
