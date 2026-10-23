@@ -1565,42 +1565,9 @@ class CoreEdgeReactionModel:
                     return_all_kinetics=False,
                 )
                 # Now decide which direction's kinetics to keep
-                keep_reverse = False
-                if entry is not None and rev_entry is None:
-                    # Only the forward has an entry, meaning an exact match in a depository or template
-                    # the reverse must have used an averaged estimated node - so use forward.
-                    reason = "This direction matched an entry in {0}, the other was just an estimate.".format(reaction.family)
-                elif entry is None and rev_entry is not None:
-                    # Only the reverse has an entry (see above) - use reverse.
-                    keep_reverse = True
-                    reason = "This direction matched an entry in {0}, the other was just an estimate.".format(reaction.family)
-                elif entry is not None and rev_entry is not None and entry is rev_entry:
-                    # Both forward and reverse have the same source and entry
-                    # Use the one for which the kinetics is the forward kinetics
-                    keep_reverse = gibbs_is_positive and is_forward and rev_is_forward
-                    reason = "Both directions matched the same entry in {0}, but this direction is exergonic.".format(reaction.family)
-                elif entry is not None and rev_entry is not None:
-                    # Both directions matched explicit rate rules
-                    # Keep the direction with the lower (but nonzero) rank
-                    if entry.rank < rev_entry.rank and entry.rank != 0:
-                        keep_reverse = False
-                        reason = "Both directions matched explicit rate rules, but this direction has a rule with a lower rank ({0} vs {1}).".format(
-                            entry.rank, rev_entry.rank
-                        )
-                    elif rev_entry.rank < entry.rank and rev_entry.rank != 0:
-                        keep_reverse = True
-                        reason = "Both directions matched explicit rate rules, but this direction has a rule with a lower rank ({0} vs {1}).".format(
-                            rev_entry.rank, entry.rank
-                        )
-                    # Otherwise keep the direction that is exergonic at 298 K
-                    else:
-                        keep_reverse = gibbs_is_positive and is_forward and rev_is_forward
-                        reason = "Both directions matched explicit rate rules, but this direction is exergonic."
-                else:
-                    # Keep the direction that is exergonic at 298 K
-                    # This must be done after the thermo generation step
-                    keep_reverse = gibbs_is_positive and is_forward and rev_is_forward
-                    reason = "Both directions are estimates, but this direction is exergonic."
+                keep_reverse, reason = own_reverse_keeps_reverse(
+                    reaction.family, entry, rev_entry, is_forward, rev_is_forward, gibbs_is_positive
+                )
 
                 if keep_reverse:
                     kinetics = rev_kinetics
@@ -2969,6 +2936,51 @@ def get_family_library_object(label):
         f"from families {list(kinetics.families.keys())} "
         f"and libraries {list(kinetics.libraries.keys())}."
     )
+
+
+def own_reverse_keeps_reverse(family, entry, rev_entry, is_forward, rev_is_forward, gibbs_is_positive):
+    """
+    Decide which direction's kinetics to keep for a reaction of a family that is its own
+    reverse, given the `entry` and `is_forward` of both directions' estimates and whether
+    the reaction's Gibbs free energy at 298 K is positive. Returns (keep_reverse, reason).
+    """
+    keep_reverse = False
+    if entry is not None and rev_entry is None:
+        # Only the forward has an entry, meaning an exact match in a depository or template
+        # the reverse must have used an averaged estimated node - so use forward.
+        reason = "This direction matched an entry in {0}, the other was just an estimate.".format(family)
+    elif entry is None and rev_entry is not None:
+        # Only the reverse has an entry (see above) - use reverse.
+        keep_reverse = True
+        reason = "This direction matched an entry in {0}, the other was just an estimate.".format(family)
+    elif entry is not None and rev_entry is not None and entry is rev_entry:
+        # Both forward and reverse have the same source and entry
+        # Use the one for which the kinetics is the forward kinetics
+        keep_reverse = gibbs_is_positive and is_forward and rev_is_forward
+        reason = "Both directions matched the same entry in {0}, but this direction is exergonic.".format(family)
+    elif entry is not None and rev_entry is not None:
+        # Both directions matched explicit rate rules
+        # Keep the direction with the lower (but nonzero) rank
+        if entry.rank < rev_entry.rank and entry.rank != 0:
+            keep_reverse = False
+            reason = "Both directions matched explicit rate rules, but this direction has a rule with a lower rank ({0} vs {1}).".format(
+                entry.rank, rev_entry.rank
+            )
+        elif rev_entry.rank < entry.rank and rev_entry.rank != 0:
+            keep_reverse = True
+            reason = "Both directions matched explicit rate rules, but this direction has a rule with a lower rank ({0} vs {1}).".format(
+                rev_entry.rank, entry.rank
+            )
+        # Otherwise keep the direction that is exergonic at 298 K
+        else:
+            keep_reverse = gibbs_is_positive and is_forward and rev_is_forward
+            reason = "Both directions matched explicit rate rules, but this direction is exergonic."
+    else:
+        # Keep the direction that is exergonic at 298 K
+        # This must be done after the thermo generation step
+        keep_reverse = gibbs_is_positive and is_forward and rev_is_forward
+        reason = "Both directions are estimates, but this direction is exergonic."
+    return keep_reverse, reason
 
 
 def get_key(spc):

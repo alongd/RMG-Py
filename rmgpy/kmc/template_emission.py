@@ -1673,7 +1673,7 @@ def witness_row(template, witness, *, label, vector, family, direction, pathway,
         # transferability: the channel's T_ch transitions share one weight, so
         # they must be one orbit of the reactants' automorphism group
         row["orbit"] = {"transitions": len(inside),
-                        "problem": orbit_problem(r, [tr.edits for tr, _k in inside])}
+                        "problem": channel_orbit_problem(r, [tr for tr, _k in inside])}
     row.update(status="ok", T=list(result.temperatures), k=list(result.k),
                ssa=result.ssa_multiplier, w=w,
                witness={"r": rows_json(r), "p": rows_json(p)},
@@ -1986,6 +1986,12 @@ def orbit_problem(rows, edit_sets) -> Optional[str]:
                     f"automorphism group: transition 0 and transition {k} are not related "
                     f"by an automorphism of the reactants")
     return None
+
+
+def channel_orbit_problem(rows, transitions) -> Optional[str]:
+    """``orbit_problem`` of a channel's matcher transitions (``window_matcher.Transition``)
+    on the witness reactants ``rows``."""
+    return orbit_problem(rows, [tr.edits for tr in transitions])
 
 
 def _grid_problem(a, b) -> Optional[str]:
