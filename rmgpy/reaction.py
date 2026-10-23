@@ -197,6 +197,13 @@ class Reaction:
         # the fields above it is NOT serialized in __reduce__; the solver demotes
         # unstamped arrivals at initialize_model.
         self.polymer_eject_units = polymer_eject_units
+        # Reaction channel of a polymer row (rmgpy.polymer.CHANNEL_*: bond
+        # fission, radical beta-scission, concerted molecular, ...), stamped in
+        # make_new_reaction from the raw molecules before the handshake maps
+        # them onto pool proxies. Direction-free, so a kinetics flip keeps it.
+        # NOT serialized in __reduce__ (like the fields above); an unstamped
+        # row is read from its own species (rmgpy.polymer.reaction_channel).
+        self.polymer_reaction_channel = None
         # moment_credit_conduit/1 admission stamp (M18.3, DESIGN §2.1/§3.1):
         # the §2.1 params dict + destination pool label written by the r93
         # stamp site's admit arm (dead behind CONDUIT_ADMISSION_ENABLED

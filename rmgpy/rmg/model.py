@@ -61,7 +61,7 @@ from rmgpy.gas_origin import (CENSUS_GAS_FOLD_BYPASSED, CENSUS_GAS_LOOKUP_UNPOOL
                               capture_gas_origin_alignment, flip_gas_origin_metadata,
                               format_census, has_gas_origin_metadata, is_genuine_gas_reactant,
                               merge_census, new_census, restore_gas_origin_alignment)
-from rmgpy.polymer import MassFluxAccumulator, Polymer, PolymerCrosslinkError, PolymerFluxArchetype, collect_polymer_pool_registry, compute_concerted_loss_evidence, compute_h_loss_shape_evidence, is_end_group_reaction, merge_polymer_adjudication_stamps, readjudicate_conduit_admission, restamp_flipped_polymer_archetype, stamp_gas_association_refusal, stamp_polymer_flux_archetype
+from rmgpy.polymer import MassFluxAccumulator, Polymer, PolymerCrosslinkError, PolymerFluxArchetype, classify_reaction_channel, collect_polymer_pool_registry, compute_concerted_loss_evidence, compute_h_loss_shape_evidence, is_end_group_reaction, merge_polymer_adjudication_stamps, readjudicate_conduit_admission, restamp_flipped_polymer_archetype, stamp_gas_association_refusal, stamp_polymer_flux_archetype
 from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
 from rmgpy.data.rmg import get_db
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
@@ -943,6 +943,11 @@ class CoreEdgeReactionModel:
             polymer_reactants = [r for r in reactants if isinstance(r, Polymer)]
             if polymer_reactants:
                 real_products_snapshot = [p.copy(deep=True) for p in forward.products]
+                # The row's reaction channel (I-253), from the raw molecules:
+                # the handshake below maps the products onto pool proxies,
+                # which do not keep a fragment's radical.
+                forward.polymer_reaction_channel = classify_reaction_channel(
+                    forward.reactants, forward.products)
                 # Per-product H-loss conduit verdicts (stage S2): computed
                 # HERE, the one place where resolved reactants and raw
                 # products are both visible, then threaded through the
@@ -1024,6 +1029,9 @@ class CoreEdgeReactionModel:
                 polymer_reactants = [r for r in reactants if isinstance(r, Polymer)]
                 if polymer_reactants:
                     real_products_snapshot = [p.copy(deep=True) for p in forward.products]
+                    # Same channel stamp as the is_forward branch (I-253).
+                    forward.polymer_reaction_channel = classify_reaction_channel(
+                        forward.reactants, forward.products)
                     # Same S2 evidence computation as the is_forward
                     # branch (round-20 conduit collapse: evidence, not the
                     # QSSA composite).
@@ -1592,14 +1600,43 @@ class CoreEdgeReactionModel:
 
         Spawned daughters are born honest-empty (moments [0,0,0]; no copied
         parent mass), so admitting them to the core adds zero mass and zero
-        initial flux -- only state slots and a config."""
-        from rmgpy.polymer import is_engine_spawned_pool_daughter
+        initial flux -- only state slots and a config.
 
-        promoted = []
+        Only a daughter with a LIVE row is promoted (I-253): a row refused at
+        generation (``polymer_refused``) or superseded by a kernel on the pool
+        it decomposes (``generated_row_superseding_kernels``, the solver's
+        channel rule read on the row's species) carries nothing into the
+        daughter, which would sit in the core as three empty state slots. A
+        daughter held back stays edge-resident and is promoted at the first
+        enlarge boundary after a live row reaches it. Setup-time daughters
+        (``SETUP_CONFIGURED_SPAWN_SOURCES``: a kernel feeds them, no row) are
+        not gated."""
+        from rmgpy.polymer import (generated_row_superseding_kernels, is_engine_spawned_pool_daughter,
+                                   is_midrun_spawned_pool_daughter)
+
+        candidates = {}
         for spc in list(self.edge.species) + list(self.new_species_list):
-            if not is_engine_spawned_pool_daughter(spc):
+            if is_engine_spawned_pool_daughter(spc) and spc not in self.core.species:
+                candidates.setdefault(id(spc), spc)
+        if not candidates:
+            return []
+        live = {key for key, spc in candidates.items() if not is_midrun_spawned_pool_daughter(spc)}
+        seen = set()
+        for rxn in list(self.core.reactions) + list(self.edge.reactions) + list(self.new_reaction_list):
+            if id(rxn) in seen:
                 continue
-            if spc in self.core.species:
+            seen.add(id(rxn))
+            touched = [id(s) for s in list(rxn.reactants) + list(rxn.products)
+                       if id(s) in candidates and id(s) not in live]
+            if not touched or getattr(rxn, "polymer_refused", False):
+                continue
+            if generated_row_superseding_kernels(rxn):
+                continue
+            live.update(touched)
+        promoted, held = [], []
+        for key, spc in candidates.items():
+            if key not in live:
+                held.append(spc.label)
                 continue
             self.add_species_to_core(spc, requires_rms=requires_rms)
             promoted.append(spc.label)
@@ -1608,6 +1645,12 @@ class CoreEdgeReactionModel:
                 "Item 16: promoted %d spawned polymer daughter pool(s) into "
                 "the core at the enlarge boundary: %s",
                 len(promoted), ", ".join(promoted))
+        if held:
+            logging.info(
+                "Item 16: %d spawned polymer daughter pool(s) held on the edge: "
+                "no live row reaches them (each is refused or superseded by a "
+                "kernel on the pool it decomposes): %s",
+                len(held), ", ".join(held))
         return promoted
 
     def add_new_surface_objects(self, obj, new_surface_species, new_surface_reactions, reaction_system):

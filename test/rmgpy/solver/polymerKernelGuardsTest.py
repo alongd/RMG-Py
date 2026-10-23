@@ -13,9 +13,10 @@ integrated honestly:
 * on a pool connection a live generated reaction row also carries, or with
   one template listed twice: the same events would be counted twice.
 
-A generated scission row cutting a pool whose initiation a homolysis kernel
-carries never reaches that check: the row itself is refused
-(kernel-superseded) and the kernel runs.
+A generated bond fission cutting a pool whose homolysis kernel carries that
+channel never reaches that check: the row itself is refused (superseded by
+channel identity) and the kernel runs. A row of another channel on the
+kernel's connection still meets it.
 
 What pure moments cannot represent is reported, never patched: the solver
 records, per pool, every accepted step whose moments leave the realizable
@@ -174,12 +175,16 @@ def test_the_kernel_test_pools_declare_no_unit_and_still_build():
 # --------------------------------------------------------------------------
 # one event, one count
 # --------------------------------------------------------------------------
-def _migration(kernel=None, kernel_b=None, archetype=2):
+def _migration(kernel=None, kernel_b=None, archetype=2, fission=False):
+    """A -> B (a chain move), or with ``fission`` a generated bond fission
+    A -> B + G stamped as generation stamps it."""
     sp, core, mask = _two_pool_species()
-    rxn = Reaction(reactants=[sp["A"]], products=[sp["B"]],
+    rxn = Reaction(reactants=[sp["A"]], products=[sp["B"], sp["G"]] if fission else [sp["B"]],
                    kinetics=Arrhenius(A=(2.0, "1/s"), n=0.0, Ea=(0.0, "kcal/mol"), T0=(298.15, "K")),
                    reversible=False)
     rxn.polymer_flux_archetype = archetype
+    if fission:
+        rxn.polymer_reaction_channel = "bond_fission"
     rxn.is_end_group_reaction = True
     pa = PolymerPoolConfig(label="A", xs=2, explicit_dp_to_species_index={}, mu_indices=(1, 2, 3),
                            **(kernel or {}))
@@ -204,14 +209,21 @@ def test_a_generated_row_on_a_kernels_connection_is_refused():
         _migration(kernel=dict(kernel_move=[move(product="B", k=2.0, b=1.0, periods_per_unit=1)]))
 
 
-def test_a_scission_row_beside_a_homolysis_kernel_into_its_daughter_is_superseded():
-    """The double-count ruling: the generated scission row is refused by name
-    (kernel-superseded, zero flux) and counted; the kernel stays."""
-    rs = _migration(kernel=dict(kernel_homolysis=[h_term(daughter="B")]), archetype=3)
+def test_a_fission_row_beside_a_homolysis_kernel_into_its_daughter_is_superseded():
+    """The double-count ruling: the generated bond fission is refused by name
+    (superseded, zero flux) and counted; the kernel stays."""
+    rs = _migration(kernel=dict(kernel_homolysis=[h_term(daughter="B")]), archetype=3, fission=True)
     assert rs.reaction_refused[0] == 1
-    assert [(c["pool"], c["kernels"], c["reason"]) for c in rs.scission_supersession_census] == [
-        ("A", ["kernel_homolysis"], "kernel-superseded")]
+    assert [(c["pool"], c["kernels"], c["reason"]) for c in rs.kernel_supersession_census] == [
+        ("A", ["kernel_homolysis"], "superseded:backbone_bond_fission")]
     assert len(rs.kernel_homolysis_terms[0]) == 1
+
+
+def test_a_scission_row_of_another_channel_on_a_homolysis_kernels_connection_is_refused():
+    """A chain move stamped scission is no bond fission: the channel rule
+    leaves it live, and the count-once guard refuses the build."""
+    with pytest.raises(ValueError, match=r"kernel_homolysis.*homolysis_t.*'A'.*'B'.*row 0"):
+        _migration(kernel=dict(kernel_homolysis=[h_term(daughter="B")]), archetype=3)
 
 
 def test_an_irreversible_row_and_the_reverse_kernel_are_not_an_overlap():

@@ -38,13 +38,14 @@ never an AssertionError.
 - symptom 2: a spawned scission tail carries its spawn markers, so the
   item-16 enlarge-boundary pass promotes it and its row runs live; a spawned
   pool the pass does not reach is refused naming that cause;
-- the ruling: a generated scission row cutting a pool whose backbone
-  initiation a kernel carries is refused kernel-superseded and counted;
+- the ruling, by channel identity (polymerChannelIdentityTest has the
+  table): a generated backbone homolysis beside the pool's QSSA kernel is
+  refused superseded and counted; a row the kernel does not carry stays live;
 - symptom 3: a born-empty spawned pool starts at zero without a "no initial
   conditions" warning; a deck pool without one is still warned;
-- symptom 4: a hydrogen-abstraction volatile-ejection row, which cuts no
-  backbone bond, does not trip the QSSA double-count tripwire; a chain-end
-  ejection still does.
+- symptom 4: neither a hydrogen-abstraction volatile-ejection row nor a
+  concerted chain-end ejection is a channel the QSSA kernel carries: both
+  stay live and no double-count census counts them.
 """
 
 import logging
@@ -190,10 +191,13 @@ def _rebuild(model, parent, gas, channel=None):
     return solver
 
 
-def _spawn_tail(monkeypatch, caplog, channel=None, marked=True):
+def _spawn_tail(monkeypatch, caplog, channel=None, marked=True, reaction_channel=None):
     """A scission tail of the parent, registered, its row placed on the edge,
     then the enlarge boundary and the production rebuild. ``marked=False``
-    strips the spawn markers: a daughter the item-16 promotion does not reach."""
+    strips the spawn markers: a daughter the item-16 promotion does not reach.
+    ``reaction_channel`` is the stamp generation writes from the raw
+    molecules (the tail proxy here is a capped stand-in, not the radical
+    piece a homolysis makes)."""
     import rmgpy.solver.polymer as sp_mod
     from rmgpy.polymer import Polymer, stitch_molecules_by_labeled_atoms
     parent = _parent(channel)
@@ -214,6 +218,7 @@ def _spawn_tail(monkeypatch, caplog, channel=None, marked=True):
     _setup(is_new, 'tail registration')
     rxn = Reaction(reactants=[parent], products=[tail, ch3], **KIN_UNI)
     rxn.polymer_flux_archetype = sp_mod.FLUX_SCISSION_FRAGMENT
+    rxn.polymer_reaction_channel = reaction_channel
     _place_edge_row(model, rxn)
     with caplog.at_level(logging.WARNING):
         _enlarge_boundary(model, monkeypatch)
@@ -238,7 +243,7 @@ class TestScissionTailPromotion:
         assert 'PMMA_scission_tail' in {p.label for p in solver.polymer_pools}
         assert solver.reaction_refused[r] == 0
         assert not solver.spawned_pool_refusal_census
-        assert solver.scission_supersession_census == []
+        assert solver.kernel_supersession_census == []
 
     def test_unconfigured_spawned_tail_is_refused_naming_the_cause(self, monkeypatch, caplog):
         model, solver, tail, _, r = _spawn_tail(monkeypatch, caplog, marked=False)
@@ -252,46 +257,69 @@ class TestScissionTailPromotion:
         assert 'item-16 pending' not in refusals[0]
 
 
-class TestKernelSupersedesGeneratedScission:
-    """The double-count ruling. Once tails are live, a generated
-    SCISSION_FRAGMENT row cutting a pool whose backbone initiation a kernel
-    carries (radical_qssa_unzip, k_homolysis, catalog kernel_homolysis) runs
-    beside the kernel's random homolysis. The row is refused by name
-    (kernel-superseded, zero flux) and counted in its own census, so neither
-    double-count census sees it."""
+class TestKernelSupersessionByChannel:
+    """The double-count ruling, by channel identity. A generated backbone
+    homolysis cutting a pool whose QSSA kernel carries that initiation is
+    refused by name (zero flux) and counted; its tail, whose only row that
+    is, stays on the edge. A row whose channel the kernel does not carry
+    stays live, whatever its archetype."""
 
-    def test_kernel_initiated_pool_refuses_generated_scission_by_name(self, monkeypatch, caplog):
+    def test_a_backbone_homolysis_beside_qssa_is_refused_by_name(self, monkeypatch, caplog):
         import rmgpy.solver.polymer as sp_mod
-        from rmgpy.polymer import _scission_supersession_warned
-        _scission_supersession_warned.clear()
-        model, solver, tail, rxn, r = _spawn_tail(monkeypatch, caplog, channel=RADICAL_CHANNEL)
-        assert 'PMMA_scission_tail' in {p.label for p in solver.polymer_pools}
+        from rmgpy.polymer import _kernel_supersession_warned
+        _kernel_supersession_warned.clear()
+        model, solver, tail, rxn, r = _spawn_tail(monkeypatch, caplog, channel=RADICAL_CHANNEL,
+                                                  reaction_channel='bond_fission')
+        assert tail not in model.core.species
+        assert 'PMMA_scission_tail' not in {p.label for p in solver.polymer_pools}
         assert not solver.spawned_pool_refusal_census
         assert solver.reaction_refused[r] == 1
         assert solver.reaction_flux_archetype[r] == sp_mod.FLUX_NONE
-        assert solver.scission_supersession_census == [
-            {'reaction': str(rxn), 'pool': 'PMMA', 'kernels': ['radical_qssa_unzip'],
-             'reason': 'kernel-superseded'}]
+        assert solver.kernel_supersession_census == [
+            {'reaction': str(rxn), 'pool': 'PMMA', 'channel': 'backbone_bond_fission',
+             'kernels': ['radical_qssa_unzip'], 'reason': 'superseded:backbone_bond_fission'}]
+        assert solver.kernel_double_count_census == []
         assert solver.qssa_double_count_census == []
         lines = [rec.getMessage() for rec in caplog.records
-                 if 'SCISSION SUPERSESSION CENSUS' in rec.getMessage()]
+                 if 'KERNEL SUPERSESSION CENSUS' in rec.getMessage()]
         assert len(lines) == 1 and "'PMMA'" in lines[0] and str(rxn) in lines[0]
 
-    def test_backbone_initiation_kernels_are_named(self):
+    def test_a_scission_row_qssa_does_not_carry_stays_live(self, monkeypatch, caplog):
+        model, solver, tail, rxn, r = _spawn_tail(monkeypatch, caplog, channel=RADICAL_CHANNEL,
+                                                  reaction_channel='concerted_molecular')
+        assert tail in model.core.species
+        assert solver.reaction_refused[r] == 0
+        assert solver.kernel_supersession_census == []
+        assert solver.kernel_double_count_census == []
+
+    def test_the_kernel_channel_table(self):
         import rmgpy.solver.polymer as sp_mod
+        from rmgpy.polymer import kernels_carrying_channel
 
         def pool(**kw):
             return sp_mod.PolymerPoolConfig(label='P', xs=3, explicit_dp_to_species_index={},
                                             mu_indices=(0, 1, 2), **kw)
 
-        kernels_of = sp_mod.backbone_initiation_kernels
         trip = {'A': 1.0e15, 'n': 0.0, 'Ea': 3.0e5}
-        assert kernels_of(pool()) == ()
-        assert kernels_of(pool(k_scission=1.0, side_group_homolysis=[{}])) == ()
-        assert kernels_of(pool(radical_qssa_unzip=RADICAL_CHANNEL)) == ('radical_qssa_unzip',)
-        assert kernels_of(pool(k_homolysis=trip)) == ('k_homolysis',)
-        assert kernels_of(pool(kernel_homolysis=[{'template': 't'}])) == ('kernel_homolysis',)
-        assert kernels_of(pool(kernel_homolysis=[])) == ()
+        backbone, beta, side = 'backbone_bond_fission', 'radical_beta_scission', 'side_group_loss'
+        sgh = [{'label': 'aliphatic_C-Br', 'gas_product': '[Br]'}]
+        br, cl = _spc('[Br]', 'Br'), _spc('[Cl]', 'Cl')
+        for channel in (backbone, beta, side, None):
+            assert kernels_carrying_channel(pool(), channel, [br]) == ()
+        assert kernels_carrying_channel(pool(radical_qssa_unzip=RADICAL_CHANNEL), backbone) == ('radical_qssa_unzip',)
+        assert kernels_carrying_channel(pool(radical_qssa_unzip=RADICAL_CHANNEL), beta) == ('radical_qssa_unzip',)
+        assert kernels_carrying_channel(pool(k_homolysis=trip), backbone) == ('k_homolysis',)
+        assert kernels_carrying_channel(pool(k_homolysis=trip), beta) == ()
+        assert kernels_carrying_channel(pool(kernel_homolysis=[{'template': 't'}]), backbone) == ('kernel_homolysis',)
+        assert kernels_carrying_channel(pool(kernel_homolysis=[]), backbone) == ()
+        assert kernels_carrying_channel(pool(k_scission=1.0), backbone) == ('k_scission',)
+        assert kernels_carrying_channel(pool(k_scission=0.0), backbone) == ()
+        assert kernels_carrying_channel(pool(k_depropagation=trip), beta) == ('k_depropagation',)
+        assert kernels_carrying_channel(pool(k_depropagation=trip), backbone) == ()
+        assert kernels_carrying_channel(pool(k_unzip=0.5), beta) == ('k_unzip',)
+        assert kernels_carrying_channel(pool(side_group_homolysis=sgh), side, [br]) == ('side_group_homolysis',)
+        assert kernels_carrying_channel(pool(side_group_homolysis=sgh), side, [cl]) == ()
+        assert kernels_carrying_channel(pool(side_group_homolysis=sgh), backbone, [br]) == ()
 
 
 class TestBornEmptyPoolInitialConditions:
@@ -352,21 +380,19 @@ class TestBornEmptyPoolInitialConditions:
             "Polymer pool 'B' has no initial conditions provided (Explicit or Moments)."]
 
 
-class TestQssaDoubleCountOnHydrogenAbstraction:
-    """Symptom 4. The QSSA tripwire counts a live volatile-ejection row sourced
-    from a QSSA pool as overlapping its random backbone homolysis only when the
-    row moves repeat units. A hydrogen abstraction into the pool's
-    radical-feature daughter (one H leaves, chains move intact: a zero moment
-    shift) cuts no backbone bond and does not trip it; a same-pool chain-end
-    ejection of a repeat unit does."""
+class TestQssaDoubleCountOnChainMovingRows:
+    """Symptom 4. Neither a hydrogen abstraction into the pool's
+    radical-feature daughter (a bimolecular row: one H leaves, chains move
+    intact) nor a same-pool concerted chain-end ejection of one repeat unit
+    (closed-shell into closed-shell) is a channel the QSSA kernel carries
+    (random backbone homolysis, radical depropagation): both stay live, and
+    no double-count census or tripwire counts them."""
 
     def _build(self, monkeypatch, caplog, row):
         """``row``: the hydrogen abstraction into the radical-feature daughter
         (one H leaves, chains move intact), or a same-pool chain-end ejection
-        of one repeat unit (a backbone cut)."""
+        of one repeat unit (closed-shell pieces: concerted)."""
         import rmgpy.solver.polymer as sp_mod
-        from rmgpy.polymer import _qssa_double_count_warned
-        _qssa_double_count_warned.discard(('PMMA', 'generated_scission_ve'))
         parent = _parent(RADICAL_CHANNEL)
         mma = _spc(MONOMER_CLOSED, 'MMA')
         ch3 = _spc('[CH3]', 'CH3')
@@ -393,14 +419,17 @@ class TestQssaDoubleCountOnHydrogenAbstraction:
                'live volatile-ejection row')
         return solver, r
 
-    def test_chain_end_ejection_row_still_trips(self, monkeypatch, caplog):
+    def test_a_concerted_chain_end_ejection_is_not_counted(self, monkeypatch, caplog):
         solver, r = self._build(monkeypatch, caplog, row='chain_end')
         _setup(solver.reaction_eject_units_moment[r] == 1.0, 'one repeat unit leaves')
-        assert solver.qssa_double_count_census == [{'pool': 'PMMA', 'overlap': 'generated_scission_ve'}]
-        assert any('QSSA DOUBLE-COUNT TRIPWIRE' in rec.getMessage() for rec in caplog.records)
+        assert solver.qssa_double_count_census == []
+        assert solver.kernel_double_count_census == []
+        assert solver.kernel_supersession_census == []
+        assert not any('DOUBLE-COUNT' in rec.getMessage() for rec in caplog.records)
 
-    def test_hydrogen_abstraction_row_does_not_trip(self, monkeypatch, caplog):
+    def test_hydrogen_abstraction_row_is_not_counted(self, monkeypatch, caplog):
         solver, r = self._build(monkeypatch, caplog, row='h_abstraction')
         _setup(solver.reaction_eject_units_moment[r] == 0.0, 'chains move intact')
         assert solver.qssa_double_count_census == []
-        assert not any('QSSA DOUBLE-COUNT TRIPWIRE' in rec.getMessage() for rec in caplog.records)
+        assert solver.kernel_double_count_census == []
+        assert not any('DOUBLE-COUNT' in rec.getMessage() for rec in caplog.records)

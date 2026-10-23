@@ -3059,22 +3059,262 @@ def _reaction_census_label(rxn) -> str:
     return str(rxn)
 
 
-_double_count_warned = set()
+# Reaction channels (I-253 channel identity). A generated row and a pool
+# kernel count the same events only when they carry the same channel, so the
+# solver refuses a row as superseded by THAT test, not by its flux archetype.
+# A row's chemistry channel is read from its real molecules in its
+# decomposition direction (one species <-> two), so a row and its reverse
+# agree; classify_reaction_channel names the six.
+CHANNEL_BOND_FISSION = "bond_fission"
+CHANNEL_RADICAL_BETA_SCISSION = "radical_beta_scission"
+CHANNEL_CONCERTED_MOLECULAR = "concerted_molecular"
+CHANNEL_ISOMERIZATION = "isomerization"
+CHANNEL_BIMOLECULAR = "bimolecular"
+CHANNEL_UNIDENTIFIED = "unidentified"
+
+# The channels a kernel carries. A fission or beta-scission counts as the
+# backbone's only when the row moves repeat units (a nonzero moment shift, or
+# a scission/chip row); a fission that moves none is a side-group loss, the
+# side-group kernel's channel only when it releases a declared gas product.
+CHANNEL_BACKBONE_FISSION = "backbone_bond_fission"
+CHANNEL_SIDE_GROUP_LOSS = "side_group_loss"
+
+# Kernel -> channels it carries, in census order:
+# - radical_qssa_unzip: random backbone homolysis (its initiation, weak-link
+#   initiation included) and the depropagation / beta-scission of its lumped
+#   chain radicals;
+# - k_homolysis, kernel_homolysis, k_scission: random backbone bond fission;
+# - k_depropagation, k_unzip: chain-end depropagation, the beta-scission of
+#   a chain radical;
+# - side_group_homolysis: the fission that releases its declared gas_product.
+# No kernel carries a concerted molecular channel (a retro-ene, an
+# elimination), an isomerization, a bimolecular row or an unidentified one.
+# Catalog recombination / transfer / move terms are not listed: a generated
+# row on their connection is refused by the count-once guard.
+KERNEL_CHANNELS = (
+    ("radical_qssa_unzip", (CHANNEL_BACKBONE_FISSION, CHANNEL_RADICAL_BETA_SCISSION)),
+    ("k_homolysis", (CHANNEL_BACKBONE_FISSION,)),
+    ("kernel_homolysis", (CHANNEL_BACKBONE_FISSION,)),
+    ("k_scission", (CHANNEL_BACKBONE_FISSION,)),
+    ("k_depropagation", (CHANNEL_RADICAL_BETA_SCISSION,)),
+    ("k_unzip", (CHANNEL_RADICAL_BETA_SCISSION,)),
+    ("side_group_homolysis", (CHANNEL_SIDE_GROUP_LOSS,)),
+)
 
 
-def _warn_once_double_count(entry: dict) -> None:
-    """Log each distinct double-count pool once (correct-but-loud). Severity is
-    census-loud only (no refuse) in item 18; the refuse-vs-warn cliff is
-    calibrated by item 19's magnitude probe."""
-    key = (entry["pool"],)
-    if key not in _double_count_warned:
-        _double_count_warned.add(key)
-        logging.warning(
-            "DOUBLE-COUNT TRIPWIRE: pool '%s' has BOTH explicit beta-scission/chip "
-            "reactions AND nonzero phenomenological k_scission=%.3e / k_unzip=%.3e -- "
-            "chain degradation may be double-counted. (Severity calibrated by item 19; "
-            "census-only in item 18.)",
-            entry["pool"], entry["k_scission"], entry["k_unzip"])
+def _radical_electrons(participant) -> int:
+    mol = participant.molecule[0] if hasattr(participant, "molecule") else participant
+    return sum(atom.radical_electrons for atom in mol.atoms)
+
+
+def classify_reaction_channel(reactants, products) -> str:
+    """The reaction channel of a row from its real molecules (Molecule or
+    Species), read in the decomposition direction -- one species into two, or
+    two into one read backwards:
+
+    - two more radical electrons in the pieces: a bond fission (homolysis;
+      recombination read backwards);
+    - as many, from a radical: a radical beta-scission (depropagation;
+      radical addition read backwards);
+    - as many, all closed-shell: a concerted molecular channel (a retro-ene,
+      an elimination);
+
+    one species into one is an isomerization, two into two a bimolecular row,
+    anything else unidentified."""
+    n_r, n_p = len(reactants), len(products)
+    if n_r == 1 and n_p == 1:
+        return CHANNEL_ISOMERIZATION
+    if n_r == 2 and n_p == 2:
+        return CHANNEL_BIMOLECULAR
+    sides = decomposition_sides(reactants, products)
+    if sides is None:
+        return CHANNEL_UNIDENTIFIED
+    whole, pieces = sides
+    r_whole = _radical_electrons(whole)
+    r_pieces = sum(_radical_electrons(p) for p in pieces)
+    if r_pieces == r_whole + 2:
+        return CHANNEL_BOND_FISSION
+    if r_pieces == r_whole:
+        return CHANNEL_RADICAL_BETA_SCISSION if r_whole > 0 else CHANNEL_CONCERTED_MOLECULAR
+    return CHANNEL_UNIDENTIFIED
+
+
+def reaction_channel(rxn) -> str:
+    """The row's channel: its generation stamp (``polymer_reaction_channel``,
+    written in make_new_reaction from the raw molecules, before the
+    handshake maps them onto pool proxies, which do not keep a fragment's
+    radical), else read from its own species (a hand-built or unpickled
+    row)."""
+    channel = getattr(rxn, "polymer_reaction_channel", None)
+    if channel:
+        return channel
+    return classify_reaction_channel(list(rxn.reactants), list(rxn.products))
+
+
+def decomposition_sides(reactants, products):
+    """(whole, pieces) of a one-into-two row in its decomposition direction,
+    or None."""
+    if len(reactants) == 1 and len(products) == 2:
+        return reactants[0], list(products)
+    if len(reactants) == 2 and len(products) == 1:
+        return products[0], list(reactants)
+    return None
+
+
+def kernel_carried_channel(channel, moves_repeat_units):
+    """The channel a kernel would carry for a row of chemistry ``channel``:
+    a fission is the backbone's when the row moves repeat units, else a
+    side-group loss; a radical beta-scission is depropagation only when it
+    moves repeat units. None when no kernel carries it."""
+    if channel == CHANNEL_BOND_FISSION:
+        return CHANNEL_BACKBONE_FISSION if moves_repeat_units else CHANNEL_SIDE_GROUP_LOSS
+    if channel == CHANNEL_RADICAL_BETA_SCISSION and moves_repeat_units:
+        return CHANNEL_RADICAL_BETA_SCISSION
+    return None
+
+
+def _kernel_enabled(value) -> bool:
+    if value is None or isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return value > 0.0
+    if isinstance(value, (list, tuple)):
+        return len(value) > 0
+    return True
+
+
+_declared_gas_species = {}
+
+
+def _releases_declared_gas(channels, released) -> bool:
+    """True if a released participant is a declared side-group gas_product
+    (resonance-aware: a SMILES parse is Kekule, a generated piece may not
+    be)."""
+    for ch in channels:
+        smiles = ch.get("gas_product") if isinstance(ch, dict) else None
+        if not smiles:
+            continue
+        declared = _declared_gas_species.get(smiles)
+        if declared is None:
+            declared = Species(molecule=[Molecule().from_smiles(smiles)])
+            declared.generate_resonance_structures()
+            _declared_gas_species[smiles] = declared
+        for spc in released:
+            mols = spc.molecule if hasattr(spc, "molecule") else [spc]
+            if any(declared.is_isomorphic(m) for m in mols):
+                return True
+    return False
+
+
+def kernels_carrying_channel(pool, carried, released=()) -> tuple:
+    """Names of the kernels on ``pool`` (a PolymerPoolConfig or a Polymer:
+    both carry the kernel fields) that carry channel ``carried``
+    (kernel_carried_channel), in KERNEL_CHANNELS order. A side-group loss is
+    the side-group kernel's only when ``released`` holds its declared gas."""
+    if carried is None:
+        return ()
+    out = []
+    for kernel, channels in KERNEL_CHANNELS:
+        value = getattr(pool, kernel, None)
+        if carried not in channels or not _kernel_enabled(value):
+            continue
+        if carried == CHANNEL_SIDE_GROUP_LOSS and not _releases_declared_gas(value, released):
+            continue
+        out.append(kernel)
+    return tuple(out)
+
+
+def volatile_ejection_moment_units(eject_units, defect_src, defect_dst, monomer_mw_src):
+    """Moment-space repeat units a cross-pool VOLATILE_EJECTION row moves per
+    event: the mass defect ``eject_units`` less the change in per-chain mass
+    defect, snapped to 0.0 at exact-cancellation roundoff (an atom-transfer
+    conduit: chains move with unchanged mu1). The solver's moment shift and
+    the enlarge-boundary promotion read the same number."""
+    a_mom = eject_units - (defect_dst - defect_src) / monomer_mw_src
+    if abs(a_mom) <= 1.0e-9 * max(1.0, abs(eject_units)):
+        a_mom = 0.0
+    return a_mom
+
+
+def generated_row_superseding_kernels(rxn) -> tuple:
+    """``(pool label, carried channel, kernels)`` when a kernel on the pool
+    ``rxn`` decomposes carries its channel, else ``()``, read from the row's
+    own species: the rule the solver applies at rebuild
+    (kernels_carrying_channel), for where the solver's pool resolution does
+    not reach -- the enlarge boundary, and a row whose other endpoint is a
+    daughter held back on the edge. A pool's kernels are read off its
+    Polymer (the deck helper and the daughter producers store them there).
+    Whether the row moves repeat units follows its stamped archetype: a
+    scission or chip row does; a volatile ejection does when its moment
+    shift is nonzero."""
+    sides = decomposition_sides(list(rxn.reactants), list(rxn.products))
+    if sides is None or not isinstance(sides[0], Polymer):
+        return ()
+    whole, pieces = sides
+    arch = int(getattr(rxn, "polymer_flux_archetype", 0))
+    if arch in (int(PolymerFluxArchetype.SCISSION_FRAGMENT),
+                int(PolymerFluxArchetype.DISCRETE_CHIP)):
+        moves = True
+    elif arch == int(PolymerFluxArchetype.VOLATILE_EJECTION):
+        src = next((r for r in rxn.reactants if isinstance(r, Polymer)), None)
+        dst = next((p for p in rxn.products if isinstance(p, Polymer)), None)
+        a = float(getattr(rxn, "polymer_eject_units", 0.0) or 0.0)
+        mw = float(getattr(src, "monomer_mw_g_mol", 0.0) or 0.0) if src is not None else 0.0
+        if src is not None and dst is not None and src is not dst and mw > 0.0:
+            a = volatile_ejection_moment_units(
+                a, float(getattr(src, "chain_mass_defect_g_mol", 0.0) or 0.0),
+                float(getattr(dst, "chain_mass_defect_g_mol", 0.0) or 0.0), mw)
+        moves = a != 0.0
+    else:
+        moves = False
+    released = [p for p in pieces if not isinstance(p, Polymer)]
+    carried = kernel_carried_channel(reaction_channel(rxn), moves)
+    kernels = kernels_carrying_channel(whole, carried, released)
+    if not kernels:
+        return ()
+    return strip_rmg_index_suffix(whole.label), carried, kernels
+
+
+_kernel_supersession_warned = set()
+
+
+def warn_once_kernel_supersession(entry: dict) -> None:
+    """Log the kernel supersession census of one pool (I-253): a generated
+    row whose channel a kernel on the pool it decomposes carries counts the
+    kernel's events again, so the solver REFUSES it by name (zero flux).
+    Warn-once keyed per (pool, row set): a row set that grows across
+    rebuilds is announced again."""
+    rows = entry.get("superseded_rows", [])
+    key = (entry["pool"], frozenset(rows))
+    if key in _kernel_supersession_warned:
+        return
+    _kernel_supersession_warned.add(key)
+    logging.warning(
+        "KERNEL SUPERSESSION CENSUS: pool '%s': %d generated row(s) whose "
+        "channel a kernel on the pool carries are refused superseded (zero "
+        "flux; the kernel counts these events): %s",
+        entry["pool"], len(rows),
+        "; ".join("%s [%s by %s]" % (r, ch, ", ".join(k))
+                  for r, ch, k in rows))
+
+
+_kernel_double_count_warned = set()
+
+
+def warn_once_kernel_double_count(entry: dict) -> None:
+    """Log each live row that a kernel on its pool double-counts, once per
+    (pool, row): the supersession refuses every such row, so an entry means
+    a row went live past it. Census-only."""
+    key = (entry["pool"], entry["reaction"])
+    if key in _kernel_double_count_warned:
+        return
+    _kernel_double_count_warned.add(key)
+    logging.warning(
+        "KERNEL CHANNEL DOUBLE-COUNT CENSUS: pool '%s': the live row %s "
+        "carries channel %s, which kernel(s) %s on the pool also carry -- its "
+        "events are counted twice.",
+        entry["pool"], entry["reaction"], entry["channel"],
+        ", ".join(entry["kernels"]))
 
 
 _qssa_double_count_warned = set()
@@ -3082,47 +3322,30 @@ _qssa_double_count_warned = set()
 
 def warn_once_qssa_double_count(entry: dict) -> None:
     """Log each distinct QSSA double-count census entry once
-    (correct-but-loud, mirroring ``_warn_once_double_count``). QSSA
-    initiation is random backbone homolysis, so it can overlap two other
-    backbone-cutting channels on the same pool, distinguished by
-    ``entry["overlap"]``:
+    (correct-but-loud). Two kernels on one pool: QSSA initiation and the
+    pool's own phenomenological k_scission (``entry["overlap"] ==
+    "k_scission"``) both cut random backbone bonds, the most direct
+    initiation double-count. A generated row beside the QSSA kernel is the
+    channel rule's business (``kernels_carrying_channel``): superseded when
+    the kernel carries its channel, live and uncounted otherwise.
 
-    - ``"generated_scission_ve"``: surviving generated-chemistry
-      VOLATILE_EJECTION reactions sourced from the pool that move repeat
-      units (nonzero moment shift; a hydrogen abstraction into a feature
-      daughter cuts no backbone bond). Generated SCISSION_FRAGMENT rows on
-      the pool never survive: the solver refuses them kernel-superseded
-      (``warn_once_scission_supersession``).
-    - ``"k_scission"``: the pool's own phenomenological k_scission -- the
-      most direct initiation double-count (both cut random backbone bonds).
-
-    Census-only, NEVER refuse: the overlapping channel may have been
-    parameterized for DIFFERENT/disjoint physics and only the user can know
-    (hard exclusion would be wrong); only the k_unzip co-presence is a hard
-    error (M1 mutual exclusion). Warn-once keyed per (pool, overlap kind)."""
-    overlap = entry.get("overlap", "generated_scission_ve")
+    Census-only, NEVER refuse: the two kernels may have been parameterized
+    for DIFFERENT/disjoint physics and only the user can know (hard
+    exclusion would be wrong); only the k_unzip co-presence is a hard error
+    (M1 mutual exclusion). Warn-once keyed per (pool, overlap kind)."""
+    overlap = entry.get("overlap", "k_scission")
     key = (entry["pool"], overlap)
     if key in _qssa_double_count_warned:
         return
     _qssa_double_count_warned.add(key)
-    if overlap == "k_scission":
-        logging.warning(
-            "QSSA DOUBLE-COUNT TRIPWIRE: pool '%s' has BOTH a radical_qssa_unzip "
-            "channel (QSSA initiation = random backbone homolysis) AND a nonzero "
-            "pool-level k_scission=%.3e [s^-1] -- both cut random backbone bonds, "
-            "the most direct initiation double-count. Ensure the two are "
-            "parameterized to cover DISJOINT physics. Census-only (warn, never "
-            "refuse).",
-            entry["pool"], entry["k_scission"])
-    else:
-        logging.warning(
-            "QSSA DOUBLE-COUNT TRIPWIRE: pool '%s' has BOTH a radical_qssa_unzip "
-            "channel (backbone-homolysis initiation) AND surviving explicit "
-            "volatile-ejection reactions sourced from it that move repeat "
-            "units -- chain "
-            "degradation may be double-counted. Census-only (warn, never refuse: "
-            "the generated chemistry may cover different bonds).",
-            entry["pool"])
+    logging.warning(
+        "QSSA DOUBLE-COUNT TRIPWIRE: pool '%s' has BOTH a radical_qssa_unzip "
+        "channel (QSSA initiation = random backbone homolysis) AND a nonzero "
+        "pool-level k_scission=%.3e [s^-1] -- both cut random backbone bonds, "
+        "the most direct initiation double-count. Ensure the two are "
+        "parameterized to cover DISJOINT physics. Census-only (warn, never "
+        "refuse).",
+        entry["pool"], entry["k_scission"])
 
 
 # Back-compat alias: the helper was born underscore-private and the solver
@@ -3176,32 +3399,6 @@ def warn_once_side_group_supersession(entry: dict) -> None:
         "conduit-deferred row(s) are superseded by the kernel (they remain "
         "refused and carry zero flux): %s",
         entry["pool"], len(rows), "; ".join(str(r) for r in rows))
-
-
-_scission_supersession_warned = set()
-
-
-def warn_once_scission_supersession(entry: dict) -> None:
-    """Log the generated-scission supersession census of one pool (I-250
-    ruling): a generated SCISSION_FRAGMENT row cutting a pool whose backbone
-    initiation a kernel carries runs beside that kernel's random homolysis --
-    the same cuts counted twice -- so the solver REFUSES it by name
-    (``kernel-superseded``, zero flux), unlike the census-only homolysis and
-    side-group supersession censuses above, whose rows were already refused.
-    Warn-once keyed per (pool, row set): a row set that grows across
-    rebuilds is announced again."""
-    rows = entry.get("superseded_rows", [])
-    key = (entry["pool"], frozenset(rows))
-    if key in _scission_supersession_warned:
-        return
-    _scission_supersession_warned.add(key)
-    logging.warning(
-        "SCISSION SUPERSESSION CENSUS: pool '%s' carries its backbone "
-        "initiation in kernel(s) %s; %d generated SCISSION_FRAGMENT row(s) "
-        "cutting it are refused kernel-superseded (zero flux; the kernel's "
-        "random homolysis carries these cuts): %s",
-        entry["pool"], ", ".join(entry.get("kernels", ())), len(rows),
-        "; ".join(str(r) for r in rows))
 
 
 _chip_tripwire_warned = set()

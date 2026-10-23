@@ -1566,14 +1566,14 @@ class TestHybridPolymerReactor:
         assert dn_dt[1] == 0.0              # mu0 untouched
         assert dn_dt[3] == 0.0              # mu2 untouched
 
-    def test_double_count_tripwire_fires_on_copresence_and_dormant_otherwise(self):
+    def test_a_chip_beside_k_scission_is_superseded_only_when_it_is_a_fission(self):
         """
-        item 18 (T2): a pool carrying BOTH an explicit, surviving beta-scission/
-        chip reaction sourced from it AND a nonzero phenomenological k_scission/
-        k_unzip double-counts chain degradation. initialize_model must census it
-        (correct-but-loud, warn-once; severity calibrated by item 19) and must be
-        DORMANT when the phenomenological constant is present but no surviving
-        explicit scission/chip is sourced from the pool.
+        Item 18 by channel identity (I-253): a pool carrying a phenomenological
+        k_scission (random backbone bond fission) and a surviving generated
+        chip sourced from it counts the same cuts twice only when the chip is
+        a bond fission: that row is refused by name and counted; a concerted
+        chip stays live and no census counts it; without k_scission (or with
+        no chip) nothing happens.
 
         DISCRETE_CHIP (archetype 5) is used for the explicit reaction because it
         needs only src resolved (not dst) and so survives the demotion loop when
@@ -1581,7 +1581,7 @@ class TestHybridPolymerReactor:
         """
         import rmgpy.solver.polymer as sp
 
-        def _build(pool_a_k_scission, with_chip):
+        def _build(pool_a_k_scission, with_chip, channel="bond_fission"):
             spx, core, mask = _two_pool_species()
             # Pool A's proxy species is matched by base_label == pool.label, so
             # rename both proxy and pool to 'epdm' for them to bind.
@@ -1592,6 +1592,7 @@ class TestHybridPolymerReactor:
             rxn = Reaction(reactants=[spx["A"]], products=[spx["A"], spx["G"]], **_KIN)
             rxn.polymer_flux_archetype = 5   # DISCRETE_CHIP
             rxn.polymer_chip_units = 1
+            rxn.polymer_reaction_channel = channel
             pool_a = PolymerPoolConfig(
                 label="epdm", xs=2, explicit_dp_to_species_index={},
                 mu_indices=(1, 2, 3), monomer_poly_index=None,
@@ -1610,32 +1611,35 @@ class TestHybridPolymerReactor:
             rs.initialize_model(core, rxns, [], [])
             return rs
 
-        # CO-PRESENCE: pool 'epdm' has k_scission=1.0 AND a surviving DISCRETE_CHIP
-        rs_copresent = _build(1.0, with_chip=True)
-        # Verify the chip survived demotion (still archetype 5, src == pool epdm).
-        assert rs_copresent.reaction_flux_archetype[0] == sp.FLUX_DISCRETE_CHIP
-        assert rs_copresent.reaction_src_pool[0] == 0   # pool 'epdm' index
-        assert len(rs_copresent.double_count_census) >= 1
-        assert any(c["pool"] == "epdm" for c in rs_copresent.double_count_census)
+        # A fission chip beside k_scission: refused by name and counted.
+        rs_fission = _build(1.0, with_chip=True)
+        assert rs_fission.reaction_src_pool[0] == 0   # pool 'epdm' index
+        assert rs_fission.reaction_refused[0] == 1
+        assert rs_fission.reaction_flux_archetype[0] == sp.FLUX_NONE
+        assert [(c["pool"], c["channel"], c["kernels"]) for c in rs_fission.kernel_supersession_census] == [
+            ("epdm", "backbone_bond_fission", ["k_scission"])]
+        assert rs_fission.kernel_double_count_census == []
 
-        # DORMANT: same pool k_scission=1.0 but NO explicit scission/chip reaction.
+        # A concerted chip: live (still archetype 5), not counted.
+        rs_split = _build(1.0, with_chip=True, channel="concerted_molecular")
+        assert rs_split.reaction_refused[0] == 0
+        assert rs_split.reaction_flux_archetype[0] == sp.FLUX_DISCRETE_CHIP
+        assert rs_split.kernel_supersession_census == []
+        assert rs_split.kernel_double_count_census == []
+
+        # No k_scission, or no chip: nothing.
+        rs_bare = _build(0.0, with_chip=True)
+        assert rs_bare.reaction_refused[0] == 0
+        assert rs_bare.kernel_supersession_census == []
         rs_clean = _build(1.0, with_chip=False)
-        assert rs_clean.double_count_census == []
+        assert rs_clean.kernel_supersession_census == rs_clean.kernel_double_count_census == []
 
-    def test_double_count_tripwire_dormant_when_scission_reaction_demoted(self):
+    def test_a_row_that_decomposes_no_pool_is_never_superseded(self):
         """
-        item 18 (T6 hardening): the EPDM-faithful complement to the co-presence
-        case. A pool ('epdm') carries k_scission=1.0 AND an explicit DISCRETE_CHIP
-        reaction IS present -- but the chip's reactant does NOT resolve to the pool
-        (src == -1, an unmapped gas reactant), so the src/dst-resolution loop
-        DEMOTES it to UNRESOLVED (archetype 4) BEFORE the census is built. The
-        demoted reaction's pool index therefore never enters scission_src_pools,
-        so the tripwire must stay DORMANT even though k_scission > 0.
-
-        This pins the load-bearing post-demotion placement of the census against
-        regression: the sibling co-presence test proves "survived demotion ->
-        fires"; this proves the complementary "demoted -> does NOT fire". (If the
-        census were built BEFORE the demotion loop, this would falsely fire.)
+        The rule reads the pool a row decomposes. A chip stamped as a fission
+        whose reactant is the UNMAPPED gas 'G' (src == -1; the resolution loop
+        demotes it to UNRESOLVED) decomposes no pool, so the k_scission on
+        pool 'epdm' neither supersedes nor counts it.
         """
         import rmgpy.solver.polymer as sp
 
@@ -1646,11 +1650,12 @@ class TestHybridPolymerReactor:
         # pool config): species_to_pool_indices -> -1, so src stays -1 and the
         # DISCRETE_CHIP demotes to UNRESOLVED per polymer.pyx:1107-1122. Same
         # demotion mechanism as test_stamped_chip_without_src_pool_demotes_to_unresolved.
-        rxn = Reaction(reactants=[spx["G"]], products=[spx["G"]], **_KIN)
+        rxn = Reaction(reactants=[spx["G"]], products=[spx["G"], spx["A"]], **_KIN)
         rxn.polymer_flux_archetype = 5   # DISCRETE_CHIP
         rxn.polymer_chip_units = 1
-        # Pool 'epdm' still carries k_scission=1.0 so the k-guard would pass --
-        # the ONLY reason the census stays empty is that the chip demoted.
+        rxn.polymer_reaction_channel = "bond_fission"
+        # Pool 'epdm' still carries k_scission=1.0: the ONLY reason nothing is
+        # superseded is that the row decomposes the gas, not the pool.
         pool_a = PolymerPoolConfig(
             label="epdm", xs=2, explicit_dp_to_species_index={},
             mu_indices=(1, 2, 3), monomer_poly_index=None,
@@ -1673,9 +1678,11 @@ class TestHybridPolymerReactor:
         assert rs.reaction_src_pool[0] == -1                          # unresolved src
         assert rs.reaction_flux_archetype[0] == sp.FLUX_UNRESOLVED    # demoted (archetype 4)
 
-        # Payoff: even though pool 'epdm' has k_scission=1.0, the DEMOTED chip
-        # does NOT trip the double-count tripwire -- census stays dormant.
-        assert rs.double_count_census == []
+        # Payoff: even though pool 'epdm' has k_scission=1.0, the row is not
+        # superseded and no census counts it.
+        assert rs.reaction_refused[0] == 0
+        assert rs.kernel_supersession_census == []
+        assert rs.kernel_double_count_census == []
 
     def test_validate_configuration_rejects_moment_in_stoichiometry(self):
         """
@@ -3012,10 +3019,11 @@ class TestHybridPolymerReactor:
                                            rel=1e-2)
 
     @staticmethod
-    def _qssa_census_system(channel, with_ve):
-        """System for the QSSA/scission-VE double-count census: pool proxy
-        bound by label, optional surviving same-pool VOLATILE_EJECTION
-        (src == dst survives the demotion loop, polymer.pyx ~1531)."""
+    def _qssa_census_system(channel, with_ve, reaction_channel=None):
+        """System for the QSSA/generated-row census: pool proxy bound by
+        label, optional surviving same-pool VOLATILE_EJECTION (src == dst
+        survives the demotion loop, polymer.pyx ~1531) carrying the channel
+        stamp generation writes."""
         Proxy = _spc("CCCC", "poly")
         Mu0 = _spc("CO", "poly_mu0")
         Mu1 = _spc("C=O", "poly_mu1")
@@ -3029,6 +3037,7 @@ class TestHybridPolymerReactor:
             rxn = Reaction(reactants=[Proxy], products=[Proxy, G], **_KIN)
             rxn.polymer_flux_archetype = 6   # VOLATILE_EJECTION
             rxn.polymer_eject_units = 1.0
+            rxn.polymer_reaction_channel = reaction_channel
             rxns = [rxn]
         pool = PolymerPoolConfig(
             label="poly", xs=2, explicit_dp_to_species_index={},
@@ -3044,38 +3053,46 @@ class TestHybridPolymerReactor:
         rs.initialize_model(core, rxns, [], [])
         return rs
 
-    def test_qssa_scission_ve_copresence_census_warns_once(self, caplog):
-        """Double-count census: QSSA initiation is backbone homolysis, so a
-        pool carrying BOTH the channel AND a surviving generated scission/VE
-        reaction sourced from it may double-count the same physics. That
-        must be censused (warn-once, NEVER refuse -- generated scission may
-        cover different bonds)."""
+    def test_qssa_pool_supersedes_a_generated_fission_by_name_once(self, caplog):
+        """QSSA initiation is random backbone homolysis: a generated fission
+        sourced from the pool counts its cuts twice, so it is refused by name
+        and counted (a census entry every build; one log line, warn-once).
+        A concerted ejection is no channel the kernel carries: live, and no
+        census counts it."""
         import rmgpy.solver.polymer as sp
-        # Warn-once is process-global and keyed (pool, overlap kind); an
-        # earlier fixture in this file may legitimately warm this key, so
-        # reset exactly the key under test to make the assertion
-        # deterministic (mirrors the k_scission co-presence twin).
-        from rmgpy.polymer import _qssa_double_count_warned
-        _qssa_double_count_warned.discard(("poly", "generated_scission_ve"))
+        # Warn-once is process-global and keyed (pool, row set); an earlier
+        # fixture in this file may legitimately warm this key.
+        from rmgpy.polymer import _kernel_supersession_warned
+        _kernel_supersession_warned.clear()
         with caplog.at_level(logging.WARNING):
-            rs = self._qssa_census_system(_qssa_channel(), with_ve=True)
-            # The VE survived demotion (src == dst same-pool shape).
-            assert rs.reaction_flux_archetype[0] == sp.FLUX_VOLATILE_EJECTION
+            rs = self._qssa_census_system(_qssa_channel(), with_ve=True,
+                                          reaction_channel="bond_fission")
             assert rs.reaction_src_pool[0] == 0
-            assert len(rs.qssa_double_count_census) == 1
-            assert rs.qssa_double_count_census[0]["pool"] == "poly"
+            assert rs.reaction_refused[0] == 1
+            assert rs.reaction_flux_archetype[0] == sp.FLUX_NONE
+            assert [(c["pool"], c["channel"], c["kernels"])
+                    for c in rs.kernel_supersession_census] == [
+                ("poly", "backbone_bond_fission", ["radical_qssa_unzip"])]
+            assert rs.qssa_double_count_census == []
             # Warn-once: a SECOND build censuses again but does not re-log.
-            rs2 = self._qssa_census_system(_qssa_channel(), with_ve=True)
-            assert len(rs2.qssa_double_count_census) == 1
-        qssa_warnings = [rec for rec in caplog.records
-                         if "QSSA" in rec.getMessage()
-                         and "poly" in rec.getMessage()
-                         and "double-count" in rec.getMessage().lower()]
-        assert len(qssa_warnings) == 1
+            rs2 = self._qssa_census_system(_qssa_channel(), with_ve=True,
+                                           reaction_channel="bond_fission")
+            assert len(rs2.kernel_supersession_census) == 1
+        lines = [rec for rec in caplog.records
+                 if "KERNEL SUPERSESSION CENSUS" in rec.getMessage()
+                 and "poly" in rec.getMessage()]
+        assert len(lines) == 1
+        rs_split = self._qssa_census_system(_qssa_channel(), with_ve=True,
+                                            reaction_channel="concerted_molecular")
+        assert rs_split.reaction_refused[0] == 0
+        assert rs_split.reaction_flux_archetype[0] == sp.FLUX_VOLATILE_EJECTION
+        assert rs_split.kernel_supersession_census == []
+        assert rs_split.kernel_double_count_census == []
+        assert rs_split.qssa_double_count_census == []
 
     def test_qssa_only_pool_census_silent(self):
-        """A QSSA pool with NO scission/VE reactions must NOT be censused;
-        neither must a scission/VE pool without the channel."""
+        """A QSSA pool with NO generated rows must NOT be censused; neither
+        must a pool with a generated row but without the channel."""
         rs_qssa_only = self._qssa_census_system(_qssa_channel(),
                                                 with_ve=False)
         assert rs_qssa_only.qssa_double_count_census == []
@@ -3275,18 +3292,17 @@ class TestHybridPolymerReactor:
         assert diff[3] == pytest.approx(-r, rel=1e-10)   # daughter mu1 drains
         assert diff[5] == pytest.approx(+r, rel=1e-10)   # monomer emitted
 
-    def test_spawned_daughter_inherited_qssa_seen_by_double_count_census(self):
-        """The M2 double-count census keys on qssa_enabled, which is rebuilt
-        (with the flattening) on EVERY initialize_model -- so a daughter that
-        inherits the channel is censused exactly like a deck pool when a
-        surviving same-pool scission/VE reaction sources from it."""
-        import rmgpy.solver.polymer as sp
-        from rmgpy.polymer import _qssa_double_count_warned
-        _qssa_double_count_warned.discard(
-            ("PS_scission_tail", "generated_scission_ve"))
+    def test_spawned_daughter_inherited_qssa_carries_its_channels(self):
+        """The channel rule reads the derived config, which carries the
+        inherited channel on EVERY rebuild (flattened into qssa_enabled with
+        it) -- so a daughter that inherits QSSA carries backbone fission and
+        radical depropagation exactly like a deck pool. (The fold-back row
+        below is refused upstream by the gas-association stamp, before any
+        supersession.)"""
+        from rmgpy.polymer import kernels_carrying_channel
 
         daughter, styrene, _ = self._qssa_scission_daughter()
-        G = _spc("[CH3]", "G_ve")
+        G = _spc("C", "G_ve")
         rxn = Reaction(reactants=[daughter], products=[daughter, G], **_KIN)
         rxn.polymer_flux_archetype = 6   # VOLATILE_EJECTION (same-pool)
         rxn.polymer_eject_units = 1.0
@@ -3313,12 +3329,11 @@ class TestHybridPolymerReactor:
             termination=[])
         rs.initialize_model(core, [rxn], [], [])
 
-        assert rs.reaction_flux_archetype[0] == sp.FLUX_VOLATILE_EJECTION
-        assert rs.reaction_src_pool[0] == 0
-        entries = [e for e in rs.qssa_double_count_census
-                   if e.get("overlap") == "generated_scission_ve"]
-        assert len(entries) == 1
-        assert entries[0]["pool"] == "PS_scission_tail"
+        assert rs.qssa_enabled[0] == 1
+        assert rs.polymer_pools[0].label == "PS_scission_tail"
+        for channel in ("backbone_bond_fission", "radical_beta_scission"):
+            assert kernels_carrying_channel(rs.polymer_pools[0], channel) == (
+                "radical_qssa_unzip",)
 
     def test_initialize_model_accepts_two_pools(self):
         """Synthetic multi-pool: HybridPolymerSystem must accept and resolve
@@ -14895,7 +14910,10 @@ class TestItem16EngineCreatedSpawnedPoolConfig:
         parent (distinct fingerprints, colliding 'polypropylene_mod' labels)
         register through _register_polymer's label dedup, promote at the
         boundary, and each gets its OWN engine-created config with a disjoint
-        mu-index triplet -- no dedup collision, no shared dummies."""
+        mu-index triplet -- no dedup collision, no shared dummies. Each
+        daughter gets a live row (I-253: a daughter no live row reaches is
+        held on the edge)."""
+        import rmgpy.solver.polymer as sp_mod
         from rmgpy.polymer import Polymer
         model, pp, daughter, h, h2, rxn = \
             self._build_model_with_spawned_daughter()
@@ -14913,6 +14931,13 @@ class TestItem16EngineCreatedSpawnedPoolConfig:
             d, is_new = model.make_new_species(d, generate_thermo=False)
             assert is_new
             model.add_species_to_edge(d)
+            feed = Reaction(reactants=[pp], products=[d],
+                            kinetics=Arrhenius(A=(1.0, "1/s"), n=0.0,
+                                               Ea=(0.0, "kcal/mol"),
+                                               T0=(298.15, "K")),
+                            reversible=False)
+            feed.polymer_flux_archetype = sp_mod.FLUX_MIGRATION
+            model.add_reaction_to_edge(feed)
         self._run_enlarge_boundary(model, monkeypatch)
         solver = self._rebuild_solver(model, h)
 

@@ -802,23 +802,6 @@ def catalog_kernel_connections(pool):
     return out
 
 
-def backbone_initiation_kernels(pool):
-    """Names of the kernels that carry `pool`'s random backbone homolysis
-    (its initiation), in a fixed order: radical_qssa_unzip (QSSA initiation),
-    k_homolysis and catalog kernel_homolysis. Each is enabled exactly when
-    configured (the flatteners' gates read the same fields). k_scission and
-    side_group_homolysis are not initiation kernels here: the first is the
-    item-18 census's business, the second cuts no backbone bond."""
-    out = []
-    if getattr(pool, "radical_qssa_unzip", None) is not None:
-        out.append("radical_qssa_unzip")
-    if getattr(pool, "k_homolysis", None) is not None:
-        out.append("k_homolysis")
-    if getattr(pool, "kernel_homolysis", None):
-        out.append("kernel_homolysis")
-    return tuple(out)
-
-
 def _kernel_number(pool_label, kernel, template, key, value, *, positive=False,
                    unit_interval=False):
     if isinstance(value, bool) or not isinstance(value, (int, float)) \
@@ -2791,6 +2774,97 @@ class HybridPolymerSystem(ReactionSystem):
                     (dict(term), tuple(target.mu_indices)))
         self._assert_catalog_kernels_count_once()
 
+    def _row_kernel_channel(self, combined_rxns, int r):
+        """(pool index, carried channel, kernels) when a kernel on the pool
+        row ``r`` decomposes carries its channel (I-253 channel identity,
+        rmgpy.polymer.kernels_carrying_channel), else None. The pool is the
+        configured pool of the row's one-species side; the channel is the
+        row's generation stamp, or its species' reading; the row moves
+        repeat units when it is a scission or chip row, or a volatile
+        ejection with a nonzero moment shift (reaction_eject_units_moment)."""
+        from rmgpy.polymer import (kernel_carried_channel, kernels_carrying_channel,
+                                   reaction_channel)
+        cdef int n_core = self.num_core_species
+        ir = [int(i) for i in self.reactant_indices[r] if i != -1]
+        ip = [int(i) for i in self.product_indices[r] if i != -1]
+        if len(ir) == 1 and len(ip) == 2:
+            whole, pieces = ir[0], ip
+        elif len(ir) == 2 and len(ip) == 1:
+            whole, pieces = ip[0], ir
+        else:
+            return None
+        if whole >= n_core or self.species_to_pool_indices[whole] < 0:
+            return None
+        p = int(self.species_to_pool_indices[whole])
+        arch = self.reaction_flux_archetype[r]
+        moves = (arch == FLUX_SCISSION_FRAGMENT or arch == FLUX_DISCRETE_CHIP
+                 or (arch == FLUX_VOLATILE_EJECTION
+                     and self.reaction_eject_units_moment[r] != 0.0))
+        carried = kernel_carried_channel(reaction_channel(combined_rxns[r]), moves)
+        released = [self._channel_species[i] for i in pieces
+                    if not (i < n_core and self.species_to_pool_indices[i] >= 0)]
+        kernels = kernels_carrying_channel(self.polymer_pools[p], carried, released)
+        if not kernels:
+            return None
+        return p, carried, kernels
+
+    def _refuse_kernel_superseded_rows(self, combined_rxns):
+        """Refuse by name every live row whose channel a kernel on the pool
+        it decomposes carries (archetype NONE, zero flux) and record it in
+        ``kernel_supersession_census`` ({reaction, pool, channel, kernels,
+        reason}); one warn-once census line per pool. Rows whose daughter
+        endpoint the enlarge boundary held back (already refused at pool
+        resolution, ``_held_superseded``) are recorded first, by the same
+        rule read on their species."""
+        from rmgpy.polymer import _reaction_census_label, warn_once_kernel_supersession
+        self.kernel_supersession_census = []
+        by_pool = {}
+        for r, rxn_r, (pool_label, carried, kernels) in getattr(self, "_held_superseded", ()):
+            label = _reaction_census_label(rxn_r)
+            self.kernel_supersession_census.append(
+                {"reaction": label, "pool": pool_label, "channel": carried,
+                 "kernels": list(kernels), "reason": "superseded:" + carried})
+            by_pool.setdefault(pool_label, []).append((label, carried, tuple(kernels)))
+        for r in range(len(combined_rxns)):
+            if self.reaction_refused[r]:
+                continue
+            hit = self._row_kernel_channel(combined_rxns, r)
+            if hit is None:
+                continue
+            p, carried, kernels = hit
+            self.reaction_refused[r] = 1
+            self.reaction_flux_archetype[r] = FLUX_NONE
+            label = _reaction_census_label(combined_rxns[r])
+            self.kernel_supersession_census.append(
+                {"reaction": label, "pool": self.polymer_pools[p].label,
+                 "channel": carried, "kernels": list(kernels),
+                 "reason": "superseded:" + carried})
+            by_pool.setdefault(self.polymer_pools[p].label, []).append(
+                (label, carried, tuple(kernels)))
+        for pool_label, rows in by_pool.items():
+            warn_once_kernel_supersession({"pool": pool_label, "superseded_rows": rows})
+
+    def _census_kernel_channel_double_counts(self, combined_rxns):
+        """The double-count census, by the same rule: every LIVE row whose
+        channel a kernel on the pool it decomposes carries
+        (``kernel_double_count_census``: {reaction, pool, channel, kernels},
+        warn-once per row). The supersession above leaves none, so an entry
+        means a row went live past it. Diagnostic-only."""
+        from rmgpy.polymer import _reaction_census_label, warn_once_kernel_double_count
+        self.kernel_double_count_census = []
+        for r in range(len(combined_rxns)):
+            if self.reaction_refused[r]:
+                continue
+            hit = self._row_kernel_channel(combined_rxns, r)
+            if hit is None:
+                continue
+            p, carried, kernels = hit
+            entry = {"reaction": _reaction_census_label(combined_rxns[r]),
+                     "pool": self.polymer_pools[p].label,
+                     "channel": carried, "kernels": list(kernels)}
+            self.kernel_double_count_census.append(entry)
+            warn_once_kernel_double_count(entry)
+
     def _assert_catalog_kernels_count_once(self):
         """One event, one count: refuse a catalog template listed on two
         pools (each listing fires), and a live core reaction row that moves
@@ -3911,7 +3985,6 @@ class HybridPolymerSystem(ReactionSystem):
         # census and artifact stay single-sourced. reaction_refused is
         # UNTOUCHED -- no flux changes here.
         from rmgpy.polymer import (_warn_once_refused, _reaction_census_label,
-                                   _warn_once_double_count,
                                    assess_refused_qssa_kout)
         # Threshold policy (explicit, logged, deck-tied; never a bare
         # constant): at least 1/terminationTime, raised by the optional
@@ -4387,6 +4460,7 @@ class HybridPolymerSystem(ReactionSystem):
         # edge-only proxy, or a duplicate core base label).
         from rmgpy.polymer import Polymer as _Polymer
         from rmgpy.polymer import strip_rmg_index_suffix as _strip_idx
+        from rmgpy.polymer import generated_row_superseding_kernels
         _configured_pool_labels = {p.label for p in self.polymer_pools}
         _arch_names = {FLUX_MIGRATION: "MIGRATION",
                        FLUX_SCISSION_FRAGMENT: "SCISSION_FRAGMENT",
@@ -4394,6 +4468,7 @@ class HybridPolymerSystem(ReactionSystem):
                        FLUX_VOLATILE_EJECTION: "VOLATILE_EJECTION",
                        FLUX_MOMENT_CREDIT_CONDUIT: "MOMENT_CREDIT_CONDUIT"}
         spawned_refusals = []      # (row_idx, rxn, archetype name, labels)
+        held_superseded = []       # (row_idx, rxn, (pool, channel, kernels))
         demotion_anomalies = []    # (row_idx, rxn, archetype name)
         self.spawned_pool_refusal_census = []
         for i in range(n_rxn):
@@ -4502,9 +4577,16 @@ class HybridPolymerSystem(ReactionSystem):
                 if attributable and spawned_labels:
                     self.reaction_refused[i] = 1
                     self.reaction_flux_archetype[i] = FLUX_NONE
-                    spawned_refusals.append(
-                        (i, rxn_i, _arch_names[arch_i],
-                         sorted(spawned_labels)))
+                    # A daughter the enlarge boundary held back because its
+                    # only row is superseded (I-253): the row's name is the
+                    # supersession, read by the same species-level rule.
+                    superseded_i = generated_row_superseding_kernels(rxn_i)
+                    if superseded_i:
+                        held_superseded.append((i, rxn_i, superseded_i))
+                    else:
+                        spawned_refusals.append(
+                            (i, rxn_i, _arch_names[arch_i],
+                             sorted(spawned_labels)))
                 else:
                     self.reaction_flux_archetype[i] = FLUX_UNRESOLVED
                     n_unresolvable += 1
@@ -4636,6 +4718,7 @@ class HybridPolymerSystem(ReactionSystem):
         # FINAL. Exact-cancellation roundoff (structural defect vs
         # reaction-mass a, both g/mol sums differing by summation order) is
         # snapped to a true zero shift.
+        from rmgpy.polymer import volatile_ejection_moment_units
         self.reaction_eject_units_moment = self.reaction_eject_units.copy()
         for r_ve in range(n_rxn):
             if self.reaction_flux_archetype[r_ve] != FLUX_VOLATILE_EJECTION:
@@ -4660,73 +4743,28 @@ class HybridPolymerSystem(ReactionSystem):
                     f"pool '{self.polymer_pools[src_ve].label}' has no "
                     f"positive monomer_mw_g_mol; cannot convert the mass "
                     f"defect to a moment shift without fabricating mass.")
-            a_mass_ve = float(self.reaction_eject_units[r_ve])
-            a_mom_ve = a_mass_ve - (defect_dst_ve - defect_src_ve) / mw_src_ve
-            if abs(a_mom_ve) <= 1.0e-9 * max(1.0, abs(a_mass_ve)):
-                a_mom_ve = 0.0
-            self.reaction_eject_units_moment[r_ve] = a_mom_ve
+            self.reaction_eject_units_moment[r_ve] = volatile_ejection_moment_units(
+                float(self.reaction_eject_units[r_ve]), defect_src_ve,
+                defect_dst_ve, mw_src_ve)
 
-        # Generated-scission supersession (I-250 ruling): a live generated
-        # SCISSION_FRAGMENT row cutting a pool whose backbone initiation a
-        # kernel carries (backbone_initiation_kernels) runs beside that
-        # kernel's random homolysis -- the same cuts counted twice. Refuse it
-        # by name (kernel-superseded; archetype NONE, zero flux, like the r91
-        # refusal and as non-sticky: re-derived per rebuild, the reaction
-        # object is not stamped) and census it. Placement is load-bearing:
-        # AFTER the demotion loop (FINAL archetypes and source pools) and
-        # BEFORE the item-18 and QSSA double-count censuses, so neither counts
-        # a superseded row. The kernels are read from the pool configs, whose
-        # fields the flatteners' enabled gates mirror exactly.
-        from rmgpy.polymer import warn_once_scission_supersession
-        self.scission_supersession_census = []
-        superseded = {}
-        for r_ss in range(n_rxn):
-            if (self.reaction_refused[r_ss]
-                    or self.reaction_flux_archetype[r_ss] != FLUX_SCISSION_FRAGMENT):
-                continue
-            src_ss = self.reaction_src_pool[r_ss]
-            if src_ss < 0:
-                continue
-            kernels_ss = backbone_initiation_kernels(self.polymer_pools[src_ss])
-            if not kernels_ss:
-                continue
-            self.reaction_refused[r_ss] = 1
-            self.reaction_flux_archetype[r_ss] = FLUX_NONE
-            entry = {"reaction": _reaction_census_label(combined_rxns[r_ss]),
-                     "pool": self.polymer_pools[src_ss].label,
-                     "kernels": list(kernels_ss),
-                     "reason": "kernel-superseded"}
-            self.scission_supersession_census.append(entry)
-            superseded.setdefault(src_ss, []).append(entry["reaction"])
-        for src_ss, rows_ss in superseded.items():
-            warn_once_scission_supersession(
-                {"pool": self.polymer_pools[src_ss].label,
-                 "kernels": list(backbone_initiation_kernels(
-                     self.polymer_pools[src_ss])),
-                 "superseded_rows": rows_ss})
-
-        # item 18 (T2): double-count tripwire. A pool carrying BOTH a surviving
-        # explicit beta-scission/chip reaction sourced from it (archetype
-        # SCISSION_FRAGMENT or DISCRETE_CHIP) AND a nonzero phenomenological
-        # k_scission/k_unzip double-counts chain degradation: the explicit
-        # chemistry and the phenomenological stand-in both model the same chain
-        # break. Census it (correct-but-loud, warn-once). Placement is
-        # load-bearing: AFTER the demotion loop completes, so it scans the FINAL
-        # archetypes -- a reaction demoted to UNRESOLVED above is no longer
-        # explicit scission and must NOT trip the tripwire. Diagnostic-only:
-        # changes NO flux/state. Default severity is census-loud (warn only; NO
-        # refuse-cliff -- severity is calibrated later by item 19).
-        self.double_count_census = []
-        scission_src_pools = set()
-        for r_dc in range(n_rxn):
-            if self.reaction_flux_archetype[r_dc] in (FLUX_SCISSION_FRAGMENT, FLUX_DISCRETE_CHIP):
-                if self.reaction_src_pool[r_dc] >= 0:
-                    scission_src_pools.add(self.reaction_src_pool[r_dc])
-        for p_idx, pool in enumerate(self.polymer_pools):
-            if (pool.k_scission > 0.0 or pool.k_unzip > 0.0) and p_idx in scission_src_pools:
-                entry = {"pool": pool.label, "k_scission": pool.k_scission, "k_unzip": pool.k_unzip}
-                self.double_count_census.append(entry)
-                _warn_once_double_count(entry)
+        # Kernel supersession by channel identity (I-253 ruling; it replaces
+        # the I-250 row-class rule and the item-18 tripwire): a live generated
+        # row whose reaction channel a kernel on the pool it decomposes
+        # carries (rmgpy.polymer.kernels_carrying_channel) counts that
+        # kernel's events again. It is refused by name (archetype NONE, zero
+        # flux; non-sticky: re-derived per rebuild, the reaction object is
+        # not stamped) and censused. Every other row stays live and is never
+        # counted as a double count, whatever its archetype. Placement is
+        # load-bearing: AFTER the demotion loop and the moment-shift loop
+        # above (FINAL archetypes, pools and moment shifts: they decide
+        # whether a row moves repeat units) and BEFORE the double-count
+        # census, the catalog count-once guard and the stationary-carrier
+        # guard (validate_configuration), so none of them sees a superseded
+        # row.
+        self._channel_species = combined_species
+        self._held_superseded = held_superseded
+        self._refuse_kernel_superseded_rows(combined_rxns)
+        self._census_kernel_channel_double_counts(combined_rxns)
 
         # Enforce the moment-isolation invariant and pool/mass-transfer index
         # sanity now that gas_species_mask and the reaction index tables are
@@ -4743,40 +4781,20 @@ class HybridPolymerSystem(ReactionSystem):
                                      for rxn in core_reactions]
         self.validate_configuration()
 
-        # radical_qssa_unzip double-count census (M2). QSSA initiation is
-        # backbone homolysis, so generated-chemistry VOLATILE_EJECTION
-        # reactions sourced from the same pool may represent overlapping
-        # physics. WARN-ONCE census mirroring the item-18 tripwire above --
-        # warn, NEVER refuse (an ejection may cover different bonds; generated
-        # SCISSION_FRAGMENT rows are the ruled exception, refused above). The
-        # k_unzip co-presence stays a hard error (M1 mutual exclusion).
-        # Placement is load-bearing twice over: AFTER the demotion loop (it
-        # scans FINAL archetypes, like the item-18 census) and AFTER
-        # validate_configuration (qssa_enabled -- the flattened solver-owned
-        # gate, the ONLY channel signal the solver trusts -- exists here).
-        # Only backbone-cutting rows overlap (I-250). A SCISSION_FRAGMENT row
-        # sourced from a QSSA pool never reaches here live: the
-        # generated-scission supersession above refused it by name. A
-        # VOLATILE_EJECTION row counts only if it moves repeat units: a zero
-        # moment shift (reaction_eject_units_moment -- an atom-transfer
-        # conduit such as a hydrogen abstraction into a feature daughter,
-        # whose chains move with unchanged mu1) cuts no backbone bond.
+        # radical_qssa_unzip double-count census (M2), kernel against kernel:
+        # QSSA initiation is random backbone homolysis, as is the pool's own
+        # k_scission. A generated row beside the QSSA kernel is the channel
+        # rule's (superseded above when the kernel carries its channel, live
+        # and uncounted otherwise). WARN-ONCE, NEVER refuse; the k_unzip
+        # co-presence stays a hard error (M1 mutual exclusion). Placement:
+        # AFTER validate_configuration (qssa_enabled -- the flattened
+        # solver-owned gate, the ONLY channel signal the solver trusts --
+        # exists here).
         from rmgpy.polymer import warn_once_qssa_double_count
         self.qssa_double_count_census = []
-        qssa_overlap_src_pools = set()
-        for r_dc in range(self.reaction_flux_archetype.shape[0]):
-            if (self.reaction_flux_archetype[r_dc] == FLUX_VOLATILE_EJECTION
-                    and self.reaction_eject_units_moment[r_dc] != 0.0
-                    and self.reaction_src_pool[r_dc] >= 0):
-                qssa_overlap_src_pools.add(self.reaction_src_pool[r_dc])
         for p_idx, pool in enumerate(self.polymer_pools):
             if not self.qssa_enabled[p_idx]:
                 continue
-            if p_idx in qssa_overlap_src_pools:
-                entry = {"pool": pool.label,
-                         "overlap": "generated_scission_ve"}
-                self.qssa_double_count_census.append(entry)
-                warn_once_qssa_double_count(entry)
             # QSSA + the pool's own k_scission: BOTH are random backbone
             # homolysis -- the most direct initiation double-count of all
             # (unlike generated scission, k_scission cannot claim to cover
@@ -6052,10 +6070,14 @@ class HybridPolymerSystem(ReactionSystem):
                 continue
             if (abs(raw0) <= f0 and abs(raw1) <= f1 and abs(raw2) <= f2):
                 self._pool_exhausted[p] = 1
-                self._emit_pool_exhaustion_census(
-                    p, raw0, raw1, raw2,
-                    "exhausted (census only -- r86: RHS computes live "
-                    "from the raw state)")
+                # A pool born empty (initial moments exactly zero) that has
+                # not filled past its floor has not been drained: not
+                # announced. A pool that starts inside the band is.
+                if self._pool_held(p) or not self._pool_born_empty(p):
+                    self._emit_pool_exhaustion_census(
+                        p, raw0, raw1, raw2,
+                        "exhausted (census only -- r86: RHS computes live "
+                        "from the raw state)")
             else:
                 self._pool_exhausted[p] = 0
                 if raw0 < 0.0 or raw1 < 0.0 or raw2 < 0.0:
@@ -6281,6 +6303,31 @@ class HybridPolymerSystem(ReactionSystem):
         return np.maximum(self._pool_mu_floors, EXHAUSTION_RELATIVE_K
                           * self._pool_mu_rtol * self._pool_mu_peak)
 
+    def _pool_held(self, p):
+        """True once pool ``p`` has held more than its absolute floor in some
+        moment on an accepted state, the initial state included (the I-244
+        peak; before the peak is laid out, the initial state itself). A pool
+        born empty that never filled has not been drained: it is neither
+        ended by end_exhausted_pools nor announced exhausted."""
+        floors = self._pool_mu_floors
+        peak = self._pool_mu_peak
+        if peak is not None:
+            return any(peak[p, k] > floors[p, k] for k in range(3))
+        y0 = getattr(self, "y0", None)
+        if y0 is None or floors is None:
+            return True
+        idx = self.polymer_pools[p].mu_indices
+        return any(abs(float(y0[int(idx[k])])) > floors[p, k] for k in range(3))
+
+    def _pool_born_empty(self, p):
+        """True if pool ``p``'s initial moments are exactly zero (a spawned
+        daughter, or a deck pool given none)."""
+        y0 = getattr(self, "y0", None)
+        if y0 is None:
+            return False
+        idx = self.polymer_pools[p].mu_indices
+        return all(float(y0[int(idx[k])]) == 0.0 for k in range(3))
+
     def end_exhausted_pools(self):
         """End every pool that has emptied, on the ACCEPTED state ``self.y``
         (I-244; simulate's step() calls it once per accepted step, before the
@@ -6321,9 +6368,7 @@ class HybridPolymerSystem(ReactionSystem):
             if not inside:
                 self._pool_ended[p] = 0
                 continue
-            held = any(self._pool_mu_peak[p, k] > self._pool_mu_floors[p, k]
-                       for k in range(3))
-            if self._pool_ended[p] or not held:
+            if self._pool_ended[p] or not self._pool_held(p):
                 continue
             self._pool_ended[p] = 1
             for k in range(3):

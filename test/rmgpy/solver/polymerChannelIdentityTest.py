@@ -120,7 +120,6 @@ CHANNEL_CASES = [
 ]
 
 
-@pytest.mark.xfail(strict=True, raises=(AssertionError, ImportError))
 @pytest.mark.parametrize('reactants,products,channel', CHANNEL_CASES)
 def test_the_channel_is_read_from_the_molecules_in_the_decomposition_direction(reactants, products, channel):
     from rmgpy.polymer import classify_reaction_channel
@@ -289,7 +288,6 @@ class TestGeneratedRowsBesideTheQssaKernel:
     row stays live and no census counts it. A backbone homolysis is the
     kernel's own initiation: refused by name."""
 
-    @pytest.mark.xfail(strict=True, raises=AssertionError)
     def test_a_generated_row_is_stamped_with_its_channel(self):
         stamped = {}
         for gas, concerted in ((HOMOLYSIS_GAS, False), (CONCERTED_GAS, True)):
@@ -299,7 +297,6 @@ class TestGeneratedRowsBesideTheQssaKernel:
             stamped[concerted] = getattr(rxn, 'polymer_reaction_channel', None)
         assert stamped == {False: 'bond_fission', True: 'concerted_molecular'}
 
-    @pytest.mark.xfail(strict=True, raises=AssertionError)
     def test_a_concerted_row_beside_qssa_stays_live_and_is_not_flagged(self, monkeypatch, caplog):
         model, solver, rxn, tail = _qssa_deck(monkeypatch, caplog, CONCERTED_GAS, concerted=True)
         r = _row(model, rxn)
@@ -312,7 +309,6 @@ class TestGeneratedRowsBesideTheQssaKernel:
         assert _census(solver, 'kernel_supersession_census') == []
         assert _census(solver, 'kernel_double_count_census') == []
 
-    @pytest.mark.xfail(strict=True, raises=AssertionError)
     def test_a_backbone_homolysis_beside_qssa_is_refused_superseded(self, monkeypatch, caplog):
         model, solver, rxn, tail = _qssa_deck(monkeypatch, caplog, HOMOLYSIS_GAS, concerted=False)
         r = _row(model, rxn)
@@ -400,7 +396,6 @@ LIVE = [
 ]
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError)
 @pytest.mark.parametrize('kernel,channel,carried', SUPERSEDED)
 def test_a_row_whose_channel_a_kernel_on_its_pool_carries_is_superseded(kernel, channel, carried):
     rs, rxn = _kernel_system(kernel, channel)
@@ -421,7 +416,6 @@ def test_a_row_whose_channel_no_kernel_on_its_pool_carries_stays_live(kernel, ch
     assert not _census(rs, 'kernel_double_count_census')
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError)
 def test_a_chip_row_follows_the_same_rule():
     """A discrete chip is a row like any other: a fission chip beside
     k_scission is superseded; a concerted chip stays live and the item-18
@@ -438,7 +432,6 @@ def test_a_chip_row_follows_the_same_rule():
     assert not getattr(rs_split, 'double_count_census', None)
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError)
 def test_an_unstamped_row_is_read_from_its_own_species():
     """A row built without the generation stamp (a hand-built or unpickled
     row) is classified from its own species: a closed-shell proxy into two
@@ -461,7 +454,6 @@ class _NoSupersession(HybridPolymerSystem):
         return None
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError)
 def test_an_injected_live_duplicate_of_a_kernels_channel_is_flagged(caplog):
     from rmgpy import polymer
     getattr(polymer, '_kernel_double_count_warned', set()).clear()
@@ -508,7 +500,6 @@ def _sgh_system(gas_product_row):
     return rs, rxn
 
 
-@pytest.mark.xfail(strict=True, raises=(AssertionError, ValueError))
 def test_a_side_group_loss_of_the_declared_gas_is_superseded():
     """Before the ruling the row is live, so the stationary-carrier guard
     refuses the build (ValueError naming the carrier)."""
@@ -552,7 +543,6 @@ def _exhausted_lines(caplog, label):
             if rec.getMessage().startswith(f'POOL EXHAUSTION CENSUS: pool {label} exhausted')]
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError)
 def test_a_pool_born_empty_is_not_announced_exhausted_at_t0(caplog):
     _two_pool_exhaustion(caplog)
     assert _exhausted_lines(caplog, 'B') == []
@@ -579,14 +569,12 @@ class TestPromotionOnALiveRow:
         model = _model_with_parent(parent, _spc('N#N', 'N2'), styrene)
         return model, parent
 
-    @pytest.mark.xfail(strict=True, raises=AssertionError)
     def test_a_daughter_whose_only_row_is_superseded_is_not_promoted(self, monkeypatch):
         model, parent = self._deck(monkeypatch)
         rxn, tail = _generate(model, parent, HOMOLYSIS_GAS, concerted=False)
         _enlarge_boundary(model, monkeypatch)
         assert tail not in model.core.species
 
-    @pytest.mark.xfail(strict=True, raises=AssertionError)
     def test_a_daughter_whose_only_row_is_refused_is_not_promoted(self, monkeypatch):
         model, parent = self._deck(monkeypatch)
         rxn, tail = _generate(model, parent, CONCERTED_GAS, concerted=True)
@@ -594,7 +582,6 @@ class TestPromotionOnALiveRow:
         _enlarge_boundary(model, monkeypatch)
         assert tail not in model.core.species
 
-    @pytest.mark.xfail(strict=True, raises=AssertionError)
     def test_it_is_promoted_when_its_first_live_row_appears(self, monkeypatch):
         model, parent = self._deck(monkeypatch)
         rxn, tail = _generate(model, parent, HOMOLYSIS_GAS, concerted=False)

@@ -71,6 +71,7 @@ cdef class Reaction:
     cdef public int polymer_flux_archetype
     cdef public int polymer_chip_units
     cdef public double polymer_eject_units
+    cdef public object polymer_reaction_channel
     cdef public object polymer_conduit_params
     cdef public object polymer_conduit_dst_pool
     cdef public bint polymer_conduit_admission_pending
