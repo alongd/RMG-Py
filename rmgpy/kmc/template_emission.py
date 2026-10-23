@@ -130,7 +130,7 @@ Templates with different keys can still make one transition: a family that
 is its own reverse loads its as_generated and reversed records in one
 (family, direction), and the two records of a reciprocal pair can partition
 one region of transitions twice.  ``resolve_overlaps`` matches the loaded
-templates on every stored witness: the reversed side of two such partitions
+templates on every stored witness: the contained one of two such partitions
 is ``covered`` (``OVERLAP_RULE``), any other overlap refused
 ``refused:class_overlap``.  ``check_cycles`` then tests the LOADED catalog's detailed balance on the
 stored witnesses against independent RMG thermo (``ThermoKc``).
@@ -945,6 +945,11 @@ class ProductionRates:
                                     degeneracy=degeneracy, reversible=fam.reversible,
                                     family=fam.label, is_forward=True,
                                     template=list(pathway or ()), electrons=fam.electrons)
+        if fam.own_reverse and not self.identity(request):
+            # the reverse the generator's reactions carry (generate_reactions_from_families),
+            # from which the compiler keeps the direction RMG's model keeps; an identity
+            # transfer is its own reverse
+            fam.add_reverse_attribute(reaction)
         return (reaction, species, reactants), ""
 
     def explicit(self, request):
@@ -1910,7 +1915,7 @@ CYCLE_RTOL = 1e-12
 COLLISION_STATUS = "refused:collision"
 
 
-def orbit_problem(rows, edit_sets) -> Optional[str]:
+def orbit_problem(rows, edit_sets, forms=None) -> Optional[str]:
     """Why the transitions (``edit_sets``: each one's ``window_matcher``
     edits) are not one orbit under the automorphism group of the witness
     reactants ``rows`` (None: they are one orbit).
@@ -1922,6 +1927,14 @@ def orbit_problem(rows, edit_sets) -> Optional[str]:
     edit written on its atoms and bonds (what the atom ends as, the bond
     order it ends at) is isomorphic to the other's.  An orbit is transitive,
     so every transition is compared with the first.
+
+    ``forms`` (one per transition: the ``form_bonds`` and ``form_radicals``
+    of the resonance form it was matched in) writes each transition's graph
+    in its own form: an isomorphism between two such graphs is a symmetry of
+    the species (its bond orders map one resonance form onto another), so
+    the two ends of an allyl radical, each matched in the form that puts the
+    radical on it, are one orbit.  Without ``forms`` every transition is
+    written on ``rows``.
 
     The graphs are compared with their leaves folded: a leaf (one neighbour,
     itself of two or more) is removed and counted on its neighbour's label
@@ -1946,8 +1959,14 @@ def orbit_problem(rows, edit_sets) -> Optional[str]:
             if a < n:
                 base.add_edge(a, n, order=float(o), elab=repr((float(o), None)))
 
-    def annotated(edits):
+    def annotated(edits, form=None):
         g = base.copy()
+        bonds, radicals = form or ((), ())
+        for a, r in radicals:
+            row = rows[a]
+            g.nodes[a]["lab"] = repr(tuple(row[:3]) + (type(row[3])(r),) + tuple(row[4:5]))
+        for a, n, o in bonds:
+            g.add_edge(a, n, order=float(o), elab=repr((float(o), None)))
         marks = defaultdict(list)
         for e in edits:
             if isinstance(e, ms.SetBond):
@@ -1972,10 +1991,11 @@ def orbit_problem(rows, edit_sets) -> Optional[str]:
             out.nodes[n]["lab"] = g.nodes[n]["lab"] + repr(sorted(keys.items()))
         return out
 
-    first = annotated(edit_sets[0])
+    forms = list(forms) if forms is not None else [None] * len(edit_sets)
+    first = annotated(edit_sets[0], forms[0])
     h0 = nx.weisfeiler_lehman_graph_hash(first, node_attr="lab", edge_attr="elab", iterations=5)
     for k, edits in enumerate(edit_sets[1:], 1):
-        other = annotated(edits)
+        other = annotated(edits, forms[k])
         same = nx.weisfeiler_lehman_graph_hash(other, node_attr="lab", edge_attr="elab",
                                                iterations=5) == h0 and \
             iso.GraphMatcher(first, other,
@@ -1990,8 +2010,9 @@ def orbit_problem(rows, edit_sets) -> Optional[str]:
 
 def channel_orbit_problem(rows, transitions) -> Optional[str]:
     """``orbit_problem`` of a channel's matcher transitions (``window_matcher.Transition``)
-    on the witness reactants ``rows``."""
-    return orbit_problem(rows, [tr.edits for tr in transitions])
+    on the witness reactants ``rows``, each in the resonance form it was matched in."""
+    return orbit_problem(rows, [tr.edits for tr in transitions],
+                         [(tr.form_bonds, tr.form_radicals) for tr in transitions])
 
 
 def _grid_problem(a, b) -> Optional[str]:
@@ -2801,10 +2822,10 @@ OVERLAP_RULE = (
     "loaded templates of one family and direction that make one transition on a stored "
     "witness are two partitions of one region when their overlap component splits into the "
     "templates of as_generated records and those of reversed records, every transition made "
-    "twice is made by one template of each side, every transition a reversed-side template "
-    "makes is made by an as_generated-side template, and the two weights of every such "
-    "transition are within the locality tolerance at every grid temperature: the reversed "
-    "side is covered (it does not load; its witnesses are still checked)")
+    "twice is made by one template of each side, every transition one side makes is made by "
+    "the other side, and the two weights of every such transition are within the locality "
+    "tolerance at every grid temperature: the contained side is covered (the reversed side "
+    "when each contains the other; it does not load; its witnesses are still checked)")
 
 
 def _union_find(groups) -> list:
@@ -2842,9 +2863,12 @@ def resolve_overlaps(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG10
     direction), on the stored ``context`` and ``emitted`` witnesses (both
     sides) of every template of that (family, direction); templates that
     make one transition are linked, and each linked component is resolved
-    by ``OVERLAP_RULE``: the reversed side becomes ``covered`` (with
-    ``covered_by``, the as_generated-side templates that make its
-    transitions), and so do the merged copies of its templates.  Any other
+    by ``OVERLAP_RULE``: the contained side (the reversed one when each side
+    contains the other) becomes ``covered`` (with ``covered_by``, the other
+    side's templates that make its transitions), and so do the merged copies
+    of its templates.  Two records of opposite generated direction cut their
+    windows from different witnesses, so either partition may be the coarser
+    one.  Any other
     component is refused whole (``refused:class_overlap``, with the
     reason), merged copies included.  Nothing chooses by record id.
     Returns (new payloads, one row per component)."""
@@ -2884,16 +2908,26 @@ def resolve_overlaps(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG10
     for component in sorted(_union_find(twice.values()), key=lambda c: sorted(k for _r, k in c)):
         members = sorted(component, key=lambda o: o[1])
         shared = [w for w, o in twice.items() if o <= component]
-        keep = {o for o in members if orientation.get(o[0]) == "as_generated"}
+        generated = {o for o in members if orientation.get(o[0]) == "as_generated"}
+        reversed_ = {o for o in members if o not in generated}
+
+        def outside(side, other):
+            """The templates of ``side`` making a transition no template of ``other`` makes."""
+            return sorted({o[1][:12] for o in side for w in made[o] if not owners[w] & other})
+        # the partition contained in the other is covered: the reversed one when each
+        # contains the other
+        keep = generated if not outside(reversed_, generated) or outside(generated, reversed_) \
+            else reversed_
         drop = [o for o in members if o not in keep]
         problems, diameter = [], 0.0
         if any(len(owners[w]) != 2 or len(owners[w] & keep) != 1 for w in shared):
             problems.append("a transition is made by more than two templates or by two templates "
                             "of records of one orientation")
-        lost = sorted({o[1][:12] for o in drop for w in made[o] if len(owners[w] & keep) == 0})
-        if lost:
-            problems.append(f"transitions of {lost} are not made by any template of an "
-                            "as_generated record")
+        if outside(reversed_, generated) and outside(generated, reversed_):
+            problems.append(f"neither partition contains the other: transitions of "
+                            f"{outside(reversed_, generated)} are not made by any template of an "
+                            f"as_generated record, transitions of {outside(generated, reversed_)} "
+                            f"by none of a reversed record")
         for w in shared:
             a, b = (loaded.index[o]["weight"] for o in sorted(owners[w], key=lambda o: o[1]))
             if [float(x) for x in a["T"]] != [float(x) for x in b["T"]]:

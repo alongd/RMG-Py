@@ -4882,6 +4882,49 @@ class EventSetCompiler:
             )
         return published, initiating
 
+    def _own_reverse_kinetics(self, family, reaction, kinetics, source, entry, is_forward):
+        """The kinetics RMG's model keeps for ``reaction``
+        (``CoreEdgeReactionModel.generate_kinetics``): a family that is its own
+        reverse estimates the reaction in both directions (its ``reverse``,
+        attached by ``generate_reactions_from_families``) and keeps one by
+        ``own_reverse_keeps_reverse`` (an exact entry, then the lower rank, then
+        the exergonic direction at 298 K, on the compiler's reference thermo).
+        A kept reverse returns with ``is_forward`` False and ``reaction``
+        carrying the reverse template and degeneracy, as
+        ``apply_kinetics_to_reaction`` writes them.  The two records RMG
+        generates for one reaction (one per direction) then carry one kinetics."""
+        reverse = getattr(reaction, "reverse", None)
+        if (
+            not getattr(family, "own_reverse", False)
+            or not reverse
+            or len(reaction.products) != len(reaction.reactants)
+        ):
+            return kinetics, source, entry, is_forward
+        from rmgpy.rmg.model import own_reverse_keeps_reverse
+
+        rev_kinetics, rev_source, rev_entry, rev_is_forward = family.get_kinetics(
+            reverse,
+            template_labels=reverse.template,
+            degeneracy=reverse.degeneracy,
+            return_all_kinetics=False,
+        )
+        try:
+            self.thermo_assignment.assign_reaction(reaction)
+        except ThermoUnavailable:
+            # no thermo, no choice: the reference-thermo reverse fails the same
+            # way below and decides the record
+            return kinetics, source, entry, is_forward
+        gibbs_is_positive = reaction.get_free_energy_of_reaction(298) > -1e-8
+        keep_reverse, _reason = own_reverse_keeps_reverse(
+            reaction.family, entry, rev_entry, is_forward, rev_is_forward,
+            gibbs_is_positive,
+        )
+        if not keep_reverse:
+            return kinetics, source, entry, is_forward
+        reaction.template = reverse.template
+        reaction.degeneracy = reverse.degeneracy
+        return rev_kinetics, rev_source, rev_entry, not rev_is_forward
+
     def _build_linked_family_pair(self, proxy, reaction, provenance):
         """Estimate exactly one direction, then invert its reference-state Kc."""
         source = getattr(reaction, "source_reaction", reaction)
@@ -4908,6 +4951,11 @@ class EventSetCompiler:
                     template_labels=estimate.template,
                     degeneracy=estimate.degeneracy,
                     return_all_kinetics=False,
+                )
+                kinetics, source_name, entry, estimated_forward = (
+                    self._own_reverse_kinetics(
+                        family, estimate, kinetics, source_name, entry, estimated_forward
+                    )
                 )
             except Exception as error:
                 refused = replace(
@@ -4962,6 +5010,11 @@ class EventSetCompiler:
             and proxy.repeat_unit is not None
         ):
             try:
+                if getattr(family, "own_reverse", False) and not estimated_forward:
+                    raise ReactionNotPaddable(
+                        "RMG keeps the reverse direction of this own-reverse reaction; "
+                        "its padded production root is not re-derived"
+                    )
                 if any(
                     getattr(port, "source", None) == "construction"
                     for port in proxy.artificial_boundaries
