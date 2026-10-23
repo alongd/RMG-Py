@@ -146,3 +146,38 @@ def test_the_far_law_check_does_not_read_which_interior_class_was_noted_first():
     (term,) = [t for t in terms(tables[0], TERTIARY_DONOR) if t["law"]]
     donor = [law for law in term["law"].values() if law["class"] == "chain"]
     assert donor and donor[0]["far"]["first"]["1"] == [[1, [["radical_interior", 1, 0, 0]]]]
+
+
+def test_identifying_a_long_interior_radical_does_not_branch_over_hydrogens():
+    """``_Probes.identify`` compares a molecule with the declared probe at every
+    interior position; all but one are not isomorphic, with equal degree
+    sequences.  VF2 on the explicit-hydrogen graphs branches over the
+    interchangeable H of every CH2 and CH3 on each failed comparison (about 45 s
+    each on 12 PP periods); with the hydrogen leaves folded it takes
+    milliseconds."""
+    import signal
+
+    import numpy
+
+    from rmgpy.kmc import melt_engine as me
+    spec = pp_deck().spec
+    engine = me.MeltEngine(kr_._single_chain_spec(spec, 4), me.PayloadCatalog([]), T,
+                           numpy.random.default_rng(0))
+    probes = kr_._Probes(spec, engine, 1, 2, 27)
+    n = 12
+    xs = probes.positions("radical_interior", n)
+    for x in xs:
+        probes.forms("radical_interior", n, x)
+    state, paths = probes.melt()
+    seg, _feature = probes.put(state, paths[0], "radical_interior", n, xs[-1])
+
+    def too_slow(*_):
+        raise TimeoutError("identify branched over the hydrogens")
+    previous = signal.signal(signal.SIGALRM, too_slow)
+    signal.alarm(20)
+    try:
+        label, length, positions = probes.identify(state, state.components.component_of(seg[0]))
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
+    assert (length, positions) == (n, [xs[-1]]) and label.startswith("radical_interior:")
