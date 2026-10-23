@@ -151,6 +151,27 @@ ATTRIBUTION_TRUST_K = 100.0
 # max(..., SMALL_EPS). Generic solver infrastructure OUTSIDE the 2.8 kernel
 # contract -- the sidecar recipe strings are deliberately untouched.
 EXHAUSTION_FLOOR_K = 100.0
+# I-244 ACCEPTED-STATE RELATIVE FLOOR. The r81 hard error (an ACCEPTED moment
+# more negative than its floor is integrator corruption) and the
+# pool_exhausted event read, per pool and moment order k,
+#     F_k = max(EXHAUSTION_FLOOR_K*atol[slot], EXHAUSTION_RELATIVE_K*rtol[slot]
+#               * peak_k),   peak_k = max |mu_k| over the run's accepted states
+# (mu_k(0) for a pool that only drains). The absolute term alone (1e-14 mol at
+# the default atol) refused a pool that depolymerizes completely on round-off:
+# the i061 error-weight floor makes 100*atol the moment slots' own DASPK atol,
+# so the floor sat at ONE error weight, and the RMS error norm lets one slot of
+# an N-slot state carry up to sqrt(N) of them (mu2 = -2e-14 mol from
+# mu2(0) = 2e3 mol on an accepted state). The relative term is DASPK's own
+# error budget at the pool's scale: while the pool held ~peak_k, every accepted
+# step was allowed a local error of rtol*peak_k in that slot, and a drain to
+# zero does not take that error back, so a residue inside rtol*peak_k cannot
+# be told from zero. K = 1: exactly the integrator's budget, no margin -- a
+# truly negative state (a sign error drains O(peak_k) past zero) crosses it
+# after a fraction rtol of its excursion. Nothing is fitted. The absolute floors
+# (_pool_mu_floors) and every consumer of them -- the trial-state census, the
+# cone/variance censuses, the bundle limiter, the softclamp -- are untouched,
+# so F_k only ever relaxes the hard error, never tightens it.
+EXHAUSTION_RELATIVE_K = 1.0
 # i061 MOMENT ERROR-WEIGHT FLOOR (DASPK step-collapse fix). The moment-
 # coordinate state slots (a pool's mu0/mu1/mu2 positions and any is_moment_dummy
 # core species) are BOOKKEEPING coordinates carrying dmu/dt, not molar species
@@ -2162,6 +2183,13 @@ class HybridPolymerSystem(ReactionSystem):
         self._pool_worst_trial_excursion = None
         self._pool_mu_floors = None
         self._exhaustion_census_emitted = set()
+        # I-244 relative accepted floor and pool_exhausted events (see
+        # EXHAUSTION_RELATIVE_K), laid out per rebuild by initialize_model.
+        self._pool_mu_peak = None
+        self._pool_mu_rtol = None
+        self._pool_ended = None
+        self._pool_exhaustion_residue = None
+        self.pool_exhaustion_events = []
         # I-090 cone-margin dead-band narrowing: the rtol half of the b1c - 1
         # noise band, rebound from the live tolerances by
         # initiate_tolerances. The base-class default stands in so the law is
@@ -4808,6 +4836,30 @@ class HybridPolymerSystem(ReactionSystem):
         self.get_const_spc_indices(core_species)
         self.set_initial_conditions()
 
+        # I-244: the relative accepted floor's scale (the peak |mu_k| over
+        # accepted states, from the initial state on) and rtol per moment
+        # slot; the exhaustion events and residue ledger, per rebuild.
+        rtol_arr_exh = getattr(self, "rtol_array", None)
+        self._pool_mu_peak = np.zeros((n_pools_exh, 3), dtype=float)
+        self._pool_mu_rtol = np.zeros((n_pools_exh, 3), dtype=float)
+        for p in range(n_pools_exh):
+            mu_idx_exh = self.polymer_pools[p].mu_indices
+            for k in range(3):
+                s_idx = int(mu_idx_exh[k])
+                self._pool_mu_peak[p, k] = abs(float(self.y0[s_idx]))
+                if rtol_arr_exh is None:
+                    r_exh = 0.0
+                elif np.ndim(rtol_arr_exh) == 0:
+                    r_exh = float(rtol_arr_exh)
+                elif s_idx < len(rtol_arr_exh):
+                    r_exh = float(rtol_arr_exh[s_idx])
+                else:
+                    r_exh = float(np.max(rtol_arr_exh))
+                self._pool_mu_rtol[p, k] = r_exh
+        self._pool_ended = np.zeros(n_pools_exh, dtype=np.uint8)
+        self._pool_exhaustion_residue = np.zeros((n_pools_exh, 3), dtype=float)
+        self.pool_exhaustion_events = []
+
         if filter_reactions:
             ReactionSystem.set_initial_reaction_thresholds(self)
         self.generate_rate_coefficients(core_reactions, edge_reactions)
@@ -5735,11 +5787,12 @@ class HybridPolymerSystem(ReactionSystem):
             # branch zeroed SILENTLY and would swallow a negative. Now a
             # mu0 beyond -floor is a hard error (integrator corruption);
             # inside [-floor, SMALL_EPS] it projects to E[n] = 0 WITH the
-            # exhaustion census below. Floor from the centralized
-            # atol-derived exhaustion floors when available
-            # (post-initialize_model); SMALL_EPS otherwise (pre-init
-            # snapshot -> honest degenerate, mirroring atol_mu0 = 0).
-            floors_exh = self._pool_mu_floors
+            # exhaustion census below. Floor: the accepted-state floor the
+            # r81 check reads (I-244: relative to the pool's scale, see
+            # EXHAUSTION_RELATIVE_K) when available (post-initialize_model);
+            # SMALL_EPS otherwise (pre-init snapshot -> honest degenerate,
+            # mirroring atol_mu0 = 0).
+            floors_exh = self.pool_moment_accepted_floors()
             floor0 = (float(floors_exh[p, 0]) if floors_exh is not None
                       and p < len(floors_exh) else SMALL_EPS)
             if mu0 < -floor0:
@@ -5747,7 +5800,8 @@ class HybridPolymerSystem(ReactionSystem):
                     f"Polymer pool '{self.polymer_pools[p].label}' mu0="
                     f"{mu0!r} mol is negative beyond the exhaustion floor "
                     f"-{floor0:.6e} mol (= -max(SMALL_EPS, "
-                    f"{EXHAUSTION_FLOOR_K:.0f}*atol[state])) at the "
+                    f"{EXHAUSTION_FLOOR_K:.0f}*atol[state], "
+                    f"{EXHAUSTION_RELATIVE_K:g}*rtol*peak|mu0|)) at the "
                     f"spawn-gate snapshot. A negative moment beyond the "
                     f"integrator's own error budget is integrator "
                     f"corruption, not exhaustion -- refusing to attribute "
@@ -6006,14 +6060,19 @@ class HybridPolymerSystem(ReactionSystem):
         ``_phase_gate_flux_census`` once per ACCEPTED snapshot with
         ``self.y`` holding the integrator's accepted solution (the SGH
         ``_assert_sgh_inventory_accepted`` precedent). Any moment more
-        negative than ``-max(SMALL_EPS, EXHAUSTION_FLOOR_K*atol[state])``
-        on an ACCEPTED state is integrator corruption, not exhaustion:
-        HARD stop, never ``max(..., SMALL_EPS)``."""
+        negative than its accepted floor
+        ``-max(SMALL_EPS, EXHAUSTION_FLOOR_K*atol[state],
+        EXHAUSTION_RELATIVE_K*rtol[state]*peak|mu_k|)`` (I-244,
+        ``pool_moment_accepted_floors``) on an ACCEPTED state is integrator
+        corruption, not exhaustion: HARD stop, never ``max(..., SMALL_EPS)``.
+        A pool that empties lands inside the floor and is ended by
+        ``end_exhausted_pools`` first."""
         cdef int p, n_pools
         cdef double f0, f1, f2, raw0, raw1, raw2
         if self.polymer_pools is None or self._pool_mu_floors is None:
             return
         y = self.y
+        accepted = self.pool_moment_accepted_floors()
         n_pools = len(self.polymer_pools)
         for p in range(n_pools):
             idx0, idx1, idx2 = self.polymer_pools[p].mu_indices
@@ -6109,6 +6168,12 @@ class HybridPolymerSystem(ReactionSystem):
                     (f0 * fabs(raw2) + f2 * fabs(raw0) + 2.0 * f1 * fabs(raw1)
                      + f0 * f2 + f1 * f1))
 
+            # I-244: the hard error reads the accepted floor, relative to the
+            # pool's scale (EXHAUSTION_RELATIVE_K); the censuses above keep
+            # the absolute floors.
+            f0 = accepted[p, 0]
+            f1 = accepted[p, 1]
+            f2 = accepted[p, 2]
             if raw0 < -f0 or raw1 < -f1 or raw2 < -f2:
                 pool = self.polymer_pools[p]
                 raise ValueError(
@@ -6118,11 +6183,156 @@ class HybridPolymerSystem(ReactionSystem):
                     f"mu1={raw1!r}, mu2={raw2!r} mol vs floors "
                     f"-{f0:.6e}/-{f1:.6e}/-{f2:.6e} mol "
                     f"(= -max(SMALL_EPS, {EXHAUSTION_FLOOR_K:.0f}*"
-                    f"atol[state])). A negative moment beyond the "
+                    f"atol[state], {EXHAUSTION_RELATIVE_K:g}*rtol*peak"
+                    f"|mu_k|)). A negative moment beyond the "
                     f"integrator's own error budget is integrator "
                     f"corruption, not exhaustion -- refusing to integrate "
                     f"it (r81 negative-moment rule: hard error, never "
                     f"max(..., SMALL_EPS)).")
+
+    def pool_moment_accepted_floors(self):
+        """(n_pools, 3) accepted-state floors [mol] (I-244, see
+        EXHAUSTION_RELATIVE_K): per pool and moment order k,
+        ``max(_pool_mu_floors[p, k], EXHAUSTION_RELATIVE_K*rtol[slot]*
+        peak|mu_k|)``, the peak over the accepted states so far (the initial
+        state's |mu_k| for a pool that only drains; the absolute floor alone
+        for a pool born empty until it fills). None before
+        initialize_model."""
+        if self._pool_mu_floors is None:
+            return None
+        if self._pool_mu_peak is None:
+            return np.array(self._pool_mu_floors, dtype=float)
+        return np.maximum(self._pool_mu_floors, EXHAUSTION_RELATIVE_K
+                          * self._pool_mu_rtol * self._pool_mu_peak)
+
+    def end_exhausted_pools(self):
+        """End every pool that has emptied, on the ACCEPTED state ``self.y``
+        (I-244; simulate's step() calls it once per accepted step, before the
+        accepted-state check). A pool is exhausted when every moment lies
+        inside its accepted floor, ``|mu_k| <= F_k``
+        (``pool_moment_accepted_floors``), and it ever held more than its
+        absolute floor (a pool born empty that never filled is not ended).
+        It is then ended by one named event per episode:
+
+        * ``pool_exhaustion_events`` gains ``{"event": "pool_exhausted",
+          "pool", "time_s", "residual_moments_mol", "floors_mol",
+          "residual_mass_g"}`` (the residue's condensed_mass_g) and a
+          ``POOL EXHAUSTED`` warning is logged;
+        * the pool's mu0/mu1/mu2 are set to exactly 0.0 and the residue is
+          added to ``_pool_exhaustion_residue``, so the balances stay exact:
+          ``code_convention_inventory() + exhausted_residue_atoms()`` and
+          ``physical_elemental_inventory() + exhausted_residue_atoms()`` are
+          what they were before the clamp (the residue chains' end groups go
+          to the end-group ledger, like any chain that leaves the moment
+          accounting), and ``exhausted_residue_mass_g()`` names the mass;
+        * DASPK is restarted from the clamped state at the same time (its
+          history holds the unclamped one), and the reactor continues.
+
+        While the pool stays inside its floors it is not ended again;
+        leaving them (refilled) starts a new episode. Returns the pools
+        ended now."""
+        if (self._pool_ended is None or self._pool_mu_floors is None
+                or not self.polymer_pools):
+            return []
+        y = self.y
+        floors = self.pool_moment_accepted_floors()
+        ended = []
+        clamp = np.array(y, dtype=float, copy=True)
+        for p, pool in enumerate(self.polymer_pools):
+            idx = [int(i) for i in pool.mu_indices]
+            mu = [float(y[i]) for i in idx]
+            inside = all(abs(mu[k]) <= floors[p, k] for k in range(3))
+            if not inside:
+                self._pool_ended[p] = 0
+                continue
+            held = any(self._pool_mu_peak[p, k] > self._pool_mu_floors[p, k]
+                       for k in range(3))
+            if self._pool_ended[p] or not held:
+                continue
+            self._pool_ended[p] = 1
+            for k in range(3):
+                self._pool_exhaustion_residue[p, k] += mu[k]
+                clamp[idx[k]] = 0.0
+            event = {"event": "pool_exhausted", "pool": pool.label,
+                     "time_s": float(self.t), "residual_moments_mol": mu,
+                     "floors_mol": [float(f) for f in floors[p]],
+                     "residual_mass_g": float(pool.condensed_mass_g(mu[0],
+                                                                    mu[1]))}
+            self.pool_exhaustion_events.append(event)
+            ended.append(pool.label)
+            logging.warning(
+                "POOL EXHAUSTED: pool %s at t = %.6g s: every moment inside "
+                "its accepted floor (mu0=%.6e, mu1=%.6e, mu2=%.6e mol; "
+                "floors %.6e/%.6e/%.6e mol = max(SMALL_EPS, %.0f*atol, "
+                "%g*rtol*peak|mu_k|)). Moments set to 0; residue %.6e g "
+                "booked (exhausted_residue_mass_g); the reactor continues.",
+                pool.label, self.t, mu[0], mu[1], mu[2], floors[p, 0],
+                floors[p, 1], floors[p, 2], EXHAUSTION_FLOOR_K,
+                EXHAUSTION_RELATIVE_K, event["residual_mass_g"])
+        if ended and np.any(clamp != np.asarray(y, dtype=float)):
+            dydt = self.residual(self.t, clamp, np.zeros(self.neq, float),
+                                 self.senpar)[0]
+            self.initialize(self.t, clamp, dydt, self.senpar,
+                            self.atol_array, self.rtol_array)
+        return ended
+
+    def _update_pool_mu_peak(self):
+        """Raise each pool's peak |mu_k| to the ACCEPTED state ``self.y``
+        (the scale of the relative accepted floor)."""
+        if self._pool_mu_peak is None:
+            return
+        y = self.y
+        for p, pool in enumerate(self.polymer_pools):
+            for k in range(3):
+                v = abs(float(y[int(pool.mu_indices[k])]))
+                if v > self._pool_mu_peak[p, k]:
+                    self._pool_mu_peak[p, k] = v
+
+    def exhausted_residue_atoms(self, defect_atoms=None):
+        """{element: mol} the pool_exhausted events took from the moment
+        state, in the code convention (repeat units minus per-chain defect
+        atoms; the residue chains' ends are on the end-group ledger):
+        sum_pools R1*repeat_unit_atoms - R0*defect atoms, R the residue
+        booked so far; ``defect_atoms`` as code_convention_inventory takes
+        it. Empty when no pool was exhausted."""
+        defect_atoms = defect_atoms or {}
+        out = {}
+        residue = self._pool_exhaustion_residue
+        if residue is None:
+            return out
+        for p, pool in enumerate(self.polymer_pools):
+            if not (residue[p, 0] or residue[p, 1]):
+                continue
+            if not pool.repeat_unit_atoms:
+                raise ValueError(
+                    f"Pool {pool.label}: repeat_unit_atoms is not declared; "
+                    f"the exhausted residue cannot be reported in elements.")
+            for el, n in pool.repeat_unit_atoms:
+                out[el] = out.get(el, 0.0) + float(residue[p, 1]) * n
+            if pool.chain_mass_defect_g_mol > 0.0:
+                if pool.label not in defect_atoms:
+                    raise ValueError(
+                        f"Pool {pool.label}: chain_mass_defect_g_mol="
+                        f"{pool.chain_mass_defect_g_mol:g} > 0 but no "
+                        f"defect_atoms[{pool.label!r}] (elements lost per "
+                        f"chain) was supplied.")
+                for el, n in defect_atoms[pool.label].items():
+                    out[el] = out.get(el, 0.0) - float(residue[p, 0]) * n
+        return out
+
+    def exhausted_residue_mass_g(self):
+        """{pool label: g} the pool_exhausted events took from each pool
+        (condensed_mass_g of the booked residue), for the pools ended so
+        far."""
+        out = {}
+        residue = self._pool_exhaustion_residue
+        if residue is None:
+            return out
+        for p, pool in enumerate(self.polymer_pools):
+            if any(e["pool"] == pool.label for e in self.pool_exhaustion_events):
+                out[pool.label] = float(pool.condensed_mass_g(residue[p, 0],
+                                                              residue[p, 1]))
+        return out
 
     def _update_sgh_inventory_guard(self, y):
         """SGH kernel-v2 Z-inventory census on a TRIAL state (§1g, P1-A).
@@ -6734,9 +6944,12 @@ class HybridPolymerSystem(ReactionSystem):
         return result
 
     def step(self, tout):
-        """One integrator step (simulate's loop), then the realizability
-        census of the accepted state."""
+        """One integrator step (simulate's loop), then on the accepted state:
+        the pools' peak moments, the end of any pool that has emptied
+        (I-244, end_exhausted_pools), and the realizability census."""
         result = super().step(tout)
+        self._update_pool_mu_peak()
+        self.end_exhausted_pools()
         self.record_realizability_census()
         return result
 

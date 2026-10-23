@@ -13881,8 +13881,13 @@ class TestR81ExhaustionTailConditioning:
         assert np.all(np.isfinite(dn_dt))
         assert any("TRIAL state" in r.getMessage() for r in caplog.records)
         assert rs._pool_worst_trial_excursion[0] == -1.0e-12
-        # Accepted-state hook: the r81 hard error, verbatim semantics.
+        # Accepted-state hook: the r81 hard error. Its floor is relative to
+        # the pool's scale (I-244: max(100*atol, rtol*peak|mu0|) = 1e-8 mol
+        # here), so -1e-12 is round-off on an accepted state and -1e-6 is
+        # corruption.
         rs.y[rs.polymer_pools[0].mu_indices[0]] = -1.0e-12
+        rs._assert_pool_moments_accepted()
+        rs.y[rs.polymer_pools[0].mu_indices[0]] = -1.0e-6
         with pytest.raises(ValueError, match="beyond the exhaustion floor"):
             rs._assert_pool_moments_accepted()
         # In-band accepted negatives (within the integrator's own error
@@ -13927,9 +13932,10 @@ class TestR81ExhaustionTailConditioning:
     def test_spawn_gate_negative_beyond_floor_hard_errors(self):
         """RED (r81 B5): the spawn-gate mu0 read at polymer.pyx:3568
         (mu0 <= SMALL_EPS -> 0.0 silently) swallowed negatives; beyond
-        -floor it must now raise."""
+        -floor it must now raise. The floor is the accepted-state floor
+        (I-244: relative to the pool's scale, 1e-8 mol for mu0(0) = 1)."""
         rs, _, _ = _r81_pool_rs((1.0, 5.0, 30.0))
-        rs.y[int(rs.pool_mu0_indices[0])] = -1.0e-12
+        rs.y[int(rs.pool_mu0_indices[0])] = -1.0e-6
         with pytest.raises(ValueError, match="beyond the exhaustion floor"):
             rs.spawn_gate_flux_snapshot()
 

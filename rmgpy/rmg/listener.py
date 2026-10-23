@@ -105,6 +105,15 @@ class SimulationProfileWriter(object):
             with open(census_file, 'w') as f:
                 json.dump({'summary': summary(), 'pools': reaction_system.realizability_census}, f, indent=1)
 
+        # pools a polymer moment solver ended by a pool_exhausted event (only when one was)
+        events = getattr(reaction_system, 'pool_exhaustion_events', None)
+        if events:
+            events_file = os.path.join(self.output_directory, 'solver', 'pool_exhaustion_{0}_{1:d}.json'.format(
+                self.reaction_sys_index + 1, len(self.core_species)))
+            with open(events_file, 'w') as f:
+                json.dump({'events': events, 'residue_mass_g': reaction_system.exhausted_residue_mass_g()}, f,
+                          indent=1)
+
 
 class SimulationProfilePlotter(object):
     """
