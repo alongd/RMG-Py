@@ -107,10 +107,19 @@ Chain and end laws give ``exact`` outcomes ``[[multiplicity, [[label, n],
 + beta*k + gamma`` backbone atoms for a reactant of L with the site anchored
 at backbone atom k (``bulk``, and the anchors within ``edge`` of either end,
 ``first``/``last``), required to reproduce the exact outcomes on the
-trailing lengths.  Interior laws give the far-field outcomes relative to the
-feature position.  ``law_inert``: an interior participant with no far-field
-site (the rate law above gives 0); ``law_refused``: a product that is no
-declared state (e.g. a vinyl radical).  ``families``: per pool family its
+trailing lengths (an interior product compared by family and length, the
+resolution of the codes: one length of an interior family can carry several
+classes, e.g. a period of a CH2 and a substituted CH).  Interior laws give
+the far-field outcomes relative to the feature position.  One length rule
+for every participant: a law reads only the probe states carrying its class
+(an interior probe's class is read at its position), and needs the class at
+the law's reach (``laws_exact_to_n``) and, along a chain or at an end, on
+``EXACT_POINTS`` lengths.  ``law_inert``: an interior participant with no
+far-field site (the rate law above gives 0); ``law_refused``: a product that
+is no declared state (e.g. a vinyl radical), or a class no probe state
+carries at the reach (the probes are head-side fragments, so the tail-side
+cut end of an unsymmetric period has none).
+``families``: per pool family its
 label per length, the molar-mass offset (M = n * unit mass + offset), the
 element-composition offset (``kmc-kernel-rates/3``, I-217: atoms = n *
 ``moment_unit.composition`` + ``composition_offset``, exact rationals as
@@ -124,6 +133,10 @@ template's whatever weight a matched size carries.
 With a ``kmc-melt-run/1`` manifest, ``hazard`` gives the fired counts per
 template, kernel and kMC-only entry (gross), the counts netted over each
 reciprocal record pair (``reverse_of``), and the run's pooled leak fraction.
+
+Progress goes to stderr: one line per chain length counted and one per law
+term (its template, classes, outcome and seconds).  The table reads the
+declaration's chemistry only, never its ensemble.
 """
 
 import argparse
@@ -131,6 +144,7 @@ import hashlib
 import json
 import math
 import sys
+import time
 from collections import Counter, defaultdict
 from fractions import Fraction
 from pathlib import Path
@@ -346,6 +360,7 @@ def _states(spec, n_values, counter, ppu: int):
     features: Dict[str, dict] = {}
     longest = max(n_values)
     for units in n_values:
+        _progress(f"site counts on {units}/{longest} declared units")
         n = units * ppu
         state = materialize(_single_chain_spec(spec, units))
         path = _backbone_order(state)
@@ -483,6 +498,31 @@ def _paths(state) -> List[List[int]]:
             for cid in state.components.ids()]
 
 
+def _hydrogen_folded(g):
+    """``g`` (``melt_engine._graph``) with every hydrogen leaf (an H whose one
+    neighbour is not an H) folded into its neighbour's label, as the sorted
+    multiset of (bond order, leaf label).  The leaves of one atom are
+    interchangeable, so two graphs are isomorphic iff their folds are; VF2 on
+    the unfolded graphs branches over them (exponentially in the CH2 and CH3
+    groups of a long probe when a form does not match)."""
+    import networkx as nx
+    leaves = {a for a, d in g.nodes(data=True) if d["label"][0] == "H" and g.degree(a) == 1
+              and g.nodes[next(iter(g[a]))]["label"][0] != "H"}
+    out = nx.Graph()
+    for a, d in g.nodes(data=True):
+        if a not in leaves:
+            held = sorted(((g[a][b]["order"], g.nodes[b]["label"]) for b in g[a] if b in leaves), key=repr)
+            out.add_node(a, label=(d["label"], tuple(held)))
+    out.add_edges_from((a, b, {"order": o}) for a, b, o in g.edges(data="order")
+                       if a not in leaves and b not in leaves)
+    return out
+
+
+def _isomorphic(g, h) -> bool:
+    """``melt_engine._isomorphic`` on the hydrogen-folded graphs."""
+    return me._isomorphic(_hydrogen_folded(g), _hydrogen_folded(h))
+
+
 def _heavy_touched(tr) -> set:
     touched = set()
     for e in tr.edits:
@@ -515,11 +555,12 @@ class _Probes:
         self.composition_offsets: Dict[str, set] = defaultdict(set)
         self.species: Dict[Tuple[str, int], str] = {}
         self._entries: Dict[Tuple, Any] = {}
+        self._carried: Dict[Tuple, str] = {}
         declared = materialize(_single_chain_spec(spec, 1))
         dcid = declared.components.ids()[0]
         key, forms = self.forms("chain", ppu)
         g = me._graph(me._first_rows(declared, dcid))
-        if me._comp_key(declared, dcid) != key or not any(me._isomorphic(g, h) for h in forms):
+        if me._comp_key(declared, dcid) != key or not any(_isomorphic(g, h) for h in forms):
             raise KernelRatesError("a cut chain capped by an H of its neighbour is not the declared chain: "
                                    "the declared ends are not hydrogen")
 
@@ -629,6 +670,23 @@ class _Probes:
             self.forms(family, n, xs[0])
         return self.labels[(family, n)]
 
+    def carries(self, label, n, x=None) -> bool:
+        """Whether the probe (family of ``label``, n[, x]) carries the class
+        ``label``: an interior probe's class is read at its own position (the
+        positions of one probe can carry different classes)."""
+        family = family_of(label)
+        try:
+            if family not in INTERIOR_FAMILIES:
+                return self.label(family, n) == label
+            key = (family, n, x)
+            if key not in self._carried:
+                state, paths = self.melt()
+                _seg, feature = self.put(state, paths[0], family, n, x)
+                self._carried[key] = f"{family}:{_label(state, feature)}"
+            return self._carried[key] == label
+        except _OffDeclared:
+            return False
+
     # -- reading products ---------------------------------------------------
     def classify(self, state, cid, segs) -> Tuple:
         """(family, label, n, ends) of a component made from the probe
@@ -670,7 +728,7 @@ class _Probes:
         if signature not in self._verified:
             key, forms = self.forms(family, n, x)
             g = me._graph(me._first_rows(state, cid))
-            if me._comp_key(state, cid) != key or not any(me._isomorphic(g, h) for h in forms):
+            if me._comp_key(state, cid) != key or not any(_isomorphic(g, h) for h in forms):
                 raise _OffDeclared(f"a product is not the declared {family} of {n} periods")
             if self.label(family, n) != label and family not in INTERIOR_FAMILIES:
                 raise _OffDeclared(f"a product labelled {label}, the probe {self.label(family, n)}")
@@ -697,7 +755,7 @@ class _Probes:
                         k, forms = self.forms(family, n, x)
                     except _OffDeclared:
                         continue
-                    if k == key and any(me._isomorphic(g, h) for h in forms):
+                    if k == key and any(_isomorphic(g, h) for h in forms):
                         hits.append(x)
                 if hits:
                     return self.label(family, n), n, (None if hits == [None] else hits)
@@ -740,6 +798,18 @@ def _absolute(product) -> Tuple:
     return (label, n)
 
 
+def _law_view(outcomes: Counter) -> Counter:
+    """Absolute outcomes at the resolution of a far rule's relative codes: an
+    interior product by its family, since its class is read at its position
+    (which the codes do not keep: one length of an interior family can carry
+    several classes)."""
+    out = Counter()
+    for prods, m in outcomes.items():
+        out[tuple(sorted(((family_of(p[0]), p[1]) if p[0] != "join" and family_of(p[0]) in INTERIOR_FAMILIES
+                          else p) for p in prods))] += m
+    return out
+
+
 def _outcome_list(counter: Counter) -> list:
     return [[m, [list(p) for p in outcome]] for outcome, m in sorted(counter.items())]
 
@@ -754,21 +824,16 @@ class _Laws:
 
     # -- the states of one participant class ---------------------------------
     def _states(self, label):
-        """[(n, x)] the law reads for a participant class: every length of a
-        chain or end family whose label is ``label``, and the far-field
-        interior positions."""
+        """[(n, x)] the law reads for a participant class, every one a probe
+        state carrying ``label``: every length of a chain or end family, and
+        the far-field interior positions (the two middlemost of the longest
+        probe, the middlemost of the next)."""
         family = family_of(label)
         if family in INTERIOR_FAMILIES:     # the middle of the two longest probes
-            xs = self.probes.positions(family, self.n_hi)
-            return [(self.n_hi, xs[-1]), (self.n_hi, xs[-2]),
-                    (self.n_hi - 1, self.probes.positions(family, self.n_hi - 1)[-1])]
-        return [(n, None) for n in range(1, self.n_hi + 1) if self._label_ok(family, n, label)]
-
-    def _label_ok(self, family, n, label):
-        try:
-            return self.probes.label(family, n) == label
-        except _OffDeclared:
-            return False
+            mine = lambda n: [(n, x) for x in reversed(self.probes.positions(family, n))
+                              if self.probes.carries(label, n, x)]
+            return mine(self.n_hi)[:2] + mine(self.n_hi - 1)[:1]
+        return [(n, None) for n in range(1, self.n_hi + 1) if self.probes.carries(label, n)]
 
     # -- measuring --------------------------------------------------------------
     def _uni(self, ci, label, n, x):
@@ -799,7 +864,8 @@ class _Laws:
         if key not in self._partners:
             found = None
             for n, x in sorted(self._states(label), key=lambda s: -s[0]) + \
-                    [(self.n_hi, xx) for xx in self.probes.positions(family_of(label), self.n_hi)]:
+                    [(self.n_hi, xx) for xx in self.probes.positions(family_of(label), self.n_hi)
+                     if self.probes.carries(label, self.n_hi, xx)]:
                 seg, feature, entry = self.probes.entry(family_of(label), n, x, chain=1)
                 sites = [(kind, s) for (cj, p, kind), ss in sorted(entry.sites.items(), key=repr)
                          if cj == ci and p == q for s in ss if not feature or set(s) & set(feature)]
@@ -892,16 +958,23 @@ class _Laws:
             ab = Counter(code(prods, k, False) for k, prods in rows)
             return L, rel, ab
 
+        # one length rule for every participant: the law reads the probe states
+        # carrying its class, and its far rule needs the class at the law's reach
+        # (and, along a chain or at an end, on EXACT_POINTS lengths to check it on)
+        states = self._states(label)
+        lengths = sorted({n for n, _x in states})
+        if not lengths or lengths[-1] != self.n_hi or (anchor != "interior" and len(lengths) < EXACT_POINTS):
+            raise _OffDeclared(f"no probe of class {label} at the law's reach ({self.n_hi} periods; "
+                               f"probe lengths carrying it: {lengths or 'none'})")
         law = {"class": label, "family": family, "anchor": anchor}
         if anchor == "interior":
-            got = [Counter(r for _k, r in measure(n, x, check=(i == 0))[1]) for i, (n, x) in enumerate(self._states(label))]
+            got = [Counter(r for _k, r in measure(n, x, check=(i == 0))[1]) for i, (n, x) in enumerate(states)]
             if any(g != got[0] for g in got[1:]):
                 raise KernelRatesError(f"{label}: the far-field products of class {ci} differ between "
                                        "neighbouring positions")
             law["far"] = {"outcomes": _outcome_list(got[0])}
             return law
         exact, rel_hi = {}, {}
-        states = self._states(label)
         for n, x in states:
             L, rel, ab = measure(n, x, check=(n == self.n_hi))
             exact[n] = ab
@@ -924,7 +997,8 @@ class _Laws:
                           "first": {str(k): _outcome_list(by_k.get(k, Counter())) for k in range(edge)},
                           "last": {str(k): _outcome_list(by_k.get(L - 1 - k, Counter())) for k in range(edge)}}
         for n in sorted(exact)[-EXACT_POINTS:]:
-            if len(exact) < EXACT_POINTS or predict(law, n, self.nbb, self.probes.label) != exact[n]:
+            if len(exact) < EXACT_POINTS or \
+                    _law_view(predict(law, n, self.nbb, self.probes.label)) != _law_view(exact[n]):
                 raise KernelRatesError(f"class {ci} {label}: the far-field law does not hold at {n} periods")
         law["exact"] = {str(n): _outcome_list(c) for n, c in sorted(exact.items())}
         law["exact_to_n"] = max(exact) if exact else 0
@@ -1054,6 +1128,34 @@ def _load(doc, spec, temperature, allow_unbound):
     if bound != kr.chemistry_sha256(spec) and not allow_unbound:
         raise KernelRatesError(f"the catalog's chemistry digest {bound!r} is not the declaration's "
                                f"({kr.chemistry_sha256(spec)})")
+
+
+def _progress(message: str) -> None:
+    print(f"kernel_rates: {message}", file=sys.stderr, flush=True)
+
+
+def _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_overrides) -> None:
+    """The product law (or why none) and the placed overrides of one kernel term."""
+    counts = [term] if len(combo) == 1 else [term["S0"], term["S1"]]
+    if any(family_of(c) in INTERIOR_FAMILIES and (x.get("per_feature") == 0 or x.get("k_per_feature") == 0)
+           for c, x in zip([combo[p] for p in order], counts)):
+        # an interior participant with no far-field site: the kernel rate is 0
+        term["law"], term["law_inert"] = None, "an interior participant with no far-field site"
+        term["overrides"] = []
+        return
+    try:
+        if len(combo) == 1:
+            term["law"] = laws.participant(ci, 0, combo[0])
+        else:
+            term["law"] = {f"S{slot}": laws.participant(ci, p, combo[p], combo[1 - p])
+                           for slot, p in enumerate(order)}
+    except _OffDeclared as error:
+        term["law"], term["law_refused"] = None, str(error)
+    if ci not in measured:
+        measured[ci] = _template_overrides(engine, probes, t, ci)
+    term["overrides"] = [o for o in measured[ci] if "refused" not in o
+                         and sorted(r[0] for r in o["reactants"]) == sorted(combo)]
+    placed_overrides.update((t.name, o["name"]) for o in term["overrides"])
 
 
 def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = None,
@@ -1215,28 +1317,13 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
     probes = _Probes(spec, engine, ppu, nbb, 2 * units_hi + 3)
     laws = _Laws(engine, probes, n_hi)
     measured, placed_overrides = {}, set()
-    for term, ci, combo, order in jobs:
+    for i, (term, ci, combo, order) in enumerate(jobs, 1):
         t = templates[ci]
-        counts = [term] if len(combo) == 1 else [term["S0"], term["S1"]]
-        if any(family_of(c) in INTERIOR_FAMILIES and (x.get("per_feature") == 0 or x.get("k_per_feature") == 0)
-               for c, x in zip([combo[p] for p in order], counts)):
-            # an interior participant with no far-field site: the kernel rate is 0
-            term["law"], term["law_inert"] = None, "an interior participant with no far-field site"
-            term["overrides"] = []
-            continue
-        try:
-            if len(combo) == 1:
-                term["law"] = laws.participant(ci, 0, combo[0])
-            else:
-                term["law"] = {f"S{slot}": laws.participant(ci, p, combo[p], combo[1 - p])
-                               for slot, p in enumerate(order)}
-        except _OffDeclared as error:
-            term["law"], term["law_refused"] = None, str(error)
-        if ci not in measured:
-            measured[ci] = _template_overrides(engine, probes, t, ci)
-        term["overrides"] = [o for o in measured[ci] if "refused" not in o
-                             and sorted(r[0] for r in o["reactants"]) == sorted(combo)]
-        placed_overrides.update((t.name, o["name"]) for o in term["overrides"])
+        start = time.perf_counter()
+        _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_overrides)
+        status = "law" if term["law"] is not None else "inert" if term.get("law_inert") else "refused"
+        _progress(f"law {i}/{len(jobs)} {t.name} {'+'.join(combo)} {status} "
+                  f"{time.perf_counter() - start:.1f}s")
     unplaced = [dict(o, template=templates[ci].name) for ci, rows in sorted(measured.items()) for o in rows
                 if (templates[ci].name, o["name"]) not in placed_overrides]
     families = {}
