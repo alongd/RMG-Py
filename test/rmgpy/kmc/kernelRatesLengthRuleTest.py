@@ -115,3 +115,34 @@ def test_progress_is_one_stderr_line_per_law_term(pp, capsys):
     lines = [line for line in err.splitlines() if line.startswith("kernel_rates: law ")]
     assert len(lines) == n_terms
     assert all(re.search(r" \d+/%d " % n_terms, line) for line in lines)
+
+
+TERTIARY_DONOR = "7313ebd9a7c7:54f630374459"      # H_Abstraction: a chain donor near an end -> tertiary radical
+
+
+def test_the_far_law_check_does_not_read_which_interior_class_was_noted_first():
+    """One length of an interior family carries two PP classes (CH2 and CH
+    positions); the far rule keeps an interior product's family and length
+    only, so its check must hold whichever class the length was labelled with
+    first.  The donor here makes the tertiary radical at backbone atom 1."""
+    doc = json.loads(gzip.decompress((FIXTURES / "pp_tertiary_donor.json.gz").read_bytes()))
+    original = kr_._Probes.label
+
+    def neighbour(self, family, n):
+        """The label of an interior family read at its second position."""
+        xs = self.positions(family, n)
+        if family not in kr_.INTERIOR_FAMILIES or len(xs) < 2:
+            return original(self, family, n)
+        state, paths = self.melt()
+        _seg, feature = self.put(state, paths[0], family, n, xs[1])
+        return f"{family}:{kr_._label(state, feature)}"
+    tables = [kr_.kernel_rates(doc, pp_deck().spec, T)]
+    kr_._Probes.label = neighbour
+    try:
+        tables.append(kr_.kernel_rates(doc, pp_deck().spec, T))
+    finally:
+        kr_._Probes.label = original
+    assert tables[0]["kernels"] == tables[1]["kernels"]
+    (term,) = [t for t in terms(tables[0], TERTIARY_DONOR) if t["law"]]
+    donor = [law for law in term["law"].values() if law["class"] == "chain"]
+    assert donor and donor[0]["far"]["first"]["1"] == [[1, [["radical_interior", 1, 0, 0]]]]
