@@ -59,9 +59,14 @@ from rmgpy.kmc.compiler import (
     ps_proxy_set,
 )
 from rmgpy.kmc.database_provenance import resolve_database_declaration
+from rmgpy.molecule.molecule import Atom, Molecule
 
 # Seconds between parent-liveness polls.
 PARENT_POLL_SECONDS = 0.5
+# RMG's atom-id counter (rmgpy.molecule.molecule): a fresh process's first id,
+# and the number of ids before it wraps
+FRESH_ATOM_ID = -(2 ** 15)
+ATOM_ID_SPAN = 2 ** 16
 
 
 @dataclass(frozen=True)
@@ -106,6 +111,97 @@ def compile_artifact(
     per-proxy generation, padded-root regeneration) goes through it.  Without
     a factory the database's own method is used and nothing is cached.
     """
+    inputs = load_compile_inputs(request)
+    database = inputs.database
+    generation_provider = (
+        generation_provider_factory(database.kinetics.generate_reactions_from_families)
+        if generation_provider_factory is not None
+        else None
+    )
+    print("discovering chemistry", flush=True)
+    active, excluded, reactions = EventSetCompiler.discover_family_reactions(
+        database.kinetics,
+        inputs.proxies,
+        request.families,
+        family_universe=inputs.family_universe,
+        generation_provider=generation_provider,
+        **inputs.discovery_options,
+    )
+    compiler = make_compiler(
+        request, inputs, active, excluded, reactions, generation_provider
+    )
+    print(
+        f"compiling {sum(len(value) for value in reactions.values())} generated reactions",
+        flush=True,
+    )
+    path, _ = compiler.write_artifact(request.output_dir)
+    return Path(path), Path(path).stem
+
+
+@dataclass
+class CompileInputs:
+    """What a compile reads before it discovers anything: the loaded database,
+    the proxies and their source, and the options the request implies."""
+
+    database: RMGDatabase
+    proxies: Sequence
+    proxy_source: dict
+    compiler_options: dict
+    discovery_options: dict
+    family_universe: list
+    barrier_e0_provider: Optional[FixedBBarrierE0Provider]
+    database_commit: Optional[str]
+
+
+def next_atom_id() -> int:
+    """The atom id RMG assigns next (reading it assigns it)."""
+    probe = Molecule(atoms=[Atom(element="C")])
+    probe.assign_atom_ids()
+    return probe.atoms[0].id
+
+
+def advance_atom_ids(count: int) -> None:
+    """Assign ``count`` atom ids (modulo the counter's span) to nothing."""
+    count %= ATOM_ID_SPAN
+    if count:
+        Molecule(atoms=[Atom(element="C") for _ in range(count)]).assign_atom_ids()
+
+
+def seek_atom_ids(value: int) -> None:
+    """Make ``value`` the atom id RMG assigns next."""
+    advance_atom_ids(value - next_atom_id() - 1)
+
+
+def peek_atom_id() -> int:
+    """The atom id RMG assigns next, leaving it unassigned."""
+    value = next_atom_id()
+    seek_atom_ids(value)
+    return value
+
+
+def replay_atom_ids(database, step: str, start: int) -> None:
+    """Leave the atom-id counter where ``step``, begun at ``start``, left it the
+    first time it ran on ``database``, whatever it did this time (a reused
+    database skips its load; a second rate-rule preparation may assign fewer)."""
+    recorded = getattr(database, "kmc_atom_ids_assigned", None)
+    if recorded is None:
+        recorded = {}
+        setattr(database, "kmc_atom_ids_assigned", recorded)
+    if step not in recorded:
+        recorded[step] = (peek_atom_id() - start) % ATOM_ID_SPAN
+    seek_atom_ids(start)
+    advance_atom_ids(recorded[step])
+
+
+def load_compile_inputs(request: CompileRequest, database=None) -> CompileInputs:
+    """Read the declaration, load the pinned database (or reuse ``database``,
+    one this function loaded for the same request) and prepare its rate rules.
+
+    RMG numbers the atoms of every generated reaction from one process-wide
+    counter (16 bits, wrapping), and the compiled records order their bond
+    rewrites by those ids; the counter is first set to where a fresh process
+    starts it, so a compile does not depend on what ran before it."""
+    seek_atom_ids(FRESH_ATOM_ID)
     database_path = Path(request.database_path)
     # the declaration is read before anything loads
     proxies, proxy_source, compiler_options, discovery_options = _proxy_inputs(request)
@@ -119,62 +215,68 @@ def compile_artifact(
         if request.barrier_e0_fixed_b is not None
         else None
     )
-    database = RMGDatabase()
-    print("loading pinned RMG families", flush=True)
-    database.load_kinetics(
-        str(database_path / "input/kinetics"),
-        reaction_libraries=[],
-        seed_mechanisms=None,
-        kinetics_families=list(request.families),
-        kinetics_depositories=["training"],
-    )
-    database.load_thermo(
-        str(database_path / "input/thermo"),
-        thermo_libraries=["primaryThermoLibrary"],
-        depository=True,
-    )
+    start = peek_atom_id()
+    if database is None:
+        database = RMGDatabase()
+        print("loading pinned RMG families", flush=True)
+        database.load_kinetics(
+            str(database_path / "input/kinetics"),
+            reaction_libraries=[],
+            seed_mechanisms=None,
+            kinetics_families=list(request.families),
+            kinetics_depositories=["training"],
+        )
+        database.load_thermo(
+            str(database_path / "input/thermo"),
+            thermo_libraries=["primaryThermoLibrary"],
+            depository=True,
+        )
+    replay_atom_ids(database, "load", start)
     if callable(proxies):
         # a schema-v2 deck: the pairs are read from the loaded family trees
         print("pairing structures over family-tree classes", flush=True)
         proxies = proxies(database.kinetics.families)
     print("preparing non-auto-generated rate rules from training", flush=True)
+    start = peek_atom_id()
     prepare_rate_rules(database.kinetics, database.thermo)
+    replay_atom_ids(database, "prepare", start)
     database_commit = resolve_database_declaration(request.database_sha)
-    generation_provider = (
-        generation_provider_factory(database.kinetics.generate_reactions_from_families)
-        if generation_provider_factory is not None
-        else None
-    )
-    print("discovering chemistry", flush=True)
-    active, excluded, reactions = EventSetCompiler.discover_family_reactions(
-        database.kinetics,
-        proxies,
-        request.families,
+    return CompileInputs(
+        database=database,
+        proxies=proxies,
+        proxy_source=proxy_source,
+        compiler_options=compiler_options,
+        discovery_options=discovery_options,
         family_universe=family_universe,
-        generation_provider=generation_provider,
-        **discovery_options,
+        barrier_e0_provider=barrier_e0_provider,
+        database_commit=database_commit,
     )
-    compiler = EventSetCompiler(
-        database.kinetics,
-        proxies,
+
+
+def make_compiler(
+    request: CompileRequest,
+    inputs: CompileInputs,
+    active,
+    excluded,
+    reactions,
+    generation_provider=None,
+) -> EventSetCompiler:
+    """The compiler of ``request`` over the discovered ``active`` families."""
+    return EventSetCompiler(
+        inputs.database.kinetics,
+        inputs.proxies,
         active,
         excluded_families=excluded,
-        database_path=database_path,
-        thermo_database=database.thermo,
+        database_path=Path(request.database_path),
+        thermo_database=inputs.database.thermo,
         reaction_cache=reactions,
-        rmg_database_sha=database_commit,
-        barrier_e0_provider=barrier_e0_provider,
+        rmg_database_sha=inputs.database_commit,
+        barrier_e0_provider=inputs.barrier_e0_provider,
         temperature_grid=request.temperature_grid,
         generation_provider=generation_provider,
-        proxy_source=proxy_source,
-        **compiler_options,
+        proxy_source=inputs.proxy_source,
+        **inputs.compiler_options,
     )
-    print(
-        f"compiling {sum(len(value) for value in reactions.values())} generated reactions",
-        flush=True,
-    )
-    path, _ = compiler.write_artifact(request.output_dir)
-    return Path(path), Path(path).stem
 
 
 def _proxy_inputs(request: CompileRequest):
@@ -332,6 +434,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m rmgpy.kmc.compile")
     parser.add_argument("database")
     parser.add_argument("output")
+    add_request_arguments(parser)
+    args = parser.parse_args(argv)
+    try:
+        request = request_from_arguments(parser, args, args.output)
+        path, artifact_id = compile_in_child(request)
+    except Exception:
+        traceback.print_exc()
+        return 1
+    print(path)
+    print(artifact_id)
+    return 0
+
+
+def add_request_arguments(parser: argparse.ArgumentParser) -> None:
+    """The arguments naming a compile request (all but the database and output)."""
     which = parser.add_mutually_exclusive_group(required=True)
     which.add_argument("--families", help="JSON list of family candidates")
     which.add_argument("--family", action="append",
@@ -346,35 +463,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--proxy-units", type=int, help="proxy chain length")
     parser.add_argument("--deck", help="RMG deck declaring the polymer: compile its own "
                         "proxies with every requested family as a candidate")
-    args = parser.parse_args(argv)
+
+
+def request_from_arguments(
+    parser: argparse.ArgumentParser, args: argparse.Namespace, output: str
+) -> CompileRequest:
+    """The request ``args`` name (``parser`` reports a bad ``--family``)."""
     if args.family is not None:
         if len(args.family) != 1 or not args.family[0]:
             parser.error(f"--family takes exactly one family name, got {args.family}")
         problem = one_family_problem(args.database, args.family[0])
         if problem:
             parser.error(problem)
-    try:
-        request = CompileRequest(
-            database_path=str(Path(args.database).resolve()),
-            output_dir=str(Path(args.output).resolve()),
-            families=(
-                tuple(args.family) if args.family is not None else _read_list(args.families)
-            ),
-            family_universe=(
-                _read_list(args.family_universe) if args.family_universe else None
-            ),
-            database_sha=args.database_sha,
-            barrier_e0_fixed_b=args.barrier_e0_fixed_b,
-            proxy_units=args.proxy_units,
-            deck=str(Path(args.deck).resolve()) if args.deck else None,
-        )
-        path, artifact_id = compile_in_child(request)
-    except Exception:
-        traceback.print_exc()
-        return 1
-    print(path)
-    print(artifact_id)
-    return 0
+    return CompileRequest(
+        database_path=str(Path(args.database).resolve()),
+        output_dir=str(Path(output).resolve()),
+        families=(
+            tuple(args.family) if args.family is not None else _read_list(args.families)
+        ),
+        family_universe=(
+            _read_list(args.family_universe) if args.family_universe else None
+        ),
+        database_sha=args.database_sha,
+        barrier_e0_fixed_b=args.barrier_e0_fixed_b,
+        proxy_units=args.proxy_units,
+        deck=str(Path(args.deck).resolve()) if args.deck else None,
+    )
 
 
 if __name__ == "__main__":

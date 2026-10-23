@@ -4318,6 +4318,63 @@ def balance_reciprocal_pair(
     return primary_new, partner_new
 
 
+def compile_candidates(reactions) -> list[tuple[Any, tuple]]:
+    """A proxy's generated reactions in compile order, each with its sides (the
+    sorted pair of sorted reactant and product graphs)."""
+    candidates = []
+    for reaction in reactions:
+        reactant_side = tuple(sorted(_graph_adjacencies(reaction.reactants)))
+        product_side = tuple(sorted(_graph_adjacencies(reaction.products)))
+        candidates.append(
+            (
+                (
+                    reaction.family,
+                    _template(reaction),
+                    reactant_side,
+                    product_side,
+                    float(reaction.degeneracy),
+                ),
+                reaction,
+                tuple(sorted((reactant_side, product_side))),
+            )
+        )
+    return [
+        (reaction, sides)
+        for _, reaction, sides in sorted(candidates, key=lambda item: item[0])
+    ]
+
+
+def initiating_record(pair_records, reactant_graphs):
+    """The record of an already compiled pair that a later candidate initiates:
+    the one whose reactants are the candidate's oriented reactant graphs
+    (``reactant_graphs``, or a callable computing them), else the first."""
+    if not pair_records:
+        return None
+    if callable(reactant_graphs):
+        reactant_graphs = reactant_graphs()
+    return next(
+        (
+            record
+            for record in pair_records
+            if _graph_lists_isomorphic(record.reactant_graphs, reactant_graphs)
+        ),
+        pair_records[0],
+    )
+
+
+def discovery_entry(proxy, reaction, coverage_site, event_id) -> dict[str, Any]:
+    """The artifact's discovery line of one compiled candidate."""
+    return {
+        "site_type": coverage_site,
+        "proxy_site_type": proxy.site_type,
+        "proxy_units": proxy.metadata.get("proxy_units"),
+        "family": reaction.family,
+        "template": _template(reaction),
+        "raw_path_degeneracy": float(reaction.degeneracy),
+        "event_id": event_id,
+    }
+
+
 class EventSetCompiler:
     """Compile declared family reactions on finite, centred polymer proxies."""
 
@@ -5582,16 +5639,9 @@ class EventSetCompiler:
         PS radical-growth filter remain visible with a stable exclusion reason;
         callers may cheaply enumerate that full universe from the database tree.
         """
-        loaded = set(kinetics_database.families)
-        universe = set(family_universe) if family_universe is not None else loaded
-        declared_candidates = set(candidate_families)
-        missing_candidates = (universe & declared_candidates) - loaded
-        if missing_candidates:
-            raise ValueError(
-                "PS family candidates were enumerated but not loaded: "
-                + ", ".join(sorted(missing_candidates))
-            )
-        candidates = sorted(loaded & declared_candidates)
+        universe, candidates = cls.discovery_candidates(
+            kinetics_database, candidate_families, family_universe
+        )
         active_set: set[str] = set()
         scheduled_set: set[str] = set()
         reaction_cache = {}
@@ -5599,29 +5649,14 @@ class EventSetCompiler:
             logging.getLogger(__name__).info(
                 "generating all candidate families on %s", proxy.site_type
             )
-            proxy_candidates = sorted(
-                set(proxy.metadata.get("family_candidates", candidates))
-                & set(candidates)
-            )
+            proxy_candidates = cls.proxy_family_candidates(proxy, candidates)
             scheduled_set.update(proxy_candidates)
             reactions = []
             for family in proxy_candidates:
-                logging.getLogger(__name__).info(
-                    "generating %s on %s", family, proxy.site_type
-                )
-                generated = _resolve_generator(
-                    kinetics_database, generation_provider
-                )(
-                    [_copy_participant(item) for item in proxy.reactants],
-                    only_families=[family],
-                    resonance=True,
-                )
-                reactions.extend(generated)
-                logging.getLogger(__name__).info(
-                    "generated %d %s reactions on %s",
-                    len(generated),
-                    family,
-                    proxy.site_type,
+                reactions.extend(
+                    cls.generate_on_proxy(
+                        kinetics_database, proxy, family, generation_provider
+                    )
                 )
             proxy.metadata["generated_families"] = sorted(
                 {reaction.family for reaction in reactions}
@@ -5631,6 +5666,53 @@ class EventSetCompiler:
                 "generated %d reactions on %s", len(reactions), proxy.site_type
             )
             active_set.update(reaction.family for reaction in reactions)
+        active, excluded = cls.family_accounting(
+            universe, candidates, scheduled_set, active_set, proxy_set_name
+        )
+        return active, excluded, reaction_cache
+
+    @staticmethod
+    def discovery_candidates(
+        kinetics_database, candidate_families, family_universe=None
+    ) -> tuple[set[str], list[str]]:
+        """(the accounted universe, the loaded candidates) of a discovery."""
+        loaded = set(kinetics_database.families)
+        universe = set(family_universe) if family_universe is not None else loaded
+        declared_candidates = set(candidate_families)
+        missing_candidates = (universe & declared_candidates) - loaded
+        if missing_candidates:
+            raise ValueError(
+                "PS family candidates were enumerated but not loaded: "
+                + ", ".join(sorted(missing_candidates))
+            )
+        return universe, sorted(loaded & declared_candidates)
+
+    @staticmethod
+    def proxy_family_candidates(proxy, candidates) -> list[str]:
+        """The candidate families a discovery generates on ``proxy``, in order."""
+        return sorted(
+            set(proxy.metadata.get("family_candidates", candidates)) & set(candidates)
+        )
+
+    @staticmethod
+    def generate_on_proxy(kinetics_database, proxy, family, generation_provider=None):
+        """One discovery generation: ``family`` on (copies of) ``proxy``'s reactants."""
+        logging.getLogger(__name__).info("generating %s on %s", family, proxy.site_type)
+        generated = _resolve_generator(kinetics_database, generation_provider)(
+            [_copy_participant(item) for item in proxy.reactants],
+            only_families=[family],
+            resonance=True,
+        )
+        logging.getLogger(__name__).info(
+            "generated %d %s reactions on %s", len(generated), family, proxy.site_type
+        )
+        return generated
+
+    @staticmethod
+    def family_accounting(
+        universe, candidates, scheduled_set, active_set, proxy_set_name=None
+    ) -> tuple[list[str], dict[str, str]]:
+        """(the firing families, the reason for every other family of the universe)."""
         active = sorted(active_set)
         excluded = {}
         for family in sorted(universe - active_set):
@@ -5654,7 +5736,7 @@ class EventSetCompiler:
                     "resonance enabled"
                 )
             )
-        return active, excluded, reaction_cache
+        return active, excluded
 
     @classmethod
     def discover_families(
@@ -5678,10 +5760,73 @@ class EventSetCompiler:
         """Compile once and retain the publication copy internally."""
         if self._compiled_artifact is not None:
             return self._compiled_artifact
+        self._reset_applicability()
+        proxy_inputs, provenance = self._compile_provenance()
+        records = []
+        discovery = []
+        excluded_channels = []
+        pairs = {}
+        for proxy in sorted(self.proxies, key=lambda p: p.site_type):
+            logging.getLogger(__name__).info("compiling pairs on %s", proxy.site_type)
+            for reaction, sides in compile_candidates(self._generate(proxy)):
+                oriented, coverage_site, excluded = self._candidate_channel(
+                    proxy, reaction
+                )
+                if excluded is not None:
+                    excluded_channels.append(excluded)
+                    continue
+                pair_key = (reaction.family, _template(reaction), proxy.frontier, sides)
+                if pair_key not in pairs:
+                    pair_records, initiating = self._linked_family_pair(
+                        proxy, reaction, provenance
+                    )
+                    pairs[pair_key] = pair_records
+                    records.extend(pair_records)
+                else:
+                    initiating = initiating_record(
+                        pairs[pair_key], lambda: _graph_adjacencies(oriented.reactants)
+                    )
+                discovery.append(
+                    discovery_entry(
+                        proxy,
+                        reaction,
+                        coverage_site,
+                        initiating.event_id if initiating else None,
+                    )
+                )
+        return self._finish_artifact(
+            proxy_inputs, provenance, records, discovery, excluded_channels
+        )
+
+    def _reset_applicability(self) -> None:
+        """Start a compile's applicability ledger and generation caches empty."""
         self._applicability_refusals = []
         self._applicability_generation_cache = {}
         self._applicability_generation_stats = {}
 
+    def _candidate_channel(self, proxy, reaction):
+        """(the reaction oriented to ``proxy``, its coverage site, the excluded
+        channel entry when the candidate is replaced rather than compiled)."""
+        oriented, _ = _orient_to_proxy(proxy, reaction)
+        coverage_site = proxy.metadata.get("coverage_site_type", proxy.site_type)
+        if (
+            _inventory_class(oriented) == "R1:J_ring"
+            and coverage_site == "junction_radical+end_radical"
+        ):
+            return (
+                oriented,
+                coverage_site,
+                {
+                    "site_type": coverage_site,
+                    "family": reaction.family,
+                    "template": _template(reaction),
+                    "reason": "bounded J_ring capture replaced by immutable R-009 archived para/ortho pairs",
+                },
+            )
+        return oriented, coverage_site, None
+
+    def _compile_provenance(self) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """(the proxy fingerprints, the provenance every record carries)."""
         proxy_inputs = [
             _proxy_fingerprint(
                 p, include_padding=self.proxy_padding_distance is not None
@@ -5747,78 +5892,15 @@ class EventSetCompiler:
             provenance["archived_j_para_rate"] = copy.deepcopy(
                 ARCHIVED_J_PARA_RATE_PROVENANCE
             )
-        records = []
-        discovery = []
-        excluded_channels = []
-        pairs = {}
-        for proxy in sorted(self.proxies, key=lambda p: p.site_type):
-            logging.getLogger(__name__).info("compiling pairs on %s", proxy.site_type)
-            candidates = []
-            for reaction in self._generate(proxy):
-                reactant_side = tuple(sorted(_graph_adjacencies(reaction.reactants)))
-                product_side = tuple(sorted(_graph_adjacencies(reaction.products)))
-                candidates.append(
-                    (
-                        (
-                            reaction.family,
-                            _template(reaction),
-                            reactant_side,
-                            product_side,
-                            float(reaction.degeneracy),
-                        ),
-                        reaction,
-                        tuple(sorted((reactant_side, product_side))),
-                    )
-                )
-            for _, reaction, sides in sorted(candidates, key=lambda item: item[0]):
-                oriented, _ = _orient_to_proxy(proxy, reaction)
-                coverage_site = proxy.metadata.get(
-                    "coverage_site_type", proxy.site_type
-                )
-                if (
-                    _inventory_class(oriented) == "R1:J_ring"
-                    and coverage_site == "junction_radical+end_radical"
-                ):
-                    excluded_channels.append(
-                        {
-                            "site_type": coverage_site,
-                            "family": reaction.family,
-                            "template": _template(reaction),
-                            "reason": "bounded J_ring capture replaced by immutable R-009 archived para/ortho pairs",
-                        }
-                    )
-                    continue
-                pair_key = (reaction.family, _template(reaction), proxy.frontier, sides)
-                if pair_key not in pairs:
-                    pair_records, initiating = self._linked_family_pair(
-                        proxy, reaction, provenance
-                    )
-                    pairs[pair_key] = pair_records
-                    records.extend(pair_records)
-                else:
-                    pair_records = pairs[pair_key]
-                    initiating = next(
-                        (
-                            record
-                            for record in pair_records
-                            if _graph_lists_isomorphic(
-                                record.reactant_graphs,
-                                _graph_adjacencies(oriented.reactants),
-                            )
-                        ),
-                        pair_records[0] if pair_records else None,
-                    )
-                discovery.append(
-                    {
-                        "site_type": coverage_site,
-                        "proxy_site_type": proxy.site_type,
-                        "proxy_units": proxy.metadata.get("proxy_units"),
-                        "family": reaction.family,
-                        "template": _template(reaction),
-                        "raw_path_degeneracy": float(reaction.degeneracy),
-                        "event_id": initiating.event_id if initiating else None,
-                    }
-                )
+        return proxy_inputs, provenance
+
+    def _finish_artifact(
+        self, proxy_inputs, provenance, records, discovery, excluded_channels
+    ) -> dict[str, Any]:
+        """The artifact of the compiled candidate pairs: the archived junction
+        records, compaction, canonical order, certification and ceiling pairs.
+        ``self._applicability_refusals`` holds the pairs' refusals in order."""
+        records = list(records)
         records.extend(self._para_junction_records(provenance))
         records, event_id_replacements = _compact_event_records(records, provenance)
         records.sort(key=lambda record: record.event_id)
