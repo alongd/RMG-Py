@@ -2254,3 +2254,29 @@ def test_node_semantics_of_another_group_still_do_not_resolve():
     for _ in range(2):
         assert any("do not resolve" in p for p in cm.tree_problems(family, {"nodes": {"N": stored}}))
         entry.item.sort_vertices()
+
+
+def test_a_family_changed_under_one_label_is_not_served_from_the_certifier_cache(fam):
+    """The certifier's per-family tables are keyed by the family's content,
+    not its label: a family whose depository differs under the same label
+    (one training entry, then the whole training depository) gets its own
+    largest-species size and formulas, as a fresh cache gives.  CH3* +
+    propane: 3 heavy atoms exceed the one entry's 2 (excluded:size) but not
+    the whole depository's."""
+    from types import SimpleNamespace
+    family = fam["H_Abstraction"]
+    (training,) = [d for d in family.depositories if d.label.endswith("training")]
+
+    def stub(entries):
+        depository = SimpleNamespace(label=training.label, entries=entries)
+        return SimpleNamespace(label=family.label, depositories=[depository])
+
+    one = stub({215: training.entries[215]})
+    whole = stub(dict(training.entries))
+    reactants, products = [mol("[CH3]", 0), mol("CCC", 10)], [mol("C", 30), mol("C[CH]C", 40)]
+    assert cm.depository_exclusion(one, reactants, products, cache={})["verdict"] == "excluded:size"
+    fresh = cm.depository_exclusion(whole, reactants, products, cache={})
+    assert fresh["verdict"] != "excluded:size"
+    certifier = cm.Certifier(fam)
+    cm.depository_exclusion(one, reactants, products, cache=certifier.cache)
+    assert cm.depository_exclusion(whole, reactants, products, cache=certifier.cache) == fresh
