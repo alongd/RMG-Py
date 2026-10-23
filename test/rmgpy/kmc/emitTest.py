@@ -1526,3 +1526,26 @@ def test_template_sides_match_without_enumerating():
     by_id = {a.id: a for m in proxy for a in m.atoms}
     assert _is_isomorphism(mols[0], proxy[1], {a: by_id[amap[a.id]] for a in mols[0].atoms})
     assert emit.match_sides([_strict("CCCC")], proxy) is None
+
+
+def test_a_record_refused_at_its_status_does_no_window_work(monkeypatch, tmp_path):
+    """A record whose status does not fire (as compiled, or republished
+    refused by certification at init) is refused ``refused:record_status``
+    before any window work: no channel key, no member window, no emission
+    (I-238: a PP shard lost its walltime to one H_Abstraction event)."""
+    def forbidden(*args, **kwargs):
+        raise AssertionError("window work for a record refused at its status")
+
+    monkeypatch.setattr(emit, "record_key", forbidden)
+    monkeypatch.setattr(emit.win, "run_member", forbidden)
+    monkeypatch.setattr(emit.te, "emit_record", forbidden)
+    emitter = emit.Emitter(tmp_path / "unused.json", tmp_path, systems=[])
+    emitter.state.update(certifier=None, fam={"H_Abstraction": object()}, store={}, by_id={},
+                         rates_by_grid=None)
+    record = {"event_id": "evt_0123456789abcdef0123", "family": "H_Abstraction",
+              "orientation": "reversed", "template": "C/H2/NonDeC;C_rad/H/NonDeC",
+              "status": "refused", "status_reason": "rate certification refused: not publishable",
+              "rate_source": {"kind": "rmg_family"}}
+    row = emitter.run_record(record)
+    assert (row["status"], row["refusal"]) == ("refused", "refused:record_status")
+    assert row["member_rows"] == [] and "members" not in row
