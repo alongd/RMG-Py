@@ -601,7 +601,11 @@ def Quantity(*args, **kwargs):
       ``(value,units,uncertainty_type,uncertainty)``
     
     * An existing :class:`ScalarQuantity` or :class:`ArrayQuantity` object, for
-      which a copy is made
+      which a copy is made. With no keyword overrides, the ordinary constructor
+      determines the result. Stored SI fields are carried exactly only when
+      already native float64 arrays in the result's shape, or float scalars for
+      a scalar result. Every other field retains the constructor's output,
+      including its rounding. Array buffers are independent.
     
     """
     # Initialize attributes
@@ -620,8 +624,26 @@ def Quantity(*args, **kwargs):
     # Process args    
     n_args = len(args)
     if n_args == 1 and isinstance(args[0], (ScalarQuantity, ArrayQuantity)):
-        # We were given another quantity object, so make a (shallow) copy of it
         other = args[0]
+        if not kwargs:
+            # Keep constructor validation, representation and warnings. Only
+            # fields already in the exact representation bypass its round trip.
+            copied = Quantity(other.value, other.units, other.uncertainty_type, other.uncertainty)
+            for field in ('value_si', 'uncertainty_si'):
+                stored = getattr(other, field)
+                if isinstance(copied, ScalarQuantity):
+                    if isinstance(stored, (float, np.float64)):
+                        setattr(copied, field, stored)
+                else:
+                    target = getattr(copied, field)
+                    if (isinstance(stored, np.ndarray)
+                            and stored.dtype == np.dtype(np.float64)
+                            and stored.dtype.isnative
+                            and target.dtype == stored.dtype
+                            and target.shape == stored.shape):
+                        target[...] = stored
+            return copied
+        # Explicit keyword overrides retain the ordinary constructor semantics.
         value = other.value
         units = other.units
         uncertainty_type = other.uncertainty_type

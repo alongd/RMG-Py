@@ -21351,15 +21351,15 @@
     },
     "rmgpy/quantity.py:Quantity": {
       "verdict": "carried",
-      "reason": "Unit conversion, numeric quantity storage and arithmetic on explicitly supplied values; no molecular data selection.",
+      "reason": "Unit conversion, numeric quantity construction and copying of explicitly supplied values; no molecular data selection. The no-override copy keeps ordinary constructor validation and representation, preserving only already native float64 SI fields in exactly the constructor result shape (or float scalars for scalar results), leaving other fields untouched; TestQuantityCopy, TestQuantityCopyCompatibility and TestQuantityCopyRepresentation and TestQuantityCopyConstructorFallback cover stored bits, consumer compatibility and warning parity.",
       "evidence": [
         "test/rmgpy/quantityTest.py"
       ],
-      "source_sha256": "9af252a3e3b14fea6a5f941f9fccc7f22ce77921bb69c3dbc2f7ba8a91c5a89c"
+      "source_sha256": "a78a3ee6813bee68db128b5a9dd865df0a5d2ca6ef2bcf164963d0882e3b49a6"
     },
     "rmgpy/quantity.py:RateCoefficient": {
       "verdict": "carried",
-      "reason": "Unit conversion, numeric quantity storage and arithmetic on explicitly supplied values; no molecular data selection.",
+      "reason": "Unit conversion and arithmetic on explicitly supplied quantities; no molecular data selection. Quantity normalizes copied inputs to the ordinary constructor representation before the existing in-place conversion; TestQuantityCopyCompatibility and TestQuantityCopyRepresentation cover integer, endian and scalar dispatch behavior.",
       "evidence": [
         "test/rmgpy/quantityTest.py"
       ],
@@ -21495,7 +21495,7 @@
     },
     "rmgpy/quantity.py:SurfaceRateCoefficient": {
       "verdict": "carried",
-      "reason": "Unit conversion, numeric quantity storage and arithmetic on explicitly supplied values; no molecular data selection.",
+      "reason": "Unit conversion and arithmetic on explicitly supplied quantities; no molecular data selection. Quantity normalizes copied inputs to the ordinary constructor representation before the existing in-place conversion; TestQuantityCopyCompatibility and TestQuantityCopyRepresentation cover integer, endian and scalar dispatch behavior.",
       "evidence": [
         "test/rmgpy/quantityTest.py"
       ],
@@ -21503,7 +21503,7 @@
     },
     "rmgpy/quantity.py:UnitType.__call__": {
       "verdict": "carried",
-      "reason": "Unit conversion, numeric quantity storage and arithmetic on explicitly supplied values; no molecular data selection.",
+      "reason": "Unit conversion and arithmetic on explicitly supplied quantities; no molecular data selection. Quantity normalizes copied inputs to the ordinary constructor representation before the existing in-place conversion; TestQuantityCopyCompatibility and TestQuantityCopyRepresentation cover integer, endian and scalar dispatch behavior.",
       "evidence": [
         "test/rmgpy/quantityTest.py"
       ],
