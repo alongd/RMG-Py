@@ -795,6 +795,70 @@ def _depository_entries(family) -> dict:
             for depository in family.depositories for entry in depository.entries.values()}
 
 
+_FAMILY_KEYS: dict = {}     # id(family) -> (family, key)
+
+
+def family_key(family) -> tuple:
+    """(label, content digest): what every certifier cache is keyed by in
+    place of the label, so a family that differs under the same label (its
+    tree, rules, recipe, templates, forbidden structures or depositories)
+    never reuses another's channels, descents, depository tables or RMG
+    checks.  Computed once per family object: a family must not be changed
+    in place while a certifier uses it."""
+    entry = _FAMILY_KEYS.get(id(family))
+    if entry is not None and entry[0] is family:
+        return entry[1]
+    key = (family.label, _family_content_digest(family))
+    _FAMILY_KEYS[id(family)] = (family, key)
+    return key
+
+
+def _family_content_digest(family) -> str:
+    def structure(item):
+        to_adjacency_list = getattr(item, "to_adjacency_list", None)
+        return to_adjacency_list() if to_adjacency_list is not None else str(item)
+
+    def species(side):
+        return [structure(s.molecule[0] if hasattr(s, "molecule") else s) for s in side]
+
+    def entries(database):
+        if database is None:
+            return None
+        rows = []
+        for label, value in sorted(database.entries.items(), key=lambda kv: str(kv[0])):
+            for e in value if isinstance(value, list) else [value]:
+                item = e.item
+                if hasattr(item, "reactants"):
+                    item = [species(item.reactants), species(item.products)]
+                else:
+                    item = structure(item)
+                parent = getattr(e, "parent", None)
+                rows.append([str(label), str(getattr(e, "index", "")), item, repr(getattr(e, "data", None)),
+                             repr(getattr(e, "rank", None)), getattr(parent, "label", None)])
+        return rows
+
+    def template(t):
+        if t is None:
+            return None
+        return [[getattr(e, "label", str(e)) for e in t.reactants],
+                [getattr(e, "label", str(e)) for e in t.products]]
+
+    recipe = getattr(family, "forward_recipe", None)
+    content = {
+        "label": family.label,
+        "recipe": None if recipe is None else [list(map(str, a)) for a in recipe.actions],
+        "forward_template": template(getattr(family, "forward_template", None)),
+        "reverse_template": template(getattr(family, "reverse_template", None)),
+        "flags": [repr(getattr(family, name, None))
+                  for name in ("own_reverse", "reversible", "auto_generated")],
+        "groups": entries(getattr(family, "groups", None)),
+        "forbidden": entries(getattr(family, "forbidden", None)),
+        "rules": entries(getattr(family, "rules", None)),
+        "depositories": [[d.label, entries(d)] for d in getattr(family, "depositories", ())],
+    }
+    return hashlib.sha256(json.dumps(content, sort_keys=True, default=str).encode()).hexdigest()
+
+
 def _side_formulas(mols, extra) -> tuple:
     out = []
     for mol, count in zip(mols, extra):
@@ -820,11 +884,11 @@ def decide_by_construction(family, reactants, products, growth, units, hmax, can
     sites = reaction_growth_sites(growth, reactants, products)
     if sites is None:
         return None, 0, []
-    ekey = ("entries", family.label)
+    ekey = ("entries", family_key(family))
     if ekey not in cache:
         cache[ekey] = _depository_entries(family)
     entries = cache[ekey]
-    fkey = ("formulas", family.label)
+    fkey = ("formulas", family_key(family))
     rows = {(label, index): (er, ep) for label, index, er, ep in cache[fkey]}
     wanted = [(c["depository"], c["index"]) for c in candidates]
     if hasattr(growth, "growth_options"):
@@ -932,7 +996,7 @@ def depository_exclusion(family, reactants, products, *, cache=None,
        depository and the catalog overrides them there; ``refused:unknown``
        when the provider names no growth sites or grows by another unit."""
     cache = {} if cache is None else cache
-    key = ("hmax", family.label)
+    key = ("hmax", family_key(family))
     if key not in cache:
         cache[key] = max_depository_heavy_atoms(family)
     hmax = cache[key]
@@ -949,7 +1013,7 @@ def depository_exclusion(family, reactants, products, *, cache=None,
                                 "only add atoms, and Reaction.is_isomorphic needs every species "
                                 "isomorphic"})
         return out
-    fkey = ("formulas", family.label)
+    fkey = ("formulas", family_key(family))
     if fkey not in cache:
         cache[fkey] = _depository_formulas(family)
     rows = cache[fkey]
@@ -1141,7 +1205,8 @@ class Certifier:
     channel sets (``max_channel_sets``; the resonance forms of a channel set
     live and leave with it), descents with their node semantics, depository
     searches, record certificates, RMG selection checks and per-family
-    tables (``max_entries`` each).
+    tables (``max_entries`` each), each keyed by the family's content
+    (``family_key``), never its label alone.
 
     ``domain`` and ``repeat``: the species domain and the depository growth
     unit of RECORD certification (``certify_record``) and of record-level
@@ -1179,7 +1244,7 @@ class Certifier:
         """Forward channels on the aromatic roots of ``reactants`` (cached by
         the witness's integer-keyed signature; bounded)."""
         roots = [aromatic_root(m) for m in reactants]
-        key = ("channels", family.label, tuple(rm._signature(rm.molecule_rows(m))
+        key = ("channels", family_key(family), tuple(rm._signature(rm.molecule_rows(m))
                                                 for m in roots))
         cs = self._channel_sets.get(key)
         if cs is None:
@@ -1227,11 +1292,13 @@ class Certifier:
         ``nodes`` (also on a cache hit)."""
         mols = self._labelled(channel_set, move)
         key = self._descent_key(family, mols)
-        cached = self._descents.get(key)
+        # cached by the family's content; the ref names the label (as stored)
+        cache_key = (family_key(family),) + key[1:]
+        cached = self._descents.get(cache_key)
         if cached is None:
             local = {}
             cached = (template_descents(family, mols, local), local)
-            self._descents[key] = cached
+            self._descents[cache_key] = cached
         descents, semantics = cached
         nodes.update(semantics)
         ref = _digest(key)
@@ -1382,7 +1449,7 @@ class Certifier:
         # rate source
         reactants = list(channel_set.reactants)
         products = [rm.molecule_from_rows(p) for p in rm.split_rows(rep.product_rows())]
-        dkey = (family.label, tuple(sorted(ch.reactants)), tuple(sorted(ch.products)))
+        dkey = (family_key(family), tuple(sorted(ch.reactants)), tuple(sorted(ch.products)))
         if dkey not in self._depository:
             self._depository[dkey] = depository_search(family, reactants, products)
         out["depository"] = self._depository[dkey]
@@ -1444,7 +1511,7 @@ class Certifier:
         direction (``is_forward`` False).  Only called when the selection is
         supported (a non-terminating auto-generated walk is refused
         before)."""
-        key = (family.label, tuple(ch.pathway),
+        key = (family_key(family), tuple(ch.pathway),
                tuple(rm._signature(rm.molecule_rows(m)) for m in channel_set.reactants),
                move.sort_key())
         cached = self._rmg.get(key)
@@ -1584,7 +1651,7 @@ class Certifier:
         family = self.families[record["family"]]
         side, mols, others = self.template_side(record)
         pathway = tuple(record["template"].split(";")) if record["template"] else None
-        rkey = (record["family"], record["template"],
+        rkey = (family_key(family), record["template"],
                 tuple(record[side]), tuple(_graph_field(record, side, other=True)))
         cert = self._records.get(rkey)
         if cert is None:
