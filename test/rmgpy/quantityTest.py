@@ -33,6 +33,7 @@ This script contains unit tests of the :mod:`rmgpy.quantity` module.
 
 
 import numpy as np
+import warnings
 
 import rmgpy.constants as constants
 import rmgpy.quantity as quantity
@@ -1198,3 +1199,402 @@ class TestQuantityDictionaryConversion:
         assert minimal_array.as_dict() == self.minimal_array.as_dict()
         assert known_array.as_dict() == self.known_array.as_dict()
         assert uncertain_array.as_dict() == self.uncertain_array.as_dict()
+
+
+class TestQuantityCopy:
+    @pytest.mark.parametrize("with_uncertainty", [False, True])
+    def test_scalar_copy_preserves_stored_bits(self, with_uncertainty):
+        source = quantity.ScalarQuantity(5.0, "torr")
+        source.value_si = float.fromhex("0x1.4d4e50d79435ep+9")
+        if with_uncertainty:
+            source.uncertainty_si = float.fromhex("0x1.4d4e50d79435ep+3")
+        copied = quantity.Quantity(source)
+        assert copied is not source
+        assert copied.units == source.units
+        assert copied.uncertainty_type == source.uncertainty_type
+        assert np.float64(copied.value_si).tobytes() == np.float64(source.value_si).tobytes()
+        assert np.float64(copied.uncertainty_si).tobytes() == np.float64(source.uncertainty_si).tobytes()
+
+    @pytest.mark.parametrize("with_uncertainty", [False, True])
+    def test_array_copy_preserves_stored_bits_without_aliasing(self, with_uncertainty):
+        source = quantity.ArrayQuantity([[5.0, 0.0], [1.0, 2.0]], "torr")
+        source.value_si[0, 0] = float.fromhex("0x1.4d4e50d79435ep+9")
+        source.value_si[0, 1] = -0.0
+        if with_uncertainty:
+            source.uncertainty_si[0, 0] = float.fromhex("0x1.4d4e50d79435ep+3")
+        copied = quantity.Quantity(source)
+        assert copied is not source
+        assert copied.units == source.units
+        assert copied.uncertainty_type == source.uncertainty_type
+        for name in ("value_si", "uncertainty_si"):
+            original, duplicate = getattr(source, name), getattr(copied, name)
+            assert duplicate.dtype == original.dtype
+            assert duplicate.shape == original.shape
+            assert duplicate.tobytes() == original.tobytes()
+            assert not np.shares_memory(original, duplicate)
+        copied.value_si[0, 0] = 0.0
+        copied.uncertainty_si[0, 0] = 1.0
+        assert source.value_si[0, 0] != 0.0
+        assert source.uncertainty_si[0, 0] != 1.0
+
+
+class TestQuantityCopyCompatibility:
+    @pytest.mark.parametrize("factory,units,factor", [
+        (quantity.Frequency, "s^-1", 1.0 / (constants.c * 100.0)),
+        (quantity.RateCoefficient, "m^3/s", 1.0),
+        (quantity.SurfaceRateCoefficient, "m^2/s", 1.0),
+    ])
+    @pytest.mark.parametrize("dtype", [np.int64, np.float32])
+    def test_factory_converts_public_si_array(self, factory, units, factor, dtype):
+        source = quantity.ArrayQuantity([100.0, 200.0], units)
+        source.value_si = np.array([100, 200], dtype=dtype)
+        copied = quantity.Quantity(source)
+        expected_copy = source.value_si.astype(np.result_type(dtype, float(1.0)))
+        assert copied.value_si.dtype == expected_copy.dtype
+        assert copied.value_si.tobytes() == expected_copy.tobytes()
+        converted = factory(source)
+        expected = source.value_si * factor
+        assert converted.value_si.dtype == expected.dtype
+        np.testing.assert_array_equal(converted.value_si, expected)
+        np.testing.assert_array_equal(source.value_si, [100, 200])
+        assert not np.shares_memory(converted.value_si, source.value_si)
+
+    def test_harmonic_oscillator_accepts_integer_si_frequencies(self):
+        from rmgpy.statmech import HarmonicOscillator
+
+        source = quantity.ArrayQuantity([100.0, 200.0], "s^-1")
+        source.value_si = np.array([100, 200])
+        oscillator = HarmonicOscillator(frequencies=source)
+        control = HarmonicOscillator(frequencies=([100.0, 200.0], "s^-1"))
+        assert oscillator.get_partition_function(300.0) == control.get_partition_function(300.0)
+
+    @pytest.mark.parametrize("values", [[300.0, 400.0, 500.0], [[300.0, 400.0]]])
+    @pytest.mark.parametrize("uncertainty_type", ["+|-", "*|/"])
+    def test_rejects_stale_uncertainty_shape(self, values, uncertainty_type):
+        source = quantity.ArrayQuantity([1.0, 2.0], "K", [0.1, 0.2], uncertainty_type)
+        source.value_si = np.array(values)
+        with pytest.raises(quantity.QuantityError):
+            quantity.Temperature(source)
+
+    def test_accepts_constructor_zero_uncertainty_sentinel(self):
+        source = quantity.ArrayQuantity([1.0], "K")
+        source.value_si = np.array([300.0, 400.0])
+        copied = quantity.Temperature(source)
+        # Preserve the constructor's broadcast shape while taking SI values
+        # directly from the stored fields.
+        assert copied.value_si.tobytes() == source.value_si.tobytes()
+        np.testing.assert_array_equal(copied.uncertainty_si, np.zeros(2))
+
+    @pytest.mark.parametrize("constructor,value", [
+        (quantity.ScalarQuantity, 300.0),
+        (quantity.ArrayQuantity, [300.0, 400.0]),
+    ])
+    @pytest.mark.parametrize("units,factory,error", [
+        ("degC", quantity.Temperature, NotImplementedError),
+        ("not_a_real_unit", quantity.Quantity, LookupError),
+    ])
+    def test_rejects_edited_unit_metadata(self, constructor, value, units, factory, error):
+        source = constructor(value, "K")
+        source.units = units
+        with pytest.raises(error):
+            factory(source)
+
+
+class TestQuantityCopyRepresentation:
+    """Only matching native float64 SI fields bypass constructor round trips."""
+
+    @staticmethod
+    def assert_representation(actual, expected):
+        assert type(actual) is type(expected)
+        assert actual.units == expected.units
+        assert actual.uncertainty_type == expected.uncertainty_type
+        for field in ("value_si", "uncertainty_si"):
+            left, right = np.asarray(getattr(actual, field)), np.asarray(getattr(expected, field))
+            assert left.dtype == right.dtype
+            assert left.dtype.byteorder == right.dtype.byteorder
+            assert left.shape == right.shape
+            if left.dtype.hasobject:
+                assert [type(item) for item in left.flat] == [type(item) for item in right.flat]
+
+    def check_copy(self, source):
+        # Ordinary positional construction is the existing validation and
+        # representation contract; it does not call the copy branch.
+        try:
+            expected = quantity.Quantity(source.value, source.units, source.uncertainty_type, source.uncertainty)
+        except Exception as error:
+            with pytest.raises(type(error)) as caught:
+                quantity.Quantity(source)
+            assert str(caught.value) == str(error)
+            return
+        actual = quantity.Quantity(source)
+        self.assert_representation(actual, expected)
+        assert actual is not source
+        self.assert_copy_fields(source, actual, expected)
+        return actual
+
+    @staticmethod
+    def assert_copy_fields(source, actual, expected):
+        for field in ("value_si", "uncertainty_si"):
+            original = getattr(source, field)
+            target = getattr(expected, field)
+            if isinstance(expected, quantity.ScalarQuantity):
+                preserve = isinstance(original, (float, np.float64))
+            else:
+                preserve = (isinstance(original, np.ndarray)
+                            and original.dtype == np.dtype("float64")
+                            and original.dtype.isnative
+                            and target.dtype == original.dtype
+                            and target.shape == original.shape)
+            wanted = np.asarray(original if preserve else target)
+            result = np.asarray(getattr(actual, field))
+            if wanted.dtype.hasobject:
+                assert [(type(x), repr(x)) for x in result.flat] == [(type(x), repr(x)) for x in wanted.flat]
+            else:
+                assert result.tobytes() == wanted.tobytes()
+            assert not np.shares_memory(result, np.asarray(original))
+
+    @pytest.mark.parametrize("factory,units", [
+        (quantity.Frequency, "s^-1"), (quantity.Frequency, "J"),
+        (quantity.Frequency, "K"), (quantity.Frequency, "cm^-1"),
+        (quantity.Energy, "K"), (quantity.Energy, "cm^-1"),
+        (quantity.Energy, "kcal/mol"), (quantity.Mass, "kg/mol"),
+        (quantity.DipoleMoment, "De"), (quantity.RateCoefficient, "m^3/s"),
+        (quantity.RateCoefficient, "s^-1"), (quantity.SurfaceRateCoefficient, "m^2/s"),
+        (quantity.SurfaceRateCoefficient, "s^-1"),
+    ])
+    @pytest.mark.parametrize("dtype", ["float16", "float32", "float64", "complex64", "complex128", "object", ">f8", ">f4", "int64", "uint64"])
+    @pytest.mark.parametrize("values", [[1, 2, 3], 2, []], ids=["vector", "zero_d", "empty"])
+    def test_factory_matrix(self, factory, units, dtype, values):
+        source = quantity.ArrayQuantity([1.0], units)
+        source.value_si = np.array(values, dtype=dtype)
+        source.uncertainty_si = np.zeros_like(source.value_si)
+        original = source.value_si.copy()
+        self.check_copy(source)
+        try:
+            expected = factory(source.value, units, source.uncertainty_type, source.uncertainty)
+        except Exception as error:
+            with pytest.raises(type(error)) as caught:
+                factory(source)
+            assert str(caught.value) == str(error)
+        else:
+            self.assert_representation(factory(source), expected)
+        np.testing.assert_array_equal(source.value_si, original)
+
+    @pytest.mark.parametrize("kind", ["+|-", "*|/"])
+    @pytest.mark.parametrize("values", [np.array(2.0), np.empty((0, 2)), np.array([2.0, 3.0]), np.array([[2.0, 3.0]])])
+    @pytest.mark.parametrize("uncertainty", [np.array(0.0), np.array([0.0]), np.array([0.1]), np.array([0.1, 0.2]), np.array([[0.1, 0.2]])])
+    def test_uncertainty_shape_matrix(self, kind, values, uncertainty):
+        source = quantity.ArrayQuantity([1.0], "torr", 1.0, kind)
+        source.value_si = values
+        source.uncertainty_si = uncertainty
+        self.check_copy(source)
+
+    @pytest.mark.parametrize("dtype", ["int64", ">f8", "float32", "float16", "complex128", "object"])
+    @pytest.mark.parametrize("field", ["Tdata", "kdata", "frequencies"])
+    def test_compiled_consumer_public_grid(self, dtype, field):
+        from rmgpy.kinetics import KineticsData
+        from rmgpy.statmech import HarmonicOscillator
+
+        values, units = {"Tdata": ([300, 400], "K"), "kdata": ([1, 2], "s^-1"), "frequencies": ([100, 200], "cm^-1")}[field]
+        source = quantity.ArrayQuantity(values, units)
+        source.value_si = np.array(values, dtype=dtype)
+        control = quantity.ArrayQuantity(np.array(values, dtype=dtype), units)
+
+        def consume(value):
+            if field == "Tdata":
+                return KineticsData(Tdata=value, kdata=([1.0, 2.0], "s^-1")).get_rate_coefficient(350.0)
+            if field == "kdata":
+                return KineticsData(Tdata=([300.0, 400.0], "K"), kdata=value).get_rate_coefficient(350.0)
+            return HarmonicOscillator(frequencies=value).get_partition_function(300.0)
+
+        try:
+            expected = consume(control)
+        except Exception as error:
+            with pytest.raises(type(error)) as caught:
+                consume(source)
+            assert str(caught.value) == str(error)
+        else:
+            assert consume(source) == expected
+
+    @pytest.mark.parametrize("model,units", [("Arrhenius", "m^3/s"), ("SurfaceArrhenius", "m^2/s"), ("Arrhenius", "s^-1")])
+    def test_zero_dimensional_kinetic_prefactor(self, model, units):
+        import rmgpy.kinetics as kinetics
+
+        source = quantity.ArrayQuantity([1.0], units)
+        source.value_si = np.array(2.0)
+        source.uncertainty_si = np.array(0.0)
+        result = getattr(kinetics, model)(A=source, n=0.0, Ea=(0.0, "J/mol"), T0=(1.0, "K"))
+        assert isinstance(result.A, quantity.ScalarQuantity)
+        assert result.get_rate_coefficient(300.0) == 2.0
+
+    @pytest.mark.parametrize("kind", ["+|-", "*|/"])
+    @pytest.mark.parametrize("layout", ["alias", "readonly", "reversed", "naninf"])
+    def test_buffer_and_override_matrix(self, kind, layout):
+        source = quantity.ArrayQuantity([1.0], "torr", 1.0, kind)
+        values = np.array([np.nan, np.inf, -np.inf, -0.0]) if layout == "naninf" else np.array([2.0, 3.0])
+        if layout == "reversed":
+            values = values[::-1]
+        if layout == "readonly":
+            values.flags.writeable = False
+        source.value_si = source.uncertainty_si = values
+        copied = self.check_copy(source)
+        assert not np.shares_memory(copied.value_si, copied.uncertainty_si)
+        for overrides in ({"units": "Pa"}, {"uncertainty": 0.25}, {"uncertainty_type": "*|/"}):
+            kwargs = dict(units=source.units, uncertainty=source.uncertainty, uncertainty_type=kind)
+            kwargs.update(overrides)
+            expected = quantity.Quantity(source.value, **kwargs)
+            actual = quantity.Quantity(source, **overrides)
+            self.assert_representation(actual, expected)
+            for field in ("value_si", "uncertainty_si"):
+                assert np.asarray(getattr(actual, field)).tobytes() == np.asarray(getattr(expected, field)).tobytes()
+        for overrides in ({"value": 2.0}, {"unknown": 1}):
+            with pytest.raises(quantity.QuantityError):
+                quantity.Quantity(source, **overrides)
+
+    @pytest.mark.parametrize("array", [False, True])
+    def test_subclass_uses_base_representation(self, array):
+        class ScalarChild(quantity.ScalarQuantity):
+            pass
+
+        class ArrayChild(quantity.ArrayQuantity):
+            pass
+
+        source = ArrayChild([2.0, 3.0], "torr") if array else ScalarChild(2.0, "torr")
+        source.tag = "extension state"
+        self.check_copy(source)
+
+    @pytest.mark.parametrize("integer", [2**53, 2**53 + 1, 2**63 - 1, 2**64 - 1])
+    def test_integer_normalization_uses_float64_rounding(self, integer):
+        source = quantity.ArrayQuantity([1.0], "K")
+        source.value_si = np.array([integer], dtype=np.uint64)
+        copied = quantity.Quantity(source)
+        assert copied.value_si.dtype == np.dtype("float64")
+        assert copied.value_si[0] == float(integer)
+
+
+    @pytest.mark.parametrize("kind", ["+|-", "*|/"])
+    @pytest.mark.parametrize("case", list(range(11)) + ["payloads", "float32", "int64", "big_endian", "noncontiguous", "reversed", "zero_d", "Fortran", "readonly", "empty"])
+    def test_stored_bit_matrix(self, kind, case):
+        bits = [0x8000000000000000, 0x7FF8000000001234, 0xFFF800000000ABCD,
+                0x7FF0000000000001, 0x7FF0000000000000, 0xFFF0000000000000,
+                1, 0x8000000000000001, 0x0010000000000000, 0x7FEFFFFFFFFFFFFF,
+                0x4084D4E50D79435E]
+        values = np.array(bits, dtype=np.uint64).view(np.float64)
+        if isinstance(case, int):
+            source = quantity.ScalarQuantity(1.0, "torr", 1.0, kind)
+            source.value_si = source.uncertainty_si = float(values[case])
+        else:
+            arrays = {
+                "payloads": values, "float32": np.array([1, 2, -0.0], dtype=np.float32),
+                "int64": np.array([1, 2], dtype=np.int64), "big_endian": np.array([1, 2], dtype=">f8"),
+                "noncontiguous": values[::2], "reversed": values[::-1], "zero_d": np.array(-0.0),
+                "Fortran": np.asfortranarray(np.arange(6.0).reshape(2, 3)),
+                "readonly": np.array([1.0, 2.0]), "empty": np.zeros((0, 2)),
+            }
+            arrays["readonly"].flags.writeable = False
+            source = quantity.ArrayQuantity([1.0], "torr", 1.0, kind)
+            source.value_si = source.uncertainty_si = arrays[case]
+        copied = self.check_copy(source)
+        for field in ("value_si", "uncertainty_si"):
+            original = np.asarray(getattr(source, field))
+            if original.dtype == np.dtype("float64") and original.dtype.isnative:
+                assert np.asarray(getattr(copied, field)).tobytes() == original.tobytes()
+
+
+    def test_object_array_preserves_constructor_element_types_and_si_bits(self):
+        source = quantity.ArrayQuantity([1.0, 2.0], "torr")
+        exact = float.fromhex("0x1.4d4e50d79435ep+9")
+        source.value_si = np.array([1, exact], dtype=object)
+        source.uncertainty_si = np.array([0, exact], dtype=object)
+        expected = quantity.Quantity(source.value, source.units, source.uncertainty_type, source.uncertainty)
+        copied = quantity.Quantity(source)
+        for field in ("value_si", "uncertainty_si"):
+            values = getattr(copied, field)
+            assert all(type(value) is float for value in values)
+            # Object fields retain the constructor's rounding, including an ulp
+            # loss here; exact copying is restricted to native float64 fields.
+            assert values[1].hex() == getattr(expected, field)[1].hex()
+
+
+class TestQuantityCopyConstructorFallback:
+    """Accepted sentinels keep constructor results and warning behavior."""
+
+    @staticmethod
+    def capture(operation, policy):
+        with warnings.catch_warnings(record=True) as caught, np.errstate(all="warn"):
+            warnings.simplefilter(policy)
+            try:
+                result = operation()
+                status = ("OK", "")
+            except Exception as error:
+                result = None
+                status = (type(error).__name__, str(error))
+            notices = [(type(w.message).__name__, str(w.message)) for w in caught]
+        return status, notices, result
+
+    def check_against_constructor(self, source, policy):
+        expected_status, expected_warnings, expected = self.capture(
+            lambda: quantity.Quantity(source.value, source.units, source.uncertainty_type, source.uncertainty), policy)
+        status, notices, actual = self.capture(lambda: quantity.Quantity(source), policy)
+        assert status == expected_status
+        assert notices == expected_warnings
+        if status[0] == "OK":
+            TestQuantityCopyRepresentation.assert_representation(actual, expected)
+            TestQuantityCopyRepresentation.assert_copy_fields(source, actual, expected)
+
+    @pytest.mark.parametrize("sentinel", ["list_none", "array_none", "masked"])
+    @pytest.mark.parametrize("route", ["Quantity", "Frequency", "HarmonicOscillator"])
+    def test_object_uncertainty_sentinel(self, sentinel, route):
+        from rmgpy.statmech import HarmonicOscillator
+
+        uncertainty = {"list_none": [None, None], "array_none": np.array([None, None], dtype=object),
+                       "masked": np.array([np.ma.masked, np.ma.masked], dtype=object)}[sentinel]
+        source = quantity.ArrayQuantity([100.0, 200.0], "cm^-1", uncertainty, "*|/")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            if route == "HarmonicOscillator":
+                assert HarmonicOscillator(frequencies=source).get_partition_function(300.0) == 4.255746785089328
+            else:
+                copied = getattr(quantity, route)(source)
+                assert [(type(x), repr(x)) for x in copied.uncertainty_si] == [(type(x), repr(x)) for x in source.uncertainty_si]
+                assert not np.shares_memory(copied.uncertainty_si, source.uncertainty_si)
+
+    @pytest.mark.parametrize("policy", ["always", "error"])
+    def test_complex_zero_sentinel_real_consumer(self, policy):
+        from rmgpy.statmech import HarmonicOscillator
+
+        source = quantity.ArrayQuantity([100.0, 200.0], "cm^-1")
+        source.uncertainty_si = np.array([0j])
+        status, notices, result = self.capture(
+            lambda: HarmonicOscillator(frequencies=source).get_partition_function(300.0), policy)
+        assert status == ("OK", "")
+        assert notices == []
+        assert result == 4.255746785089328
+
+    @pytest.mark.parametrize("dtype", [np.complex64, np.complex128])
+    @pytest.mark.parametrize("field", ["value_si", "uncertainty_si"])
+    def test_boxed_complex_scalar_warnings(self, dtype, field):
+        source = quantity.ArrayQuantity([1.0], "K")
+        source.value_si, source.uncertainty_si = np.array(1.0), np.array(0.0)
+        setattr(source, field, np.array(dtype(1 + 2j), dtype=object))
+        self.check_against_constructor(source, "always")
+        self.check_against_constructor(source, "error")
+
+    @pytest.mark.parametrize("value_dtype", ["float16", "float32", "float64"])
+    @pytest.mark.parametrize("uncertainty_dtype", ["float16", "float32", "float64", "complex64", "complex128", "object"])
+    @pytest.mark.parametrize("value", [0.0, -0.0, np.nextafter(0.0, 1.0)], ids=["zero", "negative_zero", "subnormal"])
+    @pytest.mark.parametrize("units", ["K", "atm", "De"])
+    @pytest.mark.parametrize("kind", ["+|-", "*|/"])
+    @pytest.mark.parametrize("policy", ["always", "error"])
+    def test_supplemental_sentinel_matrix(self, value_dtype, uncertainty_dtype, value, units, kind, policy):
+        source = quantity.ArrayQuantity(np.array([1.0, 2.0], dtype=value_dtype), units, 1.0, kind)
+        source.uncertainty_si = np.array([value], dtype=uncertainty_dtype)
+        self.check_against_constructor(source, policy)
+
+    @pytest.mark.parametrize("native_field", ["value_si", "uncertainty_si"])
+    def test_each_field_chooses_exact_copy_independently(self, native_field):
+        source = quantity.ArrayQuantity([1.0], "torr", 1.0, "+|-")
+        source.value_si = np.array([2.0, 3.0], dtype=np.float32)
+        source.uncertainty_si = np.array([2.0, 3.0], dtype=np.float32)
+        setattr(source, native_field, np.array([2.0, 3.0], dtype=np.float64))
+        self.check_against_constructor(source, "always")
