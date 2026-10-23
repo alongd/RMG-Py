@@ -1909,16 +1909,17 @@ class Polymer(Species):
             # from it and ignore the halved values.)
             new_Mn = self.Mn / 2.0 if self.Mn else None
             new_Mw = self.Mw / 2.0 if self.Mw else None
-            return Polymer(label=f"{self.label}_scission_tail",
-                           monomer=self.monomer,
-                           feature_monomer=None,
-                           end_groups=[self.end_groups[0].copy(deep=True), new_tail],
-                           cutoff=self.cutoff,
-                           Mn=new_Mn,
-                           Mw=new_Mw,
-                           initial_mass=0.0,
-                           moments=None,
-                           )
+            return self._mark_scission_daughter(
+                Polymer(label=f"{self.label}_scission_tail",
+                        monomer=self.monomer,
+                        feature_monomer=None,
+                        end_groups=[self.end_groups[0].copy(deep=True), new_tail],
+                        cutoff=self.cutoff,
+                        Mn=new_Mn,
+                        Mw=new_Mw,
+                        initial_mass=0.0,
+                        moments=None,
+                        ))
 
         if tail_atoms:
             try:
@@ -1936,17 +1937,28 @@ class Polymer(Species):
                 return None
             new_Mn = self.Mn / 2.0 if self.Mn else None
             new_Mw = self.Mw / 2.0 if self.Mw else None
-            return Polymer(label=f"{self.label}_scission_head",
-                           monomer=self.monomer,
-                           feature_monomer=None,
-                           end_groups=[new_head, self.end_groups[1].copy(deep=True)],
-                           cutoff=self.cutoff,
-                           Mn=new_Mn,
-                           Mw=new_Mw,
-                           initial_mass=0.0,
-                           moments=None)
+            return self._mark_scission_daughter(
+                Polymer(label=f"{self.label}_scission_head",
+                        monomer=self.monomer,
+                        feature_monomer=None,
+                        end_groups=[new_head, self.end_groups[1].copy(deep=True)],
+                        cutoff=self.cutoff,
+                        Mn=new_Mn,
+                        Mw=new_Mw,
+                        initial_mass=0.0,
+                        moments=None))
 
         return None
+
+    def _mark_scission_daughter(self, daughter: 'Polymer') -> 'Polymer':
+        """Stamp a scission piece's spawn provenance (``parent_pool_label`` +
+        ``spawn_metadata``), as every other daughter producer does: the
+        item-16 enlarge-boundary promotion (``is_engine_spawned_pool_daughter``)
+        reads these markers, and an unmarked piece is never configured, so the
+        solver refuses its row on every rebuild."""
+        daughter.parent_pool_label = self.label
+        daughter.spawn_metadata = {"source": SCISSION_SPAWN_SOURCE}
+        return daughter
 
     def _h_loss_feature_units(self) -> List[Molecule]:
         """
@@ -3075,8 +3087,12 @@ def warn_once_qssa_double_count(entry: dict) -> None:
     backbone-cutting channels on the same pool, distinguished by
     ``entry["overlap"]``:
 
-    - ``"generated_scission_ve"``: surviving generated-chemistry SCISSION /
-      VOLATILE_EJECTION reactions sourced from the pool.
+    - ``"generated_scission_ve"``: surviving generated-chemistry
+      VOLATILE_EJECTION reactions sourced from the pool that move repeat
+      units (nonzero moment shift; a hydrogen abstraction into a feature
+      daughter cuts no backbone bond). Generated SCISSION_FRAGMENT rows on
+      the pool never survive: the solver refuses them kernel-superseded
+      (``warn_once_scission_supersession``).
     - ``"k_scission"``: the pool's own phenomenological k_scission -- the
       most direct initiation double-count (both cut random backbone bonds).
 
@@ -3102,7 +3118,8 @@ def warn_once_qssa_double_count(entry: dict) -> None:
         logging.warning(
             "QSSA DOUBLE-COUNT TRIPWIRE: pool '%s' has BOTH a radical_qssa_unzip "
             "channel (backbone-homolysis initiation) AND surviving explicit "
-            "scission/volatile-ejection reactions sourced from it -- chain "
+            "volatile-ejection reactions sourced from it that move repeat "
+            "units -- chain "
             "degradation may be double-counted. Census-only (warn, never refuse: "
             "the generated chemistry may cover different bonds).",
             entry["pool"])
@@ -3159,6 +3176,32 @@ def warn_once_side_group_supersession(entry: dict) -> None:
         "conduit-deferred row(s) are superseded by the kernel (they remain "
         "refused and carry zero flux): %s",
         entry["pool"], len(rows), "; ".join(str(r) for r in rows))
+
+
+_scission_supersession_warned = set()
+
+
+def warn_once_scission_supersession(entry: dict) -> None:
+    """Log the generated-scission supersession census of one pool (I-250
+    ruling): a generated SCISSION_FRAGMENT row cutting a pool whose backbone
+    initiation a kernel carries runs beside that kernel's random homolysis --
+    the same cuts counted twice -- so the solver REFUSES it by name
+    (``kernel-superseded``, zero flux), unlike the census-only homolysis and
+    side-group supersession censuses above, whose rows were already refused.
+    Warn-once keyed per (pool, row set): a row set that grows across
+    rebuilds is announced again."""
+    rows = entry.get("superseded_rows", [])
+    key = (entry["pool"], frozenset(rows))
+    if key in _scission_supersession_warned:
+        return
+    _scission_supersession_warned.add(key)
+    logging.warning(
+        "SCISSION SUPERSESSION CENSUS: pool '%s' carries its backbone "
+        "initiation in kernel(s) %s; %d generated SCISSION_FRAGMENT row(s) "
+        "cutting it are refused kernel-superseded (zero flux; the kernel's "
+        "random homolysis carries these cuts): %s",
+        entry["pool"], ", ".join(entry.get("kernels", ())), len(rows),
+        "; ".join(str(r) for r in rows))
 
 
 _chip_tripwire_warned = set()
@@ -7056,6 +7099,12 @@ SIDE_GROUP_HOMOLYSIS_SPAWN_SOURCE = "side_group_homolysis"
 # CONCERTED_LOSS_SPAWN_SOURCE, "gas": <formula>}. Same contract shape as
 # the sibling spawn-source pins above.
 CONCERTED_LOSS_SPAWN_SOURCE = "concerted_loss_ejection"
+# Spawn provenance pin stamped on every scission daughter (the
+# ``_scission_tail`` / ``_scission_head`` pieces of a cut chain,
+# Polymer._mark_scission_daughter), together with parent_pool_label: the
+# item-16 enlarge-boundary promotion reads these markers, so an unmarked
+# piece is never configured and the solver refuses its row (r91).
+SCISSION_SPAWN_SOURCE = "scission"
 # Normative moment law of the radical-homolysis initiation kernel, pinned
 # in the STABLE product forms actually implemented (round-67 P2;
 # rmgpy/solver/polymer.pyx, the khom_* RHS section). Same contract as
@@ -10008,7 +10057,8 @@ def is_engine_spawned_pool_daughter(spc: Any) -> bool:
     daughters, ``parent_pool_label`` + ``spawn_metadata``),
     ``drain_spawn_intents`` (``{label}_d{n}`` spawn-intent daughters,
     ``parent_pool_label`` + ``spawn_metadata``), and the scission/side-loss
-    daughter producers that set ``parent_pool_label``. Deck-declared pools
+    daughter producers (``Polymer._mark_scission_daughter``,
+    ``parent_pool_label`` + ``spawn_metadata``). Deck-declared pools
     never carry either marker. Consumers: the item-16 spawn/enlarge-boundary
     core promotion (``CoreEdgeReactionModel._promote_spawned_polymer_pools``)
     and any census that must distinguish spawned from input-declared pools
@@ -10023,7 +10073,7 @@ def is_engine_spawned_pool_daughter(spc: Any) -> bool:
 #: compiler (rmgpy/rmg/input.py step 4d) and are REQUIRED solver-configured by
 #: the serialization closure guards (schema 2.6/2.8: configured, never
 #: spawned-classified). Every other spawn provenance -- including the
-#: markerless scission tails, whose spawn_metadata is absent -- is MID-RUN.
+#: scission tails and heads (SCISSION_SPAWN_SOURCE) -- is MID-RUN.
 SETUP_CONFIGURED_SPAWN_SOURCES = frozenset({HOMOLYSIS_SPAWN_SOURCE})
 
 

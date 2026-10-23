@@ -29,21 +29,22 @@
 
 """
 Side-group triage on a methacrylate-like pool (methyl ester side group, test
-data only): three of the symptoms a methacrylate deck prints, each reproduced
-through the production seams (the Polymer producer, model registration, the
-enlarge boundary, the solver rebuild).
+data only): three symptoms a methacrylate deck printed, and the double-count
+ruling that closing the first one needs, each exercised through the
+production seams (the Polymer producer, model registration, the enlarge
+boundary, the solver rebuild). A setup step that fails raises RuntimeError,
+never an AssertionError.
 
-Each symptom has a pin that passes today (the path is reached and the symptom
-is what it is) and an expected-to-fail test naming it. The xfails are strict
-and accept only an AssertionError; a setup that fails raises RuntimeError, so
-an xfail can only pass by the symptom's own assertion failing.
-
-- symptom 2: a spawned scission tail is never promoted by the item-16
-  enlarge-boundary pass (it carries no spawn marker), so its row is refused
-  "item-16 pending" on every rebuild;
-- symptom 3: a born-empty spawned pool is warned "no initial conditions";
+- symptom 2: a spawned scission tail carries its spawn markers, so the
+  item-16 enlarge-boundary pass promotes it and its row runs live; a spawned
+  pool the pass does not reach is refused naming that cause;
+- the ruling: a generated scission row cutting a pool whose backbone
+  initiation a kernel carries is refused kernel-superseded and counted;
+- symptom 3: a born-empty spawned pool starts at zero without a "no initial
+  conditions" warning; a deck pool without one is still warned;
 - symptom 4: a hydrogen-abstraction volatile-ejection row, which cuts no
-  backbone bond, trips the QSSA double-count tripwire.
+  backbone bond, does not trip the QSSA double-count tripwire; a chain-end
+  ejection still does.
 """
 
 import logging
@@ -80,7 +81,7 @@ def _spc(smiles, label):
 
 
 def _setup(ok, what):
-    """A setup step that fails must not satisfy an xfail(raises=AssertionError)."""
+    """A setup step that fails raises RuntimeError, never an AssertionError."""
     if not ok:
         raise RuntimeError('setup failed: ' + what)
 
@@ -221,39 +222,24 @@ def _spawn_tail(monkeypatch, caplog, channel=None, marked=True):
 
 
 class TestScissionTailPromotion:
-    """Symptom 2. The scission producer builds ``<label>_scission_tail`` with no
-    ``parent_pool_label`` and no ``spawn_metadata``, so
-    ``is_engine_spawned_pool_daughter`` is False and the item-16 pass never
-    promotes it; the r91 rebuild then refuses its stamped row "item-16 pending",
-    and the refused row's zero flux can never promote it either."""
+    """Symptom 2. The scission producer stamps ``<label>_scission_tail`` with
+    ``parent_pool_label`` and ``spawn_metadata``, so the item-16 pass promotes
+    it, the rebuild derives its pool config, and its stamped row runs live. A
+    spawned pool the pass does not reach (no markers) still has its row
+    refused, and the refusal names that cause."""
 
-    def test_tail_is_unmarked_unpromoted_and_refused_today(self, monkeypatch, caplog):
+    def test_tail_is_promoted_configured_and_live(self, monkeypatch, caplog):
         from rmgpy.polymer import is_engine_spawned_pool_daughter
         model, solver, tail, _, r = _spawn_tail(monkeypatch, caplog)
-        assert getattr(tail, 'parent_pool_label', None) is None
-        assert not getattr(tail, 'spawn_metadata', None)
-        assert not is_engine_spawned_pool_daughter(tail)
-        assert tail not in model.core.species
-        assert 'PMMA_scission_tail' not in {p.label for p in solver.polymer_pools}
-        assert solver.reaction_refused[r] == 1
-        assert [c['pools'] for c in solver.spawned_pool_refusal_census] == [['PMMA_scission_tail']]
-        assert any('item-16 pending' in rec.getMessage() for rec in caplog.records)
-
-    @pytest.mark.xfail(strict=True, raises=AssertionError,
-                       reason='symptom 2: a spawned scission tail carries no spawn marker, is never '
-                              'promoted by item 16, and its row stays refused "item-16 pending"')
-    def test_tail_is_promoted_configured_and_live(self, monkeypatch, caplog):
-        model, solver, tail, _, r = _spawn_tail(monkeypatch, caplog)
-        assert getattr(tail, 'parent_pool_label', None) == 'PMMA'
-        assert getattr(tail, 'spawn_metadata', None) == {'source': 'scission'}
+        assert tail.parent_pool_label == 'PMMA'
+        assert tail.spawn_metadata == {'source': 'scission'}
+        assert is_engine_spawned_pool_daughter(tail)
         assert tail in model.core.species
         assert 'PMMA_scission_tail' in {p.label for p in solver.polymer_pools}
         assert solver.reaction_refused[r] == 0
         assert not solver.spawned_pool_refusal_census
+        assert solver.scission_supersession_census == []
 
-    @pytest.mark.xfail(strict=True, raises=AssertionError,
-                       reason='the r91 refusal of an unconfigured spawned pool says "item-16 pending", '
-                              'not its cause')
     def test_unconfigured_spawned_tail_is_refused_naming_the_cause(self, monkeypatch, caplog):
         model, solver, tail, _, r = _spawn_tail(monkeypatch, caplog, marked=False)
         _setup(tail not in model.core.species, 'an unmarked tail is not promoted')
@@ -274,17 +260,16 @@ class TestKernelSupersedesGeneratedScission:
     (kernel-superseded, zero flux) and counted in its own census, so neither
     double-count census sees it."""
 
-    @pytest.mark.xfail(strict=True, raises=AssertionError,
-                       reason='ruling not landed: a generated scission row on a QSSA pool is not '
-                              'refused as kernel-superseded')
     def test_kernel_initiated_pool_refuses_generated_scission_by_name(self, monkeypatch, caplog):
         import rmgpy.solver.polymer as sp_mod
+        from rmgpy.polymer import _scission_supersession_warned
+        _scission_supersession_warned.clear()
         model, solver, tail, rxn, r = _spawn_tail(monkeypatch, caplog, channel=RADICAL_CHANNEL)
         assert 'PMMA_scission_tail' in {p.label for p in solver.polymer_pools}
         assert not solver.spawned_pool_refusal_census
         assert solver.reaction_refused[r] == 1
         assert solver.reaction_flux_archetype[r] == sp_mod.FLUX_NONE
-        assert getattr(solver, 'scission_supersession_census', None) == [
+        assert solver.scission_supersession_census == [
             {'reaction': str(rxn), 'pool': 'PMMA', 'kernels': ['radical_qssa_unzip'],
              'reason': 'kernel-superseded'}]
         assert solver.qssa_double_count_census == []
@@ -292,17 +277,14 @@ class TestKernelSupersedesGeneratedScission:
                  if 'SCISSION SUPERSESSION CENSUS' in rec.getMessage()]
         assert len(lines) == 1 and "'PMMA'" in lines[0] and str(rxn) in lines[0]
 
-    @pytest.mark.xfail(strict=True, raises=AssertionError,
-                       reason='ruling not landed: no named backbone-initiation kernel predicate')
     def test_backbone_initiation_kernels_are_named(self):
         import rmgpy.solver.polymer as sp_mod
-        kernels_of = getattr(sp_mod, 'backbone_initiation_kernels', None)
-        assert kernels_of is not None
 
         def pool(**kw):
             return sp_mod.PolymerPoolConfig(label='P', xs=3, explicit_dp_to_species_index={},
                                             mu_indices=(0, 1, 2), **kw)
 
+        kernels_of = sp_mod.backbone_initiation_kernels
         trip = {'A': 1.0e15, 'n': 0.0, 'Ea': 3.0e5}
         assert kernels_of(pool()) == ()
         assert kernels_of(pool(k_scission=1.0, side_group_homolysis=[{}])) == ()
@@ -315,12 +297,11 @@ class TestKernelSupersedesGeneratedScission:
 class TestBornEmptyPoolInitialConditions:
     """Symptom 3. A spawned daughter pool is born empty by design (moments
     0, 0, 0; the parent keeps its mass), so it has no entry in the deck's
-    initial moments; set_initial_conditions warns "no initial conditions" for
-    it on every rebuild while its moment slots start at exactly zero."""
+    initial moments; set_initial_conditions does not warn for it. A deck pool
+    without initial conditions is still warned."""
 
     def _spawn(self, monkeypatch, caplog):
         import rmgpy.solver.polymer as sp_mod
-        from rmgpy.polymer import Polymer
         parent = _parent()
         h = _spc('[H]', 'H')
         model = _model_with_parent(parent, h)
@@ -340,13 +321,14 @@ class TestBornEmptyPoolInitialConditions:
                   if 'has no initial conditions provided' in rec.getMessage()]
         return solver, warned
 
-    def test_born_empty_pool_is_warned_and_starts_at_zero(self, monkeypatch, caplog):
+    def test_born_empty_spawned_pool_starts_at_zero_unwarned(self, monkeypatch, caplog):
         solver, warned = self._spawn(monkeypatch, caplog)
         pools = {p.label: p for p in solver.polymer_pools}
-        assert set(pools) == {'PMMA', 'PMMA_mod'}
+        _setup(set(pools) == {'PMMA', 'PMMA_mod'}, 'daughter configured')
+        assert pools['PMMA_mod'].engine_spawned and not pools['PMMA'].engine_spawned
         assert [float(solver.y0[i]) for i in pools['PMMA_mod'].mu_indices] == [0.0, 0.0, 0.0]
         assert [float(solver.y0[i]) for i in pools['PMMA'].mu_indices] == pytest.approx([0.01, 0.5, 30.0])
-        assert warned == ["Polymer pool 'PMMA_mod' has no initial conditions provided (Explicit or Moments)."]
+        assert warned == []
 
     def test_configured_pool_without_initial_conditions_still_warns(self, caplog):
         """Two deck-configured pools, one without initial conditions: that one
@@ -369,27 +351,22 @@ class TestBornEmptyPoolInitialConditions:
                 if 'has no initial conditions provided' in rec.getMessage()] == [
             "Polymer pool 'B' has no initial conditions provided (Explicit or Moments)."]
 
-    @pytest.mark.xfail(strict=True, raises=AssertionError,
-                       reason='symptom 3: a born-empty spawned pool is warned "no initial conditions" '
-                              'although zero moments are its declared initial condition')
-    def test_born_empty_spawned_pool_is_not_warned(self, monkeypatch, caplog):
-        solver, warned = self._spawn(monkeypatch, caplog)
-        _setup('PMMA_mod' in {p.label for p in solver.polymer_pools}, 'daughter configured')
-        assert warned == []
-
 
 class TestQssaDoubleCountOnHydrogenAbstraction:
-    """Symptom 4. The QSSA tripwire counts any live SCISSION_FRAGMENT or
-    VOLATILE_EJECTION row sourced from a QSSA pool as overlapping its random
-    backbone homolysis. A hydrogen abstraction into the pool's radical-feature
-    daughter (volatile ejection of one H) cuts no backbone bond, yet trips it:
-    on the triage deck this row shape is the tripwire's only trigger."""
+    """Symptom 4. The QSSA tripwire counts a live volatile-ejection row sourced
+    from a QSSA pool as overlapping its random backbone homolysis only when the
+    row moves repeat units. A hydrogen abstraction into the pool's
+    radical-feature daughter (one H leaves, chains move intact: a zero moment
+    shift) cuts no backbone bond and does not trip it; a same-pool chain-end
+    ejection of a repeat unit does."""
 
-    def _build(self, monkeypatch, caplog, row='h_abstraction'):
+    def _build(self, monkeypatch, caplog, row):
         """``row``: the hydrogen abstraction into the radical-feature daughter
         (one H leaves, chains move intact), or a same-pool chain-end ejection
         of one repeat unit (a backbone cut)."""
         import rmgpy.solver.polymer as sp_mod
+        from rmgpy.polymer import _qssa_double_count_warned
+        _qssa_double_count_warned.discard(('PMMA', 'generated_scission_ve'))
         parent = _parent(RADICAL_CHANNEL)
         mma = _spc(MONOMER_CLOSED, 'MMA')
         ch3 = _spc('[CH3]', 'CH3')
@@ -414,25 +391,16 @@ class TestQssaDoubleCountOnHydrogenAbstraction:
         _setup(solver.reaction_refused[r] == 0
                and solver.reaction_flux_archetype[r] == sp_mod.FLUX_VOLATILE_EJECTION,
                'live volatile-ejection row')
-        return solver
+        return solver, r
 
     def test_chain_end_ejection_row_still_trips(self, monkeypatch, caplog):
-        from rmgpy.polymer import _qssa_double_count_warned
-        _qssa_double_count_warned.discard(('PMMA', 'generated_scission_ve'))
-        solver = self._build(monkeypatch, caplog, row='chain_end')
+        solver, r = self._build(monkeypatch, caplog, row='chain_end')
+        _setup(solver.reaction_eject_units_moment[r] == 1.0, 'one repeat unit leaves')
         assert solver.qssa_double_count_census == [{'pool': 'PMMA', 'overlap': 'generated_scission_ve'}]
         assert any('QSSA DOUBLE-COUNT TRIPWIRE' in rec.getMessage() for rec in caplog.records)
 
-    def test_hydrogen_abstraction_row_trips_the_tripwire_today(self, monkeypatch, caplog):
-        from rmgpy.polymer import _qssa_double_count_warned
-        _qssa_double_count_warned.discard(('PMMA', 'generated_scission_ve'))
-        solver = self._build(monkeypatch, caplog)
-        assert solver.qssa_double_count_census == [{'pool': 'PMMA', 'overlap': 'generated_scission_ve'}]
-        assert any('QSSA DOUBLE-COUNT TRIPWIRE' in rec.getMessage() for rec in caplog.records)
-
-    @pytest.mark.xfail(strict=True, raises=AssertionError,
-                       reason='symptom 4: a hydrogen-abstraction volatile-ejection row cuts no '
-                              'backbone bond yet trips the QSSA double-count tripwire')
     def test_hydrogen_abstraction_row_does_not_trip(self, monkeypatch, caplog):
-        solver = self._build(monkeypatch, caplog)
+        solver, r = self._build(monkeypatch, caplog, row='h_abstraction')
+        _setup(solver.reaction_eject_units_moment[r] == 0.0, 'chains move intact')
         assert solver.qssa_double_count_census == []
+        assert not any('QSSA DOUBLE-COUNT TRIPWIRE' in rec.getMessage() for rec in caplog.records)

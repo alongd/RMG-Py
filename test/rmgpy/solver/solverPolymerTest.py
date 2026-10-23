@@ -14464,9 +14464,12 @@ class TestSpawnedPoolDemotionRefusal:
         assert len(msgs) == 1, msgs
         assert re.search(
             r"SPAWNED-POOL DEMOTION REFUSAL: 1 stamped pool-coupled row\(s\) "
-            r"targeting unconfigured spawned pools refused conduit-deferred "
-            r"instead of demoted to legacy mu1-only; item-16 pending; "
-            r"archetypes=MIGRATION, pools=poly_mod, first_rows=core row 0:",
+            r"target spawned polymer pool\(s\) with no solver pool config "
+            r"\(the item-16 enlarge-boundary promotion did not reach them: a "
+            r"daughter without spawn markers, or one still edge-resident\); "
+            r"refused conduit-deferred instead of demoted to legacy "
+            r"mu1-only; archetypes=MIGRATION, pools=poly_mod, "
+            r"first_rows=core row 0:",
             msgs[0]), msgs[0]
         census = rs.spawned_pool_refusal_census
         assert len(census) == 1

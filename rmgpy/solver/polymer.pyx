@@ -802,6 +802,23 @@ def catalog_kernel_connections(pool):
     return out
 
 
+def backbone_initiation_kernels(pool):
+    """Names of the kernels that carry `pool`'s random backbone homolysis
+    (its initiation), in a fixed order: radical_qssa_unzip (QSSA initiation),
+    k_homolysis and catalog kernel_homolysis. Each is enabled exactly when
+    configured (the flatteners' gates read the same fields). k_scission and
+    side_group_homolysis are not initiation kernels here: the first is the
+    item-18 census's business, the second cuts no backbone bond."""
+    out = []
+    if getattr(pool, "radical_qssa_unzip", None) is not None:
+        out.append("radical_qssa_unzip")
+    if getattr(pool, "k_homolysis", None) is not None:
+        out.append("k_homolysis")
+    if getattr(pool, "kernel_homolysis", None):
+        out.append("kernel_homolysis")
+    return tuple(out)
+
+
 def _kernel_number(pool_label, kernel, template, key, value, *, positive=False,
                    unit_interval=False):
     if isinstance(value, bool) or not isinstance(value, (int, float)) \
@@ -1491,6 +1508,13 @@ class PolymerPoolConfig:
     # pools in one system is refused at setup.
     repeat_unit_atoms: Optional[Tuple[Tuple[str, int], ...]] = None
     end_group_atoms: Optional[Tuple[Tuple[str, int], ...]] = None
+
+    # True for a pool whose config is derived from an engine-spawned daughter
+    # (rmgpy.polymer.is_engine_spawned_pool_daughter, set by
+    # derive_daughter_pool_configs). Such a pool is born empty by design --
+    # zero moments are its initial condition -- so set_initial_conditions
+    # does not warn that it has none. Deck pools keep False.
+    engine_spawned: bool = False
 
     # Custom Kinetics Hook
     # f(T, P, mu0, mu1, mu2, mu3) -> (dmu0_dt, dmu1_dt, dmu2_dt, small_species_sources)
@@ -4494,9 +4518,11 @@ class HybridPolymerSystem(ReactionSystem):
                 for (_, r_rxn, r_arch, r_pools) in spawned_refusals]
             logging.warning(
                 "SPAWNED-POOL DEMOTION REFUSAL: %d stamped pool-coupled "
-                "row(s) targeting unconfigured spawned pools refused "
-                "conduit-deferred instead of demoted to legacy mu1-only; "
-                "item-16 pending; archetypes=%s, pools=%s, first_rows=%s",
+                "row(s) target spawned polymer pool(s) with no solver pool "
+                "config (the item-16 enlarge-boundary promotion did not "
+                "reach them: a daughter without spawn markers, or one still "
+                "edge-resident); refused conduit-deferred instead of demoted "
+                "to legacy mu1-only; archetypes=%s, pools=%s, first_rows=%s",
                 len(spawned_refusals),
                 ",".join(sorted({a for (_, _, a, _) in spawned_refusals})),
                 ",".join(sorted({lbl for (_, _, _, ls) in spawned_refusals
@@ -4640,6 +4666,45 @@ class HybridPolymerSystem(ReactionSystem):
                 a_mom_ve = 0.0
             self.reaction_eject_units_moment[r_ve] = a_mom_ve
 
+        # Generated-scission supersession (I-250 ruling): a live generated
+        # SCISSION_FRAGMENT row cutting a pool whose backbone initiation a
+        # kernel carries (backbone_initiation_kernels) runs beside that
+        # kernel's random homolysis -- the same cuts counted twice. Refuse it
+        # by name (kernel-superseded; archetype NONE, zero flux, like the r91
+        # refusal and as non-sticky: re-derived per rebuild, the reaction
+        # object is not stamped) and census it. Placement is load-bearing:
+        # AFTER the demotion loop (FINAL archetypes and source pools) and
+        # BEFORE the item-18 and QSSA double-count censuses, so neither counts
+        # a superseded row. The kernels are read from the pool configs, whose
+        # fields the flatteners' enabled gates mirror exactly.
+        from rmgpy.polymer import warn_once_scission_supersession
+        self.scission_supersession_census = []
+        superseded = {}
+        for r_ss in range(n_rxn):
+            if (self.reaction_refused[r_ss]
+                    or self.reaction_flux_archetype[r_ss] != FLUX_SCISSION_FRAGMENT):
+                continue
+            src_ss = self.reaction_src_pool[r_ss]
+            if src_ss < 0:
+                continue
+            kernels_ss = backbone_initiation_kernels(self.polymer_pools[src_ss])
+            if not kernels_ss:
+                continue
+            self.reaction_refused[r_ss] = 1
+            self.reaction_flux_archetype[r_ss] = FLUX_NONE
+            entry = {"reaction": _reaction_census_label(combined_rxns[r_ss]),
+                     "pool": self.polymer_pools[src_ss].label,
+                     "kernels": list(kernels_ss),
+                     "reason": "kernel-superseded"}
+            self.scission_supersession_census.append(entry)
+            superseded.setdefault(src_ss, []).append(entry["reaction"])
+        for src_ss, rows_ss in superseded.items():
+            warn_once_scission_supersession(
+                {"pool": self.polymer_pools[src_ss].label,
+                 "kernels": list(backbone_initiation_kernels(
+                     self.polymer_pools[src_ss])),
+                 "superseded_rows": rows_ss})
+
         # item 18 (T2): double-count tripwire. A pool carrying BOTH a surviving
         # explicit beta-scission/chip reaction sourced from it (archetype
         # SCISSION_FRAGMENT or DISCRETE_CHIP) AND a nonzero phenomenological
@@ -4679,23 +4744,31 @@ class HybridPolymerSystem(ReactionSystem):
         self.validate_configuration()
 
         # radical_qssa_unzip double-count census (M2). QSSA initiation is
-        # backbone homolysis, so generated-chemistry SCISSION_FRAGMENT /
-        # VOLATILE_EJECTION reactions sourced from the same pool may
-        # represent overlapping physics. WARN-ONCE census mirroring the
-        # item-18 tripwire above -- warn, NEVER refuse (generated scission
-        # may cover different bonds; hard exclusion would be wrong). The
+        # backbone homolysis, so generated-chemistry VOLATILE_EJECTION
+        # reactions sourced from the same pool may represent overlapping
+        # physics. WARN-ONCE census mirroring the item-18 tripwire above --
+        # warn, NEVER refuse (an ejection may cover different bonds; generated
+        # SCISSION_FRAGMENT rows are the ruled exception, refused above). The
         # k_unzip co-presence stays a hard error (M1 mutual exclusion).
         # Placement is load-bearing twice over: AFTER the demotion loop (it
         # scans FINAL archetypes, like the item-18 census) and AFTER
         # validate_configuration (qssa_enabled -- the flattened solver-owned
         # gate, the ONLY channel signal the solver trusts -- exists here).
+        # Only backbone-cutting rows overlap (I-250). A SCISSION_FRAGMENT row
+        # sourced from a QSSA pool never reaches here live: the
+        # generated-scission supersession above refused it by name. A
+        # VOLATILE_EJECTION row counts only if it moves repeat units: a zero
+        # moment shift (reaction_eject_units_moment -- an atom-transfer
+        # conduit such as a hydrogen abstraction into a feature daughter,
+        # whose chains move with unchanged mu1) cuts no backbone bond.
         from rmgpy.polymer import warn_once_qssa_double_count
         self.qssa_double_count_census = []
         qssa_overlap_src_pools = set()
         for r_dc in range(self.reaction_flux_archetype.shape[0]):
-            if self.reaction_flux_archetype[r_dc] in (FLUX_SCISSION_FRAGMENT, FLUX_VOLATILE_EJECTION):
-                if self.reaction_src_pool[r_dc] >= 0:
-                    qssa_overlap_src_pools.add(self.reaction_src_pool[r_dc])
+            if (self.reaction_flux_archetype[r_dc] == FLUX_VOLATILE_EJECTION
+                    and self.reaction_eject_units_moment[r_dc] != 0.0
+                    and self.reaction_src_pool[r_dc] >= 0):
+                qssa_overlap_src_pools.add(self.reaction_src_pool[r_dc])
         for p_idx, pool in enumerate(self.polymer_pools):
             if not self.qssa_enabled[p_idx]:
                 continue
@@ -5197,7 +5270,10 @@ class HybridPolymerSystem(ReactionSystem):
                     if dp in pool.explicit_dp_to_species_index:
                         idx = pool.explicit_dp_to_species_index[dp]
                         self.y0[idx] = max(0.0, moles)
-            elif pool.label not in self.initial_polymer_moments:
+            elif (pool.label not in self.initial_polymer_moments
+                    and not getattr(pool, "engine_spawned", False)):
+                # An engine-spawned daughter is born empty: its moment slots
+                # stay at zero, its declared initial condition.
                 logging.warning(f"Polymer pool '{pool.label}' has no initial conditions provided (Explicit or Moments).")
 
         # 3. Polymer Moments

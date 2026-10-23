@@ -1941,6 +1941,9 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
                 getattr(spc, "chain_mass_defect_g_mol", 0.0) or 0.0),
             repeat_unit_atoms=_element_count_tuple(getattr(spc, "monomer", None)),
             end_group_atoms=_end_group_atoms(getattr(spc, "end_groups", None)),
+            # Born empty by design: the solver does not warn that it has no
+            # initial conditions. A deck pool configured here keeps False.
+            engine_spawned=is_engine_spawned_pool_daughter(spc),
         ))
 
     # Item 16 discovery census over the EDGE (never configuration): any
