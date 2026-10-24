@@ -96,6 +96,7 @@ In short:
 """
 
 import datetime
+import hashlib
 import json
 import logging
 import math
@@ -3294,14 +3295,18 @@ def classify_reaction_channel(reactants, products) -> str:
       an elimination);
 
     one species into one is an isomerization, two into two a bimolecular row,
-    anything else unidentified."""
+    anything else unidentified. A one-into-two row with a species that has
+    no structure (an artifact replay's) has no radicals to count and is
+    unidentified, the proxy_balance_defect rule: no kernel carries it, so it
+    is never superseded from its species (a stamped row reads its stamp,
+    reaction_channel)."""
     n_r, n_p = len(reactants), len(products)
     if n_r == 1 and n_p == 1:
         return CHANNEL_ISOMERIZATION
     if n_r == 2 and n_p == 2:
         return CHANNEL_BIMOLECULAR
     sides = decomposition_sides(reactants, products)
-    if sides is None:
+    if sides is None or not all(_has_structure(s) for s in [sides[0]] + list(sides[1])):
         return CHANNEL_UNIDENTIFIED
     whole, pieces = sides
     r_whole = _radical_electrons(whole)
@@ -5641,22 +5646,34 @@ def _radical_site_descriptor(mol: Molecule) -> str:
     """
     Deterministic radical-placement descriptor for a feature-unit fingerprint
     (radical-feature producer path): a sorted, joined encoding of every
-    radical-bearing atom as ``{label|element}{radicals}h{n_H}c{n_heavy}``.
+    radical-bearing atom as ``{element}{radicals}h{n_H}c{n_heavy}@{colour}``.
     Distinguishes same-formula H-loss units by WHERE the extra radical sits
-    (e.g. the ~3 PP C3H5 units: backbone CH2 / backbone CH / pendant CH3)
     while staying identical for isomorphic units, so positional twins still
-    dedup to one pool. v1 coarseness is documented: exotic units whose
-    radical sites share (element, radical count, H count, heavy-neighbor
-    count) multisets would collide -- acceptable for the documented ~3-
-    environment scope; refine when a real deck needs it.
+    dedup to one pool.
+
+    ``colour`` is the atom's class under colour refinement of the whole unit
+    (element and radical count per atom, refined over its neighbours once
+    per atom, hashed so it compares across units): the local reading alone
+    let two sites with the same element, radical, H and heavy-neighbour
+    counts but different surroundings collide (I-259: a methyl on an ester
+    oxygen and one on a backbone carbon; the ortho, meta and para ring
+    positions). Bond orders and stitch labels are not read: a Kekule
+    rendering's two ortho positions are one site, and so are the H lost at
+    either stitch atom of a unit the chain reads the same both ways.
+    _register_polymer confirms by isomorphism.
     """
+    atoms = list(mol.atoms)
+    colour = {a: f"{a.symbol}{a.radical_electrons}" for a in atoms}
+    for _ in range(len(atoms)):
+        colour = {a: hashlib.sha1((colour[a] + '(' + ','.join(sorted(colour[nb] for nb in a.bonds)) + ')')
+                                  .encode()).hexdigest()[:12]
+                  for a in atoms}
     sites = []
-    for a in mol.atoms:
+    for a in atoms:
         if a.radical_electrons > 0:
             n_h = sum(1 for nb in a.bonds if nb.is_hydrogen())
             n_heavy = sum(1 for nb in a.bonds if not nb.is_hydrogen())
-            key = a.label if a.label else a.symbol
-            sites.append(f"{key}{a.radical_electrons}h{n_h}c{n_heavy}")
+            sites.append(f"{a.symbol}{a.radical_electrons}h{n_h}c{n_heavy}@{colour[a]}")
     return '-'.join(sorted(sites))
 
 

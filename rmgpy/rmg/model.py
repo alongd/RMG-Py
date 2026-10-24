@@ -450,9 +450,15 @@ class CoreEdgeReactionModel:
         whether it was freshly added.
         """
         fp = poly.fingerprint
-        # Search existing registries (fast: check in order of likelihood)
+        # Search existing registries (fast: check in order of likelihood).
+        # A feature pool is one pool per structure (I-259): its fingerprint
+        # reads the feature unit, and the match is confirmed on the proxies,
+        # so two sites that read alike never share a pool.
         for spec in self.new_species_list + self.core.species + self.edge.species:
             if isinstance(spec, Polymer) and spec.fingerprint == fp:
+                if (poly.feature_monomer is not None and spec.feature_monomer is not None
+                        and not spec.is_isomorphic(poly)):
+                    continue
                 # Round-25 P2-2: dedup discards the incoming object, so a
                 # channel-free first registration must not silently swallow a
                 # later channel-bearing equivalent's radical_qssa_unzip /

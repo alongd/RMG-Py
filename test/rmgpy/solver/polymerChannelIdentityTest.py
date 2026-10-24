@@ -476,11 +476,7 @@ def _attempt(build):
         return e
 
 
-RED = pytest.mark.xfail(strict=True, raises=AssertionError,
-                        reason='I-259 red: a structureless species crashes the channel read')
 
-
-@RED
 def test_a_participant_without_structure_reads_no_channel():
     """A species with no molecule (an artifact replay's) has no radicals to
     count: the row's channel is unidentified, never a crash."""
@@ -491,7 +487,6 @@ def test_a_participant_without_structure_reads_no_channel():
     assert channel == sp_mod_polymer.CHANNEL_UNIDENTIFIED, channel
 
 
-@RED
 def test_an_unstamped_row_with_a_structureless_pool_species_stays_live():
     """The fission the species would read beside k_scission
     (test_an_unstamped_row_is_read_from_its_own_species), with the pool

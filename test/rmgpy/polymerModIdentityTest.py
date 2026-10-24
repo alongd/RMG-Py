@@ -65,9 +65,6 @@ MONOMERS = {
 }
 SOURCE = 'radical_feature_h_loss'
 KIN = Arrhenius(A=(1.0, 'cm^3/(mol*s)'), n=0.0, Ea=(0.0, 'kcal/mol'), T0=(298.15, 'K'))
-RED = pytest.mark.xfail(strict=True, raises=AssertionError,
-                        reason='I-259 red: same-reading H-loss sites share one pool')
-
 
 def _setup(ok, what):
     """A setup step that fails raises RuntimeError, never an AssertionError."""
@@ -110,14 +107,12 @@ def _pool_count(name):
     return len({id(p) for p in registered}), len(_classes(daughters))
 
 
-@RED
 def test_a_monomer_with_one_site_class_registers_one_pool():
     """Every H of an ethylene-like unit is one site: one pool, never a split
     (the H lost at either stitch atom read as two radical-site labels)."""
     assert _pool_count('ethylene') == (1, 1)
 
 
-@RED
 def test_methacrylate_like_sites_register_one_pool_each():
     """A methyl on the ester oxygen and the methyl on the backbone carbon
     read alike (C, one radical, 2 H, one heavy neighbour): two structures."""
@@ -125,14 +120,12 @@ def test_methacrylate_like_sites_register_one_pool_each():
     assert n_pools == n_classes, (n_pools, n_classes)
 
 
-@RED
 def test_styrene_like_ring_sites_register_one_pool_each():
     """The ortho, meta and para ring H losses read alike: three structures."""
     n_pools, n_classes = _pool_count('styrene')
     assert n_pools == n_classes, (n_pools, n_classes)
 
 
-@RED
 @pytest.mark.parametrize('name', ['methacrylate', 'styrene'])
 def test_each_registered_pool_carries_the_structure_it_was_registered_for(name):
     """The pool a daughter registers to has that daughter's feature proxy."""
@@ -144,9 +137,7 @@ def test_each_registered_pool_carries_the_structure_it_was_registered_for(name):
             d.feature_proxy.molecule[0].to_smiles(), pool.feature_proxy.molecule[0].to_smiles())
 
 
-@pytest.mark.parametrize('name', [
-    'methacrylate', 'styrene',
-    pytest.param('ethylene', marks=RED)])
+@pytest.mark.parametrize('name', ['methacrylate', 'styrene', 'ethylene'])
 def test_twin_units_share_one_fingerprint(name):
     """Units whose feature proxies are isomorphic share one fingerprint."""
     daughters = _unit_daughters(_parent(name))
@@ -156,7 +147,6 @@ def test_twin_units_share_one_fingerprint(name):
             assert a.fingerprint == b.fingerprint
 
 
-@RED
 @pytest.mark.parametrize('name', ['methacrylate', 'styrene'])
 def test_non_isomorphic_units_have_distinct_fingerprints(name):
     daughters = _unit_daughters(_parent(name))
@@ -232,7 +222,6 @@ def _renders(daughter, product):
                for v in (daughter._h_loss_positional_species(unit, p) for p in (1, 0, 2)))
 
 
-@RED
 @pytest.mark.parametrize('name', ['methacrylate', 'styrene'])
 def test_a_center_h_loss_row_books_the_structure_that_reacted(name):
     """Every H lost from the center unit: the row's daughter renders, at the
