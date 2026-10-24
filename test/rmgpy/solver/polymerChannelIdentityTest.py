@@ -331,19 +331,33 @@ def _pool(label, mu0, **kw):
                              mu_indices=(mu0, mu0 + 1, mu0 + 2), monomer_mw_g_mol=104.15, **kw)
 
 
+# A stamped row's species read the channel it is stamped with (the solver
+# refuses a pool-coupled row whose proxies do not, I-255): (A, T, X) proxies.
+BALANCED = {
+    'bond_fission': ('CCCCC', '[CH2]CCCCC', '[CH2]CC'),
+    'radical_beta_scission': ('[CH2]CCCC', 'C=CCCCC', '[CH2]CC'),
+    'concerted_molecular': ('CCCCC', 'CCCCCC', 'CCC'),
+    'bimolecular': ('CCCCC', '[CH2]CCCCC', 'CCC'),
+}
+
+
 def _kernel_system(kernel, channel, archetype=sp_mod.FLUX_VOLATILE_EJECTION, cls=HybridPolymerSystem,
                    t_proxy='CCCCCC'):
     """Pool A carries ``kernel``; one row decomposes A: A -> T + X (a
-    volatile ejection moving one repeat unit) or, as a chip, A -> A + X.
-    T, Re (a kernel_homolysis daughter) and the k_homolysis end-radical pools
-    are born empty."""
-    core = [_spc('N#N', 'N2'), _spc('[CH2]CC', 'X'), _spc('C=C', 'M')]
+    volatile ejection moving one repeat unit) or, as a chip, A -> A + X; a
+    bimolecular row is A + Y -> T + X. A stamped row's proxies read its
+    channel (BALANCED). T, Re (a kernel_homolysis daughter) and the
+    k_homolysis end-radical pools are born empty."""
+    a_proxy, x = 'CCCCC', '[CH2]CC'
+    if channel in BALANCED:
+        a_proxy, t_proxy, x = BALANCED[channel]
+    core = [_spc('N#N', 'N2'), _spc(x, 'X'), _spc('C=C', 'M'), _spc('[CH3]', 'Y')]
     labels = ['A', 'T', 'Re', 'A_rad_primary_end', 'A_rad_secondary_end']
     pools = []
     for n, label in enumerate(labels):
         stem = 'C' * (n + 1)
         base = len(core)
-        proxy = t_proxy if label == 'T' else 'C' * (n + 5)
+        proxy = {'A': a_proxy, 'T': t_proxy}.get(label, 'C' * (n + 5))
         core += [_spc(proxy, label), _spc(stem + 'O', f'{label}_mu0'),
                  _spc(stem + 'N', f'{label}_mu1'), _spc(stem + 'S', f'{label}_mu2')]
         kw = {}
@@ -361,12 +375,13 @@ def _kernel_system(kernel, channel, archetype=sp_mod.FLUX_VOLATILE_EJECTION, cls
         rxn = Reaction(reactants=[sp['A']], products=[sp['A'], sp['X']], kinetics=KIN, reversible=False)
         rxn.polymer_chip_units = 1
     else:
-        rxn = Reaction(reactants=[sp['A']], products=[sp['T'], sp['X']], kinetics=KIN, reversible=False)
+        reactants = [sp['A'], sp['Y']] if channel == 'bimolecular' else [sp['A']]
+        rxn = Reaction(reactants=reactants, products=[sp['T'], sp['X']], kinetics=KIN, reversible=False)
         rxn.polymer_eject_units = 1.0
     rxn.polymer_flux_archetype = archetype
     if channel is not None:
         _stamp(rxn, channel)
-    mask = np.array([s.label in ('N2', 'X', 'M') for s in core], dtype=bool)
+    mask = np.array([s.label in ('N2', 'X', 'M', 'Y') for s in core], dtype=bool)
     rs = cls(T=700.0, P=1.0e5, initial_mole_fractions={core[0]: 1.0}, V_poly=1.0,
              polymer_pools=pools, mass_transfer=[], gas_species_mask=mask, constant_gas_volume=False,
              initial_polymer_moments={'A': (1.0, 5.0, 30.0)}, termination=[])
@@ -479,7 +494,7 @@ def _sgh_system(gas_product_row):
                    sites_per_unit=2.0, gas_product='[Br]')
     core = [_spc('N#N', 'N2'), _spc('[Br]', 'Br_rad'), _spc('[Cl]', 'Cl_rad'),
             _spc('CCCC', 'poly'), _spc('CO', 'poly_mu0'), _spc('C=O', 'poly_mu1'), _spc('C#N', 'poly_mu2'),
-            _spc('CCCCC', 'F'), _spc('CCO', 'F_mu0'), _spc('CC=O', 'F_mu1'), _spc('CC#N', 'F_mu2')]
+            _spc('[CH2]CCCC', 'F'), _spc('CCO', 'F_mu0'), _spc('CC=O', 'F_mu1'), _spc('CC#N', 'F_mu2')]
     gas = {'[Br]': core[1], '[Cl]': core[2]}[gas_product_row]
     m_x = gas.molecule[0].get_molecular_weight() * 1000.0
     pools = [PolymerPoolConfig(label='poly', xs=2, explicit_dp_to_species_index={}, mu_indices=(4, 5, 6),

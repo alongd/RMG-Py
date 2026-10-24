@@ -2808,6 +2808,33 @@ class HybridPolymerSystem(ReactionSystem):
             return None
         return p, carried, kernels
 
+    def _refuse_unbalanced_proxy_rows(self, combined_rxns):
+        """Refuse by name every live pool-coupled row (a core pool proxy among
+        its species) whose species do not balance
+        (rmgpy.polymer.proxy_balance_defect: the net charge changes, or the
+        species read another channel than the row's generation stamp) --
+        archetype NONE, zero flux -- and record it in ``proxy_balance_census``
+        ({reaction, reason, charge, channel}); warn-once per row. A row with
+        one species on both sides (a chip, a chain-end fold) books a change
+        that species does not show, and is not read for radicals."""
+        from rmgpy.polymer import proxy_balance_defect, warn_once_proxy_balance
+        cdef int n_core = self.num_core_species
+        self.proxy_balance_census = []
+        for r in range(len(combined_rxns)):
+            if self.reaction_refused[r]:
+                continue
+            ir = {int(i) for i in self.reactant_indices[r] if i != -1}
+            ip = {int(i) for i in self.product_indices[r] if i != -1}
+            if not any(i < n_core and self.species_to_pool_indices[i] >= 0 for i in ir | ip):
+                continue
+            entry = proxy_balance_defect(combined_rxns[r], folded=bool(ir & ip))
+            if entry is None:
+                continue
+            self.reaction_refused[r] = 1
+            self.reaction_flux_archetype[r] = FLUX_NONE
+            self.proxy_balance_census.append(entry)
+            warn_once_proxy_balance(entry)
+
     def _refuse_kernel_superseded_rows(self, combined_rxns):
         """Refuse by name every live row whose channel a kernel on the pool
         it decomposes carries (archetype NONE, zero flux) and record it in
@@ -4763,6 +4790,11 @@ class HybridPolymerSystem(ReactionSystem):
         # row.
         self._channel_species = combined_species
         self._held_superseded = held_superseded
+        # Proxy balance (I-255): a pool-coupled row whose proxies change the
+        # net charge, or no longer read the channel stamped from its raw
+        # molecules, is refused by name first, so a defective proxy is named
+        # for its defect rather than superseded or integrated.
+        self._refuse_unbalanced_proxy_rows(combined_rxns)
         self._refuse_kernel_superseded_rows(combined_rxns)
         self._census_kernel_channel_double_counts(combined_rxns)
 

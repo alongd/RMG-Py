@@ -3188,28 +3188,33 @@ class TestPolymerAdditionalCoverage:
         assert p1.Mn == 0.0
         assert p1.Mw == 0.0
 
-    def test_ensure_open_site(self):
+    def test_open_cut_site(self):
         """
-        Test that _ensure_open_site promotes closed-shell atoms to radicals
-        but leaves existing radicals untouched.
+        Test that _open_cut_site opens one radical electron per electron pair
+        of the cut bond, whatever the kept atom already carries (I-255: a
+        radical the reaction left there is the product's own, not the stitch
+        site), and refuses a non-integral (aromatic) cut.
         """
-        # Scenario 1: Closed-shell atom (e.g., Carbon in Methane)
-        # Should be promoted to a radical (u1)
+        def cut(order):
+            return Bond(Atom(element='C'), Atom(element='C'), order=order)
+
+        # Closed-shell atom, single cut: one stitch site (u1)
         c_closed = Atom(element='C', radical_electrons=0)
-        polymer._ensure_open_site(c_closed)
+        polymer._open_cut_site(c_closed, cut(1))
         assert c_closed.radical_electrons == 1
 
-        # Scenario 2: Existing mono-radical (u1)
-        # Should remain unchanged (not become a diradical u2)
+        # Existing mono-radical, single cut: the radical survives the stitch (u2)
         c_radical = Atom(element='C', radical_electrons=1)
-        polymer._ensure_open_site(c_radical)
-        assert c_radical.radical_electrons == 1
+        polymer._open_cut_site(c_radical, cut(1))
+        assert c_radical.radical_electrons == 2
 
-        # Scenario 3: Existing multi-radical (u2)
-        # Should remain unchanged
-        c_diradical = Atom(element='C', radical_electrons=2)
-        polymer._ensure_open_site(c_diradical)
-        assert c_diradical.radical_electrons == 2
+        # Double-bond cut: two open valences
+        c_double = Atom(element='C', radical_electrons=0)
+        polymer._open_cut_site(c_double, cut(2))
+        assert c_double.radical_electrons == 2
+
+        with pytest.raises(ValueError, match="order 1.5"):
+            polymer._open_cut_site(Atom(element='C', radical_electrons=0), cut(1.5))
 
     def test_get_target_atoms(self):
         """

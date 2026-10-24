@@ -197,12 +197,17 @@ def _spawn_tail(monkeypatch, caplog, channel=None, marked=True, reaction_channel
     strips the spawn markers: a daughter the item-16 promotion does not reach.
     ``reaction_channel`` is the stamp generation writes from the raw
     molecules (the tail proxy here is a capped stand-in, not the radical
-    piece a homolysis makes)."""
+    piece a homolysis makes); for a concerted stamp the small product is
+    closed-shell, so the row's species read its stamp (I-255)."""
     import rmgpy.solver.polymer as sp_mod
     from rmgpy.polymer import Polymer, stitch_molecules_by_labeled_atoms
     parent = _parent(channel)
     ch3 = _spc('[CH3]', 'CH3')
     gas = [ch3]
+    small = ch3
+    if reaction_channel == 'concerted_molecular':
+        small = _spc('C', 'CH4')
+        gas.append(small)
     if channel is not None:
         mma = _spc(MONOMER_CLOSED, 'MMA')
         gas.append(mma)
@@ -216,7 +221,7 @@ def _spawn_tail(monkeypatch, caplog, channel=None, marked=True, reaction_channel
         tail.spawn_metadata = None
     tail, is_new = model.make_new_species(tail, generate_thermo=False)
     _setup(is_new, 'tail registration')
-    rxn = Reaction(reactants=[parent], products=[tail, ch3], **KIN_UNI)
+    rxn = Reaction(reactants=[parent], products=[tail, small], **KIN_UNI)
     rxn.polymer_flux_archetype = sp_mod.FLUX_SCISSION_FRAGMENT
     rxn.polymer_reaction_channel = reaction_channel
     _place_edge_row(model, rxn)

@@ -43,16 +43,12 @@ Hand-built rows on small test proxies (test data only).
 import logging
 
 import numpy as np
-import pytest
 
 import rmgpy.solver.polymer as sp_mod
 from rmgpy.reaction import Reaction
 from rmgpy.solver.polymer import HybridPolymerSystem
 
 from polymerChannelIdentityTest import KIN, _pool, _spc, _stamp
-
-red = pytest.mark.xfail(strict=True, raises=AssertionError,
-                        reason='no proxy-balance guard: an unbalanced pool-coupled row runs live')
 
 
 def _system(t_proxy, x='[CH2]CC', channel=None, fold=False, kernel=None):
@@ -90,7 +86,6 @@ def _census(rs):
     return getattr(rs, 'proxy_balance_census', None)
 
 
-@red
 def test_a_row_whose_proxy_carries_a_charge_is_refused_by_name(caplog):
     from rmgpy import polymer
     getattr(polymer, '_proxy_balance_warned', set()).clear()
@@ -102,7 +97,6 @@ def test_a_row_whose_proxy_carries_a_charge_is_refused_by_name(caplog):
     assert sum('PROXY BALANCE CENSUS' in r.getMessage() for r in caplog.records) == 1
 
 
-@red
 def test_a_row_whose_proxies_lose_the_stamped_channel_is_refused_by_name():
     """A fission stamped from the raw molecules whose pool product proxy is
     closed-shell: one radical appears from none."""
@@ -112,7 +106,6 @@ def test_a_row_whose_proxies_lose_the_stamped_channel_is_refused_by_name():
                             'charge': [0, 0], 'channel': ['bond_fission', 'unidentified']}]
 
 
-@red
 def test_the_defect_is_named_before_a_kernel_supersedes_the_row():
     rs, rxn = _system('CCCC[CH+]C', channel='bond_fission', kernel='k_scission')
     assert rs.reaction_refused[0] == 1

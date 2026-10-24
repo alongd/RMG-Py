@@ -991,7 +991,13 @@ class Polymer(Species):
                 mol = eg
             else:
                 raise InputError(f"Polymer '{label}': End group #{i + 1} is invalid, got: {eg} of type {type(eg)}.")
-            if mol.get_radical_count() != 1:
+            sites = [a for a in mol.atoms if a.label in (*LABELS_1, *LABELS_2)]
+            if sites and all(a.radical_electrons >= 1 for a in sites):
+                # A labeled end group names its stitch site; any further
+                # radical is one the end carries past the stitch (a scission
+                # daughter keeps its product's chain-end radical, I-255).
+                pass
+            elif mol.get_radical_count() != 1:
                 raise InputError(f"Polymer '{label}': End group #{i + 1} ('{eg}') is chemically inert. "
                                  "End groups must be mono-radicals.")
             bad = [a.label for a in mol.atoms if a.label and a.label not in (*LABELS_1, *LABELS_2)]
@@ -1890,13 +1896,16 @@ class Polymer(Species):
                 new_tail = self._extract_remainder(product, head_atoms)
             except ValueError:
                 return None
+            # the product's own radicals on the cut atom (a homolysis piece's
+            # chain-end radical) stay on the daughter's end group
+            carried = self._radicals_at_cut(product, head_atoms)
             self._restore_labels(new_tail,
                                  original_mol=product,
                                  removed_atoms=head_atoms,
                                  head_match_atoms=head_atoms,
                                  tail_match_atoms=None)
             try:
-                self._assert_end_group(new_tail, want_label='*2')
+                self._assert_end_group(new_tail, want_label='*2', carried_radicals=carried)
             except ValueError:
                 return None
             # A scission product is a NEW, shorter chain population that starts
@@ -1926,13 +1935,14 @@ class Polymer(Species):
                 new_head = self._extract_remainder(product, tail_atoms)
             except ValueError:
                 return None
+            carried = self._radicals_at_cut(product, tail_atoms)
             self._restore_labels(new_head,
                                  original_mol=product,
                                  removed_atoms=tail_atoms,
                                  head_match_atoms=None,
                                  tail_match_atoms=tail_atoms)
             try:
-                self._assert_end_group(new_head, want_label='*1')
+                self._assert_end_group(new_head, want_label='*1', carried_radicals=carried)
             except ValueError:
                 return None
             new_Mn = self.Mn / 2.0 if self.Mn else None
@@ -2417,6 +2427,18 @@ class Polymer(Species):
         return list(uniq.values())
 
     @staticmethod
+    def _radicals_at_cut(complex_mol: Molecule, atoms_to_remove) -> int:
+        """Radical electrons the product carries on the kept atoms that a
+        removed wing atom is bonded to (the atoms the cut labels): an end
+        group keeps these past the stitch. A radical elsewhere in the kept
+        piece (the product changed the chain away from the cut: a side-group
+        or end-group loss) is not an end group's, and the end-group check
+        refuses it."""
+        removed = set(atoms_to_remove)
+        return sum(a.radical_electrons for a in complex_mol.atoms
+                   if a not in removed and any(n in removed for n in a.bonds))
+
+    @staticmethod
     def _extract_remainder(complex_mol: Molecule, atoms_to_remove) -> Molecule:
         """
         Creates a new Molecule containing only the atoms NOT in 'atoms_to_remove'.
@@ -2502,27 +2524,34 @@ class Polymer(Species):
                     if target_atom.label and target_atom.label != '*2':
                         raise ValueError(f"Label conflict: Atom already {target_atom.label}, wants *2")
                     target_atom.label = '*2'
-                    _ensure_open_site(target_atom)
+                    _open_cut_site(target_atom, atom.bonds[neighbor])
                 elif tail_match_atoms and neighbor in tail_match_atoms:
                     if target_atom.label and target_atom.label != '*1':
                         raise ValueError(f"Label conflict: Atom already {target_atom.label}, wants *1")
                     target_atom.label = '*1'
-                    _ensure_open_site(target_atom)
+                    _open_cut_site(target_atom, atom.bonds[neighbor])
         new_mol.update_multiplicity()
 
     @staticmethod
-    def _assert_end_group(mol: Molecule, want_label: str):
+    def _assert_end_group(mol: Molecule, want_label: str, carried_radicals: int = 0):
         """
         Validate that a scission fragment can serve as an end-group.
         Contract we enforce:
         - Must have exactly one labeled atom, and it must be `want_label` ('*1' or '*2').
-        - Must be a mono-radical overall (get_radical_count() == 1).
-        - That single radical must be located on the labeled atom (strongly recommended for stitching).
+        - Must carry one radical for the stitch plus the product's own radicals
+          on the cut atom (get_radical_count() == 1 + carried_radicals), so a
+          radical elsewhere in the fragment refuses.
+        - The labeled atom must carry a radical electron for stitching.
+        - Every atom's valence must be consistent with its charge (a cut that
+          opened no site leaves an atom short of a bond).
         - No stray labels ('1','2', etc.) allowed.
 
         Args:
             mol (Molecule): The molecule to validate.
             want_label (str): The expected label for the end-group ('*1' or '*2').
+            carried_radicals (int): Radical electrons the product left on the
+                cut atom (_radicals_at_cut), which the end group keeps after
+                the stitch.
         """
         if want_label not in ('*1', '*2'):
             raise ValueError(f"want_label must be '*1' or '*2', got {want_label!r}")
@@ -2534,11 +2563,15 @@ class Polymer(Species):
         if extras:
             raise ValueError(f"End-group has invalid extra labels {extras}; expected only {want_label}.")
         rad_count = mol.get_radical_count()
-        if rad_count != 1:
-            raise ValueError(f"End-group must be mono-radical (radical_count==1). Got {rad_count}.")
+        if rad_count != 1 + carried_radicals:
+            raise ValueError(f"End-group must carry one stitch radical plus the product's {carried_radicals} "
+                             f"(radical_count=={1 + carried_radicals}). Got {rad_count}.")
         labeled_atom = next(a for a in mol.atoms if a.label == want_label)
         if labeled_atom.radical_electrons < 1:
             raise ValueError(f"End-group labeled atom {want_label} must carry a radical electron for stitching.")
+        defects = _valence_defects(mol)
+        if defects:
+            raise ValueError(f"End-group atoms with an inconsistent valence: {defects}.")
 
     @staticmethod
     def _assert_feature_unit(mol: Molecule, allow_h_loss_radical: bool = False):
@@ -3142,13 +3175,73 @@ def classify_reaction_channel(reactants, products) -> str:
 def reaction_channel(rxn) -> str:
     """The row's channel: its generation stamp (``polymer_reaction_channel``,
     written in make_new_reaction from the raw molecules, before the
-    handshake maps them onto pool proxies, which do not keep a fragment's
-    radical), else read from its own species (a hand-built or unpickled
+    handshake maps them onto pool proxies, which need not keep a fragment's
+    radical: a chip or a chain-end fold books the chain in the pool it
+    reacts from), else read from its own species (a hand-built or unpickled
     row)."""
     channel = getattr(rxn, "polymer_reaction_channel", None)
     if channel:
         return channel
     return classify_reaction_channel(list(rxn.reactants), list(rxn.products))
+
+
+def _has_structure(participant) -> bool:
+    return not hasattr(participant, "molecule") or bool(participant.molecule)
+
+
+def _net_charge(participant) -> int:
+    mol = participant.molecule[0] if hasattr(participant, "molecule") else participant
+    return mol.get_net_charge()
+
+
+def proxy_balance_defect(rxn, folded: bool) -> Optional[dict]:
+    """The census entry of a pool-coupled row whose species (pool proxies
+    included) do not balance (I-255), else None:
+
+    - ``unbalanced:charge``: the row changes the net charge;
+    - ``unbalanced:radicals``: the row's species read another channel than
+      the one stamped from its raw molecules at generation, i.e. a proxy lost
+      or gained a radical the reaction did not. A ``folded`` row (one species
+      on both sides: a chip or a chain-end fold books the chain in the pool
+      it reacts from) drops the chain's radical by design and is not read;
+      an unstamped row is checked for charge only. A row with a species that
+      has no structure (an artifact replay) cannot be read.
+
+    Entry: {reaction, reason, charge: [reactants, products],
+    channel: [stamped, read from the species]}."""
+    reactants, products = list(rxn.reactants), list(rxn.products)
+    if not all(_has_structure(s) for s in reactants + products):
+        return None
+    charge = [sum(_net_charge(s) for s in reactants), sum(_net_charge(s) for s in products)]
+    stamped = getattr(rxn, "polymer_reaction_channel", None)
+    seen = classify_reaction_channel(reactants, products)
+    if charge[0] != charge[1]:
+        reason = "unbalanced:charge"
+    elif stamped and not folded and seen != stamped:
+        reason = "unbalanced:radicals"
+    else:
+        return None
+    return {"reaction": _reaction_census_label(rxn), "reason": reason,
+            "charge": charge, "channel": [stamped, seen]}
+
+
+_proxy_balance_warned = set()
+
+
+def warn_once_proxy_balance(entry: dict) -> None:
+    """Log each pool-coupled row refused as unbalanced, once per (row,
+    reason)."""
+    key = (entry["reaction"], entry["reason"])
+    if key in _proxy_balance_warned:
+        return
+    _proxy_balance_warned.add(key)
+    logging.warning(
+        "PROXY BALANCE CENSUS: the pool-coupled row %s is refused (%s): net "
+        "charge %d -> %d; channel stamped from its raw molecules %s, read from "
+        "its species %s. A pool proxy does not carry the charge or radicals "
+        "the reaction made.",
+        entry["reaction"], entry["reason"], entry["charge"][0], entry["charge"][1],
+        entry["channel"][0], entry["channel"][1])
 
 
 def decomposition_sides(reactants, products):
@@ -5424,19 +5517,42 @@ def _radical_site_descriptor(mol: Molecule) -> str:
     return '-'.join(sorted(sites))
 
 
-def _ensure_open_site(atom: 'Atom') -> None:
+def _open_cut_site(atom: 'Atom', bond: 'Bond') -> None:
     """
-    Ensure `atom` has at least one radical electron so it can serve as a stitch site.
+    Open the valence a cut bond leaves on its kept atom: one radical electron
+    per electron pair of the bond, whatever the atom already carries.
 
     This is used after we identify a cut bond between the kept remainder and a removed wing:
-    we label the kept-side atom (*1 or *2) and must ensure it is open-shell.
+    we label the kept-side atom (*1 or *2), and the stitch later closes one of these sites.
+    A radical the reaction left on that atom is the product's own and must
+    survive the stitch (I-255: counting it as the stitch site turned a radical
+    scission piece into a closed-shell carbocation proxy).
 
     Args:
-        atom (Atom): Atom in the remainder molecule to make radical if needed.
+        atom (Atom): The kept atom in the remainder molecule.
+        bond (Bond): The cut bond, in the original molecule.
     """
-    if atom.radical_electrons >= 1:
-        return
-    atom.increment_radical()
+    order = bond.get_order_num()
+    if order != int(order):
+        raise ValueError(f"Cannot cut a bond of order {order} at a wing boundary.")
+    for _ in range(int(order)):
+        atom.increment_radical()
+
+
+def _valence_defects(mol: Molecule) -> List[str]:
+    """Atoms whose formal charge does not follow from their valence electrons,
+    bond orders, radical electrons and lone pairs (Atom.update_charge), e.g.
+    an atom that lost a bond without gaining a radical."""
+    from rmgpy.molecule import element as elements
+    out = []
+    for i, atom in enumerate(mol.atoms):
+        if atom.is_surface_site() or atom.is_electron():
+            continue
+        expected = (elements.PeriodicSystem.valence_electrons[atom.symbol] - atom.get_total_bond_order()
+                    - atom.radical_electrons - 2 * atom.lone_pairs)
+        if expected != atom.charge:
+            out.append(f"{atom.symbol}{i} (charge {atom.charge}, valence implies {expected:g})")
+    return out
 
 
 def classify_structure(species: 'Species',

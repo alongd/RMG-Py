@@ -52,9 +52,6 @@ PARENTS = {
     'PE': '[CH2][CH2]',
 }
 
-red = pytest.mark.xfail(strict=True, raises=AssertionError,
-                        reason='the cut site of a radical piece opens no stitch site: the proxy is a cation')
-
 
 def _setup(ok, what):
     """A setup step that fails raises RuntimeError, never an AssertionError."""
@@ -133,7 +130,6 @@ def _scission_daughters(name):
     return out
 
 
-@red
 @pytest.mark.parametrize('name', sorted(PARENTS))
 def test_a_homolysis_pieces_scission_daughter_keeps_its_radical(name):
     """Neutral, with the piece's radical count, at the piece's radical site."""
@@ -143,7 +139,6 @@ def test_a_homolysis_pieces_scission_daughter_keeps_its_radical(name):
             (0, piece.get_radical_count(), _radical_sites(piece)), (piece.to_smiles(), proxy.to_smiles())
 
 
-@red
 @pytest.mark.parametrize('name', sorted(PARENTS))
 def test_the_producer_never_returns_a_charged_proxy_for_a_neutral_piece(name):
     parent = _parent(name)
@@ -157,7 +152,6 @@ def test_the_producer_never_returns_a_charged_proxy_for_a_neutral_piece(name):
     assert charged == []
 
 
-@red
 def test_a_cut_at_a_radical_atom_opens_one_more_site():
     """The ethyl radical with its methyl cut away as a head wing: the kept
     CH2 already carries the piece's radical and gains the cut's stitch site."""
@@ -172,7 +166,6 @@ def test_a_cut_at_a_radical_atom_opens_one_more_site():
     assert site.radical_electrons == 2
 
 
-@red
 def test_the_generated_homolysis_rows_tail_is_a_neutral_radical():
     """Through the production generation seam (make_new_reaction): the
     scission tail of a backbone homolysis of the styrene-like parent."""
@@ -198,3 +191,15 @@ def test_the_generated_homolysis_rows_tail_is_a_neutral_radical():
     _setup(len(tails) == 1 and tails[0].label == 'PS_scission_tail', 'one scission tail product')
     proxy = tails[0].molecule[0]
     assert (proxy.get_net_charge(), proxy.get_radical_count()) == (0, 1)
+
+
+@pytest.mark.parametrize('name,piece', [
+    ('PS', 'C[CH]CC(CC(C)c1ccccc1)c1ccccc1'),          # a phenyl loss: the backbone stays whole
+    ('PS', '[CH2]C(CC(C)c1ccccc1)c1ccccc1'),            # the radical at the end the wing does not cut
+    ('PMMA', 'COC(=O)C(C)(C)CC(C)(C[C](C)C)C(=O)OC'),   # an ester loss
+])
+def test_a_piece_whose_radical_is_away_from_the_cut_is_not_booked(name, piece):
+    """The end group keeps the radicals the product left on the cut atom
+    only; a piece with its radical elsewhere is refused as before (booking it
+    would make a side-group loss a half-length scission population)."""
+    assert _parent(name).create_reacted_copy(Molecule().from_smiles(piece)) is None

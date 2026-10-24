@@ -945,7 +945,8 @@ class CoreEdgeReactionModel:
                 real_products_snapshot = [p.copy(deep=True) for p in forward.products]
                 # The row's reaction channel (I-253), from the raw molecules:
                 # the handshake below maps the products onto pool proxies,
-                # which do not keep a fragment's radical.
+                # which need not keep a fragment's radical (a chip or a
+                # chain-end fold books the chain in the pool it reacts from).
                 forward.polymer_reaction_channel = classify_reaction_channel(
                     forward.reactants, forward.products)
                 # Per-product H-loss conduit verdicts (stage S2): computed

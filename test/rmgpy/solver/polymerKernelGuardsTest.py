@@ -179,6 +179,9 @@ def _migration(kernel=None, kernel_b=None, archetype=2, fission=False):
     """A -> B (a chain move), or with ``fission`` a generated bond fission
     A -> B + G stamped as generation stamps it."""
     sp, core, mask = _two_pool_species()
+    if fission:
+        # the daughter end keeps the fission's radical (a balanced row, I-255)
+        sp["B"].molecule = _spc("[CH2]CCCC", "B").molecule
     rxn = Reaction(reactants=[sp["A"]], products=[sp["B"], sp["G"]] if fission else [sp["B"]],
                    kinetics=Arrhenius(A=(2.0, "1/s"), n=0.0, Ea=(0.0, "kcal/mol"), T0=(298.15, "K")),
                    reversible=False)
