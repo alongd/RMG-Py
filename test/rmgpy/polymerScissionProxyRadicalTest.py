@@ -194,12 +194,20 @@ def test_the_generated_homolysis_rows_tail_is_a_neutral_radical():
 
 
 @pytest.mark.parametrize('name,piece', [
-    ('PS', 'C[CH]CC(CC(C)c1ccccc1)c1ccccc1'),          # a phenyl loss: the backbone stays whole
     ('PS', '[CH2]C(CC(C)c1ccccc1)c1ccccc1'),            # the radical at the end the wing does not cut
-    ('PMMA', 'COC(=O)C(C)(C)CC(C)(C[C](C)C)C(=O)OC'),   # an ester loss
 ])
 def test_a_piece_whose_radical_is_away_from_the_cut_is_not_booked(name, piece):
     """The end group keeps the radicals the product left on the cut atom
-    only; a piece with its radical elsewhere is refused as before (booking it
-    would make a side-group loss a half-length scission population)."""
+    only; a piece with its radical elsewhere is refused as before."""
     assert _parent(name).create_reacted_copy(Molecule().from_smiles(piece)) is None
+
+
+@pytest.mark.parametrize('name,piece', [
+    ('PS', 'C[CH]CC(CC(C)c1ccccc1)c1ccccc1'),          # a phenyl loss: the backbone stays whole
+    ('PMMA', 'COC(=O)C(C)(C)CC(C)(C[C](C)C)C(=O)OC'),   # an ester loss
+])
+def test_a_side_group_loss_is_never_a_scission_piece(name, piece):
+    """A piece that keeps the whole backbone lost a side group: never a
+    half-length scission population, but its X-loss feature (I-257)."""
+    d = _parent(name).create_reacted_copy(Molecule().from_smiles(piece))
+    assert (getattr(d, 'spawn_metadata', None) or {}).get('source') == 'side_group_loss'

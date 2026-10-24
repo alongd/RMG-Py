@@ -68,10 +68,6 @@ GAS_ATOMS = {"C": 2, "H": 3, "O": 2}
 DAUGHTER = "poly_sidegrp_ester"
 
 
-RED = pytest.mark.xfail(strict=True, raises=AssertionError,
-                         reason="I-257: a polyatomic side-group kernel is refused today")
-
-
 def _setup(ok, what):
     if not ok:
         raise RuntimeError("setup failed: " + what)
@@ -175,7 +171,6 @@ def _inventory(rs, y, defect_atoms):
 
 class TestInventoryAccounting:
 
-    @RED
     def test_a_stationary_carrier_loses_its_polyatomic_groups_and_the_ledger_closes(self):
         """Through full side-group loss: Z goes to zero, the gas holds one
         ester radical per repeat unit, and elements and mass close."""
@@ -195,7 +190,6 @@ class TestInventoryAccounting:
 
 class TestDaughterAccounting:
 
-    @RED
     def test_the_x_loss_daughter_takes_exactly_the_carriers_debit(self):
         """The kernel's share of the residual (with the channel less without
         it): parent dmu0 = -k*s*mu1, dmu1 = -k*s*mu2, dmu2 < 0; the daughter
@@ -213,7 +207,6 @@ class TestDaughterAccounting:
         assert list(d[8:11]) == pytest.approx([-x for x in d[4:7]], rel=1e-9)
         assert d[2] == pytest.approx(k * mu1, rel=1e-12)
 
-    @RED
     def test_a_moved_carrier_loses_its_groups_into_the_daughter_and_the_ledger_closes(self):
         """Until the carrier is gone (side-group loss and its own unzip):
         elements, with the daughter's defect atoms off each of its chains,

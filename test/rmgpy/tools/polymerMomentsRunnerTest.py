@@ -3084,10 +3084,14 @@ class TestSideGroupHomolysisConsumer:
             self._channel(a)["gas_mw_g_mol"] = 5.0
         self._shape_case(side_group_deck, cut, r"gas_mw_g_mol")
 
-    def test_rejects_non_monoatomic_gas_product(self, side_group_deck):
+    @pytest.mark.parametrize("gas", ["C", "[CH2][NH3+]"])
+    def test_rejects_a_gas_product_that_is_no_neutral_mono_radical(
+            self, side_group_deck, gas):
+        """The leaving group may be polyatomic, but it is one neutral
+        radical: a closed shell or a charged gas is refused by name."""
         def cut(a):
-            self._channel(a)["gas_product"] = "[CH3]"
-        self._shape_case(side_group_deck, cut, r"monoatomic|mono-radical")
+            self._channel(a)["gas_product"] = gas
+        self._shape_case(side_group_deck, cut, r"neutral mono-radical")
 
     def test_rejects_unresolvable_gas_species(self, side_group_deck):
         """The gas routing target must exist in chem.yaml -- the ejected X

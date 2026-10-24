@@ -2786,15 +2786,15 @@ def _parse_side_group_v2_block(lab, pool_entry):
                 f"Pool {lab!r}: side_group_homolysis channel {label!r} "
                 f"gas_product={gp!r} does not parse as SMILES ({e}). Fix "
                 f"the artifact.")
-        if len(gmol.atoms) != 1 or gmol.get_radical_count() != 1:
+        if gmol.get_radical_count() != 1 or gmol.get_net_charge() != 0:
             raise ValueError(
                 f"Pool {lab!r}: side_group_homolysis channel {label!r} "
-                f"gas_product={gp!r} must be a monoatomic mono-radical "
-                f"(e.g. '[Br]'); got {len(gmol.atoms)} atom(s), "
-                f"radical count {gmol.get_radical_count()}. Fix the "
-                f"artifact.")
+                f"gas_product={gp!r} must be a neutral mono-radical "
+                f"(the leaving group, e.g. '[Br]' or 'CO[C]=O'); got "
+                f"radical count {gmol.get_radical_count()}, net charge "
+                f"{gmol.get_net_charge()}. Fix the artifact.")
         parsed["gas_product"] = gp
-        gas_sym = gmol.atoms[0].symbol
+        gas_sym = gmol.atoms[0].symbol if len(gmol.atoms) == 1 else gp
         mw_x = gmol.get_molecular_weight() * 1000.0
         gw = ch["gas_mw_g_mol"]
         if (isinstance(gw, bool) or not isinstance(gw, (int, float))

@@ -1407,9 +1407,11 @@ class Polymer(Species):
                                 site_selector: str) -> Molecule:
         """
         Build the X-loss feature repeat unit for one side_group_homolysis
-        channel (FR1-K1): the parent monomer with ONE X atom removed and a
-        radical electron left on its ex-neighbor (the mid-chain radical
-        defect of homolytic C-X cleavage).
+        channel (FR1-K1; I-257 for any leaving group): the parent monomer
+        with ONE side group removed (side_group_sites: the far side of a
+        single acyclic bond, holding no stitch atom, that is the leaving
+        group) and a radical electron left on the atom it hung off (the
+        mid-chain radical defect of the homolysis).
 
         DETERMINISTIC transformation (documented; the channel LABEL keys
         pool identity, the unit is the representative structure): the
@@ -1419,74 +1421,106 @@ class Polymer(Species):
         the kinetics label alone must never pick the site -- on a
         mixed-site monomer a channel labeled 'aliphatic_C-Br' would
         otherwise remove the first X in atom order, an ARYL one, minting
-        the wrong defect structure under that channel's rate). The
-        removable-X predicate is unchanged: terminal (exactly one bond),
-        single-bonded, closed-shell and not a stitch-labeled atom. No
-        selector-matched atom is a hard error naming the channel (the
+        the wrong defect structure under that channel's rate). For a
+        monoatomic X the group is X alone: terminal, single-bonded,
+        closed-shell and not a stitch-labeled atom. No selector-matched
+        group is a hard error naming the channel (the
         validator enforces the same law with the full three-part
         structural check).
 
         Validated by its own STRICT assertion path
-        (_assert_side_loss_unit: element census = monomer minus one X,
+        (_assert_side_loss_unit: element census = monomer minus the group,
         exactly 3 radical electrons, radical on the ex-neighbor) plus the
         existing feature-unit machinery (_assert_feature_unit with the
         3-radical budget, mirroring the S2 H-loss units).
         """
-        from rmgpy.solver.polymer import side_group_site_atom_indices
+        from rmgpy.solver.polymer import side_group_sites
         gas = Molecule().from_smiles(gas_product)
-        if len(gas.atoms) != 1 or gas.get_radical_count() != 1:
+        if gas.get_radical_count() != 1 or gas.get_net_charge() != 0:
             raise ValueError(
                 f"Polymer '{self.label}': side_group_homolysis channel "
                 f"'{channel_label}' gas_product={gas_product!r} must be a "
-                f"monoatomic mono-radical (e.g. '[Br]') in v1.")
-        sym = gas.atoms[0].symbol
+                f"neutral mono-radical (the leaving group).")
         unit = self.monomer.copy(deep=True)
         # Selector-directed selection, resolved ON THE COPY the removal
         # operates on (self-consistent indices whatever the copy's atom
         # ordering).
-        idxs = side_group_site_atom_indices(unit, sym, site_selector)
-        if not idxs:
+        sites = side_group_sites(unit, gas, site_selector)
+        if not sites:
             raise ValueError(
                 f"Polymer '{self.label}': side_group_homolysis channel "
                 f"'{channel_label}' (site_selector='{site_selector}') "
-                f"needs a removable side-group {sym} atom (terminal, "
-                f"single-bonded, closed-shell, unlabeled) on a matching "
-                f"carbon environment in the repeat unit, but the monomer "
-                f"has none. The X-loss feature pool cannot be built.")
-        x_atom = unit.atoms[idxs[0]]
-        neighbor = next(iter(x_atom.bonds.keys()))
-        unit.remove_atom(x_atom)
+                f"needs a side group {gas_product} (the far side of a single "
+                f"acyclic bond, holding no stitch atom) on a matching attach "
+                f"atom in the repeat unit, but the monomer has none. The "
+                f"X-loss feature pool cannot be built.")
+        attach_idx, _root, side = sites[0]
+        neighbor = unit.atoms[attach_idx]
+        for atom in [unit.atoms[i] for i in side]:
+            unit.remove_atom(atom)
         neighbor.increment_radical()
         unit.update()
-        _assert_side_loss_unit(unit, sym, self.monomer, channel_label,
+        _assert_side_loss_unit(unit, gas, self.monomer, channel_label,
                                radical_atom=neighbor)
         self._assert_feature_unit(unit, allow_h_loss_radical=True)
         return unit
 
     def generate_side_loss_daughters(self) -> Tuple['Polymer', ...]:
         """
-        SGH kernel-v2 (schema 3.0, explicit Br-inventory depletion) spawns NO
-        X-loss feature pool -- this method ALWAYS returns an empty tuple, an
-        EXPLICIT no-daughter path (P1-A), never an empty list by accident.
+        The X-loss feature daughters of this pool's side_group_homolysis
+        channels, one '{label}_sidegrp_<ch>' per channel, built at model setup
+        (rmgpy/rmg/input.py step 4f) -- or an EXPLICIT empty tuple (P1-A),
+        never an empty list by accident, for a carrier that keeps the
+        inventory accounting.
 
-        In v1 (feature-pool cascade) this built one '{label}_sidegrp_<ch>'
-        daughter per channel at model setup. v2 replaces that conduit with an
-        auxiliary per-(pool, channel) Z inventory tracked on the CARRIER
-        itself (Z_c(0)=sites_c*mu1(0), dZ_c/dt=-k*Z_c/V_poly; the pool
-        moments are unchanged and the condensed mass reads
-        mu1*MW - sum_c max(0, sites_c*mu1 - Z_c)*M_X_c). There is therefore no
-        daughter pool to enumerate: multi-loss X depletion needs no separate
-        feature pool. The FR1-K1 feature-pool spawn was deleted from the deck
-        (rmgpy/rmg/input.py step 4f), so no live caller reaches this method;
-        it is retained returning empty so any remaining caller gets a
-        deliberate no-daughter result rather than a v1 feature pool.
+        SGH kernel-v2 (schema 3.0) books a STATIONARY carrier's losses on an
+        auxiliary per-(pool, channel) Z inventory (Z_c(0)=sites_c*mu1(0),
+        dZ_c/dt=-k*Z_c/V_poly; the pool moments are unchanged and the
+        condensed mass reads mu1*MW - sum_c max(0, sites_c*mu1 - Z_c)*M_X_c),
+        which tracks multi-loss depletion and needs no daughter. When another
+        kernel moves the carrier's chains (side_group_accounting, I-257) that
+        inventory cannot hold, and each channel moves a reacting chain,
+        intact, into its daughter: the unit less the group (radical at the
+        cut), born empty, carrying the exact per-chain defect M(group) on
+        top of the carrier's. A daughter carries no side-group channel of
+        its own (one loss per chain) and, its feature monomer differing,
+        inherits no unzip.
         """
         channels = getattr(self, 'side_group_homolysis', None)
         if not channels:
             return tuple()
-        # SGH-v2 carrier: channels present, but the kernel is
-        # inventory-depletion on the carrier -- NO feature/daughter pool.
-        return tuple()
+        from rmgpy.solver.polymer import (SIDE_GROUP_INVENTORY,
+                                          _side_group_gas_mw_g_mol,
+                                          side_group_accounting,
+                                          side_group_daughter_pool_label)
+        if side_group_accounting(self) == SIDE_GROUP_INVENTORY:
+            return tuple()
+        defect_src = float(getattr(self, 'chain_mass_defect_g_mol', 0.0) or 0.0)
+        daughters = []
+        for ch in channels:
+            unit = self._side_loss_feature_unit(ch['label'], ch['gas_product'],
+                                                ch['site_selector'])
+            m_x = _side_group_gas_mw_g_mol(ch['gas_product'])
+            daughter = Polymer(
+                label=side_group_daughter_pool_label(self.label, ch['label']),
+                monomer=self.monomer,
+                feature_monomer=unit,
+                end_groups=[eg.copy(deep=True) for eg in self.end_groups],
+                cutoff=self.cutoff,
+                Mn=self.Mn,
+                Mw=self.Mw,
+                moments=None,
+                initial_mass=0.0,
+                side_loss_channel=ch['label'],
+            )
+            daughter.parent_pool_label = self.label
+            daughter.spawn_metadata = {"source": SIDE_GROUP_HOMOLYSIS_SPAWN_SOURCE,
+                                       "channel": ch['label']}
+            daughter.chain_mass_defect_g_mol = defect_src + m_x
+            daughter.chain_mass_defect_provenance = self._defect_provenance(
+                SIDE_GROUP_HOMOLYSIS_SPAWN_SOURCE, defect_src, m_x)
+            daughters.append(daughter)
+        return tuple(daughters)
 
     def _capped_chain_species(self, dp: int) -> Optional[Species]:
         """
@@ -1658,7 +1692,21 @@ class Polymer(Species):
             # product into a scission branch where it fails the mono-radical
             # end-group assertion, returns None, and the product leaks to the gas
             # phase as a spurious small molecule (a mass-balance leak).
-            new_poly = self.copy(deep=True)
+            #
+            # A unit inside a wing that lost an H (handshake evidence) or a
+            # side group is no end-group modification: the structural
+            # matchers of the H-loss and side-group-loss paths run first, and
+            # a match books the unit's feature daughter with its defect
+            # (I-257). Only a product neither matches folds back.
+            new_poly = None
+            if h_loss_feature:
+                new_poly = self._create_h_loss_feature_copy(reacted_proxy)
+            if new_poly is None:
+                new_poly = self._create_side_loss_feature_copy(reacted_proxy)
+            if new_poly is not None:
+                klass = PolymerClass.FEATURE
+            else:
+                new_poly = self.copy(deep=True)
         else:
             new_poly = self._create_reacted_copy_logic(
                 reacted_proxy, h_loss_feature=h_loss_feature,
@@ -1669,9 +1717,10 @@ class Polymer(Species):
         # END_MOD reactions for chain-end (mu0) scaling in the solver. Read by
         # is_end_group_reaction(products); a transient generation-time marker.
         #
-        # Concerted-loss daughters (regen5 route) override the structural
-        # verdict: classify_structure sees their proxy graph as a broken
-        # chain (single intact wing -> SCISSION), but the routed daughter is
+        # Concerted-loss daughters (regen5 route) and side-group-loss
+        # daughters (I-257) override the structural verdict: classify_structure
+        # sees their proxy graph as a broken chain (single intact wing ->
+        # SCISSION), but the routed daughter is
         # a DP-PRESERVING mid-chain modification -- exactly the FEATURE
         # class. Leaving the SCISSION stamp would short-circuit
         # classify_reaction_flux_archetype into SCISSION_FRAGMENT (halved-Mn
@@ -1680,7 +1729,7 @@ class Polymer(Species):
         # daughter (Polymer.copy() does not carry spawn_metadata), so wing-
         # logic products can never match this predicate.
         if ((getattr(new_poly, 'spawn_metadata', None) or {}).get('source')
-                == CONCERTED_LOSS_SPAWN_SOURCE):
+                in (CONCERTED_LOSS_SPAWN_SOURCE, SIDE_GROUP_LOSS_SPAWN_SOURCE)):
             klass = PolymerClass.FEATURE
         new_poly._reacted_class = klass
         # Daughter-pool channel inheritance (radical_qssa_unzip milestone 5),
@@ -1754,6 +1803,12 @@ class Polymer(Species):
                 reacted_proxy, concerted_loss_gas)
             if new_poly is not None:
                 return new_poly
+        # Side-group loss (I-257), route-first for the same reason: such a
+        # product keeps the whole backbone, but the side group it lost breaks
+        # one wing, so the wing logic would book it as a scission piece.
+        new_poly = self._create_side_loss_feature_copy(reacted_proxy)
+        if new_poly is not None:
+            return new_poly
         return self._create_reacted_copy_wing_logic(reacted_proxy)
 
     def _create_reacted_copy_wing_logic(self, reacted_proxy: Molecule) -> Optional['Polymer']:
@@ -2143,6 +2198,85 @@ class Polymer(Species):
         return self._born_at_zero_mod_daughter(feature,
                                                source="radical_feature_h_loss")
 
+    def _side_loss_variants(self) -> list:
+        """
+        Every side group of the repeat unit with a heavy root, as
+        ``(element census of the group, M(group) [g/mol], [the positional
+        species: the capped trimer with the unit less the group -- radical
+        at the cut -- at the center and either flank])``. A side group is
+        the far side of a single acyclic bond holding no stitch atom (the
+        side_group_sites reading); an H is the H-loss path's. Cached per
+        Polymer: the monomer is fixed.
+        """
+        cached = getattr(self, '_side_loss_variant_cache', None)
+        if cached is not None:
+            return cached
+        from rmgpy.solver.polymer import _far_side, _side_fragment
+        mono = self.monomer
+        out = []
+        for root_idx, root in enumerate(mono.atoms):
+            if root.is_hydrogen() or root.label or root.radical_electrons:
+                continue
+            for attach, bond in root.bonds.items():
+                if not bond.is_single() or mono.is_bond_in_cycle(bond):
+                    continue
+                side = _far_side(mono, attach, root)
+                if any(mono.atoms[i].label for i in side):
+                    continue
+                group = _side_fragment(mono, side, root_idx)
+                unit = mono.copy(deep=True)
+                cut = unit.atoms[mono.atoms.index(attach)]
+                for atom in [unit.atoms[i] for i in side]:
+                    unit.remove_atom(atom)
+                cut.increment_radical()
+                unit.update(sort_atoms=False)
+                variants = [self._h_loss_positional_species(unit, position)
+                            for position in (1, 0, 2)]
+                out.append((group.get_element_count(),
+                            group.get_molecular_weight() * 1000.0,
+                            unit, [v for v in variants if v is not None]))
+        self._side_loss_variant_cache = out
+        return out
+
+    def _create_side_loss_feature_copy(self, product: Molecule) -> Optional['Polymer']:
+        """
+        Side-group-loss producer path (I-257), route-first ahead of the wing
+        logic: a product isomorphic to a positional variant of
+        :meth:`_side_loss_variants` -- the backbone whole, exactly one side
+        group cut off, the radical at the cut -- is the ``{label}_mod``
+        feature daughter of that unit, carrying the exact per-chain defect
+        M(group). Structural identity is the evidence; a product it does not
+        match (a scission piece, a coupled chain, anything else) falls
+        through unchanged. Without this path the wing logic matched the one
+        intact wing of such a product and booked the same-length chain as a
+        half-length scission tail (or refused it).
+        """
+        try:
+            product_comp = product.get_element_count()
+            proxy_comp = self.molecule[0].get_element_count()
+        except Exception:
+            return None
+        product_spc = None
+        for group_comp, group_mw, unit, variants in self._side_loss_variants():
+            total = dict(product_comp)
+            for el, n in group_comp.items():
+                total[el] = total.get(el, 0) + n
+            if {el: n for el, n in total.items() if n} != \
+                    {el: n for el, n in proxy_comp.items() if n}:
+                continue
+            if product_spc is None:
+                product_spc = self._h_loss_normalized_product_species(product)
+            if any(v.is_isomorphic(product_spc) for v in variants):
+                feature = unit.copy(deep=True)
+                try:
+                    self._assert_feature_unit(feature, allow_h_loss_radical=True)
+                except ValueError:
+                    return None
+                return self._born_at_zero_mod_daughter(
+                    feature, source=SIDE_GROUP_LOSS_SPAWN_SOURCE,
+                    shed_g_mol=group_mw)
+        return None
+
     def _defect_provenance(self, source: str, inherited_g_mol: float,
                            shed_g_mol: float) -> dict:
         """
@@ -2180,7 +2314,9 @@ class Polymer(Species):
         }
 
     def _born_at_zero_mod_daughter(self, feature_monomer: Molecule,
-                                   source: str) -> 'Polymer':
+                                   source: str,
+                                   shed_g_mol: Optional[float] = None,
+                                   ) -> 'Polymer':
         """
         Construct the ``{label}_mod`` feature-pool daughter BORN AT ZERO
         (stage S1b, the ratified P1 mass-duplicator fix): a just-spawned
@@ -2234,7 +2370,12 @@ class Polymer(Species):
                            or 0.0)
         daughter.chain_mass_defect_g_mol = defect_src
         shed_g = 0.0
-        if basis is not None and feature_monomer is not None:
+        if shed_g_mol is not None:
+            # The caller read the shed group from structure (a side-group
+            # loss, I-257): its mass is the defect exactly, whatever its size.
+            daughter.chain_mass_defect_g_mol = defect_src + shed_g_mol
+            shed_g = shed_g_mol
+        elif basis is not None and feature_monomer is not None:
             delta_g = (basis.get_molecular_weight()
                        - feature_monomer.get_molecular_weight()) * 1000.0
             if (0.0 < delta_g
@@ -5441,7 +5582,7 @@ def _assert_end_radical_proxy(mol: Molecule, site: str) -> None:
             f"{atom.radical_electrons} radical electrons.")
 
 
-def _assert_side_loss_unit(unit: Molecule, element_symbol: str,
+def _assert_side_loss_unit(unit: Molecule, group: Union[str, Molecule],
                            monomer: Molecule, channel_label: str,
                            radical_atom: Optional['Atom'] = None) -> None:
     """
@@ -5453,14 +5594,14 @@ def _assert_side_loss_unit(unit: Molecule, element_symbol: str,
     budget).
 
     Requirements:
-    - element census: the unit carries EXACTLY one fewer atom of
-      element_symbol than the monomer, and identical counts for every
-      other element (one X removed, nothing else touched);
+    - element and mass ledger: the unit's element census plus the leaving
+      group's (``group``: a Molecule, or the element symbol of a monoatomic
+      X) is EXACTLY the monomer's (one group removed, nothing else touched);
     - the unit is 3-radical total (two stitch radicals + exactly ONE
-      mid-chain defect radical from the homolyzed C-X bond);
+      mid-chain defect radical from the homolyzed bond);
     - when the builder passes the ex-neighbor handle (radical_atom), that
       atom carries at least one radical electron (the defect sits WHERE
-      the X was lost).
+      the group was lost).
     """
     def _census(mol):
         counts = {}
@@ -5468,29 +5609,31 @@ def _assert_side_loss_unit(unit: Molecule, element_symbol: str,
             counts[a.symbol] = counts.get(a.symbol, 0) + 1
         return counts
 
-    unit_counts = _census(unit)
-    mono_counts = _census(monomer)
-    expected = dict(mono_counts)
-    expected[element_symbol] = expected.get(element_symbol, 0) - 1
-    if expected.get(element_symbol, 0) <= 0:
-        expected.pop(element_symbol, None)
-    if unit_counts != expected:
+    if isinstance(group, str):
+        group_counts, name = {group: 1}, group
+    else:
+        group_counts, name = _census(group), group.to_smiles()
+    total = _census(unit)
+    for el, n in group_counts.items():
+        total[el] = total.get(el, 0) + n
+    if total != _census(monomer):
         raise ValueError(
             f"Side-group X-loss unit (channel '{channel_label}') must be "
-            f"the monomer minus exactly ONE {element_symbol} atom; got "
-            f"element census {unit_counts} vs expected {expected}.")
+            f"the monomer minus exactly ONE {name}; got element census "
+            f"{_census(unit)} plus {group_counts} vs the monomer's "
+            f"{_census(monomer)}.")
     rad_count = unit.get_radical_count()
     if rad_count != 3:
         raise ValueError(
             f"Side-group X-loss unit (channel '{channel_label}') must "
             f"carry exactly 3 radical electrons total (two stitch radicals "
-            f"+ ONE mid-chain defect radical from the homolyzed C-"
-            f"{element_symbol} bond). Got {rad_count}.")
+            f"+ ONE mid-chain defect radical from the homolyzed bond to "
+            f"{name}). Got {rad_count}.")
     if radical_atom is not None and radical_atom.radical_electrons < 1:
         raise ValueError(
             f"Side-group X-loss unit (channel '{channel_label}'): the "
             f"defect radical must sit on the atom that lost the "
-            f"{element_symbol} substituent; that atom carries "
+            f"{name} substituent; that atom carries "
             f"{radical_atom.radical_electrons} radical electrons.")
 
 
@@ -7412,6 +7555,11 @@ SIDE_GROUP_HOMOLYSIS_SPAWN_SOURCE = "side_group_homolysis"
 # CONCERTED_LOSS_SPAWN_SOURCE, "gas": <formula>}. Same contract shape as
 # the sibling spawn-source pins above.
 CONCERTED_LOSS_SPAWN_SOURCE = "concerted_loss_ejection"
+# Spawn provenance pin stamped on every side-group-loss feature daughter
+# (I-257, Polymer._create_side_loss_feature_copy): a generated product that
+# is the proxy with one side group cut off, booked with the exact per-chain
+# defect M(group).
+SIDE_GROUP_LOSS_SPAWN_SOURCE = "side_group_loss"
 # Spawn provenance pin stamped on every scission daughter (the
 # ``_scission_tail`` / ``_scission_head`` pieces of a cut chain,
 # Polymer._mark_scission_daughter), together with parent_pool_label: the
@@ -7738,7 +7886,9 @@ def _serialize_side_group_homolysis_block(
         return None
     # Lazy import (the QSSA serializer's cycle-avoidance idiom). v2 needs no
     # side_group_daughter_pool_label: there is no feature pool to name.
-    from rmgpy.solver.polymer import (_side_group_gas_mw_g_mol,
+    from rmgpy.solver.polymer import (SIDE_GROUP_INVENTORY,
+                                      _side_group_gas_mw_g_mol,
+                                      side_group_accounting,
                                       side_group_site_atom_indices,
                                       validate_side_group_homolysis)
     label = getattr(pool, "label", "")
@@ -7752,6 +7902,15 @@ def _serialize_side_group_homolysis_block(
             f"derived without the repeat unit. Refusing to serialize.")
     channels = validate_side_group_homolysis(label, channels,
                                              monomer=monomer)
+    if side_group_accounting(pool) != SIDE_GROUP_INVENTORY:
+        raise ValueError(
+            f"Pool '{label}': books its side-group losses through X-loss "
+            f"feature daughters (another kernel moves its chains; "
+            f"side_group_accounting, I-257). The side_group_homolysis/2 "
+            f"block describes only the inventory accounting and no artifact "
+            f"contract carries the daughter law yet; refusing to serialize "
+            f"rather than emit a block consumers would replay as an "
+            f"inventory.")
     gas_list = getattr(pool, "side_group_gas_species", None) or []
     if len(gas_list) != len(channels):
         raise ValueError(
@@ -7774,7 +7933,7 @@ def _serialize_side_group_homolysis_block(
                 f"the consumer cannot resolve.")
         gas_mol = Molecule().from_smiles(ch["gas_product"])
         idxs = side_group_site_atom_indices(
-            monomer, gas_mol.atoms[0].symbol, ch["site_selector"])
+            monomer, gas_mol, ch["site_selector"])
         out_channels.append({
             "label": ch["label"],
             "kinetics": {
@@ -7925,8 +8084,9 @@ def _assert_side_group_serialization_closure(pools: List[Dict[str, Any]],
             # Unreachable through the builder (the structural selectors
             # partition the atom classes), guarded anyway (the r68
             # broken-caller posture).
-            gas_sym = Molecule().from_smiles(
-                ch["gas_product"]).atoms[0].symbol
+            gas_mol = Molecule().from_smiles(ch["gas_product"])
+            gas_sym = (gas_mol.atoms[0].symbol if len(gas_mol.atoms) == 1
+                       else ch["gas_product"])
             new_set = {int(i) for i in ch["site_atom_indices"]}
             for prev_label, prev_set in seen_sites.get(gas_sym, []):
                 shared = sorted(prev_set & new_set)
@@ -8542,17 +8702,19 @@ def _serialize_pool_for_sidecar(pool: 'Polymer',
     # feature-pool spawn was deleted from the deck). This is an EXPLICIT
     # no-daughter branch, not an empty-list accident: rather than let a v1
     # feature pool flow into a v2 artifact (where no consumer would accept
-    # it), HARD-FAIL loudly. In v2 this guard is dormant (nothing sets
-    # side_loss_channel); it fires only on a hand-carried v1 artifact.
+    # it), HARD-FAIL loudly. It fires on a hand-carried v1 artifact and on the
+    # X-loss daughters of a daughter-accounting carrier (I-257), whose law no
+    # artifact contract carries yet.
     if getattr(pool, "side_loss_channel", None):
         raise ValueError(
-            f"Pool '{getattr(pool, 'label', '')}': carries the legacy v1 "
-            f"X-loss feature-pool identity (side_loss_channel="
-            f"{pool.side_loss_channel!r}), but SGH kernel-v2 (schema 3.0) "
-            f"spawns NO feature pool -- multi-loss X depletion is tracked "
-            f"by the carrier's auxiliary Z inventory. Refusing to emit a v1 "
-            f"feature pool into a v2 artifact; regenerate with SGH kernel v2 "
-            f"(side_group_homolysis/2, no feature pools).")
+            f"Pool '{getattr(pool, 'label', '')}': carries the X-loss "
+            f"feature-pool identity (side_loss_channel="
+            f"{pool.side_loss_channel!r}): a side-group daughter (a v1 "
+            f"artifact, or the daughter accounting of a carrier whose "
+            f"chains another kernel moves, I-257). The schema-3.0 "
+            f"side_group_homolysis/2 contract describes only the inventory "
+            f"accounting (no feature pools); refusing to emit a feature pool "
+            f"no consumer replays.")
     monomer_smiles = ""
     monomer_adj_list = ""
     try:
@@ -10383,11 +10545,12 @@ def is_engine_spawned_pool_daughter(spc: Any) -> bool:
 
 
 #: Spawn sources whose daughter pools are created at MODEL SETUP by the deck
-#: compiler (rmgpy/rmg/input.py step 4d) and are REQUIRED solver-configured by
+#: compiler (rmgpy/rmg/input.py steps 4d and 4f) and are REQUIRED solver-configured by
 #: the serialization closure guards (schema 2.6/2.8: configured, never
 #: spawned-classified). Every other spawn provenance -- including the
 #: scission tails and heads (SCISSION_SPAWN_SOURCE) -- is MID-RUN.
-SETUP_CONFIGURED_SPAWN_SOURCES = frozenset({HOMOLYSIS_SPAWN_SOURCE})
+SETUP_CONFIGURED_SPAWN_SOURCES = frozenset({HOMOLYSIS_SPAWN_SOURCE,
+                                            SIDE_GROUP_HOMOLYSIS_SPAWN_SOURCE})
 
 
 def is_midrun_spawned_pool_daughter(spc: Any) -> bool:

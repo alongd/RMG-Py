@@ -1433,9 +1433,9 @@ class PolymerPool(object):
         self.k_homolysis = k_homolysis
         # Side-group homolysis initiation kernel (FR1-K1, round 70): LIST
         # of channel dicts or None. Validated + normalized in to_config via
-        # validate_side_group_homolysis; mutually exclusive with k_unzip > 0
-        # and with radical_qssa_unzip (MAY coexist with k_homolysis /
-        # k_scission -- different bonds). side_group_gas_species is the
+        # validate_side_group_homolysis; beside k_unzip > 0, radical_qssa_unzip,
+        # k_homolysis or k_depropagation its losses go to X-loss feature
+        # daughters (side_group_accounting). side_group_gas_species is the
         # aligned list of registered gas X-radical Species (one per channel,
         # rmgpy/rmg/input.py step 4e); to_config resolves their core
         # indices into side_group_gas_indices.
@@ -1600,23 +1600,9 @@ class PolymerPool(object):
                 sgh_monomer = self.monomer
             sgh_channels = validate_side_group_homolysis(
                 self.label, self.side_group_homolysis, monomer=sgh_monomer)
-            if self.k_unzip > 0.0:
-                raise ValueError(
-                    f"Pool {self.label}: side_group_homolysis is configured "
-                    f"AND k_unzip={self.k_unzip:g} > 0. Legacy k_unzip is a "
-                    f"phenomenological closed-chain monomer-loss channel, "
-                    f"while side_group_homolysis creates radical-defect "
-                    f"feature pools that feed explicit degradation "
-                    f"chemistry; the two are mutually exclusive on a pool "
-                    f"-- enabling both would double-carry degradation. Set "
-                    f"k_unzip=0 or remove side_group_homolysis.")
-            if self.radical_qssa_unzip is not None:
-                raise ValueError(
-                    f"Pool {self.label}: side_group_homolysis is configured "
-                    f"AND radical_qssa_unzip is configured. Two lumped "
-                    f"initiation carriers on one pool are mutually "
-                    f"exclusive -- enabling both would double-carry "
-                    f"initiation. Remove one of them.")
+            # Beside k_unzip or radical_qssa_unzip the carrier books its
+            # losses through X-loss feature daughters (side_group_accounting,
+            # I-257), configured from their core species.
             gas_list = self.side_group_gas_species or []
             if len(gas_list) != len(sgh_channels):
                 raise ValueError(

@@ -12268,7 +12268,8 @@ class TestSideGroupHomolysisKernel:
             ([{**good, "label": ""}], r"P.*label.*non-empty"),
             ([{**good, "gas_product": "not a smiles ]["}], r"P.*gas_product.*parse"),
             ([{**good, "gas_product": "CC"}], r"P.*gas_product.*radical"),
-            ([{**good, "gas_product": "[CH3]"}], r"P.*gas_product.*monoatomic"),
+            # I-257: any leaving group, but a neutral radical
+            ([{**good, "gas_product": "[CH2]C[NH3+]"}], r"P.*gas_product.*net charge"),
             ([good, dict(good)], r"P.*duplicate"),
             # sanitized-collision duplicates are duplicates too
             ([good, {**good, "label": "aliphatic_C+Br"}], r"P.*duplicate"),
@@ -12608,20 +12609,24 @@ class TestSideGroupHomolysisKernel:
                            match=r"poly.*side_group_homolysis.*GAS"):
             _sgh_system(core, mask, pools, moments)
 
-    def test_solver_rejects_side_group_with_positive_k_unzip(self):
-        """Exclusion (solver last line of defense): legacy k_unzip and
-        side_group_homolysis double-carry degradation on one pool."""
+    _MISSING_DAUGHTER = (r"poly.*aliphatic_C-Br.*X-loss feature daughter "
+                         r"'poly_sidegrp_aliphatic_C_Br'.*no such pool is "
+                         r"configured")
+
+    def test_a_k_unzip_carrier_needs_its_x_loss_daughter(self):
+        """I-257 (solver last line of defense): beside legacy k_unzip the
+        carrier's chains move, so its losses go to the channel's X-loss
+        feature daughter -- a build without that pool is refused by name."""
         Mono = _spc("C=CC", "propene_gas")
         core, mask, pools, moments = _sgh_core_and_pools(extra_species=[Mono])
         pools[0] = dataclasses.replace(
             pools[0], k_unzip=0.4, monomer_poly_index=len(core) - 1)
-        with pytest.raises(ValueError,
-                           match=r"poly.*side_group_homolysis.*k_unzip.*mutually exclusive"):
+        with pytest.raises(ValueError, match=self._MISSING_DAUGHTER):
             _sgh_system(core, mask, pools, moments)
 
-    def test_solver_rejects_side_group_with_qssa_channel(self):
-        """Exclusion (solver last line of defense): QSSA random initiation and
-        side_group_homolysis on one pool double-carry initiation."""
+    def test_a_qssa_carrier_needs_its_x_loss_daughter(self):
+        """I-257: beside radical_qssa_unzip likewise (the side-group radicals
+        stay on the daughter's chains and feed no QSSA population)."""
         qssa = dict(initiation=dict(A=1.0e15, n=0.0, Ea=3.0e5),
                     depropagation=dict(A=1.0e13, n=0.0, Ea=8.0e4),
                     termination=dict(A=1.0e8, n=0.0, Ea=1.0e4))
@@ -12630,22 +12635,18 @@ class TestSideGroupHomolysisKernel:
         pools[0] = dataclasses.replace(
             pools[0], radical_qssa_unzip=qssa,
             monomer_poly_index=len(core) - 1)
-        with pytest.raises(ValueError,
-                           match=r"poly.*side_group_homolysis.*radical_qssa_unzip.*mutually exclusive"):
+        with pytest.raises(ValueError, match=self._MISSING_DAUGHTER):
             _sgh_system(core, mask, pools, moments)
 
-    def test_side_group_rejects_coexistence_with_k_homolysis(self):
-        """SGH kernel-v2 mu1-mover guard (contract 1h + P1-B): inventory-
-        depletion SGH seeds Z(0) = sites*mu1(0) ONCE and depletes it
-        independently, so it REQUIRES a stationary carrier mu1. A carrier that
-        also declares a mu1-moving kernel -- here k_homolysis, which debits the
-        backbone-break moments -- is REFUSED at setup (a moving mu1 would strand
-        or double-count the Br inventory). k_scission stays allowed elsewhere;
-        this is the k_homolysis arm of the guard."""
+    def test_a_k_homolysis_carrier_needs_its_x_loss_daughter(self):
+        """SGH kernel-v2 seeds Z(0) = sites*mu1(0) ONCE and needs a stationary
+        carrier mu1; k_homolysis debits the backbone-break moments, so (I-257)
+        the carrier books its losses through the X-loss feature daughter
+        instead of the inventory, and a build without it is refused by
+        name."""
         core, mask, pools, moments = _sgh_core_and_pools(
             k_homolysis=_khom_triplet())
-        with pytest.raises(ValueError,
-                           match=r"poly.*stationary mu1.*k_homolysis"):
+        with pytest.raises(ValueError, match=self._MISSING_DAUGHTER):
             _sgh_system(core, mask, pools, moments)
 
     def test_side_group_multi_channel_one_carrier_z_rows(self):

@@ -9489,33 +9489,50 @@ def test_polymer_copy_preserves_side_group_fields():
     assert cp.side_group_homolysis is not poly.side_group_homolysis
 
 
-def test_polymer_input_helper_rejects_side_group_with_positive_k_unzip():
-    """Deck layer exclusion: side_group_homolysis together with legacy
-    k_unzip double-carries degradation -- hard deck error naming both."""
+def _deck_pvbr(**kw):
+    """rmg_input.polymer for a PVBr pool with one aliphatic C-Br channel and
+    ``kw``, the module-global rmg mocked: (Polymer, species_dict)."""
     import rmgpy.rmg.input as rmg_input
 
-    with pytest.raises(InputError,
-                       match=r"PVBr.*side_group_homolysis.*k_unzip.*mutually exclusive"):
-        rmg_input.polymer(label="PVBr", monomer="[CH2][CH]Br",
-                          end_groups=["[H]", "[H]"], cutoff=3,
-                          Mn=1500.0, Mw=1800.0, initial_mass=0.001,
-                          monomer_product="C=CBr", k_unzip=0.7,
-                          side_group_homolysis=[_sgh_channel()])
+    mock_rmg = _mock_rmg_input_env()
+    old_rmg, old_sd = rmg_input.rmg, rmg_input.species_dict
+    rmg_input.rmg, rmg_input.species_dict = mock_rmg, {}
+    try:
+        poly = rmg_input.polymer(label="PVBr", monomer="[CH2][CH]Br",
+                                 end_groups=["[H]", "[H]"], cutoff=3,
+                                 Mn=1500.0, Mw=1800.0, initial_mass=0.001,
+                                 monomer_product="C=CBr",
+                                 side_group_homolysis=[_sgh_channel()], **kw)
+        return poly, dict(rmg_input.species_dict)
+    finally:
+        rmg_input.rmg, rmg_input.species_dict = old_rmg, old_sd
 
 
-def test_polymer_input_helper_rejects_side_group_with_qssa_random_initiation():
-    """Deck layer exclusion: QSSA random initiation together with
-    side_group_homolysis double-carries initiation -- hard deck error."""
-    import rmgpy.rmg.input as rmg_input
+def test_polymer_input_helper_gives_a_k_unzip_carrier_an_x_loss_daughter():
+    """Deck layer (I-257): beside k_unzip the carrier's chains move, so its
+    side-group losses go to the channel's X-loss feature daughter, spawned at
+    setup with the exact per-chain defect M(Br)."""
+    poly, sd = _deck_pvbr(k_unzip=0.7)
+    assert poly.side_loss_daughter_labels == ["PVBr_sidegrp_aliphatic_C_Br"]
+    d = sd["PVBr_sidegrp_aliphatic_C_Br"]
+    assert d.chain_mass_defect_g_mol == pytest.approx(
+        Molecule().from_smiles("[Br]").get_molecular_weight() * 1000.0, rel=1e-12)
 
-    with pytest.raises(InputError,
-                       match=r"PVBr.*side_group_homolysis.*radical_qssa_unzip.*mutually exclusive"):
-        rmg_input.polymer(label="PVBr", monomer="[CH2][CH]Br",
-                          end_groups=["[H]", "[H]"], cutoff=3,
-                          Mn=1500.0, Mw=1800.0, initial_mass=0.001,
-                          monomer_product="C=CBr",
-                          radical_qssa_unzip=_qssa_channel(),
-                          side_group_homolysis=[_sgh_channel()])
+
+def test_polymer_input_helper_gives_a_qssa_carrier_an_x_loss_daughter():
+    """Deck layer (I-257): beside radical_qssa_unzip likewise; the daughter's
+    radicals feed no QSSA population, so nothing is carried twice."""
+    poly, sd = _deck_pvbr(radical_qssa_unzip=_qssa_channel())
+    assert poly.side_loss_daughter_labels == ["PVBr_sidegrp_aliphatic_C_Br"]
+    assert "PVBr_sidegrp_aliphatic_C_Br" in sd
+
+
+def test_polymer_input_helper_keeps_the_inventory_on_a_stationary_carrier():
+    """Guard: a carrier no other kernel moves keeps the inventory accounting
+    and spawns no daughter."""
+    poly, sd = _deck_pvbr()
+    assert poly.side_loss_daughter_labels == []
+    assert not any("_sidegrp_" in label for label in sd)
 
 
 def test_polymer_input_helper_rejects_malformed_side_group_channels():
@@ -9545,10 +9562,11 @@ def test_polymer_input_helper_rejects_malformed_side_group_channels():
                               side_group_homolysis=bad)
 
 
-def test_pool_to_config_rejects_side_group_with_k_unzip_and_qssa():
-    """Config layer exclusions: PolymerPool.to_config re-enforces both
-    mutual exclusions (a directly-constructed PolymerPool must not dodge
-    the deck checks)."""
+def test_pool_to_config_takes_side_group_beside_k_unzip_and_qssa():
+    """Config layer (I-257): beside k_unzip or radical_qssa_unzip the carrier
+    books its losses through X-loss feature daughters, so PolymerPool.
+    to_config configures the channel (gas index resolved) rather than
+    refusing the pair."""
     from rmgpy.rmg.polymer_input import PolymerPool
 
     mono = Molecule().from_smiles("[CH2][CH]Br")
@@ -9559,22 +9577,14 @@ def test_pool_to_config_rejects_side_group_with_k_unzip_and_qssa():
     mono_prod.label = "VBr"
     spc_map = {s: i for i, s in enumerate(mu + [gas, mono_prod])}
 
-    pool = PolymerPool(label="P", xs=3, monomer=mono, explicit_map={},
-                       mu_species=mu, k_unzip=0.5, monomer_product=mono_prod,
-                       side_group_homolysis=[_sgh_channel()],
-                       side_group_gas_species=[gas])
-    with pytest.raises(ValueError,
-                       match=r"Pool P.*side_group_homolysis.*k_unzip.*mutually exclusive"):
-        pool.to_config(spc_map)
-
-    pool = PolymerPool(label="P", xs=3, monomer=mono, explicit_map={},
-                       mu_species=mu, monomer_product=mono_prod,
-                       radical_qssa_unzip=_qssa_channel(),
-                       side_group_homolysis=[_sgh_channel()],
-                       side_group_gas_species=[gas])
-    with pytest.raises(ValueError,
-                       match=r"Pool P.*side_group_homolysis.*radical_qssa_unzip.*mutually exclusive"):
-        pool.to_config(spc_map)
+    for kw in (dict(k_unzip=0.5), dict(radical_qssa_unzip=_qssa_channel())):
+        pool = PolymerPool(label="P", xs=3, monomer=mono, explicit_map={},
+                           mu_species=mu, monomer_product=mono_prod,
+                           side_group_homolysis=[_sgh_channel()],
+                           side_group_gas_species=[gas], **kw)
+        cfg = pool.to_config(spc_map)
+        assert cfg.side_group_homolysis[0]["label"] == "aliphatic_C-Br"
+        assert cfg.side_group_gas_indices == (3,)
 
 
 def test_pool_to_config_resolves_side_group_gas_indices():
@@ -9644,40 +9654,17 @@ def test_polymer_input_helper_side_group_registers_gas_no_feature_pool():
         rmg_input.rmg, rmg_input.species_dict = old_rmg, old_sd
 
 
-def test_side_group_homolysis_rejects_coexistence_with_k_homolysis_at_deck():
-    """kernel-v2 P1 contract: side-group C-X loss depletes an inventory on a
-    STATIONARY carrier mu1, whereas k_homolysis (random backbone homolysis)
-    MOVES the carrier's mu1 -- so the two are mutually exclusive and the deck
-    REJECTS the combination at deck-read validation, before any daughter
-    spawn."""
-    from unittest.mock import MagicMock
-    import rmgpy.rmg.input as rmg_input
-
-    def _make_new_species(obj, **kwargs):
-        if isinstance(obj, Molecule):
-            spc = Species(molecule=[obj])
-            spc.label = obj.get_formula()
-            return spc, True
-        return obj, True
-
-    mock_rmg = MagicMock()
-    mock_rmg.initial_species = []
-    mock_rmg.reaction_model.iteration_num = 0
-    mock_rmg.reaction_model.new_species_list = []
-    mock_rmg.reaction_model.make_new_species.side_effect = _make_new_species
-
-    old_rmg, old_sd = rmg_input.rmg, rmg_input.species_dict
-    rmg_input.rmg, rmg_input.species_dict = mock_rmg, {}
-    try:
-        with pytest.raises(InputError,
-                           match=r"PVBr.*side_group_homolysis.*k_homolysis.*mutually exclusive"):
-            rmg_input.polymer(label="PVBr", monomer="[CH2][CH]Br",
-                              end_groups=["[H]", "[H]"], cutoff=3,
-                              Mn=1500.0, Mw=1800.0, initial_mass=0.001,
-                              k_homolysis=_khom_triplet(),
-                              side_group_homolysis=[_sgh_channel()])
-    finally:
-        rmg_input.rmg, rmg_input.species_dict = old_rmg, old_sd
+def test_side_group_homolysis_beside_k_homolysis_gets_an_x_loss_daughter_at_deck():
+    """I-257: k_homolysis (random backbone homolysis) MOVES the carrier's mu1,
+    which the inventory accounting cannot hold, so the deck books the
+    side-group losses through the channel's X-loss feature daughter: the
+    end-radical daughters and the side-group daughter are all registered."""
+    poly, sd = _deck_pvbr(k_homolysis=_khom_triplet())
+    assert poly.end_radical_daughter_labels
+    assert poly.side_loss_daughter_labels == ["PVBr_sidegrp_aliphatic_C_Br"]
+    d = sd["PVBr_sidegrp_aliphatic_C_Br"]
+    assert d.chain_mass_defect_g_mol == pytest.approx(
+        Molecule().from_smiles("[Br]").get_molecular_weight() * 1000.0, rel=1e-12)
 
 
 class TestNearFloorEpisodeTracker:

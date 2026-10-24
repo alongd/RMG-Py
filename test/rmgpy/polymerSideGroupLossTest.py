@@ -87,10 +87,6 @@ END_UNIT_H_LOSS = [
 ]
 
 
-RED = pytest.mark.xfail(strict=True, raises=AssertionError,
-                         reason="I-257: polyatomic side groups are refused or misrouted today")
-
-
 def _setup(ok, what):
     """A setup step that fails raises RuntimeError, never an AssertionError."""
     if not ok:
@@ -136,7 +132,6 @@ def _attempt(fn):
 
 # --- the kernel reads a polyatomic leaving group from structure ------------
 
-@RED
 @pytest.mark.parametrize('name,label,gas,selector', LEAVING_GROUPS)
 def test_the_side_group_kernel_accepts_a_polyatomic_leaving_group(name, label, gas, selector):
     """validate_side_group_homolysis with the repeat unit resolves the group's
@@ -149,7 +144,6 @@ def test_the_side_group_kernel_accepts_a_polyatomic_leaving_group(name, label, g
     assert [ch['gas_product'] for ch in out] == [gas]
 
 
-@RED
 @pytest.mark.parametrize('name,label,gas,selector', LEAVING_GROUPS)
 def test_a_polyatomic_side_loss_unit_closes_its_ledger(name, label, gas, selector):
     """The X-loss feature unit is the repeat unit minus the group: its
@@ -167,7 +161,6 @@ def test_a_polyatomic_side_loss_unit_closes_its_ledger(name, label, gas, selecto
     assert unit.get_radical_count() == 3
 
 
-@RED
 def test_a_carrier_whose_chains_another_kernel_moves_gets_an_x_loss_daughter():
     """Beside an unzip kernel the inventory accounting (a stationary carrier)
     cannot hold, so each channel spawns its X-loss feature daughter carrying
@@ -192,7 +185,6 @@ def test_a_stationary_carrier_spawns_no_daughter():
     assert poly.generate_side_loss_daughters() == ()
 
 
-@RED
 def test_the_deck_takes_a_polyatomic_side_group_beside_an_unzip_kernel():
     """The deck helper accepts the ester channel beside radical_qssa_unzip,
     registers the gas radical and the X-loss feature daughter."""
@@ -231,7 +223,6 @@ def test_the_deck_takes_a_polyatomic_side_group_beside_an_unzip_kernel():
 
 # --- the producer routes a backbone-preserving loss to its X-loss feature ---
 
-@RED
 @pytest.mark.parametrize('name,product,gas', SIDE_LOSS_PRODUCTS)
 def test_a_side_group_loss_is_the_x_loss_feature_never_a_scission_tail(name, product, gas):
     """create_reacted_copy of a product that keeps the whole backbone and
@@ -246,7 +237,6 @@ def test_a_side_group_loss_is_the_x_loss_feature_never_a_scission_tail(name, pro
     assert d.chain_mass_defect_g_mol == pytest.approx(_mw(gas), rel=1e-12)
 
 
-@RED
 @pytest.mark.parametrize('name,product', END_UNIT_H_LOSS)
 def test_an_end_unit_h_loss_books_its_defect(name, product):
     """An H lost from an end unit (handshake evidence: exactly one H) is the
@@ -258,7 +248,6 @@ def test_an_end_unit_h_loss_books_its_defect(name, product):
     assert d.chain_mass_defect_g_mol == pytest.approx(_mw('[H]'), rel=1e-12)
 
 
-@RED
 def test_the_generated_side_loss_row_moves_no_repeat_units():
     """Through make_new_reaction: the ester homolysis of the center unit is a
     volatile ejection into the X-loss feature whose moment shift is zero (the

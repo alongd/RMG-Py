@@ -1049,63 +1049,153 @@ _SIDE_GROUP_CHANNEL_KEYS = ("label", "A", "n", "Ea", "site_selector",
                             "sites_per_unit", "gas_product")
 
 # Structural site-selector vocabulary (round-72 P1 adjudication): every
-# side_group_homolysis channel MUST name the carbon environment of the X
-# atom it removes -- the kinetics label alone must never pick the site.
-# Implemented as explicit in-repo atom-environment predicates over RMG's
-# own molecular graph (adjudication-equivalent alternative to site_smarts:
-# full SMARTS would require an RMG<->RDKit atom-index round-trip whose
-# ordering is not contract-stable -- a misordered mapping would silently
-# select the wrong atom, the exact bug class being fixed). The three
-# classes PARTITION the carbon-bound X sites (mutually exclusive, jointly
-# exhaustive), so two channels can only resolve to the SAME atom set by
-# duplicating a (selector, element) pair -- which the validator hard-fails
-# as a double-carry.
-SIDE_GROUP_SITE_SELECTORS = ("aryl", "benzylic", "aliphatic")
+# side_group_homolysis channel MUST name the environment of the atom its
+# leaving group hangs off -- the kinetics label alone must never pick the
+# site. Implemented as explicit in-repo atom-environment predicates over
+# RMG's own molecular graph (adjudication-equivalent alternative to
+# site_smarts: full SMARTS would require an RMG<->RDKit atom-index
+# round-trip whose ordering is not contract-stable -- a misordered mapping
+# would silently select the wrong atom, the exact bug class being fixed).
+# The classes PARTITION the side-group sites (mutually exclusive, jointly
+# exhaustive): 'aryl', 'benzylic' and 'aliphatic' for a group on a carbon,
+# 'hetero' for a group on any other atom (I-257: an ester's methyl leaves
+# from its oxygen). Two channels can only resolve to the SAME sites by
+# duplicating a (selector, leaving group) pair -- which the validator
+# hard-fails as a double-carry.
+SIDE_GROUP_SITE_SELECTORS = ("aryl", "benzylic", "aliphatic", "hetero")
+
+_leaving_group_species = {}
 
 
-def side_group_site_atom_indices(monomer, element_symbol, site_selector):
+def _leaving_group(leaving):
+    """The leaving-group radical as a Species with its resonance structures
+    (cached): ``leaving`` is a gas_product SMILES, a Molecule, or the element
+    symbol of a monoatomic X (the round-72 API, e.g. 'Br')."""
+    from rmgpy.molecule import Molecule
+    from rmgpy.molecule.element import get_element
+    from rmgpy.species import Species
+    if not isinstance(leaving, str):
+        spc = Species(molecule=[leaving.copy(deep=True)])
+        spc.generate_resonance_structures()
+        return spc
+    spc = _leaving_group_species.get(leaving)
+    if spc is None:
+        try:
+            get_element(leaving)
+            smiles = f"[{leaving}]"
+        except Exception:
+            smiles = leaving
+        spc = Species(molecule=[Molecule().from_smiles(smiles)])
+        spc.generate_resonance_structures()
+        _leaving_group_species[leaving] = spc
+    return spc
+
+
+def _far_side(monomer, attach, root):
+    """Indices of the atoms reached from ``root`` without crossing its bond
+    to ``attach``."""
+    seen = {root}
+    stack = [root]
+    while stack:
+        atom = stack.pop()
+        for nb in atom.bonds:
+            if nb is attach and atom is root:
+                continue
+            if nb not in seen:
+                seen.add(nb)
+                stack.append(nb)
+    return frozenset(monomer.atoms.index(a) for a in seen)
+
+
+def _side_fragment(monomer, side, root_idx):
+    """The atoms ``side`` of the repeat unit cut off as a radical at the
+    root."""
+    frag = monomer.copy(deep=True)
+    keep = [frag.atoms[i] for i in sorted(side)]
+    root = frag.atoms[root_idx]
+    for atom in [a for a in frag.atoms if a not in keep]:
+        frag.remove_atom(atom)
+    root.increment_radical()
+    frag.clear_labeled_atoms()
+    frag.update()
+    # a graph edited in place can carry stale connectivity values that
+    # false-negative VF2; its adjacency-list round trip does not
+    from rmgpy.molecule import Molecule
+    return Molecule().from_adjacency_list(frag.to_adjacency_list())
+
+
+def _same_radical(group, fragment):
+    """True if the fragment is the leaving group in any resonance (or
+    Kekule) drawing of either: a ring cut off a unit keeps the unit's bond
+    representation, the SMILES parse its own."""
+    from rmgpy.species import Species
+    frag = Species(molecule=[fragment])
+    frag.generate_resonance_structures(keep_isomorphic=False)
+    return any(g.is_isomorphic(f) for g in group.molecule for f in frag.molecule)
+
+
+def side_group_sites(monomer, leaving, site_selector):
     """Deterministic structural site selection for the side_group_homolysis
-    kernel (round-72 P1): the atom indices, in ``monomer.atoms`` order (the
-    canonical deterministic order; the producer removes the FIRST match),
-    of the removable side-group atoms of ``element_symbol`` whose carbon
-    environment matches ``site_selector``.
+    kernel (round-72 P1; I-257 for polyatomic leaving groups): one
+    ``(attach index, root index, side atom indices)`` per side group of the
+    repeat unit that is the leaving group and hangs off an attach atom of
+    class ``site_selector``, in ``monomer.atoms`` order of the root (the
+    canonical deterministic order; the producer removes the FIRST match).
 
-    Removable side-group X atom (the same predicate the producer's removal
-    always used): element match, unlabeled (never a stitch atom),
-    closed-shell, terminal (exactly one bond), single-bonded. The selector
-    then classifies the carbon the X hangs off (an X on a non-carbon
-    neighbor matches NO selector -- the v1 vocabulary is carbon-environment
-    only, consistent with the kernel's C-X homolysis law):
+    A side group is the far side of a single, acyclic bond attach-root of
+    the unit: the atoms reached from the root without crossing that bond,
+    none of them a stitch-labeled atom (so no backbone atom), the root
+    closed-shell. It is the leaving group when that side, with one radical
+    electron on the root, is isomorphic to the leaving-group radical. For a
+    monoatomic X the side is X alone, which is the round-72 removable-X
+    predicate (terminal, single-bonded, closed-shell, unlabeled).
 
-    - 'aryl':      the neighbor carbon is in an aromatic ring
-                   (Molecule.get_aromatic_rings -- robust to kekulized vs
-                   aromatic bond representations).
-    - 'benzylic':  the neighbor carbon is NOT aromatic but is bonded to an
-                   aromatic-ring carbon.
-    - 'aliphatic': the neighbor carbon is neither aromatic nor benzylic.
+    The selector classifies the attach atom, the group's own atoms aside:
+
+    - 'aryl':      a carbon in an aromatic ring (Molecule.get_aromatic_rings
+                   -- robust to kekulized vs aromatic bond representations);
+    - 'benzylic':  a carbon NOT aromatic but bonded to an aromatic-ring
+                   carbon outside the group;
+    - 'aliphatic': a carbon neither aromatic nor benzylic;
+    - 'hetero':    any other element.
     """
+    group = _leaving_group(leaving)
+    n_group = len(group.molecule[0].atoms)
     aromatic_atoms = set()
     for ring in monomer.get_aromatic_rings()[0]:
         aromatic_atoms.update(ring)
     matches = []
-    for idx, atom in enumerate(monomer.atoms):
-        if (atom.symbol != element_symbol or atom.label
-                or atom.radical_electrons != 0 or len(atom.bonds) != 1
-                or not next(iter(atom.bonds.values())).is_single()):
+    for root_idx, root in enumerate(monomer.atoms):
+        if root.label or root.radical_electrons != 0:
             continue
-        neighbor = next(iter(atom.bonds.keys()))
-        if not neighbor.is_carbon():
-            continue
-        if neighbor in aromatic_atoms:
-            cls = "aryl"
-        elif any(nb in aromatic_atoms and nb.is_carbon()
-                 for nb in neighbor.bonds.keys()):
-            cls = "benzylic"
-        else:
-            cls = "aliphatic"
-        if cls == site_selector:
-            matches.append(idx)
+        for attach, bond in root.bonds.items():
+            if not bond.is_single() or monomer.is_bond_in_cycle(bond):
+                continue
+            side = _far_side(monomer, attach, root)
+            if len(side) != n_group or any(monomer.atoms[i].label for i in side):
+                continue
+            if not _same_radical(group, _side_fragment(monomer, side, root_idx)):
+                continue
+            side_atoms = {monomer.atoms[i] for i in side}
+            if not attach.is_carbon():
+                cls = "hetero"
+            elif attach in aromatic_atoms:
+                cls = "aryl"
+            elif any(nb in aromatic_atoms and nb.is_carbon() and nb not in side_atoms
+                     for nb in attach.bonds.keys()):
+                cls = "benzylic"
+            else:
+                cls = "aliphatic"
+            if cls == site_selector:
+                matches.append((monomer.atoms.index(attach), root_idx, side))
     return tuple(matches)
+
+
+def side_group_site_atom_indices(monomer, leaving, site_selector):
+    """The root atom indices of :func:`side_group_sites` (the X atoms
+    themselves for a monoatomic X)."""
+    return tuple(root for _attach, root, _side in
+                 side_group_sites(monomer, leaving, site_selector))
 
 
 def sanitize_side_group_channel_label(channel_label):
@@ -1135,6 +1225,31 @@ def _side_group_gas_mw_g_mol(gas_product):
     return Molecule().from_smiles(gas_product).get_molecular_weight() * 1000.0
 
 
+# How a carrier books its side-group losses (I-257). The inventory
+# accounting seeds Z(0) = sites*mu1(0) once and needs the carrier's mu1
+# stationary; beside a kernel that moves the carrier's chains it cannot hold,
+# so such a carrier moves each reacting chain, intact, into the channel's
+# X-loss feature daughter, which carries the exact per-chain defect M_X.
+SIDE_GROUP_INVENTORY = "inventory"
+SIDE_GROUP_DAUGHTER = "daughter"
+SIDE_GROUP_CHAIN_MOVERS = ("radical_qssa_unzip", "k_unzip", "k_homolysis",
+                           "k_depropagation")
+
+
+def side_group_accounting(pool):
+    """SIDE_GROUP_DAUGHTER when a kernel of ``pool`` (a PolymerPoolConfig or
+    a Polymer: both carry the kernel fields) moves its chains
+    (SIDE_GROUP_CHAIN_MOVERS), else SIDE_GROUP_INVENTORY."""
+    for name in SIDE_GROUP_CHAIN_MOVERS:
+        value = getattr(pool, name, None)
+        if name == "k_unzip":
+            if float(value or 0.0) > 0.0:
+                return SIDE_GROUP_DAUGHTER
+        elif value is not None:
+            return SIDE_GROUP_DAUGHTER
+    return SIDE_GROUP_INVENTORY
+
+
 def validate_side_group_homolysis(pool_label, channels, monomer=None):
     """Validate a side_group_homolysis channel LIST and return it normalized
     (single source of truth for the field rules, shared by the deck helper
@@ -1151,24 +1266,25 @@ def validate_side_group_homolysis(pool_label, channels, monomer=None):
       convention and finite-rejection posture as validate_k_homolysis (the
       solver evaluates k(T) = A*T^n*exp(-Ea/(R_gas*T)) at its runtime T).
     - site_selector: REQUIRED structural site selector (round-72 P1), one
-      of SIDE_GROUP_SITE_SELECTORS ('aryl' | 'benzylic' | 'aliphatic') --
-      names the carbon environment of the X atom the channel removes. The
-      kinetics label alone must NEVER pick the site: on a mixed-site
-      monomer a channel labeled 'aliphatic_C-Br' would otherwise remove
-      the first X in atom order (an ARYL one), minting the wrong -- or the
-      same -- defect structure under a different rate.
-    - sites_per_unit > 0: side-group X sites per monomer repeat unit
+      of SIDE_GROUP_SITE_SELECTORS ('aryl' | 'benzylic' | 'aliphatic' |
+      'hetero') -- names the environment of the atom the channel's leaving
+      group hangs off. The kinetics label alone must NEVER pick the site:
+      on a mixed-site monomer a channel labeled 'aliphatic_C-Br' would
+      otherwise remove the first X in atom order (an ARYL one), minting the
+      wrong -- or the same -- defect structure under a different rate.
+    - sites_per_unit > 0: side-group sites per monomer repeat unit
       (e.g. aryl C-Br = 4, benzylic C-Br = 2). CHECKED, not trusted, when
       ``monomer`` is given (below).
-    - gas_product: SMILES of the ejected X radical. Must parse and be a
-      MONO-RADICAL; v1 supports only MONOATOMIC radicals (e.g. '[Br]') --
-      the deterministic feature-unit derivation removes a single X atom.
+    - gas_product: SMILES of the ejected leaving-group radical, a NEUTRAL
+      MONO-RADICAL of any size (I-257: '[Br]', the ester radical 'CO[C]=O',
+      phenyl); the group is read from the repeat unit's structure
+      (side_group_sites).
 
     STRUCTURAL layer (round-72 P1): when ``monomer`` -- the pool's parsed
     repeat-unit Molecule -- is given, each channel's selector is resolved
     against it via side_group_site_atom_indices and the law is enforced:
-    (a) the selector must match >= 1 removable X atom of the channel's
-    gas_product element (no match -> hard fail naming the channel);
+    (a) the selector must match >= 1 side group that is the channel's
+    leaving group (no match -> hard fail naming the channel);
     (b) sites_per_unit must EQUAL the selector's structural match count
     (mismatch -> hard fail with both numbers); (c) no two channels may
     resolve to the SAME atom set (that is a double-carry the distinct
@@ -1267,13 +1383,12 @@ def validate_side_group_homolysis(pool_label, channels, monomer=None):
                 f"gas_product={gp!r} must be a mono-radical (the homolysis "
                 f"co-product is the ejected X radical); got radical count "
                 f"{gmol.get_radical_count()}.")
-        if len(gmol.atoms) != 1:
+        if gmol.get_net_charge() != 0:
             raise ValueError(
                 f"Pool {pool_label}: side_group_homolysis channel '{label}' "
-                f"gas_product={gp!r} has {len(gmol.atoms)} atoms -- v1 "
-                f"supports only monoatomic radical gas products (e.g. "
-                f"'[Br]'): the deterministic feature-unit derivation removes "
-                f"a single X atom from the repeat unit.")
+                f"gas_product={gp!r} carries net charge "
+                f"{gmol.get_net_charge()}; a homolysis leaves a neutral "
+                f"radical.")
         out["gas_product"] = gp
         san = sanitize_side_group_channel_label(label)
         if san in seen_sanitized:
@@ -1293,19 +1408,22 @@ def validate_side_group_homolysis(pool_label, channels, monomer=None):
         seen_sites = {}
         for out in normalized:
             label = out["label"]
-            sym = Molecule().from_smiles(out["gas_product"]).atoms[0].symbol
-            idxs = side_group_site_atom_indices(monomer, sym,
+            gas = Molecule().from_smiles(out["gas_product"])
+            sym = (gas.atoms[0].symbol if len(gas.atoms) == 1
+                   else out["gas_product"])
+            idxs = side_group_site_atom_indices(monomer, gas,
                                                 out["site_selector"])
             if not idxs:
                 raise ValueError(
                     f"Pool {pool_label}: side_group_homolysis channel "
                     f"'{label}' site_selector='{out['site_selector']}' "
-                    f"matches NO removable side-group {sym} atom (terminal, "
-                    f"single-bonded, closed-shell, unlabeled, on a matching "
-                    f"carbon environment) in the repeat unit -- the "
-                    f"selector must structurally pin which {sym} the "
-                    f"channel removes; a non-matching selector would mint "
-                    f"the wrong defect (round-72 P1).")
+                    f"matches NO removable side-group {sym} (the far side "
+                    f"of a single acyclic bond, holding no stitch atom, "
+                    f"that is the leaving group with its radical at the "
+                    f"cut, on a matching attach atom) in the repeat unit "
+                    f"-- the selector must structurally pin which {sym} "
+                    f"the channel removes; a non-matching selector would "
+                    f"mint the wrong defect (round-72 P1).")
             if float(len(idxs)) != out["sites_per_unit"]:
                 raise ValueError(
                     f"Pool {pool_label}: side_group_homolysis channel "
@@ -1316,7 +1434,7 @@ def validate_side_group_homolysis(pool_label, channels, monomer=None):
                     f"sites_per_unit is CHECKED against the monomer, never "
                     f"trusted (round-72 P1); set it to {len(idxs)} or fix "
                     f"the selector.")
-            key = (sym, frozenset(idxs))
+            key = frozenset(idxs)
             if key in seen_sites:
                 raise ValueError(
                     f"Pool {pool_label}: side_group_homolysis channels "
@@ -1441,12 +1559,14 @@ class PolymerPoolConfig:
     # STATIONARY (no debit, no feature-pool credit); the gas X radical is
     # credited +R and the carrier's condensed mass is booked the lost-X mass
     # directly (mu1*MW - Sum_row max(0, s*mu1 - Z)*M_X). v2 spawns NO feature
-    # pool. Mutually exclusive with k_unzip > 0, with radical_qssa_unzip
-    # (double-carry), and with any kernel that MOVES the carrier's mu1 --
-    # k_homolysis / k_depropagation / explicit_dp (the §1h build guard also
-    # refuses tail_kinetics and resolved row-flux touching the carrier) --
-    # because inventory-depletion SGH requires a STATIONARY carrier mu1. MAY
-    # coexist only with k_scission (verified mu1-preserving backbone scission).
+    # pool. Inventory-depletion SGH requires a STATIONARY carrier mu1 (the §1h
+    # build guard refuses explicit_dp, tail_kinetics and resolved row-flux
+    # touching the carrier; k_scission, verified mu1-preserving, MAY coexist).
+    # A carrier with k_unzip > 0, radical_qssa_unzip, k_homolysis or
+    # k_depropagation instead moves each reacting chain, intact, into the
+    # channel's X-loss feature daughter '{label}_sidegrp_{channel}'
+    # (side_group_accounting, I-257; the v1 law, the daughter carrying the
+    # exact per-chain defect M_X).
     side_group_homolysis: Optional[List[Dict[str, object]]] = None
     # Resolved core index of each channel's gas_product species, aligned
     # with side_group_homolysis (PolymerPool.to_config resolves it; a
@@ -2248,7 +2368,7 @@ class HybridPolymerSystem(ReactionSystem):
         n_sgh_z = 0
         for pool in self.polymer_pools:
             channels = pool.side_group_homolysis
-            if channels:
+            if channels and side_group_accounting(pool) == SIDE_GROUP_INVENTORY:
                 n_sgh_z += len(channels)
         self.num_sgh_z = n_sgh_z
         # I-141: declared-and-undeclared end groups in one system are refused
@@ -2557,11 +2677,11 @@ class HybridPolymerSystem(ReactionSystem):
             # round 70). LAST line of defense, same rationale as the two
             # kernels above: deck helper and PolymerPool.to_config guard
             # these shapes, but a directly-constructed PolymerPoolConfig
-            # bypasses both. NOTE (SGH kernel-v2): this kernel is mutually
-            # exclusive with k_homolysis (k_homolysis MOVES the carrier mu1,
-            # which inventory-depletion SGH forbids -- refused by the §1h
-            # build guard). It MAY coexist only with k_scission, which acts on
-            # backbone C-C bonds and is verified mu1-preserving.
+            # bypasses both. NOTE: a carrier whose chains another kernel moves
+            # books its losses through X-loss feature daughters
+            # (side_group_accounting, I-257); an inventory carrier (kernel-v2)
+            # MAY coexist only with k_scission, which acts on backbone C-C
+            # bonds and is verified mu1-preserving.
             if (not math.isfinite(pool.chain_mass_defect_g_mol)
                     or pool.chain_mass_defect_g_mol < 0.0):
                 raise ValueError(
@@ -2580,27 +2700,11 @@ class HybridPolymerSystem(ReactionSystem):
                     pool.label, pool.side_group_homolysis)
                 object.__setattr__(pool, 'side_group_homolysis',
                                    copy.deepcopy(normalized_sgh))
-                if pool.k_unzip > 0.0:
-                    raise ValueError(
-                        f"Pool {pool.label}: side_group_homolysis is "
-                        f"configured AND k_unzip={pool.k_unzip:g} > 0. "
-                        f"Legacy k_unzip is a phenomenological closed-chain "
-                        f"monomer-loss channel, while side_group_homolysis "
-                        f"(kernel-v2) drives explicit side-group degradation "
-                        f"chemistry via the auxiliary Z-inventory depletion; "
-                        f"the two are mutually exclusive on a pool -- enabling "
-                        f"both would double-carry degradation. Set k_unzip=0 "
-                        f"or remove side_group_homolysis.")
-                if pool.radical_qssa_unzip is not None:
-                    raise ValueError(
-                        f"Pool {pool.label}: side_group_homolysis is "
-                        f"configured AND radical_qssa_unzip is configured. "
-                        f"The QSSA channel's initiation block is random "
-                        f"backbone homolysis feeding the same lumped "
-                        f"depropagation, so the two initiation carriers are "
-                        f"mutually exclusive on a pool -- enabling both "
-                        f"would double-carry initiation. Remove one of "
-                        f"them.")
+                # Beside k_unzip, radical_qssa_unzip, k_homolysis or
+                # k_depropagation the carrier books its losses through X-loss
+                # feature daughters (side_group_accounting, I-257): its
+                # radicals stay on the daughter's chains and feed none of
+                # those kernels, so nothing is carried twice.
                 gi = pool.side_group_gas_indices
                 if gi is None or len(gi) != len(normalized_sgh):
                     raise ValueError(
@@ -3063,6 +3167,10 @@ class HybridPolymerSystem(ReactionSystem):
         - sgh_z_slot[row] (int32): ABSOLUTE ODE index of this row's Z
           aux-state slot (num_core_species + num_qssa_u + z_count); Z = moles
           of remaining removable X sites, Z(0) = sites*mu1(0), dZ/dt = -R.
+          -1 on a daughter-accounting carrier (side_group_accounting, I-257),
+          whose rows instead credit
+        - sgh_dst_mu0/mu1/mu2[row] (int32): the X-loss feature daughter's
+          moment slots (-1 on an inventory row).
         - sgh_channel_labels[row]: channel label (guard warn-once keys and
           error messages).
 
@@ -3095,7 +3203,9 @@ class HybridPolymerSystem(ReactionSystem):
         rows_gas = []
         rows_mw_x = []
         rows_z_slot = []
+        rows_dst = ([], [], [])
         self.sgh_channel_labels = []
+        pool_index = {p.label: j for j, p in enumerate(self.polymer_pools)}
 
         # Absolute Z-slot base: state vector is [core | U slots | Z slots], so
         # the first Z slot follows the core block and every U slot. Mirrors
@@ -3108,9 +3218,12 @@ class HybridPolymerSystem(ReactionSystem):
             channels = pool.side_group_homolysis
             if not channels:
                 continue
-            # §1h mu1-mover exclusion (SOLVER-BUILD guard, deck-kernel arm):
-            # inventory-depletion SGH requires a stationary carrier mu1.
-            self._assert_sgh_carrier_mu1_stationary(i, pool)
+            inventory = side_group_accounting(pool) == SIDE_GROUP_INVENTORY
+            if inventory:
+                # §1h mu1-mover exclusion (SOLVER-BUILD guard, deck-kernel
+                # arm): inventory-depletion SGH requires a stationary carrier
+                # mu1.
+                self._assert_sgh_carrier_mu1_stationary(i, pool)
             for ci, ch in enumerate(channels):
                 rows_A.append(ch["A"])
                 rows_n.append(ch["n"])
@@ -3119,9 +3232,19 @@ class HybridPolymerSystem(ReactionSystem):
                 rows_gas.append(int(pool.side_group_gas_indices[ci]))
                 # M_X of the ejected X radical -- the value v1 threw away; v2
                 # carries Br mass out of the melt through the Z inventory.
-                rows_mw_x.append(_side_group_gas_mw_g_mol(ch["gas_product"]))
-                rows_z_slot.append(z_base + z_count)
-                z_count += 1
+                m_x = _side_group_gas_mw_g_mol(ch["gas_product"])
+                rows_mw_x.append(m_x)
+                if inventory:
+                    rows_z_slot.append(z_base + z_count)
+                    z_count += 1
+                    for k in range(3):
+                        rows_dst[k].append(-1)
+                else:
+                    rows_z_slot.append(-1)
+                    dst = self._side_group_daughter(pool, ch["label"], m_x,
+                                                    pool_index)
+                    for k in range(3):
+                        rows_dst[k].append(int(dst.mu_indices[k]))
                 self.sgh_channel_labels.append(ch["label"])
             self.sgh_enabled[i] = 1
             self.sgh_row_end[i] = len(rows_A)
@@ -3133,6 +3256,9 @@ class HybridPolymerSystem(ReactionSystem):
         self.sgh_gas = np.asarray(rows_gas, dtype=np.int32)
         self.sgh_mw_X = np.asarray(rows_mw_x, dtype=float)
         self.sgh_z_slot = np.asarray(rows_z_slot, dtype=np.int32)
+        self.sgh_dst_mu0 = np.asarray(rows_dst[0], dtype=np.int32)
+        self.sgh_dst_mu1 = np.asarray(rows_dst[1], dtype=np.int32)
+        self.sgh_dst_mu2 = np.asarray(rows_dst[2], dtype=np.int32)
 
         # Layout cross-check (mirrors the U-slot drift guard): initiate_
         # tolerances allocated num_sgh_z Z slots from the raw configs; the
@@ -3148,6 +3274,37 @@ class HybridPolymerSystem(ReactionSystem):
                 f"configs changed between ODE layout and validation; rebuild "
                 f"the reactor (initialize_model) instead of mutating pool "
                 f"configs in place.")
+
+    def _side_group_daughter(self, pool, channel_label, m_x, pool_index):
+        """The configured X-loss feature daughter of a daughter-accounting
+        carrier's channel (side_group_daughter_pool_label), whose per-chain
+        defect must be the carrier's plus M_X and whose repeat unit mass the
+        carrier's: the chain moves intact and its mass leaves as M_X."""
+        label = side_group_daughter_pool_label(pool.label, channel_label)
+        j = pool_index.get(label)
+        if j is None:
+            raise ValueError(
+                f"Pool {pool.label}: side_group_homolysis channel "
+                f"'{channel_label}' books its losses into the X-loss feature "
+                f"daughter '{label}' (the carrier's chains are moved by "
+                f"another kernel), but no such pool is configured; the "
+                f"deck spawns it at setup (Polymer.generate_side_loss_"
+                f"daughters).")
+        dst = self.polymer_pools[j]
+        want = float(pool.chain_mass_defect_g_mol) + m_x
+        if not math.isclose(dst.chain_mass_defect_g_mol, want, rel_tol=1e-9):
+            raise ValueError(
+                f"Pool {dst.label}: chain_mass_defect_g_mol="
+                f"{dst.chain_mass_defect_g_mol!r} is not the carrier "
+                f"{pool.label}'s defect plus M_X = {want!r}; the X-loss "
+                f"daughter would mint or destroy condensed mass.")
+        if not math.isclose(dst.monomer_mw_g_mol, pool.monomer_mw_g_mol,
+                            rel_tol=1e-9):
+            raise ValueError(
+                f"Pool {dst.label}: monomer_mw_g_mol={dst.monomer_mw_g_mol!r} "
+                f"differs from its carrier {pool.label}'s "
+                f"{pool.monomer_mw_g_mol!r}; the chain moves intact.")
+        return dst
 
     def _assert_sgh_carrier_mu1_stationary(self, int pool_i, pool):
         """§1h + P1-B (SGH kernel-v2): refuse any SGH carrier pool whose mu1
@@ -5189,6 +5346,14 @@ class HybridPolymerSystem(ReactionSystem):
                 re_ = int(self.sgh_row_end[pool_i])
                 for sgh_row in range(rs, re_):
                     z_slot = int(self.sgh_z_slot[sgh_row])
+                    if z_slot < 0:
+                        print(f"  side_group_homolysis channel "
+                              f"'{self.sgh_channel_labels[sgh_row]}': X-loss "
+                              f"feature daughter (mu0 slot "
+                              f"{int(self.sgh_dst_mu0[sgh_row])}), M_X="
+                              f"{self.sgh_mw_X[sgh_row]:g} g/mol -> gas index "
+                              f"{int(self.sgh_gas[sgh_row])}.")
+                        continue
                     z0 = self.y0[z_slot] if 0 <= z_slot < len(self.y0) \
                         else float('nan')
                     print(f"  side_group_homolysis[v2] channel "
@@ -5434,6 +5599,8 @@ class HybridPolymerSystem(ReactionSystem):
                 for sgh_row in range(int(self.sgh_row_start[i]),
                                      int(self.sgh_row_end[i])):
                     z_slot = int(z_slots[sgh_row])
+                    if z_slot < 0:
+                        continue
                     self.y0[z_slot] = self.sgh_sites[sgh_row] * mu1_amount
 
     def generate_rate_coefficients(self, core_reactions, edge_reactions):
@@ -6526,6 +6693,8 @@ class HybridPolymerSystem(ReactionSystem):
             for sgh_row in range(int(self.sgh_row_start[p]),
                                  int(self.sgh_row_end[p])):
                 z_slot = int(self.sgh_z_slot[sgh_row])
+                if z_slot < 0:
+                    continue
                 z_val = y[z_slot]
                 upper = self.sgh_sites[sgh_row] * mu1_amount
                 # atol-derived floor on the Z slot (mole basis; same basis
@@ -6576,6 +6745,8 @@ class HybridPolymerSystem(ReactionSystem):
             for sgh_row in range(int(self.sgh_row_start[p]),
                                  int(self.sgh_row_end[p])):
                 z_slot = int(self.sgh_z_slot[sgh_row])
+                if z_slot < 0:
+                    continue
                 z_val = y[z_slot]
                 upper = self.sgh_sites[sgh_row] * mu1_amount
                 if atol_arr is None:
@@ -6668,7 +6839,8 @@ class HybridPolymerSystem(ReactionSystem):
                 mu0_mol += e0 * V_poly
                 mu1_mol += e1 * V_poly
             sgh_en = getattr(self, "sgh_enabled", None)
-            if sgh_en is not None and p < len(sgh_en) and sgh_en[p]:
+            if (sgh_en is not None and p < len(sgh_en) and sgh_en[p]
+                    and self.sgh_z_slot[self.sgh_row_start[p]] >= 0):
                 # SGH kernel-v2 (§1e): Br leaves the melt through the
                 # per-channel Z depletion state, NOT a moment debit or a
                 # feature pool. Br lost so far on each row is the seeded
@@ -8732,6 +8904,33 @@ class HybridPolymerSystem(ReactionSystem):
                             f"n={self.sgh_n[sgh_row]:g}, "
                             f"Ea={self.sgh_Ea[sgh_row]:g} J/mol. Refusing "
                             f"to integrate a poisoned kernel.")
+                    if self.sgh_z_slot[sgh_row] < 0:
+                        # X-loss feature daughter (I-257; the v1 law): every
+                        # repeat unit carries s sites, so a chain of length n
+                        # reacts at k*s*n and moves, intact, to the daughter:
+                        #   parent  dmu_j -= k*s*mu_{j+1}   (j = 0, 1, 2; mu3
+                        #           from the closure above, direct products)
+                        #   daughter gains exactly that, gas X gains k*s*mu1;
+                        # the daughter's defect M_X books the mass that left.
+                        # Zero flux outside the realizable domain (mu2 < mu1,
+                        # mu3 nonfinite or < mu2) and on an empty carrier.
+                        if (mu0 <= 0.0 or mu1 <= 0.0 or mu2 < mu1
+                                or not np.isfinite(mu3) or mu3 < mu2):
+                            continue
+                        ks_sgh = k_sgh * self.sgh_sites[sgh_row]
+                        r0_sgh = ks_sgh * mu1
+                        r1_sgh = ks_sgh * mu2
+                        r2_sgh = ks_sgh * mu3
+                        dmu0_dt -= r0_sgh
+                        dmu1_dt -= r1_sgh
+                        dmu2_dt -= r2_sgh
+                        dn_dt[self.sgh_dst_mu0[sgh_row]] += r0_sgh * V_poly
+                        dn_dt[self.sgh_dst_mu1[sgh_row]] += r1_sgh * V_poly
+                        dn_dt[self.sgh_dst_mu2[sgh_row]] += r2_sgh * V_poly
+                        g_idx_sgh = int(self.sgh_gas[sgh_row])
+                        small_src[g_idx_sgh] = (
+                            small_src.get(g_idx_sgh, 0.0) + r0_sgh)
+                        continue
                     # Trial-state fuzz sanitize ONLY (never raise for Z here).
                     z_amount = y[int(self.sgh_z_slot[sgh_row])]
                     if z_amount < 0.0:
@@ -9548,6 +9747,21 @@ class HybridPolymerSystem(ReactionSystem):
                         f"chain) was supplied.")
                 for el, n in defect_atoms[pool.label].items():
                     out[el] = out.get(el, 0.0) - mu0 * n
+        # An inventory-accounting side-group carrier keeps its moments while
+        # its groups leave: the groups lost so far, max(0, sites*mu1 - Z) per
+        # row, are off its chains (they are in the gas).
+        sgh_en = getattr(self, "sgh_enabled", None)
+        for p, pool in enumerate(self.polymer_pools):
+            if sgh_en is None or p >= len(sgh_en) or not sgh_en[p]:
+                continue
+            mu1 = max(0.0, float(y[pool.mu_indices[1]]))
+            for row in range(int(self.sgh_row_start[p]), int(self.sgh_row_end[p])):
+                z_slot = int(self.sgh_z_slot[row])
+                if z_slot < 0:
+                    continue
+                lost = max(0.0, self.sgh_sites[row] * mu1 - float(y[z_slot]))
+                for el, n in self._core_species_atoms[int(self.sgh_gas[row])].items():
+                    out[el] = out.get(el, 0.0) - lost * n
         return out
 
     def physical_elemental_inventory(self, y=None, species_atoms=None,
