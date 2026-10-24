@@ -222,7 +222,7 @@ def test_emission_certifier_builds_each_channel_set_of_a_round_robin_once(famili
         return real(family, roots, direction, **kw)
 
     monkeypatch.setattr(chm, "build_channels", counting)
-    certifier = emit.make_certifier(families, {})
+    certifier = emit.make_certifier(families, {}, None)
     family = families["H_Abstraction"]
     donors = ["C", "CC", "CCC", "CC(C)C"]
     radicals = ["[CH3]", "C[CH2]", "CC[CH2]"]

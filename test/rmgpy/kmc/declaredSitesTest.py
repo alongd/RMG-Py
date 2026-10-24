@@ -107,7 +107,7 @@ def test_the_checker_certifies_a_declared_artifact_under_its_rules(tmp_path, mon
         return [dict(r, rate_certificate={"sha256": "s"}) for r in records], \
             {"s": {"certified": True, "gaps": []}}, {}
     monkeypatch.setattr(CHECKER.emit, "load_database", lambda *_args:
-                        SimpleNamespace(kinetics=SimpleNamespace(families={})))
+                        SimpleNamespace(kinetics=SimpleNamespace(families={}), thermo=None))
     monkeypatch.setattr(CHECKER.cm, "Certifier", certifier)
     monkeypatch.setattr(CHECKER.cm, "certify_records", certify)
     monkeypatch.setattr(EventRecord, "from_dict", staticmethod(dict))
@@ -118,6 +118,8 @@ def test_the_checker_certifies_a_declared_artifact_under_its_rules(tmp_path, mon
     CHECKER.check(args)
     assert seen["domain"].name == "declared_interim_v1"
     assert seen["repeat"] == emit.declared_provider(spec).unit_formula()
+    # the reference thermo that decides the direction RMG keeps (I-254)
+    assert seen["thermo"] is not None
 
 
 def test_the_emitter_certifies_a_declared_artifact_under_its_rules(tmp_path, monkeypatch):
@@ -140,6 +142,7 @@ def test_the_emitter_certifies_a_declared_artifact_under_its_rules(tmp_path, mon
     with pytest.raises(Stop):
         emitter.init()
     assert seen["domain"].name == "declared_interim_v1"
+    assert seen["thermo"] is not None
 
 
 # -- gap C: one structure per class of hydrogen-bearing atoms ------------------------

@@ -91,7 +91,7 @@ def _check(tmp_path, monkeypatch, records, *, certify, record_key, prior, limit=
                         SimpleNamespace(systems={}, sha256="hash"))
     monkeypatch.setattr(CHECKER.emit, "build_reference_systems", lambda _roster: ({}, []))
     monkeypatch.setattr(CHECKER.emit, "load_database", lambda *_args:
-                        SimpleNamespace(kinetics=SimpleNamespace(families={})))
+                        SimpleNamespace(kinetics=SimpleNamespace(families={}), thermo=None))
     monkeypatch.setattr(CHECKER.cm, "Certifier", lambda *_args, **_kwargs: object())
     monkeypatch.setattr(CHECKER.cm, "certify_records", certify)
     monkeypatch.setattr(EventRecord, "from_dict", staticmethod(dict))
@@ -252,7 +252,7 @@ def _pe_check(tmp_path, monkeypatch, records, old_rows=None, provenance=None, le
         document["provenance"] = provenance
     artifact.write_text(json.dumps(document))
     monkeypatch.setattr(CHECKER.emit, "load_database", lambda *_args:
-                        SimpleNamespace(kinetics=SimpleNamespace(families={})))
+                        SimpleNamespace(kinetics=SimpleNamespace(families={}), thermo=None))
     monkeypatch.setattr(CHECKER.cm, "Certifier", lambda *_args, **_kwargs: object())
     monkeypatch.setattr(CHECKER.cm, "certify_records", _certify())
     monkeypatch.setattr(EventRecord, "from_dict", staticmethod(dict))

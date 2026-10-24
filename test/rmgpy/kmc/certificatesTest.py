@@ -51,9 +51,21 @@ def fam(db):
     return db.kinetics.families
 
 
+_THERMO = {}
+
+
+def reference_thermo():
+    """The compiler's reference thermo on the test database (it decides the direction
+    RMG keeps for a family that is its own reverse)."""
+    if "thermo" not in _THERMO:
+        from rmgpy.kmc.reference_thermo import SharedThermoAssignment
+        _THERMO["thermo"] = SharedThermoAssignment(ct.database().thermo, "certificates-test")
+    return _THERMO["thermo"]
+
+
 @pytest.fixture(scope="module")
 def certifier(fam):
-    return cm.Certifier(fam)
+    return cm.Certifier(fam, thermo=reference_thermo())
 
 
 def witness_atoms(channel_set):
@@ -525,15 +537,23 @@ def _heavy_positions(molecules):
 def production_rate_source(family, cs, move):
     """The rate source the compiler serializes for an RMG family estimate
     (compiler._rate_table + _build_linked_family_pair): RMG's get_kinetics
-    on the move's template reaction, its source/entry/rank/uncertainty, the
-    selection direction, and for a hand-built tree compiler._rate_rule_source
-    on the reaction AFTER production's normalization (swapped when RMG
-    selected the rate for the opposite direction).  Returns (rate source,
-    is_forward)."""
+    on the move's template reaction, in the direction RMG's model keeps for a
+    family that is its own reverse (compiler.kept_own_reverse_kinetics, on
+    the reference thermo), its source/entry/rank/uncertainty, the selection
+    direction, and for a hand-built tree compiler._rate_rule_source on the
+    reaction AFTER production's normalization (swapped when RMG selected the
+    rate for the opposite direction).  Returns (rate source, is_forward)."""
     from rmgpy.kmc import compiler as cmp
     rxn, _r, _p = chm.template_reaction(family, cs, move)
     kinetics, source, entry, fwd = family.get_kinetics(
         rxn, template_labels=list(move.template), degeneracy=1, return_all_kinetics=False)
+    if family.own_reverse:
+        rxn.reactants = [cm._species(s.molecule[0]) for s in rxn.reactants]
+        rxn.products = [cm._species(s.molecule[0]) for s in rxn.products]
+        if not cm._same_species(rxn.reactants, rxn.products) and \
+                family.add_reverse_attribute(rxn):
+            kinetics, source, entry, fwd = cmp.kept_own_reverse_kinetics(
+                family, rxn, kinetics, source, entry, fwd, reference_thermo())
     rxn.kinetics = kinetics
     if not fwd:
         rxn.reactants, rxn.products = rxn.products, rxn.reactants
@@ -739,15 +759,17 @@ def test_recertify_a_reversed_record_on_its_template_reactants(fam, certifier):
     cs = chm.build_channels(family, [pe, closed])
     head = next(c for c in cs.channels if c.pathway[0].startswith("C/H3/Cs")
                 and c.pathway[1].startswith("C_rad/H/CbCs"))
-    forward, reverse, _cs, _ch = _record_pair(fam, "H_Abstraction", [pe, closed], head.pathway)
-    rc = certifier.certify_record(reverse, rate_owner=forward)
+    owner, partner, _cs, _ch = _record_pair(fam, "H_Abstraction", [pe, closed], head.pathway)
+    # the reversed record, whichever of the pair owns the rate (the direction RMG keeps)
+    reverse, rate_owner = (owner, None) if owner.orientation == "reversed" else (partner, owner)
+    rc = certifier.certify_record(reverse, rate_owner=rate_owner)
     assert rc["template_side"] == "product_graphs" and rc["complete"], rc["gaps"]
     assert rc["certified"], rc["binding"]
     _side, mols, _o = certifier.template_side(reverse)
     reacting = {a for ch in rc["certificate"]["channels"] for m in ch["members"]
                 for mp in m["mappings"] for _s, _l, a in mp["labels"]}
     ext, amap, _info = cm.extend_witness(mols, reacting)
-    res = certifier.recertify(reverse, ext, amap, certificate=rc, rate_owner=forward)
+    res = certifier.recertify(reverse, ext, amap, certificate=rc, rate_owner=rate_owner)
     assert res["same_selection"], (res["flips"], res["refusals"])
 
 

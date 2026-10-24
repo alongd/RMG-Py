@@ -268,13 +268,23 @@ def certification_rules(artifact: dict, spec) -> dict:
             "growth": declared}
 
 
-def make_certifier(fam, rules: dict):
+def make_certifier(fam, rules: dict, thermo):
     """The record certifier of emission and of the mapping check.  It keeps
     64 channel sets: an artifact's certification revisits its reactant sets
     after other records (one sampled artifact: 790 builds of 165 sets under
-    8, half of its initialisation; the same peak memory under 64)."""
+    8, half of its initialisation; the same peak memory under 64).  ``thermo``
+    (``reference_thermo``; None only where no reaction needs it) decides the
+    direction RMG keeps for a family that is its own reverse."""
     from rmgpy.kmc import certificates as cm
-    return cm.Certifier(fam, max_channel_sets=64, max_entries=1024, **rules)
+    return cm.Certifier(fam, max_channel_sets=64, max_entries=1024, thermo=thermo, **rules)
+
+
+def reference_thermo(db):
+    """The compiler's reference thermo on ``db`` (``SharedThermoAssignment``):
+    the certifier's (``make_certifier``), which decides the direction RMG
+    keeps for a family that is its own reverse as the compile decided it."""
+    from rmgpy.kmc.reference_thermo import SharedThermoAssignment
+    return SharedThermoAssignment(db.thermo, REFERENCE_THERMO_LABEL)
 
 
 def roster_bytes(roster: Roster) -> bytes:
@@ -1164,7 +1174,8 @@ class Emitter:
         db = load_database(families, self.database)
         fam = db.kinetics.families
         S.update(db=db, fam=fam, families=families, load_s=round(time.time() - t, 1))
-        certifier = make_certifier(fam, certification_rules(art, self.polymer))
+        certifier = make_certifier(fam, certification_rules(art, self.polymer),
+                                   reference_thermo(db))
         t = time.time()
         certified, store, _replacements = certified_records(art["records"], fam, certifier)
         S.update(certify_s=round(time.time() - t, 1), records=certified, store=store,

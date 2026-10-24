@@ -546,6 +546,75 @@ def _rate_rule_source(family, reaction):
     return result
 
 
+class KeptDirectionUndecided(ValueError):
+    """The direction RMG keeps depends on dG298 and no reference thermo was given."""
+
+
+def kept_own_reverse_kinetics(family, reaction, kinetics, source, entry, is_forward,
+                              thermo_assignment):
+    """The kinetics RMG's model keeps for ``reaction``
+    (``CoreEdgeReactionModel.generate_kinetics``), given its generated
+    direction's ``family.get_kinetics`` result: a family that is its own
+    reverse estimates the reaction in both directions (its ``reverse``,
+    attached by ``generate_reactions_from_families``) and keeps one by
+    ``own_reverse_keeps_reverse`` (an exact entry, then the lower rank, then
+    the exergonic direction at 298 K, on ``thermo_assignment``, the reference
+    thermo).  A kept reverse returns with ``is_forward`` False and
+    ``reaction`` carrying the reverse template and degeneracy, as
+    ``apply_kinetics_to_reaction`` writes them.  The two records RMG
+    generates for one reaction (one per direction) then carry one kinetics.
+
+    The one decision of the compiler and of rate certification
+    (``certificates.Certifier``), so both keep the same direction.  An exact
+    tie (dG298 = 0, the two directions' estimates alike) is RMG's own: its
+    ``G298 > -1e-8`` counts it endergonic, so the reverse of the generated
+    direction is kept.  ``thermo_assignment`` None decides only a reaction
+    whose choice does not read the thermo (an entry or a rank decides it)
+    and raises ``KeptDirectionUndecided`` otherwise."""
+    reverse = getattr(reaction, "reverse", None)
+    if (
+        not getattr(family, "own_reverse", False)
+        or not reverse
+        or len(reaction.products) != len(reaction.reactants)
+    ):
+        return kinetics, source, entry, is_forward
+    from rmgpy.rmg.model import own_reverse_keeps_reverse
+
+    rev_kinetics, rev_source, rev_entry, rev_is_forward = family.get_kinetics(
+        reverse,
+        template_labels=reverse.template,
+        degeneracy=reverse.degeneracy,
+        return_all_kinetics=False,
+    )
+
+    def keeps_reverse(gibbs_is_positive):
+        return own_reverse_keeps_reverse(
+            reaction.family, entry, rev_entry, is_forward, rev_is_forward,
+            gibbs_is_positive,
+        )[0]
+
+    if thermo_assignment is None:
+        keep_reverse = keeps_reverse(True)
+        if keep_reverse != keeps_reverse(False):
+            raise KeptDirectionUndecided(
+                "the direction RMG keeps is decided by dG298 and no reference thermo "
+                "was given"
+            )
+    else:
+        try:
+            thermo_assignment.assign_reaction(reaction)
+        except ThermoUnavailable:
+            # no thermo, no choice: the reference-thermo reverse fails the same
+            # way and decides the record
+            return kinetics, source, entry, is_forward
+        keep_reverse = keeps_reverse(reaction.get_free_energy_of_reaction(298) > -1e-8)
+    if not keep_reverse:
+        return kinetics, source, entry, is_forward
+    reaction.template = reverse.template
+    reaction.degeneracy = reverse.degeneracy
+    return rev_kinetics, rev_source, rev_entry, not rev_is_forward
+
+
 def _persistent_labeled_u2(molecule, atom) -> tuple[bool, int]:
     """Return whether one labeled triplet u2 carbon survives every resonance form."""
     from rmgpy.species import Species
@@ -3322,12 +3391,13 @@ def ceiling_temperature(
     return None
 
 
-def validate_artifact(artifact: dict[str, Any], families=None) -> None:
+def validate_artifact(artifact: dict[str, Any], families=None, thermo=None) -> None:
     """Reject structural corruption in a compiled event-set artifact.
 
     ``families``: the loaded RMG kinetics families a certified artifact's
     rate certificates are re-derived against (without them a certified
-    artifact is unverified and refused)."""
+    artifact is unverified and refused); ``thermo``: the reference thermo
+    that decides the direction RMG keeps (``certificates.Certifier``)."""
     schema_version = artifact.get("schema_version")
     if schema_version not in {SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}:
         raise ValueError("unknown event-set schema")
@@ -3497,7 +3567,7 @@ def validate_artifact(artifact: dict[str, Any], families=None) -> None:
     # rate certificates: declared mode, coverage, ownership, derived summary
     from rmgpy.kmc.certificates import validate_certification
 
-    validate_certification(artifact, families=families)
+    validate_certification(artifact, families=families, thermo=thermo)
     linked_records = [record for record in records if record.get("reverse_of") in by_id]
     duplicates = duplicate_transition_groups(linked_records)
     if duplicates:
@@ -4884,46 +4954,10 @@ class EventSetCompiler:
 
     def _own_reverse_kinetics(self, family, reaction, kinetics, source, entry, is_forward):
         """The kinetics RMG's model keeps for ``reaction``
-        (``CoreEdgeReactionModel.generate_kinetics``): a family that is its own
-        reverse estimates the reaction in both directions (its ``reverse``,
-        attached by ``generate_reactions_from_families``) and keeps one by
-        ``own_reverse_keeps_reverse`` (an exact entry, then the lower rank, then
-        the exergonic direction at 298 K, on the compiler's reference thermo).
-        A kept reverse returns with ``is_forward`` False and ``reaction``
-        carrying the reverse template and degeneracy, as
-        ``apply_kinetics_to_reaction`` writes them.  The two records RMG
-        generates for one reaction (one per direction) then carry one kinetics."""
-        reverse = getattr(reaction, "reverse", None)
-        if (
-            not getattr(family, "own_reverse", False)
-            or not reverse
-            or len(reaction.products) != len(reaction.reactants)
-        ):
-            return kinetics, source, entry, is_forward
-        from rmgpy.rmg.model import own_reverse_keeps_reverse
-
-        rev_kinetics, rev_source, rev_entry, rev_is_forward = family.get_kinetics(
-            reverse,
-            template_labels=reverse.template,
-            degeneracy=reverse.degeneracy,
-            return_all_kinetics=False,
+        (``kept_own_reverse_kinetics`` on the compiler's reference thermo)."""
+        return kept_own_reverse_kinetics(
+            family, reaction, kinetics, source, entry, is_forward, self.thermo_assignment
         )
-        try:
-            self.thermo_assignment.assign_reaction(reaction)
-        except ThermoUnavailable:
-            # no thermo, no choice: the reference-thermo reverse fails the same
-            # way below and decides the record
-            return kinetics, source, entry, is_forward
-        gibbs_is_positive = reaction.get_free_energy_of_reaction(298) > -1e-8
-        keep_reverse, _reason = own_reverse_keeps_reverse(
-            reaction.family, entry, rev_entry, is_forward, rev_is_forward,
-            gibbs_is_positive,
-        )
-        if not keep_reverse:
-            return kinetics, source, entry, is_forward
-        reaction.template = reverse.template
-        reaction.degeneracy = reverse.degeneracy
-        return rev_kinetics, rev_source, rev_entry, not rev_is_forward
 
     def _build_linked_family_pair(self, proxy, reaction, provenance):
         """Estimate exactly one direction, then invert its reference-state Kc."""
@@ -5978,6 +6012,7 @@ class EventSetCompiler:
         rate_certificates = None
         if getattr(self, "certify_rates", False):
             from rmgpy.kmc.certificates import (
+                Certifier,
                 certification_declaration as _certification_declaration,
                 certify_records,
             )
@@ -5985,8 +6020,10 @@ class EventSetCompiler:
             # certification required: a record of the required population whose
             # certification failed is published refused (with its partner); the
             # renamed records take their canonical places again
+            families = getattr(self.kinetics_database, "families", {})
             records, rate_certificates, certification_ids = certify_records(
-                records, getattr(self.kinetics_database, "families", {}), required=True
+                records, families, Certifier(families, thermo=self.thermo_assignment),
+                required=True,
             )
             if certification_ids:
 
@@ -6200,6 +6237,7 @@ class EventSetCompiler:
                 if rate_certificates is not None
                 else None
             ),
+            thermo=self.thermo_assignment,
         )
         self._compiled_artifact = artifact
         return artifact
