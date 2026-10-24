@@ -849,10 +849,17 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     from), and the record's ``validity`` lists them with the participant
     families, for the kernel reference to report the fraction of each
     family's chains below (``kernel_reference.law_domain_fractions``).
+    A depository override of a mapped template (RMG's own rate for the
+    reaction at exact molecules, which kMC fires at its own weight) has no
+    moment form, since moments cannot single out sizes: MoM's kernel carries
+    the template law at every size, and the record lists each override under
+    ``depository_departures`` (kernel, template, override, depository entry,
+    reactant and product states, multiplicity, ``w_kmc`` the override's
+    weight, ``w_mom`` the template's, both before divisor and phi, which apply
+    alike, and ``kmc_over_mom``).
     Refused: another schema, temperature or chemistry digest, kernels not in
     the table or of another type, inert or unmodelled homolysis or
-    recombination laws, depository overrides (sizes moments cannot single
-    out)."""
+    recombination laws."""
     from rmgpy.kmc import kernel_rates as K
     from rmgpy.kmc.melt_engine import declared_initialization
     if table.get("schema") not in KERNEL_RATES_SCHEMAS:
@@ -900,8 +907,8 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             raise ProducerError(f"{kid}: no MoM kernel cuts class {kernel['classes']} (the chain class only)")
         for term in kernel["templates"]:
             name, where = term["template"], f"{kid} template {term['template']}"
-            if term.get("law") is None or term.get("law_inert") or term.get("overrides"):
-                raise ProducerError(f"{where}: an inert, unmodelled or overridden law has no moment form")
+            if term.get("law") is None or term.get("law_inert"):
+                raise ProducerError(f"{where}: an inert or unmodelled law has no moment form")
             sites = rows[name]["participants"][0]["chain"]
             a, b = float(sites["a"]), float(sites["b"])
             e, radical = _uniform_cut(term["law"], a, radical, where)
@@ -929,8 +936,8 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     for kid, kernel in by_type["recombination"]:
         for term in kernel["templates"]:
             name, where = term["template"], f"{kid} template {term['template']}"
-            if term.get("law") is None or term.get("law_inert") or term.get("overrides"):
-                raise ProducerError(f"{where}: an inert, unmodelled or overridden law has no moment form")
+            if term.get("law") is None or term.get("law_inert"):
+                raise ProducerError(f"{where}: an inert or unmodelled law has no moment form")
             row = rows[name]
             sites = [p[radical] for p in row["participants"]]
             c = float(sites[0]["per_feature"])
@@ -988,15 +995,11 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         return owners
 
     def usable(kid, term):
-        """False (listed) for a template the table gives no law or an override."""
+        """False (listed) for a template the table gives no law."""
         name = term["template"]
         if term.get("law") is None or term.get("law_inert"):
             inert.append({"kernel": kid, "templates": [name],
                           "reason": term.get("law_inert") or term.get("law_refused") or "no product law"})
-            return False
-        if term.get("overrides"):
-            unmapped.append({"kernel": kid, "templates": [name], "reason": "an overridden law has no moment form "
-                                                                           "(sizes moments cannot single out)"})
             return False
         return True
 
@@ -1132,12 +1135,22 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                              "families": [owner], "products": [fam], "coefficients": [c[0], c[1]]})
             checks[joined] = {"kernel": kid, "templates": names, "reachable_from_periods": floor,
                               "law_from_periods": n0, "checked_to_periods": top, "rate_law": [c[0], c[1]]}
+    # the overrides of every mapped template: kMC fires them at their weight, MoM's kernel at the template's
+    departures = []
+    for kid, name in dict.fromkeys((law["kernel"], n) for law in laws_out for n in law["templates"]):
+        (term,) = [t for t in table["kernels"][kid]["templates"] if t["template"] == name]
+        w_mom = float(rows[name]["weight"])
+        for o in term.get("overrides") or ():
+            departures.append({"kernel": kid, "template": name, "override": o["name"], "entry": o.get("entry"),
+                               "reactants": o["reactants"], "products": o["products"],
+                               "multiplicity": o["multiplicity"], "w_kmc": o["weight"], "w_mom": w_mom,
+                               "kmc_over_mom": o["weight"] / w_mom})
     record = {"kernels": sorted(set(kernels)), "excluded_kernels": sorted(set(table["kernels"]) - set(kernels)),
               "temperature_K": float(table["temperature_K"]), "phi": float(phi), "moment_unit": unit,
               "volume_ratio_mom_over_kmc": float(volume_ratio), "radical_class": radical, "checks": checks,
               "far_law": bool(far_law), "unmapped": unmapped, "inert": inert, "identity": identity,
               "short_lengths": short, "validity": validity, "laws": laws_out,
-              "chemistry_sha256": bound,
+              "depository_departures": departures, "chemistry_sha256": bound,
               "table_templates_sha256": K.template_rows_sha256(table, [n for law in laws_out
                                                                        for n in law["templates"]])}
     return {"homolysis": homolysis, "recombination": recombination, "transfer": transfer, "move": move,
@@ -1460,7 +1473,10 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
              "unchanged; with record.far_law a law exact only from a longer length is mapped from there and "
              "the shorter lengths recorded (record.short_lengths), else listed; templates it cannot map are "
              "listed in record.unmapped, templates the table gives no law in record.inert (rate 0 in the "
-             "table's own law), moves that keep their pool in record.identity; refusals in "
+             "table's own law), moves that keep their pool in record.identity; a depository override at "
+             "exact sizes (kMC fires it at its own weight) has no moment form: the kernel carries the "
+             "template law at every size and each override is listed in record.depository_departures with "
+             "its sizes and kmc_over_mom; refusals in "
              "mom_producer.kernel_input; isothermal at the table's temperature (no k(T))"),
             ("kernel_phi", record["phi"],
              "cage-escape factor on the radical-creating (phi_thinned) templates; 1 is the well-mixed bound"),

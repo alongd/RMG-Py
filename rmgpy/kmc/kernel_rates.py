@@ -126,7 +126,8 @@ element-composition offset (``kmc-kernel-rates/3``, I-217: atoms = n *
 strings, keyed like the melt observables' compositions) and the lengths that
 are declared species.  ``overrides``: each depository
 override of the term's template at its exact sizes (reactant states with
-interior positions, products, matched multiplicity, weight); an override
+interior positions, products, matched multiplicity, weight, the catalog's
+depository ``entry``); an override
 placed in no term is listed in ``overrides_unplaced``.  A site count is the
 template's whatever weight a matched size carries.
 
@@ -1049,22 +1050,27 @@ def predict(law: dict, n: int, nbb: int, label_of=None) -> Counter:
     return total
 
 
-def _template_overrides(engine, probes, t, ci) -> list:
+def _template_overrides(engine, probes, t, ci, entries) -> list:
     """The depository overrides of one template at their exact sizes:
     per override its weight, its reactant states (label, n, interior
     positions or None; unordered for a bimolecular term), the products of a
     matched transition and the matched multiplicity (transitions on the
     reactant; for two reactants, ordered cross-component site pairs, the
-    engine's count before its divisor).  Read on the override's own molecules
+    engine's count before its divisor), and the catalog's depository entry
+    (``entries``, in override order; None where the catalog names none).
+    Read on the override's own molecules
     with the melt engine's matching (``_uni_overrides``, ``_pair_override``).
     An override whose molecules are no declared state is kept with its
     reason (``refused``)."""
+    if len(entries) != len(t.overrides):
+        raise KernelRatesError(f"template {t.name}: {len(t.overrides)} overrides loaded, "
+                               f"{len(entries)} in its payload")
     out = []
     for o, ov in enumerate(t.overrides):
         try:
-            out.append(_one_override(engine, probes, t, ci, o, ov))
+            out.append(dict(_one_override(engine, probes, t, ci, o, ov), entry=entries[o]))
         except _OffDeclared as error:
-            out.append({"name": ov.name, "refused": str(error)})
+            out.append({"name": ov.name, "refused": str(error), "entry": entries[o]})
     return out
 
 
@@ -1134,7 +1140,7 @@ def _progress(message: str) -> None:
     print(f"kernel_rates: {message}", file=sys.stderr, flush=True)
 
 
-def _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_overrides) -> None:
+def _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_overrides, entries) -> None:
     """The product law (or why none) and the placed overrides of one kernel term."""
     counts = [term] if len(combo) == 1 else [term["S0"], term["S1"]]
     if any(family_of(c) in INTERIOR_FAMILIES and (x.get("per_feature") == 0 or x.get("k_per_feature") == 0)
@@ -1152,7 +1158,7 @@ def _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_
     except _OffDeclared as error:
         term["law"], term["law_refused"] = None, str(error)
     if ci not in measured:
-        measured[ci] = _template_overrides(engine, probes, t, ci)
+        measured[ci] = _template_overrides(engine, probes, t, ci, entries[ci])
     term["overrides"] = [o for o in measured[ci] if "refused" not in o
                          and sorted(r[0] for r in o["reactants"]) == sorted(combo)]
     placed_overrides.update((t.name, o["name"]) for o in term["overrides"])
@@ -1170,6 +1176,11 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
         raise KernelRatesError(f"declared unit is not a whole number of primitive periods "
                                f"(d_rep {geometry.d_rep}, period {geometry.period})")
     templates = list(catalog.templates(float(temperature)))
+    # per loaded template its overrides' depository entries (``loaded_templates`` keeps payload order)
+    entries = [[o.get("entry") for o in t.get("overrides") or ()] for p in doc["payloads"]
+               for t in p.get("templates", []) if t.get("status") == "emitted"]
+    if len(entries) != len(templates):
+        raise KernelRatesError(f"{len(templates)} templates loaded from {len(entries)} emitted ones")
     window = max(sum(1 for a in t.atoms if a.element != "H") for t in templates) if templates else 1
     bb_per_unit = len(geometry.backbone_keys)
     units_hi = max_units or max(2 * EXACT_POINTS + 2, math.ceil((2 * window + EXTRA_UNITS) / bb_per_unit) + 1)
@@ -1320,7 +1331,7 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
     for i, (term, ci, combo, order) in enumerate(jobs, 1):
         t = templates[ci]
         start = time.perf_counter()
-        _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_overrides)
+        _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_overrides, entries)
         status = "law" if term["law"] is not None else "inert" if term.get("law_inert") else "refused"
         _progress(f"law {i}/{len(jobs)} {t.name} {'+'.join(combo)} {status} "
                   f"{time.perf_counter() - start:.1f}s")
