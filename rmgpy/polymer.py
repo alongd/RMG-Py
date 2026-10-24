@@ -899,6 +899,13 @@ class Polymer(Species):
         other.side_group_homolysis = deepcopy(
             getattr(self, 'side_group_homolysis', None))
         other.side_loss_channel = getattr(self, 'side_loss_channel', None)
+        # An X-loss daughter's inherited kernels (I-260): the in-pool
+        # booking key, the modified monomer and, by reference like the
+        # monomer routing below, its registered species and channel gas.
+        other.side_loss_parent = getattr(self, 'side_loss_parent', None)
+        other.side_loss_monomer = deepcopy(getattr(self, 'side_loss_monomer', None))
+        other.side_loss_monomer_species = getattr(self, 'side_loss_monomer_species', None)
+        other.side_group_gas_species = getattr(self, 'side_group_gas_species', None)
         other.chain_mass_defect_g_mol = getattr(
             self, 'chain_mass_defect_g_mol', 0.0)
         # I-059: the evidence travels with the value it explains. This copy
@@ -1483,22 +1490,23 @@ class Polymer(Species):
         inventory cannot hold, and each channel moves a reacting chain,
         intact, into its daughter: the unit less the group (radical at the
         cut), born empty, carrying the exact per-chain defect M(group) on
-        top of the carrier's. A daughter carries no side-group channel of
-        its own (one loss per chain) and, its feature monomer differing,
-        inherits no unzip.
+        top of the carrier's. The daughter carries the carrier's backbone
+        kernels and its own channel (_inherit_side_loss_kernels, I-260): its
+        chains unzip and keep losing their groups.
         """
         channels = getattr(self, 'side_group_homolysis', None)
         if not channels:
             return tuple()
-        from rmgpy.solver.polymer import (SIDE_GROUP_INVENTORY,
+        from rmgpy.solver.polymer import (SIDE_GROUP_DAUGHTER,
                                           _side_group_gas_mw_g_mol,
                                           side_group_accounting,
                                           side_group_daughter_pool_label)
-        if side_group_accounting(self) == SIDE_GROUP_INVENTORY:
+        if side_group_accounting(self) != SIDE_GROUP_DAUGHTER:
             return tuple()
         defect_src = float(getattr(self, 'chain_mass_defect_g_mol', 0.0) or 0.0)
         daughters = []
-        for ch in channels:
+        gas_species = getattr(self, 'side_group_gas_species', None) or []
+        for ci, ch in enumerate(channels):
             unit = self._side_loss_feature_unit(ch['label'], ch['gas_product'],
                                                 ch['site_selector'])
             m_x = _side_group_gas_mw_g_mol(ch['gas_product'])
@@ -1520,6 +1528,8 @@ class Polymer(Species):
             daughter.chain_mass_defect_g_mol = defect_src + m_x
             daughter.chain_mass_defect_provenance = self._defect_provenance(
                 SIDE_GROUP_HOMOLYSIS_SPAWN_SOURCE, defect_src, m_x)
+            _inherit_side_loss_kernels(daughter, self, ch, unit,
+                                       gas_species[ci] if ci < len(gas_species) else None)
             daughters.append(daughter)
         return tuple(daughters)
 
@@ -10301,6 +10311,123 @@ def _inherit_unzip_channel(daughter: 'Polymer', parent: 'Polymer') -> bool:
         inherited["unsaturated_tail_ends_initial"] = 0.0
     daughter.radical_qssa_unzip = inherited
     return True
+
+
+def _stitch_path(mol: Molecule) -> Optional[str]:
+    """A repeat unit's backbone: the elements and bond orders along a
+    shortest path from its '*1' to its '*2' atom, or None without both."""
+    ends = {a.label: a for a in mol.atoms if a.label in ('*1', '*2')}
+    if len(ends) != 2:
+        return None
+    start, goal = ends['*1'], ends['*2']
+    prev, frontier = {start: None}, [start]
+    while frontier and goal not in prev:
+        reached = []
+        for a in frontier:
+            for nb in a.bonds:
+                if nb not in prev:
+                    prev[nb] = a
+                    reached.append(nb)
+        frontier = reached
+    if goal not in prev:
+        return None
+    path = [goal]
+    while prev[path[-1]] is not None:
+        path.append(prev[path[-1]])
+    return '-'.join(f"{a.symbol}{a.bonds[b].order:g}" for a, b in zip(path, path[1:])) + path[-1].symbol
+
+
+def _paired_stitch_unit(mol: Molecule) -> Optional[Molecule]:
+    """The unit with its two stitch radicals paired into one more bond
+    between its bonded '*1' and '*2' atoms (a vinyl-type unit's monomer),
+    unlabeled; None when they are not bonded or carry no radical."""
+    m = mol.copy(deep=True)
+    ends = {a.label: a for a in m.atoms if a.label in ('*1', '*2')}
+    if len(ends) != 2:
+        return None
+    a, b = ends['*1'], ends['*2']
+    if b not in a.bonds or a.radical_electrons < 1 or b.radical_electrons < 1:
+        return None
+    a.decrement_radical()
+    b.decrement_radical()
+    a.bonds[b].increment_order()
+    for atom in m.atoms:
+        atom.label = ''
+    m.update()
+    # Rebuilt from its adjacency list: a unit that lost atoms can carry
+    # a cached fingerprint of its former formula, which fails isomorphism.
+    return Molecule().from_adjacency_list(m.to_adjacency_list())
+
+
+def _inherit_side_loss_kernels(daughter: 'Polymer', parent: 'Polymer',
+                               channel: dict, unit: Molecule,
+                               gas_species: Optional['Species']) -> None:
+    """An X-loss feature daughter takes its parent's kernels that apply to
+    its structure (I-260). Its chains are the parent's repeat units, ends
+    and backbone, some units less the group; the group holds no stitch atom
+    (side_group_sites), so the parent's backbone kernels apply when the
+    feature unit keeps the parent unit's stitch-to-stitch path:
+
+    - k_scission, a random backbone cut;
+    - the release kernels (radical_qssa_unzip, k_unzip, k_depropagation),
+      deep-copied, with the parent's monomer routing (by reference): a
+      released unit is a monomer while its group is intact and otherwise
+      the modified monomer, ``side_loss_monomer`` (the feature unit with
+      its stitch radicals paired, built only when pairing the parent's unit
+      gives its monomer product). Not inherited, with a warning, for a
+      channel of several sites per unit (several modified monomers) or a
+      weak-link QSSA channel (its U state is per pool);
+    - its own channel, ``side_group_homolysis = [channel]`` with the
+      parent's gas species, booked in-pool (``side_loss_parent``): the
+      remaining units keep losing that group.
+
+    Not inherited: k_homolysis (its end-radical pools are the parent's
+    chemistry), the catalog kernels (bound to the parent's proxy and
+    pools) and the parent's other side-group channels."""
+    def warn(reason):
+        key = (parent.label, daughter.label, reason)
+        if key not in _unzip_inherit_warned:
+            _unzip_inherit_warned.add(key)
+            logging.warning("X-loss daughter '%s' of '%s': %s", daughter.label,
+                            parent.label, reason)
+
+    if _stitch_path(unit) is None or _stitch_path(unit) != _stitch_path(parent.monomer):
+        warn("its feature unit does not keep the parent's backbone; it "
+             "carries none of the parent's kernels.")
+        return
+    daughter.side_loss_parent = parent.label
+    daughter.side_group_homolysis = [deepcopy(channel)]
+    daughter.side_group_gas_species = [gas_species] if gas_species is not None else None
+    daughter.k_scission = parent.k_scission
+    release = (getattr(parent, 'radical_qssa_unzip', None) is not None
+               or float(parent.k_unzip or 0.0) > 0.0
+               or getattr(parent, 'k_depropagation', None) is not None)
+    if not release:
+        return
+    if channel['sites_per_unit'] != 1.0:
+        warn(f"channel '{channel['label']}' has {channel['sites_per_unit']:g} "
+             f"sites per unit, so a released unit is one of several modified "
+             f"monomers; the parent's release kernels are not inherited.")
+        return
+    modified = _paired_stitch_unit(unit)
+    closed = _paired_stitch_unit(parent.monomer)
+    product = getattr(parent, 'monomer_product_species', None)
+    if modified is None or closed is None or (
+            product is not None and not any(closed.is_isomorphic(m) for m in product.molecule)):
+        warn("pairing the parent unit's stitch radicals does not give its "
+             "monomer product, so a released defect unit has no structure; "
+             "the parent's release kernels are not inherited.")
+        return
+    daughter.side_loss_monomer = modified
+    daughter.monomer_product_species = product
+    daughter.k_unzip = parent.k_unzip
+    daughter.k_depropagation = deepcopy(getattr(parent, 'k_depropagation', None))
+    qssa = getattr(parent, 'radical_qssa_unzip', None)
+    if qssa is not None and 'initiation_allyl' in qssa:
+        warn("its parent's radical_qssa_unzip is a weak-link channel, whose U "
+             "state is per pool; not inherited.")
+    elif qssa is not None:
+        daughter.radical_qssa_unzip = deepcopy(qssa)
 
 
 def _inherit_spawned_pool_channel(daughter: 'Polymer', parent: 'Polymer',

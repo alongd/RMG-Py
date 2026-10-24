@@ -1232,14 +1232,21 @@ def _side_group_gas_mw_g_mol(gas_product):
 # X-loss feature daughter, which carries the exact per-chain defect M_X.
 SIDE_GROUP_INVENTORY = "inventory"
 SIDE_GROUP_DAUGHTER = "daughter"
+# The X-loss daughter itself (I-260): it keeps its chains and counts their
+# further losses on an inventory of the channel's intact sites, which its
+# parent's moves and its own releases also move (side_loss_parent).
+SIDE_GROUP_IN_POOL = "in_pool"
 SIDE_GROUP_CHAIN_MOVERS = ("radical_qssa_unzip", "k_unzip", "k_homolysis",
                            "k_depropagation")
 
 
 def side_group_accounting(pool):
-    """SIDE_GROUP_DAUGHTER when a kernel of ``pool`` (a PolymerPoolConfig or
-    a Polymer: both carry the kernel fields) moves its chains
+    """SIDE_GROUP_IN_POOL for an X-loss daughter (``side_loss_parent`` set),
+    else SIDE_GROUP_DAUGHTER when a kernel of ``pool`` (a PolymerPoolConfig
+    or a Polymer: both carry the kernel fields) moves its chains
     (SIDE_GROUP_CHAIN_MOVERS), else SIDE_GROUP_INVENTORY."""
+    if getattr(pool, "side_loss_parent", None):
+        return SIDE_GROUP_IN_POOL
     for name in SIDE_GROUP_CHAIN_MOVERS:
         value = getattr(pool, name, None)
         if name == "k_unzip":
@@ -1598,6 +1605,18 @@ class PolymerPoolConfig:
     # kernel destination whose defect does not pin M_X exactly. 0.0 on
     # ordinary pools (the accessor then reduces to mu1*MW).
     chain_mass_defect_g_mol: float = 0.0
+
+    # An X-loss feature daughter's parent pool label (I-260), or None. Such a
+    # pool carries its parent's backbone kernels and its spawning channel as
+    # side_group_homolysis, booked in-pool (side_group_accounting): its Z
+    # inventory holds the channel's intact sites on its chains, the first
+    # loss per chain being its chain_mass_defect_g_mol and the rest
+    # s*mu1 - Z - mu0. Its radical_qssa_unzip shares one radical population
+    # with the parent's. side_loss_monomer_index is the core index of the
+    # modified monomer (the unit less its group) its defect units release,
+    # required when it carries a release kernel.
+    side_loss_parent: Optional[str] = None
+    side_loss_monomer_index: Optional[int] = None
 
     # Chain end-group bookkeeping (I-141). ``repeat_unit_atoms`` is the
     # element count of one repeat unit; ``end_group_atoms`` the element count
@@ -2316,6 +2335,7 @@ class HybridPolymerSystem(ReactionSystem):
         self._pool_mu_rtol = None
         self._pool_ended = None
         self._pool_exhaustion_residue = None
+        self._pool_exhaustion_z = {}
         self.pool_exhaustion_events = []
         # I-090 cone-margin dead-band narrowing: the rtol half of the b1c - 1
         # noise band, rebound from the live tolerances by
@@ -2368,7 +2388,7 @@ class HybridPolymerSystem(ReactionSystem):
         n_sgh_z = 0
         for pool in self.polymer_pools:
             channels = pool.side_group_homolysis
-            if channels and side_group_accounting(pool) == SIDE_GROUP_INVENTORY:
+            if channels and side_group_accounting(pool) != SIDE_GROUP_DAUGHTER:
                 n_sgh_z += len(channels)
         self.num_sgh_z = n_sgh_z
         # I-141: declared-and-undeclared end groups in one system are refused
@@ -3212,18 +3232,39 @@ class HybridPolymerSystem(ReactionSystem):
         # qssa_u_slot's absolute-index binding (num_core_species + u_count).
         z_base = self.num_core_species + int(self.num_qssa_u)
         z_count = 0
+        # The Z slot of each X-loss daughter's in-pool row, keyed (daughter,
+        # channel), bound in the same order as below: its parent's move
+        # credits the sites a moved chain brings (I-260).
+        in_pool_slot = {}
+        for pool in self.polymer_pools:
+            if (pool.side_group_homolysis
+                    and side_group_accounting(pool) != SIDE_GROUP_DAUGHTER):
+                for ch in pool.side_group_homolysis:
+                    if side_group_accounting(pool) == SIDE_GROUP_IN_POOL:
+                        in_pool_slot[(pool.label, ch["label"])] = (
+                            z_base + len(in_pool_slot) + z_count)
+                    else:
+                        z_count += 1
+        z_count = 0
+        rows_in_pool = []
+        rows_dst_z = []
+        self.slr_row = np.full(n_pools, -1, dtype=np.int32)
+        self.slr_mod_idx = np.full(n_pools, -1, dtype=np.int32)
         for i, pool in enumerate(self.polymer_pools):
             self.sgh_row_start[i] = len(rows_A)
             self.sgh_row_end[i] = len(rows_A)
             channels = pool.side_group_homolysis
             if not channels:
                 continue
-            inventory = side_group_accounting(pool) == SIDE_GROUP_INVENTORY
-            if inventory:
+            accounting = side_group_accounting(pool)
+            inventory = accounting != SIDE_GROUP_DAUGHTER
+            if accounting == SIDE_GROUP_INVENTORY:
                 # §1h mu1-mover exclusion (SOLVER-BUILD guard, deck-kernel
                 # arm): inventory-depletion SGH requires a stationary carrier
                 # mu1.
                 self._assert_sgh_carrier_mu1_stationary(i, pool)
+            elif accounting == SIDE_GROUP_IN_POOL:
+                self._bind_side_loss_release(i, pool, channels, len(rows_A))
             for ci, ch in enumerate(channels):
                 rows_A.append(ch["A"])
                 rows_n.append(ch["n"])
@@ -3234,17 +3275,20 @@ class HybridPolymerSystem(ReactionSystem):
                 # carries Br mass out of the melt through the Z inventory.
                 m_x = _side_group_gas_mw_g_mol(ch["gas_product"])
                 rows_mw_x.append(m_x)
+                rows_in_pool.append(int(accounting == SIDE_GROUP_IN_POOL))
                 if inventory:
                     rows_z_slot.append(z_base + z_count)
                     z_count += 1
                     for k in range(3):
                         rows_dst[k].append(-1)
+                    rows_dst_z.append(-1)
                 else:
                     rows_z_slot.append(-1)
                     dst = self._side_group_daughter(pool, ch["label"], m_x,
                                                     pool_index)
                     for k in range(3):
                         rows_dst[k].append(int(dst.mu_indices[k]))
+                    rows_dst_z.append(in_pool_slot.get((dst.label, ch["label"]), -1))
                 self.sgh_channel_labels.append(ch["label"])
             self.sgh_enabled[i] = 1
             self.sgh_row_end[i] = len(rows_A)
@@ -3259,6 +3303,8 @@ class HybridPolymerSystem(ReactionSystem):
         self.sgh_dst_mu0 = np.asarray(rows_dst[0], dtype=np.int32)
         self.sgh_dst_mu1 = np.asarray(rows_dst[1], dtype=np.int32)
         self.sgh_dst_mu2 = np.asarray(rows_dst[2], dtype=np.int32)
+        self.sgh_in_pool = np.asarray(rows_in_pool, dtype=np.int8)
+        self.sgh_dst_z = np.asarray(rows_dst_z, dtype=np.int32)
 
         # Layout cross-check (mirrors the U-slot drift guard): initiate_
         # tolerances allocated num_sgh_z Z slots from the raw configs; the
@@ -3274,6 +3320,68 @@ class HybridPolymerSystem(ReactionSystem):
                 f"configs changed between ODE layout and validation; rebuild "
                 f"the reactor (initialize_model) instead of mutating pool "
                 f"configs in place.")
+
+    def _bind_side_loss_release(self, int pool_i, pool, channels, int row):
+        """Bind an X-loss daughter's release split (I-260): when it carries
+        a release kernel (radical_qssa_unzip, k_unzip, k_depropagation), a
+        released unit is a monomer while its group is intact and the
+        modified monomer (side_loss_monomer_index) once lost, read from the
+        channel's intact-site inventory, which needs one channel of one site
+        per unit (several sites per unit would release several modified
+        monomers)."""
+        if not any(p.label == pool.side_loss_parent for p in self.polymer_pools):
+            raise ValueError(
+                f"Pool {pool.label}: an X-loss daughter of "
+                f"'{pool.side_loss_parent}', which is not configured; its "
+                f"inventory is credited by that parent's moves.")
+        if not (pool.radical_qssa_unzip is not None or pool.k_unzip > 0.0
+                or pool.k_depropagation is not None):
+            return
+        if len(channels) != 1 or channels[0]["sites_per_unit"] != 1.0:
+            raise ValueError(
+                f"Pool {pool.label}: an X-loss daughter with a release kernel "
+                f"needs one side_group_homolysis channel of one site per unit "
+                f"(got {[(c['label'], c['sites_per_unit']) for c in channels]}): "
+                f"its released units are a monomer or the one modified "
+                f"monomer.")
+        m = pool.side_loss_monomer_index
+        if m is None or not (0 <= m < self.num_core_species) or not self.gas_species_mask[m]:
+            raise ValueError(
+                f"Pool {pool.label}: an X-loss daughter with a release kernel "
+                f"releases its defect units as the modified monomer, but "
+                f"side_loss_monomer_index={m!r} is not a gas core species; "
+                f"those units would leave the melt un-conserved.")
+        self.slr_row[pool_i] = row
+        self.slr_mod_idx[pool_i] = m
+
+    def _split_side_loss_release(self, int pool_i, int mono, double r_release,
+                                 double mu1_mol, double V_poly, y,
+                                 dict small_src, dz_dt):
+        """An X-loss daughter's release r_release [mol/(m^3 s)], already
+        booked to its monomer index ``mono``, split by its intact-site
+        fraction phi = Z/mu1 (one site per unit, _bind_side_loss_release):
+        the units whose group is gone, r*(1 - phi), are the modified
+        monomer, and the intact sites leave with their units,
+        dZ/dt -= r*phi*V_poly. No-op on any other pool."""
+        cdef int row = self.slr_row[pool_i]
+        cdef int z_slot, mod
+        cdef double z, r_mod
+        cdef double phi = 1.0
+        if row < 0 or r_release == 0.0:
+            return
+        z_slot = self.sgh_z_slot[row]
+        z = y[z_slot]
+        if z < 0.0:
+            z = 0.0
+        if mu1_mol > 0.0:
+            phi = z / mu1_mol
+            if phi > 1.0:
+                phi = 1.0
+        r_mod = r_release * (1.0 - phi)
+        mod = self.slr_mod_idx[pool_i]
+        small_src[mono] = small_src.get(mono, 0.0) - r_mod
+        small_src[mod] = small_src.get(mod, 0.0) + r_mod
+        dz_dt[z_slot - self.num_core_species - self.num_qssa_u] -= r_release * phi * V_poly
 
     def _side_group_daughter(self, pool, channel_label, m_x, pool_index):
         """The configured X-loss feature daughter of a daughter-accounting
@@ -3609,6 +3717,39 @@ class HybridPolymerSystem(ReactionSystem):
                 f"The pool configs changed between ODE layout and "
                 f"validation; rebuild the reactor (initialize_model) instead "
                 f"of mutating pool configs in place.")
+
+        # QSSA lineages (I-260): an X-loss daughter's chains are its
+        # parent's melt, so their radicals terminate with the parent's and
+        # the two share one radical population (qssa_root: the lineage's
+        # parent pool, qssa_lineage_n: its member count, qssa_lineage_members:
+        # the pools of lineages with more than one member). The daughter
+        # carries a copy of the parent's channel; anything else is refused,
+        # and so is a weak-link channel, whose U state is per pool.
+        self.qssa_root = np.arange(n_pools, dtype=np.int32)
+        self.qssa_lineage_n = np.ones(n_pools, dtype=np.int32)
+        pool_index = {p.label: j for j, p in enumerate(self.polymer_pools)}
+        for i, pool in enumerate(self.polymer_pools):
+            parent = getattr(pool, "side_loss_parent", None)
+            if not (parent and self.qssa_enabled[i]):
+                continue
+            j = pool_index.get(parent)
+            if j is None or not self.qssa_enabled[j]:
+                continue
+            if self.qssa_weaklink[i] or self.qssa_weaklink[j]:
+                raise ValueError(
+                    f"Pool {pool.label}: an X-loss daughter of {parent} "
+                    f"carrying a weak-link radical_qssa_unzip channel; the "
+                    f"U state is per pool and has no shared form.")
+            if pool.radical_qssa_unzip != self.polymer_pools[j].radical_qssa_unzip:
+                raise ValueError(
+                    f"Pool {pool.label}: its radical_qssa_unzip channel "
+                    f"differs from its parent {parent}'s; one radical "
+                    f"population has one set of constants.")
+            self.qssa_root[i] = j
+            self.qssa_lineage_n[j] += 1
+        self.qssa_lineage_members = [
+            i for i in range(n_pools)
+            if self.qssa_enabled[i] and self.qssa_lineage_n[self.qssa_root[i]] > 1]
 
     def _reference_state_tripwire(self, core_species, core_reactions):
         """Build-time thermo reference-state tripwire (spec 2026-06-11).
@@ -5138,6 +5279,7 @@ class HybridPolymerSystem(ReactionSystem):
                 self._pool_mu_rtol[p, k] = r_exh
         self._pool_ended = np.zeros(n_pools_exh, dtype=np.uint8)
         self._pool_exhaustion_residue = np.zeros((n_pools_exh, 3), dtype=float)
+        self._pool_exhaustion_z = {}
         self.pool_exhaustion_events = []
 
         if filter_reactions:
@@ -5602,6 +5744,12 @@ class HybridPolymerSystem(ReactionSystem):
                     if z_slot < 0:
                         continue
                     self.y0[z_slot] = self.sgh_sites[sgh_row] * mu1_amount
+                    if self.sgh_in_pool[sgh_row]:
+                        # An X-loss daughter's chains each lost one site
+                        # already (I-260).
+                        self.y0[z_slot] = max(
+                            0.0, self.y0[z_slot]
+                            - max(0.0, self.y0[pool.mu_indices[0]]))
 
     def generate_rate_coefficients(self, core_reactions, edge_reactions):
         for rxn in itertools.chain(core_reactions, edge_reactions):
@@ -6189,7 +6337,10 @@ class HybridPolymerSystem(ReactionSystem):
                 # not a spawn-gate proxy on the reference deck, so this branch
                 # is not even reached for it).
                 sgh_en2 = getattr(self, "sgh_enabled", None)
+                # An X-loss daughter (I-260) is not such a carrier: its
+                # defect is the first loss per chain, its Z the rest.
                 if (sgh_en2 is not None and p < len(sgh_en2) and sgh_en2[p]
+                        and not self.sgh_in_pool[self.sgh_row_start[p]]
                         and abs(float(pool.chain_mass_defect_g_mol)) > 0.0):
                     raise ValueError(
                         f"SGH-v2 carrier pool '{pool.label}' is a spawn-gate "
@@ -6573,6 +6724,15 @@ class HybridPolymerSystem(ReactionSystem):
             for k in range(3):
                 self._pool_exhaustion_residue[p, k] += mu[k]
                 clamp[idx[k]] = 0.0
+            # An X-loss daughter's intact-site inventory leaves with its
+            # chains (I-260): booked beside the residue moments.
+            if getattr(self, "sgh_enabled", None) is not None and self.sgh_enabled[p]:
+                for row in range(int(self.sgh_row_start[p]), int(self.sgh_row_end[p])):
+                    if self.sgh_in_pool[row]:
+                        z_slot = int(self.sgh_z_slot[row])
+                        self._pool_exhaustion_z[row] = (
+                            self._pool_exhaustion_z.get(row, 0.0) + float(y[z_slot]))
+                        clamp[z_slot] = 0.0
             event = {"event": "pool_exhausted", "pool": pool.label,
                      "time_s": float(self.t), "residual_moments_mol": mu,
                      "floors_mol": [float(f) for f in floors[p]],
@@ -6638,6 +6798,20 @@ class HybridPolymerSystem(ReactionSystem):
                         f"chain) was supplied.")
                 for el, n in defect_atoms[pool.label].items():
                     out[el] = out.get(el, 0.0) - float(residue[p, 0]) * n
+            for row, lost in self._exhausted_further(p):
+                for el, n in self._core_species_atoms[int(self.sgh_gas[row])].items():
+                    out[el] = out.get(el, 0.0) - lost * n
+        return out
+
+    def _exhausted_further(self, int p):
+        """The further losses (I-260) of an exhausted X-loss daughter's
+        residue, [(row, mol)]: s*R1 - Z_residue - R0 per in-pool row."""
+        out = []
+        residue = self._pool_exhaustion_residue
+        for row, z in self._pool_exhaustion_z.items():
+            if self.sgh_row_start[p] <= row < self.sgh_row_end[p]:
+                out.append((row, self.sgh_sites[row] * float(residue[p, 1]) - z
+                            - float(residue[p, 0])))
         return out
 
     def exhausted_residue_mass_g(self):
@@ -6652,6 +6826,8 @@ class HybridPolymerSystem(ReactionSystem):
             if any(e["pool"] == pool.label for e in self.pool_exhaustion_events):
                 out[pool.label] = float(pool.condensed_mass_g(residue[p, 0],
                                                               residue[p, 1]))
+                for row, lost in self._exhausted_further(p):
+                    out[pool.label] -= lost * float(self.sgh_mw_X[row])
         return out
 
     def _update_sgh_inventory_guard(self, y):
@@ -6793,6 +6969,23 @@ class HybridPolymerSystem(ReactionSystem):
             "(census only; the RHS max(0.0, .) read clamps it, y unchanged).",
             pool.label, ch, z_val, upper, floor_z)
 
+    def _side_loss_further(self, int p, y):
+        """An X-loss daughter's further losses beyond the first per chain
+        (I-260), per in-pool row: ([(row, mol)], g), mol = s*mu1 - Z - mu0
+        over the moment and inventory slots of state ``y``."""
+        pool = self.polymer_pools[p]
+        mu0 = float(y[pool.mu_indices[0]])
+        mu1 = float(y[pool.mu_indices[1]])
+        rows, grams = [], 0.0
+        for row in range(int(self.sgh_row_start[p]), int(self.sgh_row_end[p])):
+            if not self.sgh_in_pool[row]:
+                continue
+            n = (self.sgh_sites[row] * mu1 - float(y[int(self.sgh_z_slot[row])])
+                 - mu0)
+            rows.append((row, n))
+            grams += n * self.sgh_mw_X[row]
+        return rows, grams
+
     def get_total_polymer_condensed_mass_g(self, y=None):
         """r86 terminationPolymerConversion metric (defect-adjusted):
 
@@ -6840,6 +7033,13 @@ class HybridPolymerSystem(ReactionSystem):
                 mu1_mol += e1 * V_poly
             sgh_en = getattr(self, "sgh_enabled", None)
             if (sgh_en is not None and p < len(sgh_en) and sgh_en[p]
+                    and self.sgh_in_pool[self.sgh_row_start[p]]):
+                # An X-loss daughter (I-260): the first group per chain is
+                # its defect, the further ones s*mu1 - Z - mu0 (a function
+                # of state, never clamped: every kernel's terms then close).
+                total += max(0.0, pool.condensed_mass_g(mu0_mol, mu1_mol)
+                             - self._side_loss_further(p, y)[1])
+            elif (sgh_en is not None and p < len(sgh_en) and sgh_en[p]
                     and self.sgh_z_slot[self.sgh_row_start[p]] >= 0):
                 # SGH kernel-v2 (§1e): Br leaves the melt through the
                 # per-channel Z depletion state, NOT a moment debit or a
@@ -8437,6 +8637,18 @@ class HybridPolymerSystem(ReactionSystem):
             # debit here removed core gas species and broke carbon closure.
             self.network_leak_rates[j] = rate
 
+        # The backbone bonds of each QSSA lineage (a parent and its X-loss
+        # daughters, I-260), from the same moments the loop below reads.
+        qssa_lineage_B = None
+        if getattr(self, "qssa_lineage_members", None):
+            qssa_lineage_B = np.zeros(len(self.polymer_pools), dtype=float)
+            for p_lin in self.qssa_lineage_members:
+                idx_lin = self.polymer_pools[p_lin].mu_indices
+                qssa_lineage_B[self.qssa_root[p_lin]] += max(
+                    _softclamp(y[idx_lin[1]], self._softclamp_lam) / V_poly
+                    - _softclamp(y[idx_lin[0]], self._softclamp_lam) / V_poly,
+                    0.0)
+
         # 8. Polymer Tail & Handshake
         for pool_i, pool in enumerate(self.polymer_pools):
             idx_mu0, idx_mu1, idx_mu2 = pool.mu_indices
@@ -8568,6 +8780,9 @@ class HybridPolymerSystem(ReactionSystem):
                         # monomer_poly_index. Mass conservation: one gas
                         # monomer mole per drained mu1 repeat unit.
                         small_src[pool.monomer_poly_index] = r_release
+                        self._split_side_loss_release(
+                            pool_i, pool.monomer_poly_index, r_release,
+                            mu1_mol, V_poly, y, small_src, dz_dt)
 
             # Radical-homolysis initiation kernel (Stage 1, adjudicated round
             # 66). Independent of tail_kinetics (a custom tail closure does
@@ -8930,6 +9145,15 @@ class HybridPolymerSystem(ReactionSystem):
                         g_idx_sgh = int(self.sgh_gas[sgh_row])
                         small_src[g_idx_sgh] = (
                             small_src.get(g_idx_sgh, 0.0) + r0_sgh)
+                        # A moved chain of length n brings s*n sites, one of
+                        # them lost (the daughter's per-chain defect): its
+                        # intact-site inventory gains s*k*s*mu2 - k*s*mu1
+                        # (I-260).
+                        if self.sgh_dst_z[sgh_row] >= 0:
+                            dz_dt[self.sgh_dst_z[sgh_row] - n_core
+                                  - self.num_qssa_u] += (
+                                (self.sgh_sites[sgh_row] * r1_sgh - r0_sgh)
+                                * V_poly)
                         continue
                     # Trial-state fuzz sanitize ONLY (never raise for Z here).
                     z_amount = y[int(self.sgh_z_slot[sgh_row])]
@@ -9117,7 +9341,15 @@ class HybridPolymerSystem(ReactionSystem):
                             and 0.0 < kt_qssa < QSSA_INF):
                         _raise_degenerate_qssa_rates(
                             pool.label, T_qssa, ki_qssa, kdp_qssa, kt_qssa)
-                    fkiB = self.qssa_efficiency[pool_i] * ki_qssa * B_qssa
+                    # A parent and its X-loss daughters are one melt with
+                    # one radical population (I-260): R from the lineage's
+                    # backbone bonds, released in proportion to the bonds
+                    # (the radicals) this pool holds. One pool: unchanged.
+                    B_eval_qssa = B_qssa
+                    if qssa_lineage_B is not None and \
+                            self.qssa_lineage_n[self.qssa_root[pool_i]] > 1:
+                        B_eval_qssa = qssa_lineage_B[self.qssa_root[pool_i]]
+                    fkiB = self.qssa_efficiency[pool_i] * ki_qssa * B_eval_qssa
                     G_R_qssa = 2.0 * fkiB  # two end radicals per homolysis
                     if self.qssa_has_transfer[pool_i]:
                         ktr_qssa = (self.qssa_ktr_A[pool_i]
@@ -9134,6 +9366,8 @@ class HybridPolymerSystem(ReactionSystem):
                         # == sqrt(G_R / (2 kt)), simplified
                         R_ss = math.sqrt(fkiB / kt_qssa)
                     r_qssa = self.qssa_monomer_yield[pool_i] * kdp_qssa * R_ss
+                    if B_eval_qssa != B_qssa:
+                        r_qssa = r_qssa * (B_qssa / B_eval_qssa)
                 if r_qssa > 0.0:
                     # Chain-END monomer release signature: mu1 drains one
                     # unit per release, mu2 drains (2 E[n] - 1) per release
@@ -9186,6 +9420,9 @@ class HybridPolymerSystem(ReactionSystem):
                     small_src[pool.monomer_poly_index] = (
                         small_src.get(pool.monomer_poly_index, 0.0)
                         + r_release_qssa)
+                    self._split_side_loss_release(
+                        pool_i, pool.monomer_poly_index, r_release_qssa,
+                        mu1_mol, V_poly, y, small_src, dz_dt)
 
             # End-radical DEPROPAGATION kernel (adjudicated round 74 SS2, the
             # run-6 no-outlet wall fix). Reads ONLY the flattened kdep_*
@@ -9261,6 +9498,9 @@ class HybridPolymerSystem(ReactionSystem):
                     g_idx_kdep = int(self.kdep_gas[pool_i])
                     small_src[g_idx_kdep] = (
                         small_src.get(g_idx_kdep, 0.0) + r_kdep)
+                    self._split_side_loss_release(
+                        pool_i, g_idx_kdep, r_kdep, mu1_mol, V_poly, y,
+                        small_src, dz_dt)
                 dmu0_dt -= k_dep * mu0 * _deprop_dp1_fraction(mu0, mu1, mu2)
 
             # Hybrid Handshake
@@ -9753,6 +9993,13 @@ class HybridPolymerSystem(ReactionSystem):
         sgh_en = getattr(self, "sgh_enabled", None)
         for p, pool in enumerate(self.polymer_pools):
             if sgh_en is None or p >= len(sgh_en) or not sgh_en[p]:
+                continue
+            if self.sgh_in_pool[self.sgh_row_start[p]]:
+                # An X-loss daughter's further losses, s*mu1 - Z - mu0 per
+                # row (I-260; the first per chain is its defect, above).
+                for row, lost in self._side_loss_further(p, y)[0]:
+                    for el, n in self._core_species_atoms[int(self.sgh_gas[row])].items():
+                        out[el] = out.get(el, 0.0) - lost * n
                 continue
             mu1 = max(0.0, float(y[pool.mu_indices[1]]))
             for row in range(int(self.sgh_row_start[p]), int(self.sgh_row_end[p])):

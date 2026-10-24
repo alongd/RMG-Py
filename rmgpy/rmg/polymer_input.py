@@ -1879,6 +1879,30 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
                     f"(the deck helper requires monomer_product whenever "
                     f"k_depropagation is configured).")
 
+        # An X-loss feature daughter's inherited kernels (I-260,
+        # rmgpy.polymer._inherit_side_loss_kernels): the parent's k_unzip and
+        # k_scission, its own channel booked in-pool with the channel's gas,
+        # and the modified monomer its defect units release. Other daughters
+        # keep the defaults.
+        side_loss = {}
+        if getattr(spc, "side_loss_parent", None):
+            sgh = validate_side_group_homolysis(b, spc.side_group_homolysis)
+            gas = [spc_map.get(g) for g in (spc.side_group_gas_species or [])]
+            if len(gas) != len(sgh) or any(g is None for g in gas):
+                raise ValueError(
+                    f"Pool {b}: an X-loss daughter's side_group_homolysis "
+                    f"channel(s) {[c['label'] for c in sgh]} need their gas "
+                    f"product in the core (got {gas}); the groups its chains "
+                    f"lose would vanish.")
+            mod = getattr(spc, "side_loss_monomer_species", None)
+            side_loss = dict(
+                k_unzip=float(spc.k_unzip or 0.0),
+                k_scission=float(spc.k_scission or 0.0),
+                side_group_homolysis=copy.deepcopy(sgh),
+                side_group_gas_indices=tuple(gas),
+                side_loss_parent=spc.side_loss_parent,
+                side_loss_monomer_index=None if mod is None else spc_map.get(mod))
+
         configs.append(PolymerPoolConfig(
             label=b,
             xs=spc.cutoff,
@@ -1930,6 +1954,7 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
             # Born empty by design: the solver does not warn that it has no
             # initial conditions. A deck pool configured here keeps False.
             engine_spawned=is_engine_spawned_pool_daughter(spc),
+            **side_loss,
         ))
 
     # Item 16 discovery census over the EDGE (never configuration): any

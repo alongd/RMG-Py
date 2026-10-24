@@ -94,9 +94,6 @@ REPEAT = (("C", 5), ("H", 8), ("O", 2))
 ENDS = (("C", 1), ("H", 3), ("H", 1))
 DAUGHTER = "PMMA_sidegrp_ester"
 
-RED = pytest.mark.xfail(strict=True, raises=AssertionError,
-                         reason="I-260: the X-loss daughter carries no kernel and one loss per chain")
-
 
 def _setup(ok, what):
     if not ok:
@@ -125,7 +122,6 @@ def _unit_mw():
 
 class TestProducer:
 
-    @RED
     @pytest.mark.parametrize("parent,unit,ch,gas,sel,modified", LEAVING_GROUPS)
     def test_the_daughter_inherits_the_unzip_and_its_own_channel(self, parent, unit, ch, gas, sel, modified):
         """The daughter of a radical-QSSA carrier carries a copy of the
@@ -142,7 +138,6 @@ class TestProducer:
         mod = getattr(d, "side_loss_monomer", None)
         assert mod is not None and mod.is_isomorphic(Molecule().from_smiles(modified)), mod
 
-    @RED
     def test_the_daughter_inherits_the_legacy_unzip_and_scission(self):
         """k_unzip and k_scission are backbone kernels too."""
         p = _parent("PMMA", MONOMER, [_channel("ester", GAS, "aliphatic", 1.0e3)], k_unzip=2.0e-3,
@@ -255,7 +250,6 @@ def parent_only():
 
 class TestDaughterKernels:
 
-    @RED
     def test_the_monomer_yield_survives_the_loss_of_one_group_per_chain(self, parent_only):
         """Every chain loses its first group within milliseconds; the units
         it releases per second are the parent-only carrier's."""
@@ -264,7 +258,6 @@ class TestDaughterKernels:
         _simulate(rs, core, T_END)
         assert _release_rate(rs, core) == pytest.approx(parent_only, rel=1.0e-2), (_release_rate(rs, core), parent_only)
 
-    @RED
     def test_the_gas_holds_every_lost_group(self):
         """At k*t >> 1 every unit has lost its ester: s*mu1(0) of gas, not
         one per chain (mu0)."""
@@ -275,7 +268,6 @@ class TestDaughterKernels:
         # the released amount short of s*mu1(0)
         assert MOMENTS[1] - _released(rs, core) - 1.0e-9 <= lost <= MOMENTS[1] * (1.0 + 1.0e-9), lost
 
-    @RED
     def test_every_site_is_lost_at_its_own_rate(self):
         """Without unzip, each site is lost independently at k: the gas is
         s*mu1(0)*(1 - exp(-k t)) exactly, whichever pool holds the chain."""
@@ -287,7 +279,6 @@ class TestDaughterKernels:
         lost = float(rs.y[_index(core, "ester_rad")])
         assert lost == pytest.approx(MOMENTS[1] * -math.expm1(-k * float(rs.t)), rel=1.0e-6), (lost, rs.t)
 
-    @RED
     def test_a_partial_loss_releases_what_the_parent_alone_would(self):
         """With the chains split between parent and daughter through the
         run (k*s*DP*t ~ 1) and termination-limited radicals, the two are one

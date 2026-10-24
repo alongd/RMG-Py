@@ -845,6 +845,17 @@ def polymer(label: str,
             raise InputError(str(e))
         for daughter in side_daughters:
             daughter.creation_iteration = rmg.reaction_model.iteration_num
+            # The modified monomer the daughter's defect units release when
+            # it inherited a release kernel (I-260), a core gas species
+            # like the channel's gas (step 4e).
+            modified = getattr(daughter, 'side_loss_monomer', None)
+            if modified is not None:
+                m_spc, _ = rmg.reaction_model.make_new_species(
+                    modified.copy(deep=True), reactive=True)
+                if m_spc not in rmg.initial_species:
+                    rmg.initial_species.append(m_spc)
+                species_dict[m_spc.label] = m_spc
+                daughter.side_loss_monomer_species = m_spc
             d_spc, _ = rmg.reaction_model.make_new_species(
                 daughter, generate_thermo=False)
             if d_spc not in rmg.initial_species:
