@@ -1,0 +1,1 @@
+include rmgpy/tools/eedf/_native_worker.c

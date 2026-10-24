@@ -29,7 +29,7 @@
 
 import sys
 
-from setuptools import setup
+from setuptools import setup, Extension
 
 # On macOS, conda-forge Python bakes duplicate -Wl,-rpath flags into its sysconfig data,
 # which causes every compiled extension to have duplicate LC_RPATH Mach-O load commands
@@ -180,7 +180,12 @@ setup(
     package_data={
         "": ["*.pxd"],
     },
-    ext_modules=cythonize(ext_modules, compiler_directives=directives),
+    ext_modules=cythonize(ext_modules, compiler_directives=directives) + (
+        [Extension('rmgpy.tools.eedf._native_worker',
+                   ['rmgpy/tools/eedf/_native_worker.c'],
+                   extra_compile_args=['-std=c11', '-pthread'],
+                   extra_link_args=['-pthread'], optional=True)]
+        if sys.platform.startswith('linux') else []),
     include_dirs=numpy.get_include(),
     install_requires=["Cython", "numpy"],
 )
