@@ -110,6 +110,7 @@ import json
 import math
 import os
 import re
+from collections import defaultdict
 import subprocess
 import sys
 from pathlib import Path
@@ -590,33 +591,126 @@ def species_residence(spec, species: Sequence[str], bath: Sequence[str]) -> Dict
     return dict(sorted(out.items()))
 
 
-def _uniform_cut(law: dict, a: float, radical: Optional[str], where: str) -> Tuple[int, str]:
-    """(min_fragment e, the radical class) of a homolysis law whose exact
-    outcomes are, on every n it was measured on, two radicals of one class,
-    k and n - k for every k in [e, n - e], a sites per position; refused
-    otherwise."""
-    fragments = [p for _n, outs in law["exact"].items() for _m, prods in outs for p in prods]
+def _uniform_cut(group, a: float, radical: Optional[str], where: str) -> Tuple[int, str, int]:
+    """(min_fragment e, the radical class, uniform_from) of a homolysis
+    kernel's templates (``group``: (term, chain sites) pairs) whose exact
+    outcomes, summed over the templates on every n they were measured on, are
+    two radicals of one class, k and n - k for every k in [e, n - e], a sites
+    per position, from ``uniform_from``.  A length that differs from it at or
+    past every template's ``exact_from_n`` (where each count is its affine
+    law, so the difference holds on every longer chain) is refused, naming
+    the positions cut more or less often than a and their templates; shorter
+    differing lengths set uniform_from (the law's validity length)."""
+    fragments = [p for t, _s in group for outs in t["law"]["exact"].values() for _m, prods in outs for p in prods]
     if not fragments:
-        raise ProducerError(f"{where}: the law cuts no chain up to n = {law['exact_to_n']}")
+        raise ProducerError(f"{where}: the law cuts no chain up to n = "
+                            f"{min(t['law']['exact_to_n'] for t, _s in group)}")
     e = min(int(p[1]) for p in fragments)
     classes = {p[0] for p in fragments}
     if len(classes) != 1 or (radical is not None and classes != {radical}):
         raise ProducerError(f"{where}: fragments of classes {sorted(classes)}, not one end-radical pool "
                             f"{radical or ''}")
-    for n_text, outs in sorted(law["exact"].items(), key=lambda x: int(x[0])):
-        n, got, want = int(n_text), {}, {}
-        for m, prods in outs:
-            pair = tuple(sorted(int(p[1]) for p in prods))
-            if len(prods) != 2 or sum(pair) != n:
-                raise ProducerError(f"{where}: at n = {n} an outcome {prods} is not two fragments of n")
-            got[pair] = got.get(pair, 0) + m
+    affine_from = max(int(s.get("exact_from_n") or 0) for _t, s in group)
+    top = min(int(t["law"]["exact_to_n"]) for t, _s in group)
+    uniform_from = 1
+    for n in range(1, top + 1):
+        got, by, want = {}, defaultdict(set), {}
+        for t, _s in group:
+            for m, prods in t["law"]["exact"].get(str(n), []):
+                pair = tuple(sorted(int(p[1]) for p in prods))
+                if len(prods) != 2 or sum(pair) != n:
+                    raise ProducerError(f"{where}: at n = {n} an outcome {prods} is not two fragments of n")
+                got[pair] = got.get(pair, 0) + m
+                by[pair].add(t["template"])
         for k in range(e, n - e + 1):
             pair = tuple(sorted((k, n - k)))
             want[pair] = want.get(pair, 0) + a
-        if got != want:
-            raise ProducerError(f"{where}: at n = {n} the outcomes {got} are not the uniform cut over "
-                                f"[{e}, {n - e}] with {a!r} sites per position ({want})")
-    return e, classes.pop()
+        if got == want:
+            continue
+        if n < affine_from:
+            uniform_from = n + 1
+            continue
+        named = ", ".join(f"{pair} covered {got.get(pair, 0):g} times, {want.get(pair, 0):g} expected "
+                          f"(templates {sorted(by[pair])})" for pair in sorted(set(got) | set(want))
+                          if got.get(pair, 0) != want.get(pair, 0))
+        raise ProducerError(f"{where}: at n = {n} the union of the templates' cuts is not the uniform cut over "
+                            f"[{e}, {n - e}] with {a!r} sites per position: {named}")
+    return e, classes.pop(), uniform_from
+
+
+def _pair_sites(terms, rows, families, family, cls, nbb, where):
+    """({(n0, n1): {template: (unordered pair sites, weight)}}, sites per
+    radical c, top) of a recombination kernel's templates on two radicals of
+    class ``cls`` and lengths n0 <= n1 in periods, up to ``top``, one past
+    every fixed-size profile (``top`` stands for every longer radical).  A
+    template's sites per participant are its row's count (``per_feature``,
+    its ``profile`` at fixed fragment lengths); each slot law must make one
+    chain of n0 + n1 periods per site of its own count.  Unordered pair sites
+    (s0(n0) s1(n1) + s0(n1) s1(n0)) / divisor: the pair rate is w times them,
+    as the engine counts ordered cross-component site pairs and divides."""
+    fam = families.get(family)
+    if fam is None:
+        raise ProducerError(f"{where}: the table has no {family!r} family")
+    labels = fam.get("labels", {})
+    join = [["join", "chain", 0]]
+
+    def parsed(count, what):
+        per, profile = float(count["per_feature"]), {}
+        for key, value in count.get("profile", {}).items():
+            m = re.fullmatch(r"fragment_backbone_atoms=(\d+)", key)
+            if not m or len(value) != 1 or int(m.group(1)) % nbb:
+                raise ProducerError(f"{where}: {what} a profile entry {key}: {value} has no moment form")
+            profile[int(m.group(1)) // nbb] = float(value[0])
+        return per, profile
+
+    slots, far_c, fixed = {}, set(), set()
+    for term in terms:
+        name = term["template"]
+        for slot in ("S0", "S1"):
+            per, profile = parsed(term[slot], f"{name} {slot}")
+            law = term["law"][slot]
+            if law["far"]["outcomes"] != ([] if per == 0 else [[per, join]]) or any(
+                    outs != ([] if profile.get(int(n), per) == 0 else [[profile.get(int(n), per), join]])
+                    for n, outs in law["exact"].items()
+                    if labels.get(n, fam["label_far"]) == cls and int(n) >= int(fam["min_n"])):
+                raise ProducerError(f"{where}: {name} its {slot} law is not one chain of n0 + n1 periods per site")
+        for p, slot in enumerate(("S0", "S1")):
+            per, profile = parsed(rows[name]["participants"][p][cls], f"{name} participant {p}")
+            if per:
+                far_c.add(per)
+            fixed.update(profile)
+            slots[(name, slot)] = (per, profile)
+    if len(far_c) != 1:
+        raise ProducerError(f"{where}: long radicals with {sorted(far_c) or 'no'} sites, not one count")
+    top = max(fixed | {int(fam["min_n"])}) + 1
+    lengths = [n for n in range(int(fam["min_n"]), top + 1) if labels.get(str(n), fam["label_far"]) == cls]
+
+    def s(name, slot, n):
+        per, profile = slots[(name, slot)]
+        return profile.get(n, per)
+
+    grid = {}
+    for i, n0 in enumerate(lengths):
+        for n1 in lengths[i:]:
+            by = {}
+            for term in terms:
+                name = term["template"]
+                p = (s(name, "S0", n0) * s(name, "S1", n1) + s(name, "S0", n1) * s(name, "S1", n0)) / \
+                    float(rows[name]["divisor"])
+                if p:
+                    by[name] = (p, float(rows[name]["weight"]))
+            grid[(n0, n1)] = by
+    return grid, far_c.pop(), lengths
+
+
+def _position_departures(out: list, mom_weight: dict, kid: str, w: float, members) -> None:
+    """MoM's weight ``w`` of a grouped kernel per template, and each template
+    whose own weight departs from it (``position_departures``)."""
+    for name, w_t, sites in members:
+        mom_weight[name] = w
+        if abs(w_t / w - 1.0) > SITE_LAW_RELATIVE:
+            out.append({"kernel": kid, "template": name, "sites": sites, "w_kmc": w_t, "w_mom": w,
+                        "kmc_over_mom": w_t / w})
 
 
 class _Unmapped(Exception):
@@ -799,19 +893,33 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     table, and the record of the checks that make their moment laws exact on
     this deck.
 
-    Homolysis (``homolysis``, a chain class): per template the table's weight
-    w, its sites a*n + b (n in the table's period, ``periods_per_unit`` per
-    declared unit) and ``min_fragment`` e from its exact law, which must be
-    the uniform cut (``_uniform_cut``) with b = a*(1 - 2e); phi (``phi_thinned``
-    templates) the given cage-escape factor; the fragments into the end-radical
-    pool.  The sites are the count on every chain the H + C system holds only
-    if no initial chain is shorter than 2e - 1 periods (refused otherwise;
-    recombination products are at least 2e).
+    Homolysis and recombination group a kernel's templates (RMG splits one
+    site set over context templates, e.g. a cut at a fixed distance from an
+    end), as pair transfer and moves do; MoM takes the group's far-field
+    site-weighted mean weight, and each template whose own weight departs
+    from it is listed under ``position_departures`` (kernel, template, its
+    sites, ``w_kmc``, ``w_mom``, ``kmc_over_mom``); one phi_thinned flag per
+    group.
+    Homolysis (``homolysis``, a chain class): one term per kernel, its sites
+    a*n + b the sums of the templates' (n in the table's period,
+    ``periods_per_unit`` per declared unit), w = sum w_T a_T / a, and
+    ``min_fragment`` e from the union of their exact laws, which must be the
+    uniform cut (``_uniform_cut``) with b = a*(1 - 2e), on every length from
+    its validity length (a length cut more or less often past every
+    template's affine count is refused by position); phi (``phi_thinned``)
+    the given cage-escape factor; the fragments into the end-radical pool.
+    The sites are the count on every chain the H + C system holds only if no
+    initial chain is shorter than the validity length (2e - 1, or longer
+    where short lengths are cut by no template: refused otherwise), and
+    recombination products (at least 2e) are no shorter either.
     Recombination (``recombination``, two radicals of the fragments' class
-    joining into one chain, gamma 0): k_pair = (w / divisor) phi^thinned
-    V_poly / V, kMC's per-pair coefficient in MoM's concentration n / V_poly;
-    sites_per_chain the table's per_feature, whose profile (zero sites at
-    short radicals) must lie below e, the shortest radical homolysis makes.
+    joining into one chain, gamma 0): the union of the templates' unordered
+    pair sites (``_pair_sites``) must be the long radicals' C on every pair
+    from its validity length, which must not exceed e, the shortest radical
+    homolysis makes (the pairs that differ are refused by name);
+    sites_per_chain c the long radicals' per_feature and k_pair = w C / (2
+    c^2) phi^thinned V_poly / V, (w / divisor) for one template: kMC's
+    per-pair coefficient in MoM's concentration n / V_poly.
     Pair transfer (any other two-participant kernel, e.g. end + end
     disproportionation and its reverse, the mid-chain ones, H transfer):
     each participant changes family, length unchanged, into a pool kernel
@@ -902,82 +1010,119 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         if kernel["classes"][0] != radical:
             raise ProducerError(f"{kid}: a second end-radical class {kernel['classes'][0]!r} ({radical!r})")
     homolysis, recombination, checks, e_min, validity, laws_out = [], [], {}, None, [], []
+    inert, position_departures, mom_weight = [], [], {}
+    n_h = None
     for kid, kernel in by_type["homolysis"]:
         if kernel["classes"] != ["chain"]:
             raise ProducerError(f"{kid}: no MoM kernel cuts class {kernel['classes']} (the chain class only)")
+        group = []
         for term in kernel["templates"]:
             name, where = term["template"], f"{kid} template {term['template']}"
             if term.get("law") is None or term.get("law_inert"):
                 raise ProducerError(f"{where}: an inert or unmodelled law has no moment form")
             sites = rows[name]["participants"][0]["chain"]
-            a, b = float(sites["a"]), float(sites["b"])
-            e, radical = _uniform_cut(term["law"], a, radical, where)
-            if b != a * (1 - 2 * e):
-                raise ProducerError(f"{where}: sites a*n + b with b = {b!r}, not b = a*(1 - 2*min_fragment) = "
-                                    f"{a * (1 - 2 * e)!r} of its cut law")
-            if n_min < 2 * e - 1:
-                raise ProducerError(f"{where}: initial chains of {n_min} periods are shorter than {2 * e - 1}, "
-                                    f"where a*n + b = {a * n_min + b!r} is not their site count")
-            homolysis.append({"template": name, "w": float(rows[name]["weight"]),
-                              "phi": float(phi) if rows[name]["phi_thinned"] else 1.0, "a": a, "b": b,
-                              "min_fragment": e, "periods_per_unit": ppu, "daughter": radical_label,
-                              "valid_from_periods": 2 * e - 1})
-            # a n + b = a (n - 2e + 1) counts the cuts leaving both fragments at least e long from 2e - 1
-            # (zero there); shorter chains have no cut while the law goes negative
-            validity.append({"kernel": kid, "template": name, "families": ["chain"],
-                             "valid_from_periods": 2 * e - 1, "fit_from_periods": 2 * e - 1,
-                             "participants": [{"slot": 0, "family": "chain", "exact_from_periods": 2 * e - 1}]})
-            w_h = float(rows[name]["weight"]) * (float(phi) if rows[name]["phi_thinned"] else 1.0)
-            laws_out.append({"kernel": kid, "template": name, "templates": [name], "kind": "uni",
-                             "families": ["chain"], "products": None, "coefficients": [w_h * b, w_h * a]})
-            checks[name] = {"min_fragment": e, "exact_to_n": term["law"]["exact_to_n"],
-                            "exact_from_n": sites.get("exact_from_n"), "initial_min_periods": n_min}
-            e_min = e if e_min is None else min(e_min, e)
+            if not any(outs for outs in term["law"]["exact"].values()) and not float(sites["a"]) \
+                    and not float(sites["b"]):
+                inert.append({"kernel": kid, "templates": [name], "reason": "no site at any length"})
+                continue
+            group.append((term, sites))
+        if not group:
+            raise ProducerError(f"{kid}: no template cuts a chain")
+        names = sorted(term["template"] for term, _s in group)
+        joined, where = "+".join(names), f"{kid} templates {names}"
+        thinned = {bool(rows[n]["phi_thinned"]) for n in names}
+        if len(thinned) != 1:
+            raise ProducerError(f"{where}: phi-thinned and unthinned templates in one kernel")
+        a = math.fsum(float(s["a"]) for _t, s in group)
+        b = math.fsum(float(s["b"]) for _t, s in group)
+        if a <= 0.0:
+            raise ProducerError(f"{where}: no site grows with the chain (sum of a = {a!r})")
+        e, radical, uniform_from = _uniform_cut(group, a, radical, where)
+        if b != a * (1 - 2 * e):
+            raise ProducerError(f"{where}: sites a*n + b with b = {b!r}, not b = a*(1 - 2*min_fragment) = "
+                                f"{a * (1 - 2 * e)!r} of its cut law")
+        valid = max(uniform_from, 2 * e - 1)
+        if n_min < valid:
+            raise ProducerError(f"{where}: initial chains of {n_min} periods are shorter than {valid}, where "
+                                f"a*n + b = {a * n_min + b!r} is not their site count")
+        # the far-field site-weighted mean: the weight of a period's sites on a long chain
+        w = math.fsum(float(rows[t["template"]]["weight"]) * float(s["a"]) for t, s in group) / a
+        _position_departures(position_departures, mom_weight, kid, w, [
+            (t["template"], float(rows[t["template"]]["weight"]), {"a": float(s["a"]), "b": float(s["b"])})
+            for t, s in group])
+        phi_h = float(phi) if thinned.pop() else 1.0
+        homolysis.append({"template": joined, "w": w, "phi": phi_h, "a": a, "b": b, "min_fragment": e,
+                          "periods_per_unit": ppu, "daughter": radical_label, "valid_from_periods": valid})
+        # a n + b = a (n - 2e + 1) counts the cuts leaving both fragments at least e long from 2e - 1
+        # (zero there), and the union of the templates is that cut from uniform_from; shorter chains are
+        # outside the law
+        validity.append({"kernel": kid, "template": joined, "families": ["chain"],
+                         "valid_from_periods": valid, "fit_from_periods": valid,
+                         "participants": [{"slot": 0, "family": "chain", "exact_from_periods": valid}]})
+        laws_out.append({"kernel": kid, "template": joined, "templates": names, "kind": "uni",
+                         "families": ["chain"], "products": None,
+                         "coefficients": [w * phi_h * b, w * phi_h * a]})
+        checks[joined] = {"min_fragment": e, "uniform_from_periods": uniform_from,
+                          "exact_to_n": min(t["law"]["exact_to_n"] for t, _s in group),
+                          "exact_from_n": max((s.get("exact_from_n") or 0) for _t, s in group),
+                          "initial_min_periods": n_min, "w_far_mean": w}
+        e_min = e if e_min is None else min(e_min, e)
+        n_h = valid if n_h is None else max(n_h, valid)
     for kid, kernel in by_type["recombination"]:
+        names = sorted(term["template"] for term in kernel["templates"])
+        joined, where = "+".join(names), f"{kid} templates {names}"
         for term in kernel["templates"]:
-            name, where = term["template"], f"{kid} template {term['template']}"
             if term.get("law") is None or term.get("law_inert"):
-                raise ProducerError(f"{where}: an inert or unmodelled law has no moment form")
-            row = rows[name]
-            sites = [p[radical] for p in row["participants"]]
-            c = float(sites[0]["per_feature"])
-            zero = set()
-            for s in sites:
-                if float(s["per_feature"]) != c:
-                    raise ProducerError(f"{where}: participants with {s['per_feature']!r} and {c!r} sites")
-                for key, counts in s.get("profile", {}).items():
-                    m = re.fullmatch(r"fragment_backbone_atoms=(\d+)", key)
-                    if not m or list(counts) != [0] or int(m.group(1)) % nbb:
-                        raise ProducerError(f"{where}: a profile entry {key}: {counts} has no moment form")
-                    zero.add(int(m.group(1)) // nbb)
-            if e_min is not None and zero and max(zero) >= e_min:
-                raise ProducerError(f"{where}: its profile gives no site at {sorted(zero)} periods, where "
-                                    f"homolysis makes radicals (from {e_min})")
-            join = [c, [["join", "chain", 0]]]
-            for slot in ("S0", "S1"):
-                law = term["law"][slot]
-                if law["far"]["outcomes"] != [join] or any(
-                        outs != ([] if int(n) in zero else [join]) for n, outs in law["exact"].items()):
-                    raise ProducerError(f"{where}: its {slot} law is not one chain of n0 + n1 periods per site")
-            k = float(row["weight"]) / float(row["divisor"]) * (float(phi) if row["phi_thinned"] else 1.0)
-            valid = max(zero) + 1 if zero else 1
-            recombination.append({"template": name, "k_pair": k * float(volume_ratio), "sites_per_chain": c,
-                                  "periods_per_unit": ppu, "product": label, "valid_from_periods": valid})
-            validity.append({"kernel": kid, "template": name, "families": ["radical_end"],
-                             "valid_from_periods": valid, "fit_from_periods": valid,
-                             "participants": [{"slot": p, "family": "radical_end", "exact_from_periods": valid}
-                                              for p in (0, 1)]})
-            laws_out.append({"kernel": kid, "template": name, "templates": [name], "kind": "pair",
-                             "families": ["radical_end", "radical_end"], "products": None,
-                             "coefficients": [k * c * c, 0.0, 0.0, 0.0]})
-            checks[name] = {"w_over_divisor": k, "zero_site_periods": sorted(zero)}
+                raise ProducerError(f"{kid} template {term['template']}: an inert or unmodelled law has no "
+                                    "moment form")
+        thinned = {bool(rows[n]["phi_thinned"]) for n in names}
+        if len(thinned) != 1:
+            raise ProducerError(f"{where}: phi-thinned and unthinned templates in one kernel")
+        grid, c, lengths = _pair_sites(kernel["templates"], rows, table["families"], "radical_end", radical, nbb,
+                                       where)
+        top = lengths[-1]
+        far = math.fsum(p for p, _w in grid[(top, top)].values())
+        if far <= 0.0:
+            raise ProducerError(f"{where}: no pair site between long radicals")
+        bad = {pair: sum(p for p, _w in by.values()) for pair, by in grid.items()
+               if abs(sum(p for p, _w in by.values()) - far) > SITE_LAW_RELATIVE * far}
+        # the shortest length from which every pair of radicals carries the long radicals' pair sites
+        valid = max((min(pair) + 1 for pair in bad), default=lengths[0])
+        if e_min is not None and valid > e_min:
+            named = ", ".join(f"({n0}, {n1}): {p:g}" for (n0, n1), p in sorted(bad.items())
+                              if min(n0, n1) >= e_min)
+            raise ProducerError(
+                f"{where}: the union of the templates' fixed-size profiles is not {far:g} pair sites on every "
+                f"radical pair from {e_min} periods, where homolysis makes radicals; pair sites {named} "
+                "(0: no template joins the pair)")
+        w = math.fsum(w * p for p, w in grid[(top, top)].values()) / far
+        _position_departures(position_departures, mom_weight, kid, w, [
+            (t["template"], float(rows[t["template"]]["weight"]), {"S0": t["S0"], "S1": t["S1"]})
+            for t in kernel["templates"]
+            if any(by.get(t["template"], (0.0, 0.0))[0] for pair, by in grid.items() if min(pair) >= valid)])
+        k = w * far / (2.0 * c * c) * (float(phi) if thinned.pop() else 1.0)
+        recombination.append({"template": joined, "k_pair": k * float(volume_ratio), "sites_per_chain": c,
+                              "periods_per_unit": ppu, "product": label, "valid_from_periods": valid})
+        validity.append({"kernel": kid, "template": joined, "families": ["radical_end"],
+                         "valid_from_periods": valid, "fit_from_periods": valid,
+                         "participants": [{"slot": p, "family": "radical_end", "exact_from_periods": valid}
+                                          for p in (0, 1)]})
+        laws_out.append({"kernel": kid, "template": joined, "templates": names, "kind": "pair",
+                         "families": ["radical_end", "radical_end"], "products": None,
+                         "coefficients": [k * c * c, 0.0, 0.0, 0.0]})
+        checks[joined] = {"w_over_divisor": k, "pair_sites": far, "w_far_mean": w,
+                          "zero_site_periods": [n for n in lengths if n < valid]}
+        shortest = valid if e_min is None else max(valid, e_min)
+        if n_h is not None and 2 * shortest < n_h:
+            raise ProducerError(f"{where}: radicals from {shortest} periods join into chains of {2 * shortest}, "
+                                f"shorter than {n_h}, where the homolysis kernel's law holds")
     floor = n_min if e_min is None else min(n_min, e_min)
     families = table["families"]
     family_of = {lab: fam for fam, f in families.items() for lab in [f["label_far"], *f.get("labels", {}).values()]}
     label_of = _label_of(families)
     pools = {"chain": label, "radical_end": radical_label, "alkene_terminal": alkene_label,
              "radical_interior": interior_radical_label, "alkene_internal": interior_alkene_label}
-    transfer, move, unmapped, inert, identity, short = {}, {}, [], [], [], []
+    transfer, move, unmapped, identity, short = {}, {}, [], [], []
 
     def owner_families(kid, kernel):
         nonlocal radical
@@ -1135,11 +1280,12 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                              "families": [owner], "products": [fam], "coefficients": [c[0], c[1]]})
             checks[joined] = {"kernel": kid, "templates": names, "reachable_from_periods": floor,
                               "law_from_periods": n0, "checked_to_periods": top, "rate_law": [c[0], c[1]]}
-    # the overrides of every mapped template: kMC fires them at their weight, MoM's kernel at the template's
+    # the overrides of every mapped template: kMC fires them at their weight, MoM's kernel at its own (the
+    # template's, or a grouped kernel's mean)
     departures = []
     for kid, name in dict.fromkeys((law["kernel"], n) for law in laws_out for n in law["templates"]):
         (term,) = [t for t in table["kernels"][kid]["templates"] if t["template"] == name]
-        w_mom = float(rows[name]["weight"])
+        w_mom = mom_weight.get(name, float(rows[name]["weight"]))
         for o in term.get("overrides") or ():
             departures.append({"kernel": kid, "template": name, "override": o["name"], "entry": o.get("entry"),
                                "reactants": o["reactants"], "products": o["products"],
@@ -1150,7 +1296,8 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
               "volume_ratio_mom_over_kmc": float(volume_ratio), "radical_class": radical, "checks": checks,
               "far_law": bool(far_law), "unmapped": unmapped, "inert": inert, "identity": identity,
               "short_lengths": short, "validity": validity, "laws": laws_out,
-              "depository_departures": departures, "chemistry_sha256": bound,
+              "depository_departures": departures, "position_departures": position_departures,
+              "chemistry_sha256": bound,
               "table_templates_sha256": K.template_rows_sha256(table, [n for law in laws_out
                                                                        for n in law["templates"]])}
     return {"homolysis": homolysis, "recombination": recombination, "transfer": transfer, "move": move,
@@ -1457,9 +1604,11 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
                          "record": record},
              "kernel mode: kineticsFamilies 'none'; the kernel-rates table's homolysis kernel on the chain "
              f"pool and end recombination on the explicit end-radical pool {facts['radical_pool']!r} "
-             "(polymer(end_radical_site='primary'), born empty, the chain pool's end groups), per template: "
-             "w, a, b (sites a*n + b, n in the table's period, periods_per_unit per declared unit) and "
-             "min_fragment from its exact law, which must be the uniform cut; recombination per_feature "
+             "(polymer(end_radical_site='primary'), born empty, the chain pool's end groups), per kernel "
+             "(its templates grouped; w the far-field site-weighted mean, each template off it listed in "
+             "record.position_departures): w, a, b (sites a*n + b, n in the table's period, periods_per_unit "
+             "per declared unit) and min_fragment from the union of the exact laws, which must be the "
+             "uniform cut; recombination per_feature "
              "sites, joined into one chain of n0 + n1 periods; pair transfer (end + end disproportionation, "
              "its reverse) per kernel and product pair, lengths unchanged, k_pair the constant sum_T "
              "(w/divisor) s0 s1 on every reachable length pair, into the chain, end-radical and "
