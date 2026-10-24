@@ -5634,14 +5634,25 @@
     "rmgpy/tools/eedf/branches.py:scan": {
       "file": "rmgpy/tools/eedf/branches.py",
       "function": "scan",
-      "line": 1986,
-      "signature": "594efb2fc4c8e832570fba5d03453de29e335ca6c099278f62afcb17be282e0b",
+      "line": 1189,
+      "signature": "8401cf8407ac6e334ad43dded76402d044be7297d01eaa0551bf9d42dea05f77",
       "verdict": "E",
-      "reason": "Reactor-branch scan output contains numerical seed, solver-state, stability, discharge, timeout-recheck and continuation-certificate records only, and it refuses continuation without a declared stability resolution; it emits no molecular identity or saved mechanism.",
+      "reason": "Reactor-branch scan output contains numerical seed, solver-state, stability, discharge, timeout-recheck and continuation-certificate records only, and it refuses continuation without a declared stability resolution; it emits no molecular identity or saved mechanism. This revision changes only the lifecycle documentation; output computation and schema remain unchanged.",
       "evidence": [
         "rmgpy/tools/eedf/branches.py",
         "test/rmgpy/tools/eedf/branchesTest.py"
       ]
+    },
+    "rmgpy/tools/eedf/_native_context.py:NativePopen._launch": {
+      "verdict": "E",
+      "reason": "Private fork launcher creates process/sentinel pipes and bootstraps an inherited target. It emits no molecular identifier, mechanism or serialized scientific model; native fields are process-lifecycle metadata.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/nativeWorkerTest.py"
+      ],
+      "file": "rmgpy/tools/eedf/_native_context.py",
+      "function": "NativePopen._launch",
+      "line": 130,
+      "signature": "c6d89f5df037899ef3793aeedf67906f82f68fcb3cb6285e0cab23fdeeb0e6e9"
     }
   }
 }

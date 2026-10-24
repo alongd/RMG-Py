@@ -1658,14 +1658,19 @@ non-empty strings.  ``path`` names a ``branches.json`` written by the branch sca
 resolved beside the input deck.  ``id`` is a branch id recorded in that file, such as
 ``'reactor-000'``.  Saving the input preserves the declaration.
 
-When generating this file with isolated scan workers, an interrupted start releases
-undecided children at its cleanup deadline and reaps a worker only after its PID
-report identifies it. A consumer registered before the fork also watches a
-60-second ``RUN_LEASE``, renewed by the scan's polling and start steps. If the
-calling thread stalls past that lease, a resumed scan raises ``RuntimeError``
-after cleanup and returns no results from adopted workers. The
-:doc:`branch scanner reference <../../reference/solver/branches>` describes late
-reaping and the limits on release warnings.
+When generating this file with isolated scan workers, the native launcher records
+each worker's PID before application parent callbacks run. A native watchdog stops
+the worker if its owner dies or stops renewing its lease. The scanner's ``lease_s``
+keyword defaults to 60 seconds and must be finite and positive; callers with known
+long callbacks can increase it. An expired scan raises ``ScanLeaseExpired`` and
+accepts no worker results. ``NativeWorkerUnsupported`` and
+``NativeWorkerStartupError`` report platform or watchdog-admission refusal, and
+``NativeWorkerStatusError`` reports an unverifiable exit or bounded cleanup failure.
+The caller-thread native guard reaps each worker by its exact recorded PID or
+reports its exact pending PID before returning to caller code. Application fork
+callbacks cannot give a copied process ownership of the original scan. The
+:doc:`branch scanner reference <../../reference/solver/branches>` describes the
+accepted limits, including a wedged owner, worker ``exec()`` and blocked logging.
 
 When the reactor is built, the file is read and the branch must be *matchable* (below); otherwise
 the run stops with a ``PlasmaStateError`` before it starts.  The branch's recorded seed then replaces

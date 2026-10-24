@@ -80,7 +80,7 @@ EXPECTED_TRANSPORTS = {
     ('rmgpy/data/kinetics/family.py', 'mp.Process'),
     ('rmgpy/qm/main.py', 'Pool'),
     ('rmgpy/rmg/react.py', 'Pool'),
-    ('rmgpy/tools/eedf/branches.py', 'multiprocessing.get_context'),
+    ('rmgpy/tools/eedf/_native_context.py', 'multiprocessing.get_context'),
 }
 
 #: The only module that imports a pickler at all. This is what makes the plain-pickle path
@@ -282,7 +282,8 @@ class TestFreshImportRegisters:
     Check real ForkingPickler transport in that same fresh interpreter.
     """
 
-    @pytest.mark.parametrize('module', sorted({rel for rel, _ in EXPECTED_TRANSPORTS}))
+    @pytest.mark.parametrize('module', sorted(
+        {rel for rel, _ in EXPECTED_TRANSPORTS} | {'rmgpy/tools/eedf/branches.py'}))
     def test_fresh_import(self, module):
         name = module[:-3].replace('/', '.')
         probe = textwrap.dedent("""

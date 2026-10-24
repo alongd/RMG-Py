@@ -37,10 +37,7 @@ converged reactor steady state, including failed and timed-out seeds.
 from __future__ import annotations
 
 import ctypes
-import _thread
-import fcntl
 import hashlib
-import itertools
 import json
 import math
 import logging
@@ -48,21 +45,21 @@ import mmap
 import multiprocessing
 import os
 import platform
-import queue
 import signal
 import struct
 import sys
 import threading
 import time
-import weakref
 from contextlib import contextmanager, nullcontext
-from multiprocessing.connection import Connection
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
 
 from rmgpy.data.kinetics.family import install_complete_reducers
+from . import _native_context
+from ._native_context import (ScanLeaseExpired, NativeWorkerUnsupported,
+                              NativeWorkerStartupError, NativeWorkerStatusError)
 
 
 # The scan sends reactor factories and converged states through multiprocessing
@@ -75,22 +72,11 @@ LOG_NE_TOLERANCE = 1.0e-3
 ENGINE_FD_RELATIVE_STEP = 6.0e-6
 MAX_PROCESSES = 6
 WORKER_TERMINATE_GRACE = 0.1
-# Bound on the join after SIGKILL. A worker in an uninterruptible kernel wait
-# (D state) can outlive SIGKILL; that is a recorded limit, so the scan logs it
-# and continues rather than waiting forever.
+# Fixed bound on owner cleanup/reaping; kernel scheduling or D state can delay
+# exit observation. The worker watchdog never needs the owner's Python thread.
 WORKER_KILL_TIMEOUT = 5.0
-# Seconds a start cut short after its fork spends, from the start of its
-# cleanup, on a child it cannot yet tell from an application's (_reclaim);
-# such a child is then released and logged. Every released candidate goes to
-# the deferred reaper, which reaps it only once it reports.
-WORKER_RECLAIM_TIMEOUT = 10.0
-# Main-thread progress renews each registered start; silence transfers ownership.
+# Provisional default; R11.10's measured owner gaps decide the product value.
 RUN_LEASE = 60.0
-# Seconds the deferred reaper (_reap_deferred) waits for a released child that
-# reports itself as the worker; it is otherwise left alone, logged.
-WORKER_DEFERRED_REAP_TIMEOUT = 300.0
-# A worker exits with this status when its lifeline reports its owner gone.
-WORKER_ORPHANED_EXIT = 70
 # Signals a scan on the main thread defers while it owns workers, highest
 # rank first: SIGTERM outranks SIGINT.
 _DEFERRED_SIGNALS = (signal.SIGTERM, signal.SIGINT)
@@ -626,88 +612,20 @@ class PlasmaReactorAdapter:
 def _integration_child(connection, adapter, seed, power):
     try:
         connection.send(('ok', adapter.integrate(seed, power=power)))
+    except (ScanLeaseExpired, NativeWorkerUnsupported, NativeWorkerStartupError, NativeWorkerStatusError) as exc:
+        connection.send(('lifecycle', exc))
     except BaseException as exc:
         connection.send(('error', '{}: {}'.format(type(exc).__name__, exc)))
     finally:
         connection.close()
 
 
-# Owner-death backstop, two layers. On Linux the kernel ties each worker to
-# its owner (PR_SET_PDEATHSIG): SIGKILL arrives when the owner's thread that
-# started it ends, which needs nothing from the worker (no GIL, no thread, no
-# descriptor state). That thread is the one running scan(), which reaps every
-# worker before it can return. Everywhere, each worker also reads a lifeline
-# pipe whose write end only its owner holds, and exits at end of file. A fork
-# copies every descriptor, so a sibling, a nested worker or an unrelated fork
-# of the owner would hold the write end open; every Python fork therefore
-# closes the write ends it inherited (_after_fork_in_child), each only if the
-# descriptor is still the pipe end that was registered.
-_LIFELINES = {}  # write end -> (st_dev, st_ino) of the pipe it was opened on
-_LIFELINES_LOCK = threading.Lock()
-_PR_SET_PDEATHSIG = 1
 _LIBC = ctypes.CDLL(None, use_errno=True) if sys.platform.startswith('linux') else None
 
 
-def _open_lifeline():
-    """Return (read end for the worker, write end the owner keeps)."""
-    with _LIFELINES_LOCK:
-        # Cleanup never waits on this fork-hook lock. Prune its closed entries
-        # here; child hooks already distinguish them from reused descriptors.
-        for descriptor, identity in list(_LIFELINES.items()):
-            if not _is_registered_writer(descriptor, identity):
-                del _LIFELINES[descriptor]
-        read_end, write_end = os.pipe()
-        identity = os.fstat(write_end)
-        identity = (identity.st_dev, identity.st_ino)
-        _LIFELINES[write_end] = identity
-    return Connection(read_end, writable=False), (write_end, identity)
-
-
-def _close_lifeline(write_end):
-    # Retain the identity across interruption after close but before return.
-    # A retry must not close an application's replacement for this descriptor.
-    descriptor, identity = write_end
-    if _is_registered_writer(descriptor, identity):
-        os.close(descriptor)
-
-
-def _is_registered_writer(descriptor, identity):
-    """Whether a descriptor is still the lifeline write end registered as it."""
-    try:
-        status = os.fstat(descriptor)
-        mode = fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_ACCMODE
-    except OSError:
-        return False
-    return mode == os.O_WRONLY and (status.st_dev, status.st_ino) == identity
-
-
-def _arm_owner_death(owner):
-    """Have the kernel SIGKILL this worker when its owner goes; exit if it already has."""
-    if _LIBC is not None:
-        _LIBC.prctl(_PR_SET_PDEATHSIG, int(signal.SIGKILL), 0, 0, 0)
-    # The owner may have died before the request: then this process was
-    # already re-parented and no death signal will come.
-    if os.getppid() != owner:
-        os._exit(WORKER_ORPHANED_EXIT)
-
-
-def _exit_when_orphaned(lifeline):
-    # The owner never writes, so the read returns only at end of file.
-    while os.read(lifeline.fileno(), 1):
-        pass
-    os._exit(WORKER_ORPHANED_EXIT)
-
-
-def _worker(owner, lifeline, connection, adapter, seed, power):
-    # Under fork the fork hook has already armed the worker; ``owner`` is
-    # passed for a spawned worker, whose parent is also its owner.
-    if owner is not None:
-        _arm_owner_death(owner)
-    threading.Thread(target=_exit_when_orphaned, args=(lifeline,), daemon=True,
-                     name='eedf-worker-lifeline').start()
-    # Under fork the owner's deferral is still installed here (see
-    # _after_fork_in_child): restore the caller's handlers and act on any
-    # signal this worker received since its fork.
+def _worker(connection, adapter, seed, power):
+    # The native watchdog is already running, including throughout Python's
+    # child hooks. Restore only the calling application's signal semantics.
     _DEFERRAL.release()
     _integration_child(connection, adapter, seed, power)
 
@@ -946,12 +864,6 @@ class _NoDeferral:
 
 
 _DEFERRAL = _Deferral()
-# Set on the thread that starts a worker, for the duration of the start, so
-# the fork hook can tell this module's workers from any other fork.
-_STARTING = threading.local()
-_STARTING_FIELDS = ('owner', 'start', 'worker')
-
-
 def _record_signal(signum, frame):
     _DEFERRAL.pending[signum] = frame
 
@@ -1031,642 +943,15 @@ def _install_recorder(signum, action, effective):
     signal.signal(signum, _record_signal)
 
 
-class _Start:
-    """One worker start, identified only by its child's pid report.
-
-    A handler for a signal the scan does not defer can raise inside
-    Process.start() after the fork but before multiprocessing records the
-    child, and an application at-fork hook registered before this module's
-    can keep that child from running any code of ours for as long as it
-    likes. A random nonce that _WorkerPopen writes just before the fork and
-    clears just after it returns narrows the candidates: a child forked
-    before the write or after the clear holds zeros, while any child forked
-    inside that window inherits the nonce. The owner reads that copy with
-    process_vm_readv (_read_child), but never uses it as identity. Only the
-    worker reports its pid through ``slot`` once this module's child hook
-    runs. _reclaim waits for that report up to WORKER_RECLAIM_TIMEOUT; a
-    released candidate is then watched by _reap_deferred.
-    """
-
-    __slots__ = ('nonce', 'buffer', 'children', 'candidates', 'seen', 'identified',
-                 'armed', 'reclaimed', 'deadline', 'releases', 'lease', 'slot', 'done', 'records',
-                 'registered', 'renewed', 'adopted', 'adoption_expiry')
-
-    def __init__(self):
-        self.nonce = os.urandom(16)
-        self.buffer = ctypes.create_string_buffer(16)
-        self.children = None    # this process's children just before the nonce is written
-        self.candidates = None  # the children new against them when cleanup starts
-        self.seen = {}          # pid -> the last copy of the buffer read from it
-        self.identified = None  # the worker's pid, latched once known
-        self.armed = False      # whether the worker's fork was reached
-        self.reclaimed = False
-        self.deadline = None    # fixed at the first cleanup entry, even if interrupted
-        self.releases = None   # durable release records, frozen at the deadline
-        self.records = {}       # shared identities if main and consumer publish concurrently
-        self.lease = None       # consumer acquired before this worker can be forked
-        self.done = False       # final main-thread ownership transfer, never an intent
-        self.registered = None  # stamped only by the consumer, not the main thread
-        self.renewed = 0.0
-        self.adopted = False
-        self.adoption_expiry = None
-        self.slot = mmap.mmap(-1, 8)
-
-    def arm(self):
-        self.children = _children()
-        self.armed = True
-        self.buffer.raw = self.nonce
-
-    def disarm(self):
-        self.buffer.raw = bytes(16)
-
-    def pid(self):
-        return struct.unpack('q', self.slot[:8])[0]
-
-
-try:
-    from multiprocessing import popen_fork
-    from multiprocessing import util as _multiprocessing_util
-    _ForkPopen = popen_fork.Popen
-except ImportError:  # no fork start method here
-    popen_fork = None
-    _ForkPopen = object
-
-
-class _WorkerPopen(_ForkPopen):
-    """multiprocessing's fork Popen, with the start's nonce set across the fork alone."""
-
-    def _launch(self, process_obj):
-        code = 1
-        parent_r, child_w = os.pipe()
-        child_r, parent_w = os.pipe()
-        start = getattr(_STARTING, 'start', None)
-        if start is not None:
-            _renew_start(start)
-            start.arm()
-            _renew_start(start)
-        try:
-            self.pid = os.fork()
-        finally:
-            if start is not None and getattr(self, 'pid', None) != 0:
-                start.disarm()
-        if self.pid == 0:
-            try:
-                os.close(parent_r)
-                os.close(parent_w)
-                code = process_obj._bootstrap(parent_sentinel=child_r)
-            finally:
-                os._exit(code)
-        else:
-            os.close(child_w)
-            os.close(child_r)
-            self.finalizer = _multiprocessing_util.Finalize(
-                self, _multiprocessing_util.close_fds, (parent_r, parent_w,))
-            self.sentinel = parent_r
-
-
-_LAUNCHES = ((popen_fork.Popen._launch.__code__, _WorkerPopen._launch.__code__)
-             if popen_fork is not None else ())
-
-
-class _Iovec(ctypes.Structure):
-    _fields_ = [('base', ctypes.c_void_p), ('len', ctypes.c_size_t)]
-
-
-_VM_READV = getattr(_LIBC, 'process_vm_readv', None)
-if _VM_READV is not None:
-    _VM_READV.argtypes = (ctypes.c_int, ctypes.POINTER(_Iovec), ctypes.c_ulong,
-                          ctypes.POINTER(_Iovec), ctypes.c_ulong, ctypes.c_ulong)
-    _VM_READV.restype = ctypes.c_ssize_t
-
-
-def _read_child(pid, address, size=16):
-    """A child's copy of ``size`` bytes at ``address``, or None if it cannot be read.
-
-    A parent may read its own children (Yama ptrace_scope 1 included). A
-    zombie, an exited process or a stricter policy gives None.
-    """
-    copy = ctypes.create_string_buffer(size)
-    if _VM_READV is not None:
-        local, remote = _Iovec(ctypes.addressof(copy), size), _Iovec(address, size)
-        if _VM_READV(pid, ctypes.byref(local), 1, ctypes.byref(remote), 1, 0) == size:
-            return copy.raw
-    try:
-        with open('/proc/{}/mem'.format(pid), 'rb', buffering=0) as memory:
-            memory.seek(address)
-            data = memory.read(size)
-    except (OSError, ValueError, OverflowError):
-        return None
-    return data if len(data) == size else None
-
-
-def _state(pid):
-    """'live', 'zombie', or None once ``pid`` is gone (or was never this process's)."""
-    try:
-        with open('/proc/{}/stat'.format(pid)) as stat:
-            return 'zombie' if stat.read().rsplit(')', 1)[1].split()[0] == 'Z' else 'live'
-    except (OSError, IndexError):
-        return None
-
-
-def _exec_d(pid):
-    """Whether a live child now runs another program than this process."""
-    try:
-        return os.readlink('/proc/{}/exe'.format(pid)) != os.readlink('/proc/self/exe')
-    except OSError:
-        return False
-
-
-def _children():
-    """Every child of this process, from each thread's list; None where /proc lists none."""
-    if not os.path.exists('/proc/self/task/{}/children'.format(threading.get_native_id())):
-        return None
-    try:
-        tasks = os.listdir('/proc/self/task')
-    except OSError:
-        return None
-    children = set()
-    for task in tasks:
-        try:
-            with open('/proc/self/task/{}/children'.format(task)) as listing:
-                children.update(int(pid) for pid in listing.read().split())
-        except OSError:
-            pass  # that thread has exited; its children moved to another's list
-    return children
-
-
-def _kill_and_reap(pid):
-    try:
-        os.kill(pid, signal.SIGKILL)
-        deadline = time.monotonic() + WORKER_KILL_TIMEOUT
-        while not os.waitpid(pid, os.WNOHANG)[0]:
-            if time.monotonic() >= deadline:
-                return ('reactor worker pid %s is still alive %.3g s after SIGKILL '
-                        '(uninterruptible kernel wait?); not waiting further'
-                        % (pid, WORKER_KILL_TIMEOUT))
-            time.sleep(0.001)
-    except (ProcessLookupError, ChildProcessError):
-        pass
-
-
-def _reclaim(start):
-    """Reap the worker of a start that multiprocessing never recorded, and nothing else.
-
-    The worker is identified only by the pid it reported (``start.slot``):
-    that pid is killed if it is still this process's child and reaped by its
-    exact pid. A memory read never identifies it. The candidates are the
-    children that are new, when cleanup starts, against those listed just
-    before the nonce was written; a candidate whose copy of the start's
-    buffer holds zeros was forked outside the window and is the
-    application's: it is neither killed nor waited on. Any other candidate
-    (it holds the nonce, cannot be read, exec'd, or died) is undecided until
-    the report comes or WORKER_RECLAIM_TIMEOUT after cleanup starts. It is
-    then released, neither killed nor reaped, and logged; every released
-    candidate goes to the deferred reaper, which reaps it if it reports
-    later (_reap_deferred). A later interrupt resumes missing release steps
-    against the same deadline. A warning is acknowledged after logging returns;
-    an interruption after its write can therefore cause a duplicate. Where
-    /proc lists no children only the report identifies the worker. A start that never reached the worker's
-    fork has no child to find.
-    """
-    if start.deadline is None:
-        start.deadline = time.monotonic() + WORKER_RECLAIM_TIMEOUT
-    if start.done or start.reclaimed or not start.armed:  # not armed: no worker forked
-        start.reclaimed = True
-        return
-    if start.releases is not None:
-        for candidate in start.releases:
-            _release_candidate(start, candidate)
-        start.reclaimed = True
-        return
-    if start.candidates is None:
-        listed = _children()
-        start.candidates = (sorted(listed - start.children)
-                            if listed is not None and start.children is not None else None)
-    address = ctypes.addressof(start.buffer)
-    undecided = {}
-    while True:
-        pid = start.identified or start.pid() or None
-        if pid is None and start.candidates is not None:
-            undecided = {}
-            for candidate in start.candidates:
-                state = _state(candidate)
-                copy = _read_child(candidate, address) if state == 'live' else None
-                if copy is not None:
-                    start.seen[candidate] = copy
-                copy = start.seen.get(candidate)
-                if copy == bytes(16):
-                    continue  # forked outside the window: the application's
-                if copy == start.nonce or state != 'live':
-                    undecided[candidate] = 'no report'
-                elif _exec_d(candidate):
-                    undecided[candidate] = "exec'd"
-                else:
-                    undecided[candidate] = 'unreadable'
-        if pid:
-            start.identified = pid
-            listed = _children()
-            if listed is None or pid in listed:  # not already reaped elsewhere
-                diagnostic = _kill_and_reap(pid)
-                if diagnostic:
-                    logging.getLogger(__name__).error(diagnostic)
-            break
-        if start.candidates is not None and not undecided:
-            break
-        if time.monotonic() >= start.deadline:
-            start.releases = {candidate: _release_record(start, candidate, reason)
-                              for candidate, reason in sorted(undecided.items())}
-            for candidate in start.releases:
-                _release_candidate(start, candidate)
-            break
-        time.sleep(0.001)
-    start.reclaimed = True
-
-
-_DEFERRED = {}  # consumer-owned pending records; never used by a producer to hand off
-_REAPER = None
-_REAPER_SERVICE = None
-_REAPER_LOCK = threading.Lock()  # producer preflight only; never the consumer, cleanup or a fork hook
-
-
-class _ScanOwner:
-    """Lifetime token held only by the scanning frame, not by its consumer."""
-
-
-class _ReaperLease:
-    def __init__(self, owner=None):
-        self.service = None
-        self.closed = False
-        self.admitted = None
-        self.adopted = False
-        self.owner = weakref.ref(owner) if owner is not None else None
-
-
-class _ReaperService:
-    def __init__(self):
-        self.queue = queue.SimpleQueue()
-        self.pending = {}
-        self.starts = set()
-        self.leases = set()
-        self.ready = False
-        self.retired = False
-        self.cancelled = False
-        self.error = None
-        self.warnings = []
-        self.emitter = None
-        self.thread = threading.Thread(target=_reap_deferred, args=(self,),
-                                       name='eedf-scan-reaper', daemon=True)
-
-
-def _lease_reaper(lease):
-    """Pin one consumer before a scan's first fork; no startup waits in cleanup."""
-    global _REAPER, _REAPER_SERVICE, _DEFERRED
-    while True:
-        with _REAPER_LOCK:
-            service = _REAPER_SERVICE
-            fresh = (service is None or service.cancelled or service.retired
-                     or service.error is not None)
-            if fresh:
-                service = _ReaperService()
-                _REAPER_SERVICE = service
-                _REAPER = service.thread
-                _DEFERRED = service.pending
-            lease.service = service
-            service.queue.put(('open', lease))
-            if fresh:
-                try:
-                    service.thread.start()
-                except RuntimeError as exc:
-                    if str(exc) != "can't start new thread":
-                        service.cancelled = True
-                        raise
-                    service.error = exc
-                    _REAPER = None
-                except BaseException:
-                    # Keep a possibly live generation reachable. A delayed
-                    # bootstrap sees cancellation before taking obligations.
-                    service.cancelled = True
-                    raise
-        while lease.admitted is not service and service.error is None:
-            if service.retired or service.cancelled:
-                break  # a late open raced retirement: no worker has forked yet
-            time.sleep(.001)
-        else:
-            return
-
-
-def _close_reaper_lease(lease):
-    if not lease.closed:
-        if lease.service is not None:
-            lease.service.queue.put(lease)
-        lease.closed = True
-
-
-def _register_start(start):
-    """Publish recovery ownership before a fork can leave a child behind."""
-    start.lease.service.queue.put(start)
-
-
-def _start_expiry(start):
-    """The consumer's registration lease, shortened by cleanup, fixed on adoption."""
-    if start.adoption_expiry is not None:
-        return start.adoption_expiry
-    if start.registered is None:
-        return start.deadline  # private reclaim helpers have no registration lease
-    expiry = max(start.registered, start.renewed) + RUN_LEASE
-    return min(expiry, start.deadline) if start.deadline is not None else expiry
-
-
-def _check_owner(lease):
-    if lease.adopted:
-        raise RuntimeError('scan owner was unresponsive past RUN_LEASE; workers were released')
-
-
-def _renew_start(start):
-    _check_owner(start.lease)
-    start.renewed = time.monotonic()  # one publication; a missed store cannot extend ownership
-    _check_owner(start.lease)
-
-
-def _renew_active(active, lease):
-    _check_owner(lease)
-    for entry in active.values():
-        _renew_start(entry[-1])
-
-
-def _adopt_start(start):
-    """Take an expired start, including one whose main thread never entered cleanup."""
-    if start.done or start.reclaimed:
-        start.done = True
-        return
-    if not start.adopted:
-        start.adoption_expiry = _start_expiry(start)
-        start.adopted = True
-        start.lease.adopted = True
-    if not start.armed:
-        start.done = True
-        return
-    if start.releases is None:
-        if start.candidates is None:
-            listed = _children()
-            start.candidates = (sorted(listed - start.children)
-                                if listed is not None and start.children is not None else [])
-        pid = start.pid()
-        candidates = [pid] if pid else start.candidates
-        records = {}
-        for candidate in candidates:
-            copy = _read_child(candidate, ctypes.addressof(start.buffer))
-            if copy == bytes(16) and candidate != pid:
-                continue
-            records[candidate] = _release_record(start, candidate, 'no report')
-        start.releases = records
-    # A before-fork application hook may outlive the lease. Keep watching the
-    # report even if there was no child to snapshot at the moment of adoption.
-    reported = start.pid()
-    if reported and reported not in start.releases:
-        start.releases[reported] = _release_record(start, reported, 'owner lease expired')
-    for pid, record in start.releases.items():
-        if not record.done:
-            record.service.pending[pid] = record
-    if reported or time.monotonic() >= start.adoption_expiry + WORKER_DEFERRED_REAP_TIMEOUT:
-        start.done = True
-
-
-class _Release:
-    def __init__(self, start, pid, reason):
-        self.start, self.pid, self.reason = start, pid, reason
-        self.service = start.lease.service if start.lease is not None else None
-        self.bound = _start_expiry(start) + WORKER_DEFERRED_REAP_TIMEOUT
-        self.warned = False
-        self.fallback = False
-        self.queued = False
-        self.handed = False
-        self.done = False
-        self.warning_pending = False
-
-
-def _release_record(start, pid, reason):
-    # CPython's built-in setdefault publishes one identity even if main and
-    # consumer interleave; retrying construction cannot replace a queued record.
-    return start.records.setdefault(pid, _Release(start, pid, reason))
-
-
-def _warn_release(record):
-    logging.getLogger(__name__).warning(
-        'releasing child pid %s (%s; %s): it may be the reactor worker of an '
-        'interrupted start, so it is neither killed nor reaped; '
-        'reaped later if it reports',
-        record.pid, _state(record.pid) or 'gone', record.reason)
-    record.warned = True  # after the write: retry may duplicate, but never suppress it
-
-
-class _Warning:
-    def __init__(self, message, record=None):
-        self.message = message
-        self.record = record
-        self.finished = False
-        self.sentinel = None
-        self.ident = None
-
-
-def _emit_warning(warning):
-    """One daemon emission; logging locks belong exclusively to this lane."""
-    sentinel = _thread._set_sentinel()
-    sentinel.acquire()
-    warning.sentinel = sentinel  # released by CPython on native thread exit
-    try:
-        logging.getLogger(__name__).warning(warning.message)
-        if warning.record is not None:
-            warning.record.warned = True
-    finally:
-        warning.finished = True
-
-
-def _queue_warning(service, record):
-    if not record.warned and not record.warning_pending:
-        message = ('releasing child pid %s (%s; %s): it may be the reactor worker of an '
-                   'interrupted start, so it is neither killed nor reaped; '
-                   'reaped later if it reports'
-                   % (record.pid, _state(record.pid) or 'gone', record.reason))
-        service.warnings.append(_Warning(message, record))
-        record.warning_pending = True
-
-
-def _start_emitter(service):
-    """Consumer-owned cap; no threading registry or main-thread lock acquisition."""
-    emitter = service.emitter
-    if emitter is not None and emitter.sentinel is not None and not emitter.sentinel.locked():
-        service.emitter = None
-    if service.emitter is None and service.warnings:
-        warning = service.warnings[0]
-        try:
-            # Thread.start and is_alive use shared threading locks. The raw
-            # daemon bootstrap and exit sentinel avoid both on the consumer.
-            warning.ident = _thread.start_new_thread(_emit_warning, (warning,))
-        except RuntimeError:
-            return  # retain the warning for a later attempt; reaping has run
-        service.emitter = warning
-        service.warnings.pop(0)
-
-
-def _release_candidate(start, pid):
-    record = start.releases[pid]
-    if record.handed:
-        return
-    if not record.warned and not record.fallback:
-        try:
-            _warn_release(record)  # first attempt synchronous, including at the deadline
-        except BaseException:
-            if (time.monotonic() >= start.deadline and record.service is not None
-                    and record.service.error is None):
-                record.fallback = True
-            raise
-    _defer_reap(start, pid)
-    record.handed = True  # publication AND consumer readiness have completed
-
-
-def _defer_reap(start, pid):
-    """Non-blocking, resumable handoff to the consumer pinned before the fork."""
-    record = start.releases[pid]
-    if record.service.error is not None:
-        logging.getLogger(__name__).warning(
-            'released child pid %s is left alone: the deferred reaper cannot start (%s)',
-            pid, record.service.error)
-        record.done = True
-        return
-    if not record.queued:
-        record.service.queue.put(record)
-        record.queued = True  # an interrupted store can only cause a duplicate put
-    if not record.service.ready:
-        raise RuntimeError('released worker has no ready consumer for its lease')
-
-
-def _reap_deferred(service):
-    """Reap each released child that later reports as its start's worker, and no other.
-
-    A child whose start reports it is killed if it is still this process's
-    child and reaped by its exact pid. One whose start reports another pid
-    is the application's. One with no report by WORKER_DEFERRED_REAP_TIMEOUT
-    is left alone and logged. The thread ends when nothing is left to watch.
-    """
-    global _REAPER, _REAPER_SERVICE
-    if service.cancelled:
-        return
-    service.ready = True
-    while not service.cancelled:
-        while True:
-            try:
-                record = service.queue.get_nowait()
-            except queue.Empty:
-                break
-            if isinstance(record, _ReaperLease):
-                service.leases.discard(record)
-            elif isinstance(record, tuple):
-                _kind, lease = record
-                service.leases.add(lease)
-                lease.admitted = service
-            elif isinstance(record, _Start):
-                if record.registered is None:
-                    record.registered = time.monotonic()
-                service.starts.add(record)
-            elif not record.done:
-                service.pending[record.pid] = record
-        for start in list(service.starts):
-            if start.done:
-                service.starts.discard(start)
-                continue
-            if time.monotonic() >= _start_expiry(start) + .1:
-                _adopt_start(start)
-                if start.done:
-                    service.starts.discard(start)
-        for lease in list(service.leases):
-            if lease.adopted or (lease.owner is not None and lease.owner() is None):
-                service.leases.discard(lease)
-        completed = []
-        for pid, record in list(service.pending.items()):
-            try:
-                reported = record.start.pid()
-                if reported == pid:
-                    listed = _children()
-                    if listed is None or pid in listed:  # not reaped elsewhere meanwhile
-                        diagnostic = _kill_and_reap(pid)
-                        if diagnostic:
-                            service.warnings.append(_Warning(diagnostic))
-                elif not reported and time.monotonic() < record.bound:
-                    continue
-                elif not reported:
-                    service.warnings.append(_Warning(
-                        'released child pid %s never reported as the reactor worker of an '
-                        'interrupted start within %.3g s; left alone'
-                        % (pid, WORKER_DEFERRED_REAP_TIMEOUT)))
-            except OSError as exc:
-                service.warnings.append(_Warning(
-                    'deferred reaping of released child pid %s failed; left alone: %s' % (pid, exc)))
-            record.done = True
-            service.pending.pop(pid, None)
-            completed.append(record)
-        # Warning work follows the whole reap pass, including records that
-        # await a report. A blocked emitter never prevents the next pass.
-        for record in completed + list(service.pending.values()):
-            _queue_warning(service, record)
-        _start_emitter(service)
-        if (not service.pending and not service.leases and not service.starts
-                and not service.warnings and service.emitter is None):
-            service.ready = False
-            _REAPER = None
-            _REAPER_SERVICE = None
-            service.retired = True
-            return  # late open messages are unacknowledged; preflight retries
-        time.sleep(.01)
-
-
-def _worker_fork(caller):
-    """Whether the fork under way, called from ``caller``, starts this module's worker.
-
-    During a start, a signal handler on the same thread may fork too; only
-    multiprocessing's own fork is the worker's.
-    """
-    if not getattr(_STARTING, 'worker', False):
-        return False
-    return not _LAUNCHES or caller.f_code in _LAUNCHES
-
-
-
 def _after_fork_in_child():
-    global _REAPER, _REAPER_SERVICE, _REAPER_LOCK, _DEFERRED
-    # The before-fork hook took the lock, so this process's copy is held.
-    _LIFELINES_LOCK.release()
-    # The deferred reaper is the parent's: it did not survive the fork.
-    # Do not acquire, drain or clear an inherited queue/consumer lock.
-    _DEFERRED = {}
-    _REAPER = None
-    _REAPER_SERVICE = None
-    _REAPER_LOCK = threading.Lock()
-    # Only multiprocessing's own fork is a worker: not a fork a signal
-    # handler makes on the starting thread meanwhile.
-    worker = _worker_fork(sys._getframe(1))
-    _STARTING.worker = False
-    if worker:
-        start = getattr(_STARTING, 'start', None)
-        if start is not None:
-            start.slot[:8] = struct.pack('q', os.getpid())
-        _arm_owner_death(getattr(_STARTING, 'owner', os.getppid()))
-    # An application hook that ran first may have closed these and reused
-    # the numbers: close a descriptor only if it is still the registered pipe.
-    for write_end, identity in _LIFELINES.items():
-        if _is_registered_writer(write_end, identity):
-            os.close(write_end)
-    _LIFELINES.clear()
-    # Signals the owner recorded are the owner's; from here on a recorded
-    # signal was sent to this process.
+    # Native identity is set before Python repair and cannot be inherited by an
+    # unrelated fork: the native child PID must match this process's PID.
+    worker = (_native_context.native is not None
+              and _native_context.native.is_worker())
     _DEFERRAL.pending = {}
     _DEFERRAL.raised = None
     if worker:
-        # One of this module's workers keeps recording until _worker restores
-        # the caller's handlers: a handler that raised in this hook would be
-        # swallowed, and the owner may terminate a worker that is still here.
         return
-    # Any other fork gets the caller's dispositions back at once, exactly.
     for signum, (handler, action, _action_now) in _DEFERRAL.previous.items():
         if signal.getsignal(signum) is _record_signal:
             _restore_disposition(signum, handler, action)
@@ -1674,281 +959,199 @@ def _after_fork_in_child():
 
 
 if hasattr(os, 'register_at_fork'):
-    # No Python code runs in the parent's hooks: a handler for a signal the
-    # scan does not defer could run there, and its exception would be lost.
-    os.register_at_fork(before=_LIFELINES_LOCK.acquire,
-                        after_in_parent=_LIFELINES_LOCK.release,
-                        after_in_child=_after_fork_in_child)
+    os.register_at_fork(after_in_child=_after_fork_in_child)
 
 
 def _running(process):
-    """Whether the OS still runs a started worker.
-
-    multiprocessing reports a worker that someone else reaped (a caller's
-    SIGCHLD handler, a stray waitpid) as alive with no exit code forever;
-    waitid without reaping tells that case apart.
-    """
-    if not process.is_alive():
-        return False
-    if not hasattr(os, 'waitid'):
-        return True
-    try:
-        state = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
-    except ChildProcessError:
-        return False
-    return state is None
+    return process.is_alive()
 
 
 def _join(process, timeout):
-    # Short joins: a descendant of the worker can hold the sentinel a long
-    # join waits on, long after the worker itself has exited.
     deadline = time.monotonic() + timeout
     while _running(process):
         remaining = deadline - time.monotonic()
-        if remaining <= 0.0:
+        if remaining <= 0:
             return
         process.join(min(remaining, 0.05))
 
 
 def _reap_worker(process, *, terminate=False):
-    """Stop one worker and reap it before returning.
-
-    A worker has WORKER_TERMINATE_GRACE to exit, after SIGTERM or after
-    sending its result, and is then killed. SIGKILL cannot be caught or
-    ignored, so the last join waits up to WORKER_KILL_TIMEOUT for the exit
-    and reaps the child. A worker still running after that is logged and
-    left, never waited on forever; an uninterruptible kernel wait (D state)
-    is the one known cause. It still dies with its owner.
-    """
-    if terminate and _running(process):
+    """Request native self-exit if necessary, then reap the exact recorded PID."""
+    if terminate:
         process.terminate()
     _join(process, WORKER_TERMINATE_GRACE)
     if _running(process):
-        process.kill()
-        killed = time.monotonic()
+        process.kill()  # Private NativePopen: cancellation, never os.kill.
         _join(process, WORKER_KILL_TIMEOUT)
-        if _running(process):
-            logging.getLogger(__name__).error(
-                'reactor worker pid %s is still alive %.3g s after SIGKILL '
-                '(uninterruptible kernel wait?); not waiting further',
-                process.pid, time.monotonic() - killed)
+    if _running(process):
+        raise NativeWorkerStatusError(
+            'native worker pid {} has not exited within the cleanup bound'.format(process.pid))
 
 
-def _integrate_many(adapter, seeds, processes, timeout, power=None):
-    """Run seed integrations in isolated processes, preserving input order.
+def _integrate_many(adapter, seeds, processes, timeout, power=None, lease_s=RUN_LEASE):
+    """Integrate in order with native worker lifetime and exact exit attribution.
 
-    On the main thread SIGINT and SIGTERM are deferred from before the first
-    worker starts until the last is reaped (_cancellation_deferred), so a
-    signal cannot split a worker's start from its registration or abort the
-    cleanup, whichever thread the OS gave it to. The loop acts on it within
-    one poll interval. Whatever happens to this process, each worker dies
-    with it: on Linux the kernel kills it (PR_SET_PDEATHSIG), and everywhere
-    it exits when its lifeline closes (_exit_when_orphaned).
+    Worker mode requires qualified Linux x86_64/glibc 2.39/CPython 3.9, lock-free
+    native records and a successful watchdog handshake. There is no fallback.
+    Only the calling scan thread renews its finite ownership lease. A long
+    honest callback can expire it; ScanLeaseExpired is a lifecycle cancellation,
+    never a scientific failure. Raise lease_s for known long owner operations.
 
-    Known limits:
+    The watchdog starts before Python child hooks and exits without the GIL or
+    application locks. Reaping still requires the owner: while the owner is
+    wedged the stopped worker can remain a zombie until the owner resumes and
+    reaps it, or exits. SIGKILL/power loss may leave no owner diagnostic or
+    durable artifact. Same-UID hostile tampering is out of scope. OS scheduling
+    and uninterruptible waits can delay exit observation. A native startup hang
+    is an error that stops further launches, not an admitted worker guarantee.
 
-    - Off Linux only the lifeline ties a worker to its owner. It is watched
-      by a Python thread, so there a worker in a native call that holds the
-      GIL exits only when the call releases it, and a fork made outside
-      os.fork() (C code calling fork directly) can hold the lifeline open
-      until that process exits.
-    - Off glibc Linux nothing is deferred, because a disposition cannot be
-      saved and restored exactly there.
-    - Under the forkserver start method a worker's parent is the server, not
-      the owner: only the lifeline applies.
-    - Helper processes an adapter's own code creates are not scan processes:
-      the scan neither kills nor reaps them.
-    - Off the main thread nothing is deferred: the main thread's handlers
-      govern and the scanning thread is not interrupted; owner death still
-      ends the workers.
-    - A signal whose disposition belongs to C code (a handler installed
-      behind Python's back, as RDKit's embedding leaves for SIGINT) is not
-      deferred: that handler runs during the scan as it would without one,
-      and if it ends the process, the workers die with it, unreaped. Until
-      CPython's own handler address is known (_defer_signals), a Python
-      handler cannot be told from C code's and is treated the same way. It
-      is known once a scan meets SIGTERM or SIGINT at SIG_DFL, or from the
-      interpreter's symbol table: under a stripped interpreter, a process
-      whose deferred signals all start on Python handlers gets no deferral.
-      Other signals (SIGHUP, SIGQUIT, ...) are not deferred either.
-    - A scan re-entered on the same thread (from a signal handler, say) acts
-      on a deferred signal at its own checkpoint rather than at the
-      outermost scan's; the exception still unwinds through the outer scan's
-      cleanup, which reaps every outer worker before it leaves ``scan()``.
-    - An application at-fork child hook registered before this module's runs
-      in a forked worker before any code of the scan's, so neither backstop
-      is armed until it returns. If the owner dies meanwhile, the worker ends
-      within 5 s after the later of the owner's death and the completion of
-      those earlier hooks.
-    - Off Linux a start cut short after its fork finds its child only by the
-      pid the child reports, and waits WORKER_RECLAIM_TIMEOUT for it. Under
-      the spawn and forkserver start methods such a child is not recognized
-      at all; it ends with its lifeline.
-    - A start cut short after its fork recognizes its worker by the pid
-      the worker reports from its fork hook, and by nothing else (_Start,
-      _reclaim). A nonce in memory copied at the fork says only whether to
-      wait: a new child that holds zeros was forked outside the window and
-      is the application's. A child that holds the nonce, cannot be read,
-      exec'd, or died without reporting is undecided; by
-      WORKER_RECLAIM_TIMEOUT after cleanup starts it is released, neither
-      killed nor reaped, and logged, and ``scan()`` raises on schedule.
-      Before any fork, each start is registered with one daemon thread,
-      ``eedf-scan-reaper``. It adopts unfinished releases after the absolute
-      cleanup deadline plus 0.1 s, even if repeated application signals
-      escape the main thread's cleanup. Each registration also expires after
-      RUN_LEASE without renewal by the poll loop or start steps; this bounds
-      ownership even when no cleanup deadline was stored. It kills a released
-      child if it reports within
-      WORKER_DEFERRED_REAP_TIMEOUT and is still this process's child, reaps
-      it by its exact pid, and otherwise leaves it alone and logs it.
-      Main-thread cleanup attempts each release WARNING synchronously;
-      interrupted attempts retry against the same deadline. The consumer
-      reaps before sending fallback warnings to at most one daemon emitter,
-      and never takes a logging or application lock. A warning can be
-      duplicated if interrupted after its write but before acknowledgment. So:
-      - A worker held by an earlier application hook past the deadline may
-        still be alive when ``scan()`` raises. It is reaped later, by its
-        report.
-      - A worker that dies or execs before reporting is never reaped by us.
-      - Cleanup kills no process that has not reported as our worker.
-      - If no reaper thread can be created, a released worker is left alone
-        and logged; it may remain a zombie until this process exits.
-      - If the process exits within the release window after cleanup has
-        been interrupted repeatedly, the release WARNING may be lost. A
-        released worker is then re-parented on exit and is not left a zombie.
-      - If an application signal leaks a logging handler's lock, a fallback
-        release WARNING may be delayed indefinitely and one daemon emitter
-        thread may stay blocked until the process exits; the released worker
-        is still reaped.
-      - If the calling thread is blocked for longer than RUN_LEASE during a
-        scan (for example inside an application signal handler or hook), the
-        scan's workers are released and reaped, and the scan raises.
-    - A SIGTERM sent to a worker before its fork hook runs is lost
-      (CPython clears signals that reach a child before its after-fork
-      step); _reap_worker's SIGKILL after WORKER_TERMINATE_GRACE stops that
-      worker.
+    An exec inside a worker replaces the image and ends its watchdog guarantee.
+    The replacement program can run past lease expiry or owner death. RMG
+    reports its exact pending PID and bounded cleanup failure, but does not
+    kill that replacement or accept its results.
+
+    A caller-thread native guard reaps or reports every started worker before
+    the scan unwinds, even if signals escape the Python cleanup retry. Retaining
+    the exception does not postpone that accounting. Cleanup uses one deadline;
+    reporting can take longer. Application logging that blocks forever or an
+    endless raising-signal storm can delay scan return indefinitely. The report
+    obligation remains; interruption after a log append may produce duplicates.
+
+    Signal deferral retains the caller's handlers/masks on the main thread;
+    other signals, native handlers and off-main-thread handlers run normally.
+    Helper processes created by adapters remain the application's. External
+    reaping makes a result unverifiable. Acceptance requires native normal
+    completion, exact reap, exit zero and a complete protocol envelope.
+
+    One process with no timeout runs in the caller, without worker isolation.
     """
     if processes == 1 and timeout is None:
         results = []
         for seed in seeds:
             try:
                 results.append(('ok', adapter.integrate(seed, power=power)))
+            except (ScanLeaseExpired, NativeWorkerUnsupported, NativeWorkerStartupError,
+                    NativeWorkerStatusError):
+                raise
             except BaseException as exc:
                 results.append(('error', '{}: {}'.format(type(exc).__name__, exc)))
         return results
-    context = multiprocessing.get_context()
-    # A spawned worker's parent is its owner and arms itself at entry; a
-    # forked one is armed by the fork hook; a forkserver child's parent is the
-    # server, so only the lifeline ties it to this process.
-    method = getattr(context, 'get_start_method', None)
-    method = method() if method is not None else None
-    spawn_owner = os.getpid() if method == 'spawn' else None
+    owner = _native_context.Owner(lease_s)
+    with _cancellation_deferred() as deferral:
+        return _native_context.native.guard(
+            owner.handle,
+            lambda: _integrate_owned(owner, deferral, adapter, seeds, processes, timeout, power),
+            lambda wait_error: _native_cleanup_error(owner, wait_error),
+            WORKER_KILL_TIMEOUT,
+        )
+
+
+def _native_cleanup_error(owner, wait_error=0):
+    """Deliver the exact native accounting failure and return its typed error."""
+    facts = owner.facts()
+    pending = [r['pid'] for r in facts['records'] if r['pid'] and not r['reaped']]
+    external = [r['pid'] for r in facts['records'] if r['reaped'] == 2]
+    reason = 'native cleanup deadline reached' if pending else 'external reap prevents attribution'
+    message = '{}; pending child PIDs {!r}; native facts: {!r}'.format(reason, pending, facts)
+    if wait_error:
+        message += '; waitpid errno {}'.format(wait_error)
+    if external:
+        message += '; externally reaped PIDs {!r}'.format(external)
+    error = NativeWorkerStatusError(message)
+    logging.getLogger(__name__).error(message)
+    return error
+
+
+def _integrate_owned(owner, deferral, adapter, seeds, processes, timeout, power):
+    """Worker loop enclosed by the caller-thread native final-sweep guard."""
+    native = _native_context.native
+    context = _native_context.NativeForkContext()
     waiting = list(enumerate(seeds))
     active = {}
     results = [None] * len(seeds)
-    owner = _ScanOwner()
-    lease = _ReaperLease(owner)
-    with _cancellation_deferred() as deferral:
-        try:
-            _lease_reaper(lease)
-            while waiting or active:
-                _renew_active(active, lease)
+    try:
+        while waiting or active:
+            owner.checkpoint()
+            deferral.checkpoint()
+            while waiting and len(active) < processes:
+                owner.checkpoint()
                 deferral.checkpoint()
-                while waiting and len(active) < processes:
-                    _renew_active(active, lease)
-                    deferral.checkpoint()
-                    index, seed = waiting.pop(0)
-                    parent, child = context.Pipe(duplex=False)
-                    lifeline, write_end = _open_lifeline()
-                    try:
-                        process = context.Process(
-                            target=_worker,
-                            args=(spawn_owner, lifeline, child, adapter, seed, power))
-                    except BaseException:
-                        _close_lifeline(write_end)
-                        for end in (parent, child, lifeline):
-                            end.close()
-                        raise
-                    if method == 'fork' and popen_fork is not None:
-                        process._Popen = _WorkerPopen  # sets the start's nonce across the fork
-                    # Owned before it exists. A start cut short after its fork
-                    # leaves a child multiprocessing never recorded: it is found
-                    # and reaped before the exception leaves (_Start, _reclaim).
-                    start = _Start()
-                    start.lease = lease
-                    active[index] = (process, parent, write_end, time.monotonic(), start)
-                    _register_start(start)
-                    _renew_start(start)
-                    outer = [getattr(_STARTING, name, None) for name in _STARTING_FIELDS]
-                    try:
-                        _STARTING.owner, _STARTING.start, _STARTING.worker = (
-                            os.getpid(), start, True)
-                        process.start()
-                        _renew_start(start)
-                    finally:
-                        # A scan re-entered from a handler during the start
-                        # hands the outer start back its own fields.
-                        for name, value in zip(_STARTING_FIELDS, outer):
-                            setattr(_STARTING, name, value)
-                        child.close()
-                        lifeline.close()
-                        if process.pid is None:
-                            _reclaim(start)
-                progressed = False
-                for index, (process, connection, write_end, started, _start) in list(active.items()):
-                    if connection.poll():
-                        try:
-                            results[index] = connection.recv()
-                        except (EOFError, OSError) as exc:
-                            _reap_worker(process, terminate=True)
-                            results[index] = (
-                                'error',
-                                '{}: reactor worker receive failed after exit code {}: {}'.format(
-                                    type(exc).__name__, process.exitcode, exc))
-                        else:
-                            _reap_worker(process)
-                    elif timeout is not None and time.monotonic() - started >= timeout:
-                        _reap_worker(process, terminate=True)
-                        results[index] = ('error', 'TimeoutError: exceeded {:.6g} s'.format(timeout))
-                    elif not _running(process):
-                        _reap_worker(process)
-                        results[index] = (
-                            'error',
-                            'ChildProcessError: reactor worker exited without a result '
-                            '(exit code {})'.format(process.exitcode))
-                    else:
-                        continue
-                    _renew_start(_start)
-                    connection.close()
-                    _close_lifeline(write_end)
-                    _renew_start(_start)
-                    _start.done = True
-                    del active[index]
-                    progressed = True
-                if active and not progressed:
-                    time.sleep(0.01)
-        finally:
-            # A handler for a signal the scan does not defer can raise here;
-            # every step is idempotent, so cleanup resumes until nothing is owned.
-            interrupted = None
-            while active or not lease.closed:
+                index, seed = waiting.pop(0)
+                parent, child = context.Pipe(duplex=False)
                 try:
-                    for index, (process, connection, write_end, _started, start) in list(active.items()):
-                        if start.deadline is None:
-                            start.deadline = time.monotonic() + WORKER_RECLAIM_TIMEOUT
-                        connection.close()
-                        if process.pid is None:
-                            _reclaim(start)
+                    process = owner.process(_worker, (child, adapter, seed, power))
+                    active[index] = (process, parent, time.monotonic())
+                    owner.checkpoint()
+                    process.start()
+                    owner.checkpoint()
+                except BaseException:
+                    parent.close()
+                    raise
+                finally:
+                    child.close()
+            progressed = False
+            for index, (process, connection, started) in list(active.items()):
+                owner.checkpoint()
+                if connection.poll():
+                    owner.checkpoint()
+                    try:
+                        envelope = connection.recv()
+                    except (EOFError, OSError) as exc:
                         _reap_worker(process, terminate=True)
-                        _close_lifeline(write_end)
-                        start.done = True
-                        del active[index]
-                    _close_reaper_lease(lease)
-                except BaseException as exc:
-                    interrupted = exc
-            if interrupted is not None:
-                raise interrupted
-    _check_owner(lease)
+                        owner.checkpoint()
+                        facts = native.info(process._native_record)
+                        if facts['reaped'] != 1:
+                            raise NativeWorkerStatusError('external reap prevents attribution: {!r}'.format(facts))
+                        results[index] = ('error', '{}: reactor worker receive failed after exit code {}: {}'.format(
+                            type(exc).__name__, process.exitcode, exc))
+                    else:
+                        owner.checkpoint()
+                        _reap_worker(process)
+                        owner.checkpoint()
+                        results[index] = _native_context.accepted(process, envelope)
+                elif timeout is not None and time.monotonic() - started >= timeout:
+                    _reap_worker(process, terminate=True)
+                    owner.checkpoint()
+                    results[index] = ('error', 'TimeoutError: exceeded {:.6g} s'.format(timeout))
+                elif not _running(process):
+                    _reap_worker(process)
+                    owner.checkpoint()
+                    facts = native.info(process._native_record)
+                    if facts['reaped'] != 1:
+                        raise NativeWorkerStatusError('external reap prevents attribution: {!r}'.format(facts))
+                    results[index] = ('error', 'ChildProcessError: reactor worker exited without a result '
+                                      '(exit code {})'.format(process.exitcode))
+                else:
+                    continue
+                owner.checkpoint()
+                if not native.retire(process._native_record):
+                    owner.checkpoint()  # Typed refusal if retirement observed lease loss.
+                connection.close()
+                del active[index]
+                progressed = True
+            if active and not progressed:
+                time.sleep(0.01)
+    finally:
+        # Fast path only: the C guard sweeps if any retry statement escapes.
+        # Both paths use the same native cleanup deadline.
+        interrupted = None
+        while True:
+            try:
+                complete = owner.cleanup(WORKER_KILL_TIMEOUT)
+                for process, connection, _started in active.values():
+                    connection.close()
+                if not complete:
+                    raise _native_cleanup_error(owner)
+                break
+            except (NativeWorkerStatusError, ScanLeaseExpired):
+                raise
+            except BaseException as exc:
+                interrupted = exc
+            # Outside the retry catch: a copied process/thread must reach the
+            # native guard's ownership refusal, not retry cleanup forever.
+            owner.facts()
+        if interrupted is not None:
+            raise interrupted
     return results
 
 
@@ -1988,7 +1191,8 @@ def scan(adapter, u_limits, output, *, u_steps=12, electron_density_decades=5,
          timeout=None, u_tolerance=U_TOLERANCE,
          reference_power=None, continuation_max_step=None,
          continuation_min_step=None, continuation_stability_resolution=None,
-         log_ne_tolerance=LOG_NE_TOLERANCE, recheck_timeouts=True):
+         log_ne_tolerance=LOG_NE_TOLERANCE, recheck_timeouts=True,
+         lease_s=RUN_LEASE):
     """Scan an adapter and write a portable ``branches.json`` report.
 
     Every seed is solved at ``reference_power``, which is required: an
@@ -2002,15 +1206,43 @@ def scan(adapter, u_limits, output, *, u_steps=12, electron_density_decades=5,
     reference verdict and a consistent certified path can be matched
     (``matchable_issue``).
 
-    With ``processes`` above one or a ``timeout``, seeds run in worker
-    processes. Called on the main thread, the scan holds SIGINT and SIGTERM
-    until every started worker is reaped, then acts on them as the caller's
-    handlers would: KeyboardInterrupt, the caller's SIGTERM handler, or
-    termination with status -15 under the default action. Workers exit with
-    their owner however it ends (see ``_integrate_many`` for the limits).
+    With ``processes`` above one or a ``timeout``, workers require the qualified
+    native fork launcher (Linux x86_64, glibc 2.39, CPython 3.9, lock-free records
+    and a successful watchdog handshake). Unsupported modes raise
+    ``NativeWorkerUnsupported``; failed admission raises ``NativeWorkerStartupError``.
+    There is no legacy fallback. One process without a timeout runs in the caller.
+
+    ``lease_s`` is finite and positive (default 60 seconds). Only the calling
+    scan thread renews it at checkpoints; long worker integration is allowed
+    while the caller polls. A long honest owner callback or unpickle can expire
+    the lease; choose a larger value for known long owner operations.
+    ``ScanLeaseExpired`` is a distinct cancellation, never a scientific failure.
+    These errors write no new artifact and leave any earlier output file
+    unchanged; that file is not a result of the failed call.
+
+    A wedged owner may leave stopped workers as zombies until it resumes and
+    reaps or exits. SIGKILL/power loss may leave no owner-side diagnostic or
+    durable output. Same-UID hostile tampering is out of scope. The native
+    watchdog does not use Python, the GIL, logging or application locks; OS
+    scheduling and uninterruptible kernel waits can still delay exit observation.
+    Native startup hangs stop further launches rather than promising cleanup.
+    External reaping prevents result acceptance. On the main thread SIGINT and
+    SIGTERM are deferred until cleanup, then retain the caller's semantics.
+    An exec inside a worker replaces its image and ends the watchdog guarantee.
+    The replacement program can run past lease expiry or owner death. RMG reports
+    its exact pending PID and bounded cleanup failure in NativeWorkerStatusError
+    and the log, but does not kill it or accept results from it. A terminal-state
+    timestamp is not a reap. A native guard reaps or reports every started worker
+    before returning to caller code, including when Python cleanup is interrupted.
+    Permanently blocked application logging or an endless raising-signal storm
+    can delay return indefinitely; the reporting obligation is never dropped.
+    Retried reporting may emit duplicate lines. See ``_integrate_many`` for the
+    complete limits.
     """
     if not isinstance(processes, int) or isinstance(processes, bool) or not 1 <= processes <= MAX_PROCESSES:
         raise ValueError('processes must be an integer from 1 to at most 6')
+    if not math.isfinite(lease_s) or lease_s <= 0.0:
+        raise ValueError('lease_s must be finite and positive')
     if timeout is not None and (not math.isfinite(timeout) or timeout <= 0.0):
         raise ValueError('timeout must be finite and positive')
     try:
@@ -2026,7 +1258,7 @@ def scan(adapter, u_limits, output, *, u_steps=12, electron_density_decades=5,
     seeds = seed_lattice(u_limits, u_steps, electron_density_decades,
                          electron_density_limits)
     outcomes = _integrate_many(
-        adapter, seeds, processes, timeout, power=reference_power)
+        adapter, seeds, processes, timeout, power=reference_power, lease_s=lease_s)
     first_failures = {}
     if recheck_timeouts:
         timed_out = [index for index, outcome in enumerate(outcomes)
@@ -2034,7 +1266,7 @@ def scan(adapter, u_limits, output, *, u_steps=12, electron_density_decades=5,
         if timed_out:
             repeated = _integrate_many(
                 adapter, [seeds[index] for index in timed_out], processes,
-                timeout, power=reference_power)
+                timeout, power=reference_power, lease_s=lease_s)
             for index, outcome in zip(timed_out, repeated):
                 first_failures[index] = outcomes[index][1]
                 outcomes[index] = outcome
@@ -2091,7 +1323,7 @@ def scan(adapter, u_limits, output, *, u_steps=12, electron_density_decades=5,
                 min_step=continuation_min_step,
                 stability_resolution=continuation_stability_resolution,
                 u_tolerance=u_tolerance,
-                log_ne_tolerance=log_ne_tolerance)
+                log_ne_tolerance=log_ne_tolerance, lease_s=lease_s)
         branches.append(branch)
     payload = {
         'schema': 2,
@@ -2512,7 +1744,7 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
                     eigenvalue_fraction=0.5, eigenvalue_band=EIGENVALUE_BAND,
                     stability_resolution=None,
                     u_tolerance=U_TOLERANCE,
-                    log_ne_tolerance=LOG_NE_TOLERANCE):
+                    log_ne_tolerance=LOG_NE_TOLERANCE, lease_s=RUN_LEASE):
     """Follow one branch with certified adaptive predictor-corrector steps.
 
     A step is accepted only with the reversible-chain certificate
@@ -2542,7 +1774,13 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
     and a complex crossing is Hopf. If a corrector fails while an event is
     being bracketed, the bracket is ``unresolved``, unless the adapter
     declares the failure a missing steady state.
+
+    ``lease_s`` has the same finite, positive ownership-lease meaning as in
+    ``scan()`` when a timeout requests isolated corrector workers. Lifecycle
+    cancellation propagates; it is not classified as a corrector failure.
     """
+    if not math.isfinite(lease_s) or lease_s <= 0.0:
+        raise ValueError('lease_s must be finite and positive')
     targets = [float(power) for power in powers]
     if not targets:
         return []
@@ -2606,7 +1844,7 @@ def continue_branch(adapter, seed, powers, timeout=None, *, initial_power=None,
     def correct(power, predicted_u, predicted_ne, predicted_vector):
         predictor = Seed(float(predicted_u), float(predicted_ne), tuple(predicted_vector))
         solves['corrector'] += 1
-        outcome = _integrate_many(adapter, [predictor], 1, timeout, power=power)[0]
+        outcome = _integrate_many(adapter, [predictor], 1, timeout, power=power, lease_s=lease_s)[0]
         if outcome[0] != 'ok':
             return predictor, None, None, None, outcome[1]
         try:
