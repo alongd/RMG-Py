@@ -53,6 +53,7 @@ import logging
 import numpy as np
 import pytest
 
+import rmgpy.polymer as sp_mod_polymer
 import rmgpy.solver.polymer as sp_mod
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.kinetics import Arrhenius
@@ -342,12 +343,13 @@ BALANCED = {
 
 
 def _kernel_system(kernel, channel, archetype=sp_mod.FLUX_VOLATILE_EJECTION, cls=HybridPolymerSystem,
-                   t_proxy='CCCCCC'):
+                   t_proxy='CCCCCC', structureless=()):
     """Pool A carries ``kernel``; one row decomposes A: A -> T + X (a
     volatile ejection moving one repeat unit) or, as a chip, A -> A + X; a
     bimolecular row is A + Y -> T + X. A stamped row's proxies read its
     channel (BALANCED). T, Re (a kernel_homolysis daughter) and the
-    k_homolysis end-radical pools are born empty."""
+    k_homolysis end-radical pools are born empty. The species labeled in
+    ``structureless`` lose their molecules, as an artifact replay's do."""
     a_proxy, x = 'CCCCC', '[CH2]CC'
     if channel in BALANCED:
         a_proxy, t_proxy, x = BALANCED[channel]
@@ -381,6 +383,9 @@ def _kernel_system(kernel, channel, archetype=sp_mod.FLUX_VOLATILE_EJECTION, cls
     rxn.polymer_flux_archetype = archetype
     if channel is not None:
         _stamp(rxn, channel)
+    for s in core:
+        if s.label in structureless:
+            s.molecule = []
     mask = np.array([s.label in ('N2', 'X', 'M', 'Y') for s in core], dtype=bool)
     rs = cls(T=700.0, P=1.0e5, initial_mole_fractions={core[0]: 1.0}, V_poly=1.0,
              polymer_pools=pools, mass_transfer=[], gas_species_mask=mask, constant_gas_volume=False,
@@ -460,6 +465,52 @@ def test_an_unstamped_row_that_is_no_fission_stays_live():
     """A closed T and one radical X: no channel a kernel carries."""
     rs, _ = _kernel_system('k_scission', None)
     assert rs.reaction_refused[0] == 0
+
+
+def _attempt(build):
+    """The built system, or the exception the build raised: a crash is an
+    outcome to assert on, so the test fails on its assertion."""
+    try:
+        return build()
+    except Exception as e:  # noqa: BLE001 -- any crash is the outcome
+        return e
+
+
+RED = pytest.mark.xfail(strict=True, raises=AssertionError,
+                        reason='I-259 red: a structureless species crashes the channel read')
+
+
+@RED
+def test_a_participant_without_structure_reads_no_channel():
+    """A species with no molecule (an artifact replay's) has no radicals to
+    count: the row's channel is unidentified, never a crash."""
+    whole = Species(label='polyA')
+    whole.molecule = []
+    pieces = _mols('[CH2]CCCCC', '[CH2]CC')
+    channel = _attempt(lambda: sp_mod_polymer.classify_reaction_channel([whole], pieces))
+    assert channel == sp_mod_polymer.CHANNEL_UNIDENTIFIED, channel
+
+
+@RED
+def test_an_unstamped_row_with_a_structureless_pool_species_stays_live():
+    """The fission the species would read beside k_scission
+    (test_an_unstamped_row_is_read_from_its_own_species), with the pool
+    species structureless: the supersession and double-count passes cannot
+    read it, so it is not superseded -- and they do not crash."""
+    built = _attempt(lambda: _kernel_system('k_scission', None, t_proxy='[CH2]CCCCC', structureless=('A',)))
+    assert not isinstance(built, Exception), repr(built)
+    rs, _ = built
+    assert rs.reaction_refused[0] == 0
+    assert not _census(rs, 'kernel_supersession_census')
+    assert not _census(rs, 'kernel_double_count_census')
+
+
+def test_a_stamped_row_with_a_structureless_pool_species_is_read_from_its_stamp():
+    """The generation stamp needs no structure: a stamped fission beside
+    k_scission is superseded whether or not its species can be read."""
+    rs, rxn = _kernel_system('k_scission', 'bond_fission', structureless=('A',))
+    assert rs.reaction_refused[0] == 1
+    assert [c['channel'] for c in _census(rs, 'kernel_supersession_census') or []] == ['backbone_bond_fission']
 
 
 class _NoSupersession(HybridPolymerSystem):
