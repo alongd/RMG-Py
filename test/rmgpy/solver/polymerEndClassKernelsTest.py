@@ -266,3 +266,39 @@ def test_the_pool_config_carries_an_explicit_pools_depropagation_and_propagation
     assert config.k_depropagation == SP.validate_k_depropagation("Re", KDEP)
     assert config.kernel_propagation == SP.validate_kernel_propagation("Re", [p_term()])
     assert config.monomer_poly_index == 4
+
+
+# --------------------------------------------------------------------------
+# the artifact
+# --------------------------------------------------------------------------
+def _artifact(pools):
+    from rmgpy.polymer import build_polymer_moments_artifact
+    return build_polymer_moments_artifact(pools, core_species=None, core_reactions=[],
+                                          configured_pool_labels=[p.label for p in pools], monomer_routing_by_pool={})
+
+
+def test_the_artifact_records_an_explicit_pools_depropagation_and_propagation_at_3_5():
+    from rmgpy.tools.polymer_moments_runner import _check_schema_version_known
+    r = _deck(k_depropagation=KDEP, monomer_product="C=C", kernel_propagation=[p_term()])
+    artifact = _artifact([r])
+    entry = artifact["pools"][0]
+    assert entry["catalog_kernels"] == {"depropagation": SP.validate_k_depropagation("Re", KDEP),
+                                        "propagation": r.kernel_propagation}
+    assert "end_radical_depropagation" not in entry
+    assert entry["monomer_routing"] == "M"
+    assert artifact["schema_version"] == "3.5"
+    with pytest.raises(Exception, match="3.5"):
+        _check_schema_version_known(artifact)
+
+
+def test_the_artifact_records_a_join_of_two_pools_at_3_5():
+    a = _deck(kernel_recombination=[join_term(partner="Re1")])
+    b = _deck(label="Re1", end_class="CH3")
+    artifact = _artifact([a, b])
+    assert artifact["pools"][0]["catalog_kernels"] == {"recombination": a.kernel_recombination}
+    assert artifact["schema_version"] == "3.5"
+
+
+def test_a_same_pool_recombination_stays_at_3_2():
+    a = _deck(kernel_recombination=[r_term()])
+    assert _artifact([a])["schema_version"] == "3.2"
