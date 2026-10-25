@@ -73,13 +73,16 @@ Not atom sets (each with an explicit disposition, ``Support.dispositions``):
 Closure (item 2)
 ----------------
 On BOTH reaction sides (the window is the union): every ring <= ``RING_LIMIT``
-through a window atom, whole (a reacting atom in a larger ring -> refused; a
-larger ring touching the window without a reacting atom is refused too: the
+through a window atom, whole, all of them, so fused and bridged rings close
+together (a reacting atom whose smallest ring is larger -> refused; a window
+atom whose smallest ring is larger is refused too: the
 declared domain admits six-membered phenyl rings only, so such a ring is a
 domain error, never silently truncated); the whole conjugated pi / radical
 system (atoms with an unpaired electron or a bond of order > 1, joined by
 bonds) touching the window; every H of an included heavy atom; repeated to a
-fixed point.
+fixed point.  A closed window that still cuts a ring (a bond leaving it lies
+on a ring of that side: a ring larger than ``RING_LIMIT`` fused to a closed
+one) is refused, ``refused:ring_cut``, never truncated.
 
 Recertified fixed point (item 3)
 --------------------------------
@@ -532,7 +535,9 @@ class ChemistryPolicy:
     (``species_domain_refusal``, the event builds of a reacting-port cover,
     certificate eligibility and recertification) and ``ring_edits``
     (``"exclude"``: ``member_cases`` drops every mapping whose connectivity
-    change touches a ring atom, ``ring_change_select``; ``"admit"``: none)."""
+    change touches a ring atom, ``ring_change_select``; ``"admit"``: none, the
+    window decides: closure holds every ring it touches whole, and a window
+    that cuts one is ``refused:ring_cut``)."""
 
     name: str
     domain: PolicyDomain
@@ -549,11 +554,12 @@ LEGACY_V1 = ChemistryPolicy("legacy_v1", PolicyDomain(
     "legacy_v1", lambda molecule: dom.check(molecule),
     lambda molecule: dom.spin_verdict(molecule)), "exclude")
 # a declared chain under the INTERIM domain (``domain.declared_interim_check``)
-# and no ring edits; a later slice replaces the domain.  This object admits C
-# and H only; ``declared_interim`` binds a witness's declared elements
+# with ring edits admitted (I-264: the window decides which are sound); a later
+# slice replaces the domain.  This object admits C and H only;
+# ``declared_interim`` binds a witness's declared elements
 DECLARED_INTERIM = ChemistryPolicy("declared_interim_v1", PolicyDomain(
     "declared_interim_v1", lambda molecule: dom.declared_interim_check(molecule),
-    lambda molecule: dom.spin_verdict(molecule)), "exclude")
+    lambda molecule: dom.spin_verdict(molecule)), "admit")
 _INTERIM_POLICIES = {}
 
 
@@ -767,8 +773,8 @@ def _pi_component(rows, pi, start) -> set:
     return seen
 
 
-def _cyclic_atoms(rows) -> set:
-    """Atoms on a cycle (incident to a non-bridge bond)."""
+def _ring_bonds(rows) -> set:
+    """Bonds on a cycle (the non-bridge bonds), as sorted atom pairs."""
     import networkx as nx
     graph = nx.Graph()
     graph.add_nodes_from(rows)
@@ -777,7 +783,55 @@ def _cyclic_atoms(rows) -> set:
             if a < n:
                 graph.add_edge(a, n)
     bridges = {tuple(sorted(e)) for e in nx.bridges(graph)}
-    return {a for a in rows for n in _neighbours(rows, a) if tuple(sorted((a, n))) not in bridges}
+    return {(a, n) for a in rows for n in _neighbours(rows, a)
+            if a < n and (a, n) not in bridges}
+
+
+def _cyclic_atoms(rows) -> set:
+    """Atoms on a cycle (incident to a non-bridge bond)."""
+    return {a for bond in _ring_bonds(rows) for a in bond}
+
+
+def rings_through(rows, atom, cyclic=None, limit: int = RING_LIMIT) -> tuple:
+    """Every ring (simple cycle) of at most ``limit`` atoms through ``atom``,
+    each as its sorted atoms (() if it is on none)."""
+    cyclic = _cyclic_atoms(rows) if cyclic is None else cyclic
+    if atom not in cyclic:
+        return ()
+    found = set()
+    path, on = [atom], {atom}
+
+    def walk():
+        for n in _neighbours(rows, path[-1]):
+            if n == atom and len(path) >= 3:
+                found.add(tuple(sorted(path)))
+            elif n not in on and n in cyclic and len(path) < limit:
+                path.append(n)
+                on.add(n)
+                walk()
+                on.discard(path.pop())
+    walk()
+    return tuple(sorted(found))
+
+
+def _ring_through_bond(rows, a, n, limit: int = 64) -> Optional[int]:
+    """Atoms of a smallest ring through the bond ``a``-``n`` (None past
+    ``limit``): the shortest path ``n`` -> ``a`` avoiding that bond, plus one."""
+    depth, seen, frontier = {n: 0}, {n}, [n]
+    while frontier:
+        nxt = []
+        for x in frontier:
+            for y in _neighbours(rows, x):
+                if x == n and y == a:
+                    continue
+                if y == a:
+                    return depth[x] + 2
+                if y not in seen and depth[x] + 1 < limit:
+                    seen.add(y)
+                    depth[y] = depth[x] + 1
+                    nxt.append(y)
+        frontier = nxt
+    return None
 
 
 def smallest_ring(rows, atom, cyclic=None, limit: int = 64) -> Optional[tuple]:
@@ -836,8 +890,10 @@ def close(witness, support, *, ring_limit=RING_LIMIT, sides=("reactants", "produ
         raise WindowError(f"support atoms {unknown[:5]} are not witness atoms")
     window = set(support.atoms)
     centres = set(support.reacting) or set(support.atoms)
-    info = {side: (rows, _cyclic_atoms(rows), _pi_atoms(rows)) for side, rows in rows_of.items()}
-    ring_cache = {}
+    bonds_of = {side: _ring_bonds(rows) for side, rows in rows_of.items()}
+    info = {side: (rows, {a for bond in bonds_of[side] for a in bond}, _pi_atoms(rows))
+            for side, rows in rows_of.items()}
+    ring_cache, rings_cache = {}, {}
     added = []
     changed = True
     while changed:
@@ -862,7 +918,9 @@ def close(witness, support, *, ring_limit=RING_LIMIT, sides=("reactants", "produ
                                       f"refused:large_ring: window atom {atom} is in a "
                                       f"{size}-membered ring (> {ring_limit}) on the {side} "
                                       "side (the declared domain admits phenyl rings only)")
-                    new = set(ring) - window
+                    if key not in rings_cache:
+                        rings_cache[key] = rings_through(rows, atom, cyclic, ring_limit)
+                    new = set(ring).union(*rings_cache[key]) - window
                     if new:
                         window |= new
                         added.append(("ring", side, tuple(sorted(new))))
@@ -879,6 +937,20 @@ def close(witness, support, *, ring_limit=RING_LIMIT, sides=("reactants", "produ
                 window |= hydrogens
                 added.append(("H", side, tuple(sorted(hydrogens))))
                 changed = True
+    # every ring <= ring_limit through a window atom is whole: a ring bond
+    # still leaving the window is on a larger ring fused to a closed one
+    for side, (rows, cyclic, _pi) in info.items():
+        if not window & cyclic:
+            continue
+        for a in sorted(window & cyclic):
+            for n in _neighbours(rows, a):
+                if n not in window and tuple(sorted((a, n))) in bonds_of[side]:
+                    size = _ring_through_bond(rows, a, n) or "> 64"
+                    return Window(frozenset(support.atoms), support, tuple(added),
+                                  f"refused:ring_cut: the window cuts a "
+                                  f"{size}-membered ring on the {side} side (its "
+                                  f"bond {a}-{n} leaves the window; every ring of at most "
+                                  f"{ring_limit} atoms through a window atom is held whole)")
     return Window(frozenset(window), support, tuple(added), None)
 
 
