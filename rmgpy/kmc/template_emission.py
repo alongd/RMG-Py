@@ -150,6 +150,17 @@ stored Kc form, attached to every template making it (``overrides``;
 ``override_weight``, ``matcher_from_payload`` loads them as
 ``window_matcher.Override``).
 
+Depository sizes (I-262): a member whose own size RMG rates from a
+depository entry grows to the first unmatched size (``windows.depository_start``);
+its candidates carry the sizes passed over (``Candidate.matched``), each a
+``depository`` row of the template that makes it (``matched_row``; ``not_made``
+when another template does), and their rows are rebound to the production
+selection on their own emitted witness (``witness_selection``): the record
+names no rule selection.  A closed candidate (the whole species,
+``windows.CLOSED_DEPOSITORY``) is a template weighed at the depository rate,
+unless an open candidate of the record makes it (``carry_closed``: it rides
+that template as a depository row).
+
 Schema (item 6)
 ---------------
 ``executable_payload`` / ``validate_payload``; ``attach`` sets
@@ -1142,6 +1153,11 @@ class Candidate:
     unextended: Any = None
     sources: list = field(default_factory=list)
     reverse: bool = False
+    # the depository sizes the fixed point grew past (label, template-direction
+    # reactant rows, product rows): override sites of the template that makes them
+    matched: tuple = ()
+    # a whole-species depository reaction (``windows.CLOSED_DEPOSITORY``)
+    closed: bool = False
 
 
 def selection_flip(certificate, pathway) -> Optional[str]:
@@ -1201,9 +1217,13 @@ def context_candidates(case, results, merges, *, family, pathway, direction, rev
                 unextended = win.reconstruct(case.witness, assignment, providers)
             except b.BoundaryError as error:
                 refusal = refusal or f"refused:end: {error}"
+        fp = r.fixed_point
+        matched = tuple((f"matched {i}", *template_sides(w, reverse))
+                        for i, w in enumerate(getattr(fp, "matched", ()) or ()))
         cands.append(Candidate(cut, case.label, k, assignment, r.witness,
                                frozenset(r.window.atoms), cert, k == 0, refusal, unextended,
-                               reverse=reverse))
+                               reverse=reverse, matched=matched,
+                               closed=bool(getattr(fp, "closed", False))))
         row["emission"] = "candidate" if refusal is None else refusal
         row["context"] = context
         rows.append(row)
@@ -1269,9 +1289,27 @@ def dedupe(cands) -> list:
         rep = min([c for c in copies if c.refusal is None] or copies, key=candidate_order)
         rep.sources = sorted((c.member, c.context_index) for c in copies)
         rep.base = any(c.base for c in copies)
+        rep.matched = matched_union(copies)
         out.append(rep)
     return sorted(out, key=lambda c: (not c.base, c.cut.key if c.cut else "",
                                       candidate_order(c)))
+
+
+def matched_union(copies) -> tuple:
+    """The depository sizes of equal-key copies, each reaction once (by its
+    species: ``reaction_signature``), in a canonical order and relabelled
+    ``matched <i>``."""
+    seen = {}
+    for c in copies:
+        for _label, r, p in c.matched:
+            seen.setdefault(reaction_signature(r, p), (r, p))
+    return tuple((f"matched {i}", r, p) for i, (_k, (r, p)) in enumerate(sorted(seen.items())))
+
+
+def reaction_signature(r, p) -> str:
+    """The species of a reaction (template-direction rows) as canonical SMILES,
+    blind to atom ids."""
+    return canonical_json([sorted(m.to_smiles() for m in molecules_of(rows)) for rows in (r, p)])
 
 
 # ---------------------------------------------------------------------------
@@ -1409,6 +1447,21 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
     cands = dedupe(cands)
     ctx_rows.sort(key=lambda r: (r["member"], r["index"], canonical_json(r)))
     cpath = count_pathway(fam, pathway, template_on_products(record))
+    # a record whose own size RMG rates from a depository entry (its members
+    # grew past it, or it is a whole-species reaction): its rate is never a
+    # rule weight (``windows.depository_start``)
+    matched_record = any(getattr(results[0].fixed_point, "matched", ()) or
+                         getattr(results[0].fixed_point, "closed", False)
+                         for _case, _row, (results, _merges) in members if results)
+    cands = carry_closed(cands, ctx_rows, family=fam, direction=direction, pathway=cpath,
+                         counter=counter)
+    if matched_record and not any(c.base and c.refusal is None and c.cut is not None
+                                  for c in cands):
+        # the record's own node holds on its whole species only (every grown
+        # context selects another one): its closed templates are its base
+        for c in cands:
+            if c.closed and c.refusal is None and c.cut is not None:
+                c.base = True
     # item 2 on the record's own witness: the base templates jointly
     base = [c for c in cands if c.base and c.refusal is None and c.cut is not None]
     if not base:
@@ -1423,7 +1476,7 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
     # each template's weight comes from its emitted witness)
     beyond = [c for c in base if reaches_beyond(c.cut, c.witness, c.unextended)]
     record_count, weights, cal, record_map = None, None, None, {}
-    if not beyond:
+    if not beyond and not matched_record:
         probes = [c.cut.matcher(1.0, f"probe{k}") for k, c in enumerate(base)]
         count, inside, _ch = count_on(probes, rec_r, None, family=fam, direction=direction,
                                       pathway=cpath, counter=counter,
@@ -1456,6 +1509,7 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
             cpath=cpath, reverse=cand.reverse,
             counter=counter, rates=rates, weights=weights,
             temperatures=rate["T"], providers=providers, ceiling=ceiling,
+            matched_record=matched_record,
             owner_rate_source=owner_rate_source, kc=kc, record_map=next((record_map.get(f"probe{i}") for i, c in enumerate(base)
                              if c is cand), None)))
     status, refusal = record_status(templates)
@@ -1468,6 +1522,43 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
     if matches:
         out["depository_matches"] = matches
     return finish(out)
+
+
+def carry_closed(cands, ctx_rows, *, family, direction, pathway, counter) -> list:
+    """``cands`` without every closed candidate (a whole-species depository
+    reaction, ``windows.CLOSED_DEPOSITORY``) that an open candidate of the
+    record makes: that reaction is a depository size of the open template
+    (one of its ``matched`` rows, an override site), never a second template
+    of one transition.  The context rows name the template it rides; every
+    candidate's matched rows are relabelled ``matched <i>``."""
+    live = [c for c in cands if not c.closed and c.cut is not None and c.refusal is None]
+    out = []
+    for c in cands:
+        rider = None
+        if c.closed and c.cut is not None and c.refusal is None:
+            r, p = template_sides(c.witness, c.reverse)
+            for o in live:
+                try:
+                    count, _inside, _ch = count_on([o.cut.matcher(1.0, "o")], r, p,
+                                                   family=family, direction=direction,
+                                                   pathway=pathway, counter=counter)
+                except wm.WindowMatcherError:
+                    continue
+                if count.matcher and count.target_found:
+                    rider = o
+                    break
+        if rider is None:
+            out.append(c)
+            continue
+        rider.matched = rider.matched + (("closed", r, p),)
+        sources = {(m[-120:], i) for m, i in (c.sources or [(c.member, c.context_index)])}
+        for row in ctx_rows:
+            if (row["member"], row["index"]) in sources:
+                row["emission"] = (f"rides template {rider.cut.key[:12]} as an override: a "
+                                   "depository size that template makes")
+    for c in out:
+        c.matched = matched_union([c])
+    return out
 
 
 def depository_matches(record_certificate) -> list:
@@ -1509,9 +1600,18 @@ def record_status(templates) -> tuple:
 
 def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, counter,
                    rates, weights, temperatures, providers=None, ceiling=None,
-                   record_map=None, owner_rate_source=None, kc=None) -> dict:
+                   record_map=None, owner_rate_source=None, kc=None,
+                   matched_record=False) -> dict:
     """Count (item 2, on the context's own witness), locality (item 3) and
-    the payload of one candidate."""
+    the payload of one candidate.
+
+    A record whose own size RMG rates from a depository entry
+    (``matched_record``) names no rule selection: each candidate's rows are
+    rebound to the production selection on its own emitted witness, the first
+    size the depository does not match.  A closed candidate (a whole-species
+    depository reaction, of any record) is weighed at the depository rate RMG
+    selects on its own witness.  Every matched size the candidate grew past is
+    a ``depository`` row (``matched_row``)."""
     entry = {"member": cand.member[-120:], "context_index": cand.context_index,
              "context": [[p[0], p[1], e] for p, e in cand.assignment if e],
              "base": cand.base, "sources": [[m[-120:], i] for m, i in cand.sources],
@@ -1533,12 +1633,24 @@ def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, 
     reasons = []
     wset = locality_witnesses(cand.witness, providers, ceiling=ceiling)
     beyond = reaches_beyond(cut, cand.witness, cand.unextended)
-    jobs = [("context", (), cand.unextended)] + [(x.label, x.vector, x) for x in wset]
+    jobs = [("context", (), cand.unextended)] + [(x.label, x.vector, x) for x in wset] + \
+        [(label, (), (r, p)) for label, r, p in cand.matched]
+    rebind = None
+    if matched_record or cand.closed:
+        rebind = witness_selection(rates, family, record, cand.witness)
     for label, vector, item in jobs:
         if label == "context" and beyond:
             rows.append({"label": label, "vector": [], "status": "not_applicable",
                          "reason": "the window or a port exterior reaches the padding beyond "
                                    "the unextended witness's artificial ends"})
+            continue
+        if isinstance(item, tuple):
+            row = matched_row(template, *item, label=label, family=family, direction=direction,
+                              pathway=cpath, counter=counter)
+            rows.append(row)
+            if row["status"] not in ("depository", "not_made"):
+                ok = False
+                reasons.append(f"{label}: {row['status']}: {row.get('reason', '')[:120]}")
             continue
         if isinstance(item, LocalityWitness):
             if item.status != "ok":
@@ -1552,7 +1664,8 @@ def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, 
             witness = item
         row = witness_row(template, witness, label=label, vector=vector, family=family,
                           direction=direction, pathway=cpath, reverse=reverse, counter=counter,
-                          rates=rates, record=record, owner_rate_source=owner_rate_source)
+                          rates=rates, record=record, owner_rate_source=owner_rate_source,
+                          rebind=rebind, depository_weight=cand.closed)
         rows.append(row)
         if row["status"] not in ("ok", "depository"):
             ok = False
@@ -1564,7 +1677,10 @@ def emit_candidate(cand, *, record, family, direction, pathway, cpath, reverse, 
         weight_source, cal = "record", None
     else:
         record_row = {"label": "record", "vector": [], "status": "not_applicable",
-                      "reason": "a base template reaches beyond the record's proxy graph"}
+                      "reason": "RMG rates the record's own size from a depository entry: it is "
+                                "an override site or a closed template, never the rule weight"
+                      if matched_record else
+                      "a base template reaches beyond the record's proxy graph"}
         weight_source, cal = "emitted_witness", None
         if emitted_row is not None and emitted_row["status"] == "ok":
             weights = list(emitted_row["w"])
@@ -1632,10 +1748,62 @@ def depository_row(family, reactant_rows, product_rows) -> Optional[dict]:
                                    molecules_of(product_rows))
 
 
+def witness_selection(rates, family, record, witness) -> dict:
+    """The selection RMG's production path makes on ``witness`` (the record's
+    template and orientation, rebound to nothing): the reference of a
+    candidate whose record names none (``emit_candidate``).  A path that
+    fails gives ``{"unavailable": ...}``, which no row's selection equals."""
+    result = rates(RateRequest(family.label if hasattr(family, "label") else family,
+                               (record or {}).get("template", ""),
+                               (record or {}).get("orientation", "as_generated"),
+                               dict(witness.reactant_rows()), dict(witness.product_rows()),
+                               witness, "emitted", ()))
+    if result.problems:
+        return {"unavailable": "; ".join(result.problems)[:200]}
+    return (result.provenance or {}).get("selection") or {"unavailable": "no selection"}
+
+
+def matched_row(template, r, p, *, label, family, direction, pathway, counter) -> dict:
+    """One matched size (template-direction rows) a candidate's fixed point
+    grew past: ``depository`` (an override site, as ``witness_row`` names it)
+    when the template makes it, ``not_made`` when it does not (another
+    template's size: a context's, or its own closed template)."""
+    try:
+        count, _inside, _ch = count_on([template], r, p, family=family, direction=direction,
+                                       pathway=pathway, counter=counter)
+    except wm.WindowMatcherError as error:
+        return {"label": label, "vector": [], "status": "refused:matcher",
+                "reason": str(error)[:200]}
+    row = {"label": label, "vector": [], "counts": count.as_dict(),
+           "heavy_atoms": sum(1 for x in r.values() if x[0] != "H")}
+    if count.matcher == 0:
+        row.update(status="not_made", reason="the template makes no transition of this "
+                                             "depository size")
+        return row
+    if not count.equal or not count.target_found:
+        row.update(status="refused:count_mismatch",
+                   reason=f"matcher {count.matcher} vs rmg_moves {count.rmg} (target "
+                          f"{count.target_found})")
+        return row
+    selected = depository_row(family, r, p)
+    if selected is None:
+        row.update(status="refused:not_depository",
+                   reason="a size grown past as a depository match that no entry matches")
+        return row
+    row.update(status="depository", depository=selected,
+               reason="RMG rates the witness's reaction from a depository entry",
+               witness={"r": rows_json(r), "p": rows_json(p)})
+    return row
+
+
 def witness_row(template, witness, *, label, vector, family, direction, pathway, reverse,
-                counter, rates, record, owner_rate_source=None) -> dict:
+                counter, rates, record, owner_rate_source=None, rebind=None,
+                depository_weight=False) -> dict:
     """One locality row: counts by both counters on the witness's own target,
-    production k, ``w``."""
+    production k, ``w``.  ``rebind``: the selection the production path must
+    make here (``witness_selection``) in place of the record's; with
+    ``depository_weight`` a depository rate is the row's weight (a closed
+    template), not an override site."""
     r, p = template_sides(witness, reverse)
     try:
         count, inside, _ch = count_on([template], r, p, family=family, direction=direction,
@@ -1657,7 +1825,7 @@ def witness_row(template, witness, *, label, vector, family, direction, pathway,
                                                    "among the template's transitions")
         return row
     selected = depository_row(family, r, p)
-    if selected is not None:
+    if selected is not None and not depository_weight:
         # RMG rates this size from a depository entry: an override site of
         # the catalog (``depository_overrides``), not a row of the rule weight
         row.update(status="depository", depository=selected,
@@ -1665,13 +1833,19 @@ def witness_row(template, witness, *, label, vector, family, direction, pathway,
                    witness={"r": rows_json(r), "p": rows_json(p)})
         return row
     rs = (record or {}).get("rate_source")
+    if rebind is not None:
+        rs, owner_rate_source = None, None
     result = rates(RateRequest(family.label if hasattr(family, "label") else family,
                                (record or {}).get("template", ""),
                                (record or {}).get("orientation", "as_generated"),
                                dict(witness.reactant_rows()), dict(witness.product_rows()),
                                witness, label, tuple(vector), rs, owner_rate_source))
-    if result.problems:
-        row.update(status="refused:rebind", reason="; ".join(result.problems)[:300])
+    problems = list(result.problems)
+    if rebind is not None and (result.provenance or {}).get("selection") != rebind:
+        problems.append(f"rate source: emitted witness {rebind!r} vs witness "
+                        f"{(result.provenance or {}).get('selection')!r}")
+    if problems:
+        row.update(status="refused:rebind", reason="; ".join(problems)[:300])
         return row
     w = weight_table(result.temperatures, result.k, result.ssa_multiplier, count.matcher)
     if True:
@@ -3472,7 +3646,10 @@ def depository_overrides(payloads, *, counter, rates, kc) -> tuple:
     ``check_temperatures``.  Without any such reaction the payloads come back
     unchanged.  An own-reverse family, a count mismatch, a production
     selection that is not a depository, or a depository row left without an
-    override are failures (never a fallback to the rule weight)."""
+    override are failures (never a fallback to the rule weight).  A reaction no
+    loaded template carries in either direction is a named row
+    (``refused:no_template``; a family's enumerated depository entries are
+    counted in one ``not_made:enumerated`` row), never a silent skip."""
     reactions = _override_reactions(payloads, counter)
     if not reactions:
         return payloads, [], []
@@ -3492,9 +3669,11 @@ def depository_overrides(payloads, *, counter, rates, kc) -> tuple:
             matchers[direction] = (entries, [
                 matcher_from_payload(dict(t, family=family_label), 0.0, weight=1.0, name=f"L{k}")
                 for k, t in enumerate(entries)])
+        made_any, carried, unmade = set(), set(), {}
         for (a_src, b_src, sources) in _rekey(reactions[family_label], counter).values():
             key = canonical_json([sorted(counter.species_of_rows(a_src)),
                                   sorted(counter.species_of_rows(b_src))])
+            either = canonical_json(sorted(json.loads(key)))
             if own:
                 failures.append(f"depository override {family_label}: an own-reverse family "
                                 "(one template both ways) is not supported; refused")
@@ -3515,6 +3694,7 @@ def depository_overrides(payloads, *, counter, rates, kc) -> tuple:
                             if a not in wm.product_rows(state, tr)}) == target]
                 if not made:
                     continue
+                made_any.add(either)
                 pathways = sorted({tuple(by_record[id(t)].get("pathway") or ()) for t in entries})
                 for pathway in pathways:
                     channel = counter.channel(fam, molecules_of(r_rows), direction,
@@ -3529,6 +3709,10 @@ def depository_overrides(payloads, *, counter, rates, kc) -> tuple:
                         direction=direction, orientation=orientation, pathway=pathway,
                         r=r_rows, p=p_rows, count=len(inside), rmg=channel.transitions,
                         owners=[entries[i] for i in owners])
+            if events:
+                carried.add(either)
+            else:
+                unmade.setdefault(either, []).extend(sources)
             for ev in events.values():
                 name = f"{family_label}|{ev['direction']}|{';'.join(ev['pathway'])}|{key}"
                 row = {"family": family_label, "direction": ev["direction"],
@@ -3567,6 +3751,28 @@ def depository_overrides(payloads, *, counter, rates, kc) -> tuple:
                     production={"T": list(result.temperatures), "k": list(result.k),
                                 "ssa": result.ssa_multiplier},
                     entry=_selected_entry(fam, forward_sel))
+        # no silent skip: a depository reaction no loaded template carries in
+        # either direction is named (one row per reaction a payload names; the
+        # family's enumerated entries are counted in one row)
+        enumerated = 0
+        for either, srcs in sorted(unmade.items()):
+            if either in carried:
+                continue
+            named = [s for s in srcs if not s.get("enumerated")]
+            if not named:
+                enumerated += 1
+                continue
+            table.append({"family": family_label, "reaction": sha256_json(either)[:16],
+                          "status": "refused:no_channel" if either in made_any else
+                          "refused:no_template", "sources": named,
+                          "reason": "a loaded template makes it, outside every channel of its "
+                                    "pathway" if either in made_any else
+                                    "no loaded template makes it in either direction"})
+        if enumerated:
+            table.append({"family": family_label, "status": "not_made:enumerated",
+                          "reactions": enumerated,
+                          "reason": "entries of the family's depositories no loaded template "
+                                    "makes in either direction"})
         for (key, direction, pathway), ev in sorted(found.items(), key=lambda kv: canonical_json(
                 [kv[0][0], kv[0][1], list(kv[0][2])])):
             override = {"family": family_label, "direction": direction, "pathway": list(pathway),

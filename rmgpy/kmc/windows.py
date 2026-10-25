@@ -105,6 +105,24 @@ residue is not declared: every extension there branches over each residue
 the sequence support allows, and the window must be the same on every
 branch (``refused:extension_branches`` otherwise, naming the branch).
 
+Depository sizes (I-262): a member or context whose own witness RMG rates
+from a depository entry has no rule window there (``DEPOSITORY_MATCH_REFUSAL``).
+``depository_start`` grows every artificial port of it together, one repeat a
+step, to the first size no depository entry matches (``depository_match``):
+the fixed point runs from there, its per-port limit counted from that size,
+and the sizes passed over are ``FixedPointResult.matched`` (each an override
+site of the templates that make it).  A matched witness with no artificial
+port (a context whose every end is physical: the whole species) is closed
+(``CLOSED_DEPOSITORY``): its window is every atom and the depository reaction
+is its own template.  A step that cannot be taken is named (a reacting atom
+on a port, the ceiling, a copolymer port that branches), and so is a
+matched size of a family that is its own reverse
+(``refused:own_reverse_depository``: no depository override carries it, and
+its rule template, formed at a longer size, makes it too).  A member whose
+growth stops otherwise keeps its closed contexts (``closed_contexts``: every
+port a declared end): the member is a fixed point on those alone, its open
+base refused under its own name.
+
 Span bound (item 4)
 -------------------
 Per family, from the declared domain and the family's tree constants
@@ -326,7 +344,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import combinations, combinations_with_replacement, permutations, product
 from typing import Any, Callable, Optional, Sequence
 
@@ -341,6 +359,8 @@ FIXED_POINT_RETRIES = 3
 CHECK_STEPS = (1, 2)
 # a witness whose reaction RMG rates from a depository entry (whole species)
 DEPOSITORY_MATCH_REFUSAL = "refused:whole_species: depository match"
+# the reason of a closed depository fixed point (``depository_start``)
+CLOSED_DEPOSITORY = "closed: the whole species is a depository reaction"
 CLOSURE_EXTENSION = 1
 ISOMORPHISM_LIMIT = 256
 LOOP_STATUSES = ("fixed_point", "no_fixed_point", "ceiling_exceeded", "certificate_unstable")
@@ -698,6 +718,10 @@ class FixedPointResult:
     flips: tuple = field(default=(), compare=False)
     # the residue branches of a fixed point (``branch_label`` each; empty: one)
     branches: tuple = field(default=(), compare=False, repr=False)
+    # the depository sizes grown past before the fixed point (``depository_start``)
+    matched: tuple = field(default=(), compare=False, repr=False)
+    # a whole-species depository reaction (``CLOSED_DEPOSITORY``)
+    closed: bool = False
 
     @property
     def reached(self) -> bool:
@@ -1824,6 +1848,97 @@ def fixed_point(witness, observe, providers=None, *, ceiling=None, port_limit=PO
         if obs.refusal or win.refusal:
             return stop(obs.refusal or win.refusal, "refused on re-extension", current[0], win,
                         obs, rounds, used)
+
+
+def depository_match(family, witness) -> Optional[dict]:
+    """The depository entry RMG rates ``witness``'s reaction from
+    (``certificates.depository_selection``, the search behind
+    ``DEPOSITORY_MATCH_REFUSAL``); None for none and for a family without
+    depositories."""
+    from rmgpy.kmc import certificates as cm
+    from rmgpy.kmc import rmg_moves as rm
+    if not getattr(family, "depositories", None):
+        return None
+    sides = [[rm.molecule_from_rows(part) for part in rm.split_rows(dict(rows))]
+             for rows in (witness.reactant_rows(), witness.product_rows())]
+    return cm.depository_selection(family, *sides)
+
+
+def depository_start(family, witness, providers=None, *, ceiling=None) -> tuple:
+    """(start witness, matched witnesses, failure): the witness itself when
+    RMG rates it by rule; else every artificial port grown together, one
+    repeat a step, until no depository entry matches (the module doc), with
+    the matched sizes passed over.  ``failure`` is None, ``"closed"`` (a
+    matched witness without artificial ports) or a ``FixedPointResult``
+    naming the step that cannot be taken."""
+    ports = b.vector_ports(witness)
+    matched = []
+    while depository_match(family, witness) is not None:
+        if getattr(family, "reverse_template", "x") is None:
+            # one template both ways: ``template_emission.depository_overrides``
+            # carries no override there, so a rule template would fire this size
+            # (and a closed template would make its reaction a second time)
+            return witness, (), FixedPointResult(
+                "refused:own_reverse_depository", "RMG rates this size from a depository "
+                "entry and an own-reverse family carries no depository override",
+                tuple((p, witness.depth(p)) for p in ports), witness)
+        if not ports:
+            return witness, tuple(matched), "closed"
+        matched.append(witness)
+
+        def stop(status, reason):
+            return FixedPointResult(status, f"growing past the depository size "
+                                    f"{len(matched)}: {reason}", tuple((p, witness.depth(p))
+                                                                       for p in ports),
+                                    witness, matched=tuple(matched))
+        if any(b.extension_residues(witness, p, providers) != (None,) for p in ports):
+            return witness, tuple(matched), stop(
+                "refused:depository_branches", "a port's next repeat branches over residues: "
+                "no one next size")
+        try:
+            for p in ports:
+                witness = b.extend(witness, p, providers, ceiling=b._ceiling(ceiling))[0]
+        except b.CeilingExceeded as error:
+            return witness, tuple(matched), stop("ceiling_exceeded", f"{error} (never truncated)")
+        except b.ExtensionRefused as error:
+            if "reacting atom" in str(error):
+                return witness, tuple(matched), stop(
+                    "refused:reacting_port", f"a reacting atom sits on an artificial port (a "
+                    f"cut-point event: its long-chain and physical-end analogues are other "
+                    f"witnesses): {error}")
+            return witness, tuple(matched), stop("refused:extension", str(error))
+    return witness, tuple(matched), None
+
+
+def closed_fixed_point(witness, observe) -> FixedPointResult:
+    """The fixed point of a whole-species depository reaction: the window is
+    every atom (``CLOSED_DEPOSITORY``)."""
+    atoms = frozenset(dict(witness.reactant_rows()))
+    return FixedPointResult("fixed_point", CLOSED_DEPOSITORY, (), witness,
+                            Window(atoms, Support(atoms)), observe(witness), closed=True)
+
+
+def member_fixed_point(family, witness, observe, providers=None, **loop) -> FixedPointResult:
+    """``fixed_point`` from ``depository_start``: the per-port limit counts
+    from the start size, and the result names the matched sizes."""
+    start, matched, failure = depository_start(family, witness, providers,
+                                               ceiling=loop.get("ceiling"))
+    if failure == "closed":
+        return closed_fixed_point(start, observe)
+    if failure is not None:
+        return failure
+    if matched:     # one repeat per port per matched size
+        loop = dict(loop, port_limit=loop.get("port_limit", PORT_DEPTH_LIMIT) + len(matched))
+    fp = fixed_point(start, observe, providers, **loop)
+    return replace(fp, matched=matched) if matched else fp
+
+
+def grown_loop(fp, loop) -> dict:
+    """``loop`` with the per-port limit raised by the depository growth of
+    ``fp`` (its contexts start from its depths)."""
+    if not fp.matched:
+        return loop
+    return dict(loop, port_limit=loop.get("port_limit", PORT_DEPTH_LIMIT) + len(fp.matched))
 
 
 # ---------------------------------------------------------------------------
@@ -4151,8 +4266,8 @@ def run_context(certifier, family, case: MemberCase, assignment, *, bound=None,
                     break
     observer = MemberObserver(certifier, family, case.direction, wanted, providers=providers,
                               policy=policy)
-    fp = fixed_point(witness, observer, providers, **loop)
-    if fp.reached and bound is not None:
+    fp = member_fixed_point(family, witness, observer, providers, **loop)
+    if fp.reached and not fp.closed and bound is not None:
         check_span(fp.witness, fp.window.atoms, bound, providers)
     return ContextResult(assignment, fp.status, fp.reason, fp.witness, fp.window,
                          fp.observation, fp)
@@ -4629,13 +4744,15 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
         return out
     observer = MemberObserver(certifier, family, case.direction, case.wanted,
                               providers=providers, policy=policy)
-    fp = fixed_point(case.witness, observer, providers, **loop)
+    fp = member_fixed_point(family, case.witness, observer, providers, **loop)
     if keep is not None:       # the class closings keep the fixed point (``close_classes``)
         keep.append(fp)
     out.update(status=fp.status, reason=fp.reason, depths=[[list(p), d] for p, d in fp.depths],
                retries=fp.retries, observations=observer.calls,
                flips=sorted({(n, o, w) for _k, n, o, w in fp.flips}),
                check_rounds=len(fp.checks))
+    if fp.matched or fp.closed:
+        out["depository"] = {"matched": len(fp.matched), "closed": fp.closed}
     if fp.branches:
         out["branches"] = list(fp.branches)
     if not fp.reached:
@@ -4644,6 +4761,9 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
                                                  providers=providers, specs=specs,
                                                  policy=policy, **loop)
             out["covered"] = cover_verdict(out["covers"])
+        if fp.matched and contexts:
+            closed_contexts(out, certifier, family, case, fp, providers, loop,
+                            contexts_out=contexts_out, policy=policy)
         out["seconds"] = round(time.perf_counter() - start, 1)
         return out
     window = fp.window
@@ -4653,16 +4773,49 @@ def run_member(certifier, family, case: MemberCase, *, bound=None, contexts: boo
     out["mapping_problems"] = mapping_problems(case, window.atoms)
     span = window_span(fp.witness, window.atoms, providers)
     out["span"] = {str(k): v for k, v in span.items()}
-    if bound is not None:
+    if bound is not None and not fp.closed:
         check_span(fp.witness, window.atoms, bound, providers)
         out["span_bound_held"] = True
     out["dispositions"] = sorted({(str(k[0]), d) for k, d, _a in window.support.dispositions})
     out["diagnostics"] = diagnostics(fp.witness, window.atoms, policy)
     if contexts:
-        _contexts(out, certifier, family, case, fp, bound, providers, loop,
+        _contexts(out, certifier, family, case, fp, bound, providers, grown_loop(fp, loop),
                   contexts_out=contexts_out, policy=policy)
     out["seconds"] = round(time.perf_counter() - start, 1)
     return out
+
+
+def closed_contexts(out, certifier, family, case, fp, providers, loop, contexts_out=None,
+                    policy=None):
+    """A member whose growth past its depository sizes stops (``fp``, from
+    ``depository_start``) keeps its closed contexts: every artificial port a
+    declared end, each such context run whole (``run_context``) and kept when
+    it closes (``CLOSED_DEPOSITORY``).  With one kept, the member is a fixed
+    point on its closed contexts alone; the open base stays the first result,
+    refused under its own name.  Without one, ``out`` is unchanged."""
+    ports = list(b.vector_ports(case.witness))
+    base = ContextResult(tuple((p, None) for p in ports), fp.status, fp.reason, fp.witness,
+                         fp.window, fp.observation, fp)
+    results, rows = [base], []
+    for ends in product(*(tuple(b.end_chemistries(case.witness, p, providers)) for p in ports)):
+        r = run_context(certifier, family, case, tuple(zip(ports, ends)), providers=providers,
+                        policy=policy, **loop)
+        kept = r.fixed_point is not None and r.fixed_point.closed
+        if kept:
+            results.append(r)
+        rows.append({"assignment": [[list(p), e] for p, e in r.assignment], "status": r.status,
+                     "reason": r.reason[:200], "closed": kept})
+    if len(results) == 1:
+        out["closed_contexts"] = rows
+        return
+    out.update(status="fixed_point", reason=f"{CLOSED_DEPOSITORY} (closed contexts only; the "
+               f"open growth: {fp.status}: {fp.reason})"[:400])
+    out["contexts"] = [{"assignment": [], "status": fp.status, "reason": fp.reason[:200],
+                        "merged_into": None}] + [dict(r, merged_into=None) for r in rows]
+    out["context_classes"] = len(results) - 1
+    out["merges"] = []
+    if contexts_out is not None:
+        contexts_out.append((tuple(results), ()))
 
 
 def _contexts(out, certifier, family, case, fp, bound, providers, loop, contexts_out=None,
