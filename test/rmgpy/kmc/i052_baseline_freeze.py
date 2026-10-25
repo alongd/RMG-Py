@@ -51,19 +51,24 @@ FIXTURE = Path(__file__).with_name("fixtures") / "i052_legacy_baseline.json"
 MANIFEST = Path(__file__).with_name("fixtures") / "i052_legacy_baseline_manifest.json"
 # The manifest was regenerated after Step 1 so that it names no database
 # file: its database entries became one digest (``database_digest``), every
-# other entry unchanged.  Its bytes are pinned here, the fixture's by commit.
+# other entry unchanged.  Its bytes are pinned here by content.
 MANIFEST_SHA256 = "eba463ef4a13f32f46d692a1b06236437210184d6eb5f9f8e0f8998f1dbcffb8"
 # Bytecode caches the database's own imports write; not database content.
 DATABASE_IGNORED_PARTS = frozenset({".git", "__pycache__"})
 RMG_PY_PIN = "23893012393d946efc8d70529bfc58780b8cdf86"
-STEP1_FREEZE_COMMIT = "d1459e1b9cd1f9d877ac820b0152ee931673b7c7"
 RMG_DATABASE_PIN = "cd86d4e1c187a132109e16cd86f624ed9fb217df"
 MOM_PIN = "c220aa83c3e6f3016c9998e5efa69a10c4de6bb5"
-STEP1_FREEZE_ONLY_FILES = frozenset({
-    "test/rmgpy/kmc/fixtures/i052_legacy_baseline.json",
-    "test/rmgpy/kmc/i052BaselineFreezeTest.py",
-    "test/rmgpy/kmc/i052_baseline_freeze.py",
-})
+# The three files Step 1 added on top of the RMG-Py pin, pinned by the
+# content they had when frozen, never by the id of the commit that froze
+# them: a history rewrite changes that id.
+STEP1_FREEZE_ONLY_FILES = {
+    "test/rmgpy/kmc/fixtures/i052_legacy_baseline.json":
+        "4ca3be2c20a0ca72901a32e3cea3e692c0da527d51a8ea94ca676b1bf6f332c4",
+    "test/rmgpy/kmc/i052BaselineFreezeTest.py":
+        "7ae5840020fa99a9e6f72ef4575f71c72a6425d95935ea28ae3ddfafab8b6454",
+    "test/rmgpy/kmc/i052_baseline_freeze.py":
+        "a6e8a0e83faec79637ea4aff741ccd9f865f6a835f51a5f966867c9189754acd",
+}
 TEMPERATURE = 700.0
 VOLUME = 1.0e-24
 
@@ -103,8 +108,7 @@ def _git_blob(root: Path, commit: str, relative: str) -> bytes:
 def _verify_frozen_json_bytes() -> None:
     """The record files themselves remain exactly as frozen."""
     relative = str(FIXTURE.relative_to(ROOT))
-    expected = _git_blob(ROOT, STEP1_FREEZE_COMMIT, relative)
-    assert FIXTURE.read_bytes() == expected, relative
+    assert _sha256(FIXTURE) == STEP1_FREEZE_ONLY_FILES[relative], relative
     assert _sha256(MANIFEST) == MANIFEST_SHA256, str(MANIFEST.relative_to(ROOT))
 
 
@@ -1396,11 +1400,8 @@ def baseline_skip_reason(manifest: Mapping[str, Any]) -> Optional[str]:
             return f"{name} is absent: {path}"
     if not DATABASE.is_dir():
         return f"frozen RMG database is absent: {DATABASE}"
-    for label, commit in (
-        ("RMG-Py pin", RMG_PY_PIN), ("Step-1 freeze", STEP1_FREEZE_COMMIT),
-    ):
-        if not _has_commit(ROOT, commit):
-            return f"historical commit for the {label} is absent: {commit}"
+    if not _has_commit(ROOT, RMG_PY_PIN):
+        return f"historical commit for the RMG-Py pin is absent: {RMG_PY_PIN}"
     if manifest["environment"] != environment_pins():
         return (
             "the frozen environment differs from this interpreter "
@@ -1411,7 +1412,6 @@ def baseline_skip_reason(manifest: Mapping[str, Any]) -> Optional[str]:
 
 def verify_manifest(manifest: Mapping[str, Any]) -> None:
     _require_git_commit(ROOT, RMG_PY_PIN)
-    _require_git_commit(ROOT, STEP1_FREEZE_COMMIT)
     _verify_frozen_json_bytes()
     assert manifest["pins"] == {
         "rmgpy_commit": RMG_PY_PIN,
@@ -1427,16 +1427,14 @@ def verify_manifest(manifest: Mapping[str, Any]) -> None:
     assert artifact_provenance["rmgpy_sha"] == RMG_PY_PIN
     assert manifest["environment"] == environment_pins()
     for relative, expected in manifest["repository_files"].items():
-        # The freeze commit adds exactly three Step-1 record/harness files to
-        # the pinned source tree. Preserve their recorded hashes from that
-        # immutable overlay; every pre-existing input comes directly from the
-        # RMG-Py pin rather than the evolving checkout.
-        source_commit = (
-            STEP1_FREEZE_COMMIT
-            if relative in STEP1_FREEZE_ONLY_FILES
-            else RMG_PY_PIN
-        )
-        assert _sha256_bytes(_git_blob(ROOT, source_commit, relative)) == expected, relative
+        # Step 1 adds exactly three record/harness files to the pinned source
+        # tree; their recorded hashes are checked against the content pinned
+        # above.  Every pre-existing input comes directly from the RMG-Py pin
+        # rather than the evolving checkout.
+        if relative in STEP1_FREEZE_ONLY_FILES:
+            assert STEP1_FREEZE_ONLY_FILES[relative] == expected, relative
+            continue
+        assert _sha256_bytes(_git_blob(ROOT, RMG_PY_PIN, relative)) == expected, relative
     verify_database(manifest)
 
 

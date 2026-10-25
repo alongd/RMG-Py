@@ -87,3 +87,31 @@ def test_present_inputs_stay_strict(inputs, monkeypatch):
     assert freeze.baseline_skip_reason(manifest) is None
     with pytest.raises(AssertionError):
         freeze.verify_manifest(manifest)
+
+
+def test_missing_design_skips_both_frozen_tests_with_reason(inputs):
+    manifest, path, tmp = inputs
+    manifest["design"]["path"] = str(tmp / "no_design.md")
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(pytest.skip.Exception, match="design document is absent"):
+        frozen_tests.test_manifest_hashes_are_immutable()
+    with pytest.raises(pytest.skip.Exception, match="design document is absent"):
+        frozen_tests.test_replay_frozen_observations()
+
+
+def test_only_the_rmg_py_pin_is_looked_up_by_commit(inputs, monkeypatch):
+    manifest, _path, _tmp = inputs
+    asked = []
+    monkeypatch.setattr(
+        freeze, "_has_commit", lambda root, commit: asked.append(commit) or True)
+    assert freeze.baseline_skip_reason(manifest) is None
+    assert asked == [freeze.RMG_PY_PIN]
+
+
+def test_freeze_files_are_pinned_by_content(monkeypatch):
+    freeze._verify_frozen_json_bytes()
+    relative = str(freeze.FIXTURE.relative_to(freeze.ROOT))
+    edited = dict(freeze.STEP1_FREEZE_ONLY_FILES, **{relative: "0" * 64})
+    monkeypatch.setattr(freeze, "STEP1_FREEZE_ONLY_FILES", edited)
+    with pytest.raises(AssertionError, match="i052_legacy_baseline.json"):
+        freeze._verify_frozen_json_bytes()
