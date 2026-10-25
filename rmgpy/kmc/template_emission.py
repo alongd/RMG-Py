@@ -2992,6 +2992,23 @@ def primary_order(payload, template, record_id) -> tuple:
     return (payload.get("orientation") != "as_generated", template.get("key"), str(record_id))
 
 
+def _reverse_side(payload, template, by_record):
+    """The reverse record whose family and direction ``derive_weights``
+    searches for ``template``'s partners: that of the first record holding a
+    copy of it (its own, then every record ``collision`` lists) whose
+    ``reverse_of`` record is in the catalog and loads.  Copies share one key,
+    so these reverse records share one family and direction.  None: no
+    holder has a loaded reverse record."""
+    own = payload.get("record_event_id")
+    holders = [own] + [r for r in (template.get("collision") or {}).get("records", [])
+                       if r != own]
+    for rid in holders:
+        q = by_record.get((by_record.get(rid) or {}).get("reverse_of"))
+        if q is not None and _loads(q):
+            return q
+    return None
+
+
 def derive_weights(payloads, *, counter) -> list:
     """Make the weights of every reciprocal pair of LOADED templates follow
     detailed balance at the requested temperature.
@@ -3010,19 +3027,23 @@ def derive_weights(payloads, *, counter) -> list:
     primary's stored thermo form, ``N_P / N_D`` and the ``ssa`` ratio, so that
     ``weight_at`` returns ``w_P(T) * (N_P / N_D) / (ssa_ratio * Kc_P(T))``.  A
     template with several or no partners, or without thermo, stays
-    independent (and fails the off-grid cycle check)."""
+    independent (and fails the off-grid cycle check).  The partners are
+    searched on the reverse side of any record holding a copy of ``t``
+    (``_reverse_side``), never only on its representative's: which copy
+    loads is a content order, and its record's reverse may be absent or load
+    nothing while the partner loads from another record."""
     out = [json.loads(canonical_json(p)) for p in payloads]
     loaded = _Loaded(out)
     by_record = {p.get("record_event_id"): p for p in out}
     changed = set()
     for i, p in enumerate(out):
-        rid, rev = p.get("record_event_id"), p.get("reverse_of")
-        q = by_record.get(rev)
-        if q is None or not _loads(q):
-            continue                 # no loaded reverse: the cycle gate names it
+        rid = p.get("record_event_id")
         for t in p.get("templates", []):
             if t.get("status") != "emitted" or t.get("derived"):
                 continue
+            q = _reverse_side(p, t, by_record)
+            if q is None:
+                continue             # no loaded reverse: the cycle gate names it
             partners = set()
             for lab in CHECK_LABELS:
                 wit = ((t.get("maps") or {}).get("witnesses") or {}).get(lab)
