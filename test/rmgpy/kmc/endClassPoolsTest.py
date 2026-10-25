@@ -149,6 +149,15 @@ def test_interior_beta_scission_is_refused_by_name(table):
         mapped(table, [H, C, BETA_MID])
 
 
+def test_beta_scission_of_a_class_no_family_labels_is_refused_for_its_class(table):
+    """PP's tail end radical: a second end class, in no family of the table."""
+    import copy
+    other = copy.deepcopy(table)
+    other["kernels"][BETA_END]["classes"] = ["radical_end:CHX"]
+    with pytest.raises(mp.ProducerError, match=r"no MoM pool carries its participant class 'radical_end:CHX'"):
+        mapped(other, [H, C, BETA_END])
+
+
 def test_the_methyl_cuts_are_size_departures_and_homolysis_is_the_uniform_cut_from_ethyl(table):
     out = mapped(table, carried(table))
     (h,) = out["homolysis"]
