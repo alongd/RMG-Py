@@ -42,6 +42,7 @@ from rmgpy.solver.polymer import (HybridPolymerSystem, MassTransferConfig, Polym
                                   validate_k_depropagation, validate_k_homolysis,
                                   validate_kernel_homolysis, validate_kernel_recombination,
                                   validate_kernel_transfer, validate_kernel_move,
+                                  validate_kernel_propagation,
                                   validate_radical_qssa_unzip,
                                   validate_side_group_homolysis)
 from rmgpy.polymer import strip_rmg_index_suffix
@@ -1312,6 +1313,12 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
                                              None),
                 kernel_transfer=getattr(spc, 'kernel_transfer', None),
                 kernel_move=getattr(spc, 'kernel_move', None),
+                kernel_propagation=getattr(spc, 'kernel_propagation', None),
+                # a deck-declared end-radical pool IS its radical-end pool: its
+                # depropagation runs here (on a parent pool k_depropagation
+                # belongs to the spawned daughters, never to the parent)
+                k_depropagation=(getattr(spc, 'k_depropagation', None)
+                                 if getattr(spc, 'end_radical_site', None) else None),
             )
             pools.append(pool)
         else:
@@ -1402,17 +1409,24 @@ class PolymerPool(object):
                  kernel_recombination: Optional[list] = None,
                  kernel_transfer: Optional[list] = None,
                  kernel_move: Optional[list] = None,
+                 kernel_propagation: Optional[list] = None,
+                 k_depropagation: Optional[dict] = None,
                  ):
         self.label = label
         self.xs = xs
         # Catalog-driven pool kernels (S5 a + b, c + e, d): term lists,
         # validated + normalized in to_config (validate_kernel_homolysis /
         # validate_kernel_recombination / validate_kernel_transfer /
-        # validate_kernel_move); targets resolve in the solver.
+        # validate_kernel_move / validate_kernel_propagation); targets
+        # resolve in the solver.
         self.kernel_homolysis = kernel_homolysis
         self.kernel_recombination = kernel_recombination
         self.kernel_transfer = kernel_transfer
         self.kernel_move = kernel_move
+        self.kernel_propagation = kernel_propagation
+        # End-radical depropagation on this pool itself (I-266: a
+        # deck-declared end-radical pool); validated in to_config.
+        self.k_depropagation = k_depropagation
         self.monomer = monomer
         self.explicit_map = explicit_map
         self.mu_species = mu_species
@@ -1676,6 +1690,10 @@ class PolymerPool(object):
                              validate_kernel_transfer(self.label, self.kernel_transfer)),
             kernel_move=(None if self.kernel_move is None else
                          validate_kernel_move(self.label, self.kernel_move)),
+            kernel_propagation=(None if self.kernel_propagation is None else
+                                validate_kernel_propagation(self.label, self.kernel_propagation)),
+            k_depropagation=(None if self.k_depropagation is None else
+                             validate_k_depropagation(self.label, self.k_depropagation)),
             repeat_unit_atoms=_element_count_tuple(self.monomer),
             end_group_atoms=_end_group_atoms(
                 getattr(self.proxy_species, "end_groups", None)),
@@ -1940,6 +1958,8 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
                              else validate_kernel_transfer(b, spc.kernel_transfer)),
             kernel_move=(None if getattr(spc, "kernel_move", None) is None
                          else validate_kernel_move(b, spc.kernel_move)),
+            kernel_propagation=(None if getattr(spc, "kernel_propagation", None) is None
+                                else validate_kernel_propagation(b, spc.kernel_propagation)),
             # FR1-K1 mass contract: an X-loss feature daughter's exact
             # per-chain defect (M_X of the spawning channel's gas_product,
             # pinned by generate_side_loss_daughters) must survive config

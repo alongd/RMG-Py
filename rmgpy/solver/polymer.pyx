@@ -771,6 +771,13 @@ KERNEL_HOMOLYSIS_KEYS = ("template", "w", "phi", "a", "b", "min_fragment",
                          "periods_per_unit", "daughter")
 KERNEL_RECOMBINATION_KEYS = ("template", "k_pair", "sites_per_chain",
                              "periods_per_unit", "product")
+# I-266: a recombination term joining one chain of this pool and one of
+# another pool (two end-radical classes; an addition of a radical to an
+# alkene pool) carries both.
+KERNEL_RECOMBINATION_PARTNER_KEYS = ("partner", "partner_sites_per_chain")
+# I-266: one chain of the pool adds one monomer unit, its monomer_product
+# consumed.
+KERNEL_PROPAGATION_KEYS = ("template", "k_pair")
 KERNEL_TRANSFER_KEYS = ("template", "k_pair", "phi", "partner", "product",
                         "partner_product")
 # S5 d: a transfer term whose sites grow with a chain carries both.
@@ -781,22 +788,27 @@ KERNEL_MOVE_KEYS = ("template", "k", "a", "b", "periods_per_unit", "product")
 # a*n + b turns negative below it). Reported, never acted on.
 KERNEL_VALIDITY_KEY = "valid_from_periods"
 CATALOG_KERNELS = ("kernel_homolysis", "kernel_recombination",
-                   "kernel_transfer", "kernel_move")
+                   "kernel_transfer", "kernel_move", "kernel_propagation")
 
 
 def catalog_kernel_connections(pool):
     """Every chain move of `pool`'s (validated) catalog kernel terms, as
     (kernel, template, source pool label, target pool label): homolysis
-    pool -> daughter, recombination pool -> product, transfer pool ->
-    product and partner -> partner_product, move pool -> product."""
+    pool -> daughter, recombination pool -> product (and partner ->
+    product for a join of two pools), transfer pool -> product and partner
+    -> partner_product, move pool -> product. Propagation keeps its chains
+    in the pool."""
     out = []
     for kernel, moves in (("kernel_homolysis", (("", "daughter"),)),
-                          ("kernel_recombination", (("", "product"),)),
+                          ("kernel_recombination", (("", "product"),
+                                                    ("partner", "product"))),
                           ("kernel_transfer", (("", "product"),
                                                ("partner", "partner_product"))),
                           ("kernel_move", (("", "product"),))):
         for term in getattr(pool, kernel, None) or ():
             for src, dst in moves:
+                if src and src not in term:
+                    continue
                 out.append((kernel, term["template"],
                             term[src] if src else pool.label, term[dst]))
     return out
@@ -848,10 +860,11 @@ def _kernel_terms(pool_label, kernel, terms, keys, target_key, optional=()):
             raise ValueError(f"Pool {pool_label}: {kernel} has a duplicate "
                              f"template {template!r}.")
         seen.add(template)
-        target = term[target_key]
-        if not isinstance(target, str) or not target or target == pool_label:
-            raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
-                             f"{target_key}={target!r} must name another pool.")
+        if target_key is not None:
+            target = term[target_key]
+            if not isinstance(target, str) or not target or target == pool_label:
+                raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
+                                 f"{target_key}={target!r} must name another pool.")
         yield template, term
 
 
@@ -922,21 +935,60 @@ def validate_kernel_recombination(pool_label, terms):
     n0 + n1 periods in the `product` pool at k_pair*S**2 per volume, S the
     pool's site concentration [mol/m^3] and k_pair [m^3/(mol s)] > 0 the
     rate coefficient per ordered site pair in MoM's concentration
-    convention (n / V_poly)."""
+    convention (n / V_poly).
+
+    I-266, a join of two pools: a term with `partner` (another pool) and
+    `partner_sites_per_chain` (> 0), both or neither, joins one chain of
+    this pool and one of the partner into one chain of n + m periods in
+    `product` at k_pair*S*S' per volume, S' the partner's site
+    concentration."""
     out = []
     for template, term in _kernel_terms(pool_label, "kernel_recombination",
                                         terms, KERNEL_RECOMBINATION_KEYS,
-                                        "product"):
+                                        "product",
+                                        optional=KERNEL_RECOMBINATION_PARTNER_KEYS):
         num = lambda key, **kw: _kernel_number(pool_label,
                                                "kernel_recombination",
                                                template, key, term[key], **kw)
+        partner = {}
+        if "partner" in term:
+            if not isinstance(term["partner"], str) or not term["partner"] \
+                    or term["partner"] == pool_label:
+                raise ValueError(
+                    f"Pool {pool_label}: kernel_recombination term "
+                    f"{template!r}: partner={term['partner']!r} must name "
+                    f"another pool (a join within this pool has no partner).")
+            partner = {"partner": term["partner"],
+                       "partner_sites_per_chain": num("partner_sites_per_chain",
+                                                      positive=True)}
         out.append({"template": template, "k_pair": num("k_pair", positive=True),
                     "sites_per_chain": num("sites_per_chain", positive=True),
                     "periods_per_unit": _kernel_integer(
                         pool_label, "kernel_recombination", template,
                         "periods_per_unit", term["periods_per_unit"]),
-                    "product": term["product"],
+                    "product": term["product"], **partner,
                     **_kernel_validity(pool_label, "kernel_recombination",
+                                       template, term)})
+    return out
+
+
+def validate_kernel_propagation(pool_label, terms):
+    """Validate a kernel_propagation term list and return it normalized
+    (shared like validate_kernel_homolysis).
+
+    Each term (I-266) is one kernel of a kernel-rates table whose events add
+    one monomer unit to a chain of this pool, consuming one of the pool's
+    monomer_product, at k_pair*c_M per chain, k_pair [m^3/(mol s)] > 0 (the
+    sites folded in) and c_M the monomer's amount over the polymer volume
+    (kMC's convention: every small species at its melt concentration)."""
+    out = []
+    for template, term in _kernel_terms(pool_label, "kernel_propagation",
+                                        terms, KERNEL_PROPAGATION_KEYS, None):
+        out.append({"template": template,
+                    "k_pair": _kernel_number(pool_label, "kernel_propagation",
+                                             template, "k_pair",
+                                             term["k_pair"], positive=True),
+                    **_kernel_validity(pool_label, "kernel_propagation",
                                        template, term)})
     return out
 
@@ -1593,6 +1645,9 @@ class PolymerPoolConfig:
     # Pool move (S5 d) per validate_kernel_move: one chain of this pool
     # changes pool, length unchanged (backbiting and its reverse).
     kernel_move: Optional[List[Dict[str, object]]] = None
+    # Propagation (I-266) per validate_kernel_propagation: one chain of this
+    # pool adds one monomer unit, its monomer_poly_index species consumed.
+    kernel_propagation: Optional[List[Dict[str, object]]] = None
 
     # Exact per-chain mass defect [g/mol] of an X-loss feature pool (FR1-K1
     # mass contract, the round-70 #1 P1 trap): the feature pool keeps the
@@ -2598,6 +2653,16 @@ class HybridPolymerSystem(ReactionSystem):
                 object.__setattr__(pool, 'kernel_move',
                                    validate_kernel_move(
                                        pool.label, pool.kernel_move))
+            if pool.kernel_propagation is not None:
+                object.__setattr__(pool, 'kernel_propagation',
+                                   validate_kernel_propagation(
+                                       pool.label, pool.kernel_propagation))
+                if pool.monomer_poly_index is None:
+                    raise ValueError(
+                        f"Pool {pool.label}: kernel_propagation is configured "
+                        f"but monomer_poly_index is None: the monomer each "
+                        f"event consumes has no core species, so the added "
+                        f"units would come from nowhere.")
 
             # Radical-homolysis kernel invariants (Stage 1, adjudicated round
             # 66). LAST line of defense, same rationale as above: the deck
@@ -2857,15 +2922,25 @@ class HybridPolymerSystem(ReactionSystem):
                      pool.kernel_recombination,
                      self.kernel_recombination_terms[i])):
                 for term in terms or ():
-                    target = label_to_pool.get(term[key])
-                    if target is None:
-                        raise ValueError(
-                            f"Pool {pool.label}: {kernel} term "
-                            f"{term['template']!r} names the {key} pool "
-                            f"{term[key]!r}, which is not among the "
-                            f"configured solver pools "
-                            f"{sorted(label_to_pool)}.")
-                    out.append((dict(term), tuple(target.mu_indices)))
+                    slots = []
+                    for k in (key, "partner"):
+                        if k not in term:
+                            continue
+                        target = label_to_pool.get(term[k])
+                        if target is None:
+                            raise ValueError(
+                                f"Pool {pool.label}: {kernel} term "
+                                f"{term['template']!r} names the {k} pool "
+                                f"{term[k]!r}, which is not among the "
+                                f"configured solver pools "
+                                f"{sorted(label_to_pool)}.")
+                        slots.append(tuple(target.mu_indices))
+                    if kernel == "kernel_recombination":
+                        # (term, product slots, partner slots or None)
+                        out.append((dict(term), slots[0],
+                                    slots[1] if len(slots) > 1 else None))
+                    else:
+                        out.append((dict(term), slots[0]))
         # kernel_transfer: (term, partner, product, partner_product) moment
         # slots; every named pool must be configured or its chains vanish.
         self.kernel_transfer_terms = [[] for _ in self.polymer_pools]
@@ -2896,6 +2971,11 @@ class HybridPolymerSystem(ReactionSystem):
                         f"configured solver pools {sorted(label_to_pool)}.")
                 self.kernel_move_terms[i].append(
                     (dict(term), tuple(target.mu_indices)))
+        # kernel_propagation (I-266): the terms; the monomer is the pool's
+        # monomer_poly_index (validate_configuration requires it).
+        self.kernel_propagation_terms = [
+            [dict(term) for term in pool.kernel_propagation or ()]
+            for pool in self.polymer_pools]
         self._assert_catalog_kernels_count_once()
 
     def _row_kernel_channel(self, combined_rxns, int r):
@@ -8944,8 +9024,36 @@ class HybridPolymerSystem(ReactionSystem):
             #   product dm0 += r;    dm1 += 2*k s^2 m0 m1
             #           dm2 += k s^2 (2*m0*m2 + 2*m1^2)
             # (mu2 gains 2*(m1/m0)^2 per event beyond the transfer).
+            # I-266, a join of two pools (a term with a partner): one chain of
+            # this pool (s sites) and one of the partner (s' sites, moments
+            # nu_j) join into one chain of n + m in the product pool at
+            # K = k_pair*s*s' per pair (a convolution, closed: no m3; the
+            # same in any length unit):
+            #   this    dmu_j -= K mu_j nu0;   partner dnu_j -= K mu0 nu_j
+            #   product dmu0 += K mu0 nu0;     dmu1 += K (mu1 nu0 + mu0 nu1)
+            #           dmu2 += K (mu2 nu0 + 2 mu1 nu1 + mu0 nu2)
             if mu0 > 0.0:
-                for term, (p0, p1, p2) in self.kernel_recombination_terms[pool_i]:
+                for term, (p0, p1, p2), partner in self.kernel_recombination_terms[pool_i]:
+                    if partner is not None:
+                        q0, q1, q2 = partner
+                        nu0 = _softclamp(y[q0], self._softclamp_lam) / V_poly
+                        if not nu0 > 0.0:
+                            continue
+                        nu1 = _softclamp(y[q1], self._softclamp_lam) / V_poly
+                        nu2 = _softclamp(y[q2], self._softclamp_lam) / V_poly
+                        kss = (term["k_pair"] * term["sites_per_chain"]
+                               * term["partner_sites_per_chain"])
+                        dmu0_dt -= kss * mu0 * nu0
+                        dmu1_dt -= kss * mu1 * nu0
+                        dmu2_dt -= kss * mu2 * nu0
+                        dn_dt[q0] -= kss * mu0 * nu0 * V_poly
+                        dn_dt[q1] -= kss * mu0 * nu1 * V_poly
+                        dn_dt[q2] -= kss * mu0 * nu2 * V_poly
+                        dn_dt[p0] += kss * mu0 * nu0 * V_poly
+                        dn_dt[p1] += kss * (mu1 * nu0 + mu0 * nu1) * V_poly
+                        dn_dt[p2] += kss * (mu2 * nu0 + 2.0 * mu1 * nu1
+                                            + mu0 * nu2) * V_poly
+                        continue
                     c_k = float(term["periods_per_unit"])
                     ks2 = (term["k_pair"] * term["sites_per_chain"]
                            * term["sites_per_chain"])
@@ -9063,6 +9171,21 @@ class HybridPolymerSystem(ReactionSystem):
                     dn_dt[p0] += flow[0] * V_poly
                     dn_dt[p1] += flow[1] * V_poly
                     dn_dt[p2] += flow[2] * V_poly
+
+            # kernel_propagation (I-266): a chain of n units adds one monomer
+            # unit at k_pair*c_M per chain, c_M = n_M / V_poly (kMC's
+            # convention: every small species at its melt concentration),
+            # the monomer consumed (small_src -> dn_dt*V_poly):
+            #   dmu0 = 0;  dmu1 = k c_M mu0;  dmu2 = k c_M (2 mu1 + mu0)
+            if mu0 > 0.0 and self.kernel_propagation_terms[pool_i]:
+                m_idx = pool.monomer_poly_index
+                c_mon = _softclamp(y[m_idx], self._softclamp_lam) / V_poly
+                if c_mon > 0.0:
+                    for term in self.kernel_propagation_terms[pool_i]:
+                        kc = term["k_pair"] * c_mon
+                        dmu1_dt += kc * mu0
+                        dmu2_dt += kc * (2.0 * mu1 + mu0)
+                        small_src[m_idx] = small_src.get(m_idx, 0.0) - kc * mu0
 
             # Side-group homolysis initiation kernel (SGH kernel-v2, explicit
             # Br-inventory depletion; adjudicated spar r103 / plan r104).

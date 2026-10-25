@@ -74,6 +74,7 @@ from rmgpy.solver.polymer import (validate_k_depropagation,
                                   validate_kernel_recombination,
                                   validate_kernel_transfer,
                                   validate_kernel_move,
+                                  validate_kernel_propagation,
                                   validate_radical_qssa_unzip,
                                   validate_side_group_homolysis)
 from rmgpy.solver.simple import SimpleReactor
@@ -280,6 +281,8 @@ def polymer(label: str,
             kernel_transfer: Optional[list] = None,
             interior_feature: Optional[str] = None,
             kernel_move: Optional[list] = None,
+            end_class: Optional[str] = None,
+            kernel_propagation: Optional[list] = None,
             ):
     """
     Helper function exposed in the input file to define a Polymer Pool.
@@ -431,6 +434,19 @@ def polymer(label: str,
             into the `product` pool, length unchanged, at k*(a n + b) per
             chain (backbiting and its reverse), each term exactly {template,
             k, a, b, periods_per_unit, product} (validate_kernel_move).
+        end_class (str): on an end_radical_site pool, the class of its
+            radical end (letters and digits), keying the pool's identity so
+            that two end-radical pools of one site are two pools. Default
+            None.
+        kernel_propagation (list): catalog-driven propagation: one chain of
+            this pool adds one monomer unit, the pool's monomer_product
+            consumed, at k_pair * n_monomer / V_poly per chain, each term
+            exactly {template, k_pair} (validate_kernel_propagation).
+            Requires monomer_product.
+
+    k_depropagation on an end_radical_site pool runs on that pool (it is
+    the radical-end pool); on any other pool it needs k_homolysis, as
+    before.
     """
     # Catalog-driven pool kernels (S5 a + b, c + e, d): the shared
     # validators, re-raised as deck errors; kernel_homolysis carries this
@@ -445,8 +461,13 @@ def polymer(label: str,
             kernel_transfer = validate_kernel_transfer(label, kernel_transfer)
         if kernel_move is not None:
             kernel_move = validate_kernel_move(label, kernel_move)
+        if kernel_propagation is not None:
+            kernel_propagation = validate_kernel_propagation(label, kernel_propagation)
     except ValueError as e:
         raise InputError(str(e))
+    if kernel_propagation is not None and monomer_product is None:
+        raise InputError(f"Polymer pool '{label}': kernel_propagation requires monomer_product (the monomer "
+                         f"species each event consumes); without it the added units would come from nowhere.")
     if kernel_homolysis is not None:
         for other, on in (("k_homolysis", k_homolysis is not None), ("k_scission", k_scission > 0.0),
                           ("radical_qssa_unzip", radical_qssa_unzip is not None)):
@@ -596,7 +617,9 @@ def polymer(label: str,
             k_depropagation = validate_k_depropagation(label, k_depropagation)
         except ValueError as e:
             raise InputError(str(e))
-        if k_homolysis is None:
+        # An explicit end-radical pool (end_radical_site, kernel mode) IS the
+        # radical-end pool: the kernel runs on it (I-266).
+        if k_homolysis is None and end_radical_site is None:
             raise InputError(
                 f"Polymer pool '{label}': k_depropagation requires "
                 f"k_homolysis on the same pool -- the depropagation kernel "
@@ -683,11 +706,13 @@ def polymer(label: str,
         end_radical_site=end_radical_site,
         end_alkene_site=end_alkene_site,
         interior_feature=interior_feature,
+        end_class=end_class,
     )
     poly_obj.kernel_homolysis = kernel_homolysis
     poly_obj.kernel_recombination = kernel_recombination
     poly_obj.kernel_transfer = kernel_transfer
     poly_obj.kernel_move = kernel_move
+    poly_obj.kernel_propagation = kernel_propagation
 
     # 1b. Round-72 P1 STRUCTURAL layer of the side-group channel law,
     #     enforced against the PARSED monomer at deck-read time: the

@@ -101,6 +101,7 @@ import json
 import logging
 import math
 import os
+import re
 
 import numpy as np
 from collections import defaultdict
@@ -259,6 +260,7 @@ class Polymer(Species):
                  side_loss_channel: Optional[str] = None,
                  end_alkene_site: Optional[str] = None,
                  interior_feature: Optional[str] = None,
+                 end_class: Optional[str] = None,
                  **kwargs,
                  ):
         # k_unzip/k_scission/radical_qssa_unzip/k_homolysis/end_radical_site
@@ -297,6 +299,18 @@ class Polymer(Species):
                 f"Polymer '{label}': end_radical_site must be None, "
                 f"'primary' or 'secondary', got {end_radical_site!r}.")
         self.end_radical_site = end_radical_site
+        # end_class keys an explicit end-radical pool by the class of its
+        # radical end (I-266: a kernel table with more than one end-radical
+        # class, e.g. a short class of its own): letters and digits, only on
+        # an end_radical_site pool; the fingerprint's _EndRad segment carries
+        # it, so two end-radical pools of one site stay two pools. None (the
+        # default) leaves the fingerprint as it was.
+        if end_class is not None and (end_radical_site is None or not isinstance(end_class, str)
+                                      or not re.fullmatch(r"[A-Za-z0-9]+", end_class)):
+            raise InputError(
+                f"Polymer '{label}': end_class must be a non-empty string of letters and digits on an "
+                f"end_radical_site pool, got end_class={end_class!r} with end_radical_site={end_radical_site!r}.")
+        self.end_class = end_class
         # end_alkene_site marks an explicit terminal-alkene pool (S5 c + e,
         # the end + end disproportionation donor's product): its proxy is the
         # end-radical oligomer of that site with the radical end turned into
@@ -595,6 +609,8 @@ class Polymer(Species):
                     er_mol = self.end_radical_proxy.molecule[0]
                     feat += (f'_EndRad-{self.end_radical_site}'
                              f'-rad{_radical_site_descriptor(er_mol)}')
+                    if getattr(self, 'end_class', None):
+                        feat += f'-class{self.end_class}'
                 if getattr(self, 'end_alkene_site', None):
                     # Terminal-alkene pools (S5 c + e): distinct from the
                     # dead-chain and end-radical pools of the same monomer.
@@ -882,6 +898,7 @@ class Polymer(Species):
         other.k_depropagation = deepcopy(getattr(self, 'k_depropagation',
                                                  None))
         other.end_radical_site = getattr(self, 'end_radical_site', None)
+        other.end_class = getattr(self, 'end_class', None)
         other.end_alkene_site = getattr(self, 'end_alkene_site', None)
         other.interior_feature = getattr(self, 'interior_feature', None)
         # Catalog-driven pool kernels (S5 a + b, c + e, d): losing a term list
@@ -890,6 +907,7 @@ class Polymer(Species):
         other.kernel_recombination = deepcopy(getattr(self, 'kernel_recombination', None))
         other.kernel_transfer = deepcopy(getattr(self, 'kernel_transfer', None))
         other.kernel_move = deepcopy(getattr(self, 'kernel_move', None))
+        other.kernel_propagation = deepcopy(getattr(self, 'kernel_propagation', None))
         # Side-group homolysis kernel channels + X-loss feature-pool
         # identity + exact mass-defect contract (FR1-K1): losing the
         # channel list on copy would silently disable the kernel; losing
