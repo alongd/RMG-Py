@@ -685,7 +685,10 @@ def _kernel_kind(kid: str, kernel: dict, families: dict, family_of: Dict[str, st
     if ktype == "addition":
         return "propagation" if monomer is not None and classes[0] == monomer["class"] else "join"
     if ktype == "beta_scission":
-        if family_of.get(classes[0]) != "radical_end":
+        if classes[0] not in family_of:
+            raise ProducerError(f"{kid}: no MoM pool carries its participant class {classes[0]!r} (no family of the "
+                                "table labels it)")
+        if family_of[classes[0]] != "radical_end":
             raise ProducerError(f"{kid}: no MoM kernel carries it: its fragments' lengths are set by the "
                                 f"radical's position on the chain (the {family_of.get(classes[0])!r} law's "
                                 "outcomes are relative to it), which no pool carries")
