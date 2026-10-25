@@ -77,6 +77,7 @@ CONTEXT_CLASS = {"pristine": "pristine", "interior_radical": "featured",
                  "doubly_featured": "featured", "head_end_radical": "end-proximal",
                  "tail_end_radical": "end-proximal", "head_group_radical": "end-proximal",
                  "tail_group_radical": "end-proximal", "pendant_radical": "pendant",
+                 "head_terminal_radical": "end-proximal", "short_radical": "end-proximal",
                  "monomer": "monomer"}
 
 
@@ -607,15 +608,114 @@ class _SequenceBuilder:
         return out
 
 
-def _sequence_builder(spec, units) -> _SequenceBuilder:
-    from rmgpy.polymer_spec import PolymerSpec
+# The compile structures of a ``BranchedPolymerSpec`` are those of its lift
+# (``declared_branches``: a linear alphabet of residue variants, built by the
+# lift's chain provider under ``branched:<sha16>``), with its ends read from
+# the end and short words of its environment set:
+#
+# - ``interior_radical:<i>`` / ``pristine:<i>``: as above, on the interior
+#   witnesses of the lift (stub atoms are never witnesses);
+# - ``head_end_radical:<i>`` / ``tail_end_radical:<i>``: a radical at a
+#   forbidden-vacant end site (a cut link: no H cap can stand there), one per
+#   environment over the support words of rho + 2 variants from that end;
+# - ``head_terminal_radical:<i>``: one per environment of a hydrogen-bearing
+#   atom first seen near a real end (an H-capped vacant entry site) and not on
+#   an interior radical, on its end word with one more variant inward;
+# - ``short_radical:<i>``: likewise for a molecule both of whose ends the
+#   environment reads (a word of at most k variants, both ends capped).
+# A radical on a vacant end site's own atom takes the cap's place
+# (``head``/``tail`` ``radical``); any other is an H removed.
 
-    if not isinstance(spec, PolymerSpec):
-        raise TypeError(f"a sequence proxy set takes a PolymerSpec (schema v2), got "
-                        f"{type(spec).__name__}")
+
+class _BranchedBuilder(_SequenceBuilder):
+    """The structures of one branched declaration (comment above)."""
+
+    def __init__(self, spec):
+        from rmgpy.kmc.declared_branches import branched_lift, branched_provider
+        from rmgpy.kmc.declared_chain import site_class_policy
+        from rmgpy.kmc import declared_environments as de
+
+        self.declaration = spec
+        self.lift = branched_lift(spec)
+        self.spec = self.lift
+        self.provider = branched_provider(spec)
+        self.period, self.witnesses = self.lift.environment_witnesses()
+        self.k = self.lift.k
+        self.policy = site_class_policy(spec.locality_policy, de.MAX_HEAVY_ATOMS)
+        self.homopolymer = set()
+        self._built = {}
+
+    def _checked(self, name, chain, environment, unit, key):
+        """``chain`` after checking that its pristine atom ``(unit, key)``
+        reads ``environment`` in the lift's own key space (the declared
+        bonds; a built chain is Kekule, whose keys differ on an aromatic
+        residue), so its word, caps and padding are the environment's."""
+        found = self.lift.word_keys(chain.residues, unit, True, chain.tail != "artificial")[key]
+        if found != environment:
+            raise ValueError(f"{name}: its pristine atom ({unit}, {key!r}) reads {found!r}, not the "
+                             f"environment {environment!r} it stands for")
+        return chain
+
+    def _terminal(self, name, word, position, key, both):
+        from rmgpy.kmc.declared_sequence import SequenceChainSpec
+
+        lift = self.lift
+        residues = tuple(word)
+        if not both:
+            residues = residues + (min(lift.support[residues[-1]]),)
+        chain = SequenceChainSpec(residues, "declared", "declared" if both else "artificial")
+        atom = next(a for a in lift.residues[residues[position]].graph.atoms if a.key == key)
+        if not atom.hydrogens and position == 0 and key == lift.entry[residues[0]]:
+            return replace(chain, head="radical")
+        if not atom.hydrogens and both and position == len(residues) - 1 and key == lift.exit[residues[-1]]:
+            return replace(chain, tail="radical")
+        return self._radical(chain, position, key)
+
+    def _ends(self, units) -> list:
+        """Open-end, terminal and short-molecule radicals (comment above)."""
+        from rmgpy.kmc.declared_sequence import SequenceChainSpec
+
+        lift, out = self.lift, []
+        for side in ("head", "tail"):
+            found = {}
+            for path in self._support_paths(lift.rho + 2):
+                end = path[0] if side == "head" else path[-1]
+                if (lift.vacant_entry(end) if side == "head" else lift.vacant_exit(end)):
+                    continue
+                found.setdefault(self._key(*self._end_probe(path, side, None)), []).append(path)
+            for index, environment in enumerate(sorted(found)):
+                path = min(found[environment])
+                chain = self._end_chain(SequenceChainSpec(self._padded(path, side, units)), side, None)
+                out.append((f"{side}_end_radical:{index}", chain, dict(environment=environment)))
+        covered = {key for key, occurrences in self.witnesses.items()
+                   if _h_bearing(lift.residues[occurrences[0][0][occurrences[0][1]]].graph, occurrences[0][2])}
+        environments = lift.environments()
+        counters = {"end": 0, "short": 0}
+        for environment, occurrences in environments.items():
+            if environment in covered:
+                continue
+            for kind, word, position, _start, key in occurrences:
+                if kind == "interior" or not lift.h_bearing(kind, word, position, key):
+                    continue
+                prefix = "head_terminal_radical" if kind == "end" else "short_radical"
+                name = f"{prefix}:{counters[kind]}"
+                chain = self._terminal(name, word, position, key, kind == "short")
+                out.append((name, self._checked(name, chain, environment, position, key),
+                            dict(environment=environment)))
+                counters[kind] += 1
+                break
+        return out
+
+
+def _sequence_builder(spec, units) -> _SequenceBuilder:
+    from rmgpy.polymer_spec import BranchedPolymerSpec, PolymerSpec
+
+    if not isinstance(spec, (PolymerSpec, BranchedPolymerSpec)):
+        raise TypeError(f"a sequence proxy set takes a PolymerSpec or a BranchedPolymerSpec (schema "
+                        f"v2), got {type(spec).__name__}")
     if isinstance(units, bool) or not isinstance(units, int) or units < 1:
         raise ValueError(f"sequence proxies need at least one residue per chain, got {units!r}")
-    return _SequenceBuilder(spec)
+    return _BranchedBuilder(spec) if isinstance(spec, BranchedPolymerSpec) else _SequenceBuilder(spec)
 
 
 def sequence_structures(spec, units: int = DEFAULT_PROXY_UNITS, wide: bool = False) -> dict:

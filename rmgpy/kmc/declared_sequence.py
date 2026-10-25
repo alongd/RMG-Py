@@ -109,11 +109,11 @@ class SequenceChainProvider(BoundaryProvider):
 
     RADICAL_END_CHEMISTRIES = ("radical",)
 
-    def __init__(self, spec):
+    def __init__(self, spec, name=None):
         from rmgpy.kmc.declared_environments import _backbone_atoms, _ends
 
         self.spec = spec
-        self.name = "sequence:" + hashlib.sha256(spec.normalized_json).hexdigest()[:16]
+        self.name = name or "sequence:" + hashlib.sha256(spec.normalized_json).hexdigest()[:16]
         self.residues = dict(spec.residues)
         self.junctions = spec.junctions
         self.support = {a: tuple(successors) for a, successors in spec.sequence_support}
@@ -524,10 +524,14 @@ class SequenceChainProvider(BoundaryProvider):
 
 
 def sequence_provider(spec) -> SequenceChainProvider:
-    """The registered provider of this exact normalized v2 declaration."""
-    from rmgpy.polymer_spec import normalized_polymer_spec
+    """The registered provider of this exact normalized v2 declaration (a
+    branched one's is its lift's, ``declared_branches.branched_provider``)."""
+    from rmgpy.polymer_spec import BranchedPolymerSpec, normalized_polymer_spec
 
     spec = normalized_polymer_spec(spec)
+    if isinstance(spec, BranchedPolymerSpec):
+        from rmgpy.kmc.declared_branches import branched_provider
+        return branched_provider(spec)
     name = "sequence:" + hashlib.sha256(spec.normalized_json).hexdigest()[:16]
     found = PROVIDERS.get(name)
     if isinstance(found, SequenceChainProvider) and \

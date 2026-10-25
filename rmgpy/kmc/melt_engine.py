@@ -93,6 +93,11 @@ backbone, its backbone degree after the participant's own edits, and for a
 heavy atom off the backbone whether it stays on a backbone-carrying piece);
 a kind pair is allowed or leak, so the leak and allowed pair counts are exact.
 Leak propensity accrues to the leak integral (``leak_num``) and never fires.
+A branched declaration (``BranchedPolymerSpec``) replaces this guard by its
+declared linearity (``melt_branched.DeclaredLinearity``: an inter-residue bond
+only at two vacant sites of a declared link, within each residue's site count,
+closing no cycle shorter than ``minimum_cycle_bonds``); its site kinds are
+tagged ``melt_branched.DECLARED`` and ``_pair_leak`` reads them by that rule.
 
 The leak fraction (``LEAK_ESTIMATOR``, ``LEAK_DEFINITION``) is
 ``leak_num / leak_den`` with ``leak_den = leak_num + non_thinned + phi_sum``:
@@ -180,6 +185,7 @@ from fractions import Fraction
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from rmgpy import constants
+from rmgpy.kmc import melt_branched
 from rmgpy.kmc import window_matcher as wm
 from rmgpy.kmc.melt_state import (AncestryError, MeltState, SetBond, SetRadical, materialize, _Builder,
                                    _backbone_keys)
@@ -338,11 +344,12 @@ class TransportLaw:
         spin = _number(met["spin_factor"], "spin_factor")
         if not SPIN_FACTOR_RANGE[0] <= spin <= SPIN_FACTOR_RANGE[1]:
             raise DeclarationError(f"spin_factor must lie in {SPIN_FACTOR_RANGE}, got {spin}")
-        from rmgpy.polymer_spec import PolymerSpec
+        from rmgpy.polymer_spec import BranchedPolymerSpec, PolymerSpec
         mean = None
-        if isinstance(spec, PolymerSpec):
+        if isinstance(spec, (PolymerSpec, BranchedPolymerSpec)):
+            from rmgpy.kmc.melt_branched import mean_residue_molar_mass as branched_mean
             from rmgpy.kmc.melt_sequence import mean_residue_molar_mass
-            mean = mean_residue_molar_mass(spec)
+            mean = mean_residue_molar_mass(spec) if isinstance(spec, PolymerSpec) else branched_mean(spec)
             m0, b = float(mean), 0
         else:
             repeat = spec.repeat_unit
@@ -1125,6 +1132,8 @@ def _site_kind(state, cls: _Class, t: wm.Template, participant: int, site) -> Tu
 
 
 def _pair_leak(cls: _Class, kind0: Tuple, kind1: Tuple) -> bool:
+    if melt_branched.is_declared_kind(kind0):
+        return melt_branched.declared_pair_leak(cls, kind0, kind1)
     if kind0[0] or kind1[0]:
         return True
     info = {}
@@ -1502,11 +1511,14 @@ class SpeciesIdentity:
 def declared_initialization(spec):
     """The representative masses, volume and scale factor of the declared melt:
     ``spec.initialization()`` (v1), or those of the sampled copolymer melt
-    (``melt_sequence.initialization``)."""
-    from rmgpy.polymer_spec import PolymerSpec
+    (``melt_sequence.initialization``), or those of the random branched melt
+    (``melt_branched.initialization``)."""
+    from rmgpy.polymer_spec import BranchedPolymerSpec, PolymerSpec
     if isinstance(spec, PolymerSpec):
         from rmgpy.kmc.melt_sequence import initialization
         return initialization(spec)
+    if isinstance(spec, BranchedPolymerSpec):
+        return melt_branched.initialization(spec)
     return spec.initialization()
 
 
@@ -1621,12 +1633,14 @@ class MeltEngine:
 
     def __init__(self, spec, catalog, temperature: float, rng, *, state=None, volume_m3=None,
                  quotient: bool = True, temperature_range=None, excluded: Iterable[str] = ()):
-        from rmgpy.polymer_spec import LinearHomopolymerSpec, PolymerSpec
-        if not isinstance(spec, (LinearHomopolymerSpec, PolymerSpec)):
+        from rmgpy.polymer_spec import BranchedPolymerSpec, LinearHomopolymerSpec, PolymerSpec
+        if not isinstance(spec, (LinearHomopolymerSpec, PolymerSpec, BranchedPolymerSpec)):
             raise DeclarationError(
-                "only LinearHomopolymerSpec and PolymerSpec declarations are supported, "
+                "only LinearHomopolymerSpec, PolymerSpec and BranchedPolymerSpec declarations are supported, "
                 f"got {type(spec).__name__}")
         self.spec = spec
+        # a branched declaration's leak rule is declared linearity (melt_branched.DeclaredLinearity)
+        self.linearity = melt_branched.DeclaredLinearity(spec) if isinstance(spec, BranchedPolymerSpec) else None
         self.quotient = bool(quotient)
         self.transport = TransportLaw.from_spec(spec)
         lo, hi = (float(temperature), float(temperature)) if temperature_range is None else \
@@ -1691,6 +1705,13 @@ class MeltEngine:
         self.conservation_checks = 0
         self._index_revision = 0
         self.rebuild()
+
+    def _leaks(self, state, edits) -> bool:
+        return _creates_branch(state, edits) if self.linearity is None else self.linearity.leaks(state, edits)
+
+    def _site_kind(self, state, cls, t, p, site) -> Tuple:
+        return _site_kind(state, cls, t, p, site) if self.linearity is None else \
+            self.linearity.site_kind(state, cls, t, p, site)
 
     # -- catalog and temperature ----------------------------------------
     def _load(self, temperature):
@@ -1850,7 +1871,7 @@ class MeltEngine:
                     prev = found.get(delta)    # the outcome: (template, component, delta) in one class and component
                     if prev is None or edit_key < prev.edit_key:
                         found[delta] = EngineTransition(t.name, t.family, cls.index, edit_key, (cid,), edits_, fb, fr,
-                                                        delta, _creates_branch(state, edits_))
+                                                        delta, self._leaks(state, edits_))
                 if found:
                     trs = sorted(found.values(), key=lambda x: x.edit_key)
                     which = self._uni_overrides(state, view, cid, cls.index, trs, seen)
@@ -1902,7 +1923,7 @@ class MeltEngine:
                                     for k in known[None]):
                                 kind = None
                         if kind is None:
-                            kind = _site_kind(state, cls, t, p, site)
+                            kind = self._site_kind(state, cls, t, p, site)
                         tag = self._site_tag(state, cid, cls.index, p, site, seen)
                         grouped.setdefault(kind if tag is None else kind + (tag,), []).append(site)
                     for kind, ss in grouped.items():
@@ -1919,7 +1940,7 @@ class MeltEngine:
         """site -> kind of participant ``p`` of class ``cls`` over the prior
         entries, with the positions ``_kind_reads`` checks under the key None;
         None when the class carries override tags or its kinds may walk."""
-        if cls.index in self._ovr:
+        if cls.index in self._ovr or self.linearity is not None:
             return None
         reads = _kind_reads(cls, t, p)
         if reads is None:
@@ -2265,7 +2286,7 @@ class MeltEngine:
         other.__dict__.update({k: v for k, v in self.__dict__.items()
                                if k in ("spec", "transport", "catalog", "rng", "state", "volume", "nav",
                                         "identity", "temperature", "templates", "classes", "weights",
-                                        "quotient", "temperature_range", "_ovr", "excluded")})
+                                        "quotient", "temperature_range", "_ovr", "excluded", "linearity")})
         other._index_revision = 0
         other.rebuild()
         return other.snapshot()
@@ -2304,7 +2325,7 @@ class MeltEngine:
                         if prev is None or edit_key < prev.edit_key:
                             found[identity] = EngineTransition(t.name, t.family, ci, edit_key, comps,
                                                                edits, fb, fr, delta,
-                                                               _creates_branch(self.state, edits))
+                                                               self._leaks(self.state, edits))
         if len(found) != 1:
             raise EngineError(f"{t.name}: site pair {s0} x {s1} gives {len(found)} outcomes, expected 1")
         return next(iter(found.values())), view

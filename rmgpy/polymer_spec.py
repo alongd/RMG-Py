@@ -12,7 +12,7 @@ import math
 from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, Union
 
 from rmgpy import constants
 from rmgpy.molecule import Atom, Bond, Molecule
@@ -1027,7 +1027,7 @@ class SchemaV2Refusal(ValueError):
 def is_schema_v2(value: Any) -> bool:
     """Whether ``value`` is a v2 declaration: a ``PolymerSpec``, or a mapping
     (or its JSON text) declaring schema_version 2."""
-    if isinstance(value, PolymerSpec):
+    if isinstance(value, (PolymerSpec, BranchedPolymerSpec)):
         return True
     if isinstance(value, (str, bytes, bytearray)):
         try:
@@ -1095,7 +1095,9 @@ class SiteDeclaration:
     vacancy: str
 
     @classmethod
-    def from_mapping(cls, value: Mapping, name: str) -> "SiteDeclaration":
+    def from_mapping(cls, value: Mapping, name: str, vacancies=("forbidden",)) -> "SiteDeclaration":
+        """``vacancies``: the vacancies the architecture admits (a linear chain
+        occupies every site; a branched one may leave a site H-capped)."""
         if not isinstance(value, Mapping) or set(value) != {"atom", "bond_order", "class", "vacancy"}:
             raise ValueError(f"site {name} requires exactly atom, bond_order, class and vacancy")
         atom, site_class, vacancy = value["atom"], value["class"], value["vacancy"]
@@ -1105,7 +1107,7 @@ class SiteDeclaration:
             raise ValueError(f"site {name}: class must be a non-empty string")
         if vacancy not in VACANCIES:
             raise ValueError(f"site {name}: vacancy must be one of {list(VACANCIES)}")
-        if vacancy != "forbidden":
+        if vacancy not in vacancies:
             raise ValueError(f"refused:vacancy: site {name} declares vacancy {vacancy!r}; a linear "
                              "chain occupies every site, capped sites arrive with branched chains")
         return cls(atom, _link_order(value["bond_order"], f"site {name} bond_order"), site_class, vacancy)
@@ -1126,7 +1128,8 @@ class ResidueDeclaration:
     sites: Tuple[Tuple[str, SiteDeclaration], ...]
 
     @classmethod
-    def from_mapping(cls, value: Mapping, name: str = "residue") -> "ResidueDeclaration":
+    def from_mapping(cls, value: Mapping, name: str = "residue",
+                     vacancies=("forbidden",)) -> "ResidueDeclaration":
         if not isinstance(value, Mapping) or set(value) != {"graph", "sites"}:
             raise ValueError(f"residue {name} requires exactly graph and sites")
         graph, sites = value["graph"], value["sites"]
@@ -1134,7 +1137,7 @@ class ResidueDeclaration:
             raise ValueError(f"residue {name}: the graph is a mapping without ports (sites declare them)")
         if not isinstance(sites, Mapping) or not sites:
             raise ValueError(f"residue {name} declares no sites")
-        parsed = tuple(sorted((str(site), SiteDeclaration.from_mapping(item, f"{name}.{site}"))
+        parsed = tuple(sorted((str(site), SiteDeclaration.from_mapping(item, f"{name}.{site}", vacancies))
                               for site, item in sites.items()))
         ports = {site: {"atom": item.atom, "bond_order": item.bond_order} for site, item in parsed}
         return cls(GraphDeclaration.from_mapping(dict(graph, ports=ports)), parsed)
@@ -1740,11 +1743,428 @@ class PolymerSpec:
         }
 
 
-def normalized_polymer_spec(value: Any) -> PolymerSpec:
-    """A v2 declaration from a ``PolymerSpec``, a mapping or its JSON text.
-    JSON floats parse as floats, so ``normalized_json`` is a fixed point."""
-    if isinstance(value, PolymerSpec):
+def normalized_polymer_spec(value: Any) -> Union["PolymerSpec", "BranchedPolymerSpec"]:
+    """A v2 declaration from a ``PolymerSpec`` / ``BranchedPolymerSpec``, a
+    mapping or its JSON text: ``architecture`` ``branched`` reads as a
+    ``BranchedPolymerSpec``, ``linear`` as a ``PolymerSpec``; ``network`` is
+    refused by name.  JSON floats parse as floats, so ``normalized_json`` is
+    a fixed point."""
+    if isinstance(value, (PolymerSpec, BranchedPolymerSpec)):
         return value
     if isinstance(value, (str, bytes, bytearray)):
         value = json.loads(value, object_pairs_hook=_reject_duplicate_json_pairs)
+    architecture = value.get("architecture") if isinstance(value, Mapping) else None
+    if architecture == "network":
+        raise ValueError("refused:architecture: network chains are not declarable yet (S7); schema v2 "
+                         "declares linear and branched chains")
+    if architecture == "branched":
+        return BranchedPolymerSpec.from_mapping(value)
     return PolymerSpec.from_mapping(value)
+
+
+# ---------------------------------------------------------------------------
+# schema v2, architecture "branched": finite branched molecules below the gel
+# point (``BranchedPolymerSpec``)
+# ---------------------------------------------------------------------------
+# Residues carry sites that a link may occupy or leave vacant (``vacancy: H``:
+# an H cap) and sites that are always linked (``forbidden``: a linking
+# residue).  A link joins a site of class ``from`` to a site of class ``to``
+# on two different residues; which residue follows which is pure site
+# occupancy, so there is no sequence support and no end group (a chain end is
+# a vacant site).  ``minimum_cycle_bonds`` (chemistry) is the shortest cycle
+# through inter-residue bonds any molecule may hold; at 2(r+1)+2 or more every
+# environment is a tree (an environment reads r + 1 bonds on each side of its
+# atom), so shorter values are refused.  The initial state is the seeded
+# ``random_bond_v1`` matching of the declared link counts over the declared
+# residue counts (``initial_ensemble``, outside the chemistry digest);
+# ``rmgpy.kmc.melt_branched`` builds it.  Counts at or above the gel point are
+# refused (networks are S7): the gel point is where the half-edge branching
+# process of the random matching becomes critical (``gel_criterion``).
+GENERATOR_V1 = "random_bond_v1"
+_BRANCHED_ENSEMBLE_FIELDS = {"generator", "representative_residue_counts", "link_counts", "seed"}
+
+
+def default_minimum_cycle_bonds(radius: int) -> int:
+    """2(r + 1) + 2: the shortest cycle no environment of radius ``radius``
+    (with its boundary shell) can hold whole."""
+    return 2 * (int(radius) + 1) + 2
+
+
+@dataclass(frozen=True)
+class BranchedEnsemble:
+    """``random_bond_v1``: residue counts, link counts (links of each type)
+    and the seed, exact integers."""
+
+    generator: str
+    residue_counts: Tuple[Tuple[str, int], ...]
+    link_counts: Tuple[Tuple[str, int], ...]
+    seed: int
+
+    @classmethod
+    def from_mapping(cls, value: Mapping, residues: Sequence[str], links: Sequence[str]) -> "BranchedEnsemble":
+        if not isinstance(value, Mapping) or set(value) != _BRANCHED_ENSEMBLE_FIELDS:
+            raise ValueError(f"a branched initial_ensemble has exactly {sorted(_BRANCHED_ENSEMBLE_FIELDS)}")
+        if value["generator"] != GENERATOR_V1:
+            raise ValueError(f"generator must be the literal {GENERATOR_V1!r}")
+        out = []
+        for field, names in (("representative_residue_counts", residues), ("link_counts", links)):
+            raw = value[field]
+            if not isinstance(raw, Mapping) or set(raw) != set(names):
+                raise ValueError(f"{field} must give every declared name {sorted(names)} a count")
+            out.append(tuple(sorted((str(name), _integer(count, f"{field} {name}", 0))
+                                    for name, count in raw.items())))
+        seed = value["seed"]
+        if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+            raise ValueError(f"seed must be a non-negative integer, got {seed!r}")
+        return cls(GENERATOR_V1, out[0], out[1], seed)
+
+    def as_mapping(self) -> Dict[str, Any]:
+        return {"generator": self.generator,
+                "representative_residue_counts": dict(self.residue_counts),
+                "link_counts": dict(self.link_counts), "seed": self.seed}
+
+
+def _class_tables(residues, links, residue_counts, link_counts):
+    """Per site class: (sites in the melt, link endpoints), and per pair of
+    classes the endpoints that a link of that pair joins (both directions)."""
+    sites, ends, pairs = {}, {}, {}
+    for name, residue in residues:
+        for _s, site in residue.sites:
+            sites[site.site_class] = sites.get(site.site_class, 0) + residue_counts[name]
+    for name, link in links:
+        n = link_counts[name]
+        for x, y in ((link.source, link.target), (link.target, link.source)):
+            ends[x] = ends.get(x, 0) + n
+            pairs[(x, y)] = pairs.get((x, y), 0) + n
+    return sites, ends, pairs
+
+
+def gel_criterion(residues, links, residue_counts: Mapping[str, int],
+                  link_counts: Mapping[str, int]) -> Tuple[bool, list]:
+    """(below the gel point, the half-edge branching matrix A) of a random
+    matching of the declared links over the declared residues.
+
+    A half edge arrives at a site of class c; it lands on residue R with
+    probability N_R k_Rc / S_c (k_Rc: R's sites of class c, S_c: all sites of
+    class c), every other site s' of R is linked with probability p = E/S of
+    its class (E: link endpoints), and a link from class c' arrives at class
+    c'' with probability q(c' -> c'') (its share of c' endpoints).  So
+    A[c][c''] = sum_R P(R | c) sum_{s' != the arrival site} p(c') q(c' -> c'').
+    Finite molecules (below the gel point) iff the spectral radius of A is
+    below 1, iff I - A is a nonsingular M-matrix, iff every leading principal
+    minor of I - A is positive (exact in rationals).  Equal reactivity on three
+    sites per residue gives Flory's alpha_c = 1/2."""
+    sites, ends, pairs = _class_tables(residues, links, residue_counts, link_counts)
+    classes = sorted(c for c in ends if ends[c] and sites.get(c))
+    index = {c: i for i, c in enumerate(classes)}
+    p = {c: Fraction(ends[c], sites[c]) for c in classes}
+    matrix = [[Fraction(0)] * len(classes) for _ in classes]
+    for c in classes:
+        for name, residue in residues:
+            k = {}
+            for _s, site in residue.sites:
+                k[site.site_class] = k.get(site.site_class, 0) + 1
+            if not k.get(c) or not residue_counts[name]:
+                continue
+            land = Fraction(residue_counts[name] * k[c], sites[c])
+            for other, count in k.items():
+                count -= other == c
+                if other not in index or not count:
+                    continue
+                for (x, y), n in pairs.items():
+                    if x == other and y in index:
+                        matrix[index[c]][index[y]] += land * count * p[other] * Fraction(n, ends[other])
+    m = [[(Fraction(1) if i == j else Fraction(0)) - matrix[i][j] for j in range(len(classes))]
+         for i in range(len(classes))]
+    for size in range(1, len(classes) + 1):
+        if _determinant([row[:size] for row in m[:size]]) <= 0:
+            return False, matrix
+    return True, matrix
+
+
+def _determinant(rows) -> Fraction:
+    a = [list(row) for row in rows]
+    det = Fraction(1)
+    for col in range(len(a)):
+        pivot = next((r for r in range(col, len(a)) if a[r][col] != 0), None)
+        if pivot is None:
+            return Fraction(0)
+        if pivot != col:
+            a[col], a[pivot] = a[pivot], a[col]
+            det = -det
+        det *= a[col][col]
+        for r in range(col + 1, len(a)):
+            factor = a[r][col] / a[col][col]
+            for c in range(col, len(a)):
+                a[r][c] -= factor * a[col][c]
+    return det
+
+
+def _vacancy_cap() -> "GraphDeclaration":
+    return GraphDeclaration.from_mapping(
+        {"atoms": [{"key": "h", "element": "H", "hydrogens": 0, "electronic_state": {"radical_electrons": 0}}],
+         "bonds": [], "ports": {"cap": {"atom": "h", "bond_order": 1}},
+         "electronic_state": {"multiplicity": 1}}, single_connection_port=True)
+
+
+@dataclass(frozen=True)
+class BranchedPolymerSpec:
+    """A branched v2 declaration (comment above)."""
+
+    schema_version: int
+    label: str
+    architecture: str
+    residues: Tuple[Tuple[str, ResidueDeclaration], ...]
+    links: Tuple[Tuple[str, LinkDeclaration], ...]
+    minimum_cycle_bonds: int
+    monomer_products: Tuple[Tuple[str, GraphDeclaration], ...]
+    small_species: Tuple[Tuple[str, GraphDeclaration, str], ...]
+    initial_ensemble: BranchedEnsemble
+    initial_mass_kg: float
+    density_kg_m3: float
+    density_basis: str
+    initial_mobile_counts: Tuple[Tuple[str, int], ...]
+    locality_policy: Mapping[str, Any]
+    family_manifest: Mapping[str, Any]
+    library_manifest: Mapping[str, Any]
+    transport_model: Mapping[str, Any]
+    diagnostics: Mapping[str, Any]
+
+    @property
+    def vacancy_cap(self) -> GraphDeclaration:
+        """The H that caps a vacant site (as a one-port end group)."""
+        return _vacancy_cap()
+
+    @classmethod
+    def from_mapping(cls, value: Mapping) -> "BranchedPolymerSpec":
+        if not isinstance(value, Mapping):
+            raise ValueError("BranchedPolymerSpec input must be a mapping")
+        version = _integer(value.get("schema_version"), "schema_version", 1)
+        if version != SCHEMA_VERSION_V2:
+            raise ValueError(f"BranchedPolymerSpec reads schema_version {SCHEMA_VERSION_V2}, got {version}")
+        if value.get("architecture") != "branched":
+            raise ValueError(f"a BranchedPolymerSpec declares architecture 'branched', got "
+                             f"{value.get('architecture')!r}")
+        required = {
+            "schema_version", "label", "architecture", "residues", "links", "small_species",
+            "initial_ensemble", "initial_mass_kg", "density_kg_m3", "locality_policy",
+            "family_manifest", "library_manifest", "transport_model", "diagnostics",
+        }
+        optional = {"minimum_cycle_bonds", "monomer_products", "density_basis", "initial_mobile_counts"}
+        missing, unknown = required - set(value), set(value) - required - optional
+        if missing:
+            raise ValueError(f"missing BranchedPolymerSpec fields: {sorted(missing)}")
+        if unknown:
+            raise ValueError(f"unknown BranchedPolymerSpec fields: {sorted(unknown)} (a branched "
+                             "declaration has no sequence_support or end_groups: a chain end is a vacant site)")
+        label = value["label"]
+        if not isinstance(label, str) or not label:
+            raise ValueError("spec label must be a non-empty display string")
+
+        raw_residues = value["residues"]
+        if not isinstance(raw_residues, Mapping) or not raw_residues:
+            raise ValueError("residues must be a non-empty mapping")
+        residues = {str(name): ResidueDeclaration.from_mapping(item, str(name), VACANCIES)
+                    for name, item in raw_residues.items()}
+        raw_links = value["links"]
+        if not isinstance(raw_links, Mapping) or not raw_links:
+            raise ValueError("links must be a non-empty mapping")
+        links = {str(name): LinkDeclaration.from_mapping(item, str(name)) for name, item in raw_links.items()}
+
+        locality = _validated_locality_policy(value["locality_policy"])
+        bounds = locality["bounds"]
+        classes = set(bounds["attachment_classes"])
+        vacancy = {}
+        for rname, residue in sorted(residues.items()):
+            for sname, site in residue.sites:
+                if site.site_class not in classes:
+                    raise ValueError(f"site class {site.site_class!r} of {rname}.{sname} is not in "
+                                     "locality_policy.bounds.attachment_classes")
+                if site.bond_order != 1.0:
+                    raise ValueError(f"refused:site_order: site {rname}.{sname} has bond order "
+                                     f"{site.bond_order:g}; a branched site is joined (or capped) by one "
+                                     "single bond")
+                vacancy.setdefault(site.site_class, set()).add(site.vacancy)
+        mixed = sorted(c for c, kinds in vacancy.items() if len(kinds) > 1)
+        if mixed:
+            raise ValueError(f"refused:mixed_vacancy: site classes {mixed} are forbidden-vacant on one "
+                             "residue and vacant-capable on another; the random matching cannot keep "
+                             "every forbidden site linked")
+        if not any("H" in kinds for kinds in vacancy.values()):
+            raise ValueError("a branched declaration without a vacant-capable site branches nowhere: "
+                             "declare it as linear (architecture 'linear')")
+        linked = set()
+        for lname, link in sorted(links.items()):
+            for site_class in (link.source, link.target):
+                if site_class not in classes:
+                    raise ValueError(f"link {lname} class {site_class!r} is not in "
+                                     "locality_policy.bounds.attachment_classes")
+                if site_class not in vacancy:
+                    raise ValueError(f"link {lname} class {site_class!r} is no residue's site")
+                linked.add(site_class)
+            if link.bond_order != 1.0:
+                raise ValueError(f"refused:site_order: link {lname} has bond order {link.bond_order:g}")
+        unlinked = sorted(set(vacancy) - linked)
+        if unlinked:
+            raise ValueError(f"site classes {unlinked} take no declared link")
+        for lname, link in sorted(links.items()):
+            for a, ra in sorted(residues.items()):
+                for _x, xs in ra.sites:
+                    if xs.site_class != link.source:
+                        continue
+                    for b, rb in sorted(residues.items()):
+                        for _y, ys in rb.sites:
+                            if ys.site_class == link.target:
+                                _junction_rules(residues, a, b, [(xs.atom, ys.atom, link.bond_order)])
+        vocabulary = bounds["topology_metadata_schema"]
+        if set(vocabulary) - set(TOPOLOGY_VOCABULARY):
+            raise ValueError(f"unknown topology_metadata_schema keys: "
+                             f"{sorted(set(vocabulary) - set(TOPOLOGY_VOCABULARY))}")
+        for key, names in vocabulary.items():
+            if set(_names(names, f"topology_metadata_schema {key}")) - set(TOPOLOGY_VOCABULARY[key]):
+                raise ValueError(f"topology_metadata_schema {key} names outside "
+                                 f"{list(TOPOLOGY_VOCABULARY[key])}")
+        if "branched" not in vocabulary.get("architecture", ()):
+            raise ValueError("architecture 'branched' is not in locality_policy.bounds.topology_metadata_schema")
+        radius = int(locality["radius"])
+        floor = default_minimum_cycle_bonds(radius)
+        minimum = value.get("minimum_cycle_bonds", floor)
+        if isinstance(minimum, bool) or not isinstance(minimum, int) or minimum < floor:
+            raise ValueError(f"refused:minimum_cycle_bonds: {minimum!r} is below 2(r+1)+2 = {floor} at "
+                             f"radius {radius}: a shorter cycle fits inside one environment, which the "
+                             "environment set (a tree set) does not hold")
+
+        raw_products = value.get("monomer_products", {})
+        if not isinstance(raw_products, Mapping) or set(raw_products) - set(residues):
+            raise ValueError("monomer_products maps declared residues to physical species")
+        products = []
+        for name, graph in sorted(raw_products.items()):
+            graph = GraphDeclaration.from_mapping(graph)
+            if graph.ports:
+                raise ValueError("a monomer product is a physical species and cannot contain ports")
+            products.append((name, graph))
+        small_species = _small_species(value["small_species"])
+        mobile = value.get("initial_mobile_counts", {})
+        if not isinstance(mobile, Mapping):
+            raise ValueError("initial_mobile_counts must be a mapping")
+        mobile_counts = tuple(sorted((str(name), _integer(count, "representative mobile count", 0))
+                                     for name, count in mobile.items()))
+        if not {name for name, _count in mobile_counts} <= {name for name, _g, _d in small_species}:
+            raise ValueError("initial_mobile_counts names a species absent from small_species")
+        density_basis = value.get("density_basis", "dry_polymer")
+        if density_basis not in ("dry_polymer", "whole_initial_mixture"):
+            raise ValueError("density_basis must be dry_polymer or whole_initial_mixture")
+        if any(count for _name, count in mobile_counts) and density_basis != "whole_initial_mixture":
+            raise ValueError("mobile representative counts require whole_initial_mixture density")
+        ensemble = BranchedEnsemble.from_mapping(value["initial_ensemble"], tuple(residues), tuple(links))
+        if ensemble.generator not in vocabulary.get("network_generators", ()):
+            raise ValueError(f"generator {ensemble.generator!r} is not in "
+                             "locality_policy.bounds.topology_metadata_schema network_generators")
+        policies = []
+        for name in ("family_manifest", "library_manifest", "transport_model", "diagnostics"):
+            if not isinstance(value[name], Mapping):
+                raise ValueError(f"{name} must be a mapping")
+            policies.append(_canonical_data(value[name]))
+        spec = cls(SCHEMA_VERSION_V2, label, "branched", tuple(sorted(residues.items())),
+                   tuple(sorted(links.items())), minimum, tuple(products), small_species, ensemble,
+                   _finite(value["initial_mass_kg"], "initial_mass_kg"),
+                   _finite(value["density_kg_m3"], "density_kg_m3"), density_basis, mobile_counts,
+                   locality, *policies)
+        if spec.initial_mass_kg < 0.0:
+            raise ValueError("initial_mass_kg cannot be negative")
+        if spec.density_kg_m3 <= 0.0:
+            raise ValueError("density_kg_m3 must be positive")
+        spec._validate_counts()
+        spec._validate_coverage_and_states()
+        return spec
+
+    def _validate_counts(self) -> None:
+        residue_counts, link_counts = dict(self.initial_ensemble.residue_counts), \
+            dict(self.initial_ensemble.link_counts)
+        sites, ends, _pairs = _class_tables(self.residues, self.links, residue_counts, link_counts)
+        forbidden = {site.site_class for _n, residue in self.residues for _s, site in residue.sites
+                     if site.vacancy == "forbidden"}
+        for c in sorted(sites):
+            if ends.get(c, 0) > sites[c]:
+                raise ValueError(f"refused:link_counts: {ends[c]} link ends of class {c!r} but only "
+                                 f"{sites[c]} such sites in the declared residues")
+            if c in forbidden and ends.get(c, 0) != sites[c]:
+                raise ValueError(f"refused:link_counts: the {sites[c]} forbidden-vacant sites of class "
+                                 f"{c!r} need exactly that many link ends, the counts give {ends.get(c, 0)}")
+        below, _matrix = gel_criterion(self.residues, self.links, residue_counts, link_counts)
+        if not below:
+            raise ValueError("refused:gel_point: the declared counts are at or above the gel point (the "
+                             "half-edge branching process of the random matching is critical or "
+                             "supercritical): a network is S7")
+
+    def _validate_coverage_and_states(self) -> None:
+        cap = self.vacancy_cap
+        for _name, residue in self.residues:
+            _v1_locality(self.locality_policy, residue.graph, cap, cap)
+        first = self.residues[0][1].graph
+        for _name, product in self.monomer_products:
+            _v1_locality(self.locality_policy, first, cap, cap, monomer=product)
+        _v1_locality(self.locality_policy, first, cap, cap, small=self.small_species)
+        for name, graph in list(self.monomer_products) + [(n, g) for n, g, _d in self.small_species]:
+            molecule = graph.to_legacy_molecule({})
+            molecule.multiplicity = graph.multiplicity
+            _check_electronic_state(molecule, f"species {name}")
+
+    @property
+    def normalized_json(self) -> bytes:
+        return json.dumps(
+            self.as_mapping(), sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode("utf-8")
+
+    def residence(self, name: str) -> str:
+        """Every species is melt-resident (``DEFAULT_RESIDENCE``)."""
+        return DEFAULT_RESIDENCE
+
+    def as_mapping(self) -> Dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "label": self.label,
+            "architecture": self.architecture,
+            "residues": {name: residue.as_mapping() for name, residue in self.residues},
+            "links": {name: link.as_mapping() for name, link in self.links},
+            "minimum_cycle_bonds": self.minimum_cycle_bonds,
+            "monomer_products": {name: graph.as_mapping() for name, graph in self.monomer_products},
+            "small_species": {
+                name: {"graph": graph.as_mapping(), "disposition": disposition}
+                for name, graph, disposition in self.small_species
+            },
+            "initial_ensemble": self.initial_ensemble.as_mapping(),
+            "initial_mass_kg": self.initial_mass_kg,
+            "density_kg_m3": self.density_kg_m3,
+            "density_basis": self.density_basis,
+            "initial_mobile_counts": {name: count for name, count in self.initial_mobile_counts},
+            "locality_policy": self.locality_policy,
+            "family_manifest": self.family_manifest,
+            "library_manifest": self.library_manifest,
+            "transport_model": self.transport_model,
+            "diagnostics": self.diagnostics,
+        }
+
+
+class BranchedMomRefusal(ValueError):
+    """The method of moments was given a branched declaration (deferred: a
+    finite branched moment seed needs branch-point moments)."""
+
+    status = "refused:branched_mom"
+
+    def __init__(self, consumer: str):
+        super().__init__(f"{self.status}: {consumer}: the method of moments reads linear declarations; "
+                         "branched chains need branch-point moments (deferred)")
+        self.consumer = consumer
+
+
+def is_branched(value: Any) -> bool:
+    """Whether ``value`` is a branched v2 declaration (an object, a mapping or its JSON)."""
+    if isinstance(value, BranchedPolymerSpec):
+        return True
+    if isinstance(value, (str, bytes, bytearray)):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return False
+    return isinstance(value, Mapping) and is_schema_v2(value) and value.get("architecture") == "branched"

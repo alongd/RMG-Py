@@ -203,6 +203,9 @@ SPECIES_RULE = (
 END_SEGMENTS = ("head_end", "tail_end")
 MOM_V2_REFUSAL = ("refused:schema_v2_mom: the method-of-moments comparison reads v1 declarations only; a "
                   "linear copolymer (schema v2) has no MoM run to compare with yet")
+BRANCHED_OBSERVABLES_REFUSAL = ("refused:branched_observables: the melt observables read linear chains; a "
+                                "branched declaration has its initial state and declared linearity rule "
+                                "(S6), not its observables yet")
 
 
 class ObservablesError(ValueError):
@@ -653,6 +656,9 @@ class MeltObserver:
                  side_group_homolysis=None):
         if isinstance(xs, bool) or not isinstance(xs, int) or xs < 0:
             raise ObservablesError(f"xs must be a non-negative integer, got {xs!r}")
+        from rmgpy.polymer_spec import BranchedPolymerSpec
+        if isinstance(spec, BranchedPolymerSpec):
+            raise ObservablesError(BRANCHED_OBSERVABLES_REFUSAL)
         self.spec = spec
         self.xs = xs
         self.b = backbone_atoms_per_unit(spec)

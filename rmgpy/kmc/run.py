@@ -266,7 +266,8 @@ import numpy
 from rmgpy.kmc import catalog_set as cs
 from rmgpy.kmc import melt_engine as me
 from rmgpy.kmc import melt_observables as mo
-from rmgpy.polymer_spec import (LinearHomopolymerSpec, PolymerSpec, normalized_linear_homopolymer_spec,
+from rmgpy.polymer_spec import (BranchedMomRefusal, BranchedPolymerSpec, LinearHomopolymerSpec, PolymerSpec,
+                                normalized_linear_homopolymer_spec,
                                 normalized_polymer_spec)
 
 RUN_SCHEMA = "kmc-melt-run/1"
@@ -1354,6 +1355,13 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
     of the loaded templates (``template_selection``)."""
     start = time.perf_counter()
     deck = read_deck(deck)
+    if isinstance(deck.spec, BranchedPolymerSpec):
+        # S6 builds a branched melt (melt_branched) and its declared linearity
+        # rule (melt_engine); the observables and the MoM comparison read
+        # linear chains
+        if mom is not None:
+            raise RunError(f"{BranchedMomRefusal('run')} (--mom {mom})")
+        raise RunError(f"{mo.BRANCHED_OBSERVABLES_REFUSAL} ({deck.label})")
     sequence = isinstance(deck.spec, PolymerSpec)
     if sequence and mom is not None:
         raise RunError(f"{mo.MOM_V2_REFUSAL} (--mom {mom})")
