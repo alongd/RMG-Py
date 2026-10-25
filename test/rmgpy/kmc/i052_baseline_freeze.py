@@ -49,6 +49,12 @@ ARTIFACT = Path(
 DESIGN = Path("/home/alon/runs/i058-generic-design/generic_linear_kmc_design.md")
 FIXTURE = Path(__file__).with_name("fixtures") / "i052_legacy_baseline.json"
 MANIFEST = Path(__file__).with_name("fixtures") / "i052_legacy_baseline_manifest.json"
+# The manifest was regenerated after Step 1 so that it names no database
+# file: its database entries became one digest (``database_digest``), every
+# other entry unchanged.  Its bytes are pinned here, the fixture's by commit.
+MANIFEST_SHA256 = "eba463ef4a13f32f46d692a1b06236437210184d6eb5f9f8e0f8998f1dbcffb8"
+# Bytecode caches the database's own imports write; not database content.
+DATABASE_IGNORED_PARTS = frozenset({".git", "__pycache__"})
 RMG_PY_PIN = "23893012393d946efc8d70529bfc58780b8cdf86"
 STEP1_FREEZE_COMMIT = "d1459e1b9cd1f9d877ac820b0152ee931673b7c7"
 RMG_DATABASE_PIN = "cd86d4e1c187a132109e16cd86f624ed9fb217df"
@@ -95,11 +101,11 @@ def _git_blob(root: Path, commit: str, relative: str) -> bytes:
 
 
 def _verify_frozen_json_bytes() -> None:
-    """The record files themselves remain exactly as committed by Step 1."""
-    for path in (MANIFEST, FIXTURE):
-        relative = str(path.relative_to(ROOT))
-        expected = _git_blob(ROOT, STEP1_FREEZE_COMMIT, relative)
-        assert path.read_bytes() == expected, relative
+    """The record files themselves remain exactly as frozen."""
+    relative = str(FIXTURE.relative_to(ROOT))
+    expected = _git_blob(ROOT, STEP1_FREEZE_COMMIT, relative)
+    assert FIXTURE.read_bytes() == expected, relative
+    assert _sha256(MANIFEST) == MANIFEST_SHA256, str(MANIFEST.relative_to(ROOT))
 
 
 def _state_oracle():
@@ -1268,8 +1274,37 @@ def _materialized_files(root: Path):
     return [
         path.relative_to(root)
         for path in root.rglob("*")
-        if path.is_file() and ".git" not in path.relative_to(root).parts
+        if path.is_file()
+        and not DATABASE_IGNORED_PARTS.intersection(path.relative_to(root).parts)
     ]
+
+
+def database_digest(hashes: Mapping[str, str]) -> dict[str, Any]:
+    """One digest over ``{relative path: sha256}`` of database files.
+
+    The manifest records this instead of the paths, which name local-only
+    libraries; any changed, missing or added file changes the digest.
+    """
+    digest = hashlib.sha256()
+    for relative in sorted(hashes):
+        digest.update(f"{relative}\0{hashes[relative]}\n".encode())
+    return {
+        "algorithm": "sha256 over sorted 'path NUL sha256 LF' lines",
+        "files": len(hashes),
+        "sha256": digest.hexdigest(),
+    }
+
+
+def database_hashes(root: Path = DATABASE) -> dict[str, str]:
+    return {
+        str(relative): _sha256(root / relative)
+        for relative in sorted(_materialized_files(root))
+    }
+
+
+def verify_database(manifest: Mapping[str, Any], root: Path = DATABASE) -> None:
+    """The database under ``root`` is byte-identical to the frozen one."""
+    assert database_digest(database_hashes(root)) == manifest["database_digest"], str(root)
 
 
 def build_manifest() -> dict[str, Any]:
@@ -1279,13 +1314,8 @@ def build_manifest() -> dict[str, Any]:
         if not path.is_file() or path == MANIFEST:
             continue
         repository_hashes[str(relative)] = _sha256(path)
-    database_hashes = {
-        str(relative): _sha256(DATABASE / relative)
-        for relative in sorted(_materialized_files(DATABASE))
-        if (DATABASE / relative).is_file()
-    }
     return {
-        "schema_version": "kmc_legacy_baseline_manifest/1",
+        "schema_version": "kmc_legacy_baseline_manifest/2",
         "pins": {
             "rmgpy_commit": RMG_PY_PIN,
             "rmg_database_commit": RMG_DATABASE_PIN,
@@ -1296,7 +1326,7 @@ def build_manifest() -> dict[str, Any]:
         "repository_root": str(ROOT),
         "repository_files": repository_hashes,
         "database_root": str(DATABASE),
-        "database_files": database_hashes,
+        "database_digest": database_digest(database_hashes()),
         "environment": environment_pins(),
         "required_runtime_sources": {
             name: repository_hashes[f"rmgpy/kmc/{name}"]
@@ -1407,8 +1437,7 @@ def verify_manifest(manifest: Mapping[str, Any]) -> None:
             else RMG_PY_PIN
         )
         assert _sha256_bytes(_git_blob(ROOT, source_commit, relative)) == expected, relative
-    for relative, expected in manifest["database_files"].items():
-        assert _sha256(DATABASE / relative) == expected, relative
+    verify_database(manifest)
 
 
 def compare_frozen(expected: Any, actual: Any, path: str = "root") -> None:
