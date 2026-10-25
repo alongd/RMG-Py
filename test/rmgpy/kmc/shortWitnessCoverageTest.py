@@ -1,7 +1,7 @@
 """The compile witnesses every pristine chain shorter than its proxies
 (I-261), so a two-fragment event whose fragments both end inside the window
 has a template, and the PE toy catalog joins every radical pair and cuts
-every chain that its homolysis makes, but the named gaps.
+every chain that its homolysis makes from the shortest fragment.
 
 A template's window closes on a side only where the witness molecule ends
 inside it.  The shortest pristine witness was the proxy itself (3 repeat
@@ -9,18 +9,26 @@ units, n-hexane for PE), so no template cut n-butane or n-pentane and none
 joined ethyl + ethyl or ethyl + propyl, which RMG recombines like any
 other pair.
 
-The named gaps (``UNJOINED``, ``UNCUT``): ethyl + ethyl and n-butane.  That
-closed context occurs on n-butane alone, which RMG rates from a training
-entry (a whole-species match): emission refuses a whole-species match (its
-rate rides as an override on the rule template that makes it), and no rule
-template makes this one.  A fix that covers them must shrink the sets.
+Ethyl + ethyl and n-butane were the last gaps (I-262): that closed context
+occurs on n-butane alone, which RMG rates from a training entry (a
+whole-species match), and no rule template makes it.  The depository
+reaction is now its own template (a closed context), and so is every
+whole species the depository rates whose cut leaves a methyl
+(``METHYL``: ethane, propane, n-decane), the only methyl cuts: elsewhere a
+reacting atom on an artificial port stays a named refusal.  Primary
+radical + ethylene is the open case: every witness up to octyl + C2H4 is a
+training molecule, so the member grows to the first size the depository
+does not match and the rule template formed there carries the training
+sizes as overrides, in both directions.
 
 ``fixtures/i261_pe_toy_recombination_payloads.json`` holds the PE toy
 catalog's R_Recombination payloads whose templates break or form a C-C bond
 (``fixtures/decks/pe_toy_deck.py``, emitted on the stage-A artifact of the
-code under test); ``fixtures/i261_pe_toy_split_kernels_700K.json`` the
-homolysis and end-recombination kernels of that catalog's kernel-rates table
-at 700 K.  Sizes count CH2 periods.
+code under test); ``fixtures/i262_pe_toy_addition_payloads.json`` its
+R_Addition_MultipleBond payloads of the same kind;
+``fixtures/i261_pe_toy_split_kernels_700K.json`` the homolysis and
+end-recombination kernels of that catalog's kernel-rates table at 700 K.
+Sizes count CH2 periods.
 """
 
 import json
@@ -45,13 +53,26 @@ from rmgpy.polymer_spec import LinearHomopolymerSpec, normalized_linear_homopoly
 FIXTURES = Path(__file__).parent / "fixtures"
 DECKS = FIXTURES / "decks"
 PAYLOADS = FIXTURES / "i261_pe_toy_recombination_payloads.json"
+ADDITION = FIXTURES / "i262_pe_toy_addition_payloads.json"
 TABLE = FIXTURES / "i261_pe_toy_split_kernels_700K.json"
 H = "homolysis:substrate=chain"
 C = "recombination:radical=radical_end:CH2+radical=radical_end:CH2"
 LONGEST = 12
-# a closed context whose only molecules RMG rates from a depository (module doc)
-UNJOINED = {(2, 2)}
-UNCUT = {4}
+# ethyl: the shortest fragment a chain's homolysis leaves (module doc)
+SHORTEST = 2
+# n-alkane -> its methyl cuts (left fragment sizes): whole species RMG rates
+# from its depository (module doc)
+METHYL = {2: (1,), 3: (1, 2), 10: (1, 9)}
+# the shortest end radical witnessed with ethylene (``pair:head_end_radical_short+monomer``)
+SHORTEST_ADDING = 4
+# the depository reactions of the PE toy that join or cut a C-C bond and
+# that no loaded template carried before I-262 (both directions each); the
+# training pairs of n-decane and n-dodecane already rode a longer member's
+# rule template
+DEPOSITORY_ONLY = (
+    "C2H5 + C2H5 <=> C4H10", "CH3 + CH3 <=> C2H6", "CH3 + C2H5 <=> C3H8", "CH3 + C9H19 <=> C10H22",
+    "C4H9-1 + C2H4 <=> C6H13-10", "C5H11-10 + C2H4 <=> C7H15-9", "C6H13-11 + C2H4 <=> C8H17-7",
+    "C7H15-10 + C2H4 <=> C9H19-4", "C8H17-8 + C2H4 <=> C10H21-2", "C10H21-3 + C2H4 <=> C12H25")
 DATABASE = Path(os.environ.get("RMG_DATABASE_PATH", "/nonexistent"))
 needs_database = pytest.mark.skipif(not (DATABASE / "input/kinetics/families").is_dir(),
                                     reason="RMG_DATABASE_PATH is not a database checkout")
@@ -63,6 +84,10 @@ def _pe():
 
 def _alkane(n):
     return Molecule(smiles="C" * n)
+
+
+def _radical(n):
+    return "[CH3]" if n == 1 else "[CH2]" + "C" * (n - 1)
 
 
 # -- the compile's witnesses ---------------------------------------------------
@@ -105,12 +130,21 @@ def test_the_roster_offers_each_short_witness_as_a_system_of_its_own():
 # -- the PE toy catalog ----------------------------------------------------------
 
 
-@pytest.fixture(scope="module")
-def engine():
-    payloads = json.loads(PAYLOADS.read_text())["payloads"]
+def _engine(path):
+    payloads = json.loads(path.read_text())["payloads"]
     spec = kr.read_deck(DECKS / "pe_toy_deck.py").spec
     return me.MeltEngine(K._single_chain_spec(spec, 4), me.PayloadCatalog(payloads), 700.0,
                          numpy.random.default_rng(0))
+
+
+@pytest.fixture(scope="module")
+def engine():
+    return _engine(PAYLOADS)
+
+
+@pytest.fixture(scope="module")
+def adding():
+    return _engine(ADDITION)
 
 
 def _cuts(engine, n):
@@ -129,10 +163,10 @@ def _cuts(engine, n):
     return out
 
 
-def _pair_sites(engine, i, j):
-    """Unordered pair sites, summed over the recombination templates (each
-    over its divisor), of n-alkyl radicals of i and j periods."""
-    state = me._rows_state(S.smiles_rows(["[CH2]" + "C" * (i - 1), "[CH2]" + "C" * (j - 1)]))
+def _pair_sites(engine, a_smiles, b_smiles):
+    """Unordered pair sites, summed over the bimolecular templates (each
+    over its divisor), of molecules ``a_smiles`` and ``b_smiles``."""
+    state = me._rows_state(S.smiles_rows([a_smiles, b_smiles]))
     a, b = list(state.components.ids())
     entries = engine._scan([a, b], state=state)
     total = 0.0
@@ -145,45 +179,123 @@ def _pair_sites(engine, i, j):
     return total
 
 
-def _shortest_fragment(engine):
-    return min(left for n in range(2, LONGEST + 1) for left in _cuts(engine, n))
+def _scissions(engine, n):
+    """(rule, override) counts of the C-C bonds of n-alkyl radical n that
+    the loaded templates break: at the rule weight (uni) and at a depository
+    override (uni_o)."""
+    rows = S.smiles_rows([_radical(n)])
+    state = me._rows_state(rows)
+    (cid,) = list(state.components.ids())
+    entry = engine._scan([cid], state=state)[cid]
+
+    def count(items):
+        return sum(1 for allowed, _leak in items for tr in allowed
+                   if any(type(ed).__name__ == "SetBond" and ed.new == 0.0 and
+                          rows[ed.a][0] == rows[ed.b][0] == "C" for ed in tr.edits))
+    return count(entry.uni.values()), count(entry.uni_o.values())
 
 
-def test_every_chain_is_cut_once_at_every_bond_from_the_shortest_fragment_but_the_named_gaps(engine):
-    e = _shortest_fragment(engine)
-    assert e >= 1
-    wrong = {n: _cuts(engine, n) for n in range(2 * e, LONGEST + 1)}
-    wrong = {n: got for n, got in wrong.items() if got != {left: 1 for left in range(e, n - e + 1)}}
-    assert wrong == {n: {} for n in UNCUT}, f"shortest fragment {e}; chains cut otherwise: {wrong}"
+def test_every_chain_is_cut_once_at_every_bond_from_the_shortest_fragment(engine):
+    """Every C-C bond whose fragments are at least ethyl, from n-butane on,
+    and the methyl cuts of the depository's whole species, nothing else."""
+    wrong = {}
+    for n in range(2, LONGEST + 1):
+        want = {left: 1 for left in range(SHORTEST, n - SHORTEST + 1)}
+        want.update({left: 1 for left in METHYL.get(n, ())})
+        got = _cuts(engine, n)
+        if got != want:
+            wrong[n] = got
+    assert wrong == {}, f"chains cut otherwise: {wrong}"
 
 
-def test_every_radical_pair_from_the_shortest_fragment_is_joined_once_but_the_named_gaps(engine):
-    e = _shortest_fragment(engine)
-    sizes = range(e, 9)
-    wrong = {(i, j): _pair_sites(engine, i, j) for i in sizes for j in sizes if i <= j}
+def test_every_radical_pair_from_the_shortest_fragment_is_joined_once(engine):
+    """Every pair of n-alkyl radicals from ethyl + ethyl; methyl only with
+    the partners of the depository's whole species."""
+    sizes = range(SHORTEST, 10)
+    wrong = {(i, j): _pair_sites(engine, _radical(i), _radical(j)) for i in sizes for j in sizes if i <= j}
     wrong = {pair: got for pair, got in wrong.items() if got != pytest.approx(1.0)}
-    assert wrong == {pair: 0.0 for pair in UNJOINED}, f"shortest fragment {e}; pairs joined otherwise: {wrong}"
+    assert wrong == {}, f"pairs joined otherwise: {wrong}"
+    with_methyl = {n - left for n, lefts in METHYL.items() for left in lefts[:1]}
+    got = {j: _pair_sites(engine, _radical(1), _radical(j)) for j in range(1, 10)}
+    assert got == {j: pytest.approx(1.0 if j in with_methyl else 0.0) for j in range(1, 10)}
+
+
+def test_every_end_radical_from_butyl_adds_ethylene_and_releases_it_back(adding):
+    """Primary radical + C2H4 (both ends of the alkene) from butyl on, and
+    the beta-scission back from hexyl on: each n-alkyl radical breaks one C-C
+    bond, ethylene off its radical end."""
+    far = _pair_sites(adding, _radical(LONGEST), "C=C")
+    assert far > 0.0
+    got = {i: _pair_sites(adding, _radical(i), "C=C") for i in range(1, LONGEST + 1)}
+    assert got == {i: pytest.approx(far if i >= SHORTEST_ADDING else 0.0) for i in got}
+    for n in range(SHORTEST_ADDING + 2, LONGEST + 3):
+        assert sum(_scissions(adding, n)) == 1, (n, _scissions(adding, n))
 
 
 @needs_database
-def test_each_named_gap_is_a_reaction_rmg_rates_only_from_its_depository():
-    """The closed context of each gap occurs on its own molecules only, and
-    RMG rates those from a training entry (a whole-species match), so no
-    rule template exists for an override to ride on."""
+def test_each_whole_species_cut_is_a_reaction_rmg_rates_only_from_its_depository():
+    """The closed contexts (n-butane, and the methyl cuts) occur on their own
+    molecules only, and RMG rates those from a training entry (a
+    whole-species match): the reason each is its own template."""
     from rmgpy.kmc import certificates as cm
     db = emit.load_database(["R_Recombination"], DATABASE)
     family = db.kinetics.families["R_Recombination"]
-    for (i, j), n in zip(sorted(UNJOINED), sorted(UNCUT)):
-        assert i + j == n
-        radicals = [Molecule(smiles="[CH2]" + "C" * (k - 1)) for k in (i, j)]
+    for n, lefts in sorted({4: (SHORTEST,), **METHYL}.items()):
+        radicals = [Molecule(smiles=_radical(k)) for k in (lefts[0], n - lefts[0])]
         selected = cm.depository_search(family, radicals, [_alkane(n)])["selected"]
-        assert selected is not None and selected["depository"].endswith("training"), (i, j)
+        assert selected is not None and selected["depository"].endswith("training"), n
 
 
-def test_grouped_recombination_is_refused_on_the_named_gaps_only():
-    """MoM's kernel mode with homolysis making ethyl radicals (min_fragment
-    2): the recombination law fails on (2, 2) alone; (2, 3) is joined."""
+@needs_database
+def test_an_ethylene_scission_takes_its_override_exactly_where_rmg_rates_it_from_its_depository(adding):
+    """At a size RMG rates from training the scission fires the depository
+    override in place of the rule template; at every other size the rule
+    weight."""
+    from rmgpy.kmc import certificates as cm
+    db = emit.load_database(["R_Addition_MultipleBond"], DATABASE)
+    family = db.kinetics.families["R_Addition_MultipleBond"]
+    for n in range(SHORTEST_ADDING + 2, LONGEST + 3):
+        selected = cm.depository_search(family, [Molecule(smiles=_radical(n - 2)), Molecule(smiles="C=C")],
+                                        [Molecule(smiles=_radical(n))])["selected"]
+        rule, override = _scissions(adding, n)
+        assert (rule, override) == ((0, 1) if selected is not None else (1, 0)), (n, selected)
+
+
+@pytest.mark.parametrize("label", DEPOSITORY_ONLY)
+def test_every_depository_only_reaction_rides_a_template_in_both_directions(label):
+    """Each depository reaction no loaded template carried (its sizes are
+    all training molecules, or it is a whole species) is an override of a
+    loaded template, forward and reverse: RMG's depository rate on the
+    catalog, never a silent skip."""
+    carried = {(o["entry"]["label"], o["direction"])
+               for path in (PAYLOADS, ADDITION) for p in json.loads(path.read_text())["payloads"]
+               for t in p["templates"] for o in t.get("overrides") or ()}
+    assert {d for name, d in carried if name == label} == {"forward", "reverse"}, label
+
+
+def _methyl_cut(term) -> bool:
+    return any(cls == "radical_end:CH3" for outs in term["law"]["exact"].values()
+               for _m, prods in outs for cls, _n in prods)
+
+
+def test_grouped_recombination_is_refused_on_the_methyl_class_then_on_the_kernel_states():
+    """MoM's kernel mode on homolysis + end recombination: (2, 2) is joined
+    (no pair-site refusal any more).  The producer refuses the methyl
+    fragments of the depository's whole species (one end-radical pool); set
+    those aside and it refuses the kernel-rates states: homolysis's law
+    holds from 6 periods (no state of n-pentane), ethyl + ethyl makes 4."""
     doc = json.loads(TABLE.read_text())
-    with pytest.raises(mp.ProducerError, match=r"pair sites \(2, 2\): 0 \(0: no template joins the pair\)$"):
-        mp.kernel_input(doc, kr.read_deck(DECKS / "pe_toy_deck.py").spec, [H, C], temperature=700.0, phi=1.0,
-                        label=LABEL, radical_label=LABEL + "_re", volume_ratio=1.0)
+    spec = kr.read_deck(DECKS / "pe_toy_deck.py").spec
+
+    def kernel_input(doc):
+        return mp.kernel_input(doc, spec, [H, C], temperature=700.0, phi=1.0, label=LABEL,
+                               radical_label=LABEL + "_re", volume_ratio=1.0)
+    with pytest.raises(mp.ProducerError, match=r"fragments of classes \['radical_end:CH2', 'radical_end:CH3'\], "
+                                               r"not one end-radical pool"):
+        kernel_input(doc)
+    terms = doc["kernels"][H]["templates"]
+    assert 0 < sum(map(_methyl_cut, terms)) < len(terms)
+    doc["kernels"][H]["templates"] = [t for t in terms if not _methyl_cut(t)]
+    with pytest.raises(mp.ProducerError, match=r"radicals from 2 periods join into chains of 4, shorter than 6, "
+                                               r"where the homolysis kernel's law holds$"):
+        kernel_input(doc)
