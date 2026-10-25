@@ -830,7 +830,7 @@ def test_policy_objects():
     from rmgpy.kmc import certificates as cm
     assert win.LEGACY_V1.name == win.LEGACY_V1.domain.name == cm.LEGACY_DOMAIN_POLICY
     assert (win.DECLARED_INTERIM.name, win.DECLARED_INTERIM.ring_edits) == \
-        ("declared_interim_v1", "exclude")
+        ("declared_interim_v1", "admit")      # I-264: the window decides
     m = _mol("CC(C)(C)CC")
     assert win.LEGACY_V1.domain.check(m) == dom.check(m)
     assert win.DECLARED_INTERIM.domain.check(m) == dom.declared_interim_check(m)

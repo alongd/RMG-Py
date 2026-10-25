@@ -65,9 +65,12 @@ graphs) the record's base-context templates jointly give ``T_R`` and the
 per-transition weight ``w = ssa_multiplier * k / T_R`` over the whole channel
 with the certified production rate (``k_table``) and its provenance
 (estimate or library).  ``T_R = 0`` or a non-finite or non-positive ``w``
-raises ``EmissionError``.  The calibration identity ``sum(w over the T_R
-transitions) = ssa * k`` is checked at ``CALIBRATION_TEMPERATURES``
-(necessary, not sufficient).
+raises ``EmissionError``, except a channel RMG's own moves on those graphs
+make only under other nodes of the family's tree (``attributed_elsewhere``:
+the node RMG reads depends on the drawing its recipe builds, so no count of
+the record's node can be made): ``refused:node_attribution``, naming them.
+The calibration identity ``sum(w over the T_R transitions) = ssa * k`` is
+checked at ``CALIBRATION_TEMPERATURES`` (necessary, not sufficient).
 
 The record's graphs are a proxy whose artificial ends stand for the chain
 beyond.  A base template whose window or port exteriors reach the padding
@@ -742,6 +745,33 @@ def count_pathway(family, pathway, reverse: bool):
     if getattr(fam, "reverse_template", "x") is None and reverse:
         return InversePathway(pathway) if pathway else None
     return tuple(pathway) if pathway else None
+
+
+def attributed_elsewhere(counter, family, reactant_rows, direction, pathway,
+                         product_species) -> tuple:
+    """The family-tree nodes (``;``-joined) under which RMG's own moves on
+    ``reactant_rows`` make ``product_species`` when ``pathway`` (a plain node
+    filter) is not among them: RMG reads the reaction under another node in
+    this direction (the node depends on the drawing its recipe builds), so a
+    count filtered by ``pathway`` finds no move of the channel.  () when the
+    pathway is an inverse reading or no such move exists (the counter's
+    unfiltered ``channel`` decides; its moves only name the nodes)."""
+    if pathway is None or isinstance(pathway, InversePathway):
+        return ()
+    molecules = molecules_of(reactant_rows)
+    if not counter.channel(family, molecules, direction, None, product_species).transitions:
+        return ()
+    nodes = set()
+    for m in counter.moves(family, molecules, direction):
+        if m.status not in ("kept", "unchanged_species") or m.products is None \
+                or m.template is None:
+            continue
+        if counter.species_of_rows(m.product_rows()) != tuple(product_species):
+            continue
+        if tuple(m.template) == tuple(pathway):
+            return ()
+        nodes.add(";".join(m.template))
+    return tuple(sorted(nodes))
 
 
 def count_on(templates: Sequence[wm.Template], reactant_rows, product_rows, *, family,
@@ -1429,6 +1459,21 @@ def emit_record(record, *, family, members, counter, rates, record_certificate=N
                                       pathway=cpath, counter=counter,
                                       product_species=rec_species, target=False)
         record_count = count.as_dict()
+        others = attributed_elsewhere(counter, fam, rec_r, direction, cpath, rec_species) \
+            if count.matcher == 0 and count.rmg == 0 else ()
+        if others:
+            return finish({**head, "status": "refused",
+                           "refusal": {"by": "emission", "status": "refused:node_attribution",
+                                       "reason": f"record witness: RMG makes no move of the "
+                                                 f"record's node {';'.join(pathway)[:120]} "
+                                                 f"here; it makes the record's products under "
+                                                 f"node(s) {[o[:120] for o in others[:3]]} "
+                                                 "(the node RMG reads depends on the drawing "
+                                                 "its recipe builds), so the channel has no "
+                                                 "count",
+                                       "nodes": list(others), "matcher": count.matcher,
+                                       "rmg": count.rmg},
+                           "templates": [], "contexts": ctx_rows})
         if count.matcher == 0:
             raise EmissionError(f"T_ch = 0 on the record's own witness: the base template(s) "
                                 f"make no transition of the record's channel (rmg_moves: "
@@ -3944,7 +3989,7 @@ EMISSION_FAILURE_STATUSES = ("refused:count_mismatch", "refused:non_local_kineti
                              "refused:locality_witness", "refused:locality_spread",
                              "refused:base_template",
                              "refused:no_base_template", "refused:orientation",
-                             "refused:unmapped")
+                             "refused:unmapped", "refused:node_attribution")
 
 
 def _molecularity(family, direction) -> int:

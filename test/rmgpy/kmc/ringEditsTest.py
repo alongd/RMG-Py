@@ -185,4 +185,5 @@ def test_a_drawing_dependent_node_is_refused_by_name(exocyclic):
     assert named and all(r["orientation"] == "reversed" for r in named)
     reasons = [r["payload"]["refusal"]["reason"] for r in named]
     assert all("node" in why for why in reasons)
-    assert not [f for f in catalog["gates"]["failures"] if f.startswith("error ")]
+    assert not [f for f in catalog["gates"]["failures"]
+                if f.startswith(("error ", "catalog consistency"))]
