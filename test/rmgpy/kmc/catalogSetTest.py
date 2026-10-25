@@ -257,9 +257,13 @@ class FakeEmitter:
         self.only = list(families) if families else None
         self.state = {}
 
+    @classmethod
+    def artifact_records(cls):
+        return [{"event_id": f"evt{k}", "family": f} for k, f in
+                enumerate(cls.families_in_artifact * 2)]
+
     def init(self):
-        records = [{"event_id": f"evt{k}", "family": f} for k, f in
-                   enumerate(self.families_in_artifact * 2)]
+        records = self.artifact_records()
         self.state.update(artifact_records=len(records),
                           families=sorted({r["family"] for r in records
                                            if not self.only or r["family"] in self.only}))
@@ -273,7 +277,7 @@ class FakeEmitter:
 def selection_of(monkeypatch, tmp_path, artifact_families, **args):
     FakeEmitter.families_in_artifact = artifact_families
     artifact = tmp_path / "artifact.json"
-    artifact.write_text("{}")
+    artifact.write_text(json.dumps({"records": FakeEmitter.artifact_records()}))
     monkeypatch.setattr(emit, "Emitter", FakeEmitter)
     monkeypatch.setattr(emit, "load_roster", lambda path: SimpleNamespace(
         sha256="r" * 64, digests=lambda: {}, schema=emit.ROSTER_SCHEMA, proxy_units=None,

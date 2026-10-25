@@ -41,6 +41,7 @@ from rmgpy.kmc.proxy_padding import (
     pad_reaction_witness,
     pad_reaction_witness_verified,
 )
+from rmgpy.kmc.resource_errors import reraise_resource
 from rmgpy.kmc.reference_thermo import (
     FROZEN_THERMO_PROPERTY,
     GasPhaseRMGReferenceThermo,
@@ -3651,6 +3652,7 @@ def _apply_record(
         for product in products:
             product.update(sort_atoms=False)
     except Exception as error:
+        reraise_resource(error)
         raise ValueError("rewrite produced an invalid molecular graph") from error
     return sorted(
         products, key=lambda molecule: molecule.to_adjacency_list(remove_h=False)
@@ -4634,6 +4636,7 @@ class EventSetCompiler:
                     return_all_kinetics=False,
                 )
             except Exception as error:
+                reraise_resource(error)
                 return None, {
                     "kind": "RMG family estimate",
                     "available": False,
@@ -4683,6 +4686,7 @@ class EventSetCompiler:
                     ),
                 }
             except Exception as error:
+                reraise_resource(error)
                 if isinstance(error, BarrierE0Error):
                     raise
                 return None, {
@@ -4719,6 +4723,7 @@ class EventSetCompiler:
                 ]
                 reference = "reverse from RMG gas-phase Kc"
             except Exception as error:
+                reraise_resource(error)
                 return None, {
                     "kind": "RMG gas-phase reverse",
                     "available": False,
@@ -4992,6 +4997,7 @@ class EventSetCompiler:
                     )
                 )
             except Exception as error:
+                reraise_resource(error)
                 refused = replace(
                     structural_forward,
                     status="refused",

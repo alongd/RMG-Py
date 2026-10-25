@@ -179,6 +179,7 @@ from typing import Any, Callable, Optional, Sequence
 from rmgpy.kmc import boundaries as b
 from rmgpy.kmc import rmg_moves as rm
 from rmgpy.kmc import window_matcher as wm
+from rmgpy.kmc.resource_errors import reraise_resource
 
 SCHEMA = "kmc-executable-template/1"
 RECORD_SCHEMA = "rewrite_record/0.2"
@@ -905,6 +906,7 @@ class ProductionRates:
             records, _initiating = self.compiler._linked_family_pair(proxy, reaction, {})
             return tuple(records), ""
         except Exception as error:   # reported, never hidden
+            reraise_resource(error)
             return None, f"production pair failed: {type(error).__name__}: {error}"
 
     def explicit_reaction(self, request):

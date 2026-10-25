@@ -64,6 +64,7 @@ from typing import Dict, Iterable, Optional, Sequence, Tuple
 from rmgpy.kmc import channels as chm
 from rmgpy.kmc import domain as dom
 from rmgpy.kmc import rmg_moves as rm
+from rmgpy.kmc.resource_errors import reraise_resource
 
 CERTIFICATE_VERSION = "kmc-rate-certificate/4"
 RECORD_CERTIFICATE_SCHEMA = "kmc-record-rate-certificate/3"
@@ -1607,6 +1608,7 @@ class Certifier:
             try:
                 attached = family.add_reverse_attribute(rxn)
             except Exception as exc:   # reported, never hidden
+                reraise_resource(exc)
                 attached = False
                 out = (rmg, template, f"kept direction: RMG found no reverse of the reaction "
                                       f"({type(exc).__name__}: {exc})"[:300])
@@ -2058,7 +2060,8 @@ def _resonance_forms(molecule):
     try:
         forms = generate_resonance_structures(base, keep_isomorphic=True,
                                               filter_structures=False)
-    except Exception:
+    except Exception as error:
+        reraise_resource(error)
         forms = []
     return [molecule] + [f for f in forms
                          if sorted(a.id for a in f.atoms) == sorted(a.id for a in molecule.atoms)]
@@ -2371,6 +2374,7 @@ def _normalisation_problems(graph, members) -> list:
         normalised = mol.copy(deep=True)
         normalised.update(log_species=False, sort_atoms=False)
     except Exception as exc:  # an invalid graph is a problem, never a pass
+        reraise_resource(exc)
         return [f"the replayed graph is not a valid molecule: {type(exc).__name__}: {exc}"]
     out = []
     for (i, before), after in zip(atoms.items(), normalised.atoms):
@@ -2401,6 +2405,7 @@ def rewrite_problems(record) -> list:
         targets = [_parse_adjacency(text) for text in record.get("product_graphs") or []]
         amap = {int(k): int(v) for k, v in (record.get("atom_map") or {}).items()}
     except Exception as exc:  # unparsable graphs are a problem, never a pass
+        reraise_resource(exc)
         return [f"the record's graphs do not parse: {type(exc).__name__}: {exc}"]
     r_heavy = [i for i in sorted(graph) if graph[i]["element"] != "H"]
     p_heavy = [(t, i) for t, part in enumerate(targets) for i in sorted(part)
@@ -3060,6 +3065,7 @@ def _derivation_problems(record: dict, body: dict) -> list:
             try:
                 expected = _constitution(_witness_atoms(witness_molecules(record[side])))
             except Exception as exc:  # unparsable graphs are a mismatch, never a pass
+                reraise_resource(exc)
                 expected = f"unparsable: {exc}"
             stored = _constitution((cert.get("witness") or {}).get("atoms", []))
             if stored != expected:
@@ -3289,6 +3295,7 @@ def rederived_certificate(record: dict, by_id: dict, certifier: "Certifier") -> 
     try:
         return certifier.certify_record(record, rate_owner=_rate_owner(record, by_id))
     except Exception as exc:  # the same verdict certify_records stores
+        reraise_resource(exc)
         return _error_certificate(record, exc)
 
 
@@ -3330,6 +3337,7 @@ def stored_certificate_problems(record: dict, body: dict, by_id: dict,
         try:
             problems = tree_problems(family, cert, labels)
         except Exception as exc:  # a malformed derivation is a problem, never a pass
+            reraise_resource(exc)
             problems = [f"the stored descents are malformed ({type(exc).__name__}: {exc}): "
                         "not a chain of the family tree"]
         if problems:
@@ -3435,7 +3443,9 @@ def certify_records(records, families, certifier: Optional[Certifier] = None, *,
     graphs when padded; a reverse record through its rate-owning
     ``reverse_of`` partner) and attach the reference.  Every record gets a
     certificate (coverage: every record); a failure is stored as an owned
-    ``error`` certificate, never dropped.
+    ``error`` certificate, never dropped.  A resource error (MemoryError,
+    RecursionError: ``resource_errors``) is not a failure of the record and
+    propagates: refusing on it made the published ids depend on the machine.
 
     With ``required`` (the certified compile) a record of the required
     population (``requires_certification``) whose certification failed is
@@ -3454,6 +3464,7 @@ def certify_records(records, families, certifier: Optional[Certifier] = None, *,
         try:
             rcs.append(certifier.certify_record(record, rate_owner=_rate_owner(d, by_id)))
         except Exception as exc:  # reported, never silently dropped
+            reraise_resource(exc)
             rcs.append(_error_certificate(d, exc))
     replacements = {}
     if required:

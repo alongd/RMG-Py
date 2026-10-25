@@ -15,13 +15,18 @@ full selection.  ``catalog-set`` ties per-family catalogs into one
 ``kmc-catalog-set/1`` manifest (``rmgpy.kmc.catalog_set``) that the runner
 accepts wherever it accepts catalogs.
 
-**Emit.** For each record (or the shard ``--chunk i/n``: records ``i::n`` of the
-event-id-sorted list): certify the records, match the reference cases of the
+**Emit.** For each record (or the shard ``--chunk i/n``: the records whose
+artifact ids are ``i::n`` of the artifact's sorted ids, read before anything is
+computed, a record certification republished under a new id staying with its
+source id): certify the records, match the reference cases of the
 roster's systems, ``template_emission.emit_record`` with the production rates
 and the reference Kc.  One JSON line per record: the payload plus status,
-refusal and timing.  An error is a row (``status: error``), never silent.  The
+refusal and timing.  An error is a row (``status: error``), never silent; a
+resource error (``resource_errors``) fails the shard instead.  The
 first line of a rows file is its header (artifact, database, code, roster and
-shard identity).
+shard identity, and the partition: the artifact's ids and each assigned
+record's source id, from which assembly names every record no shard or two
+shards assign).
 
 **Roster.** A JSON file ``{"schema": "kmc-reference-roster/2", "polymer":
 <LinearHomopolymerSpec mapping>, "systems": {name: [participant, ...]}}``.  A
@@ -75,6 +80,7 @@ from rmgpy.kmc import boundaries as b
 from rmgpy.kmc.catalog_set import CatalogSetError, build_catalog_set  # noqa: F401
 from rmgpy.kmc import template_emission as te
 from rmgpy.kmc import windows as win
+from rmgpy.kmc.resource_errors import reraise_resource
 
 SCHEMA = "kmc-template-catalog/1"
 ROWS_SCHEMA = "kmc-emit-rows/1"
@@ -733,6 +739,7 @@ def _participant(provider, graph, entry, label):
             participant = Participant(label, spec, lambda name, s=spec: win.build_spec(s, name))
             participant.build("roster_check")
         except Exception as error:   # reported as a refusal, never dropped
+            reraise_resource(error)
             raise RosterRefusal("refused:variant", f"{label}: {type(error).__name__}: {error}")
         return participant
     if kind == "chain":
@@ -759,6 +766,7 @@ def _participant(provider, graph, entry, label):
         except RosterRefusal:
             raise
         except Exception as error:   # reported as a refusal, never dropped
+            reraise_resource(error)
             raise RosterRefusal("refused:variant", f"{label}: {type(error).__name__}: {error}")
         return participant
     if kind in ("smiles", "adjacency_list"):
@@ -767,6 +775,7 @@ def _participant(provider, graph, entry, label):
                 return explicit_build(name, **{kind: value})
             make("roster_check")
         except Exception as error:
+            reraise_resource(error)
             raise RosterRefusal("refused:variant", f"{label}: {type(error).__name__}: {error}")
         return Participant(label, ("small", kind, value), make)
     raise RosterRefusal("refused:roster", f"{label}: unknown participant kind {kind!r}")
@@ -971,16 +980,38 @@ def bind(certifier, record, rc, case, owner):
             "refusals": res["refusals"][:2]}
 
 
-def select_records(records, chunk=None, limit=None):
-    """The event-id-sorted records, then shard ``chunk`` ("i/n": ``i::n``), then
-    at most ``limit``."""
-    picked = sorted(records, key=lambda r: r["event_id"])
+def select_records(records, chunk=None, limit=None, *, artifact_ids=None, replacements=None):
+    """The records of shard ``chunk`` ("i/n"), then at most ``limit``.  The
+    partition is the artifact's own record ids (``artifact_ids``; default the
+    records' source ids), sorted, ``i::n``, so it depends on nothing a shard
+    computes: a record certification republished under a new id
+    (``replacements``, old id -> new id) is emitted by the shard owning its
+    source id, and shards whose certification differed still partition the
+    artifact.  In source-id order; every source id has exactly one record."""
+    by_source = {}
+    for record, source in zip(records, source_ids(records, replacements)):
+        if source in by_source:
+            raise ValueError(f"refused:partition: two records of source id {source}")
+        by_source[source] = record
+    ids = sorted(by_source if artifact_ids is None else artifact_ids)
+    if set(ids) != set(by_source):
+        raise ValueError(f"refused:partition: the certified records are not the artifact's "
+                         f"({len(set(ids) - set(by_source))} without a record, "
+                         f"{len(set(by_source) - set(ids))} not in the artifact)")
     if chunk:
         k, n = parse_chunk(chunk)
-        picked = picked[k::n]
+        ids = ids[k::n]
+    picked = [by_source[i] for i in ids]
     if limit:
         picked = picked[:limit]
     return picked
+
+
+def source_ids(records, replacements=None) -> list:
+    """The artifact id each record was certified from (``replacements``,
+    old id -> new id, undone)."""
+    back = {new: old for old, new in (replacements or {}).items()}
+    return [back.get(r["event_id"], r["event_id"]) for r in records]
 
 
 def parse_chunk(chunk):
@@ -1133,6 +1164,7 @@ def midpoint_entries(record, payload, rates_for) -> dict:
                 raise te.EmissionError("; ".join(result.problems) or "grid mismatch")
             truth = te.weight_table(mids, result.k, result.ssa_multiplier, tch)
         except Exception as error:   # reported, never hidden
+            reraise_resource(error)
             out[t["key"]] = {"status": "unavailable",
                              "reason": f"{type(error).__name__}: {str(error)[:120]}"}
             continue
@@ -1177,8 +1209,9 @@ class Emitter:
         certifier = make_certifier(fam, certification_rules(art, self.polymer),
                                    reference_thermo(db))
         t = time.time()
-        certified, store, _replacements = certified_records(art["records"], fam, certifier)
+        certified, store, replacements = certified_records(art["records"], fam, certifier)
         S.update(certify_s=round(time.time() - t, 1), records=certified, store=store,
+                 replacements=replacements,
                  by_id={r["event_id"]: r for r in certified}, certifier=certifier)
         species = chm.SpeciesKeys()
         t = time.time()
@@ -1258,7 +1291,8 @@ class Emitter:
             row["midpoint"] = midpoint_entries(record, payload, S["rates_by_grid"])
         except te.EmissionError as error:
             row.update(status="error", refusal="error:emission", reason=str(error)[:400])
-        except Exception:   # reported, never hidden
+        except Exception as error:   # reported, never hidden
+            reraise_resource(error)
             row.update(status="error", refusal="error:exception",
                        reason=traceback.format_exc()[-1500:])
         row["member_rows"] = member_rows
@@ -1268,10 +1302,18 @@ class Emitter:
         return row
 
 
-def shard_header(emitter, roster, refusals, picked, chunk, partial, bound_by=()):
+def shard_header(emitter, roster, refusals, picked, chunk, partial, bound_by=(),
+                 artifact_ids=None):
+    """The rows file's header.  With ``artifact_ids`` (the ids the shards
+    partition) it carries the partition: those ids and the source id of each
+    assigned record, so assembly names every record no shard or two shards
+    assign."""
     from rmgpy.kmc.compiler import DEFAULT_T_GRID
     S = emitter.state
     artifact = emitter.artifact
+    partition = {} if artifact_ids is None else {"partition": {
+        "basis": "artifact_event_ids", "artifact_ids": sorted(artifact_ids),
+        "sources": source_ids(picked, S.get("replacements"))}}
     return {"kind": "header", "schema": ROWS_SCHEMA, "artifact_id": artifact.stem,
             "artifact_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
             "artifact_records": S["artifact_records"], "families": S["families"],
@@ -1284,7 +1326,8 @@ def shard_header(emitter, roster, refusals, picked, chunk, partial, bound_by=())
             "selection": "partial" if partial else "all",
             "assigned": [r["event_id"] for r in picked], "roster_refusals": refusals,
             "systems": {n: [p.label for p in ps] for n, ps in emitter.systems.items()},
-            **{key: roster.digests()[key] for key in bound_by if key in CATALOG_BINDING_KEYS}}
+            **{key: roster.digests()[key] for key in bound_by if key in CATALOG_BINDING_KEYS},
+            **partition}
 
 
 def is_partial_selection(only, limit, artifact_records, selected_records) -> bool:
@@ -1308,6 +1351,10 @@ def run_emit(args):
         print("REFUSED", error, flush=True)
         return 1
     print("BINDING", {"bound_by": list(bound_by), "legacy_artifact": not bound_by}, flush=True)
+    # the partition: the artifact's own record ids (of the selected families),
+    # read before anything this shard computes
+    artifact_ids = [r["event_id"] for r in artifact.get("records", [])
+                    if not args.family or r.get("family") in args.family]
     systems, refusals = build_reference_systems(roster)
     for refusal in refusals:
         print("ROSTER", json.dumps(refusal), flush=True)
@@ -1315,12 +1362,13 @@ def run_emit(args):
                       contexts=not args.no_contexts, polymer=roster.polymer)
     t0 = time.time()
     emitter.init()
-    picked = select_records(emitter.records, args.chunk, args.limit)
+    picked = select_records(emitter.records, args.chunk, args.limit, artifact_ids=artifact_ids,
+                            replacements=emitter.state.get("replacements"))
     header = shard_header(emitter, roster, refusals, picked, args.chunk,
                           partial=is_partial_selection(args.family, args.limit,
                                                        emitter.state["artifact_records"],
                                                        len(emitter.records)),
-                          bound_by=bound_by)
+                          bound_by=bound_by, artifact_ids=artifact_ids)
     print("INIT", {k: emitter.state.get(k) for k in ("load_s", "certify_s", "cases_s", "case_stats")},
           len(emitter.records), "records, selected", len(picked), flush=True)
     errors = 0
@@ -1501,6 +1549,30 @@ def assembler_identity(database) -> dict:
             "code_extensions_sha256": code_extensions_sha256()}
 
 
+def partition_failures(headers) -> list:
+    """Every artifact record no shard assigns, every one two or more shards
+    assign, and every assigned source that is not an artifact record, named:
+    read from the partition the shard headers carry (``shard_header``: the
+    artifact's ids and each assigned record's source id; ids compared on
+    their first 24 characters, as ``assigned`` is)."""
+    if not all(h.get("partition") for h in headers):
+        return ["some shard headers carry the artifact's partition and some do not"]
+    ids = {_canon(sorted(i[:24] for i in h["partition"]["artifact_ids"])) for h in headers}
+    if len(ids) > 1:
+        return ["shard headers disagree on the artifact's record ids"]
+    artifact = set(json.loads(ids.pop()))
+    owners = defaultdict(list)
+    for h in headers:
+        for source in h["partition"]["sources"]:
+            owners[source[:24]].append(str(h.get("chunk")))
+    out = [f"record {i} is assigned by no shard" for i in sorted(artifact - set(owners))]
+    out += [f"record {i} is assigned by {len(chunks)} shards ({', '.join(chunks)})"
+            for i, chunks in sorted(owners.items()) if len(chunks) > 1]
+    out += [f"record {i} is assigned but is not an artifact record"
+            for i in sorted(set(owners) - artifact)]
+    return out
+
+
 def assemble(paths, *, database=None, services=None) -> dict:
     """The catalog of the rows files ``paths`` (see the module docstring).
     Refused (``AssembleRefused``) unless every shard header carries the
@@ -1563,14 +1635,20 @@ def assemble(paths, *, database=None, services=None) -> dict:
         failures.append(f"the shards assign {len(assigned)} of the artifact's "
                         f"{first.get('artifact_records')} records")
         complete_coverage = False
+    partitioned = [h for h in headers if h.get("partition")]
+    if partitioned:
+        named = partition_failures(headers)
+        failures += named
+        complete_coverage = complete_coverage and not named
     if headers:
         absent = sorted(assigned - set(by_id))
         if absent:
-            failures.append(f"{len(absent)} assigned record(s) have no row, e.g. {absent[0]}")
+            failures.append(f"{len(absent)} assigned record(s) have no row: {', '.join(absent)}")
             complete_coverage = False
         extra = sorted(set(by_id) - assigned)
         if extra:
-            failures.append(f"{len(extra)} row(s) were not assigned to any shard, e.g. {extra[0]}")
+            failures.append(f"{len(extra)} row(s) were not assigned to any shard: "
+                            f"{', '.join(extra)}")
     roster_refusals = {}
     for f in files:
         for h in ([f["header"]] if f["header"] else []):
@@ -1596,6 +1674,7 @@ def assemble(paths, *, database=None, services=None) -> dict:
     try:
         merged, collisions = te.resolve_collisions(payloads)
     except Exception as error:    # a split reciprocal pair, a bad weight
+        reraise_resource(error)
         # the catalog is refused: unmerged copies would load as independent
         # templates and fail (or fake) every gate after this one
         failures.append(f"catalog consistency: {type(error).__name__}: {error}"[:600])
@@ -1609,6 +1688,7 @@ def assemble(paths, *, database=None, services=None) -> dict:
         try:
             merged, overlaps = te.resolve_overlaps(merged)
         except Exception as error:    # two templates would make one transition unchecked
+            reraise_resource(error)
             failures.append(f"class overlap: {type(error).__name__}: {error}"[:600])
             have, merged = [], []
     refused_overlaps = [o for o in overlaps if o["disposition"] != "covered"]
@@ -1626,6 +1706,7 @@ def assemble(paths, *, database=None, services=None) -> dict:
             payloads, cycle_table = te.check_cycles(payloads, counter=services.counter,
                                                     kc=services.kc, complete=complete_coverage)
         except Exception as error:   # reported, never hidden
+            reraise_resource(error)
             failures.append(f"balance check could not run: {type(error).__name__}: "
                             f"{str(error)[:500]}")
     override_table = []
@@ -1637,6 +1718,7 @@ def assemble(paths, *, database=None, services=None) -> dict:
                 kc=services.kc)
             failures += override_failures
         except Exception as error:   # reported, never hidden
+            reraise_resource(error)
             failures.append(f"depository overrides could not run: {type(error).__name__}: "
                             f"{str(error)[:500]}")
     for k, payload in zip(have, payloads):
@@ -1681,6 +1763,7 @@ def assemble(paths, *, database=None, services=None) -> dict:
         try:
             loaded = len(te.loaded_templates(out_payloads, T))
         except Exception as error:
+            reraise_resource(error)
             round_trip["ok"] = False
             failures.append(f"round trip at {T} K: {type(error).__name__}: {str(error)[:300]}")
             break
