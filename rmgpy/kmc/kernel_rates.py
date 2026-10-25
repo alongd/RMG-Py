@@ -32,8 +32,12 @@ chain of n declared units), by edits on its backbone (``origin.is_backbone``):
 * ``chain``: a pristine chain; its count is the per-chain polynomial
   ``s(n) = a*n + b`` in the moment unit, read from the melt engine's own index
   (``MeltEngine._scan``: allowed unimolecular transitions, bimolecular sites per
-  branching kind) on chains of every length up to ``n_max`` and required to be
-  exactly affine on the trailing lengths (refused otherwise: never fitted);
+  branching kind) on chains of every primitive period count up to ``n_max``
+  (I-266: a chain of n periods that is no whole number of declared units is
+  the first n periods of a declared chain, cut and capped as the chain probe
+  below, so the odd-period alkanes of a two-period unit are states too) and
+  required to be exactly affine on the trailing lengths (refused otherwise:
+  never fitted);
 * ``radical_end``: the radical atom left by cutting one backbone single bond
   (every backbone bond, both fragments);
 * ``radical_interior``: one H removed from an interior backbone atom;
@@ -114,11 +118,14 @@ the far-field outcomes relative to the feature position.  One length rule
 for every participant: a law reads only the probe states carrying its class
 (an interior probe's class is read at its position), and needs the class at
 the law's reach (``laws_exact_to_n``) and, along a chain or at an end, on
-``EXACT_POINTS`` lengths.  ``law_inert``: an interior participant with no
-far-field site (the rate law above gives 0); ``law_refused``: a product that
-is no declared state (e.g. a vinyl radical), or a class no probe state
-carries at the reach (the probes are head-side fragments, so the tail-side
-cut end of an unsymmetric period has none).
+``EXACT_POINTS`` lengths; an end class carried at short lengths only (a
+length label of its family, e.g. the methyl radical at 1 period, ethylene at
+2) has no longer state, so its law is exact on those lengths
+(``fixed_lengths``) with no far outcome.  ``law_inert``: an interior
+participant with no far-field site (the rate law above gives 0);
+``law_refused``: a product that is no declared state (e.g. a vinyl radical),
+or a class no probe state carries (the probes are head-side fragments, so the
+tail-side cut end of an unsymmetric period has none).
 ``families``: per pool family its
 label per length, the molar-mass offset (M = n * unit mass + offset), the
 element-composition offset (``kmc-kernel-rates/3``, I-217: atoms = n *
@@ -353,23 +360,44 @@ def _affine(series: Dict[int, int]) -> dict:
     return {"a": a, "b": b, "exact_from_n": start}
 
 
-def _states(spec, n_values, counter, ppu: int):
+def _chain_state(spec, n: int, ppu: int, nbb: int):
+    """(state, component) of a pristine chain of n primitive periods: the
+    declared chain of n / ppu units when n is a whole number of them, else
+    the first n periods of a longer declared chain cut from the rest, the cut
+    end capped by an H of the rest (``_Probes.put``'s chain probe)."""
+    if n % ppu == 0:
+        state = materialize(_single_chain_spec(spec, n // ppu))
+        return state, state.components.component_of(_backbone_order(state)[0])
+    state = materialize(_single_chain_spec(spec, n // ppu + 2))
+    path = _backbone_order(state)
+    L = n * nbb
+    u, v, q = path[L - 1], path[L], path[L + 1]
+    hq = _hydrogens(state, q)
+    if state.atoms[u].edges.get(v) != 1.0 or state.atoms[v].edges.get(q) != 1.0 or not hq:
+        raise KernelRatesError(f"no pristine chain of {n} periods: the declared chain is not cut and capped there")
+    state.apply([SetBond(u, v, 1.0, 0.0), SetBond(q, hq[0], 1.0, 0.0), SetBond(u, hq[0], 0.0, 1.0),
+                 SetBond(v, q, 1.0, 2.0)])
+    return state, state.components.component_of(path[0])
+
+
+def _states(spec, n_values, counter, ppu: int, nbb: int):
     """``chain``: {(class index, participant, kind): {n: count}} on pristine
-    chains (n in primitive periods); ``features``: {class label: {"far":
-    {units: counts}, "profile": {position: [counts, ...]}}} (``_features``)."""
+    chains of every n primitive periods up to the longest declared chain
+    (``_chain_state``); ``features``: {class label: {"far": {units: counts},
+    "profile": {position: [counts, ...]}}} (``_features``, on the declared
+    chains of ``n_values`` units)."""
     chain: Dict[Tuple, Dict[int, int]] = defaultdict(dict)
     features: Dict[str, dict] = {}
     longest = max(n_values)
-    for units in n_values:
-        _progress(f"site counts on {units}/{longest} declared units")
-        n = units * ppu
-        state = materialize(_single_chain_spec(spec, units))
-        path = _backbone_order(state)
-        cid = state.components.component_of(path[0])
+    for n in range(1, longest * ppu + 1):
+        _progress(f"site counts on {n}/{longest * ppu} periods")
+        state, cid = _chain_state(spec, n, ppu, nbb)
         for key, v in counter.counts(state, cid).items():
             chain[key][n] = v
         for key in chain:
             chain[key].setdefault(n, 0)
+    for units in n_values:
+        _progress(f"feature counts on {units}/{longest} declared units")
         _features(spec, units, counter, features, far_ok=(units > longest - EXACT_POINTS))
     return chain, features
 
@@ -964,10 +992,20 @@ class _Laws:
         # (and, along a chain or at an end, on EXACT_POINTS lengths to check it on)
         states = self._states(label)
         lengths = sorted({n for n, _x in states})
-        if not lengths or lengths[-1] != self.n_hi or (anchor != "interior" and len(lengths) < EXACT_POINTS):
+        # a class of an end family carried at short lengths only (a length label of the family, e.g. the
+        # methyl radical) has no longer state: its law is exact on those lengths, with no far outcome
+        fixed = anchor == "end" and bool(lengths) and lengths[-1] < self.n_hi
+        if not lengths or (not fixed and (lengths[-1] != self.n_hi or
+                                          (anchor != "interior" and len(lengths) < EXACT_POINTS))):
             raise _OffDeclared(f"no probe of class {label} at the law's reach ({self.n_hi} periods; "
                                f"probe lengths carrying it: {lengths or 'none'})")
         law = {"class": label, "family": family, "anchor": anchor}
+        if fixed:
+            exact = {n: measure(n, x, check=True)[2] for n, x in states}
+            law.update({"fixed_lengths": lengths, "far": {"outcomes": []},
+                        "exact": {str(n): _outcome_list(c) for n, c in sorted(exact.items())},
+                        "exact_to_n": lengths[-1]})
+            return law
         if anchor == "interior":
             got = [Counter(r for _k, r in measure(n, x, check=(i == 0))[1]) for i, (n, x) in enumerate(states)]
             if any(g != got[0] for g in got[1:]):
@@ -1190,7 +1228,10 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
         raise KernelRatesError("the engine loaded another template set")
     counter = _Counter(engine)
     n_values = list(range(1, units_hi + 1))
-    chain, features = _states(spec, n_values, counter, ppu)
+    if bb_per_unit % ppu:
+        raise KernelRatesError("the declared unit's backbone is not a whole number of primitive periods")
+    nbb = bb_per_unit // ppu
+    chain, features = _states(spec, n_values, counter, ppu, nbb)
     classes = engine.classes
 
     # per template, participant -> {class: count description}
@@ -1321,9 +1362,6 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
         else:
             k["rate_law"] = "R = sum (w_over_divisor)*S0*S1/V (mol/s; S_p in mol of sites, V in m3)"
     unit_mass = spec.repeat_unit.composition.molar_mass_g_mol() / ppu
-    if bb_per_unit % ppu:
-        raise KernelRatesError("the declared unit's backbone is not a whole number of primitive periods")
-    nbb = bb_per_unit // ppu
     n_hi = units_hi * ppu
     probes = _Probes(spec, engine, ppu, nbb, 2 * units_hi + 3)
     laws = _Laws(engine, probes, n_hi)
@@ -1368,7 +1406,7 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
                            "backbone_atoms_per_period": nbb,
                            "composition": {el: str(v) for el, v in sorted(probes.composition.items()) if v},
                            "definition": "n counts primitive periods of the declared backbone"},
-           "chain_lengths_probed": [n * ppu for n in n_values],
+           "chain_lengths_probed": list(range(1, n_hi + 1)),
            "families": families, "laws_exact_to_n": n_hi, "overrides_unplaced": unplaced,
            "kernels": dict(sorted(kernels.items())), "kmc_only": kmc_only, "templates": template_rows}
     if run is not None:

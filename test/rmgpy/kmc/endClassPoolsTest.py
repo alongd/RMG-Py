@@ -112,7 +112,7 @@ def test_the_odd_period_cuts_join_the_homolysis_kernel(table):
         for n in union:
             for m, prods in t["law"]["exact"].get(str(n), []):
                 union[n][tuple(sorted(p[1] for p in prods))] += m
-    assert union == {3: Counter({(1, 2): 1}), 4: Counter({(2, 2): 1}), 5: Counter({(2, 3): 2})}
+    assert union == {3: Counter({(1, 2): 2}), 4: Counter({(2, 2): 1}), 5: Counter({(2, 3): 2})}
 
 
 def test_a_class_at_its_short_lengths_has_its_law_there(table):
@@ -193,9 +193,35 @@ def test_vinyl_addition_joins_the_radical_and_alkene_pools_into_the_interior_rad
                  "valid_from_periods": 5}
 
 
+def test_kernel_mode_writes_the_end_class_pools_and_the_monomer_kernels(table, tmp_path):
+    from momKernelProducerTest import polymers
+    from momProducerTest import CHECKOUT, make_setup
+    setup = make_setup(tmp_path)
+    path = tmp_path / "pe.kernel_rates.json"
+    path.write_text(json.dumps(table))
+    out = tmp_path / "out"
+    manifest = mp.produce(setup["deck"], checkout=CHECKOUT, temperature=700.0, end=40.0, snapshots=9, families=(),
+                          catalogs=(), out=out, database=setup["db"], kernel_rates=str(path),
+                          kernels=carried(table))
+    terms = manifest["facts"]["kernels"]
+    pools = polymers(out)
+    assert set(pools) == {LABEL, RADICAL, ALKENE, MID, METHYL_POOL}
+    assert pools[RADICAL]["k_depropagation"] == {"A": terms["depropagation"][RADICAL]["k"], "n": 0.0, "Ea": 0.0}
+    assert pools[RADICAL]["kernel_propagation"] == terms["propagation"][RADICAL]
+    assert pools[RADICAL]["monomer_product"] == "C=C"
+    assert pools[RADICAL]["kernel_recombination"] == terms["recombination"] + terms["joins"][RADICAL]
+    assert pools[METHYL_POOL]["end_class"] == "CH3" and pools[METHYL_POOL]["end_radical_site"] == "primary"
+    assert pools[METHYL_POOL]["kernel_recombination"] == terms["joins"][METHYL_POOL]
+    text = (out / "rmg" / "input.py").read_text()
+    assert "species(label='C2H4', reactive=True, structure=SMILES('C=C'))" in text
+    assert "'C2H4': 'gas'" in text
+    assert manifest["facts"]["kernels"]["record"]["pool_family"][METHYL_POOL] == "radical_end"
+
+
 def test_methyl_recombination_maps_on_the_methyl_pool_which_nothing_feeds(table):
     out = mapped(table, carried(table))
     ((name, t),) = terms_of(table, C_METHYLS).items()
     assert out["joins"][METHYL_POOL] == [{"template": name, "k_pair": t["w_over_divisor"], "sites_per_chain": 1.0,
                                           "periods_per_unit": 2, "product": LABEL, "valid_from_periods": 1}]
-    assert out["record"]["unfed_pools"] == [METHYL_POOL]
+    # the terminal-alkene pool too: no disproportionation, which makes terminal alkenes, is in this subset
+    assert out["record"]["unfed_pools"] == sorted([ALKENE, METHYL_POOL])
