@@ -190,8 +190,10 @@ def test_a_one_residue_declaration_is_refused_as_v1_expressible():
         v2_spec(mutate)
 
 
-@pytest.mark.parametrize("architecture", ["branched", "network"])
-def test_branched_and_network_architectures_are_refused_by_name(architecture):
+@pytest.mark.parametrize("architecture", ["network"])
+def test_a_network_architecture_is_refused_by_name(architecture):
+    """Networks are S7; a branched declaration has its own class and tests
+    (``branchedSpecTest``)."""
     def mutate(mapping):
         mapping["architecture"] = architecture
         mapping["locality_policy"]["bounds"]["topology_metadata_schema"]["architecture"] = [architecture]
