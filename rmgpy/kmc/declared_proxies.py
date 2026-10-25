@@ -41,6 +41,14 @@ length (``<radical>+monomer``) and at ``units - 1``
 completeness bound).  No proxy names family candidates: the compile tries
 the requested families on all.
 
+The pristine chain of every primitive-period count below ``units`` repeat
+units is a proxy of its own too (``pristine~<k>``, k periods; no ``@``
+copy).  A template's window closes on a side only where its witness ends
+inside it, so an event whose fragments both end inside the window (PE: the
+cut of n-butane into two ethyl radicals and its reverse) is witnessed only on
+a chain that short.  Its ends are artificial like every other proxy's: an
+event whose reacting atom is an end atom stays a cut point.
+
 A schema-v2 (linear copolymer) declaration is refused by the functions
 above; its proxies are ``sequence_proxy_set`` and its roster structures
 ``sequence_declared_structures`` (the section at the end of this module).
@@ -61,6 +69,8 @@ DEFAULT_PROXY_UNITS = 3
 # the extra units of the full-context copies
 COVERAGE_EXTRA_UNITS = 2
 SHORT = "_short"
+# ``pristine~<k>``: the pristine chain of k primitive periods, below the proxies
+SHORT_CHAIN = "~"
 SINGLE_RADICALS = ("interior_radical", "pendant_radical", "head_end_radical",
                    "tail_end_radical", "head_group_radical", "tail_group_radical")
 CONTEXT_CLASS = {"pristine": "pristine", "interior_radical": "featured",
@@ -91,13 +101,16 @@ def radical_sites(declared) -> tuple:
 
 def declared_proxy_set(spec, units: int = DEFAULT_PROXY_UNITS) -> tuple:
     """The compile proxies of a linear-homopolymer declaration at ``units``
-    repeat units, with their ``units + 2`` full-context copies (module doc)."""
+    repeat units, with their ``units + 2`` full-context copies and the
+    shorter pristine chains (module doc)."""
     builder = _Builder.of(spec, units)
     wide = units + COVERAGE_EXTRA_UNITS
     extended = tuple(replace(proxy, site_type=f"{proxy.site_type}@{wide}",
                              metadata={**proxy.metadata, "coverage_site_type": proxy.site_type})
                      for proxy in _proxies(builder, wide))
-    return _proxies(builder, units) + extended
+    short = builder.short_chains(units)
+    return _proxies(builder, units) + extended + _proxies(builder, units, short,
+                                                          [(name, (name,)) for name in short])
 
 
 def declared_structures(spec, units: int = DEFAULT_PROXY_UNITS) -> tuple:
@@ -115,6 +128,9 @@ def declared_structures(spec, units: int = DEFAULT_PROXY_UNITS) -> tuple:
             structures[f"{name}@{depth}"] = item
         for site_type, participants in _declarations(builds):
             proxies[site_type + suffix] = tuple(f"{name}@{depth}" for name in participants)
+    for name, item in builder.short_chains(units).items():
+        structures[name] = item
+        proxies[name] = (name,)
     return structures, proxies
 
 
@@ -140,19 +156,23 @@ def _declarations(builds) -> list:
     return declarations
 
 
-def _proxies(builder, units: int) -> tuple:
+def _proxies(builder, units: int, structures=None, declarations=None) -> tuple:
+    """The proxies of ``declarations`` over ``structures`` (default: every
+    structure at ``units`` and ``_declarations`` over them)."""
     from rmgpy.species import Species
 
-    builds = {name: build for name, (_spec, build) in builder.builds(units).items()}
+    if structures is None:
+        structures = builder.builds(units)
+    builds = {name: build for name, (_spec, build) in structures.items()}
     species = {name: Species(molecule=[build.molecule]) for name, build in builds.items()}
     proxies = []
-    for site_type, participants in _declarations(builds):
+    for site_type, participants in (_declarations(builds) if declarations is None else declarations):
         boundaries = tuple(
             port
             for index, name in enumerate(participants)
             for port in construction_ports(name, builds[name].molecule, index,
                                            builds[name].metadata))
-        site_types = tuple(name[:-len(SHORT)] if name.endswith(SHORT) else name
+        site_types = tuple(name[:-len(SHORT)] if name.endswith(SHORT) else name.split(SHORT_CHAIN)[0]
                            for name in participants)
         proxies.append(SiteProxy(
             site_type,
@@ -204,6 +224,19 @@ class _Builder:
                 builds.update({name + SHORT: item for name, item in short.items()})
             self._builds[units] = builds
         return self._builds[units]
+
+    def short_chains(self, units: int) -> dict:
+        """``pristine~<k>`` -> (witness spec, build) of the pristine chain of
+        every k primitive periods below ``units`` repeat units (the chains
+        the declared chain builds)."""
+        out = {}
+        for k in range(1, units * self.declared.periods_per_repeat):
+            spec = win.DeclaredSpec(self.declared.name, ChainSpec(k))
+            try:
+                out[f"pristine{SHORT_CHAIN}{k}"] = (spec, win.build_spec(spec, "pristine"))
+            except (b.BoundaryError, ValueError):
+                continue
+        return out
 
     def structures(self, units: int, only=None) -> dict:
         """name -> (witness spec, build) of every structure buildable at
