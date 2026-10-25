@@ -6973,6 +6973,12 @@ POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_TRANSFER = "3.3"
 # with a chain). Stamped iff any pool carries either; a 3.3 reader would
 # replay them without the move or with constant sites.
 POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_MOVE = "3.4"
+# Schema 3.5: `catalog_kernels` may carry "propagation" (the normalized
+# kernel_propagation terms), "depropagation" (a deck-declared end-radical
+# pool's k_depropagation triplet) and "recombination" terms with a `partner`
+# (a join of two pools). Stamped iff any pool carries one; a 3.4 reader would
+# replay the pools without them or replay a join as a same-pool recombination.
+POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_ENDS = "3.5"
 POLYMER_POOLS_SIDECAR_FILENAME = "polymer_pools.json"
 
 # Recognized thermal_analysis_inputs fields (schema 2.9). Per-pool fields
@@ -8290,9 +8296,14 @@ def _serialize_end_radical_depropagation_block(
             f"end-radical daughter pool (end_radical_site unset). The "
             f"kernel only integrates on spawned end-radical daughters, so "
             f"this is a dead-knob shape no deck can produce "
-            f"(rmgpy/rmg/input.py requires k_homolysis beside "
-            f"k_depropagation); refusing to serialize an artifact that "
-            f"would carry an unreproducible declaration.")
+            f"(rmgpy/rmg/input.py requires k_homolysis or end_radical_site "
+            f"beside k_depropagation); refusing to serialize an artifact "
+            f"that would carry an unreproducible declaration.")
+    if getattr(pool, "spawn_metadata", None) is None:
+        # A deck-declared end-radical pool (kernel mode): its
+        # depropagation is a catalog kernel, recorded under
+        # catalog_kernels (schema 3.5) by _serialize_pool_for_sidecar.
+        return None
     # Lazy import (the QSSA serializer's cycle-avoidance idiom).
     from rmgpy.solver.polymer import (KDEP_GATE_WIDTH,
                                       validate_k_depropagation)
@@ -8872,13 +8883,31 @@ def _serialize_pool_for_sidecar(pool: 'Polymer',
     if homolysis_block is not None:
         d["homolysis_initiation"] = homolysis_block
     # Catalog-driven pool kernels (schema 3.2, S5 a + b; "transfer" 3.3,
-    # S5 c + e; "move" 3.4, S5 d). Absent -> emit nothing (kernel-free pools
-    # stay byte-identical, presence-gated).
+    # S5 c + e; "move" 3.4, S5 d; "propagation" and a deck-declared
+    # end-radical pool's "depropagation" 3.5). Absent -> emit nothing
+    # (kernel-free pools stay byte-identical, presence-gated).
     catalog_kernels = {name: deepcopy(terms) for name, terms in (
         ("homolysis", getattr(pool, "kernel_homolysis", None)),
         ("recombination", getattr(pool, "kernel_recombination", None)),
         ("transfer", getattr(pool, "kernel_transfer", None)),
-        ("move", getattr(pool, "kernel_move", None))) if terms is not None}
+        ("move", getattr(pool, "kernel_move", None)),
+        ("propagation", getattr(pool, "kernel_propagation", None))) if terms is not None}
+    kdep = getattr(pool, "k_depropagation", None)
+    if (kdep is not None and getattr(pool, "spawn_metadata", None) is None
+            and getattr(pool, "k_homolysis", None) is None
+            and getattr(pool, "end_radical_site", None) is not None):
+        from rmgpy.solver.polymer import validate_k_depropagation
+        catalog_kernels["depropagation"] = validate_k_depropagation(d["label"], kdep)
+    if monomer_routing is None and ("propagation" in catalog_kernels or "depropagation" in catalog_kernels):
+        # Both move one repeat unit to or from the pool's monomer gas.
+        mps = getattr(pool, "monomer_product_species", None)
+        if mps is None or (core_species and not any(spc is mps for spc in core_species)):
+            raise ValueError(
+                f"Pool '{d['label']}': carries a catalog propagation or depropagation kernel but its "
+                f"monomer_product_species is missing or not in the core species universe the artifact "
+                f"labels come from (identity check). Refusing to serialize a monomer exchange the "
+                f"consumer cannot route.")
+        monomer_routing = _artifact_species_label(mps)
     if catalog_kernels:
         d["catalog_kernels"] = catalog_kernels
     # Side-group homolysis block (schema 2.7, FR1-K2). Absent -> emit
@@ -9997,6 +10026,12 @@ def build_polymer_moments_artifact(pool_registry,
            or any("sites" in t for t in p.get("catalog_kernels", {}).get("transfer", ()))
            for p in pools):
         schema_version = POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_MOVE
+    # Propagation, an explicit pool's depropagation and joins of two pools
+    # (schema 3.5) -- the rung above 3.4.
+    if any("propagation" in p.get("catalog_kernels", {}) or "depropagation" in p.get("catalog_kernels", {})
+           or any("partner" in t for t in p.get("catalog_kernels", {}).get("recombination", ()))
+           for p in pools):
+        schema_version = POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_ENDS
 
     # conventions.condensed_species closure (schema 2.5): a spawned pool's
     # phase_species (canonical proxy + mu-dummies collected from the same
