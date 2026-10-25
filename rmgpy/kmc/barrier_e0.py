@@ -8,6 +8,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from rmgpy.kmc.resource_errors import reraise_resource
+
 
 PROVIDER_NAME = "fixed-b-wilhoit"
 PROVIDER_VERSION = "1"
@@ -121,6 +123,7 @@ class FixedBBarrierE0Provider:
                 try:
                     fitted = isolated.to_wilhoit(B=self.B)
                 except Exception as error:
+                    reraise_resource(error)
                     raise BarrierE0Error(
                         f"fixed-B E0 fit failed for {role} {index}: {error}"
                     ) from error

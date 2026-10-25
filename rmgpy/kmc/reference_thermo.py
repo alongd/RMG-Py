@@ -9,6 +9,7 @@ import math
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
+from rmgpy.kmc.resource_errors import reraise_resource
 from rmgpy.kmc.database_provenance import (
     check_database_identity,
     legacy_identity_provenance,
@@ -235,6 +236,7 @@ class SharedThermoAssignment:
                 if thermo is None:
                     raise ValueError("RMG returned no thermochemistry")
             except Exception as error:
+                reraise_resource(error)
                 raise ThermoUnavailable(
                     f"thermo unavailable for species {name}: {error}"
                 ) from error
@@ -308,6 +310,7 @@ class GasPhaseRMGReferenceThermo:
                 for temperature in temperatures
             ]
         except Exception as error:
+            reraise_resource(error)
             names = ", ".join(
                 species.molecule[0].to_smiles()
                 for species in list(reaction.reactants) + list(reaction.products)

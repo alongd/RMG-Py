@@ -352,6 +352,7 @@ from rmgpy.kmc import boundaries as b
 from rmgpy.kmc import declared_chain as dc
 from rmgpy.kmc import declared_sequence as ds
 from rmgpy.kmc import domain as dom
+from rmgpy.kmc.resource_errors import reraise_resource
 
 RING_LIMIT = 8
 PORT_DEPTH_LIMIT = 6
@@ -1132,6 +1133,7 @@ def _fragment_facts(providers=None) -> dict:
                     facts[port.tag] = {"closed_shell": all(atom[3] == 0 for atom in fragment.atoms),
                                        "delta": dict(delta)}
             except Exception as error:   # fail closed: the facts are not decided
+                reraise_resource(error)
                 facts = {FACTS_UNDECIDED: f"{type(error).__name__}: {error}"}
             out[provider.name] = facts
         _FACTS[key] = out
@@ -3067,7 +3069,8 @@ def joined_templates(family, directions) -> tuple:
     def first(entry):
         try:
             groups = chm._group_atoms(family.groups, entry)
-        except Exception:    # an unexpandable logic node: not proved joined
+        except Exception as error:    # an unexpandable logic node: not proved joined
+            reraise_resource(error)
             return None
         return groups[0] if groups else None
     out = []
@@ -3249,7 +3252,8 @@ def training_keys(family) -> frozenset:
         out = set()
         try:
             depository = family.get_training_depository()
-        except Exception:     # no training depository: nothing can match
+        except Exception as error:     # no training depository: nothing can match
+            reraise_resource(error)
             depository = None
         for entry in (depository.entries.values() if depository else ()):
             for s in list(entry.item.reactants) + list(entry.item.products):
@@ -4236,6 +4240,7 @@ def run_context(certifier, family, case: MemberCase, assignment, *, bound=None,
             reactants = tuple(cs.reactants)
             forms = tuple(rm.reactant_forms(m) for m in reactants)
     except Exception as error:   # reported, never hidden
+        reraise_resource(error)
         return ContextResult(assignment, "refused:rematch", f"{type(error).__name__}: {error}",
                              built)
     target = rm.product_key(dict(built.product_rows()))

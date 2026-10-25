@@ -7,6 +7,8 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
 
+from rmgpy.kmc.resource_errors import reraise_resource
+
 
 @dataclass(frozen=True)
 class RepeatUnitGraph:
@@ -651,7 +653,8 @@ def _edit_support_ids(reaction) -> frozenset:
 
     try:
         before, after = rows(reaction.reactants), rows(reaction.products)
-    except Exception:
+    except Exception as error:
+        reraise_resource(error)
         return frozenset()
     if set(before) != set(after):
         return frozenset()
@@ -765,6 +768,7 @@ def check_padding_declarations(original, boundaries, repeat_unit, providers) -> 
             provider = providers[metadata.provider]
             fragment = provider.fragment(port, metadata.coordinate(port.atom_id))
         except Exception as error:
+            reraise_resource(error)
             raise ReactionNotPaddable(f"port {key}: provider fragment unavailable: {error}") \
                 from error
         if len(fragment.attachments) != 1:

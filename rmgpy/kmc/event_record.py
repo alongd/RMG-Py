@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Literal, Optional
 from hashlib import sha256
 
+from rmgpy.kmc.resource_errors import reraise_resource
+
 
 @dataclass(frozen=True)
 class EventRecord:
@@ -492,7 +494,8 @@ def _resonance_forms(forms: list) -> list:
         copy = form.copy(deep=True)
         try:
             out.extend(resonance.generate_resonance_structures(copy, keep_isomorphic=False))
-        except Exception:  # an unexpandable form is compared as given
+        except Exception as error:  # an unexpandable form is compared as given
+            reraise_resource(error)
             out.append(copy)
     return out
 

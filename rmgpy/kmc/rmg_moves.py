@@ -70,6 +70,8 @@ from rmgpy.molecule.molecule import Atom, Bond, Molecule
 from rmgpy.molecule.resonance import generate_resonance_structures
 from rmgpy.reaction import same_species_lists
 
+from rmgpy.kmc.resource_errors import reraise_resource
+
 STATUSES = ("kept", "forbidden", "recipe_failed", "unchanged_species", "charged_species",
             "unbalanced", "constraint", "excluded")
 RESONANCE_POLICIES = ("all", "given")
@@ -357,7 +359,8 @@ def _forbidden_reason(family, molecule, where):
                         names.append(name)
                 elif item.is_isomorphic(molecule):
                     names.append(name)
-            except Exception:  # diagnostics never change the verdict
+            except Exception as error:  # diagnostics never change the verdict
+                reraise_resource(error)
                 continue
     return f"forbidden {where} ({', '.join(names) or 'family rule'})"
 
