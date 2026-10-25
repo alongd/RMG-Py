@@ -1013,16 +1013,23 @@ def materialize(spec) -> MeltState:
     residue sequence (``melt_sequence``: ``markov_chain_v1`` with the declared
     seed; a realized composition outside the declared tolerance is refused);
     residues are joined head to tail by the declared junctions and a unit's
-    segment is ``unit <k> <residue>``."""
-    from rmgpy.polymer_spec import LinearHomopolymerSpec, PolymerSpec
+    segment is ``unit <k> <residue>``.
+
+    A ``BranchedPolymerSpec`` builds its molecules with ``random_bond_v1``
+    (``melt_branched``), below the gel point the declaration checks."""
+    from rmgpy.polymer_spec import BranchedPolymerSpec, LinearHomopolymerSpec, PolymerSpec
 
     if isinstance(spec, PolymerSpec):
         builder, molecules = _sequence_chains(spec)
     elif isinstance(spec, LinearHomopolymerSpec):
         builder, molecules = _homopolymer_chains(spec)
+    elif isinstance(spec, BranchedPolymerSpec):
+        from rmgpy.kmc.melt_branched import chains
+        builder, molecules = chains(spec)
     else:
         raise MeltStateError(
-            f"only LinearHomopolymerSpec and PolymerSpec declarations are supported, got {type(spec).__name__}")
+            "only LinearHomopolymerSpec, PolymerSpec and BranchedPolymerSpec declarations are supported, "
+            f"got {type(spec).__name__}")
     small = {name: graph for name, graph, _disposition in spec.small_species}
     mobile = 0
     for name, count in spec.initial_mobile_counts:

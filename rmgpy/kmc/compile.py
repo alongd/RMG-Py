@@ -303,11 +303,12 @@ def _proxy_inputs(request: CompileRequest):
         sequence_structures,
     )
     from rmgpy.kmc.run import read_deck
-    from rmgpy.polymer_spec import PolymerSpec
+    from rmgpy.polymer_spec import BranchedPolymerSpec, PolymerSpec
 
     deck = read_deck(request.deck)
     units = request.proxy_units if request.proxy_units is not None else DEFAULT_PROXY_UNITS
-    build = sequence_proxy_set if isinstance(deck.spec, PolymerSpec) else declared_proxy_set
+    build = sequence_proxy_set if isinstance(deck.spec, (PolymerSpec, BranchedPolymerSpec)) \
+        else declared_proxy_set
     source = {
         "kind": "declaration",
         "label": deck.label,
