@@ -278,24 +278,19 @@ def _methyl_cut(term) -> bool:
                for _m, prods in outs for cls, _n in prods)
 
 
-def test_grouped_recombination_is_refused_on_the_methyl_class_then_on_the_kernel_states():
+def test_grouped_recombination_is_refused_on_the_whole_unit_kernel_states():
     """MoM's kernel mode on homolysis + end recombination: (2, 2) is joined
-    (no pair-site refusal any more).  The producer refuses the methyl
-    fragments of the depository's whole species (one end-radical pool); set
-    those aside and it refuses the kernel-rates states: homolysis's law
-    holds from 6 periods (no state of n-pentane), ethyl + ethyl makes 4."""
+    (no pair-site refusal any more).  The methyl fragments of the
+    depository's whole species are size departures (I-266: they cut single
+    sizes only); this table, built on whole-unit states (before I-266), then
+    refuses on the kernel-rates states: homolysis's law holds from 6 periods
+    (no state of n-pentane), ethyl + ethyl makes 4.  On the period grid it
+    maps (``endClassPoolsTest``)."""
     doc = json.loads(TABLE.read_text())
     spec = kr.read_deck(DECKS / "pe_toy_deck.py").spec
-
-    def kernel_input(doc):
-        return mp.kernel_input(doc, spec, [H, C], temperature=700.0, phi=1.0, label=LABEL,
-                               radical_label=LABEL + "_re", volume_ratio=1.0)
-    with pytest.raises(mp.ProducerError, match=r"fragments of classes \['radical_end:CH2', 'radical_end:CH3'\], "
-                                               r"not one end-radical pool"):
-        kernel_input(doc)
     terms = doc["kernels"][H]["templates"]
     assert 0 < sum(map(_methyl_cut, terms)) < len(terms)
-    doc["kernels"][H]["templates"] = [t for t in terms if not _methyl_cut(t)]
     with pytest.raises(mp.ProducerError, match=r"radicals from 2 periods join into chains of 4, shorter than 6, "
                                                r"where the homolysis kernel's law holds$"):
-        kernel_input(doc)
+        mp.kernel_input(doc, spec, [H, C], temperature=700.0, phi=1.0, label=LABEL,
+                        radical_label=LABEL + "_re", volume_ratio=1.0)
