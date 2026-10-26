@@ -138,6 +138,36 @@ depository ``entry``); an override
 placed in no term is listed in ``overrides_unplaced``.  A site count is the
 template's whatever weight a matched size carries.
 
+**Positions** (I-272; optional keys of ``kmc-kernel-rates/3``, every other
+key unchanged).  A law any of whose products carries an interior feature
+(``radical_interior``, ``alkene_internal``) also has ``positioned``: the same
+outcomes, read from the same fired transitions, resolved by where each
+feature sits, its product code followed by one of ``{"end_distance": d}``
+(d backbone bonds from the nearer end of the product: an edge or end
+anchor, or d from the cut end of a fragment), ``{"bulk": [p, q]}`` (a bulk
+row: over the bulk anchors the feature's first atom is uniform on the
+product's backbone atoms [p, Lp - w - q], Lp atoms, the feature spanning w),
+``{"offset": c}`` (an interior law: c backbone atoms past the reactant's own
+feature) or ``{"junction": true}`` (a join; where it sits depends on both
+reactants).  ``positioned`` has ``exact`` (every probed length) and ``far``
+(the shape of the law's own far rule; a chain law its own ``edge``), and its
+far rule must reproduce the exact positions on the trailing lengths
+(``predict_placed``); otherwise the law says ``positions_refused`` and why.
+**End-distance laws** (I-272): a term marked ``law_inert`` keeps ``law``
+None and its reason, and gains ``law_end_distance`` (or
+``law_end_distance_refused``): per participant (``S0``/``S1``, or the
+law itself for one participant) the far-field law of a participant with
+one, and for an interior participant with sites only near an end (anchor
+``end_distance``) its ``at``: per end distance d with sites on chains of
+``from_n`` periods and more, the sites of a feature at d (the count read on
+the longest probe with the feature at d, checked against the participant's
+profile there; the probes are head-side, so of an unsymmetric period this
+is the head-side count), its positioned outcomes and, for one participant,
+``k_per_feature`` (1/s per feature at d); and ``exact``: on every shorter
+length, the same per canonical position (an entry the probes cannot read
+says ``refused``).  Nothing is fitted: the sites and products are the
+engine's own on declared probe states, the weights the template's.
+
 With a ``kmc-melt-run/1`` manifest, ``hazard`` gives the fired counts per
 template, kernel and kMC-only entry (gross), the counts netted over each
 reciprocal record pair (``reverse_of``), and the run's pooled leak fraction.
@@ -151,12 +181,13 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import sys
 import time
 from collections import Counter, defaultdict
 from fractions import Fraction
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 import numpy
 
@@ -718,11 +749,12 @@ class _Probes:
 
     # -- reading products ---------------------------------------------------
     def classify(self, state, cid, segs) -> Tuple:
-        """(family, label, n, ends) of a component made from the probe
+        """(family, label, n, ends, place) of a component made from the probe
         backbones ``segs``: ``ends`` per segment, (holds its first atom, holds
-        its last atom, holds any of it).  The component must be the declared
-        probe of its family, length and position (isomorphism, once per
-        backbone signature)."""
+        its last atom, holds any of it); ``place`` where an interior feature
+        sits (``_place``; None for another family).  The component must be the
+        declared probe of its family, length and position (isomorphism, once
+        per backbone signature)."""
         atoms = set(state.components.atoms(cid))
         path = _walk(state, [a for seg in segs for a in seg if a in atoms])
         L = len(path)
@@ -763,7 +795,7 @@ class _Probes:
                 raise _OffDeclared(f"a product labelled {label}, the probe {self.label(family, n)}")
             self._verified.add(signature)
         ends = tuple((seg[0] in atoms, seg[-1] in atoms, any(a in atoms for a in seg)) for seg in segs)
-        return family, label, n, ends
+        return family, label, n, ends, (_place(feature, segs, atoms, x) if family in INTERIOR_FAMILIES else None)
 
     def identify(self, state, cid) -> Tuple:
         """(label, n, positions) of a component with no backbone origin (a
@@ -810,7 +842,7 @@ def _relative(product, L, k, nbb) -> Tuple:
     backbone atoms with anchor k: its length is alpha*L + beta*k + gamma
     backbone atoms (the piece holding the reactant's first atom, its last,
     both or neither)."""
-    family, _label, n, ends = product
+    family, _label, n, ends = product[:4]
     first, last, _any = ends[0]
     lp = n * nbb
     if first and last:
@@ -823,8 +855,201 @@ def _relative(product, L, k, nbb) -> Tuple:
 
 
 def _absolute(product) -> Tuple:
-    family, label, n, _ends = product
+    family, label, n, _ends = product[:4]
     return (label, n)
+
+
+# --------------------------------------------------------------------------
+# positions (I-272): where an interior product's feature sits
+# --------------------------------------------------------------------------
+WIDTH = {"radical_interior": 1, "alkene_internal": 2}     # backbone atoms a feature of the family spans
+
+
+class _Place(NamedTuple):
+    """Where an interior product's feature sits on the reactant backbone it
+    came from: the index of its first atom on that segment (None when the
+    feature is on no segment), the first and last index of the segment the
+    product holds and whether those are the segment's ends, and the
+    feature's end distance on the product."""
+    index: Optional[int]
+    lo: Optional[int]
+    hi: Optional[int]
+    first: bool
+    last: bool
+    width: int
+    x: int
+
+
+def _place(feature, segs, atoms, x) -> _Place:
+    for seg in segs:
+        at = [i for i, a in enumerate(seg) if a in feature]
+        if len(at) == len(feature):
+            held = [i for i, a in enumerate(seg) if a in atoms]
+            return _Place(at[0], held[0], held[-1], held[0] == 0, held[-1] == len(seg) - 1, len(feature), x)
+    return _Place(None, None, None, False, False, len(feature), x)
+
+
+def _placed(product, L, k, nbb, fixed: bool) -> Tuple:
+    """The positioned code of one product of a reactant of L backbone atoms
+    at anchor k: its length code (``_relative``; a join as ``("join",
+    family, gamma)``) and, for an interior feature, where it sits.
+    ``fixed``: the anchor is at a fixed end distance (an end, an edge site,
+    an end-distance law), so the position is the feature's own end distance
+    on the product, ``("end_distance", d)``.  Otherwise (a bulk site; an
+    interior reactant in the far field) the position moves with the anchor:
+    ``("offset", c)``, the feature c backbone atoms past the anchor on a
+    product holding the whole reactant, or ``("end_distance", d)`` from the
+    cut end of a fragment holding one reactant end.  A join's feature is
+    ``("junction", True)``: where it sits depends on both reactants."""
+    if product[0] == "join":
+        return tuple(product[:3]) + ((("junction", True),) if product[3] is not None else ())
+    base = _relative(product, L, k, nbb)
+    p = product[4]
+    if p is None:
+        return base
+    if fixed:
+        return base + (("end_distance", p.x),)
+    if p.index is None:
+        raise _OffDeclared("an interior product whose feature is on no reactant backbone")
+    if p.first and p.last:
+        return base + (("offset", p.index - k),)
+    if p.first:
+        return base + (("end_distance", p.hi - p.index - (p.width - 1)),)
+    if p.last:
+        return base + (("end_distance", p.index - p.lo),)
+    raise _OffDeclared("an interior product that holds neither end of its reactant")
+
+
+def _place_of(product) -> Optional[_Place]:
+    return product[3] if product[0] == "join" else product[4]
+
+
+def _absolute_placed(product) -> Tuple:
+    """``_absolute`` with an interior feature's end distance on the product."""
+    if product[0] == "join":
+        return _placed(product, 0, 0, 0, True)
+    base = _absolute(product)
+    return base if product[4] is None else base + (("end_distance", product[4].x),)
+
+
+def _placed_json(code) -> list:
+    if code and isinstance(code[-1], tuple):
+        kind, *v = code[-1]
+        return list(code[:-1]) + [{kind: v[0] if len(v) == 1 else list(v)}]
+    return list(code)
+
+
+def _placed_list(counter: Counter) -> list:
+    return [[m, [_placed_json(p) for p in outcome]] for outcome, m in sorted(counter.items(), key=repr)]
+
+
+def _placed_counter(rows, place) -> Counter:
+    """Counter of the sorted positioned products of measured rows [(k, products)], each product coded by
+    ``place(product, k)``."""
+    return Counter(tuple(sorted((place(r, k) for r in prods), key=repr)) for k, prods in rows)
+
+
+def _bulk_place(code, edge) -> Tuple:
+    """A bulk-row code with its ``("offset", c)`` as the end-distance range
+    ``("bulk", p, q)``: over the bulk anchors [edge, L - 1 - edge] the
+    feature's first atom is uniform on [p, Lp - w - q] of the product (Lp
+    backbone atoms, the feature spanning w)."""
+    if not code or not isinstance(code[-1], tuple) or code[-1][0] != "offset":
+        return code
+    c = code[-1][1]
+    return code[:-1] + (("bulk", edge + c, edge - c - (WIDTH[code[0]] - 1)),)
+
+
+def _end_distance(d, lp, family) -> int:
+    """The end distance on a product of lp backbone atoms of a feature d from one of its ends."""
+    return min(d, lp - WIDTH[family] - d)
+
+
+def _expand_placed(outcomes, L, k, nbb) -> Counter:
+    """Absolute positioned outcomes of relative positioned ones (JSON) at
+    reactant length L (backbone atoms) and anchor k: (family, n), (family,
+    n, end distance) or (``join``, family, gamma)."""
+    out = Counter()
+    for m, prods in outcomes:
+        coded = []
+        for p in prods:
+            p, where = (p[:-1], p[-1]) if p and isinstance(p[-1], dict) else (p, None)
+            if p[0] == "join":
+                coded.append(tuple(p))
+                continue
+            family, alpha, beta, gamma = p
+            lp = alpha * L + beta * k + gamma
+            if lp < 1 or lp % nbb:
+                raise KernelRatesError(f"a positioned law gives an impossible product at {L} backbone atoms")
+            if where is None:
+                coded.append((family, lp // nbb))
+                continue
+            (kind, v), = where.items()
+            if kind == "bulk":
+                raise KernelRatesError("a bulk position is expanded anchor by anchor (_predict_placed_far)")
+            d = v if kind == "end_distance" else k + v
+            coded.append((family, lp // nbb, _end_distance(d, lp, family)))
+        out[tuple(sorted(coded, key=repr))] += m
+    return out
+
+
+def _exact_placed(outcomes) -> Counter:
+    """Positioned exact outcomes (JSON: labels, lengths, end distances) as
+    (family, n[, end distance]) / (``join``, family, gamma) tuples."""
+    out = Counter()
+    for m, prods in outcomes:
+        coded = []
+        for p in prods:
+            p, where = (p[:-1], p[-1]) if p and isinstance(p[-1], dict) else (p, None)
+            if p[0] == "join":
+                coded.append(tuple(p))
+            elif where is None or "end_distance" not in where:
+                coded.append((family_of(p[0]), int(p[1])))
+            else:
+                coded.append((family_of(p[0]), int(p[1]), where["end_distance"]))
+        out[tuple(sorted(coded, key=repr))] += m
+    return out
+
+
+def _predict_placed_far(far, anchor, n, nbb, x=None) -> Counter:
+    L = n * nbb
+    if anchor == "end":
+        return _expand_placed(far["outcomes"], L, L - 1, nbb)
+    if anchor in ("interior", "end_distance"):
+        return _expand_placed(far["outcomes"], L, x, nbb)
+    edge, total = far["edge"], Counter()
+    for k in range(L):
+        if k < edge:
+            total.update(_expand_placed(far["first"][str(k)], L, k, nbb))
+        elif L - 1 - k < edge:
+            total.update(_expand_placed(far["last"][str(L - 1 - k)], L, k, nbb))
+        else:
+            rows = [[m, [p[:-1] + [{"offset": p[-1]["bulk"][0] - edge}]
+                         if p and isinstance(p[-1], dict) and "bulk" in p[-1] else p for p in prods]]
+                    for m, prods in far["bulk"]]
+            total.update(_expand_placed(rows, L, k, nbb))
+    return total
+
+
+def predict_placed(law: dict, n: int, nbb: int, x: Optional[int] = None) -> Counter:
+    """The absolute positioned outcomes (Counter of product tuples: (family,
+    n), (family, n, end distance) for an interior feature, (``join``,
+    family, gamma)) of a law on a reactant of n periods: its ``positioned``
+    outcomes (exact up to ``exact_to_n``, its far rule beyond), or an
+    end-distance law's outcomes with the reactant's feature at end distance
+    ``x`` (``exact`` below ``from_n``, ``at`` from it)."""
+    if law["anchor"] == "end_distance":
+        if n < int(law["from_n"]):
+            entry = law["exact"].get(str(n), {}).get(str(x))
+            if entry is not None and "refused" in entry:
+                raise KernelRatesError(f"{law['class']} at end distance {x} on {n} periods: {entry['refused']}")
+            return Counter() if entry is None else _exact_placed(entry["outcomes"])
+        entry = law["at"].get(str(x))
+        return Counter() if entry is None else _expand_placed(entry["outcomes"], n * nbb, x, nbb)
+    placed = law["positioned"]
+    if law["anchor"] != "interior" and n <= int(law.get("exact_to_n") or 0):
+        return _exact_placed(placed["exact"].get(str(n), []))
+    return _predict_placed_far(placed["far"], law["anchor"], n, nbb, x)
 
 
 def _law_view(outcomes: Counter) -> Counter:
@@ -930,7 +1155,7 @@ class _Laws:
                       if not me._pair_leak(cls, *((kind, kb) if p == 0 else (kb, kind)))]
             if not usable:
                 raise _OffDeclared("a site whose every partner leaks")
-            seen = set()
+            seen, kept = set(), None
             for kb, sb in usable[:2 if check else 1]:
                 c0, s0, c1, s1 = (ca, site, cb, sb) if p == 0 else (cb, sb, ca, site)
                 saved, self.engine.state = self.engine.state, state
@@ -948,19 +1173,23 @@ class _Laws:
                 if r[3][1][2]:
                     if not (r[3][0][0] and r[3][0][1] and r[3][1][0] and r[3][1][1]):
                         raise _OffDeclared("a joined product that is not both whole reactants")
-                    seen.add(("join", r[0], r[2] * self.nbb - len(seg) - len(pseg)))
+                    got = ("join", r[0], r[2] * self.nbb - len(seg) - len(pseg))
+                    full = got + (r[4],)
                 else:
-                    seen.add(r)
+                    got, full = r[:4], r
+                seen.add(got)
+                kept = kept or full
             if len(seen) != 1:
                 raise _OffDeclared("a participant's product depends on its partner's site")
             k = min(seg.index(a) for a in site if a in seg)
-            out.append((k, next(iter(seen))))
+            out.append((k, kept))
         return seg, out
 
     # -- the law of one participant ------------------------------------------
     def participant(self, ci, p, label, partner_label=None) -> dict:
         family = family_of(label)
         anchor = "chain" if family == "chain" else "end" if family in END_FAMILIES else "interior"
+        raw = {}
 
         def measure(n, x, check=False):
             if partner_label is None:
@@ -979,12 +1208,13 @@ class _Laws:
                 out = []
                 for r in prods:
                     if r[0] == "join":
-                        out.append(r)
+                        out.append(r[:3])
                     else:
                         out.append(_relative(r, L, k, self.nbb) if rel else _absolute(r))
                 return tuple(sorted(out))
             rel = [(k, code(prods, k, True)) for k, prods in rows]
             ab = Counter(code(prods, k, False) for k, prods in rows)
+            raw[(n, x)] = (L, rows)
             return L, rel, ab
 
         # one length rule for every participant: the law reads the probe states
@@ -1005,14 +1235,14 @@ class _Laws:
             law.update({"fixed_lengths": lengths, "far": {"outcomes": []},
                         "exact": {str(n): _outcome_list(c) for n, c in sorted(exact.items())},
                         "exact_to_n": lengths[-1]})
-            return law
+            return self._positioned(law, raw)
         if anchor == "interior":
             got = [Counter(r for _k, r in measure(n, x, check=(i == 0))[1]) for i, (n, x) in enumerate(states)]
             if any(g != got[0] for g in got[1:]):
                 raise KernelRatesError(f"{label}: the far-field products of class {ci} differ between "
                                        "neighbouring positions")
             law["far"] = {"outcomes": _outcome_list(got[0])}
-            return law
+            return self._positioned(law, raw)
         exact, rel_hi = {}, {}
         for n, x in states:
             L, rel, ab = measure(n, x, check=(n == self.n_hi))
@@ -1041,7 +1271,138 @@ class _Laws:
                 raise KernelRatesError(f"class {ci} {label}: the far-field law does not hold at {n} periods")
         law["exact"] = {str(n): _outcome_list(c) for n, c in sorted(exact.items())}
         law["exact_to_n"] = max(exact) if exact else 0
+        return self._positioned(law, raw)
+
+    # -- positions (I-272) ------------------------------------------------------
+    def _positioned(self, law, raw) -> dict:
+        """``law`` with ``positioned`` (module doc, positions) when any product
+        has an interior feature: the law's outcomes resolved by where each
+        feature sits, read from the same fired transitions; its far rule must
+        reproduce the positioned exact outcomes on the trailing lengths, or
+        the law says ``positions_refused`` and why."""
+        if not any(_place_of(r) is not None for _L, rows in raw.values() for _k, prods in rows for r in prods):
+            return law
+        try:
+            law["positioned"] = self._placed_law(law, raw)
+        except _OffDeclared as error:
+            law["positions_refused"] = str(error)
         return law
+
+    def _placed_law(self, law, raw) -> dict:
+        nbb, anchor = self.nbb, law["anchor"]
+        out = {}
+        if anchor == "interior":
+            got = [_placed_counter(rows, lambda r, k, L=L: _placed(r, L, k, nbb, False))
+                   for L, rows in raw.values()]
+            if any(g != got[0] for g in got[1:]):
+                raise _OffDeclared("the far-field positions differ between neighbouring positions")
+            return {"far": {"outcomes": _placed_list(got[0])}}
+        out["exact"] = {str(n): _placed_list(_placed_counter(rows, lambda r, k: _absolute_placed(r)))
+                        for (n, _x), (_L, rows) in sorted(raw.items())}
+        if "fixed_lengths" in law:
+            out["far"] = {"outcomes": []}
+            return out
+        L, rows = raw[(self.n_hi, None)]
+        if anchor == "end":
+            out["far"] = {"outcomes": _placed_list(_placed_counter(rows, lambda r, k: _placed(r, L, k, nbb, True)))}
+        else:
+            by_k = defaultdict(list)
+            for k, prods in rows:
+                by_k[k].append((k, prods))
+            moving = {k: _placed_counter(rs, lambda r, kk: _placed(r, L, kk, nbb, False)) for k, rs in by_k.items()}
+            bulk = moving.get(L // 2, Counter())
+            odd = [k for k in range(L) if moving.get(k, Counter()) != bulk]
+            edge = max([min(k, L - 1 - k) + 1 for k in odd], default=0)
+            if 2 * edge >= L:
+                raise _OffDeclared("end effects on the positions reach the middle of the longest probe")
+            fixed = lambda k: _placed_list(_placed_counter(by_k.get(k, []), lambda r, kk: _placed(r, L, kk, nbb, True)))
+            out["far"] = {"edge": edge,
+                          "bulk": _placed_list(Counter({tuple(_bulk_place(p, edge) for p in outcome): m
+                                                        for outcome, m in bulk.items()})),
+                          "first": {str(k): fixed(k) for k in range(edge)},
+                          "last": {str(k): fixed(L - 1 - k) for k in range(edge)}}
+        for n in sorted(int(n) for n in law["exact"])[-EXACT_POINTS:]:
+            if _predict_placed_far(out["far"], anchor, n, nbb) != _exact_placed(out["exact"][str(n)]):
+                raise _OffDeclared(f"the positioned far rule does not hold at {n} periods")
+        return out
+
+    # -- the law of an interior participant with sites near an end only -----------
+    def participant_at(self, ci, p, label, profile, partner_label=None, weight=None) -> dict:
+        """The law of an interior participant whose sites lie only near a
+        chain end (``per_feature`` 0; module doc, end-distance laws): per end
+        distance d with sites on chains of ``from_n`` periods and more, its
+        sites and positioned outcomes on the longest probe with the feature at
+        d (the count checked against the participant's ``profile``); on every
+        shorter length, the same at every position (``exact``)."""
+        family = family_of(label)
+        nbb, ppu = self.nbb, self.probes.ppu
+        counted = defaultdict(dict)                  # backbone atoms -> {end distance: counts}
+        for key, values in profile.items():
+            m = re.fullmatch(r"chain_backbone_atoms=(\d+),end_distance=(\d+)", key)
+            if m and any(values):
+                counted[int(m[1])][int(m[2])] = sorted(values)
+        lengths = [u * ppu * nbb for u in range(1, self.n_hi // ppu + 1)]
+        far = counted.get(lengths[-1], {})
+        from_nb = lengths[-1]
+        for nb in reversed(lengths):
+            if counted.get(nb, {}) != far:
+                break
+            from_nb = nb
+        from_n = -(-from_nb // nbb)
+
+        def rows_at(n, x, check=False):
+            if partner_label is None:
+                seg, rows = self._uni(ci, label, n, x)
+                return len(seg), [(k, tuple(sorted(prods, key=repr))) for k, prods in rows]
+            seg, rows = self._bi(ci, p, label, n, x, partner_label, check)
+            return len(seg), [(k, (prod,)) for k, prod in rows]
+
+        at = {}
+        for d in sorted(far):
+            if not self.probes.carries(label, self.n_hi, d):
+                continue
+            L, rows = rows_at(self.n_hi, d, check=True)
+            if not rows:
+                continue
+            if len(rows) not in far[d]:
+                raise _OffDeclared(f"{label} at end distance {d}: {len(rows)} sites on the probe, its profile "
+                                   f"counts {far[d]}")
+            at[str(d)] = {"sites": len(rows),
+                          "outcomes": _placed_list(_placed_counter(rows, lambda r, k: _placed(r, L, d, nbb, True)))}
+            if weight is not None:
+                at[str(d)]["k_per_feature"] = weight * len(rows)
+        exact = {}
+        for n in range(1, from_n):
+            for x in self.probes.positions(family, n):
+                if not self.probes.carries(label, n, x):
+                    continue
+                try:
+                    _L, rows = rows_at(n, x)
+                except _OffDeclared as error:
+                    exact.setdefault(str(n), {})[str(x)] = {"refused": str(error)}
+                    continue
+                if rows:
+                    entry = {"sites": len(rows),
+                             "outcomes": _placed_list(_placed_counter(rows, lambda r, k: _absolute_placed(r)))}
+                    if weight is not None:
+                        entry["k_per_feature"] = weight * len(rows)
+                    exact.setdefault(str(n), {})[str(x)] = entry
+        return {"class": label, "family": family, "anchor": "end_distance", "from_n": from_n, "at": at,
+                "exact": exact}
+
+    def end_distance_law(self, ci, combo, order, participants, weight) -> dict:
+        """The law of a term whose interior participant has sites only near
+        a chain end: ``participant_at`` for every such participant, the far-
+        field law (``participant``, its partner read at the end distance it
+        has sites at) for the other."""
+        def one(p, partner):
+            c = participants[p][combo[p]]
+            if family_of(combo[p]) in INTERIOR_FAMILIES and not c.get("per_feature"):
+                return self.participant_at(ci, p, combo[p], c["profile"], partner, weight if partner is None else None)
+            return self.participant(ci, p, combo[p], partner)
+        if len(combo) == 1:
+            return one(0, None)
+        return {f"S{slot}": one(p, combo[1 - p]) for slot, p in enumerate(order)}
 
 
 def _expand(outcomes, L, k, nbb, label_of) -> Counter:
@@ -1178,14 +1539,20 @@ def _progress(message: str) -> None:
     print(f"kernel_rates: {message}", file=sys.stderr, flush=True)
 
 
-def _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_overrides, entries) -> None:
+def _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_overrides, entries,
+              participants) -> None:
     """The product law (or why none) and the placed overrides of one kernel term."""
     counts = [term] if len(combo) == 1 else [term["S0"], term["S1"]]
     if any(family_of(c) in INTERIOR_FAMILIES and (x.get("per_feature") == 0 or x.get("k_per_feature") == 0)
            for c, x in zip([combo[p] for p in order], counts)):
-        # an interior participant with no far-field site: the kernel rate is 0
+        # an interior participant with no far-field site: the kernel rate is 0; its sites near an end have a
+        # law per end distance (I-272)
         term["law"], term["law_inert"] = None, "an interior participant with no far-field site"
         term["overrides"] = []
+        try:
+            term["law_end_distance"] = laws.end_distance_law(ci, combo, order, participants, t.weight)
+        except _OffDeclared as error:
+            term["law_end_distance_refused"] = str(error)
         return
     try:
         if len(combo) == 1:
@@ -1369,7 +1736,8 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
     for i, (term, ci, combo, order) in enumerate(jobs, 1):
         t = templates[ci]
         start = time.perf_counter()
-        _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_overrides, entries)
+        _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_overrides, entries,
+                  template_rows[ci]["participants"])
         status = "law" if term["law"] is not None else "inert" if term.get("law_inert") else "refused"
         _progress(f"law {i}/{len(jobs)} {t.name} {'+'.join(combo)} {status} "
                   f"{time.perf_counter() - start:.1f}s")
