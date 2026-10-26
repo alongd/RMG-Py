@@ -2170,7 +2170,7 @@
     "rmgpy/qm/molecule.py:QMMolecule.load_thermo_data": {
       "file": "rmgpy/qm/molecule.py",
       "function": "QMMolecule.load_thermo_data",
-      "line": 570,
+      "line": 647,
       "signature": "e6733c660c51a32a58a45af10e331f92b809f2a33b6ec7a2640c80c5a18eb481",
       "verdict": "N",
       "reason": "The upstream resolved-state check raises StateProvenanceError before opening or decoding a QM thermo cache; resolved thermo cannot be sourced from that cache.",
@@ -3711,8 +3711,8 @@
     "rmgpy/qm/molecule.py:Geometry.rd_embed": {
       "file": "rmgpy/qm/molecule.py",
       "function": "Geometry.rd_embed",
-      "line": 177,
-      "signature": "1c8ea535b0de7af2630221cfc3cde06962eb37d47f1f4233f137f50539fd0321",
+      "line": 253,
+      "signature": "8e728cb0dd0f5bd27239808c5aa22e8381661935eee96a432d0ffbce88b27a0f",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/qm/molecule.py:Geometry.rd_embed]",
       "reason": "A declaration-bearing graph refuses by SpeciesIdentityError before embedding or MOL output because coordinate export cannot carry its library-only partition; previously supported explicit-state title transport remains.",
@@ -3733,7 +3733,7 @@
     "rmgpy/qm/molecule.py:QMMolecule.save_thermo_data": {
       "file": "rmgpy/qm/molecule.py",
       "function": "QMMolecule.save_thermo_data",
-      "line": 549,
+      "line": 626,
       "signature": "dc22e476160407423231142f67fcaa58f8de0fd31e44f8536c825b5e2743c136",
       "verdict": "N",
       "reason": "Saving estimated QM thermo invokes require_thermo_estimation_allowed before filename preparation, thermo-unit mutations or file writes, refusing resolved molecules with ExcitedSpeciesThermoError.",

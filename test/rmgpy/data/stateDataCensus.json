@@ -20760,7 +20760,7 @@
       "source_sha256": "ac7634414e6bb2e9c5f1b0674a4b239bcdfed6a798d345c453771389bb7d943f"
     },
     "rmgpy/qm/molecule.py:Geometry.rd_embed": {
-      "source_sha256": "a2c709b4b03355e5579350e894980571a4b625fdb6c39e64bc1b7d38038e452f",
+      "source_sha256": "bec4b5c0acae73f95366fd1b2f411c13201641efe3702600a5feddc040c1161d",
       "verdict": "refused",
       "reason": "A declaration-bearing graph refuses by SpeciesIdentityError before embedding or MOL output because coordinate export cannot carry its library-only partition; previously supported explicit-state title transport remains.",
       "evidence": [
@@ -20931,6 +20931,22 @@
         "test/rmgpy/data/stateSupplierReworkTest.py"
       ],
       "source_sha256": "4d0e0ba3d438855d18a60c78d0cd26f85ef3112ffe88b76656556ba56baa54b7"
+    },
+    "rmgpy/qm/molecule.py:_kernel_sigaction": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Reads or restores the kernel SIGINT disposition; it neither consumes resolved-state scientific data nor acquires thermo.",
+      "evidence": [
+        "test/rmgpy/qm/rdkitSigintTest.py"
+      ],
+      "source_sha256": "ceabf1d9527811053512e278b130cde02c5e3a467d75179459a9e031f05a25d5"
+    },
+    "rmgpy/qm/molecule.py:_preserve_rdkit_sigint": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Blocks SIGINT on the embedding thread and restores its kernel disposition around RDKit geometry generation; it uses explicit molecular input and does not select or carry resolved-state data.",
+      "evidence": [
+        "test/rmgpy/qm/rdkitSigintTest.py"
+      ],
+      "source_sha256": "aab7c17f18dda5cff93788e41acb167a420c1782a4cb19c42d98a2e49b61a570"
     },
     "rmgpy/qm/molecule.py:QMMolecule.load_thermo_data": {
       "verdict": "refused",

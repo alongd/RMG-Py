@@ -3868,7 +3868,7 @@
   {
     "site": "rmgpy/qm/molecule.py::QMMolecule.load_thermo_data::is_isomorphic#1",
     "kind": "direction",
-    "line": 592,
+    "line": 669,
     "source": "if not loaded_molecule.is_isomorphic(self.molecule):",
     "verdict": "not-reachable-for-resolved",
     "reason": "The receiver is a species, molecule, group or graph (including species Cantera conversion), not a Reaction; it cannot match opposite channels or compute an equilibrium reverse rate.",

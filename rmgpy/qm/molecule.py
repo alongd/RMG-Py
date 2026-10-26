@@ -27,9 +27,15 @@
 #                                                                             #
 ###############################################################################
 
+from contextlib import contextmanager
+
+import ctypes
 import logging
 import math
 import os
+import platform
+import signal
+import sys
 import tempfile
 
 import numpy as np
@@ -52,6 +58,76 @@ from rmgpy.qm.qmdata import parse_cclib_data
 from rmgpy.qm import _check_file_names
 from rmgpy.thermo import ThermoData
 from rmgpy.thermo.state import require_thermo_estimation_allowed
+
+
+class _KernelSigaction(ctypes.Structure):
+    """Linux kernel layout for the fields used by ``rt_sigaction``."""
+
+    _fields_ = [
+        ("handler", ctypes.c_void_p),
+        ("flags", ctypes.c_ulong),
+        ("restorer", ctypes.c_void_p),
+        ("mask", ctypes.c_ulong),
+    ]
+
+
+_RT_SIGACTION_SYSCALL = {"x86_64": 13, "aarch64": 134}.get(platform.machine())
+try:
+    _LIBC_SYSCALL = (
+        ctypes.CDLL(None, use_errno=True).syscall
+        if sys.platform.startswith("linux") and _RT_SIGACTION_SYSCALL is not None
+        else None
+    )
+    if _LIBC_SYSCALL is not None:
+        _LIBC_SYSCALL.restype = ctypes.c_long
+except (OSError, AttributeError):
+    _LIBC_SYSCALL = None
+
+
+def _kernel_sigaction(signum, action=None):
+    """Read or set a raw Linux signal action, preserving fields Python cannot see."""
+    old_action = _KernelSigaction()
+    result = _LIBC_SYSCALL(
+        ctypes.c_long(_RT_SIGACTION_SYSCALL),
+        ctypes.c_long(signum),
+        ctypes.byref(action) if action is not None else None,
+        ctypes.byref(old_action),
+        ctypes.c_long(ctypes.sizeof(ctypes.c_ulong)),
+    )
+    if result != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+    return old_action
+
+
+@contextmanager
+def _preserve_rdkit_sigint():
+    """Protect SIGINT while RDKit embeds and restore its exact kernel action.
+
+    SIGINT is blocked only on the calling thread. A process-directed SIGINT can
+    still reach RDKit's handler on another unblocked thread; RMG performs these
+    embeddings on the main thread. While blocked, Ctrl-C cannot interrupt a
+    long embedding. If the caller allowed SIGINT on entry, a signal pending
+    for this thread is delivered under the restored disposition as soon as the
+    embedding scope exits. If the caller had SIGINT blocked, the caller's mask
+    is restored and the signal remains pending until the caller unblocks it.
+
+    Exact restoration is available on Linux x86_64 and aarch64. Other
+    platforms retain the existing RDKit behavior without error.
+    """
+    if _LIBC_SYSCALL is None or not hasattr(signal, "pthread_sigmask"):
+        yield
+        return
+
+    previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+    try:
+        previous_action = _kernel_sigaction(signal.SIGINT)
+        try:
+            yield
+        finally:
+            _kernel_sigaction(signal.SIGINT, previous_action)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
 
 
 class Geometry(object):
@@ -185,37 +261,38 @@ class Geometry(object):
         # `good_embed` is a flag to indicate conformers are not from random coordinates or 2D coordinates
         # `good_opt` is a flag to indicate at least one conformer is successfully optimized using force field
         good_embed, good_opt = True, False
-        AllChem.EmbedMultipleConfs(rdmol, num_conf_attempts, randomSeed=1)
-
-        if rdmol.GetNumConformers() == 0:
-            good_embed = False
-            # Occasionally, ETKDG fails to embed some molecules
-            # Try to embed using random coordinates. However, there
-            # are still cases that it can fails:
-            # https://github.com/rdkit/rdkit/issues/2996
-            AllChem.EmbedMultipleConfs(
-                rdmol, num_conf_attempts, useRandomCoords=True, randomSeed=1
-            )
+        with _preserve_rdkit_sigint():
+            AllChem.EmbedMultipleConfs(rdmol, num_conf_attempts, randomSeed=1)
 
             if rdmol.GetNumConformers() == 0:
-                # As a workaround, one can also build a molecule using its 2D Geometry
-                # and optimize the molecule from the 2D geometry.
-                for _ in range(num_conf_attempts):
-                    # Since it can only add one conformer at a time, clearConfs is set to False
-                    # to keep the previously generated 2D geometries
-                    AllChem.Compute2DCoords(
-                        rdmol, nSample=10, sampleSeed=1, clearConfs=False
-                    )
+                good_embed = False
+                # Occasionally, ETKDG fails to embed some molecules
+                # Try to embed using random coordinates. However, there
+                # are still cases that it can fails:
+                # https://github.com/rdkit/rdkit/issues/2996
+                AllChem.EmbedMultipleConfs(
+                    rdmol, num_conf_attempts, useRandomCoords=True, randomSeed=1
+                )
 
                 if rdmol.GetNumConformers() == 0:
-                    # EDKTG + random coords + 2D should be able to cover almost all
-                    # the cases. This is to check and report if further workaround
-                    # needs to be implemented
-                    raise RuntimeError(
-                        f"RDKit has issue in embedding the conformer of {self.molecule}."
-                        f" Please raise an issue on the RMG Github page mentioning the"
-                        f" error and the molecule."
-                    )
+                    # As a workaround, one can also build a molecule using its 2D Geometry
+                    # and optimize the molecule from the 2D geometry.
+                    for _ in range(num_conf_attempts):
+                        # Since it can only add one conformer at a time, clearConfs is set to False
+                        # to keep the previously generated 2D geometries
+                        AllChem.Compute2DCoords(
+                            rdmol, nSample=10, sampleSeed=1, clearConfs=False
+                        )
+
+                    if rdmol.GetNumConformers() == 0:
+                        # EDKTG + random coords + 2D should be able to cover almost all
+                        # the cases. This is to check and report if further workaround
+                        # needs to be implemented
+                        raise RuntimeError(
+                            f"RDKit has issue in embedding the conformer of {self.molecule}."
+                            f" Please raise an issue on the RMG Github page mentioning the"
+                            f" error and the molecule."
+                        )
 
         energy = 0.0
         min_e_id = 0
