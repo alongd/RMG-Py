@@ -1635,7 +1635,8 @@ def record_status(templates) -> tuple:
     if not base_ok:
         reasons = [t["refusal"]["status"] for t in templates if t["base"] and t.get("refusal")]
         named = next((x for x in (("refused:collision_grid", "refused:collision", "refused:cycle",
-                                   "refused:split_partners", "refused:non_transferable")) if x in reasons), None)
+                                   "refused:split_partners", "refused:class_overlap",
+                                   "refused:non_transferable")) if x in reasons), None)
         collision = named is not None and named.startswith("refused:collision")
         return "refused", {"by": "collision" if collision else "emission",
                            "status": named or "refused:base_template",
@@ -3144,7 +3145,8 @@ def resolve_overlaps(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG10
         if any(len(owners[w]) != 2 or len(owners[w] & keep) != 1 for w in shared):
             problems.append("a transition is made by more than two templates or by two templates "
                             "of records of one orientation")
-        if outside(reversed_, generated) and outside(generated, reversed_):
+        neither = bool(outside(reversed_, generated) and outside(generated, reversed_))
+        if neither:
             problems.append(f"neither partition contains the other: transitions of "
                             f"{outside(reversed_, generated)} are not made by any template of an "
                             f"as_generated record, transitions of {outside(generated, reversed_)} "
@@ -3164,7 +3166,10 @@ def resolve_overlaps(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG10
                "templates": [{"record": r, "key": k, "orientation": orientation.get(r)}
                              for r, k in members],
                "covered": [], "covered_by": [], "transitions": len(shared),
-               "log10_diameter": diameter}
+               "log10_diameter": diameter,
+               # refused only for being nested neither way at one weight: a correct
+               # refusal, counted by name (``overlap_gates``)
+               "named": neither and len(problems) == 1}
         if problems or not drop:
             reason = (f"templates {[k[:12] for _r, k in members]} make {len(shared)} transitions "
                       f"twice: " + "; ".join(problems or ["no side may be dropped"]))
@@ -3203,6 +3208,38 @@ def resolve_overlaps(payloads, tolerance_log10: float = LOCALITY_TOLERANCE_LOG10
         out[i]["status"], out[i]["refusal"] = record_status(out[i]["templates"])
         out[i] = finish(out[i])
     return out, table
+
+
+def overlap_gates(table) -> list:
+    """Acceptance gates of ``resolve_overlaps``' table: every refused
+    component but those refused for being nested neither way at one weight
+    (``named``), which the catalog counts by name."""
+    return [f"class overlap {o['family']} {o['direction']} "
+            f"{[t['key'][:12] for t in o['templates']]}: {o['disposition']}: {o['reason']}"[:600]
+            for o in table if o["disposition"] != "covered" and not o.get("named")]
+
+
+def _overlap_refused(payload) -> bool:
+    """Whether ``payload`` loads nothing because class overlaps took it: every
+    base template refused ``refused:class_overlap`` (by ``resolve_overlaps``,
+    or by a cycle pair refused for one)."""
+    bases = [t for t in (payload or {}).get("templates", []) if t.get("base")]
+    return bool(bases) and not _loads(payload) and all(
+        t.get("status") == "refused" and (t.get("refusal") or {}).get("status")
+        == "refused:class_overlap" for t in bases)
+
+
+def _overlap_readmitted(payloads) -> "_Loaded":
+    """The loaded catalog with every template refused ``refused:class_overlap``
+    loaded again: what the cycle check reads to tell a pair that failed only
+    for the overlap refusals from one with a problem of its own."""
+    out = json.loads(canonical_json(payloads))
+    for p in out:
+        for t in p.get("templates", []):
+            if t.get("status") == "refused" and \
+                    (t.get("refusal") or {}).get("status") == "refused:class_overlap":
+                t["status"] = "emitted"
+    return _Loaded(out)
 
 
 def primary_order(payload, template, record_id) -> tuple:
@@ -3468,7 +3505,11 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
     templates, and every merged or covered template of those; a record whose reverse record loads nothing is refused the same
     way; repeated until stable.  A pair whose only problem is an off-grid
     ratio miss of a template ``derive_weights`` left with ``split_partners``
-    (or of one of those partners) is ``refused:split_partners``, by name.  Returns (new payloads, one row per
+    (or of one of those partners) is ``refused:split_partners``, by name.  A
+    pair that fails only for templates a class overlap refused (its reverse
+    record loads nothing because of them, or a witness has loaded
+    transitions once they load again) is ``refused:class_overlap``, by name;
+    so are the templates it refuses.  Returns (new payloads, one row per
     reciprocal record pair)."""
     out = [json.loads(canonical_json(p)) for p in payloads]
     by_record = {p.get("record_event_id"): i for i, p in enumerate(out)}
@@ -3489,6 +3530,19 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
         loaded = _Loaded(out)
         rows_out, refuse = {}, {}
         cache = {}
+        readmitted = []      # the catalog with overlap-refused templates loaded, when asked
+
+        def overlap_made(r_rows, p_rows, p, q, direction):
+            """Whether both channels have loaded transitions on the witness
+            once the overlap-refused templates load again."""
+            if not readmitted:
+                readmitted.append(_overlap_readmitted(out))
+            again = readmitted[0]
+            try:
+                return bool(again.total(counter, r_rows, p, direction, p_rows, [])[1]) and \
+                    bool(again.total(counter, p_rows, q, q["direction"], r_rows, [])[1])
+            except EmissionError:
+                return False
         for rid in sorted(by_record, key=str):
             p = out[by_record[rid]]
             rev = p.get("reverse_of")
@@ -3520,7 +3574,8 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                     row["reason"] = "reverse record outside this sample"
                 continue
             if not _loads(q):
-                fail(f"reverse record {str(rev)[:16]} loads no template (one-way channel)")
+                fail(f"reverse record {str(rev)[:16]} loads no template (one-way channel)",
+                     status="refused:class_overlap" if _overlap_refused(q) else "refused:cycle")
                 continue
             seed_pair = tuple(sorted((seed_of[rid], seed_of[rev])))
             for t in mine:
@@ -3603,10 +3658,14 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                                          "s_r": s_r, "kc": kcs, "want": want}
                         except EmissionError as error:
                             cache[ck] = {"error": str(error)}
+                            if str(error).startswith("no loaded "):
+                                cache[ck]["overlap"] = overlap_made(r_rows, p_rows, p, q,
+                                                                    t["direction"])
                     res = cache[ck]
                     row["rows"] += 1
                     if "error" in res:
-                        fail(f"template {t['key'][:12]} {lr['label']}: {res['error']}"[:300])
+                        fail(f"template {t['key'][:12]} {lr['label']}: {res['error']}"[:300],
+                             status="refused:class_overlap" if res.get("overlap") else "refused:cycle")
                         continue
                     on_grid = set(float(x) for x in t["weight"]["T"])
                     row["temperatures"] = max(row["temperatures"], len(res["grid"]))
@@ -3667,7 +3726,9 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                 if rid in by_record:
                     kill(rid, why, rows_out[pair]["status"])
         for rid, why in one_way_problems(out, complete):
-            kill(rid, why)
+            q = out[by_record[out[by_record[rid]]["reverse_of"]]] \
+                if out[by_record[rid]].get("reverse_of") in by_record else None
+            kill(rid, why, "refused:class_overlap" if _overlap_refused(q) else "refused:cycle")
         changed = set()
         for i, p in enumerate(out):
             rid = p.get("record_event_id")
@@ -3701,8 +3762,9 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
 
 # a pair refused for a reason the catalog names, not a balance failure:
 # ``refused:split_partners`` (one loaded template undoes partners that derive it
-# differently; ``derive_weights``)
-CYCLE_NAMED_REFUSALS = ("refused:split_partners",)
+# differently; ``derive_weights``) and ``refused:class_overlap`` (a pair that fails
+# only for templates a class overlap refused; ``resolve_overlaps``)
+CYCLE_NAMED_REFUSALS = ("refused:split_partners", "refused:class_overlap")
 
 
 def cycle_gates(table, payloads, complete: bool = True) -> list:
@@ -3712,7 +3774,9 @@ def cycle_gates(table, payloads, complete: bool = True) -> list:
     pairs refused by name (``CYCLE_NAMED_REFUSALS``) are counted, not gates."""
     gates = [f"cycle {r['forward'][:16]}/{r['reverse'][:16]}: {r['status']}: {r['reason']}"[:500]
              for r in table if r["status"] not in ("ok", "not_evaluable") + CYCLE_NAMED_REFUSALS]
-    gates += [f"one-way channel {str(rid)[:16]}: {why}" for rid, why in one_way_problems(payloads, complete)]
+    by_record = {p.get("record_event_id"): p for p in payloads}
+    gates += [f"one-way channel {str(rid)[:16]}: {why}" for rid, why in one_way_problems(payloads, complete)
+              if not _overlap_refused(by_record.get(by_record[rid].get("reverse_of")))]
     return gates
 
 

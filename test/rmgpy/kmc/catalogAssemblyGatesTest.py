@@ -139,7 +139,8 @@ def test_a_nested_overlap_covers_the_contained_partition():
 def test_an_overlap_nested_neither_way_stays_refused():
     """A record and its reversed twin whose windows each miss end placements the other
     covers: covering either partition would lose transitions, loading both makes the
-    shared ones twice.  The gate guards a real defect and stays."""
+    shared ones twice.  The refusal stays; at one weight it is a correct refusal,
+    counted by name rather than failed as a gate (I-251)."""
     payloads = _fixture("neither_nested_overlap.json.gz")["payloads"]
     merged, _ = te.resolve_collisions(payloads)
     _out, table = te.resolve_overlaps(merged)
@@ -147,6 +148,7 @@ def test_an_overlap_nested_neither_way_stays_refused():
     assert row["log10_diameter"] < te.LOCALITY_TOLERANCE_LOG10
     assert row["disposition"] == "refused:class_overlap"
     assert "neither partition contains the other" in row["reason"]
+    assert row["named"] is True and te.overlap_gates(table) == []
 
 
 # --- one orbit across resonance forms -------------------------------------------------

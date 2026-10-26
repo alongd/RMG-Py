@@ -1692,10 +1692,7 @@ def assemble(paths, *, database=None, services=None) -> dict:
             failures.append(f"class overlap: {type(error).__name__}: {error}"[:600])
             have, merged = [], []
     refused_overlaps = [o for o in overlaps if o["disposition"] != "covered"]
-    for o in refused_overlaps:
-        failures.append(f"class overlap {o['family']} {o['direction']} "
-                        f"{[t['key'][:12] for t in o['templates']]}: {o['disposition']}: "
-                        f"{o['reason']}"[:600])
+    failures += te.overlap_gates(overlaps)
     payloads = merged
     cycle_table = []
     if payloads:
@@ -1805,7 +1802,9 @@ def assemble(paths, *, database=None, services=None) -> dict:
                            "entry_keys": entry_keys},
             "overlaps": {"components": len(overlaps),
                          "covered": sum(len(o["covered"]) for o in overlaps),
-                         "refused": len(refused_overlaps), "table": overlaps},
+                         "refused": len(refused_overlaps),
+                         "named": sum(1 for o in refused_overlaps if o.get("named")),
+                         "table": overlaps},
             "cycles": {"pairs": len(cycle_table), "refused": len(refused_pairs),
                        "not_evaluable": len(te.cycle_not_evaluable(cycle_table)),
                        "by_status": dict(Counter(r.get("status") for r in cycle_table))},
