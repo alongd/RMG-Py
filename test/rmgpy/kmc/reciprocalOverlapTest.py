@@ -173,7 +173,10 @@ def test_overlap_census_is_two_partitions_of_one_region():
 
 def test_exchange_pairs_balance_after_overlap_resolution(services):
     """Every reciprocal pair checked, every pair ok, no gate; the covered
-    templates' witnesses are still checked rows; neither covered template loads."""
+    templates' witnesses are still checked rows; neither covered template loads.
+    a756 undoes its own transitions (self-inverse, primary) and 3e48's, which
+    nothing else undoes: 3e48 is derived from it (I-251: the partners of
+    ``derive_weights`` are mutual; before, 3e48 stayed an independent table)."""
     before = te.derive_weights(collided(), counter=services.counter)
     _o, unresolved = te.check_cycles(before, counter=services.counter, kc=services.kc,
                                      complete=True)
@@ -188,8 +191,11 @@ def test_exchange_pairs_balance_after_overlap_resolution(services):
     loaded = te.loaded_templates(out, 700.0)
     assert sorted(t.name.split(":")[1][:10] for t in loaded
                   if t.name.split(":")[1][:10] in EXCHANGE) == ["3e484af0e1", "a7562b8ed1"]
-    assert not any(t.get("derived") for p in out for t in p["templates"]
-                   if t["key"][:10] in EXCHANGE)
+    exchange = {t["key"][:10]: t for p in out for t in p["templates"]
+                if t["status"] == "emitted" and t["key"][:10] in EXCHANGE}
+    assert exchange["a7562b8ed1"].get("self_inverse") is True
+    assert not exchange["a7562b8ed1"].get("derived")
+    assert exchange["3e484af0e1"]["derived"]["primary"]["key"][:10] == "a7562b8ed1"
 
 
 def _scaled(payloads, key, factor):
