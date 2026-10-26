@@ -3349,12 +3349,30 @@ def stored_certificate_problems(record: dict, body: dict, by_id: dict,
     stored = {k: v for k, v in body.items() if k != "owner"}
     derived = {k: v for k, v in fresh.items() if k != "owner"}
     derived["event_id"] = record.get("event_id")
-    if canonical_json(stored) != canonical_json(derived):
-        keys = sorted(k for k in set(stored) | set(derived)
-                      if canonical_json(stored.get(k)) != canonical_json(derived.get(k)))
+    keys = sorted(k for k in set(stored) | set(derived)
+                  if not (_same_certificate(stored.get(k), derived.get(k)) if k == "certificate"
+                          else canonical_json(stored.get(k)) == canonical_json(derived.get(k))))
+    if keys:
         return [f"rate certificate is not re-derived: the production binding rerun on the "
                 f"record against the loaded database differs in {keys}"]
     return []
+
+
+def _same_certificate(stored, derived) -> bool:
+    """Whether a stored inner certificate is the one re-derived: equal, except
+    that a tree node is the same node up to the atom order RMG's matcher leaves
+    in its group (``same_node_semantics``).  The order a re-derivation reads
+    depends on the process: the certifier's descents cache is bounded, and a
+    record whose cached descents were evicted re-reads each group as the
+    matcher has re-sorted it since."""
+    if canonical_json(stored) == canonical_json(derived):
+        return True
+    if not (isinstance(stored, dict) and isinstance(derived, dict)):
+        return False
+    a, b = stored.get("nodes") or {}, derived.get("nodes") or {}
+    if set(a) != set(b) or not all(same_node_semantics(a[k], b[k]) for k in a):
+        return False
+    return canonical_json({**stored, "nodes": None}) == canonical_json({**derived, "nodes": None})
 
 
 def validate_certification(artifact: dict, families=None, thermo=None) -> None:
