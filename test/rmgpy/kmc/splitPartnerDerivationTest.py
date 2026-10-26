@@ -114,3 +114,34 @@ def test_primaries_that_derive_it_differently_are_a_named_refusal(payloads, serv
                if p.get("status") == "refused"}
     assert {r for r, _ in refused} == {r for pair in PAIRS for r in pair}
     assert {s for _, s in refused} == {"refused:split_partners"}
+
+
+ONE_SIDED = REPOSITORY / "test/rmgpy/kmc/fixtures/i251/one_sided_partner_payloads.json.gz"
+
+
+@needs_database
+def test_a_template_whose_partner_shows_only_on_the_partner_s_witnesses_is_derived():
+    """The partner relation is mutual, though a witness shows it one way only.
+
+    On the PP catalog at 67eabc9fb (intra_H_migration), 77c1 of evt_bd1c covers
+    0b44 and 8046, the reverses of dbb8 and 738f.  738f's witnesses show 77c1
+    undoing it; 77c1's own witnesses show only dbb8.  So 738f (the lesser key)
+    stayed primary against 77c1, 77c1 stayed primary against dbb8 (which was
+    derived from it), and pair evt_6d5b/evt_df41 was refused off the grid:
+    S_f/S_r = 17.290370078603431 vs 17.286109706723089 at 312.5 K.  The
+    fixture is the six records of that component, each pruned to its base
+    template and the templates of the component."""
+    from rmgpy.kmc import emit
+    services = emit.load_services(str(DATABASE), ["intra_H_migration"])
+    with gzip.open(ONE_SIDED, "rt") as handle:
+        payloads = json.load(handle)
+    out, checked, table = _cycles(payloads, services)
+    loaded = _templates(out)
+    assert {r["key"][:12] for r in loaded["77c1d362bce2"]["derived"]["partners"]} == \
+        {"738f06527b5a", "dbb8ec0a5629"}
+    assert loaded["77c1d362bce2"]["derived"]["primary"]["key"][:12] == "738f06527b5a"
+    assert not loaded["738f06527b5a"].get("derived")
+    assert not loaded["dbb8ec0a5629"].get("derived")
+    assert table and all(r["status"] == "ok" for r in table.values()), \
+        [r["reason"] for r in table.values()]
+    assert te.cycle_gates(list(table.values()), checked) == []
