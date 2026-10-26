@@ -229,9 +229,13 @@ def test_an_overlap_inside_one_orientation_is_refused_by_name():
     assert _refused_by_overlap(out) == set(EXCHANGE)
 
 
-def test_a_reversed_template_not_wholly_covered_is_refused_by_name():
-    """Without a756, the reversed base 53b8 makes transitions no as_generated
-    template makes: dropping it would lose them, so the component is refused."""
+def test_a_contained_as_generated_partition_is_covered_by_the_reversed_one():
+    """Without a756, the reversed side {53b8, 247a} makes transitions no
+    as_generated template makes, and every transition of the as_generated side
+    {3e48} is made by a reversed template: the contained side is covered,
+    whichever side generated it (I-249), and no transition is lost.  (Before
+    I-249 only the reversed side could be covered, and this component was
+    refused.)"""
     payloads = collided()
     for p in payloads:
         for t in p["templates"]:
@@ -240,9 +244,16 @@ def test_a_reversed_template_not_wholly_covered_is_refused_by_name():
                 t["refusal"] = {"status": "refused:test", "reason": "removed by the test"}
                 t.pop("merged_into", None)
     out, table = te.resolve_overlaps(payloads)
-    assert [r["disposition"] for r in table] == ["refused:class_overlap"]
-    assert "not made by" in table[0]["reason"]
-    assert _refused_by_overlap(out) == {"3e484af0e1", "53b80ec7cc", "247abac61b"}
+    assert [r["disposition"] for r in table] == ["covered"]
+    assert keys_of(table[0]["covered"]) == ["3e484af0e1"]
+    assert keys_of(table[0]["covered_by"]) == ["247abac61b", "53b80ec7cc"]
+    assert _refused_by_overlap(out) == set()
+    emitted = {(p["record_event_id"], t["key"]) for p in out for t in p["templates"]
+               if t["status"] == "emitted"}
+    for p in out:
+        for t in p["templates"]:
+            if t["status"] == "covered":
+                assert {(c["record"], c["key"]) for c in t["covered_by"]} <= emitted
 
 
 def digest(value):
