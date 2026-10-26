@@ -2475,14 +2475,27 @@ def test_merged_reciprocal_copies_derive_one_reverse_from_one_primary(i188_balan
         assert by_record[rid]["reverse_of"] == prid
 
 
-def test_a_template_with_several_inverse_partners_stays_independent(i188_balance):
+def test_a_template_with_several_inverse_partners_is_derived_when_they_agree(i188_balance):
     """Unmerged, each forward copy is undone by two identical reverse
-    copies: no single primary exists, so neither direction is derived."""
-    counter, _kc = i188_balance
+    copies.  The copies derive it alike, so it is derived from the least of
+    them and names both (I-251: before, several partners left both
+    directions independent).  The double count is still the cycle check's:
+    only merging makes each forward transition undone by exactly one loaded
+    reverse transition."""
+    counter, kc = i188_balance
     payloads = _i188_payloads()
     duplicated = {k for k, n in _emitted_keys(payloads).items() if n > 1}
     out = te.derive_weights(payloads, counter=counter)
-    assert not [key for _rid, key in _derived_pairs(out) if key in duplicated]
+    derived = [t for p in out for t in p["templates"]
+               if t["status"] == "emitted" and t["key"] in duplicated and t.get("derived")]
+    assert derived
+    for t in derived:
+        assert len(t["derived"]["partners"]) == 2
+        assert {r["key"] for r in t["derived"]["partners"]} == {t["derived"]["primary"]["key"]}
+        assert t["derived"]["primary"] == min(t["derived"]["partners"],
+                                              key=lambda r: (r["key"], r["record"]))
+    _out, table = te.check_cycles(out, counter=counter, kc=kc, complete=True)
+    assert any("undone by exactly one" in r["reason"] for r in table)
 
 
 def test_a_derived_reverse_balances_off_the_grid_within_the_cycle_tolerance(i188_balance):

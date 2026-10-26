@@ -1634,8 +1634,8 @@ def record_status(templates) -> tuple:
     base_ok = any(t["status"] in live and t["base"] for t in templates)
     if not base_ok:
         reasons = [t["refusal"]["status"] for t in templates if t["base"] and t.get("refusal")]
-        named = next((x for x in ("refused:collision_grid", "refused:collision", "refused:cycle",
-                                   "refused:non_transferable") if x in reasons), None)
+        named = next((x for x in (("refused:collision_grid", "refused:collision", "refused:cycle",
+                                   "refused:split_partners", "refused:non_transferable")) if x in reasons), None)
         collision = named is not None and named.startswith("refused:collision")
         return "refused", {"by": "collision" if collision else "emission",
                            "status": named or "refused:base_template",
@@ -3236,18 +3236,30 @@ def derive_weights(payloads, *, counter) -> list:
 
     For each emitted template ``t`` (base or context) with a stored thermo, the
     reverse templates that undo its transitions on its ``context`` and
-    ``emitted`` witnesses are found by matching the loaded catalog.  When
-    there is exactly one partner ``u``, the pair is ordered by
-    ``primary_order``: the template of the record RMG generated (orientation
-    ``as_generated``, the record whose own k the compiler keeps, deriving its
-    partner by Kc) first, then the lesser template key (the sha256 of the
-    executable).  Both are the same however the families were partitioned; a
-    record id hashes the artifact's family list and only breaks a tie, which
-    loaded keys never have.  The lesser is PRIMARY and keeps its interpolated
-    table, the greater is DERIVED: ``derived`` names the primary and carries the
-    primary's stored thermo form, ``N_P / N_D`` and the ``ssa`` ratio, so that
-    ``weight_at`` returns ``w_P(T) * (N_P / N_D) / (ssa_ratio * Kc_P(T))``.  A
-    template with several or no partners, or without thermo, stays
+    ``emitted`` witnesses are found by matching the loaded catalog: its
+    partners.  Undoing is mutual, so ``u`` is ``t``'s partner when either's
+    witnesses show it; the partners link the loaded templates into
+    components of two sides (each undoes the other side's transitions).  In
+    a two-template component the pair is ordered by ``primary_order``: the
+    template of the record RMG generated (orientation ``as_generated``, the
+    record whose own k the compiler keeps, deriving its partner by Kc)
+    first, then the lesser template key (the sha256 of the executable).
+    Both are the same however the families were partitioned; a record id
+    hashes the artifact's family list and only breaks a tie, which loaded
+    keys never have.  The lesser is PRIMARY and keeps its interpolated
+    table, the greater is DERIVED: ``derived`` names the primary and carries
+    the primary's stored thermo form, ``N_P / N_D`` and the ``ssa`` ratio, so
+    that ``weight_at`` returns ``w_P(T) * (N_P / N_D) / (ssa_ratio *
+    Kc_P(T))``.  A larger component (class coverage lets one template undo
+    the transitions of two) keeps the side of its least template primary,
+    and derives each template of the other side from its least partner when
+    every partner derives it alike (``_split_reason``), listing them
+    (``partners``); otherwise one weight cannot balance them all, and the
+    template carries ``split_partners``, which ``check_cycles`` refuses by
+    that name.  A template that is its own only partner is self-inverse, and
+    one among its own partners is always on the primary side (both sides
+    holding one, or an odd cycle of partners, is ``split_partners`` too).  A
+    template with no partner, or whose primary has no thermo, stays
     independent (and fails the off-grid cycle check).  The partners are
     searched on the reverse side of any record holding a copy of ``t``
     (``_reverse_side``), never only on its representative's: which copy
@@ -3256,8 +3268,8 @@ def derive_weights(payloads, *, counter) -> list:
     out = [json.loads(canonical_json(p)) for p in payloads]
     loaded = _Loaded(out)
     by_record = {p.get("record_event_id"): p for p in out}
-    changed = set()
-    for i, p in enumerate(out):
+    found, unread, changed = defaultdict(set), set(), set()
+    for p in out:
         rid = p.get("record_event_id")
         for t in p.get("templates", []):
             if t.get("status") != "emitted" or t.get("derived"):
@@ -3281,31 +3293,123 @@ def derive_weights(payloads, *, counter) -> list:
                                                   q["direction"])
                 except EmissionError:
                     partners.add(None)
-            if len(partners) != 1 or None in partners:
-                continue
-            ref = next(iter(partners))
-            if ref == (rid, t["key"]):
+            if None in partners:
+                unread.add((rid, t["key"]))  # never derived; still another's partner
+                partners.discard(None)
+            if partners == {(rid, t["key"])}:
                 # a self-inverse class (after merging, its own reverse): primary,
                 # never derived; its balance is checked directly
                 t["self_inverse"] = True
-                changed.add(i)
+                changed.add(id(p))
+            for ref in partners:
+                found[(rid, t["key"])].add(ref)
+                found[ref].add((rid, t["key"]))
+    owner = {(p.get("record_event_id"), t["key"]): p for p in out for t in p.get("templates", [])
+             if t.get("status") == "emitted"}
+    order = {ref: primary_order(owner[ref], loaded.index[ref], ref[0]) for ref in found}
+    # a template among its own partners is primary: it undoes its own transitions
+    selfish = {ref for ref in found if ref in found[ref]}
+    for ref in selfish:
+        found[ref].discard(ref)
+    for component in _union_find([{ref} | refs for ref, refs in found.items()]):
+        side = _two_sides(component, found)
+        primary = {side[ref] for ref in component if ref in selfish} if side else set()
+        if side is None or len(primary) > 1:
+            # partners that undo one another (an odd cycle), or self-inverse
+            # templates on both sides: no side can be primary
+            for ref in component:
+                names = sorted(found[ref] | ({ref} & selfish))
+                loaded.index[ref]["split_partners"] = {
+                    "status": "refused:split_partners",
+                    "partners": [{"record": r[0], "key": r[1]} for r in names],
+                    "reason": f"template {ref[1][:12]} is undone by "
+                              f"{[r[1][:12] for r in names]}, which cannot all be primaries "
+                              f"or all derived (they undo one another or themselves)"}
+                changed.add(id(owner[ref]))
+            continue
+        primary = primary.pop() if primary else side[min(component, key=order.get)]
+        for ref in sorted(component):
+            if side[ref] == primary or ref in unread:
                 continue
-            u = loaded.index[ref]
-            if primary_order(p, t, rid) < primary_order(by_record.get(ref[0]) or {}, u, ref[0]):
-                continue                         # t is the primary of this pair
-            th = u.get("thermo")
-            if not th or "error" in th or "form" not in th:
+            t, p = loaded.index[ref], owner[ref]
+            derivations = {u: _derivation(p, t, loaded.index[u], u, owner)
+                           for u in sorted(found[ref], key=order.get)}
+            if None in derivations.values():
                 continue
-            t["derived"] = {
-                "primary": {"record": ref[0], "key": ref[1]},
-                "counts_ratio": _count_of(by_record[ref[0]], u) / _count_of(p, t),
-                "ssa_ratio": th["ssa_ratio"], "thermo": th["form"],
-                "rule": "primary = of the pair of loaded templates that undo each other, the "
-                        "one of the as_generated record, then of the lesser template key (record "
-                        "ids, which carry the artifact's family list, only break ties); "
-                        "w = w_primary(T) * (N_P / N_D) / (ssa_ratio * Kc(T)), Kc exactly at T"}
-            changed.add(i)
-    return [finish(p) if k in changed else p for k, p in enumerate(out)]
+            d = next(iter(derivations.values()))
+            if len(derivations) > 1:
+                names = [{"record": r[0], "key": r[1]} for r in sorted(derivations)]
+                why = _split_reason(t, derivations, loaded)
+                if why:
+                    t["split_partners"] = {"status": "refused:split_partners",
+                                           "partners": names, "reason": why}
+                    changed.add(id(p))
+                    continue
+                d = dict(d, partners=names, rule=d["rule"] + SPLIT_PARTNERS_RULE)
+            t["derived"] = d
+            changed.add(id(p))
+    return [finish(p) if id(p) in changed else p for p in out]
+
+
+DERIVED_RULE = (
+    "primary = of the pair of loaded templates that undo each other, the one of the "
+    "as_generated record, then of the lesser template key (record ids, which carry the "
+    "artifact's family list, only break ties); w = w_primary(T) * (N_P / N_D) / "
+    "(ssa_ratio * Kc(T)), Kc exactly at T")
+SPLIT_PARTNERS_RULE = (
+    "; templates that undo one another link into two sides: the side of the least is "
+    "primary, and a template undoing several of its templates (``partners``) is derived "
+    "from the least of them when each derives it alike (to CYCLE_RTOL at its grid and the "
+    "grid midpoints), else refused:split_partners")
+
+
+def _two_sides(component, found):
+    """{template: 0 or 1} with every partner on the other side, or None when
+    the partners of ``component`` cannot be so split (a template among its
+    own partners, an odd cycle)."""
+    side = {}
+    for start in sorted(component):
+        if start in side:
+            continue
+        side[start], todo = 0, [start]
+        while todo:
+            ref = todo.pop()
+            for u in found[ref]:
+                if u not in side:
+                    side[u] = 1 - side[ref]
+                    todo.append(u)
+                elif side[u] == side[ref]:
+                    return None
+    return side
+
+
+def _derivation(p, t, u, ref, owner):
+    """``t``'s ``derived`` block from its partner ``u`` (``ref``), or None when
+    ``u`` has no stored thermo form."""
+    th = u.get("thermo")
+    if not th or "error" in th or "form" not in th:
+        return None
+    return {"primary": {"record": ref[0], "key": ref[1]},
+            "counts_ratio": _count_of(owner[ref], u) / _count_of(p, t),
+            "ssa_ratio": th["ssa_ratio"], "thermo": th["form"], "rule": DERIVED_RULE}
+
+
+def _split_reason(t, derivations, loaded) -> str:
+    """Why one weight of ``t`` cannot balance all its partners, or '' when
+    each derivation's weight agrees with the first's to ``CYCLE_RTOL`` at
+    ``t``'s grid temperatures and their midpoints."""
+    keys = [r[1][:12] for r in derivations]
+    grid = [float(x) for x in t["weight"]["T"]]
+    temps = sorted(set(grid + [(a + b) / 2.0 for a, b in zip(grid, grid[1:])]))
+    (ref0, d0), *rest = derivations.items()
+    w0 = [weight_at(dict(t, derived=d0), T, loaded.index[ref0]) for T in temps]
+    for ref, d in rest:
+        w = [weight_at(dict(t, derived=d), T, loaded.index[ref]) for T in temps]
+        bad = max(abs(a / b - 1.0) for a, b in zip(w, w0))
+        if bad > CYCLE_RTOL:
+            return (f"template {t['key'][:12]} is undone by {keys}, whose derivations of it "
+                    f"differ by {bad:.3g} (> {CYCLE_RTOL:.3g}): no one derived weight")
+    return ""
 
 
 OFFGRID_RANDOM = 5
@@ -3362,7 +3466,9 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
     failing pair refuses every emitted template of both records, the
     representatives behind their merged copies, the covers of their covered
     templates, and every merged or covered template of those; a record whose reverse record loads nothing is refused the same
-    way; repeated until stable.  Returns (new payloads, one row per
+    way; repeated until stable.  A pair whose only problem is an off-grid
+    ratio miss of a template ``derive_weights`` left with ``split_partners``
+    (or of one of those partners) is ``refused:split_partners``, by name.  Returns (new payloads, one row per
     reciprocal record pair)."""
     out = [json.loads(canonical_json(p)) for p in payloads]
     by_record = {p.get("record_event_id"): i for i, p in enumerate(out)}
@@ -3370,6 +3476,15 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
     # as given (fixed over the rounds), never their ids
     seed_of = {rid: partition_free_identity(out[i]) for rid, i in by_record.items()}
     verdict = {}            # pair -> table row (refused ones stick)
+    # templates derive_weights left with partners that derive them differently,
+    # and those partners: their off-grid misses are that, refused by name
+    split = {}
+    for x in out:
+        for t in x.get("templates", []):
+            if t.get("status") == "emitted" and t.get("split_partners"):
+                for ref in [(x.get("record_event_id"), t["key"])] + \
+                        [(r["record"], r["key"]) for r in t["split_partners"]["partners"]]:
+                    split.setdefault(ref, t["split_partners"]["reason"])
     for _round in range(max_rounds):
         loaded = _Loaded(out)
         rows_out, refuse = {}, {}
@@ -3390,8 +3505,9 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                 "bijection_failures": 0, "status": "ok", "reason": "", "problems": []})
             q = out[by_record[rev]] if rev in by_record else None
 
-            def fail(why, row=row, pair=pair):
-                row["status"] = "refused:cycle"
+            def fail(why, row=row, pair=pair, status="refused:cycle"):
+                # a named refusal holds only while every problem of the pair is it
+                row["status"] = status if row["status"] in ("ok", status) else "refused:cycle"
                 if why not in row["problems"]:
                     row["problems"].append(why)
                 row["reason"] = "; ".join(row["problems"])[:500]
@@ -3516,15 +3632,19 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                         row["bijection_failures"] += 1
                         fail(f"inverse edit: each forward transition must be undone by exactly "
                              f"one loaded reverse transition (counts {res['back']})")
+                    named = emitted_t and (rid, t["key"]) in split and all(
+                        e <= rtol for T, e in zip(res["grid"], res["errs"]) if T in on_grid)
                     if (worst > rtol) if emitted_t else beyond_tolerance(max(res["decades"])):
-                        fail(f"ratio: S_f/S_r = {res['s_f'][i] / res['s_r'][i]:.17g} vs "
+                        fail((f"split partners: {split[(rid, t['key'])]}; " if named else "")
+                             + f"ratio: S_f/S_r = {res['s_f'][i] / res['s_r'][i]:.17g} vs "
                              f"(ssa ratio * Kc) = {res['want'][i]:.17g} at {res['grid'][i]} K"
                              f"{'' if res['grid'][i] in on_grid else ' (off the grid)'}, "
                              f"relative error {worst:.3g} ("
                              + (f"> {rtol:.3g}" if emitted_t else f"{max(res['decades']):.3g} "
                                 f"decades > {LOCALITY_TOLERANCE_LOG10:.3g}")
                              + f") (template "
-                             f"{t['key'][:12]}, {t['status']}, row {lr['label']})")
+                             f"{t['key'][:12]}, {t['status']}, row {lr['label']})",
+                             status="refused:split_partners" if named else "refused:cycle")
         for pair, why in refuse.items():
             verdict[pair] = rows_out[pair]
         for pair, row in rows_out.items():
@@ -3532,7 +3652,8 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                 verdict[pair] = row
         dead = {}
 
-        def kill(rid, why):
+        def kill(rid, why, status="refused:cycle"):
+            why = (status, why)
             for t in out[by_record[rid]].get("templates", []):
                 if t.get("status") == "emitted":
                     dead[(rid, t["key"])] = why
@@ -3544,7 +3665,7 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
         for pair, why in refuse.items():
             for rid in pair:
                 if rid in by_record:
-                    kill(rid, why)
+                    kill(rid, why, rows_out[pair]["status"])
         for rid, why in one_way_problems(out, complete):
             kill(rid, why)
         changed = set()
@@ -3563,7 +3684,7 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
                 else:
                     continue
                 t["status"] = "refused"
-                t["refusal"] = {"status": "refused:cycle", "reason": str(why)[:600]}
+                t["refusal"] = {"status": why[0], "reason": str(why[1])[:600]}
                 t.pop("merged_into", None)
                 t.pop("covered_by", None)
                 changed.add(i)
@@ -3578,12 +3699,19 @@ def check_cycles(payloads, *, counter, kc, complete: bool = True, rtol: float = 
     raise EmissionError(f"the cycle check did not settle in {max_rounds} rounds")
 
 
+# a pair refused for a reason the catalog names, not a balance failure:
+# ``refused:split_partners`` (one loaded template undoes partners that derive it
+# differently; ``derive_weights``)
+CYCLE_NAMED_REFUSALS = ("refused:split_partners",)
+
+
 def cycle_gates(table, payloads, complete: bool = True) -> list:
     """Acceptance gates: every refused pair and every loaded template whose
     reverse record loads nothing.  Pairs a partial catalog cannot evaluate
-    (``not_evaluable``) are reported separately (``cycle_not_evaluable``)."""
+    (``not_evaluable``) are reported separately (``cycle_not_evaluable``), and
+    pairs refused by name (``CYCLE_NAMED_REFUSALS``) are counted, not gates."""
     gates = [f"cycle {r['forward'][:16]}/{r['reverse'][:16]}: {r['status']}: {r['reason']}"[:500]
-             for r in table if r["status"] not in ("ok", "not_evaluable")]
+             for r in table if r["status"] not in ("ok", "not_evaluable") + CYCLE_NAMED_REFUSALS]
     gates += [f"one-way channel {str(rid)[:16]}: {why}" for rid, why in one_way_problems(payloads, complete)]
     return gates
 
