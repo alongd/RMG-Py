@@ -43,6 +43,7 @@ from rmgpy.solver.polymer import (HybridPolymerSystem, MassTransferConfig, Polym
                                   validate_kernel_homolysis, validate_kernel_recombination,
                                   validate_kernel_transfer, validate_kernel_move,
                                   validate_kernel_propagation,
+                                  validate_kernel_interior_scission,
                                   validate_radical_qssa_unzip,
                                   validate_side_group_homolysis)
 from rmgpy.polymer import strip_rmg_index_suffix
@@ -1314,6 +1315,7 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
                 kernel_transfer=getattr(spc, 'kernel_transfer', None),
                 kernel_move=getattr(spc, 'kernel_move', None),
                 kernel_propagation=getattr(spc, 'kernel_propagation', None),
+                kernel_interior_scission=getattr(spc, 'kernel_interior_scission', None),
                 # a deck-declared end-radical pool IS its radical-end pool: its
                 # depropagation runs here (on a parent pool k_depropagation
                 # belongs to the spawned daughters, never to the parent)
@@ -1411,6 +1413,7 @@ class PolymerPool(object):
                  kernel_move: Optional[list] = None,
                  kernel_propagation: Optional[list] = None,
                  k_depropagation: Optional[dict] = None,
+                 kernel_interior_scission: Optional[list] = None,
                  ):
         self.label = label
         self.xs = xs
@@ -1424,6 +1427,7 @@ class PolymerPool(object):
         self.kernel_transfer = kernel_transfer
         self.kernel_move = kernel_move
         self.kernel_propagation = kernel_propagation
+        self.kernel_interior_scission = kernel_interior_scission
         # End-radical depropagation on this pool itself (I-266: a
         # deck-declared end-radical pool); validated in to_config.
         self.k_depropagation = k_depropagation
@@ -1692,6 +1696,9 @@ class PolymerPool(object):
                          validate_kernel_move(self.label, self.kernel_move)),
             kernel_propagation=(None if self.kernel_propagation is None else
                                 validate_kernel_propagation(self.label, self.kernel_propagation)),
+            kernel_interior_scission=(None if self.kernel_interior_scission is None else
+                                      validate_kernel_interior_scission(self.label,
+                                                                        self.kernel_interior_scission)),
             k_depropagation=(None if self.k_depropagation is None else
                              validate_k_depropagation(self.label, self.k_depropagation)),
             repeat_unit_atoms=_element_count_tuple(self.monomer),
@@ -1960,6 +1967,8 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
                          else validate_kernel_move(b, spc.kernel_move)),
             kernel_propagation=(None if getattr(spc, "kernel_propagation", None) is None
                                 else validate_kernel_propagation(b, spc.kernel_propagation)),
+            kernel_interior_scission=(None if getattr(spc, "kernel_interior_scission", None) is None
+                                      else validate_kernel_interior_scission(b, spc.kernel_interior_scission)),
             # FR1-K1 mass contract: an X-loss feature daughter's exact
             # per-chain defect (M_X of the spawning channel's gas_product,
             # pinned by generate_side_loss_daughters) must survive config

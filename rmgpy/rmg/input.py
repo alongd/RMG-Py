@@ -75,6 +75,7 @@ from rmgpy.solver.polymer import (validate_k_depropagation,
                                   validate_kernel_transfer,
                                   validate_kernel_move,
                                   validate_kernel_propagation,
+                                  validate_kernel_interior_scission,
                                   validate_radical_qssa_unzip,
                                   validate_side_group_homolysis)
 from rmgpy.solver.simple import SimpleReactor
@@ -283,6 +284,8 @@ def polymer(label: str,
             kernel_move: Optional[list] = None,
             end_class: Optional[str] = None,
             kernel_propagation: Optional[list] = None,
+            position_class: Optional[str] = None,
+            kernel_interior_scission: Optional[list] = None,
             ):
     """
     Helper function exposed in the input file to define a Polymer Pool.
@@ -443,6 +446,15 @@ def polymer(label: str,
             consumed, at k_pair * n_monomer / V_poly per chain, each term
             exactly {template, k_pair} (validate_kernel_propagation).
             Requires monomer_product.
+        position_class (str): on an interior_feature pool, the position class
+            of its feature (letters and digits: a fixed end distance, or the
+            bulk), keying the pool's identity so that two mid-chain pools of
+            one feature are two pools. Default None.
+        kernel_interior_scission (list): catalog-driven interior scission:
+            every chain of this pool breaks at k per chain into fragments,
+            each product {pool, moments} receiving fixed coefficients of
+            this pool's moments; each term exactly {template, k,
+            periods_per_unit, products} (validate_kernel_interior_scission).
 
     k_depropagation on an end_radical_site pool runs on that pool (it is
     the radical-end pool); on any other pool it needs k_homolysis, as
@@ -463,6 +475,8 @@ def polymer(label: str,
             kernel_move = validate_kernel_move(label, kernel_move)
         if kernel_propagation is not None:
             kernel_propagation = validate_kernel_propagation(label, kernel_propagation)
+        if kernel_interior_scission is not None:
+            kernel_interior_scission = validate_kernel_interior_scission(label, kernel_interior_scission)
     except ValueError as e:
         raise InputError(str(e))
     if kernel_propagation is not None and monomer_product is None:
@@ -707,12 +721,14 @@ def polymer(label: str,
         end_alkene_site=end_alkene_site,
         interior_feature=interior_feature,
         end_class=end_class,
+        position_class=position_class,
     )
     poly_obj.kernel_homolysis = kernel_homolysis
     poly_obj.kernel_recombination = kernel_recombination
     poly_obj.kernel_transfer = kernel_transfer
     poly_obj.kernel_move = kernel_move
     poly_obj.kernel_propagation = kernel_propagation
+    poly_obj.kernel_interior_scission = kernel_interior_scission
 
     # 1b. Round-72 P1 STRUCTURAL layer of the side-group channel law,
     #     enforced against the PARSED monomer at deck-read time: the

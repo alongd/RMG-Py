@@ -261,6 +261,7 @@ class Polymer(Species):
                  end_alkene_site: Optional[str] = None,
                  interior_feature: Optional[str] = None,
                  end_class: Optional[str] = None,
+                 position_class: Optional[str] = None,
                  **kwargs,
                  ):
         # k_unzip/k_scission/radical_qssa_unzip/k_homolysis/end_radical_site
@@ -342,6 +343,19 @@ class Polymer(Species):
                     f"Polymer '{label}': interior_feature and {other} are "
                     f"mutually exclusive (one pool is one chain type).")
         self.interior_feature = interior_feature
+        # position_class keys an explicit mid-chain pool by the position class
+        # of its feature (I-273: a kernel table states where each mid-chain
+        # radical sits, a fixed end distance or the bulk): letters and digits,
+        # only on an interior_feature pool; the fingerprint's _Interior segment
+        # carries it, so two mid-chain pools of one feature stay two pools.
+        # None (the default) leaves the fingerprint as it was.
+        if position_class is not None and (interior_feature is None or not isinstance(position_class, str)
+                                           or not re.fullmatch(r"[A-Za-z0-9]+", position_class)):
+            raise InputError(
+                f"Polymer '{label}': position_class must be a non-empty string of letters and digits on an "
+                f"interior_feature pool, got position_class={position_class!r} with "
+                f"interior_feature={interior_feature!r}.")
+        self.position_class = position_class
         # Side-group homolysis initiation kernel (FR1-K1, adjudicated round
         # 70): LIST of channel dicts (each exactly {label, A, n, Ea,
         # site_selector, sites_per_unit, gas_product}; site_selector is the
@@ -618,6 +632,8 @@ class Polymer(Species):
                 if getattr(self, 'interior_feature', None):
                     # Mid-chain pools (S5 d): the same reason.
                     feat += f'_Interior-{self.interior_feature}'
+                    if getattr(self, 'position_class', None):
+                        feat += f'-pos{self.position_class}'
                 eg = '_'.join(eg.fingerprint for eg in self.end_groups) if self.end_groups else ''
                 self._fingerprint = f'Polymer_{self.monomer.fingerprint}{feat}_EG-{eg}_{self.cutoff}'
         return self._fingerprint
@@ -901,6 +917,7 @@ class Polymer(Species):
         other.end_class = getattr(self, 'end_class', None)
         other.end_alkene_site = getattr(self, 'end_alkene_site', None)
         other.interior_feature = getattr(self, 'interior_feature', None)
+        other.position_class = getattr(self, 'position_class', None)
         # Catalog-driven pool kernels (S5 a + b, c + e, d): losing a term list
         # on copy would silently disable the kernel.
         other.kernel_homolysis = deepcopy(getattr(self, 'kernel_homolysis', None))
@@ -908,6 +925,7 @@ class Polymer(Species):
         other.kernel_transfer = deepcopy(getattr(self, 'kernel_transfer', None))
         other.kernel_move = deepcopy(getattr(self, 'kernel_move', None))
         other.kernel_propagation = deepcopy(getattr(self, 'kernel_propagation', None))
+        other.kernel_interior_scission = deepcopy(getattr(self, 'kernel_interior_scission', None))
         # Side-group homolysis kernel channels + X-loss feature-pool
         # identity + exact mass-defect contract (FR1-K1): losing the
         # channel list on copy would silently disable the kernel; losing
@@ -6979,6 +6997,11 @@ POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_MOVE = "3.4"
 # (a join of two pools). Stamped iff any pool carries one; a 3.4 reader would
 # replay the pools without them or replay a join as a same-pool recombination.
 POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_ENDS = "3.5"
+# Schema 3.6 (I-273): `catalog_kernels` may carry "interior_scission" (the
+# normalized kernel_interior_scission terms: every chain of a mid-chain
+# radical pool breaks into fragments credited to its product pools). Stamped
+# iff any pool carries it; a 3.5 reader would replay the pool without it.
+POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_INTERIOR_SCISSION = "3.6"
 POLYMER_POOLS_SIDECAR_FILENAME = "polymer_pools.json"
 
 # Recognized thermal_analysis_inputs fields (schema 2.9). Per-pool fields
@@ -8891,7 +8914,8 @@ def _serialize_pool_for_sidecar(pool: 'Polymer',
         ("recombination", getattr(pool, "kernel_recombination", None)),
         ("transfer", getattr(pool, "kernel_transfer", None)),
         ("move", getattr(pool, "kernel_move", None)),
-        ("propagation", getattr(pool, "kernel_propagation", None))) if terms is not None}
+        ("propagation", getattr(pool, "kernel_propagation", None)),
+        ("interior_scission", getattr(pool, "kernel_interior_scission", None))) if terms is not None}
     kdep = getattr(pool, "k_depropagation", None)
     if (kdep is not None and getattr(pool, "spawn_metadata", None) is None
             and getattr(pool, "k_homolysis", None) is None
@@ -10032,6 +10056,10 @@ def build_polymer_moments_artifact(pool_registry,
            or any("partner" in t for t in p.get("catalog_kernels", {}).get("recombination", ()))
            for p in pools):
         schema_version = POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_ENDS
+    # Interior scission of a mid-chain radical pool (schema 3.6, I-273) --
+    # the rung above 3.5.
+    if any("interior_scission" in p.get("catalog_kernels", {}) for p in pools):
+        schema_version = POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_CATALOG_INTERIOR_SCISSION
 
     # conventions.condensed_species closure (schema 2.5): a spawned pool's
     # phase_species (canonical proxy + mu-dummies collected from the same

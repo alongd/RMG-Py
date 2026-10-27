@@ -783,12 +783,16 @@ KERNEL_TRANSFER_KEYS = ("template", "k_pair", "phi", "partner", "product",
 # S5 d: a transfer term whose sites grow with a chain carries both.
 KERNEL_TRANSFER_SITE_KEYS = ("sites", "periods_per_unit")
 KERNEL_MOVE_KEYS = ("template", "k", "a", "b", "periods_per_unit", "product")
+# I-273: every chain of the pool breaks at k per chain into fragments, each
+# product pool receiving fixed coefficients of the parent's moments.
+KERNEL_INTERIOR_SCISSION_KEYS = ("template", "k", "periods_per_unit", "products")
 # Any term may also declare the shortest chain (periods) its site law counts
 # correctly; homolysis' is 2*min_fragment - 1 when undeclared (the cut count
 # a*n + b turns negative below it). Reported, never acted on.
 KERNEL_VALIDITY_KEY = "valid_from_periods"
 CATALOG_KERNELS = ("kernel_homolysis", "kernel_recombination",
-                   "kernel_transfer", "kernel_move", "kernel_propagation")
+                   "kernel_transfer", "kernel_move", "kernel_propagation",
+                   "kernel_interior_scission")
 
 
 def catalog_kernel_connections(pool):
@@ -796,9 +800,11 @@ def catalog_kernel_connections(pool):
     (kernel, template, source pool label, target pool label): homolysis
     pool -> daughter, recombination pool -> product (and partner ->
     product for a join of two pools), transfer pool -> product and partner
-    -> partner_product, move pool -> product. Propagation keeps its chains
-    in the pool."""
-    out = []
+    -> partner_product, move pool -> product, interior scission pool ->
+    each product. Propagation keeps its chains in the pool."""
+    out = [("kernel_interior_scission", term["template"], pool.label, product["pool"])
+           for term in getattr(pool, "kernel_interior_scission", None) or ()
+           for product in term["products"]]
     for kernel, moves in (("kernel_homolysis", (("", "daughter"),)),
                           ("kernel_recombination", (("", "product"),
                                                     ("partner", "product"))),
@@ -1082,6 +1088,69 @@ def validate_kernel_move(pool_label, terms):
                     "product": term["product"],
                     **_kernel_validity(pool_label, "kernel_move", template,
                                        term)})
+    return out
+
+
+def validate_kernel_interior_scission(pool_label, terms):
+    """Validate a kernel_interior_scission term list and return it normalized
+    (shared like validate_kernel_homolysis).
+
+    Each term (I-273) is one kernel of a kernel-rates table on one position
+    class of mid-chain radicals: every chain of this pool breaks at k [1/s]
+    per chain (k > 0) into fragments, and each product {pool, moments}
+    receives per event the fragments whose lengths L (periods,
+    `periods_per_unit` per monomer unit) have E[sum L^j | parent of n
+    periods] = sum_{i<=j} q_ji n^i, `moments` the lower-triangular
+    [[q00], [q10, q11], [q20, q21, q22]] (finite, q00 >= 0). The products
+    must conserve the parent's periods: sum q10 = 0 and sum q11 = 1."""
+    out = []
+    kernel = "kernel_interior_scission"
+    for template, term in _kernel_terms(pool_label, kernel, terms,
+                                        KERNEL_INTERIOR_SCISSION_KEYS, None):
+        products = term["products"]
+        if not isinstance(products, (list, tuple)) or not products:
+            raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
+                             f"products={products!r} must be a non-empty list "
+                             f"of {{pool, moments}}.")
+        norm = []
+        for product in products:
+            if not isinstance(product, dict) or set(product) != {"pool", "moments"}:
+                raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
+                                 f"product {product!r} must have exactly the "
+                                 f"keys ['pool', 'moments'].")
+            target = product["pool"]
+            if not isinstance(target, str) or not target or target == pool_label:
+                raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
+                                 f"pool={target!r} must name another pool.")
+            q = product["moments"]
+            if not isinstance(q, (list, tuple)) or len(q) != 3 or any(
+                    not isinstance(row, (list, tuple)) or len(row) != j + 1
+                    for j, row in enumerate(q)):
+                raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
+                                 f"moments={q!r} must be [[q00], [q10, q11], "
+                                 f"[q20, q21, q22]].")
+            q = [[_kernel_number(pool_label, kernel, template, f"moments[{j}][{i}]", v)
+                  for i, v in enumerate(row)] for j, row in enumerate(q)]
+            if q[0][0] < 0.0:
+                raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
+                                 f"q00={q[0][0]!r} fragments per event must be >= 0.")
+            norm.append({"pool": target, "moments": q})
+        q10 = math.fsum(p["moments"][1][0] for p in norm)
+        q11 = math.fsum(p["moments"][1][1] for p in norm)
+        scale = max([1.0] + [abs(p["moments"][1][0]) for p in norm])
+        if abs(q10) > 1e-12 * scale or abs(q11 - 1.0) > 1e-12:
+            raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: the "
+                             f"products' lengths sum to {q11!r} n + {q10!r} periods "
+                             f"per event, not the parent's n: they must conserve "
+                             f"its periods.")
+        out.append({"template": template,
+                    "k": _kernel_number(pool_label, kernel, template, "k", term["k"],
+                                        positive=True),
+                    "periods_per_unit": _kernel_integer(
+                        pool_label, kernel, template, "periods_per_unit",
+                        term["periods_per_unit"]),
+                    "products": norm,
+                    **_kernel_validity(pool_label, kernel, template, term)})
     return out
 
 
@@ -1648,6 +1717,9 @@ class PolymerPoolConfig:
     # Propagation (I-266) per validate_kernel_propagation: one chain of this
     # pool adds one monomer unit, its monomer_poly_index species consumed.
     kernel_propagation: Optional[List[Dict[str, object]]] = None
+    # Interior scission (I-273) per validate_kernel_interior_scission: every
+    # chain of this pool breaks into fragments in its product pools.
+    kernel_interior_scission: Optional[List[Dict[str, object]]] = None
 
     # Exact per-chain mass defect [g/mol] of an X-loss feature pool (FR1-K1
     # mass contract, the round-70 #1 P1 trap): the feature pool keeps the
@@ -2663,6 +2735,10 @@ class HybridPolymerSystem(ReactionSystem):
                         f"but monomer_poly_index is None: the monomer each "
                         f"event consumes has no core species, so the added "
                         f"units would come from nowhere.")
+            if pool.kernel_interior_scission is not None:
+                object.__setattr__(pool, 'kernel_interior_scission',
+                                   validate_kernel_interior_scission(
+                                       pool.label, pool.kernel_interior_scission))
 
             # Radical-homolysis kernel invariants (Stage 1, adjudicated round
             # 66). LAST line of defense, same rationale as above: the deck
@@ -2976,6 +3052,24 @@ class HybridPolymerSystem(ReactionSystem):
         self.kernel_propagation_terms = [
             [dict(term) for term in pool.kernel_propagation or ()]
             for pool in self.polymer_pools]
+        # kernel_interior_scission (I-273): (term, [(q, product moment
+        # slots)]); every product pool must be configured or its fragments
+        # vanish.
+        self.kernel_interior_scission_terms = [[] for _ in self.polymer_pools]
+        for i, pool in enumerate(self.polymer_pools):
+            for term in getattr(pool, "kernel_interior_scission", None) or ():
+                products = []
+                for product in term["products"]:
+                    target = label_to_pool.get(product["pool"])
+                    if target is None:
+                        raise ValueError(
+                            f"Pool {pool.label}: kernel_interior_scission term "
+                            f"{term['template']!r} names the product pool "
+                            f"{product['pool']!r}, which is not among the "
+                            f"configured solver pools {sorted(label_to_pool)}.")
+                    products.append(([list(row) for row in product["moments"]],
+                                     tuple(target.mu_indices)))
+                self.kernel_interior_scission_terms[i].append((dict(term), products))
         self._assert_catalog_kernels_count_once()
 
     def _row_kernel_channel(self, combined_rxns, int r):
@@ -9186,6 +9280,40 @@ class HybridPolymerSystem(ReactionSystem):
                         dmu1_dt += kc * mu0
                         dmu2_dt += kc * (2.0 * mu1 + mu0)
                         small_src[m_idx] = small_src.get(m_idx, 0.0) - kc * mu0
+
+            # kernel_interior_scission (I-273): every chain of this pool (one
+            # position class of mid-chain radicals) breaks at k per chain;
+            # each product pool receives fixed coefficients of this pool's
+            # moments, in the term's period (m_j = c^j mu_j; no closure):
+            #   this    dmu_j -= k mu_j
+            #   product dm_j  += k sum_{i<=j} q_ji m_i
+            # q_ji the coefficients of E[sum of its fragment lengths^j | n].
+            # A credit outside the law's domain (a negative or unbounded
+            # moment) skips the term, loudly.
+            if mu0 > 0.0:
+                for term, products in self.kernel_interior_scission_terms[pool_i]:
+                    k_s = term["k"]
+                    c_k = float(term["periods_per_unit"])
+                    m = (mu0, c_k * mu1, c_k * c_k * mu2)
+                    credits = [[k_s * math.fsum([q[j][i] * m[i] for i in range(j + 1)])
+                                / c_k ** j for j in range(3)] for q, _slots in products]
+                    if not all([np.isfinite(v) and v >= 0.0
+                                for credit in credits for v in credit]):
+                        if pool.label not in self._kernel_guard_warned:
+                            self._kernel_guard_warned.add(pool.label)
+                            logging.warning(
+                                "Polymer pool '%s': kernel_interior_scission "
+                                "term %s skipped -- credits %s outside its "
+                                "fragment law's domain.", pool.label,
+                                term["template"], credits)
+                        continue
+                    dmu0_dt -= k_s * mu0
+                    dmu1_dt -= k_s * mu1
+                    dmu2_dt -= k_s * mu2
+                    for credit, (_q, (p0, p1, p2)) in zip(credits, products):
+                        dn_dt[p0] += credit[0] * V_poly
+                        dn_dt[p1] += credit[1] * V_poly
+                        dn_dt[p2] += credit[2] * V_poly
 
             # Side-group homolysis initiation kernel (SGH kernel-v2, explicit
             # Br-inventory depletion; adjudicated spar r103 / plan r104).
