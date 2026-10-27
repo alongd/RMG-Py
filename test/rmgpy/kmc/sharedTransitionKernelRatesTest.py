@@ -7,11 +7,14 @@ participant, whose kernel term is a product of site counts.  The PP overlaps
 the catalog deduplicates have no kernel term on the declared states (their
 templates are kMC-only there), so the case is a PE toy template and a twin of
 it deferring to it: every transition of the twin is the template's, and the
-twin adds nothing to the table.
+twin adds nothing to the table.  A deferring term's laws read its own sites
+too: the end-distance and near-end laws of an interior participant (a
+mid-chain radical) as much as its far law (I-275).
 """
 
 import copy
 import hashlib
+import re
 
 import pytest
 
@@ -129,6 +132,78 @@ def test_a_term_counts_only_the_pairs_its_template_makes_itself():
             restricted += term[slot] != full[kid][slot]
         assert (term["law"] is None) == (full[kid]["law"] is None)
     assert restricted
+
+
+def _mid_abstraction(name, narrow=None):
+    """A mid-chain radical (an interior participant) taking a mid CH2's H:
+    the radical between two CH2 ports, or with ``narrow`` "far" a CH2 and a
+    CH2 port on each side (no radical next to the CH2 beside a chain end),
+    "near" a CH2 then the chain's CH3 on one side (that radical only)."""
+    acceptor, bonds = [WindowAtom("C", 0, radical=1), WindowAtom("H", 0)], [(0, 1, 1)]
+    if narrow is None:
+        acceptor += [WindowAtom("C", 0, "port", S.MID), WindowAtom("C", 0, "port", S.MID)]
+        bonds += [(0, 2, 1), (0, 3, 1)]
+    elif narrow == "far":
+        for o in (2, 6):
+            acceptor += [WindowAtom("C", 0), WindowAtom("H", 0), WindowAtom("H", 0),
+                         WindowAtom("C", 0, "port", S.MID)]
+            bonds += [(0, o, 1), (o, o + 1, 1), (o, o + 2, 1), (o, o + 3, 1)]
+    else:
+        acceptor += [WindowAtom("C", 0), WindowAtom("H", 0), WindowAtom("H", 0), WindowAtom("C", 0),
+                     WindowAtom("H", 0), WindowAtom("H", 0), WindowAtom("H", 0), WindowAtom("C", 0, "port", S.MID)]
+        bonds += [(0, 2, 1), (2, 3, 1), (2, 4, 1), (2, 5, 1), (5, 6, 1), (5, 7, 1), (5, 8, 1), (0, 9, 1)]
+    o = len(acceptor)
+    donor = [WindowAtom("C", 1), WindowAtom("H", 1), WindowAtom("H", 1),
+             WindowAtom("C", 1, "port", S.MID), WindowAtom("C", 1, "port", S.MID)]
+    bonds += [(o, o + 1, 1), (o, o + 2, 1), (o, o + 3, 1), (o, o + 4, 1)]
+    return Template(name, "toy_mid_abstraction", acceptor + donor, bonds,
+                    [BondEdit(o, o + 1, 0), BondEdit(0, o + 1, 1), AtomEdit(0, radical=0), AtomEdit(o, radical=1)],
+                    weight=S.PE_WEIGHTS["h_abstraction"])
+
+
+def _deferring_term(narrow):
+    """The term of a mid-chain H abstraction deferring to its ``narrow``
+    version, and the slot of its mid-chain radical."""
+    payloads = toy_payloads([t for t in S.pe_templates() if t.name in PE_LIVE]
+                            + [_mid_abstraction("mid_abstraction"), _mid_abstraction("narrow_mid", narrow)])
+    (mine,) = [p for p in payloads if p["record_event_id"] == "evt_mid_abstraction"]
+    (target,) = [p for p in payloads if p["record_event_id"] == "evt_narrow_mid"]
+    mine["templates"][0]["defers_to"] = [{"record": target["record_event_id"], "key": target["templates"][0]["key"]}]
+    name = mine["record_event_id"][4:16] + ":" + mine["templates"][0]["key"][:12]
+    (term,) = [x for k in _table(payloads)["kernels"].values() for x in k["templates"] if x["template"] == name]
+    (slot,) = [s for s in ("S0", "S1") if "per_feature" in term[s]]
+    return term, slot
+
+
+def _near_end_sites(count):
+    """{end distance: sites} of an interior count on its longest chain where they are not its far count."""
+    keys = [re.fullmatch(r"chain_backbone_atoms=(\d+),end_distance=(\d+)", k) for k in count["profile"]]
+    longest = max(int(m[1]) for m in keys if m)
+    return {m[2]: _site_count(count, m[0])[0] for m in keys if m and int(m[1]) == longest}
+
+
+def test_an_interior_participant_left_only_near_an_end_has_an_end_distance_law_of_its_own_sites():
+    """The far-narrow version makes every mid-chain radical's transitions but
+    the one beside the CH2 next to an end: the deferring term's radical sites
+    are there only, and its law is the end-distance law of those sites, not a
+    far law of every site."""
+    term, slot = _deferring_term("far")
+    assert term[slot]["per_feature"] == 0 and term["law"] is None and term["sites_deferred_to"]
+    law = term["law_end_distance"][slot]
+    assert law["anchor"] == "end_distance"
+    assert {d: at["sites"] for d, at in law["at"].items()} \
+        == {d: n for d, n in _near_end_sites(term[slot]).items() if n} == {"2": 1}
+
+
+def test_a_near_end_law_leaves_out_the_sites_a_term_defers():
+    """The near-narrow version makes the mid-chain radical's transitions
+    beside the CH2 next to an end: the deferring term keeps its far sites,
+    and its near-end law lists that end distance with none."""
+    term, slot = _deferring_term("near")
+    assert term[slot]["per_feature"] == 1 and term["sites_deferred_to"]
+    own = _near_end_sites(term[slot])
+    assert own == {"1": 0, "2": 0}
+    assert {d: at["sites"] for d, at in term["law_near_end"][slot]["at"].items()} == own
 
 
 def test_pairs_a_template_makes_itself_that_are_no_product_leave_it_kmc_only():
