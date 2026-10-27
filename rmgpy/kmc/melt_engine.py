@@ -71,6 +71,17 @@ activation (one MET class row per class and override).  Everything else
 keeps the template weight; a template without overrides indexes exactly as
 before.
 
+Deduplicated overlaps
+---------------------
+A template that defers to others (``window_matcher.Template.defers``: a class
+overlap the catalog deduplicated) leaves them every transition they also
+make.  Unimolecular: per component its transitions whose product delta a
+class it defers to makes there are dropped.  Bimolecular: its site carries,
+last in its kind, the classes it defers to that have a site of the same atoms
+in the same roles (``window_matcher.site_key``), and a kind pair sharing one
+of them is no channel and no MET class row: the catalog admits the
+deduplication only where its shared transitions are exactly those pairs.
+
 Exact pair sampler
 ------------------
 ``ComponentPairSampler``: the left component is drawn with weight
@@ -1154,6 +1165,42 @@ def _pair_leak(cls: _Class, kind0: Tuple, kind1: Tuple) -> bool:
 
 
 # --------------------------------------------------------------------------
+# deduplicated overlaps: a class leaves the transitions it shares to the
+# classes it defers to (``window_matcher.Template.defers``)
+# --------------------------------------------------------------------------
+class _Shared(tuple):
+    """The last element of a deferring bimolecular class's site kind: the
+    classes it defers to that have this site (by ``window_matcher.site_key``)."""
+
+
+def _deferrals(templates) -> Tuple[Dict[int, Tuple[int, ...]], Dict[int, Tuple]]:
+    """(class -> the classes it defers to, class -> ``window_matcher.site_roles``
+    of every bimolecular class taking part)."""
+    index = {t.name: i for i, t in enumerate(templates)}
+    defers, roles = {}, {}
+    for i, t in enumerate(templates):
+        if not t.defers:
+            continue
+        missing = [d for d in t.defers if d not in index]
+        if missing:
+            raise EngineError(f"template {t.name} defers to {missing}, which are not loaded")
+        defers[i] = tuple(sorted(index[d] for d in t.defers))
+        if any(len(templates[a].participants) != len(t.participants) for a in defers[i]):
+            raise EngineError(f"template {t.name} defers to a template of another molecularity")
+        if len(t.participants) == 2:
+            for a in (i,) + defers[i]:
+                roles[a] = wm.site_roles(templates[a])
+    return defers, roles
+
+
+def _suppressed(kind0: Tuple, kind1: Tuple) -> bool:
+    """A kind pair of a deferring class whose sites some class it defers to has
+    both of: its transitions are that class's."""
+    return isinstance(kind0[-1], _Shared) and isinstance(kind1[-1], _Shared) and \
+        bool(set(kind0[-1]) & set(kind1[-1]))
+
+
+# --------------------------------------------------------------------------
 # depository overrides: a template's weight at the matched molecules
 # --------------------------------------------------------------------------
 def _rows_state(rows) -> MeltState:
@@ -1735,6 +1782,7 @@ class MeltEngine:
         self.weights = tuple(t.weight for t in templates)
         self._ovr = {i: o for i, o in ((i, _prepare_overrides(t, i, self.quotient))
                                        for i, t in enumerate(templates)) if o is not None}
+        self._defers, self._roles = _deferrals(templates)
         self.temperature = float(temperature)
         self._scan_memo: "OrderedDict[Tuple, _Entry]" = OrderedDict()
 
@@ -1826,11 +1874,20 @@ class MeltEngine:
         the same before and after, since every changed bond has both ends
         dirty.  Sites are kept as sorted sets, so the entry equals a full
         match.  A site with no dirty atom whose kind reads no walk
-        (``_kind_reads``) keeps its prior kind."""
+        (``_kind_reads``) keeps its prior kind.
+
+        A deferring class (``_deferrals``) keeps no unimolecular transition a
+        class it defers to makes on the component (same product delta), and
+        its bimolecular sites carry, last in their kind, the classes it defers
+        to that have the same site (``_Shared``; ``_suppressed`` pairs)."""
         quotient = self.quotient
         view = _LocalView(state, [cid])
         atoms = state.components.atoms(cid)
+        wanted = only
+        if only is not None and self._defers:
+            only = set(only) | {a for ci in only for a in self._defers.get(ci, ())}
         uni, sites, uni_o, seen = {}, {}, {}, {}
+        uni_found = {}  # class -> {delta: transition} before deferral
         shared = {}     # participant signature id -> embeddings in plan order (``_pattern``)
         fresh = {}      # the same, rooted near the dirty atoms
         pairs = {}      # (signature id, edited positions) -> ((root, site), ...)
@@ -1872,17 +1929,7 @@ class MeltEngine:
                     if prev is None or edit_key < prev.edit_key:
                         found[delta] = EngineTransition(t.name, t.family, cls.index, edit_key, (cid,), edits_, fb, fr,
                                                         delta, self._leaks(state, edits_))
-                if found:
-                    trs = sorted(found.values(), key=lambda x: x.edit_key)
-                    which = self._uni_overrides(state, view, cid, cls.index, trs, seen)
-                    for o in sorted(set(which.values())):
-                        mine = [x for x in trs if which.get(x.edit_key) == o]
-                        allowed = tuple(x for x in mine if not x.leak)
-                        uni_o[(cls.index, o)] = (allowed, len(mine) - len(allowed))
-                    trs = [x for x in trs if x.edit_key not in which]
-                    allowed = tuple(x for x in trs if not x.leak)
-                    if trs:
-                        uni[cls.index] = (allowed, len(trs) - len(allowed))
+                uni_found[cls.index] = found
             else:
                 for p in (0, 1):
                     pattern = _pattern(t, p)
@@ -1928,6 +1975,37 @@ class MeltEngine:
                         grouped.setdefault(kind if tag is None else kind + (tag,), []).append(site)
                     for kind, ss in grouped.items():
                         sites[(cls.index, p, kind)] = tuple(sorted(ss))
+        for ci, found in sorted(uni_found.items()):
+            gone = {d for a in self._defers.get(ci, ()) for d in uni_found[a]}
+            trs = sorted((x for d, x in found.items() if d not in gone), key=lambda x: x.edit_key)
+            if trs:
+                which = self._uni_overrides(state, view, cid, ci, trs, seen)
+                for o in sorted(set(which.values())):
+                    mine = [x for x in trs if which.get(x.edit_key) == o]
+                    allowed = tuple(x for x in mine if not x.leak)
+                    uni_o[(ci, o)] = (allowed, len(mine) - len(allowed))
+                trs = [x for x in trs if x.edit_key not in which]
+                allowed = tuple(x for x in trs if not x.leak)
+                if trs:
+                    uni[ci] = (allowed, len(trs) - len(allowed))
+        for ci, targets in sorted(self._defers.items()):
+            if ci not in self._roles or (only is not None and ci not in only):
+                continue
+            theirs = {a: {wm.site_key(self._roles[a][q], s) for (cj, q, _k), ss in sites.items()
+                          if cj == a for s in ss} for a in targets}
+            regrouped = {}
+            for key in [k for k in sites if k[0] == ci]:
+                _ci, p, kind = key
+                base = kind[:2] + ((kind[2] if len(kind) > 2 else ()),)
+                for s in sites.pop(key):
+                    mine = wm.site_key(self._roles[ci][p], s)
+                    marker = _Shared(a for a in targets if mine in theirs[a])
+                    regrouped.setdefault((ci, p, base + (marker,)), []).append(s)
+            sites.update((k, tuple(sorted(ss))) for k, ss in regrouped.items())
+        if wanted is not None and only != wanted:
+            for d in (uni, uni_o, sites):
+                for k in [k for k in d if (k if isinstance(k, int) else k[0]) not in wanted]:
+                    del d[k]
         backbone = state.components.backbone_count(cid)
         length = (self.transport.met_length(backbone)
                   if self.transport.mean_residue_molar_mass_g_mol is None
@@ -1950,7 +2028,8 @@ class MeltEngine:
             for (ci, q, kind), ss in e.sites.items():
                 if ci == cls.index and q == p:
                     for site in ss:
-                        out[site] = kind
+                        # a deferral marker (after an empty override tag) is read afresh
+                        out[site] = kind[:-2] if isinstance(kind[-1], _Shared) else kind
         return out
 
     def _uni_candidates(self, view, t, ci, cid, root, within=None) -> List[Tuple]:
@@ -2024,7 +2103,8 @@ class MeltEngine:
         return tuple(sorted(hits)) or None
 
     def _pair_override(self, ci, k0, k1) -> int:
-        """The override a kind pair of class ``ci`` makes (-1: none)."""
+        """The override a kind pair of class ``ci`` makes (-1: none; a deferring
+        class's kinds carry an empty tag when they have none)."""
         ov = self._ovr.get(ci)
         if ov is None or len(k0) < 3 or len(k1) < 3:
             return -1
@@ -2093,6 +2173,8 @@ class MeltEngine:
             return
         for other in sorted(self.kinds.get((ci, 1 - p), ()), key=repr):
             k0, k1 = (kind, other) if p == 0 else (other, kind)
+            if _suppressed(k0, k1):
+                continue
             sampler = ComponentPairSampler(self._size)
             self.channels[(ci, k0, k1)] = sampler
             for cid, entry in self.entries.items():
@@ -2173,7 +2255,7 @@ class MeltEngine:
                     continue
                 cls = self.classes[ci]
                 for (cj, q, k1), n1 in y.items():
-                    if cj != ci or q != 1:
+                    if cj != ci or q != 1 or _suppressed(k0, k1):
                         continue
                     slot = per.setdefault((ci, self._pair_override(ci, k0, k1)), [0, 0])
                     slot[1 if _pair_leak(cls, k0, k1) else 0] += n0 * n1
@@ -2286,7 +2368,8 @@ class MeltEngine:
         other.__dict__.update({k: v for k, v in self.__dict__.items()
                                if k in ("spec", "transport", "catalog", "rng", "state", "volume", "nav",
                                         "identity", "temperature", "templates", "classes", "weights",
-                                        "quotient", "temperature_range", "_ovr", "excluded", "linearity")})
+                                        "quotient", "temperature_range", "_ovr", "excluded", "linearity",
+                                        "_defers", "_roles")})
         other._index_revision = 0
         other.rebuild()
         return other.snapshot()

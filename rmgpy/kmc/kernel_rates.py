@@ -91,7 +91,24 @@ site pairing, or every transition, leaks: the product is not a linear chain),
 ``small_species_participant`` (a participant with no port, i.e. a whole
 molecule, matches no state built here: a small species that no piece of a
 declared chain is), ``no_site_on_declared_states`` (any other participant
-with no site on any state built here, e.g. a homolysis at a branch point).
+with no site on any state built here, e.g. a homolysis at a branch point),
+``deferred`` and ``deferred_not_a_product`` (below).
+
+**Deduplicated overlaps** (I-271).  A template that defers to others
+(``defers_to``, ``window_matcher.deferred``) makes only the transitions none
+of them makes.  A unimolecular class's count is the engine's own (its index
+holds only those transitions).  A bimolecular class's sites carry the engine's
+marker (``melt_engine._Shared``: the classes it defers to that have the same
+site on that state), and a pair of sites whose markers share a class is that
+class's transition (``melt_engine._suppressed``).  So a deferring template's
+term at a class pairing counts the pairs of marker sets sharing no class:
+when those pairs are one product (a set of participant 0's markers with a set
+of participant 1's), ``S0``/``S1`` and the law are read on those sites only,
+and ``sites_deferred_to`` names the classes the term leaves out; when every
+pair is suppressed the pairing is no term; a template with no other pairing
+is ``deferred``.  When they are no single product the template is
+``deferred_not_a_product``: a kernel term is one product of site counts.
+The participant counts of a template's row are all its sites.
 
 **Product laws** (``kmc-kernel-rates/2``, I-214; what the kernel references
 of ``kernel_reference`` integrate).  Each kernel term carries ``law``: per
@@ -376,8 +393,27 @@ class _Counter:
         for (ci, p, kind), sites in entry.sites.items():
             n = sum(1 for s in sites if not feature or set(s) & feature)
             if n:
-                out[(ci, p, kind[:2])] += n       # a depository override's tag is a weight, not a site class
+                # a depository override's tag is a weight, not a site class; a deferral marker is kept
+                out[(ci, p, kind[:2] + (kind[-1],) if isinstance(kind[-1], me._Shared) else kind[:2])] += n
         return out
+
+
+def _marker(kind) -> frozenset:
+    """The classes a counted site kind defers its shared pairs to (empty for a
+    site of no deferring class, or a unimolecular count)."""
+    return frozenset(kind[-1]) if kind and isinstance(kind[-1], me._Shared) else frozenset()
+
+
+def _unshared_blocks(m0, m1) -> List[Tuple[frozenset, frozenset]]:
+    """The pairs of site markers (participant 0's, participant 1's) a class
+    fires itself, those sharing no class (``melt_engine._suppressed``), as
+    products: [(markers of participant 0, markers of participant 1)]."""
+    by = defaultdict(set)
+    for a in m0:
+        allowed = frozenset(b for b in m1 if not a & b)
+        if allowed:
+            by[allowed].add(a)
+    return sorted(((frozenset(a), b) for b, a in by.items()), key=lambda x: sorted(map(sorted, x[0])))
 
 
 def _affine(series: Dict[int, int]) -> dict:
@@ -1147,10 +1183,11 @@ class _Laws:
             out.append((k, _fired(self.engine, state, tr, view, [seg], self.probes)))
         return seg, out
 
-    def _partner(self, ci, q, label):
+    def _partner(self, ci, q, label, markers=None):
         """(family, n, x, sites) of a probe with sites of participant ``q`` of
-        class ``ci`` in class ``label``: the far field first."""
-        key = (ci, q, label)
+        class ``ci`` in class ``label`` (of a deferral marker in ``markers``,
+        when given): the far field first."""
+        key = (ci, q, label, markers)
         if key not in self._partners:
             found = None
             for n, x in sorted(self._states(label), key=lambda s: -s[0]) + \
@@ -1158,7 +1195,8 @@ class _Laws:
                      if self.probes.carries(label, self.n_hi, xx)]:
                 seg, feature, entry = self.probes.entry(family_of(label), n, x, chain=1)
                 sites = [(kind, s) for (cj, p, kind), ss in sorted(entry.sites.items(), key=repr)
-                         if cj == ci and p == q for s in ss if not feature or set(s) & set(feature)]
+                         if cj == ci and p == q and (markers is None or _marker(kind) in markers)
+                         for s in ss if not feature or set(s) & set(feature)]
                 if sites:
                     found = (family_of(label), n, x, sites)
                     break
@@ -1167,7 +1205,7 @@ class _Laws:
             self._partners[key] = found
         return self._partners[key]
 
-    def _bi(self, ci, p, label, n, x, partner_label, check=False):
+    def _bi(self, ci, p, label, n, x, partner_label, check=False, markers=None, partner_markers=None):
         """[(anchor, product)] of every site of participant ``p`` at the
         feature of probe (label, n, x), each fired with a partner of class
         ``partner_label``; the product is participant p's (``("join", family,
@@ -1176,11 +1214,12 @@ class _Laws:
         seg, feature, entry = self.probes.entry(family, n, x)
         cls = self.engine.classes[ci]
         mine = [(kind, s) for (cj, pp, kind), ss in sorted(entry.sites.items(), key=repr)
-                if cj == ci and pp == p for s in ss if not feature or set(s) & set(feature)]
+                if cj == ci and pp == p and (markers is None or _marker(kind) in markers)
+                for s in ss if not feature or set(s) & set(feature)]
         if not mine:
             return seg, []
         q = 1 - p
-        pf, pn, px, theirs = self._partner(ci, q, partner_label)
+        pf, pn, px, theirs = self._partner(ci, q, partner_label, partner_markers)
         state, paths = self.probes.melt()
         self.probes.put(state, paths[0], family, n, x)
         pseg, _pfeat = self.probes.put(state, paths[1], pf, pn, px)
@@ -1222,7 +1261,7 @@ class _Laws:
         return seg, out
 
     # -- the law of one participant ------------------------------------------
-    def participant(self, ci, p, label, partner_label=None) -> dict:
+    def participant(self, ci, p, label, partner_label=None, markers=None, partner_markers=None) -> dict:
         family = family_of(label)
         anchor = "chain" if family == "chain" else "end" if family in END_FAMILIES else "interior"
         raw = {}
@@ -1232,7 +1271,7 @@ class _Laws:
                 seg, rows = self._uni(ci, label, n, x)
                 rows = [(k, tuple(sorted(prods, key=repr))) for k, prods in rows]
             else:
-                seg, rows = self._bi(ci, p, label, n, x, partner_label, check)
+                seg, rows = self._bi(ci, p, label, n, x, partner_label, check, markers, partner_markers)
                 rows = [(k, (prod,)) for k, prod in rows]
             L = len(seg)
             if anchor == "end":
@@ -1602,7 +1641,8 @@ def _one_override(engine, probes, t, ci, o, ov) -> dict:
                     if cj != ci or p0 != 0:
                         continue
                     for (ck, p1, k1), s1 in sorted(entries[cb].sites.items(), key=repr):
-                        if ck == ci and p1 == 1 and engine._pair_override(ci, k0, k1) == o:
+                        if ck == ci and p1 == 1 and engine._pair_override(ci, k0, k1) == o \
+                                and not me._suppressed(k0, k1):
                             m += len(s0) * len(s1)
                             if fire is None:
                                 fire = engine._pair_transition(ci, ca, s0[0], cb, s1[0])
@@ -1647,8 +1687,10 @@ def _progress(message: str) -> None:
 
 
 def _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_overrides, entries,
-              participants) -> None:
-    """The product law (or why none) and the placed overrides of one kernel term."""
+              participants, markers=None) -> None:
+    """The product law (or why none) and the placed overrides of one kernel term;
+    ``markers``: per participant the deferral markers of the sites it counts
+    (None: every site)."""
     counts = [term] if len(combo) == 1 else [term["S0"], term["S1"]]
     if any(family_of(c) in INTERIOR_FAMILIES and (x.get("per_feature") == 0 or x.get("k_per_feature") == 0)
            for c, x in zip([combo[p] for p in order], counts)):
@@ -1665,7 +1707,8 @@ def _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_
         if len(combo) == 1:
             term["law"] = laws.participant(ci, 0, combo[0])
         else:
-            term["law"] = {f"S{slot}": laws.participant(ci, p, combo[p], combo[1 - p])
+            term["law"] = {f"S{slot}": laws.participant(ci, p, combo[p], combo[1 - p],
+                                                        *((markers[p], markers[1 - p]) if markers else ()))
                            for slot, p in enumerate(order)}
     except _OffDeclared as error:
         term["law"], term["law_refused"] = None, str(error)
@@ -1724,17 +1767,33 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
         if any(series.values()):
             by_template[ci][p].setdefault("chain", Counter())
             kinds[ci][p]["chain"].add(kind)
+    def chain_count(ci, p, markers=None):
+        """The chain polynomial of participant ``p`` of class ``ci`` (its sites
+        of a deferral marker in ``markers``, when given)."""
+        total = Counter()
+        for (cj, q, kind), series in chain.items():
+            if cj == ci and q == p and (markers is None or _marker(kind) in markers):
+                for n, v in series.items():
+                    total[n] += v
+        return _affine(dict(total))
+
+    def feature_count(name, ci, p, markers=None):
+        """The count of feature ``name`` (``chain_count``)."""
+        mine = lambda k: k[0] == ci and k[1] == p and (markers is None or _marker(k[2]) in markers)
+        c_far = sum(v for k, v in fars[name].items() if mine(k))
+        prof = {}
+        for position, counts in sorted(features[name]["profile"].items()):
+            values = sorted({sum(v for k, v in c.items() if mine(k)) for c in counts})
+            if values != [c_far]:
+                prof[",".join(f"{position[i]}={position[i + 1]}" for i in range(0, len(position), 2))] = values
+        return {"per_feature": c_far, "profile": prof}
+
     chain_poly = {}
     for ci in range(len(templates)):
         for p in list(by_template[ci]):
             if "chain" in by_template[ci][p]:
-                total = Counter()
-                for (cj, q, kind), series in chain.items():
-                    if cj == ci and q == p:
-                        for n, v in series.items():
-                            total[n] += v
-                chain_poly[(ci, p)] = _affine(dict(total))
-    feature_counts = {}
+                chain_poly[(ci, p)] = chain_count(ci, p)
+    feature_counts, fars = {}, {}
     for name, slot in features.items():
         far_by = slot["far"]
         if far_by:
@@ -1745,6 +1804,7 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
             far = far_by[last[-1]]
         else:
             far = Counter()       # a feature only near an end or on a short fragment: no far-field count
+        fars[name] = far
         keys = set(far)
         for counts in slot["profile"].values():
             for c in counts:
@@ -1753,19 +1813,14 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
             for k in keys:
                 if k[0] == ci and k[1] == p:
                     kinds[ci][p][name].add(k[2])
-            c_far = sum(v for k, v in far.items() if k[0] == ci and k[1] == p)
-            prof = {}
-            for position, counts in sorted(slot["profile"].items()):
-                values = sorted({sum(v for k, v in c.items() if k[0] == ci and k[1] == p) for c in counts})
-                if values != [c_far]:
-                    prof[",".join(f"{position[i]}={position[i + 1]}" for i in range(0, len(position), 2))] = values
-            if c_far or any(any(v) for v in prof.values()):
-                feature_counts[(ci, p, name)] = {"per_feature": c_far, "profile": prof}
+            count = feature_count(name, ci, p)
+            if count["per_feature"] or any(any(v) for v in count["profile"].values()):
+                feature_counts[(ci, p, name)] = count
                 by_template[ci][p][name] = Counter()
 
     kernels: Dict[str, dict] = {}
     kmc_only: List[dict] = []
-    jobs = []                 # (term, class index, classes, role order): the product laws
+    jobs = []                 # (term, class index, classes, role order, site markers): the product laws
     template_rows = []
     for ci, (t, cls) in enumerate(zip(templates, classes)):
         ktype = kernel_type(t, cls)
@@ -1799,10 +1854,25 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
             continue
         combos = [(c,) for c in row["participants"][0]] if parts == 1 else \
             [(c0, c1) for c0 in row["participants"][0] for c1 in row["participants"][1]]
-        placed = False
+        # per class pairing the deferral markers of each participant's sites, and the pairs it fires itself
+        marks = {combo: tuple(frozenset(_marker(k) for k in kinds[ci][p][combo[p]]) for p in (0, 1))
+                 for combo in combos} if parts == 2 else {}
+        blocks = {combo: _unshared_blocks(*m) for combo, m in marks.items()}
+        if any(len(b) > 1 for b in blocks.values()):
+            kmc_only.append({"template": t.name, "family": t.family, "reason": "deferred_not_a_product"})
+            continue
+        placed = deferred = False
         for combo in combos:
+            markers = None
             if parts == 2:
-                pairs = [(k0, k1) for k0 in kinds[ci][0][combo[0]] for k1 in kinds[ci][1][combo[1]]]
+                if not blocks[combo]:
+                    deferred = True        # every pair is a transition of a template it defers to
+                    continue
+                (markers,) = blocks[combo]
+                if markers == marks[combo]:
+                    markers = None         # no pair is
+                pairs = [(k0, k1) for k0 in kinds[ci][0][combo[0]] for k1 in kinds[ci][1][combo[1]]
+                         if markers is None or (_marker(k0) in markers[0] and _marker(k1) in markers[1])]
                 leaking = [me._pair_leak(cls, k0, k1) for k0, k1 in pairs]
                 if all(leaking):
                     continue
@@ -1823,17 +1893,23 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
                 else:
                     term["k_per_feature"] = t.weight * c["per_feature"]
             else:
+                sites = [row["participants"][p][combo[p]] if markers is None
+                         else chain_count(ci, p, markers[p]) if combo[p] == "chain"
+                         else feature_count(combo[p], ci, p, markers[p]) for p in (0, 1)]
                 term.update({"w_over_divisor": t.weight / cls.divisor,
-                             "S0": row["participants"][order[0]][combo[order[0]]],
-                             "S1": row["participants"][order[1]][combo[order[1]]]})
+                             "S0": sites[order[0]], "S1": sites[order[1]]})
                 if partial:
                     term["partially_leaking"] = True
+                if markers is not None:
+                    term["sites_deferred_to"] = sorted({templates[c].name for p in (0, 1)
+                                                        for m in marks[combo][p] for c in m})
             k["templates"].append(term)
-            jobs.append((term, ci, combo, order))
+            jobs.append((term, ci, combo, order, markers))
             row["kernels"].append(kid)
             placed = True
         if not placed:
-            kmc_only.append({"template": t.name, "family": t.family, "reason": "branching"})
+            kmc_only.append({"template": t.name, "family": t.family,
+                             "reason": "deferred" if deferred else "branching"})
     for k in kernels.values():
         if k["molecularity"] == 1 and k["classes"] == ["chain"]:
             k["k_mu1"] = math.fsum(x["k_mu1"] for x in k["templates"])
@@ -1849,11 +1925,11 @@ def kernel_rates(doc: dict, spec, temperature: float, *, run: Optional[dict] = N
     probes = _Probes(spec, engine, ppu, nbb, 2 * units_hi + 3)
     laws = _Laws(engine, probes, n_hi)
     measured, placed_overrides = {}, set()
-    for i, (term, ci, combo, order) in enumerate(jobs, 1):
+    for i, (term, ci, combo, order, markers) in enumerate(jobs, 1):
         t = templates[ci]
         start = time.perf_counter()
         _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_overrides, entries,
-                  template_rows[ci]["participants"])
+                  template_rows[ci]["participants"], markers)
         status = "law" if term["law"] is not None else "inert" if term.get("law_inert") else "refused"
         _progress(f"law {i}/{len(jobs)} {t.name} {'+'.join(combo)} {status} "
                   f"{time.perf_counter() - start:.1f}s")

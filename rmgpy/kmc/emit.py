@@ -96,7 +96,7 @@ ROSTER_SCHEMA_V4 = "kmc-reference-roster/4"
 REFERENCE_THERMO_LABEL = "i147-reference"
 REFERENCE_RATES_LABEL = "i138-reference"
 PAYLOAD_FIELDS = ("key", "name", "family", "status", "direction", "executable", "weight", "derived",
-                  "overrides")
+                  "overrides", "defers_to")
 # the declaration digests an artifact compiled from a deck carries in
 # ``provenance.proxy_source`` and a deck or roster must match
 BINDING_KEYS = ("chemistry_sha256", "declaration_sha256")
@@ -1697,7 +1697,7 @@ def assemble(paths, *, database=None, services=None) -> dict:
             reraise_resource(error)
             failures.append(f"class overlap: {type(error).__name__}: {error}"[:600])
             have, merged = [], []
-    refused_overlaps = [o for o in overlaps if o["disposition"] != "covered"]
+    refused_overlaps = [o for o in overlaps if o["disposition"] not in ("covered", "deduplicated")]
     failures += te.overlap_gates(overlaps)
     payloads = merged
     cycle_table = []
@@ -1808,6 +1808,8 @@ def assemble(paths, *, database=None, services=None) -> dict:
                            "entry_keys": entry_keys},
             "overlaps": {"components": len(overlaps),
                          "covered": sum(len(o["covered"]) for o in overlaps),
+                         "deduplicated": sum(1 for o in overlaps
+                                             if o["disposition"] == "deduplicated"),
                          "refused": len(refused_overlaps),
                          "named": sum(1 for o in refused_overlaps if o.get("named")),
                          "table": overlaps},

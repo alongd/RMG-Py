@@ -136,19 +136,47 @@ def test_a_nested_overlap_covers_the_contained_partition():
                           for p in out for t in p["templates"] if t["status"] == "emitted")
 
 
-def test_an_overlap_nested_neither_way_stays_refused():
+def test_an_overlap_nested_neither_way_loads_both_sides_once():
     """A record and its reversed twin whose windows each miss end placements the other
-    covers: covering either partition would lose transitions, loading both makes the
-    shared ones twice.  The refusal stays; at one weight it is a correct refusal,
-    counted by name rather than failed as a gate (I-251)."""
+    covers: covering either partition would lose transitions, loading both as they are
+    makes the shared ones twice.  At one weight both load, the reversed side deferring
+    the shared transitions to the as_generated one, so each is made once and none is
+    lost (I-271)."""
+    from collections import Counter
+    from rmgpy.kmc import window_matcher as wm
     payloads = _fixture("neither_nested_overlap.json.gz")["payloads"]
     merged, _ = te.resolve_collisions(payloads)
-    _out, table = te.resolve_overlaps(merged)
+    out, table = te.resolve_overlaps(merged)
     (row,) = table
     assert row["log10_diameter"] < te.LOCALITY_TOLERANCE_LOG10
-    assert row["disposition"] == "refused:class_overlap"
-    assert "neither partition contains the other" in row["reason"]
-    assert row["named"] is True and te.overlap_gates(table) == []
+    assert row["disposition"] == "deduplicated", row.get("reason")
+    assert te.overlap_gates(table) == []
+    orientation = {p["record_event_id"]: p["orientation"] for p in out}
+    members = {(t["record"], t["key"]): t["orientation"] for t in row["templates"]}
+    deferring = {}
+    for p in out:
+        for t in p["templates"]:
+            assert t["status"] in ("emitted", "merged")
+            if t.get("defers_to"):
+                deferring[(p["record_event_id"], t["key"])] = t["defers_to"]
+    # the component's reversed templates defer, to its as_generated ones
+    assert set(deferring) == {m for m, o in members.items() if o == "reversed"}
+    assert all(members.get((d["record"], d["key"])) == "as_generated"
+               for ds in deferring.values() for d in ds)
+    loaded = te.loaded_templates(out, 700.0)
+    alone = [wm.Template(t.name, t.family, t.atoms, list(t.bonds), t.edits, weight=t.weight)
+             for t in loaded]
+    shared = 0
+    for p in out:
+        for t in p["templates"]:
+            for wit in t["maps"]["witnesses"].values():
+                for side in ("r", "p"):
+                    state = te.melt_state(te.rows_from_json(wit[side]))
+                    made = Counter(tr.identity[1:] for tr in te.loaded_transitions(loaded, state))
+                    each = Counter(tr.identity[1:] for tr in te.loaded_transitions(alone, state))
+                    assert set(made) == set(each) and set(made.values()) <= {1}
+                    shared += sum(1 for n in each.values() if n > 1)
+    assert shared
 
 
 # --- one orbit across resonance forms -------------------------------------------------

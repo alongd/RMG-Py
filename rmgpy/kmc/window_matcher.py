@@ -33,7 +33,10 @@ Matching is pure and deterministic: ``match(templates, state)``.
   reactant components written in their first forms, which is equivalent
   because both sides are fixed points of the same normalization.  Embeddings
   with equal identity in one class are one transition; equal outcomes from
-  different classes stay separate pathways.
+  different classes stay separate pathways, except that a class leaves to the
+  classes it defers to (``Template.defers``) every outcome they also make
+  (``deferred``): two templates that make one transition at one weight, each
+  also making transitions the other cannot, make it once.
 * Two-participant classes are counted by the participant quotient:
   ``n_i(c)`` edit-role-distinct sites of participant i in component c,
   ``P = n0*n1 - sum_c n0(c)*n1(c)``, halved under ``role_swap`` (and divided
@@ -217,12 +220,18 @@ class Template:
     """A hand-written executable template (see the module docstring).
 
     ``edited`` holds, per participant, the sorted indices of the atoms named by
-    an edit; a participant's site is the image of those atoms.
+    an edit; a participant's site is the image of those atoms.  ``defers``
+    names the templates this one leaves the transitions they also make to
+    (``deferred``).
     """
 
-    def __init__(self, name, family, atoms, bonds, edits, *, weight, paths=(), overrides=()):
+    def __init__(self, name, family, atoms, bonds, edits, *, weight, paths=(), overrides=(),
+                 defers=()):
         if not isinstance(name, str) or not name:
             raise TemplateError("a template needs a name")
+        self.defers = tuple(sorted(set(defers)))
+        if not all(isinstance(d, str) and d and d != name for d in self.defers):
+            raise TemplateError(f"{name}: defers must name other templates")
         self.overrides = tuple(overrides)
         if not all(isinstance(o, Override) for o in self.overrides):
             raise TemplateError(f"{name}: overrides must be Override")
@@ -1426,11 +1435,60 @@ def _joint_classes(classes0, classes1):
             yield mapping, comps, choices, a.per_choice * b.per_choice, n0 * n1
 
 
+def site_roles(template) -> Tuple:
+    """Per participant, the role of each edited atom (in ``edited`` order),
+    read from the edits alone: (element, radical, charge, lone pairs, the
+    atom's final values, and per bond edit at it the order before and after,
+    the partner's element and whether the partner is in the same
+    participant).  Two templates' sites with equal ``site_key`` put the same
+    atoms in the same roles."""
+    out = []
+    for p in template.participants:
+        roles = []
+        for i in template.edited[p]:
+            a = template.atoms[i]
+            bonds = sorted((template.bond.get(k, 0.0), order, template.atoms[k[0] + k[1] - i].element,
+                            template.atoms[k[0] + k[1] - i].participant == a.participant)
+                           for k, order in template.bond_final.items() if i in k)
+            roles.append((a.element, a.radical, a.charge, a.lone_pairs,
+                          tuple(sorted(template.atom_final.get(i, {}).items())), tuple(bonds)))
+        out.append(tuple(roles))
+    return tuple(out)
+
+
+def site_key(roles, site) -> frozenset:
+    """The atoms of one participant's site with their roles (``site_roles``
+    of that participant)."""
+    return frozenset(zip(site, roles))
+
+
+def deferred(transitions, templates) -> tuple:
+    """``transitions`` of ``templates`` without those a template leaves to the
+    templates it defers to (``Template.defers``): an outcome (touched
+    components, product delta) one of them also makes.  Every template
+    deferred to must be among ``templates``."""
+    names = {t.name for t in templates}
+    defers = {t.name: t.defers for t in templates if t.defers}
+    if not defers:
+        return tuple(transitions)
+    for name, targets in defers.items():
+        missing = [d for d in targets if d not in names]
+        if missing:
+            raise TemplateError(f"{name} defers to {missing}, which are not loaded")
+    made = {}
+    for tr in transitions:
+        made.setdefault((tr.components, tr.delta), set()).add(tr.template)
+    return tuple(tr for tr in transitions
+                 if not made[(tr.components, tr.delta)] & set(defers.get(tr.template, ())))
+
+
 def match(templates: Sequence[Template], state, *, joint: bool = True) -> MatchResult:
     """All transitions of ``templates`` on ``state`` (pure and deterministic).
 
     With ``joint=False`` two-participant classes are only counted (sites and
-    the participant quotient), not enumerated pair by pair.
+    the participant quotient), not enumerated pair by pair.  The transitions
+    a template defers (``deferred``) are not its own; its statistics count
+    its matches.
     """
     templates = tuple(templates)
     names = [t.name for t in templates]
@@ -1497,7 +1555,7 @@ def match(templates: Sequence[Template], state, *, joint: bool = True) -> MatchR
                                             len(mine) if (joint or not two) else None,
                                             sites, pair_count, template.role_swap)
     transitions.sort(key=lambda t: t.edit_key)
-    return MatchResult(templates, tuple(transitions), classes)
+    return MatchResult(templates, deferred(transitions, templates), classes)
 
 
 def product_rows(state, transition) -> Dict[int, Tuple]:
