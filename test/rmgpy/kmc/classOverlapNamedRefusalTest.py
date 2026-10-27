@@ -74,12 +74,13 @@ def _cycles(payloads, services):
     return table, checked, {(r["forward"][:16], r["reverse"][:16]): r for r in cycles}
 
 
-def deduplicated_once(out, row, temperature):
+def deduplicated_once(out, row, temperature, catalog=None):
     """On every stored witness of the component's templates (both sides):
     (transitions the loaded catalog makes more than once, transitions it
-    loses against the union of what each template makes alone)."""
+    loses against the union of what each template makes alone); with
+    ``catalog`` the templates are those payloads' (a written catalog's)."""
     members = {(t["record"], t["key"]) for t in row["templates"]}
-    loaded = te.loaded_templates(out, temperature)
+    loaded = te.loaded_templates(out if catalog is None else catalog, temperature)
     alone = [wm.Template(t.name, t.family, t.atoms, list(t.bonds), t.edits, weight=t.weight)
              for t in loaded]
     twice, lost, states = 0, 0, 0
@@ -115,6 +116,19 @@ def test_a_neither_nested_overlap_at_one_weight_loads_both_sides_once(payloads):
     assert [d["key"][:12] for d in status["1fd63df94565"].get("defers_to", ())] == ["bee00028af2b"]
     assert "defers_to" not in status["bee00028af2b"]
     assert deduplicated_once(out, row, 700.0) == (0, 0)
+
+
+def test_a_written_catalog_keeps_the_deferral(payloads):
+    """A catalog's payloads are the emitted templates' loaded fields
+    (``emit.stripped_payloads``); the melt engine and the kernel table load
+    them, so they must make each shared transition once too."""
+    from rmgpy.kmc import emit
+    out, table = _overlaps(payloads)
+    (row,) = [r for r in table if r["disposition"] == "deduplicated"]
+    catalog = emit.stripped_payloads(out)
+    status = {t["key"][:12]: t for p in catalog for t in p["templates"]}
+    assert [d["key"][:12] for d in status["1fd63df94565"].get("defers_to", ())] == ["bee00028af2b"]
+    assert deduplicated_once(out, row, 700.0, catalog=catalog) == (0, 0)
 
 
 def test_a_neither_nested_overlap_whose_weights_disagree_stays_a_gate(payloads):
