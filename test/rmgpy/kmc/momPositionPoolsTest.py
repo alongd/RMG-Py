@@ -407,6 +407,33 @@ def test_a_join_making_a_mid_chain_feature_is_refused_by_name(table):
     assert not terms["joins"]
 
 
+@pytest.mark.parametrize("drop", ["1", "all"])
+def test_a_product_placed_off_the_chain_is_listed_by_name(table, drop):
+    """A law read at an end distance its near-end law does not state places its product by the far rule; one
+    bond toward the end from end distance 1 is end distance 0, no mid-chain position (I-276: a PP table's
+    secondary mid-chain radical, whose near-end law states end distance 2 and skips 1, crashed the producer on
+    the missing pool <ui>_d0; with no near-end law at all the boundary is 1 and the product was carried in the
+    bulk pool as a boundary departure at end distance 0).  The template is listed in record.unmapped and has
+    no term."""
+    doc = json.loads(json.dumps(table))
+    ((kid, t),) = [(k, t) for k, kernel in doc["kernels"].items() for t in kernel["templates"]
+                   if t["template"].startswith("mid_donor:")]
+    (slot,) = [s for s, law in t["law"].items() if law["anchor"] == "interior"]
+    if drop == "all":
+        t.pop("law_near_end")
+    else:
+        del t["law_near_end"][slot]["at"][drop]
+    outcomes = t["law"][slot]["positioned"]["far"]["outcomes"]
+    assert any(p[-1].get("offset", 0) < 0 for _m, prods in outcomes for p in prods)
+    terms = mp.kernel_input(doc, spec_of(BASE), [kid], temperature=700.0, phi=1.0, label=LABEL,
+                            radical_label=RADICAL, alkene_label=ALKENE, interior_radical_label=MID,
+                            interior_alkene_label=INTERNAL, volume_ratio=RATIO, far_law=True, positions=True)
+    (listed,) = [x for x in terms["record"]["unmapped"] if x["templates"] == [t["template"]]]
+    assert listed["kernel"] == kid and "end distance 0" in listed["reason"]
+    assert all(t["template"] not in x["template"] for ts in terms["transfer"].values() for x in ts)
+    assert all(0 not in x["end_distances"] for x in terms["record"]["boundary_departures"])
+
+
 @pytest.mark.parametrize("name, slot, kind", [("backbite", None, "move"), ("h_abstractio", "S0", "transfer")])
 def test_a_flow_on_short_chains_only_gets_no_term_and_is_listed_with_its_last_length(table, name, slot, kind):
     """An end radical's law with no far-field site (its exact outcomes only, to exact_to_n periods): MoM
