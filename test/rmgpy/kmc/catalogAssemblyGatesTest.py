@@ -152,12 +152,17 @@ def test_an_overlap_nested_neither_way_loads_both_sides_once():
     assert row["disposition"] == "deduplicated", row.get("reason")
     assert te.overlap_gates(table) == []
     orientation = {p["record_event_id"]: p["orientation"] for p in out}
+    members = {(t["record"], t["key"]): t["orientation"] for t in row["templates"]}
+    deferring = {}
     for p in out:
         for t in p["templates"]:
-            assert t["status"] == "emitted"
-            defers = [(d["record"], d["key"]) for d in t.get("defers_to", ())]
-            assert bool(defers) == (orientation[p["record_event_id"]] == "reversed")
-            assert all(orientation[r] == "as_generated" for r, _k in defers)
+            assert t["status"] in ("emitted", "merged")
+            if t.get("defers_to"):
+                deferring[(p["record_event_id"], t["key"])] = t["defers_to"]
+    # the component's reversed templates defer, to its as_generated ones
+    assert set(deferring) == {m for m, o in members.items() if o == "reversed"}
+    assert all(members.get((d["record"], d["key"])) == "as_generated"
+               for ds in deferring.values() for d in ds)
     loaded = te.loaded_templates(out, 700.0)
     alone = [wm.Template(t.name, t.family, t.atoms, list(t.bonds), t.edits, weight=t.weight)
              for t in loaded]
