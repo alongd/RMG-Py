@@ -407,6 +407,28 @@ def test_a_join_making_a_mid_chain_feature_is_refused_by_name(table):
     assert not terms["joins"]
 
 
+@pytest.mark.parametrize("name, slot, kind", [("backbite", None, "move"), ("h_abstractio", "S0", "transfer")])
+def test_a_flow_on_short_chains_only_gets_no_term_and_is_listed_with_its_last_length(table, name, slot, kind):
+    """An end radical's law with no far-field site (its exact outcomes only, to exact_to_n periods): MoM
+    carries no term for it, and the record names the flow and the last length it fires on."""
+    doc = json.loads(json.dumps(table))
+    ((kid, t),) = [(k, t) for k, kernel in doc["kernels"].items() for t in kernel["templates"]
+                   if t["template"].startswith(name + ":")]
+    law = t["law"] if slot is None else t["law"][slot]
+    law["far"]["outcomes"] = []
+    if law.get("positioned"):
+        law["positioned"]["far"]["outcomes"] = []
+    last = max(int(n) for n, outs in law["exact"].items() if outs)
+    terms = mp.kernel_input(doc, spec_of(BASE), [kid], temperature=700.0, phi=1.0, label=LABEL,
+                            radical_label=RADICAL, alkene_label=ALKENE, interior_radical_label=MID,
+                            interior_alkene_label=INTERNAL, volume_ratio=RATIO, far_law=True, positions=True)
+    assert not [x for x in terms[kind].get(RADICAL, []) if t["template"] in x["template"].split("@")[0].split("+")]
+    listed = [x for x in terms["record"]["short_lengths"] if x.get("far_law") == 0.0]
+    assert listed and all(x["kernel"] == kid and x["templates"] == [t["template"]] for x in listed)
+    assert {x["pools"][0] for x in listed} == {RADICAL}
+    assert max(x["last_nonzero_periods"] for x in listed) == last
+
+
 # --------------------------------------------------------------------------
 # the MoM input
 # --------------------------------------------------------------------------
