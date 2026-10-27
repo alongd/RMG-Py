@@ -670,14 +670,20 @@ def isomorphic(first, second) -> bool:
 
 def match_provider(graph, declaration=None):
     """The registered provider whose ``REPEAT_UNIT`` is the declared repeat unit,
-    preferring the provider of this exact declaration when supplied, or None."""
+    preferring the provider of this exact declaration when supplied, or None.
+
+    Only the named providers match by repeat unit alone.  A provider constructed
+    for a declaration stays registered for the life of the process (its name must
+    keep resolving), so matching one by repeat unit would hand a caller whichever
+    declaration of that unit the process built before (I-270)."""
     from rmgpy.polymer_spec import GraphDeclaration
     if declaration is not None:
         exact = [provider for provider in b.PROVIDERS.values()
                  if getattr(provider, "spec", None) == declaration]
         if exact:
             return min(exact, key=lambda provider: provider.name)
-    for name in sorted(b.PROVIDERS, key=lambda value: (value.startswith("declared:"), value)):
+    for name in sorted(name for name, provider in b.PROVIDERS.items()
+                       if not win._is_declared(provider)):
         unit = getattr(b.PROVIDERS[name], "REPEAT_UNIT", None)
         if unit is not None and isomorphic(
                 graph, GraphDeclaration.from_mapping(unit, required_ports=("head", "tail"))):
