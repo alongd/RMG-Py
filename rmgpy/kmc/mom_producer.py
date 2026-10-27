@@ -1509,6 +1509,17 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             f"{worst:.3g} relative)")})
         return False
 
+    def short_only(kid, names, pools_read, n0, values):
+        """The record of a flow whose law from n0 is zero: it fires on short chains only (to the last length
+        of ``values``, its lengths with a flow), e.g. a position counted from the other end once the chain is
+        shorter than twice it.  MoM carries no term for it."""
+        if far_law:
+            short.append({"kernel": kid, "templates": names, "pools": pools_read, "from_periods": floor,
+                          "law_from_periods": n0, "far_law": 0.0, "last_nonzero_periods": max(values)})
+        else:
+            unmapped.append({"kernel": kid, "templates": names, "pools": pools_read, "reason": (
+                f"its flow is zero from {n0} periods and nonzero to {max(values)} periods only")})
+
     # positions (I-273): transfers, moves and interior beta scission by position-class pool
     interior_scission = {}
     pool_family = {pool: fam for fam, pool in pools.items() if pool is not None}
@@ -1579,6 +1590,9 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                     f"sum_T (w/divisor) s0(n) s1(m) is not one constant, nor bilinear in n and m, on lengths from "
                     f"{floor} periods: {F[lo]!r} at (n, m) = {lo}, {F[hi]!r} at {hi}")})
                 continue
+            if not any(c):
+                short_only(kid, names, [*key0, *key1], n0, sorted({min(nm) for nm, v in F.items() if v}))
+                continue
             if n0 > floor and not short_lengths(
                     kid, names, n0, worst, "sum_T (w/divisor) s0(n) s1(m) is not one constant, nor bilinear in n "
                                            "and m,"):
@@ -1634,6 +1648,9 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             if n0 is None:
                 unmapped.append({"kernel": kid, "templates": names, "pools": [src, dst], "reason": (
                     f"sum_T w s(n) is not affine in n on lengths from {floor} periods")})
+                continue
+            if not any(c):
+                short_only(kid, names, [src, dst], n0, [n for n, v in r.items() if v])
                 continue
             if n0 > floor and not short_lengths(kid, names, n0, worst, "sum_T w s(n) is not affine in n"):
                 continue
