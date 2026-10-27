@@ -1300,6 +1300,10 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         if fam in INTERIOR_FAMILIES:
             if len(prod) < 3:
                 raise _Unmapped(f"its {fam} product states no position (the table's positions_refused)")
+            if prod[2] < 1:
+                # the far rule read where the near-end law states nothing, e.g. one bond toward the end from
+                # end distance 1 (I-276)
+                raise _Unmapped(f"its {fam} product placed at end distance {prod[2]}, no mid-chain position")
             return position_pool(fam, prod[2])
         cls = label_of(fam, int(prod[1]))
         pool = pool_of(cls) if cls is not None else None
