@@ -167,6 +167,17 @@ is the head-side count), its positioned outcomes and, for one participant,
 length, the same per canonical position (an entry the probes cannot read
 says ``refused``).  Nothing is fitted: the sites and products are the
 engine's own on declared probe states, the weights the template's.
+**Near-end laws** (I-273): a law term whose interior participant has
+far-field sites gains ``law_near_end`` (per slot, or the law itself for one
+participant; ``law_near_end_refused`` with the reason when the probes
+cannot read it) where that participant's sites near an end are not its far
+law's: an end-distance law (as above) whose ``at`` lists every end distance
+d where the sites of a feature at d, or their positioned outcomes, differ
+from the far law at d (zero sites included; scanned one past the reach of
+the participant's profile on the longest probe, and refused if they still
+differ there), and whose ``exact`` gives every canonical position of the
+lengths shorter than where the profile settles.  Elsewhere the far law
+holds (``predict_near``).
 
 With a ``kmc-melt-run/1`` manifest, ``hazard`` gives the fired counts per
 template, kernel and kMC-only entry (gross), the counts netted over each
@@ -1052,6 +1063,31 @@ def predict_placed(law: dict, n: int, nbb: int, x: Optional[int] = None) -> Coun
     return _predict_placed_far(placed["far"], law["anchor"], n, nbb, x)
 
 
+def _far_at(law: dict, n: int, nbb: int, x: int) -> Counter:
+    """The absolute positioned outcomes of an interior law's far rule with its feature at backbone atom x on n
+    periods (its positioned far rule, or its plain one when no product has an interior feature)."""
+    placed = law.get("positioned")
+    return _expand_placed((placed or law)["far"]["outcomes"], n * nbb, x, nbb)
+
+
+def predict_near(law: dict, near: Optional[dict], n: int, nbb: int, x: int) -> Counter:
+    """The absolute positioned outcomes (``predict_placed``'s tuples) of an
+    interior participant of a law term with its feature at canonical end
+    distance x on n periods: its near-end law (``law_near_end``) where it
+    speaks (``exact`` below ``from_n``, every position; ``at`` from it), the
+    far law elsewhere."""
+    if near is not None:
+        if n < int(near["from_n"]):
+            entry = near["exact"].get(str(n), {}).get(str(x))
+            if entry is not None and "refused" in entry:
+                raise KernelRatesError(f"{near['class']} at end distance {x} on {n} periods: {entry['refused']}")
+            return Counter() if entry is None else _exact_placed(entry["outcomes"])
+        entry = near["at"].get(str(x))
+        if entry is not None:
+            return _expand_placed(entry["outcomes"], n * nbb, x, nbb)
+    return _far_at(law, n, nbb, x)
+
+
 def _law_view(outcomes: Counter) -> Counter:
     """Absolute outcomes at the resolution of a far rule's relative codes: an
     interior product by its family, since its class is read at its position
@@ -1335,27 +1371,11 @@ class _Laws:
         d (the count checked against the participant's ``profile``); on every
         shorter length, the same at every position (``exact``)."""
         family = family_of(label)
-        nbb, ppu = self.nbb, self.probes.ppu
-        counted = defaultdict(dict)                  # backbone atoms -> {end distance: counts}
-        for key, values in profile.items():
-            m = re.fullmatch(r"chain_backbone_atoms=(\d+),end_distance=(\d+)", key)
-            if m and any(values):
-                counted[int(m[1])][int(m[2])] = sorted(values)
-        lengths = [u * ppu * nbb for u in range(1, self.n_hi // ppu + 1)]
-        far = counted.get(lengths[-1], {})
-        from_nb = lengths[-1]
-        for nb in reversed(lengths):
-            if counted.get(nb, {}) != far:
-                break
-            from_nb = nb
-        from_n = -(-from_nb // nbb)
+        nbb = self.nbb
+        far, from_n = self._profile_reach(profile, nonzero=True)
 
         def rows_at(n, x, check=False):
-            if partner_label is None:
-                seg, rows = self._uni(ci, label, n, x)
-                return len(seg), [(k, tuple(sorted(prods, key=repr))) for k, prods in rows]
-            seg, rows = self._bi(ci, p, label, n, x, partner_label, check)
-            return len(seg), [(k, (prod,)) for k, prod in rows]
+            return self._rows_at(ci, p, label, n, x, partner_label, check)
 
         at = {}
         for d in sorted(far):
@@ -1371,6 +1391,39 @@ class _Laws:
                           "outcomes": _placed_list(_placed_counter(rows, lambda r, k: _placed(r, L, d, nbb, True)))}
             if weight is not None:
                 at[str(d)]["k_per_feature"] = weight * len(rows)
+        return {"class": label, "family": family, "anchor": "end_distance", "from_n": from_n, "at": at,
+                "exact": self._exact_positions(family, label, from_n, rows_at, weight)}
+
+    def _rows_at(self, ci, p, label, n, x, partner_label=None, check=False):
+        """(backbone atoms, [(anchor, products)]) of participant p's sites with its feature at x on n periods."""
+        if partner_label is None:
+            seg, rows = self._uni(ci, label, n, x)
+            return len(seg), [(k, tuple(sorted(prods, key=repr))) for k, prods in rows]
+        seg, rows = self._bi(ci, p, label, n, x, partner_label, check)
+        return len(seg), [(k, (prod,)) for k, prod in rows]
+
+    def _profile_reach(self, profile, nonzero=False):
+        """({end distance: counts} of an interior participant's profile on the longest probe, from_n): from_n
+        the shortest length from which every longer probe's profile is the same.  ``nonzero``: positions with
+        some site only."""
+        nbb, ppu = self.nbb, self.probes.ppu
+        counted = defaultdict(dict)                  # backbone atoms -> {end distance: counts}
+        for key, values in profile.items():
+            m = re.fullmatch(r"chain_backbone_atoms=(\d+),end_distance=(\d+)", key)
+            if m and (any(values) or not nonzero):
+                counted[int(m[1])][int(m[2])] = sorted(values)
+        lengths = [u * ppu * nbb for u in range(1, self.n_hi // ppu + 1)]
+        far = counted.get(lengths[-1], {})
+        from_nb = lengths[-1]
+        for nb in reversed(lengths):
+            if counted.get(nb, {}) != far:
+                break
+            from_nb = nb
+        return far, -(-from_nb // nbb)
+
+    def _exact_positions(self, family, label, from_n, rows_at, weight) -> dict:
+        """Per length shorter than from_n, the sites and positioned outcomes at every canonical position with
+        sites (an entry the probes cannot read says ``refused``)."""
         exact = {}
         for n in range(1, from_n):
             for x in self.probes.positions(family, n):
@@ -1387,8 +1440,62 @@ class _Laws:
                     if weight is not None:
                         entry["k_per_feature"] = weight * len(rows)
                     exact.setdefault(str(n), {})[str(x)] = entry
+        return exact
+
+    # -- the near-end law of an interior participant with far-field sites (I-273) -------------------------
+    def participant_near(self, ci, p, label, count, law, partner_label=None, weight=None) -> Optional[dict]:
+        """The near-end law of an interior participant of a law term (module
+        doc, near-end laws), or None where none is needed: on the longest
+        probe, every end distance d where the participant's sites or their
+        positioned outcomes differ from its far law at d (``at``, zero sites
+        included), scanned one past the reach of its profile there (an
+        internal alkene's profile key is one past its mirror bond's end
+        distance); on every length shorter than where the profile settles,
+        the sites and outcomes at every canonical position (``exact``)."""
+        family = family_of(label)
+        nbb, L_hi = self.nbb, self.n_hi * self.nbb
+        far_profile, from_n = self._profile_reach(count.get("profile", {}))
+        reach = max(far_profile, default=0) + 1
+
+        def rows_at(n, x, check=False):
+            return self._rows_at(ci, p, label, n, x, partner_label, check)
+
+        at = {}
+        for d in self.probes.positions(family, self.n_hi):
+            if d > reach:
+                break
+            if not self.probes.carries(label, self.n_hi, d):
+                continue
+            L, rows = rows_at(self.n_hi, d, check=True)
+            got = _exact_placed(_placed_list(_placed_counter(rows, lambda r, k: _absolute_placed(r))))
+            if len(rows) == count["per_feature"] and got == _far_at(law, self.n_hi, nbb, d):
+                continue
+            if d == reach:
+                raise _OffDeclared(f"{label}: its near-end law differs from the far law at end distance {d}, past "
+                                   f"its profile's reach on {L_hi} backbone atoms")
+            at[str(d)] = {"sites": len(rows),
+                          "outcomes": _placed_list(_placed_counter(rows, lambda r, k: _placed(r, L, d, nbb, True)))}
+            if weight is not None:
+                at[str(d)]["k_per_feature"] = weight * len(rows)
+        if not at and from_n <= 1:
+            return None
         return {"class": label, "family": family, "anchor": "end_distance", "from_n": from_n, "at": at,
-                "exact": exact}
+                "exact": self._exact_positions(family, label, from_n, rows_at, weight)}
+
+    def near_end_law(self, ci, combo, order, participants, law, weight) -> Optional[dict]:
+        """``participant_near`` of every interior participant of a law term:
+        the law itself for one participant, else per slot (``S0``/``S1``)
+        with a near-end law; None when no participant needs one."""
+        def one(p, slot_law, partner):
+            c = participants[p].get(combo[p])
+            if family_of(combo[p]) not in INTERIOR_FAMILIES or not c or not c.get("per_feature"):
+                return None
+            return self.participant_near(ci, p, combo[p], c, slot_law, partner, weight if partner is None else None)
+        if len(combo) == 1:
+            return one(0, law, None)
+        out = {f"S{slot}": one(p, law[f"S{slot}"], combo[1 - p]) for slot, p in enumerate(order)}
+        out = {slot: near for slot, near in out.items() if near is not None}
+        return out or None
 
     def end_distance_law(self, ci, combo, order, participants, weight) -> dict:
         """The law of a term whose interior participant has sites only near
@@ -1562,6 +1669,15 @@ def _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_
                            for slot, p in enumerate(order)}
     except _OffDeclared as error:
         term["law"], term["law_refused"] = None, str(error)
+    if term["law"] is not None:
+        # an interior participant's sites near an end: which of them are left, and their products (I-273)
+        try:
+            near = laws.near_end_law(ci, combo, order, participants, term["law"], t.weight)
+        except _OffDeclared as error:
+            term["law_near_end_refused"] = str(error)
+        else:
+            if near is not None:
+                term["law_near_end"] = near
     if ci not in measured:
         measured[ci] = _template_overrides(engine, probes, t, ci, entries[ci])
     term["overrides"] = [o for o in measured[ci] if "refused" not in o
