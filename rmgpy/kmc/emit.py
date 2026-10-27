@@ -96,7 +96,7 @@ ROSTER_SCHEMA_V4 = "kmc-reference-roster/4"
 REFERENCE_THERMO_LABEL = "i147-reference"
 REFERENCE_RATES_LABEL = "i138-reference"
 PAYLOAD_FIELDS = ("key", "name", "family", "status", "direction", "executable", "weight", "derived",
-                  "overrides")
+                  "overrides", "defers_to")
 # the declaration digests an artifact compiled from a deck carries in
 # ``provenance.proxy_source`` and a deck or roster must match
 BINDING_KEYS = ("chemistry_sha256", "declaration_sha256")
