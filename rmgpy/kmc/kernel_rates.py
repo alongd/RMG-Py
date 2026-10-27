@@ -103,7 +103,8 @@ site on that state), and a pair of sites whose markers share a class is that
 class's transition (``melt_engine._suppressed``).  So a deferring template's
 term at a class pairing counts the pairs of marker sets sharing no class:
 when those pairs are one product (a set of participant 0's markers with a set
-of participant 1's), ``S0``/``S1`` and the law are read on those sites only,
+of participant 1's), ``S0``/``S1`` and the laws (``law``, ``law_near_end``,
+``law_end_distance``; I-275) are read on those sites only,
 and ``sites_deferred_to`` names the classes the term leaves out; when every
 pair is suppressed the pairing is no term; a template with no other pairing
 is ``deferred``.  When they are no single product the template is
@@ -1402,19 +1403,21 @@ class _Laws:
         return out
 
     # -- the law of an interior participant with sites near an end only -----------
-    def participant_at(self, ci, p, label, profile, partner_label=None, weight=None) -> dict:
+    def participant_at(self, ci, p, label, profile, partner_label=None, weight=None, markers=None,
+                       partner_markers=None) -> dict:
         """The law of an interior participant whose sites lie only near a
         chain end (``per_feature`` 0; module doc, end-distance laws): per end
         distance d with sites on chains of ``from_n`` periods and more, its
         sites and positioned outcomes on the longest probe with the feature at
         d (the count checked against the participant's ``profile``); on every
-        shorter length, the same at every position (``exact``)."""
+        shorter length, the same at every position (``exact``).  ``markers``,
+        ``partner_markers``: those of the sites a deferring term counts (``_bi``)."""
         family = family_of(label)
         nbb = self.nbb
         far, from_n = self._profile_reach(profile, nonzero=True)
 
         def rows_at(n, x, check=False):
-            return self._rows_at(ci, p, label, n, x, partner_label, check)
+            return self._rows_at(ci, p, label, n, x, partner_label, check, markers, partner_markers)
 
         at = {}
         for d in sorted(far):
@@ -1433,12 +1436,12 @@ class _Laws:
         return {"class": label, "family": family, "anchor": "end_distance", "from_n": from_n, "at": at,
                 "exact": self._exact_positions(family, label, from_n, rows_at, weight)}
 
-    def _rows_at(self, ci, p, label, n, x, partner_label=None, check=False):
+    def _rows_at(self, ci, p, label, n, x, partner_label=None, check=False, markers=None, partner_markers=None):
         """(backbone atoms, [(anchor, products)]) of participant p's sites with its feature at x on n periods."""
         if partner_label is None:
             seg, rows = self._uni(ci, label, n, x)
             return len(seg), [(k, tuple(sorted(prods, key=repr))) for k, prods in rows]
-        seg, rows = self._bi(ci, p, label, n, x, partner_label, check)
+        seg, rows = self._bi(ci, p, label, n, x, partner_label, check, markers, partner_markers)
         return len(seg), [(k, (prod,)) for k, prod in rows]
 
     def _profile_reach(self, profile, nonzero=False):
@@ -1482,7 +1485,8 @@ class _Laws:
         return exact
 
     # -- the near-end law of an interior participant with far-field sites (I-273) -------------------------
-    def participant_near(self, ci, p, label, count, law, partner_label=None, weight=None) -> Optional[dict]:
+    def participant_near(self, ci, p, label, count, law, partner_label=None, weight=None, markers=None,
+                         partner_markers=None) -> Optional[dict]:
         """The near-end law of an interior participant of a law term (module
         doc, near-end laws), or None where none is needed: on the longest
         probe, every end distance d where the participant's sites or their
@@ -1490,14 +1494,15 @@ class _Laws:
         included), scanned one past the reach of its profile there (an
         internal alkene's profile key is one past its mirror bond's end
         distance); on every length shorter than where the profile settles,
-        the sites and outcomes at every canonical position (``exact``)."""
+        the sites and outcomes at every canonical position (``exact``).
+        ``markers``, ``partner_markers``: ``participant_at``."""
         family = family_of(label)
         nbb, L_hi = self.nbb, self.n_hi * self.nbb
         far_profile, from_n = self._profile_reach(count.get("profile", {}))
         reach = max(far_profile, default=0) + 1
 
         def rows_at(n, x, check=False):
-            return self._rows_at(ci, p, label, n, x, partner_label, check)
+            return self._rows_at(ci, p, label, n, x, partner_label, check, markers, partner_markers)
 
         at = {}
         for d in self.probes.positions(family, self.n_hi):
@@ -1521,31 +1526,35 @@ class _Laws:
         return {"class": label, "family": family, "anchor": "end_distance", "from_n": from_n, "at": at,
                 "exact": self._exact_positions(family, label, from_n, rows_at, weight)}
 
-    def near_end_law(self, ci, combo, order, participants, law, weight) -> Optional[dict]:
+    def near_end_law(self, ci, combo, order, participants, law, weight, markers=None) -> Optional[dict]:
         """``participant_near`` of every interior participant of a law term:
         the law itself for one participant, else per slot (``S0``/``S1``)
-        with a near-end law; None when no participant needs one."""
+        with a near-end law; None when no participant needs one.
+        ``markers``: per participant those of the sites a deferring term counts."""
         def one(p, slot_law, partner):
             c = participants[p].get(combo[p])
             if family_of(combo[p]) not in INTERIOR_FAMILIES or not c or not c.get("per_feature"):
                 return None
-            return self.participant_near(ci, p, combo[p], c, slot_law, partner, weight if partner is None else None)
+            return self.participant_near(ci, p, combo[p], c, slot_law, partner, weight if partner is None else None,
+                                         *((markers[p], markers[1 - p]) if markers else ()))
         if len(combo) == 1:
             return one(0, law, None)
         out = {f"S{slot}": one(p, law[f"S{slot}"], combo[1 - p]) for slot, p in enumerate(order)}
         out = {slot: near for slot, near in out.items() if near is not None}
         return out or None
 
-    def end_distance_law(self, ci, combo, order, participants, weight) -> dict:
+    def end_distance_law(self, ci, combo, order, participants, weight, markers=None) -> dict:
         """The law of a term whose interior participant has sites only near
         a chain end: ``participant_at`` for every such participant, the far-
         field law (``participant``, its partner read at the end distance it
-        has sites at) for the other."""
+        has sites at) for the other.  ``markers``: ``near_end_law``."""
         def one(p, partner):
             c = participants[p][combo[p]]
+            mark = (markers[p], markers[1 - p]) if markers else ()
             if family_of(combo[p]) in INTERIOR_FAMILIES and not c.get("per_feature"):
-                return self.participant_at(ci, p, combo[p], c["profile"], partner, weight if partner is None else None)
-            return self.participant(ci, p, combo[p], partner)
+                return self.participant_at(ci, p, combo[p], c["profile"], partner, weight if partner is None else None,
+                                           *mark)
+            return self.participant(ci, p, combo[p], partner, *mark)
         if len(combo) == 1:
             return one(0, None)
         return {f"S{slot}": one(p, combo[1 - p]) for slot, p in enumerate(order)}
@@ -1692,6 +1701,9 @@ def _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_
     ``markers``: per participant the deferral markers of the sites it counts
     (None: every site)."""
     counts = [term] if len(combo) == 1 else [term["S0"], term["S1"]]
+    if markers:
+        # a deferring term's sites are not its row's: its laws count the term's own (I-275)
+        participants = [{combo[p]: counts[order.index(p)]} for p in range(len(combo))]
     if any(family_of(c) in INTERIOR_FAMILIES and (x.get("per_feature") == 0 or x.get("k_per_feature") == 0)
            for c, x in zip([combo[p] for p in order], counts)):
         # an interior participant with no far-field site: the kernel rate is 0; its sites near an end have a
@@ -1699,7 +1711,7 @@ def _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_
         term["law"], term["law_inert"] = None, "an interior participant with no far-field site"
         term["overrides"] = []
         try:
-            term["law_end_distance"] = laws.end_distance_law(ci, combo, order, participants, t.weight)
+            term["law_end_distance"] = laws.end_distance_law(ci, combo, order, participants, t.weight, markers)
         except _OffDeclared as error:
             term["law_end_distance_refused"] = str(error)
         return
@@ -1715,7 +1727,7 @@ def _law_term(laws, engine, probes, t, term, ci, combo, order, measured, placed_
     if term["law"] is not None:
         # an interior participant's sites near an end: which of them are left, and their products (I-273)
         try:
-            near = laws.near_end_law(ci, combo, order, participants, term["law"], t.weight)
+            near = laws.near_end_law(ci, combo, order, participants, term["law"], t.weight, markers)
         except _OffDeclared as error:
             term["law_near_end_refused"] = str(error)
         else:
