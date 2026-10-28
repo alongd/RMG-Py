@@ -8991,6 +8991,20 @@ class HybridPolymerSystem(ReactionSystem):
             mu1 = mu1_mol / V_poly
             mu2 = mu2_mol / V_poly
             mu3 = _safe_mu3_from_mu012(mu0, mu1, mu2)
+            # I-281: the kernels linear in this pool's own moments and free of
+            # the mu3 closure (kernel_move with a = 0, kernel_interior_scission,
+            # an unsited kernel_transfer, a partnered kernel_recombination,
+            # kernel_propagation) read the RAW moments, whatever their sign.
+            # Their exact flows are odd in the moments, so a negative noise
+            # excursion drains back at the rate a positive one does. Skipping
+            # them below zero (or reading the softclamp, slope -> 0 at -lam)
+            # put a kink at zero into a fast drain: the predictor overshoots
+            # it, the iteration matrix is built with the drain off, and with
+            # h*k in the hundreds the corrector fails (PP: the step pinned at
+            # ~1e-5 s). On a state >= 0 raw == softclamped, bit for bit.
+            lin0 = y[idx_mu0] / V_poly
+            lin1 = y[idx_mu1] / V_poly
+            lin2 = y[idx_mu2] / V_poly
 
             if self.debug_check_realizability and pool.label not in self._realizability_warned:
                 # Use raw (pre-clamp) moles so negatives are caught too. All terms
@@ -9331,41 +9345,63 @@ class HybridPolymerSystem(ReactionSystem):
             #   this    dmu_j -= K mu_j nu0;   partner dnu_j -= K mu0 nu_j
             #   product dmu0 += K mu0 nu0;     dmu1 += K (mu1 nu0 + mu0 nu1)
             #           dmu2 += K (mu2 nu0 + 2 mu1 nu1 + mu0 nu2)
-            if mu0 > 0.0:
-                for term, (p0, p1, p2), partner in self.kernel_recombination_terms[pool_i]:
-                    if partner is not None:
-                        q0, q1, q2 = partner
-                        nu0 = _softclamp(y[q0], self._softclamp_lam) / V_poly
-                        if not nu0 > 0.0:
-                            continue
-                        nu1 = _softclamp(y[q1], self._softclamp_lam) / V_poly
-                        nu2 = _softclamp(y[q2], self._softclamp_lam) / V_poly
-                        kss = (term["k_pair"] * term["sites_per_chain"]
-                               * term["partner_sites_per_chain"])
-                        dmu0_dt -= kss * mu0 * nu0
-                        dmu1_dt -= kss * mu1 * nu0
-                        dmu2_dt -= kss * mu2 * nu0
-                        dn_dt[q0] -= kss * mu0 * nu0 * V_poly
-                        dn_dt[q1] -= kss * mu0 * nu1 * V_poly
-                        dn_dt[q2] -= kss * mu0 * nu2 * V_poly
-                        dn_dt[p0] += kss * mu0 * nu0 * V_poly
-                        dn_dt[p1] += kss * (mu1 * nu0 + mu0 * nu1) * V_poly
-                        dn_dt[p2] += kss * (mu2 * nu0 + 2.0 * mu1 * nu1
-                                            + mu0 * nu2) * V_poly
+            # The join of two pools is linear in each pool's own moments (no
+            # closure): the raw moments of both, any sign (I-281). The join
+            # within one pool is quadratic in them and keeps its gate.
+            for term, (p0, p1, p2), partner in self.kernel_recombination_terms[pool_i]:
+                if partner is not None and partner[0] != idx_mu0:
+                    q0, q1, q2 = partner
+                    nu0 = y[q0] / V_poly
+                    nu1 = y[q1] / V_poly
+                    nu2 = y[q2] / V_poly
+                    kss = (term["k_pair"] * term["sites_per_chain"]
+                           * term["partner_sites_per_chain"])
+                    dmu0_dt -= kss * lin0 * nu0
+                    dmu1_dt -= kss * lin1 * nu0
+                    dmu2_dt -= kss * lin2 * nu0
+                    dn_dt[q0] -= kss * lin0 * nu0 * V_poly
+                    dn_dt[q1] -= kss * lin0 * nu1 * V_poly
+                    dn_dt[q2] -= kss * lin0 * nu2 * V_poly
+                    dn_dt[p0] += kss * lin0 * nu0 * V_poly
+                    dn_dt[p1] += kss * (lin1 * nu0 + lin0 * nu1) * V_poly
+                    dn_dt[p2] += kss * (lin2 * nu0 + 2.0 * lin1 * nu1
+                                        + lin0 * nu2) * V_poly
+                    continue
+                if not mu0 > 0.0:
+                    continue
+                if partner is not None:
+                    q0, q1, q2 = partner
+                    nu0 = _softclamp(y[q0], self._softclamp_lam) / V_poly
+                    if not nu0 > 0.0:
                         continue
-                    c_k = float(term["periods_per_unit"])
-                    ks2 = (term["k_pair"] * term["sites_per_chain"]
-                           * term["sites_per_chain"])
-                    m1_k, m2_k = c_k * mu1, c_k * c_k * mu2
-                    r_ev = ks2 * mu0 * mu0
-                    g1 = 2.0 * ks2 * mu0 * m1_k
-                    dmu0_dt -= 2.0 * r_ev
-                    dmu1_dt -= g1 / c_k
-                    dmu2_dt -= 2.0 * ks2 * mu0 * m2_k / (c_k * c_k)
-                    dn_dt[p0] += r_ev * V_poly
-                    dn_dt[p1] += (g1 / c_k) * V_poly
-                    dn_dt[p2] += (ks2 * (2.0 * mu0 * m2_k + 2.0 * m1_k * m1_k)
-                                  / (c_k * c_k)) * V_poly
+                    nu1 = _softclamp(y[q1], self._softclamp_lam) / V_poly
+                    nu2 = _softclamp(y[q2], self._softclamp_lam) / V_poly
+                    kss = (term["k_pair"] * term["sites_per_chain"]
+                           * term["partner_sites_per_chain"])
+                    dmu0_dt -= kss * mu0 * nu0
+                    dmu1_dt -= kss * mu1 * nu0
+                    dmu2_dt -= kss * mu2 * nu0
+                    dn_dt[q0] -= kss * mu0 * nu0 * V_poly
+                    dn_dt[q1] -= kss * mu0 * nu1 * V_poly
+                    dn_dt[q2] -= kss * mu0 * nu2 * V_poly
+                    dn_dt[p0] += kss * mu0 * nu0 * V_poly
+                    dn_dt[p1] += kss * (mu1 * nu0 + mu0 * nu1) * V_poly
+                    dn_dt[p2] += kss * (mu2 * nu0 + 2.0 * mu1 * nu1
+                                        + mu0 * nu2) * V_poly
+                    continue
+                c_k = float(term["periods_per_unit"])
+                ks2 = (term["k_pair"] * term["sites_per_chain"]
+                       * term["sites_per_chain"])
+                m1_k, m2_k = c_k * mu1, c_k * c_k * mu2
+                r_ev = ks2 * mu0 * mu0
+                g1 = 2.0 * ks2 * mu0 * m1_k
+                dmu0_dt -= 2.0 * r_ev
+                dmu1_dt -= g1 / c_k
+                dmu2_dt -= 2.0 * ks2 * mu0 * m2_k / (c_k * c_k)
+                dn_dt[p0] += r_ev * V_poly
+                dn_dt[p1] += (g1 / c_k) * V_poly
+                dn_dt[p2] += (ks2 * (2.0 * mu0 * m2_k + 2.0 * m1_k * m1_k)
+                              / (c_k * c_k)) * V_poly
 
             # kernel_transfer (S5 c + e): one chain of this pool and one of
             # the partner pool change pool, lengths unchanged, at
@@ -9383,19 +9419,33 @@ class HybridPolymerSystem(ReactionSystem):
             #                          + c01 m0 n_{j+1} + c11 m1 n_{j+1})
             # exact but for m3 / n3 on a side whose sites grow (the
             # log-Lagrange closure); a flow outside the law's domain (a
-            # negative or unbounded moment) is skipped, loudly.
-            if mu0 > 0.0:
-                for term, (q0, q1, q2), (a0, a1, a2), (b0, b1, b2) in \
-                        self.kernel_transfer_terms[pool_i]:
-                    kphi = term["k_pair"] * term["phi"]
-                    if kphi == 0.0:
+            # negative or unbounded moment) is skipped, loudly. An unsited term
+            # with another pool as partner is linear in each pool's own
+            # moments (no closure): the raw moments of both, any sign (I-281).
+            for term, (q0, q1, q2), (a0, a1, a2), (b0, b1, b2) in \
+                    self.kernel_transfer_terms[pool_i]:
+                kphi = term["k_pair"] * term["phi"]
+                if kphi == 0.0:
+                    continue
+                sites = term.get("sites")
+                if sites is None and q0 != idx_mu0:
+                    nu0 = y[q0] / V_poly
+                    nu1 = y[q1] / V_poly
+                    nu2 = y[q2] / V_poly
+                    own = (kphi * lin0 * nu0 * V_poly,
+                           kphi * lin1 * nu0 * V_poly,
+                           kphi * lin2 * nu0 * V_poly)
+                    other = (kphi * lin0 * nu0 * V_poly,
+                             kphi * lin0 * nu1 * V_poly,
+                             kphi * lin0 * nu2 * V_poly)
+                else:
+                    if not mu0 > 0.0:
                         continue
                     nu0 = _softclamp(y[q0], self._softclamp_lam) / V_poly
                     if not nu0 > 0.0:
                         continue
                     nu1 = _softclamp(y[q1], self._softclamp_lam) / V_poly
                     nu2 = _softclamp(y[q2], self._softclamp_lam) / V_poly
-                    sites = term.get("sites")
                     if sites is None:
                         own = (kphi * mu0 * nu0 * V_poly,
                                kphi * mu1 * nu0 * V_poly,
@@ -9430,61 +9480,71 @@ class HybridPolymerSystem(ReactionSystem):
                                     "site law's domain.", pool.label,
                                     term["template"], own, other)
                             continue
-                    dmu0_dt -= own[0] / V_poly
-                    dmu1_dt -= own[1] / V_poly
-                    dmu2_dt -= own[2] / V_poly
-                    dn_dt[a0] += own[0]
-                    dn_dt[a1] += own[1]
-                    dn_dt[a2] += own[2]
-                    dn_dt[q0] -= other[0]
-                    dn_dt[q1] -= other[1]
-                    dn_dt[q2] -= other[2]
-                    dn_dt[b0] += other[0]
-                    dn_dt[b1] += other[1]
-                    dn_dt[b2] += other[2]
+                dmu0_dt -= own[0] / V_poly
+                dmu1_dt -= own[1] / V_poly
+                dmu2_dt -= own[2] / V_poly
+                dn_dt[a0] += own[0]
+                dn_dt[a1] += own[1]
+                dn_dt[a2] += own[2]
+                dn_dt[q0] -= other[0]
+                dn_dt[q1] -= other[1]
+                dn_dt[q2] -= other[2]
+                dn_dt[b0] += other[0]
+                dn_dt[b1] += other[1]
+                dn_dt[b2] += other[2]
 
             # kernel_move (S5 d): a chain of n periods leaves for the product
             # pool, length unchanged, at k*(a n + b) (m_j = c^j mu_j):
             #   this dm_j -= k (a m_{j+1} + b m_j) -> product
             # exact but for m3 when a != 0 (the log-Lagrange closure); a flow
-            # outside the law's domain is skipped, loudly.
-            if mu0 > 0.0:
-                for term, (p0, p1, p2) in self.kernel_move_terms[pool_i]:
-                    c_k = float(term["periods_per_unit"])
+            # outside the law's domain is skipped, loudly. With a = 0 (and
+            # b >= 0) the flow is k b mu_j, linear in the pool's own moments:
+            # the raw moments, any sign (I-281).
+            for term, (p0, p1, p2) in self.kernel_move_terms[pool_i]:
+                c_k = float(term["periods_per_unit"])
+                linear = term["a"] == 0.0 and term["b"] >= 0.0
+                if linear:
+                    m = (lin0, c_k * lin1, c_k * c_k * lin2, 0.0)
+                elif mu0 > 0.0:
                     m = (mu0, c_k * mu1, c_k * c_k * mu2, c_k ** 3 * mu3)
-                    flow = tuple([term["k"] * (term["a"] * m[j + 1]
-                                               + term["b"] * m[j])
-                                  / c_k ** j for j in range(3)])
-                    if not all([np.isfinite(v) and v >= 0.0 for v in flow]):
-                        if pool.label not in self._kernel_guard_warned:
-                            self._kernel_guard_warned.add(pool.label)
-                            logging.warning(
-                                "Polymer pool '%s': kernel_move term %s "
-                                "skipped -- flows %s outside its site "
-                                "law's domain.", pool.label,
-                                term["template"], flow)
-                        continue
-                    dmu0_dt -= flow[0]
-                    dmu1_dt -= flow[1]
-                    dmu2_dt -= flow[2]
-                    dn_dt[p0] += flow[0] * V_poly
-                    dn_dt[p1] += flow[1] * V_poly
-                    dn_dt[p2] += flow[2] * V_poly
+                else:
+                    continue
+                flow = tuple([term["k"] * (term["a"] * m[j + 1]
+                                           + term["b"] * m[j])
+                              / c_k ** j for j in range(3)])
+                if not all([np.isfinite(v) and (linear or v >= 0.0)
+                            for v in flow]):
+                    if pool.label not in self._kernel_guard_warned:
+                        self._kernel_guard_warned.add(pool.label)
+                        logging.warning(
+                            "Polymer pool '%s': kernel_move term %s "
+                            "skipped -- flows %s outside its site "
+                            "law's domain.", pool.label,
+                            term["template"], flow)
+                    continue
+                dmu0_dt -= flow[0]
+                dmu1_dt -= flow[1]
+                dmu2_dt -= flow[2]
+                dn_dt[p0] += flow[0] * V_poly
+                dn_dt[p1] += flow[1] * V_poly
+                dn_dt[p2] += flow[2] * V_poly
 
             # kernel_propagation (I-266): a chain of n units adds one monomer
             # unit at k_pair*c_M per chain, c_M = n_M / V_poly (kMC's
             # convention: every small species at its melt concentration),
             # the monomer consumed (small_src -> dn_dt*V_poly):
             #   dmu0 = 0;  dmu1 = k c_M mu0;  dmu2 = k c_M (2 mu1 + mu0)
-            if mu0 > 0.0 and self.kernel_propagation_terms[pool_i]:
+            # linear in the pool's own moments and in c_M: the raw values,
+            # any sign (I-281).
+            if self.kernel_propagation_terms[pool_i]:
                 m_idx = pool.monomer_poly_index
-                c_mon = _softclamp(y[m_idx], self._softclamp_lam) / V_poly
-                if c_mon > 0.0:
+                c_mon = y[m_idx] / V_poly
+                if c_mon != 0.0:
                     for term in self.kernel_propagation_terms[pool_i]:
                         kc = term["k_pair"] * c_mon
-                        dmu1_dt += kc * mu0
-                        dmu2_dt += kc * (2.0 * mu1 + mu0)
-                        small_src[m_idx] = small_src.get(m_idx, 0.0) - kc * mu0
+                        dmu1_dt += kc * lin0
+                        dmu2_dt += kc * (2.0 * lin1 + lin0)
+                        small_src[m_idx] = small_src.get(m_idx, 0.0) - kc * lin0
 
             # kernel_interior_scission (I-273): every chain of this pool (one
             # position class of mid-chain radicals) breaks at k per chain;
@@ -9493,32 +9553,44 @@ class HybridPolymerSystem(ReactionSystem):
             #   this    dmu_j -= k mu_j
             #   product dm_j  += k sum_{i<=j} q_ji m_i
             # q_ji the coefficients of E[sum of its fragment lengths^j | n].
-            # A credit outside the law's domain (a negative or unbounded
-            # moment) skips the term, loudly.
-            if mu0 > 0.0:
-                for term, products in self.kernel_interior_scission_terms[pool_i]:
-                    k_s = term["k"]
-                    c_k = float(term["periods_per_unit"])
-                    m = (mu0, c_k * mu1, c_k * c_k * mu2)
-                    credits = [[k_s * math.fsum([q[j][i] * m[i] for i in range(j + 1)])
-                                / c_k ** j for j in range(3)] for q, _slots in products]
-                    if not all([np.isfinite(v) and v >= 0.0
-                                for credit in credits for v in credit]):
-                        if pool.label not in self._kernel_guard_warned:
-                            self._kernel_guard_warned.add(pool.label)
-                            logging.warning(
-                                "Polymer pool '%s': kernel_interior_scission "
-                                "term %s skipped -- credits %s outside its "
-                                "fragment law's domain.", pool.label,
-                                term["template"], credits)
-                        continue
-                    dmu0_dt -= k_s * mu0
-                    dmu1_dt -= k_s * mu1
-                    dmu2_dt -= k_s * mu2
-                    for credit, (_q, (p0, p1, p2)) in zip(credits, products):
-                        dn_dt[p0] += credit[0] * V_poly
-                        dn_dt[p1] += credit[1] * V_poly
-                        dn_dt[p2] += credit[2] * V_poly
+            # Linear in the pool's own moments: the raw moments, any sign
+            # (I-281). A credit outside the law's domain (an unbounded one, or
+            # a negative one from a pool that holds more than its noise
+            # scale) skips the term, loudly. Within the noise scale -- every
+            # |mu_k| <= L^k * A_0, the I-280 refusal scale of an empty pool --
+            # the moments are integrator noise with no distribution's shape,
+            # so the law is not judged on it and runs as the exact ODE.
+            if self._pool_mu_floors is None:
+                noise = False
+            else:
+                a_noise = float(self._pool_mu_floors[pool_i, 0])
+                l_noise = float(self._pool_length_scale)
+                noise = (abs(y[idx_mu0]) <= a_noise
+                         and abs(y[idx_mu1]) <= a_noise * l_noise
+                         and abs(y[idx_mu2]) <= a_noise * l_noise * l_noise)
+            for term, products in self.kernel_interior_scission_terms[pool_i]:
+                k_s = term["k"]
+                c_k = float(term["periods_per_unit"])
+                m = (lin0, c_k * lin1, c_k * c_k * lin2)
+                credits = [[k_s * math.fsum([q[j][i] * m[i] for i in range(j + 1)])
+                            / c_k ** j for j in range(3)] for q, _slots in products]
+                if not all([np.isfinite(v) and (noise or v >= 0.0)
+                            for credit in credits for v in credit]):
+                    if pool.label not in self._kernel_guard_warned:
+                        self._kernel_guard_warned.add(pool.label)
+                        logging.warning(
+                            "Polymer pool '%s': kernel_interior_scission "
+                            "term %s skipped -- credits %s outside its "
+                            "fragment law's domain.", pool.label,
+                            term["template"], credits)
+                    continue
+                dmu0_dt -= k_s * lin0
+                dmu1_dt -= k_s * lin1
+                dmu2_dt -= k_s * lin2
+                for credit, (_q, (p0, p1, p2)) in zip(credits, products):
+                    dn_dt[p0] += credit[0] * V_poly
+                    dn_dt[p1] += credit[1] * V_poly
+                    dn_dt[p2] += credit[2] * V_poly
 
             # Side-group homolysis initiation kernel (SGH kernel-v2, explicit
             # Br-inventory depletion; adjudicated spar r103 / plan r104).
