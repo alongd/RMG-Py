@@ -211,8 +211,22 @@ def stated(pp, law, n, x=None):
     return Counter({tuple(sorted(k, key=repr)): v for k, v in got.items()})
 
 
-def lengths(pp):
-    return [3, 4, 7, pp["n_hi"] - 1, pp["n_hi"] + 1, pp["n_hi"] + 4]
+def lengths(pp, law=None):
+    """The lengths a law is checked on; a chain law's far rule only where its first and last edges do not overlap
+    (2 * edge <= backbone atoms, as in the I-214 PE law), shorter chains being its exact rows."""
+    out = [3, 4, 7, pp["n_hi"] - 1, pp["n_hi"] + 1, pp["n_hi"] + 4]
+    if law is None or law["anchor"] != "chain":
+        return out
+    r = pp["types"][kr_.type_of(law["class"]) or "c1~c2"]["residue"]
+    return [n for n in out if 2 * n + r >= 2 * law["far"]["edge"]]
+
+
+def participant_of(pp, template, label):
+    """The engine participant of a template whose class is ``label`` (the table's template row; a kernel's S0 / S1
+    follow its roles, not the template's participants)."""
+    (row,) = [r for r in pp["table"]["templates"] if r["template"] == template]
+    (p,) = [p for p, classes in enumerate(row["participants"]) if label in classes]
+    return p
 
 
 # --------------------------------------------------------------------------
@@ -262,7 +276,7 @@ def test_homolysis_products_equal_a_brute_force_enumeration(pp, tau):
     kid = "homolysis:substrate=chain" + ("" if tau is None else f"/{tau}")
     (t,) = [t for k, t in terms(pp["table"], HOMOLYSIS) if k == kid]
     (ci,) = class_index(pp["engine"], HOMOLYSIS)
-    for n in lengths(pp):
+    for n in lengths(pp, t["law"]):
         assert stated(pp, t["law"], n) == brute(pp, ci, 0, "chain", n, tau=tau), (kid, n)
 
 
@@ -270,17 +284,22 @@ def test_homolysis_products_equal_a_brute_force_enumeration(pp, tau):
 # rule 1: the tail-side end of a cut is probed
 # --------------------------------------------------------------------------
 def test_the_tail_side_end_radical_has_a_law_read_at_its_own_end(pp):
-    ((kid, t),) = terms(pp["table"], END_BACKBITE)
-    assert kid == "intra_h_transfer:substrate=radical_end:CH2"
+    got = dict(terms(pp["table"], END_BACKBITE))
+    assert sorted(got) == ["intra_h_transfer:substrate=radical_end:CH2",
+                           "intra_h_transfer:substrate=radical_end:CH2/c1~c1"]
+    t = got["intra_h_transfer:substrate=radical_end:CH2"]
     assert t["law"] is not None, t.get("law_refused")
     assert t["law"]["anchor"] == "end" and t["law"]["side"] == "start"
 
 
 def test_the_tail_side_end_backbite_equals_a_brute_force_enumeration(pp):
-    ((_kid, t),) = terms(pp["table"], END_BACKBITE)
+    """The declared type's CH2 end is its start (side ``start``); a c1~c1 piece has a CH2 end at both ends."""
+    got = dict(terms(pp["table"], END_BACKBITE))
     (ci,) = class_index(pp["engine"], END_BACKBITE)
-    for n in lengths(pp):
-        assert stated(pp, t["law"], n) == brute(pp, ci, 0, "radical_end", n, "start"), n
+    for kid, x, tau in (("intra_h_transfer:substrate=radical_end:CH2", "start", None),
+                        ("intra_h_transfer:substrate=radical_end:CH2/c1~c1", None, "c1~c1")):
+        for n in lengths(pp):
+            assert stated(pp, got[kid]["law"], n, x) == brute(pp, ci, 0, "radical_end", n, x, tau=tau), (kid, n)
 
 
 def test_the_end_probes_of_both_sides_carry_their_own_class(pp):
@@ -304,7 +323,7 @@ def test_the_tertiary_backbite_has_a_law(pp):
 def test_ab_positions_are_not_folded(pp):
     probes = pp["probes"]
     assert probes.positions("radical_interior", 10) == list(range(1, 19))
-    assert probes.positions("radical_interior", 10, tau="c1~c1") == list(range(1, 10))
+    assert probes.positions("radical_interior", 10, tau="c1~c1") == list(range(1, 11))
 
 
 def test_the_tertiary_backbite_at_every_position_equals_a_brute_force_enumeration(pp):
@@ -333,13 +352,21 @@ def test_the_tertiary_backbite_at_every_position_equals_a_brute_force_enumeratio
 # rule 4: codes carry the class; a chain law's bulk is periodic
 # --------------------------------------------------------------------------
 def test_a_chain_donor_names_the_class_it_makes_per_phase(pp):
+    """The fixture's chain donors give up a CH2 hydrogen (the engine's sites: two per period, on c1): the bulk
+    row of phase 0 (c1) makes radical_interior:CH, that of phase 1 (c2) nothing."""
     got = [(kid, t) for kid, t in terms(pp["table"], CHAIN_DONOR) if kid.endswith("+donor=chain")]
     assert got
+    phased = 0
     for kid, t in got:
         assert t["law"] is not None, (kid, t.get("law_refused"))
         far = t["law"]["S1"]["far"]
-        tokens = sorted({p[0] for rows in far["bulk_phases"].values() for _m, prods in rows for p in prods})
-        assert tokens == ["radical_interior:C", "radical_interior:CH"], kid
+        if "bulk_phases" not in far:
+            assert far["bulk"] == [], kid
+            continue
+        tokens = {ph: sorted({p[0] for _m, prods in rows for p in prods}) for ph, rows in far["bulk_phases"].items()}
+        assert tokens == {"0": ["radical_interior:CH"], "1": []}, kid
+        phased += 1
+    assert phased
 
 
 def test_a_chain_donor_equals_a_brute_force_enumeration(pp):
@@ -348,8 +375,9 @@ def test_a_chain_donor_equals_a_brute_force_enumeration(pp):
         if not kid.endswith("+donor=chain") or t["law"] is None:
             continue
         (ci,) = class_index(pp["engine"], CHAIN_DONOR, t["template"].split(":")[1])
-        for n in lengths(pp):
-            assert stated(pp, t["law"]["S1"], n) == brute(pp, ci, 1, "chain", n, partner=("radical_end", 6, None)), \
+        p = participant_of(pp, t["template"], "chain")
+        for n in lengths(pp, t["law"]["S1"]):
+            assert stated(pp, t["law"]["S1"], n) == brute(pp, ci, p, "chain", n, partner=("radical_end", 6, None)), \
                 (kid, n)
             checked += 1
     assert checked

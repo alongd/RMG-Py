@@ -1,7 +1,9 @@
 """Kernel references (I-214, slice S2 of the shared-chemistry design): an
 exact length-resolved population balance (V0) and a length-level stochastic
 simulation (V1) of one kernel set, both read from a kernel-rates table
-(``kernel_rates``, ``kmc-kernel-rates/3``) and a deck's initial ensemble.
+(``kernel_rates``, ``kmc-kernel-rates/3``, or a ``/4`` table in the ``/3``
+state model: one chain type, its own reverse; a table of more chain types is
+refused by name) and a deck's initial ensemble.
 
 **The kernel model.** A molecule is a state (family, n): its pool family
 (``chain``, ``radical_end``, ``alkene_terminal``, ``radical_interior``,
@@ -108,6 +110,9 @@ class KernelModel:
         from rmgpy.polymer_spec import LinearHomopolymerSpec
         if table.get("schema") != K.SCHEMA:
             raise KernelReferenceError(f"not a {K.SCHEMA} table (got {table.get('schema')!r})")
+        beyond = K.state_model_beyond_v3(table)
+        if beyond is not None:
+            raise KernelReferenceError(f"{beyond}: a state here is (family, n) on that one type")
         if not isinstance(spec, LinearHomopolymerSpec):
             raise KernelReferenceError("the kernel references need a linear homopolymer declaration")
         bound = (table.get("catalog") or {}).get("chemistry_sha256")

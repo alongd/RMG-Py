@@ -21,6 +21,7 @@ from meltRunTest import PE_LIVE, lines, toy_payloads, write_catalog, write_deck
 from momContractTest import produced, run_cli
 
 from rmgpy.kmc import comparison_rows as cr
+from rmgpy.kmc import kernel_rates as kr_
 from rmgpy.kmc import kernel_reference as R
 from rmgpy.kmc import melt_observables as mo
 from rmgpy.kmc import run as kr
@@ -253,7 +254,7 @@ def test_an_unbalanced_law_is_named_and_its_residual_is_not_zero():
 
 def test_the_reference_counts_elements_per_state_from_the_table(reference):
     table = toy_table(Path(reference[0]).parent)
-    assert table["schema"] == "kmc-kernel-rates/3"
+    assert table["schema"] == kr_.SCHEMA
     assert table["moment_unit"]["composition"] == {"C": "1", "H": "2"}
     model = R.KernelModel(table, S.pe_spec({10: 5}))
     assert model.composition("chain", 7) == {"C": Fraction(7), "H": Fraction(16)}

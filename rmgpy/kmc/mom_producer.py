@@ -153,7 +153,8 @@ MOM_EXHAUSTION_FLOOR_K = 100.0   # rmgpy/solver/polymer.pyx:153 EXHAUSTION_FLOOR
 MOM_MOMENT_FLOOR = max(MOM_SMALL_EPS, MOM_EXHAUSTION_FLOOR_K * SIMULATOR_ATOL)
 STATUS_INACTIVE = "refused:inactive_chemistry"
 BUILTIN_STRUCTURES = {"H": "[H]", "H2": "[H][H]"}
-KERNEL_RATES_SCHEMAS = ("kmc-kernel-rates/2", "kmc-kernel-rates/3")
+# /4 is read only in the /3 state model (one chain type, its own reverse): kernel_rates.state_model_beyond_v3
+KERNEL_RATES_SCHEMAS = ("kmc-kernel-rates/2", "kmc-kernel-rates/3", "kmc-kernel-rates/4")
 RADICAL_POOL_SUFFIX = "_re"      # the explicit end-radical pool of kernel mode: <label>_re
 ALKENE_POOL_SUFFIX = "_ut"       # the explicit terminal-alkene pool of kernel mode: <label>_ut
 INTERIOR_RADICAL_POOL_SUFFIX = "_rm"   # the explicit interior-radical pool of kernel mode: <label>_rm
@@ -1231,6 +1232,9 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     from rmgpy.kmc.melt_engine import declared_initialization
     if table.get("schema") not in KERNEL_RATES_SCHEMAS:
         raise ProducerError(f"not a kernel-rates table of {KERNEL_RATES_SCHEMAS} (got {table.get('schema')!r})")
+    beyond = K.state_model_beyond_v3(table)
+    if beyond is not None:
+        raise ProducerError(f"{beyond}: the producer's pools are one per family on that one type")
     if float(table["temperature_K"]) != float(temperature):
         raise ProducerError(f"the table is at temperature {table['temperature_K']!r} K, the run at {temperature!r} "
                             "K: kernel mode is isothermal at the table's temperature")

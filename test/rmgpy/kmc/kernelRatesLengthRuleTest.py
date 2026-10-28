@@ -5,9 +5,10 @@ The fixture is a reduced PP catalog (the payloads of three templates of the
 PP catalog assembled at 29df6852c, with their reciprocal twins) and the PP deck
 it is bound to.  Cutting a PP backbone bond leaves a CH end on the head-side
 fragment and a CH2 end on the tail-side one, and interior backbone carbons
-alternate between CH2 and CH; the law probes are head-side fragments, so the
-CH2 end is a site class no probe state carries, and the interior positions of
-one probe carry two classes.
+alternate between CH2 and CH; the interior positions of one probe carry two
+classes.  (Until I-279 the law probes were head-side fragments only, so the
+CH2 end was a site class no probe state carried; it is now probed at the
+start of a piece, ``kmc-kernel-rates/4``.)
 """
 
 import gzip
@@ -62,20 +63,22 @@ def terms(table, template):
 
 
 def carried(probes, label, n, x):
-    family = kr_.family_of(label)
+    family, tau = kr_.family_of(label), kr_.type_of(label)
     state, paths = probes.melt()
-    _seg, feature = probes.put(state, paths[0], family, n, x)
-    return family if family == "chain" else f"{family}:{kr_._label(state, feature)}"
+    _seg, feature = probes.put(state, paths[0], family, n, x, tau=tau)
+    return (family if family == "chain" else f"{family}:{kr_._label(state, feature)}") + (f"/{tau}" if tau else "")
 
 
-def test_a_class_no_probe_state_carries_is_refused_by_name(pp):
-    """The CH2 end has site counts but no probe: its terms carry no law and say
-    which class and lengths, instead of the table failing on the missing length."""
+def test_the_tail_side_end_class_is_probed_at_the_start_of_a_piece(pp):
+    """The CH2 end has site counts and (since I-279) probes: the start of a piece of every length.  Its terms
+    have a law or say why, and the reason is never a missing probe."""
     mine = [t for t in terms(pp["table"], CH2_END_DONOR)]
     assert mine
     for t in mine:
-        assert t["law"] is None
-        assert re.search(r"no probe of class radical_end:CH2 ", t["law_refused"])
+        assert t["law"] is not None or t.get("law_refused") or t.get("law_inert"), t
+        assert not re.search(r"no probe of class", t.get("law_refused") or ""), t["law_refused"]
+    states = next(s for _p, label, s in pp["states"] if label == "radical_end:CH2")
+    assert states and all(x == "start" for _n, x in states)
 
 
 def test_every_state_a_law_reads_carries_the_laws_class(pp):
@@ -90,9 +93,10 @@ def test_every_state_a_law_reads_carries_the_laws_class(pp):
 
 
 def test_the_interior_participant_has_a_law(pp):
-    (term,) = terms(pp["table"], INTERIOR_ACCEPTOR)
-    laws = [term["law"][s] for s in ("S0", "S1")] if term["law"] else []
-    assert any(law["class"] == "radical_interior:CH" and law["far"]["outcomes"] for law in laws), term
+    """One term per kernel (since I-279 the partner's classes include the other chain types' ends)."""
+    mine = terms(pp["table"], INTERIOR_ACCEPTOR)
+    laws = [t["law"][s] for t in mine if t["law"] for s in ("S0", "S1")]
+    assert any(law["class"] == "radical_interior:CH" and law["far"]["outcomes"] for law in laws), mine
 
 
 def test_every_term_has_a_law_or_says_why(pp):
@@ -122,17 +126,17 @@ TERTIARY_DONOR = "7313ebd9a7c7:54f630374459"      # H_Abstraction: a chain donor
 
 def test_the_far_law_check_does_not_read_which_interior_class_was_noted_first():
     """One length of an interior family carries two PP classes (CH2 and CH
-    positions); the far rule keeps an interior product's family and length
-    only, so its check must hold whichever class the length was labelled with
-    first.  The donor here makes the tertiary radical at backbone atom 1."""
+    positions); its check must hold whichever class the length was labelled with
+    first.  The donor here makes the tertiary radical at backbone atom 1 (since
+    I-279 a product code carries its class: radical_interior:C, not the family)."""
     doc = json.loads(gzip.decompress((FIXTURES / "pp_tertiary_donor.json.gz").read_bytes()))
     original = kr_._Probes.label
 
-    def neighbour(self, family, n):
-        """The label of an interior family read at its second position."""
+    def neighbour(self, family, n, x=None, tau=None):
+        """The label of an interior family of the declared type read at its second position."""
         xs = self.positions(family, n)
-        if family not in kr_.INTERIOR_FAMILIES or len(xs) < 2:
-            return original(self, family, n)
+        if family not in kr_.INTERIOR_FAMILIES or len(xs) < 2 or x is not None or tau is not None:
+            return original(self, family, n, x, tau)
         state, paths = self.melt()
         _seg, feature = self.put(state, paths[0], family, n, xs[1])
         return f"{family}:{kr_._label(state, feature)}"
@@ -143,9 +147,10 @@ def test_the_far_law_check_does_not_read_which_interior_class_was_noted_first():
     finally:
         kr_._Probes.label = original
     assert tables[0]["kernels"] == tables[1]["kernels"]
-    (term,) = [t for t in terms(tables[0], TERTIARY_DONOR) if t["law"]]
-    donor = [law for law in term["law"].values() if law["class"] == "chain"]
-    assert donor and donor[0]["far"]["first"]["1"] == [[1, [["radical_interior", 1, 0, 0]]]]
+    # one term per acceptor class (since I-279 the ends of every chain type): the donor's product is the same in each
+    donor = [law for t in terms(tables[0], TERTIARY_DONOR) if t["law"] for law in t["law"].values()
+             if law["class"] == "chain"]
+    assert donor and all(law["far"]["first"]["1"] == [[1, [["radical_interior:C", 1, 0, 0]]]] for law in donor)
 
 
 def test_identifying_a_long_interior_radical_does_not_branch_over_hydrogens():

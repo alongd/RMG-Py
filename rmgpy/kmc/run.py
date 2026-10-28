@@ -304,8 +304,9 @@ WELL_MIXED_D0_M2_S = 1.0e200
 TRANSPORT_PASSES = ("declared", "well_mixed_bound")
 # the kernel-rates versions a template selection reads (rmgpy.kmc.kernel_rates.SCHEMA is one): every one
 # carries the fields it reads alike (schema, catalog.chemistry_sha256, temperature_K, kernels.*.type,
-# kernels.*.templates[].template); /2 added product laws and overrides, /3 element compositions
-KERNEL_RATES_SCHEMAS = ("kmc-kernel-rates/1", "kmc-kernel-rates/2", "kmc-kernel-rates/3")
+# kernels.*.templates[].template); /2 added product laws and overrides, /3 element compositions, /4 chain
+# types and codes by class (no field read here)
+KERNEL_RATES_SCHEMAS = ("kmc-kernel-rates/1", "kmc-kernel-rates/2", "kmc-kernel-rates/3", "kmc-kernel-rates/4")
 SELECTION_DEFINITION = (
     "the run fires only the selected loaded templates; the excluded ones keep their weights, are matched "
     "and indexed, never fire, take no part in the MET activation, and their intrinsic hazard is "
