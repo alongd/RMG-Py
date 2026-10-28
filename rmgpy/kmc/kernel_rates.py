@@ -142,7 +142,11 @@ length label of its family, e.g. the methyl radical at 1 period, ethylene at
 (``fixed_lengths``) with no far outcome.  ``law_inert``: an interior
 participant with no far-field site (the rate law above gives 0);
 ``law_refused``: a product that is no declared state (e.g. a vinyl radical),
-or a class no probe state carries.
+a class no probe state carries, or a far field the law cannot state (an
+interior law whose neighbouring far-field states differ, a chain law whose
+end effects reach the middle of the longest probe, a far rule that does not
+reproduce the exact outcomes or gives an impossible product): every such
+condition refuses its law by name, never the table.
 ``families``: per pool family its
 label per length, the molar-mass offset (M = n * unit mass + offset), the
 element-composition offset (``kmc-kernel-rates/3``, I-217: atoms = n *
@@ -220,7 +224,12 @@ of a cut); interior positions on such a type are oriented, never folded:
 a product's position is ``{"head_distance": d}`` or ``{"tail_distance":
 d}`` (its feature d backbone bonds from the head or the tail, the nearer
 one), and an end-distance law's ``at`` keys are ``head_distance=d`` /
-``tail_distance=d``; a type that is its own reverse keeps ``end_distance``.
+``tail_distance=d``; a type that is its own reverse keeps ``end_distance``,
+and its far-field interior states are read off the piece's mirror: a state
+where a product holding the whole reactant has its feature past the middle
+of the piece (read from the other end than the reactant's feature, e.g. the
+two alkenes of a CH donor at the centre atom of a c1~c1 piece, mirror images
+both read C=CH) is passed over for the next middlemost (I-279b).
 Product codes carry their class (``[label, alpha, beta, gamma]``), so a far
 rule is checked by class; a chain law whose bulk depends on the anchor's
 place in the period gives ``bulk_phases`` (one row per phase k % nbb, the
@@ -1355,6 +1364,22 @@ def _place_of(product) -> Optional[_Place]:
     return product[3] if product[0] == "join" else product[4]
 
 
+def _across_mirror(L, rows) -> bool:
+    """Whether a measured interior state of L backbone atoms has a product
+    read across the mirror of its piece: a product holding the whole
+    reactant, on a chain type that is its own reverse, with its feature past
+    the middle (nearer the last atom), so read from the other end than the
+    reactant's feature (whose positions are those nearer the head,
+    ``_Probes.positions``)."""
+    for _k, prods in rows:
+        for r in prods:
+            p = None if r[0] == "join" else r[4]
+            if p is not None and p.index is not None and p.first and p.last and not p.oriented \
+                    and 2 * p.index > L - p.width:
+                return True
+    return False
+
+
 def _absolute_placed(product) -> Tuple:
     """``_absolute`` with an interior feature's end distance on the product."""
     if product[0] == "join":
@@ -1424,7 +1449,7 @@ def _expand_placed(outcomes, L, k, nbb, types=None) -> Counter:
             lp = alpha * L + beta * k + gamma
             r = _residue(token, types)
             if lp < 1 or lp < r or (lp - r) % nbb:
-                raise KernelRatesError(f"a positioned law gives an impossible product at {L} backbone atoms")
+                raise _OffDeclared(f"a positioned law gives an impossible product at {L} backbone atoms")
             if where is None:
                 coded.append((token, (lp - r) // nbb))
                 continue
@@ -1591,15 +1616,23 @@ class _Laws:
         family, tau, r = self._class(label)
         probes = self.probes
         if family in INTERIOR_FAMILIES:     # the middle of the two longest probes
-            if probes.symmetric(tau):
-                order = lambda n: list(reversed(probes.positions(family, n, tau)))
-            else:
-                order = lambda n: sorted(probes.positions(family, n, tau),
-                                         key=lambda x: (abs(2 * x + WIDTH[family] - n * self.nbb - r), x))
-            mine = lambda n: [(n, x) for x in order(n) if probes.carries(label, n, x)]
-            return mine(self.n_hi)[:2] + mine(self.n_hi - 1)[:1]
+            longest, shorter = self._middle(label)
+            return longest[:2] + shorter[:1]
         return [(n, x) for n in range(0 if r else 1, self.n_hi + 1) for x in probes.positions(family, n, tau)
                 if probes.carries(label, n, x)]
+
+    def _middle(self, label):
+        """([(n, x)] on the longest probe, the same on the next): every
+        interior state carrying ``label``, middlemost first."""
+        family, tau, r = self._class(label)
+        probes = self.probes
+        if probes.symmetric(tau):
+            order = lambda n: list(reversed(probes.positions(family, n, tau)))
+        else:
+            order = lambda n: sorted(probes.positions(family, n, tau),
+                                     key=lambda x: (abs(2 * x + WIDTH[family] - n * self.nbb - r), x))
+        mine = lambda n: [(n, x) for x in order(n) if probes.carries(label, n, x)]
+        return mine(self.n_hi), mine(self.n_hi - 1)
 
     # -- measuring --------------------------------------------------------------
     def _uni(self, ci, label, n, x):
@@ -1756,10 +1789,25 @@ class _Laws:
                         "exact_to_n": lengths[-1]})
             return self._positioned(law, raw)
         if anchor == "interior":
-            got = [Counter(r for _k, r in measure(n, x, check=(i == 0))[1]) for i, (n, x) in enumerate(states)]
+            # the far field: the two middlemost states of the longest probe and the middlemost of the next,
+            # each read off the mirror of a piece that is its own reverse (module doc, chain types)
+            got = []
+            for want, candidates in zip((2, 1), self._middle(label)):
+                kept = 0
+                for n, x in candidates:
+                    if kept == want:
+                        break
+                    rel = measure(n, x, check=not got)[1]
+                    if _across_mirror(*raw[(n, x)]):
+                        del raw[(n, x)]
+                        continue
+                    got.append(Counter(r for _k, r in rel))
+                    kept += 1
+            if not got:
+                raise _OffDeclared(f"{label}: no far-field state off the mirror of its piece")
             if any(g != got[0] for g in got[1:]):
-                raise KernelRatesError(f"{label}: the far-field products of class {ci} differ between "
-                                       "neighbouring positions")
+                raise _OffDeclared(f"{label}: the far-field products of class {ci} differ between "
+                                   "neighbouring positions")
             law["far"] = {"outcomes": _outcome_list(got[0])}
             return self._positioned(law, raw)
         exact, rel_hi = {}, {}
@@ -1782,7 +1830,7 @@ class _Laws:
             odd = [k for k in range(L) if by_k.get(k, Counter()) != bulk[k % nbb]]
             edge = max([min(k, L - 1 - k) + 1 for k in odd], default=0)
             if 2 * edge >= L:
-                raise KernelRatesError(f"class {ci}: end effects reach the middle of the longest probe")
+                raise _OffDeclared(f"class {ci}: end effects reach the middle of the longest probe")
             rows = {ph: _outcome_list(c) for ph, c in bulk.items()}
             law["far"] = {"edge": edge,
                           "first": {str(k): _outcome_list(by_k.get(k, Counter())) for k in range(edge)},
@@ -1795,7 +1843,7 @@ class _Laws:
             if len(exact) < EXACT_POINTS or \
                     _law_view(predict(law, n, nbb, self.probes.label, self.types), by_class) != \
                     _law_view(exact[n], by_class):
-                raise KernelRatesError(f"class {ci} {label}: the far-field law does not hold at {n} periods")
+                raise _OffDeclared(f"class {ci} {label}: the far-field law does not hold at {n} periods")
         law["exact"] = {str(n): _outcome_list(c) for n, c in sorted(exact.items())}
         law["exact_to_n"] = max(exact) if exact else 0
         return self._positioned(law, raw)
@@ -2091,7 +2139,7 @@ def predict(law: dict, n: int, nbb: int, label_of=None, types: Optional[dict] = 
             rows = far["bulk_phases"][str(k % nbb)] if "bulk_phases" in far else far["bulk"]
         got = _expand(rows, L, k, nbb, label_of, types)
         if got is None:
-            raise KernelRatesError(f"a far-field law gives an impossible product at {n} periods")
+            raise _OffDeclared(f"a far-field law gives an impossible product at {n} periods")
         total.update(got)
     return total
 
