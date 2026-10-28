@@ -153,7 +153,7 @@ MOM_EXHAUSTION_FLOOR_K = 100.0   # rmgpy/solver/polymer.pyx:153 EXHAUSTION_FLOOR
 MOM_MOMENT_FLOOR = max(MOM_SMALL_EPS, MOM_EXHAUSTION_FLOOR_K * SIMULATOR_ATOL)
 STATUS_INACTIVE = "refused:inactive_chemistry"
 BUILTIN_STRUCTURES = {"H": "[H]", "H2": "[H][H]"}
-# /4 is read only in the /3 state model (one chain type, its own reverse): kernel_rates.state_model_beyond_v3
+# /4 with chain types (kernel_rates.state_model_beyond_v3) is read in positions mode only (kernel_input, I-278)
 KERNEL_RATES_SCHEMAS = ("kmc-kernel-rates/2", "kmc-kernel-rates/3", "kmc-kernel-rates/4")
 RADICAL_POOL_SUFFIX = "_re"      # the explicit end-radical pool of kernel mode: <label>_re
 ALKENE_POOL_SUFFIX = "_ut"       # the explicit terminal-alkene pool of kernel mode: <label>_ut
@@ -641,15 +641,81 @@ def _uniform_cut(group, a: float, radical: Optional[str], where: str) -> Tuple[i
     return e, classes.pop(), uniform_from
 
 
-def _feature_sites(count: dict, nbb: int, what: str) -> Tuple[float, Dict[int, float]]:
+def _typed_cuts(group, where: str) -> List[dict]:
+    """The uniform cut per position in the period (I-278) of a homolysis
+    kernel's templates on a ``kmc-kernel-rates/4`` table (``group``: (term,
+    chain sites) pairs): their exact outcomes, summed over the templates,
+    grouped by the pair of fragment classes and the residue (the reactant's
+    periods minus the fragments'), each group the uniform cut: fragments of k
+    periods of its first class (the smaller label) and n - residue - k of its
+    second for every k in [e, n - residue - e'], ``a`` sites per position (a
+    pair of one class counted unordered), on every length from
+    ``uniform_from`` (shorter lengths below every template's ``exact_from_n``
+    set it; a longer one that differs is refused, naming its positions).
+    [{classes, residue, a, min_fragments, uniform_from, a_by_template}]; a
+    template's ``a`` is its outcomes' growth per period at the top length."""
+    top = min(int(t["law"]["exact_to_n"]) for t, _s in group)
+    affine_from = max(int(s.get("exact_from_n") or 0) for _t, s in group)
+    got = defaultdict(lambda: defaultdict(Counter))
+    by_template = defaultdict(lambda: defaultdict(Counter))
+    for t, _s in group:
+        for key_n, outs in t["law"]["exact"].items():
+            n = int(key_n)
+            for m, prods in outs:
+                if len(prods) != 2:
+                    raise ProducerError(f"{where}: at n = {n} an outcome {prods} is not two fragments")
+                (c0, k0), (c1, k1) = sorted((p[0], int(p[1])) for p in prods)
+                got[(c0, c1, n - k0 - k1)][n][(k0, k1)] += m
+                by_template[(c0, c1, n - k0 - k1)][t["template"]][n] += m
+    if not got:
+        raise ProducerError(f"{where}: the law cuts no chain up to n = {top}")
+    out = []
+    for (c0, c1, residue), rows in sorted(got.items()):
+        e0 = min(k0 for counts in rows.values() for k0, _k1 in counts)
+        e1 = min(k1 for counts in rows.values() for _k0, k1 in counts)
+        if c0 == c1:
+            e0 = e1 = min(e0, e1)
+        positions = top - residue - e0 - e1 + 1
+        if positions < 1:
+            raise ProducerError(f"{where}: fragments {c0} + {c1} (residue {residue}) are cut at no position of n = "
+                                f"{top}")
+        a = sum(rows[top].values()) / positions
+
+        def uniform(n):
+            want = Counter()
+            for k in range(e0, n - residue - e1 + 1):
+                want[tuple(sorted((k, n - residue - k))) if c0 == c1 else (k, n - residue - k)] += a
+            return want
+        uniform_from = 1
+        for n in range(1, top + 1):
+            want = uniform(n)
+            if Counter(rows.get(n, {})) == want:
+                continue
+            if n < affine_from:
+                uniform_from = n + 1
+                continue
+            named = ", ".join(f"{k} covered {rows.get(n, {}).get(k, 0):g} times, {want.get(k, 0):g} expected"
+                              for k in sorted(set(rows.get(n, {})) | set(want))
+                              if rows.get(n, {}).get(k, 0) != want.get(k, 0))
+            raise ProducerError(f"{where}: at n = {n} the cuts into {c0} + {c1} (residue {residue}) are not the "
+                                f"uniform cut over [{e0}, {n - residue - e1}] with {a!r} sites per position: {named}")
+        out.append({"classes": (c0, c1), "residue": residue, "a": a, "min_fragments": (e0, e1),
+                    "uniform_from": uniform_from,
+                    "a_by_template": {name: counts[top] - counts[top - 1]
+                                      for name, counts in sorted(by_template[(c0, c1, residue)].items())}})
+    return out
+
+
+def _feature_sites(count: dict, nbb: int, what: str, residue: int = 0) -> Tuple[float, Dict[int, float]]:
     """(per_feature, {n periods: sites}) of an end class's site count: its
-    far-field count and its ``profile`` at fixed fragment lengths."""
+    far-field count and its ``profile`` at fixed fragment lengths (n periods
+    past the class's chain-type ``residue``)."""
     per, profile = float(count["per_feature"]), {}
     for key, value in count.get("profile", {}).items():
         m = re.fullmatch(r"fragment_backbone_atoms=(\d+)", key)
-        if not m or len(value) != 1 or int(m.group(1)) % nbb:
+        if not m or len(value) != 1 or int(m.group(1)) < residue or (int(m.group(1)) - residue) % nbb:
             raise ProducerError(f"{what} a profile entry {key}: {value} has no moment form")
-        profile[int(m.group(1)) // nbb] = float(value[0])
+        profile[(int(m.group(1)) - residue) // nbb] = float(value[0])
     return per, profile
 
 
@@ -676,8 +742,10 @@ def _monomer(table: dict, spec, ppu: int) -> Optional[dict]:
 
 
 def _kernel_kind(kid: str, kernel: dict, families: dict, family_of: Dict[str, str], monomer: Optional[dict],
-                 positions: bool = False) -> str:
-    """The MoM kernel of a table kernel (``kernel_input``), or refused by name."""
+                 positions: bool = False, typed: bool = False) -> str:
+    """The MoM kernel of a table kernel (``kernel_input``), or refused by name.
+    ``typed`` (a /4 table with chain types): every recombination is a join
+    (its product's class and type are read from its code)."""
     ktype, classes = kernel["type"], kernel["classes"]
     if positions and ktype == "beta_scission" and family_of.get(classes[0]) in INTERIOR_FAMILIES:
         return "interior_scission"
@@ -687,9 +755,10 @@ def _kernel_kind(kid: str, kernel: dict, families: dict, family_of: Dict[str, st
         if any(not c.startswith("radical_end:") for c in classes):
             raise ProducerError(f"{kid}: no MoM kernel joins classes {classes} (end radicals only)")
         far = (families.get("radical_end") or {}).get("label_far")
-        return "recombination" if classes == [far, far] else "join"
+        return "recombination" if classes == [far, far] and not typed else "join"
     if ktype == "addition":
-        return "propagation" if monomer is not None and classes[0] == monomer["class"] else "join"
+        return "propagation" if monomer is not None and classes[0] in monomer.get("classes", [monomer["class"]]) \
+            else "join"
     if ktype == "beta_scission":
         if classes[0] not in family_of:
             raise ProducerError(f"{kid}: no MoM pool carries its participant class {classes[0]!r} (no family of the "
@@ -754,8 +823,9 @@ def _position_boundary(table: dict, kernels: Sequence[str]) -> int:
         for _m, prods in rows:
             for p in prods:
                 if p and isinstance(p[-1], dict):
-                    if "end_distance" in p[-1]:
-                        found.add(int(p[-1]["end_distance"]))
+                    for kind in ("end_distance", "head_distance", "tail_distance"):     # I-278: oriented
+                        if kind in p[-1]:
+                            found.add(int(p[-1][kind]))
                     if "bulk" in p[-1]:
                         starts.add(int(p[-1]["bulk"][0]))
 
@@ -764,12 +834,14 @@ def _position_boundary(table: dict, kernels: Sequence[str]) -> int:
             return
         if law.get("anchor") == "end_distance":
             for d, entry in law["at"].items():
-                found.add(int(d))
+                found.add(int(d.rsplit("=", 1)[-1]))            # "d", or "head_distance=d" on an oriented type
                 positions(entry["outcomes"])
             return
         far = (law.get("positioned") or {}).get("far") or {}
         positions(far.get("outcomes", []))
         positions(far.get("bulk", []))
+        for rows in (far.get("bulk_phases") or {}).values():
+            positions(rows)
         for side in ("first", "last"):
             for rows in far.get(side, {}).values():
                 positions(rows)
@@ -786,22 +858,26 @@ def _position_boundary(table: dict, kernels: Sequence[str]) -> int:
     return max([1 + d for d in found] + sorted(starts) + [1])
 
 
-def _placed_outcomes(law: dict, near: Optional[dict], n: int, nbb: int, x: Optional[int] = None) -> Counter:
+def _placed_outcomes(law: dict, near: Optional[dict], n: int, nbb: int, x: Optional[int] = None,
+                     types: Optional[dict] = None) -> Counter:
     """The absolute outcomes ((family, n[, end distance]) tuples) of one
     participant law on n periods: an end-distance law with its feature at
     x, an interior law at x with its near-end law, a positioned law, else
-    its exact law or far rule."""
+    its exact law or far rule.  ``types``: a /4 table's ``chain_types``
+    (tuples (class label, n[, position kind, d]), x from the head on an
+    oriented type; kernel_rates.predict_placed)."""
     from rmgpy.kmc import kernel_rates as K
     if law["anchor"] == "end_distance":
-        return K.predict_placed(law, n, nbb, x)
+        return K.predict_placed(law, n, nbb, x, types)
     if law["anchor"] == "interior":
-        return K.predict_near(law, near, n, nbb, x)
+        return K.predict_near(law, near, n, nbb, x, types)
     if law.get("positioned"):
-        return K.predict_placed(law, n, nbb)
+        return K.predict_placed(law, n, nbb, types=types)
     if n <= int(law["exact_to_n"]):
-        return Counter({tuple(sorted(((K.family_of(p[0]), int(p[1])) for p in prods), key=repr)): m
+        token = (lambda p: K.family_of(p[0])) if types is None else (lambda p: p[0])
+        return Counter({tuple(sorted(((token(p), int(p[1])) for p in prods), key=repr)): m
                         for m, prods in law["exact"].get(str(n), [])})
-    return K.predict(law, n, nbb)
+    return K.predict(law, n, nbb, types=types)
 
 
 def _canonical_positions(family: str, L: int) -> Counter:
@@ -810,6 +886,165 @@ def _canonical_positions(family: str, L: int) -> Counter:
     from rmgpy.kmc import kernel_rates as K
     w = K.WIDTH[family]
     return Counter(min(x, L - w - x) for x in range(1, L - w))
+
+
+# --------------------------------------------------------------------------
+# chain types (I-278): the kmc-kernel-rates/4 state model
+# --------------------------------------------------------------------------
+POSITION_TAGS = {"end_distance": "d", "head_distance": "h", "tail_distance": "t"}
+
+
+def _feature_tag(cls: str) -> str:
+    """A class's feature atoms in letters and digits (``radical_end:CH2/c1~c1`` -> ``CH2``; '' for a chain)."""
+    parts = cls.split("/", 1)[0].split(":", 1)
+    return re.sub(r"[^A-Za-z0-9]", "", parts[1]) if len(parts) > 1 else ""
+
+
+def _state_classes(types: dict) -> Dict[str, dict]:
+    """{class label: {family, type, side, lengths, min_n, short}} of every class a /4 table's chain types
+    declare: an interior class (side None, every n from min_n), an end class's far label (every n from min_n
+    but its ``short`` labels' lengths) and each short label (``lengths``, the lengths that carry it)."""
+    out = {}
+    for name, t in sorted(types.items()):
+        for fam, f in sorted(t["families"].items()):
+            for cls in f.get("classes") or ():
+                out[cls] = {"family": fam, "type": name, "side": None, "lengths": None, "min_n": int(f["min_n"]),
+                            "short": {}}
+            for side, end in sorted((f.get("ends") or {}).items()):
+                short = {int(n): lab for n, lab in end["labels"].items()}
+                out[end["label_far"]] = {"family": fam, "type": name, "side": side, "lengths": None,
+                                         "min_n": int(end["min_n"]), "short": short}
+                for n, lab in sorted(short.items()):
+                    out.setdefault(lab, {"family": fam, "type": name, "side": side, "lengths": [], "min_n": n,
+                                         "short": {}})["lengths"].append(n)
+    return out
+
+
+def _carried(info: dict, n: int) -> bool:
+    """Whether a class (``_state_classes``) is the state of its family on n periods of its type."""
+    if info["lengths"] is not None:
+        return n in info["lengths"]
+    return n >= info["min_n"] and n not in info["short"]
+
+
+def _interior_phases(spec, types: dict, ppu: int, nbb: int) -> Dict[Tuple[str, str], Dict[int, str]]:
+    """{(type, interior family): {head index mod nbb: class}}: the class of a mid-chain feature by its place in
+    the period, read on a pristine piece of each type (kernel_rates._piece, the table's own probe chain): the
+    feature atoms' element and hydrogens left (kernel_rates._features' labels; on a type that is its own reverse
+    the head-side reading, its positions folded).  Refused when one phase gives two classes or a class the
+    table does not declare."""
+    from rmgpy.kmc import kernel_rates as K
+    out = {}
+    for name, t in sorted(types.items()):
+        s, r, sym = int(t["start_offset"]), int(t["residue"]), bool(t["symmetric"])
+        state, path = K._piece(spec, s, r, 4 + 4 * ppu, ppu, nbb)
+        L, h = len(path), [len(K._hydrogens(state, a)) for a in path]
+
+        def atom(j):
+            left = h[j] - 1
+            return state.atoms[path[j]].element + ("H" if left == 1 else f"H{left}" if left else "")
+        suffix = "" if t["declared"] else f"/{name}"
+        for fam in K.INTERIOR_FAMILIES:
+            if fam not in t["families"]:
+                continue
+            w, phases = K.WIDTH[fam], {}
+            for x in range(1, L - w):
+                if (sym and x > L - w - x) or any(h[j] < 1 for j in range(x, x + w)):
+                    continue
+                cls = f"{fam}:{'='.join(atom(j) for j in range(x, x + w))}{suffix}"
+                if cls not in (t["families"][fam].get("classes") or ()):
+                    raise ProducerError(f"chain type {name}: a {fam} feature at head index {x} is class {cls!r}, "
+                                        f"which the table does not declare ({t['families'][fam].get('classes')})")
+                if phases.setdefault(x % nbb, cls) != cls:
+                    raise ProducerError(f"chain type {name}: {fam} classes {phases[x % nbb]!r} and {cls!r} at one "
+                                        "place in the period")
+            out[(name, fam)] = phases
+    return out
+
+
+def _unit_backbone(repeat) -> list:
+    """The repeat unit's backbone atoms from its head port (``*2``, bonded to the head cap) to its tail port
+    (``*1``)."""
+    head = [a for a in repeat.atoms if a.label == "*2"]
+    tail = [a for a in repeat.atoms if a.label == "*1"]
+    if len(head) != 1 or len(tail) != 1:
+        raise ProducerError(f"the repeat unit's ports are not one *2 and one *1 atom ({repeat.to_smiles()})")
+    back, frontier = {head[0]: None}, [head[0]]
+    while frontier and tail[0] not in back:
+        frontier = [b for a in frontier for b in a.edges if not b.is_hydrogen() and b not in back
+                    and back.setdefault(b, a) is a]
+    if tail[0] not in back:
+        raise ProducerError("the repeat unit's ports are not connected")
+    path = [tail[0]]
+    while back[path[-1]] is not None:
+        path.append(back[path[-1]])
+    return path[::-1]
+
+
+def _cap(repeat, keep: list, cut_to, port_label: str):
+    """A MoM end group cut from the repeat unit: the backbone atoms ``keep`` (one port among them) with their
+    side groups, the bond from ``keep``'s inner end to ``cut_to`` replaced by an H; refused when the cut opens a
+    ring."""
+    from rmgpy.molecule import Atom
+    mol = repeat.copy(deep=True)
+    index = {a: i for i, a in enumerate(repeat.atoms)}
+    inner, other = mol.atoms[index[keep[-1]]], mol.atoms[index[cut_to]]
+    mol.remove_bond(mol.get_bond(inner, other))
+    start = mol.atoms[index[keep[0]]]
+    seen, frontier = {start}, [start]
+    while frontier:
+        frontier = [b for a in frontier for b in a.edges if b not in seen and not seen.add(b)]
+    if other in seen:
+        raise ProducerError("a chain type's end group would cut a ring of the repeat unit")
+    for a in [a for a in mol.atoms if a not in seen]:
+        mol.remove_atom(a)
+    hydrogen = Atom(element="H")
+    mol.add_atom(hydrogen)
+    mol.add_bond(Bond(inner, hydrogen, 1))
+    for a in mol.atoms:
+        if a.label and a.label != port_label:
+            a.label = ""
+    mol.update()
+    return mol
+
+
+def _type_end_groups(spec, t: dict, nbb: int, ppu: int) -> Tuple[Any, Any]:
+    """(head, tail) MoM end groups of a chain type's pools: the declared polymer's, but for a start offset s > 0
+    the head cap is the backbone atoms from offset s to the period's end (the unit's tail-port side, with their
+    side groups, H on the cut), and the tail cap the residue atoms past the whole periods from the period's start
+    (the head-port side), so a pool chain of n periods is n declared units plus these caps (module doc, chain
+    types).  Refused by name when the caps do not leave n whole periods."""
+    repeat, (head, tail) = spec.legacy_molecules()
+    path = _unit_backbone(repeat)
+    if len(path) != ppu * nbb:
+        raise ProducerError(f"the repeat unit's backbone has {len(path)} atoms, not {ppu} x {nbb}")
+    s, r = int(t["start_offset"]), int(t["residue"])
+    tail_atoms = (s + r) % nbb if s else r
+    if s and s + r < nbb:
+        raise ProducerError(f"chain type (s={s}, r={r}): its caps hold no whole period between them, so its pool "
+                            "has no end-group form of the declared polymer")
+    if s:
+        keep = path[len(path) - (nbb - s):][::-1]
+        head = _cap(repeat, keep, path[len(path) - (nbb - s) - 1], "*1")
+    if tail_atoms:
+        tail = _cap(repeat, path[:tail_atoms], path[tail_atoms], "*2")
+    return head, tail
+
+
+def _end_site(info: dict, t: dict, nbb: int) -> str:
+    """The MoM site of an end-featured class: ``secondary`` (the first unit's head port) for the start end of a
+    type at offset 0, ``primary`` (the last unit's tail port) for its last end when no tail cap follows; a type
+    that is its own reverse takes whichever end sits on a port.  Refused by name otherwise."""
+    s, r = int(t["start_offset"]), int(t["residue"])
+    start_on_port, last_on_port = s == 0, (s + r) % nbb == 0
+    if info["side"] == "start" and start_on_port:
+        return "secondary"
+    if info["side"] == "last" and last_on_port:
+        return "primary"
+    if t["symmetric"] and start_on_port:
+        return "secondary"
+    raise ProducerError(f"class on chain type (s={s}, r={r}), {info['side']} end: the end atom sits on no port of "
+                        "a declared unit, where a MoM end pool's feature is")
 
 
 def _polynomial_from(values: Dict[int, float], degree: int, top: int) -> Tuple[Optional[int], Optional[list]]:
@@ -1232,9 +1467,10 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     from rmgpy.kmc.melt_engine import declared_initialization
     if table.get("schema") not in KERNEL_RATES_SCHEMAS:
         raise ProducerError(f"not a kernel-rates table of {KERNEL_RATES_SCHEMAS} (got {table.get('schema')!r})")
-    beyond = K.state_model_beyond_v3(table)
-    if beyond is not None:
-        raise ProducerError(f"{beyond}: the producer's pools are one per family on that one type")
+    types = table.get("chain_types") or None
+    if types is not None and not positions:
+        raise ProducerError(f"{K.state_model_beyond_v3(table)}: the producer reads it in positions mode only "
+                            "(--kernel-positions), where a mid-chain class is held per oriented position class")
     if float(table["temperature_K"]) != float(temperature):
         raise ProducerError(f"the table is at temperature {table['temperature_K']!r} K, the run at {temperature!r} "
                             "K: kernel mode is isothermal at the table's temperature")
@@ -1258,11 +1494,22 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     family_of = {lab: fam for fam, f in families.items() for lab in [f["label_far"], *f.get("labels", {}).values()]}
     label_of = _label_of(families)
     monomer = _monomer(table, spec, ppu)
+    # I-278, chain types: every class of every type, its family, side and lengths; a mid-chain class by its
+    # place in the period; the monomer read from either end of a declared unit
+    sclass = _state_classes(types) if types else {}
+    phases = _interior_phases(spec, types, ppu, nbb) if types else {}
+    family_of.update({cls: info["family"] for cls, info in sclass.items()})
+    if types and monomer is not None:
+        monomer["classes"] = sorted({cls for cls, info in sclass.items() if info["family"] == "alkene_terminal"
+                                     and types[info["type"]]["declared"] and info["lengths"] == [ppu]})
+
+    def carried_at(cls, n):
+        return _carried(sclass[cls], n) if types else label_of(family_of[cls], n) == cls
     by_type = {"homolysis": [], "recombination": [], "transfer": [], "move": [], "join": [], "depropagation": [],
                "propagation": [], "interior_scission": []}
     for kid in sorted(set(kernels)):
         kernel = table["kernels"][kid]
-        by_type[_kernel_kind(kid, kernel, families, family_of, monomer, positions)].append((kid, kernel))
+        by_type[_kernel_kind(kid, kernel, families, family_of, monomer, positions, bool(types))].append((kid, kernel))
     # the pool of each class: a family's far class its family pool, a short class of the end-radical family (a
     # length label: the methyl radical) a pool of its own, <radical_label><its first length>
     pools = {"chain": label, "radical_end": radical_label, "alkene_terminal": alkene_label,
@@ -1274,15 +1521,34 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             return None
         if cls == families[fam]["label_far"]:
             return pools.get(fam)
-        if fam == "radical_end" and radical_label is not None:
+        if fam == "radical_end" and radical_label is not None and cls in families[fam].get("labels", {}).values():
             return f"{radical_label}{min(int(n) for n, lab in families[fam]['labels'].items() if lab == cls)}"
+        if types and pools.get(fam) is not None:
+            # I-278: every other class of a chain type, <family pool>_<feature atoms>[_<type>]
+            tag, name = _feature_tag(cls), sclass[cls]["type"]
+            return pools[fam] + (f"_{tag}" if tag else "") + \
+                ("" if types[name]["declared"] else "_" + re.sub(r"[^A-Za-z0-9]", "", name))
         return None
 
     # positions (I-273): a mid-chain family's pool is its bulk pool (end distance D and beyond, the feature uniform
     # there); every end distance d < D has a pool of its own, <family pool>_d<d>
     boundary = _position_boundary(table, sorted(set(kernels))) if positions else None
     position_pools, boundary_departures, position_refused = {}, {}, []
-    if positions:
+    if types:
+        # I-278: per mid-chain class of each type, its bulk pool and one per position class below D: folded
+        # (<pool>_d<d>) on a type that is its own reverse, from the head or the tail (<pool>_h<d>, <pool>_t<d>)
+        # on an oriented one
+        for cls, info in sorted(sclass.items()):
+            if info["family"] not in INTERIOR_FAMILIES or pool_of(cls) is None:
+                continue
+            base, kinds = pool_of(cls), (("end_distance",) if types[info["type"]]["symmetric"]
+                                         else ("head_distance", "tail_distance"))
+            entry = {"family": info["family"], "class": cls, "type": info["type"]}
+            position_pools[base] = dict(entry, position="bulk")
+            for d in range(1, boundary):
+                for kind in kinds:
+                    position_pools[f"{base}_{POSITION_TAGS[kind]}{d}"] = dict(entry, position=f"{POSITION_TAGS[kind]}{d}")
+    elif positions:
         for fam in INTERIOR_FAMILIES:
             if pools.get(fam) is None or fam not in families:
                 continue
@@ -1296,11 +1562,48 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             raise _Unmapped(f"products of family {fam!r}: no MoM pool carries it")
         return pools[fam] if d >= boundary else f"{pools[fam]}_d{d}"
 
+    def typed_position_pool(cls, kind, d):
+        return pool_of(cls) if d >= boundary else f"{pool_of(cls)}_{POSITION_TAGS[kind]}{d}"
+
+    def class_positions(cls, n):
+        """{(x, (position kind, d)): positions} of a mid-chain class on a chain of n periods of its type: x as
+        the table's laws read it (from the head on an oriented type, the end distance on one that is its own
+        reverse), at every backbone position the class sits on (its phase)."""
+        info = sclass[cls]
+        t, fam = types[info["type"]], info["family"]
+        w, L = K.WIDTH[fam], n * nbb + int(types[info["type"]]["residue"])
+        phase = phases.get((info["type"], fam), {})
+        out = Counter()
+        if n < info["min_n"]:
+            return out
+        for x in range(1, L - w):
+            if t["symmetric"]:
+                d = min(x, L - w - x)
+                if phase.get(d % nbb) == cls:
+                    out[(d, ("end_distance", d))] += 1
+            elif phase.get(x % nbb) == cls:
+                out[(x, K._oriented_pos(x, L, w))] += 1
+        return out
+
     def product_pool(prod):
-        """The pool of a positioned product (family, n[, end distance])."""
+        """The pool of a positioned product (family, n[, end distance]); on a /4 table (class label, n[,
+        position kind, d]), the pool of its class (and position class)."""
         fam = prod[0]
         if fam == "join":
             raise _Unmapped(f"its outcome {prod} is a join")
+        if types:
+            info = sclass.get(fam)
+            if info is None:
+                raise _Unmapped(f"its product class {fam!r} is declared by no chain type")
+            if info["family"] in INTERIOR_FAMILIES:
+                if len(prod) < 4:
+                    raise _Unmapped(f"its {fam} product states no position (the table's positions_refused)")
+                if prod[3] < 1:
+                    raise _Unmapped(f"its {fam} product placed at {prod[2]} {prod[3]}, no mid-chain position")
+                return typed_position_pool(fam, prod[2], prod[3])
+            if not _carried(info, int(prod[1])):
+                raise _Unmapped(f"its product class {fam!r} is not its family's state at {prod[1]} periods")
+            return pool_of(fam)
         if fam in INTERIOR_FAMILIES:
             if len(prod) < 3:
                 raise _Unmapped(f"its {fam} product states no position (the table's positions_refused)")
@@ -1315,11 +1618,54 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             raise _Unmapped(f"products of class {cls or fam!r}: no MoM pool carries it")
         return pool
 
+    def one_product(outcome, n, keep_length):
+        if len(outcome) != 1:
+            raise _Unmapped(f"at {n} periods an outcome {outcome} is not one product")
+        (prod,) = outcome
+        if keep_length and prod[0] != "join" and int(prod[1]) != n:
+            raise _Unmapped(f"at {n} periods its product {prod} is not of the reactant's length")
+        return prod
+
+    def typed_flows(law, near, cls, n, where):
+        """slot_flows on a /4 table: an end or chain class read where it is its family's state, a mid-chain
+        class at every position of its class (class_positions), each product into the pool of its class and
+        position class; the boundary rule of slot_flows."""
+        info = sclass[cls]
+        out = defaultdict(float)
+        if info["family"] not in INTERIOR_FAMILIES:
+            if _carried(info, n):
+                for outcome, m in _placed_outcomes(law, near, n, nbb, types=types).items():
+                    out[(pool_of(cls), product_pool(one_product(outcome, n, True)))] += m
+            return out
+        by_pool = defaultdict(list)
+        for (x, (kind, d)), mult in class_positions(cls, n).items():
+            by_pool[typed_position_pool(cls, kind, d)].append((x, d, mult))
+        for src, xs in by_pool.items():
+            total = sum(m for _x, _d, m in xs)
+            bulk = src == pool_of(cls)
+            centre = max(xs, key=lambda v: (v[1], v[0]))[0]
+            middle = {p for o in _placed_outcomes(law, near, n, nbb, centre, types) for p in o} if bulk else set()
+            for x, _d, mult in xs:
+                for outcome, m in _placed_outcomes(law, near, n, nbb, x, types).items():
+                    prod = one_product(outcome, n, True)
+                    dst = product_pool(prod)
+                    if bulk and sclass[prod[0]]["family"] in INTERIOR_FAMILIES and prod[3] < boundary \
+                            and prod not in middle:
+                        dst = pool_of(prod[0])
+                        seen = boundary_departures.setdefault((where, src, dst), {"end_distances": set(),
+                                                                                    "positions": {}})
+                        seen["end_distances"].add(int(prod[3]))
+                        seen["positions"].setdefault(n, {})[x] = mult
+                    out[(src, dst)] += m * mult / total
+        return out
+
     def slot_flows(law, near, cls, n, where):
         """{(source pool, product pool): sites per chain of the source pool} of one participant law on chains
         of n periods: a mid-chain class read at every position of each of its position classes (uniform
         over a class); a bulk-pool product placed relative to the feature that lands below the boundary stays
         in the bulk pool (listed in boundary_departures)."""
+        if types:
+            return typed_flows(law, near, cls, n, where)
         fam = family_of[cls]
         out = defaultdict(float)
         if fam not in INTERIOR_FAMILIES:
@@ -1364,7 +1710,8 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     homolysis, recombination, checks, e_min, validity, laws_out = [], [], {}, None, [], []
     inert, position_departures, mom_weight = [], [], {}
     n_h = None
-    for kid, kernel in by_type["homolysis"]:
+    homolysis_by_pool = {}
+    for kid, kernel in ([] if types else by_type["homolysis"]):
         if kernel["classes"] != ["chain"]:
             raise ProducerError(f"{kid}: no MoM kernel cuts class {kernel['classes']} (the chain class only)")
         group = []
@@ -1431,6 +1778,82 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                           "initial_min_periods": n_min, "w_far_mean": w}
         e_min = e if e_min is None else min(e_min, e)
         n_h = valid if n_h is None else max(n_h, valid)
+    for kid, kernel in (by_type["homolysis"] if types else []):
+        # I-278: per chain type, the uniform cut per position in the period (_typed_cuts), one term per pair of
+        # fragment classes and residue, into the pools of those classes
+        (cls,) = kernel["classes"]
+        if family_of.get(cls) != "chain":
+            raise ProducerError(f"{kid}: no MoM kernel cuts class {cls!r} (chain classes only)")
+        src, group = pool_of(cls), []
+        for term in kernel["templates"]:
+            name, where = term["template"], f"{kid} template {term['template']}"
+            if term.get("law") is None or term.get("law_inert"):
+                raise ProducerError(f"{where}: an inert or unmodelled law has no moment form")
+            sites = rows[name]["participants"][0][cls]
+            if not any(outs for outs in term["law"]["exact"].values()) and not float(sites["a"]) \
+                    and not float(sites["b"]):
+                inert.append({"kernel": kid, "templates": [name], "reason": "no site at any length"})
+                continue
+            short = {p[0] for outs in term["law"]["exact"].values() for _m, prods in outs for p in prods
+                     if sclass.get(p[0], {}).get("lengths") is not None}
+            if short and not float(sites["a"]) and not float(sites["b"]):
+                size_departures.append({
+                    "kernel": kid, "template": name, "w_kmc": float(rows[name]["weight"]),
+                    "sizes": [[int(n), outs] for n, outs in sorted(term["law"]["exact"].items(),
+                                                                   key=lambda x: int(x[0])) if outs],
+                    "reason": f"cuts at single sizes only, making classes {sorted(short)}"})
+                continue
+            group.append((term, sites))
+        if not group:
+            raise ProducerError(f"{kid}: no template cuts a chain")
+        names = sorted(term["template"] for term, _s in group)
+        joined, where = "+".join(names), f"{kid} templates {names}"
+        thinned = {bool(rows[n]["phi_thinned"]) for n in names}
+        if len(thinned) != 1:
+            raise ProducerError(f"{where}: phi-thinned and unthinned templates in one kernel")
+        phi_h = float(phi) if thinned.pop() else 1.0
+        a = math.fsum(float(s["a"]) for _t, s in group)
+        b = math.fsum(float(s["b"]) for _t, s in group)
+        cuts = _typed_cuts(group, where)
+        b_cuts = math.fsum(c["a"] * (1 - c["residue"] - sum(c["min_fragments"])) for c in cuts)
+        if abs(math.fsum(c["a"] for c in cuts) - a) > SITE_LAW_RELATIVE * a or \
+                abs(b_cuts - b) > SITE_LAW_RELATIVE * max(abs(b), a):
+            raise ProducerError(f"{where}: sites a*n + b = {a!r} n + {b!r}, but its cuts per position in the period "
+                                f"sum to {math.fsum(c['a'] for c in cuts)!r} n + {b_cuts!r}")
+        for cut in cuts:
+            (c0, c1), (e0, e1), residue, a_c = cut["classes"], cut["min_fragments"], cut["residue"], cut["a"]
+            p0, p1 = pool_of(c0), pool_of(c1)
+            if p0 is None or p1 is None:
+                raise ProducerError(f"{where}: no MoM pool carries fragment class {c0 if p0 is None else c1!r}")
+            valid = max(cut["uniform_from"], e0 + e1 + residue - 1, 1)
+            if src == label and n_min < valid:
+                raise ProducerError(f"{where}: initial chains of {n_min} periods are shorter than {valid}, where "
+                                    f"its cuts into {c0} + {c1} are not their site count")
+            w = math.fsum(float(rows[t]["weight"]) * a_t for t, a_t in cut["a_by_template"].items()) / a_c
+            b_c = a_c * (1 - residue - e0 - e1)
+            label_t = f"{joined}@{p0}+{p1}" + (f"/r{residue}" if residue else "")
+            entry = {"template": label_t, "w": w, "phi": phi_h, "a": a_c, "b": b_c, "min_fragment": e0,
+                     "periods_per_unit": ppu, "daughter": p0, "valid_from_periods": valid}
+            if (p0, e0, residue) != (p1, e1, 0):
+                entry.update({"partner_daughter": p1, "partner_min_fragment": e1, "residue": residue})
+            homolysis_by_pool.setdefault(src, []).append(entry)
+            fed.update((p0, p1))
+            _position_departures(position_departures, mom_weight, kid, w, [
+                (t, float(rows[t]["weight"]), {"a": a_t}) for t, a_t in cut["a_by_template"].items()])
+            validity.append({"kernel": kid, "template": label_t, "families": ["chain"], "valid_from_periods": valid,
+                             "fit_from_periods": valid,
+                             "participants": [{"slot": 0, "family": "chain", "exact_from_periods": valid}]})
+            law = {"kernel": kid, "template": label_t, "templates": names, "kind": "uni", "families": ["chain"],
+                   "products": None, "pools": [src, p0, p1], "coefficients": [w * phi_h * b_c, w * phi_h * a_c]}
+            if src == label:
+                laws_out.append(law)
+            else:
+                outside_attribution.append(dict(law, reason="a chain type other than the declared one: the balance "
+                                                            "attributes per family of the declared chain"))
+            checks[label_t] = {"min_fragments": [e0, e1], "residue": residue, "uniform_from_periods":
+                               cut["uniform_from"], "exact_to_n": min(t["law"]["exact_to_n"] for t, _s in group),
+                               "w_far_mean": w}
+            e_min = min(e0, e1) if e_min is None else min(e_min, e0, e1)
     for kid, kernel in by_type["recombination"]:
         names = sorted(term["template"] for term in kernel["templates"])
         joined, where = "+".join(names), f"{kid} templates {names}"
@@ -1497,6 +1920,15 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             owners.append(fam)
         return owners
 
+    def owners_have_pools(kid, kernel):
+        """owner_families; on a /4 table every participant class has its own pool (I-278)."""
+        if not types:
+            return owner_families(kid, kernel)
+        for cls in kernel["classes"]:
+            if pool_of(cls) is None:
+                raise ProducerError(f"{kid}: no MoM pool carries its participant class {cls!r}")
+        return [family_of[cls] for cls in kernel["classes"]]
+
     def usable(kid, term):
         """False (listed) for a template the table gives no law."""
         name = term["template"]
@@ -1532,6 +1964,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     interior_scission = {}
     pool_family = {pool: fam for fam, pool in pools.items() if pool is not None}
     pool_family.update({pool: v["family"] for pool, v in position_pools.items()})
+    pool_family.update({pool_of(cls): info["family"] for cls, info in sclass.items() if pool_of(cls) is not None})
 
     def position_top(laws_near):
         """The longest length a positions check reads: past every exact law, chain edge, end-distance law's
@@ -1562,7 +1995,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         return laws
 
     for kid, kernel in (by_type["transfer"] if positions else []):
-        owner_families(kid, kernel)
+        owners_have_pools(kid, kernel)
         classes = kernel["classes"]
         laws = slot_laws_of(kid, kernel, 2)
         top = position_top([s for slots in laws.values() for s in slots])
@@ -1630,7 +2063,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             checks[label_t] = {"kernel": kid, "templates": names, "reachable_from_periods": floor,
                                "law_from_periods": n0, "checked_to_periods": top, "sites_law": c}
     for kid, kernel in (by_type["move"] if positions else []):
-        owner_families(kid, kernel)
+        owners_have_pools(kid, kernel)
         cls = kernel["classes"][0]
         laws = {name: slots[0] for name, slots in slot_laws_of(kid, kernel, 1).items()}
         top = position_top(list(laws.values()))
@@ -1674,7 +2107,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                        "coefficients": [c[0], c[1]]}, (src, dst))
             checks[label_t] = {"kernel": kid, "templates": names, "reachable_from_periods": floor,
                                "law_from_periods": n0, "checked_to_periods": top, "rate_law": [c[0], c[1]]}
-    for kid, kernel in by_type["interior_scission"]:
+    for kid, kernel in ([] if types else by_type["interior_scission"]):
         (cls,) = kernel["classes"]
         fam = family_of[cls]
         laws = {name: slots[0] for name, slots in slot_laws_of(kid, kernel, 1).items()}
@@ -1749,6 +2182,90 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             checks[label_t] = {"kernel": kid, "templates": names, "k_per_chain": k, "valid_from_periods": n0,
                                "checked_to_periods": top}
             mapped_names += [(kid, n) for n in names]
+    for kid, kernel in (by_type["interior_scission"] if types else []):
+        # I-278: per position-class pool of the class, one term per residue (the periods an event's fragments lose
+        # to their residues), each conserving n - residue periods
+        (cls,) = kernel["classes"]
+        fam = family_of[cls]
+        laws = {name: slots[0] for name, slots in slot_laws_of(kid, kernel, 1).items()}
+        if not laws:
+            continue
+        names = sorted(laws)
+        thinned = {bool(rows[n]["phi_thinned"]) for n in names}
+        if len(thinned) != 1:
+            raise ProducerError(f"{kid} templates {names}: phi-thinned and unthinned templates in one kernel")
+        phi_s = float(phi) if thinned.pop() else 1.0
+        top = position_top(list(laws.values()))
+        for src in [p for p, v in position_pools.items() if v["class"] == cls]:
+            rate, fragments = defaultdict(dict), defaultdict(lambda: defaultdict(dict))
+            try:
+                for n in range(floor, top + 1):
+                    xs = [(x, m) for (x, (kind, d)), m in class_positions(cls, n).items()
+                          if typed_position_pool(cls, kind, d) == src]
+                    total = sum(m for _x, m in xs)
+                    r, sums = defaultdict(float), defaultdict(lambda: defaultdict(lambda: [0.0, 0.0, 0.0]))
+                    for name, (law, near) in laws.items():
+                        w = float(rows[name]["weight"]) * phi_s
+                        for x, mult in xs:
+                            for outcome, m in _placed_outcomes(law, near, n, nbb, x, types).items():
+                                share, residue = w * m * mult / total, n - sum(int(f[1]) for f in outcome)
+                                r[residue] += share
+                                for frag in outcome:
+                                    for j in range(3):
+                                        sums[residue][product_pool(frag)][j] += share * float(frag[1]) ** j
+                    for residue, value in r.items():
+                        if value > 0.0:
+                            rate[residue][n] = value
+                            for q, s in sums[residue].items():
+                                fragments[residue][q][n] = s
+            except (_Unmapped, K.KernelRatesError) as why:
+                raise ProducerError(f"{kid} templates {names} on pool {src}: {why}")
+            for residue in sorted(rate):
+                if residue < 0:
+                    raise ProducerError(f"{kid} templates {names} on pool {src}: fragments longer than the parent "
+                                        f"by {-residue} periods")
+                fits = [_polynomial_from(rate[residue], 0, top)]
+                moments_ = {}
+                for q, by_n in sorted(fragments[residue].items()):
+                    q_fits = [_polynomial_from({n: by_n.get(n, [0.0] * 3)[j] / rate[residue][n]
+                                                for n in rate[residue]}, j, top) for j in range(3)]
+                    fits += q_fits
+                    moments_[q] = [f[1] for f in q_fits]
+                if any(n0 is None for n0, _c in fits):
+                    unmapped.append({"kernel": kid, "templates": names, "pools": [src], "residue": residue,
+                                     "reason": (
+                        "the rate per chain is not one constant, or a product pool's fragment length moments are not "
+                        f"polynomials of their order in n, on lengths up to {top} periods")})
+                    continue
+                n0 = max(n0 for n0, _c in fits)
+                if n0 > floor and not short_lengths(kid, names, n0, 0.0, "the rate per chain is not one constant, "
+                                                                          "or a fragment moment not a polynomial,"):
+                    continue
+                q10 = math.fsum(m[1][0] for m in moments_.values())
+                q11 = math.fsum(m[1][1] for m in moments_.values())
+                if abs(q10 + residue) > POSITION_RELATIVE * max(1.0, n0) or abs(q11 - 1.0) > POSITION_RELATIVE:
+                    raise ProducerError(f"{kid} templates {names} on pool {src}: the fragments sum to {q11!r} n + "
+                                        f"{q10!r} periods, not the parent's n - {residue}")
+                k = fits[0][1][0]
+                label_t = f"{'+'.join(names)}@{src}" + (f"/r{residue}" if residue else "")
+                term = {"template": label_t, "k": k, "periods_per_unit": ppu,
+                        "products": [{"pool": q, "moments": m} for q, m in sorted(moments_.items())],
+                        "valid_from_periods": n0}
+                if residue:
+                    term["residue"] = residue
+                interior_scission.setdefault(src, []).append(term)
+                fed.update(moments_)
+                validity.append({"kernel": kid, "template": label_t, "families": [fam], "valid_from_periods": n0,
+                                 "fit_from_periods": n0,
+                                 "participants": [{"slot": 0, "family": fam, "exact_from_periods": n0}]})
+                outside_attribution.append({
+                    "kernel": kid, "template": label_t, "templates": names, "kind": "uni", "families": [fam],
+                    "products": sorted({pool_family[q] for q in moments_}), "pools": [src, *sorted(moments_)],
+                    "coefficients": [k, 0.0], "reason": "a scission of a mid-chain class: its fragments' lengths are "
+                                                        "fixed coefficients of the pool's moments, no per-family law"})
+                checks[label_t] = {"kernel": kid, "templates": names, "k_per_chain": k, "residue": residue,
+                                   "valid_from_periods": n0, "checked_to_periods": top}
+                mapped_names += [(kid, n) for n in names]
     for kid, kernel in ([] if positions else by_type["transfer"]):
         owners = owner_families(kid, kernel)
         laws = {}
@@ -1873,6 +2390,19 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     # end classes: a slot's sites per length (its far count, or the constant count of a short class at its
     # lengths) and the shortest length from which they are that constant
     def slot_sites(kid, cls, count, name):
+        if types:
+            # I-278: the class's own lengths on its type (fragment atoms past its residue)
+            info = sclass[cls]
+            per, profile = _feature_sites(count, nbb, f"{kid} template {name} class {cls}:",
+                                          int(types[info["type"]]["residue"]))
+            if info["lengths"] is not None:
+                values = {profile.get(n, per) for n in info["lengths"]}
+                if len(values) != 1:
+                    raise ProducerError(f"{kid} template {name}: class {cls} has sites {sorted(values)} on its "
+                                        f"lengths {info['lengths']}, not one count")
+                return values.pop(), min(info["lengths"]), sorted(info["lengths"]), profile, per
+            first = min([n for n in range(info["min_n"], info["min_n"] + 64) if _carried(info, n)] or [info["min_n"]])
+            return per, max([first] + [n + 1 for n, v in profile.items() if v != per]), None, profile, per
         fam = family_of.get(cls)
         fixed = fam is not None and cls != families[fam]["label_far"]
         per, profile = _feature_sites(count, nbb, f"{kid} template {name} class {cls}:")
@@ -1892,7 +2422,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         """The join product family of a slot law that makes one chain of both whole reactants per site
         (gamma 0) wherever its class is: the far outcome and every exact length."""
         for n, outs in law["exact"].items():
-            if label_of(law["family"], int(n)) != law["class"]:
+            if not carried_at(law["class"], int(n)):
                 continue
             m = sites(int(n))
             if outs != ([] if m == 0 else [[m, [["join", fam_out, 0]]]]):
@@ -1923,7 +2453,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         thinned = {bool(rows[n]["phi_thinned"]) for n in names}
         if len(thinned) != 1:
             raise ProducerError(f"{where}: phi-thinned and unthinned templates in one kernel")
-        if positions and any(p[0] == "join" and p[1] in INTERIOR_FAMILIES
+        if positions and any(p[0] == "join" and K.family_of(p[1]) in INTERIOR_FAMILIES
                              for t in terms_ for s in (0, 1)
                              for outs in [t["law"][f"S{s}"]["far"]["outcomes"], *t["law"][f"S{s}"]["exact"].values()]
                              for _m, prods in outs for p in prods):
@@ -1970,10 +2500,15 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         if departing:
             raise ProducerError(f"{where}: templates {[d['template'] for d in departing]} join single sizes "
                                 "beside a far-field join: no moment form")
-        pool_a, pool_b, pool_p = pool_of(classes[owner]), pool_of(classes[1 - owner]), pool_of(
-            families[fam_out]["label_far"])
-        for cls, pool in ((classes[owner], pool_a), (classes[1 - owner], pool_b),
-                          (families[fam_out]["label_far"], pool_p)):
+        # a /4 code names the product's class (and type); MoM's join adds both lengths, so the residues must add
+        cls_out = fam_out if types else families[fam_out]["label_far"]
+        if types:
+            r_of = lambda c: int(types[sclass[c]["type"]]["residue"])
+            if cls_out not in sclass or r_of(classes[0]) + r_of(classes[1]) != r_of(cls_out):
+                raise ProducerError(f"{where}: its join into {cls_out!r} is no chain of n0 + n1 periods (the "
+                                    "reactants' residues do not add to the product's)")
+        pool_a, pool_b, pool_p = pool_of(classes[owner]), pool_of(classes[1 - owner]), pool_of(cls_out)
+        for cls, pool in ((classes[owner], pool_a), (classes[1 - owner], pool_b), (cls_out, pool_p)):
             if pool is None:
                 raise ProducerError(f"{where}: no MoM pool carries class {cls!r}")
             class_pools[cls] = pool
@@ -1981,7 +2516,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         s_b = max(fs for fs, _v in slots[1 - owner])
         valid = [max(v for _fs, v in slots[p]) for p in (0, 1)]
         phi_j = float(phi) if thinned.pop() else 1.0
-        joined = "+".join(names)
+        joined = "+".join(names) + (f"@{pool_a}+{pool_b}" if types else "")     # I-278: one template, many class pairs
         term = {"template": joined, "k_pair": far / (s_a * s_b) * phi_j * float(volume_ratio), "sites_per_chain": s_a,
                 "periods_per_unit": ppu, "product": pool_p, "valid_from_periods": max(valid)}
         if pool_b != pool_a:
@@ -2021,16 +2556,20 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             raise ProducerError(f"{where}: phi-thinned and unthinned templates in one kernel")
         k, valid, top = 0.0, 1, 1
         for t in terms_:
-            per, profile = _feature_sites(rows[t["template"]]["participants"][0][cls], nbb, f"{where}:")
+            per, profile = _feature_sites(rows[t["template"]]["participants"][0][cls], nbb, f"{where}:",
+                                          int(types[sclass[cls]["type"]]["residue"]) if types else 0)
             v = max([n + 1 for n, x in profile.items() if x != per] or [1])
             valid, k = max(valid, v), k + float(t["k_per_feature"])
             top = max(top, int(t["law"]["exact_to_n"]) + SITE_LAW_MARGIN, v + SITE_LAW_MARGIN)
             for n in range(v, top + 1):
-                if label_of(family_of[cls], n) != cls:
+                if not carried_at(cls, n):
                     continue
-                want = Counter({tuple(sorted([(monomer["class"], ppu), (cls, n - ppu)])): per}) if per else Counter()
-                got = _end_outcomes(t["law"], n, nbb, label_of)
-                if got != want:
+                # on a /4 table the monomer is read from either end of a declared unit (monomer["classes"])
+                wants = [Counter({tuple(sorted([(m, ppu), (cls, n - ppu)])): per}) if per else Counter()
+                         for m in monomer.get("classes", [monomer["class"]])]
+                got = _end_outcomes(t["law"], n, nbb, label_of) if not types else Counter(
+                    {tuple(sorted(o)): m for o, m in _placed_outcomes(t["law"], None, n, nbb, types=types).items()})
+                if got not in wants:
                     raise ProducerError(f"{where}: at {n} periods {t['template']} makes {dict(got)}, not the "
                                         f"monomer and a radical {ppu} periods shorter of its class per site")
         if pool in depropagation:
@@ -2070,15 +2609,16 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             s_r, v_r, _l, profile, per = slot_sites(kid, cls_r, t["S1"], name)
             if lengths != [ppu]:
                 raise ProducerError(f"{where}: the monomer class {cls_m!r} is not carried at {ppu} periods only")
-            if label_of(family_of[cls_r], v_r + ppu) != cls_r or law_family(t["law"]["S1"]) != family_of[cls_r]:
+            if not carried_at(cls_r, v_r + ppu) or \
+                    law_family(t["law"]["S1"]) != (cls_r if types else family_of[cls_r]):
                 raise ProducerError(f"{where}: {name} does not make a radical of its class {ppu} periods longer")
-            join_outcome(t["law"]["S0"], lambda n: s_m, lengths, family_of[cls_r], f"{where} S0")
+            join_outcome(t["law"]["S0"], lambda n: s_m, lengths, cls_r if types else family_of[cls_r], f"{where} S0")
             join_outcome(t["law"]["S1"], lambda n, pr=profile, pe=per: pe if n is None else pr.get(n, pe), None,
-                         family_of[cls_r], f"{where} S1")
+                         cls_r if types else family_of[cls_r], f"{where} S1")
             k += float(t["w_over_divisor"]) * s_m * s_r
             valid = max(valid, v_r)
         phi_p = float(phi) if thinned.pop() else 1.0
-        joined = "+".join(names)
+        joined = "+".join(names) + (f"@{pool}" if types else "")
         propagation.setdefault(pool, []).append({"template": joined, "k_pair": k * phi_p * float(volume_ratio),
                                                  "valid_from_periods": valid})
         class_pools[cls_r] = pool
@@ -2095,9 +2635,13 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         raise ProducerError("depropagation or propagation without a declared monomer state")
     # the pools every mapped term reads or makes, by class, and the ones no term (nor the deck) puts chains into
     far_pool = {pools[fam]: families[fam]["label_far"] for fam in pools if fam in families and pools[fam]}
+    far_pool.update({pool_of(cls): cls for cls in sclass if pool_of(cls) is not None})     # I-278: every class
     for h in homolysis:
         fed.add(h["daughter"])
         class_pools[far_pool[h["daughter"]]] = h["daughter"]
+    for src, ts in homolysis_by_pool.items():
+        for p in [src] + [t[key] for t in ts for key in ("daughter", "partner_daughter") if key in t]:
+            class_pools[far_pool[p]] = p
     for r in recombination:
         class_pools[far_pool[radical_label]] = radical_label
     for owner, ts in transfer.items():
@@ -2169,6 +2713,18 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     if positions:
         record.update(position_record, positions=True)
         out["interior_scission"] = interior_scission
+    if types:
+        # I-278: every class's pool, the chain types, what the table's laws never reach, homolysis per chain pool
+        record.update({
+            "chain_types": {name: {k: t[k] for k in ("start_offset", "residue", "symmetric", "declared")}
+                            for name, t in sorted(types.items())},
+            "pools_by_class": {cls: pool_of(cls) for cls in sorted(sclass)},
+            "unreached": table.get("unreached"),
+            "classes_without_terms": sorted(set(sclass) - set(class_pools)
+                                            - {v["class"] for p, v in position_pools.items()
+                                               if p in set(record.get("position_pools_used", ()))})})
+        out["homolysis"] = homolysis_by_pool.get(label, [])
+        out["homolysis_by_pool"] = homolysis_by_pool
     return out
 
 
@@ -2215,6 +2771,7 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
         spec.initial_mass_kg + math.fsum(mobile_kg.values()))
     terms, class_pools, monomer, monomer_label = None, {}, None, None
     position_pools = {}
+    types, state, pool_class = {}, {}, {}
     if kernels is not None:
         terms = kernel_input(kernels["table"], spec, kernels["ids"], temperature=temperature, phi=kernels["phi"],
                              label=label, radical_label=radical_label, alkene_label=alkene_label,
@@ -2246,8 +2803,15 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
         families = kernels["table"]["families"]
         family_of = {lab: fam for fam, f in families.items()
                      for lab in [f["label_far"], *f.get("labels", {}).values()]}
+        # I-278, chain types: every class of every type, each pool's class (its type's end groups and end mass)
+        types = kernels["table"].get("chain_types") or {}
+        state = _state_classes(types) if types else {}
+        family_of.update({cls: info["family"] for cls, info in state.items()})
+        pool_class = {pool: cls for cls, pool in terms["record"].get("pools_by_class", {}).items()}
+        pool_class.update({pool: v["class"] for pool, v in position_pools.items() if types})
         class_pools = {pool: cls for cls, pool in terms["record"]["pools"].items()
-                       if pool not in (label, radical_label, alkene_label, mid_label, internal_label)}
+                       if pool not in (label, radical_label, alkene_label, mid_label, internal_label)
+                       and pool not in position_pools}
         for pool in sorted(class_pools):
             pools.append(pool)
             phase.append(pool)
@@ -2271,7 +2835,12 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
                                                    ("alkene_internal", internal_label)) if pool is not None}
         pool_family.update({pool: family_of[cls] for pool, cls in class_pools.items()})
         pool_family.update({pool: v["family"] for pool, v in position_pools.items()})
-        ends = {pool: float(families[fam]["molar_mass_offset_g_mol"]) for pool, fam in pool_family.items()}
+        def family_entry(pool, fam):
+            """The pool's family entry: its chain type's (I-278), else the table's families."""
+            if pool in pool_class and state[pool_class[pool]]["type"] in types:
+                return types[state[pool_class[pool]]["type"]]["families"][fam]
+            return families[fam]
+        ends = {pool: float(family_entry(pool, fam)["molar_mass_offset_g_mol"]) for pool, fam in pool_family.items()}
         if abs(ends[label] - e) > MASS_RELATIVE * e:
             raise ProducerError(f"the table's chain family carries {ends[label]!r} g/mol of end groups, the deck "
                                 f"{e!r} g/mol")
@@ -2281,7 +2850,7 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
         terms["record"]["pool_family"] = pool_family
         terms["record"]["declared_species_by_pool"] = {
             pool: sorted([name, int(key.rsplit("@", 1)[1])]
-                         for key, name in (families[fam].get("declared_species") or {}).items())
+                         for key, name in (family_entry(pool, fam).get("declared_species") or {}).items())
             for pool, fam in pool_family.items()}
 
     def transfer_line(pool):
@@ -2289,7 +2858,9 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
             return []
         recombination = (terms["recombination"] if pool == radical_label else []) + terms["joins"].get(pool, [])
         kdep = terms["depropagation"].get(pool)
-        return ([f"    kernel_recombination={recombination!r},"] if recombination else []) \
+        typed_homolysis = terms.get("homolysis_by_pool", {}).get(pool) if pool != label else None
+        return ([f"    kernel_homolysis={typed_homolysis!r},"] if typed_homolysis else []) \
+            + ([f"    kernel_recombination={recombination!r},"] if recombination else []) \
             + ([f"    kernel_transfer={terms['transfer'][pool]!r},"] if pool in terms["transfer"] else []) \
             + ([f"    kernel_move={terms['move'][pool]!r},"] if pool in terms["move"] else []) \
             + ([f"    k_depropagation={ {'A': kdep['k'], 'n': 0.0, 'Ea': 0.0}!r},"] if kdep else []) \
@@ -2299,17 +2870,40 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
             + ([f"    monomer_product={monomer['smiles']!r},"]
                if kdep or pool in terms["propagation"] else [])
 
+    def end_groups_of(pool):
+        """The deck's end groups; a pool of another chain type, that type's (I-278, _type_end_groups)."""
+        cls = pool_class.get(pool)
+        if cls is None or types[state[cls]["type"]]["declared"]:
+            return head.to_smiles(), tail.to_smiles()
+        unit = kernels["table"]["moment_unit"]
+        h, t = _type_end_groups(spec, types[state[cls]["type"]], int(unit["backbone_atoms_per_period"]),
+                                int(unit["periods_per_declared_unit"]))
+        return h.to_smiles(), t.to_smiles()
+
+    def keyed(pool, declaration):
+        """I-278: an end- or mid-chain-featured pool of a chain type keyed by its class, an end pool on the site
+        of its side (_end_site)."""
+        cls = pool_class.get(pool)
+        if cls is None or not _feature_tag(cls):
+            return declaration
+        info = state[cls]
+        if info["family"] in ("radical_end", "alkene_terminal"):
+            key = "end_radical_site" if info["family"] == "radical_end" else "end_alkene_site"
+            site = _end_site(info, types[info["type"]], int(kernels["table"]["moment_unit"]["backbone_atoms_per_period"]))
+            declaration = re.sub(rf"{key}='\w+'", f"{key}={site!r}", declaration)
+        return f"{declaration}, end_class={_feature_tag(cls)!r}"
+
     def born_empty(pool, declaration):
+        groups = end_groups_of(pool)
         return [
             "polymer(",
             f"    label={pool!r},",
             f"    monomer=\"\"\"{repeat.to_adjacency_list()}\"\"\",",
-            f"    end_groups=[{head.to_smiles()!r}, {tail.to_smiles()!r}],",
+            f"    end_groups=[{groups[0]!r}, {groups[1]!r}],",
             f"    cutoff={deck.xs},",
             "    moments=[0.0, 0.0, 0.0],",
             "    initial_mass=0.0,",
-            f"    {declaration},",
-        ]
+        ] + ([f"    {keyed(pool, declaration)},"] if declaration else [])
     constraints = dict(constraints or {})
     if constraints:
         constraints.setdefault("allowed", ["input species"])   # the declared species stay admissible
@@ -2354,7 +2948,7 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
             f"    cutoff={deck.xs},",
             "    moments=[0.0, 0.0, 0.0],",
             "    initial_mass=0.0,",
-            "    end_radical_site='primary',",
+            "    " + keyed(radical_label, "end_radical_site='primary'") + ",",
         ] + transfer_line(radical_label) + [")"]
     def interior(pool, feature):
         """A mid-chain pool's declaration: its feature, and in positions mode its position class."""
@@ -2372,6 +2966,12 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
         feature = "radical" if v["family"] == "radical_interior" else "alkene"
         lines += born_empty(pool, interior(pool, feature)) + transfer_line(pool) + [")"]
     for pool, cls in sorted(class_pools.items()):
+        if types:
+            # I-278: a class of a chain type, its family's declaration (keyed by born_empty)
+            lines += born_empty(pool, {"chain": None, "radical_end": "end_radical_site='primary'",
+                                       "alkene_terminal": "end_alkene_site='primary'"}[family_of[cls]]) \
+                + transfer_line(pool) + [")"]
+            continue
         # a short end-radical class (the methyl radical): an end-radical pool of its own, keyed by its class
         end_class = re.sub(r"[^A-Za-z0-9]", "", cls.split(":", 1)[1])
         lines += born_empty(pool, f"end_radical_site='primary', end_class={end_class!r}") + transfer_line(pool) + [")"]
