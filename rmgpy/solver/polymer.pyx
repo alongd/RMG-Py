@@ -172,6 +172,32 @@ EXHAUSTION_FLOOR_K = 100.0
 # cone/variance censuses, the bundle limiter, the softclamp -- are untouched,
 # so F_k only ever relaxes the hard error, never tightens it.
 EXHAUSTION_RELATIVE_K = 1.0
+# I-280 REFUSAL FLOOR PER MOMENT ORDER. A born-empty pool fed far below atol
+# holds nothing but integrator noise, and the accepted floor of such a pool is
+# the absolute EXHAUSTION_FLOOR_K*atol alone, the same number for every moment
+# order: exactly ONE error weight of its moment slots (the slot atol is that
+# same 100*atol by the i061 floor). The noise is chains passed through the
+# pool by fast couplings at mu0's error scale, so it carries their moments:
+# mu_k noise ~ mean^k * mu0 noise, bounded by L^k * mu0 noise with L the
+# weight-average length mu2/mu1 (>= mu1/mu0, and L^2 >= mu2/mu0). On PP, an
+# empty interior-radical pair exchanging chains by moves at ~1e7 s^-1 was
+# refused at mu0 = -9.3e-17, mu2 = -1.3e-14 mol (mu2/mu0 = 11.7^2), and,
+# past it, an empty position pool at mu0 = -4.6e-16, mu2 = -3.7e-13 mol
+# (28.4^2; -37 error weights of an accepted step, past the RMS norm's
+# sqrt(N) = 13.9 single-slot share, so no per-slot error weight bounds it),
+# against L = 30. Once negative, the pool's drains are skipped and the
+# excursion is held. The hard error therefore reads, per pool and order k,
+#     max(F_k, L^k * A_0),   F_k = pool_moment_accepted_floors()
+# with A_0 the pool's absolute mu0 floor (EXHAUSTION_FLOOR_K*atol, the noise
+# scale of an empty pool; a held pool's relative term already scales with
+# each order's own peak) and L the largest mu2/mu1 of any pool that has held a trusted
+# distribution on an accepted state (mu0 above its absolute floor, mu1 >= mu0,
+# mu0*mu2 >= mu1^2), the initial state included; L >= 1. A pool inside A_0
+# in mu0 whose mu_k sits inside L^k*A_0 is indistinguishable from an empty
+# one. Only the refusal reads it; the floors that END a pool are unchanged,
+# so an empty pool between the two is carried. A sign error still drives
+# mu0 past F_0, or mu_k past L^k*A_0. Nothing is fitted: L is the deck's own
+# chain length.
 # i061 MOMENT ERROR-WEIGHT FLOOR (DASPK step-collapse fix). The moment-
 # coordinate state slots (a pool's mu0/mu1/mu2 positions and any is_moment_dummy
 # core species) are BOOKKEEPING coordinates carrying dmu/dt, not molar species
@@ -2537,6 +2563,8 @@ class HybridPolymerSystem(ReactionSystem):
         # I-244 relative accepted floor and pool_exhausted events (see
         # EXHAUSTION_RELATIVE_K), laid out per rebuild by initialize_model.
         self._pool_mu_peak = None
+        # I-280: the deck's chain length scale of the refusal floor.
+        self._pool_length_scale = 1.0
         self._pool_mu_rtol = None
         self._pool_ended = None
         self._pool_exhaustion_residue = None
@@ -5541,6 +5569,8 @@ class HybridPolymerSystem(ReactionSystem):
                 else:
                     r_exh = float(np.max(rtol_arr_exh))
                 self._pool_mu_rtol[p, k] = r_exh
+        self._pool_length_scale = 1.0
+        self._raise_pool_length_scale(self.y0)
         self._pool_ended = np.zeros(n_pools_exh, dtype=np.uint8)
         self._pool_exhaustion_residue = np.zeros((n_pools_exh, 3), dtype=float)
         self._pool_exhaustion_z = {}
@@ -6492,12 +6522,13 @@ class HybridPolymerSystem(ReactionSystem):
             # branch zeroed SILENTLY and would swallow a negative. Now a
             # mu0 beyond -floor is a hard error (integrator corruption);
             # inside [-floor, SMALL_EPS] it projects to E[n] = 0 WITH the
-            # exhaustion census below. Floor: the accepted-state floor the
-            # r81 check reads (I-244: relative to the pool's scale, see
-            # EXHAUSTION_RELATIVE_K) when available (post-initialize_model);
+            # exhaustion census below. Floor: the refusal floor the r81
+            # check reads (I-244: relative to the pool's scale, see
+            # EXHAUSTION_RELATIVE_K; I-280: pool_moment_refusal_floors)
+            # when available (post-initialize_model);
             # SMALL_EPS otherwise (pre-init snapshot -> honest degenerate,
             # mirroring atol_mu0 = 0).
-            floors_exh = self.pool_moment_accepted_floors()
+            floors_exh = self.pool_moment_refusal_floors()
             floor0 = (float(floors_exh[p, 0]) if floors_exh is not None
                       and p < len(floors_exh) else SMALL_EPS)
             if mu0 < -floor0:
@@ -6506,7 +6537,8 @@ class HybridPolymerSystem(ReactionSystem):
                     f"{mu0!r} mol is negative beyond the exhaustion floor "
                     f"-{floor0:.6e} mol (= -max(SMALL_EPS, "
                     f"{EXHAUSTION_FLOOR_K:.0f}*atol[state], "
-                    f"{EXHAUSTION_RELATIVE_K:g}*rtol*peak|mu0|)) at the "
+                    f"{EXHAUSTION_RELATIVE_K:g}*rtol*peak|mu0|, "
+                    f"refusal floor)) at the "
                     f"spawn-gate snapshot. A negative moment beyond the "
                     f"integrator's own error budget is integrator "
                     f"corruption, not exhaustion -- refusing to attribute "
@@ -6775,16 +6807,19 @@ class HybridPolymerSystem(ReactionSystem):
         negative than its accepted floor
         ``-max(SMALL_EPS, EXHAUSTION_FLOOR_K*atol[state],
         EXHAUSTION_RELATIVE_K*rtol[state]*peak|mu_k|)`` (I-244,
-        ``pool_moment_accepted_floors``) on an ACCEPTED state is integrator
+        ``pool_moment_accepted_floors``) and beyond the noise an empty pool
+        carries at that order, ``L**k * A_0`` (I-280,
+        ``pool_moment_refusal_floors``) on an ACCEPTED state is integrator
         corruption, not exhaustion: HARD stop, never ``max(..., SMALL_EPS)``.
         A pool that empties lands inside the floor and is ended by
-        ``end_exhausted_pools`` first."""
+        ``end_exhausted_pools`` first; an empty pool inside the refusal
+        floor only is carried."""
         cdef int p, n_pools
         cdef double f0, f1, f2, raw0, raw1, raw2
         if self.polymer_pools is None or self._pool_mu_floors is None:
             return
         y = self.y
-        accepted = self.pool_moment_accepted_floors()
+        accepted = self.pool_moment_refusal_floors()
         n_pools = len(self.polymer_pools)
         for p in range(n_pools):
             idx0, idx1, idx2 = self.polymer_pools[p].mu_indices
@@ -6896,7 +6931,9 @@ class HybridPolymerSystem(ReactionSystem):
                     f"-{f0:.6e}/-{f1:.6e}/-{f2:.6e} mol "
                     f"(= -max(SMALL_EPS, {EXHAUSTION_FLOOR_K:.0f}*"
                     f"atol[state], {EXHAUSTION_RELATIVE_K:g}*rtol*peak"
-                    f"|mu_k|)). A negative moment beyond the "
+                    f"|mu_k|, L**k*100*atol[mu0] with L="
+                    f"{self._pool_length_scale:g})). A "
+                    f"negative moment beyond the "
                     f"integrator's own error budget is integrator "
                     f"corruption, not exhaustion -- refusing to integrate "
                     f"it (r81 negative-moment rule: hard error, never "
@@ -6916,6 +6953,32 @@ class HybridPolymerSystem(ReactionSystem):
             return np.array(self._pool_mu_floors, dtype=float)
         return np.maximum(self._pool_mu_floors, EXHAUSTION_RELATIVE_K
                           * self._pool_mu_rtol * self._pool_mu_peak)
+
+    def pool_moment_refusal_floors(self):
+        """(n_pools, 3) floors [mol] of the accepted-state hard error (I-280,
+        see REFUSAL FLOOR PER MOMENT ORDER): per pool and moment order k,
+        ``max(F[p, k], L**k * A[p, 0])``, F the accepted floors
+        (pool_moment_accepted_floors), A the absolute floors
+        (``_pool_mu_floors``) and L ``_pool_length_scale``. None before
+        initialize_model."""
+        accepted = self.pool_moment_accepted_floors()
+        if accepted is None:
+            return None
+        length = float(self._pool_length_scale)
+        orders = (np.asarray(self._pool_mu_floors, dtype=float)[:, :1]
+                  * np.array([1.0, length, length * length]))
+        return np.maximum(accepted, orders)
+
+    def _raise_pool_length_scale(self, y):
+        """Raise ``_pool_length_scale`` to the largest mu2/mu1 of any pool
+        holding a trusted distribution in ``y``: mu0 above its absolute
+        floor, mu1 >= mu0 and mu0*mu2 >= mu1^2 (I-280)."""
+        for p, pool in enumerate(self.polymer_pools):
+            mu0, mu1, mu2 = [float(y[int(i)]) for i in pool.mu_indices]
+            if (mu0 > self._pool_mu_floors[p, 0] and mu1 >= mu0
+                    and mu0 * mu2 >= mu1 * mu1):
+                if mu2 / mu1 > self._pool_length_scale:
+                    self._pool_length_scale = mu2 / mu1
 
     def _pool_held(self, p):
         """True once pool ``p`` has held more than its absolute floor in some
@@ -7022,7 +7085,8 @@ class HybridPolymerSystem(ReactionSystem):
 
     def _update_pool_mu_peak(self):
         """Raise each pool's peak |mu_k| to the ACCEPTED state ``self.y``
-        (the scale of the relative accepted floor)."""
+        (the scale of the relative accepted floor), and the chain length
+        scale of the refusal floor (I-280)."""
         if self._pool_mu_peak is None:
             return
         y = self.y
@@ -7031,6 +7095,7 @@ class HybridPolymerSystem(ReactionSystem):
                 v = abs(float(y[int(pool.mu_indices[k])]))
                 if v > self._pool_mu_peak[p, k]:
                     self._pool_mu_peak[p, k] = v
+        self._raise_pool_length_scale(y)
 
     def exhausted_residue_atoms(self, defect_atoms=None):
         """{element: mol} the pool_exhausted events took from the moment
