@@ -410,7 +410,9 @@ def polymer(label: str,
         kernel_homolysis (list): catalog-driven backbone homolysis of this
             pool's chains into an end-radical pool, one term per template of
             a kernel-rates table, each exactly {template, w, phi, a, b,
-            min_fragment, periods_per_unit, daughter}
+            min_fragment, periods_per_unit, daughter}, optionally with all of
+            {partner_daughter, partner_min_fragment, residue} for a cut whose
+            fragments land in two pools
             (rmgpy.solver.polymer.validate_kernel_homolysis). Mutually
             exclusive with k_homolysis, k_scission > 0 and radical_qssa_unzip.
         kernel_recombination (list): catalog-driven recombination of this
@@ -437,10 +439,13 @@ def polymer(label: str,
             into the `product` pool, length unchanged, at k*(a n + b) per
             chain (backbiting and its reverse), each term exactly {template,
             k, a, b, periods_per_unit, product} (validate_kernel_move).
-        end_class (str): on an end_radical_site pool, the class of its
-            radical end (letters and digits), keying the pool's identity so
-            that two end-radical pools of one site are two pools. Default
-            None.
+        end_class (str): on an end_radical_site, end_alkene_site or
+            interior_feature pool, the class of its radical end, terminal
+            alkene or mid-chain feature (letters and digits), keying the
+            pool's identity so that two pools of one site are two pools; an
+            alkene or interior pool's proxy must form that class (the end
+            atom's and its partner's element plus H / H<k>, joined: CHCH,
+            CH2C). Default None.
         kernel_propagation (list): catalog-driven propagation: one chain of
             this pool adds one monomer unit, the pool's monomer_product
             consumed, at k_pair * n_monomer / V_poly per chain, each term
@@ -454,7 +459,8 @@ def polymer(label: str,
             every chain of this pool breaks at k per chain into fragments,
             each product {pool, moments} receiving fixed coefficients of
             this pool's moments; each term exactly {template, k,
-            periods_per_unit, products} (validate_kernel_interior_scission).
+            periods_per_unit, products}, optionally with residue (the products'
+            lengths then sum to n - residue periods) (validate_kernel_interior_scission).
 
     k_depropagation on an end_radical_site pool runs on that pool (it is
     the radical-end pool); on any other pool it needs k_homolysis, as

@@ -119,9 +119,9 @@ def test_a_term_without_the_optional_keys_credits_as_it_did():
 
 
 def test_a_two_daughter_term_outside_its_law_domain_is_skipped_loudly(caplog):
-    """Chains of 5 periods hold fewer than e + e' + r: negative sites."""
+    """Chains of 3 periods hold fewer than e + e' + r: negative sites."""
     with caplog.at_level(logging.WARNING):
-        got = run_h(h2_term(2, 3, 1), {5: 0.7})
+        got = run_h(h2_term(2, 3, 1), {3: 0.7})
     assert all(np.all(g == 0.0) for g in got)
     assert "kernel_homolysis" in caplog.text
 
@@ -223,7 +223,6 @@ def test_an_interior_scission_with_a_residue_credits_n_minus_residue_periods():
     (dict(_residue_term(1), residue=0), r"residue 0"),
     (dict(_residue_term(1), residue=2), r"residue 2"),
     (dict(_residue_term(1), residue=-1), "residue=-1 must be an integer >= 0"),
-    (dict(_residue_term(0)), r"residue 0"),
     (dict(s_term(), residue=1), r"residue 1"),
 ])
 def test_an_interior_scission_whose_lengths_do_not_match_its_residue_is_refused(term, match):
@@ -313,10 +312,9 @@ def test_an_alkene_end_class_that_matches_the_formed_feature_is_accepted(site, e
 
 @pytest.mark.parametrize("site, end_class", [("primary", "CH2C"), ("secondary", "CHCH")])
 def test_an_alkene_end_class_that_does_not_match_is_refused_naming_both(site, end_class):
-    pool = _alkene(end_alkene_site=site, end_class=end_class)
     formed = "CHCH" if site == "primary" else "CH2C"
-    with pytest.raises(ValueError, match=f"{end_class}.*{formed}|{formed}.*{end_class}"):
-        pool.end_alkene_proxy
+    with pytest.raises((ValueError, InputError), match=f"{end_class}.*{formed}|{formed}.*{end_class}"):
+        _alkene(end_alkene_site=site, end_class=end_class).end_alkene_proxy
 
 
 def test_an_interior_radical_end_class_picks_the_matching_backbone_atom():

@@ -769,6 +769,9 @@ def validate_k_depropagation(pool_label, triplet):
 # length scale, so working in periods is exact).
 KERNEL_HOMOLYSIS_KEYS = ("template", "w", "phi", "a", "b", "min_fragment",
                          "periods_per_unit", "daughter")
+# I-278: a homolysis term whose two fragments land in different pools, the
+# chain losing `residue` periods to the cut, carries all three.
+KERNEL_HOMOLYSIS_PARTNER_KEYS = ("partner_daughter", "partner_min_fragment", "residue")
 KERNEL_RECOMBINATION_KEYS = ("template", "k_pair", "sites_per_chain",
                              "periods_per_unit", "product")
 # I-266: a recombination term joining one chain of this pool and one of
@@ -786,6 +789,8 @@ KERNEL_MOVE_KEYS = ("template", "k", "a", "b", "periods_per_unit", "product")
 # I-273: every chain of the pool breaks at k per chain into fragments, each
 # product pool receiving fixed coefficients of the parent's moments.
 KERNEL_INTERIOR_SCISSION_KEYS = ("template", "k", "periods_per_unit", "products")
+# I-278: the products' lengths sum to n - residue periods per event.
+KERNEL_INTERIOR_SCISSION_RESIDUE_KEYS = ("residue",)
 # Any term may also declare the shortest chain (periods) its site law counts
 # correctly; homolysis' is 2*min_fragment - 1 when undeclared (the cut count
 # a*n + b turns negative below it). Reported, never acted on.
@@ -805,7 +810,7 @@ def catalog_kernel_connections(pool):
     out = [("kernel_interior_scission", term["template"], pool.label, product["pool"])
            for term in getattr(pool, "kernel_interior_scission", None) or ()
            for product in term["products"]]
-    for kernel, moves in (("kernel_homolysis", (("", "daughter"),)),
+    for kernel, moves in (("kernel_homolysis", (("", "daughter"), ("", "partner_daughter"))),
                           ("kernel_recombination", (("", "product"),
                                                     ("partner", "product"))),
                           ("kernel_transfer", (("", "product"),
@@ -813,11 +818,41 @@ def catalog_kernel_connections(pool):
                           ("kernel_move", (("", "product"),))):
         for term in getattr(pool, kernel, None) or ():
             for src, dst in moves:
-                if src and src not in term:
+                if (src and src not in term) or dst not in term:
                     continue
                 out.append((kernel, term["template"],
                             term[src] if src else pool.label, term[dst]))
     return out
+
+
+def _range_power_sums(lo, shift):
+    """Exact coefficients, in powers of n, of S_j(n) = sum_{k=lo}^{n-shift} k^j
+    for j = 1, 2: ([c0, c1, c2], [d0, d1, d2, d3]) with S_1 = sum c_i n^i and
+    S_2 = sum d_i n^i, valid wherever n - shift >= lo - 1 (an empty range is 0).
+    Faulhaber's sums at the upper end M = n - shift less the same at lo - 1."""
+    from fractions import Fraction
+
+    def at(m):          # coefficients in M of sum_{k=1}^{M} k and k^2
+        return ([Fraction(0), Fraction(1, 2), Fraction(1, 2)],
+                [Fraction(0), Fraction(1, 6), Fraction(1, 2), Fraction(1, 3)])
+
+    def shifted(poly):  # poly(M) with M = n - shift, as a polynomial in n
+        out = [Fraction(0)] * len(poly)
+        for power, coeff in enumerate(poly):
+            for i in range(power + 1):
+                out[i] += coeff * math.comb(power, i) * Fraction(-shift) ** (power - i)
+        return out
+
+    def at_value(poly, m):
+        return sum(c * Fraction(m) ** i for i, c in enumerate(poly))
+
+    s1, s2 = at(0)
+    out = []
+    for poly in (s1, s2):
+        top = shifted(poly)
+        top[0] -= at_value(poly, lo - 1)
+        out.append([float(c) for c in top])
+    return out[0], out[1]
 
 
 def _kernel_number(pool_label, kernel, template, key, value, *, positive=False,
@@ -902,10 +937,17 @@ def validate_kernel_homolysis(pool_label, terms):
     per site is w*phi [1/s], w > 0 the table's weight, phi in [0, 1] the
     template's cage-escape factor. Both fragments land in the `daughter`
     pool. The law is exact in moments for chains of a*n + b >= 0 sites; the
-    producer refuses tables whose states leave that domain."""
+    producer refuses tables whose states leave that domain.
+
+    I-278, two daughters: a term with `partner_daughter` (a pool; it may be
+    the daughter), `partner_min_fragment` e' (>= 1) and `residue` r (>= 0),
+    all three or none, has b = a*(1 - r - e - e'): a cut leaves k periods in
+    `daughter` and n - r - k in `partner_daughter`, k uniform over
+    [e, n - r - e']."""
     out = []
     for template, term in _kernel_terms(pool_label, "kernel_homolysis", terms,
-                                        KERNEL_HOMOLYSIS_KEYS, "daughter"):
+                                        KERNEL_HOMOLYSIS_KEYS, "daughter",
+                                        optional=KERNEL_HOMOLYSIS_PARTNER_KEYS):
         num = lambda key, **kw: _kernel_number(pool_label, "kernel_homolysis",
                                                template, key, term[key], **kw)
         w = num("w", positive=True)
@@ -916,7 +958,37 @@ def validate_kernel_homolysis(pool_label, terms):
                             "min_fragment", term["min_fragment"])
         c = _kernel_integer(pool_label, "kernel_homolysis", template,
                             "periods_per_unit", term["periods_per_unit"])
-        if not math.isclose(b, a * (1 - 2 * e), rel_tol=1e-12, abs_tol=0.0):
+        two = {}
+        floor, floor_name = 2 * e - 1, "2*min_fragment - 1"
+        if "partner_daughter" in term:
+            partner = term["partner_daughter"]
+            if not isinstance(partner, str) or not partner or partner == pool_label:
+                raise ValueError(
+                    f"Pool {pool_label}: kernel_homolysis term {template!r}: "
+                    f"partner_daughter={partner!r} must name another pool "
+                    f"(it may equal the daughter).")
+            e2 = _kernel_integer(pool_label, "kernel_homolysis", template,
+                                 "partner_min_fragment",
+                                 term["partner_min_fragment"])
+            residue = term["residue"]
+            if isinstance(residue, bool) or not isinstance(residue, int) \
+                    or residue < 0:
+                raise ValueError(
+                    f"Pool {pool_label}: kernel_homolysis term {template!r}: "
+                    f"residue={residue!r} must be an integer >= 0.")
+            want = a * (1 - residue - e - e2)
+            if not math.isclose(b, want, rel_tol=1e-12, abs_tol=0.0):
+                raise ValueError(
+                    f"Pool {pool_label}: kernel_homolysis term {template!r}: "
+                    f"b={b!r} is not b = a*(1 - residue - min_fragment - "
+                    f"partner_min_fragment) = {want!r}; the sites a*n + b "
+                    f"are not the cut positions min_fragment..n - residue - "
+                    f"partner_min_fragment the moment law integrates.")
+            two = {"partner_daughter": partner, "partner_min_fragment": e2,
+                   "residue": int(residue)}
+            floor = e + e2 + residue - 1
+            floor_name = "min_fragment + partner_min_fragment + residue - 1"
+        elif not math.isclose(b, a * (1 - 2 * e), rel_tol=1e-12, abs_tol=0.0):
             raise ValueError(
                 f"Pool {pool_label}: kernel_homolysis term {template!r}: "
                 f"b={b!r} is not b = a*(1 - 2*min_fragment) = "
@@ -925,10 +997,9 @@ def validate_kernel_homolysis(pool_label, terms):
                 f"integrates.")
         out.append({"template": template, "w": w, "phi": phi, "a": a, "b": b,
                     "min_fragment": e, "periods_per_unit": c,
-                    "daughter": term["daughter"],
+                    "daughter": term["daughter"], **two,
                     **_kernel_validity(pool_label, "kernel_homolysis", template,
-                                       term, 2 * e - 1,
-                                       "2*min_fragment - 1")})
+                                       term, floor, floor_name)})
     return out
 
 
@@ -1106,7 +1177,12 @@ def validate_kernel_interior_scission(pool_label, terms):
     out = []
     kernel = "kernel_interior_scission"
     for template, term in _kernel_terms(pool_label, kernel, terms,
-                                        KERNEL_INTERIOR_SCISSION_KEYS, None):
+                                        KERNEL_INTERIOR_SCISSION_KEYS, None,
+                                        optional=KERNEL_INTERIOR_SCISSION_RESIDUE_KEYS):
+        residue = term.get("residue", 0)
+        if isinstance(residue, bool) or not isinstance(residue, int) or residue < 0:
+            raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
+                             f"residue={residue!r} must be an integer >= 0.")
         products = term["products"]
         if not isinstance(products, (list, tuple)) or not products:
             raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: "
@@ -1138,11 +1214,12 @@ def validate_kernel_interior_scission(pool_label, terms):
         q10 = math.fsum(p["moments"][1][0] for p in norm)
         q11 = math.fsum(p["moments"][1][1] for p in norm)
         scale = max([1.0] + [abs(p["moments"][1][0]) for p in norm])
-        if abs(q10) > 1e-12 * scale or abs(q11 - 1.0) > 1e-12:
+        if abs(q10 + residue) > 1e-12 * scale or abs(q11 - 1.0) > 1e-12:
             raise ValueError(f"Pool {pool_label}: {kernel} term {template!r}: the "
                              f"products' lengths sum to {q11!r} n + {q10!r} periods "
-                             f"per event, not the parent's n: they must conserve "
-                             f"its periods.")
+                             f"per event, not the parent's n - {residue} (residue "
+                             f"{residue}): they must conserve its periods but "
+                             f"the residue.")
         out.append({"template": template,
                     "k": _kernel_number(pool_label, kernel, template, "k", term["k"],
                                         positive=True),
@@ -1150,6 +1227,7 @@ def validate_kernel_interior_scission(pool_label, terms):
                         pool_label, kernel, template, "periods_per_unit",
                         term["periods_per_unit"]),
                     "products": norm,
+                    **({"residue": int(residue)} if "residue" in term else {}),
                     **_kernel_validity(pool_label, kernel, template, term)})
     return out
 
@@ -2980,7 +3058,9 @@ class HybridPolymerSystem(ReactionSystem):
                     n = term.get(KERNEL_VALIDITY_KEY)
                     source = "declared"
                     if n is None and kernel == "kernel_homolysis":
-                        n, source = 2 * term["min_fragment"] - 1, "derived"
+                        n, source = (term["min_fragment"]
+                                     + term.get("partner_min_fragment", term["min_fragment"])
+                                     + term.get("residue", 0) - 1), "derived"
                     elif n is None:
                         source = "undeclared"
                     self.kernel_validity.append(
@@ -2989,6 +3069,9 @@ class HybridPolymerSystem(ReactionSystem):
                          "valid_from_periods": n, "source": source})
         self._kernel_guard_warned = set()
         self.kernel_homolysis_terms = [[] for _ in self.polymer_pools]
+        # I-278: two-daughter homolysis terms, (term, daughter slots, partner
+        # slots, S1 and S2 coefficients of each daughter's length sums).
+        self.kernel_homolysis_two_terms = [[] for _ in self.polymer_pools]
         self.kernel_recombination_terms = [[] for _ in self.polymer_pools]
         for i, pool in enumerate(self.polymer_pools):
             for kernel, key, terms, out in (
@@ -2999,7 +3082,7 @@ class HybridPolymerSystem(ReactionSystem):
                      self.kernel_recombination_terms[i])):
                 for term in terms or ():
                     slots = []
-                    for k in (key, "partner"):
+                    for k in (key, "partner", "partner_daughter"):
                         if k not in term:
                             continue
                         target = label_to_pool.get(term[k])
@@ -3015,6 +3098,13 @@ class HybridPolymerSystem(ReactionSystem):
                         # (term, product slots, partner slots or None)
                         out.append((dict(term), slots[0],
                                     slots[1] if len(slots) > 1 else None))
+                    elif "partner_daughter" in term:
+                        e1, e2 = term["min_fragment"], term["partner_min_fragment"]
+                        r = term["residue"]
+                        self.kernel_homolysis_two_terms[i].append(
+                            (dict(term), slots[0], slots[1],
+                             _range_power_sums(e1, r + e2),
+                             _range_power_sums(e2, r + e1)))
                     else:
                         out.append((dict(term), slots[0]))
         # kernel_transfer: (term, partner, product, partner_product) moment
@@ -9110,6 +9200,56 @@ class HybridPolymerSystem(ReactionSystem):
                     dn_dt[d0] += 2.0 * r0 * V_poly
                     dn_dt[d1] += (r1 / c_k) * V_poly
                     dn_dt[d2] += (q2 / (c_k * c_k)) * V_poly
+
+            # kernel_homolysis, two daughters (I-278): a chain of n periods
+            # has a*n + b sites, b = a*(1 - r - e - e'); a cut at k leaves k
+            # periods in the daughter (k from e to n - r - e') and n - r - k
+            # in the partner daughter (their range is e' to n - r - e):
+            #   events  r0 = w*phi*(a*m1 + b*m0);  parent as above
+            #   daughter dm0 += r0; dm_j += w*phi*a*sum_n N_n S_j(n), j = 1, 2
+            # with S_j(n) the exact polynomial sum_{k=lo}^{n-shift} k^j
+            # (_range_power_sums), so dm1 reads m0..m2 and dm2 m0..m3 (the
+            # same closure for m3).
+            if mu0 > 0.0 and mu1 > 0.0:
+                for term, (d0, d1, d2), (q0, q1, q2_), sums_d, sums_q in \
+                        self.kernel_homolysis_two_terms[pool_i]:
+                    wphi = term["w"] * term["phi"]
+                    if wphi == 0.0:
+                        continue
+                    a_k, b_k = term["a"], term["b"]
+                    c_k = float(term["periods_per_unit"])
+                    m_k = (mu0, c_k * mu1, c_k * c_k * mu2,
+                           c_k * c_k * c_k * mu3)
+                    r0 = wphi * (a_k * m_k[1] + b_k * m_k[0])
+                    r1 = wphi * (a_k * m_k[2] + b_k * m_k[1])
+                    r2 = wphi * (a_k * m_k[3] + b_k * m_k[2])
+                    credits = []
+                    for (s1, s2) in (sums_d, sums_q):
+                        credits.append((
+                            wphi * a_k * sum(c * m_k[i] for i, c in enumerate(s1)),
+                            wphi * a_k * sum(c * m_k[i] for i, c in enumerate(s2))))
+                    if not (np.isfinite(m_k[3]) and r0 >= 0.0 and r1 >= 0.0
+                            and r2 >= 0.0
+                            and all(np.isfinite(v) and v >= 0.0
+                                    for credit in credits for v in credit)):
+                        if pool.label not in self._kernel_guard_warned:
+                            self._kernel_guard_warned.add(pool.label)
+                            logging.warning(
+                                "Polymer pool '%s': kernel_homolysis term %s "
+                                "skipped -- moments (%.6g, %.6g, %.6g, mu3 "
+                                "%.6g) give rates (%.6g, %.6g, %.6g) and "
+                                "credits %s outside the cut law's domain.",
+                                pool.label, term["template"], mu0, mu1, mu2,
+                                mu3, r0, r1, r2, credits)
+                        continue
+                    dmu0_dt -= r0
+                    dmu1_dt -= r1 / c_k
+                    dmu2_dt -= r2 / (c_k * c_k)
+                    for (cr1, cr2), (s0, s1_, s2_) in zip(
+                            credits, ((d0, d1, d2), (q0, q1, q2_))):
+                        dn_dt[s0] += r0 * V_poly
+                        dn_dt[s1_] += (cr1 / c_k) * V_poly
+                        dn_dt[s2_] += (cr2 / (c_k * c_k)) * V_poly
 
             # kernel_recombination: two chains of this pool, s sites each,
             # join into one chain of n0 + n1 periods in the product pool at

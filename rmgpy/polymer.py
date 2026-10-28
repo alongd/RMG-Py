@@ -303,14 +303,18 @@ class Polymer(Species):
         # end_class keys an explicit end-radical pool by the class of its
         # radical end (I-266: a kernel table with more than one end-radical
         # class, e.g. a short class of its own): letters and digits, only on
-        # an end_radical_site pool; the fingerprint's _EndRad segment carries
-        # it, so two end-radical pools of one site stay two pools. None (the
-        # default) leaves the fingerprint as it was.
-        if end_class is not None and (end_radical_site is None or not isinstance(end_class, str)
-                                      or not re.fullmatch(r"[A-Za-z0-9]+", end_class)):
+        # an end_radical_site pool (I-278: also an end_alkene_site or an
+        # interior_feature pool); the fingerprint's _EndRad, _EndAlkene or
+        # _Interior segment carries it, so two pools of one site stay two
+        # pools. None (the default) leaves the fingerprint as it was.
+        if end_class is not None and (
+                (end_radical_site is None and end_alkene_site is None and interior_feature is None)
+                or not isinstance(end_class, str) or not re.fullmatch(r"[A-Za-z0-9]+", end_class)):
             raise InputError(
                 f"Polymer '{label}': end_class must be a non-empty string of letters and digits on an "
-                f"end_radical_site pool, got end_class={end_class!r} with end_radical_site={end_radical_site!r}.")
+                f"end_radical_site, end_alkene_site or interior_feature pool, got end_class={end_class!r} "
+                f"with end_radical_site={end_radical_site!r}, end_alkene_site={end_alkene_site!r}, "
+                f"interior_feature={interior_feature!r}.")
         self.end_class = end_class
         # end_alkene_site marks an explicit terminal-alkene pool (S5 c + e,
         # the end + end disproportionation donor's product): its proxy is the
@@ -629,11 +633,15 @@ class Polymer(Species):
                     # Terminal-alkene pools (S5 c + e): distinct from the
                     # dead-chain and end-radical pools of the same monomer.
                     feat += f'_EndAlkene-{self.end_alkene_site}'
+                    if getattr(self, 'end_class', None):
+                        feat += f'-class{self.end_class}'
                 if getattr(self, 'interior_feature', None):
                     # Mid-chain pools (S5 d): the same reason.
                     feat += f'_Interior-{self.interior_feature}'
                     if getattr(self, 'position_class', None):
                         feat += f'-pos{self.position_class}'
+                    if getattr(self, 'end_class', None):
+                        feat += f'-class{self.end_class}'
                 eg = '_'.join(eg.fingerprint for eg in self.end_groups) if self.end_groups else ''
                 self._fingerprint = f'Polymer_{self.monomer.fingerprint}{feat}_EG-{eg}_{self.cutoff}'
         return self._fingerprint
@@ -663,6 +671,13 @@ class Polymer(Species):
             self._end_radical_proxy = self._stitch_end_radical_oligomer(site)
         return getattr(self, '_end_radical_proxy', None)
 
+    @staticmethod
+    def _feature_label(atom, lost_h=False):
+        """An atom's element plus 'H' / 'H<k>' for its hydrogens (one fewer when ``lost_h``: the hydrogen the
+        edit is about to remove), the letters-and-digits label of end_class."""
+        h = sum(1 for b in atom.edges if b.is_hydrogen()) - (1 if lost_h else 0)
+        return atom.symbol + ('' if h <= 0 else 'H' if h == 1 else f'H{h}')
+
     @property
     def end_alkene_proxy(self) -> Optional[Species]:
         """The cached terminal-alkene oligomer proxy (end_alkene_site pools
@@ -681,12 +696,28 @@ class Polymer(Species):
                 raise ValueError(f"Polymer '{self.label}': the {site} end-radical oligomer has radical "
                                  f"atoms {[(a.symbol, a.radical_electrons) for a in ends]}, not one end radical.")
             end = ends[0]
-            donors = [a for a in end.edges if not a.is_hydrogen()
-                      and any(b.is_hydrogen() for b in a.edges)]
-            if len(donors) != 1:
-                raise ValueError(f"Polymer '{self.label}': the {site} chain end has {len(donors)} "
-                                 f"hydrogen-bearing heavy neighbours; a terminal C=C needs exactly one.")
-            donor = donors[0]
+            # The backbone neighbour: the heavy neighbour whose branch (the graph without the end atom) holds
+            # the most heavy atoms; a side group lies within one unit, so it is always smaller. A chain end
+            # with one heavy neighbour is its own backbone neighbour.
+            def branch_size(neighbour):
+                seen, frontier = {end, neighbour}, [neighbour]
+                while frontier:
+                    frontier = [c for a in frontier for c in a.edges if not c.is_hydrogen() and c not in seen]
+                    seen.update(frontier)
+                return len(seen) - 1
+
+            heavy = [a for a in end.edges if not a.is_hydrogen()]
+            donor = max(heavy, key=branch_size) if heavy else None
+            if donor is None or not any(b.is_hydrogen() for b in donor.edges) or (
+                    len(heavy) > 1 and sorted(map(branch_size, heavy))[-1] == sorted(map(branch_size, heavy))[-2]):
+                raise ValueError(f"Polymer '{self.label}': the {site} chain end has no hydrogen-bearing "
+                                 f"backbone neighbour for a terminal C=C.")
+            end_class = getattr(self, 'end_class', None)
+            if end_class:
+                formed = self._feature_label(end) + self._feature_label(donor, lost_h=True)
+                if formed != end_class:
+                    raise ValueError(f"Polymer '{self.label}': the {site} terminal alkene forms {formed!r}, "
+                                     f"not the declared end_class {end_class!r}.")
             mol.remove_atom(next(b for b in donor.edges if b.is_hydrogen()))
             mol.get_bond(end, donor).increment_order()
             end.decrement_radical()
@@ -735,18 +766,33 @@ class Polymer(Species):
             if not sites:
                 raise ValueError(f"Polymer '{self.label}': the dead chain's oligomer has no interior "
                                  f"hydrogen-bearing backbone atom for an interior {feature}.")
-            centre = sites[0]
-            mol.remove_atom(next(b for b in centre.edges if b.is_hydrogen()))
+            end_class = getattr(self, 'end_class', None)
             if feature == 'radical':
+                # I-278: with an end_class, the most central atom whose label after the edit matches it
+                centres = [a for a in sites if not end_class or self._feature_label(a, lost_h=True) == end_class]
+                if not centres:
+                    raise ValueError(f"Polymer '{self.label}': no interior hydrogen-bearing backbone atom "
+                                     f"of the dead chain's oligomer forms the declared end_class {end_class!r}.")
+                centre = centres[0]
+                mol.remove_atom(next(b for b in centre.edges if b.is_hydrogen()))
                 centre.increment_radical()
             else:
-                partners = sorted((b for b in centre.edges if not b.is_hydrogen() and inner(b)
-                                   and mol.get_bond(centre, b).is_single()),
-                                  key=lambda a: (far[a], mol.atoms.index(a)))
-                if not partners:
+                pairs = []
+                for centre in (sites if end_class else sites[:1]):
+                    for b in sorted((b for b in centre.edges if not b.is_hydrogen() and inner(b)
+                                     and mol.get_bond(centre, b).is_single()),
+                                    key=lambda a: (far[a], mol.atoms.index(a))):
+                        labels = (self._feature_label(centre, lost_h=True), self._feature_label(b, lost_h=True))
+                        if not end_class or end_class in (labels[0] + labels[1], labels[1] + labels[0]):
+                            pairs.append((centre, b))
+                if not pairs:
+                    if end_class:
+                        raise ValueError(f"Polymer '{self.label}': no pair of interior hydrogen-bearing backbone "
+                                         f"atoms forms the declared end_class {end_class!r} as an internal C=C.")
                     raise ValueError(f"Polymer '{self.label}': the most central backbone atom has no "
                                      f"interior hydrogen-bearing neighbour for an internal C=C.")
-                partner = partners[0]
+                centre, partner = pairs[0]
+                mol.remove_atom(next(b for b in centre.edges if b.is_hydrogen()))
                 mol.remove_atom(next(b for b in partner.edges if b.is_hydrogen()))
                 mol.get_bond(centre, partner).increment_order()
             mol.update()
