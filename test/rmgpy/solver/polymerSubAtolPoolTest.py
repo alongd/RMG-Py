@@ -133,10 +133,11 @@ class _KickedPairSystem(HybridPolymerSystem):
 
 class _SinkOnEmptyPoolSystem(HybridPolymerSystem):
     """A sign error on the empty pool Ra: a constant sink that ignores what is
-    left, past every error scale and every feed (-1e-9 mol/s in each
-    moment)."""
+    left, past every error scale and every feed (-1e-6 mol/s in each
+    moment).  Ra's linear drains hold a sink at about -RATE/k (k ~ 2.5e6
+    s^-1 for the pair), so it must outrun k times the 1e-14 mol floor."""
 
-    RATE = 1.0e-9
+    RATE = 1.0e-6
 
     def residual(self, t, y, dydt, senpar=None):
         if senpar is None:
@@ -231,5 +232,5 @@ class TestRefusalFloor:
         rs = pair_deck(cls=_SinkOnEmptyPoolSystem)
         with pytest.raises(ValueError, match="beyond the exhaustion floor"):
             _simulate(rs, 1.0)
-        # the sink takes mu0 past 1e-14 mol at ~1e-5 s
+        # the sink takes mu0 past 1e-14 mol within ~1e-7 s
         assert rs.t < 1.0e-3
