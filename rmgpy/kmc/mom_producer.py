@@ -1439,7 +1439,13 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     ``k_depropagation`` (R = k mu0) on that pool.  Addition of the monomer
     (``propagation``, per pool): one radical of its class one unit longer per
     site; k_pair = sum_T (w/divisor) s_monomer s_radical phi^thinned V_poly /
-    V, MoM's ``kernel_propagation`` (R = k_pair mu0 n_monomer / V_poly).  A
+    V, MoM's ``kernel_propagation`` (R = k_pair mu0 n_monomer / V_poly).
+    I-283: on a /4 table the monomer is read from either end (one class per
+    end, ``monomer["classes"]``) and the table has an addition kernel per
+    reading; a template two readings state onto one radical class counts the
+    same sites of the one molecule, which kMC fires once, so it is counted
+    once, in the first such kernel's term (refused when the readings count
+    its sites differently); ``record.propagation_shared`` lists each.  A
     term on a class other than its family's far class, and the propagation
     (the monomer is a species in MoM, not a pool of its family), are listed
     in ``laws_outside_attribution``, not ``laws``: the balance attributes per
@@ -2610,6 +2616,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             outside_attribution.append(dict(law, reason="the class is not its family's far class"))
         checks[joined] = {"kernel": kid, "k_dep": k * phi_d, "valid_from_periods": valid, "checked_to_periods": top}
         mapped_names += [(kid, n) for n in names]
+    shared = {}             # (pool, radical class, template) -> the term that counts it and every kernel stating it
     for kid, kernel in by_type["propagation"]:
         cls_m, cls_r = kernel["classes"]
         names = sorted(term["template"] for term in kernel["templates"] if usable(kid, term))
@@ -2623,7 +2630,8 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         thinned = {bool(rows[n]["phi_thinned"]) for n in names}
         if len(thinned) != 1:
             raise ProducerError(f"{where}: phi-thinned and unthinned templates in one kernel")
-        k, valid = 0.0, 1
+        k, valid, counted = 0.0, 1, []
+        phi_p = float(phi) if thinned.pop() else 1.0
         for t in terms_:
             name = t["template"]
             s_m, _v, lengths, _pr, _pe = slot_sites(kid, cls_m, t["S0"], name)
@@ -2636,9 +2644,28 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             join_outcome(t["law"]["S0"], lambda n: s_m, lengths, cls_r if types else family_of[cls_r], f"{where} S0")
             join_outcome(t["law"]["S1"], lambda n, pr=profile, pe=per: pe if n is None else pr.get(n, pe), None,
                          cls_r if types else family_of[cls_r], f"{where} S1")
-            k += float(t["w_over_divisor"]) * s_m * s_r
+            sites = (float(t["w_over_divisor"]), s_m, s_r, v_r)
+            first = shared.get((pool, cls_r, name))
+            if first is not None:
+                # I-283: another reading of the monomer states this template onto the same radical class: the
+                # same sites of the one molecule, counted once (in the first reading's term), as kMC fires them
+                if first["sites"] != sites:
+                    raise ProducerError(f"{where}: {name} counts its sites on the monomer (w/divisor, monomer, "
+                                        f"radical, validity) {sites}, {first['counted_in']} {first['sites']}: the "
+                                        "readings of the monomer are not the same sites of one species")
+                first["kernels"].append(kid)
+                first["monomer_classes"].append(cls_m)
+                mapped_names.append((kid, name))
+                continue
+            shared[(pool, cls_r, name)] = {"pool": pool, "template": name, "kernels": [kid], "counted_in": kid,
+                                           "monomer_classes": [cls_m], "sites": sites,
+                                           "k_pair": sites[0] * s_m * s_r * phi_p * float(volume_ratio)}
+            counted.append(name)
+            k += sites[0] * s_m * s_r
             valid = max(valid, v_r)
-        phi_p = float(phi) if thinned.pop() else 1.0
+        if not counted:
+            continue
+        names = counted
         joined = "+".join(names) + (f"@{pool}" if types else "")
         propagation.setdefault(pool, []).append({"template": joined, "k_pair": k * phi_p * float(volume_ratio),
                                                  "valid_from_periods": valid})
@@ -2705,10 +2732,18 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                                if (kid, name) in {(k, n) for k, n in mapped_names}]}
     else:
         position_record = {}
+    propagation_shared = [{**{key: s[key] for key in ("pool", "template", "kernels", "counted_in", "k_pair")},
+                           "monomer_classes": sorted(s["monomer_classes"]),
+                           "reason": "the monomer read from either end: the same sites of one species, which kMC "
+                                     "fires once, counted once"}
+                          for _key, s in sorted(shared.items()) if len(s["kernels"]) > 1]
+    counted_elsewhere = {(kid, s["template"]) for s in propagation_shared for kid in s["kernels"][1:]}
     # the overrides of every mapped template: kMC fires them at their weight, MoM's kernel at its own (the
     # template's, or a grouped kernel's mean)
     departures = []
     for kid, name in dict.fromkeys(mapped_names):
+        if (kid, name) in counted_elsewhere:
+            continue            # its overrides fire once, listed under the kernel whose term counts the template
         (term,) = [t for t in table["kernels"][kid]["templates"] if t["template"] == name]
         w_mom = mom_weight.get(name, float(rows[name]["weight"]))
         for o in term.get("overrides") or ():
@@ -2739,7 +2774,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
               "short_lengths": short, "validity": validity, "laws": laws_out,
               "depository_departures": departures, "position_departures": position_departures,
               "size_departures": size_departures, "laws_outside_attribution": outside_attribution,
-              "partial_kernels": partial_kernels,
+              "partial_kernels": partial_kernels, "propagation_shared": propagation_shared,
               "pools": dict(sorted(class_pools.items())),
               "unfed_pools": sorted(set(class_pools.values()) - fed),
               "monomer": monomer if (depropagation or propagation) else None,
