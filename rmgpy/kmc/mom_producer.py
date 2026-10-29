@@ -1423,7 +1423,9 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     when the other slot's pool differs, ``valid_from_periods`` the longest
     slot's first length of far-field sites; a join whose far pair sites are
     zero acts at single sizes only: its kernel is listed under ``inert`` and
-    each of its templates' site pairs under ``size_departures``.
+    each of its templates' site pairs under ``size_departures``; a template
+    at single sizes beside a far-field join is listed there and the others
+    map (I-282).
     End-radical beta scission (``depropagation``, per pool): the radical's
     law must make the declared monomer (``_monomer``: the terminal alkene of
     one declared unit) and a radical of its class one unit shorter per site
@@ -2484,7 +2486,9 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                 join_outcome(t["law"][f"S{p}"], lambda n, pr=profile, pe=per: pe if n is None else pr.get(n, pe),
                              lengths, fam_out, f"{kid} template {name} S{p}")
                 s.append((far_s, valid, lengths, profile, per))
-                slots.setdefault(p, []).append((far_s, valid))
+            if s[0][0] != 0.0 and s[1][0] != 0.0:
+                for p in (0, 1):
+                    slots.setdefault(p, []).append(s[p][:2])
             w = float(t["w_over_divisor"])
             far += w * s[0][0] * s[1][0]
             if s[0][0] == 0.0 or s[1][0] == 0.0:
@@ -2506,8 +2510,12 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                                     "(record.size_departures)"})
             continue
         if departing:
-            raise ProducerError(f"{where}: templates {[d['template'] for d in departing]} join single sizes "
-                                "beside a far-field join: no moment form")
+            # I-282: a template at single sizes beside the far-field join has no moment form (moments cannot
+            # single out sizes), as a homolysis template cutting single sizes only: listed, the others map
+            size_departures.extend(departing)
+            gone = {d["template"] for d in departing}
+            names = [n for n in names if n not in gone]
+            where = f"{kid} templates {names}"
         # a /4 code names the product's class (and type); MoM's join adds both lengths, so the residues must add
         cls_out = fam_out if types else families[fam_out]["label_far"]
         if types:
