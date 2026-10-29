@@ -1382,7 +1382,14 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     have no pool, is listed under ``unmapped`` with its reason; one the table
     gives no law (``law_inert``, unmodelled) under ``inert`` (rate 0 by the
     table's own law, as in the kernel reference); never dropped silently; a
-    kernel whose participant classes have no pool is refused.
+    kernel whose participant classes have no pool is refused.  A kernel's
+    rate is the sum over its templates, so every kernel type, homolysis and
+    recombination included, maps its lawful templates as it would alone and
+    lists the rest (I-282); ``partial_kernels`` names each kernel that maps
+    some templates and omits others (``templates`` its count, ``mapped``,
+    ``omitted`` each with the reason it is listed under).  The kMC event
+    share an omission carries is not computed here: the table carries rates,
+    not events, and the producer reads no kMC run.
     Every term declares its validity length ``valid_from_periods``, the
     shortest chain its site law counts correctly (homolysis 2e - 1, where the
     cut count a*n + b turns negative below; recombination one past its
@@ -1461,8 +1468,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     the ones a mapped term reads or makes; laws on a fixed end-distance pool
     are listed in ``laws_outside_attribution``.
     Refused: another schema, temperature or chemistry digest, kernels not in
-    the table or of another type, inert or unmodelled homolysis or
-    recombination laws."""
+    the table or of another type."""
     from rmgpy.kmc import kernel_rates as K
     from rmgpy.kmc.melt_engine import declared_initialization
     if table.get("schema") not in KERNEL_RATES_SCHEMAS:
@@ -1711,14 +1717,25 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     inert, position_departures, mom_weight = [], [], {}
     n_h = None
     homolysis_by_pool = {}
+
+    def usable(kid, term):
+        """False (listed) for a template the table gives no law.  A kernel's rate is the sum over its
+        templates: the others map as they would alone (I-282)."""
+        name = term["template"]
+        if term.get("law") is None or term.get("law_inert"):
+            inert.append({"kernel": kid, "templates": [name],
+                          "reason": term.get("law_inert") or term.get("law_refused") or "no product law"})
+            return False
+        return True
     for kid, kernel in ([] if types else by_type["homolysis"]):
         if kernel["classes"] != ["chain"]:
             raise ProducerError(f"{kid}: no MoM kernel cuts class {kernel['classes']} (the chain class only)")
+        lawful = [term for term in kernel["templates"] if usable(kid, term)]
+        if not lawful:
+            continue
         group = []
-        for term in kernel["templates"]:
+        for term in lawful:
             name, where = term["template"], f"{kid} template {term['template']}"
-            if term.get("law") is None or term.get("law_inert"):
-                raise ProducerError(f"{where}: an inert or unmodelled law has no moment form")
             sites = rows[name]["participants"][0]["chain"]
             if not any(outs for outs in term["law"]["exact"].values()) and not float(sites["a"]) \
                     and not float(sites["b"]):
@@ -1784,11 +1801,12 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         (cls,) = kernel["classes"]
         if family_of.get(cls) != "chain":
             raise ProducerError(f"{kid}: no MoM kernel cuts class {cls!r} (chain classes only)")
+        lawful = [term for term in kernel["templates"] if usable(kid, term)]
+        if not lawful:
+            continue
         src, group = pool_of(cls), []
-        for term in kernel["templates"]:
+        for term in lawful:
             name, where = term["template"], f"{kid} template {term['template']}"
-            if term.get("law") is None or term.get("law_inert"):
-                raise ProducerError(f"{where}: an inert or unmodelled law has no moment form")
             sites = rows[name]["participants"][0][cls]
             if not any(outs for outs in term["law"]["exact"].values()) and not float(sites["a"]) \
                     and not float(sites["b"]):
@@ -1855,16 +1873,15 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                                "w_far_mean": w}
             e_min = min(e0, e1) if e_min is None else min(e_min, e0, e1)
     for kid, kernel in by_type["recombination"]:
-        names = sorted(term["template"] for term in kernel["templates"])
+        lawful = [term for term in kernel["templates"] if usable(kid, term)]
+        if not lawful:
+            continue
+        names = sorted(term["template"] for term in lawful)
         joined, where = "+".join(names), f"{kid} templates {names}"
-        for term in kernel["templates"]:
-            if term.get("law") is None or term.get("law_inert"):
-                raise ProducerError(f"{kid} template {term['template']}: an inert or unmodelled law has no "
-                                    "moment form")
         thinned = {bool(rows[n]["phi_thinned"]) for n in names}
         if len(thinned) != 1:
             raise ProducerError(f"{where}: phi-thinned and unthinned templates in one kernel")
-        grid, c, lengths = _pair_sites(kernel["templates"], rows, table["families"], "radical_end", radical, nbb,
+        grid, c, lengths = _pair_sites(lawful, rows, table["families"], "radical_end", radical, nbb,
                                        where)
         top = lengths[-1]
         far = math.fsum(p for p, _w in grid[(top, top)].values())
@@ -1884,7 +1901,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         w = math.fsum(w * p for p, w in grid[(top, top)].values()) / far
         _position_departures(position_departures, mom_weight, kid, w, [
             (t["template"], float(rows[t["template"]]["weight"]), {"S0": t["S0"], "S1": t["S1"]})
-            for t in kernel["templates"]
+            for t in lawful
             if any(by.get(t["template"], (0.0, 0.0))[0] for pair, by in grid.items() if min(pair) >= valid)])
         k = w * far / (2.0 * c * c) * (float(phi) if thinned.pop() else 1.0)
         recombination.append({"template": joined, "k_pair": k * float(volume_ratio), "sites_per_chain": c,
@@ -1928,15 +1945,6 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             if pool_of(cls) is None:
                 raise ProducerError(f"{kid}: no MoM pool carries its participant class {cls!r}")
         return [family_of[cls] for cls in kernel["classes"]]
-
-    def usable(kid, term):
-        """False (listed) for a template the table gives no law."""
-        name = term["template"]
-        if term.get("law") is None or term.get("law_inert"):
-            inert.append({"kernel": kid, "templates": [name],
-                          "reason": term.get("law_inert") or term.get("law_refused") or "no product law"})
-            return False
-        return True
 
     def short_lengths(kid, names, n0, worst, what):
         """The far-law record (and the strict refusal) of a law exact only from n0 > floor."""
@@ -2695,6 +2703,22 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                                "reactants": o["reactants"], "products": o["products"],
                                "multiplicity": o["multiplicity"], "w_kmc": o["weight"], "w_mom": w_mom,
                                "kmc_over_mom": o["weight"] / w_mom})
+    # I-282: a kernel carries its mapped templates; the ones it omits are each listed with a reason elsewhere
+    # in the record, and named and counted here per partly mapped kernel
+    omitted_by = {}
+    for entry in [*inert, *unmapped, *size_departures, *position_record.get("position_refused", ())]:
+        for name in entry.get("templates") or [entry["template"]]:
+            omitted_by.setdefault(entry["kernel"], {}).setdefault(name, entry.get("reason", "no reason recorded"))
+    carried = {}
+    for kid, name in mapped_names:
+        carried.setdefault(kid, set()).add(name)
+    partial_kernels = []
+    for kid in sorted(set(kernels)):
+        left = {n: why for n, why in omitted_by.get(kid, {}).items() if n not in carried.get(kid, ())}
+        if carried.get(kid) and left:
+            partial_kernels.append({"kernel": kid, "templates": len(table["kernels"][kid]["templates"]),
+                                    "mapped": sorted(carried[kid]),
+                                    "omitted": [{"template": n, "reason": left[n]} for n in sorted(left)]})
     record = {"kernels": sorted(set(kernels)), "excluded_kernels": sorted(set(table["kernels"]) - set(kernels)),
               "temperature_K": float(table["temperature_K"]), "phi": float(phi), "moment_unit": unit,
               "volume_ratio_mom_over_kmc": float(volume_ratio), "radical_class": radical, "checks": checks,
@@ -2702,6 +2726,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
               "short_lengths": short, "validity": validity, "laws": laws_out,
               "depository_departures": departures, "position_departures": position_departures,
               "size_departures": size_departures, "laws_outside_attribution": outside_attribution,
+              "partial_kernels": partial_kernels,
               "pools": dict(sorted(class_pools.items())),
               "unfed_pools": sorted(set(class_pools.values()) - fed),
               "monomer": monomer if (depropagation or propagation) else None,
