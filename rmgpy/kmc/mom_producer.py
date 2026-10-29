@@ -865,14 +865,19 @@ def _placed_outcomes(law: dict, near: Optional[dict], n: int, nbb: int, x: Optio
     x, an interior law at x with its near-end law, a positioned law, else
     its exact law or far rule.  ``types``: a /4 table's ``chain_types``
     (tuples (class label, n[, position kind, d]), x from the head on an
-    oriented type; kernel_rates.predict_placed)."""
+    oriented type; kernel_rates.predict_placed).  An entry the table refuses
+    at this length and position has no outcome: ``_Unmapped`` with the
+    table's reason (the template is listed, I-282)."""
     from rmgpy.kmc import kernel_rates as K
-    if law["anchor"] == "end_distance":
-        return K.predict_placed(law, n, nbb, x, types)
-    if law["anchor"] == "interior":
-        return K.predict_near(law, near, n, nbb, x, types)
-    if law.get("positioned"):
-        return K.predict_placed(law, n, nbb, types=types)
+    try:
+        if law["anchor"] == "end_distance":
+            return K.predict_placed(law, n, nbb, x, types)
+        if law["anchor"] == "interior":
+            return K.predict_near(law, near, n, nbb, x, types)
+        if law.get("positioned"):
+            return K.predict_placed(law, n, nbb, types=types)
+    except K.KernelRatesError as why:
+        raise _Unmapped(str(why)) from why
     if n <= int(law["exact_to_n"]):
         token = (lambda p: K.family_of(p[0])) if types is None else (lambda p: p[0])
         return Counter({tuple(sorted(((token(p), int(p[1])) for p in prods), key=repr)): m
