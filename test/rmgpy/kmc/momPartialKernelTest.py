@@ -147,3 +147,30 @@ def test_a_single_size_join_template_is_a_size_departure_beside_the_far_field_jo
     (part,) = [p for p in out["record"]["partial_kernels"] if p["kernel"] == JOIN]
     assert part["mapped"] == [t["template"] for t in pp_table["kernels"][JOIN]["templates"]]
     assert part["omitted"] == [{"template": name, "reason": dep["reason"]}]
+
+
+# --------------------------------------------------------------------------
+# kmc-kernel-rates/4: a law the table refuses at one reachable length and position
+# --------------------------------------------------------------------------
+MOVE = "intra_h_transfer:substrate=radical_interior:CH"
+SHORT = "1cfafb5c5066:e34cd8d621f9"            # its end-distance law is exact below 6 periods
+OFF = "a product with more than one feature, or a feature off the backbone"
+
+
+def test_a_law_refused_at_a_reachable_length_lists_its_template_unmapped(pp_table):
+    """Homolysis makes radicals of 2 periods, so a move's end-distance law is read at 5 periods, where the
+    full table refuses some entries: the template is listed with the table's reason, the kernel's others map."""
+    doc = copy.deepcopy(pp_table)
+    (term,) = [t for t in doc["kernels"][MOVE]["templates"] if t["template"] == SHORT]
+    (x,) = term["law_end_distance"]["exact"]["5"]
+    term["law_end_distance"]["exact"]["5"][x] = {"refused": OFF}
+    out = pp_terms(doc)
+    (entry,) = [u for u in out["record"]["unmapped"] if u["kernel"] == MOVE and SHORT in u["templates"]]
+    assert OFF in entry["reason"] and "5 periods" in entry["reason"]
+    # the template also sits on the /c2~c2 kernel: this kernel's laws only
+    labels = [law["template"] for law in out["record"]["laws"] + out["record"]["laws_outside_attribution"]
+              if law["kernel"] == MOVE]
+    assert not any(SHORT in label for label in labels)
+    assert any(label.startswith("1cfafb5c5066:704f98848600") for label in labels)
+    (part,) = [p for p in out["record"]["partial_kernels"] if p["kernel"] == MOVE]
+    assert SHORT in [o["template"] for o in part["omitted"]]
