@@ -1,0 +1,429 @@
+{
+  "source": "the full polypropylene kmc-kernel-rates/4 table built at ad9cfc006 (1573 terms), kernel recombination:radical=radical_end:CH+radical=radical_end:CH2: its template that joins at single sizes beside the far-field join",
+  "term": {
+    "S0": {
+      "per_feature": 1,
+      "profile": {
+        "fragment_backbone_atoms=2": [
+          0
+        ]
+      }
+    },
+    "S1": {
+      "per_feature": 0,
+      "profile": {
+        "fragment_backbone_atoms=2": [
+          1
+        ]
+      }
+    },
+    "law": {
+      "S0": {
+        "anchor": "end",
+        "class": "radical_end:CH",
+        "exact": {
+          "1": [],
+          "10": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "11": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "12": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "13": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "14": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "15": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "16": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "17": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "18": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "19": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "2": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "20": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "21": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "22": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "23": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "24": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "25": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "3": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "4": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "5": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "6": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "7": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "8": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "9": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ]
+        },
+        "exact_to_n": 25,
+        "family": "radical_end",
+        "far": {
+          "outcomes": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ]
+        }
+      },
+      "S1": {
+        "anchor": "end",
+        "class": "radical_end:CH2",
+        "exact": {
+          "1": [
+            [
+              1,
+              [
+                [
+                  "join",
+                  "chain",
+                  0
+                ]
+              ]
+            ]
+          ],
+          "10": [],
+          "11": [],
+          "12": [],
+          "13": [],
+          "14": [],
+          "15": [],
+          "16": [],
+          "17": [],
+          "18": [],
+          "19": [],
+          "2": [],
+          "20": [],
+          "21": [],
+          "22": [],
+          "23": [],
+          "24": [],
+          "25": [],
+          "3": [],
+          "4": [],
+          "5": [],
+          "6": [],
+          "7": [],
+          "8": [],
+          "9": []
+        },
+        "exact_to_n": 25,
+        "family": "radical_end",
+        "far": {
+          "outcomes": []
+        },
+        "side": "start"
+      }
+    },
+    "overrides": [],
+    "phi_thinned": false,
+    "template": "f5b611023b7d:4bf25260976f",
+    "w_over_divisor": 12405018.889224185
+  },
+  "row": {
+    "divisor": 1,
+    "family": "R_Recombination",
+    "kernels": [
+      "recombination:radical=radical_end:CH+radical=radical_end:CH2",
+      "recombination:radical=radical_end:CH/c2~c2+radical=radical_end:CH2"
+    ],
+    "participants": [
+      {
+        "radical_end:CH": {
+          "per_feature": 1,
+          "profile": {
+            "fragment_backbone_atoms=2": [
+              0
+            ]
+          }
+        },
+        "radical_end:CH/c2~c2": {
+          "per_feature": 1,
+          "profile": {
+            "fragment_backbone_atoms=3": [
+              0
+            ]
+          }
+        }
+      },
+      {
+        "radical_end:CH2": {
+          "per_feature": 0,
+          "profile": {
+            "fragment_backbone_atoms=2": [
+              1
+            ]
+          }
+        }
+      }
+    ],
+    "phi_thinned": false,
+    "template": "f5b611023b7d:4bf25260976f",
+    "type": "recombination",
+    "weight": 12405018.889224185,
+    "weight_units": "m3/(mol*s) per matched transition"
+  }
+}

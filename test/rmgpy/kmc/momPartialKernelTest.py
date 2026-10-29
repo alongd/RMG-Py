@@ -119,3 +119,31 @@ def test_a_typed_homolysis_kernel_maps_its_lawful_templates_per_chain_pool(pp_ta
     assert part["omitted"] == [{"template": REFUSED, "reason": REFUSAL}]
     assert [p for p in out["record"]["partial_kernels"] if p["kernel"] != kernel] == \
         alone["record"]["partial_kernels"]
+
+
+# --------------------------------------------------------------------------
+# kmc-kernel-rates/4: a join template at single sizes beside the far-field join
+# --------------------------------------------------------------------------
+JOIN = "recombination:radical=radical_end:CH+radical=radical_end:CH2"
+SINGLE = json.loads((FIXTURES / "i282" / "pp_single_size_join_template.json").read_text())
+
+
+def with_single_size_join(doc):
+    """The fixture table with the full table's single-size template on the end recombination."""
+    doc = copy.deepcopy(doc)
+    doc["kernels"][JOIN]["templates"].append(copy.deepcopy(SINGLE["term"]))
+    doc["templates"].append(dict(copy.deepcopy(SINGLE["row"]), kernels=[JOIN]))
+    return doc
+
+
+def test_a_single_size_join_template_is_a_size_departure_beside_the_far_field_join(pp_table):
+    alone = pp_terms(pp_table)
+    out = pp_terms(with_single_size_join(pp_table))
+    assert out["joins"] == alone["joins"]
+    name = SINGLE["term"]["template"]
+    (dep,) = [d for d in out["record"]["size_departures"] if d["kernel"] == JOIN]
+    assert dep["template"] == name
+    assert "single sizes" in dep["reason"]
+    (part,) = [p for p in out["record"]["partial_kernels"] if p["kernel"] == JOIN]
+    assert part["mapped"] == [t["template"] for t in pp_table["kernels"][JOIN]["templates"]]
+    assert part["omitted"] == [{"template": name, "reason": dep["reason"]}]
