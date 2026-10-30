@@ -1321,6 +1321,8 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
                 # belongs to the spawned daughters, never to the parent)
                 k_depropagation=(getattr(spc, 'k_depropagation', None)
                                  if getattr(spc, 'end_radical_site', None) else None),
+                depropagation_residue=(getattr(spc, 'depropagation_residue_species', None)
+                                       if getattr(spc, 'end_radical_site', None) else None),
             )
             pools.append(pool)
         else:
@@ -1414,6 +1416,7 @@ class PolymerPool(object):
                  kernel_propagation: Optional[list] = None,
                  k_depropagation: Optional[dict] = None,
                  kernel_interior_scission: Optional[list] = None,
+                 depropagation_residue: Optional[Species] = None,
                  ):
         self.label = label
         self.xs = xs
@@ -1431,6 +1434,9 @@ class PolymerPool(object):
         # End-radical depropagation on this pool itself (I-266: a
         # deck-declared end-radical pool); validated in to_config.
         self.k_depropagation = k_depropagation
+        # I-286: the species a drained chain leaves (its end groups); its
+        # core index resolves in to_config.
+        self.depropagation_residue = depropagation_residue
         self.monomer = monomer
         self.explicit_map = explicit_map
         self.mu_species = mu_species
@@ -1496,6 +1502,15 @@ class PolymerPool(object):
                 raise ValueError(
                     f"Pool {self.label}: monomer_product {self.monomer_product} not in core species; "
                     f"cannot wire unzip-to-monomer release.")
+
+        # 3'. Resolve the depropagation residue (I-286): a real core Species.
+        residue_idx = None
+        if self.depropagation_residue is not None:
+            residue_idx = spc_map.get(self.depropagation_residue)
+            if residue_idx is None:
+                raise ValueError(
+                    f"Pool {self.label}: depropagation_residue {self.depropagation_residue} not in core "
+                    f"species; cannot credit the end groups a drained chain leaves.")
 
         # HARD ERROR: a non-finite k_unzip/k_scission is not a valid rate
         # constant. NaN passes BOTH the `< 0` and `> 0` gates as False, so
@@ -1701,6 +1716,7 @@ class PolymerPool(object):
                                                                         self.kernel_interior_scission)),
             k_depropagation=(None if self.k_depropagation is None else
                              validate_k_depropagation(self.label, self.k_depropagation)),
+            depropagation_residue_index=residue_idx,
             repeat_unit_atoms=_element_count_tuple(self.monomer),
             end_group_atoms=_end_group_atoms(
                 getattr(self.proxy_species, "end_groups", None)),
@@ -1903,6 +1919,17 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
                     f"monomer_product_species must be a live core species "
                     f"(the deck helper requires monomer_product whenever "
                     f"k_depropagation is configured).")
+        # I-286: the depropagation residue of a born-empty deck pool, by the
+        # same object-keyed spc_map.
+        residue_idx = None
+        residue = getattr(spc, "depropagation_residue_species", None)
+        if residue is not None:
+            residue_idx = spc_map.get(residue)
+            if residue_idx is None:
+                raise ValueError(
+                    f"Pool {b}: depropagation_residue {residue} not in core "
+                    f"species; cannot credit the end groups a drained chain "
+                    f"leaves.")
 
         # An X-loss feature daughter's inherited kernels (I-260,
         # rmgpy.polymer._inherit_side_loss_kernels): the parent's k_unzip and
@@ -1952,6 +1979,7 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
                 getattr(spc, "monomer", None)),
             radical_qssa_unzip=qssa_channel,
             k_depropagation=kdep_channel,
+            depropagation_residue_index=residue_idx,
             # Catalog-driven kernels (S5 a + b): a deck pool born empty (no
             # initialMoles entry, e.g. an explicit end-radical pool) is
             # configured HERE, not by compile_polymer_phase, so its terms

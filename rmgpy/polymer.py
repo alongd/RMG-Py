@@ -1009,6 +1009,8 @@ class Polymer(Species):
         # object-keyed, so identity with the core Species is load-bearing --
         # a deep copy would silently resolve to no core index at all.
         other.monomer_product_species = getattr(self, 'monomer_product_species', None)
+        # The depropagation residue (I-286): object-keyed the same way.
+        other.depropagation_residue_species = getattr(self, 'depropagation_residue_species', None)
         other.discrete_dp_threshold = getattr(self, 'discrete_dp_threshold', 4)
         other.is_polymer = True
         other._cached_backbone_group = None

@@ -1777,6 +1777,11 @@ class PolymerPoolConfig:
     # initiation pool has no radical end to depropagate). Requires a
     # resolvable monomer_poly_index (released units must land somewhere).
     k_depropagation: Optional[Dict[str, float]] = None
+    # I-286: core index of the species a drained chain leaves behind (its end
+    # groups, with no unit) or None: the dmu0 drain above credits it one
+    # molecule per chain, the same float. Requires k_depropagation; None
+    # keeps the drain uncredited (the H_p = 0 basis, ends booked apart).
+    depropagation_residue_index: Optional[int] = None
 
     # Side-group homolysis initiation kernel (FR1-K1, adjudicated round 70):
     # normalized channel LIST per validate_side_group_homolysis (each entry
@@ -2939,6 +2944,23 @@ class HybridPolymerSystem(ReactionSystem):
                         f"initiation pool has no radical end to "
                         f"depropagate; the two kernels are mutually "
                         f"exclusive on one pool. Remove one of them.")
+            # I-286: the residue a drained chain leaves is a species of its
+            # own: on the core, not a moment slot, not the released monomer.
+            residue = pool.depropagation_residue_index
+            if residue is not None:
+                if pool.k_depropagation is None:
+                    raise ValueError(
+                        f"Pool {pool.label}: depropagation_residue_index is "
+                        f"configured without k_depropagation; only the "
+                        f"depropagation's chain drain credits it.")
+                moment_slots = {i for p in self.polymer_pools for i in p.mu_indices}
+                if (not 0 <= residue < n_core or residue in moment_slots
+                        or residue == pool.monomer_poly_index):
+                    raise ValueError(
+                        f"Pool {pool.label}: depropagation_residue_index "
+                        f"{residue!r} is not a core species of its own (core "
+                        f"0..{n_core - 1}, not a moment slot, not the "
+                        f"released monomer {pool.monomer_poly_index!r}).")
 
             # Side-group homolysis kernel invariants (FR1-K1, adjudicated
             # round 70). LAST line of defense, same rationale as the two
@@ -3371,6 +3393,8 @@ class HybridPolymerSystem(ReactionSystem):
         - kdep_gas[i] (int32): core index of the released monomer volatile
           (== pool.monomer_poly_index, guaranteed non-None and gas-masked by
           validate_configuration); -1 on kernel-free pools.
+        - kdep_residue[i] (int32): core index of the species a drained chain
+          leaves (pool.depropagation_residue_index, I-286); -1 when none.
         """
         n_pools = len(self.polymer_pools)
         self.kdep_enabled = np.zeros(n_pools, dtype=np.int8)
@@ -3378,10 +3402,13 @@ class HybridPolymerSystem(ReactionSystem):
         self.kdep_n = np.zeros(n_pools, dtype=float)
         self.kdep_Ea = np.zeros(n_pools, dtype=float)
         self.kdep_gas = np.full(n_pools, -1, dtype=np.int32)
+        self.kdep_residue = np.full(n_pools, -1, dtype=np.int32)
         for i, pool in enumerate(self.polymer_pools):
             trip = pool.k_depropagation
             if trip is None:
                 continue
+            if pool.depropagation_residue_index is not None:
+                self.kdep_residue[i] = pool.depropagation_residue_index
             self.kdep_enabled[i] = 1
             self.kdep_A[i] = trip["A"]
             self.kdep_n[i] = trip["n"]
@@ -10035,7 +10062,14 @@ class HybridPolymerSystem(ReactionSystem):
                     self._split_side_loss_release(
                         pool_i, g_idx_kdep, r_kdep, mu1_mol, V_poly, y,
                         small_src, dz_dt)
-                dmu0_dt -= k_dep * mu0 * _deprop_dp1_fraction(mu0, mu1, mu2)
+                r_drain = k_dep * mu0 * _deprop_dp1_fraction(mu0, mu1, mu2)
+                dmu0_dt -= r_drain
+                # I-286: a drained chain leaves its end groups, which the
+                # residue species receives one molecule per chain (the same
+                # float); without one the drain is uncredited, as before.
+                if self.kdep_residue[pool_i] >= 0:
+                    res_idx = int(self.kdep_residue[pool_i])
+                    small_src[res_idx] = small_src.get(res_idx, 0.0) + r_drain
 
             # Hybrid Handshake
             tail_mean = mu1 / mu0 if mu0 > SMALL_EPS else 0.0

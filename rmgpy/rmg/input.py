@@ -286,6 +286,7 @@ def polymer(label: str,
             kernel_propagation: Optional[list] = None,
             position_class: Optional[str] = None,
             kernel_interior_scission: Optional[list] = None,
+            depropagation_residue: Optional[Union[Molecule, str]] = None,
             ):
     """
     Helper function exposed in the input file to define a Polymer Pool.
@@ -461,6 +462,10 @@ def polymer(label: str,
             this pool's moments; each term exactly {template, k,
             periods_per_unit, products}, optionally with residue (the products'
             lengths then sum to n - residue periods) (validate_kernel_interior_scission).
+        depropagation_residue (str): SMILES of what a chain k_depropagation
+            drains leaves behind (its end groups, with no unit), registered
+            as a core species: the drain credits it one molecule per chain.
+            Requires k_depropagation. Default None (the drain is uncredited).
 
     k_depropagation on an end_radical_site pool runs on that pool (it is
     the radical-end pool); on any other pool it needs k_homolysis, as
@@ -657,6 +662,11 @@ def polymer(label: str,
                 f"Without it the depropagated repeat units would leave the "
                 f"condensed phase silently un-conserved. Define "
                 f"monomer_product or remove k_depropagation.")
+    if depropagation_residue is not None and k_depropagation is None:
+        raise InputError(
+            f"Polymer pool '{label}': depropagation_residue is declared "
+            f"without k_depropagation; only the depropagation's chain drain "
+            f"credits it.")
 
     # HARD ERRORS at deck-read time for the side-group homolysis initiation
     # kernel (FR1-K1, adjudicated round 70). Field rules (LIST of channel
@@ -798,6 +808,17 @@ def polymer(label: str,
             rmg.initial_species.append(mp_spc)
         species_dict[mp_spc.label] = mp_spc
         poly_obj.monomer_product_species = mp_spc
+    # 4b'. The depropagation residue (I-286): what a drained chain leaves,
+    #      registered through the same path as monomer_product.
+    poly_obj.depropagation_residue_species = None
+    if depropagation_residue is not None:
+        res_mol = (Molecule().from_smiles(depropagation_residue)
+                   if isinstance(depropagation_residue, str) else depropagation_residue)
+        res_spc, _ = rmg.reaction_model.make_new_species(res_mol, reactive=True)
+        if res_spc not in rmg.initial_species:
+            rmg.initial_species.append(res_spc)
+        species_dict[res_spc.label] = res_spc
+        poly_obj.depropagation_residue_species = res_spc
 
     # 4c. Explicit-DP handshake oligomer (stage A, opt-in): auto-generate ONE
     #     capped oligomer species at DP == cutoff (xs) from the pool's own
