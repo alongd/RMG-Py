@@ -9197,8 +9197,9 @@ class HybridPolymerSystem(ReactionSystem):
                         # would credit negative mu2 to both end-radical
                         # daughters). Contribute ZERO flux this step rather
                         # than integrate garbage fragment moments.
-                        if pool.label not in self._khom_guard_warned:
-                            self._khom_guard_warned.add(pool.label)
+                        _gkey = (pool.label, "k_homolysis", "k_homolysis")
+                        if _gkey not in self._khom_guard_warned:
+                            self._khom_guard_warned.add(_gkey)
                             logging.warning(
                                 "Polymer pool '%s': k_homolysis kernel "
                                 "skipped -- nonfinite/negative moment "
@@ -9263,8 +9264,9 @@ class HybridPolymerSystem(ReactionSystem):
                         # outside the law's domain (chains shorter than the
                         # sites allow, or a degenerate closure): no flux,
                         # loudly, rather than negative chains
-                        if pool.label not in self._kernel_guard_warned:
-                            self._kernel_guard_warned.add(pool.label)
+                        _gkey = (pool.label, "kernel_homolysis", term["template"])
+                        if _gkey not in self._kernel_guard_warned:
+                            self._kernel_guard_warned.add(_gkey)
                             logging.warning(
                                 "Polymer pool '%s': kernel_homolysis term %s "
                                 "skipped -- moments (%.6g, %.6g, %.6g, mu3 "
@@ -9311,8 +9313,9 @@ class HybridPolymerSystem(ReactionSystem):
                             and r2 >= 0.0
                             and all(np.isfinite(v) and v >= 0.0
                                     for credit in credits for v in credit)):
-                        if pool.label not in self._kernel_guard_warned:
-                            self._kernel_guard_warned.add(pool.label)
+                        _gkey = (pool.label, "kernel_homolysis", term["template"])
+                        if _gkey not in self._kernel_guard_warned:
+                            self._kernel_guard_warned.add(_gkey)
                             logging.warning(
                                 "Polymer pool '%s': kernel_homolysis term %s "
                                 "skipped -- moments (%.6g, %.6g, %.6g, mu3 "
@@ -9472,8 +9475,9 @@ class HybridPolymerSystem(ReactionSystem):
                                        / c_k ** j * V_poly for j in range(3)])
                         if not all([np.isfinite(v) and v >= 0.0
                                     for v in own + other]):
-                            if pool.label not in self._kernel_guard_warned:
-                                self._kernel_guard_warned.add(pool.label)
+                            _gkey = (pool.label, "kernel_transfer", term["template"])
+                            if _gkey not in self._kernel_guard_warned:
+                                self._kernel_guard_warned.add(_gkey)
                                 logging.warning(
                                     "Polymer pool '%s': kernel_transfer term "
                                     "%s skipped -- flows %s / %s outside its "
@@ -9514,8 +9518,9 @@ class HybridPolymerSystem(ReactionSystem):
                               / c_k ** j for j in range(3)])
                 if not all([np.isfinite(v) and (linear or v >= 0.0)
                             for v in flow]):
-                    if pool.label not in self._kernel_guard_warned:
-                        self._kernel_guard_warned.add(pool.label)
+                    _gkey = (pool.label, "kernel_move", term["template"])
+                    if _gkey not in self._kernel_guard_warned:
+                        self._kernel_guard_warned.add(_gkey)
                         logging.warning(
                             "Polymer pool '%s': kernel_move term %s "
                             "skipped -- flows %s outside its site "
@@ -9576,8 +9581,9 @@ class HybridPolymerSystem(ReactionSystem):
                             / c_k ** j for j in range(3)] for q, _slots in products]
                 if not all([np.isfinite(v) and (noise or v >= 0.0)
                             for credit in credits for v in credit]):
-                    if pool.label not in self._kernel_guard_warned:
-                        self._kernel_guard_warned.add(pool.label)
+                    _gkey = (pool.label, "kernel_interior_scission", term["template"])
+                    if _gkey not in self._kernel_guard_warned:
+                        self._kernel_guard_warned.add(_gkey)
                         logging.warning(
                             "Polymer pool '%s': kernel_interior_scission "
                             "term %s skipped -- credits %s outside its "
