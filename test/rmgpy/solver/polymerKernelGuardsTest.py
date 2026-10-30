@@ -27,6 +27,7 @@ declared or, for homolysis, derived (2*min_fragment - 1).
 
 import dataclasses
 import json
+import logging
 import math
 
 import numpy as np
@@ -348,3 +349,35 @@ def test_an_undeclared_validity_length_is_reported_as_undeclared():
     rs = system5({"Re": {40: 1.0}}, move={"Re": [bb_term()]})
     assert rs.kernel_validity == [{"pool": "Re", "kernel": "kernel_move", "template": "backbiting_t",
                                    "valid_from_periods": None, "source": "undeclared"}]
+
+
+# --------------------------------------------------------------------------
+# kernel-guard warnings are kept once per term, not once per pool (I-285)
+# --------------------------------------------------------------------------
+def _short_chain_moves(*templates):
+    """Pool A of 4-period chains whose every listed move term (sites n - 18)
+    leaves its law's domain, so each is skipped with a warning."""
+    pools = [_pool("A", 0, kernel_move=[move(product="B", template=t, a=1.0, b=-18.0) for t in templates]),
+             _pool("B", 1)]
+    return _system(pools, {"A": {4: 1.0}})
+
+
+def _skip_lines(caplog):
+    return [r.getMessage() for r in caplog.records if "skipped --" in r.getMessage()]
+
+
+def test_a_skipped_term_does_not_silence_another_term_on_the_same_pool(caplog):
+    rs = _short_chain_moves("term_a", "term_b")
+    with caplog.at_level(logging.WARNING):
+        rs.residual(0.0, rs.y, np.zeros_like(rs.y))
+    lines = _skip_lines(caplog)
+    assert sum("term term_a " in s for s in lines) == 1
+    assert sum("term term_b " in s for s in lines) == 1
+
+
+def test_the_same_skipped_term_warns_once_per_rebuild(caplog):
+    rs = _short_chain_moves("term_a")
+    with caplog.at_level(logging.WARNING):
+        for _ in range(3):
+            rs.residual(0.0, rs.y, np.zeros_like(rs.y))
+    assert len(_skip_lines(caplog)) == 1
