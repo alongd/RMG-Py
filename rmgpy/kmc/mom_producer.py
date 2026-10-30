@@ -164,7 +164,7 @@ QUANTITY_SOURCES = {
     "polymer_condensed_mass_g": (
         "kMC's polymer-derived mass: MoM's ledger booking of its pools, sum over pools p of "
         "M_u,p mu1_p - defect_p mu0_p + e_p (mu0_p + L_p), L_p = mu0_p(0) - mu0_p (H_p = 0: no "
-        "explicit-DP species), plus every other MoM species kMC's classifier puts in the polymer "
+        "explicit-DP species; L_p = 0 on a kernel-mode pool, whose chains weigh M_u n + e_p), plus every other MoM species kMC's classifier puts in the polymer "
         "class (amount x molar mass of its structure); exported only where the kMC inventory closes "
         "and the bath closes (MASS_CLOSURE_RELATIVE) and no present species is unclassifiable"),
     "polymer_conversion": "1 - polymer_condensed_mass_g / (1000 initial_mass_kg); with the mass only",
@@ -365,6 +365,10 @@ SPECIES_CLASS_RULES = {
         "the atoms its unique map onto that closed unit sends to the unit's head-to-tail path backbone "
         "(melt_state.monomer_backbone_keys' map), then MeltObserver.category on that origin (B = b: polymer "
         "at DP 1 unless declared)"),
+    "end_residue": (
+        "the element bounds differ, and the species is the residue a depropagation leaves when it unzips a "
+        "chain's last unit (the producer's record depropagation_residue: the pool's end-group cap of mass e_p, "
+        "with the repeat-unit backbone atoms it keeps, B < b): MeltObserver.category at that B"),
     "undetermined": (
         "neither rule decides (the element bounds differ and the species is not the closed unit, or its map "
         "onto it is ambiguous), or the kMC melt cannot hold it (RMG's inert Ar, He, Ne): the polymer rows are "
@@ -384,7 +388,10 @@ class KmcClasses:
     kMC melt cannot represent, such as RMG's inert Ar / He / Ne: it blocks the
     polymer rows only where present)."""
 
-    def __init__(self, spec, xs: int):
+    def __init__(self, spec, xs: int, residues: Sequence[Tuple[Any, int]] = ()):
+        """``residues``: [(molecule, backbone atoms)] of the depropagation residues the producer declared
+        (I-286, ``_depropagation_residue``)."""
+        self.residues = [(m, int(b)) for m, b in residues]
         try:
             self.observer = mo.MeltObserver(spec, xs=xs)
         except (mo.ObservablesError, me.DeclarationError, ms.MeltStateError) as error:
@@ -427,9 +434,13 @@ class KmcClasses:
         if len(classes) == 1:
             return classes.pop(), "element"
         backbone = self._closed_unit_backbone(state)
-        if backbone is None:
-            return "undetermined", "undetermined"
-        return category(backbone)[1], "closed_unit"
+        if backbone is not None:
+            return category(backbone)[1], "closed_unit"
+        for residue, b in self.residues:
+            if molecule.is_isomorphic(residue):
+                # only the count enters n_c = floor(B / b), and a declared species is matched by structure
+                return category(set(sorted(i for i, row in rows.items() if row[0] != "H")[:b]))[1], "end_residue"
+        return "undetermined", "undetermined"
 
     def _closed_unit_backbone(self, state) -> Optional[frozenset]:
         """The atom ids kMC flags backbone in ``state``'s one molecule when it
@@ -1082,6 +1093,13 @@ def _type_end_groups(spec, t: dict, nbb: int, ppu: int) -> Tuple[Any, Any]:
     side groups, H on the cut), and the tail cap the residue atoms past the whole periods from the period's start
     (the head-port side), so a pool chain of n periods is n declared units plus these caps (module doc, chain
     types).  Refused by name when the caps do not leave n whole periods."""
+    (head, _bh), (tail, _bt) = _type_caps(spec, t, nbb, ppu)
+    return head, tail
+
+
+def _type_caps(spec, t: dict, nbb: int, ppu: int) -> List[Tuple[Any, int]]:
+    """[(head, B), (tail, B)]: ``_type_end_groups``' caps, each with the repeat-unit backbone atoms it keeps (kMC
+    flags them backbone; the deck's end-group atoms are not, B = 0)."""
     repeat, (head, tail) = spec.legacy_molecules()
     path = _unit_backbone(repeat)
     if len(path) != ppu * nbb:
@@ -1091,12 +1109,26 @@ def _type_end_groups(spec, t: dict, nbb: int, ppu: int) -> Tuple[Any, Any]:
     if s and s + r < nbb:
         raise ProducerError(f"chain type (s={s}, r={r}): its caps hold no whole period between them, so its pool "
                             "has no end-group form of the declared polymer")
+    caps = [(head, 0), (tail, 0)]
     if s:
         keep = path[len(path) - (nbb - s):][::-1]
-        head = _cap(repeat, keep, path[len(path) - (nbb - s) - 1], "*1")
+        caps[0] = (_cap(repeat, keep, path[len(path) - (nbb - s) - 1], "*1"), len(keep))
     if tail_atoms:
-        tail = _cap(repeat, path[:tail_atoms], path[tail_atoms], "*2")
-    return head, tail
+        caps[1] = (_cap(repeat, path[:tail_atoms], path[tail_atoms], "*2"), tail_atoms)
+    return caps
+
+
+def _depropagation_residue(pool: str, caps: Sequence[Tuple[Any, int]], e_p: float) -> Tuple[Any, int]:
+    """(molecule, backbone atoms) of what a depropagation leaves when it unzips a chain's last unit: the pool's
+    end groups with no unit, e_p g/mol, which on an end-radical pool is the cap away from the radical end, the
+    one cap (``_type_caps``) of that mass.  Refused by name when no cap weighs e_p or two caps of that mass
+    differ in structure or ancestry (the residue, hence its mass and kMC class, would be a guess)."""
+    hits = [(m, b) for m, b in caps
+            if abs(m.get_molecular_weight() * 1000.0 - e_p) <= MASS_RELATIVE * max(1.0, abs(e_p))]
+    if not hits or any(b != hits[0][1] or not m.is_isomorphic(hits[0][0]) for m, b in hits[1:]):
+        raise ProducerError(f"pool {pool!r}: no one end-group cap of {e_p!r} g/mol (caps "
+                            f"{[(m.to_smiles(), b) for m, b in caps]}) is the residue its depropagation leaves")
+    return hits[0]
 
 
 def _end_site(info: dict, t: dict, nbb: int) -> str:
@@ -3004,17 +3036,31 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
             + ([f"    kernel_interior_scission={terms['interior_scission'][pool]!r},"]
                if pool in terms.get("interior_scission", {}) else []) \
             + ([f"    monomer_product={monomer['smiles']!r},"]
-               if kdep or pool in terms["propagation"] else [])
+               if kdep or pool in terms["propagation"] else []) \
+            + ([f"    depropagation_residue={residues[pool]['smiles']!r},"] if kdep else [])
+
+    def end_caps_of(pool):
+        """[(cap, backbone atoms)]: the deck's end groups; a pool of another chain type, that type's (I-278,
+        _type_caps)."""
+        cls = pool_class.get(pool) if terms else None
+        if cls is None or types[state[cls]["type"]]["declared"]:
+            return [(head, 0), (tail, 0)]
+        unit = kernels["table"]["moment_unit"]
+        return _type_caps(spec, types[state[cls]["type"]], int(unit["backbone_atoms_per_period"]),
+                          int(unit["periods_per_declared_unit"]))
 
     def end_groups_of(pool):
-        """The deck's end groups; a pool of another chain type, that type's (I-278, _type_end_groups)."""
-        cls = pool_class.get(pool)
-        if cls is None or types[state[cls]["type"]]["declared"]:
-            return head.to_smiles(), tail.to_smiles()
-        unit = kernels["table"]["moment_unit"]
-        h, t = _type_end_groups(spec, types[state[cls]["type"]], int(unit["backbone_atoms_per_period"]),
-                                int(unit["periods_per_declared_unit"]))
-        return h.to_smiles(), t.to_smiles()
+        return tuple(m.to_smiles() for m, _b in end_caps_of(pool))
+
+    # I-286: what each depropagation leaves when it unzips a chain's last unit (the engine's
+    # depropagation_residue); the converter classes it by its cap's ancestry
+    residues = {}
+    for pool in sorted(terms["depropagation"] if terms else ()):
+        m, b = _depropagation_residue(pool, end_caps_of(pool), ends[pool])
+        residues[pool] = {"smiles": m.to_smiles(), "backbone_atoms": b,
+                          "molar_mass_g_mol": m.get_molecular_weight() * 1000.0}
+    if terms:
+        terms["record"]["depropagation_residue"] = residues
 
     def keyed(pool, declaration):
         """I-278: an end- or mid-chain-featured pool of a chain type keyed by its class, an end pool on the site
@@ -3178,7 +3224,8 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
          "(whole-ensemble moments are in mom_diagnostics.json, not compared)"),
         ("mass_booking", "MoM physical_elemental_inventory ledger",
          "condensed mass = sum_p M_u,p mu1_p - defect_p mu0_p + e_p (mu0_p + L_p), L_p = mu0_p(0) - mu0_p "
-         "(H_p = 0, no explicit-DP species); e_p from the pool's end-group SMILES"),
+         "(H_p = 0, no explicit-DP species), e_p from the pool's end-group SMILES; a pool whose end mass is its "
+         "kernel-rates family's (kernel mode) holds chains of M_u n + e_p each and books L_p = 0 (I-286)"),
         ("mass_closure", MASS_CLOSURE_RELATIVE,
          "two closures, each within this relative tolerance of its own t = 0 value: the kMC inventory "
          "(booked pools + every non-bath, non-bookkeeping species by its structure's molar mass) and the "
@@ -4244,7 +4291,7 @@ WHOLE_KEYS = mo.WHOLE_ENSEMBLE_KEYS
 
 
 def whole_moments(row, first, pools, columns, ends, shift, polymer_cols, n_mass, *, booked: float, e: float,
-                  a: float) -> Tuple[List[Optional[float]], Optional[str]]:
+                  a: float, ledger_pools=None) -> Tuple[List[Optional[float]], Optional[str]]:
     """Whole-ensemble mass-DP moments (``melt_observables.WHOLE_ENSEMBLE_DEFINITION``)
     of one profile row: every pool chain and every polymer-class species.
     mu0 = sum of pool mu0 + species amounts; mu1 from MoM's booked chain mass
@@ -4252,11 +4299,13 @@ def whole_moments(row, first, pools, columns, ends, shift, polymer_cols, n_mass,
     mu2 = sum of pool mu2 shifted by each pool's offset (e_p - defect_p - e) / a
     (n_m = pool DP + offset for a chain with its pool's end groups) -- exact
     only when the ledger books no end-group deficit or excess (sum of
-    e_p L_p = 0 within MoM's floors); otherwise None and the reason."""
+    e_p L_p = 0 within MoM's floors); otherwise None and the reason.
+    ``ledger_pools``: the pools on the ledger's basis (default all); a pool
+    whose chains each weigh a n + e_p (kernel mode, I-286) is on none."""
     mu0_pools = math.fsum(row[columns[p["label"]][0]] for p in pools)
     w0 = mu0_pools + math.fsum(row[i] for i in polymer_cols)
     w1 = (booked - e * mu0_pools) / a + math.fsum(row[i] * n_mass[i] for i in polymer_cols)
-    ledger, zero = whole_ledger(row, first, pools, columns, ends)
+    ledger, zero = whole_ledger(row, first, pools if ledger_pools is None else ledger_pools, columns, ends)
     if not zero:
         return [w0, w1, None], (f"MoM's end-group ledger books {ledger!r} g/mol x mol of end groups minted "
                                 "or removed (sum of e_p L_p): how that deficit spreads over chains, hence "
@@ -4569,11 +4618,17 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
              for p in pools}                                                # pool DP -> mass DP offset
     first = data[0]
 
+    # I-286: a pool whose end mass is its kernel-rates family's holds chains of M_u n + e_p each, and every
+    # kernel term conserves sum_p (M_u mu1_p + e_p mu0_p) (a cut off a unit boundary moves unit mass into end
+    # groups), so it books e_p mu0_p(t); the ledger (end groups held at their t = 0 count, L_p) is the basis
+    # of the legacy kernels, which mint chain ends from nothing
+    ledger_pools = [p for p in pools if p["label"] not in pool_ends]
+
     def booked(row):
         total = 0.0
         for p in pools:
             mu0, mu1 = row[columns[p["label"]][0]], row[columns[p["label"]][1]]
-            ledger = first[columns[p["label"]][0]] - mu0
+            ledger = 0.0 if p["label"] in pool_ends else first[columns[p["label"]][0]] - mu0
             total += (mu1 * p["monomer_mw_g_mol"] - mu0 * float(p.get("chain_mass_defect_g_mol") or 0.0)
                       + ends[p["label"]] * (mu0 + ledger))
         return total
@@ -4642,7 +4697,7 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
         booked_as, blocked = {}, []
         corrupt_pools = {label for label in pm if any(c.startswith(f"pool {label} ") for c in corrupt)}
         unresolved = {}                       # pool label -> why its chains are not booked
-        end_ledger, ledger_zero = whole_ledger(row, first, pools, columns, ends)
+        end_ledger, ledger_zero = whole_ledger(row, first, ledger_pools, columns, ends)
         for label, cands in candidates.items():  # classified at every row, t = 0 included
             m = pm[label]
             if not cands or (label not in corrupt_pools and all(abs(x) <= MOM_MOMENT_FLOOR for x in m)):
@@ -4696,7 +4751,7 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
             quantities["polymer_derived_molecules_mol"] = (math.fsum(v[0] for v in pm.values()) - booked_mu0
                                                            + math.fsum(row[i] for i in polymer_cols))
             whole, reason = whole_moments(clamped_row, first, pools, columns, ends, shift, polymer_cols, n_mass,
-                                          booked=mass, e=e_deck, a=a_deck)
+                                          booked=mass, e=e_deck, a=a_deck, ledger_pools=ledger_pools)
             for label, (name, _n) in booked_as.items():
                 n_s = (species_mass[name] - e_deck) / a_deck
                 whole[0] -= pm[label][0]
@@ -4733,7 +4788,8 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
                          for p in pools)
         diagnostics.append({"time_s": t, "volume_m3": row[1], "whole_ensemble_moments_mol": mu,
                             "end_group_ledger_g": end_ledger,
-                            "end_group_ledger_threshold_g": ledger_threshold(row, first, pools, columns, ends),
+                            "end_group_ledger_threshold_g": ledger_threshold(row, first, ledger_pools, columns,
+                                                                             ends),
                             "booked_pool_mass_g": mass, "polymer_class_species_mass_g": oligomer_mass,
                             "code_condensed_mass_g": code, "kmc_inventory_species_mass_g": gas,
                             "species_without_structure": missing or missing_first,
@@ -4896,7 +4952,9 @@ def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: i
         if (out / stale).exists():
             (out / stale).unlink()
     # the run's integrity first (its refusals take precedence), then its activity
-    entries, diagnostics, read = convert(rmg_dir, times, facts, KmcClasses(deck.spec, deck.xs))
+    declared_residues = [(Molecule(smiles=r["smiles"]), r["backbone_atoms"]) for r in
+                         ((facts.get("kernels") or {}).get("record") or {}).get("depropagation_residue", {}).values()]
+    entries, diagnostics, read = convert(rmg_dir, times, facts, KmcClasses(deck.spec, deck.xs, declared_residues))
     if kernel_source is not None:
         manifest["census"] = kernel_census(rmg_dir, facts, times)
         if not manifest["census"]["profile_changes"]:

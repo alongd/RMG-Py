@@ -119,5 +119,5 @@ def test_a_species_that_is_not_the_closed_unit_stays_a_named_refusal(tmp_path, d
 
 
 def test_the_class_rules_are_named():
-    assert set(mp.SPECIES_CLASS_RULES) == {"element", "closed_unit", "undetermined"}
+    assert set(mp.SPECIES_CLASS_RULES) == {"element", "closed_unit", "end_residue", "undetermined"}
     assert all(isinstance(v, str) and v for v in mp.SPECIES_CLASS_RULES.values())

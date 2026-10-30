@@ -101,8 +101,9 @@ def test_the_ledger_residual_and_threshold_are_exported_per_time(setup):
     diagnostics = json.loads((out / "mom_diagnostics.json").read_text())
     assert len(diagnostics) == len(mom_entries(out))
     for d_ in diagnostics:
+        # I-286: kernel-mode pools book e_p mu0_p(t), so none is on the ledger's basis: it is zero, exactly
         ledger, threshold = d_["end_group_ledger_g"], d_["end_group_ledger_threshold_g"]
-        assert threshold > 0.0 and abs(ledger) <= threshold
+        assert ledger == 0.0 and threshold == 0.0
     rows = by_name(cr.mom_rows(out / "mom.json", setup["deck"]))
     t = diagnostics[-1]["time_s"]
     assert rows[(t, "mom_end_group_ledger_g")]["kind"] == "diagnostic"
