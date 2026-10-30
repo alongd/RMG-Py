@@ -3504,14 +3504,14 @@ def save_input_file(path, rmg):
         if system.T is not None:
             return '({0:g},"{1!s}")'.format(system.T.value, system.T.units)
         
-        return f'[({system.Trange[0].value:g}, "{system.Trange[0].units}"), ({system.Trange[1].value:g}, "{system.Trange[1].units}")],'
+        return f'[({system.Trange[0].value:g}, "{system.Trange[0].units}"), ({system.Trange[1].value:g}, "{system.Trange[1].units}")]'
 
     def format_pressure(system):
         """Get pressure string format for reaction system, whether single value or range"""
         if system.P is not None:
             return '({0:g},"{1!s}")'.format(system.P.value, system.P.units)
         
-        return f'[({system.Prange[0].value:g}, "{system.Prange[0].units}"), ({system.Prange[1].value:g}, "{system.Prange[1].units}")],'
+        return f'[({system.Prange[0].value:g}, "{system.Prange[0].units}"), ({system.Prange[1].value:g}, "{system.Prange[1].units}")]'
 
     def format_initial_mole_fractions(system):
         """Get initial mole fractions string format for reaction system"""
@@ -3548,7 +3548,7 @@ def save_input_file(path, rmg):
             f.write(format_initial_mole_fractions(system))
         elif rmg.solvent:
             f.write('liquidReactor(\n')
-            f.write('    temperature = ' + format_temperature(system) + '\n')
+            f.write('    temperature = ' + format_temperature(system) + ',\n')
             f.write('    initialConcentrations={\n')
             for spcs, conc in system.initial_concentrations.items():
                 # conc may have been converted to SI, so we need to convert back
@@ -3557,8 +3557,10 @@ def save_input_file(path, rmg):
                 f.write('        "{0!s}": ({1:g},"{2!s}"),\n'.format(spcs.label, conc.value, conc.units))
         elif isinstance(system, SurfaceReactor):
             f.write('surfaceReactor(\n')
-            f.write('    temperature = ' + format_temperature(system) + '\n')
+            f.write('    temperature = ' + format_temperature(system) + ',\n')
             f.write('    initialPressure = ({0:g},"{1!s}"),\n'.format(system.P_initial.value, system.P_initial.units))
+            f.write('    surfaceVolumeRatio = ({0:g},"{1!s}"),\n'.format(
+                system.surface_volume_ratio.value, system.surface_volume_ratio.units))
             f.write('    initialGasMoleFractions={\n')
             for spcs, molfrac in system.initial_gas_mole_fractions.items():
                 f.write('        "{0!s}": {1:g},\n'.format(spcs.label, molfrac))
@@ -3568,8 +3570,8 @@ def save_input_file(path, rmg):
                 f.write('        "{0!s}": {1:g},\n'.format(spcs.label, cov))
         else:
             f.write('simpleReactor(\n')
-            f.write('    temperature = ' + format_temperature(system) + '\n')
-            f.write('    pressure = ' + format_pressure(system) + '\n')
+            f.write('    temperature = ' + format_temperature(system) + ',\n')
+            f.write('    pressure = ' + format_pressure(system) + ',\n')
             f.write('    initialMoleFractions={\n')
             f.write(format_initial_mole_fractions(system))
         f.write('    },\n')

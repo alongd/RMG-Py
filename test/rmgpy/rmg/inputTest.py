@@ -1747,3 +1747,100 @@ class TestInputPlasmaChargeBalance:
             "plasmaReactor(", 1)
         with pytest.raises(InputError, match="not a usable mole fraction"):
             self._read(tmp_path, body)
+
+
+class TestSaveInputTemperaturePressureRoundTrip:
+    """Saved reactor conditions must be valid input to the public reader."""
+
+    CASES = [
+        ("simple", "scalar"),
+        ("simple", "range"),
+        ("plasma", "scalar"),
+        ("liquid", "scalar"),
+        ("surface", "scalar"),
+    ]
+
+    @staticmethod
+    def _body(reactor_type, form):
+        if form == "scalar":
+            temperature = "(1000, 'K')"
+            pressure = "(1, 'atm')"
+        else:
+            temperature = "[(800, 'K'), (1500, 'K')]"
+            pressure = "[(0.5, 'atm'), (2, 'atm')]"
+
+        body = (
+            "database(thermoLibraries=['primaryThermoLibrary'], reactionLibraries=[], "
+            "seedMechanisms=[], kineticsFamilies='default')\n"
+            "species(label='Ar', reactive=False, "
+            "structure=adjacencyList('1 Ar u0 p4 c0'))\n"
+            "species(label='He', reactive=False, "
+            "structure=adjacencyList('1 He u0 p1 c0'))\n"
+        )
+        settings = (
+            "simulator(atol=1e-16, rtol=1e-8)\n"
+            "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)\n"
+        )
+
+        if reactor_type == "simple":
+            return body + (
+                f"simpleReactor(temperature={temperature}, pressure={pressure}, "
+                "initialMoleFractions={'Ar': 0.7, 'He': 0.3}, terminationTime=(1, 's'))\n"
+            ) + settings
+        if reactor_type == "plasma":
+            body += "species(label='e-', structure=adjacencyList('1 e u1 p0 c-1'))\n"
+            return body + (
+                f"plasmaReactor(temperature={temperature}, pressure={pressure}, "
+                "electronTemperature=(11604.5, 'K'), "
+                "initialMoleFractions={'Ar': 0.7, 'He': 0.299999999, 'e-': 1e-9}, "
+                "terminationTime=(1, 's'))\n"
+            ) + settings
+        if reactor_type == "liquid":
+            return body + (
+                "solvation(solvent='water')\n"
+                f"liquidReactor(temperature={temperature}, "
+                "initialConcentrations={'Ar': (1, 'mol/m^3')}, terminationTime=(1, 's'))\n"
+            ) + settings
+        if reactor_type == "surface":
+            body += (
+                "species(label='X', structure=adjacencyList('1 X u0'))\n"
+                "catalystProperties(surfaceSiteDensity=(2.5e-9, 'mol/cm^2'))\n"
+            )
+            return body + (
+                f"surfaceReactor(temperature={temperature}, initialPressure={pressure}, "
+                "initialGasMoleFractions={'Ar': 1.0}, initialSurfaceCoverages={'X': 1.0}, "
+                "surfaceVolumeRatio=(10, 'm^-1'), terminationTime=(1, 's'))\n"
+            ) + settings
+        raise AssertionError(f"Unhandled reactor type: {reactor_type}")
+
+    @pytest.mark.parametrize("reactor_type,form", CASES, ids=[f"{kind}-{form}" for kind, form in CASES])
+    def test_saved_temperature_and_pressure_read_back(self, tmp_path, reactor_type, form):
+        source = tmp_path / "input.py"
+        source.write_text(self._body(reactor_type, form))
+        first = RMG()
+        inp.read_input_file(str(source), first)
+        original = first.reaction_systems[0]
+
+        saved = tmp_path / "saved.py"
+        inp.save_input_file(str(saved), first)
+        second = RMG()
+        inp.read_input_file(str(saved), second)
+        reread = second.reaction_systems[0]
+
+        assert type(reread) is type(original)
+        if form == "range":
+            assert [value.value_si for value in reread.Trange] == pytest.approx(
+                [value.value_si for value in original.Trange]
+            )
+            assert [value.value_si for value in reread.Prange] == pytest.approx(
+                [value.value_si for value in original.Prange]
+            )
+        else:
+            assert reread.T.value_si == pytest.approx(original.T.value_si)
+            if reactor_type == "simple" or reactor_type == "plasma":
+                assert reread.P.value_si == pytest.approx(original.P.value_si)
+            elif reactor_type == "surface":
+                assert reread.P_initial.value_si == pytest.approx(original.P_initial.value_si)
+                assert reread.surface_volume_ratio.value_si == pytest.approx(
+                    original.surface_volume_ratio.value_si
+                )
