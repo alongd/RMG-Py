@@ -354,15 +354,35 @@ def ancestry_elements(spec) -> Tuple[frozenset, frozenset]:
     return frozenset(backbone - other), frozenset(backbone)
 
 
+SPECIES_CLASS_RULES = {
+    "element": (
+        "melt_observables.MeltObserver.category on the species' structure with its backbone-origin count B "
+        "bracketed by element (the atoms of elements only ever backbone, and of elements ever backbone, in the "
+        "declared melt): both bounds give this class"),
+    "closed_unit": (
+        "the element bounds differ, and the species is the declared repeat unit with its head-tail bond raised "
+        "by the port order (the monomer a depropagation releases): kMC's ancestry of a unit cut from a chain, "
+        "the atoms its unique map onto that closed unit sends to the unit's head-to-tail path backbone "
+        "(melt_state.monomer_backbone_keys' map), then MeltObserver.category on that origin (B = b: polymer "
+        "at DP 1 unless declared)"),
+    "undetermined": (
+        "neither rule decides (the element bounds differ and the species is not the closed unit, or its map "
+        "onto it is ambiguous), or the kMC melt cannot hold it (RMG's inert Ar, He, Ne): the polymer rows are "
+        "withheld where it is present"),
+}
+
+
 class KmcClasses:
     """kMC's class of a MoM species: ``melt_observables.MeltObserver.category``
     (declared species by identity, else polymer when n_c = floor(B_c / b) >= 1,
     else light) on the species' structure.  MoM keeps no ancestry, so B_c is
     bracketed: the atoms of elements that are only ever backbone (lower) and
     of elements that are ever backbone (upper); the class is kMC's when both
-    give the same, else "undetermined" (also for a species the kMC melt
-    cannot represent, such as RMG's inert Ar / He / Ne: it blocks the polymer
-    rows only where present)."""
+    give the same.  Where they differ, a species that is the declared unit
+    closed head-tail (the released monomer) takes the ancestry kMC gives it
+    (``SPECIES_CLASS_RULES``); any other is "undetermined" (also a species the
+    kMC melt cannot represent, such as RMG's inert Ar / He / Ne: it blocks the
+    polymer rows only where present)."""
 
     def __init__(self, spec, xs: int):
         try:
@@ -370,27 +390,70 @@ class KmcClasses:
         except (mo.ObservablesError, me.DeclarationError, ms.MeltStateError) as error:
             raise ProducerError(f"kMC observer of the deck: {error}") from error
         self.only, self.possible = ancestry_elements(spec)
+        self.closed = None              # (resonance forms, backbone atom ids) of the unit closed head-tail
+        if not self.observer.sequence:  # a copolymer's n_c is by mass: B never enters its class
+            try:
+                _keys, forms, backbone = ms._normalized_forms(spec.repeat_unit, closing=True)
+                self.closed = (forms, backbone)
+            except ms.MeltStateError:   # head and tail not bonded, or no one molecule: no closed unit
+                pass
 
     def classify(self, molecule) -> str:
+        return self.classify_with_rule(molecule)[0]
+
+    def classify_with_rule(self, molecule) -> Tuple[str, str]:
+        """(class, its rule: a key of ``SPECIES_CLASS_RULES``)."""
         mol = molecule.copy(deep=True)
         for i, atom in enumerate(mol.atoms):
             atom.id = i
         rows = rr.molecule_rows(mol)
         nodes = {i: ms.Node(el, iso, charge, radical, lone, dict(edges))
                  for i, (el, iso, charge, radical, lone, edges) in rows.items()}
-        classes = set()
-        for allowed in (self.only, self.possible):
-            origin = {i: ms.Origin("mobile", 0, "mom", str(i), (row[0], row[1]) in allowed)
-                      for i, row in rows.items()}
-            try:
-                state = ms.MeltState(nodes, origin)
-            except ms.MeltStateError:      # an atom the kMC melt cannot hold (RMG's inert Ar, He, Ne)
-                return "undetermined"
+
+        def category(backbone):
+            state = ms.MeltState(nodes, {i: ms.Origin("mobile", 0, "mom", str(i), i in backbone) for i in rows})
             ids = state.components.ids()
             if len(ids) != 1:
                 raise ProducerError(f"species {molecule.to_smiles()} is {len(ids)} molecules")
-            classes.add(self.observer.category(state, ids[0]))
-        return classes.pop() if len(classes) == 1 else "undetermined"
+            return state, self.observer.category(state, ids[0])
+
+        classes = set()
+        for allowed in (self.only, self.possible):
+            try:
+                state, kind = category({i for i, row in rows.items() if (row[0], row[1]) in allowed})
+            except ms.MeltStateError:      # an atom the kMC melt cannot hold (RMG's inert Ar, He, Ne)
+                return "undetermined", "undetermined"
+            classes.add(kind)
+        if len(classes) == 1:
+            return classes.pop(), "element"
+        backbone = self._closed_unit_backbone(state)
+        if backbone is None:
+            return "undetermined", "undetermined"
+        return category(backbone)[1], "closed_unit"
+
+    def _closed_unit_backbone(self, state) -> Optional[frozenset]:
+        """The atom ids kMC flags backbone in ``state``'s one molecule when it
+        is the declared unit closed head-tail (``melt_state._unique_ancestry``
+        over the normalized forms ``monomer_backbone_keys`` matches), else
+        None (not the closed unit, or an ambiguous map)."""
+        if self.closed is None:
+            return None
+        import networkx as nx
+        from rmgpy.kmc import window_matcher as wm
+        forms, backbone = self.closed
+        cid = state.components.ids()[0]
+        query = nx.Graph()              # the species' first form, labelled as melt_state._normalized_forms does
+        for atom, row in wm.form_rows(state, cid, wm.component_forms(state, cid)[0]).items():
+            query.add_node(atom, label=row[:5])
+            for other, order in row[5]:
+                if atom < other:
+                    query.add_edge(atom, other, order=float(order))
+        if not any(len(query) == len(g) and next(ms._isomorphisms(query, g), None) is not None for g in forms):
+            return None
+        try:
+            return ms._unique_ancestry({i: i for i in query}, query, forms, backbone)
+        except ms.AncestryError:
+            return None
 
 
 # --------------------------------------------------------------------------
@@ -3143,9 +3206,11 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
          "every MoM species outside the pools and the bath is put in kMC's class (declared species, "
          "polymer-derived when floor(B / b) >= 1, else light) by kMC's own classifier on its structure; "
          "B, the backbone-origin atom count MoM does not keep, is bracketed by the elements only ever "
-         "backbone and those ever backbone in the declared melt; a polymer-class species adds its mass and "
-         "amount to the polymer rows; where a species whose bracket gives two classes is present, the "
-         "polymer rows are not exported"),
+         "backbone and those ever backbone in the declared melt; where the two bounds differ, a species that "
+         "is the declared unit closed head-tail (the released monomer) takes the ancestry kMC gives a unit "
+         "cut from a chain; a polymer-class species adds its mass and amount to the polymer rows; where a "
+         "species neither rule classes is present, the polymer rows are not exported; each species' rule is "
+         "read.species_class_rules (SPECIES_CLASS_RULES)"),
         ("volume", facts["volume_ratio_mom_over_kmc"],
          "MoM V_poly = (a mu1 + phase species mass) / rho (end groups excluded), constant; value = "
          "MoM V_poly / kMC volume (polymer with end groups + mobile species, same density)"),
@@ -4494,8 +4559,9 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
     system = [i for i in range(2, len(header)) if i not in bookkeeping and i not in bath.values()]
     molar = {i: (dictionary[header[i]].get_molecular_weight() * 1000.0 if header[i] in dictionary else None)
              for i in system + list(bath.values())}
-    kind = {i: (classes.classify(dictionary[header[i]]) if header[i] in dictionary else "undetermined")
-            for i in system}
+    rule = {i: (classes.classify_with_rule(dictionary[header[i]]) if header[i] in dictionary
+                else ("undetermined", "undetermined")) for i in system}
+    kind = {i: rule[i][0] for i in system}
     polymer_cols = [i for i in system if kind[i] == "polymer"]
     a_deck, e_deck = facts["a_g_mol"], facts["e_g_mol"]
     n_mass = {i: (molar[i] - e_deck) / a_deck for i in polymer_cols}       # mass DP of a polymer-class species
@@ -4687,6 +4753,7 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
             "species_columns": {name: header[i] for name, i in species.items()},
             "bath_columns": {label: header[i] for label, i in bath.items()},
             "species_classes": {header[i]: kind[i] for i in system},
+            "species_class_rules": {header[i]: rule[i][1] for i in system},
             "polymer_species_mass_dp": {header[i]: n_mass[i] for i in polymer_cols},
             "pool_mass_dp_shift": shift,
             "pool_species_candidates": {k: [list(c) for c in v] for k, v in candidates.items()}}
