@@ -349,10 +349,42 @@ def expand_electrons(reaction, species_list):
 
     electrons = getattr(reaction, 'electrons', 0) or 0
     if electrons == 0:
-        # Nothing to fold in. A reaction already in explicit-electron form (the
-        # reactor's placement view, or a mechanism read back from a written
-        # file) arrives here and is returned untouched, which is what makes this
-        # helper idempotent over the write/read round trip.
+        declaration = get_placement_declaration(reaction)
+        # Net-zero is normally a no-op. A declared conserved placement is the
+        # exception: canonical reactions store only the scalar, so their pair
+        # must be made explicit for export. A reaction already in placement
+        # view (or read back from a written mechanism) has the declared pair in
+        # its participant lists and must remain untouched for idempotence.
+        if declaration is None or declaration[0] != declaration[1]:
+            return reactants, products
+
+        reactant_count, product_count = declaration
+        from rmgpy.electron_placement import _is_electron
+        explicit_counts = (
+            sum(1 for spc in reactants if _is_electron(spc)),
+            sum(1 for spc in products if _is_electron(spc)),
+        )
+        if explicit_counts == declaration:
+            return reactants, products
+        if explicit_counts != (0, 0):
+            raise MechanismWriterError(
+                'Reaction {0!s} has electrons=0 and owner {1!r} declares the conserved '
+                'electron placement {2!r}, but its participants already contain the '
+                'inconsistent explicit electron placement {3!r}. Refusing to duplicate '
+                'or rewrite explicit electrons.'.format(
+                    reaction, get_placement_owner(reaction), declaration, explicit_counts)
+            )
+
+        electron = get_electron_species(species_list)
+        if electron is None:
+            raise MechanismWriterError(
+                'Reaction {0!s} has a declared conserved electron placement {1!r} but the '
+                'mechanism defines no electron species, so the electron cannot be written '
+                'into the exported equation. Add the electron to the species list before '
+                'exporting.'.format(reaction, declaration)
+            )
+        reactants.extend([electron] * reactant_count)
+        products.extend([electron] * product_count)
         return reactants, products
 
     electron = get_electron_species(species_list)

@@ -50,7 +50,8 @@ from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.electron_balance import (check_electron_balance, check_electron_reactant_order,
                                     expand_electrons, get_electron_placement_counts,
-                                    get_electron_species, potential_dependence_is_inert)
+                                    get_electron_species, get_placement_declaration,
+                                    potential_dependence_is_inert)
 from rmgpy.exceptions import (ChemkinError, ChemkinIdentifierCollisionError,
                               EEDFExportError, MechanismWriterError)
 from rmgpy.molecule.element import get_element
@@ -2146,6 +2147,14 @@ def write_reaction_string(reaction, java_library=False, species_list=None):
     """
     from rmgpy.export import SpeciesReferences, resolve_species_reference
     use_species_list = bool(species_list)
+    if (not use_species_list and (getattr(reaction, 'electrons', 0) or 0) == 0
+            and not any(species.is_electron()
+                        for species in reaction.reactants + reaction.products)):
+        declaration = get_placement_declaration(reaction)
+        if declaration is not None and declaration[0] == declaration[1]:
+            raise MechanismWriterError(
+                'Reaction {0!s} has a conserved electron pair declared by its owner, but it cannot '
+                'be written without a species_list that defines the electron species.'.format(reaction))
     if not use_species_list and reaction.electrons:
         raise MechanismWriterError(
             'Reaction {0!s} carries {1:d} electron(s), but writing it requires an explicit '

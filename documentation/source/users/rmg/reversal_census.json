@@ -605,7 +605,7 @@
   {
     "site": "rmgpy/chemkin.pyx::_dictionary_identities_conflict::is_isomorphic#1",
     "kind": "direction",
-    "line": 986,
+    "line": 987,
     "source": "return not previous.copy(deep=True).is_isomorphic(current.copy(deep=True))",
     "verdict": "not-reachable-for-resolved",
     "reason": "This comparison detects conflicting full species identities in a dictionary; it does not compare reaction direction or construct a reverse rate.",
@@ -616,7 +616,7 @@
   {
     "site": "rmgpy/chemkin.pyx::_process_duplicate_reactions::LibraryReaction#1",
     "kind": "builder",
-    "line": 1269,
+    "line": 1270,
     "source": "reaction = LibraryReaction(",
     "verdict": "guarded",
     "reason": "Combines only equal reversible declarations, copies reversible/electrons, and checks every returned reaction.",
@@ -628,7 +628,7 @@
   {
     "site": "rmgpy/chemkin.pyx::_process_duplicate_reactions::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1312,
+    "line": 1313,
     "source": "reaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Combines only equal reversible declarations, copies reversible/electrons, and checks every returned reaction.",
@@ -640,7 +640,7 @@
   {
     "site": "rmgpy/chemkin.pyx::_process_duplicate_reactions::reaction-io",
     "kind": "reader-exporter",
-    "line": 1226,
+    "line": 1227,
     "source": "cpdef _process_duplicate_reactions(list reaction_list):",
     "verdict": "guarded",
     "reason": "Combines only equal reversible declarations, copies reversible/electrons, and checks every returned reaction.",
@@ -652,7 +652,7 @@
   {
     "site": "rmgpy/chemkin.pyx::_read_kinetics_line::reaction-io",
     "kind": "reader-exporter",
-    "line": 582,
+    "line": 583,
     "source": "def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units, kinetics):",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -664,7 +664,7 @@
   {
     "site": "rmgpy/chemkin.pyx::_read_kinetics_reaction::Reaction#1",
     "kind": "builder",
-    "line": 403,
+    "line": 404,
     "source": "reaction = Reaction(reactants=[], products=[], specific_collider=specific_collider, reversible=reversible)",
     "verdict": "guarded",
     "reason": "Parses explicit direction into Reaction; read_kinetics_entry checks after attaching TDEP and all reader returns are checked at load_chemkin_file.",
@@ -675,7 +675,7 @@
   {
     "site": "rmgpy/chemkin.pyx::_read_kinetics_reaction::reaction-io",
     "kind": "reader-exporter",
-    "line": 340,
+    "line": 341,
     "source": "def _read_kinetics_reaction(line, species_dict, Aunits, Aunits_surf, Eunits):",
     "verdict": "guarded",
     "reason": "Parses explicit direction into Reaction; read_kinetics_entry checks after attaching TDEP and all reader returns are checked at load_chemkin_file.",
@@ -686,7 +686,7 @@
   {
     "site": "rmgpy/chemkin.pyx::chemkin_duplicate_group_key::reaction-io",
     "kind": "reader-exporter",
-    "line": 2610,
+    "line": 2619,
     "source": "def chemkin_duplicate_group_key(reaction):",
     "verdict": "guarded",
     "reason": "Irreversible direction participates in the duplicate key/marking decision.",
@@ -697,7 +697,7 @@
   {
     "site": "rmgpy/chemkin.pyx::load_chemkin_file::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1222,
+    "line": 1223,
     "source": "reaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -709,7 +709,7 @@
   {
     "site": "rmgpy/chemkin.pyx::load_chemkin_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 1088,
+    "line": 1089,
     "source": "def load_chemkin_file(path, dictionary_path=None, transport_path=None, read_comments=True, thermo_path=None,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -721,7 +721,7 @@
   {
     "site": "rmgpy/chemkin.pyx::load_species_dictionary::is_isomorphic#1",
     "kind": "direction",
-    "line": 1014,
+    "line": 1015,
     "source": "if inert.is_isomorphic(species):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Species-only identity classifies inert species; no reaction matching or reverse kinetics occurs.",
@@ -732,7 +732,7 @@
   {
     "site": "rmgpy/chemkin.pyx::mark_duplicate_reaction::reaction-io",
     "kind": "reader-exporter",
-    "line": 2735,
+    "line": 2744,
     "source": "def mark_duplicate_reaction(test_reaction, reaction_list):",
     "verdict": "guarded",
     "reason": "Irreversible direction participates in the duplicate key/marking decision.",
@@ -743,7 +743,7 @@
   {
     "site": "rmgpy/chemkin.pyx::mark_duplicate_reactions::chemkin_duplicate_flags#1",
     "kind": "direction",
-    "line": 2907,
+    "line": 2916,
     "source": "for reaction, duplicate in zip(reactions, chemkin_duplicate_flags(reactions)):",
     "verdict": "guarded",
     "reason": "Irreversible direction participates in the duplicate key/marking decision.",
@@ -754,7 +754,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_kinetics_entry::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 336,
+    "line": 337,
     "source": "reaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -766,7 +766,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_kinetics_entry::reaction-io",
     "kind": "reader-exporter",
-    "line": 189,
+    "line": 190,
     "source": "def read_kinetics_entry(entry, species_dict, Aunits, Aunits_surf, Eunits):",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -778,7 +778,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reaction_comments::LibraryReaction#1",
     "kind": "builder",
-    "line": 799,
+    "line": 800,
     "source": "reaction = LibraryReaction(",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -790,7 +790,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reaction_comments::LibraryReaction#2",
     "kind": "builder",
-    "line": 839,
+    "line": 840,
     "source": "reaction = LibraryReaction(",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -802,7 +802,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reaction_comments::LibraryReaction#3",
     "kind": "builder",
-    "line": 930,
+    "line": 931,
     "source": "reaction = LibraryReaction(",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -814,7 +814,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reaction_comments::LibraryReaction#4",
     "kind": "builder",
-    "line": 963,
+    "line": 964,
     "source": "reaction = LibraryReaction(",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -826,7 +826,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reaction_comments::PDepReaction#1",
     "kind": "builder",
-    "line": 852,
+    "line": 853,
     "source": "reaction = PDepReaction(",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -838,7 +838,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reaction_comments::PDepReaction#2",
     "kind": "builder",
-    "line": 916,
+    "line": 917,
     "source": "reaction = PDepReaction(",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -850,7 +850,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reaction_comments::TemplateReaction#1",
     "kind": "builder",
-    "line": 826,
+    "line": 827,
     "source": "reaction = TemplateReaction(",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -862,7 +862,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reaction_comments::TemplateReaction#2",
     "kind": "builder",
-    "line": 947,
+    "line": 948,
     "source": "reaction = TemplateReaction(",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -874,7 +874,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reaction_comments::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 795,
+    "line": 796,
     "source": "reaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -886,7 +886,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reaction_comments::reaction-io",
     "kind": "reader-exporter",
-    "line": 786,
+    "line": 787,
     "source": "def read_reaction_comments(reaction, comments, read=True):",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -898,7 +898,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reactions_block::reaction-io",
     "kind": "reader-exporter",
-    "line": 1487,
+    "line": 1488,
     "source": "def read_reactions_block(f, species_dict, read_comments=True):",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -910,7 +910,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reactions_block::read_kinetics_entry#1",
     "kind": "reader-exporter",
-    "line": 1633,
+    "line": 1634,
     "source": "reaction = read_kinetics_entry(kinetics, species_dict, Aunits, Aunits_surf, Eunits)",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -922,7 +922,7 @@
   {
     "site": "rmgpy/chemkin.pyx::read_reactions_block::read_reaction_comments#1",
     "kind": "reader-exporter",
-    "line": 1634,
+    "line": 1635,
     "source": "reaction = read_reaction_comments(reaction, comments, read=read_comments)",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -934,7 +934,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_file::chemkin_duplicate_flags#1",
     "kind": "direction",
-    "line": 3084,
+    "line": 3093,
     "source": "duplicate_flags = chemkin_duplicate_flags(reactions)",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -946,7 +946,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3055,
+    "line": 3064,
     "source": "def render_chemkin_file(species, reactions, verbose=True, check_for_duplicates=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -958,7 +958,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_file::write_kinetics_entry#1",
     "kind": "reader-exporter",
-    "line": 3141,
+    "line": 3150,
     "source": "f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -970,7 +970,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_surface_file::chemkin_duplicate_flags#1",
     "kind": "direction",
-    "line": 3182,
+    "line": 3191,
     "source": "duplicate_flags = chemkin_duplicate_flags(reactions)",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -982,7 +982,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_surface_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3166,
+    "line": 3175,
     "source": "def render_chemkin_surface_file(species, reactions, verbose=True, check_for_duplicates=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -994,7 +994,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_surface_file::write_kinetics_entry#1",
     "kind": "reader-exporter",
-    "line": 3230,
+    "line": 3239,
     "source": "f.write(write_kinetics_entry(rxn, species_list=references, verbose=verbose,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1006,7 +1006,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::reaction-io",
     "kind": "reader-exporter",
-    "line": 3240,
+    "line": 3249,
     "source": "def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, transport_path=None,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1018,7 +1018,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::render_chemkin_file#1",
     "kind": "reader-exporter",
-    "line": 3308,
+    "line": 3317,
     "source": "(gas_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=False,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1030,7 +1030,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::render_chemkin_file#2",
     "kind": "reader-exporter",
-    "line": 3316,
+    "line": 3325,
     "source": "(gas_verbose_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1042,7 +1042,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::render_chemkin_file#3",
     "kind": "reader-exporter",
-    "line": 3326,
+    "line": 3335,
     "source": "(path, render_chemkin_file(species_list, rxn_list, verbose=False,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1054,7 +1054,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::render_chemkin_file#4",
     "kind": "reader-exporter",
-    "line": 3331,
+    "line": 3340,
     "source": "(verbose_path, render_chemkin_file(species_list, rxn_list, verbose=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1066,7 +1066,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3038,
+    "line": 3047,
     "source": "def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicates=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1078,7 +1078,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin_file::render_chemkin_file#1",
     "kind": "reader-exporter",
-    "line": 3050,
+    "line": 3059,
     "source": "_write_file_atomically(path, render_chemkin_file(species, reactions, verbose=verbose,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1090,7 +1090,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin_files::reaction-io",
     "kind": "reader-exporter",
-    "line": 3346,
+    "line": 3355,
     "source": "def save_chemkin_files(rmg, config=None):",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1102,7 +1102,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin_surface_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3153,
+    "line": 3162,
     "source": "def save_chemkin_surface_file(path, species, reactions, verbose=True, check_for_duplicates=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1114,7 +1114,7 @@
   {
     "site": "rmgpy/chemkin.pyx::write_kinetics_entry::LibraryReaction#1",
     "kind": "builder",
-    "line": 2272,
+    "line": 2281,
     "source": "new_reaction = LibraryReaction(index=reaction.index,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1126,7 +1126,7 @@
   {
     "site": "rmgpy/chemkin.pyx::write_kinetics_entry::Reaction#1",
     "kind": "builder",
-    "line": 2282,
+    "line": 2291,
     "source": "new_reaction = Reaction(index=reaction.index,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1138,7 +1138,7 @@
   {
     "site": "rmgpy/chemkin.pyx::write_kinetics_entry::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 2231,
+    "line": 2240,
     "source": "reaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1150,7 +1150,7 @@
   {
     "site": "rmgpy/chemkin.pyx::write_kinetics_entry::reaction-io",
     "kind": "reader-exporter",
-    "line": 2213,
+    "line": 2222,
     "source": "def write_kinetics_entry(reaction, species_list, verbose=True, java_library=False, commented=False,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1162,7 +1162,7 @@
   {
     "site": "rmgpy/chemkin.pyx::write_kinetics_entry::write_kinetics_entry#1",
     "kind": "reader-exporter",
-    "line": 2291,
+    "line": 2300,
     "source": "string += write_kinetics_entry(new_reaction, species_list, verbose, java_library,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1174,7 +1174,7 @@
   {
     "site": "rmgpy/chemkin.pyx::write_reaction_string::reaction-io",
     "kind": "reader-exporter",
-    "line": 2130,
+    "line": 2131,
     "source": "def write_reaction_string(reaction, java_library=False, species_list=None):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Writes the equation with its explicit arrow only, without kinetics or equilibrium reconstruction.",
@@ -3022,7 +3022,7 @@
   {
     "site": "rmgpy/electron_balance.py::is_isomorphic_same_charge::is_isomorphic#1",
     "kind": "direction",
-    "line": 428,
+    "line": 460,
     "source": "return species.is_isomorphic(other, strict=strict)",
     "verdict": "not-reachable-for-resolved",
     "reason": "The receiver is a species, molecule, group or graph (including species Cantera conversion), not a Reaction; it cannot match opposite channels or compute an equilibrium reverse rate.",

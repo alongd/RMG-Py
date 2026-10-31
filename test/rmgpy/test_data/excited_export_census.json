@@ -860,7 +860,7 @@
     "rmgpy/chemkin.pyx:load_species_dictionary": {
       "file": "rmgpy/chemkin.pyx",
       "function": "load_species_dictionary",
-      "line": 989,
+      "line": 990,
       "signature": "13c837e47a5c10162b154a0cd8bc5e71577c27c4d587384ed50b9cc2834cc86b",
       "verdict": "R",
       "reason": "Dictionary records parse full adjacency identity; duplicate Ground identifiers retain historical last-record behavior, while a duplicate involving a resolved identity refuses.",
@@ -880,7 +880,7 @@
     "rmgpy/chemkin.pyx:load_chemkin_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "load_chemkin_file",
-      "line": 1088,
+      "line": 1089,
       "signature": "e7d43f9a0c29e9dc00ac6a1bff83208a18b8c05999a0558910340eccd150467d",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:load_chemkin_file]",
@@ -898,7 +898,7 @@
     "rmgpy/chemkin.pyx:_chemkin_declarations": {
       "file": "rmgpy/chemkin.pyx",
       "function": "_chemkin_declarations",
-      "line": 1649,
+      "line": 1650,
       "signature": "1a4ffa81d56c45aabc7b523cc134fbda439807c66e708753b0d6ea5ab7eeb26d",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:_chemkin_declarations]",
@@ -916,7 +916,7 @@
     "rmgpy/chemkin.pyx:validate_species_identifiers": {
       "file": "rmgpy/chemkin.pyx",
       "function": "validate_species_identifiers",
-      "line": 1659,
+      "line": 1660,
       "signature": "58b73062190441aab1a46dad07bf2d87965ca6c74689da993057934528bacaa2",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:validate_species_identifiers]",
@@ -934,7 +934,7 @@
     "rmgpy/chemkin.pyx:get_species_identifier": {
       "file": "rmgpy/chemkin.pyx",
       "function": "get_species_identifier",
-      "line": 1693,
+      "line": 1694,
       "signature": "5aea0bcb4a8ab84964a47631eabe476a707b7b358667e83a0123ae10bc851dae",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:get_species_identifier]",
@@ -956,7 +956,7 @@
     "rmgpy/chemkin.pyx:write_thermo_entry": {
       "file": "rmgpy/chemkin.pyx",
       "function": "write_thermo_entry",
-      "line": 1829,
+      "line": 1830,
       "signature": "f317706f870b466e58ebc2dec21a4549750501724b9bcaf1505fe155d1a26f77",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:write_thermo_entry]",
@@ -974,8 +974,8 @@
     "rmgpy/chemkin.pyx:write_reaction_string": {
       "file": "rmgpy/chemkin.pyx",
       "function": "write_reaction_string",
-      "line": 2130,
-      "signature": "0268e4a57a64f070b8d1be065d9780a16908f3aa01223b18e312b057e2608c31",
+      "line": 2131,
+      "signature": "7eb7ed918d4fceffc06656a6390478bafc1d20221615cf6087d2deaa24732aa0",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:write_reaction_string]",
       "manifold": {
@@ -992,7 +992,7 @@
     "rmgpy/chemkin.pyx:write_kinetics_entry": {
       "file": "rmgpy/chemkin.pyx",
       "function": "write_kinetics_entry",
-      "line": 2213,
+      "line": 2222,
       "signature": "fbbebd16db17111e55c918f6615221a124950fa9aef4da1af9c6268e378fd8b0",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:write_kinetics_entry]",
@@ -1010,7 +1010,7 @@
     "rmgpy/chemkin.pyx:save_species_dictionary": {
       "file": "rmgpy/chemkin.pyx",
       "function": "save_species_dictionary",
-      "line": 2911,
+      "line": 2920,
       "signature": "a5c6ae5738d4bbfad0c1a83d68fae7ab86ab3e53b670319e3cd594d6336e83a1",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_species_dictionary]",
@@ -1028,7 +1028,7 @@
     "rmgpy/chemkin.pyx:render_species_dictionary": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_species_dictionary",
-      "line": 2921,
+      "line": 2930,
       "signature": "28c543a0cf3137a2d94bfec243557ba3fae1d9dbbcad1f99e370f206f79c4e37",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_species_dictionary]",
@@ -1050,7 +1050,7 @@
     "rmgpy/chemkin.pyx:render_transport_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_transport_file",
-      "line": 2985,
+      "line": 2994,
       "signature": "4d69663000b49b8fb9cbf3ba93883ac210acbbab0a25f0a11188ece900e8fb7e",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_transport_file]",
@@ -1068,7 +1068,7 @@
     "rmgpy/chemkin.pyx:_write_files_atomically": {
       "file": "rmgpy/chemkin.pyx",
       "function": "_write_files_atomically",
-      "line": 3023,
+      "line": 3032,
       "signature": "e5eda7f0083fb997283794195531aa4bbe03577d923d205ea3d6d569d0b0e6f7",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:_write_files_atomically]",
@@ -1086,7 +1086,7 @@
     "rmgpy/chemkin.pyx:render_chemkin_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_chemkin_file",
-      "line": 3055,
+      "line": 3064,
       "signature": "f764b0d49190d9d1dccbde575cb2c9fd28eac9b441eb31c30488f7e9211051c2",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_chemkin_file]",
@@ -1110,7 +1110,7 @@
     "rmgpy/chemkin.pyx:render_chemkin_surface_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_chemkin_surface_file",
-      "line": 3166,
+      "line": 3175,
       "signature": "3babcbfffa7a299aef59c607a5a7b8302944ad1c990ea7eb4d5a47e29b357462",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_chemkin_surface_file]",
@@ -1128,7 +1128,7 @@
     "rmgpy/chemkin.pyx:save_chemkin": {
       "file": "rmgpy/chemkin.pyx",
       "function": "save_chemkin",
-      "line": 3240,
+      "line": 3249,
       "signature": "5a15e1bbcdbf8ec6cc33a2e31217430d21a3930e16cfc11ae7fc5bc076f30797",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_chemkin]",
@@ -1146,7 +1146,7 @@
     "rmgpy/chemkin.pyx:save_chemkin_files": {
       "file": "rmgpy/chemkin.pyx",
       "function": "save_chemkin_files",
-      "line": 3346,
+      "line": 3355,
       "signature": "02fb049c0e467e2aeea660d7ba62be5e38df9dee7964131b52615da079a74b7d",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_chemkin_files]",
@@ -4117,7 +4117,7 @@
     "rmgpy/chemkin.pyx:_two_temperature_plasma_from_arrhenius": {
       "file": "rmgpy/chemkin.pyx",
       "function": "_two_temperature_plasma_from_arrhenius",
-      "line": 541,
+      "line": 542,
       "signature": "51a8305b558af8b2711bcdb8050b0aa2ec415d19831e67b00eab5a547ac8cdb7",
       "reason": "Diagnostic context describing an existing reaction; no emitted identifier.",
       "verdict": "E"
@@ -5090,7 +5090,7 @@
       "reason": "Writes Element singleton names and isotope masses only, not molecular identifiers; baseline ground bytes preserved.",
       "file": "rmgpy/chemkin.pyx",
       "function": "write_elements_section",
-      "line": 3413,
+      "line": 3422,
       "signature": "71165b64271e41296c9002ee7a63db7f4ca7b5e8780b6bf7a9659199d98ba7e2"
     },
     "rmgpy/data/base.py:Database.save_old_tree": {
