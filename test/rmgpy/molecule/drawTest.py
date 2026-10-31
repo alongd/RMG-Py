@@ -66,6 +66,14 @@ class TestMoleculeDrawer:
         os.unlink(path)
         assert isinstance(surface, ImageSurface)
 
+    def test_draw_electron_png(self, tmp_path):
+        """Test that an electron can be rendered to a nonempty PNG."""
+        molecule = Species().from_adjacency_list('e-\n1 e u1 p0 c-1\n').molecule[0]
+        path = tmp_path / "electron.png"
+        MoleculeDrawer().draw(molecule, file_format="png", target=str(path))
+        assert path.exists()
+        assert path.stat().st_size > 0
+
     def test_draw_pdf(self):
         """
         Test we can create PDF files from molecules.

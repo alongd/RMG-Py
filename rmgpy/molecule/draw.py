@@ -1276,7 +1276,7 @@ class MoleculeDrawer(object):
             heavy_atom = symbol[0]
 
             # Split label by atoms
-            labels = re.findall(r'[A-Z][a-z]*[0-9]*', symbol)
+            labels = re.findall(r'[A-Z][a-z]*[0-9]*', symbol) or ([heavy_atom] if heavy_atom == 'e' else [])
             if not heavy_first:
                 labels.reverse()
             if 'C' not in symbol and 'O' not in symbol and len(atoms) == 1:
@@ -1287,7 +1287,7 @@ class MoleculeDrawer(object):
             coordinates = []
 
             cr.set_font_size(self.options['fontSizeNormal'])
-            y0 += max([cr.text_extents(char)[3] for char in symbol if char.isalpha()]) / 2
+            y0 += max([cr.text_extents(char)[3] for char in symbol if char.isalpha()] or [cr.text_extents(heavy_atom)[3]]) / 2
 
             for i, label in enumerate(labels):
                 for j, char in enumerate(label):

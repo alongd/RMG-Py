@@ -14505,7 +14505,7 @@
       "evidence": [
         "test/rmgpy/molecule/drawTest.py"
       ],
-      "source_sha256": "3bb9b4e592a261dd7e2b4836175b5e3507fa402c7626e869adf86d0a2b311db7"
+      "source_sha256": "f4499dba3b6f87b8d4312965e7e451ce29a2bb9c958508f5866ef09ab256178f"
     },
     "rmgpy/molecule/draw.py:MoleculeDrawer._render_bond": {
       "verdict": "not-reachable-for-resolved",
