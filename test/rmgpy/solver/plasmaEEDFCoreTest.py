@@ -14,7 +14,7 @@ import rmgpy.rmg.input as rmg_input
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.data.base import Entry
 from rmgpy.exceptions import PlasmaStateError
-from rmgpy.kinetics import EEDFChannel, TwoTemperaturePlasma
+from rmgpy.kinetics import Arrhenius, EEDFChannel, TwoTemperaturePlasma
 from rmgpy.solver.plasma import PlasmaReactor
 from rmgpy.solver.eedf_provider import (
     DEVELOPMENT_UNQUALIFIED_STATUS,
@@ -156,7 +156,8 @@ def artifact(tmp_path, marker, composition=True, cold_mean=False, accepted=True,
 def build_reactor(tmp_path, composition=True, extra_reaction=None, empirical_laws=None,
                   reaction_index=1, entry_index=1, power_w=.5, cold_mean=False,
                   extra_species=None, electron_energies=None, accepted=True,
-                  development=False, excited_label=None, operating_branch=None):
+                  development=False, excited_label=None, operating_branch=None,
+                  extra_on_edge=False):
     core, reaction = species_and_reaction()
     if excited_label is not None:
         core[3].label = excited_label
@@ -181,7 +182,7 @@ def build_reactor(tmp_path, composition=True, extra_reaction=None, empirical_law
                       'chamber_volume': (VOLUME, 'm^3'),
                       'sheath': 'floating_wall'}
     if electron_energies is not None:
-        energy_balance['electron_energies'] = dict(electron_energies)
+        energy_balance['electron_energies'] = copy.deepcopy(electron_energies)
     reactor = PlasmaReactor(
         (TGAS, 'K'), (PRESSURE, 'Pa'), initial, (TGAS, 'K'), termination=[],
         diffusion_length=(LAMBDA, 'm'), ion_reduced_mobility=(MU0, 'm^2/(V*s)'),
@@ -189,11 +190,13 @@ def build_reactor(tmp_path, composition=True, extra_reaction=None, empirical_law
         wall_neutralization_products={'Ar+': 'Ar'},
         electron_energy_balance=energy_balance,
         electron_kinetics=config, thermo_source_assertions={'Ar+': 'ion'})
+    core_reactions = reactions[:1] if extra_on_edge else reactions
+    edge_reactions = reactions[1:] if extra_on_edge else []
     if development:
         with _development_unqualified_table_route():
-            reactor.initialize_model(core, reactions, [], [])
+            reactor.initialize_model(core, core_reactions, [], edge_reactions)
     else:
-        reactor.initialize_model(core, reactions, [], [])
+        reactor.initialize_model(core, core_reactions, [], edge_reactions)
     return reactor, core, reactions
 
 
@@ -439,6 +442,18 @@ def test_ar4s_envelope_uses_species_identity_after_label_alias(tmp_path):
         reactor._check_accepted_plasma_domain(state)
 
 
+class EEDFWallFixtureReactor(PlasmaReactor):
+    """Give only the synthetic EEDF wall chemistry stable declaration identities."""
+
+    def initialize_model(self, core_species, core_reactions, edge_species, edge_reactions):
+        core_reactions[:] = [
+            LibraryReaction(reactants=reaction.reactants, products=reaction.products,
+                            kinetics=reaction.kinetics, reversible=reaction.reversible,
+                            library='EN-EEDF-test', entry=Entry(index=j + 1))
+            for j, reaction in enumerate(core_reactions)]
+        return super().initialize_model(core_species, core_reactions, edge_species, edge_reactions)
+
+
 def build_eedf_electronegative_reactor(
         tmp_path, monkeypatch, variable_epsilon=False, accepted=True,
         development=False):
@@ -473,11 +488,16 @@ def build_eedf_electronegative_reactor(
 
     monkeypatch.setattr(plasma_module, 'radial_source_frequency', capture_radial)
     kwargs = {
+        'reactor_cls': EEDFWallFixtureReactor,
         'electron_kinetics': config,
         'electron_energy_balance': {
             'absorbed_power': (0., 'W'),
             'chamber_volume': (VOLUME, 'm^3'),
             'sheath': 'floating_wall',
+            # Cl and Cl- have identical zero H298 and Cp in en.model.
+            # Explicit synthetic zero gaps isolate wall physics, not chlorine data.
+            'electron_energies': {'EN-EEDF-test:1': (0., 'eV'),
+                                  'EN-EEDF-test:2': (0., 'eV')},
         },
         'electronegative_wall_qualification': en.qualification(
             full_profile_reference=capture_reference,
@@ -1374,6 +1394,156 @@ def test_declared_heavy_particle_electron_energy_is_kept_and_table_owned_is_refu
 
     with pytest.raises(PlasmaStateError, match='table-owned'):
         build_reactor(tmp_path / 'owned', electron_energies={'Toy:1': (15.76, 'eV')})
+
+
+def non_table_energy_reaction(core, kind):
+    """Toy energies: Ar=0, Ar+=15.76, Ars=11.55 eV, as above."""
+    electron, ar, ion, excited = core
+    reactants, products = {
+        'produces': ([excited, excited], [ion, ar, electron]),
+        'consumes': ([electron, ion], [ar]),
+        'spectator': ([electron, excited], [electron, ar]),
+        'heavy': ([excited], [ar]),
+    }[kind]
+    units = 's^-1' if kind == 'heavy' else 'm^3/(mol*s)'
+    reaction = LibraryReaction(
+        reactants=reactants, products=products, reversible=False,
+        kinetics=Arrhenius(A=(1., units)), library='EnergyFixture',
+        entry=Entry(index=90))
+    # Model indices are not library entry identities.
+    reaction.index = 735
+    return reaction
+
+
+@pytest.mark.parametrize('kind', ['produces', 'consumes', 'spectator'])
+@pytest.mark.parametrize('declarations', [None, {}])
+def test_undeclared_non_table_electron_reaction_is_refused(tmp_path, kind, declarations):
+    reactions = []
+
+    def extra(core):
+        reactions.append(non_table_energy_reaction(core, kind))
+        return reactions[-1]
+
+    with pytest.raises(PlasmaStateError) as error:
+        build_reactor(tmp_path, extra_reaction=extra, electron_energies=declarations)
+    assert str(reactions[0]) in str(error.value)
+    assert 'EnergyFixture:90' in str(error.value)
+    assert 'declared electron energy' in str(error.value)
+
+
+@pytest.mark.parametrize('kind, energy, net', [
+    # Pooling transfers the toy 2*11.55 - 15.76 eV excess to the electron.
+    ('produces', -7.34, 1),
+    # Radiative recombination: binding energy leaves as radiation, not electrons.
+    ('consumes', 0., -1),
+    # Deexcitation transfers the toy 11.55 eV gap to the scattered electron.
+    ('spectator', -11.55, 0),
+])
+def test_declared_non_table_energy_reaches_arrays_and_residual(tmp_path, kind, energy, net):
+    reactor, core, reactions = build_reactor(
+        tmp_path, extra_reaction=lambda core: non_table_energy_reaction(core, kind),
+        electron_energies={'EnergyFixture:90': (energy, 'eV')})
+    j = reactor.reaction_index[reactions[1]]
+    threshold = energy * constants.e * constants.Na
+    assert reactor.energy_threshold[j] == pytest.approx(threshold)
+    assert reactor.energy_participates[j] == 1
+    assert reactor.energy_electron_net[j] == net
+    assert reactor.energy_reaction_keys[j] == 'EnergyFixture:90'
+    reactor.residual(0., reactor.y0, np.zeros_like(reactor.y0))
+    assert reactor.core_reaction_rates[j] > 0.
+    expected = reactor.core_reaction_rates[j] * reactor.compute_volume(reactor.y0) * threshold
+    actual = reactor.electron_energy_terms['Q_heavy_particle_electron_by_reaction'][j]
+    assert actual == pytest.approx(expected)
+
+
+@pytest.mark.parametrize('declared', [False, True])
+def test_edge_energy_declaration_is_checked_when_promoted(tmp_path, declared):
+    energies = {'EnergyFixture:90': (-7.34, 'eV')} if declared else None
+    reactor, core, reactions = build_reactor(
+        tmp_path, extra_reaction=lambda core: non_table_energy_reaction(core, 'produces'),
+        extra_on_edge=True, electron_energies=energies)
+    j = reactor.reaction_index[reactions[1]]
+    assert j >= reactor.num_core_reactions
+    assert reactor.energy_participates[j] == int(declared)
+    # Promotion can reorder the core; table ownership must use the new indices.
+    promoted = reactions[::-1]
+    if declared:
+        reactor.initialize_model(core, promoted, [], [])
+        j = reactor.reaction_index[reactions[1]]
+        assert j == 0
+        assert reactor.eedf_reaction_map == {1: (0, 'ine')}
+        assert reactor.energy_participates[j] == 1
+        assert reactor.energy_threshold[j] == pytest.approx(-7.34 * constants.e * constants.Na)
+    else:
+        with pytest.raises(PlasmaStateError) as error:
+            reactor.initialize_model(core, promoted, [], [])
+        assert str(reactions[1]) in str(error.value)
+        assert 'declared electron energy' in str(error.value)
+        assert reactor.eedf_reaction_map == {1: (0, 'ine')}
+
+
+def test_empirical_rate_declaration_does_not_supply_electron_energy(tmp_path):
+    def extra(core):
+        reaction = non_table_energy_reaction(core, 'spectator')
+        reaction.kinetics = TwoTemperaturePlasma(
+            A=(1.e-18, 'm^3/(molecule*s)'), n=0.,
+            Ea_g=(0., 'J/mol'), Ea_e=(0., 'J/mol'))
+        return reaction
+
+    with pytest.raises(PlasmaStateError, match='declared electron energy.*EnergyFixture:90'):
+        build_reactor(tmp_path, extra_reaction=extra, empirical_laws={
+            'EnergyFixture:90': {'evaluate_at': 'Te_eff', 'class': 'C',
+                                 'basis': 'synthetic test', 'sensitivity': True}})
+
+
+def test_missing_source_identity_cannot_use_model_reaction_index(tmp_path):
+    def extra(core):
+        reaction = non_table_energy_reaction(core, 'produces')
+        reaction.entry = None
+        reaction.index = 90
+        return reaction
+
+    with pytest.raises(PlasmaStateError, match='declared electron energy.*EnergyFixture:None'):
+        build_reactor(tmp_path, extra_reaction=extra,
+                      electron_energies={'EnergyFixture:90': (-7.34, 'eV')})
+
+
+@pytest.mark.parametrize('declared', [False, True])
+def test_heavy_only_reaction_needs_no_electron_energy(tmp_path, declared):
+    kwargs = dict(extra_reaction=lambda core: non_table_energy_reaction(core, 'heavy'))
+    if declared:
+        with pytest.raises(PlasmaStateError, match='contains no electron'):
+            build_reactor(tmp_path, electron_energies={'EnergyFixture:90': (0., 'eV')}, **kwargs)
+    else:
+        reactor, _, reactions = build_reactor(tmp_path, **kwargs)
+        assert reactor.energy_participates[reactor.reaction_index[reactions[1]]] == 0
+
+
+def test_superelastic_table_energy_cannot_also_be_declared(tmp_path):
+    def superelastic(core):
+        return LibraryReaction(
+            reactants=[core[0], core[2]], products=[core[0], core[1]],
+            reversible=False, library='Toy', entry=Entry(index=2),
+            kinetics=EEDFChannel(process='e + Ar -> e + e + Ar+',
+                                 collision_set='fixture', side='sup'))
+
+    with pytest.raises(PlasmaStateError, match='declares Toy:2 on a superelastic EEDF entry'):
+        build_reactor(tmp_path, extra_reaction=superelastic,
+                      electron_energies={'Toy:2': (0., 'eV')})
+
+
+@pytest.mark.parametrize('energies, diagnostic', [
+    ([], 'must be a dict'),
+    ({'missing-entry': (0., 'eV')}, "key 'missing-entry' is not"),
+    ({'EnergyFixture:90': (float('nan'), 'eV')}, 'domain: reaction energy'),
+    ({'EnergyFixture:90': (0., 's')}, 'must be an energy per event'),
+    ({'WrongLibrary:90': (0., 'eV')}, 'declared electron energy.*EnergyFixture:90'),
+])
+def test_invalid_non_table_energy_declaration_refuses(tmp_path, energies, diagnostic):
+    with pytest.raises(PlasmaStateError, match=diagnostic):
+        build_reactor(tmp_path,
+                      extra_reaction=lambda core: non_table_energy_reaction(core, 'produces'),
+                      electron_energies=energies)
 
 
 def test_new_neutral_additive_is_refused_at_an_accepted_state(tmp_path):

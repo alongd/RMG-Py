@@ -72,6 +72,34 @@ def test_development_argon_channel_bindings_are_runtime_copies_only():
                for source in sources[:-1])
 
 
+@pytest.mark.parametrize('restart', [False, True])
+def test_development_deck_declares_non_table_electron_energies(tmp_path, monkeypatch, restart):
+    # Input/energy declarations need no external LoKI solve. Provider loading is
+    # deliberately outside this test; the opt-in integration tests cover it.
+    table = tmp_path / 'table.h5'
+    table.write_bytes(b'input declaration fixture only')
+    manifest = {'branches': ['branch_0'], 'artifact_sha256': _file_hash(table)}
+    state = {'species_amounts_mol': {'Ar': .999998, 'Arp': 1.e-6,
+                                    'e-': 1.e-6, 'Ars': 0.}, 'u': np.log(17.)}
+    deck = pure_argon_deck(tmp_path, manifest,
+                          restart_state=state if restart else None,
+                          over_ionised=not restart)
+    path = tmp_path / 'input.py'
+    path.write_text(deck)
+    # The reader replaces these DSL globals; mol_to_frag may not exist yet.
+    for name in ('rmg', 'species_dict', 'mol_to_frag'):
+        monkeypatch.setattr(rmg_input, name, getattr(rmg_input, name, None), raising=False)
+    job = RMG()
+    rmg_input.read_input_file(str(path), job)
+    reactor = job.reaction_systems[0]
+    assert reactor.electron_energy_balance['electron_energies'] == {
+        'PlasmaArgon:88': (4.211256, 'eV'),
+        'PlasmaArgon:90': (-7.337098, 'eV'),
+        'PlasmaArgon:91': (0.075238, 'eV'),
+    }
+    assert set(reactor.eedf_empirical_laws) == {'PlasmaArgon:88', 'PlasmaArgon:91'}
+
+
 def test_every_development_harness_diagnostic_carries_warning_and_blockers():
     blockers = ['artifact manifest is not accepted',
                 'branch_0: uncertified: unseeded scans']

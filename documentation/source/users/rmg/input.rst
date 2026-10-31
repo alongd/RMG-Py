@@ -1624,9 +1624,13 @@ non-empty strings without leading or trailing whitespace.
 
 In table-driven mode ``electronEnergyBalance`` requires ``absorbedPower`` and ``sheath``, accepts
 the optional ``chamberVolume``, and refuses ``elasticCollisions`` because that term comes from the
-selected table row.  ``electronEnergies`` is optional and reserved for non-table reactions that
-contain an electron; table-owned and superelastic declarations are refused to prevent double
-counting.  The usual chamber-volume rule is unchanged: a cylinder or sphere supplies its volume,
+selected table row.  ``electronEnergies`` must declare an energy for every core non-table
+reaction with an electron on either side, including reactions with no net change in electron
+count.  The energy is never inferred from thermo or rate-law parameters; zero must be declared
+explicitly when appropriate.  Edge reactions are checked when promoted to the core, matching
+the Maxwellian energy-balance rule.  The mapping may be omitted when no core reaction needs
+a non-table declaration.  Table-owned and superelastic declarations are refused to prevent
+double counting.  The usual chamber-volume rule is unchanged: a cylinder or sphere supplies its volume,
 while a geometry without a finite volume requires ``chamberVolume``; declaring both is refused.  A
 charged-particle wall is still required.
 

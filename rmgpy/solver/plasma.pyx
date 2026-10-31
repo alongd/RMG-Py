@@ -3203,7 +3203,12 @@ cdef class PlasmaReactor(ReactionSystem):
         return key if key in self.eedf_empirical_laws else None
 
     def _resolve_eedf_energy_balance(self, core_species, core_reactions, edge_reactions):
-        """Initialize bookkeeping arrays consumed by shared diagnostics."""
+        """Require declared energies for core electron reactions not owned by the table.
+
+        An electron on either side requires accounting, even with no net electron
+        change. As in Maxwellian mode, edge reactions are checked on promotion
+        to the core, whose rates enter the electron energy balance.
+        """
         n = self.num_core_reactions + self.num_edge_reactions
         self.energy_threshold = np.zeros(n)
         self.energy_threshold_thermo = np.full(n, np.nan)
@@ -3216,6 +3221,7 @@ cdef class PlasmaReactor(ReactionSystem):
         self.energy_elastic_mass_ratio = np.zeros(0)
         self.energy_te_rate_refresh = []
         used_declared = set()
+        missing = []
         for rxn in itertools.chain(core_reactions, edge_reactions):
             j = self.reaction_index[rxn]
             self.energy_electron_net[j] = (
@@ -3227,6 +3233,10 @@ cdef class PlasmaReactor(ReactionSystem):
             source_index = getattr(entry, 'index', None)
             source = (getattr(rxn, 'library', None), source_index)
             if source not in self.energy_declared:
+                if (j < self.num_core_reactions and j not in self.eedf_reaction_map
+                        and any(spc.is_electron()
+                                for spc in itertools.chain(rxn.reactants, rxn.products))):
+                    missing.append('{0} (source {1}:{2})'.format(rxn, *source))
                 continue
             if not any(spc.is_electron()
                        for spc in itertools.chain(rxn.reactants, rxn.products)):
@@ -3247,6 +3257,12 @@ cdef class PlasmaReactor(ReactionSystem):
             self.energy_participates[j] = 1
             if j < self.num_core_reactions:
                 self.energy_reaction_keys[j] = '{0}:{1}'.format(*source)
+        if missing:
+            raise PlasmaStateError(
+                'EEDF energy balance needs a declared electron energy for every core '
+                'non-table reaction an electron takes part in (it is never inferred '
+                'from thermo); undeclared: {0}. ({1})'.format(
+                    '; '.join(missing), self._identity()))
         unused = sorted(set(self.energy_declared) - used_declared)
         if unused:
             raise PlasmaStateError(

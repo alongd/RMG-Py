@@ -406,9 +406,16 @@ plasmaReactor(
                                   'diffusivity': (47.0, 'cm^2*torr/s')}},
     ionisationSource=(6.6e4, 'm^-3/s'),
     electronKinetics=__ELECTRON_KINETICS__,
+    # Same NIST ASD level convention and energy partition as the shipped
+    # plasma_argon_energy_balance example and docs/i274-energy-balance/report.md:
+    # 88: 15.759610 - 11.548354; 90: 15.759610 - 2*11.548354 (to the electron);
+    # 91: 11.623592 - 11.548354 (mixing to resonance, followed by radiation).
     electronEnergyBalance={'absorbedPower': (0.5, 'W'),
                            'sheath': 'floatingWall',
-                           'chamberVolume': (2.356194490192345e-3, 'm^3')},
+                           'chamberVolume': (2.356194490192345e-3, 'm^3'),
+                           'electronEnergies': {'PlasmaArgon:88': (4.211256, 'eV'),
+                                                'PlasmaArgon:90': (-7.337098, 'eV'),
+                                                'PlasmaArgon:91': (0.075238, 'eV')}},
     terminationSteadyState=1e-6, terminationTime=(600.0, 's'),
 )
 
@@ -430,7 +437,8 @@ def development_argon_model(core_reactions):
     The database objects are never edited.  Entry 89 and the radiative
     recombination library are intentionally absent from this development
     deck: its electron reactions are the two table-owned ground-state
-    channels plus the explicitly declared entries 88 and 91.
+    channels plus entries 88, 90, and 91 with explicit energy declarations.
+    The electron-temperature laws for 88 and 91 are declared separately.
     """
     selected = []
     seen = set()
