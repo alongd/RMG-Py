@@ -105,9 +105,11 @@ class TestLibrary:
                 )  # this loads all of them, including the new copy
                 original_rxns = self.database.libraries[library_name].get_library_reactions()
                 copy_rxns = self.database.libraries[library_name + "-copy"].get_library_reactions()
-                for i in range(len(original_rxns)):
-                    if repr(original_rxns[i]).strip() != repr(copy_rxns[i]).strip():  # if it's representation looks different...
-                        assert isinstance(copy_rxns[i], TemplateReaction)  # ...it must be a TemplateReaction
+                assert len(original_rxns) == len(copy_rxns), library_name
+                for index, (original_rxn, copy_rxn) in enumerate(zip(original_rxns, copy_rxns)):
+                    context = f"{library_name}[{index}]"
+                    assert original_rxn.is_isomorphic(copy_rxn, either_direction=False), context
+                    assert original_rxn.kinetics.is_identical_to(copy_rxn.kinetics), f"{context} kinetics"
                     # Todo: we need to check more carefully for equivalence,
                     # eg. is the metal attribute saved for surface reactions?
             finally:

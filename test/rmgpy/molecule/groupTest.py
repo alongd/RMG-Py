@@ -261,7 +261,7 @@ class TestGroupAtom:
         atom1.apply_action(action)
         assert atom1.radical_electrons == [0, 1, 2, 3]
 
-    def test_apply_action_gain_charge(self):
+    def test_apply_action_gain_charge_with_atomtype_values(self):
         """
         Test the GroupAtom.apply_action() method for a GAIN_CHARGE action.
         """
@@ -293,7 +293,7 @@ class TestGroupAtom:
         # If the below test is un-commented, it will need to be changed to pytest-style, i.e. a plain assert
         #self.assertListEqual(atom1.radical_electrons, [0, 1, 2, 3])
 
-    def test_apply_action_lose_charge(self):
+    def test_apply_action_lose_charge_with_atomtype_values(self):
         """
         Test the GroupAtom.apply_action() method for a LOSE_CHARGE action.
         """
@@ -428,14 +428,14 @@ class TestGroupAtom:
             except ActionError:
                 assert len(atomtype.increment_lone_pair) == 0
     
-    def test_is_electron(self):
+    def test_atom_is_electron(self):
         """
         Test the GroupAtom.is_electron() method.
         """
         electron = GroupAtom(atomtype=[ATOMTYPES['e']])
         assert electron.is_electron()
 
-    def test_is_proton(self):
+    def test_atom_is_proton(self):
         """
         Test the GroupAtom.is_proton() method.
         """
@@ -530,22 +530,6 @@ class TestGroupAtom:
                         else:
                             assert not atom1.equivalent(atom3), "{0!s} is equivalent to {1!s}".format(atom1, atom3)
                             assert not atom1.equivalent(atom3), "{0!s} is equivalent to {1!s}".format(atom3, atom1)
-
-    def test_is_electron(self):
-        """
-        Test the Group.is_electron() method.
-        """
-        assert not self.group.is_electron()
-        electron = Group().from_adjacency_list("""1 *1 e u1 p0 c-1""")
-        assert electron.is_electron()
-
-    def test_is_proton(self):
-        """
-        Test the Group.is_proton() method.
-        """
-        assert not self.group.is_proton()
-        proton = Group().from_adjacency_list("""1 *1 H+ u0 p0 c+1""")
-        assert proton.is_proton()
 
     def test_is_specific_case_of(self):
         """
@@ -710,7 +694,7 @@ class TestGroupBond:
         assert bond.get_order_str() == ["S", "D", "T", "B"]
     
 
-    def test_apply_action_gain_charge(self):
+    def test_apply_action_gain_charge_rejects_unsupported_action(self):
         """
         Test the GroupBond.apply_action() method for a GAIN_RADICAL action.
         """
@@ -724,7 +708,7 @@ class TestGroupBond:
             except ActionError:
                 pass
 
-    def test_apply_action_lose_charge(self):
+    def test_apply_action_lose_charge_rejects_unsupported_action(self):
         """
         Test the GroupBond.apply_action() method for a LOSE_CHARGE action.
         """
@@ -844,26 +828,44 @@ class TestGroupBond:
         Test the GroupBond.apply_action() method for a CHANGE_BOND action.
         """
         action = ["CHANGE_BOND", "*1", 1, "*2"]
+        expected_orders = {
+            (1,): {1.5, 2},
+            (2,): {3},
+            (3,): {4},
+            (1.5,): {1.5, 2},
+            (1, 2): {1.5, 2, 3},
+            (2, 1): {1.5, 2, 3},
+            (2, 3): {3, 4},
+            (1, 2, 3): {1.5, 2, 3, 4},
+        }
+        assert {tuple(order0) for order0 in self.orderList} == set(expected_orders)
         for order0 in self.orderList:
             bond0 = GroupBond(None, None, order=order0)
             bond = bond0.copy()
-            try:
-                bond.apply_action(action)
-            except ActionError:
-                assert 3 in order0 or 1.5 in order0
+            bond.apply_action(action)
+            assert set(bond.order) == expected_orders[tuple(order0)]
 
     def test_apply_action_decrement_bond(self):
         """
         Test the GroupBond.apply_action() method for a CHANGE_BOND action.
         """
         action = ["CHANGE_BOND", "*1", -1, "*2"]
+        expected_orders = {
+            (1,): {0},
+            (2,): {1},
+            (3,): {1.5, 2},
+            (1.5,): {1},
+            (1, 2): {0, 1},
+            (2, 1): {0, 1},
+            (2, 3): {1, 1.5, 2},
+            (1, 2, 3): {0, 1, 1.5, 2},
+        }
+        assert {tuple(order0) for order0 in self.orderList} == set(expected_orders)
         for order0 in self.orderList:
             bond0 = GroupBond(None, None, order=order0)
             bond = bond0.copy()
-            try:
-                bond.apply_action(action)
-            except ActionError:
-                assert 1 in order0 or 1.5 in order0
+            bond.apply_action(action)
+            assert set(bond.order) == expected_orders[tuple(order0)]
 
     def test_apply_action_gain_radical(self):
         """

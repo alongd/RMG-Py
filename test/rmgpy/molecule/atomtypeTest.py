@@ -69,6 +69,9 @@ class TestAtomType:
         assert len(self.atomtype.decrement_bond) == len(atom_type.decrement_bond)
         for item1, item2 in zip(self.atomtype.decrement_bond, atom_type.decrement_bond):
             assert item1.label == item2.label
+        assert len(self.atomtype.increment_charge) == len(atom_type.increment_charge)
+        for item1, item2 in zip(self.atomtype.increment_charge, atom_type.increment_charge):
+            assert item1.label == item2.label
         assert len(self.atomtype.form_bond) == len(atom_type.form_bond)
         for item1, item2 in zip(self.atomtype.form_bond, atom_type.form_bond):
             assert item1.label == item2.label

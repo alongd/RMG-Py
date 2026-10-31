@@ -1610,7 +1610,7 @@ class InChIParsingTest:
 
         assert Species(molecule=[Molecule().from_augmented_inchi(aug_inchi)]).is_isomorphic(spc) == True
 
-    def test_c3h4(self):
+    def test_c3h4_without_inchi_prefix(self):
         inchi = "C3H4/c1-3-2/h1,3H,2H2"
         u_indices = [1, 1]
         self.compare(inchi, u_indices)

@@ -1022,7 +1022,7 @@ class TestMain:
     def test_rmg_seed_mechanism_creation(self):
         """Test that the expected seed mechanisms are created in output directory."""
         seed_dir = os.path.join(self.testDir, self.outputDir, "seed")
-        assert os.path.exists
+        assert os.path.exists(seed_dir)
 
         assert os.path.exists(os.path.join(seed_dir, "seed"))  # kinetics library folder made
 
@@ -1032,7 +1032,7 @@ class TestMain:
     def test_rmg_seed_edge_mechanism_creation(self):
         """Test that the expected seed mechanisms are created in output directory."""
         seed_dir = os.path.join(self.testDir, self.outputDir, "seed")
-        assert os.path.exists
+        assert os.path.exists(seed_dir)
 
         assert os.path.exists(os.path.join(seed_dir, "seed_edge"))  # kinetics library folder made
 

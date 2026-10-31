@@ -205,6 +205,11 @@ def registered(monkeypatch, quarantine, tmp_path_factory):
         "Ordinary_Family": _Family(None),
     }
     monkeypatch.setattr(rmgpy.data.rmg, "database", _Database(families), raising=False)
+    assert rmgpy.data.rmg.database is not None, "quarantine fixture database was not installed"
+    registered_families = rmgpy.data.rmg.database.kinetics.families
+    assert "Fake_Quarantined_Family" in registered_families
+    assert registered_families["Fake_Quarantined_Family"].quarantine is quarantine
+    assert "Ordinary_Family" in registered_families
     return quarantine
 
 

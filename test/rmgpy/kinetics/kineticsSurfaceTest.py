@@ -565,7 +565,7 @@ class TestSurfaceChargeTransfer:
         """
         assert round(abs(self.surfchargerxn_reduction.Tmin.value_si-self.Tmin), 6) == 0
 
-    def test_Tmax(self):
+    def test_Tmax_property_value(self):
         """
         Test that the SurfaceChargeTransfer Tmax property was properly set.
         """

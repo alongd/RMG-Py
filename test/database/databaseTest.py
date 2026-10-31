@@ -839,9 +839,6 @@ class TestDatabase:
         """
         boo = False
         family = self.database.kinetics.families[family_name]
-        if not family.electrons:
-            return True
-
         for depository in family.depositories:
             for entry in depository.entries.values():
                 data_borne = isinstance(entry.data, (SurfaceChargeTransfer, SurfaceArrheniusBEP))
