@@ -2271,7 +2271,7 @@
     "rmgpy/rmg/input.py:save_input_file": {
       "file": "rmgpy/rmg/input.py",
       "function": "save_input_file",
-      "line": 3433,
+      "line": 3436,
       "signature": "ac3972d9a08130a4cff030e767fce2876ffafadd0afffe33709c9405a88e2884",
       "verdict": "N",
       "reason": "The existing supported header-free declaration keeps its original graph and vibrationalManifold DSL line by stripping the marker only from the serialization copy; explicit resolved input remains refused.",

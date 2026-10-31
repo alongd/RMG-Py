@@ -5125,7 +5125,7 @@
   {
     "site": "rmgpy/rmg/input.py::read_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3150,
+    "line": 3153,
     "source": "def read_input_file(path, rmg0):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Job input reads/writes settings, species, reactor conditions and library references, without building or serializing executable Reaction rates. Actual library resolution is separately guarded.",
@@ -5136,7 +5136,7 @@
   {
     "site": "rmgpy/rmg/input.py::read_thermo_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3259,
+    "line": 3262,
     "source": "def read_thermo_input_file(path, rmg0):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Job input reads/writes settings, species, reactor conditions and library references, without building or serializing executable Reaction rates. Actual library resolution is separately guarded.",
@@ -5147,7 +5147,7 @@
   {
     "site": "rmgpy/rmg/input.py::save_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3433,
+    "line": 3436,
     "source": "def save_input_file(path, rmg):",
     "verdict": "refused",
     "reason": "The job-input writer refuses resolved species identities before creating its state-blind settings file; it never serializes executable Reaction rates.",

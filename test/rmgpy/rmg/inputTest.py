@@ -1844,3 +1844,27 @@ class TestSaveInputTemperaturePressureRoundTrip:
                 assert reread.surface_volume_ratio.value_si == pytest.approx(
                     original.surface_volume_ratio.value_si
                 )
+
+    def test_surface_reactor_requires_surface_volume_ratio(self, tmp_path):
+        body = self._body("surface", "scalar").replace(
+            "surfaceVolumeRatio=(10, 'm^-1')", "surfaceVolumeRatio=None"
+        )
+        assert "surfaceVolumeRatio=None" in body
+        source = tmp_path / "input.py"
+        source.write_text(body)
+
+        missing = object()
+        input_state = {
+            name: getattr(inp, name, missing)
+            for name in ("rmg", "species_dict", "mol_to_frag", "_input_file_directory")
+        }
+        try:
+            with pytest.raises(InputError, match="surfaceVolumeRatio must be specified"):
+                inp.read_input_file(str(source), RMG())
+        finally:
+            for name, value in input_state.items():
+                if value is missing:
+                    if hasattr(inp, name):
+                        delattr(inp, name)
+                else:
+                    setattr(inp, name, value)

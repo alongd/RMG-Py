@@ -2564,6 +2564,9 @@ def surface_reactor(temperature,
                     terminationRateRatio=None,
                     sensitivity=None,
                     sensitivityThreshold=1e-3):
+    if surfaceVolumeRatio is None:
+        raise InputError('surfaceVolumeRatio must be specified for surface reactors.')
+
     logging.debug('Found SurfaceReactor reaction system')
 
     for value in list(initialGasMoleFractions.values()):
