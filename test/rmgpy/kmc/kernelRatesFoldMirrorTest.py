@@ -82,6 +82,11 @@ def test_an_oriented_type_keeps_its_head_to_tail_token():
     assert expand(token, 0, 0, 20, {"head_distance": 16}, 20, 0, PP_TYPES) == (token, 10, "tail_distance", 2)
 
 
+def test_an_end_distance_on_an_oriented_type_is_refused_by_name():
+    with pytest.raises(kr_.KernelRatesError, match="names no end"):
+        expand("alkene_internal:CH=C", 0, 0, 20, {"end_distance": 3}, 20, 0, PP_TYPES)
+
+
 # --------------------------------------------------------------------------
 # the writer: a token is stored as read from the end its code counts from
 # --------------------------------------------------------------------------

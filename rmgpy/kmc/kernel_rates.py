@@ -231,13 +231,18 @@ of the piece (read from the other end than the reactant's feature, e.g. the
 two alkenes of a CH donor at the centre atom of a c1~c1 piece, mirror images
 both read C=CH) is passed over for the next middlemost (I-279b).
 Product codes carry their class (``[label, alpha, beta, gamma]``), so a far
-rule is checked by class; a chain law whose bulk depends on the anchor's
-place in the period gives ``bulk_phases`` (one row per phase k % nbb, the
-anchor k read from the reactant's head) instead of ``bulk``.  A product
-whose period is not continued across a junction (head-to-head or
-tail-to-tail) is a defect, refused by name.  ``unreached`` lists the
-participant classes and the chain types no term's law reads.  A reader of
-the ``/3`` state model refuses such a table by name
+rule is checked by class.  On a type that is its own reverse a positioned
+code's class reads its feature from the end the code counts from (an
+``end_distance``'s end; the head for ``offset``, ``bulk``): expanded to a
+length where that end is the farther one, the position folds to the nearer
+end and the class is read from there, its feature atoms reversed (I-288; a
+tie keeps the forward reading, as ``classify`` does).  A chain law whose
+bulk depends on the anchor's place in the period gives ``bulk_phases`` (one
+row per phase k % nbb, the anchor k read from the reactant's head) instead
+of ``bulk``.  A product whose period is not continued across a junction
+(head-to-head or tail-to-tail) is a defect, refused by name.  ``unreached``
+lists the participant classes and the chain types no term's law reads.  A
+reader of the ``/3`` state model refuses such a table by name
 (``state_model_beyond_v3``).
 
 With a ``kmc-melt-run/1`` manifest, ``hazard`` gives the fired counts per
@@ -1347,17 +1352,29 @@ def _placed(product, L, k, nbb, fixed: bool) -> Tuple:
         return base
     if fixed:
         return base + (p.pos,)
+    lp = product[5] if len(product) > 5 else product[2] * nbb
     if p.index is None:
         raise _OffDeclared("an interior product whose feature is on no reactant backbone")
     if p.first and p.last:
         if p.oriented and p.flipped:
             raise _OffDeclared("an interior product holding its whole reactant, read against its reactant")
-        return base + (("offset", p.index - k),)
+        return _read_from(base, p.index, lp, p) + (("offset", p.index - k),)
     if p.first:
-        return base + ((_cut_end(p, True), p.hi - p.index - (p.width - 1)),)
+        d = p.hi - p.index - (p.width - 1)
+        return _read_from(base, d, lp, p) + ((_cut_end(p, True), d),)
     if p.last:
-        return base + ((_cut_end(p, False), p.index - p.lo),)
+        d = p.index - p.lo
+        return _read_from(base, d, lp, p) + ((_cut_end(p, False), d),)
     raise _OffDeclared("an interior product that holds neither end of its reactant")
+
+
+def _read_from(base, d, lp, p: _Place) -> Tuple:
+    """A relative code ``base`` whose token reads the feature from the end its distance d counts from, on a product
+    of lp backbone atoms: ``classify`` read it from the nearer end, so past the middle of a type that is its own
+    reverse it is mirrored (``_expand_placed`` mirrors it back where it folds)."""
+    if p.oriented or d <= lp - p.width - d:
+        return base
+    return (_mirror(base[0]),) + tuple(base[1:])
 
 
 def _place_of(product) -> Optional[_Place]:
@@ -1426,6 +1443,16 @@ def _phase_bounds(edge, L, nbb, ph) -> Tuple[int, int]:
     return first, L - 1 - last
 
 
+def _mirror(token: str) -> str:
+    """A class token read from the other end of its feature: the feature atoms' labels reversed (a family token,
+    ``kmc-kernel-rates/3``, has no reading and is kept)."""
+    head, _, tau = token.partition("/")
+    family, colon, feature = head.partition(":")
+    if not colon:
+        return token
+    return f"{family}:{'='.join(reversed(feature.split('=')))}" + (f"/{tau}" if tau else "")
+
+
 def _end_distance(d, lp, family) -> int:
     """The end distance on a product of lp backbone atoms of a feature d from one of its ends."""
     return min(d, lp - WIDTH[family] - d)
@@ -1460,12 +1487,21 @@ def _expand_placed(outcomes, L, k, nbb, types=None) -> Counter:
             if types is None:
                 d = v if kind == "end_distance" else k + v
                 coded.append((family, lp // nbb, _end_distance(d, lp, family)))
+            elif _symmetric(token, types):
+                # the token is read from the end the code counts from (``_placed``): folded to the other end, the
+                # feature is read from there (``classify``); a tie keeps the forward reading
+                w = WIDTH[family]
+                d = k + v if kind == "offset" else v
+                if d > lp - w - d:
+                    token, d = _mirror(token), lp - w - d
+                coded.append((token, (lp - r) // nbb, "end_distance", d))
             elif kind == "end_distance":
-                coded.append((token, (lp - r) // nbb, kind, _end_distance(v, lp, family)))
+                raise KernelRatesError(f"{token}: an end distance on a chain type that is not its own reverse names "
+                                       "no end (head_distance / tail_distance)")
             else:
                 w = WIDTH[family]
                 x = {"head_distance": v, "tail_distance": lp - w - v, "offset": k + v}[kind]
-                coded.append((token, (lp - r) // nbb) + _product_pos(x, lp, w, _symmetric(token, types)))
+                coded.append((token, (lp - r) // nbb) + _oriented_pos(x, lp, w))
         out[tuple(sorted(coded, key=repr))] += m
     return out
 
