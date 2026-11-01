@@ -29,14 +29,20 @@
 
 import logging
 import os.path
+import re
 import shutil
+from copy import deepcopy
+
+import pytest
 
 
 import rmgpy
 from rmgpy import settings
 from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.data.kinetics.family import TemplateReaction
-from rmgpy.data.kinetics.library import LibraryReaction
+from rmgpy.data.base import DatabaseError
+from rmgpy.data.kinetics.library import (KineticsLibrary, LibraryReaction,
+                                         _template_from_rate_rule_comment)
 from rmgpy.kinetics import Arrhenius, Troe, PDepArrhenius
 from rmgpy.kinetics.model import PDepKineticsModel
 
@@ -74,6 +80,106 @@ class TestLibrary:
                 assert isinstance(rxn, LibraryReaction)  # can load pdep as networks yet so load as libraries
             else:
                 assert isinstance(rxn, TemplateReaction)  # all reactions are template based
+
+    def _load_rate_rule_description(self, long_desc):
+        source = self.libraries["ethane-oxidation"]
+        entry = deepcopy(next(iter(source.entries.values())))
+        entry.long_desc = long_desc
+        library = KineticsLibrary(label="seed", auto_generated=True)
+        library.entries[entry.index] = entry
+        [reaction] = library.get_library_reactions()
+        return reaction
+
+    def test_rate_rule_prose_without_template_raises_named_database_error(self):
+        source = self.libraries["ethane-oxidation"]
+        entry = deepcopy(next(iter(source.entries.values())))
+        entry.long_desc = "This prose mentions a rate rule but has no template.\nfamily: H_Abstraction"
+        library = KineticsLibrary(label="prose-library", auto_generated=True)
+        library.entries[entry.index] = entry
+
+        with pytest.raises(DatabaseError, match="prose-library.*entry"):
+            library.get_library_reactions()
+
+    def test_rate_rule_prose_before_real_template_line_is_ignored(self):
+        source = self.libraries["ethane-oxidation"]
+        entry = deepcopy(next(iter(source.entries.values())))
+        entry.long_desc = (
+            "A note about this rate rule has no template here.\n"
+            "Estimated using an average for rate rule [H2;O2b]\n"
+            "family: H_Abstraction"
+        )
+        library = KineticsLibrary(label="seed", auto_generated=True)
+        library.entries[entry.index] = entry
+
+        [reaction] = library.get_library_reactions()
+        assert isinstance(reaction, TemplateReaction)
+        assert reaction.family == "H_Abstraction"
+        assert reaction.template == "H2;O2b"
+
+    def test_legacy_bracketed_rate_rule_text_keeps_base_template(self):
+        assert _template_from_rate_rule_comment(
+            "This reaction matched rate rule [Legacy;Template]\nfamily: LegacyFamily"
+        ) == "Legacy;Template"
+
+    def test_family_on_rate_rule_line_keeps_base_elif_behavior(self):
+        reaction = self._load_rate_rule_description(
+            "Exact match found for rate rule [X] family: H_Abstraction"
+        )
+        assert isinstance(reaction, TemplateReaction)
+        assert reaction.family == ""
+        assert reaction.template == "X"
+
+    def test_second_rate_rule_keyword_keeps_base_fragment_boundary(self):
+        reaction = self._load_rate_rule_description(
+            "Exact match found for rate rule [X]; source rate rule [Source;Source]\n"
+            "family: H_Abstraction"
+        )
+        assert isinstance(reaction, TemplateReaction)
+        assert reaction.family == "H_Abstraction"
+        assert reaction.template == "X"
+
+    def test_multiple_usable_rate_rule_lines_keep_last_template(self):
+        reaction = self._load_rate_rule_description(
+            "Estimated using template [Matched1] for rate rule [First]\n"
+            "Estimated using template [Matched2] for rate rule [Last]\n"
+            "family: H_Abstraction"
+        )
+        assert isinstance(reaction, TemplateReaction)
+        assert reaction.template == "Last"
+
+    def test_vertical_tab_keeps_base_line_splitting(self):
+        reaction = self._load_rate_rule_description(
+            "Exact match found for rate rule [X]\vNote rate rule [Source;Source]\n"
+            "family: H_Abstraction"
+        )
+        assert isinstance(reaction, TemplateReaction)
+        assert reaction.template == "X"
+
+    def test_saved_seed_fixture_round_trips_template_family_and_template(self):
+        seed_path = os.path.join(
+            settings["test_data.directory"], "restartTest", "seed_no_filters", "seed", "reactions.py"
+        )
+        library = KineticsLibrary(label="seed", auto_generated=True)
+        library.load(seed_path, self.database.local_context, self.database.global_context)
+        expected = {}
+        for index, entry in library.entries.items():
+            if "rate rule" in entry.long_desc:
+                template = ""
+                family = ""
+                for line in entry.long_desc.split("\n"):
+                    line = line.strip()
+                    if "rate rule" in line:
+                        rule_part = line.split("rate rule")[1].strip()
+                        template = re.split(r"\[(.*)\]", rule_part)[1]
+                    elif "family:" in line:
+                        family = line.split("family:")[1].strip()
+                expected[index] = (family, template)
+
+        reactions = library.get_library_reactions()
+        observed = {reaction.entry.index: (reaction.family, reaction.template)
+                    for reaction in reactions if isinstance(reaction, TemplateReaction)}
+        assert observed == expected
+        assert len(observed) > 0
 
     def test_save_library(self):
         """

@@ -6389,7 +6389,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
-      "source_sha256": "f957bb0d0109f401fa40dce8a84b7901aa625f882f13a64bd5b05a8eab645b6e"
+      "source_sha256": "78a28eef435b27a778e808a831cc66da43c7ed51c7cfc2477150bb85db285dc5"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load": {
       "verdict": "carried",
@@ -37014,6 +37014,14 @@
         "test/rmgpy/tools/eedf/reportTest.py"
       ],
       "source_sha256": "e6176c8717fe355169c607b374d8ade4d771f3059d5761f52e7c3c7d6b6040a0"
+    },
+    "rmgpy/data/kinetics/library.py:_template_from_rate_rule_comment": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Parses seed provenance text only; it neither acquires thermochemistry nor reads or changes molecular state.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/libraryTest.py"
+      ],
+      "source_sha256": "67357f1a9fbf1c70d06bcd8ada0835cbdd0cc2f51fd0a5b40d895dea94baa81f"
     }
   }
 }

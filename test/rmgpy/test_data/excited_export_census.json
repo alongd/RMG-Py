@@ -1520,7 +1520,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load",
-      "line": 601,
+      "line": 627,
       "signature": "45f783ce1121662a6f25a8a255cdc0c7f589b1797f2c4bdf3a186dd287f68f91",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load]",
@@ -1538,7 +1538,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.save",
-      "line": 811,
+      "line": 837,
       "signature": "959aef8273e6fb06328e5c5e92115993572b8438f6ac29455e7b57c017f59a89",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.save]",
@@ -1556,7 +1556,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load_old": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load_old",
-      "line": 855,
+      "line": 881,
       "signature": "74d14e289688249e906a0a12a3a789443b285daea8bb40c9cabd87482d4c2439",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load_old]",
@@ -1574,7 +1574,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save_old": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.save_old",
-      "line": 915,
+      "line": 941,
       "signature": "6c2b60ef9657bd517f204346d893655ea4ee65a90e31d9aba8e012da1f18d93a",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.save_old]",
@@ -3947,7 +3947,7 @@
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load_entry]",
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load_entry",
-      "line": 758,
+      "line": 784,
       "signature": "2ffb81967c7d67dfbcc9aa69b9afd88d1a85907b6e5ad48e48ec710972d0c160",
       "manifold": {
         "verdict": "carried",
@@ -4301,7 +4301,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.__str__": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.__str__",
-      "line": 411,
+      "line": 433,
       "signature": "217321735a2675715413adbeaf0a76359ced08fb3c305ccb07518cef90b15d1c",
       "reason": "Database diagnostic label.",
       "verdict": "E"
@@ -4309,7 +4309,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.__repr__": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.__repr__",
-      "line": 414,
+      "line": 436,
       "signature": "e4a12607d179c164dc60dfa09ab2be571ea921afd7d817154808ad4bc13994af",
       "reason": "Database diagnostic label.",
       "verdict": "E"
@@ -4317,8 +4317,8 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.get_library_reactions": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.get_library_reactions",
-      "line": 417,
-      "signature": "d732abe23834a20a4ac84bf8623f9fbede5f95ef37a26113935e3498fd73d58b",
+      "line": 439,
+      "signature": "76929d81c78c3b465115d390f1127e45136ddb089258c542672dcbe5cbf19553",
       "reason": "Returns reaction objects internally; no identifier emission.",
       "verdict": "E"
     },
@@ -5114,7 +5114,7 @@
       "reason": "Nested formatter writes scalar Arrhenius parameters and uncertainties only; parent save_old refuses resolved molecular references before opening.",
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.write_arrhenius",
-      "line": 951,
+      "line": 977,
       "signature": "1cf3591ae6abb9219ea62718650de3f613c953e7a13862fa42fa05ccef8bda91"
     },
     "rmgpy/molecule/draw.py:create_new_surface": {

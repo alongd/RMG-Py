@@ -72,6 +72,28 @@ from rmgpy.util import get_reaction_collider, write_files_atomically
 
 ################################################################################
 
+def _template_from_rate_rule_comment(long_desc):
+    """Return the last bracketed template after ``rate rule`` in a seed comment.
+
+    Current seed writers put the original template in a ``for rate rule [...]``
+    clause. Older seed comments also use forms such as ``This reaction matched
+    rate rule [...]``. Both are retained for compatibility with descriptions the
+    previous reader parsed successfully; unbracketed prose is ignored.
+    """
+    template = None
+    for line in (long_desc or '').split('\n'):
+        if 'rate rule' not in line:
+            continue
+        # Keep the legacy fragment boundary: a second "rate rule" ends the
+        # fragment selected by split(...)[1]. Only make the missing-bracket
+        # case non-fatal so a later real declaration can still be considered.
+        rule_part = line.split('rate rule')[1].strip()
+        pieces = re.split(r'\[(.*)\]', rule_part)
+        if len(pieces) > 1:
+            template = pieces[1]
+    return template
+
+
 class LibraryReaction(Reaction):
     """
     A Reaction object generated from a reaction library. In addition to the
@@ -452,14 +474,18 @@ class KineticsLibrary(Database):
                 rxn.family = self.label  # the library the reaction was loaded from (opposed to originally from)
             elif self.auto_generated and entry.long_desc and 'rate rule' in entry.long_desc:  # template reaction
                 family = ''
-                template = ''
                 for line in entry.long_desc.split('\n'):
                     line = line.strip()
                     if 'rate rule' in line:
-                        rule_part = line.split('rate rule')[1].strip()
-                        template = re.split(r'\[(.*)\]', rule_part)[1]  # Remove outer brackets and trailing text
+                        pass
                     elif 'family:' in line:
                         family = line.split('family:')[1].strip()
+                template = _template_from_rate_rule_comment(entry.long_desc)
+                if template is None:
+                    raise DatabaseError(
+                        'Auto-generated kinetics library {0}, entry {1} ({2}), claims rate-rule '
+                        'provenance but has no bracketed template line.'.format(
+                            self.label, entry.index, entry.label))
                 # Clean up any leading indents in kinetics comment
                 entry.data.comment = '\n'.join([line.strip() for line in entry.data.comment.split('\n')])
                 rxn = TemplateReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],
