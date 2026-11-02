@@ -34,7 +34,7 @@ Non-plasma callers retain their existing unlabelled output.
 """
 
 #: The name a prescribed-electron-temperature run must call itself by, verbatim.
-PRESCRIBED_TE_MODE = 'prescribed-Te transport diagnostic'
+PRESCRIBED_TE_MODE = 'LEGACY: prescribed-Te transport diagnostic'
 
 #: The disclaimer that must appear verbatim in every artifact such a run writes.
 #: The subscript is U+2091 (LATIN SUBSCRIPT SMALL LETTER E), so the sentence reads
@@ -53,7 +53,7 @@ PRESCRIBED_TE_DISCLAIMER_ASCII = (
     'absolute electron density and ionisation degree are not predicted.'
 )
 
-SOLVED_TE_MODE = 'solved-Te energy-balance engineering intermediate'
+SOLVED_TE_MODE = 'LEGACY: solved-Te energy-balance engineering intermediate'
 SOLVED_TE_DISCLAIMER = (
     'Electron temperature and species evolution are solved conditional on specified '
     'absorbed power and the declared Maxwellian, wall and sheath closures; coupling '
@@ -66,10 +66,17 @@ EEDF_DISCLAIMER = (
     'and wall/sheath closures. This label does not establish terminal qualification '
     'or predict external power-source coupling.'
 )
+MAXWELLIAN_MODE = 'MODEL-FORM COMPARATOR: Maxwellian-table energy-balance diagnostic'
+MAXWELLIAN_DISCLAIMER = (
+    'Electron kinetics use a prescribed Maxwellian on the source-table grid. '
+    'This is a model-form comparator; it is not a production EEDF result and '
+    'does not establish EEDF self-consistency or a physical reduced electric field.'
+)
 _MODE_DISCLAIMERS = {
     PRESCRIBED_TE_MODE: PRESCRIBED_TE_DISCLAIMER,
     SOLVED_TE_MODE: SOLVED_TE_DISCLAIMER,
     EEDF_MODE: EEDF_DISCLAIMER,
+    MAXWELLIAN_MODE: MAXWELLIAN_DISCLAIMER,
 }
 
 

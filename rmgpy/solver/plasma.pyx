@@ -76,7 +76,7 @@ cimport rmgpy.constants as constants
 import rmgpy.data.rmg as rmg_data_module
 from rmgpy.data.thermo import find_cp0_and_cpinf
 from rmgpy.diagnostic_mode import (PRESCRIBED_TE_MODE, PRESCRIBED_TE_DISCLAIMER,
-                                   SOLVED_TE_MODE, EEDF_MODE, run_provenance_lines)
+                                   SOLVED_TE_MODE, EEDF_MODE, MAXWELLIAN_MODE, run_provenance_lines)
 from rmgpy.exceptions import (NonEquilibriumReverseRateError, PlasmaStateError,
                               PrescribedTeDiagnosticError)
 from rmgpy.quantity import Quantity
@@ -1208,8 +1208,12 @@ cdef class PlasmaReactor(ReactionSystem):
                 'electron_kinetics fields differ from the normalized contract: {0!r}'.format(
                     sorted(required - set(electron_kinetics) |
                            (set(electron_kinetics) - allowed))))
-        if electron_kinetics['provider'] != 'loki-table':
-            raise PlasmaStateError("electron_kinetics provider must be 'loki-table'")
+        if (not isinstance(electron_kinetics['provider'], str)
+                or electron_kinetics['provider'] not in ('loki-table', 'maxwellian-table')):
+            raise PlasmaStateError("electron_kinetics provider must be 'loki-table' or 'maxwellian-table'")
+        if (electron_kinetics['provider'] == 'maxwellian-table'
+                and electron_kinetics.get('operating_branch') is not None):
+            raise PlasmaStateError('Maxwellian comparator rejects operating_branch')
         table = electron_kinetics['table']
         field = electron_kinetics['initial_reduced_field']
         if (not isinstance(table, (tuple, list)) or len(table) != 2
@@ -1246,6 +1250,13 @@ cdef class PlasmaReactor(ReactionSystem):
         self.eedf_mode = True
 
     @property
+    def maxwellian_comparator(self):
+        """Use the byte-checked provider kind once initialized."""
+        if self.eedf_provider is not None:
+            return self.eedf_provider.provider_kind == 'maxwellian-table'
+        return bool(self.eedf_mode and self.electron_kinetics['provider'] == 'maxwellian-table')
+
+    @property
     def electronegative_wall_qualification(self):
         """Frozen declaration, defensively copied; no after-the-run threshold tuning."""
         return copy.deepcopy(self._en_wall_qualification)
@@ -1268,6 +1279,7 @@ cdef class PlasmaReactor(ReactionSystem):
         SpeciesReferences(species, identifiers, context='electronegative wall manifest',
                           allow_ground_collisions=True)
         record = copy.deepcopy(self.electronegative_wall_diagnostics)
+        record['run_provenance'] = run_provenance_lines(self)
         record.update(closure=self.electronegative_wall_model,
                       geometry_arm=self.electronegative_wall_geometry)
         closure_metadata = closure_scientific_metadata(
@@ -1294,7 +1306,11 @@ cdef class PlasmaReactor(ReactionSystem):
             'wall_sheath_basis': 'Maxwellian form at epsilon_k',
             'energy_budget': copy.deepcopy(self.energy_budget),
         }
-        self.eedf_provider.annotate_development_diagnostic(record)
+        record['run_provenance'] = run_provenance_lines(self)
+        if self.eedf_provider is not None:
+            self.eedf_provider.annotate_development_diagnostic(record)
+            if self.maxwellian_comparator:
+                record['comparator'] = self.eedf_provider._manifest_snapshot['comparator']
         from rmgpy.solver.electronegative import manifest_values
         return manifest_values(record)
 
@@ -2969,7 +2985,8 @@ cdef class PlasmaReactor(ReactionSystem):
             self.eedf_provider = EEDFProvider(
                 table_path, current_model, artifact_sha256=artifact_sha256,
                 reaction_map=reaction_map, branch=self.electron_kinetics['branch'],
-                empirical_laws=self.eedf_empirical_laws)
+                empirical_laws=self.eedf_empirical_laws,
+                provider_kind=self.electron_kinetics['provider'])
         except Exception as exc:
             raise PlasmaStateError('EEDF provider construction failed: {0}'.format(exc)) from exc
         self.eedf_reaction_map = reaction_map
@@ -3649,15 +3666,29 @@ cdef class PlasmaReactor(ReactionSystem):
         if (not np.isfinite(denominator) or not np.isfinite(row.denergy_du)
                 or row.denergy_du < minimum_derivative):
             raise PlasmaStateError('EEDF d<epsilon>/du is non-positive or insufficiently conditioned')
-        joule = power_factor * float(row.power_groups['field'])
-        transport_field = power_factor * field_power_from_mobility(
-            mobility, row.EN_Td)
-        a6b_runtime_scale = max(abs(joule), abs(transport_field), np.finfo(float).tiny)
-        a6b_runtime_relative = abs(joule - transport_field) / a6b_runtime_scale
-        generation_tolerance = self.eedf_provider.runtime_metadata['tolerances']['G1']
-        a6b_runtime_tolerance = (generation_tolerance['rtol'] +
-                                 power_factor * generation_tolerance['atol'] /
-                                 a6b_runtime_scale)
+        if self.maxwellian_comparator:
+            joule = None
+            source_check = dict(row.a6b_source)
+            runtime_check = dict(row.a6b_runtime)
+        else:
+            joule = power_factor * float(row.power_groups['field'])
+            transport_field = power_factor * field_power_from_mobility(
+                mobility, row.EN_Td)
+            a6b_runtime_scale = max(abs(joule), abs(transport_field), np.finfo(float).tiny)
+            a6b_runtime_relative = abs(joule - transport_field) / a6b_runtime_scale
+            generation_tolerance = self.eedf_provider.runtime_metadata['tolerances']['G1']
+            a6b_runtime_tolerance = (generation_tolerance['rtol'] +
+                                     power_factor * generation_tolerance['atol'] /
+                                     a6b_runtime_scale)
+            source_check = {
+                key: row.a6b_source[key] for key in (
+                    'check', 'criterion', 'tolerance', 'maximum_relative_error', 'passed')}
+            runtime_check = {
+                'check': 'A6b-runtime', 'criterion': row.a6b_runtime['criterion'],
+                'numerator': abs(joule - transport_field), 'denominator': a6b_runtime_scale,
+                'relative_error': a6b_runtime_relative, 'tolerance': a6b_runtime_tolerance,
+                'passed': a6b_runtime_relative <= a6b_runtime_tolerance,
+            }
         by_reaction = np.array(heavy_by_reaction, copy=True)
         inelastic_by_reaction = np.zeros(self.num_core_reactions)
         superelastic_by_reaction = np.zeros(self.num_core_reactions)
@@ -3688,21 +3719,11 @@ cdef class PlasmaReactor(ReactionSystem):
             'composition_energy_derivative': composition_term,
             'mean_energy_eV': mean, 'epsilon_k_eV': epsilon_k,
             'joule_power': joule,
-            'power_mismatch_fraction': ((p_abs - joule) / p_abs if p_abs else 0.0),
-            'A6b-source': {
-                key: row.a6b_source[key] for key in (
-                    'check', 'criterion', 'tolerance',
-                    'maximum_relative_error', 'passed')
-            },
-            'A6b-runtime': {
-                'check': 'A6b-runtime',
-                'criterion': row.a6b_runtime['criterion'],
-                'numerator': abs(joule - transport_field),
-                'denominator': a6b_runtime_scale,
-                'relative_error': a6b_runtime_relative,
-                'tolerance': a6b_runtime_tolerance,
-                'passed': a6b_runtime_relative <= a6b_runtime_tolerance,
-            },
+            'power_mismatch_fraction': (None if self.maxwellian_comparator else
+                                        (p_abs - joule) / p_abs if p_abs else 0.0),
+            'A6b-source': source_check,
+            'A6b-runtime': runtime_check,
+            'run_provenance': run_provenance_lines(self),
             'T10 interpolation qualification': dict(row.t10_interpolation),
             'wall_sheath_basis': 'Maxwellian form at epsilon_k',
         }
@@ -4552,13 +4573,19 @@ cdef class PlasmaReactor(ReactionSystem):
         if self.eedf_mode:
             u = float(y[self.te_index])
             b['u'] = u
-            b['EN_Td'] = float(np.exp(u))
+            b['EN_Td'] = None if self.maxwellian_comparator else float(np.exp(u))
+            if self.maxwellian_comparator:
+                b['reference_EN_Td'] = float(np.exp(u))
             b['mean_energy_eV'] = self.eedf_provider.mean_energy_eV(self.eedf_row)
             b['Te_eff'] = self.Te.value_si
             b['Te_eff_basis'] = 'effective temperature derived from mean energy'
             floors = self.eedf_provider.runtime_metadata['floors']
-            p_scale = max(abs(b['joule_power']) * floors['absolute_power_share'],
-                          np.finfo(float).tiny)
+            if self.maxwellian_comparator:
+                p_scale = max(max(abs(b['P_abs']), abs(losses)) * floors['absolute_power_share'],
+                              np.finfo(float).tiny)
+            else:
+                p_scale = max(abs(b['joule_power']) * floors['absolute_power_share'],
+                              np.finfo(float).tiny)
             a6a_scale = max(abs(b['P_abs']), p_scale)
             b['A6a_power_scale'] = p_scale
             b['A6a_relative'] = abs(b['closure']) / a6a_scale
@@ -4790,6 +4817,8 @@ cdef class PlasmaReactor(ReactionSystem):
                 'A6a global electron-energy closure gate failed at accepted '
                 'terminal state: relative error {0!r} exceeds tolerance 0.01'.format(
                     relative))
+        if self.maxwellian_comparator:
+            return  # Physical energy closure above remains mandatory.
         runtime = self.energy_budget.get('A6b-runtime')
         if (not isinstance(runtime, dict) or runtime.get('passed') is not True
                 or runtime.get('relative_error') is None
@@ -4817,7 +4846,8 @@ cdef class PlasmaReactor(ReactionSystem):
 
     def validate_terminal_state(self):
         """Apply EEDF power gates before any accepted termination path."""
-        production_eedf = (self.eedf_mode and self.eedf_provider is not None and
+        production_eedf = (self.eedf_mode and not self.maxwellian_comparator
+                           and self.eedf_provider is not None and
                            self.eedf_provider.development_notice is None)
         try:
             self._check_eedf_power_gates(steady=self.steady_state_reached)
@@ -4919,7 +4949,7 @@ cdef class PlasmaReactor(ReactionSystem):
         """A short identity string for this reactor, used in error messages."""
         return "PlasmaReactor(label={0!r}, T={1!r}, P={2!r}, Te={3!r}, mode={4!r})".format(
             getattr(self, 'label', None), self.T, self.P, self.Te,
-            EEDF_MODE if self.eedf_mode else SOLVED_TE_MODE if self.energy_balance else PRESCRIBED_TE_MODE)
+            self.diagnostic_mode)
 
     @property
     def diagnostic_mode(self):
@@ -4927,7 +4957,7 @@ cdef class PlasmaReactor(ReactionSystem):
         if self.eedf_mode:
             if not self.energy_balance:
                 raise PlasmaStateError('EEDF provenance requires the electron energy balance.')
-            return EEDF_MODE
+            return MAXWELLIAN_MODE if self.maxwellian_comparator else EEDF_MODE
         return SOLVED_TE_MODE if self.energy_balance else PRESCRIBED_TE_MODE
 
     def get_diagnostic_provenance(self, ascii_only=False):

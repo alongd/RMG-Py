@@ -991,9 +991,9 @@ def _plasma_electron_kinetics(electronKinetics):
         raise InputError("electronKinetics is missing required key(s) {0}.".format(missing))
 
     provider = electronKinetics['provider']
-    if provider != 'loki-table':
+    if not isinstance(provider, str) or provider not in ('loki-table', 'maxwellian-table'):
         raise InputError(
-            "electronKinetics provider must be 'loki-table'; got {0!r}.".format(provider))
+            "electronKinetics provider must be 'loki-table' or 'maxwellian-table'; got {0!r}.".format(provider))
 
     table = electronKinetics['table']
     if not isinstance(table, (tuple, list)) or len(table) != 2:
@@ -1018,6 +1018,8 @@ def _plasma_electron_kinetics(electronKinetics):
             "electronKinetics branch must be a non-empty string; got {0!r}.".format(branch))
 
     operating = electronKinetics.get('operatingBranch')
+    if provider == 'maxwellian-table' and operating is not None:
+        raise InputError('Maxwellian comparator rejects operatingBranch: source coordinates do not certify a physical branch')
     if operating is not None:
         if not isinstance(operating, Mapping) or set(operating) != {'id', 'path'}:
             raise InputError("electronKinetics operatingBranch must be {'id', 'path'}; got {0!r}.".format(operating))

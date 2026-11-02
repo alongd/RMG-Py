@@ -39,6 +39,8 @@ import re
 from string import Formatter
 
 import numpy as np
+
+from rmgpy.diagnostic_mode import MAXWELLIAN_MODE
 import yaml
 
 
@@ -140,7 +142,7 @@ def _comparator_metadata(manifest):
     if (type(resolution) not in (int, float) or not np.isfinite(resolution)
             or not 0 <= resolution <= manifest['tolerances']['H2']['rtol']):
         raise FingerprintMismatch('comparator mean resolution')
-    if metadata['label'] != 'MODEL-FORM COMPARATOR: Maxwellian-table energy-balance diagnostic':
+    if metadata['label'] != MAXWELLIAN_MODE:
         raise FingerprintMismatch('comparator label')
     return copy.deepcopy(metadata)
 

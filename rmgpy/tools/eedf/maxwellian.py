@@ -41,6 +41,8 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+
+from rmgpy.diagnostic_mode import MAXWELLIAN_MODE
 from scipy.constants import elementary_charge, electron_mass
 
 from rmgpy.tools.eedf.artifact import _storage_items, _validate_storage, NUMERIC, MAPPINGS
@@ -385,7 +387,7 @@ def generate_maxwellian(source_path, output_root, *, artifact_sha256, branch_id,
     manifest.update({name: applicability[name] for name in (
         'A6b-source', 'A6b-runtime', 'T10 interpolation qualification')})
     manifest['comparator'] = {'source': provenance, 'applicability': applicability,
-                              'label': 'MODEL-FORM COMPARATOR: Maxwellian-table energy-balance diagnostic'}
+                              'label': MAXWELLIAN_MODE}
     selected = native[u_start:u_stop + 1]
     rows = np.empty(selected.shape, dtype=object)
     for index in np.ndindex(selected.shape):
@@ -416,7 +418,7 @@ def main(argv=None):
     path = generate_maxwellian(args.source, args.output_root, artifact_sha256=args.artifact_sha256,
                                branch_id=args.branch_id, u_start=args.u_start, u_stop=args.u_stop,
                                command_line=list(sys.argv if argv is None else argv))
-    print('MODEL-FORM COMPARATOR: Maxwellian-table energy-balance diagnostic')
+    print(MAXWELLIAN_MODE)
     print(path)
 
 

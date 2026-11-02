@@ -50,7 +50,8 @@ import pytest
 from rmgpy.chemkin import save_chemkin_file, save_species_dictionary, save_transport_file
 from rmgpy.diagnostic_mode import (PRESCRIBED_TE_DISCLAIMER, PRESCRIBED_TE_DISCLAIMER_ASCII,
                                    PRESCRIBED_TE_MODE, SOLVED_TE_MODE, SOLVED_TE_DISCLAIMER,
-                                   EEDF_MODE, EEDF_DISCLAIMER, comment_block, run_provenance_lines)
+                                   EEDF_MODE, EEDF_DISCLAIMER, MAXWELLIAN_MODE, MAXWELLIAN_DISCLAIMER,
+                                   comment_block, run_provenance_lines)
 from rmgpy.exceptions import PrescribedTeDiagnosticError
 from rmgpy.kinetics import Arrhenius, TwoTemperaturePlasma
 from rmgpy.reaction import Reaction
@@ -119,7 +120,7 @@ class DiagnosticModeStringsTest:
     """The canonical strings, and the query every artifact writer uses."""
 
     def test_mode_name_is_the_exact_ruling_string(self):
-        assert PRESCRIBED_TE_MODE == 'prescribed-Te transport diagnostic'
+        assert PRESCRIBED_TE_MODE == 'LEGACY: prescribed-Te transport diagnostic'
 
     def test_disclaimer_is_verbatim_with_the_u2091_subscript(self):
         assert PRESCRIBED_TE_DISCLAIMER == (
@@ -380,9 +381,9 @@ def _mode_reactor(mode):
               'sheath': 'floating_wall', 'electron_energies': {},
               'elastic_collisions': {'Ar': {'ignore': 'constructor-only fixture'}}}
     kwargs = {}
-    if mode == EEDF_MODE:
+    if mode in (EEDF_MODE, MAXWELLIAN_MODE):
         kwargs['electron_kinetics'] = {
-            'provider': 'loki-table', 'table': ('unused.json', 'a' * 64),
+            'provider': 'maxwellian-table' if mode == MAXWELLIAN_MODE else 'loki-table', 'table': ('unused.json', 'a' * 64),
             'branch': 'branch_0', 'initial_reduced_field': (10., 'Td'), 'empirical_laws': {},
         }
         energy.pop('elastic_collisions')
@@ -393,22 +394,28 @@ def _mode_reactor(mode):
 
 
 MODES = [(PRESCRIBED_TE_MODE, PRESCRIBED_TE_DISCLAIMER),
-         (SOLVED_TE_MODE, SOLVED_TE_DISCLAIMER), (EEDF_MODE, EEDF_DISCLAIMER)]
+         (SOLVED_TE_MODE, SOLVED_TE_DISCLAIMER), (EEDF_MODE, EEDF_DISCLAIMER),
+         (MAXWELLIAN_MODE, MAXWELLIAN_DISCLAIMER)]
 
 
 @pytest.mark.parametrize('energy_balance,eedf,expected_mode,expected_qualification', [
-    pytest.param(False, False, 'prescribed-Te transport diagnostic',
+    pytest.param(False, False, 'LEGACY: prescribed-Te transport diagnostic',
                  'Species evolution conditional on prescribed Te and nₑ; '
                  'absolute electron density and ionisation degree are not predicted.', id='P'),
-    pytest.param(True, False, 'solved-Te energy-balance engineering intermediate',
+    pytest.param(True, False, 'LEGACY: solved-Te energy-balance engineering intermediate',
                  'Electron temperature and species evolution are solved conditional on specified '
                  'absorbed power and the declared Maxwellian, wall and sheath closures; coupling '
                  'of an external power source to the plasma is not predicted.', id='S'),
-    pytest.param(True, True, 'EEDF energy-balance engineering intermediate',
+    pytest.param(True, 'loki-table', 'EEDF energy-balance engineering intermediate',
                  'Electron kinetics use the declared EEDF table; reduced field and species '
                  'evolution are solved conditional on specified absorbed power, empirical laws '
                  'and wall/sheath closures. This label does not establish terminal qualification '
                  'or predict external power-source coupling.', id='E'),
+    pytest.param(True, 'maxwellian-table',
+                 'MODEL-FORM COMPARATOR: Maxwellian-table energy-balance diagnostic',
+                 'Electron kinetics use a prescribed Maxwellian on the source-table grid. '
+                 'This is a model-form comparator; it is not a production EEDF result and '
+                 'does not establish EEDF self-consistency or a physical reduced electric field.', id='M'),
 ])
 def test_configured_reactor_has_literal_mode_and_qualification(
         energy_balance, eedf, expected_mode, expected_qualification):
@@ -425,14 +432,14 @@ def test_configured_reactor_has_literal_mode_and_qualification(
                       ion_reduced_mobility=(1e-4, 'm^2/(V*s)'))
     if eedf:
         kwargs['electron_kinetics'] = {
-            'provider': 'loki-table', 'table': ('unused.json', 'a' * 64),
+            'provider': eedf, 'table': ('unused.json', 'a' * 64),
             'branch': 'branch_0', 'initial_reduced_field': (10., 'Td'), 'empirical_laws': {},
         }
     reactor = PlasmaReactor((300., 'K'), (1., 'bar'),
                             {electron: 1e-6, ion: 1e-6, ar: .999998}, (10000., 'K'),
                             termination=[], **kwargs)
     assert reactor.energy_balance == energy_balance
-    assert reactor.eedf_mode == eedf
+    assert reactor.eedf_mode == bool(eedf)
     assert reactor.diagnostic_mode == expected_mode
     expected = ['RMG diagnostic mode: ' + expected_mode, expected_qualification]
     assert reactor.get_diagnostic_provenance() == expected
@@ -453,7 +460,7 @@ def test_real_reactor_classifies_mode_independently_of_te(mode, disclaimer):
             assert other_disclaimer not in expected
 
 
-@pytest.mark.parametrize('mode', [SOLVED_TE_MODE, EEDF_MODE])
+@pytest.mark.parametrize('mode', [SOLVED_TE_MODE, EEDF_MODE, MAXWELLIAN_MODE])
 @pytest.mark.parametrize('accessor', ['get_electron_density', 'get_ionisation_degree', 'get_ionization_degree'])
 def test_solved_accessors_do_not_claim_prescribed_te(mode, accessor):
     with pytest.raises(NotImplementedError, match=mode):
@@ -575,7 +582,7 @@ def test_profile_plot_stats_html_carry_the_matching_mode(tmp_path, mode, disclai
     reactor = job.reaction_systems[0]
     reactor.snapshots = [[0., 1., .01, .98, .01], [1., 1., .02, .96, .02]]
     # EEDF manifests are tested with a fully initialized provider below.
-    if mode == EEDF_MODE:
+    if mode in (EEDF_MODE, MAXWELLIAN_MODE):
         proxy = SimpleNamespace(diagnostic_mode=mode, snapshots=reactor.snapshots)
     else:
         proxy = reactor
@@ -622,7 +629,7 @@ def test_real_eedf_json_preserves_provider_manifest(tmp_path):
     before = reactor.eedf_run_manifest()
     path = Path(_write_profile(tmp_path, reactor, core)).with_suffix('.eedf.json')
     record = json.loads(path.read_text())
-    assert record.pop('run_provenance') == run_provenance_lines(reactor)
+    assert record['run_provenance'] == run_provenance_lines(reactor)
     assert record == before
     assert 'artifact_sha256' in record
 
@@ -709,3 +716,21 @@ def test_converted_yaml_preserves_chemkin_provenance(tmp_path, mode, disclaimer)
     data = yaml.safe_load(Path(path).read_text())
     assert mode in data['description']
     assert disclaimer.replace('nₑ', 'n_e') in data['description']
+
+
+@pytest.fixture(autouse=True)
+def comparator_outputs_never_claim_production(request, tmp_path):
+    """Inspect the artifacts written by each existing writer's M case."""
+    yield
+    params = getattr(getattr(request.node, 'callspec', None), 'params', {})
+    if params.get('mode') != 'MODEL-FORM COMPARATOR: Maxwellian-table energy-balance diagnostic':
+        return
+    for path in tmp_path.rglob('*'):
+        if not path.is_file():
+            continue
+        if path.suffix in ('.csv', '.json', '.py', '.txt', '.inp', '.yaml', '.yml', '.rms', '.svg', '.html'):
+            assert 'EEDF energy-balance engineering intermediate' not in path.read_text()
+        elif path.suffix == '.png' and path.parent.name != 'species':
+            from PIL import Image
+            with Image.open(path) as picture:
+                assert 'EEDF energy-balance engineering intermediate' not in repr(picture.info)

@@ -306,3 +306,30 @@ def test_real_constructor_save_read_round_trip_uses_deck_relative_table(tmp_path
         'id': 'reactor-000', 'path': str(tmp_path / 'branches.json')}
     assert set(reactor2.electron_energy_balance) == {
         'absorbed_power', 'chamber_volume', 'sheath'}
+
+
+def test_maxwellian_declaration_round_trips_with_comparator_label(tmp_path):
+    declaration = _electron_kinetics()
+    declaration['provider'] = 'maxwellian-table'
+    declaration.pop('operatingBranch', None)
+    declaration['branch'] = 'maxwellian'
+    rmg = _read(tmp_path, _eedf_block(electron_kinetics=declaration))
+    reactor = rmg.reaction_systems[0]
+    assert reactor.electron_kinetics['provider'] == 'maxwellian-table'
+    assert reactor.maxwellian_comparator
+    assert reactor.diagnostic_mode == 'MODEL-FORM COMPARATOR: Maxwellian-table energy-balance diagnostic'
+    saved = tmp_path / 'maxwellian-saved.py'
+    inp.save_input_file(str(saved), rmg)
+    text = saved.read_text()
+    assert 'MODEL-FORM COMPARATOR: Maxwellian-table energy-balance diagnostic' in text
+    assert 'EEDF energy-balance engineering intermediate' not in text
+    restored = RMG()
+    inp.read_input_file(str(saved), restored)
+    assert restored.reaction_systems[0].electron_kinetics == reactor.electron_kinetics
+
+
+def test_maxwellian_rejects_production_operating_branch(tmp_path):
+    declaration = _electron_kinetics()
+    declaration['provider'] = 'maxwellian-table'
+    with pytest.raises(InputError, match='rejects operatingBranch'):
+        _read(tmp_path, _eedf_block(electron_kinetics=declaration))
