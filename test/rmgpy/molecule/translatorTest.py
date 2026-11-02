@@ -1426,6 +1426,55 @@ class ParsingTest:
         assert "InChIKey is a write-only format" in str(cm.exconly())
 
 
+    @pytest.mark.parametrize('symbol,lone_pairs', [
+        ('He', 0),
+        ('Ne', 3),
+        ('Ar', 3),
+    ])
+    def test_from_smiles_singly_charged_noble_gases(self, symbol, lone_pairs):
+        molecule = Molecule().from_smiles('[{}+]'.format(symbol))
+        atom = molecule.atoms[0]
+
+        assert molecule.get_net_charge() == 1
+        assert atom.charge == 1
+        assert atom.radical_electrons == 1
+        assert atom.lone_pairs == lone_pairs
+
+        round_tripped = Molecule().from_smiles(molecule.to_smiles())
+        assert round_tripped.is_isomorphic(molecule)
+        assert round_tripped.get_net_charge() == 1
+
+    @pytest.mark.parametrize('smiles,expected', [
+        ('[C+]', (('C', 1, 3, 0),)),
+        ('[N+]', (('N', 1, 4, 0),)),
+        ('[O+]', (('O', 1, 3, 1),)),
+    ])
+    def test_from_smiles_non_noble_cation_base_states_unchanged(self, smiles, expected):
+        molecule = Molecule().from_smiles(smiles)
+        state = tuple((atom.element.symbol, atom.charge, atom.radical_electrons, atom.lone_pairs) for atom in molecule.atoms)
+        assert state == expected
+
+    @pytest.mark.parametrize('smiles,expected', [
+        ('[ArH+]', (('Ar', 1, 0, 3), ('H', 0, 0, 0))),
+        ('[HeH+]', (('He', 1, 0, 0), ('H', 0, 0, 0))),
+        ('[Ar].[Ar+]', (('Ar', 0, 0, 4), ('Ar', 2, 0, 3))),
+    ])
+    def test_from_smiles_non_isolated_noble_cation_base_states_unchanged(self, smiles, expected):
+        molecule = Molecule().from_smiles(smiles)
+        state = tuple((atom.element.symbol, atom.charge, atom.radical_electrons, atom.lone_pairs) for atom in molecule.atoms)
+        assert state == expected
+
+    def test_from_adjacency_list_singly_charged_helium_smiles_round_trip(self):
+        molecule = Molecule().from_adjacency_list('1 He u1 p0 c+1')
+
+        round_tripped = Molecule().from_smiles(molecule.to_smiles())
+
+        assert round_tripped.is_isomorphic(molecule)
+        assert round_tripped.get_net_charge() == 1
+        assert round_tripped.atoms[0].radical_electrons == 1
+        assert round_tripped.atoms[0].lone_pairs == 0
+
+
 class InChIParsingTest:
     def compare(self, inchi, u_indices=None, p_indices=None):
         u_layer = U_LAYER_PREFIX + U_LAYER_SEPARATOR.join(map(str, u_indices)) if u_indices else None

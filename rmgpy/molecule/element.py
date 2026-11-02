@@ -122,6 +122,7 @@ class PeriodicSystem(object):
     https://sciencenotes.org/list-of-electronegativity-values-of-the-elements/
     isotopes of the same element may have slight different electronegativities, which is not reflected below
     """
+    noble_gases = ('He', 'Ne', 'Ar')
     valences = {'H+':0, 'e': 0, 'H': 1, 'He': 0, 'C': 4, 'N': 3, 'O': 2, 'F': 1, 'Ne': 0,
                 'Si': 4, 'P': 3, 'S': 2, 'Cl': 1, 'Br': 1, 'Ar': 0, 'I': 1, 'X': 4, 'Li': 1, 'Na': 1, 'K': 1, 'Mg': 2, 'Ca': 2}
     valence_electrons = {'H+':0, 'e': 1, 'H': 1, 'He': 2, 'C': 4, 'N': 5, 'O': 6, 'F': 7, 'Ne': 8,

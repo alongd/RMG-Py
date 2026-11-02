@@ -331,6 +331,11 @@ def from_ob_mol(mol, obmol, raise_atomtype_exception=True):
         # ignoring whatever may be set on obatom.GetSpinMultiplicity()
         valence = obatom.GetTotalValence()
         radical_electrons = openbabel.GetTypicalValence(number, valence, charge) - valence
+        # Open Babel reports zero radicals for isolated singly charged noble-gas ions.
+        # RMG represents these ions with one unpaired electron; without it, the later
+        # lone-pair/charge repair truncates a half-integer pair count and doubles +1.
+        if obmol.NumAtoms() == 1 and element.symbol in elements.PeriodicSystem.noble_gases and charge == 1:
+            radical_electrons = 1
 
         atom = mm.Atom(element, radical_electrons, charge, '', 0)
         mol.vertices.append(atom)

@@ -14345,7 +14345,7 @@
       "evidence": [
         "test/rmgpy/molecule/converterTest.py"
       ],
-      "source_sha256": "d48ff545f21006367f9d311353d50f53eec90b8ffad16f9572456f5bebad5499"
+      "source_sha256": "20a6f7843f39cbc18982a5ecc6aebcbf5207a3b4cfe79bf6e1c6ce80ae682115"
     },
     "rmgpy/molecule/converter.py:from_rdkit_mol": {
       "verdict": "not-reachable-for-resolved",
