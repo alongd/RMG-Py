@@ -981,7 +981,7 @@ def test_real_pure_ar_table_passes_legacy_checks_but_awaits_t10(
             'mobility_N': {'rtol': 1.e-3, 'atol': 0.},
             'field_power': {'rtol': 1.e-3, 'atol': 0.},
         })
-    expected = {'schema_version', 'row_inputs', 'fingerprint', 'axes', 'energy_eV', 'energy_edges_eV',
+    expected = {'schema_version', 'provider_kind', 'row_inputs', 'fingerprint', 'axes', 'energy_eV', 'energy_edges_eV',
                 'envelopes', 'screen_results', 'tolerances', 'floors', 'channel_map', 'repositories',
                 'solver', 'setups', 'state_population_assumptions', 'density_convention', 'units',
                 'generator_command', 'generated_at', 'generation_seconds', 'held_out',
@@ -990,6 +990,7 @@ def test_real_pure_ar_table_passes_legacy_checks_but_awaits_t10(
                 'qualification_setup_sha256',
                 'A6b-source', 'A6b-runtime', 'T10 interpolation qualification'}
     assert set(table.manifest) == expected
+    assert table.manifest['provider_kind'] == 'loki-table'
     assert 'cold' in table.manifest['branch_detection'][0]['branch_sources']['branch_0']
 
 
