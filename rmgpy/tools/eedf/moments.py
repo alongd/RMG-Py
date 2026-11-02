@@ -29,8 +29,43 @@
 
 """Independent moments from f0 using the pinned solver's cell quadrature."""
 import numpy as np
+from scipy import integrate
 from scipy.constants import elementary_charge, electron_mass, Boltzmann
 from rmgpy.tools.eedf.schema import EEDFError
+
+
+def _transport_moments(energy, edges, f0, momentum_edges, growth_rate):
+    """DC transport with the temporal-growth collision frequency.
+
+    Mobility retains the corroboration quadrature exactly. Diffusion and its
+    energy moment use the same nodal collision frequency averaged onto cells,
+    as in LoKI-B ElectronKineticsBoltzmann::evaluateSwarmParameters. No field
+    or Joule power is inferred from a prescribed distribution.
+    """
+    energy, edges, f0, momentum_edges = (
+        np.asarray(value, dtype=float) for value in
+        (energy, edges, f0, momentum_edges))
+    gamma = np.sqrt(2 * elementary_charge / electron_mass)
+    derivative = np.r_[0.0, np.diff(f0) / np.diff(energy), 0.0]
+    with np.errstate(divide='ignore', invalid='ignore'):
+        base = np.where(momentum_edges > 0.0,
+                        derivative * edges / momentum_edges, 0.0)
+        denominator = momentum_edges + np.where(
+            edges > 0.0, growth_rate / gamma / np.sqrt(edges), 0.0)
+        corrected = np.where(denominator > 0.0,
+                             derivative * edges / denominator, 0.0)
+    base[0] = 0.0
+    corrected[0] = 0.0
+    cells = (denominator[:-1] + denominator[1:]) / 2.0
+    with np.errstate(divide='ignore', invalid='ignore'):
+        diffusion = np.where(cells > 0.0, energy * f0 / cells, 0.0)
+    return {
+        'mobility_N': float(-gamma / 3.0 * integrate.simpson(corrected, x=edges)),
+        'mobility_without_growth_N': float(-gamma / 3.0 * integrate.simpson(base, x=edges)),
+        'energy_mobility_N': float(-gamma / 3.0 * integrate.simpson(corrected * edges, x=edges)),
+        'diffusion_N': float(gamma / 3.0 * np.sum(diffusion * np.diff(edges))),
+        'energy_diffusion_N': float(gamma / 3.0 * np.sum(diffusion * energy * np.diff(edges))),
+    }
 
 
 def _distribution_moments(row, channels):

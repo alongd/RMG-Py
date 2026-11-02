@@ -64,6 +64,7 @@ from rmgpy.tools.eedf.integrity import (
     _solver_environment,
 )
 from rmgpy.tools.eedf.loki import LoKIError, _setup_text, parse_output
+from rmgpy.tools.eedf.moments import _transport_moments
 from rmgpy.tools.eedf.schema import SpecError, _canonical_json
 
 logger = logging.getLogger(__name__)
@@ -664,20 +665,12 @@ def _quadrature(energy, f0, processes, row):
             powers.append(float(targets[index] * np.sum(GAMMA * energy**2 * sigma * f0 * widths)))
         else:
             powers.append(float(targets[index] * rate * threshold))
-    derivative = np.r_[0.0, np.diff(f0) / np.diff(energy), 0.0]
-    with np.errstate(divide="ignore", invalid="ignore"):
-        base = np.where(momentum_edges > 0.0, derivative * edges / momentum_edges, 0.0)
-        growth_denominator = momentum_edges + np.where(edges > 0.0, growth_rate / GAMMA / np.sqrt(edges), 0.0)
-        corrected = np.where(growth_denominator > 0.0, derivative * edges / growth_denominator, 0.0)
-    base[0] = 0.0
-    corrected[0] = 0.0
-    mobility_without_growth = float(-GAMMA / 3.0 * integrate.simpson(base, x=edges))
-    mobility = float(-GAMMA / 3.0 * integrate.simpson(corrected, x=edges))
+    transport = _transport_moments(energy, edges, f0, momentum_edges, growth_rate)
     powers = np.asarray(powers, dtype=float)
     return {
         "mean_energy_eV": float(np.sum(energy**1.5 * f0 * widths)),
-        "mobility_N": mobility,
-        "mobility_without_growth_N": mobility_without_growth,
+        "mobility_N": transport['mobility_N'],
+        "mobility_without_growth_N": transport['mobility_without_growth_N'],
         "growth_rate_m3_s": growth_rate,
         "rates": np.asarray(rates),
         "channel_power": powers,
