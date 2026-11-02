@@ -4947,9 +4947,13 @@ cdef class PlasmaReactor(ReactionSystem):
 
     def _identity(self):
         """A short identity string for this reactor, used in error messages."""
+        # Wall validation needs an identity before energy-balance setup finishes.
+        # Do not let provenance validation mask the actual configuration error.
+        mode = ('unconfigured electron energy balance'
+                if self.eedf_mode and not self.energy_balance else self.diagnostic_mode)
         return "PlasmaReactor(label={0!r}, T={1!r}, P={2!r}, Te={3!r}, mode={4!r})".format(
             getattr(self, 'label', None), self.T, self.P, self.Te,
-            self.diagnostic_mode)
+            mode)
 
     @property
     def diagnostic_mode(self):

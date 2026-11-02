@@ -52,7 +52,7 @@ from rmgpy.diagnostic_mode import (PRESCRIBED_TE_DISCLAIMER, PRESCRIBED_TE_DISCL
                                    PRESCRIBED_TE_MODE, SOLVED_TE_MODE, SOLVED_TE_DISCLAIMER,
                                    EEDF_MODE, EEDF_DISCLAIMER, MAXWELLIAN_MODE, MAXWELLIAN_DISCLAIMER,
                                    comment_block, run_provenance_lines)
-from rmgpy.exceptions import PrescribedTeDiagnosticError
+from rmgpy.exceptions import PlasmaStateError, PrescribedTeDiagnosticError
 from rmgpy.kinetics import Arrhenius, TwoTemperaturePlasma
 from rmgpy.reaction import Reaction
 from rmgpy.rmg.listener import SimulationProfileWriter
@@ -473,10 +473,12 @@ def test_unknown_declared_mode_refuses(bad):
         run_provenance_lines(SimpleNamespace(diagnostic_mode=bad))
 
 
-def test_inconsistent_eedf_state_refuses_provenance():
-    reactor = _mode_reactor(EEDF_MODE)
+@pytest.mark.parametrize('mode', [EEDF_MODE, MAXWELLIAN_MODE])
+def test_inconsistent_eedf_state_refuses_provenance(mode):
+    reactor = _mode_reactor(mode)
     reactor.energy_balance = False
-    with pytest.raises(Exception, match='EEDF provenance requires'):
+    assert "mode='unconfigured electron energy balance'" in reactor._identity()
+    with pytest.raises(PlasmaStateError, match='EEDF provenance requires'):
         run_provenance_lines(reactor)
 
 
