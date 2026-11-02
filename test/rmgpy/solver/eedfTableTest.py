@@ -212,6 +212,89 @@ def test_missing_native_field_power_refuses(tmp_path):
         EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'))
 
 
+@pytest.mark.parametrize('actual,requested', [
+    ('loki-table', 'maxwellian-table'),
+    ('maxwellian-table', 'loki-table'),
+])
+def test_provider_kind_cross_load_refuses_before_qualification(tmp_path, actual, requested):
+    path, model = fixture_table(tmp_path)
+    manifest_path = path / 'manifest.json'
+    manifest = json.loads(manifest_path.read_text())
+    manifest['provider_kind'] = actual
+    manifest['row_inputs']['provider_kind'] = actual
+    manifest['accepted'] = False
+    manifest_path.write_text(json.dumps(manifest))
+    # The kind check precedes both acceptance and numerical row loading.
+    with pytest.raises(FingerprintMismatch, match='artifact provider kind'):
+        EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'),
+                       provider_kind=requested)
+
+
+@pytest.mark.parametrize('bad', [None, False, [], {}, 'Maxwellian', ''])
+def test_provider_kind_malformed_refuses(tmp_path, bad):
+    path, model = fixture_table(tmp_path)
+    with pytest.raises(FingerprintMismatch, match='provider kind'):
+        EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'),
+                       provider_kind=bad)
+
+
+@pytest.mark.parametrize('remove', ['manifest', 'hdf5', 'both'])
+def test_provider_kind_historical_compatibility_requires_both_tags_absent(tmp_path, remove):
+    import h5py
+
+    path, model = fixture_table(tmp_path)
+    manifest_path = path / 'manifest.json'
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest['provider_kind'] == 'loki-table'
+    with h5py.File(path / 'table.h5', 'r+') as stream:
+        assert stream.attrs['provider_kind'] == 'loki-table'
+        if remove in ('hdf5', 'both'):
+            del stream.attrs['provider_kind']
+    if remove in ('manifest', 'both'):
+        del manifest['provider_kind']
+    digest = _file_hash(path / 'table.h5')
+    manifest['artifact_sha256'] = digest
+    manifest_path.write_text(json.dumps(manifest))
+    if remove == 'both':
+        table = EEDFTable.load(path, model, artifact_sha256=digest)
+        assert table.row(.5, {}).k_ine[0] > 0
+        with pytest.raises(FingerprintMismatch, match='provider kind'):
+            EEDFTable.load(path, model, artifact_sha256=digest,
+                           provider_kind='maxwellian-table')
+    else:
+        with pytest.raises(FingerprintMismatch, match='provider kind'):
+            EEDFTable.load(path, model, artifact_sha256=digest)
+
+
+def test_provider_kind_is_bound_in_pinned_hdf5(tmp_path):
+    import h5py
+
+    path, model = fixture_table(tmp_path)
+    pin = _file_hash(path / 'table.h5')
+    with h5py.File(path / 'table.h5', 'r+') as stream:
+        stream.attrs['provider_kind'] = 'maxwellian-table'
+    with pytest.raises(FingerprintMismatch, match='HDF5 artifact content SHA'):
+        EEDFTable.load(path, model, artifact_sha256=pin)
+    manifest_path = path / 'manifest.json'
+    manifest = json.loads(manifest_path.read_text())
+    digest = _file_hash(path / 'table.h5')
+    manifest['artifact_sha256'] = digest
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(FingerprintMismatch, match='HDF5 provider kind'):
+        EEDFTable.load(path, model, artifact_sha256=digest)
+
+
+def test_provider_kind_stripped_comparator_identity_refuses(tmp_path):
+    path, model = fixture_table(tmp_path)
+    manifest_path = path / 'manifest.json'
+    manifest = json.loads(manifest_path.read_text())
+    del manifest['provider_kind']
+    manifest['row_inputs']['provider_kind'] = 'maxwellian-table'
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(FingerprintMismatch, match='provider kind differs from row inputs'):
+        EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'))
+
+
 @pytest.mark.parametrize(
     'field, message', [
         ('EN_Td', 'native EN_Td state mapping'),

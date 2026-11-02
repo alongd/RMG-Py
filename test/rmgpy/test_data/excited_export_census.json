@@ -5643,13 +5643,13 @@
       "reason": "Copies normalized explicit EEDF spec/manifest and numerical tables; no Species/Molecule identity or inferred molecular name.",
       "file": "rmgpy/tools/eedf/artifact.py",
       "function": "_write_artifact",
-      "line": 137,
-      "signature": "6303e33e3d74efe0f40683d30f59a0e6dc29f2e971c3859af12a803c7db0b52a"
+      "line": 140,
+      "signature": "f3527b3c7794aac1e863ce0c33320233f4078d85a538d06c100db0ebd0e24a86"
     },
     "rmgpy/tools/eedf/artifact.py:_write_rows": {
       "file": "rmgpy/tools/eedf/artifact.py",
       "function": "_write_rows",
-      "line": 69,
+      "line": 72,
       "signature": "8b9e6e1cd46879a85c94cc0073982a0f8586a0f20e53b37bd4b381219bead56c",
       "verdict": "E",
       "reason": "Stores numerical solver tensors and explicit symbolic spec assumptions; identifiers are encoded reversibly with storage_key. No Species/Molecule graph or inferred molecular name is exported."

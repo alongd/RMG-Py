@@ -37,7 +37,10 @@ from urllib.parse import quote, unquote
 import h5py
 import numpy as np
 
-from rmgpy.tools.eedf.schema import _canonical_json, _content_hash, _file_hash, SpecError, FingerprintMismatch
+from rmgpy.tools.eedf.schema import (
+    _canonical_json, _content_hash, _file_hash, _artifact_provider_kind,
+    SpecError, FingerprintMismatch,
+)
 
 NUMERIC = ('u', 'EN_Td', 'k_ine', 'k_sup', 'channel_power', 'attachment_energy_eV',
            'target_fractions', 'product_fractions', 'rate_floors', 'below_floor',
@@ -138,6 +141,7 @@ def _write_artifact(root, manifest, branches, held_out, *, extra_files=None):
     """Write an immutable content-addressed artifact; return its directory."""
     manifest, branches, held_out, extra_files = copy.deepcopy(
         (manifest, branches, held_out, extra_files))
+    manifest['provider_kind'] = _artifact_provider_kind(manifest)
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     for rows in list(branches.values()) + ([held_out] if held_out else []):
@@ -152,6 +156,7 @@ def _write_artifact(root, manifest, branches, held_out, *, extra_files=None):
         path = destination / 'table.h5'
         with h5py.File(path, 'w') as h5:
             h5.attrs['schema_version'] = manifest['schema_version']
+            h5.attrs['provider_kind'] = manifest['provider_kind']
             h5.attrs['fingerprint'] = manifest['fingerprint']
             h5.attrs['qualification_sha256'] = _content_hash({
                 key: manifest.get(key) for key in (

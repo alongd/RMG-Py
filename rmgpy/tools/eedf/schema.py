@@ -54,6 +54,24 @@ class SpecError(EEDFError):
     """An incomplete or inconsistent generation specification."""
 
 
+def _provider_kind(value):
+    """Validate the literal provider name without importing a row generator."""
+    if not isinstance(value, str) or value not in ('loki-table', 'maxwellian-table'):
+        raise FingerprintMismatch('unknown EEDF provider kind')
+    return value
+
+
+def _artifact_provider_kind(manifest):
+    """Old untagged artifacts are LoKI only; comparator identity is explicit."""
+    kind = _provider_kind(manifest.get('provider_kind', 'loki-table'))
+    inputs = manifest.get('row_inputs', {})
+    if 'provider_kind' in inputs and inputs['provider_kind'] != kind:
+        raise FingerprintMismatch('provider kind differs from row inputs')
+    if kind == 'maxwellian-table' and inputs.get('provider_kind') != kind:
+        raise FingerprintMismatch('comparator provider kind missing from row inputs')
+    return kind
+
+
 def _canonical_json(value):
     """Serialize manifest values independently of dictionary order."""
     value = copy.deepcopy(value)

@@ -289,7 +289,8 @@ def _reconcile_off_centre_after_axis_drop(spec, removed):
 
 def _manifest(spec, driver, channel_map, screen_results, scans, row, command_line):
     inputs = _model_inputs(spec, channel_map)
-    return {'schema_version': 1, 'row_inputs': inputs, 'fingerprint': _content_hash(inputs),
+    return {'schema_version': 1, 'provider_kind': 'loki-table',
+            'row_inputs': inputs, 'fingerprint': _content_hash(inputs),
             'qualification_setup_sha256': inputs['qualification_setup_sha256'],
             'axes': spec['axes'], 'energy_eV': row['energy_eV'].tolist(),
             'energy_edges_eV': row['energy_edges_eV'].tolist(), 'envelopes': spec['envelopes'],

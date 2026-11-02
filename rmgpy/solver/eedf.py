@@ -48,7 +48,7 @@ from rmgpy.tools.eedf.artifact import _storage_items, _validate_storage
 from rmgpy.tools.eedf._ownership import _detached_copy
 from rmgpy.tools.eedf.schema import (
     EEDFError, FingerprintMismatch, _check_model, _content_hash,
-    _interpolant_identity,
+    _interpolant_identity, _provider_kind, _artifact_provider_kind,
 )
 
 
@@ -314,13 +314,15 @@ class EEDFTable:
         return copy.deepcopy(self._t10_interpolation)
 
     @classmethod
-    def load(cls, path, current_model, *, artifact_sha256, require_accepted=True):
+    def load(cls, path, current_model, *, artifact_sha256, require_accepted=True,
+             provider_kind='loki-table'):
         """Check provenance, physical inputs, implementation, and file bytes.
 
         ``require_accepted=False`` is reserved for offline qualification;
         ordinary loads refuse unsuccessful independent held-out verdicts."""
-        path, current_model, artifact_sha256, require_accepted = copy.deepcopy(
-            (path, current_model, artifact_sha256, require_accepted))
+        path, current_model, artifact_sha256, require_accepted, provider_kind = copy.deepcopy(
+            (path, current_model, artifact_sha256, require_accepted, provider_kind))
+        provider_kind = _provider_kind(provider_kind)
         require_accepted = _plain_bool(
             require_accepted, 'require_accepted', FingerprintMismatch)
         if not isinstance(artifact_sha256, str):
@@ -334,6 +336,8 @@ class EEDFTable:
                 manifest = json.load(stream)
         except FileNotFoundError as error:
             raise FingerprintMismatch('incomplete artifact: missing manifest') from error
+        if _artifact_provider_kind(manifest) != provider_kind:
+            raise FingerprintMismatch('artifact provider kind differs from requested provider')
         results = manifest.get('held_out_verdicts', [])
         legacy_held_out_passed = bool(results) and all(
             result.get('passed') is True and bool(result.get('checks')) and
@@ -395,6 +399,14 @@ class EEDFTable:
             raise FingerprintMismatch('branch certification keys')
         with h5py.File(io.BytesIO(contents), 'r') as h5:
             _validate_storage(h5)
+            stored_kind = h5.attrs.get('provider_kind')
+            if stored_kind is None:
+                # Only genuinely historical artifacts lack both tags. Removing
+                # one tag from a new artifact cannot invoke legacy compatibility.
+                if 'provider_kind' in manifest or provider_kind != 'loki-table':
+                    raise FingerprintMismatch('missing HDF5 provider kind')
+            elif stored_kind != provider_kind or manifest.get('provider_kind') != stored_kind:
+                raise FingerprintMismatch('HDF5 provider kind differs from manifest')
             if h5.attrs['branch_certification_sha256'] != _content_hash(table._branch_certification):
                 raise FingerprintMismatch('branch certification')
             if h5.attrs['qualification_sha256'] != _content_hash({
