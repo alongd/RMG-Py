@@ -7445,6 +7445,60 @@ class TestAllowUnpairedReferenceStateKnobPlumb:
         assert "allow_unpaired_reference_state=allow_unpaired_reference_state" in src
 
 
+class TestSimulateFirstInitTolerances:
+    """I-290: HybridPolymerReactor.simulate builds its engine through
+    initialize_model(**kwargs), and those kwargs carry simulator_settings, not
+    atol/rtol. The first engine setup must still run at the deck's
+    tolerances, the same ones the engine's own simulate() re-init reads
+    (base.pyx), never at initialize_model's library defaults."""
+
+    def test_first_initialize_model_uses_deck_tolerances(self, monkeypatch):
+        from rmgpy.quantity import Quantity
+        from rmgpy.rmg.polymer_input import HybridPolymerReactor, PolymerPhase
+        from rmgpy.rmg.settings import ModelSettings, SimulatorSettings
+        from rmgpy.thermo import NASA, NASAPolynomial
+        a = _spc("CCCC", "A")
+        a.thermo = NASA(polynomials=[NASAPolynomial(
+            coeffs=[4.0, 0, 0, 0, 0, -1000.0, 5.0], Tmin=(200, "K"), Tmax=(6000, "K"))],
+            Tmin=(200, "K"), Tmax=(6000, "K"))
+        phase = PolymerPhase(density=Quantity(1000.0, "kg/m^3"),
+                             initial_moments={}, initial_explicit={a: 1.0},
+                             pools=[], mass_transfer=[])
+        reactor = HybridPolymerReactor(
+            temperature=(800.0, "K"), pressure=(1.0e5, "Pa"),
+            initialMoles={a: 1.0}, polymerPhase=phase,
+            terminationTime=(1.0e-6, "s"))
+        seen = []
+        original = HybridPolymerReactor.initialize_model
+
+        def spy(self, *args, **kwargs):
+            out = original(self, *args, **kwargs)
+            seen.append((dict(kwargs), np.asarray(self.solver.atol_array).copy(),
+                         np.asarray(self.solver.rtol_array).copy()))
+            return out
+
+        monkeypatch.setattr(HybridPolymerReactor, "initialize_model", spy)
+        # deck values distinct from every initialize_model default
+        deck = SimulatorSettings(atol=1e-20, rtol=1e-5, sens_atol=1e-7, sens_rtol=1e-3)
+        ms = ModelSettings(tol_keep_in_edge=0.0, tol_move_to_core=1e3,
+                           tol_interrupt_simulation=1e8)
+        reactor.simulate(core_species=[a], core_reactions=[], edge_species=[],
+                         edge_reactions=[], surface_species=[], surface_reactions=[],
+                         pdep_networks=[], model_settings=ms, simulator_settings=deck)
+        assert len(seen) == 1   # the rebuild path actually ran
+        kwargs, atol_first, rtol_first = seen[0]
+        assert kwargs.get("atol") == 1e-20
+        assert kwargs.get("rtol") == 1e-5
+        assert kwargs.get("sens_atol") == 1e-7
+        assert kwargs.get("sens_rtol") == 1e-3
+        np.testing.assert_array_equal(atol_first, [1e-20])
+        np.testing.assert_array_equal(rtol_first, [1e-5])
+        # the first setup equals the engine's own re-init (base.pyx reads the
+        # same four fields): drift between the two copies fails here
+        np.testing.assert_array_equal(atol_first, np.asarray(reactor.solver.atol_array))
+        np.testing.assert_array_equal(rtol_first, np.asarray(reactor.solver.rtol_array))
+
+
 class TestQssaKoutFloorPlumb:
     """Codex round-22 P1: the deck's filterThreshold must actually reach
     the census-only QSSA k_out policy in PRODUCTION construction --

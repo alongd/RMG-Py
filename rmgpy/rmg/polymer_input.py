@@ -248,7 +248,16 @@ class HybridPolymerReactor(ReactionSystem):
         if (self.solver is None or
                 self.solver.num_core_species != n_core or
                 self.solver.num_core_reactions != n_rxn):
-            self.initialize_model(core_species, core_reactions, edge_species, edge_reactions, **kwargs)
+            # kwargs carry simulator_settings, not atol/rtol: thread the deck's
+            # tolerances (the four fields base.pyx simulate() re-reads) so the
+            # first setup never runs at initialize_model's library defaults.
+            init_kwargs = dict(kwargs)
+            simulator_settings = kwargs.get('simulator_settings')
+            if simulator_settings is not None:
+                init_kwargs.update(atol=simulator_settings.atol, rtol=simulator_settings.rtol,
+                                   sens_atol=simulator_settings.sens_atol,
+                                   sens_rtol=simulator_settings.sens_rtol)
+            self.initialize_model(core_species, core_reactions, edge_species, edge_reactions, **init_kwargs)
         result = self.solver.simulate(core_species, core_reactions, edge_species, edge_reactions, **kwargs)
 
         # Sync threshold arrays back from solver so RMG main can read them
