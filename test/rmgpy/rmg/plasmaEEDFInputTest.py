@@ -292,6 +292,7 @@ def test_real_constructor_save_read_round_trip_uses_deck_relative_table(tmp_path
     saved = tmp_path / 'saved.py'
     inp.save_input_file(str(saved), rmg1)
     text = saved.read_text()
+    assert text.startswith('# RMG diagnostic mode: EEDF energy-balance engineering intermediate\n')
     assert 'electronKinetics' in text
     assert 'initialReducedField' in text
     assert 'electronTemperature' not in text
@@ -313,7 +314,10 @@ def test_maxwellian_declaration_round_trips_with_comparator_label(tmp_path):
     declaration['provider'] = 'maxwellian-table'
     declaration.pop('operatingBranch', None)
     declaration['branch'] = 'maxwellian'
-    rmg = _read(tmp_path, _eedf_block(electron_kinetics=declaration))
+    rmg = _read(tmp_path, "database(thermoLibraries=[], reactionLibraries=[], seedMechanisms=[], "
+                "kineticsFamilies=[])\n" + _eedf_block(electron_kinetics=declaration)
+                + "simulator(atol=1e-16, rtol=1e-8)\n"
+                  "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)\n")
     reactor = rmg.reaction_systems[0]
     assert reactor.electron_kinetics['provider'] == 'maxwellian-table'
     assert reactor.maxwellian_comparator

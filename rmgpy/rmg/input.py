@@ -3459,7 +3459,9 @@ def save_input_file(path, rmg):
 
     # Render the complete deck before opening the destination. Any validation or
     # serialization refusal must leave an existing input file untouched.
+    from rmgpy.diagnostic_mode import comment_block
     f = io.StringIO()
+    f.write(comment_block(rmg, '#'))
 
     # Databases
     f.write('database(\n')

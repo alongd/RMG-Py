@@ -22623,7 +22623,7 @@
       "line": 3091
     },
     "rmgpy/rmg/input.py:save_input_file": {
-      "source_sha256": "63c128d9cc6ca6161d8ebbe5984153588c051aaf3c9562d45828345652ae5e21",
+      "source_sha256": "bde695c6788d06ad45288cf00e92274d95c6e980e046550216afab44d7e72a59",
       "verdict": "carried",
       "reason": "The existing supported header-free declaration keeps its original graph and vibrationalManifold DSL line by stripping the marker only from the serialization copy; explicit resolved input remains refused.",
       "evidence": [
