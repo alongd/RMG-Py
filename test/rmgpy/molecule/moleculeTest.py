@@ -34,10 +34,43 @@ from rmgpy.molecule.group import Group, ActionError
 from rmgpy.molecule.molecule import Atom, Bond, Molecule
 import pickle
 import pytest
+from copy import deepcopy
 
 
 class PickleMoleculeSubclass(Molecule):
     pass
+
+
+def test_atom_props_survive_copy_and_pickle_routes():
+    from rmgpy.species import Species
+
+    molecule = Molecule(smiles='C')
+    atom = molecule.atoms[0]
+    atom.props = {'inRing': True, 'nested': [3]}
+
+    copied_atom = atom.copy()
+    deepcopied_atom = deepcopy(atom)
+    pickled_atom = pickle.loads(pickle.dumps(atom))
+    copied_molecule_atom = molecule.copy(deep=True).atoms[0]
+    pickled_molecule_atom = pickle.loads(pickle.dumps(molecule)).atoms[0]
+    pickled_species_atom = pickle.loads(pickle.dumps(Species(molecule=[molecule]))).molecule[0].atoms[0]
+
+    for restored in (copied_atom, deepcopied_atom, pickled_atom, copied_molecule_atom,
+                     pickled_molecule_atom, pickled_species_atom):
+        assert restored.props == {'inRing': True, 'nested': [3]}
+        assert restored.props is not atom.props
+        restored.props['nested'].append(4)
+        assert atom.props == {'inRing': True, 'nested': [3]}
+
+
+def test_atom_unpickle_without_props_state_uses_empty_default():
+    atom = Atom(element=get_element('C'))
+    factory, args, state = atom.__reduce__()
+    legacy_atom = factory(*args)
+    legacy_state = dict(state)
+    legacy_state.pop('props', None)
+    legacy_atom.__setstate__(legacy_state)
+    assert legacy_atom.props == {}
 
 
 class StatefulMoleculeSubclass(Molecule):

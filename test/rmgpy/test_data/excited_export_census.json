@@ -2010,7 +2010,7 @@
     "rmgpy/molecule/molecule.py:Molecule.__init__": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.__init__",
-      "line": 1047,
+      "line": 1049,
       "signature": "3b534d544a76e0c42ae9a8f748fddf6f385ed0a63bd105d7a5de132675b57b4a",
       "verdict": "R",
       "reason": "Molecular reconstruction keeps explicit electronic_state and vibrational_level constructor declarations, validating them and restoring them after SMILES/InChI readers replace structure. This preserves state during repr/archive reconstruction.",
@@ -2034,7 +2034,7 @@
     "rmgpy/molecule/molecule.py:Molecule.__repr__": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.__repr__",
-      "line": 1123,
+      "line": 1125,
       "signature": "fa39afa1d1b8e4d22a96d93225880a448174d45f676d1523b572ae258a23baf1",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/molecule/molecule.py:Molecule.__repr__]",
@@ -2056,7 +2056,7 @@
     "rmgpy/molecule/molecule.py:Molecule.from_adjacency_list": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.from_adjacency_list",
-      "line": 2130,
+      "line": 2132,
       "signature": "4c528ded058c27e869ccf30319fe3687c8f40da614e0a6be5ef28eb9d4121afe",
       "verdict": "R",
       "reason": "Adjacency reconstruction parses and validates both state headers, retains the molecular graph/state and invokes require_electron_state_allowed so a serialized electron cannot acquire resolved headers.",
@@ -3654,7 +3654,7 @@
       "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.draw",
-      "line": 2062,
+      "line": 2064,
       "signature": "85b6c8537a4eddc85a9a2e5f98fec25d8e56226e6e4472fb839913732a8b445f",
       "manifold": {
         "verdict": "refused",
@@ -3673,7 +3673,7 @@
       "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule._repr_png_",
-      "line": 2078,
+      "line": 2080,
       "signature": "cd30bbf5f8290f6965934953fdc12a6c19afd8c83f145746b2492f3445fe798b",
       "manifold": {
         "verdict": "refused",
@@ -4558,7 +4558,7 @@
     "rmgpy/molecule/molecule.py:Molecule.get_labeled_atoms": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.get_labeled_atoms",
-      "line": 1768,
+      "line": 1770,
       "signature": "dd54f10794c635f974530e848f1ca5d2a7bd27a42676e752e41f5fb86568dce6",
       "reason": "Internal atom labels.",
       "verdict": "E"
@@ -4566,7 +4566,7 @@
     "rmgpy/molecule/molecule.py:Molecule.get_all_labeled_atoms": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.get_all_labeled_atoms",
-      "line": 1779,
+      "line": 1781,
       "signature": "a8c4d15a14467d937be6c14f032d694ff319c2dae6be8884c742c4cce093d226",
       "reason": "Internal atom labels.",
       "verdict": "E"
@@ -4574,7 +4574,7 @@
     "rmgpy/molecule/molecule.py:Molecule.from_smiles": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.from_smiles",
-      "line": 2110,
+      "line": 2112,
       "signature": "2630f519c7a6b8f28c8c2b4fba805c8497aec137455fb4bdea371eb55b9a16b2",
       "reason": "Explicit SMILES constructor, not saved-species reload.",
       "verdict": "E"
@@ -4582,7 +4582,7 @@
     "rmgpy/molecule/molecule.py:Molecule.to_group": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.to_group",
-      "line": 2764,
+      "line": 2766,
       "signature": "1df5289fcceefe3716064ad3e671303e4fd97d0056d68203b20ed90e82c14bf7",
       "reason": "Internal pattern conversion.",
       "verdict": "E"
@@ -4590,7 +4590,7 @@
     "rmgpy/molecule/molecule.py:Molecule.get_desorbed_molecules": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.get_desorbed_molecules",
-      "line": 3322,
+      "line": 3324,
       "signature": "8a7faec5d005a727c72cee09f7a8bdf22081002d6a02e6f42e139db8550cd008",
       "reason": "Internal graph transformation.",
       "verdict": "E"

@@ -84,6 +84,16 @@ class TestGroupAtom:
             lone_pairs=[0],
         )
 
+    def test_props_survive_copy_and_pickle(self):
+        self.atom.props = {'inRing': True, 'nested': [3]}
+        copied = self.atom.copy()
+        restored = pickle.loads(pickle.dumps(self.atom))
+        for candidate in (copied, restored):
+            assert candidate.props == {'inRing': True, 'nested': [3]}
+            assert candidate.props is not self.atom.props
+            candidate.props['nested'].append(4)
+            assert self.atom.props == {'inRing': True, 'nested': [3]}
+
     def test_apply_action_break_bond(self):
         """
         Test the GroupAtom.apply_action() method for a BREAK_BOND action.

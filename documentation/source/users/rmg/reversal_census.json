@@ -3198,7 +3198,7 @@
   {
     "site": "rmgpy/molecule/molecule.py::Molecule.__eq__::is_isomorphic#1",
     "kind": "direction",
-    "line": 1099,
+    "line": 1101,
     "source": "self.is_isomorphic(other))",
     "verdict": "not-reachable-for-resolved",
     "reason": "The receiver is a species, molecule, group or graph (including species Cantera conversion), not a Reaction; it cannot match opposite channels or compute an equilibrium reverse rate.",
@@ -3209,7 +3209,7 @@
   {
     "site": "rmgpy/molecule/molecule.py::Molecule.is_isomorphic::is_isomorphic#1",
     "kind": "direction",
-    "line": 1857,
+    "line": 1859,
     "source": "result = Graph.is_isomorphic(self, other, initial_map, generate_initial_map, save_order=save_order, strict=strict)",
     "verdict": "not-reachable-for-resolved",
     "reason": "The receiver is a species, molecule, group or graph (including species Cantera conversion), not a Reaction; it cannot match opposite channels or compute an equilibrium reverse rate.",

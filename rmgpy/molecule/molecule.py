@@ -160,6 +160,7 @@ class Atom(Vertex):
             'lone_pairs': self.lone_pairs,
             'site': self.site,
             'morphology': self.morphology,
+            'props': self.props,
         }
         if self.element.isotope == -1:
             element2pickle = self.element.symbol
@@ -180,6 +181,7 @@ class Atom(Vertex):
         self.lone_pairs = d['lone_pairs']
         self.site = d['site']
         self.morphology = d['morphology']
+        self.props = d.get('props', self.props)
 
     def __hash__(self):
         """
