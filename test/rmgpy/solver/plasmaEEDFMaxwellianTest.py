@@ -108,6 +108,23 @@ def test_maxwellian_rates_energy_equation_and_shared_provider(tmp_path):
     assert terms['T10 interpolation qualification']['status'] == 'NOT_APPLICABLE'
     assert reactor.energy_budget['EN_Td'] is None
     assert reactor.energy_budget['reference_EN_Td'] == np.e
+    # The base initializer supplies a derivative guess with the opposite sign
+    # to this residual. Check physical closure using actual accepted derivatives,
+    # without replacing the solver's derivative by the residual's energy identity.
+    for system in (reactor, loki):
+        system.step(1e-14)
+        assert system.t > 0.
+        accepted = system.eedf_row
+        derivative = np.array(system.dydt)
+        actual_storage = constants.Na * constants.e * (
+            accepted.swarm['mean_energy_eV'] * derivative[system.electron_index]
+            + system.y[system.electron_index] * accepted.denergy_du * derivative[system.te_index])
+        budget = system.energy_budget
+        actual_losses = sum(budget[key] for key in
+                            ('Q_inelastic', 'Q_elastic', 'Q_wall_electron', 'Q_wall_ion', 'Q_flow'))
+        assert budget['dU_dt'] == pytest.approx(actual_storage, rel=1e-12)
+        assert abs(budget['P_abs'] - actual_losses - actual_storage) / abs(budget['P_abs']) < 1e-8
+        assert budget['A6a_passed']
     assert reactor.energy_budget['A6a_passed']
     assert 'MODEL-FORM COMPARATOR: Maxwellian-table energy-balance diagnostic' in str(terms)
     assert 'EEDF energy-balance engineering intermediate' not in str(terms)
