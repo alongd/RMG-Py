@@ -8,8 +8,9 @@ recorded branch.  See :ref:`plasmaoperatingbranch` for the input option that use
 Native worker ownership
 -----------------------
 
-Worker scans require Linux x86_64, glibc 2.39, CPython 3.9.x, lock-free native
-atomics and a successful per-worker watchdog handshake. Unsupported platforms,
+Worker scans require Linux x86_64, a glibc version in the native platform facts'
+``qualified_glibc`` set, CPython 3.9.x, lock-free native atomics and a successful
+per-worker watchdog handshake. Unsupported platforms,
 multiprocessing modes or native startup failures raise ``NativeWorkerUnsupported``
 or ``NativeWorkerStartupError``; there is no fallback lifetime mechanism. The
 CPython patch and compiler versions are recorded in native startup diagnostics.

@@ -38,6 +38,45 @@ import pytest
 PROBE = Path(__file__).with_name('_native_protocol_probe.py')
 
 
+def test_native_platform_qualified_set():
+    from rmgpy.tools.eedf import _native_context as context
+
+    facts = context.native.check_platform()
+    assert facts['qualified_glibc'] == ('2.39', '2.43')
+    assert facts == context.native._test_platform(facts['glibc'])
+
+
+@pytest.mark.parametrize('version', ['2.39', '2.43'])
+def test_native_platform_admits_each_qualified_version(monkeypatch, version):
+    from rmgpy.tools.eedf import _native_context as context
+
+    facts = context.native._test_platform(version)
+    assert facts['glibc'] == version
+    assert facts['supported'] is True
+    monkeypatch.setattr(context.native, 'check_platform', lambda: facts)
+    assert context.require_supported() == facts
+
+
+@pytest.mark.parametrize('version', ['2.40', '', '2.43.1', '2.43garbage', 'glibc 2.43', ' 2.43', 'not-glibc'])
+def test_native_platform_refuses_unqualified_versions(monkeypatch, version):
+    from rmgpy.tools.eedf import _native_context as context
+
+    facts = context.native._test_platform(version)
+    assert facts['glibc'] == version
+    assert facts['supported'] is False
+    monkeypatch.setattr(context.native, 'check_platform', lambda: facts)
+    with pytest.raises(context.NativeWorkerUnsupported) as error:
+        context.require_supported()
+    assert 'glibc in {!r}'.format(facts['qualified_glibc']) in str(error.value)
+
+
+def test_native_platform_rejects_embedded_null():
+    from rmgpy.tools.eedf import _native_context as context
+
+    with pytest.raises(ValueError, match='null'):
+        context.native._test_platform('2.43\x00unqualified')
+
+
 @pytest.mark.parametrize('mode', [
     'blocking-hook', 'gil', 'healthy', 'completion', 'race', 'expiry',
     'bootstrap-finalizer', 'external-reap', 'reap-cache', 'accept-before-reap',

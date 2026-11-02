@@ -991,8 +991,9 @@ def _reap_worker(process, *, terminate=False):
 def _integrate_many(adapter, seeds, processes, timeout, power=None, lease_s=RUN_LEASE):
     """Integrate in order with native worker lifetime and exact exit attribution.
 
-    Worker mode requires qualified Linux x86_64/glibc 2.39/CPython 3.9, lock-free
-    native records and a successful watchdog handshake. There is no fallback.
+    Worker mode requires Linux x86_64, a glibc version in the native platform
+    facts' qualified_glibc set, CPython 3.9, lock-free native records and a
+    successful watchdog handshake. There is no fallback.
     Only the calling scan thread renews its finite ownership lease. A long
     honest callback can expire it; ScanLeaseExpired is a lifecycle cancellation,
     never a scientific failure. Raise lease_s for known long owner operations.
@@ -1207,8 +1208,9 @@ def scan(adapter, u_limits, output, *, u_steps=12, electron_density_decades=5,
     (``matchable_issue``).
 
     With ``processes`` above one or a ``timeout``, workers require the qualified
-    native fork launcher (Linux x86_64, glibc 2.39, CPython 3.9, lock-free records
-    and a successful watchdog handshake). Unsupported modes raise
+    native fork launcher (Linux x86_64, a glibc version in the native platform
+    facts' qualified_glibc set, CPython 3.9, lock-free records and a successful
+    watchdog handshake). Unsupported modes raise
     ``NativeWorkerUnsupported``; failed admission raises ``NativeWorkerStartupError``.
     There is no legacy fallback. One process without a timeout runs in the caller.
 

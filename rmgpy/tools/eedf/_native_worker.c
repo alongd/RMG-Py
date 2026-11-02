@@ -220,20 +220,43 @@ static void drop_record(PyObject *obj) {
     r->refs--;
     collect(r->owner);
 }
-static PyObject *platform_info(PyObject *self, PyObject *unused) {
+/* One source of truth for qualification, also returned in runtime diagnostics. */
+static const char *const qualified_glibc[] = {"2.39", "2.43"};
+static int glibc_qualified(const char *version) {
+    for (size_t i = 0; i < sizeof(qualified_glibc) / sizeof(*qualified_glibc); i++)
+        if (!strcmp(version, qualified_glibc[i])) return 1;
+    return 0;
+}
+static PyObject *platform_facts(const char *libc) {
     _Atomic uint64_t test64 = 0;
     _Atomic int testint = 0;
     int supported = 0;
-    const char *libc = "not-glibc";
-#ifdef __GLIBC__
-    libc = gnu_get_libc_version();
-#if defined(__linux__) && defined(__x86_64__) && PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION == 9
-    supported = !strcmp(libc, "2.39") && atomic_is_lock_free(&test64) && atomic_is_lock_free(&testint);
+#if defined(__GLIBC__) && defined(__linux__) && defined(__x86_64__) && PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION == 9
+    supported = glibc_qualified(libc) && atomic_is_lock_free(&test64) && atomic_is_lock_free(&testint);
 #endif
-#endif
-    return Py_BuildValue("{s:O,s:s,s:s,s:s,s:i,s:O}", "supported", supported ? Py_True : Py_False,
+    PyObject *versions = PyTuple_New(sizeof(qualified_glibc) / sizeof(*qualified_glibc));
+    if (!versions) return NULL;
+    for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(versions); i++) {
+        PyObject *version = PyUnicode_FromString(qualified_glibc[i]);
+        if (!version) { Py_DECREF(versions); return NULL; }
+        PyTuple_SET_ITEM(versions, i, version);
+    }
+    return Py_BuildValue("{s:O,s:s,s:s,s:s,s:i,s:O,s:N}", "supported", supported ? Py_True : Py_False,
         "glibc", libc, "python", Py_GetVersion(), "compiler", __VERSION__,
-        "record_abi", RECORD_ABI, "lock_free", atomic_is_lock_free(&test64) && atomic_is_lock_free(&testint) ? Py_True : Py_False);
+        "record_abi", RECORD_ABI, "lock_free", atomic_is_lock_free(&test64) && atomic_is_lock_free(&testint) ? Py_True : Py_False,
+        "qualified_glibc", versions);
+}
+static PyObject *platform_info(PyObject *self, PyObject *unused) {
+#ifdef __GLIBC__
+    return platform_facts(gnu_get_libc_version());
+#else
+    return platform_facts("not-glibc");
+#endif
+}
+static PyObject *test_platform(PyObject *self, PyObject *args) {
+    const char *version;
+    if (!PyArg_ParseTuple(args, "s", &version)) return NULL;
+    return platform_facts(version);
 }
 static PyObject *new_owner(PyObject *self, PyObject *args) {
     double seconds; int tracing = 0; uint64_t lease;
@@ -578,6 +601,7 @@ static PyObject *hold_gil(PyObject *self, PyObject *args) {
 }
 static PyMethodDef methods[] = {
     {"check_platform", platform_info, METH_NOARGS, "Native runtime qualification facts."},
+    {"_test_platform", test_platform, METH_VARARGS, "Private qualification facts for an injected libc version."},
     {"owner", new_owner, METH_VARARGS, "Create a caller-thread ownership ledger."},
     {"record", new_record, METH_O, "Link a durable record before any fork."},
     {"fork", native_fork, METH_O, "Publish PID and admit watchdog before Python repair/hooks."},

@@ -87,8 +87,9 @@ def require_supported():
             or sys.implementation.name != 'cpython' or sys.version_info[:2] != (3, 9)
             or not facts['supported'] or facts['record_abi'] != 1
             or multiprocessing.get_context().get_start_method() != 'fork'):
-        raise NativeWorkerUnsupported('requires Linux x86_64, glibc 2.39, CPython 3.9, '
-                                      'lock-free ABI 1 and fork context; observed {!r}'.format(facts))
+        raise NativeWorkerUnsupported('requires Linux x86_64, glibc in {!r}, CPython 3.9, '
+                                      'lock-free ABI 1 and fork context; observed {!r}'.format(
+                                          facts['qualified_glibc'], facts))
     return facts
 
 
