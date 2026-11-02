@@ -24,6 +24,10 @@ def source_data(temperatures=(1., 1.5, 2.), max_energy=30., cells=3000):
     energy = (edges[:-1] + edges[1:]) / 2
     axes = {'u': [float(i) for i in range(len(temperatures))]}
     inputs = {'axes': axes, 'Tg_K': 298.15, 'P_Pa': 666.61184,
+              'gas_properties': {'fraction': ['Ar = 1.0']},
+              'state_properties': {'population': ['Ar(1S0) = 1.0']},
+              'envelopes': {},
+              'held_out': {'cell_midpoints': True, 'seed': 337, 'lhs_count': 2},
               'interpolant': {'version': 'historical', 'source_sha256': 'historical'},
               'solver_options': {'growthModelType': 'temporal',
                                  'ionizationOperatorType': 'usingSDCS',
@@ -32,7 +36,14 @@ def source_data(temperatures=(1., 1.5, 2.), max_energy=30., cells=3000):
                 'row_inputs': inputs, 'fingerprint': _content_hash(inputs),
                 'axes': axes, 'energy_eV': energy.tolist(), 'energy_edges_eV': edges.tolist(),
                 'channel_map': channels, 'branch_certification': {'branch_0': 'uncertified'},
-                'tolerances': {'H2': {'rtol': .001, 'atol': 0}},
+                'tolerances': {
+                    'H1': {'rtol': .0005, 'atol': .002},
+                    'H2': {'rtol': .001, 'atol': 0},
+                    'H3': {'rtol': .005, 'atol': 0},
+                    'H4': {'rtol': .005, 'atol': 0, 'total_rtol': .001},
+                    'F0': {'norm': 'weighted_L1', 'atol': .005},
+                    'fingerprint_rtol': 1e-9,
+                    'u_condition': {'min_abs_denergy_du': 1e-6, 'min_scaled_denergy_du': 1e-6}},
                 'floors': {'rate_absolute': 1e-40}, 'envelopes': {}, 'accepted': False}
     rows = []
     for i, temperature in enumerate(temperatures):
@@ -213,3 +224,168 @@ def test_source_hash_and_parse_use_one_read(tmp_path, monkeypatch):
     assert manifest['artifact_sha256'] == path.name
     with pytest.raises(FingerprintMismatch, match='SHA-256'):
         _source_snapshot(path, artifact_sha256=path.name, branch_id='branch_0')
+
+
+def generated_comparator(tmp_path, temperatures=(2., 2.02, 2.04)):
+    from rmgpy.tools.eedf.maxwellian import generate_maxwellian
+    manifest, rows = source_data(temperatures)
+    source = _write_artifact(tmp_path / 'source', manifest, {'branch_0': rows}, [])
+    path = generate_maxwellian(source, tmp_path / 'comparator', artifact_sha256=source.name,
+                               branch_id='branch_0')
+    return source, path, json.loads((path / 'manifest.json').read_text())
+
+
+def test_generated_comparator_uses_shared_runtime_interpolation(tmp_path):
+    from rmgpy.solver.eedf import EEDFTable
+    source, path, manifest = generated_comparator(tmp_path)
+    table = EEDFTable.load(path, manifest['row_inputs'], artifact_sha256=path.name,
+                           provider_kind='maxwellian-table')
+    assert table.provider_kind == 'maxwellian-table'
+    assert manifest['accepted'] is False
+    assert manifest['comparator']['source']['artifact_sha256'] == source.name
+    assert manifest['comparator']['source']['retained_indices'] == [0, 1, 2]
+    numerical = manifest['comparator']['numerical_validation']
+    assert numerical['passed'] is True and numerical['held_out_count'] >= 2
+    assert len(numerical['verdicts']) == numerical['held_out_count']
+    for point in manifest['held_out']:
+        row = table.row(point['u'], {})
+        assert row.EN_Td is None
+        assert row.reference_EN_Td == np.exp(point['u'])
+        assert 'field' not in row.power_groups
+        assert 'field' not in row.derivatives['u']['power_groups']
+        assert row.a6b_runtime['status'] == row.a6b_source['status'] == 'NOT_APPLICABLE'
+        assert row.t10_interpolation['status'] == 'NOT_APPLICABLE'
+        assert not row.converged and row.iteration_count == -1
+        assert row.denergy_du > 0
+        assert all(row.k_ine > 0)
+        assert np.sum(row.f0 * np.sqrt(row.energy_eV) * np.diff(row.energy_edges_eV)) == pytest.approx(1.)
+        temperature = 2. + .02 * point['u']
+        for j, channel in enumerate(manifest['channel_map']):
+            assert row.k_ine[j] == pytest.approx(
+                independent_rate(channel, temperature, row.energy_eV, row.energy_edges_eV), rel=1e-4, abs=0)
+    for candidate, kind in [(path, 'loki-table'), (source, 'maxwellian-table')]:
+        with pytest.raises(FingerprintMismatch, match='provider kind'):
+            EEDFTable.load(candidate, manifest['row_inputs'], artifact_sha256=candidate.name, provider_kind=kind)
+    public = table.manifest
+    public['comparator']['numerical_validation']['passed'] = False
+    assert table.manifest['comparator']['numerical_validation']['passed'] is True
+
+
+@pytest.mark.parametrize('field', ['source', 'applicability', 'numerical', 'accepted', 'label', 'reason'])
+def test_comparator_metadata_tampering_refuses_even_offline_load(tmp_path, field):
+    from rmgpy.solver.eedf import EEDFTable
+    _, path, manifest = generated_comparator(tmp_path)
+    inputs = manifest['row_inputs']
+    metadata = manifest['comparator']
+    if field == 'source':
+        metadata['source']['artifact_sha256'] = '0' * 64
+    elif field == 'applicability':
+        metadata['applicability']['field']['status'] = 'PASS'
+    elif field == 'numerical':
+        metadata['numerical_validation']['passed'] = False
+    elif field == 'accepted':
+        manifest['accepted'] = True
+    elif field == 'label':
+        metadata['label'] = 'EEDF energy-balance engineering intermediate'
+    else:
+        # A structurally valid metadata change must still fail byte binding.
+        metadata['applicability']['field']['reason'] = 'another reason'
+    (path / 'manifest.json').write_text(json.dumps(manifest))
+    with pytest.raises(FingerprintMismatch, match='comparator'):
+        EEDFTable.load(path, inputs, artifact_sha256=path.name,
+                       provider_kind='maxwellian-table', require_accepted=False)
+
+
+def test_generator_explicit_subset_and_no_source_rewrite(tmp_path):
+    from rmgpy.tools.eedf.maxwellian import generate_maxwellian
+    manifest, rows = source_data((2.78, 2.79, 2.80, 3.0))
+    source = _write_artifact(tmp_path / 'source', manifest, {'branch_0': rows}, [])
+    before = [(source / name).read_bytes() for name in ('table.h5', 'manifest.json')]
+    with pytest.raises(EEDFError, match='unresolved Maxwellian mean'):
+        generate_maxwellian(source, tmp_path / 'full', artifact_sha256=source.name, branch_id='branch_0')
+    assert not (tmp_path / 'full').exists()
+    # The steep last source interval affects the near-end PCHIP slope: select
+    # the first two nodes, preserving their source mean coordinate exactly.
+    path = generate_maxwellian(source, tmp_path / 'subset', artifact_sha256=source.name,
+                               branch_id='branch_0', u_start=0, u_stop=1)
+    result = json.loads((path / 'manifest.json').read_text())
+    assert result['axes']['u'] == [0., 1.]
+    assert result['comparator']['source']['excluded_u'] == [2., 3.]
+    assert result['energy_eV'] == manifest['energy_eV']
+    assert result['energy_edges_eV'] == manifest['energy_edges_eV']
+    assert result['channel_map'] == manifest['channel_map']
+    assert before == [(source / name).read_bytes() for name in ('table.h5', 'manifest.json')]
+    for start, stop in [(1, None), (True, 2), (2, 1), (0, 9)]:
+        with pytest.raises(EEDFError, match='select'):
+            generate_maxwellian(source, tmp_path / 'invalid', artifact_sha256=source.name,
+                                branch_id='branch_0', u_start=start, u_stop=stop)
+
+
+def test_generator_refuses_failed_interpolation_without_publication(tmp_path):
+    from rmgpy.tools.eedf.maxwellian import generate_maxwellian
+    source, _, _ = native_artifact(tmp_path / 'source')
+    with pytest.raises(EEDFError, match='comparator interpolation failed'):
+        generate_maxwellian(source, tmp_path / 'bad', artifact_sha256=source.name, branch_id='branch_0')
+    assert not (tmp_path / 'bad').exists()
+
+
+def test_generator_cli(tmp_path, capsys):
+    from rmgpy.tools.eedf.maxwellian import main
+    manifest, rows = source_data((2., 2.02, 2.04))
+    source = _write_artifact(tmp_path / 'source', manifest, {'branch_0': rows}, [])
+    main([str(source), str(tmp_path / 'output'), '--artifact-sha256', source.name,
+          '--branch-id', 'branch_0', '--u-start', '0', '--u-stop', '2'])
+    output = capsys.readouterr().out.splitlines()
+    assert output[0] == 'MODEL-FORM COMPARATOR: Maxwellian-table energy-balance diagnostic'
+    assert (Path(output[1]) / 'table.h5').is_file()
+
+
+def test_held_out_populations_resolved_from_composition_inputs(tmp_path):
+    import copy
+    from rmgpy.solver.eedf import EEDFTable
+    from rmgpy.tools.eedf.maxwellian import generate_maxwellian
+    manifest, native = source_data((2., 2.02, 2.04))
+    manifest['axes']['x'] = [.98, 1.]
+    manifest['row_inputs']['state_properties']['population'] = ['Ar(1S0) = {x}']
+    for channel in manifest['channel_map']:
+        channel['target_fraction'] = '{x}'
+    manifest['fingerprint'] = _content_hash(manifest['row_inputs'])
+    rows = np.empty((3, 2), dtype=object)
+    for i, j in np.ndindex(rows.shape):
+        fraction = manifest['axes']['x'][j]
+        row = copy.deepcopy(native[i])
+        row.update(composition={'x': fraction}, state_populations={'Ar(1S0)': fraction},
+                   target_fractions=np.full(3, fraction))
+        rows[i, j] = row
+    source = _write_artifact(tmp_path / 'source', manifest, {'branch_0': rows}, [])
+    path = generate_maxwellian(source, tmp_path / 'output', artifact_sha256=source.name, branch_id='branch_0')
+    result = json.loads((path / 'manifest.json').read_text())
+    table = EEDFTable.load(path, result['row_inputs'], artifact_sha256=path.name, provider_kind='maxwellian-table')
+    assert any(point['x'] == .99 for point in result['held_out'])
+    row = table.row(.5, {'x': .99})
+    assert row.target_fractions == pytest.approx([.99, .99, .99])
+    assert row.state_populations['Ar(1S0)'] == pytest.approx(.99)
+    assert row.gas_fractions == {'Ar': 1.}
+
+
+def test_numerical_contract_refuses_vacuous_checks(tmp_path):
+    from rmgpy.tools.eedf.schema import _comparator_metadata
+    _, _, manifest = generated_comparator(tmp_path)
+    manifest['comparator']['numerical_validation']['verdicts'][0]['checks'] = [
+        {'quantity': 'unrelated', 'passed': True, 'max_tolerance_fraction': 0.}]
+    with pytest.raises(FingerprintMismatch, match='numerical quantities'):
+        _comparator_metadata(manifest)
+
+
+def test_repeated_publication_cannot_replace_existing_artifact(tmp_path):
+    from rmgpy.tools.eedf.maxwellian import generate_maxwellian
+    source, path, _ = generated_comparator(tmp_path)
+    before = {name: (path / name).read_bytes() for name in ('table.h5', 'manifest.json')}
+    # HDF5 object timestamps may yield either the same content address or a new
+    # one; neither case permits replacement of the first published artifact.
+    try:
+        again = generate_maxwellian(source, path.parent, artifact_sha256=source.name, branch_id='branch_0')
+        assert again != path
+    except OSError:
+        pass
+    assert before == {name: (path / name).read_bytes() for name in before}

@@ -38,7 +38,7 @@ import h5py
 import numpy as np
 
 from rmgpy.tools.eedf.schema import (
-    _canonical_json, _content_hash, _file_hash, _artifact_provider_kind,
+    _canonical_json, _content_hash, _file_hash, _artifact_provider_kind, _comparator_metadata,
     SpecError, FingerprintMismatch,
 )
 
@@ -142,6 +142,8 @@ def _write_artifact(root, manifest, branches, held_out, *, extra_files=None):
     manifest, branches, held_out, extra_files = copy.deepcopy(
         (manifest, branches, held_out, extra_files))
     manifest['provider_kind'] = _artifact_provider_kind(manifest)
+    comparator = (_comparator_metadata(manifest)
+                  if manifest['provider_kind'] == 'maxwellian-table' else None)
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     for rows in list(branches.values()) + ([held_out] if held_out else []):
@@ -157,6 +159,9 @@ def _write_artifact(root, manifest, branches, held_out, *, extra_files=None):
         with h5py.File(path, 'w') as h5:
             h5.attrs['schema_version'] = manifest['schema_version']
             h5.attrs['provider_kind'] = manifest['provider_kind']
+            if comparator is not None:
+                h5.attrs['comparator_sha256'] = _content_hash(comparator)
+                h5.attrs['diagnostic_mode'] = comparator['label']
             h5.attrs['fingerprint'] = manifest['fingerprint']
             h5.attrs['qualification_sha256'] = _content_hash({
                 key: manifest.get(key) for key in (

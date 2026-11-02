@@ -72,6 +72,79 @@ def _artifact_provider_kind(manifest):
     return kind
 
 
+COMPARATOR_NA = ('branch_scan', 'self_consistency', 'field', 'A6b-source',
+                 'A6b-runtime', 'T10 interpolation qualification', 'terminal_qualification')
+
+
+def _comparator_metadata(manifest):
+    """Validate numerical usability separately from production acceptance.
+
+    This runtime contract contains no generator imports. Its complete return
+    value is bound to the HDF5 bytes by the writer and checked by the loader.
+    """
+    metadata = manifest.get('comparator')
+    if not isinstance(metadata, dict) or set(metadata) != {'source', 'applicability', 'numerical_validation', 'label'}:
+        raise FingerprintMismatch('comparator metadata')
+    if manifest.get('accepted') is not False:
+        raise FingerprintMismatch('comparator cannot carry production acceptance')
+    source = metadata['source']
+    if (not isinstance(source, dict) or source != manifest['row_inputs'].get('comparator_source')
+            or not isinstance(source.get('artifact_sha256'), str)
+            or re.fullmatch('[0-9a-f]{64}', source['artifact_sha256']) is None
+            or not isinstance(source.get('branch_id'), str)
+            or source.get('retained_u') != manifest['axes']['u']
+            or not isinstance(source.get('excluded_u'), list)):
+        raise FingerprintMismatch('comparator source provenance')
+    applicability = metadata['applicability']
+    if not isinstance(applicability, dict) or set(applicability) != set(COMPARATOR_NA):
+        raise FingerprintMismatch('comparator applicability')
+    for name, record in applicability.items():
+        if (not isinstance(record, dict) or set(record) != {'status', 'reason'}
+                or record['status'] != 'NOT_APPLICABLE'
+                or not isinstance(record['reason'], str) or not record['reason']):
+            raise FingerprintMismatch('comparator applicability: ' + name)
+    for name in ('A6b-source', 'A6b-runtime', 'T10 interpolation qualification'):
+        if manifest.get(name) != applicability[name]:
+            raise FingerprintMismatch('comparator production status: ' + name)
+    if (manifest.get('branches') != ['maxwellian']
+            or manifest.get('branch_certification') != {
+                'maxwellian': 'NOT_APPLICABLE: prescribed Maxwellian comparator'}
+            or manifest.get('branch_detection') != applicability['branch_scan']
+            or manifest.get('held_out_verdicts') != []):
+        raise FingerprintMismatch('comparator production branch claims')
+    validation = metadata['numerical_validation']
+    if (not isinstance(validation, dict) or validation.get('passed') is not True
+            or validation.get('training_count') != int(np.prod([len(a) for a in manifest['axes'].values()]))
+            or validation.get('held_out_count') != len(manifest.get('held_out', []))
+            or not manifest.get('held_out')):
+        raise FingerprintMismatch('comparator numerical validation')
+    verdicts = validation.get('verdicts')
+    if not isinstance(verdicts, list) or len(verdicts) != validation['held_out_count']:
+        raise FingerprintMismatch('comparator numerical verdicts')
+    for point, verdict in zip(manifest['held_out'], verdicts):
+        if (verdict.get('point') != point or verdict.get('passed') is not True
+                or not verdict.get('checks')):
+            raise FingerprintMismatch('comparator numerical verdict')
+        quantities = {'mean_energy_eV', 'mobility_N', 'diffusion_N', 'energy_mobility_N',
+                      'energy_diffusion_N', 'k_ine', 'k_sup', 'attachment_energy_eV',
+                      'channel_power', 'collision_loss', 'f0_weighted_L1'}
+        if (len(verdict['checks']) != len(quantities)
+                or {check.get('quantity') for check in verdict['checks']} != quantities):
+            raise FingerprintMismatch('comparator numerical quantities')
+        for check in verdict['checks']:
+            error = check.get('max_tolerance_fraction')
+            if (check.get('passed') is not True or type(error) not in (int, float)
+                    or not np.isfinite(error) or not 0 <= error <= 1):
+                raise FingerprintMismatch('comparator numerical check')
+    resolution = validation.get('max_relative_mean_error')
+    if (type(resolution) not in (int, float) or not np.isfinite(resolution)
+            or not 0 <= resolution <= manifest['tolerances']['H2']['rtol']):
+        raise FingerprintMismatch('comparator mean resolution')
+    if metadata['label'] != 'MODEL-FORM COMPARATOR: Maxwellian-table energy-balance diagnostic':
+        raise FingerprintMismatch('comparator label')
+    return copy.deepcopy(metadata)
+
+
 def _canonical_json(value):
     """Serialize manifest values independently of dictionary order."""
     value = copy.deepcopy(value)

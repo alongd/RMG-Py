@@ -33,6 +33,7 @@ The table returns one consistent row. It neither regenerates artifacts nor
 selects a reactor operating point. Coordinates are u = ln(E/N / 1 Td).
 """
 from dataclasses import dataclass
+from typing import Optional
 import copy
 import itertools
 import io
@@ -48,7 +49,7 @@ from rmgpy.tools.eedf.artifact import _storage_items, _validate_storage
 from rmgpy.tools.eedf._ownership import _detached_copy
 from rmgpy.tools.eedf.schema import (
     EEDFError, FingerprintMismatch, _check_model, _content_hash,
-    _interpolant_identity, _provider_kind, _artifact_provider_kind,
+    _interpolant_identity, _provider_kind, _artifact_provider_kind, _comparator_metadata,
 )
 
 
@@ -243,7 +244,7 @@ class EEDFRow:
     solver does not expose the count. The manifest records this limitation.
     """
     u: float
-    EN_Td: float
+    EN_Td: Optional[float]
     branch_id: str
     composition: dict
     swarm: dict
@@ -269,6 +270,7 @@ class EEDFRow:
     a6b_runtime: dict
     t10_interpolation: dict
     fingerprint: str
+    reference_EN_Td: Optional[float] = None
 
     def _as_dict(self):
         """Mapping for validation against an independent direct solve."""
@@ -282,6 +284,11 @@ class EEDFTable:
     identity, usually constructed with ``model_inputs(spec)``. Database and
     engine SHAs are provenance only and must not appear in that identity.
     """
+
+    @property
+    def provider_kind(self):
+        """The kind checked against the artifact bytes."""
+        return self._provider_kind
 
     @property
     def manifest(self):
@@ -338,6 +345,8 @@ class EEDFTable:
             raise FingerprintMismatch('incomplete artifact: missing manifest') from error
         if _artifact_provider_kind(manifest) != provider_kind:
             raise FingerprintMismatch('artifact provider kind differs from requested provider')
+        comparator = (_comparator_metadata(manifest)
+                      if provider_kind == 'maxwellian-table' else None)
         results = manifest.get('held_out_verdicts', [])
         legacy_held_out_passed = bool(results) and all(
             result.get('passed') is True and bool(result.get('checks')) and
@@ -346,9 +355,9 @@ class EEDFTable:
         t10 = manifest.get('T10 interpolation qualification', {})
         accepted = (manifest.get('accepted') is True and
                     legacy_held_out_passed and t10.get('passed') is True)
-        if require_accepted and not accepted:
+        if comparator is None and require_accepted and not accepted:
             raise FingerprintMismatch('T10 held-out qualification')
-        if require_accepted and any(channel.get('classification') not in ('A', 'B')
+        if comparator is None and require_accepted and any(channel.get('classification') not in ('A', 'B')
                                     for channel in manifest.get('channel_map', [])):
             raise FingerprintMismatch('channel classification is excluded from production')
         required = {'schema_version', 'row_inputs', 'fingerprint', 'axes', 'envelopes',
@@ -384,6 +393,7 @@ class EEDFTable:
         if not artifact_sha256 or digest != artifact_sha256 or digest != manifest['artifact_sha256']:
             raise FingerprintMismatch('HDF5 artifact content SHA-256')
         table = cls()
+        table._provider_kind = provider_kind
         table._manifest, table.path = copy.deepcopy(manifest), path
         table._axis_names = tuple(
             ['u'] + [name for name in manifest['axes'] if name != 'u'])
@@ -407,6 +417,11 @@ class EEDFTable:
                     raise FingerprintMismatch('missing HDF5 provider kind')
             elif stored_kind != provider_kind or manifest.get('provider_kind') != stored_kind:
                 raise FingerprintMismatch('HDF5 provider kind differs from manifest')
+            if comparator is not None:
+                if h5.attrs.get('comparator_sha256') != _content_hash(comparator):
+                    raise FingerprintMismatch('comparator content')
+                if h5.attrs.get('diagnostic_mode') != comparator['label']:
+                    raise FingerprintMismatch('comparator label')
             if h5.attrs['branch_certification_sha256'] != _content_hash(table._branch_certification):
                 raise FingerprintMismatch('branch certification')
             if h5.attrs['qualification_sha256'] != _content_hash({
@@ -449,9 +464,13 @@ class EEDFTable:
             for branch_id in manifest['branches']:
                 table._read_branch(branch_id, stored_branches[branch_id])
             table._check_population_rows(h5)
-        table._a6b_source = table._source_identity_summary()
-        table._t10_interpolation = table._interpolation_qualification_summary()
-        if require_accepted and not table._a6b_source['passed']:
+        if comparator is None:
+            table._a6b_source = table._source_identity_summary()
+            table._t10_interpolation = table._interpolation_qualification_summary()
+        else:
+            table._a6b_source = copy.deepcopy(comparator['applicability']['A6b-source'])
+            table._t10_interpolation = copy.deepcopy(comparator['applicability']['T10 interpolation qualification'])
+        if comparator is None and require_accepted and not table._a6b_source['passed']:
             raise FingerprintMismatch('A6b-source native field-power identity')
         return table
 
@@ -559,6 +578,8 @@ class EEDFTable:
                 for key, dataset in _storage_items(value):
                     values = dataset[...]
                     if name == 'power_groups' and key == 'field':
+                        if self._provider_kind == 'maxwellian-table':
+                            raise FingerprintMismatch('comparator must not store physical field power')
                         self._native_field_power[branch_id] = np.asarray(values)
                         continue
                     if name == 'swarm' and key == 'mobility_N':
@@ -587,7 +608,7 @@ class EEDFTable:
                     raise FingerprintMismatch('native u state mapping')
             elif name != 'iteration_count':
                 append(name, value[...])
-        if branch_id not in self._native_field_power:
+        if self._provider_kind == 'loki-table' and branch_id not in self._native_field_power:
             raise FingerprintMismatch('missing required native field power')
         if branch_id not in self._native_mobility:
             raise FingerprintMismatch('missing required native mobility_N')
@@ -717,25 +738,35 @@ class EEDFTable:
             name: float(interpolate(dimension)[mobility_start])
             for dimension, name in enumerate(self._axis_names[1:], start=1)
         }
-        EN_Td = float(np.exp(u))
-        field_power = field_power_from_mobility(mobility, EN_Td)
-        field_derivatives = _field_power_derivatives(
-            mobility, EN_Td, dmobility_du, dmobility_dcomposition)
-        mappings['power_groups']['field'] = field_power
-        derivatives = {
-            'u': {
-                'swarm': {'mobility_N': dmobility_du},
-                'power_groups': {'field': field_derivatives['u']},
-            },
-            'composition': {
-                name: {
-                    'swarm': {'mobility_N': dmobility_dcomposition[name]},
-                    'power_groups': {
-                        'field': field_derivatives['composition'][name]},
-                }
-                for name in self._axis_names[1:]
-            },
-        }
+        reference_EN_Td = None
+        if self._provider_kind == 'maxwellian-table':
+            EN_Td = None
+            reference_EN_Td = float(np.exp(u))
+            derivatives = {
+                'u': {'swarm': {'mobility_N': dmobility_du}, 'power_groups': {}},
+                'composition': {name: {'swarm': {'mobility_N': value}, 'power_groups': {}}
+                                for name, value in dmobility_dcomposition.items()},
+            }
+        else:
+            EN_Td = float(np.exp(u))
+            field_power = field_power_from_mobility(mobility, EN_Td)
+            field_derivatives = _field_power_derivatives(
+                mobility, EN_Td, dmobility_du, dmobility_dcomposition)
+            mappings['power_groups']['field'] = field_power
+            derivatives = {
+                'u': {
+                    'swarm': {'mobility_N': dmobility_du},
+                    'power_groups': {'field': field_derivatives['u']},
+                },
+                'composition': {
+                    name: {
+                        'swarm': {'mobility_N': dmobility_dcomposition[name]},
+                        'power_groups': {
+                            'field': field_derivatives['composition'][name]},
+                    }
+                    for name in self._axis_names[1:]
+                },
+            }
         result = {name: take(name) for name in ('k_ine', 'k_sup', 'channel_power',
                   'attachment_energy_eV', 'target_fractions', 'product_fractions', 'rate_floors', 'f0')}
         for direction in ('k_ine', 'k_sup'):
@@ -769,7 +800,9 @@ class EEDFTable:
             'relative_error': 0.0,
             'passed': True,
         }
-        return EEDFRow(u=float(u), EN_Td=EN_Td, branch_id=branch_id,
+        if self._provider_kind == 'maxwellian-table':
+            runtime_check = copy.deepcopy(self._manifest['comparator']['applicability']['A6b-runtime'])
+        return EEDFRow(u=float(u), EN_Td=EN_Td, reference_EN_Td=reference_EN_Td, branch_id=branch_id,
                        composition={name: c[name] for name in self._axis_names[1:]},
                        **mappings, **result, below_floor=flags,
                        energy_eV=np.asarray(self._manifest['energy_eV']),
