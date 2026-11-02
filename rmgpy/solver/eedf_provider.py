@@ -62,6 +62,7 @@ from rmgpy.tools.eedf.schema import (
     _canonical_json,
     _content_hash,
     qualification_rule_for_quantity,
+    _provider_kind,
 )
 from rmgpy.tools.eedf.signal_guard import run_guarded_attempt
 from rmgpy.solver._eedf_ownership import (
@@ -485,22 +486,25 @@ class EEDFProvider:
     """
 
     def __init__(self, path, current_model, *, artifact_sha256, reaction_map,
-                 branch, empirical_laws=None):
+                 branch, empirical_laws=None, provider_kind='loki-table'):
         (path, current_model, artifact_sha256, reaction_map, branch,
-         empirical_laws) = copy.deepcopy(
+         empirical_laws, provider_kind) = copy.deepcopy(
             (path, current_model, artifact_sha256, reaction_map, branch,
-             empirical_laws))
+             empirical_laws, provider_kind))
+        provider_kind = _provider_kind(provider_kind)
         if not isinstance(artifact_sha256, str):
             raise TypeError('artifact_sha256 must be a string')
         if not isinstance(branch, str):
             raise TypeError('branch must be a string')
         development = bool(_development_unqualified_route.get())
+        if provider_kind == 'maxwellian-table' and development:
+            raise EEDFError('Maxwellian comparator does not use the development route')
         table = EEDFTable.load(path, current_model,
                                artifact_sha256=artifact_sha256,
-                               require_accepted=not development)
-        if not development and not table.a6b_source['passed']:
+                               require_accepted=not development, provider_kind=provider_kind)
+        if provider_kind == 'loki-table' and not development and not table.a6b_source['passed']:
             raise FingerprintMismatch('A6b-source native field-power identity')
-        if not development and not table.t10_interpolation['passed']:
+        if provider_kind == 'loki-table' and not development and not table.t10_interpolation['passed']:
             raise FingerprintMismatch('T10 interpolation qualification')
         if branch not in table.manifest['branches']:
             raise AmbiguousBranch('declared branch ' + str(branch))
@@ -509,6 +513,7 @@ class EEDFProvider:
             raise IllConditionedCoordinate(
                 'mean energy must increase strictly with u=ln(E/N)')
         self._table = table
+        self._provider_kind = table.provider_kind
         # Reactor callbacks need repeated read-only access to artifact metadata.
         # Freeze one private snapshot here so those callbacks never pay for the
         # public manifest property's deliberately defensive deep copy.
@@ -660,6 +665,11 @@ class EEDFProvider:
         return manifest
 
     @property
+    def provider_kind(self):
+        """Immutable public kind, checked against the loaded artifact."""
+        return self._provider_kind
+
+    @property
     def runtime_metadata(self):
         """Immutable callback metadata, without terminal export authority."""
         return self._runtime_metadata
@@ -685,6 +695,8 @@ class EEDFProvider:
         terminal-qualified output. Records, statuses, paths and manifests are
         non-authoritative snapshots. Existing destinations are refused.
         """
+        if self._provider_kind == 'maxwellian-table':
+            raise EEDFError('Maxwellian comparator: production admission is NOT_APPLICABLE')
         if not isinstance(operation, str):
             raise TypeError('operation must be a string')
         operation = str(operation)
@@ -1862,8 +1874,15 @@ class EEDFProvider:
             raise publication_error
         return self._qualification_record
 
-    @_qualification_attempt_locked
+    @_qualification_locked
     def qualify(self, y, t):
+        """Refuse comparator qualification under the same lock as the action."""
+        if self._provider_kind == 'maxwellian-table':
+            raise EEDFError('Maxwellian comparator: terminal qualification is NOT_APPLICABLE')
+        return self._qualify_loki(y, t)
+
+    @_qualification_attempt_locked
+    def _qualify_loki(self, y, t):
         """Qualify one accepted terminal state with an independent direct solve."""
         from rmgpy.exceptions import PlasmaStateError
 

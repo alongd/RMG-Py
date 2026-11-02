@@ -3920,3 +3920,119 @@ def test_test_only_provider_accessors_are_private():
             'branch', 'reaction_map', 'empirical_laws', 'manifest',
             'cache_identity', 'cached_row'):
         assert not hasattr(EEDFProvider, name)
+
+
+def maxwellian_provider(tmp_path):
+    import runpy
+    source_data = runpy.run_path(str(
+        Path(__file__).parents[1] / 'tools' / 'eedf' / 'maxwellianTest.py'))['source_data']
+    from rmgpy.tools.eedf.maxwellian import generate_maxwellian
+    manifest, rows = source_data((2., 2.02, 2.04))
+    manifest['channel_map'][0].update(
+        classification='A', reaction={'library': 'fixture', 'index': 1, 'repr': 'fixture marker'})
+    source = _write_artifact(tmp_path / 'source', manifest, {'branch_0': rows}, [])
+    path = generate_maxwellian(source, tmp_path / 'comparator', artifact_sha256=source.name,
+                               branch_id='branch_0')
+    result = json.loads((path / 'manifest.json').read_text())
+    return EEDFProvider(path, result['row_inputs'], artifact_sha256=path.name,
+                        branch='maxwellian', reaction_map={0: (0, 'ine')}, provider_kind='maxwellian-table')
+
+
+def test_maxwellian_uses_common_provider_cache_and_ownership(tmp_path):
+    provider = maxwellian_provider(tmp_path)
+    assert type(provider) is EEDFProvider
+    assert provider.provider_kind == 'maxwellian-table'
+    assert provider.development_notice is None
+    with pytest.raises(AttributeError):
+        provider.provider_kind = 'loki-table'
+    with pytest.raises(TypeError):
+        provider.runtime_metadata['provider_kind'] = 'loki-table'
+    row = provider.row(.5, {})
+    assert provider.row(.5, {}) is row
+    assert provider.reaction_rate(0, row) == row.k_ine[0] > 0
+    assert provider.transport(row) is row.swarm
+    assert provider.mean_energy_eV(row) == row.swarm['mean_energy_eV'] > 0
+    assert row.EN_Td is None and row.reference_EN_Td == np.exp(.5)
+    with pytest.raises(ValueError):
+        row.k_ine.setflags(write=True)
+    other = maxwellian_provider(tmp_path / 'other')
+    with pytest.raises(FingerprintMismatch, match='not issued'):
+        other.mean_energy_eV(row)
+    with pytest.raises(OutOfDomain):
+        provider.row(3., {})
+
+
+def test_maxwellian_never_enters_production_qualification(tmp_path, monkeypatch):
+    provider = maxwellian_provider(tmp_path)
+    monkeypatch.setattr(provider, '_begin_qualification_publication',
+                        lambda: pytest.fail('comparator entered production qualification'))
+    with pytest.raises(EEDFError, match='terminal qualification is NOT_APPLICABLE'):
+        provider.qualify({}, 0.)
+    with pytest.raises(EEDFError, match='production admission is NOT_APPLICABLE'):
+        provider.require_qualified('mechanism export')
+    with pytest.raises(EEDFError, match='requires a development provider'):
+        provider.development_diagnostic({}, 0.)
+    assert provider.qualification_record_path is None
+    assert provider._qualification_status is None
+    assert provider._manifest_snapshot['accepted'] is False
+    with _development_unqualified_table_route():
+        with pytest.raises(EEDFError, match='does not use the development route'):
+            EEDFProvider(provider._table.path, provider._manifest_snapshot['row_inputs'],
+                         artifact_sha256=provider._table.path.name, branch='maxwellian',
+                         reaction_map={}, provider_kind='maxwellian-table')
+
+
+@pytest.mark.parametrize('action', ['qualify', 'require_qualified'])
+def test_provider_kind_checked_after_waiting_for_qualification_lock(tmp_path, action, monkeypatch):
+    provider = maxwellian_provider(tmp_path)
+    # Model an eligibility change while the caller waits. Public kind is immutable;
+    # this private test mutation proves the guard is inside the action's lock.
+    provider._provider_kind = 'loki-table'
+    real_lock = threading.RLock()
+    waiting = threading.Event()
+    class ObservedLock:
+        def __enter__(self):
+            waiting.set()
+            real_lock.acquire()
+        def __exit__(self, *unused):
+            real_lock.release()
+    provider._qualification_lock = ObservedLock()
+    monkeypatch.setattr(provider, '_qualify_loki', lambda *a: pytest.fail('stale eligibility'))
+    results = []
+    def call():
+        try:
+            if action == 'qualify':
+                provider.qualify({}, 0.)
+            else:
+                provider.require_qualified('test export')
+        except EEDFError as error:
+            results.append(str(error))
+    with real_lock:
+        worker = threading.Thread(target=call)
+        worker.start()
+        assert waiting.wait(5)
+        provider._provider_kind = 'maxwellian-table'
+    worker.join(5)
+    assert not worker.is_alive()
+    assert len(results) == 1 and 'NOT_APPLICABLE' in results[0]
+    assert provider.qualification_record_path is None
+
+
+def test_runtime_import_graph_excludes_offline_generators(tmp_path):
+    import subprocess
+    script = '''
+import importlib.abc, sys
+class RefuseOffline(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in ('rmgpy.tools.eedf.maxwellian', 'rmgpy.tools.eedf.generate'):
+            raise AssertionError('offline generator entered runtime graph: ' + fullname)
+sys.meta_path.insert(0, RefuseOffline())
+import rmgpy.solver.eedf
+import rmgpy.solver.eedf_provider
+assert 'rmgpy.tools.eedf.maxwellian' not in sys.modules
+assert 'rmgpy.tools.eedf.generate' not in sys.modules
+print('OFFLINE_IMPORT_BOUNDARY_PASS')
+'''
+    completed = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, check=False)
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == 'OFFLINE_IMPORT_BOUNDARY_PASS'

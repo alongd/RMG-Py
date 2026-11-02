@@ -5500,7 +5500,7 @@
     "rmgpy/solver/eedf_provider.py:EEDFProvider._write_json": {
       "file": "rmgpy/solver/eedf_provider.py",
       "function": "EEDFProvider._write_json",
-      "line": 807,
+      "line": 819,
       "signature": "3c1bdd3c811ec5f00cb2ee79530c5f6da989f78e38f3b9ed345e15386d9c68c1",
       "verdict": "E",
       "reason": "Writes only exact LoKI setup bytes or numerical qualification evidence bound to an immutable execution; it emits no mechanism, species dictionary, or reloadable molecular representation.",
@@ -5512,7 +5512,7 @@
     "rmgpy/solver/eedf_provider.py:EEDFProvider._run_qualification": {
       "file": "rmgpy/solver/eedf_provider.py",
       "function": "EEDFProvider._run_qualification",
-      "line": 1549,
+      "line": 1561,
       "signature": "febf81c53286853b59b7e0a1f8368a852f07c42749bfb06eb335761e00041cb3",
       "verdict": "E",
       "reason": "Writes only exact LoKI setup bytes or numerical qualification evidence bound to an immutable execution; it emits no mechanism, species dictionary, or reloadable molecular representation.",
@@ -5536,7 +5536,7 @@
     "rmgpy/solver/eedf_provider.py:_QualificationAdmission.commit_bytes": {
       "file": "rmgpy/solver/eedf_provider.py",
       "function": "_QualificationAdmission.commit_bytes",
-      "line": 390,
+      "line": 391,
       "signature": "e5be95dafdc2b91f63f7a2a753904a79802b5bd3a60a4cae719c837e7e403135",
       "verdict": "E",
       "reason": "Commits opaque caller-prepared bytes under revocable terminal admission; it performs no species naming or molecular reconstruction. Format exporters remain responsible for the existing resolved-state refusal guards.",
@@ -5548,7 +5548,7 @@
     "rmgpy/solver/eedf_provider.py:_QualificationExport._settle_revocation": {
       "file": "rmgpy/solver/eedf_provider.py",
       "function": "_QualificationExport._settle_revocation",
-      "line": 319,
+      "line": 320,
       "signature": "788aeae57bb9c488fb5a526aaf9416955ee5478af2129a7f493b11dec241907b",
       "verdict": "E",
       "reason": "Writes opaque qualification or refusal bytes under retained inode ownership; it performs no species naming or molecular reconstruction. Format-specific resolved-state refusal guards remain unchanged.",
@@ -5560,7 +5560,7 @@
     "rmgpy/solver/eedf_provider.py:_QualificationExport.stage": {
       "file": "rmgpy/solver/eedf_provider.py",
       "function": "_QualificationExport.stage",
-      "line": 271,
+      "line": 272,
       "signature": "9cff91e319421aceff95e45cae0c1e5f55a733d974d1c4b04f1b5890d7c1fe6d",
       "verdict": "E",
       "reason": "Writes opaque qualification or refusal bytes under retained inode ownership; it performs no species naming or molecular reconstruction. Format-specific resolved-state refusal guards remain unchanged.",
@@ -5572,7 +5572,7 @@
     "rmgpy/solver/eedf_provider.py:EEDFProvider._publish_acceptance": {
       "file": "rmgpy/solver/eedf_provider.py",
       "function": "EEDFProvider._publish_acceptance",
-      "line": 1057,
+      "line": 1069,
       "signature": "bf0f7e4ce57fed9e49080fe9b1d352365686a2c9e0531ba1a61cbcbe9fe4d441",
       "verdict": "E",
       "reason": "Writes opaque qualification or refusal bytes under retained inode ownership; it performs no species naming or molecular reconstruction. Format-specific resolved-state refusal guards remain unchanged.",
@@ -5584,7 +5584,7 @@
     "rmgpy/solver/eedf_provider.py:EEDFProvider._publish_failure": {
       "file": "rmgpy/solver/eedf_provider.py",
       "function": "EEDFProvider._publish_failure",
-      "line": 847,
+      "line": 859,
       "signature": "8136b169c89366169495f6d8cd063b586b5aed86337b6a89d7903b8800040019",
       "verdict": "E",
       "reason": "Transfers opaque qualification, refusal, or caller-prepared bytes under existing inode ownership; it performs no species naming or molecular reconstruction. Format-specific refusal guards are unchanged.",
