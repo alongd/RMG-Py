@@ -39,6 +39,78 @@ a table. Named exceptions identify changed inputs, an unaccepted table,
 extrapolation, envelope exits, ambiguous branches and folded or poorly
 conditioned mean-energy dependence on u.
 
+Maxwellian model-form comparator
+-------------------------------
+
+``maxwellian-table`` uses the same table format, interpolation, provider,
+reaction mapping and reactor energy equation as ``loki-table``. Its rows come
+from direct quadrature of a prescribed Maxwellian at
+``Te_eV = (2/3) * source_mean_energy_eV``. This is an offline comparison model;
+it does not solve a Boltzmann equation or require the native LoKI worker.
+The specification and production qualification sections below describe the
+LoKI path; comparator applicability is defined here.
+
+Generate a fresh comparator from a source artifact and an explicit source
+branch with the RMG Python environment::
+
+    python -m rmgpy.tools.eedf.maxwellian /tables/source /tables/comparators \
+        --artifact-sha256 <source-table-sha256> --branch-id branch_0
+
+The generator hashes and reads the same HDF5 bytes, checks their binding to
+the source manifest, and reads the native rows without loading the historical
+artifact through today's runtime interpolant. It never rewrites the source.
+The new artifact records the source SHA, branch, channel map and energy grid,
+and is bound to today's runtime identity checks.
+
+The source energy grid, collision set, population conventions and collision
+power operator are retained. Transport and channel powers are recomputed from
+the Maxwellian; source transport is not copied. Raw normalization, analytic
+temperature and sampled mean are recorded separately. A grid that cannot
+resolve the prescribed mean within the source H2 tolerance refuses generation.
+There is no automatic grid extension, temperature refit or node deletion.
+An explicit contiguous subset can be selected using inclusive native indices,
+for example ``--u-start 0 --u-stop 24``. Both bounds are required, at least two
+nodes must remain, and every retained/excluded coordinate is recorded. The
+chosen subset must still pass resolution and fresh held-out quadrature checks.
+
+Use the published directory or ``table.h5`` and its new content SHA in an
+``electronKinetics`` declaration::
+
+    electronKinetics={
+        'provider': 'maxwellian-table',
+        'table': ('/tables/comparators/<sha256>', '<sha256>'),
+        'branch': 'maxwellian',
+        'initialReducedField': (3.2, 'Td'),
+        'empiricalLaws': {},
+    }
+
+Choose ``initialReducedField`` within the selected source-coordinate range.
+For this provider it selects the reference coordinate ``u = ln(value / 1 Td)``;
+it is not a physical reduced electric field of the prescribed Maxwellian.
+``electronEnergyBalance`` and the usual wall declarations remain required.
+``operatingBranch`` refuses because a production branch declaration cannot
+certify the comparator closure. Normal runtime envelope and reaction-ownership
+checks still apply: an energy-only channel cannot supply a reacting
+``EEDFChannel``. A source with only energy channels supports an explicitly
+transport-only comparison, not a reacting mechanism obtained by relabelling
+those channels.
+
+Every comparator output uses
+``MODEL-FORM COMPARATOR: Maxwellian-table energy-balance diagnostic``.
+Runtime ``EN_Td``, Joule power and field-power mismatch are unavailable
+(``None``); ``reference_EN_Td`` identifies the source coordinate. Branch scan,
+self-consistency, field/A6b diagnostics, production T10 and terminal
+qualification are ``NOT_APPLICABLE``. Separate mandatory numerical validation
+establishes comparator interpolation usability. Physical A6a energy closure
+remains enforced. ``accepted`` stays false, and production admission and
+qualification refuse; numerical usability never grants production acceptance.
+
+Provider kind is bound into the artifact's HDF5 identity. A comparator cannot
+be loaded as ``loki-table``, or vice versa. Historical kind-less artifacts
+remain LoKI-only and retain all existing fingerprint checks. Omitting
+``electronKinetics`` retains the electron-temperature-law path and its
+unchanged libraries; these outputs carry the ``LEGACY:`` P/S mode labels.
+
 Specification schema
 --------------------
 
