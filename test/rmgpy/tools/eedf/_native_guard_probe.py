@@ -95,7 +95,7 @@ def fork(record):
     if pid:
         if state['fixture'] == 'exec':
             until = time.monotonic() + 2
-            while os.readlink('/proc/%d/exe' % pid) != '/usr/bin/sleep':
+            while os.readlink('/proc/%d/exe' % pid) != os.path.realpath('/usr/bin/sleep'):
                 assert time.monotonic() < until
                 time.sleep(.001)
         if state['fixture'] == 'external':

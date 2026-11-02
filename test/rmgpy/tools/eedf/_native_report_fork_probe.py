@@ -146,7 +146,7 @@ def body(owner, deferral, adapter, seeds, processes, timeout, power):
     child.start()
     pid = n.info(state['record'])['pid']
     until = time.monotonic()+2
-    while os.readlink('/proc/%d/exe' % pid) != '/usr/bin/sleep':
+    while os.readlink('/proc/%d/exe' % pid) != os.path.realpath('/usr/bin/sleep'):
         assert time.monotonic() < until
         time.sleep(.001)
     raise AppSignal('enter C guard without Python cleanup')

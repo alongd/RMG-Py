@@ -395,7 +395,7 @@ def exec_replacement():
                 elapsed = time.monotonic() - facts['ended_us'] / 1e6
                 assert facts['ended_us'] > 0 and facts['reaped'] == 0, facts
                 assert facts['phase'] == 'cancelled', facts
-                assert os.readlink('/proc/%d/exe' % facts['pid']) == '/usr/bin/sleep'
+                assert os.readlink('/proc/%d/exe' % facts['pid']) == os.path.realpath('/usr/bin/sleep')
                 assert 'native cleanup deadline reached' in message, message
                 assert 'pending child PIDs [%d]' % facts['pid'] in message, message
                 assert message in messages, messages
