@@ -30,6 +30,7 @@
 import concurrent.futures
 import builtins
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -53,6 +54,92 @@ from rmgpy.solver.eedf import EEDFTable
 
 fixture_table = runpy.run_path(
     str(Path(__file__).parents[2] / 'solver' / 'eedfTableTest.py'))['fixture_table']
+
+
+def test_channel_map_replacement_between_hash_and_parse(tmp_path, monkeypatch):
+    mapping = tmp_path / 'channels.json'
+    original = [{'reaction': None}]
+    mapping.write_text(json.dumps(original))
+    pin = _file_hash(mapping)
+    other = tmp_path / 'other'
+    other.write_text('other input')
+    other_pin = {'path': str(other), 'sha256': _file_hash(other)}
+    spec = {'channel_map': {'path': str(mapping), 'sha256': pin},
+            'binary': other_pin, 'cmake_cache': other_pin,
+            'input_files': {}, 'axes': {'u': [0., 1.]}}
+    for name, replacement in {
+            '_check_solver': lambda spec: {},
+            '_physical_properties': lambda spec: ({}, {}),
+            '_solver_environment': lambda spec: {},
+            '_row_inputs': lambda spec: {},
+            '_interpolant_identity': lambda: {},
+            'qualification_setup_sha256': lambda spec: 'setup',
+            '_validate_physical_map': lambda *args: None}.items():
+        monkeypatch.setattr(generation, name, replacement)
+    real_sha256 = hashlib.sha256
+    replacements = []
+
+    class ReplacingDigest:
+        def __init__(self, *args, **kwargs):
+            self.digest = real_sha256(*args, **kwargs)
+
+        def update(self, value):
+            self.digest.update(value)
+
+        def hexdigest(self):
+            digest = self.digest.hexdigest()
+            if digest == pin and not replacements:
+                mapping.write_text('[{"reaction": {"index": 999}}]')
+                replacements.append(True)
+            return digest
+
+    monkeypatch.setattr(hashlib, 'sha256', ReplacingDigest)
+    result = model_inputs(spec)
+    assert replacements == [True], 'the replacement must actually occur'
+    assert result['channel_map_sha256'] == pin
+    assert result['reactions'] == []
+
+
+@pytest.mark.parametrize('problem', ['missing', 'malformed', 'changed'])
+def test_pinned_channel_map_refuses_invalid_input(tmp_path, problem):
+    from rmgpy.tools.eedf.channels import _load_channel_map
+    path = tmp_path / 'channels.json'
+    path.write_text('broken JSON' if problem == 'malformed' else '[]')
+    pin = {'path': str(path), 'sha256': _file_hash(path)}
+    if problem == 'missing':
+        path.unlink()
+    elif problem == 'changed':
+        path.write_text('[{}]')
+    with pytest.raises((SpecError, FingerprintMismatch)):
+        _load_channel_map(pin)
+
+
+def test_generate_keeps_verified_map_when_driver_replaces_path(tmp_path, monkeypatch):
+    path = tmp_path / 'channels.json'
+    path.write_text('[{"reaction": null}]')
+    spec = {'channel_map': {'path': str(path), 'sha256': _file_hash(path)},
+            'axes': {'u': [0., 1.]}}
+    seen = []
+
+    class StopAfterSnapshot(Exception):
+        pass
+
+    def driver(candidate):
+        path.write_text('[{"reaction": {"index": 999}}]')
+        return object()
+
+    def screen(candidate, driver, channels, prefix):
+        seen.extend(channels)
+        raise StopAfterSnapshot
+
+    monkeypatch.setattr(generation, '_validate_spec', lambda spec: None)
+    monkeypatch.setattr(generation, '_validate_map', lambda channels: None)
+    monkeypatch.setattr(generation, 'LoKIDriver', driver)
+    monkeypatch.setattr(generation, '_screen', screen)
+    with pytest.raises(StopAfterSnapshot):
+        generate(spec)
+    assert seen == [{'reaction': None}]
+    assert json.loads(path.read_text()) == [{'reaction': {'index': 999}}]
 
 
 def test_generate_refuses_readonly_spec_before_import(monkeypatch):
@@ -252,10 +339,11 @@ def test_mobility_negative_control_passes_runtime_identity_but_fails_held_out(
     reference_table = EEDFTable.load(
         reference_path, model, artifact_sha256=_file_hash(reference_path / 'table.h5'))
     Path(spec['channel_map']['path']).write_text('[]')
+    spec['channel_map']['sha256'] = _file_hash(spec['channel_map']['path'])
     calls = []
 
     monkeypatch.setattr('rmgpy.tools.eedf.generate._validate_spec', lambda candidate: None)
-    monkeypatch.setattr('rmgpy.tools.eedf.generate.model_inputs', lambda candidate: model)
+    monkeypatch.setattr('rmgpy.tools.eedf.generate._model_inputs', lambda candidate, mapping: model)
     monkeypatch.setattr('rmgpy.tools.eedf.generate._validate_map', lambda candidate: None)
     monkeypatch.setattr('rmgpy.tools.eedf.generate.LoKIDriver', lambda candidate: object())
 
@@ -303,7 +391,7 @@ def test_qualify_interpolation_refuses_an_empty_pinned_point_set(
     channel_map = tmp_path / 'channels.json'
     channel_map.write_text('[]')
     spec = {
-        'channel_map': {'path': str(channel_map)},
+        'channel_map': {'path': str(channel_map), 'sha256': _file_hash(channel_map)},
         'held_out': {
             'cell_midpoints': True, 'lhs_count': 0, 'seed': 7,
             'off_centre': [{'u': .25}],
@@ -315,7 +403,7 @@ def test_qualify_interpolation_refuses_an_empty_pinned_point_set(
     }
     table.manifest['held_out'] = []
     monkeypatch.setattr('rmgpy.tools.eedf.generate._validate_spec', lambda candidate: None)
-    monkeypatch.setattr('rmgpy.tools.eedf.generate.model_inputs', lambda candidate: model)
+    monkeypatch.setattr('rmgpy.tools.eedf.generate._model_inputs', lambda candidate, mapping: model)
     monkeypatch.setattr('rmgpy.tools.eedf.generate._validate_map', lambda candidate: None)
     monkeypatch.setattr('rmgpy.tools.eedf.generate.LoKIDriver', lambda candidate: object())
 
@@ -330,7 +418,7 @@ def test_qualify_interpolation_refuses_declared_off_centre_training_node_before_
     channel_map = tmp_path / 'channels.json'
     channel_map.write_text('[]')
     spec = {
-        'channel_map': {'path': str(channel_map)},
+        'channel_map': {'path': str(channel_map), 'sha256': _file_hash(channel_map)},
         'held_out': {
             'cell_midpoints': True, 'lhs_count': 0, 'seed': 7,
             'off_centre': [
@@ -344,7 +432,7 @@ def test_qualify_interpolation_refuses_declared_off_centre_training_node_before_
         'field_power': {'rtol': 1.e-3, 'atol': 0.},
     }
     monkeypatch.setattr('rmgpy.tools.eedf.generate._validate_spec', lambda candidate: None)
-    monkeypatch.setattr('rmgpy.tools.eedf.generate.model_inputs', lambda candidate: model)
+    monkeypatch.setattr('rmgpy.tools.eedf.generate._model_inputs', lambda candidate, mapping: model)
     monkeypatch.setattr('rmgpy.tools.eedf.generate._validate_map', lambda candidate: None)
     monkeypatch.setattr(
         'rmgpy.tools.eedf.generate.LoKIDriver',
@@ -364,14 +452,14 @@ def test_qualify_interpolation_refuses_a_partial_evaluated_point_set(
     channel_map = tmp_path / 'channels.json'
     channel_map.write_text('[]')
     spec = {
-        'channel_map': {'path': str(channel_map)},
+        'channel_map': {'path': str(channel_map), 'sha256': _file_hash(channel_map)},
         'held_out': {
             'cell_midpoints': True, 'lhs_count': 0, 'seed': 7,
             'off_centre': [{'u': .25}],
         },
     }
     monkeypatch.setattr('rmgpy.tools.eedf.generate._validate_spec', lambda candidate: None)
-    monkeypatch.setattr('rmgpy.tools.eedf.generate.model_inputs', lambda candidate: model)
+    monkeypatch.setattr('rmgpy.tools.eedf.generate._model_inputs', lambda candidate, mapping: model)
     monkeypatch.setattr('rmgpy.tools.eedf.generate._validate_map', lambda candidate: None)
     monkeypatch.setattr('rmgpy.tools.eedf.generate.LoKIDriver', lambda candidate: object())
     monkeypatch.setattr(
@@ -405,7 +493,7 @@ def test_qualify_interpolation_runs_fresh_solver_at_persisted_held_out_points(
     channel_map = tmp_path / 'channels.json'
     channel_map.write_text('[]')
     spec = {
-        'channel_map': {'path': str(channel_map)},
+        'channel_map': {'path': str(channel_map), 'sha256': _file_hash(channel_map)},
         'held_out': {
             'cell_midpoints': True, 'lhs_count': 0, 'seed': 7,
             'off_centre': [{'u': .25}],
@@ -414,7 +502,7 @@ def test_qualify_interpolation_runs_fresh_solver_at_persisted_held_out_points(
     calls = []
 
     monkeypatch.setattr('rmgpy.tools.eedf.generate._validate_spec', lambda candidate: None)
-    monkeypatch.setattr('rmgpy.tools.eedf.generate.model_inputs', lambda candidate: model)
+    monkeypatch.setattr('rmgpy.tools.eedf.generate._model_inputs', lambda candidate, mapping: model)
     monkeypatch.setattr('rmgpy.tools.eedf.generate._validate_map', lambda candidate: None)
     monkeypatch.setattr('rmgpy.tools.eedf.generate.LoKIDriver', lambda candidate: object())
     monkeypatch.setattr(
@@ -451,7 +539,7 @@ def test_qualify_interpolation_runs_fresh_solver_at_persisted_held_out_points(
     with pytest.raises(SpecError, match='preselected.*off_centre'):
         qualify_interpolation(table, missing_off_centre, criteria=criteria)
     monkeypatch.setattr(
-        'rmgpy.tools.eedf.generate.model_inputs', lambda candidate: {'wrong': True})
+        'rmgpy.tools.eedf.generate._model_inputs', lambda candidate, mapping: {'wrong': True})
     with pytest.raises(FingerprintMismatch, match='setup fingerprint'):
         qualify_interpolation(table, spec, criteria=criteria)
 
@@ -466,7 +554,7 @@ def test_public_manifest_copy_cannot_reduce_loaded_qualification_points(
     channel_map = tmp_path / 'channels.json'
     channel_map.write_text('[]')
     spec = {
-        'channel_map': {'path': str(channel_map)},
+        'channel_map': {'path': str(channel_map), 'sha256': _file_hash(channel_map)},
         'held_out': {
             'cell_midpoints': True, 'lhs_count': 0, 'seed': 7,
             'off_centre': [{'u': .25}],
@@ -477,7 +565,7 @@ def test_public_manifest_copy_cannot_reduce_loaded_qualification_points(
     monkeypatch.setattr(
         'rmgpy.tools.eedf.generate._validate_spec', lambda candidate: None)
     monkeypatch.setattr(
-        'rmgpy.tools.eedf.generate.model_inputs', lambda candidate: model)
+        'rmgpy.tools.eedf.generate._model_inputs', lambda candidate, mapping: model)
     monkeypatch.setattr(
         'rmgpy.tools.eedf.generate._validate_map', lambda candidate: None)
     monkeypatch.setattr(
@@ -531,7 +619,7 @@ def test_qualification_owns_caller_spec_during_every_fresh_solve(
                 'reference': 666.61184,
             },
         },
-        'channel_map': {'path': str(channel_map)},
+        'channel_map': {'path': str(channel_map), 'sha256': _file_hash(channel_map)},
         'held_out': {
             'cell_midpoints': True, 'lhs_count': 0, 'seed': 7,
             'off_centre': [{'u': .25}],
@@ -544,7 +632,7 @@ def test_qualification_owns_caller_spec_during_every_fresh_solve(
     monkeypatch.setattr(
         'rmgpy.tools.eedf.generate._validate_spec', lambda candidate: None)
     monkeypatch.setattr(
-        'rmgpy.tools.eedf.generate.model_inputs', lambda candidate: model)
+        'rmgpy.tools.eedf.generate._model_inputs', lambda candidate, mapping: model)
     monkeypatch.setattr(
         'rmgpy.tools.eedf.generate._validate_map', lambda candidate: None)
     monkeypatch.setattr(
@@ -836,7 +924,10 @@ def test_qualify_interpolation_refuses_unpinned_multibranch_reference(
     path, model = fixture_table(tmp_path, branches=2)
     table = EEDFTable.load(
         path, model, artifact_sha256=_file_hash(path / 'table.h5'))
-    spec = {'held_out': {
+    channel_map = tmp_path / 'channels.json'
+    channel_map.write_text('[]')
+    spec = {'channel_map': {'path': str(channel_map), 'sha256': _file_hash(channel_map)},
+            'held_out': {
         'cell_midpoints': True, 'lhs_count': 0, 'seed': 7,
         'off_centre': [{'u': .25}],
     }}
@@ -845,7 +936,7 @@ def test_qualify_interpolation_refuses_unpinned_multibranch_reference(
         'field_power': {'rtol': 1.e-3, 'atol': 0.},
     }
     monkeypatch.setattr('rmgpy.tools.eedf.generate._validate_spec', lambda candidate: None)
-    monkeypatch.setattr('rmgpy.tools.eedf.generate.model_inputs', lambda candidate: model)
+    monkeypatch.setattr('rmgpy.tools.eedf.generate._model_inputs', lambda candidate, mapping: model)
 
     with pytest.raises(EEDFError, match='multi-branch.*pinned direct-solver'):
         qualify_interpolation(table, spec, criteria=criteria)

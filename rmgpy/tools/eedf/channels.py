@@ -29,6 +29,7 @@
 
 """Validate collision metadata against the pinned solver's physical inputs."""
 from functools import lru_cache
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -37,7 +38,21 @@ import numpy as np
 from scipy.constants import electron_mass
 
 from rmgpy.tools.eedf.integrity import _physical_properties, _resolved_properties
-from rmgpy.tools.eedf.schema import SpecError
+from rmgpy.tools.eedf.schema import FingerprintMismatch, SpecError
+
+
+def _load_channel_map(pin):
+    """Hash and parse the same bytes, even if the path is replaced meanwhile."""
+    try:
+        data = Path(pin['path']).read_bytes()
+    except OSError as error:
+        raise SpecError('cannot read channel map: ' + str(error)) from error
+    if hashlib.sha256(data).hexdigest() != pin['sha256']:
+        raise FingerprintMismatch('channel_map')
+    try:
+        return json.loads(data)
+    except (ValueError, UnicodeError) as error:
+        raise SpecError('malformed channel map JSON') from error
 
 
 def _validate_map(channels):

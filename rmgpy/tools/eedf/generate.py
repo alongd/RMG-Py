@@ -48,7 +48,7 @@ import numpy as np
 
 from rmgpy.tools.eedf.artifact import _write_artifact
 from rmgpy.tools.eedf._ownership import _detached_copy
-from rmgpy.tools.eedf.channels import _validate_map, _validate_physical_map
+from rmgpy.tools.eedf.channels import _load_channel_map, _validate_map, _validate_physical_map
 from rmgpy.tools.eedf.integrity import _check_solver, _physical_properties, _solver_environment
 from rmgpy.tools.eedf.loki import LoKIDriver, _enrich_row, qualification_setup_sha256
 from rmgpy.tools.eedf.schema import (
@@ -74,9 +74,14 @@ def model_inputs(spec):
     own the fingerprint. All property files, not only LXCat, shape rows.
     """
     spec = copy.deepcopy(spec)
+    return _model_inputs(spec, _load_channel_map(spec['channel_map']))
+
+
+def _model_inputs(spec, channel_map):
+    """Use the invocation's verified map snapshot for every identity consumer."""
     shared = _check_solver(spec)
     _physical_properties(spec)
-    for key in ('binary', 'cmake_cache', 'channel_map'):
+    for key in ('binary', 'cmake_cache'):
         if _file_hash(spec[key]['path']) != spec[key]['sha256']:
             raise FingerprintMismatch(key)
     for name, item in spec['input_files'].items():
@@ -94,8 +99,7 @@ def model_inputs(spec):
                                 if item['kind'] == 'cross_section'}
     inputs['auxiliary_inputs'] = {name: _file_hash(item['path']) for name, item in spec['input_files'].items()
                                  if item['kind'] != 'cross_section'}
-    inputs['channel_map_sha256'] = _file_hash(spec['channel_map']['path'])
-    channel_map = json.loads(Path(spec['channel_map']['path']).read_text())
+    inputs['channel_map_sha256'] = spec['channel_map']['sha256']
     _validate_physical_map(channel_map, spec, {name: values[0] for name, values in spec['axes'].items() if name != 'u'})
     inputs['reactions'] = [item['reaction'] for item in channel_map if item['reaction'] is not None]
     inputs['interpolant'] = _interpolant_identity()
@@ -127,7 +131,8 @@ def qualify_interpolation(table, spec, *, criteria):
     criteria = _freeze_accuracy_criteria(criteria)
     _validate_spec(spec)
     manifest = table.manifest
-    fingerprint = _content_hash(model_inputs(spec))
+    channel_map = _load_channel_map(spec['channel_map'])
+    fingerprint = _content_hash(_model_inputs(spec, channel_map))
     if fingerprint != manifest.get('fingerprint'):
         raise FingerprintMismatch('held-out direct-solver setup fingerprint')
     if not spec['held_out'].get('off_centre'):
@@ -172,7 +177,6 @@ def qualify_interpolation(table, spec, *, criteria):
         raise SpecError(
             'declared held_out off_centre point is absent from the artifact '
             'retained set: ' + repr(point))
-    channel_map = json.loads(Path(spec['channel_map']['path']).read_text())
     _validate_map(channel_map)
     driver = LoKIDriver(spec)
     attempt = 't10_' + uuid.uuid4().hex
@@ -284,7 +288,7 @@ def _reconcile_off_centre_after_axis_drop(spec, removed):
 
 
 def _manifest(spec, driver, channel_map, screen_results, scans, row, command_line):
-    inputs = model_inputs(spec)
+    inputs = _model_inputs(spec, channel_map)
     return {'schema_version': 1, 'row_inputs': inputs, 'fingerprint': _content_hash(inputs),
             'qualification_setup_sha256': inputs['qualification_setup_sha256'],
             'axes': spec['axes'], 'energy_eV': row['energy_eV'].tolist(),
@@ -335,7 +339,7 @@ def generate(spec, command_line=None):
     _validate_spec(spec)
     started = time.monotonic()
     prefix = 'run_' + uuid.uuid4().hex
-    channel_map = json.loads(Path(spec['channel_map']['path']).read_text())
+    channel_map = _load_channel_map(spec['channel_map'])
     _validate_map(channel_map)
     driver = LoKIDriver(spec)
     spec['axes'] = {'u': spec['axes']['u'], **{name: spec['axes'][name] for name in sorted(spec['axes']) if name != 'u'}}
@@ -394,7 +398,7 @@ def generate(spec, command_line=None):
         manifest = _manifest(spec, driver, channel_map, screen_results, scans, sample, command_line)
         manifest['held_out'] = [dict(zip(names, key)) for key in held]
         provisional = _write_artifact(Path(spec['scratch_root']) / f'{prefix}_r{round_index}_table', manifest, tensors, list(held.values()))
-        table = EEDFTable.load(provisional, model_inputs(spec), artifact_sha256=_file_hash(provisional / 'table.h5'), require_accepted=False)
+        table = EEDFTable.load(provisional, manifest['row_inputs'], artifact_sha256=_file_hash(provisional / 'table.h5'), require_accepted=False)
         manifest['A6b-source'] = table.a6b_source
         manifest['A6b-runtime'] = {
             'check': 'A6b-runtime',

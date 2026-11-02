@@ -30846,7 +30846,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "ed013fd76a79550ced633f376f0e6181b1d30d6c845521f83afdf4ddcd74bf0d"
+      "source_sha256": "252f3a05320df70d62b0f4a87293a3ff3cb3a08adc80942fc930434aee48b185"
     },
     "rmgpy/tools/eedf/generate.py:_screen": {
       "verdict": "carried",
@@ -30878,7 +30878,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "69d0f0ed7c15a642cb96923f1f7f2d69e6d8d024ef520edeb3af342f71a5f404"
+      "source_sha256": "2285c6eb6ebcff0c9e9eb109b1b383a1bb74013a1fac4478e002f39b14097235"
     },
     "rmgpy/tools/eedf/generate.py:model_inputs": {
       "verdict": "carried",
@@ -30886,7 +30886,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "ed78d6921b72855ef3bb6062a745ae84e990db7579361779a64b1352ff51c7fb"
+      "source_sha256": "71c91ca8f5797fbdf4622ea2832fc2ffa57548f9628376c764b87d5c14d0ff8b"
     },
     "rmgpy/tools/eedf/loki.py:LoKIDriver.__init__": {
       "verdict": "carried",
@@ -36736,7 +36736,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "19e47651efb668c8e14dd1bdf6ce1aa054341f2f5936633e22c8b42d4879cba0"
+      "source_sha256": "d55d6a7c678b469c12d48608ebb23f261bb45531ba3fd18d9f0217aed9e2c5b1"
     },
     "rmgpy/tools/eedf/generate.py:qualify_interpolation.direct_solver": {
       "verdict": "carried",
@@ -37171,6 +37171,22 @@
         "test/rmgpy/diagnosticModeTest.py"
       ],
       "source_sha256": "7d58fb6c78e0a698f06528ee5d2a54425e5ea629d10577da4f77abf871f81c23"
+    },
+    "rmgpy/tools/eedf/channels.py:_load_channel_map": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Validates and carries explicitly supplied EEDF metadata; does not acquire or transfer species data. Hashes and parses one channel-map snapshot.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "90475c0462e2668a00919699f06b44bc9757eef4fbe8e15269536c5f315d57e9"
+    },
+    "rmgpy/tools/eedf/generate.py:_model_inputs": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Validates and carries explicitly supplied EEDF metadata; does not acquire or transfer species data. Hashes and parses one channel-map snapshot.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/generateTest.py"
+      ],
+      "source_sha256": "152206e217793f6efe3b019e9425f8b8d22f8a14642710ae52dca9c8f3c36873"
     }
   }
 }
