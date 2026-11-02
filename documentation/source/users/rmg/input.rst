@@ -1576,6 +1576,49 @@ budget, or generate an implicit reduced envelope.
 Table-driven electron kinetics
 ------------------------------
 
+Plasma run labels
+~~~~~~~~~~~~~~~~~
+
+Plasma output files declare how the run was produced. The label follows the
+reactor configuration, including on restart; changing the evolving numerical
+temperature does not change the mode:
+
+* ``prescribed-Te transport diagnostic``: species evolution is conditional on
+  prescribed Te and the initial electron amount. An independently predictive
+  absolute electron density or ionisation degree is not supported.
+* ``solved-Te energy-balance engineering intermediate``: electron temperature
+  and species evolution are solved under specified absorbed power and the
+  declared Maxwellian, wall and sheath closures. External source coupling is
+  not predicted.
+* ``EEDF energy-balance engineering intermediate``: electron kinetics use the
+  declared EEDF table; reduced field and species evolution are solved under
+  specified power, empirical laws and wall/sheath closures. The label does not
+  establish terminal qualification or predict external power-source coupling.
+
+Run-wide outputs carry every distinct mode/qualification pair in reactor order;
+profiles and JSON diagnostics carry their own reactor's pair. Existing EEDF
+export refusals and scientific-status annotations still apply. Structure
+thumbnails in ``species/`` are exempt because their content is independent of
+run mode. The user's ``input.py`` is never relabelled.
+
+CSV profiles start with ``#`` comment rows. :func:`rmgpy.tools.plot.parse_csv_data`
+skips those rows; :func:`rmgpy.tools.plot.parse_csv_provenance` recovers them.
+External CSV consumers must likewise skip comments. Both seed dictionaries use
+``//`` comments that the seed reader understands, so labelled seeds remain
+restartable. Older unlabelled CSVs and seeds remain readable. Plot files carry
+metadata and a visible footnote; HTML shows the qualification, while statistics
+and HDF5 filters carry it in a sheet and attributes respectively.
+
+``PlasmaReactor.get_electron_density()``, ``get_ionisation_degree()`` and its US
+spelling ``get_ionization_degree()`` raise ``PrescribedTeDiagnosticError`` in
+prescribed-Te mode. In solved-Te and EEDF modes those convenience scalar APIs
+raise ``NotImplementedError``; use the existing labelled trajectories and
+diagnostics. State access, steady-state termination and conditional trajectories
+are unchanged.
+
+EEDF electron kinetics
+~~~~~~~~~~~~~~~~~~~~~~
+
 ``electronKinetics`` selects a fingerprinted LoKI-B table as the single source of the electron
 energy distribution, rate coefficients, transport, and electron-energy terms.  In this mode the
 initial coordinate is the reduced field, not an electron temperature::

@@ -50,3 +50,4 @@ Module                  Description
     thermo/index
     exceptions
     export
+    diagnostic_mode
