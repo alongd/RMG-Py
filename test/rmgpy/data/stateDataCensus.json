@@ -22237,7 +22237,7 @@
       ],
       "source_sha256": "fb0fa41d1ed9f24f6eb711e946d4462aacf6ecfc02cc6ccdf607963746f2a951",
       "file": "rmgpy/rmg/input.py",
-      "line": 3323
+      "line": 3329
     },
     "rmgpy/rmg/input.py:_parse_writer_config": {
       "verdict": "carried",
@@ -22247,7 +22247,7 @@
       ],
       "source_sha256": "1e0264ae0f03d3b2c979e30671d59c0d69ec39be9699ad365c1cf33c7dba1e26",
       "file": "rmgpy/rmg/input.py",
-      "line": 2934
+      "line": 2940
     },
     "rmgpy/rmg/input.py:_plasma_chamber_volume": {
       "verdict": "carried",
@@ -22257,7 +22257,7 @@
       ],
       "source_sha256": "d4ebbc1bbc5fb40acafbd17767841c1fb1eb88e0a508f3d3f2e9616febc4d27c",
       "file": "rmgpy/rmg/input.py",
-      "line": 1100
+      "line": 1102
     },
     "rmgpy/rmg/input.py:_plasma_check_mobility_entry": {
       "verdict": "carried",
@@ -22277,7 +22277,7 @@
       ],
       "source_sha256": "a71159e6c0782b23fcf49f7c2f04f54c73499b2e3b4480c4d157707729ea5608",
       "file": "rmgpy/rmg/input.py",
-      "line": 1115
+      "line": 1117
     },
     "rmgpy/rmg/input.py:_plasma_inverse_lambda_squared": {
       "verdict": "carried",
@@ -22307,7 +22307,7 @@
       ],
       "source_sha256": "4b0228b2ad5dc1cab95cd2d89a8d89005f4b4c28ac561ec035b38d3a1119b7f3",
       "file": "rmgpy/rmg/input.py",
-      "line": 1197
+      "line": 1199
     },
     "rmgpy/rmg/input.py:_plasma_wall_kwargs": {
       "verdict": "carried",
@@ -22327,7 +22327,7 @@
       ],
       "source_sha256": "4673cb9e29147e531381211396cb7e6d4837ec6ee0628cbbb80caf2c4a1fac3c",
       "file": "rmgpy/rmg/input.py",
-      "line": 2974
+      "line": 2980
     },
     "rmgpy/rmg/input.py:adjacency_list": {
       "verdict": "carried",
@@ -22367,7 +22367,7 @@
       ],
       "source_sha256": "35602e26b43fe7bbfd2594de78a379d5687de4ff50eaafd59cf7fb69e6b8c8c4",
       "file": "rmgpy/rmg/input.py",
-      "line": 2098
+      "line": 2104
     },
     "rmgpy/rmg/input.py:constant_T_V_liquid_reactor": {
       "verdict": "carried",
@@ -22377,7 +22377,7 @@
       ],
       "source_sha256": "b8a15568d8776e9c2585f5f1de0efb21a48df478864ab2e694ded5fdc0a2fc65",
       "file": "rmgpy/rmg/input.py",
-      "line": 2300
+      "line": 2306
     },
     "rmgpy/rmg/input.py:constant_V_ideal_gas_reactor": {
       "verdict": "carried",
@@ -22387,7 +22387,7 @@
       ],
       "source_sha256": "d0fc981f4d9231b997ab66d4326e6b1340215fa046527d9be591c7720bd097c0",
       "file": "rmgpy/rmg/input.py",
-      "line": 1997
+      "line": 2003
     },
     "rmgpy/rmg/input.py:convert_binding_energies": {
       "verdict": "carried",
@@ -22457,7 +22457,7 @@
       ],
       "source_sha256": "7ec71f7851f116a6bca88e4d016c1b0a6aa117e2035d6dd84614c29c843b5c34",
       "file": "rmgpy/rmg/input.py",
-      "line": 3031
+      "line": 3037
     },
     "rmgpy/rmg/input.py:get_input": {
       "verdict": "carried",
@@ -22467,7 +22467,7 @@
       ],
       "source_sha256": "661482f314ec3600a9d6852b64f0bf37e9fa025cfdddcbaa2875c546322cdadd",
       "file": "rmgpy/rmg/input.py",
-      "line": 3729
+      "line": 3737
     },
     "rmgpy/rmg/input.py:inchi": {
       "verdict": "carried",
@@ -22487,7 +22487,7 @@
       ],
       "source_sha256": "0aab07c82b82dc328b05bd06d04a5653472e226d831685e422a7612c5b814d22",
       "file": "rmgpy/rmg/input.py",
-      "line": 2199
+      "line": 2205
     },
     "rmgpy/rmg/input.py:liquid_reactor": {
       "verdict": "carried",
@@ -22497,7 +22497,7 @@
       ],
       "source_sha256": "900f1ff54b4c460a15729a97d3c81bf03e9130f4c80e0ab3a0cab8e2e615b090",
       "file": "rmgpy/rmg/input.py",
-      "line": 2480
+      "line": 2486
     },
     "rmgpy/rmg/input.py:liquid_volumetric_mass_transfer_coefficient_power_law": {
       "verdict": "carried",
@@ -22507,7 +22507,7 @@
       ],
       "source_sha256": "d7989ed600cf6f0196c9062b0787f1cbb0c366337344b4861d68d3c9ef8f3cd0",
       "file": "rmgpy/rmg/input.py",
-      "line": 3135
+      "line": 3141
     },
     "rmgpy/rmg/input.py:mb_sampled_reactor": {
       "verdict": "carried",
@@ -22517,7 +22517,7 @@
       ],
       "source_sha256": "d139fba283ba91e5271e993c89b404debb55a769c3a1df851c054ebf4aa66df4",
       "file": "rmgpy/rmg/input.py",
-      "line": 2655
+      "line": 2661
     },
     "rmgpy/rmg/input.py:ml_estimator": {
       "verdict": "carried",
@@ -22527,7 +22527,7 @@
       ],
       "source_sha256": "99dc80d2ecebfb7fde9c52fa1474bb6d5021a21eddc60404ebd62589924de4ca",
       "file": "rmgpy/rmg/input.py",
-      "line": 2818
+      "line": 2824
     },
     "rmgpy/rmg/input.py:model": {
       "verdict": "carried",
@@ -22537,7 +22537,7 @@
       ],
       "source_sha256": "7126f714f3e019573381aa36d1b0a5139a95d6874dc148835940d6d5561a9b28",
       "file": "rmgpy/rmg/input.py",
-      "line": 2737
+      "line": 2743
     },
     "rmgpy/rmg/input.py:options": {
       "verdict": "carried",
@@ -22547,7 +22547,7 @@
       ],
       "source_sha256": "fd3b365c49ec9ea68a1502b5ff9f2677b8764f3ba0164640f7cc1140bdf740d1",
       "file": "rmgpy/rmg/input.py",
-      "line": 2990
+      "line": 2996
     },
     "rmgpy/rmg/input.py:plasma_reactor": {
       "verdict": "carried",
@@ -22559,7 +22559,7 @@
       ],
       "source_sha256": "97f46b49023b95de90b8e5804cf3cd750bdf0a94a532e3799a9d3b0cc7c5b5d7",
       "file": "rmgpy/rmg/input.py",
-      "line": 1222
+      "line": 1224
     },
     "rmgpy/rmg/input.py:pressure_dependence": {
       "verdict": "carried",
@@ -22569,7 +22569,7 @@
       ],
       "source_sha256": "ceabd9f917dc06b5090c25b3e6c580cbfe26a1224a312641dad2879ce167620f",
       "file": "rmgpy/rmg/input.py",
-      "line": 2879
+      "line": 2885
     },
     "rmgpy/rmg/input.py:quantum_mechanics": {
       "verdict": "carried",
@@ -22579,7 +22579,7 @@
       ],
       "source_sha256": "53e6e7292c82912e91c5bec7b2e7e44837afc46a2497f8e91faafbd1218234ca",
       "file": "rmgpy/rmg/input.py",
-      "line": 2799
+      "line": 2805
     },
     "rmgpy/rmg/input.py:react": {
       "verdict": "carried",
@@ -22600,7 +22600,7 @@
       ],
       "source_sha256": "a2a343bf2be2b542f1398766d47daf73e162a6dcfa1ba98d3fc389c1eebb2a94",
       "file": "rmgpy/rmg/input.py",
-      "line": 3153
+      "line": 3159
     },
     "rmgpy/rmg/input.py:read_thermo_input_file": {
       "verdict": "carried",
@@ -22610,7 +22610,7 @@
       ],
       "source_sha256": "113bade13238c4e8e0e55c70f205763a450ca0f3240983df3833c547182697be",
       "file": "rmgpy/rmg/input.py",
-      "line": 3262
+      "line": 3268
     },
     "rmgpy/rmg/input.py:restart_from_seed": {
       "verdict": "carried",
@@ -22620,7 +22620,7 @@
       ],
       "source_sha256": "2dc96bde4e914e19e62a59794054a21b03cbe5106311f347db0542a0041e1d1f",
       "file": "rmgpy/rmg/input.py",
-      "line": 3091
+      "line": 3097
     },
     "rmgpy/rmg/input.py:save_input_file": {
       "source_sha256": "bde695c6788d06ad45288cf00e92274d95c6e980e046550216afab44d7e72a59",
@@ -22631,7 +22631,7 @@
         "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py"
       ],
       "file": "rmgpy/rmg/input.py",
-      "line": 3436
+      "line": 3442
     },
     "rmgpy/rmg/input.py:save_input_file.<lambda1>": {
       "verdict": "carried",
@@ -22641,7 +22641,7 @@
       ],
       "source_sha256": "53a6a3a6a619383e1ee34624d2e9cc3070b8614183ed7c4413f9379fbc0f5c42",
       "file": "rmgpy/rmg/input.py",
-      "line": 3692
+      "line": 3700
     },
     "rmgpy/rmg/input.py:save_input_file.format_initial_mole_fractions": {
       "verdict": "carried",
@@ -22651,7 +22651,7 @@
       ],
       "source_sha256": "9c923cafd297bc1c2d5c5600403df75ff7ede8bc2f94a54833740048e94806db",
       "file": "rmgpy/rmg/input.py",
-      "line": 3519
+      "line": 3527
     },
     "rmgpy/rmg/input.py:save_input_file.format_pressure": {
       "verdict": "carried",
@@ -22661,7 +22661,7 @@
       ],
       "source_sha256": "30133e65d63ea04dbc8d283d88e875490be53c32214e1593a8164f9c2d112450",
       "file": "rmgpy/rmg/input.py",
-      "line": 3512
+      "line": 3520
     },
     "rmgpy/rmg/input.py:save_input_file.format_temperature": {
       "verdict": "carried",
@@ -22671,7 +22671,7 @@
       ],
       "source_sha256": "28dcd0511fc529c926c98cf5ba0d000e78754d4d4ca267255c6546cf9dd77a00",
       "file": "rmgpy/rmg/input.py",
-      "line": 3505
+      "line": 3513
     },
     "rmgpy/rmg/input.py:save_input_file.formula": {
       "verdict": "carried",
@@ -22681,7 +22681,7 @@
       ],
       "source_sha256": "df9d9af73bf7e4a28e3921d3d55d349b0f39a0e51df864f63e27e610287961eb",
       "file": "rmgpy/rmg/input.py",
-      "line": 3664
+      "line": 3672
     },
     "rmgpy/rmg/input.py:set_global_rmg": {
       "verdict": "carried",
@@ -22691,7 +22691,7 @@
       ],
       "source_sha256": "532ad34bf51058529053ee70bdffab7569108b029fd3a5066a43302a4e046083",
       "file": "rmgpy/rmg/input.py",
-      "line": 3144
+      "line": 3150
     },
     "rmgpy/rmg/input.py:simple_reactor": {
       "verdict": "carried",
@@ -22711,7 +22711,7 @@
       ],
       "source_sha256": "80c86eec6cbb0deb4dabe9321c180ccc3db62a849b261855d1e5d58544b6cb3d",
       "file": "rmgpy/rmg/input.py",
-      "line": 2719
+      "line": 2725
     },
     "rmgpy/rmg/input.py:smarts": {
       "verdict": "carried",
@@ -22741,7 +22741,7 @@
       ],
       "source_sha256": "27a0a850e7d5a219e670126ef8b5a5e4bcc0a3e7449995d543571f8d030c92e0",
       "file": "rmgpy/rmg/input.py",
-      "line": 2723
+      "line": 2729
     },
     "rmgpy/rmg/input.py:species": {
       "verdict": "carried",
@@ -22762,7 +22762,7 @@
       ],
       "source_sha256": "1ac017a836fbcfb2c873dddd665b14f7341090538364d7fca5f3287ae2ca63eb",
       "file": "rmgpy/rmg/input.py",
-      "line": 2556
+      "line": 2562
     },
     "rmgpy/rmg/input.py:thermo_central_database": {
       "verdict": "carried",
@@ -22772,7 +22772,7 @@
       ],
       "source_sha256": "f43cf224bcaa0c0e1af7c60a4ab7fcda5b60615156c85c6142ac3bc8742a0d79",
       "file": "rmgpy/rmg/input.py",
-      "line": 3057
+      "line": 3063
     },
     "rmgpy/rmg/input.py:uncertainty": {
       "verdict": "carried",
@@ -22782,7 +22782,7 @@
       ],
       "source_sha256": "52345e1ba5c710d3dec24433c2bfe9434f74ed39e3348a87e9646950913fe914",
       "file": "rmgpy/rmg/input.py",
-      "line": 3070
+      "line": 3076
     },
     "rmgpy/rmg/listener.py:SimulationProfilePlotter.__init__": {
       "verdict": "carried",
@@ -24626,7 +24626,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "471590616d202c6e8ca07ac2fdfdc5790bec3abf717d4b2fa6bcb0300887120a"
+      "source_sha256": "0a89c45ad03c169eedddc3bea16a90556272bcc21d5637253447868c530d6b7c"
     },
     "rmgpy/solver/eedf.py:EEDFTable._read_branch.append": {
       "verdict": "carried",
@@ -24642,7 +24642,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "abe8ef89eb89bed2aa2d3bedcfd57420b757541ac7e78008c0dfccaa1ffc78b2"
+      "source_sha256": "0685d747728c2869722504684f02a15dc5e36a9f1cd8cb9c4ce14a3837570f18"
     },
     "rmgpy/solver/eedf.py:EEDFTable.row": {
       "verdict": "carried",
@@ -24650,7 +24650,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "c907675d54051061540c062d5b46751c2c8d3a0a21a9ffdd649b961fe0799684"
+      "source_sha256": "3256c0263f24df5e3d13404f662d7f7cc17278ecf0d82ede329e61fd77c314c2"
     },
     "rmgpy/solver/eedf.py:EEDFTable.row.take": {
       "verdict": "carried",
@@ -24966,7 +24966,7 @@
       ],
       "source_sha256": "35b39d32f28f3d19bc051e244671fac742bee9998b554378f2bc5c43ad194ae9",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1043
+      "line": 1046
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.__reduce__": {
       "verdict": "carried",
@@ -24977,7 +24977,7 @@
       ],
       "source_sha256": "3dea0685a3d8e46ea8333c11ab27f82a14a09e98f9ab3f073394e05f9dd51cb0",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4925
+      "line": 5003
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._apply_wall_jacobian": {
       "verdict": "carried",
@@ -24988,7 +24988,7 @@
       ],
       "source_sha256": "cf3a597c6ec01946154b6a35fceed8f9618b239361873169048812905c6779e7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8973
+      "line": 9051
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._apply_wall_terms": {
       "verdict": "carried",
@@ -24999,7 +24999,7 @@
       ],
       "source_sha256": "37fcbbc91b167ffdeeb73d5f5664d813675dfd03ec015dac6da7b4176cea76d3",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8701
+      "line": 8779
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._bath_amounts": {
       "verdict": "carried",
@@ -25009,7 +25009,7 @@
       ],
       "source_sha256": "351b1eb1bbed5215f143db9a099c48f1b4e882556ab3a7c074585eef0aa54243",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6682
+      "line": 6760
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._blanc_combine": {
       "verdict": "carried",
@@ -25019,7 +25019,7 @@
       ],
       "source_sha256": "908072764c7cb0b1d6046588eb1e24af84429e48f01135a7ef15b5690f3c2245",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6692
+      "line": 6770
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_accepted_plasma_domain": {
       "verdict": "carried",
@@ -25030,7 +25030,7 @@
       ],
       "source_sha256": "07810bde68722a94916fe417822ea026ab53ad0f20274dc5ead965825e4702f9",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3946
+      "line": 3970
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_bath_threshold": {
       "verdict": "carried",
@@ -25040,7 +25040,7 @@
       ],
       "source_sha256": "e31157e55d55bb20a64b65b69d54fd239923e3028f5aded4892fc744f287d6ff",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6778
+      "line": 6856
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_charged_species_thermo_provenance": {
       "verdict": "carried",
@@ -25051,7 +25051,7 @@
       ],
       "source_sha256": "5d8063479e4011babd85fa764538de28ce2719573e59c680e24f8854824ae7f5",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5201
+      "line": 5279
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_en_complete_operator": {
       "verdict": "carried",
@@ -25062,7 +25062,7 @@
       ],
       "source_sha256": "686762ab9d5000a63f671ac7508ddef340bac60c7f08fe4ef288dff298ef86fd",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7441
+      "line": 7519
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_en_transport_parameters": {
       "verdict": "carried",
@@ -25073,7 +25073,7 @@
       ],
       "source_sha256": "52478a9302d98bccd91fdf7d3f1e2f912e30b57bbd629791794f56da5c2b88cf",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2045
+      "line": 2064
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_en_wall_domain": {
       "verdict": "carried",
@@ -25084,7 +25084,7 @@
       ],
       "source_sha256": "e3aa85e87fdffb11f0949ad2904dfd698c4696f29464ea73317afddd9ce5fdfc",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4053
+      "line": 4077
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_energy_state": {
       "verdict": "carried",
@@ -25095,7 +25095,7 @@
       ],
       "source_sha256": "8c10955c00473dac76a72abbcdcc39e1183ccee343a82bfd698012826d234496",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3367
+      "line": 3387
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_plasma_energy_parameters": {
       "verdict": "carried",
@@ -25106,7 +25106,7 @@
       ],
       "source_sha256": "9356d8d1417d5a15005f947a24d34ce8edd80d5fb664616ec3c234e49a31bb53",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2088
+      "line": 2107
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_plasma_rate_parameters": {
       "verdict": "carried",
@@ -25117,7 +25117,7 @@
       ],
       "source_sha256": "34c4e4179a7821ea11f6a3f243959308cab86ec0c7df138d8536948897f41a37",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2110
+      "line": 2129
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_rate_temperature_exponent": {
       "verdict": "carried",
@@ -25128,7 +25128,7 @@
       ],
       "source_sha256": "3fce636dc9fa402e816fcb6a9b920fff986d63375bbd7d0ff265c2ea07901cc5",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2064
+      "line": 2083
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_anion_transport_data": {
       "verdict": "carried",
@@ -25139,7 +25139,7 @@
       ],
       "source_sha256": "2a44ec3f0920f2d5753de2a7f709db9c283687184ece533865d6e5da8795ad69",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7277
+      "line": 7355
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_electronegative_wall_jacobian": {
       "verdict": "carried",
@@ -25150,7 +25150,7 @@
       ],
       "source_sha256": "ea322a0b1d22bfa00d6d75414c871157222c8f1087d618cdfa556128d708e36e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4073
+      "line": 4097
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_ion_wall_components": {
       "verdict": "carried",
@@ -25161,7 +25161,7 @@
       ],
       "source_sha256": "407f7c56afc8cc5b030215cb45532cc8927534db51b3e9ea1cba86da3f525584",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1536
+      "line": 1555
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_mixture_reduced_mobilities": {
       "verdict": "carried",
@@ -25172,7 +25172,7 @@
       ],
       "source_sha256": "3476989827ff843114a6a5ae739ca9ca0cd5e82338c48653b126f954415aa221",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6731
+      "line": 6809
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_neutral_wall_frequencies": {
       "verdict": "carried",
@@ -25183,7 +25183,7 @@
       ],
       "source_sha256": "09b5b8ebf8813b168513b6ce4f4d1478b346c4d38c1c5b50c5b795aa8eeed343",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7018
+      "line": 7096
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_nu_wall": {
       "verdict": "carried",
@@ -25194,7 +25194,7 @@
       ],
       "source_sha256": "43d9ecea7510d036dc30fd0d6912391b5f9703b5ef7f6bb5efeaaa37d00367d1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6871
+      "line": 6949
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_nu_wall_per_ion": {
       "verdict": "carried",
@@ -25205,7 +25205,7 @@
       ],
       "source_sha256": "2813061e0789fb7c03b84f90d9290b2a8983ebe5cab1c726dfee6182e6f0c62e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6961
+      "line": 7039
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data": {
       "source_sha256": "a842358f1f3942615bfaa765e9ad8ca35cb156f70184d80d25a0f049057597b4",
@@ -25217,7 +25217,7 @@
         "test/rmgpy/yaml_writer/excitedExportRework10Test.py"
       ],
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7325
+      "line": 7403
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_bath_transport": {
       "verdict": "carried",
@@ -25227,7 +25227,7 @@
       ],
       "source_sha256": "2fac5ef9b77d66b1217485eb067cec606e5f4b35746cb278bc336594ca465c9e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2170
+      "line": 2189
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_electronegative_wall": {
       "verdict": "carried",
@@ -25238,7 +25238,7 @@
       ],
       "source_sha256": "e2e7f0860472ac174279f15ca2e061783abc7a8d1a324ebc95eeef6b6277b786",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1439
+      "line": 1458
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_energy_balance": {
       "verdict": "carried",
@@ -25249,7 +25249,7 @@
       ],
       "source_sha256": "5e80d29316bd0552c7fa0334dd3cdac982309193e6a34328a1958885f6af565f",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2442
+      "line": 2461
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_energy_balance._si": {
       "verdict": "carried",
@@ -25259,7 +25259,7 @@
       ],
       "source_sha256": "09ffc4a80e05ef5295d7887b902f7ddec311edf801312a66c4d5cdffff41b581",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2554
+      "line": 2573
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_neutral_wall_diffusion": {
       "verdict": "carried",
@@ -25269,7 +25269,7 @@
       ],
       "source_sha256": "c7c46479bddd4b067744c08237c41140065ed078cbdb2a76fc247596acce7cb4",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2308
+      "line": 2327
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_wall": {
       "verdict": "carried",
@@ -25280,7 +25280,7 @@
       ],
       "source_sha256": "c9be6c009e7f3d2e6ba3f66772a7f371c69a2b2170baf989606551bb408259bb",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1556
+      "line": 1575
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._declared_entry_kinetics": {
       "verdict": "carried",
@@ -25290,7 +25290,7 @@
       ],
       "source_sha256": "c2cd79968dc9b0faee71b43b9f294e029d0c6b9bf21542ec09ba11440f8954e7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2683
+      "line": 2702
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._derive_mobility_entry": {
       "verdict": "carried",
@@ -25301,7 +25301,7 @@
       ],
       "source_sha256": "0f3e88b11d68b9ba9431f5713fe5fd52a87bc1b807e57a0e1987db0a4f7b0b4e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2131
+      "line": 2150
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._electron_energy_row": {
       "verdict": "carried",
@@ -25312,7 +25312,7 @@
       ],
       "source_sha256": "9327dd3f27913813fce264abf10b77fe34fb0497d44c48a6cdea2b8ce0c192f9",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3385
+      "line": 3405
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._electronegative_wall_factor": {
       "verdict": "carried",
@@ -25323,7 +25323,7 @@
       ],
       "source_sha256": "367a6e3f2ead92bda3d0e014bf310cde76e29e70ff1a27da425f98267a86b333",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1519
+      "line": 1538
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_chemical_energy": {
       "verdict": "carried",
@@ -25334,7 +25334,7 @@
       ],
       "source_sha256": "a584f0fc02473636a1c883377041ca41069079c579acd5f9e8c6d9021140b157",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4228
+      "line": 4252
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_energy_jacobian": {
       "verdict": "carried",
@@ -25345,7 +25345,7 @@
       ],
       "source_sha256": "5680c0f6f877e4ad306018ba4c54506e4528db452785c46ba56cc7093a73163e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4324
+      "line": 4348
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_floating_shift": {
       "verdict": "carried",
@@ -25356,7 +25356,7 @@
       ],
       "source_sha256": "2c952da3fe5004875481952193a29941b0a44c75e63afcee82c0a523dbcb1fe8",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3714
+      "line": 3738
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_net_rows": {
       "verdict": "carried",
@@ -25367,7 +25367,7 @@
       ],
       "source_sha256": "1e05326612e95ba9dd36ac149e5e44fd46a3cb5ee77ed090205db45b3ef3dd78",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4200
+      "line": 4224
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_other_pressure_volumes": {
       "verdict": "carried",
@@ -25378,7 +25378,7 @@
       ],
       "source_sha256": "35e0d8c586f743bde15e97997cdc737e68248b5dc4bc920d1874a4ff5f78fda0",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4184
+      "line": 4208
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_product": {
       "verdict": "carried",
@@ -25389,7 +25389,7 @@
       ],
       "source_sha256": "da870c8c8f13b520481854ee99ccac3e3766225629fb7af57b1f8b80db47af71",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4173
+      "line": 4197
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_signed_energy_cost": {
       "verdict": "carried",
@@ -25400,7 +25400,7 @@
       ],
       "source_sha256": "82e0028d777a62764740d985ac24191178badc98405a3ffa9ad173e160ba446c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4205
+      "line": 4229
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_wall_linearization": {
       "verdict": "carried",
@@ -25411,7 +25411,7 @@
       ],
       "source_sha256": "362174a118cfec67c9b171017a7a59ee4c587a40f7f19e19852f65232e51141a",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3740
+      "line": 3764
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._energy_jacobian": {
       "verdict": "carried",
@@ -25422,7 +25422,7 @@
       ],
       "source_sha256": "51f6c0298866adc64259800274133b5de76801992777b65a7e2ae13d1043149d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4477
+      "line": 4501
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "source_sha256": "580034bb7b74be8687f63a2476e9c2e8659d040b5bed5d125feeb2f77ce8a7b2",
@@ -25434,7 +25434,7 @@
         "test/rmgpy/yaml_writer/excitedExportRework10Test.py"
       ],
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7455
+      "line": 7533
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime.<lambda1>": {
       "verdict": "carried",
@@ -25445,7 +25445,7 @@
       ],
       "source_sha256": "dc8d3d0289ab1cd09cfe3d20d1336a11650e47a53a15049caa8fa268e6c3a96c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7547
+      "line": 7625
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_two_temperature_rate_coefficient": {
       "verdict": "carried",
@@ -25456,7 +25456,7 @@
       ],
       "source_sha256": "de5b1659639bd76c2cb42803d669b816682a0994a81dc4f5e9341ce956b785db",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5807
+      "line": 5885
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._extinction_persistence_time": {
       "verdict": "carried",
@@ -25467,7 +25467,7 @@
       ],
       "source_sha256": "688f7080ad3b96a37774e9eb77978c1915d1cf270996638c39292acba0cd7911",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4682
+      "line": 4712
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._finite_en_state": {
       "verdict": "carried",
@@ -25478,7 +25478,7 @@
       ],
       "source_sha256": "a93c727e39ae782f22b96719af719a6c4ca7f3e199f6e69934d036158f9b86a9",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3711
+      "line": 3735
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._identity": {
       "verdict": "carried",
@@ -25487,9 +25487,9 @@
         "test/rmgpy/solver/plasmaTest.py",
         "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "614a7f09a294c843650af354725f2cdda619b7f29163232c649941f6161b3599",
+      "source_sha256": "1cd9c6c56080d65d8b82dccbc5cd33c430f71aa147b0fb80af7c6bd4d0473d9c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4915
+      "line": 4948
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._initialize_model": {
       "verdict": "carried",
@@ -25500,7 +25500,7 @@
       ],
       "source_sha256": "3c6c650e0a5ba679e19631a964f8d08c28552829a0b20eaa7cd842a70dca9b7c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5010
+      "line": 5088
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_energy_budget": {
       "verdict": "carried",
@@ -25509,7 +25509,7 @@
         "rmgpy/solver/plasma.pyx",
         "test/rmgpy/solver/plasmaElectronegativeRework7Test.py"
       ],
-      "source_sha256": "5299b05dab135cf014279cb7368ef557bd366ef3ab229290c021f0471e28c814"
+      "source_sha256": "cb5f4199b166c61316e6e80eb184e93bca99c14179364f944d8fd8ae8d3b82a5"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_wall_diagnostics": {
       "verdict": "carried",
@@ -25520,7 +25520,7 @@
       ],
       "source_sha256": "94c751e7b8cf1a8c6942ad5d1f3b1e0a19bb8e45fc9e92b61bcc1c5e9c1ffafc",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7646
+      "line": 7724
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._needs_electron_placement": {
       "verdict": "carried",
@@ -25530,7 +25530,7 @@
       ],
       "source_sha256": "bc80e99e00b47914ecd43678788a5c2ea853322b0ea2bb5b60b7a257572f3d5a",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5340
+      "line": 5418
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._net_charge": {
       "verdict": "carried",
@@ -25540,7 +25540,7 @@
       ],
       "source_sha256": "18d47a3f8555bc04c638c43374cb2a29f73e91f67797e0ec93cbf3e4910b5489",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8661
+      "line": 8739
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._neutral_dn_effective": {
       "verdict": "carried",
@@ -25550,7 +25550,7 @@
       ],
       "source_sha256": "945a6e9117ee335f27ca90a165e39f2d449f480973dd23e4baca67bb5f33f6df",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7039
+      "line": 7117
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._neutral_dn_value": {
       "verdict": "carried",
@@ -25561,7 +25561,7 @@
       ],
       "source_sha256": "0fe2725d48a9cea09a982b1497648bd593d7bc766bd710850ad9bcb6e81c0347",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2247
+      "line": 2266
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._neutral_wall_scale": {
       "verdict": "carried",
@@ -25571,7 +25571,7 @@
       ],
       "source_sha256": "c2e7196db5c5e62c996a916ff28c16d35a5431a44d142c4567b56640a4a5be4b",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7000
+      "line": 7078
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._prepare_public_wall_state": {
       "verdict": "carried",
@@ -25582,7 +25582,7 @@
       ],
       "source_sha256": "81cdf4c1d01d4e6f4f3ce2b9f1ba437f7dc051e530190f7cd29b531e17644455",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4158
+      "line": 4182
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._record_electronegative_wall_output": {
       "verdict": "carried",
@@ -25593,7 +25593,7 @@
       ],
       "source_sha256": "fc0116c2daa8788dd65808e124603a7fcb08e05346915a8fb8fdff469f64e163",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1427
+      "line": 1446
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._refresh_electron_temperature_rates": {
       "verdict": "carried",
@@ -25604,7 +25604,7 @@
       ],
       "source_sha256": "1ab6ab19d36c9ebbf4fc2e7cdef2f554d743e20f93d47068715aba106212eec1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3321
+      "line": 3341
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._rekey_reaction_index_to_model": {
       "verdict": "carried",
@@ -25615,7 +25615,7 @@
       ],
       "source_sha256": "471de832c580787ca755ff1d34de028ef990396aed39674ab6f94df735333811",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5262
+      "line": 5340
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._requires_en_steps": {
       "verdict": "carried",
@@ -25626,7 +25626,7 @@
       ],
       "source_sha256": "08f9f4a01c06ec3ac4922fcd6409970d28f29858111f9cf456d260cfc3baa354",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8053
+      "line": 8131
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_bath_transport": {
       "verdict": "carried",
@@ -25636,7 +25636,7 @@
       ],
       "source_sha256": "c7d753bf222fba1fb120f7b2e8319461bd1acacfaa02c5826de7a350d0dfa6a8",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6460
+      "line": 6538
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_declared_neutral": {
       "verdict": "carried",
@@ -25646,7 +25646,7 @@
       ],
       "source_sha256": "eba8f7a4fdc5fd4357c6d0157a0cc877e8714fcbc4c7ecbc0f48e1530646e488",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6824
+      "line": 6902
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_electron_placements": {
       "verdict": "carried",
@@ -25656,7 +25656,7 @@
       ],
       "source_sha256": "6286ac23ebad36f6c911ca918467e658246f56dc2911ce678435e293e9502c59",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5277
+      "line": 5355
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_energy_balance": {
       "verdict": "carried",
@@ -25666,7 +25666,7 @@
       ],
       "source_sha256": "6ad9cce7e7988595fa52911460cba0eac73f39afd567bd8e4eea293bdb9b0221",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2702
+      "line": 2721
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_neutral_wall_diffusion": {
       "verdict": "carried",
@@ -25676,7 +25676,7 @@
       ],
       "source_sha256": "6e4dbdda1453060a91753075b1bb49ce9adb119e368c15d8e0c35bc5c2547629",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6348
+      "line": 6426
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_wall_state": {
       "verdict": "carried",
@@ -25687,7 +25687,7 @@
       ],
       "source_sha256": "502da96152615f02f352b138f42073a3c4e1252cb12a2c745c65099de0b7c346",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5944
+      "line": 6022
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._set_charge_row_scale": {
       "verdict": "carried",
@@ -25697,7 +25697,7 @@
       ],
       "source_sha256": "a652c14a0cf96284129b1996cd677054bb1ec1d9d838a553804ce21af9c3d693",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8623
+      "line": 8701
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._skeleton_key": {
       "verdict": "carried",
@@ -25707,7 +25707,7 @@
       ],
       "source_sha256": "3da7ae9e57730dca6aa8590ae5f2bd784279e2b3dc4810473071ff6833cc3f00",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5898
+      "line": 5976
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._source_total_at_volume": {
       "verdict": "carried",
@@ -25717,7 +25717,7 @@
       ],
       "source_sha256": "17df4e55851f05b08b9ab6111643053dda79648efb8902f4020e7fa0e3c96ef3",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8670
+      "line": 8748
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._species_enthalpy": {
       "verdict": "carried",
@@ -25727,7 +25727,7 @@
       ],
       "source_sha256": "c4742bb032637b024d447f494eada5032e7e4a4b341bd2a11f91ef417d3be832",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6810
+      "line": 6888
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._sync_electron_temperature": {
       "verdict": "carried",
@@ -25738,7 +25738,7 @@
       ],
       "source_sha256": "99d3cc18055249920f772d7334f349858f464f58680b6e76e9d50e6c1aa9a718",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3304
+      "line": 3324
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._update_terminal_state": {
       "verdict": "carried",
@@ -25749,7 +25749,7 @@
       ],
       "source_sha256": "32a75a55c5e8820f9e037501e8a44cd71ae6630bbaf2dbcc294e979cc4d8705c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4723
+      "line": 4753
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._validate_electron_state": {
       "verdict": "carried",
@@ -25759,7 +25759,7 @@
       ],
       "source_sha256": "c2996008c7728cff44002ed14299ea1bdf8ad1f7c0e62ae875a02607ff5224d3",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5390
+      "line": 5468
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._validate_reactions": {
       "verdict": "carried",
@@ -25770,7 +25770,7 @@
       ],
       "source_sha256": "71f9baeec7551ed81819cc54319bd1043970e1b8a2bd561334cda5f371935a1e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5653
+      "line": 5731
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._warn_if_balance_ion_unreachable": {
       "verdict": "carried",
@@ -25780,7 +25780,7 @@
       ],
       "source_sha256": "80a02165a9600004aafde48745e4bafd319c8a769f23bfabf793f821ff29d4bc",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5570
+      "line": 5648
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._warn_if_not_charge_neutral": {
       "verdict": "carried",
@@ -25790,7 +25790,7 @@
       ],
       "source_sha256": "c551b1f412af07547c34e7e9179a34817f05333faef91dbc7e75f276dbebccf4",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5494
+      "line": 5572
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.advance": {
       "verdict": "carried",
@@ -25801,7 +25801,7 @@
       ],
       "source_sha256": "592040e6677c22a992ef56289350b413b4fa56a1875fb8585560f068b266f47f",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8104
+      "line": 8182
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.check_wall_support": {
       "verdict": "carried",
@@ -25812,7 +25812,7 @@
       ],
       "source_sha256": "22dfb153c61f47eddc938fa07472f5bac8a7f282f789fef3dcf8b6e53c4a9fe7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7054
+      "line": 7132
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_anion_transport_data": {
       "verdict": "carried",
@@ -25823,7 +25823,7 @@
       ],
       "source_sha256": "eaf0e04640f545d63ef051cae5c078e366cc47833db3eb3893ca9e5d7cfd09eb",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3931
+      "line": 3955
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_anion_transport_frequencies": {
       "verdict": "carried",
@@ -25834,7 +25834,7 @@
       ],
       "source_sha256": "adf4a08b9100706aa5181c22ef702002f70367479fbb402b40da8883c83f3d0a",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7320
+      "line": 7398
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_electronegative_wall_jacobian": {
       "verdict": "carried",
@@ -25845,7 +25845,7 @@
       ],
       "source_sha256": "1ac060abd0030ca483d8169264b9ecdbb442cc2728f2c0463e2cc52f933f4c9e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3941
+      "line": 3965
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_ion_wall_components": {
       "verdict": "carried",
@@ -25856,7 +25856,7 @@
       ],
       "source_sha256": "a20459d1e1554d41d2a5df09871a294dade74577ef24407de5db342781058906",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1531
+      "line": 1550
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_ion_wall_frequencies": {
       "verdict": "carried",
@@ -25867,7 +25867,7 @@
       ],
       "source_sha256": "9be7565e837ce38bd23e5d6b52e4f2272c755ec15b3eb435b86539a1cd586e77",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 6757
+      "line": 6835
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_mixture_reduced_mobilities": {
       "verdict": "carried",
@@ -25878,7 +25878,7 @@
       ],
       "source_sha256": "89745ef6c44471db07ea06adaa79c431c1a6f178e262a4c0efe7c83f6e006c1b",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3916
+      "line": 3940
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_neutral_wall_frequencies": {
       "verdict": "carried",
@@ -25889,7 +25889,7 @@
       ],
       "source_sha256": "443f0a6c2b049c9e70019b79f92575c687064b00c01c3d7699ec0eed384dbf70",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3926
+      "line": 3950
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_nu_wall": {
       "verdict": "carried",
@@ -25900,7 +25900,7 @@
       ],
       "source_sha256": "bdd64bec4df4a790e2c7f26b4bab6958207eb463bcd2e9b1be1cc3959faeca78",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3921
+      "line": 3945
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_reference_reaction_data": {
       "verdict": "carried",
@@ -25911,7 +25911,7 @@
       ],
       "source_sha256": "147a8fdf954f834ffae16a149a788b42ec28346c312fbd373be1c9184954fb05",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3936
+      "line": 3960
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.compute_volume": {
       "verdict": "carried",
@@ -25921,7 +25921,7 @@
       ],
       "source_sha256": "923d3f66687b52c5759bef3d8c3bb97e152270c2963a5d4c02d0c5cbea16f9a8",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8190
+      "line": 8268
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.convert_initial_keys_to_species_objects": {
       "verdict": "carried",
@@ -25931,7 +25931,7 @@
       ],
       "source_sha256": "6bc70da1dd75bbbf8e90b52e5c3f328cec6190a293a1fa35b180fa5af59b97f6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4898
+      "line": 4931
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.discharge_state": {
       "verdict": "carried",
@@ -25941,7 +25941,7 @@
       ],
       "source_sha256": "362f0b21e94c9fc87a1c9397def82848b47b9f3dcd59de1297cf0519c068a7b7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4889
+      "line": 4922
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_factor": {
       "verdict": "carried",
@@ -25952,10 +25952,10 @@
       ],
       "source_sha256": "1051183fa37bb0c1b7e7436ca0041471026beed9aff70204dd93a1cbca812cde",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3911
+      "line": 3935
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_manifest": {
-      "source_sha256": "930c41d4425f7560cd375679ca8c25d2f76e0c64e3b049803c5a2384dc5c94b6",
+      "source_sha256": "1fefdb2e026a91fc29ab3f4ea661a9192995c8f0b5930cfdba9ea62dcc6a11d1",
       "verdict": "carried",
       "reason": "Published wall species identifiers include declared v0 names through has_export_state and the shared Chemkin allocator; ordinary wall identifiers and calculations retain their existing paths.",
       "evidence": [
@@ -25964,7 +25964,7 @@
         "test/rmgpy/yaml_writer/excitedExportRework10Test.py"
       ],
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1250
+      "line": 1264
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_qualification": {
       "verdict": "carried",
@@ -25975,7 +25975,7 @@
       ],
       "source_sha256": "f3d00cf270964d44a13dfac8752b09fcc435b0f19b316abcf81a7aa64bb122d6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1245
+      "line": 1259
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.evaluate_two_temperature_rate_coefficient": {
       "verdict": "carried",
@@ -25986,7 +25986,7 @@
       ],
       "source_sha256": "fa6b107e24f8900011faedbd1bd3128b4bb4933d9d5305f9add9ebeff788709e",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5800
+      "line": 5878
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.extinction_persistence_time": {
       "verdict": "carried",
@@ -25997,7 +25997,7 @@
       ],
       "source_sha256": "06ab13c43df533100701d62bf4ccfd11f5141d2f33076129c47f4d06c81c1d81",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4677
+      "line": 4707
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.generate_rate_coefficients": {
       "verdict": "carried",
@@ -26008,7 +26008,7 @@
       ],
       "source_sha256": "89627409d89829407c0d3eaae17ff6687ca3bb40d396874db058afdf44157249",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 5824
+      "line": 5902
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.get_non_chemical_char_rate": {
       "verdict": "carried",
@@ -26019,7 +26019,7 @@
       ],
       "source_sha256": "0531dcd246d3f1da4b35dc7f7e2c60f0307236675c21bdde9cfab9a4076b3bc6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7863
+      "line": 7941
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.initialize_model": {
       "verdict": "carried",
@@ -26029,7 +26029,7 @@
       ],
       "source_sha256": "65b1bf50a7d078123070715d64c9efe3ab0716564349069495ce42d75e2300b8",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4990
+      "line": 5068
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.ion_reduced_mobilities": {
       "verdict": "carried",
@@ -26039,7 +26039,7 @@
       ],
       "source_sha256": "f3d00cf270964d44a13dfac8752b09fcc435b0f19b316abcf81a7aa64bb122d6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4920
+      "line": 4998
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.jacobian": {
       "verdict": "carried",
@@ -26049,7 +26049,7 @@
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8807
+      "line": 8885
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.monitor_electronegative_wall": {
       "verdict": "carried",
@@ -26060,7 +26060,7 @@
       ],
       "source_sha256": "121f2d1d7eb0d29fa573327560fd21654abec74cdea8d44ecf24a1af55e18db5",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7383
+      "line": 7461
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.residual": {
       "verdict": "carried",
@@ -26070,7 +26070,7 @@
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8371
+      "line": 8449
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.set_initial_conditions": {
       "verdict": "carried",
@@ -26080,7 +26080,7 @@
       ],
       "source_sha256": "cd5b712cc4d86a4bd084272fa48dc7c7c0dd8fe8344fcfb395589e0080ebc23d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8220
+      "line": 8298
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.steady_state_external_armed": {
       "verdict": "carried",
@@ -26091,7 +26091,7 @@
       ],
       "source_sha256": "5ee10b2d085e7dcc9a64923be8017f49a5dcf070360f22807626d0c0197e9876",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7965
+      "line": 8043
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.steady_state_external_residual": {
       "verdict": "carried",
@@ -26102,7 +26102,7 @@
       ],
       "source_sha256": "4e7474761c9a927ad41603b13742de1e35f8ab405b02613190c6b70968e1bd45",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 7908
+      "line": 7986
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.steady_state_relaxation_time": {
       "verdict": "carried",
@@ -26113,7 +26113,7 @@
       ],
       "source_sha256": "dd5aafab8edeea93d35ae1747c630ad8ae99cbc1d7ae418458f1851e1606ac47",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8001
+      "line": 8079
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.step": {
       "verdict": "carried",
@@ -26124,7 +26124,7 @@
       ],
       "source_sha256": "81d2c1e4716c880003d85d3af58ea46ca9f8025deb782e3a0087332c80584d7d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8164
+      "line": 8242
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.terminal_state": {
       "verdict": "carried",
@@ -26134,7 +26134,7 @@
       ],
       "source_sha256": "079c2074c8122713ed2684e12bd09e11df56c1274bb2575de94753b581b29ee2",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4883
+      "line": 4916
     },
     "rmgpy/solver/plasma.pyx:_build_charged_thermo_library_index": {
       "verdict": "carried",
@@ -26145,7 +26145,7 @@
       ],
       "source_sha256": "8fc732bbebbdae52b2c0bf5d729097ef9c5f833bfcca7c331f9bd5e179ad497d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 545
+      "line": 548
     },
     "rmgpy/solver/plasma.pyx:_charged_species_identity": {
       "verdict": "not-reachable-for-resolved",
@@ -26156,7 +26156,7 @@
       ],
       "source_sha256": "f237bbdf4d1b530fa340c9461866d5a46a3e0310be87a6a22698aac8e74187a9",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 261
+      "line": 264
     },
     "rmgpy/solver/plasma.pyx:_charged_species_library_thermo_match": {
       "source_sha256": "bb2051bfcda4f2c34c6fc4d98afd19316da6d8405f4bbaed0b354cd2a53a4340",
@@ -26167,7 +26167,7 @@
         "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py"
       ],
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 567
+      "line": 570
     },
     "rmgpy/solver/plasma.pyx:_charged_thermo_formula_charge_key": {
       "verdict": "carried",
@@ -26178,7 +26178,7 @@
       ],
       "source_sha256": "9bcc6d9ab597b0164cdff7442d6776e91f8d68f041ebe8e0643cbb7b38169faa",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 539
+      "line": 542
     },
     "rmgpy/solver/plasma.pyx:_coerce_bool_flag": {
       "verdict": "carried",
@@ -26188,7 +26188,7 @@
       ],
       "source_sha256": "c2fbecc63178be3755a7dc654cdd995d56d652e0dc3072d935a589671d8e9884",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 215
+      "line": 218
     },
     "rmgpy/solver/plasma.pyx:_is_finite_normal_positive": {
       "verdict": "carried",
@@ -26198,7 +26198,7 @@
       ],
       "source_sha256": "efbbda7ac18c26e4529d2271483f2f8bbcc72b8068b9f32fff50a5e64d5166e1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 254
+      "line": 257
     },
     "rmgpy/solver/plasma.pyx:_is_per_bath_mobility": {
       "verdict": "carried",
@@ -26208,7 +26208,7 @@
       ],
       "source_sha256": "9b5a887947b8cc8ba81537d6101cc0c535cc5b1f5936233fb1066926be4a0efd",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 245
+      "line": 248
     },
     "rmgpy/solver/plasma.pyx:_library_entry_thermo_forms": {
       "verdict": "carried",
@@ -26218,7 +26218,7 @@
       ],
       "source_sha256": "04f1370a228da990694fb50dfb62249849a81f4a958eb66ca01afb7d8eaf5708",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 522
+      "line": 525
     },
     "rmgpy/solver/plasma.pyx:_reference_temperature_kelvin": {
       "verdict": "carried",
@@ -26228,7 +26228,7 @@
       ],
       "source_sha256": "fb3ce1b09a6aca9837a7b6c6c8b4c4869e42a6bf081f8c6bc2cbcb94f834e4bc",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 649
+      "line": 652
     },
     "rmgpy/solver/plasma.pyx:_require_finite_normal_positive": {
       "verdict": "carried",
@@ -26238,7 +26238,7 @@
       ],
       "source_sha256": "72ae392dd6826f59db9545a1676822731853f5eebd05b21f5d7aaf24d56e8acd",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 627
+      "line": 630
     },
     "rmgpy/solver/plasma.pyx:_temperature_exponent": {
       "verdict": "carried",
@@ -26248,7 +26248,7 @@
       ],
       "source_sha256": "2ca61fcc85bc5cfe3ce3bc97663a0680cf25c7628e3ee590c866a8c4de4699cc",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 682
+      "line": 685
     },
     "rmgpy/solver/plasma.pyx:_temperature_law_factor": {
       "verdict": "carried",
@@ -26258,7 +26258,7 @@
       ],
       "source_sha256": "f0a2dd783d09625925dbf6221c03a36ba31ce13d23071e0222d5279d75c65fa6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 704
+      "line": 707
     },
     "rmgpy/solver/plasma.pyx:_thermo_comparison_plan": {
       "verdict": "carried",
@@ -26268,7 +26268,7 @@
       ],
       "source_sha256": "175870ad8530815613019c127182bda6a55b0dbd7b4875441c172125cdc40f1b",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 352
+      "line": 355
     },
     "rmgpy/solver/plasma.pyx:_thermo_comparison_segments": {
       "verdict": "carried",
@@ -26278,7 +26278,7 @@
       ],
       "source_sha256": "2177f6d04d4f9e6e03c922b9d967415938c8b863bb3ecbadf943c71a26b4b2fe",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 266
+      "line": 269
     },
     "rmgpy/solver/plasma.pyx:_thermo_coverage_gap": {
       "verdict": "carried",
@@ -26288,7 +26288,7 @@
       ],
       "source_sha256": "9f6cff7ee47d8a26c6f78eb52d2c7c5a9f67c47f5df1c52b3139860c2211f2b6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 300
+      "line": 303
     },
     "rmgpy/solver/plasma.pyx:_thermo_match_diagnostic": {
       "verdict": "carried",
@@ -26298,7 +26298,7 @@
       ],
       "source_sha256": "60e26bd6408af18e78f9f2063692345f315987214bd6e2b3ed10270ddb34129d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 507
+      "line": 510
     },
     "rmgpy/solver/plasma.pyx:_thermo_mismatch_reason_text": {
       "verdict": "carried",
@@ -26308,7 +26308,7 @@
       ],
       "source_sha256": "10fb3b2413eeda261d47252ba9dd5d24d083940fb0353f7287ddb13ef44743b5",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 481
+      "line": 484
     },
     "rmgpy/solver/plasma.pyx:_thermo_mismatch_summary": {
       "verdict": "carried",
@@ -26318,7 +26318,7 @@
       ],
       "source_sha256": "f44ee296913f3bb8a33f91a8206a671f633077fa20a1e9b56142aee7f3b116ad",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 499
+      "line": 502
     },
     "rmgpy/solver/plasma.pyx:_thermo_sample_values": {
       "verdict": "carried",
@@ -26328,7 +26328,7 @@
       ],
       "source_sha256": "e8db173f984a7812b96d2c8a8541b245e63ce7fcc4695c68587abb10e7c22571",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 406
+      "line": 409
     },
     "rmgpy/solver/plasma.pyx:_thermo_values_match": {
       "verdict": "carried",
@@ -26338,7 +26338,7 @@
       ],
       "source_sha256": "83bf9627ec0cec85d6a047b3dd133b08410568db4d680055c2767ef4a9329a92",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 425
+      "line": 428
     },
     "rmgpy/solver/plasma.pyx:_thermodata_cp_breakpoints": {
       "verdict": "carried",
@@ -26348,7 +26348,7 @@
       ],
       "source_sha256": "3f091ae8eaa29bb4dbb0256a0ffe3ef71b42c2417764b44e058342466f26c340",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 324
+      "line": 327
     },
     "rmgpy/solver/plasma.pyx:classify_discharge": {
       "verdict": "carried",
@@ -26358,7 +26358,7 @@
       ],
       "source_sha256": "6f32083e28e96ba69a9d74c01faf024e8bdb437800091520e68663906a2b9cc5",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 194
+      "line": 197
     },
     "rmgpy/solver/simple.pyx:SimpleReactor.__init__": {
       "verdict": "carried",
@@ -30552,7 +30552,7 @@
         "rmgpy/tools/eedf/corroborate.py",
         "test/rmgpy/tools/eedf/corroborateTest.py"
       ],
-      "source_sha256": "1b37c20db10b1ab57b2251b398df7d33d42a2d1eb3a69b34828d5ebdf4b80e91"
+      "source_sha256": "dec826615c2c250573a2b20fccb1682d625e07c3d890acc93e2d1eea4ef8a2f7"
     },
     "rmgpy/tools/eedf/corroborate.py:_after_fork_in_child": {
       "verdict": "excluded",
@@ -30846,7 +30846,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "252f3a05320df70d62b0f4a87293a3ff3cb3a08adc80942fc930434aee48b185"
+      "source_sha256": "e6867cbf7a6aa9cb0470facc3c9ad6bc093a90b7e2f91808828937cceea685f4"
     },
     "rmgpy/tools/eedf/generate.py:_screen": {
       "verdict": "carried",
@@ -32934,7 +32934,7 @@
       ],
       "source_sha256": "566d72d10fbe52df63cee0ae202ea4a72c850f820efca13f700201b865249098",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 557
+      "line": 560
     },
     "rmgpy/species.py:Species._invalidate_thermo_state_cache": {
       "verdict": "not-reachable-for-resolved",
@@ -33143,7 +33143,7 @@
       ],
       "source_sha256": "cf0525c23c789c13c293b132222c087ff5bd319f13b3754accdffc6eb5d424d1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4134
+      "line": 4158
     },
     "rmgpy/eedf_export.py:require_non_eedf_reactor_mode": {
       "verdict": "refused",
@@ -33231,7 +33231,7 @@
       "evidence": [
         "test/rmgpy/rmg/plasmaEEDFInputTest.py"
       ],
-      "source_sha256": "63433cdc810acf351a3e2412c508fc7cd53013b5ee8e67a01df6e30422d9fa68",
+      "source_sha256": "45c8208d191b5130d77054ac7608e41931623e1802a023c777d2f1fed54fb414",
       "file": "rmgpy/rmg/input.py",
       "line": 975
     },
@@ -33261,7 +33261,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "db35fe5a3eeccec75f4919c6cf09c1568277a4939ffd34090d4faa98b78d1f3a"
+      "source_sha256": "491c3f43831174d2d47ecef07562ea6137f70219eabda0ec4e84c8434818c54c"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider._identity": {
       "verdict": "carried",
@@ -33367,7 +33367,7 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "e7fac9d74e3af91285b27fab4c6819bddeee7920dd7a08dbe15054596fe45cde"
+      "source_sha256": "76f9b7f0179aeb95b604a7f1e9aab2015872308ffff94636cd50088cc9557571"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_eedf_wall_worst_case": {
       "verdict": "carried",
@@ -33379,7 +33379,7 @@
       ],
       "source_sha256": "8dda6d6b6c7eeb9e37d7c4fb29cde33dc515ab3a62caf191553ae2c0ef511456",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3089
+      "line": 3109
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_eedf": {
       "verdict": "carried",
@@ -33389,9 +33389,9 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "c9e150d5691f002cfc44912132d5f629a665cef7222926cd680a94e9ed5ab74b",
+      "source_sha256": "9d4578a3aabe7606247f54c7a7900ccc8a62192a50feda576cf12cfa8c0be7a4",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1183
+      "line": 1186
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_composition_energy_derivative": {
       "verdict": "carried",
@@ -33403,7 +33403,7 @@
       ],
       "source_sha256": "711d3171fb8b9c7b1e2ca3804f6666d722068f7c13863fe3ee1f979d0552ad76",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3496
+      "line": 3516
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_coordinate_label": {
       "verdict": "carried",
@@ -33415,7 +33415,7 @@
       ],
       "source_sha256": "63fbfbfa95693731c93806d7c89059d492f9d69ddcf46813422d31eeda4479b1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3120
+      "line": 3140
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_coordinates": {
       "verdict": "carried",
@@ -33427,7 +33427,7 @@
       ],
       "source_sha256": "8107f84bc25bfe74c2e359eeee92966d73d7fd7ea4f1e9be441396f1f83bd397",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3130
+      "line": 3150
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_coordinates.resolve": {
       "verdict": "carried",
@@ -33439,7 +33439,7 @@
       ],
       "source_sha256": "e32d4b0b30d7719f6fe2e923c60442b66d7561139ebe86f720ed916cf98d588d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3152
+      "line": 3172
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_empirical_key": {
       "verdict": "carried",
@@ -33451,7 +33451,7 @@
       ],
       "source_sha256": "641efb871e5cdfa4fad95301e7b2300d56a5b63ab14d9ef46d63618f0e41ed5a",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3197
+      "line": 3217
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_energy_row": {
       "verdict": "carried",
@@ -33461,7 +33461,7 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "426ebb6fb43aef107fda94ab8f6ba67382719e5c18687a6abc90513e14e43df0"
+      "source_sha256": "c26a2c848c74553c0a26e9bdf63802bdf553c10f98473cbf1826ee9f391bb214"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._initialize_eedf_provider": {
       "verdict": "carried",
@@ -33471,9 +33471,9 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "97ea7457da27d079968f1d38cf83a4220bf8e4fce5d4660544537f5cb70f83af",
+      "source_sha256": "68788d7600b97e3f22c408e2ced8104313fe077dcf6059c02e120f066b582188",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2849
+      "line": 2868
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_eedf_energy_balance": {
       "verdict": "carried",
@@ -33485,7 +33485,7 @@
       ],
       "source_sha256": "45a9e0f58ec32bc5fa3a26bccb3f5c869bd353c6bba89eed040ae24744f9f356",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3205
+      "line": 3225
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._sync_electron_state": {
       "verdict": "carried",
@@ -33497,7 +33497,7 @@
       ],
       "source_sha256": "e0d93f8bb02f4a90a892853aa7d7bb62c132ba1b2fdc3c6c91c9a7286cdd6e4f",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3281
+      "line": 3301
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.eedf_run_manifest": {
       "verdict": "carried",
@@ -33507,9 +33507,9 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "2344be9cc3dd150640a03bf4c6ffed39c888f688584eca1406f4ccc619a534c3",
+      "source_sha256": "20e0a1d67316b8b4584af71bbff7b55e4a120623c1e2c83e7c39f7ffa90a6754",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1280
+      "line": 1295
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.validate_steady_state": {
       "verdict": "carried",
@@ -33521,7 +33521,7 @@
       ],
       "source_sha256": "3498a63bf4f12123f3a86dddcb94a3c3ab4f5e25ab0d3b60a3762b14264ab155",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4802
+      "line": 4834
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.validate_terminal_state": {
       "verdict": "carried",
@@ -33531,9 +33531,9 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "66095580bfc3336da211df5a224d442aa789cf233118c851c08e8db9a9562318",
+      "source_sha256": "f1ca21593bf177ce74754aeca42ebb0faa6278b7b0dee09b77dfd55c6df6a41a",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4815
+      "line": 4847
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.development_notice": {
       "verdict": "not-reachable-for-resolved",
@@ -33551,7 +33551,7 @@
         "test/rmgpy/solver/eedfProviderTest.py",
         "test/rmgpy/eedfExportRefusalTest.py"
       ],
-      "source_sha256": "73cf442e4e8b8e004e7212a5706443905e35c444a755061d5365aba1497d9b5e"
+      "source_sha256": "6da8c17f715dcd69414b50b74cd311c03fc91b52a39f345024e42b9b4e2ec0c6"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.annotate_development_diagnostic": {
       "verdict": "not-reachable-for-resolved",
@@ -33579,7 +33579,7 @@
       ],
       "source_sha256": "62523137550c7bf74103923e978bba535a20c18d009532d1db563a6cc3854df3",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1298
+      "line": 1317
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._development_run_active": {
       "verdict": "excluded",
@@ -33589,7 +33589,7 @@
       ],
       "source_sha256": "c6957d19f61b460b95ea9c97fa77b2be05a9cc8f91960b7458ba95209890ed19",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1338
+      "line": 1357
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._development_begin_evaluation": {
       "verdict": "excluded",
@@ -33599,7 +33599,7 @@
       ],
       "source_sha256": "f2dc470493eba191892f488295314e63cb6dd9d1e12044b3ae09d57e5dec91c1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1344
+      "line": 1363
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._development_finish_residual": {
       "verdict": "excluded",
@@ -33609,7 +33609,7 @@
       ],
       "source_sha256": "20f5759faf2879263cac451465ac2e8e6c093837432c5dbeb54b79b8b9ef8669",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1367
+      "line": 1386
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._emit_development_progress": {
       "verdict": "excluded",
@@ -33619,7 +33619,7 @@
       ],
       "source_sha256": "5489d0021f049e7690e58eb79b85f55fbe3cbb3f2539ae62df88c0191efe960c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 1375
+      "line": 1394
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.runtime_metadata": {
       "verdict": "carried",
@@ -33638,7 +33638,7 @@
       ],
       "source_sha256": "790c9152fca162ea1e416a5ee6cf25ea9bdd7fe5377abf24c598ee1715d0477c",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8062
+      "line": 8140
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._raise_native_callback_failure": {
       "verdict": "carried",
@@ -33648,7 +33648,7 @@
       ],
       "source_sha256": "484c1503160e6fbbed6933dcde1ff08d3fbb7da9d8501a689fd861caa9eec0c6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8068
+      "line": 8146
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._restore_native_step": {
       "verdict": "carried",
@@ -33658,7 +33658,7 @@
       ],
       "source_sha256": "884ec93ce32e39cf9c237cee6bb011c5ad4e1acba2992ccebf7356196ef3da03",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8072
+      "line": 8150
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._native_solver_step": {
       "verdict": "carried",
@@ -33668,7 +33668,7 @@
       ],
       "source_sha256": "3e70c9751c7c778d17f74ee188759e28bd66cbde17058d778c0886d3e32bb183",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8082
+      "line": 8160
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._residual": {
       "verdict": "carried",
@@ -33678,7 +33678,7 @@
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8389
+      "line": 8467
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._jacobian": {
       "verdict": "carried",
@@ -33688,7 +33688,7 @@
       ],
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 8825
+      "line": 8903
     },
     "rmgpy/tools/eedf/report.py:PowerReport.__post_init__": {
       "verdict": "excluded",
@@ -33975,7 +33975,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "499844d33a143332f4e1f336cba1b6de1df8dab5b6071b3fb64eaa3d142285dd"
+      "source_sha256": "489532415c0b0964cb9c89bbe71511dd086dbebf37db3f2881e51a2eee120604"
     },
     "rmgpy/solver/eedf_provider.py:_qualification_attempt_locked.locked": {
       "verdict": "excluded",
@@ -33983,7 +33983,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "64d3c4b42b0b68c308b6db3a5a120973a6133e8fea1aa316f14dcb0b01e86b73"
+      "source_sha256": "afc00ff0142d2eeb7d813984356004ee1e0990877d6366f6193db6ec34994afe"
     },
     "rmgpy/solver/eedf_provider.py:_qualification_attempt_locked.locked.attempt": {
       "verdict": "excluded",
@@ -33991,7 +33991,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "0d0c98523e845689c8de012e33e05a9c16bbe291aea4e3bd2a854dea6209b146"
+      "source_sha256": "5e024959dd337c0b77e9d1fc7f83bec850a90a3ea12d76a0e179cf6d44454bd1"
     },
     "rmgpy/solver/eedf_provider.py:_qualification_attempt_locked.locked.finalize": {
       "verdict": "excluded",
@@ -33999,7 +33999,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "38fdbbf2502ada59c5f9395c1743f11253e1c140c55834df3a590b3150bc4546"
+      "source_sha256": "e3375bd36c842cec3bbbd99b135e32d98571f970e1c9bec10c2711d713dbad21"
     },
     "rmgpy/tools/eedf/signal_guard.py:run_guarded_attempt": {
       "verdict": "excluded",
@@ -34242,7 +34242,7 @@
       ],
       "source_sha256": "b978a19de1d5fba371de033e4786affc5ddae8dcb5c20c1af630bd6ffec93d8f",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3010
+      "line": 3030
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.development_eedf_diagnostic": {
       "verdict": "carried",
@@ -34252,7 +34252,7 @@
       ],
       "source_sha256": "ea3241eef594e00c729d84d6b2ba27db2297103f475f91c4d04c9f03edbcd056",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3078
+      "line": 3098
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider._check_all_recorded_quantities.check": {
       "verdict": "carried",
@@ -34656,7 +34656,7 @@
       ],
       "source_sha256": "f3d00cf270964d44a13dfac8752b09fcc435b0f19b316abcf81a7aa64bb122d6",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4806
+      "line": 4838
     },
     "rmgpy/solver/eedf_provider.py:_QualificationExport._settle_revocation": {
       "verdict": "excluded",
@@ -36672,7 +36672,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "cf839019bca81f9713cde5f37923841ef828eb542724e1382f7cd89354b97914"
+      "source_sha256": "9328900c631a31bb64c39bf84b4079a28eb7b12e3bac5267ed0d492e2d5caf48"
     },
     "rmgpy/tools/eedf/artifact.py:_write_rows": {
       "verdict": "carried",
@@ -37283,6 +37283,126 @@
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
       "source_sha256": "d169aadba160314dfcb4a62acc995e9258b9a8e491f381fb6b31c884daf2da51"
+    },
+    "rmgpy/tools/eedf/schema.py:_provider_kind": {
+      "verdict": "excluded",
+      "reason": "Validates the numerical artifact provider kind; no molecular identity lookup, inheritance, or export.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "9690b004d3d9b0fe0a2336d91ff2803ac86583664d84c833b79cedfe12888d19"
+    },
+    "rmgpy/tools/eedf/schema.py:_artifact_provider_kind": {
+      "verdict": "excluded",
+      "reason": "Validates the numerical artifact provider kind; no molecular identity lookup, inheritance, or export.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "e573f06a9719a483be3088eb0b71540ab52ca543582c4625cd697751b0a028ca"
+    },
+    "rmgpy/tools/eedf/maxwellian.py:_source_snapshot": {
+      "verdict": "excluded",
+      "reason": "Offline numerical EEDF source decoding or quadrature on explicit collision/population arrays; no molecular identity lookup, inheritance or mechanism export.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/maxwellianTest.py"
+      ],
+      "source_sha256": "dd553d7c1fedeb3c464c9a986db8736df11aaa0eb2ee717e69fd85401ac36601"
+    },
+    "rmgpy/tools/eedf/maxwellian.py:_maxwellian_distribution": {
+      "verdict": "excluded",
+      "reason": "Offline numerical EEDF source decoding or quadrature on explicit collision/population arrays; no molecular identity lookup, inheritance or mechanism export.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/maxwellianTest.py"
+      ],
+      "source_sha256": "0557c142babba5ed1e19d0ec13d55c3117e411450b57310ef99abb7acf9378c8"
+    },
+    "rmgpy/tools/eedf/maxwellian.py:_maxwellian_row": {
+      "verdict": "excluded",
+      "reason": "Offline numerical EEDF source decoding or quadrature on explicit collision/population arrays; no molecular identity lookup, inheritance or mechanism export.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/maxwellianTest.py"
+      ],
+      "source_sha256": "f3537ddc114413d836108f49ecd1bda3de4a9aa8c661e11cf7b4d1866942df9c"
+    },
+    "rmgpy/tools/eedf/moments.py:_transport_moments": {
+      "verdict": "excluded",
+      "reason": "Offline numerical EEDF source decoding or quadrature on explicit collision/population arrays; no molecular identity lookup, inheritance or mechanism export.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/maxwellianTest.py"
+      ],
+      "source_sha256": "8d6169699afb255664e9458dc90c9c5f24e1d5ed939db097abb205b2dde88244"
+    },
+    "rmgpy/solver/eedf.py:EEDFTable.provider_kind": {
+      "verdict": "excluded",
+      "reason": "Numerical EEDF comparator generation, metadata validation or provider-kind access on explicit arrays; no molecular identity lookup, inheritance or mechanism export.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/maxwellianTest.py"
+      ],
+      "source_sha256": "ea769f997855a2cc2f74f832f57b9c3bec3060e2d275338dffdf973b5f609065"
+    },
+    "rmgpy/tools/eedf/maxwellian.py:_held_out_source_row": {
+      "verdict": "excluded",
+      "reason": "Numerical EEDF comparator generation, metadata validation or provider-kind access on explicit arrays; no molecular identity lookup, inheritance or mechanism export.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/maxwellianTest.py"
+      ],
+      "source_sha256": "23a59f564e2d8ac9bd8a1b1c21648acd750e56a05dae6c1e8b87a551dca06d76"
+    },
+    "rmgpy/tools/eedf/maxwellian.py:_validate_comparator": {
+      "verdict": "excluded",
+      "reason": "Numerical EEDF comparator generation, metadata validation or provider-kind access on explicit arrays; no molecular identity lookup, inheritance or mechanism export.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/maxwellianTest.py"
+      ],
+      "source_sha256": "88adc1b03e17270075deff8a1a8fc4782b4df76d61c70a3cbbc61acf5665c5e3"
+    },
+    "rmgpy/tools/eedf/maxwellian.py:_validate_comparator.compare": {
+      "verdict": "excluded",
+      "reason": "Numerical EEDF comparator generation, metadata validation or provider-kind access on explicit arrays; no molecular identity lookup, inheritance or mechanism export.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/maxwellianTest.py"
+      ],
+      "source_sha256": "ccaa04074f4498c40b532220fd63554436c9e1bae71f6d285a29c28bfaa51e38"
+    },
+    "rmgpy/tools/eedf/maxwellian.py:generate_maxwellian": {
+      "verdict": "excluded",
+      "reason": "Numerical EEDF comparator generation, metadata validation or provider-kind access on explicit arrays; no molecular identity lookup, inheritance or mechanism export.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/maxwellianTest.py"
+      ],
+      "source_sha256": "58423e9a794fe72a9f69a7e5ff13315ee9948566c1cfcd205e0427aae90538e6"
+    },
+    "rmgpy/tools/eedf/maxwellian.py:main": {
+      "verdict": "excluded",
+      "reason": "Numerical EEDF comparator generation, metadata validation or provider-kind access on explicit arrays; no molecular identity lookup, inheritance or mechanism export.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/maxwellianTest.py"
+      ],
+      "source_sha256": "7a418549c62d3bc2f625c8a1e63ce5b9e737d1852892b09009fe100234ef01fe"
+    },
+    "rmgpy/tools/eedf/schema.py:_comparator_metadata": {
+      "verdict": "excluded",
+      "reason": "Numerical EEDF comparator generation, metadata validation or provider-kind access on explicit arrays; no molecular identity lookup, inheritance or mechanism export.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/maxwellianTest.py"
+      ],
+      "source_sha256": "a5e9d34392f1fe2574b08d679825b923553c12992d355496bf71bf85f2b07558"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider.provider_kind": {
+      "verdict": "excluded",
+      "reason": "EEDF provider-kind access or existing terminal qualification after the comparator refusal boundary; no molecular identity lookup or mechanism export.",
+      "evidence": [
+        "test/rmgpy/solver/eedfProviderTest.py"
+      ],
+      "source_sha256": "549d747fd12cd18640153cf12f0b2a19304ac1d42e28c65d69e0d68916199d98"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.maxwellian_comparator": {
+      "verdict": "excluded",
+      "reason": "Read-only comparator-kind classification from the checked provider or pre-initialization declaration; no molecular identity lookup or mechanism export.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFMaxwellianTest.py"
+      ],
+      "source_sha256": "f3d00cf270964d44a13dfac8752b09fcc435b0f19b316abcf81a7aa64bb122d6"
     }
   }
 }

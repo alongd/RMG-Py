@@ -2271,8 +2271,8 @@
     "rmgpy/rmg/input.py:save_input_file": {
       "file": "rmgpy/rmg/input.py",
       "function": "save_input_file",
-      "line": 3440,
-      "signature": "ac3972d9a08130a4cff030e767fce2876ffafadd0afffe33709c9405a88e2884",
+      "line": 3442,
+      "signature": "c8dbc12b7d7e9f56f1d9182ca65fd82673c6c4b7b60bc955dc4ac8489220ca43",
       "verdict": "N",
       "reason": "The existing supported header-free declaration keeps its original graph and vibrationalManifold DSL line by stripping the marker only from the serialization copy; explicit resolved input remains refused.",
       "evidence": [
@@ -4017,7 +4017,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._compute_reference_reaction_data",
-      "line": 7369,
+      "line": 7403,
       "signature": "4e16933925d7bb2f387b5e73d5b0e0e565eb8f80fa92124ccdeb788c3df50785",
       "verdict": "R",
       "reason": "Charged-reaction diagnostic equations use shared declarations when any participant is resolved and retain historical str(reaction) bytes for ground-only reactions. Thermo rebase classification: Reference-reaction names and equations include canonical v0 identity for declared participants; the reference energy calculation still uses its previously checked source.",
@@ -4039,7 +4039,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._evaluate_electronegative_wall_regime",
-      "line": 7499,
+      "line": 7533,
       "signature": "c0534dbafe3fd70cd2debb87c2f8284fbe156429631e29d4634048c0656d014e",
       "verdict": "R",
       "reason": "Wall destruction-channel equations and anion labels include declared v0 identifiers while gate computation and ground labels retain the existing code.",
@@ -4061,8 +4061,8 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_manifest": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor.electronegative_wall_manifest",
-      "line": 1253,
-      "signature": "661ea95545b49d6f63bee51997f098a0ff15dc59fcc830dc80eeaa6f0b54cf0d",
+      "line": 1264,
+      "signature": "26872f5889a0a8124ff1e5cb1bc0d12e38eafdd9736a346932c5f658ce1e7a65",
       "verdict": "R",
       "reason": "Published wall species identifiers include declared v0 names through has_export_state and the shared Chemkin allocator; ordinary wall identifiers and calculations retain their existing paths.",
       "test": "excitedExportRework10Test.test_resolved_wall_manifest_uses_state_qualified_species_names",
@@ -5492,7 +5492,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._emit_development_progress": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._emit_development_progress",
-      "line": 1378,
+      "line": 1394,
       "signature": "5747f0e9ecd18b23f53f5c383c181b5a751645fe29aac281308e141e02a16559",
       "verdict": "E",
       "reason": "Development-only JSON telemetry written to stderr; it reports numerical solver state and emits no molecular identity or saved mechanism."
@@ -5644,7 +5644,7 @@
       "file": "rmgpy/tools/eedf/artifact.py",
       "function": "_write_artifact",
       "line": 140,
-      "signature": "f3527b3c7794aac1e863ce0c33320233f4078d85a538d06c100db0ebd0e24a86"
+      "signature": "5b1a32a51e5f7ecb2526db65f3af63ac945469da59ac329cc934c692a9186713"
     },
     "rmgpy/tools/eedf/artifact.py:_write_rows": {
       "file": "rmgpy/tools/eedf/artifact.py",
@@ -5693,6 +5693,14 @@
       "signature": "946476788cadede4b0111a1853ba54312db4c8dd7e87622fb634d5f74edf617c",
       "verdict": "E",
       "reason": "Prints conversion diagnostics or error text; molecular labels remain those of the explicit frozen source and no molecular structures or computed rates are exported."
+    },
+    "rmgpy/tools/eedf/maxwellian.py:_validate_comparator": {
+      "file": "rmgpy/tools/eedf/maxwellian.py",
+      "function": "_validate_comparator",
+      "line": 275,
+      "signature": "8366f72809333a5187a592ad3c2aedc5aa2251774b9036e078a298d44b3707f7",
+      "verdict": "E",
+      "reason": "Builds an in-memory HDF5 numerical candidate to test common interpolation; no mechanism or molecular identity is exported."
     }
   }
 }
