@@ -3997,7 +3997,8 @@ def test_provider_kind_checked_after_waiting_for_qualification_lock(tmp_path, ac
         def __exit__(self, *unused):
             real_lock.release()
     provider._qualification_lock = ObservedLock()
-    monkeypatch.setattr(provider, '_qualify_loki', lambda *a: pytest.fail('stale eligibility'))
+    monkeypatch.setattr(provider, '_begin_qualification_publication',
+                        lambda *a: pytest.fail('stale eligibility started publication'))
     results = []
     def call():
         try:

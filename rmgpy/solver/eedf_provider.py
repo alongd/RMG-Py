@@ -434,13 +434,22 @@ def _qualification_attempt_locked(method):
     @wraps(method)
     def locked(provider, y, t, *args, **kwargs):
         context = None
+        comparator_refusal = None
 
         def attempt():
-            nonlocal context
+            nonlocal context, comparator_refusal
+            # The signal guard must be installed before acquiring this lock.
+            # Refuse M under that lock, before starting any publication.
+            if provider._provider_kind == 'maxwellian-table':
+                comparator_refusal = EEDFError(
+                    'Maxwellian comparator: terminal qualification is NOT_APPLICABLE')
+                raise comparator_refusal
             context = provider._begin_qualification_publication()
             return method(provider, y, t, *args, **kwargs)
 
         def finalize(error):
+            if error is comparator_refusal:
+                return None  # An inapplicable request never started an attempt.
             record = (provider._qualification_record
                       if provider._qualification_status == 'FAILED' else None)
             if record is not None:
@@ -1874,15 +1883,8 @@ class EEDFProvider:
             raise publication_error
         return self._qualification_record
 
-    @_qualification_locked
-    def qualify(self, y, t):
-        """Refuse comparator qualification under the same lock as the action."""
-        if self._provider_kind == 'maxwellian-table':
-            raise EEDFError('Maxwellian comparator: terminal qualification is NOT_APPLICABLE')
-        return self._qualify_loki(y, t)
-
     @_qualification_attempt_locked
-    def _qualify_loki(self, y, t):
+    def qualify(self, y, t):
         """Qualify one accepted terminal state with an independent direct solve."""
         from rmgpy.exceptions import PlasmaStateError
 
