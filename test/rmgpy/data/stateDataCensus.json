@@ -3897,9 +3897,10 @@
       "evidence": [
         "test/rmgpy/data/excitedThermoSourceTest.py",
         "test/rmgpy/chemkinTest.py",
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "bf64b1675f3f343d8c74b3e52b8da600537080977dd4c3cffb6c604d0b45e16d"
+      "source_sha256": "9fac77073ef8c433f0ec59dae1c385e11450a516ba32d0094d0fd342429c745a"
     },
     "rmgpy/chemkin.pyx:render_chemkin_file.<lambda1>": {
       "verdict": "carried",
@@ -3926,45 +3927,50 @@
       "source_sha256": "7369510d18c7871ce9d4c37b234e734bdd6ab8899f01b835638e9af3e5edf75e"
     },
     "rmgpy/chemkin.pyx:render_species_dictionary": {
-      "source_sha256": "e24513d460adbed7c848addc820f364acafaa811c23c36e6ac12ebdad56bcfce",
+      "source_sha256": "5aa76d7643b776baf62961bdf7a60d6ec6e4c3d0da88bcf5ca336d532480e322",
       "verdict": "carried",
       "reason": "Modern dictionaries serialize canonical v0 graphs under their allocated names; old-style dictionaries refuse declaration-bearing identities with SpeciesIdentityError.",
       "evidence": [
         "test/rmgpy/data/excitedThermoSourceTest.py",
-        "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py"
+        "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ]
     },
     "rmgpy/chemkin.pyx:render_transport_file": {
       "verdict": "carried",
       "reason": "Reads/writes explicit mechanism species and kinetic/thermo/transport records. Molecular dictionary identity is kept; this import/export boundary is not an estimator matching ground groups.",
       "evidence": [
-        "test/rmgpy/chemkinTest.py"
+        "test/rmgpy/chemkinTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "ce70df67a36b91a28e9112359c8f481c22248ca5f8bfb6de4075a9dba0c77935"
+      "source_sha256": "54340d25aa1d15ba591dd27b35f5c8a6cdd156c7622bcb282bae13223263a6a1"
     },
     "rmgpy/chemkin.pyx:save_chemkin": {
       "verdict": "carried",
       "reason": "Reads/writes explicit mechanism species and kinetic/thermo/transport records. Molecular dictionary identity is kept; this import/export boundary is not an estimator matching ground groups.",
       "evidence": [
-        "test/rmgpy/chemkinTest.py"
+        "test/rmgpy/chemkinTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "bb0323f76f63bec2286e4bfe0e2c25ec4dae60f87a27c9e01ebc55fa1b714d2d"
+      "source_sha256": "55c193aaf1a835c0dffa15c8db985c5c9945949411379a0ba3bea5c9967f0c56"
     },
     "rmgpy/chemkin.pyx:save_chemkin_file": {
       "verdict": "carried",
       "reason": "Reads/writes explicit mechanism species and kinetic/thermo/transport records. Molecular dictionary identity is kept; this import/export boundary is not an estimator matching ground groups.",
       "evidence": [
-        "test/rmgpy/chemkinTest.py"
+        "test/rmgpy/chemkinTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "41065dea0cbbc5455dccd6f50158a87ccc37ec4930f57c04d530ef059f126c34"
+      "source_sha256": "ac0143d4fea97174830c226b47b242c4df5085dd07291d7a153c847495adb24c"
     },
     "rmgpy/chemkin.pyx:save_chemkin_files": {
       "verdict": "carried",
       "reason": "Reads/writes explicit mechanism species and kinetic/thermo/transport records. Molecular dictionary identity is kept; this import/export boundary is not an estimator matching ground groups.",
       "evidence": [
-        "test/rmgpy/chemkinTest.py"
+        "test/rmgpy/chemkinTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "a613a5f034f9ae51a7059a69d070a97b9541ca45221c7bc7900f4ada666c731e"
+      "source_sha256": "0efd3a510324b3c043d159031dd1e692cee1178c84865f7f53a2fd560d34ac12"
     },
     "rmgpy/chemkin.pyx:save_chemkin_surface_file": {
       "verdict": "carried",
@@ -3978,17 +3984,19 @@
       "verdict": "carried",
       "reason": "Reads/writes explicit mechanism species and kinetic/thermo/transport records. Molecular dictionary identity is kept; this import/export boundary is not an estimator matching ground groups.",
       "evidence": [
-        "test/rmgpy/chemkinTest.py"
+        "test/rmgpy/chemkinTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "098cc5bda7a11a7fe369906b67efa20b984a2825749ddde0c8398fc11f5d60a9"
+      "source_sha256": "c38d48297d5d0a8bc9b60a01c2f0c52edfc0dfed0ac5d471849ebc33c0705fdc"
     },
     "rmgpy/chemkin.pyx:save_transport_file": {
       "verdict": "carried",
       "reason": "Reads/writes explicit mechanism species and kinetic/thermo/transport records. Molecular dictionary identity is kept; this import/export boundary is not an estimator matching ground groups.",
       "evidence": [
-        "test/rmgpy/chemkinTest.py"
+        "test/rmgpy/chemkinTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "45395fd6cf597a7e536c45c0812df3a468d7624ab23e991b77997c5053452c9f"
+      "source_sha256": "125610c6e093588f58386e81d49462ce3a3c90df22886b7cde0d582a80fe2548"
     },
     "rmgpy/chemkin.pyx:validate_chemkin_references": {
       "source_sha256": "15ff5cb512f32a621131f7bbf5d9c8da760309b17cf3349be17a7285b7f5ff0c",
@@ -6427,9 +6435,10 @@
       "verdict": "carried",
       "reason": "Storage/format administration of Entry/item/data, without a resolved species query. Modern molecular/group serialization carries state; derived state-bearing group text output is checked by Database._check_data_serialization.",
       "evidence": [
-        "test/rmgpy/data/kinetics/libraryTest.py"
+        "test/rmgpy/data/kinetics/libraryTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "53f2580093de7256b53213b5b28f7e8fdb6b5d01b66682cf392ecb44f09955a7"
+      "source_sha256": "e8d15cde29e9a589538ef0f5b6acbeaf2d8bbc465e02497d360da72e757a3645"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save_entry": {
       "verdict": "carried",
@@ -22545,9 +22554,10 @@
       "reason": "Resolves deck labels to their existing species_dict objects, validates explicit composition/electron and wall declarations, and passes them to PlasmaReactor. It does not strip electronic state or assign thermo/transport from a ground database record.",
       "evidence": [
         "rmgpy/rmg/input.py",
-        "test/rmgpy/rmg/electronegativeWallInputTest.py"
+        "test/rmgpy/rmg/electronegativeWallInputTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "f69f2999da8aa4c8a448857ca9a0b0bb7f48f37e8ccd72590e02889716c9057c",
+      "source_sha256": "97f46b49023b95de90b8e5804cf3cd750bdf0a94a532e3799a9d3b0cc7c5b5d7",
       "file": "rmgpy/rmg/input.py",
       "line": 1222
     },
@@ -22787,7 +22797,8 @@
       "reason": "Plots the supplied core species profiles and accepted wall manifest/history with their existing labels and gate metadata. Plot titles do not acquire or alter any scientific model.",
       "evidence": [
         "rmgpy/rmg/listener.py",
-        "test/rmgpy/solver/plasmaElectronegativeRework2Test.py"
+        "test/rmgpy/solver/plasmaElectronegativeRework2Test.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
       "source_sha256": "ea2b84f0548d4191effae4e6b92f07b3b575161b74da6bd0d7a7a430b049c358"
     },
@@ -22804,9 +22815,10 @@
       "reason": "Writes the supplied core labels, snapshots and accepted per-time wall history/manifest to output. The writer carries the recorded values and has no species matching or data acquisition route.",
       "evidence": [
         "rmgpy/rmg/listener.py",
-        "test/rmgpy/solver/plasmaElectronegativeRework2Test.py"
+        "test/rmgpy/solver/plasmaElectronegativeRework2Test.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "2eda5a142f9be0a2f596fd108fe727c859ec25d8a32580cc074909f877e34c26"
+      "source_sha256": "c5ad51a4b7607eebbdde9232747286a3eba98328fe712c368f3153c360b628c2"
     },
     "rmgpy/rmg/listener.py:_minimum_confinement": {
       "verdict": "carried",
@@ -22861,9 +22873,10 @@
       "verdict": "carried",
       "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
       "evidence": [
-        "test/rmgpy/rmg/mainTest.py"
+        "test/rmgpy/rmg/mainTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "f8f4f17fd9002269c24af59b78cff46a6d90436f488b5dca206acaffd4a26c77"
+      "source_sha256": "b81e02233845d84ab8162e25ff9dc9ccc142d3d58630cd34984c96b41532d206"
     },
     "rmgpy/rmg/main.py:RMG.clear": {
       "verdict": "carried",
@@ -22902,9 +22915,10 @@
       "reason": "Checks Species thermo before final Cantera export rather than trusting attached resolved fields.",
       "evidence": [
         "test/rmgpy/data/excitedThermoSourceTest.py",
-        "test/rmgpy/rmg/mainTest.py"
+        "test/rmgpy/rmg/mainTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "0e56996ae5eacb8b30026a2387ae579fc19be359fb12337448f77ce8ef055d58"
+      "source_sha256": "b21aa6189b0d9326721f5b7b29e42c273644457557c8e6d841503bab73b4390c"
     },
     "rmgpy/rmg/main.py:RMG.get_git_commit": {
       "verdict": "carried",
@@ -22918,9 +22932,10 @@
       "verdict": "carried",
       "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
       "evidence": [
-        "test/rmgpy/rmg/mainTest.py"
+        "test/rmgpy/rmg/mainTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "61bd387c84f183b10a1421b506b110c5fb5b477b1fcd442aa7b49f4462181ae1"
+      "source_sha256": "81a57ba81971aa8e156bbff7a9bb1aa58a6c6a194933ea86a99ccdf07c27095f"
     },
     "rmgpy/rmg/main.py:RMG.initialize_reaction_threshold_and_react_flags": {
       "verdict": "carried",
@@ -22934,9 +22949,10 @@
       "verdict": "carried",
       "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
       "evidence": [
-        "test/rmgpy/rmg/mainTest.py"
+        "test/rmgpy/rmg/mainTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "9d9ae907c125045dd88a6815859ea297b23a221f8687b74cf5e5cd9410039e11"
+      "source_sha256": "a958f0f1413c0feae22ade35be454440d0bada7f3d0fc798c4609f82fc13eab8"
     },
     "rmgpy/rmg/main.py:RMG.job_is_all_plasma": {
       "verdict": "carried",
@@ -22982,9 +22998,10 @@
       "verdict": "carried",
       "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
       "evidence": [
-        "test/rmgpy/rmg/mainTest.py"
+        "test/rmgpy/rmg/mainTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "8610a155298195458edaa79624f8b8882aba772869a38cbea6e19b67e170c56c"
+      "source_sha256": "b1a8aad3cd2039c3a10c02ba3fb28e86c6da84501c5db2cec97aca762f88515d"
     },
     "rmgpy/rmg/main.py:RMG.make_species_labels_independent": {
       "verdict": "carried",
@@ -23206,9 +23223,10 @@
       "verdict": "carried",
       "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
       "evidence": [
-        "test/rmgpy/rmg/mainTest.py"
+        "test/rmgpy/rmg/mainTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "22553e028fcea92c6db9ac2ab2db5b70b8a8e5576d12471b9b23648bdcec6130"
+      "source_sha256": "6aeb6125fbcc3b79c6b06604b58a913e7bafab23cf40070939829028dcce4754"
     },
     "rmgpy/rmg/main.py:log_conditions": {
       "verdict": "carried",
@@ -23717,9 +23735,10 @@
       "verdict": "carried",
       "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
       "evidence": [
-        "test/rmgpy/rmg/outputTest.py"
+        "test/rmgpy/rmg/outputTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "f0f08653860b6d8e75c1b9f9e6e8416fb1f1d6027213d8a0b4922781ed87d020"
+      "source_sha256": "1c671534d492d22d4cf56d5593e8c1c76895b76d90a25ee77030cc26c385bf60"
     },
     "rmgpy/rmg/output.py:save_output_html": {
       "verdict": "refused",
@@ -23727,9 +23746,10 @@
       "evidence": [
         "test/rmgpy/data/excitedThermoSourceTest.py",
         "test/rmgpy/rmg/outputTest.py",
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "764e59ac5391359d4e320be424ec429c03689ff9bd666bd3d10d02a92b9fdd8a"
+      "source_sha256": "80af639ad40f9a62ae11319b0f8cabcf2f0455a504041219b1e1698cfd04ad59"
     },
     "rmgpy/rmg/output.py:save_output_html.csssafe": {
       "verdict": "carried",
@@ -25464,9 +25484,10 @@
       "verdict": "carried",
       "reason": "Consumes already assigned species models and reaction rates while evolving populations. No independent thermo/group-template acquisition; reaction/species identity is retained in model arrays.",
       "evidence": [
-        "test/rmgpy/solver/plasmaTest.py"
+        "test/rmgpy/solver/plasmaTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "e7a830046939188672342f36e246ad316a48bf19555c7da27ed9f1251f57f237",
+      "source_sha256": "614a7f09a294c843650af354725f2cdda619b7f29163232c649941f6161b3599",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 4915
     },
@@ -28974,17 +28995,19 @@
       "verdict": "not-reachable-for-resolved",
       "reason": "Runtime statistics/reporting only; no molecular scientific acquisition.",
       "evidence": [
-        "test/rmgpy/statsTest.py"
+        "test/rmgpy/statsTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "da1e1f05a54715194b89cde531893d45ec4cea22b3ff0faf2deadefddc3ca8b3"
+      "source_sha256": "0416f4dfe7920c2a2d3c7f19a21f40e8085f393b5aeeeb56552cd701f0937f40"
     },
     "rmgpy/stats.py:ExecutionStatsWriter.save_execution_statistics": {
       "verdict": "not-reachable-for-resolved",
       "reason": "Runtime statistics/reporting only; no molecular scientific acquisition.",
       "evidence": [
-        "test/rmgpy/statsTest.py"
+        "test/rmgpy/statsTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "bc208ac64e3123eed875a30a5b89a29c9102f8629d9e7fdc0fa7732c3d652937"
+      "source_sha256": "b5a371ef93f802b9ff288472a2cb63b0a031553cc4d1e685b86e633bb1c50464"
     },
     "rmgpy/stats.py:ExecutionStatsWriter.update": {
       "verdict": "not-reachable-for-resolved",
@@ -30213,9 +30236,10 @@
       "verdict": "carried",
       "reason": "Analysis, model import/export, simulation, isotope or uncertainty operation on explicit species/reaction data. Independent acquisition delegates to original-species database APIs; external file values are explicit input, not ground-tree matching.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "c54da7b7b9ba59b615d37257d40d820ea47657fe3fe088ef6263f8112d393a99"
+      "source_sha256": "10b3794d959946997ec58056227a1323e367a50b32c207dfb81a6701bf3424f0"
     },
     "rmgpy/tools/compare_cantera_yaml.py:is_numeric": {
       "verdict": "carried",
@@ -31339,9 +31363,10 @@
       "verdict": "carried",
       "reason": "Analysis, model import/export, simulation, isotope or uncertainty operation on explicit species/reaction data. Independent acquisition delegates to original-species database APIs; external file values are explicit input, not ground-tree matching.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "7095c5bd9d8610cc7d24080a72f2366bed0356ad8804c21b1d29c9f9ac0a64a6"
+      "source_sha256": "8ffc797ab1b3566debf82d20fcf83dc71dfbe0758a8894d3a8b826487b836a89"
     },
     "rmgpy/tools/plot.py:GenericPlot.barplot": {
       "verdict": "carried",
@@ -31364,9 +31389,10 @@
       "reason": "Plots explicitly supplied x/y series and their labels, including the supplied title as PNG metadata. This presentation operation reads no species database and cannot select or alter scientific data.",
       "evidence": [
         "rmgpy/tools/plot.py",
-        "test/rmgpy/solver/plasmaElectronegativeRework2Test.py"
+        "test/rmgpy/solver/plasmaElectronegativeRework2Test.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "8d481357c0024ff313a6e2f37094ae842a6bf246fe08d4b4625cf59ae5eb930b"
+      "source_sha256": "628557d10706a3e7e9a0b8d1148fa6ec76825d4326bb9cd5e9d2127510420faa"
     },
     "rmgpy/tools/plot.py:ReactionSensitivityPlot.__init__": {
       "verdict": "carried",
@@ -31452,9 +31478,10 @@
       "verdict": "carried",
       "reason": "Analysis, model import/export, simulation, isotope or uncertainty operation on explicit species/reaction data. Independent acquisition delegates to original-species database APIs; external file values are explicit input, not ground-tree matching.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "036ac5a28ca9c73441afa9d75d84921e527a07aaf913bda4da327585b6da5a36"
+      "source_sha256": "6fd05d3e3f90d165b0a373e072b0c05c830a18d3690491c1285d693e2fc4499a"
     },
     "rmgpy/tools/plot.py:SimulationPlot.plot": {
       "verdict": "carried",
@@ -31556,9 +31583,10 @@
       "verdict": "carried",
       "reason": "Analysis, model import/export, simulation, isotope or uncertainty operation on explicit species/reaction data. Independent acquisition delegates to original-species database APIs; external file values are explicit input, not ground-tree matching.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "b2a81151b307a4829fbaeeaa57e30e761d147f5f9fa5a3ab99d958a3993cccd9"
+      "source_sha256": "81900c9eaa0051f07fd3d7557f3d9277635999fa4600f855d2e52f4f98c60c22"
     },
     "rmgpy/tools/plot.py:plot_sensitivity": {
       "verdict": "carried",
@@ -32108,9 +32136,10 @@
       "verdict": "not-reachable-for-resolved",
       "reason": "Filesystem, timing, log and multiprocessing utilities; no species scientific acquisition.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "fc5d8173649cd2f0ea7b338ea2dd78dc7647e35b6b4bf3977d3d721f581abf60"
+      "source_sha256": "e02ace12cf82ca9b6c4b0a0b4bc3eeda2d9f8d24158c140f8c9dda6ed97707f6"
     },
     "rmgpy/util.py:timefn": {
       "verdict": "not-reachable-for-resolved",
@@ -32148,9 +32177,10 @@
       "verdict": "carried",
       "reason": "Serializes explicit Species thermo and Reaction kinetics into Cantera records, without performing molecular ground-data acquisition.",
       "evidence": [
-        "test/rmgpy/yaml_cantera1Test.py"
+        "test/rmgpy/yaml_cantera1Test.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "b4d339aada7d47b587f07e454275b7a008e54faeb5a9dfafd770660efe6c2462"
+      "source_sha256": "51d87d5df3fe4e72f2ef547bd22a60862a129f22ec7936a8399c8f4e9aa23105"
     },
     "rmgpy/yaml_cantera1.py:_build_equation_string": {
       "verdict": "carried",
@@ -32283,9 +32313,10 @@
       "evidence": [
         "test/rmgpy/data/excitedThermoSourceTest.py",
         "test/rmgpy/yaml_cantera1Test.py",
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "89f849803a16ecc2e09bbc1bbdc02247a1b710ea4f7241e4ea61898c5a4004c5"
+      "source_sha256": "d26627781cd171c961d303ed0f082e5ff90b5b7fd13429718c3bfe42a327ec25"
     },
     "rmgpy/yaml_cantera2.py:CanteraWriter2.__init__": {
       "verdict": "carried",
@@ -32355,9 +32386,10 @@
       "verdict": "carried",
       "reason": "Serializes explicit Species thermo and Reaction kinetics into Cantera records, without performing molecular ground-data acquisition.",
       "evidence": [
-        "test/rmgpy/yaml_cantera2Test.py"
+        "test/rmgpy/yaml_cantera2Test.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "6d29a896de1315fa4cb0f15585f42197585ee25a20b0814f7f878f4219e4e73d"
+      "source_sha256": "2703c5a5d464b0cbc542ac016d4187ef25ad319a08a2421fa75f45f15742ebc0"
     },
     "rmgpy/yaml_cantera2.py:generate_cantera_data": {
       "verdict": "carried",
@@ -32365,9 +32397,10 @@
       "evidence": [
         "test/rmgpy/data/excitedThermoSourceTest.py",
         "test/rmgpy/yaml_cantera2Test.py",
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "7228967291d9d13b60df8e2dd7b7a5978ea76eb1ed52bc4c30d413b83b7689f6"
+      "source_sha256": "8ca98c921e670f43ba673450640fd9ee6798d12f3e0b24f5814c7b6a9b1e167f"
     },
     "rmgpy/yaml_cantera2.py:generate_cantera_data.<lambda1>": {
       "verdict": "carried",
@@ -32413,17 +32446,19 @@
       "verdict": "carried",
       "reason": "Serializes explicit Species thermo and Reaction kinetics into Cantera records, without performing molecular ground-data acquisition.",
       "evidence": [
-        "test/rmgpy/yaml_cantera2Test.py"
+        "test/rmgpy/yaml_cantera2Test.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "7d3802a9b808c0530c5b842a09fe055d05c587774a23cbd873abd828f4963985"
+      "source_sha256": "096901dcb80b1e869b6c1ec88fb281ca8e8cf58b72246a9d69a3644c7af0fa8c"
     },
     "rmgpy/yaml_cantera2.py:save_cantera_model": {
       "verdict": "carried",
       "reason": "Serializes explicit Species thermo and Reaction kinetics into Cantera records, without performing molecular ground-data acquisition.",
       "evidence": [
-        "test/rmgpy/yaml_cantera2Test.py"
+        "test/rmgpy/yaml_cantera2Test.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "1a2f726472dc631cf0d702ee775b58ed58d70abfb46d513187c5d24390b934ef"
+      "source_sha256": "cc7142a94c7208e0e6d03bc3bf2c15a05053cf29301e3f2cd373e115fb7235b4"
     },
     "rmgpy/yaml_cantera2.py:species_to_dict": {
       "source_sha256": "c784ef10bb11229a75a97ac0d472fe241a5ad28824260e2e76763e82f6900561",
@@ -32462,9 +32497,10 @@
       "verdict": "carried",
       "reason": "Serializes explicit species/reaction/phase data to RMS, without an independent ground-template estimate.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "c0bc3446d515245883a54901a69d67c4517386ff407567fd25e6cd298619c4a3"
+      "source_sha256": "24ee328595bd70ab2ec9c0a25d364a94109a6e9b82d0cf54fc968c6bdf5c065d"
     },
     "rmgpy/yaml_rms.py:convert_chemkin_to_rms": {
       "verdict": "carried",
@@ -32523,9 +32559,10 @@
       "verdict": "carried",
       "reason": "Serializes explicit species/reaction/phase data to RMS, without an independent ground-template estimate.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "240460e492363ce3cd9ae0293c40813e13482f309c65ab40c2aa9ad245647e5e"
+      "source_sha256": "c8ab70b5acb94b1d3b2dd1ec44f4fe3dc3fde57eeb36db139eab88f9b48d7a20"
     },
     "rmgpy/rmg/pdep.py:_check_electron_channel_routing.side": {
       "verdict": "not-reachable-for-resolved",
@@ -37022,6 +37059,118 @@
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
       "source_sha256": "67357f1a9fbf1c70d06bcd8ada0835cbdd0cc2f51fd0a5b40d895dea94baa81f"
+    },
+    "rmgpy/diagnostic_mode.py:_reaction_systems_of": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "85e93c98ea962d41a32f961bb7bd77556de6e0e330ac35494ec3174246cfa79a"
+    },
+    "rmgpy/diagnostic_mode.py:comment_block": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "07dc053312265274fbc611f2cfceaa167af6145166b900c97da3e1adddf6e2e7"
+    },
+    "rmgpy/diagnostic_mode.py:diagnostic_mode_of": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "a8305c4bbfbafde177ee2224df332b5d6947303d1f20710d9a72e2bb905eb2d3"
+    },
+    "rmgpy/diagnostic_mode.py:run_diagnostic_modes": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "b3b583eda1f0336472481b4bb47a3be06113b9a164d916afc1a5418743b0e947"
+    },
+    "rmgpy/diagnostic_mode.py:run_provenance_lines": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "d6b63261376cb60ec69551ae418d518a9e4b14276212bbe79fcf2e2bd2b4982e"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._refuse_predictive_electron_claim": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "1aa1ad726e4da6439de0b177be058ed8a6075f750a2850b575042926a4682112"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.diagnostic_mode": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "f3d00cf270964d44a13dfac8752b09fcc435b0f19b316abcf81a7aa64bb122d6"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.get_diagnostic_provenance": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "87d6a4f6aa3bfa26b994cf5558ee253c40d3ef43c492b826167331ae18684c29"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.get_electron_density": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "db13e38cb9b5d8d68f87ce1e735e5de066986b3de7ae7251fdbd05ac6fc25b38"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.get_ionisation_degree": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "7cb6bd72d582c51a35a5633b23205378a15c1f018a9940bc84f1a410983ee964"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.get_ionization_degree": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "d95c3366d3eeee3dbbf299f5374fc9bb88f84dd4597adf774ff1033f7fa881f4"
+    },
+    "rmgpy/stats.py:_diagnostic_svg_metadata": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "9537449b5d0ce3f31e425b19bd510789352da60147a559b3b477b9d233f0ae55"
+    },
+    "rmgpy/tools/plot.py:_is_comment_row": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "f74a33f09ab4e24a312274670f67e9f0f1e59cb1a2b9737dc93d8332054e2dc2"
+    },
+    "rmgpy/tools/plot.py:parse_csv_provenance": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "evidence": [
+        "test/rmgpy/diagnosticModeTest.py"
+      ],
+      "source_sha256": "7d58fb6c78e0a698f06528ee5d2a54425e5ea629d10577da4f77abf871f81c23"
     }
   }
 }

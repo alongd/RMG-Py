@@ -536,3 +536,21 @@ class ChemkinReferenceError(ChemkinError, SpeciesIdentityError):
     """An emitted Chemkin reference has no matching declared full identity."""
 class DuplicateSpeciesLabelError(InputError):
     """Two different species were assigned the same explicit model label."""
+
+
+class PrescribedTeDiagnosticError(Exception):
+    """
+    An exception raised when a run whose electron temperature is *prescribed*
+    -- the ``prescribed-Te transport diagnostic`` mode -- is asked for a claim
+    that mode cannot make: a predictive absolute electron density, or an
+    ionisation degree derived from one.
+
+    This is deliberately an error and not a warning. The mode is a legitimate
+    engineering diagnostic and keeps predicting everything it legitimately can
+    (transient growth or decay, extinction versus sustainment, wall fluxes,
+    geometry sensitivity, conditional composition, particle-balance residual);
+    what it cannot do is report the electron density it was handed as though it
+    had computed it. A warning at that boundary is ignorable, and has twice been
+    ignored on the way to an external figure.
+    """
+    pass

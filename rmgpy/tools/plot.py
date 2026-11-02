@@ -63,6 +63,44 @@ def plot_sensitivity(output_directory, reaction_system_index, sensitive_species_
         ThermoSensitivityPlot(csv_file=csv_file, num_species=number).barplot(thermo_plot_file)
 
 
+def _is_comment_row(row):
+    """
+    True for a csv row that is a provenance comment rather than data.
+
+    A comment row is one whose first cell, ignoring leading whitespace, starts
+    with ``#`` -- and also the empty row a writer may leave between the comment
+    block and the header. Deliberately not anchored to the top of the file: a
+    comment is a comment wherever it sits, and anchoring would mean a second,
+    position-dependent notion of the same thing.
+    """
+    if not row:
+        return True
+    first = row[0].lstrip()
+    return first.startswith("#") or (first == "" and len(row) == 1)
+
+
+def parse_csv_provenance(csv_file):
+    """
+    Return the provenance comment lines at the head of ``csv_file`` as a list of
+    strings with the leading ``#`` and one space stripped, or ``[]`` if there are
+    none.
+
+    This is the read side of the block :class:`rmgpy.rmg.listener.SimulationProfileWriter`
+    writes. It is what lets a plot, a report or a verifier recover the run's
+    diagnostic mode from the artifact alone, without the input deck.
+    """
+    lines = []
+    with open(csv_file, "r", encoding="utf-8") as fh:
+        for raw in fh:
+            stripped = raw.strip()
+            if not stripped:
+                continue
+            if not stripped.startswith("#"):
+                break
+            lines.append(stripped[1:].strip())
+    return lines
+
+
 def parse_csv_data(csv_file):
     """
     This function parses a typical csv file outputted from a simulation or
@@ -78,6 +116,12 @@ def parse_csv_data(csv_file):
     Time, DataList
 
     Where Time is returned as a GenericData object, and DataList is list of GenericData objects
+
+    Rows at the top of the file whose first cell begins with ``#`` are provenance
+    comments, not data, and are skipped. RMG writes such a block when the run is in
+    a diagnostic mode (see :mod:`rmgpy.diagnostic_mode`); the text is available
+    separately from :func:`parse_csv_provenance`. Files written before that block
+    existed have no such rows and parse exactly as they always did.
     """
     import csv
     import re
@@ -90,9 +134,10 @@ def parse_csv_data(csv_file):
 
     time_data = []
     data = {}
-    f = csv.reader(open(csv_file, "r"))
+    with open(csv_file, "r", encoding="utf-8") as fh:
+        rows = [row for row in csv.reader(fh) if not _is_comment_row(row)]
 
-    columns = list(zip(*f))
+    columns = list(zip(*rows))
     time = GenericData(
         label=columns[0][0],
         data=np.array(columns[0][1:], dtype=float),
@@ -176,7 +221,10 @@ class GenericPlot(object):
     A generic plotting class that can be extended to plot other things.
     """
 
-    def __init__(self, x_var=None, y_var=None, title="", xlabel="", ylabel=""):
+    #: Class-level default so a subclass that never calls this __init__ still has one.
+    footnote = ""
+
+    def __init__(self, x_var=None, y_var=None, title="", xlabel="", ylabel="", footnote=""):
         self.x_var = x_var
         # Convert y_var to a list if it wasn't one already
         if isinstance(y_var, GenericData):
@@ -186,6 +234,11 @@ class GenericPlot(object):
         self.title = title
         self.xlabel = xlabel
         self.ylabel = ylabel
+        # Provenance text stamped under the axes and written into the image file's
+        # metadata. Empty for every plot that has nothing to declare, which leaves
+        # those figures exactly as they were.
+        self.footnote = footnote
+        self.provenance_text = ""
 
     def plot(self, filename=""):
         """
@@ -234,17 +287,20 @@ class GenericPlot(object):
             plt.title(self.title)
 
         ax.grid(True)
+        extra_artists = []
+        metadata = {'Title': self.title} if str(filename).lower().endswith('.png') and self.title else {}
+        if self.footnote:
+            extra_artists.append(fig.text(0.0, -0.02, self.footnote, ha="left", va="top", fontsize=7, wrap=True))
+            key = 'Subject' if str(filename).lower().endswith('.pdf') else 'Description'
+            metadata[key] = self.provenance_text or self.footnote
         handles, labels = ax.get_legend_handles_labels()
-        metadata = {'Title': self.title} if str(filename).lower().endswith('.png') and self.title else None
         if labels:
-            # Create a legend outside the plot and adjust width based off of longest legend label
             max_string_length = max([len(label) for label in labels])
             width = 1.05 + 0.011 * max_string_length
-            legend = ax.legend(handles, labels, loc="upper center", numpoints=1, bbox_to_anchor=(width, 1))  # bbox_to_anchor=(1.01,.9)
-            fig.savefig(filename, bbox_extra_artists=(legend,), bbox_inches="tight", metadata=metadata)
-        else:
-            fig.savefig(filename, bbox_inches="tight", metadata=metadata)
-
+            legend = ax.legend(handles, labels, loc="upper center", numpoints=1, bbox_to_anchor=(width, 1))
+            extra_artists.append(legend)
+        fig.savefig(filename, bbox_extra_artists=tuple(extra_artists), bbox_inches="tight",
+                    metadata=metadata or None)
         plt.close()
 
     def barplot(self, filename="", idx=None):
@@ -386,6 +442,19 @@ class SimulationPlot(GenericPlot):
     def load(self):
         if self.x_var is None and self.y_var is None:
             time, data_list = parse_csv_data(self.csv_file)
+            # Carry the csv's own provenance onto the figure drawn from it. The
+            # ASCII spelling is used for the drawn stamp because a raster font
+            # cannot be relied on to carry U+2091; the canonical sentence with its
+            # subscript goes into the image metadata.
+            provenance = parse_csv_provenance(self.csv_file)
+            if provenance:
+                self.provenance_text = "\n".join(provenance)
+                from rmgpy.diagnostic_mode import PRESCRIBED_TE_DISCLAIMER, PRESCRIBED_TE_DISCLAIMER_ASCII
+
+                self.footnote = "\n".join(
+                    line.replace(PRESCRIBED_TE_DISCLAIMER, PRESCRIBED_TE_DISCLAIMER_ASCII)
+                    for line in provenance
+                )
         else:
             time = self.x_var
             data_list = self.y_var

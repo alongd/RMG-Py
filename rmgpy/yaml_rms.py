@@ -64,9 +64,12 @@ def convert_chemkin_to_rms(chemkin_path, dictionary_path=None, output="chem.rms"
     write_yml(spcs, rxns, path=output)
 
 
-def write_rms(spcs, rxns, solvent=None, solvent_data=None, path="chem.rms"):
+def write_rms(spcs, rxns, solvent=None, solvent_data=None, path="chem.rms", provenance_source=None):
+    from rmgpy.diagnostic_mode import comment_block
+    provenance = comment_block(provenance_source, '#')
     result_dict = get_mech_dict(spcs, rxns, solvent=solvent, solvent_data=solvent_data)
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(provenance)
         yaml.dump(result_dict, stream=f, Dumper=Dumper, sort_keys=False)
 
 
@@ -377,4 +380,5 @@ class RMSWriter(object):
         if rmg.solvent:
             solvent_data = rmg.database.solvation.get_solvent_data(rmg.solvent)
         write_rms(rmg.reaction_model.core.species, rmg.reaction_model.core.reactions, solvent=rmg.solvent, solvent_data=solvent_data,
-                  path=os.path.join(self.output_directory, 'rms', 'chem{}.rms').format(len(rmg.reaction_model.core.species)))
+                  path=os.path.join(self.output_directory, 'rms', 'chem{}.rms').format(len(rmg.reaction_model.core.species)),
+                  provenance_source=rmg)

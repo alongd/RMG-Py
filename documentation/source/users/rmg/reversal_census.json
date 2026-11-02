@@ -934,7 +934,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_file::chemkin_duplicate_flags#1",
     "kind": "direction",
-    "line": 3093,
+    "line": 3095,
     "source": "duplicate_flags = chemkin_duplicate_flags(reactions)",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -946,7 +946,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3064,
+    "line": 3066,
     "source": "def render_chemkin_file(species, reactions, verbose=True, check_for_duplicates=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -958,7 +958,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_file::write_kinetics_entry#1",
     "kind": "reader-exporter",
-    "line": 3150,
+    "line": 3153,
     "source": "f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -970,7 +970,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_surface_file::chemkin_duplicate_flags#1",
     "kind": "direction",
-    "line": 3191,
+    "line": 3194,
     "source": "duplicate_flags = chemkin_duplicate_flags(reactions)",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -982,7 +982,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_surface_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3175,
+    "line": 3178,
     "source": "def render_chemkin_surface_file(species, reactions, verbose=True, check_for_duplicates=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -994,7 +994,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_surface_file::write_kinetics_entry#1",
     "kind": "reader-exporter",
-    "line": 3239,
+    "line": 3242,
     "source": "f.write(write_kinetics_entry(rxn, species_list=references, verbose=verbose,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1006,7 +1006,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::reaction-io",
     "kind": "reader-exporter",
-    "line": 3249,
+    "line": 3252,
     "source": "def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, transport_path=None,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1018,7 +1018,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::render_chemkin_file#1",
     "kind": "reader-exporter",
-    "line": 3317,
+    "line": 3323,
     "source": "(gas_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=False,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1030,7 +1030,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::render_chemkin_file#2",
     "kind": "reader-exporter",
-    "line": 3325,
+    "line": 3331,
     "source": "(gas_verbose_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1042,7 +1042,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::render_chemkin_file#3",
     "kind": "reader-exporter",
-    "line": 3335,
+    "line": 3341,
     "source": "(path, render_chemkin_file(species_list, rxn_list, verbose=False,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1054,7 +1054,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::render_chemkin_file#4",
     "kind": "reader-exporter",
-    "line": 3340,
+    "line": 3346,
     "source": "(verbose_path, render_chemkin_file(species_list, rxn_list, verbose=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1066,7 +1066,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3047,
+    "line": 3049,
     "source": "def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicates=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1078,7 +1078,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin_file::render_chemkin_file#1",
     "kind": "reader-exporter",
-    "line": 3059,
+    "line": 3061,
     "source": "_write_file_atomically(path, render_chemkin_file(species, reactions, verbose=verbose,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1090,7 +1090,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin_files::reaction-io",
     "kind": "reader-exporter",
-    "line": 3355,
+    "line": 3361,
     "source": "def save_chemkin_files(rmg, config=None):",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1102,7 +1102,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin_surface_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3162,
+    "line": 3165,
     "source": "def save_chemkin_surface_file(path, species, reactions, verbose=True, check_for_duplicates=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -2615,7 +2615,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_old::check_for_duplicates#1",
     "kind": "direction",
-    "line": 924,
+    "line": 926,
     "source": "self.check_for_duplicates()",
     "verdict": "guarded",
     "reason": "The old reader constructs rates supported by its thermal format; get_library_reactions validates them with current species state.",
@@ -2626,7 +2626,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_old::convert_duplicates_to_multi#1",
     "kind": "direction",
-    "line": 925,
+    "line": 927,
     "source": "self.convert_duplicates_to_multi()",
     "verdict": "guarded",
     "reason": "The old reader constructs rates supported by its thermal format; get_library_reactions validates them with current species state.",
@@ -2637,7 +2637,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_old::mark_valid_duplicates#1",
     "kind": "direction",
-    "line": 908,
+    "line": 910,
     "source": "self.mark_valid_duplicates(reactions, pdep_reactions)",
     "verdict": "guarded",
     "reason": "The old reader constructs rates supported by its thermal format; get_library_reactions validates them with current species state.",
@@ -2648,7 +2648,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_old::reaction-io",
     "kind": "reader-exporter",
-    "line": 881,
+    "line": 883,
     "source": "def load_old(self, path):",
     "verdict": "guarded",
     "reason": "The old reader constructs rates supported by its thermal format; get_library_reactions validates them with current species state.",
@@ -2670,7 +2670,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.save_old::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 975,
+    "line": 977,
     "source": "entry.item.check_resolved_species_reversibility(kinetics=entry.data, reversible=True)",
     "verdict": "refused",
     "reason": "The legacy library identity boundary refuses resolved species before this downstream reversal check or any state-blind file write.",
@@ -2681,7 +2681,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.save_old::is_isomorphic#1",
     "kind": "direction",
-    "line": 995,
+    "line": 997,
     "source": "if any(spc.is_isomorphic(molecule) for spc in species_dict.values()):",
     "verdict": "refused",
     "reason": "The legacy library validates dictionary identities and refuses resolved species before any state-blind file write.",
@@ -2692,7 +2692,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.save_old::reaction-io",
     "kind": "reader-exporter",
-    "line": 941,
+    "line": 943,
     "source": "def save_old(self, path):",
     "verdict": "refused",
     "reason": "The legacy library refuses resolved species identity before writing reactions, so neither direction nor kinetics can be erased by the old format.",
@@ -5125,7 +5125,7 @@
   {
     "site": "rmgpy/rmg/input.py::read_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3153,
+    "line": 3157,
     "source": "def read_input_file(path, rmg0):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Job input reads/writes settings, species, reactor conditions and library references, without building or serializing executable Reaction rates. Actual library resolution is separately guarded.",
@@ -5136,7 +5136,7 @@
   {
     "site": "rmgpy/rmg/input.py::read_thermo_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3262,
+    "line": 3266,
     "source": "def read_thermo_input_file(path, rmg0):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Job input reads/writes settings, species, reactor conditions and library references, without building or serializing executable Reaction rates. Actual library resolution is separately guarded.",
@@ -5147,7 +5147,7 @@
   {
     "site": "rmgpy/rmg/input.py::save_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3436,
+    "line": 3440,
     "source": "def save_input_file(path, rmg):",
     "verdict": "refused",
     "reason": "The job-input writer refuses resolved species identities before creating its state-blind settings file; it never serializes executable Reaction rates.",
@@ -5158,7 +5158,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.check_model::is_isomorphic#1",
     "kind": "direction",
-    "line": 1923,
+    "line": 1928,
     "source": "if spc.is_isomorphic(spc2):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5170,7 +5170,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.check_model::is_isomorphic#2",
     "kind": "direction",
-    "line": 1933,
+    "line": 1938,
     "source": "if spc.is_isomorphic(spc2):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5182,7 +5182,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.check_model::to_chemkin#1",
     "kind": "reader-exporter",
-    "line": 1975,
+    "line": 1981,
     "source": "rxn_string = violator[0].to_chemkin(self.reaction_model.core.species)",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5194,7 +5194,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.generate_end_of_run_cantera_files::to_chemkin#1",
     "kind": "reader-exporter",
-    "line": 1553,
+    "line": 1556,
     "source": "s_name = s.to_chemkin()",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5206,7 +5206,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.initialize::is_isomorphic#1",
     "kind": "direction",
-    "line": 859,
+    "line": 862,
     "source": "if spec.is_isomorphic(O2Singlet):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5218,7 +5218,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.load_database::reaction-io",
     "kind": "reader-exporter",
-    "line": 515,
+    "line": 516,
     "source": "def load_database(self):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5230,7 +5230,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.load_input::reaction-io",
     "kind": "reader-exporter",
-    "line": 296,
+    "line": 297,
     "source": "def load_input(self, path=None):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5242,7 +5242,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.load_thermo_input::reaction-io",
     "kind": "reader-exporter",
-    "line": 327,
+    "line": 328,
     "source": "def load_thermo_input(self, path=None):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5254,7 +5254,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.save_everything::reaction-io",
     "kind": "reader-exporter",
-    "line": 2593,
+    "line": 2605,
     "source": "def save_everything(self):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5762,7 +5762,7 @@
   {
     "site": "rmgpy/rmg/output.py::<module>::generate_reverse_rate_coefficient#1",
     "kind": "template-expression",
-    "line": 714,
+    "line": 719,
     "source": "rxn2.generate_reverse_rate_coefficient(surface_site_density=2.483e-05).to_html()",
     "verdict": "refused",
     "reason": "The HTML entry point refuses resolved identities before rendering, so resolved reactions cannot reach the template's equilibrium-reverse display helper.",
@@ -5773,7 +5773,7 @@
   {
     "site": "rmgpy/rmg/output.py::<module>::is_isomorphic#1",
     "kind": "template-expression",
-    "line": 714,
+    "line": 719,
     "source": "if not rxn1.is_isomorphic(rxn2, either_direction=False)",
     "verdict": "not-reachable-for-resolved",
     "reason": "HTML display only; orientation is checked forward-only and no executable declaration is exported at this site.",
@@ -5784,7 +5784,7 @@
   {
     "site": "rmgpy/rmg/output.py::<module>::to_chemkin#1",
     "kind": "template-expression",
-    "line": 159,
+    "line": 161,
     "source": "rxn.to_chemkin(serialization_species)",
     "verdict": "not-reachable-for-resolved",
     "reason": "HTML display only; orientation is checked forward-only and no executable declaration is exported at this site.",
@@ -5795,7 +5795,7 @@
   {
     "site": "rmgpy/rmg/output.py::<module>::to_chemkin#2",
     "kind": "template-expression",
-    "line": 714,
+    "line": 719,
     "source": "rxn1.to_chemkin(species_list)",
     "verdict": "not-reachable-for-resolved",
     "reason": "HTML display only; orientation is checked forward-only and no executable declaration is exported at this site.",
@@ -5806,7 +5806,7 @@
   {
     "site": "rmgpy/rmg/output.py::<module>::to_chemkin#3",
     "kind": "template-expression",
-    "line": 714,
+    "line": 719,
     "source": "rxn2.to_chemkin(species_list)",
     "verdict": "not-reachable-for-resolved",
     "reason": "HTML display only; orientation is checked forward-only and no executable declaration is exported at this site.",
@@ -5817,7 +5817,7 @@
   {
     "site": "rmgpy/rmg/output.py::<module>::to_chemkin#4",
     "kind": "template-expression",
-    "line": 714,
+    "line": 719,
     "source": "rxn.to_chemkin(species)",
     "verdict": "not-reachable-for-resolved",
     "reason": "HTML display only; orientation is checked forward-only and no executable declaration is exported at this site.",
@@ -5828,7 +5828,7 @@
   {
     "site": "rmgpy/rmg/output.py::<module>::to_chemkin#5",
     "kind": "template-expression",
-    "line": 714,
+    "line": 719,
     "source": "rxn.to_chemkin(species)",
     "verdict": "not-reachable-for-resolved",
     "reason": "HTML display only; orientation is checked forward-only and no executable declaration is exported at this site.",
@@ -5839,7 +5839,7 @@
   {
     "site": "rmgpy/rmg/output.py::save_diff_html::reaction-io",
     "kind": "reader-exporter",
-    "line": 536,
+    "line": 541,
     "source": "def save_diff_html(path, common_species_list, species_list1, species_list2, common_reactions, unique_reactions1,",
     "verdict": "refused",
     "reason": "The HTML comparison boundary refuses resolved species and reaction identities before rendering any display-only reaction or reverse rate.",
@@ -5850,7 +5850,7 @@
   {
     "site": "rmgpy/rmg/output.py::save_output::reaction-io",
     "kind": "reader-exporter",
-    "line": 1348,
+    "line": 1353,
     "source": "def save_output(rmg, save_edge=None):",
     "verdict": "not-reachable-for-resolved",
     "reason": "HTML display only; orientation is checked forward-only and no executable declaration is exported at this site.",
@@ -5862,7 +5862,7 @@
     "site": "rmgpy/rmg/output.py::save_output_html::reaction-io",
     "kind": "reader-exporter",
     "line": 47,
-    "source": "def save_output_html(path, reaction_model, part_core_edge='core'):",
+    "source": "def save_output_html(path, reaction_model, part_core_edge='core', provenance_source=None):",
     "verdict": "not-reachable-for-resolved",
     "reason": "HTML display only; orientation is checked forward-only and no executable declaration is exported at this site.",
     "tests": [
@@ -6570,7 +6570,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._compute_reference_reaction_data::reaction-io",
     "kind": "reader-exporter",
-    "line": 7325,
+    "line": 7369,
     "source": "def _compute_reference_reaction_data(self, np.ndarray y):",
     "verdict": "guarded",
     "reason": "The diagnostic serializes already-initialized directed kf/kb arrays; reactor initialization has checked original declarations, and irreversible explicit channels never synthesize a reverse record.",
@@ -6581,7 +6581,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._evaluate_electronegative_wall_regime::reaction-io",
     "kind": "reader-exporter",
-    "line": 7455,
+    "line": 7499,
     "source": "def _evaluate_electronegative_wall_regime(self, np.ndarray y, double t, result=None):",
     "verdict": "guarded",
     "reason": "The accepted-state diagnostic formats original directed reactions and already-initialized kf/kb arrays; initialization enforces resolved reversibility, and the formatter preserves the declared arrow.",
@@ -6592,7 +6592,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._requires_en_steps::reaction-io",
     "kind": "reader-exporter",
-    "line": 8053,
+    "line": 8097,
     "source": "def _requires_en_steps(self):",
     "verdict": "guarded",
     "reason": "The wall-step predicate only inspects admitted reaction direction flags and participants; admission has enforced resolved reversibility, and opposite irreversible channels remain independent entries.",
@@ -6603,7 +6603,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._validate_reactions::reaction-io",
     "kind": "reader-exporter",
-    "line": 5653,
+    "line": 5697,
     "source": "def _validate_reactions(self, core_species, edge_species, core_reactions, edge_reactions):",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6614,7 +6614,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::check_reverse_from_equilibrium_supported#1",
     "kind": "reverse",
-    "line": 5889,
+    "line": 5933,
     "source": "rxn.check_reverse_from_equilibrium_supported()",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6625,7 +6625,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 5890,
+    "line": 5934,
     "source": "self.Keq[j] = rxn.get_equilibrium_constant(self.T.value_si)",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6636,7 +6636,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::reaction-io",
     "kind": "reader-exporter",
-    "line": 5824,
+    "line": 5868,
     "source": "def generate_rate_coefficients(self, core_reactions, edge_reactions):",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6647,7 +6647,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::_charged_species_library_thermo_match::is_isomorphic#1",
     "kind": "direction",
-    "line": 583,
+    "line": 586,
     "source": "if not any(molecule.is_isomorphic(entry_item)",
     "verdict": "not-reachable-for-resolved",
     "reason": "Species thermo provenance matching has no reaction direction/rate operation.",
@@ -7602,7 +7602,7 @@
   {
     "site": "rmgpy/tools/plot.py::ReactionSensitivityPlot.load::reaction-io",
     "kind": "reader-exporter",
-    "line": 458,
+    "line": 527,
     "source": "def load(self):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Plot/sensitivity reports contain species labels or already computed scalar arrays, without executable Reaction kinetics or reverse production.",
@@ -7613,7 +7613,7 @@
   {
     "site": "rmgpy/tools/plot.py::parse_csv_data::reaction-io",
     "kind": "reader-exporter",
-    "line": 66,
+    "line": 104,
     "source": "def parse_csv_data(csv_file):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Plot/sensitivity reports contain species labels or already computed scalar arrays, without executable Reaction kinetics or reverse production.",
@@ -8089,7 +8089,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::_build_equation_string::reaction-io",
     "kind": "reader-exporter",
-    "line": 423,
+    "line": 427,
     "source": "def _build_equation_string(obj, spcs=None):",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8101,7 +8101,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::_collect_reactions::chemkin_duplicate_flags#1",
     "kind": "direction",
-    "line": 358,
+    "line": 362,
     "source": "duplicate_flags = chemkin_duplicate_flags(rxn_list)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8113,7 +8113,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::_collect_reactions::reaction_to_dicts#1",
     "kind": "reader-exporter",
-    "line": 362,
+    "line": 366,
     "source": "rxn_entries = reaction_to_dicts(rmg_rxn, spcs, duplicate=duplicate)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8125,7 +8125,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::reaction_to_dicts::_build_equation_string#1",
     "kind": "reader-exporter",
-    "line": 503,
+    "line": 507,
     "source": "rmg_equation = _build_equation_string(obj, spcs)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8137,7 +8137,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::reaction_to_dicts::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 486,
+    "line": 490,
     "source": "obj.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8149,7 +8149,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::reaction_to_dicts::reaction-io",
     "kind": "reader-exporter",
-    "line": 466,
+    "line": 470,
     "source": "def reaction_to_dicts(obj, spcs, duplicate=None):",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8161,7 +8161,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::reaction_to_dicts::to_cantera#1",
     "kind": "reader-exporter",
-    "line": 498,
+    "line": 502,
     "source": "list_of_cantera_reactions = obj.to_cantera(species_list=spcs, use_chemkin_identifier=True)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8173,7 +8173,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::reaction_to_dicts::to_cantera#2",
     "kind": "reader-exporter",
-    "line": 500,
+    "line": 504,
     "source": "list_of_cantera_reactions = [obj.to_cantera(species_list=spcs, use_chemkin_identifier=True)]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8185,7 +8185,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::species_to_dict::to_cantera#1",
     "kind": "reader-exporter",
-    "line": 631,
+    "line": 635,
     "source": "cantera_species = species.to_cantera(use_chemkin_identifier=True, all_species=all_species)",
     "verdict": "not-reachable-for-resolved",
     "reason": "Species formatting cannot identify opposite reactions or create reverse rates.",
@@ -8207,7 +8207,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::_collect_reaction_entries::chemkin_duplicate_flags#1",
     "kind": "direction",
-    "line": 462,
+    "line": 488,
     "source": "duplicate_flags = chemkin_duplicate_flags(rxns)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8219,7 +8219,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::_collect_reaction_entries::reaction_to_dict_list#1",
     "kind": "reader-exporter",
-    "line": 466,
+    "line": 492,
     "source": "rxn_entries = reaction_to_dict_list(rxn, species_list, duplicate=duplicate)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8231,7 +8231,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::generate_cantera_data::reaction-io",
     "kind": "reader-exporter",
-    "line": 278,
+    "line": 293,
     "source": "def generate_cantera_data(species_list,",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8243,7 +8243,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::get_reaction_equation::reaction-io",
     "kind": "reader-exporter",
-    "line": 1035,
+    "line": 1061,
     "source": "def get_reaction_equation(reaction, species_list):",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8255,7 +8255,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::reaction_to_dict_list::Reaction#1",
     "kind": "builder",
-    "line": 753,
+    "line": 779,
     "source": "sub_rxn = Reaction(",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8267,7 +8267,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::reaction_to_dict_list::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 730,
+    "line": 756,
     "source": "reaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8279,7 +8279,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::reaction_to_dict_list::get_reaction_equation#1",
     "kind": "reader-exporter",
-    "line": 789,
+    "line": 815,
     "source": "equation = get_reaction_equation(reaction, species_list)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8291,7 +8291,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::reaction_to_dict_list::reaction-io",
     "kind": "reader-exporter",
-    "line": 716,
+    "line": 742,
     "source": "def reaction_to_dict_list(reaction, species_list=None, duplicate=None):",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8303,7 +8303,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::reaction_to_dict_list::reaction_to_dict_list#1",
     "kind": "reader-exporter",
-    "line": 780,
+    "line": 806,
     "source": "sub_result = reaction_to_dict_list(sub_rxn, species_list,",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8327,7 +8327,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::save_cantera_model::generate_cantera_data#1",
     "kind": "reader-exporter",
-    "line": 214,
+    "line": 225,
     "source": "yaml_data = generate_cantera_data(species_list, reaction_list,",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8339,8 +8339,8 @@
   {
     "site": "rmgpy/yaml_cantera2.py::save_cantera_model::reaction-io",
     "kind": "reader-exporter",
-    "line": 195,
-    "source": "def save_cantera_model(model_container, path, site_density=None):",
+    "line": 197,
+    "source": "def save_cantera_model(model_container, path, site_density=None, provenance_source=None):",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
     "tests": [
@@ -8375,7 +8375,7 @@
   {
     "site": "rmgpy/yaml_rms.py::get_mech_dict::obj_to_dict#1",
     "kind": "reader-exporter",
-    "line": 132,
+    "line": 135,
     "source": "result_dict[\"Phases\"][0][\"Species\"] = [obj_to_dict(x, spcs, names=names) for x in spcs]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8387,7 +8387,7 @@
   {
     "site": "rmgpy/yaml_rms.py::get_mech_dict::obj_to_dict#2",
     "kind": "reader-exporter",
-    "line": 133,
+    "line": 136,
     "source": "result_dict[\"Reactions\"] = [obj_to_dict(x, spcs, names=names) for x in rxns]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8399,7 +8399,7 @@
   {
     "site": "rmgpy/yaml_rms.py::get_mech_dict::obj_to_dict#3",
     "kind": "reader-exporter",
-    "line": 135,
+    "line": 138,
     "source": "result_dict[\"Solvents\"] = [obj_to_dict(solvent_data, spcs, names=names, label=solvent)]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8411,7 +8411,7 @@
   {
     "site": "rmgpy/yaml_rms.py::get_mech_dict::obj_to_dict#4",
     "kind": "reader-exporter",
-    "line": 144,
+    "line": 147,
     "source": "result_dict[\"Phases\"][0][\"Species\"] = [obj_to_dict(x,spcs,names=names) for x in spcs if not x.contains_surface_site()]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8423,7 +8423,7 @@
   {
     "site": "rmgpy/yaml_rms.py::get_mech_dict::obj_to_dict#5",
     "kind": "reader-exporter",
-    "line": 145,
+    "line": 148,
     "source": "result_dict[\"Phases\"][1][\"Species\"] = [obj_to_dict(x,spcs,names=names) for x in spcs if x.contains_surface_site()]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8435,7 +8435,7 @@
   {
     "site": "rmgpy/yaml_rms.py::get_mech_dict::obj_to_dict#6",
     "kind": "reader-exporter",
-    "line": 146,
+    "line": 149,
     "source": "result_dict[\"Reactions\"] = [obj_to_dict(x, spcs,names=names) for x in rxns]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8447,7 +8447,7 @@
   {
     "site": "rmgpy/yaml_rms.py::get_mech_dict::obj_to_dict#7",
     "kind": "reader-exporter",
-    "line": 148,
+    "line": 151,
     "source": "result_dict[\"Solvents\"] = [obj_to_dict(solvent_data, spcs, names=names, label=solvent)]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8459,7 +8459,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 212,
+    "line": 215,
     "source": "obj.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8471,7 +8471,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::obj_to_dict#1",
     "kind": "reader-exporter",
-    "line": 188,
+    "line": 191,
     "source": "result_dict[\"thermo\"] = obj_to_dict(thermo, spcs)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8483,7 +8483,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::obj_to_dict#10",
     "kind": "reader-exporter",
-    "line": 297,
+    "line": 300,
     "source": "result_dict[\"arrhigh\"] = obj_to_dict(obj.arrheniusHigh, spcs)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8495,7 +8495,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::obj_to_dict#11",
     "kind": "reader-exporter",
-    "line": 298,
+    "line": 301,
     "source": "result_dict[\"arrlow\"] = obj_to_dict(obj.arrheniusLow, spcs)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8507,7 +8507,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::obj_to_dict#2",
     "kind": "reader-exporter",
-    "line": 202,
+    "line": 205,
     "source": "result_dict[\"polys\"] = [obj_to_dict(k, spcs) for k in obj.polynomials]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8519,7 +8519,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::obj_to_dict#3",
     "kind": "reader-exporter",
-    "line": 227,
+    "line": 230,
     "source": "result_dict[\"kinetics\"] = obj_to_dict(obj.kinetics, spcs, names)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8531,7 +8531,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::obj_to_dict#4",
     "kind": "reader-exporter",
-    "line": 273,
+    "line": 276,
     "source": "result_dict[\"arrs\"] = [obj_to_dict(x, spcs) for x in obj.arrhenius]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8543,7 +8543,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::obj_to_dict#5",
     "kind": "reader-exporter",
-    "line": 276,
+    "line": 279,
     "source": "result_dict[\"arrs\"] = [obj_to_dict(x, spcs) for x in obj.arrhenius]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8555,7 +8555,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::obj_to_dict#6",
     "kind": "reader-exporter",
-    "line": 279,
+    "line": 282,
     "source": "result_dict[\"parrs\"] = [obj_to_dict(x, spcs) for x in obj.arrhenius]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8567,7 +8567,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::obj_to_dict#7",
     "kind": "reader-exporter",
-    "line": 282,
+    "line": 285,
     "source": "result_dict[\"arr\"] = obj_to_dict(obj.arrheniusLow, spcs)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8579,7 +8579,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::obj_to_dict#8",
     "kind": "reader-exporter",
-    "line": 289,
+    "line": 292,
     "source": "result_dict[\"arrhigh\"] = obj_to_dict(obj.arrheniusHigh, spcs)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8591,7 +8591,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::obj_to_dict#9",
     "kind": "reader-exporter",
-    "line": 290,
+    "line": 293,
     "source": "result_dict[\"arrlow\"] = obj_to_dict(obj.arrheniusLow, spcs)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8603,7 +8603,7 @@
   {
     "site": "rmgpy/yaml_rms.py::obj_to_dict::reaction-io",
     "kind": "reader-exporter",
-    "line": 159,
+    "line": 162,
     "source": "def obj_to_dict(obj, spcs, names=None, label=\"solvent\"):",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8615,7 +8615,7 @@
   {
     "site": "rmgpy/yaml_rms.py::write_rms::get_mech_dict#1",
     "kind": "reader-exporter",
-    "line": 68,
+    "line": 70,
     "source": "result_dict = get_mech_dict(spcs, rxns, solvent=solvent, solvent_data=solvent_data)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",

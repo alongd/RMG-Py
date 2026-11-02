@@ -128,9 +128,20 @@ class ExecutionStatsWriter(object):
             logging.warning('Package xlwt not loaded. Unable to save execution statistics.')
             return
 
+        from rmgpy.diagnostic_mode import run_provenance_lines
+
         # Create workbook and sheet for statistics to be places
         workbook = xlwt.Workbook()
         sheet = workbook.add_sheet('Statistics')
+
+        # A run in a diagnostic mode declares it in a sheet of its own, so the
+        # declaration cannot be lost by copying the Statistics columns out. Nothing
+        # is added for a run that declares no mode.
+        provenance = run_provenance_lines(rmg)
+        if provenance:
+            notice = workbook.add_sheet('Diagnostic mode')
+            for row, line in enumerate(provenance):
+                notice.write(row, 0, line)
 
         # First column is execution time
         sheet.write(0, 0, 'Execution time (s)')
@@ -176,6 +187,11 @@ class ExecutionStatsWriter(object):
 
         logging.info('Generating plots of execution statistics...')
 
+        # These three plots describe the run's progress, not its chemistry, but they
+        # are still artifacts of a run in a diagnostic mode, so they carry the
+        # declaration in their SVG metadata. Empty dict -> savefig behaves as before.
+        svg_metadata = _diagnostic_svg_metadata(rmg)
+
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
         ax1.semilogx(rmg.exec_time, self.coreSpeciesCount, 'o-b')
@@ -184,7 +200,7 @@ class ExecutionStatsWriter(object):
         ax2 = ax1.twinx()
         ax2.semilogx(rmg.exec_time, self.coreReactionCount, 'o-r')
         ax2.set_ylabel('Number of core reactions')
-        plt.savefig(os.path.join(rmg.output_directory, 'plot/coreSize.svg'))
+        plt.savefig(os.path.join(rmg.output_directory, 'plot/coreSize.svg'), **svg_metadata)
         plt.close()
 
         fig = plt.figure()
@@ -201,7 +217,7 @@ class ExecutionStatsWriter(object):
         else:
             ax2.semilogx(rmg.exec_time, self.edgeReactionCount, 'o-r')
         ax2.set_ylabel('Number of edge reactions')
-        plt.savefig(os.path.join(rmg.output_directory, 'plot/edgeSize.svg'))
+        plt.savefig(os.path.join(rmg.output_directory, 'plot/edgeSize.svg'), **svg_metadata)
         plt.close()
 
         fig = plt.figure()
@@ -210,5 +226,17 @@ class ExecutionStatsWriter(object):
         ax1.set_xlabel('Execution time (s)')
         ax1.set_ylabel('Memory (MB)')
         ax1.legend(['RAM'], loc=2)
-        plt.savefig(os.path.join(rmg.output_directory, 'plot/memoryUse.svg'))
+        plt.savefig(os.path.join(rmg.output_directory, 'plot/memoryUse.svg'), **svg_metadata)
         plt.close()
+
+
+def _diagnostic_svg_metadata(rmg):
+    """
+    ``{'metadata': {...}}`` declaring the run's diagnostic mode, for ``plt.savefig``,
+    or ``{}`` when the run declares none.  SVG is XML, so the canonical sentence
+    goes in with its U+2091 subscript intact.
+    """
+    from rmgpy.diagnostic_mode import run_provenance_lines
+
+    lines = run_provenance_lines(rmg)
+    return {'metadata': {'Description': '\n'.join(lines)}} if lines else {}

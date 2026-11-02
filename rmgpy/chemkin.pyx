@@ -2917,17 +2917,17 @@ def mark_duplicate_reactions(reactions):
         reaction.duplicate = duplicate
 
 
-def save_species_dictionary(path, species, old_style=False):
+def save_species_dictionary(path, species, old_style=False, provenance=''):
     """
     Save the given list of `species` as adjacency lists in a text file `path` 
     on disk.
     
     If `old_style==True` then it saves it in the old RMG-Java syntax.
     """
-    _write_file_atomically(path, render_species_dictionary(species, old_style=old_style))
+    _write_file_atomically(path, render_species_dictionary(species, old_style=old_style, provenance=provenance))
 
 
-def render_species_dictionary(species, old_style=False):
+def render_species_dictionary(species, old_style=False, provenance=''):
     """
     Return the text of a species dictionary for the given list of `species`.
     See :func:`render_chemkin_file`.
@@ -2936,6 +2936,7 @@ def render_species_dictionary(species, old_style=False):
     species = _chemkin_declarations(species)
     validate_species_identifiers(species)
     f = io.StringIO()
+    f.write(provenance)
     for spec in species:
         if old_style:
             from rmgpy.export import has_export_state
@@ -2966,7 +2967,7 @@ def render_species_dictionary(species, old_style=False):
     return f.getvalue()
 
 
-def save_transport_file(path, species):
+def save_transport_file(path, species, provenance=''):
     r"""
     Save a Chemkin transport properties file to `path` on disk containing the
     transport properties of the given list of `species`.
@@ -2988,10 +2989,10 @@ def save_transport_file(path, species):
     7. After the last number, a comment field can be enclosed in parenthesis.
 
     """
-    _write_file_atomically(path, render_transport_file(species))
+    _write_file_atomically(path, render_transport_file(species, provenance=provenance))
 
 
-def render_transport_file(species):
+def render_transport_file(species, provenance=''):
     """
     Return the text of a Chemkin transport properties file for the given list of
     `species`. See :func:`render_chemkin_file`.
@@ -3000,6 +3001,7 @@ def render_transport_file(species):
     species = _chemkin_declarations(species)
     validate_species_identifiers(species)
     f = io.StringIO()
+    f.write(provenance)
     f.write("! {0:15} {1:8} {2:9} {3:9} {4:9} {5:9} {6:9} {7:9}\n".format(
         'Species', 'Shape', 'LJ-depth', 'LJ-diam', 'DiplMom', 'Polzblty', 'RotRelaxNum', 'Data'))
     f.write("! {0:15} {1:8} {2:9} {3:9} {4:9} {5:9} {6:9} {7:9}\n".format(
@@ -3045,7 +3047,7 @@ def _write_file_atomically(path, content):
 
 
 def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicates=True,
-                      elements_in_use=None):
+                      elements_in_use=None, provenance=''):
     """
     Save a Chemkin input file to `path` on disk containing the provided lists
     of `species` and `reactions`.
@@ -3058,11 +3060,11 @@ def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicat
     """
     _write_file_atomically(path, render_chemkin_file(species, reactions, verbose=verbose,
                                                     check_for_duplicates=check_for_duplicates,
-                                                    elements_in_use=elements_in_use))
+                                                    elements_in_use=elements_in_use, provenance=provenance))
 
 
 def render_chemkin_file(species, reactions, verbose=True, check_for_duplicates=True,
-                        elements_in_use=None):
+                        elements_in_use=None, provenance=''):
     """
     Return the text of a Chemkin input file for the given `species` and `reactions`.
 
@@ -3102,6 +3104,7 @@ def render_chemkin_file(species, reactions, verbose=True, check_for_duplicates=T
     # MechanismWriterError from any reaction leaves no partial mechanism on disk.
     # See _write_files_atomically.
     f = io.StringIO()
+    f.write(provenance)
 
     sorted_species = sorted(species, key=lambda species: species.index)
 
@@ -3247,7 +3250,7 @@ def render_chemkin_surface_file(species, reactions, verbose=True, check_for_dupl
 
 
 def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, transport_path=None,
-                 save_edge_species=False, old_style_dictionary=False):
+                 save_edge_species=False, old_style_dictionary=False, provenance_source=None):
     """
     Save a Chemkin file for the current model as well as any desired output
     species and reactions to `path`. If `save_edge_species` is True, then
@@ -3261,6 +3264,9 @@ def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, trans
     across two generations of the model, which is harder to notice than no file
     at all. See :func:`_write_files_atomically`.
     """
+    from rmgpy.diagnostic_mode import comment_block
+    chemkin_provenance = comment_block(provenance_source, '!', ascii_only=True)
+    dictionary_provenance = comment_block(provenance_source, '//', ascii_only=True)
     from rmgpy.rmg.model import ReactionModel
     if save_edge_species:
         species_list = reaction_model.core.species + reaction_model.edge.species
@@ -3315,7 +3321,7 @@ def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, trans
         # reaction object this repair is getting the answer off.
         staged = [
             (gas_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=False,
-                                           elements_in_use=elements_in_use)),
+                                           elements_in_use=elements_in_use, provenance=chemkin_provenance)),
             (surface_path, render_chemkin_surface_file(
                 surface_species_list, surface_rxn_list, verbose=False,
                 surface_site_density=reaction_model.surface_site_density, reference_species=species_list)),
@@ -3323,7 +3329,7 @@ def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, trans
         logging.info('Saving annotated version of Chemkin files...')
         staged.append(
             (gas_verbose_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=True,
-                                                   elements_in_use=elements_in_use)))
+                                                   elements_in_use=elements_in_use, provenance=chemkin_provenance)))
         staged.append(
             (surface_verbose_path, render_chemkin_surface_file(
                 surface_species_list, surface_rxn_list, verbose=True,
@@ -3333,16 +3339,16 @@ def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, trans
         # Gas phase only
         staged = [
             (path, render_chemkin_file(species_list, rxn_list, verbose=False,
-                                       elements_in_use=elements_in_use)),
+                                       elements_in_use=elements_in_use, provenance=chemkin_provenance)),
         ]
         logging.info('Saving annotated version of Chemkin file...')
         staged.append(
             (verbose_path, render_chemkin_file(species_list, rxn_list, verbose=True,
-                                               elements_in_use=elements_in_use)))
+                                               elements_in_use=elements_in_use, provenance=chemkin_provenance)))
     if dictionary_path:
-        staged.append((dictionary_path, render_species_dictionary(species_list, old_style=old_style_dictionary)))
+        staged.append((dictionary_path, render_species_dictionary(species_list, old_style=old_style_dictionary, provenance=dictionary_provenance)))
     if transport_path:
-        staged.append((transport_path, render_transport_file(species_list)))
+        staged.append((transport_path, render_transport_file(species_list, provenance=chemkin_provenance)))
 
     if dictionary_path:
         from rmgpy.util import stamp_file_generation
@@ -3373,7 +3379,7 @@ def save_chemkin_files(rmg, config=None):
                  latest_chemkin_verbose_path,
                  latest_dictionary_path,
                  latest_transport_path,
-                 save_edge_species=False)
+                 save_edge_species=False, provenance_source=rmg)
 
     if is_surface_model:
         paths = []
@@ -3400,7 +3406,7 @@ def save_chemkin_files(rmg, config=None):
         latest_dictionary_path = os.path.join(rmg.output_directory, 'chemkin', 'species_edge_dictionary.txt')
         latest_transport_path = None
         save_chemkin(rmg.reaction_model, this_chemkin_path, latest_chemkin_verbose_path, latest_dictionary_path,
-                     latest_transport_path, save_edge)
+                     latest_transport_path, save_edge, provenance_source=rmg)
 
         if is_surface_model:
             paths = []

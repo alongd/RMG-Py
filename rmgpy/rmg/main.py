@@ -51,6 +51,7 @@ import yaml
 from cantera import ck2yaml
 from scipy.optimize import brute
 
+from rmgpy.diagnostic_mode import comment_block, run_provenance_lines, run_diagnostic_modes
 import rmgpy.util as util
 from rmgpy import settings
 from rmgpy.chemkin import ChemkinWriter, kinetics_has_plasma_rate
@@ -637,6 +638,8 @@ class RMG(util.Subject):
 
         # Read input file
         self.load_input(self.input_file)
+        for line in run_provenance_lines(self):
+            logging.info(line)
 
         # Check if ReactionMechanismSimulator reactors are being used
         # if RMS is not installed but the user attempted to use it, the load_input_file would have failed
@@ -1622,11 +1625,13 @@ class RMG(util.Subject):
             if translated_cantera_file and self.cantera1_writer_config and self.cantera1_writer_config.enabled:
                 compare_yaml_files_and_report(translated_cantera_file,
                                               os.path.join(self.output_directory, "cantera1", "chem.yaml"),
-                                              output=os.path.join(self.output_directory, "cantera1", "comparison_report.txt"))
+                                              output=os.path.join(self.output_directory, "cantera1", "comparison_report.txt"),
+                                              provenance=comment_block(self, "#"))
             if translated_cantera_file and self.cantera2_writer_config and self.cantera2_writer_config.enabled:
                 compare_yaml_files_and_report(translated_cantera_file,
                                               os.path.join(self.output_directory, "cantera2", "chem.yaml"),
-                                              output=os.path.join(self.output_directory, "cantera2", "comparison_report.txt"))
+                                              output=os.path.join(self.output_directory, "cantera2", "comparison_report.txt"),
+                                              provenance=comment_block(self, "#"))
 
         except EnvironmentError as exc:
             logging.exception("Could not write the direct Cantera writers' end-of-run output due to "
@@ -1962,7 +1967,8 @@ class RMG(util.Subject):
                 "{0} CORE reactions violate the collision rate limit!"
                 "\nSee the 'collision_rate_violators.log' for details.\n\n".format(len(violators))
             )
-            with open(new_file, "w") as violators_f:
+            with open(new_file, "w", encoding="utf-8") as violators_f:
+                violators_f.write(comment_block(self, "#"))
                 violators_f.write(
                     "*** Collision rate limit violators report ***\n"
                     '"Violation factor" is the ratio of the rate coefficient to the collision limit'
@@ -1999,7 +2005,8 @@ class RMG(util.Subject):
 
         # Generate a file for restarting from a seed mechanism if this is not a restart job
         if not self.restart:
-            with open(os.path.join(self.output_directory, "restart_from_seed.py"), "w") as f:
+            with open(os.path.join(self.output_directory, "restart_from_seed.py"), "w", encoding="utf-8") as f:
+                f.write(comment_block(self, "#"))
                 f.write("restartFromSeed(path='seed')\n\n")
                 with open(self.input_file, "r") as input_file:
                     f.write(input_file.read())
@@ -2134,26 +2141,30 @@ class RMG(util.Subject):
                     os.makedirs(os.path.join(database_directory, "kinetics", "libraries", name))
                 except:
                     pass
-                kinetics_library.save(os.path.join(database_directory, "kinetics", "libraries", name, "reactions.py"))
+                kinetics_library.save(os.path.join(database_directory, "kinetics", "libraries", name, "reactions.py"), provenance_source=self)
 
                 try:
                     os.makedirs(os.path.join(database_directory, "kinetics", "libraries", name + "_edge"))
                 except:
                     pass
-                edge_kinetics_library.save(os.path.join(database_directory, "kinetics", "libraries", name + "_edge", "reactions.py"))
+                edge_kinetics_library.save(os.path.join(database_directory, "kinetics", "libraries", name + "_edge", "reactions.py"), provenance_source=self)
 
             # save in output directory
             # Rename for the output directory, as these names should not be dynamic
             kinetics_library.name = "seed"
-            kinetics_library.save(os.path.join(seed_dir, "seed", "reactions.py"))
+            kinetics_library.save(os.path.join(seed_dir, "seed", "reactions.py"), provenance_source=self)
 
             edge_kinetics_library.name = "seed_edge"
-            edge_kinetics_library.save(os.path.join(seed_dir, "seed_edge", "reactions.py"))
+            edge_kinetics_library.save(os.path.join(seed_dir, "seed_edge", "reactions.py"), provenance_source=self)
 
             # Save the filter tensors
             if not os.path.exists(filter_dir):
                 os.mkdir(filter_dir)
             with h5py.File(os.path.join(filter_dir, "filters.h5"), "w") as f:
+                lines = run_provenance_lines(self)
+                if lines:
+                    f.attrs["diagnostic_modes"] = "\n".join(run_diagnostic_modes(self))
+                    f.attrs["run_provenance"] = "\n".join(lines)
                 if self.unimolecular_threshold is not None:
                     f.create_dataset("unimolecular_threshold", data=self.unimolecular_threshold)
                 if self.bimolecular_threshold is not None:
@@ -2164,7 +2175,8 @@ class RMG(util.Subject):
             # Save a map of species indices
             spcs_map = [spc.molecule[0].to_adjacency_list() for spc in self.reaction_model.core.species]
 
-            with open(os.path.join(filter_dir, "species_map.yml"), "w") as f:
+            with open(os.path.join(filter_dir, "species_map.yml"), "w", encoding="utf-8") as f:
+                f.write(comment_block(self, "#"))
                 yaml.dump(data=spcs_map, stream=f)
 
             # Also, save the seed to the previous_seeds directory on specified iterations
@@ -2795,7 +2807,7 @@ def initialize_log(verbose, log_file_name):
             os.remove(backup)
         logging.info("Moving {0} to {1}\n".format(log_file_name, backup))
         shutil.move(log_file_name, backup)
-    fh = logging.FileHandler(filename=log_file_name)  # , backupCount=3)
+    fh = logging.FileHandler(filename=log_file_name, encoding="utf-8")  # , backupCount=3)
     fh.setLevel(min(logging.DEBUG, verbose))  # always at least VERBOSE in the file
     fh.setFormatter(formatter)
     # notice that STDERR does not get saved to the log file

@@ -162,7 +162,8 @@ def save_cantera_files(rmg, config=None):
 
     logging.info(f"Saving current model core to Cantera file: {this_cantera_path}")
 
-    save_cantera_model(rmg.reaction_model.core, this_cantera_path, site_density=site_density)
+    save_cantera_model(rmg.reaction_model.core, this_cantera_path, site_density=site_density,
+                       provenance_source=rmg)
 
     # Copy to 'chem_annotated.yaml' (the latest file)
     if os.path.exists(latest_cantera_path):
@@ -185,21 +186,31 @@ def save_cantera_files(rmg, config=None):
             reactions=rmg.reaction_model.core.reactions + rmg.reaction_model.edge.reactions,
         )
 
-        save_cantera_model(edge_model, this_edge_path, site_density=site_density)
+        save_cantera_model(edge_model, this_edge_path, site_density=site_density,
+                           provenance_source=rmg)
 
         if os.path.exists(latest_edge_path):
             os.unlink(latest_edge_path)
         shutil.copy2(this_edge_path, latest_edge_path)
 
 
-def save_cantera_model(model_container, path, site_density=None):
+def save_cantera_model(model_container, path, site_density=None, provenance_source=None):
     """
     Internal helper to generate the dictionary and write the YAML file.
     model_container must be a :class:`rmgpy.rmg.model.ReactionModel` (or duck-typed
     equivalent with .species, .reactions, and .get_elements()).
     Species/reaction notes (SMILES, source, kinetics comments) are always
     included in the output.
+
+    ``provenance_source`` is the RMG object (or reaction system) whose diagnostic
+    mode, if any, must be declared in the file. It lands twice on purpose: as a
+    leading ``#`` comment block, which is what a human opening the file sees, and
+    inside the mechanism's own ``description`` field, which is what survives a
+    tool that reparses the YAML. ``None`` leaves the output byte-identical.
     """
+    from rmgpy.diagnostic_mode import comment_block, run_provenance_lines
+
+    provenance_lines = run_provenance_lines(provenance_source)
     species_list = model_container.species
     reaction_list = model_container.reactions
     elements_in_use = model_container.get_elements()
@@ -214,15 +225,19 @@ def save_cantera_model(model_container, path, site_density=None):
     yaml_data = generate_cantera_data(species_list, reaction_list,
                                       elements_in_use=elements_in_use,
                                       is_plasma=is_plasma,
-                                      site_density=site_density)
+                                      site_density=site_density,
+                                      provenance_lines=provenance_lines)
 
     # Serialize into memory first, then land the file with a single rename, so a
     # failure inside yaml.dump cannot truncate an existing mechanism on disk.
     # See _write_file_atomically.
     buffer = io.StringIO()
     # sort_keys=False ensures 'units' comes first, then 'phases', etc.
-    yaml.dump(yaml_data, buffer, Dumper=Dumper, sort_keys=False, default_flow_style=None)
-    _write_file_atomically(path, buffer.getvalue())
+    # allow_unicode is switched on only when there is provenance to carry, so a
+    # mechanism with nothing to declare is dumped exactly as it was before.
+    yaml.dump(yaml_data, buffer, Dumper=Dumper, sort_keys=False, default_flow_style=None,
+              allow_unicode=bool(provenance_lines))
+    _write_file_atomically(path, comment_block(provenance_source, '#') + buffer.getvalue())
 
 
 def _write_file_atomically(path, content):
@@ -240,7 +255,7 @@ def _write_file_atomically(path, content):
     fd, tmp_path = tempfile.mkstemp(prefix='.' + os.path.basename(path) + '.', suffix='.tmp',
                                     dir=directory)
     try:
-        with os.fdopen(fd, 'w') as handle:
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
             handle.write(content)
         os.replace(tmp_path, path)
     except BaseException:
@@ -280,6 +295,7 @@ def generate_cantera_data(species_list,
                           elements_in_use=None,
                           is_plasma=False,
                           site_density=None,
+                          provenance_lines=None,
                           ):
     """
     Converts RMG objects into a dictionary structure compatible with Cantera YAML.
@@ -308,8 +324,18 @@ def generate_cantera_data(species_list,
     except Exception:
         git_head = ''
 
+    description = 'RMG-Py Generated Mechanism'
+    if provenance_lines:
+        # Inside the mechanism, not only above it: a tool that reparses this YAML
+        # drops the '#' block but keeps every mapping key.
+        # Joined with newlines, not spaces: this Dumper emits any multi-line string
+        # as a literal block scalar (see _multiline_str_representer), which is the
+        # only YAML style that will not re-wrap the sentence. Folding it would put a
+        # line break inside the disclaimer and destroy the verbatim match.
+        description = '\n'.join([description] + list(provenance_lines))
+
     data = {
-        'description': 'RMG-Py Generated Mechanism',
+        'description': description,
         'generator': f'RMG-Py CanteraWriter2 at {__file__}{git_head}',
         'cantera-version': '3.1',
         'units': {

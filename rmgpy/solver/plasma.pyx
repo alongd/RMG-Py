@@ -75,7 +75,10 @@ import rmgpy.constants as constants
 cimport rmgpy.constants as constants
 import rmgpy.data.rmg as rmg_data_module
 from rmgpy.data.thermo import find_cp0_and_cpinf
-from rmgpy.exceptions import NonEquilibriumReverseRateError, PlasmaStateError
+from rmgpy.diagnostic_mode import (PRESCRIBED_TE_MODE, PRESCRIBED_TE_DISCLAIMER,
+                                   SOLVED_TE_MODE, EEDF_MODE, run_provenance_lines)
+from rmgpy.exceptions import (NonEquilibriumReverseRateError, PlasmaStateError,
+                              PrescribedTeDiagnosticError)
 from rmgpy.quantity import Quantity
 from rmgpy.quantity cimport ScalarQuantity
 from rmgpy.kinetics.arrhenius cimport Arrhenius, TwoTemperaturePlasma
@@ -4914,8 +4917,49 @@ cdef class PlasmaReactor(ReactionSystem):
 
     def _identity(self):
         """A short identity string for this reactor, used in error messages."""
-        return "PlasmaReactor(label={0!r}, T={1!r}, P={2!r}, Te={3!r})".format(
-            getattr(self, 'label', None), self.T, self.P, self.Te)
+        return "PlasmaReactor(label={0!r}, T={1!r}, P={2!r}, Te={3!r}, mode={4!r})".format(
+            getattr(self, 'label', None), self.T, self.P, self.Te,
+            EEDF_MODE if self.eedf_mode else SOLVED_TE_MODE if self.energy_balance else PRESCRIBED_TE_MODE)
+
+    @property
+    def diagnostic_mode(self):
+        """The validated operating mode, independent of the evolving numerical state."""
+        if self.eedf_mode:
+            if not self.energy_balance:
+                raise PlasmaStateError('EEDF provenance requires the electron energy balance.')
+            return EEDF_MODE
+        return SOLVED_TE_MODE if self.energy_balance else PRESCRIBED_TE_MODE
+
+    def get_diagnostic_provenance(self, ascii_only=False):
+        """Return this reactor's mode and qualification as bare lines."""
+        return run_provenance_lines(self, ascii_only=ascii_only)
+
+    def _refuse_predictive_electron_claim(self, quantity):
+        """Distinguish a forbidden prescribed-Te claim from an unimplemented API."""
+        mode = self.diagnostic_mode
+        if mode != PRESCRIBED_TE_MODE:
+            raise NotImplementedError(
+                'The scalar accessor for {0} is not implemented in {1}; use the '
+                'labelled trajectory and existing diagnostics.'.format(quantity, mode))
+        raise PrescribedTeDiagnosticError(
+            "Refusing to report {0}: this run is a '{1}'.\n{2}\n"
+            "This run may legitimately claim transient growth or decay, extinction versus sustainment, "
+            "wall fluxes, geometry sensitivity, conditional composition and the particle-balance residual. "
+            "An independently predictive absolute density requires an electron energy/power balance; "
+            "this run prescribes Te instead. ({3})".format(
+                quantity, mode, PRESCRIBED_TE_DISCLAIMER, self._identity()))
+
+    def get_electron_density(self, *args, **kwargs):
+        """Refuse an unsupported predictive scalar; solved-mode API is unimplemented."""
+        self._refuse_predictive_electron_claim('an absolute electron density')
+
+    def get_ionisation_degree(self, *args, **kwargs):
+        """Refuse an unsupported predictive scalar; solved-mode API is unimplemented."""
+        self._refuse_predictive_electron_claim('an ionisation degree')
+
+    def get_ionization_degree(self, *args, **kwargs):
+        """US spelling of :meth:`get_ionisation_degree`."""
+        self.get_ionisation_degree(*args, **kwargs)
 
     @property
     def ion_reduced_mobilities(self):

@@ -31,6 +31,8 @@ import csv
 import json
 import os
 
+from rmgpy.diagnostic_mode import comment_block, run_provenance_lines
+
 from rmgpy.chemkin import get_species_identifier
 from rmgpy.tools.plot import SimulationPlot
 
@@ -91,6 +93,7 @@ class SimulationProfileWriter(object):
         )
 
         from rmgpy.export import SpeciesReferences, resolve_species_reference
+        provenance = run_provenance_lines(reaction_system)
         wall_model = getattr(reaction_system, 'electronegative_wall_model', None)
         declarations = SpeciesReferences(self.core_species, get_species_identifier, context='simulation profile',
                                          allow_ground_collisions=True)
@@ -104,7 +107,9 @@ class SimulationProfileWriter(object):
             # gate values repeated over the trajectory.
             records = [reaction_system.electronegative_wall_history[row[0]]
                        for row in reaction_system.snapshots]
-            manifest = reaction_system.electronegative_wall_manifest()
+            manifest = dict(reaction_system.electronegative_wall_manifest())
+            if provenance:
+                manifest['run_provenance'] = provenance
             identity = '{0}; {1}'.format(manifest['closure'], manifest['geometry_arm'])
             header.extend(['Wall h [{0}]'.format(identity),
                            'Wall floating potential e/(kTe)',
@@ -116,12 +121,16 @@ class SimulationProfileWriter(object):
                 stream.write('\n')
 
         if getattr(reaction_system, 'eedf_mode', False):
+            manifest = dict(reaction_system.eedf_run_manifest())
+            if provenance:
+                manifest['run_provenance'] = provenance
             with open(filename[:-4] + '.eedf.json', 'w') as stream:
-                json.dump(reaction_system.eedf_run_manifest(), stream, indent=2,
+                json.dump(manifest, stream, indent=2,
                           sort_keys=True, allow_nan=False)
                 stream.write('\n')
 
-        with open(filename, 'w') as csvfile:
+        with open(filename, 'w', encoding='utf-8') as csvfile:
+            csvfile.write(comment_block(reaction_system, '#', trailing_blank=False))
             worksheet = csv.writer(csvfile)
 
             # add header row:

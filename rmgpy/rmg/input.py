@@ -1418,6 +1418,10 @@ def plasma_reactor(temperature,
     Electron energy balance
     -----------------------
 
+    Output provenance distinguishes prescribed Te, solved-Te energy balance and
+    EEDF energy balance (see :mod:`rmgpy.diagnostic_mode`). The label qualifies
+    the output; it does not change the equations or qualify an EEDF export.
+
     ``electronEnergyBalance`` makes ``Te`` a SOLVED quantity instead of a prescribed one:
     ``electronTemperature`` becomes its initial value, and the electron density follows from
     the coupled particle and power balances. It needs a wall. The closure is a specified

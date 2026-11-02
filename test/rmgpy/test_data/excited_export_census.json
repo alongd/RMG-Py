@@ -1011,7 +1011,7 @@
       "file": "rmgpy/chemkin.pyx",
       "function": "save_species_dictionary",
       "line": 2920,
-      "signature": "a5c6ae5738d4bbfad0c1a83d68fae7ab86ab3e53b670319e3cd594d6336e83a1",
+      "signature": "38ccc207febc220222d3639769728baf5fdf4e6a27a5e3970cdca17a35fc5a66",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_species_dictionary]",
       "manifold": {
@@ -1029,7 +1029,7 @@
       "file": "rmgpy/chemkin.pyx",
       "function": "render_species_dictionary",
       "line": 2930,
-      "signature": "28c543a0cf3137a2d94bfec243557ba3fae1d9dbbcad1f99e370f206f79c4e37",
+      "signature": "330e1b9aaea0d3419f5f419b23767c0606ea3389ea20bda31206bde35a53be75",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_species_dictionary]",
       "reason": "Modern dictionaries serialize canonical v0 graphs under their allocated names; old-style dictionaries refuse declaration-bearing identities with SpeciesIdentityError.",
@@ -1050,8 +1050,8 @@
     "rmgpy/chemkin.pyx:render_transport_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_transport_file",
-      "line": 2994,
-      "signature": "4d69663000b49b8fb9cbf3ba93883ac210acbbab0a25f0a11188ece900e8fb7e",
+      "line": 2995,
+      "signature": "e06b43fb949868ded6a3c8b951c14500ca7e871c2a3a36b450948ec2ecf8182c",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_transport_file]",
       "manifold": {
@@ -1068,7 +1068,7 @@
     "rmgpy/chemkin.pyx:_write_files_atomically": {
       "file": "rmgpy/chemkin.pyx",
       "function": "_write_files_atomically",
-      "line": 3032,
+      "line": 3034,
       "signature": "e5eda7f0083fb997283794195531aa4bbe03577d923d205ea3d6d569d0b0e6f7",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:_write_files_atomically]",
@@ -1086,8 +1086,8 @@
     "rmgpy/chemkin.pyx:render_chemkin_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_chemkin_file",
-      "line": 3064,
-      "signature": "f764b0d49190d9d1dccbde575cb2c9fd28eac9b441eb31c30488f7e9211051c2",
+      "line": 3066,
+      "signature": "e40b6b8378718b91fb2bd759d6fefdf08c17531c7397972af083647d2991fc32",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_chemkin_file]",
       "reason": "The in-memory Chemkin renderer validates declaration names and reaction references, emits each species through resolve_species_reference, and delegates thermo records to the checked write_thermo_entry; named state identity is retained in the companion dictionary contract.",
@@ -1110,7 +1110,7 @@
     "rmgpy/chemkin.pyx:render_chemkin_surface_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_chemkin_surface_file",
-      "line": 3175,
+      "line": 3178,
       "signature": "3babcbfffa7a299aef59c607a5a7b8302944ad1c990ea7eb4d5a47e29b357462",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_chemkin_surface_file]",
@@ -1128,8 +1128,8 @@
     "rmgpy/chemkin.pyx:save_chemkin": {
       "file": "rmgpy/chemkin.pyx",
       "function": "save_chemkin",
-      "line": 3249,
-      "signature": "5a15e1bbcdbf8ec6cc33a2e31217430d21a3930e16cfc11ae7fc5bc076f30797",
+      "line": 3252,
+      "signature": "02674d176ddc2647f9d8ee58dce0c8f417ff3fbf27ac941385aa9daf7c39241b",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_chemkin]",
       "manifold": {
@@ -1146,8 +1146,8 @@
     "rmgpy/chemkin.pyx:save_chemkin_files": {
       "file": "rmgpy/chemkin.pyx",
       "function": "save_chemkin_files",
-      "line": 3355,
-      "signature": "02fb049c0e467e2aeea660d7ba62be5e38df9dee7964131b52615da079a74b7d",
+      "line": 3361,
+      "signature": "b806d554c46ef66fbca76396a7b8fdda9bb181266eb4da29781ea730a7278460",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_chemkin_files]",
       "manifold": {
@@ -1539,7 +1539,7 @@
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.save",
       "line": 837,
-      "signature": "959aef8273e6fb06328e5c5e92115993572b8438f6ac29455e7b57c017f59a89",
+      "signature": "00e0825800e3768771f3be5369ddcb1617b07c5e846f67673a1176b4d2b1493f",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.save]",
       "manifold": {
@@ -1556,7 +1556,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load_old": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load_old",
-      "line": 881,
+      "line": 883,
       "signature": "74d14e289688249e906a0a12a3a789443b285daea8bb40c9cabd87482d4c2439",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load_old]",
@@ -1574,7 +1574,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save_old": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.save_old",
-      "line": 941,
+      "line": 943,
       "signature": "6c2b60ef9657bd517f204346d893655ea4ee65a90e31d9aba8e012da1f18d93a",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.save_old]",
@@ -2271,7 +2271,7 @@
     "rmgpy/rmg/input.py:save_input_file": {
       "file": "rmgpy/rmg/input.py",
       "function": "save_input_file",
-      "line": 3436,
+      "line": 3440,
       "signature": "ac3972d9a08130a4cff030e767fce2876ffafadd0afffe33709c9405a88e2884",
       "verdict": "N",
       "reason": "The existing supported header-free declaration keeps its original graph and vibrationalManifold DSL line by stripping the marker only from the serialization copy; explicit resolved input remains refused.",
@@ -2296,8 +2296,8 @@
     "rmgpy/rmg/listener.py:SimulationProfileWriter.update": {
       "file": "rmgpy/rmg/listener.py",
       "function": "SimulationProfileWriter.update",
-      "line": 74,
-      "signature": "48a73f5571489a50719455c67dc0b14ab0412ff20f1ec15019afe04525f15160",
+      "line": 76,
+      "signature": "9071e39db3366630dba2582c0d393c68e73dd4a8fb7d3ff60002c8814841619c",
       "verdict": "R",
       "reason": "Profile CSV names and electronegative-wall JSON use state-qualified declarations for resolved species while retaining historical ground labels and refusing true collisions.",
       "evidence": "TestExcitedExportSiteCensus.test_resolved_route, test_wall_manifest_with_resolved_species_is_written_after_identity_resolution, and excitedExportRework10Test.",
@@ -2316,7 +2316,7 @@
     "rmgpy/rmg/main.py:RMG.load_database": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.load_database",
-      "line": 515,
+      "line": 516,
       "signature": "9d88752eebaaddd2af40d2967c92d6838aebbbd2192a998ee46ae59ce16686a0",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmg/main.py:RMG.load_database]",
@@ -2334,8 +2334,8 @@
     "rmgpy/rmg/main.py:RMG.generate_end_of_run_cantera_files": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.generate_end_of_run_cantera_files",
-      "line": 1446,
-      "signature": "c935506d61e85a777895132904b9e6c53069ad7604eb08db0f1500ea5b2ef511",
+      "line": 1449,
+      "signature": "287fcf1bd41138a25e11fbe4fd6b4021f519d78d62e503fece3907d67b3e664a",
       "verdict": "R",
       "reason": "End-of-run export orchestration checks thermo for all core and edge species before invoking existing Cantera/Chemkin writers and validates state-bearing thermodynamic coverage references through those writers.",
       "evidence": [
@@ -2358,8 +2358,8 @@
     "rmgpy/rmg/main.py:RMG.make_seed_mech": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.make_seed_mech",
-      "line": 2026,
-      "signature": "18cf62cbdf6b876eeaa51c34aa1a5fec95bcbb867991c89d6633ffee98e061ce",
+      "line": 2033,
+      "signature": "3912719c3c7f7afc6d33e8a68e182e7b7a3a675b861914d95b5255d096e41779",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmg/main.py:RMG.make_seed_mech]",
       "manifold": {
@@ -2376,7 +2376,7 @@
     "rmgpy/rmg/main.py:RMG.generate_cantera_files_from_chemkin": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.generate_cantera_files_from_chemkin",
-      "line": 2282,
+      "line": 2294,
       "signature": "bcbd9918de62fd816a64a504002e25e2826fe99767c3db6622724db2bbceffb2",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/rmg/main.py:RMG.generate_cantera_files_from_chemkin]",
@@ -2395,7 +2395,7 @@
       "file": "rmgpy/rmg/output.py",
       "function": "save_output_html",
       "line": 47,
-      "signature": "923c5b6cd5579bc12ba856b05ac8796dbb2db3845644fe46ad2a87ebd9119a38",
+      "signature": "722922c9962c34b8ce1ad3f39f87763c542e940770bde60e24cf87af14edeae6",
       "verdict": "N",
       "reason": "HTML/model drawing output first refuses resolved species across core, edge and output lists plus reaction references with SpeciesIdentityError, then checks selected ground model thermo before creating images or the HTML file.",
       "evidence": [
@@ -2418,7 +2418,7 @@
     "rmgpy/rmg/output.py:save_diff_html": {
       "file": "rmgpy/rmg/output.py",
       "function": "save_diff_html",
-      "line": 536,
+      "line": 541,
       "signature": "53e056105c579812917cd9e7a4fa09efa64cc2f4e49d886b44cc67422e531ae3",
       "verdict": "N",
       "reason": "The diff writer first refuses all common/unique species and reaction references with SpeciesIdentityError, before thermo comparisons, label mutation, graph drawing or HTML writes.",
@@ -2901,8 +2901,8 @@
     "rmgpy/tools/plot.py:GenericPlot.plot": {
       "file": "rmgpy/tools/plot.py",
       "function": "GenericPlot.plot",
-      "line": 190,
-      "signature": "1a65d49a9028650d7cdf1a3590f54368e636dfa20721c0551875ff0db01e2ca4",
+      "line": 243,
+      "signature": "4f612b2c31ce92a7fbf06308caa5d21a075e5d15ee4fac160586c6adf9c11751",
       "verdict": "N",
       "reason": "Resolved GenericData species are refused before legend labels, title rendering, or PNG title metadata; the wall title itself contains only closure, geometry, time, potential, and gate diagnostics.",
       "evidence": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/plot.py:GenericPlot.plot]",
@@ -2921,7 +2921,7 @@
     "rmgpy/tools/plot.py:GenericPlot.barplot": {
       "file": "rmgpy/tools/plot.py",
       "function": "GenericPlot.barplot",
-      "line": 250,
+      "line": 306,
       "signature": "f5fa02ff6de8918aa72f2a2252284bd4973653659e730b50815055d5aa792361",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/plot.py:GenericPlot.barplot]",
@@ -2939,7 +2939,7 @@
     "rmgpy/tools/plot.py:GenericPlot.compare_plot": {
       "file": "rmgpy/tools/plot.py",
       "function": "GenericPlot.compare_plot",
-      "line": 287,
+      "line": 343,
       "signature": "3f1e5418a8f6f32a1d0c720ac9035c8fc0f81a3593882f7d8da76912f8624065",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/plot.py:GenericPlot.compare_plot]",
@@ -2957,7 +2957,7 @@
     "rmgpy/tools/plot.py:ReactionSensitivityPlot.uncertainty_plot": {
       "file": "rmgpy/tools/plot.py",
       "function": "ReactionSensitivityPlot.uncertainty_plot",
-      "line": 514,
+      "line": 583,
       "signature": "7b525107c2e150835dc01a2d1f4584cdbc21fb58fcbb64199b0a2da4190e8807",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/plot.py:ReactionSensitivityPlot.uncertainty_plot]",
@@ -2975,7 +2975,7 @@
     "rmgpy/tools/plot.py:ThermoSensitivityPlot.uncertainty_plot": {
       "file": "rmgpy/tools/plot.py",
       "function": "ThermoSensitivityPlot.uncertainty_plot",
-      "line": 630,
+      "line": 699,
       "signature": "9dec7a5180fdcede7366c3a6daddff70b68e7a8e686c6157a351f93d73781f87",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/plot.py:ThermoSensitivityPlot.uncertainty_plot]",
@@ -3120,7 +3120,7 @@
       "file": "rmgpy/util.py",
       "function": "strip_yaml_notes",
       "line": 223,
-      "signature": "84017bb79bb11b7014260f5eb821120e1af1fbb71436047e7b9d1822398f879a",
+      "signature": "885218e8f105f258d62ce0e7496dbcbdbb637730bba4a68617c840ec67d8024b",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/util.py:strip_yaml_notes]",
       "manifold": {
@@ -3209,7 +3209,7 @@
     "rmgpy/yaml_cantera1.py:get_phases_gas_only": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "get_phases_gas_only",
-      "line": 240,
+      "line": 244,
       "signature": "d00f95a61de58ccfeefd7f8f747b5372d5e3875b1a0abeeca03d938d8eb15fb5",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:get_phases_gas_only]",
@@ -3227,7 +3227,7 @@
     "rmgpy/yaml_cantera1.py:get_phases_with_surface": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "get_phases_with_surface",
-      "line": 269,
+      "line": 273,
       "signature": "65116451108723ffda285a38481ad868706ea156b2a5bdcd87e283dfee1a1214",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:get_phases_with_surface]",
@@ -3245,7 +3245,7 @@
     "rmgpy/yaml_cantera1.py:_cantera_declarations": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "_cantera_declarations",
-      "line": 417,
+      "line": 421,
       "signature": "2bdfb963636d7608dac016fd07523d0097ad19f72d19415cf0a3ea87fb89bf92",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:_cantera_declarations]",
@@ -3263,7 +3263,7 @@
     "rmgpy/yaml_cantera1.py:_build_equation_string": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "_build_equation_string",
-      "line": 423,
+      "line": 427,
       "signature": "0000f2e26762d2d945cd9402266d20a8b34dc65817faa6e75b55e2e0ca85e9ba",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:_build_equation_string]",
@@ -3281,7 +3281,7 @@
     "rmgpy/yaml_cantera1.py:reaction_to_dicts": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "reaction_to_dicts",
-      "line": 466,
+      "line": 470,
       "signature": "c5e454f4a5c6778d11b785e4b6fe5932cad5c154548afb9c41f5a93ec0032f97",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:reaction_to_dicts]",
@@ -3304,7 +3304,7 @@
     "rmgpy/yaml_cantera1.py:species_to_dict": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "species_to_dict",
-      "line": 611,
+      "line": 615,
       "signature": "245d3693f91deb0ba555adfc62f22d85b798968e0ad7280c100bb8860bcc5002",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:species_to_dict]",
@@ -3329,7 +3329,7 @@
     "rmgpy/yaml_cantera2.py:species_to_dict": {
       "file": "rmgpy/yaml_cantera2.py",
       "function": "species_to_dict",
-      "line": 481,
+      "line": 507,
       "signature": "5c5abda46d74c8d9c5d26eb81fa46704b026be90f819bd31d9c06e8aa206926f",
       "verdict": "R",
       "reason": "Composition and adjacency note use the canonical copied v0 graph; checked thermo and reference allocation retain the declaration identity through Cantera YAML.",
@@ -3354,7 +3354,7 @@
     "rmgpy/yaml_cantera2.py:get_reaction_equation": {
       "file": "rmgpy/yaml_cantera2.py",
       "function": "get_reaction_equation",
-      "line": 1035,
+      "line": 1061,
       "signature": "c02097a6dc612009ce33135fd3c0216e4323cdc5b0f9731eb30a68782acb7e9b",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:get_reaction_equation]",
@@ -3372,7 +3372,7 @@
     "rmgpy/yaml_cantera2.py:_cantera_declarations": {
       "file": "rmgpy/yaml_cantera2.py",
       "function": "_cantera_declarations",
-      "line": 1096,
+      "line": 1122,
       "signature": "806bfb899b742a16d10eec307e0ba940b0ae6c2268af097eb1a1541e984b5040",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:_cantera_declarations]",
@@ -3390,7 +3390,7 @@
     "rmgpy/yaml_cantera2.py:get_label": {
       "file": "rmgpy/yaml_cantera2.py",
       "function": "get_label",
-      "line": 1103,
+      "line": 1129,
       "signature": "7e240a6be62db5e350dcd3f285da1b66fcdfcc33beda4fc806444cacd43fcf45",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:get_label]",
@@ -3426,7 +3426,7 @@
     "rmgpy/yaml_rms.py:load_rms_species": {
       "file": "rmgpy/yaml_rms.py",
       "function": "load_rms_species",
-      "line": 73,
+      "line": 76,
       "signature": "5071acfed68027957ea106771d5d52383e4cf8c86100cb0ec8c47c7b03a0c091",
       "verdict": "R",
       "reason": "RMS species records retain adjacency-backed identities; shared Ground names keep every legacy record while collisions involving a resolved identity refuse through SpeciesReferences.",
@@ -3446,7 +3446,7 @@
     "rmgpy/yaml_rms.py:get_mech_dict": {
       "file": "rmgpy/yaml_rms.py",
       "function": "get_mech_dict",
-      "line": 99,
+      "line": 102,
       "signature": "b8ccf549b93cc23b4e95adb6195beab44878ebb059319ae7e548697c9041452d",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_rms.py:get_mech_dict]",
@@ -3468,7 +3468,7 @@
     "rmgpy/yaml_rms.py:obj_to_dict": {
       "file": "rmgpy/yaml_rms.py",
       "function": "obj_to_dict",
-      "line": 159,
+      "line": 162,
       "signature": "2d26acb6d62c4604fb176eb1f5d3174798ae8d4658b5277a02200995fb3a7703",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_rms.py:obj_to_dict]",
@@ -3828,7 +3828,7 @@
       "file": "rmgpy/yaml_cantera1.py",
       "function": "write_cantera",
       "line": 114,
-      "signature": "5a61388ba318025c4bbe603b3cd5d19f80598ba75791dbbd42ab4683b3fae84f",
+      "signature": "69e77f28eaa41bef3c7009b3662c3b80f1b6d7968559fd3569a716e2e4ac279b",
       "verdict": "R",
       "reason": "The Cantera YAML writer checks each species thermo before preparing output and delegates identity naming, adjacency notes and reaction references to the audited state-aware conversion/declaration helpers.",
       "evidence": [
@@ -3854,8 +3854,8 @@
       "reason": "generate_cantera_data validates full identities and emits adjacency metadata before yaml.dump or file replacement.",
       "file": "rmgpy/yaml_cantera2.py",
       "function": "save_cantera_model",
-      "line": 195,
-      "signature": "25b0cf227ce766e1c675c30cb7a343cdcba81d758ba56a8c0448b775e1e9d4aa",
+      "line": 197,
+      "signature": "1f26a43480cf770b2e6f44f67ebaf74f7ac808b4cd3ed324b65feab94d6136e2",
       "manifold": {
         "verdict": "carried",
         "reason": "save_cantera_model uses a qualified identity inventory and explicit-v0 adjacency notes; plain native label conversion and unsupported declared collider syntax refuse by name.",
@@ -3873,8 +3873,8 @@
       "reason": "Transports already-serialized content without alteration; actual adjacency content witness retains full identity.",
       "file": "rmgpy/yaml_cantera2.py",
       "function": "_write_file_atomically",
-      "line": 228,
-      "signature": "4c1eed92cb5fc4eaf365fae17e40c46beae739149c127b2f8a927047d2b72ff1",
+      "line": 243,
+      "signature": "6ac6a8e5cacc16692a2b90443a66e6fba86f2d5f872120ebf225704a28bae069",
       "manifold": {
         "verdict": "not-applicable",
         "reason": "_write_file_atomically transports an already serialized payload or owner-free mathematical model; it neither selects a species partition nor drops its declaration.",
@@ -3893,7 +3893,7 @@
       "file": "rmgpy/yaml_rms.py",
       "function": "write_rms",
       "line": 67,
-      "signature": "58bce971632790b2d83741a3d38024eabbb88702c725f1d02accefea25812ee0",
+      "signature": "6f8222b2f0733c1cd351b1e65bf77e1fc153a5d9cbba72264ffda0fdec3d0895",
       "manifold": {
         "verdict": "carried",
         "reason": "write_rms uses RMS full-identity references and explicit-v0 adjacency; unsupported declared named colliders/coverage syntax refuses instead of emitting a ground key.",
@@ -4017,7 +4017,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._compute_reference_reaction_data",
-      "line": 7325,
+      "line": 7369,
       "signature": "4e16933925d7bb2f387b5e73d5b0e0e565eb8f80fa92124ccdeb788c3df50785",
       "verdict": "R",
       "reason": "Charged-reaction diagnostic equations use shared declarations when any participant is resolved and retain historical str(reaction) bytes for ground-only reactions. Thermo rebase classification: Reference-reaction names and equations include canonical v0 identity for declared participants; the reference energy calculation still uses its previously checked source.",
@@ -4039,7 +4039,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._evaluate_electronegative_wall_regime",
-      "line": 7455,
+      "line": 7499,
       "signature": "c0534dbafe3fd70cd2debb87c2f8284fbe156429631e29d4634048c0656d014e",
       "verdict": "R",
       "reason": "Wall destruction-channel equations and anion labels include declared v0 identifiers while gate computation and ground labels retain the existing code.",
@@ -4061,7 +4061,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_manifest": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor.electronegative_wall_manifest",
-      "line": 1250,
+      "line": 1253,
       "signature": "661ea95545b49d6f63bee51997f098a0ff15dc59fcc830dc80eeaa6f0b54cf0d",
       "verdict": "R",
       "reason": "Published wall species identifiers include declared v0 names through has_export_state and the shared Chemkin allocator; ordinary wall identifiers and calculations retain their existing paths.",
@@ -4670,7 +4670,7 @@
     "rmgpy/rmg/main.py:RMG.add_default_bath_gases": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.add_default_bath_gases",
-      "line": 454,
+      "line": 455,
       "signature": "b3155b0b0f9666ac8bb3058d3c62964fe47c0fc697369a164c7073015961397b",
       "reason": "Explicit default ground bath gas construction.",
       "verdict": "E"
@@ -4678,23 +4678,23 @@
     "rmgpy/rmg/main.py:RMG.initialize": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.initialize",
-      "line": 623,
-      "signature": "d74ec92866092c64b477be09bdcb208c4e837fe2a99a09cab1436d0bdc492429",
+      "line": 624,
+      "signature": "682d42b069201a7a15deefa1e521ea4aaf03658a842efe60c7c4d2f3b774fafb",
       "reason": "Orchestrates internal model setup; saved species are reconstructed by the audited library/depository/adjacency readers.",
       "verdict": "E"
     },
     "rmgpy/rmg/main.py:RMG.check_model": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.check_model",
-      "line": 1893,
-      "signature": "9fc16df4e4cdb8e9a1897e3f60dec298579eccc9872ac31e91937ccde5938b87",
+      "line": 1898,
+      "signature": "cd7e4dba0ca04a12588ecbce3e7f6b8d95849bc56c11be7b078cb2af264e999d",
       "reason": "Diagnostics and logging; no exported species identifiers.",
       "verdict": "E"
     },
     "rmgpy/rmg/main.py:RMG.initialize_reaction_threshold_and_react_flags": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.initialize_reaction_threshold_and_react_flags",
-      "line": 2353,
+      "line": 2365,
       "signature": "625f8174dbe5f7892adc6024d426176a8bf01381a809e89572ea453ee098c80e",
       "reason": "Internal restart state bookkeeping; dictionary reload has a separate audited path.",
       "verdict": "E"
@@ -5016,8 +5016,8 @@
     "rmgpy/tools/plot.py:parse_csv_data": {
       "file": "rmgpy/tools/plot.py",
       "function": "parse_csv_data",
-      "line": 66,
-      "signature": "abf7f82ba49ed1a7a2ba4932fc7ceeb3bceb69a200aa10fc1a68c468410485b6",
+      "line": 104,
+      "signature": "bed4672c72f2bd73c4389dd862cb3f4a6c6378664b7c918bf5313a6aff20b073",
       "reason": "Reads names already emitted by the audited CSV writer; does not rebuild molecular species.",
       "verdict": "E"
     },
@@ -5090,7 +5090,7 @@
       "reason": "Writes Element singleton names and isotope masses only, not molecular identifiers; baseline ground bytes preserved.",
       "file": "rmgpy/chemkin.pyx",
       "function": "write_elements_section",
-      "line": 3422,
+      "line": 3428,
       "signature": "71165b64271e41296c9002ee7a63db7f4ca7b5e8780b6bf7a9659199d98ba7e2"
     },
     "rmgpy/data/base.py:Database.save_old_tree": {
@@ -5114,7 +5114,7 @@
       "reason": "Nested formatter writes scalar Arrhenius parameters and uncertainties only; parent save_old refuses resolved molecular references before opening.",
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.write_arrhenius",
-      "line": 977,
+      "line": 979,
       "signature": "1cf3591ae6abb9219ea62718650de3f613c953e7a13862fa42fa05ccef8bda91"
     },
     "rmgpy/molecule/draw.py:create_new_surface": {
@@ -5146,7 +5146,7 @@
       "reason": "Conservative finish() sink match: invokes RMG.finish, not Cairo surface.finish; concrete exports are audited in their writers.",
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.execute",
-      "line": 949,
+      "line": 952,
       "signature": "34cf2f70a2ac30a958a680f76a26f8cf90b20a8ce90cd045a6d2b5936eb79262"
     },
     "rmgpy/rmg/main.py:RMG.initialize_seed_mech": {
@@ -5154,15 +5154,15 @@
       "reason": "Copies the full explicit input deck verbatim with a restart directive; seed molecular records use separately audited paired save.",
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.initialize_seed_mech",
-      "line": 1985,
-      "signature": "1991cc566de235a765285c8a68bc7198bb44d3ed8d45af98060b705850145571"
+      "line": 1991,
+      "signature": "a016cf0136bac610f07c898039a6f83f5a8d4db06f3da452ff1880248d6d608e"
     },
     "rmgpy/rmg/main.py:RMG.save_profiler_info": {
       "verdict": "E",
       "reason": "marshal.dump persists profiler timing statistics only, not a molecular mechanism.",
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.save_profiler_info",
-      "line": 2587,
+      "line": 2599,
       "signature": "178fd0183d2b302c0e7654490c2e210db62df834cdbb13a6c0a887292bfca2f2"
     },
     "rmgpy/rmg/main.py:_add_coverage_dependence_to_cantera_yaml": {
@@ -5170,7 +5170,7 @@
       "reason": "Inserts already-rendered thermo coverage blocks into an existing YAML by exact Chemkin names; does not rebuild or rename molecular records.",
       "file": "rmgpy/rmg/main.py",
       "function": "_add_coverage_dependence_to_cantera_yaml",
-      "line": 2963,
+      "line": 2975,
       "signature": "97ad55a8fa2cf8b2f74b491a1b025dc808081bb8f30d06295d15a71ac1af9658"
     },
     "rmgpy/rmg/main.py:Tee.write": {
@@ -5178,7 +5178,7 @@
       "reason": "Generic byte-preserving diagnostic stream fan-out; takes only strings, performs no molecular naming or reconstruction.",
       "file": "rmgpy/rmg/main.py",
       "function": "Tee.write",
-      "line": 3030,
+      "line": 3042,
       "signature": "81c59c0e5b7611675612830436b7fb2e9832edb38f703c7307f50fc18c18d15a"
     },
     "rmgpy/rmg/main.py:process_profile_stats": {
@@ -5186,7 +5186,7 @@
       "reason": "print(file=...) writes function timing/call-count diagnostics, not species identities.",
       "file": "rmgpy/rmg/main.py",
       "function": "process_profile_stats",
-      "line": 3057,
+      "line": 3069,
       "signature": "78cddbe838b7b68b127406544946151c1ce494ee24bb126e7263b7b481636834"
     },
     "rmgpy/rmg/main.py:make_profile_graph": {
@@ -5194,7 +5194,7 @@
       "reason": "Writes a function-call profiler graph and timing metrics, not molecular drawings.",
       "file": "rmgpy/rmg/main.py",
       "function": "make_profile_graph",
-      "line": 3077,
+      "line": 3089,
       "signature": "d1089cbb7e60fed4691c36fbb827a521adbc3e552c56c45971717e4d8aca58b7"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.update": {
@@ -5242,15 +5242,15 @@
       "file": "rmgpy/stats.py",
       "function": "ExecutionStatsWriter.save_execution_statistics",
       "line": 117,
-      "signature": "55954730ed7fb7a494f2932f1706b76f45d45023963771804fac80e7f3d4f723"
+      "signature": "2878428d0f6485c60df84646eaeea89c00982b58899c842149cc697521853950"
     },
     "rmgpy/stats.py:ExecutionStatsWriter.generate_execution_plots": {
       "verdict": "E",
       "reason": "Plots numerical execution statistics by elapsed time/iteration, not species labels or structures.",
       "file": "rmgpy/stats.py",
       "function": "ExecutionStatsWriter.generate_execution_plots",
-      "line": 169,
-      "signature": "6c3f934b3340329a195f991a4b587a3a793c57356c97aea790ce63998a891aa1"
+      "line": 180,
+      "signature": "a31c7319ba9337980efaa1cdf39716a33aefc624a365ab946d93cdbf9f8e205c"
     },
     "rmgpy/tools/eedf/corroborate.py:kill_scope": {
       "file": "rmgpy/tools/eedf/corroborate.py",
@@ -5492,7 +5492,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._emit_development_progress": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._emit_development_progress",
-      "line": 1375,
+      "line": 1378,
       "signature": "5747f0e9ecd18b23f53f5c383c181b5a751645fe29aac281308e141e02a16559",
       "verdict": "E",
       "reason": "Development-only JSON telemetry written to stderr; it reports numerical solver state and emits no molecular identity or saved mechanism."
@@ -5653,6 +5653,14 @@
       "signature": "8b9e6e1cd46879a85c94cc0073982a0f8586a0f20e53b37bd4b381219bead56c",
       "verdict": "E",
       "reason": "Stores numerical solver tensors and explicit symbolic spec assumptions; identifiers are encoded reversibly with storage_key. No Species/Molecule graph or inferred molecular name is exported."
+    },
+    "rmgpy/tools/compare_cantera_yaml.py:compare_yaml_files_and_report": {
+      "verdict": "E",
+      "reason": "Comparison diagnostics and run-mode comments; no mechanism or molecular identity serialization.",
+      "file": "rmgpy/tools/compare_cantera_yaml.py",
+      "function": "compare_yaml_files_and_report",
+      "line": 358,
+      "signature": "7bbb270546e5fba53e24ce2035d87001b2caa94294cf56969087e949d95b06f8"
     }
   }
 }

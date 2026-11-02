@@ -237,7 +237,7 @@ def strip_yaml_notes(src, dst):
     """
     if not os.path.exists(src):
         return
-    with open(src) as f:
+    with open(src, encoding='utf-8') as f:
         text = f.read()
     # State-bearing adjacency notes are identity, not removable commentary.
     from rmgpy.export import refuse_resolved_species
@@ -258,7 +258,7 @@ def strip_yaml_notes(src, dst):
     # Block style: ``  note: ...\n`` plus deeper-indented
     # continuation lines.
     text = re.sub(r'^( +)note:.*\n(?:\1 +[^\n]*\n)*', '', text, flags=re.MULTILINE)
-    with open(dst, "w") as f:
+    with open(dst, "w", encoding="utf-8") as f:
         f.write(text)
 
 

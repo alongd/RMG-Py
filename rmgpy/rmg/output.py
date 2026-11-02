@@ -44,7 +44,7 @@ from rmgpy.util import make_output_subdirectory
 
 ################################################################################
 
-def save_output_html(path, reaction_model, part_core_edge='core'):
+def save_output_html(path, reaction_model, part_core_edge='core', provenance_source=None):
     """
     Save the current set of  species and reactions of `reactionModel` to
     an HTML file `path` on disk. As part of this process, drawings of all 
@@ -77,6 +77,8 @@ def save_output_html(path, reaction_model, part_core_edge='core'):
     dirname = os.path.dirname(path)
 
     # Prepare parameters to pass to jinja template
+    from rmgpy.diagnostic_mode import run_provenance_lines
+    provenance_lines = run_provenance_lines(provenance_source)
     title = 'RMG Output'
 
     if part_core_edge == 'core':
@@ -158,7 +160,8 @@ def save_output_html(path, reaction_model, part_core_edge='core'):
     template = environment.from_string(
 """<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN">
 <html lang="en">
-<head>
+<head>{% if provenance_lines %}
+<meta name="rmg-run-provenance" content="{{ provenance_lines | join(' | ') | e }}">{% endif %}
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" >
 <title>{{ title }}</title>
 <style type="text/css">
@@ -392,7 +395,8 @@ $(document).ready(function() {
 </script>
 </head>
 
-<body>
+<body>{% if provenance_lines %}
+<aside class="run-provenance">{% for line in provenance_lines %}<p>{{ line | e }}</p>{% endfor %}</aside>{% endif %}
 
 <h1>{{ title }}</h1>
 
@@ -525,8 +529,9 @@ $(document).ready(function() {
 </html>
 """)
 
-    f = open(path, 'w')
+    f = open(path, 'w', encoding='utf-8')
     f.write(template.render(title=title, species=species, serialization_species=serialization_species,
+                            provenance_lines=provenance_lines,
                             reactions=reactions, families=families,
                             family_count=family_count, get_species_identifier=get_species_identifier,
                             textwrap=textwrap))
@@ -1352,11 +1357,11 @@ def save_output(rmg, save_edge=None):
     if save_edge is None:
         save_edge = rmg.save_edge_species
     logging.info('Saving current model core to HTML file...')
-    save_output_html(os.path.join(rmg.output_directory, 'output.html'), rmg.reaction_model, 'core')
+    save_output_html(os.path.join(rmg.output_directory, 'output.html'), rmg.reaction_model, 'core', provenance_source=rmg)
 
     if save_edge:
         logging.info('Saving current model edge to HTML file...')
-        save_output_html(os.path.join(rmg.output_directory, 'output_edge.html'), rmg.reaction_model, 'edge')
+        save_output_html(os.path.join(rmg.output_directory, 'output_edge.html'), rmg.reaction_model, 'edge', provenance_source=rmg)
 
 
 class OutputHTMLWriter(object):

@@ -119,6 +119,7 @@ def write_cantera(
     solvent=None,
     solvent_data=None,
     path="chem.yml",
+    provenance_source=None,
 ):
     """
     Writes yaml file depending on the type of system (gas-phase, catalysis).
@@ -186,7 +187,10 @@ def write_cantera(
         )
         phases_block = get_phases_gas_only(spcs, elements_line)
 
-    with open(path, "w") as f:
+    from rmgpy.diagnostic_mode import comment_block
+    provenance = comment_block(provenance_source, "#")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(provenance)
         # generator line
         generator = f"RMG-Py CanteraWriter1 at {__file__}{git_head}"
         f.write(f'generator: "{generator}"\n')
@@ -740,6 +744,7 @@ class CanteraWriter1(object):
             solvent=rmg.solvent,
             solvent_data=solvent_data,
             path=this_output_path,
+            provenance_source=rmg,
         )
         shutil.copy2(this_output_path, latest_output_path)
 
@@ -762,5 +767,6 @@ class CanteraWriter1(object):
                 solvent=rmg.solvent,
                 solvent_data=solvent_data,
                 path=this_edge_path,
+                provenance_source=rmg,
             )
             shutil.copy2(this_edge_path, latest_edge_path)

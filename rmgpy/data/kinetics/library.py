@@ -834,11 +834,13 @@ class KineticsLibrary(Database):
             facet=facet,
         ), "KineticsLibrary.load_entry")
 
-    def save(self, path):
+    def save(self, path, provenance_source=None):
         """
         Save the current database to the file at location `path` on disk. 
         """
-        dictionary = self.render_dictionary()
+        from rmgpy.diagnostic_mode import comment_block
+        python_provenance = comment_block(provenance_source, '#')
+        dictionary = comment_block(provenance_source, '//') + self.render_dictionary()
         entries = self.get_entries_to_save()
 
         f = io.StringIO()
@@ -863,7 +865,7 @@ class KineticsLibrary(Database):
 
         from rmgpy.util import stamp_file_generation
         write_files_atomically(stamp_file_generation([
-            (path, f.getvalue(), '#'),
+            (path, python_provenance + f.getvalue(), '#'),
             (os.path.join(os.path.dirname(path), 'dictionary.txt'), dictionary, '//'),
         ]))
 

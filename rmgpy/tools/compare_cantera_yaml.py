@@ -356,7 +356,7 @@ def compare_yaml_files(file1: str, file2: str, atol: float = 1e-12,
 
 
 def compare_yaml_files_and_report(file1: str, file2: str, atol: float = 1e-12,
-                                   rtol: float = 1e-3, output: str = None) -> bool:
+                                   rtol: float = 1e-3, output: str = None, provenance: str = '') -> bool:
     """Compare two Cantera YAML files and report results via logging.
     
     Performs a comparison between two Cantera YAML files and logs the results.
@@ -387,7 +387,10 @@ def compare_yaml_files_and_report(file1: str, file2: str, atol: float = 1e-12,
     try:
         # Set up optional file logging if output path provided
         if output:
-            file_handler = logging.FileHandler(output)
+            file_handler = logging.FileHandler(output, encoding="utf-8")
+            if provenance:
+                file_handler.stream.write(provenance)
+                file_handler.flush()
             file_handler.setFormatter(logging.Formatter("%(message)s"))
             root_logger.addHandler(file_handler)
         
