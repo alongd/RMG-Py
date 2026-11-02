@@ -5661,6 +5661,38 @@
       "function": "compare_yaml_files_and_report",
       "line": 358,
       "signature": "7bbb270546e5fba53e24ce2035d87001b2caa94294cf56969087e949d95b06f8"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_load_library": {
+      "file": "rmgpy/tools/eedf/channel_map.py",
+      "function": "_load_library",
+      "line": 232,
+      "signature": "01f41aa00496d7400d1bfe5da292866eee394bd17a0395a26d47d5e4039d341b",
+      "verdict": "E",
+      "reason": "Copies exact explicitly supplied library bytes into private scratch space for the native loader; no molecular identity is regenerated or state information discarded."
+    },
+    "rmgpy/tools/eedf/channel_map.py:prepare_spec": {
+      "file": "rmgpy/tools/eedf/channel_map.py",
+      "function": "prepare_spec",
+      "line": 252,
+      "signature": "853908a28387f862e2c48fab75b818c0eaf7bd1eed8b5999f005d7780e89fac4",
+      "verdict": "E",
+      "reason": "Copies pinned physical-input bytes into private scratch space and checks ownership against the explicit library; does not export reconstructed molecular identities."
+    },
+    "rmgpy/tools/eedf/channel_map.py:_write_outputs": {
+      "file": "rmgpy/tools/eedf/channel_map.py",
+      "function": "_write_outputs",
+      "line": 287,
+      "signature": "7d167fe1cae4e0c7438625bcae88666344e52b930e8a275a1d24aaf8fb63fd9b",
+      "verdict": "E",
+      "reason": "Writes explicit collision metadata, source provenance and requested owner labels into JSON; does not serialize Species, molecular structures, thermo, or evaluated kinetics."
+    },
+    "rmgpy/tools/eedf/channel_map.py:_main": {
+      "file": "rmgpy/tools/eedf/channel_map.py",
+      "function": "_main",
+      "line": 310,
+      "signature": "946476788cadede4b0111a1853ba54312db4c8dd7e87622fb634d5f74edf617c",
+      "verdict": "E",
+      "reason": "Prints conversion diagnostics or error text; molecular labels remain those of the explicit frozen source and no molecular structures or computed rates are exported."
     }
   }
 }

@@ -37187,6 +37187,102 @@
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
       "source_sha256": "152206e217793f6efe3b019e9425f8b8d22f8a14642710ae52dca9c8f3c36873"
+    },
+    "rmgpy/tools/eedf/channel_map.py:MissingOwners.__init__": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "12270a4d7ef29a76586a120faf247bb30460d8b2f60436c9d0d8ffee25c58d1e"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_UniqueLoader.construct_mapping": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "fc9faa2ce8f01c185c5ffb328d333b1f87805568de5261a1465450d0af2bf9f1"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_read_pinned_bytes": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "ee7f3a4d7bd6b82c94508d03747cb9a7b62e8dcbc3586ace3525d46f089971d0"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_frozen_rows": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "005be3c78ef02dc66dbd16ce36e60d7ef514ca34ca9584b916838055517b75cc"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_owner_problem": {
+      "verdict": "carried",
+      "reason": "Compares explicit requested participants and direction to a loaded library reaction before assigning an EEDF marker; does not compute or reverse rate data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "0149e2223250ee9e306b19b5cf76956ce6d96226d6dcb0813b6e50ea54748348"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_convert_channel": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "2fad92c6502e2b20c238cf5db7023bd77daf486cead4eab3f554747ac5388dd0"
+    },
+    "rmgpy/tools/eedf/channel_map.py:convert_channel_map": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "53010cd749e85490e73d6b2ada7375bd785276a2c041466d91cbd74ade736d5f"
+    },
+    "rmgpy/tools/eedf/channel_map.py:convert_channel_map.<lambda1>": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "e32a85d8e0b6e77fe96cc409c1c8365b0060cd54942d0879474c922507fb5895"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_load_library": {
+      "verdict": "carried",
+      "reason": "Loads exact copied library bytes through KineticsLibrary.load, preserving species state and generation-pair validation; only verifies collision ownership, without assigning new thermo or kinetics.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "0fa0172e3d894030bff3e1a13f681d75f9060f382a60f73b371212a152d933f1"
+    },
+    "rmgpy/tools/eedf/channel_map.py:prepare_spec": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "11964288aa177eb7291441b90faa165cd7c91c5ad59a66f6406c4fc22dd1d6d4"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_write_outputs": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "af92f429fd722d98716b870f98563e792c397200a63c5502094d4f669bfa1c20"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_main": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "d169aadba160314dfcb4a62acc995e9258b9a8e491f381fb6b31c884daf2da51"
     }
   }
 }

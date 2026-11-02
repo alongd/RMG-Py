@@ -346,6 +346,21 @@ integers (boolean values refuse), with at most five parallel solves.
 Artifact storage and reverse-rate qualification
 -----------------------------------------------
 
+To adapt the frozen database argon YAML to the generator's JSON map, run::
+
+    python -m rmgpy.tools.eedf.channel_map --base-spec "$EEDF_REAL_SPEC" \
+        --frozen-map "$EEDF_FROZEN_CHANNEL_MAP" \
+        --frozen-map-sha256 "$EEDF_FROZEN_CHANNEL_MAP_SHA256" \
+        --database "$EEDF_DATABASE_ROOT" --collision-set IST-Lisbon-Ar-2021 \
+        --output-directory "$EEDF_CONVERSION_OUTPUT"
+
+The database argument names its checkout root. Conversion preserves pinned physical
+inputs and requires an existing owner for every selected class-A channel. Missing
+owners produce exit 2 and only ``conversion-report.json``, listing each process,
+threshold, products, gap status and requested owner. No A channel becomes B.
+Successful conversion writes a new map and spec; it does not generate or accept
+a table. The output directory must be new. Historical maps remain unchanged.
+
 Publication writes the HDF5 file, manifest, generation spec and validation
 report in a sibling temporary directory before renaming it into place.
 A directory without a manifest refuses to load. HDF5 storage is inspected

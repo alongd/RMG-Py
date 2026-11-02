@@ -5595,5 +5595,12 @@
     "tests": [
       "test/rmgpy/tools/eedf/reportTest.py::test_as_dict_serializes_report"
     ]
+  },
+  "rmgpy/tools/eedf/channel_map.py::_owner_problem::reaction-io": {
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Checks participant labels and reversibility to verify a requested library owner; neither computes nor serializes reverse rates or reaction thermo.",
+    "tests": [
+      "test/rmgpy/tools/eedf/channelMapTest.py::test_refuses_unowned_a_without_demotion"
+    ]
   }
 }
