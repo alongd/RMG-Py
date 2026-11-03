@@ -129,6 +129,8 @@ class Atom(Vertex):
         self.coords = coords
         self.id = id
         self.props = props or {}
+        # Runtime weak graph ownership is local to atoms, never serialized.
+        self._thermo_state_owners = None
 
     def __str__(self):
         """
@@ -369,6 +371,7 @@ class Atom(Vertex):
         a.coords = self.coords[:]
         a.id = self.id
         a.props = deepcopy(self.props)
+        a._thermo_state_owners = None
         return a
 
     def is_electron(self):

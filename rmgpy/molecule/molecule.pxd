@@ -51,6 +51,7 @@ cdef class Atom(Vertex):
     cdef public str morphology
     cdef public int id
     cdef public dict props
+    cdef public object _thermo_state_owners
     
     cpdef bint equivalent(self, Vertex other, bint strict=?) except -2
 

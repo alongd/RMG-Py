@@ -17139,9 +17139,10 @@
       "verdict": "not-reachable-for-resolved",
       "reason": "Structural, matching, representation or topology helper; this site independently supplies no thermo/kinetics/transport/solute/conformer value. State-erasing external graph representations are not evidence of matched provenance; their scientific acquisition callers must carry original state or refuse.",
       "evidence": [
-        "test/rmgpy/molecule/moleculeTest.py"
+        "test/rmgpy/molecule/moleculeTest.py",
+        "test/rmgpy/data/excitedThermoSourceTest.py"
       ],
-      "source_sha256": "d45ef8407e41cefc0f6dde9d24f47d9552bf87c4595aa0de8be5dc2587e02e75"
+      "source_sha256": "4ca870572c61a4413f6613db0c0e50d8bf5a9fcb760ccd3832965ce52184fa7c"
     },
     "rmgpy/molecule/molecule.py:Atom.__lt__": {
       "verdict": "not-reachable-for-resolved",
@@ -17203,9 +17204,10 @@
       "verdict": "not-reachable-for-resolved",
       "reason": "Structural, matching, representation or topology helper; this site independently supplies no thermo/kinetics/transport/solute/conformer value. State-erasing external graph representations are not evidence of matched provenance; their scientific acquisition callers must carry original state or refuse.",
       "evidence": [
-        "test/rmgpy/molecule/moleculeTest.py"
+        "test/rmgpy/molecule/moleculeTest.py",
+        "test/rmgpy/data/excitedThermoSourceTest.py"
       ],
-      "source_sha256": "3a2f224eeb795eadc0612e06a5f2c0b69a3678998f98a6f6d1e255fff74ab99d"
+      "source_sha256": "b0186cf72b142adbb6304d2a566a2aef47a599ade907d6c91178c69d643e8b0e"
     },
     "rmgpy/molecule/molecule.py:Atom.decrement_charge": {
       "verdict": "not-reachable-for-resolved",
@@ -26212,11 +26214,12 @@
     },
     "rmgpy/solver/plasma.pyx:_library_entry_thermo_forms": {
       "verdict": "carried",
-      "reason": "Consumes already assigned species models and reaction rates while evolving populations. No independent thermo/group-template acquisition; reaction/species identity is retained in model arrays.",
+      "reason": "Constructs stored and engine-processed reference forms from a loaded library entry for the solver provenance check; exact resolved-state thermo fields, including derived E0, remain compared.",
       "evidence": [
-        "test/rmgpy/solver/plasmaTest.py"
+        "test/rmgpy/solver/plasmaTest.py",
+        "test/rmgpy/i289DimerKineticsLibraryTest.py"
       ],
-      "source_sha256": "04f1370a228da990694fb50dfb62249849a81f4a958eb66ca01afb7d8eaf5708",
+      "source_sha256": "f262acf3402b953330cdc57251b123dd9e7e3ca1bf3c7a9add0db377a9e9be3a",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 525
     },
@@ -32979,18 +32982,10 @@
       "reason": "Records weak graph ownership for resolved atoms without changing their payloads or acquiring thermo.",
       "evidence": [
         "test/rmgpy/data/excitedThermoReworkTest.py",
-        "test/rmgpy/speciesTest.py"
+        "test/rmgpy/speciesTest.py",
+        "test/rmgpy/data/excitedThermoSourceTest.py"
       ],
-      "source_sha256": "0741826ac1c7fb45be4be0251d7f39d7d23d5adf133c6ff07e3cc7c3595e44d2"
-    },
-    "rmgpy/thermo/state.py:register_state_atoms.discard": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Removes dead weak owner registrations during garbage collection; it changes no molecular or thermodynamic values.",
-      "evidence": [
-        "test/rmgpy/data/excitedThermoReworkTest.py",
-        "test/rmgpy/speciesTest.py"
-      ],
-      "source_sha256": "960c8b04d031bb7a67b0aa63d1d1a1c0e94cbb3a1b6b53ef720bf207d7edafbe"
+      "source_sha256": "5e85b9b47f926750a394d956a562dcb865a0e0ab1b9b4f7a2969d03ef91bb42b"
     },
     "rmgpy/thermo/state.py:require_atom_thermo_allowed": {
       "verdict": "refused",
@@ -32999,7 +32994,7 @@
         "test/rmgpy/data/excitedThermoSourceTest.py",
         "test/rmgpy/speciesTest.py"
       ],
-      "source_sha256": "c934aa5b59f9a619504aaaddd6f21a05fc58b86385704f163e3888167ebbb79c"
+      "source_sha256": "1d080ddcb381d6616b89d75efb134b09398979d956daf286d357af29c91e8bc8"
     },
     "rmgpy/thermo/state.py:require_consistent_state": {
       "verdict": "refused",

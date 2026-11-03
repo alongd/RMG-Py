@@ -917,3 +917,28 @@ def test_attached_model_inspection_refuses_unknown_classes_by_name(database, att
     else:
         with pytest.raises(ExcitedSpeciesThermoError):
             species.get_thermo_data()
+
+
+def test_atom_ownership_is_local_and_not_serialized(database):
+    import gc
+    import pickle
+    import weakref
+    from rmgpy.thermo.state import require_atom_thermo_allowed
+
+    resolved = nitrogen('electronicstate TEST\n').molecule[0]
+    atom = resolved.atoms[0]
+    copied_atom = atom.copy()
+    restored_atom = pickle.loads(pickle.dumps(atom))
+    assert copied_atom._thermo_state_owners is None
+    assert restored_atom._thermo_state_owners is None
+    require_atom_thermo_allowed([copied_atom, restored_atom])
+    with pytest.raises(ExcitedSpeciesThermoError):
+        require_atom_thermo_allowed([atom])
+    restored_molecule = pickle.loads(pickle.dumps(resolved))
+    with pytest.raises(ExcitedSpeciesThermoError):
+        require_atom_thermo_allowed(restored_molecule.atoms)
+    owner = weakref.ref(resolved)
+    del resolved
+    gc.collect()
+    assert owner() is None
+    require_atom_thermo_allowed([atom])

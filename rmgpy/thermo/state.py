@@ -249,35 +249,25 @@ def require_network_thermo_allowed(network):
         require_species_thermo_allowed(reaction.reactants + reaction.products)
 
 
-# Atom-list heuristics have no state header. Retain weak ownership so extracting
-# a cycle cannot silently erase its molecule's resolved identity. No state is
-# stored on atoms, and shared atoms are checked against every live owner.
-_resolved_atom_owners = {}
-
-
+# Atom-list heuristics have no state header. Keep weak graph ownership on the
+# participating atoms, without a module registry or serialized state on atoms.
 def register_state_atoms(molecule):
-    """Register live resolved graph ownership without changing atom data or persistence."""
+    """Register live resolved owners locally; atom copies start without owners."""
     if not (molecule.has_resolved_state() or molecule.props.get('vibrational_manifold')):
         return
-    import weakref
-    owner_id = id(molecule)
-    atom_ids = tuple(id(atom) for atom in molecule.vertices)
-    def discard(reference):
-        for atom_id in atom_ids:
-            owners = _resolved_atom_owners.get(atom_id)
-            if owners is not None and owners.get(owner_id) is reference:
-                del owners[owner_id]
-                if not owners:
-                    del _resolved_atom_owners[atom_id]
-    reference = weakref.ref(molecule, discard)
-    for atom_id in atom_ids:
-        _resolved_atom_owners.setdefault(atom_id, {})[owner_id] = reference
+    from weakref import WeakValueDictionary
+    for atom in molecule.vertices:
+        if atom._thermo_state_owners is None:
+            atom._thermo_state_owners = WeakValueDictionary()
+        atom._thermo_state_owners[id(molecule)] = molecule
 
 
 def require_atom_thermo_allowed(atoms):
-    """Refuse atom-only estimation if any atom belongs to a resolved graph."""
+    """Refuse atom-only estimation if any atom belongs to a live resolved graph."""
     for atom in atoms:
-        for reference in tuple(_resolved_atom_owners.get(id(atom), {}).values()):
-            owner = reference()
-            if owner is not None and any(vertex is atom for vertex in owner.vertices):
+        owners = getattr(atom, '_thermo_state_owners', None)
+        if owners is None:
+            continue
+        for owner in list(owners.values()):
+            if any(vertex is atom for vertex in owner.vertices):
                 require_thermo_estimation_allowed(owner)

@@ -529,10 +529,17 @@ def _library_entry_thermo_forms(data, species, entry_label):
     find_cp0_and_cpinf(species, reference)
     forms = [reference]
     if isinstance(reference, NASA):
-        return tuple(forms)
-    if not isinstance(reference, (ThermoData, Wilhoit)):
+        from rmgpy.thermo.state import requires_state_library
+        if not requires_state_library(species):
+            return tuple(forms)
+    if not isinstance(reference, (NASA, ThermoData, Wilhoit)):
         return tuple(forms)
     processed_source = copy.deepcopy(reference)
+    # This reference comes from a loaded library. Preserve its NASA polynomials
+    # through the engine's library path, including E0 derived when it is absent
+    # from the stored entry. Compare that processed form exactly as well as raw
+    # data; neither coefficients nor a supplied E0 are exempt from comparison.
+    processed_source.comment += '\nThermo library: ' + entry_label
     processed = process_thermo_data(
         copy.deepcopy(species), processed_source)
     forms.append(processed)

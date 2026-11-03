@@ -1,5 +1,6 @@
 """Engine-side acceptance tests for the PlasmaArgonDimer database library."""
 
+import copy
 import os
 import re
 import shutil
@@ -9,7 +10,7 @@ import numpy as np
 import pytest
 
 from rmgpy import constants, settings
-from rmgpy.exceptions import DatabaseError
+from rmgpy.exceptions import DatabaseError, PlasmaStateError
 from rmgpy.chemkin import (load_chemkin_file, save_chemkin_file,
                            save_species_dictionary)
 from rmgpy.data.rmg import RMGDatabase
@@ -326,3 +327,39 @@ def test_ar2p_thermo_wilhoit_and_nasa_conversion(rmg_database):
             data.get_enthalpy(temperature), abs=100.0)
         assert nasa.get_entropy(temperature) == pytest.approx(
             data.get_entropy(temperature), abs=0.1)
+
+
+@pytest.mark.parametrize('changed_coefficient', [False, True])
+def test_tagged_ars_processed_thermo_matches_only_its_library(
+        rmg_database, monkeypatch, changed_coefficient):
+    """Derived E0 is accepted; a changed entropy coefficient is still refused."""
+    species, reactions = _mechanism(rmg_database)
+    ars = next(spc for spc in species if spc.label == 'Ars')
+    assert ars.molecule[0].electronic_state == '3P2'
+    entry = rmg_database.thermo.libraries['PlasmaExcitedNeutralThermo'].entries['Ar(3P2)']
+    assert entry.data.E0 is None
+    assert ars.thermo.E0 is not None
+    # First exercise the public acceptance boundary with the actual processed
+    # library NASA, whose E0 the thermo engine derives from these polynomials.
+    ar = next(spc for spc in species if spc.label == 'Ar')
+    fractions = {spc: 0.0 for spc in species}
+    fractions[ar] = 0.9999998
+    fractions[next(spc for spc in species if spc.label == 'Arp')] = 1e-7
+    fractions[next(spc for spc in species if spc.label == 'e-')] = 1e-7
+    reactor = PlasmaReactor((298.15, 'K'), (5.0, 'torr'), fractions,
+                            (10444.0, 'K'), n_sims=1, termination=[])
+    if changed_coefficient:
+        changed = copy.deepcopy(entry.data)
+        coefficients = changed.polynomials[0].coeffs
+        # NASA entropy integration constant: changes real thermo while leaving
+        # heat capacity, enthalpy and therefore derived E0 unchanged.
+        coefficients[6] += 1.0
+        changed.polynomials[0].coeffs = coefficients
+        assert changed.to_wilhoit().E0.value_si == pytest.approx(
+            entry.data.to_wilhoit().E0.value_si, rel=1e-12)
+        monkeypatch.setattr(entry, 'data', changed)
+        with pytest.raises(PlasmaStateError, match="species 'Ars'.*exact-state thermo library check"):
+            reactor.initialize_model(species, reactions, [], [])
+    else:
+        reactor.initialize_model(species, reactions, [], [])
+        assert 'PlasmaExcitedNeutralThermo/Ar(3P2)' in reactor.thermo_provenance_diagnostics['Ars']

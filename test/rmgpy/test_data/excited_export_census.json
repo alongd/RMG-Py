@@ -2010,7 +2010,7 @@
     "rmgpy/molecule/molecule.py:Molecule.__init__": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.__init__",
-      "line": 1049,
+      "line": 1052,
       "signature": "3b534d544a76e0c42ae9a8f748fddf6f385ed0a63bd105d7a5de132675b57b4a",
       "verdict": "R",
       "reason": "Molecular reconstruction keeps explicit electronic_state and vibrational_level constructor declarations, validating them and restoring them after SMILES/InChI readers replace structure. This preserves state during repr/archive reconstruction.",
@@ -2034,7 +2034,7 @@
     "rmgpy/molecule/molecule.py:Molecule.__repr__": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.__repr__",
-      "line": 1125,
+      "line": 1128,
       "signature": "fa39afa1d1b8e4d22a96d93225880a448174d45f676d1523b572ae258a23baf1",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/molecule/molecule.py:Molecule.__repr__]",
@@ -2056,7 +2056,7 @@
     "rmgpy/molecule/molecule.py:Molecule.from_adjacency_list": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.from_adjacency_list",
-      "line": 2132,
+      "line": 2135,
       "signature": "4c528ded058c27e869ccf30319fe3687c8f40da614e0a6be5ef28eb9d4121afe",
       "verdict": "R",
       "reason": "Adjacency reconstruction parses and validates both state headers, retains the molecular graph/state and invokes require_electron_state_allowed so a serialized electron cannot acquire resolved headers.",
@@ -3654,7 +3654,7 @@
       "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.draw",
-      "line": 2064,
+      "line": 2067,
       "signature": "85b6c8537a4eddc85a9a2e5f98fec25d8e56226e6e4472fb839913732a8b445f",
       "manifold": {
         "verdict": "refused",
@@ -3673,7 +3673,7 @@
       "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule._repr_png_",
-      "line": 2080,
+      "line": 2083,
       "signature": "cd30bbf5f8290f6965934953fdc12a6c19afd8c83f145746b2492f3445fe798b",
       "manifold": {
         "verdict": "refused",
@@ -4017,7 +4017,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._compute_reference_reaction_data",
-      "line": 7403,
+      "line": 7410,
       "signature": "4e16933925d7bb2f387b5e73d5b0e0e565eb8f80fa92124ccdeb788c3df50785",
       "verdict": "R",
       "reason": "Charged-reaction diagnostic equations use shared declarations when any participant is resolved and retain historical str(reaction) bytes for ground-only reactions. Thermo rebase classification: Reference-reaction names and equations include canonical v0 identity for declared participants; the reference energy calculation still uses its previously checked source.",
@@ -4039,7 +4039,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._evaluate_electronegative_wall_regime",
-      "line": 7533,
+      "line": 7540,
       "signature": "c0534dbafe3fd70cd2debb87c2f8284fbe156429631e29d4634048c0656d014e",
       "verdict": "R",
       "reason": "Wall destruction-channel equations and anion labels include declared v0 identifiers while gate computation and ground labels retain the existing code.",
@@ -4061,7 +4061,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_manifest": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor.electronegative_wall_manifest",
-      "line": 1264,
+      "line": 1271,
       "signature": "26872f5889a0a8124ff1e5cb1bc0d12e38eafdd9736a346932c5f658ce1e7a65",
       "verdict": "R",
       "reason": "Published wall species identifiers include declared v0 names through has_export_state and the shared Chemkin allocator; ordinary wall identifiers and calculations retain their existing paths.",
@@ -4558,7 +4558,7 @@
     "rmgpy/molecule/molecule.py:Molecule.get_labeled_atoms": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.get_labeled_atoms",
-      "line": 1770,
+      "line": 1773,
       "signature": "dd54f10794c635f974530e848f1ca5d2a7bd27a42676e752e41f5fb86568dce6",
       "reason": "Internal atom labels.",
       "verdict": "E"
@@ -4566,7 +4566,7 @@
     "rmgpy/molecule/molecule.py:Molecule.get_all_labeled_atoms": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.get_all_labeled_atoms",
-      "line": 1781,
+      "line": 1784,
       "signature": "a8c4d15a14467d937be6c14f032d694ff319c2dae6be8884c742c4cce093d226",
       "reason": "Internal atom labels.",
       "verdict": "E"
@@ -4574,7 +4574,7 @@
     "rmgpy/molecule/molecule.py:Molecule.from_smiles": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.from_smiles",
-      "line": 2112,
+      "line": 2115,
       "signature": "2630f519c7a6b8f28c8c2b4fba805c8497aec137455fb4bdea371eb55b9a16b2",
       "reason": "Explicit SMILES constructor, not saved-species reload.",
       "verdict": "E"
@@ -4582,7 +4582,7 @@
     "rmgpy/molecule/molecule.py:Molecule.to_group": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.to_group",
-      "line": 2766,
+      "line": 2769,
       "signature": "1df5289fcceefe3716064ad3e671303e4fd97d0056d68203b20ed90e82c14bf7",
       "reason": "Internal pattern conversion.",
       "verdict": "E"
@@ -4590,7 +4590,7 @@
     "rmgpy/molecule/molecule.py:Molecule.get_desorbed_molecules": {
       "file": "rmgpy/molecule/molecule.py",
       "function": "Molecule.get_desorbed_molecules",
-      "line": 3324,
+      "line": 3327,
       "signature": "8a7faec5d005a727c72cee09f7a8bdf22081002d6a02e6f42e139db8550cd008",
       "reason": "Internal graph transformation.",
       "verdict": "E"
@@ -5492,7 +5492,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._emit_development_progress": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._emit_development_progress",
-      "line": 1394,
+      "line": 1401,
       "signature": "5747f0e9ecd18b23f53f5c383c181b5a751645fe29aac281308e141e02a16559",
       "verdict": "E",
       "reason": "Development-only JSON telemetry written to stderr; it reports numerical solver state and emits no molecular identity or saved mechanism."
