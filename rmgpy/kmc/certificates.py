@@ -3455,6 +3455,80 @@ def _error_certificate(data, exc) -> dict:
             "gaps": [f"{type(exc).__name__}: {exc}"], "source_kind": "error"}
 
 
+def certify_one(certifier, record, data, rate_owner=None) -> dict:
+    """``record``'s certificate (``data``: its dict) through its rate owner;
+    a failure is an owned ``error`` certificate, a resource error propagates
+    (``certify_records``)."""
+    try:
+        return certifier.certify_record(record, rate_owner=rate_owner)
+    except Exception as exc:  # reported, never silently dropped
+        reraise_resource(exc)
+        return _error_certificate(data, exc)
+
+
+def refusal_reasons(pairs, data_by_id) -> dict:
+    """event id -> reason of every record the certified compile publishes
+    refused (``certify_records`` with ``required``): ``pairs`` are (record
+    dict, certificate) in artifact order (a certificate needs only its
+    ``certified`` and ``gaps``); a required record that did not certify, then
+    the firing ``reverse_of`` partner of each (one rate).  ``data_by_id``:
+    event id -> record dict (its status, ``reverse_of`` and rate source)."""
+    reasons = {}
+    for d, rc in pairs:
+        if requires_certification(d, data_by_id) and not rc.get("certified"):
+            reasons[d["event_id"]] = (rc.get("gaps") or ["not certified"])[0]
+    for event_id in list(reasons):
+        partner = data_by_id[event_id].get("reverse_of")
+        if partner in data_by_id and partner not in reasons and \
+                data_by_id[partner].get("status", "enabled") in FIRING_STATUSES:
+            reasons[partner] = f"its linked partner {event_id} failed: {reasons[event_id]}"
+    return reasons
+
+
+def republish_refused(record, reason):
+    """``record`` published refused by status for ``reason``, under its new id."""
+    from dataclasses import replace
+    return replace(record, status="refused", status_reason=(
+        f"rate certification refused: {reason}")[:2000], event_id="")
+
+
+def relink(record, replacements):
+    """``record`` with every event id it carries remapped (old id -> new id);
+    its own id must not change."""
+    from rmgpy.kmc.compiler import _replace_event_ids
+    from rmgpy.kmc.event_record import EventRecord
+    relinked = _replace_event_ids(
+        {k: v for k, v in record.to_dict().items() if k != "rate_certificate"}, replacements)
+    new_id = relinked.pop("event_id")
+    relinked["event_id"] = ""
+    fresh = EventRecord.from_dict(relinked)
+    if fresh.event_id != new_id:
+        raise ValueError("event id changed while remapping certification links")
+    return fresh
+
+
+def publish_certificate(record, rc, replacements, final_ids):
+    """(``record`` carrying its certificate reference, the certificate with
+    its owner block bound to the published record, the reference):
+    ``replacements`` old id -> new id, ``final_ids`` the published ids."""
+    from dataclasses import replace
+    d = _as_dict(record)
+    rc = dict(rc)
+    owner = record_owner(d)
+    rate_owner = (rc.get("owner") or {}).get("rate_owner_event_id")
+    owner.update({"rate_owner_event_id": replacements.get(rate_owner, rate_owner),
+                  "rate_source_sha256": (rc.get("owner") or {}).get("rate_source_sha256")})
+    rc["owner"] = owner
+    rc["event_id"] = d.get("event_id")
+    if owner["rate_owner_event_id"] is not None and \
+            owner["rate_owner_event_id"] not in final_ids:
+        raise ValueError("certification lost a rate-owning record")
+    ref = certificate_reference(rc)
+    published = (replace(record, rate_certificate=ref) if not isinstance(record, dict)
+                 else dict(record, rate_certificate=ref))
+    return published, rc, ref
+
+
 def certify_records(records, families, certifier: Optional[Certifier] = None, *,
                     required: bool = True):
     """Certify every record from its actual rate source (the rate witness
@@ -3471,71 +3545,35 @@ def certify_records(records, families, certifier: Optional[Certifier] = None, *,
     together with its linked ``reverse_of`` partner (one rate); event ids
     are recomputed and every link remapped, and each owner block is bound to
     the final record.  Returns (records, store, replacements old id -> new
-    id)."""
-    from dataclasses import replace
+    id).
+
+    The steps (``certify_one``, ``refusal_reasons``, ``republish_refused``,
+    ``relink``, ``publish_certificate``) are shared with the streaming
+    certification of ``emit_prepare``, which runs them one record at a time."""
     certifier = certifier or Certifier(families)
     records = list(records)
     data = [_as_dict(r) for r in records]
     by_id = {d.get("event_id"): r for d, r in zip(data, records)}
-    rcs = []
-    for record, d in zip(records, data):
-        try:
-            rcs.append(certifier.certify_record(record, rate_owner=_rate_owner(d, by_id)))
-        except Exception as exc:  # reported, never silently dropped
-            reraise_resource(exc)
-            rcs.append(_error_certificate(d, exc))
+    rcs = [certify_one(certifier, record, d, _rate_owner(d, by_id))
+           for record, d in zip(records, data)]
     replacements = {}
     if required:
         data_by_id = {d.get("event_id"): d for d in data}
-        reasons = {}
-        for d, rc in zip(data, rcs):
-            if requires_certification(d, data_by_id) and not rc.get("certified"):
-                reasons[d["event_id"]] = (rc.get("gaps") or ["not certified"])[0]
-        for event_id in list(reasons):
-            partner = data_by_id[event_id].get("reverse_of")
-            if partner in data_by_id and partner not in reasons and \
-                    data_by_id[partner].get("status", "enabled") in FIRING_STATUSES:
-                reasons[partner] = f"its linked partner {event_id} failed: {reasons[event_id]}"
+        reasons = refusal_reasons(zip(data, rcs), data_by_id)
         if reasons:
-            from rmgpy.kmc.compiler import _replace_event_ids
-            from rmgpy.kmc.event_record import EventRecord
             changed = []
             for record, d in zip(records, data):
                 if d["event_id"] in reasons:
-                    record = replace(record, status="refused", status_reason=(
-                        f"rate certification refused: {reasons[d['event_id']]}")[:2000],
-                        event_id="")
+                    record = republish_refused(record, reasons[d["event_id"]])
                     replacements[d["event_id"]] = record.event_id
                 changed.append(record)
-            records = []
-            for record in changed:
-                relinked = _replace_event_ids(
-                    {k: v for k, v in record.to_dict().items() if k != "rate_certificate"},
-                    replacements)
-                new_id = relinked.pop("event_id")
-                relinked["event_id"] = ""
-                fresh = EventRecord.from_dict(relinked)
-                if fresh.event_id != new_id:
-                    raise ValueError("event id changed while remapping certification links")
-                records.append(fresh)
+            records = [relink(record, replacements) for record in changed]
     store, out = {}, []
-    final_by_id = {_as_dict(r).get("event_id"): r for r in records}
+    final_ids = {_as_dict(r).get("event_id") for r in records}
     for record, rc in zip(records, rcs):
-        d = _as_dict(record)
-        rc = dict(rc)
-        owner = record_owner(d)
-        rate_owner = (rc.get("owner") or {}).get("rate_owner_event_id")
-        owner.update({"rate_owner_event_id": replacements.get(rate_owner, rate_owner),
-                      "rate_source_sha256": (rc.get("owner") or {}).get("rate_source_sha256")})
-        rc["owner"] = owner
-        rc["event_id"] = d.get("event_id")
-        if owner["rate_owner_event_id"] is not None and \
-                owner["rate_owner_event_id"] not in final_by_id:
-            raise ValueError("certification lost a rate-owning record")
-        ref = certificate_reference(rc)
+        published, rc, ref = publish_certificate(record, rc, replacements, final_ids)
         store[ref["sha256"]] = rc
-        out.append(replace(record, rate_certificate=ref) if not isinstance(record, dict)
-                   else dict(record, rate_certificate=ref))
+        out.append(published)
     return out, store, replacements
 
 
