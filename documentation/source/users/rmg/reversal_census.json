@@ -7244,7 +7244,7 @@
     "site": "rmgpy/tools/eedf/channel_map.py::_owner_problem::reaction-io",
     "kind": "reader-exporter",
     "line": 141,
-    "source": "def _owner_problem(row, library):",
+    "source": "def _owner_problem(row, libraries):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Checks participant labels and reversibility to verify a requested library owner; neither computes nor serializes reverse rates or reaction thermo.",
     "tests": [

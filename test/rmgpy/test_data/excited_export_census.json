@@ -5686,10 +5686,10 @@
     "rmgpy/tools/eedf/channel_map.py:_load_library": {
       "file": "rmgpy/tools/eedf/channel_map.py",
       "function": "_load_library",
-      "line": 273,
-      "signature": "01f41aa00496d7400d1bfe5da292866eee394bd17a0395a26d47d5e4039d341b",
-      "verdict": "E",
-      "reason": "Copies exact explicitly supplied library bytes into private scratch space for the native loader; no molecular identity is regenerated or state information discarded."
+      "line": 316,
+      "signature": "017f7cde1e3a7501526bc2632889acc48e07157618ee741cd0588ad76dc08d99",
+      "reason": "Copies byte-pinned kinetics-library sources into private loader scratch; it does not export or reserialize molecular state.",
+      "verdict": "E"
     },
     "rmgpy/tools/eedf/channel_map.py:prepare_spec": {
       "file": "rmgpy/tools/eedf/channel_map.py",
@@ -5702,18 +5702,18 @@
     "rmgpy/tools/eedf/channel_map.py:_write_outputs": {
       "file": "rmgpy/tools/eedf/channel_map.py",
       "function": "_write_outputs",
-      "line": 341,
-      "signature": "7d167fe1cae4e0c7438625bcae88666344e52b930e8a275a1d24aaf8fb63fd9b",
-      "verdict": "E",
-      "reason": "Writes explicit collision metadata, source provenance and requested owner labels into JSON; does not serialize Species, molecular structures, thermo, or evaluated kinetics."
+      "line": 486,
+      "signature": "e6f5964d189a14b6cf43f27c6adb05d01a2cfc25d4287c6756960bde4c972b1e",
+      "reason": "Publishes EEDF channel maps and solver specifications, not molecular identifiers or species dictionaries.",
+      "verdict": "E"
     },
     "rmgpy/tools/eedf/channel_map.py:_main": {
       "file": "rmgpy/tools/eedf/channel_map.py",
       "function": "_main",
-      "line": 364,
-      "signature": "5d04d1e46d4ba8ee36ca3c2b85d003a76f685bb1f7c05d5a2bf7217df7aefb2f",
-      "verdict": "E",
-      "reason": "Prints conversion diagnostics or error text; molecular labels remain those of the explicit frozen source and no molecular structures or computed rates are exported."
+      "line": 516,
+      "signature": "971ab9518728f75a1c8b8ddda0dd60c7bddd848511d849d64d28d11ba2aa330d",
+      "reason": "CLI routing and refusal reporting for EEDF artifact conversion; no molecular export sink.",
+      "verdict": "E"
     },
     "rmgpy/tools/eedf/maxwellian.py:_validate_comparator": {
       "file": "rmgpy/tools/eedf/maxwellian.py",
@@ -5741,6 +5741,14 @@
       "line": 107,
       "reason": "Reconstructs exact-v adjacency records internally to validate the sourced ladder and prepare a fingerprinted coupling descriptor. Does not write a species dictionary or choose mechanism identifiers; retained formula, electronic state, multiplicity and v are checked explicitly.",
       "signature": "55a34a9d0ab18a650c3c9690afa272798a5240c09c3b39e44a21232b71008cb1",
+      "verdict": "E"
+    },
+    "rmgpy/tools/eedf/channel_map.py:prepare_mixture_spec": {
+      "file": "rmgpy/tools/eedf/channel_map.py",
+      "function": "prepare_mixture_spec",
+      "line": 424,
+      "signature": "3f65b4c7eb990e84ca0c24c19c664b0070c0b408d016e85dcb8f92c7f229c7ae",
+      "reason": "Snapshots pinned collision inputs and builds EEDF specifications; it does not serialize molecular species.",
       "verdict": "E"
     }
   }

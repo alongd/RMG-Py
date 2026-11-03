@@ -37237,7 +37237,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "12270a4d7ef29a76586a120faf247bb30460d8b2f60436c9d0d8ffee25c58d1e"
+      "source_sha256": "cba1a33516a804b5bf864e8301fd8915dc27ab0a1dc519ff0d8623a9ed1afc4e"
     },
     "rmgpy/tools/eedf/channel_map.py:_UniqueLoader.construct_mapping": {
       "verdict": "not-reachable-for-resolved",
@@ -37261,7 +37261,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "005be3c78ef02dc66dbd16ce36e60d7ef514ca34ca9584b916838055517b75cc"
+      "source_sha256": "e2ee66c6f0810706a90d236774bf0314d4fcbf689e59da1e12675b7bfb669340"
     },
     "rmgpy/tools/eedf/channel_map.py:_owner_problem": {
       "verdict": "carried",
@@ -37269,7 +37269,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "0149e2223250ee9e306b19b5cf76956ce6d96226d6dcb0813b6e50ea54748348"
+      "source_sha256": "dded2702e0ee463a516437302cd12ac010ad0907cf18a30c88421aecf80b440b"
     },
     "rmgpy/tools/eedf/channel_map.py:_convert_channel": {
       "verdict": "not-reachable-for-resolved",
@@ -37285,15 +37285,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "4263e0fcb0a4d0344fcc2df6a60ca8ef742a287c8cae0c44c626329071e281df"
-    },
-    "rmgpy/tools/eedf/channel_map.py:convert_channel_map.<lambda1>": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/channelMapTest.py"
-      ],
-      "source_sha256": "e32a85d8e0b6e77fe96cc409c1c8365b0060cd54942d0879474c922507fb5895"
+      "source_sha256": "49ea296e62708ab87bc077291618aff5ff020657cca74b2fe7e38d97495f2a21"
     },
     "rmgpy/tools/eedf/channel_map.py:_load_library": {
       "verdict": "carried",
@@ -37301,7 +37293,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "0fa0172e3d894030bff3e1a13f681d75f9060f382a60f73b371212a152d933f1"
+      "source_sha256": "3592f41fc9b19a32e861b59496f1bb816740a65f98222c30d235b9c3cdfc6a6b"
     },
     "rmgpy/tools/eedf/channel_map.py:prepare_spec": {
       "verdict": "not-reachable-for-resolved",
@@ -37317,7 +37309,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "af92f429fd722d98716b870f98563e792c397200a63c5502094d4f669bfa1c20"
+      "source_sha256": "2e8fd11e2df355400dbfeb6e85c2d736312e05ad8e50170d0460a370278347c7"
     },
     "rmgpy/tools/eedf/channel_map.py:_main": {
       "verdict": "not-reachable-for-resolved",
@@ -37325,7 +37317,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "158d52b49a769ed362c451d2a0a188ece10ca329889142e04a744ee63b9e6895"
+      "source_sha256": "5daedfd25451e9fa9a078f99b9f7edb9e307e314d36e9743d8c917298b1d1af9"
     },
     "rmgpy/tools/eedf/schema.py:_provider_kind": {
       "verdict": "excluded",
@@ -37558,14 +37550,6 @@
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
       "source_sha256": "ada74037a5162d8668fb2d7fbcda67647d9a4de50b111975c00aa576d4371c12"
-    },
-    "rmgpy/tools/eedf/channel_map.py:convert_channel_map.<lambda2>": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Orders family diagnostic records by their explicit collision id; does not alter chemistry or rates.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/channelMapTest.py"
-      ],
-      "source_sha256": "e32a85d8e0b6e77fe96cc409c1c8365b0060cd54942d0879474c922507fb5895"
     },
     "rmgpy/tools/eedf/ownership.py:_argon_identity": {
       "verdict": "carried",
@@ -37864,6 +37848,46 @@
       "file": "rmgpy/tools/eedf/vibrational.py",
       "line": 173,
       "source_sha256": "97698c1fd9ccc75302f2f7949c15955d56ebbb1bb28e66e506e58da994b146d9"
+    },
+    "rmgpy/tools/eedf/channel_map.py:convert_channel_maps": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit EEDF source data and pinned owner metadata; does not acquire resolved thermo, calculate rates, or transfer state data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "8ab951dbe368913ae63a60a2f04abf599a88f37b95456f281c0fc72835781189"
+    },
+    "rmgpy/tools/eedf/channel_map.py:convert_channel_maps.<lambda1>": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit EEDF source data and pinned owner metadata; does not acquire resolved thermo, calculate rates, or transfer state data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "e32a85d8e0b6e77fe96cc409c1c8365b0060cd54942d0879474c922507fb5895"
+    },
+    "rmgpy/tools/eedf/channel_map.py:convert_channel_maps.<lambda2>": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit EEDF source data and pinned owner metadata; does not acquire resolved thermo, calculate rates, or transfer state data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "e32a85d8e0b6e77fe96cc409c1c8365b0060cd54942d0879474c922507fb5895"
+    },
+    "rmgpy/tools/eedf/channel_map.py:build_mixture_spec": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit EEDF source data and pinned owner metadata; does not acquire resolved thermo, calculate rates, or transfer state data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "237f53d0e164ce01f06056502826036af962d410c3f228ff718e71e54f680287"
+    },
+    "rmgpy/tools/eedf/channel_map.py:prepare_mixture_spec": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit EEDF source data and pinned owner metadata; does not acquire resolved thermo, calculate rates, or transfer state data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "17d3451255d6aac3064167832e621ea1c852d6c09c9f3b50cbdea4c149b36215"
     }
   }
 }

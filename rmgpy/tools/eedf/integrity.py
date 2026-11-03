@@ -109,7 +109,7 @@ def _physical_properties(spec):
                 if match.start() != 0:
                     raise SpecError('ambiguous state property assignment: ' + value)
                 key, expr = match.groups()
-                if not (population and re.fullmatch(r'boltzmann:[A-Za-z_][A-Za-z_0-9]*:\d+', expr)) and not re.fullmatch(r'\{[A-Za-z_][A-Za-z_0-9]*\}|[+\-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+\-]?\d+)?', expr):
+                if not (population and re.fullmatch(r'boltzmann:[A-Za-z_][A-Za-z_0-9]*:\d+', expr)) and not re.fullmatch(r'1-\{[A-Za-z_][A-Za-z_0-9]*\}|\{[A-Za-z_][A-Za-z_0-9]*\}|[+\-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+\-]?\d+)?', expr):
                     raise SpecError('symbolic state property must be resolved to numbers')
                 result.append(_neutral_state_key(key) + ' = ' + expr)
                 continue
@@ -275,6 +275,9 @@ def _resolved_properties(spec, coordinates):
                     if ladder['levels'][int(v)]['loki_state'] != key:
                         raise SpecError('Boltzmann declaration differs from level identity')
                     value = boltzmann_populations(ladder, state[axis])[int(v)]
+                elif not population and re.fullmatch(r'1-\{[A-Za-z_][A-Za-z_0-9]*\}', expr):
+                    axis = re.fullmatch(r'1-\{([A-Za-z_][A-Za-z_0-9]*)\}', expr)[1]
+                    value = 1. - float(state[axis])
                 else:
                     value = float(expr.format_map(state).replace('D', 'e').replace('d', 'e'))
             except (ValueError, KeyError, IndexError) as error:

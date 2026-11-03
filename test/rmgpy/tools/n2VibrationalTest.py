@@ -218,7 +218,7 @@ def test_generation_and_regeneration_byte_determinism(source, K):
     assert output['production_manifest']
     assert output['runtime_requirements'] == [
         'coupling automatically executes D6 regeneration before accepting a run',
-        'physical Ar+N2 arm qualification requires a channel map and owners; the converter currently accepts PlasmaArgon owners only']
+        'physical Ar+N2 arm qualification requires complete channel maps and class-A owners in their configured per-gas libraries']
 
 
 def test_complete_census_and_every_supplied_transition_audited(source):
