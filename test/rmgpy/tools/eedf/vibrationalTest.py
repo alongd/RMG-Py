@@ -39,7 +39,7 @@ import pytest
 
 from rmgpy.species import Species
 from rmgpy.tools.eedf.integrity import _neutral_state_key, _channel_fractions, _resolved_properties
-from rmgpy.tools.eedf.schema import SpecError, _row_inputs, _content_hash
+from rmgpy.tools.eedf.schema import SpecError, _content_hash
 from rmgpy.tools.eedf.vibrational import (
     temperature, boltzmann_populations, ladder_coupling, resolve_levels,
     validate_ladders, energy_ledger, qualify_ladder, VibrationalPopulationError,
@@ -63,7 +63,11 @@ def small_ladder(source):
     source['level_source'] = _generator.pin(levels_path)
     section_path = Path(source['cross_sections'][0]['path'])
     section_path.write_text(_generator.sections_text(2))
-    source['cross_sections'] = [_generator.pin(section_path)]
+    section_pin = _generator.pin(section_path)
+    section_pin['source_id'] = 'synthetic'
+    source['cross_sections'] = [section_pin]
+    source['source_domain'] = {'initial_levels': [0, 1, 2], 'final_v': 2}
+    source['source_assignments'] = {str(v): 'synthetic' for v in range(3)}
     source['D6'].update(top_fraction_limit=1., top_leak_share_limit=1.)
     manifest = _generator.decoded(source, K=1)
     bindings = [{'source_sha256': pair['source']['sha256'], 'source_block': pair['source_block'],
@@ -175,6 +179,47 @@ def test_binding_source_identity_and_policy(small_ladder):
         validate_ladders([bad])
     with pytest.raises(SpecError, match='missing source collision'):
         ladder_coupling(manifest, [], axis='Tv', parent='N2(X)')
+
+
+def test_legacy_ladder_metadata_is_complete_only_over_its_levels(small_ladder):
+    _, ladder = small_ladder
+    legacy = copy.deepcopy(ladder)
+    legacy.pop('source_domain')
+    validate_ladders([legacy])
+    legacy['channels'] = [c for c in legacy['channels']
+                          if not (c['initial_v'] == 1 and c['source_final_v'] == 2)]
+    with pytest.raises(SpecError, match='incomplete vibrational source-pair bindings'):
+        validate_ladders([legacy])
+
+
+@pytest.mark.parametrize('K', [10, 29])
+def test_partial_source_domain_adapter_witness(source, tmp_path, K):
+    spectrum_path = Path(source['level_source']['path'])
+    spectrum = json.loads(spectrum_path.read_text())
+    for v in range(len(spectrum['levels']), 59):
+        spectrum['levels'].append({'v': v, 'energy_eV': .2 * v, 'statistical_weight': v + 1,
+                                   'thermo_entry': None})
+    spectrum_path.write_text(json.dumps(spectrum))
+    source['level_source'] = _generator.pin(spectrum_path)
+    sections_path = tmp_path / 'partial.txt'
+    sections_path.write_text(_generator.partial_sections_text(range(30), 58))
+    pin = _generator.pin(sections_path)
+    pin['source_id'] = 'partial'
+    source['cross_sections'] = [pin]
+    source['source_domain'] = {'initial_levels': list(range(30)), 'final_v': 58}
+    source['source_assignments'] = {str(v): 'partial' for v in range(30)}
+    manifest = _generator.decoded(source, K=K)
+    bindings = [{'source_sha256': pair['source']['sha256'], 'source_block': pair['source_block'],
+                 'description': f"e + N2(X,v={pair['initial_v']}) <-> e + N2(X,v={pair['final_v']}), Vibrational"}
+                for pair in manifest['transition_audit']]
+    ladder = ladder_coupling(manifest, bindings, axis='Tv_N2', parent='N2(X)')
+    assert ladder['source_domain'] == {'initial_levels': list(range(30)), 'final_v': 58}
+    validate_ladders([ladder])
+    missing = copy.deepcopy(ladder)
+    missing['channels'] = [c for c in missing['channels']
+                           if not (c['initial_v'] == 29 and c['source_final_v'] == 58)]
+    with pytest.raises(SpecError, match='incomplete vibrational source-pair bindings'):
+        validate_ladders([missing])
 
 
 def test_d6_named_requests_and_closed_energy_partition(small_ladder):
