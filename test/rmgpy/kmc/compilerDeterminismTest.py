@@ -341,6 +341,8 @@ def _generating_compiler(reaction, *, cached):
     state._canonical_participants = lambda item: EventSetCompiler._canonical_participants(
         state, item
     )
+    # the real seam ``_generate`` takes each reaction through, unstubbed
+    state.compile_input = lambda item: EventSetCompiler.compile_input(state, item)
     return state, proxy
 
 
