@@ -2254,6 +2254,17 @@ setup = tuple(getattr(b, name).__code__ for name in (
 injected = set()
 
 
+def wait_for_delivery():
+    # SIGINT is a standard signal: successful sends can coalesce while it
+    # is pending. Observe this callback before allowing the next send.
+    until = time.monotonic() + 3.
+    while len(deliveries) < row['sent']:
+        assert time.monotonic() < until, (
+            'native SIGINT delivery timed out: mode={}, sent={}, delivered={}'.format(
+                mode, row['sent'], len(deliveries)))
+        time.sleep(.001)
+
+
 def trace(frame, event, arg):
     if os.getpid() != me:
         return None
@@ -2278,9 +2289,11 @@ def trace(frame, event, arg):
     if mode == 'siginfo':
         assert libc.sigqueue(me, signal.SIGINT, Value(integer=12345)) == 0
         row['sent'] += 1
+        wait_for_delivery()
     elif mode == 'eintr':
         assert libc.syscall(234, me, reader['tid'], int(signal.SIGINT)) == 0  # tgkill
         row['sent'] += 1
+        wait_for_delivery()
         time.sleep(.02)
         if done.is_set():
             row['early'].append(frame.f_lineno)
@@ -2298,10 +2311,11 @@ try:
            timeout=1, reference_power=.5, recheck_timeouts=False)
 finally:
     sys.settrace(None)
-if mode == 'eintr':
-    os.write(pipe_w, b'x')
-    thread.join(5)
-    row['read'] = reader['result']
+    if mode == 'eintr':
+        os.write(pipe_w, b'x')
+        thread.join(5)
+        assert not thread.is_alive(), 'native SIGINT reader did not finish'
+        row['read'] = reader['result']
 learnt = b._PYTHON_HANDLER
 signal.signal(signal.SIGUSR1, python_sigterm)  # CPython's own handler, for comparison
 row.update(deliveries=deliveries, learnt=learnt is not None,
@@ -2322,6 +2336,17 @@ def _first_scan(tmp_path, mode, sigterm, *extra):
 
 
 _BOTH_IDENTICAL = {str(int(signal.SIGINT)): True, str(int(signal.SIGTERM)): True}
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='glibc sigaction')
+@pytest.mark.parametrize('mode', ['siginfo', 'eintr'])
+def test_first_scan_sender_times_out_on_a_missing_native_delivery(tmp_path, monkeypatch, mode):
+    script = _FIRST_SCAN_OWNERSHIP.replace(
+        'deliveries.append([info.code, info.value.integer])', 'pass')
+    assert script != _FIRST_SCAN_OWNERSHIP
+    monkeypatch.setattr(sys.modules[__name__], '_FIRST_SCAN_OWNERSHIP', script)
+    with pytest.raises(AssertionError, match='native SIGINT delivery timed out'):
+        _first_scan(tmp_path, mode, 'python')
 
 
 @pytest.mark.skipif(not sys.platform.startswith('linux'), reason='glibc sigaction')
