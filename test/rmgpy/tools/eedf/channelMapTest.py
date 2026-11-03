@@ -38,7 +38,7 @@ import yaml
 
 from rmgpy.tools.eedf import channel_map as adapter
 from rmgpy.tools.eedf.schema import FingerprintMismatch, SpecError, _file_hash, load_spec
-from branchYieldTest import PROCESS, branch_fixture, branch_reactions, source_files
+from branchYieldTest import PROCESS, branch_fixture, branch_reactions, database_cascade_channels, source_files
 
 
 @pytest.fixture
@@ -404,21 +404,29 @@ def test_i353_fixture_families_are_reported(tmp_path, monkeypatch):
         pytest.skip('requires EEDF_DATABASE_ROOT and EEDF_CHANNEL_MAP_BASE_SPEC')
     root = Path(database) / 'input/eedf'
     snapshot = load_cascade_yields(root / 'argon_cascade_yields.yaml', root / 'argon_radiative_data.yaml')
-    # The live source contract has an independent literal byte pin.
-    assert snapshot['yield_table_sha256'] == '200cd309f4915122117f37293bb74fcb785d0b5805d3d9868d3fe5eec2dac0f5'
+    # The live database may precede or include the argon cascade owners and
+    # channel-11 amendment. Verify bytes and independently regenerate the source.
+    assert snapshot['yield_table_sha256'] == _file_hash(root / 'argon_cascade_yields.yaml')
+    assert snapshot['channels'] == database_cascade_channels(Path(database))
+    complete = [row['id'] for row in snapshot['channels'] if row['status'] == 'complete_for_E1']
+    unresolved = [row['id'] for row in snapshot['channels'] if row['status'] == 'unresolved']
     library, hashes = adapter._load_library(database, tmp_path)
-    for channel_id in [6, 7, 8, 9, 10, 12, 13, 14, 15]:
-        for reaction in branch_reactions(snapshot, channel_id):
+    collision_set = 'IST-Lisbon-Ar-2021'
+    for channel_id in complete:
+        row = next(row for row in snapshot['channels'] if row['id'] == channel_id)
+        if any(getattr(entry.data, 'process', None) == row['process']
+               for entry in library.entries.values()):
+            continue  # Exercise existing owners through native family validation.
+        for reaction in branch_reactions(snapshot, channel_id, collision_set):
             assert reaction.entry.index not in library.entries
             library.entries[reaction.entry.index] = reaction.entry
     monkeypatch.setattr(adapter, '_load_library', lambda *args: (library, hashes))
     frozen_path = root / 'argon_channel_map.yaml'
     with pytest.raises(adapter.MissingOwners) as caught:
-        adapter.prepare_spec(spec_path, frozen_path, _file_hash(frozen_path), database, 'test-Ar')
+        adapter.prepare_spec(spec_path, frozen_path, _file_hash(frozen_path), database, collision_set)
     report = caught.value.report
-    assert [row['id'] for row in report['branch_families']] == [6, 7, 8, 9, 10, 12, 13, 14, 15]
-    assert [row['id'] for row in report['missing_owners']] == [
-        11, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
+    assert [row['id'] for row in report['branch_families']] == complete
+    assert [row['id'] for row in report['missing_owners']] == unresolved
     assert report['shared_owners'] == []
     adapter._write_outputs(tmp_path / 'refusal', report)
     assert [path.name for path in (tmp_path / 'refusal').iterdir()] == ['conversion-report.json']
