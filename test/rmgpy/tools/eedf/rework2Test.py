@@ -130,7 +130,7 @@ def test_every_cross_section_file_key_requires_a_hash(key):
 def test_ambiguous_population_selectors_are_refused(syntax):
     request = spec()
     entries = {'duplicate': ['Ar(1S0) = 1', 'Ar(1S0) = 0.1'],
-               'wildcard': ['Ar(*) = 1'], 'hierarchy': ['Ar(1S0,v=0) = 1'],
+               'wildcard': ['Ar(*) = 1'], 'hierarchy': ['Ar(1S0,v=0,J=0) = 1'],
                'charge': ['Ar(+) = 1'], 'prefix': ['ignored Ar(1S0) = 1'], 'symbolic': ['Ar(1S0) = constantValue@1']}
     request['state_properties']['population'] = entries[syntax]
     with pytest.raises(SpecError):

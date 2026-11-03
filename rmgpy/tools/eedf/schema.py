@@ -312,12 +312,17 @@ def _validate_spec(spec):
                 'working_conditions', 'solver_options', 'tolerances', 'floors',
                 'held_out', 'repositories', 'output_root', 'scratch_root',
                 'omp_threads', 'max_parallel', 'timeout_s', 'refinement'}
-    optional = {'engine_state_map', 'qualification_quantity_rules'}
+    optional = {'engine_state_map', 'qualification_quantity_rules', 'vibrational_ladders'}
     if (not isinstance(spec, dict) or not required <= set(spec) or
             set(spec) - required - optional):
         fields = ((required - set(spec or {})) |
                   (set(spec or {}) - required - optional))
         raise SpecError('spec fields: ' + str(fields))
+    if 'vibrational_ladders' in spec:
+        from rmgpy.tools.eedf.vibrational import validate_ladders
+        validate_ladders(spec['vibrational_ladders'])
+        if any(item['axis'] not in spec['axes'] for item in spec['vibrational_ladders']):
+            raise SpecError('vibrational ladder requires its Tv axis')
     if 'engine_state_map' in spec:
         fields = {'formula', 'electronic_state', 'vibrational_level',
                   'multiplicity', 'loki_state', 'statistical_weight'}
@@ -470,6 +475,8 @@ def _row_inputs(spec):
         'floors', 'tolerances', 'held_out', 'refinement')}
     if 'engine_state_map' in spec:
         result['engine_state_map'] = copy.deepcopy(spec['engine_state_map'])
+    if 'vibrational_ladders' in spec:
+        result['vibrational_ladders'] = copy.deepcopy(spec['vibrational_ladders'])
     if 'qualification_quantity_rules' in spec:
         result['qualification_quantity_rules'] = copy.deepcopy(
             spec['qualification_quantity_rules'])

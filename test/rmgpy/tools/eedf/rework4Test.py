@@ -180,7 +180,7 @@ def test_r4_regression_conflicting_selector_aliases_refuse(tmp_path, property_na
 
 
 @pytest.mark.parametrize('property_name', ['energy', 'statisticalWeight'])
-@pytest.mark.parametrize('selector', ['Ar(*)', 'Ar()', 'Ar(+,1S0)', 'Ar(1S0,v=0)'])
+@pytest.mark.parametrize('selector', ['Ar(*)', 'Ar()', 'Ar(+,1S0)', 'Ar(1S0,v=0,J=0)'])
 def test_r4_regression_unsupported_state_tree_overrides_refuse(tmp_path, property_name, selector):
     spec, _ = request_and_channels(tmp_path)
     spec['state_properties'][property_name] = [selector + ' = 100']

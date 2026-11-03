@@ -453,11 +453,19 @@ class LoKIDriver:
             _require_normalized(gas, 'gas fractions')
             for gas_name in gas:
                 states = {name: value for name, value in populations.items()
-                          if name.startswith(gas_name + '(')}
+                          if name.startswith(gas_name + '(') and ',v=' not in name}
                 if not states:
                     raise LoKIError(
                         'prepared setup terminal mapping has no states for ' + gas_name)
                 _require_normalized(states, gas_name + ' state populations')
+                for parent, population in states.items():
+                    children = {name: value for name, value in populations.items()
+                                if name.startswith(parent[:-1] + ',v=')}
+                    if children:
+                        if population == 0. and any(children.values()):
+                            raise LoKIError('populated vibrational child of empty electronic parent')
+                        if population > 0.:
+                            _require_normalized(children, parent + ' vibrational populations')
             conditions = rendered.get('workingConditions', {})
             expected_field = list(fields_Td)
             if conditions.get('reducedField') != expected_field:

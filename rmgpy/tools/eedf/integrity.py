@@ -109,7 +109,7 @@ def _physical_properties(spec):
                 if match.start() != 0:
                     raise SpecError('ambiguous state property assignment: ' + value)
                 key, expr = match.groups()
-                if not re.fullmatch(r'\{[A-Za-z_][A-Za-z_0-9]*\}|[+\-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+\-]?\d+)?', expr):
+                if not (population and re.fullmatch(r'boltzmann:[A-Za-z_][A-Za-z_0-9]*:\d+', expr)) and not re.fullmatch(r'\{[A-Za-z_][A-Za-z_0-9]*\}|[+\-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+\-]?\d+)?', expr):
                     raise SpecError('symbolic state property must be resolved to numbers')
                 result.append(_neutral_state_key(key) + ' = ' + expr)
                 continue
@@ -219,8 +219,8 @@ def _neutral_state_key(selector):
     StateEntry.cpp:393-495 splits comma tokens with std::getline (which drops
     one trailing empty token), then consumes an optional charge before the
     electronic identifier. Gas::findState uses these fields, not the original
-    spelling. Root, charge, wildcard and hierarchical selectors need a state
-    tree and are deliberately refused for every state property.
+    spelling. One explicit nonnegative vibrational quantum number is supported;
+    root, charged, wildcard and rotational selectors remain unsupported.
     """
     outer = re.fullmatch(r'([A-Za-z][A-Za-z0-9]*)(\(.*\))?', selector)
     if not outer or not outer[2]:
@@ -236,22 +236,25 @@ def _neutral_state_key(selector):
         electronic_index = 1
     if len(tokens) > electronic_index:
         electronic = tokens[electronic_index].strip()
+    tail = tokens[electronic_index + 1:]
+    vibration = re.fullmatch(r'\s*v=(0|[1-9][0-9]*)\s*', tail[0]) if len(tail) == 1 else None
     if (charge or not re.fullmatch(r'[^,()=\s*]+', electronic)
-            or len(tokens) != electronic_index + 1):
+            or (tail and vibration is None)):
         raise SpecError('unsupported state selector: ' + selector)
-    return outer[1] + '(' + electronic + ')'
+    return outer[1] + '(' + electronic + (',v=' + vibration[1] if vibration else '') + ')'
 
 
 def _resolved_properties(spec, coordinates):
     """Produce the very same explicit constants for setup and row metadata.
 
-    Flattened numeric state selectors are deliberately limited to neutral
-    electronic states. Wildcards, charge overrides and hierarchical selectors
-    need LoKI's full state tree and are refused rather than guessed.
+    Explicit vibrational children use populations conditional on their
+    electronic parent. Boltzmann declarations are resolved only for generation;
+    terminal qualification replaces them with exact numeric populations.
     """
     state = {name: item['reference'] for name, item in spec['envelopes'].items()}
     state.update(coordinates)
     gas, properties = _physical_properties(spec)
+    ladders = {item['axis']: item for item in spec.get('vibrational_ladders', [])}
 
     def numbers(entries, population=False):
         result = {}
@@ -265,8 +268,16 @@ def _resolved_properties(spec, coordinates):
             if not population and not re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', key):
                 raise SpecError('ambiguous gas fraction identifier')
             try:
-                value = float(expr.format_map(state).replace('D', 'e').replace('d', 'e'))
-            except (ValueError, KeyError) as error:
+                if population and expr.startswith('boltzmann:'):
+                    from rmgpy.tools.eedf.vibrational import boltzmann_populations
+                    _, axis, v = expr.split(':')
+                    ladder = ladders[axis]
+                    if ladder['levels'][int(v)]['loki_state'] != key:
+                        raise SpecError('Boltzmann declaration differs from level identity')
+                    value = boltzmann_populations(ladder, state[axis])[int(v)]
+                else:
+                    value = float(expr.format_map(state).replace('D', 'e').replace('d', 'e'))
+            except (ValueError, KeyError, IndexError) as error:
                 raise SpecError('symbolic population/fraction is unresolved') from error
             if (not math.isfinite(value) or value < 0 or value > 1 or key in result
                     or (value == 0 and math.copysign(1., value) < 0)):
@@ -294,6 +305,16 @@ def _resolved_properties(spec, coordinates):
                 raise SpecError('nonfinite state property')
             expanded.append(key + ' = ' + format(value, '.17g'))
         properties[name] = expanded
+    for ladder in ladders.values():
+        if ladder['parent'] not in populations:
+            raise SpecError('missing vibrational electronic-parent population')
+        for name, field in (('energy', 'energy_eV'), ('statisticalWeight', 'statistical_weight')):
+            declared = {entry.split(' = ', 1)[0]: float(entry.split(' = ', 1)[1])
+                        for entry in properties.get(name, [])}
+            for level in ladder['levels']:
+                if (level['loki_state'] not in populations or
+                        declared.get(level['loki_state']) != level[field]):
+                    raise SpecError('vibrational population/level property differs from source: ' + name)
     return gas, properties, fractions, populations
 
 
@@ -308,11 +329,16 @@ def _channel_fractions(channel_map, gas, populations, coordinates):
     targets, products = [], []
 
     def density(identifier):
-        match = re.fullmatch(r'([A-Z][A-Za-z0-9]*)\([^,()=\s*]+\)', identifier)
-        if (not match or match[1] not in gas
-                or re.fullmatch(r'[-+]+', identifier.split('(', 1)[-1].rstrip(')'))):
+        key = _neutral_state_key(identifier)
+        formula = key.split('(', 1)[0]
+        if formula not in gas:
             raise SpecError('channel population cannot be resolved: ' + identifier)
-        return gas[match[1]] * populations.get(identifier, 0.)
+        if ',v=' in key:
+            parent = key.split(',v=', 1)[0] + ')'
+            if parent not in populations or key not in populations:
+                raise SpecError('missing hierarchical population: ' + key)
+            return gas[formula] * populations[parent] * populations[key]
+        return gas[formula] * populations.get(key, 0.)
 
     for channel in channel_map:
         match = re.fullmatch(r'e \+ (.+?) (?:<->|->) (.+), [A-Za-z]+', channel['description'])
@@ -328,7 +354,9 @@ def _channel_fractions(channel_map, gas, populations, coordinates):
             product = 0.  # No superelastic process for these collision types.
         for name, value in (('target_fraction', target), ('product_fraction', product)):
             try:
-                supplied = float(str(channel[name]).format_map(coordinates))
+                declaration = str(channel[name])
+                supplied = (density(declaration[6:]) if declaration.startswith('state:') else
+                            float(declaration.format_map(coordinates)))
             except (ValueError, KeyError) as error:
                 raise SpecError('unresolved channel population') from error
             if supplied.hex() != value.hex():

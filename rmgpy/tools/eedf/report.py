@@ -447,6 +447,15 @@ def _validate_channel_metadata(channel):
                 raise ReportRefusal('invalid channel ' + name)
     for name in ('target_fraction', 'product_fraction'):
         if name in channel:
+            declaration = channel[name]
+            if isinstance(declaration, str) and declaration.startswith('state:'):
+                from rmgpy.tools.eedf.integrity import _neutral_state_key
+                from rmgpy.tools.eedf.schema import SpecError
+                try:
+                    _neutral_state_key(declaration[6:])
+                except SpecError as error:
+                    raise ReportRefusal('invalid channel ' + name) from error
+                continue
             value = _number(channel[name], 'channel ' + name)
             if value < 0. or value > 1.:
                 raise ReportRefusal('invalid channel ' + name)

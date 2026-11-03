@@ -51,3 +51,4 @@ Module                  Description
     exceptions
     export
     diagnostic_mode
+    vibrational_eedf
