@@ -120,8 +120,10 @@ def test_native_guard_boundaries(mode):
 def test_native_cleanup_statement_matrix():
     environment = dict(os.environ, PATH='')
     environment.pop('PYTHONPATH', None)
+    # Whole-matrix timings: isolated median 29.5 s / max 30.7 s; loaded max 36.6 s.
+    # Allow startup and shutdown overhead; per-trial deadlines stay unchanged.
     result = subprocess.run([sys.executable, str(PROBE.with_name('_native_cleanup_matrix.py')), 'green'],
-                            env=environment, capture_output=True, text=True, timeout=30)
+                            env=environment, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'CLEANUP_MATRIX' in result.stdout
 
