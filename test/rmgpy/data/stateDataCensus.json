@@ -37398,6 +37398,62 @@
         "test/rmgpy/solver/plasmaEEDFMaxwellianTest.py"
       ],
       "source_sha256": "f3d00cf270964d44a13dfac8752b09fcc435b0f19b316abcf81a7aa64bb122d6"
+    },
+    "rmgpy/tools/eedf/ownership.py:_UniqueLoader.construct_mapping": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Parses sourced yield metadata with unique keys; no Species objects, thermo lookup, or rate evaluation.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "741010c4969b96608094add6d0bf821a7140045e52c508f3b5951c5d549156e2"
+    },
+    "rmgpy/tools/eedf/ownership.py:_read_source": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Reads and hashes one immutable byte snapshot for later metadata validation; does not acquire molecular thermo or kinetics.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "c4ad587c1d2457af642ec339b90e3a59edf9b185909bb6642eba0e034003b6ba"
+    },
+    "rmgpy/tools/eedf/ownership.py:_validate_source_row": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Checks collision identity, finite threshold and explicit E1 completeness; unresolved rows cannot acquire inferred product yields.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "aeb061ba1c45db128a0f98d829c9750ecb350d29777f6b38a30cd286b7c8e8f3"
+    },
+    "rmgpy/tools/eedf/ownership.py:load_cascade_yields": {
+      "verdict": "carried",
+      "reason": "Retains the generated product-state vector and its byte/source provenance; validates every row and never regenerates or normalizes data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "0c6ff38e49eef84b0e688e805edd9b507f08a7a14dc90d55ff9172959dc0ccaf"
+    },
+    "rmgpy/tools/eedf/ownership.py:require_cascade_yields": {
+      "verdict": "carried",
+      "reason": "Returns a detached complete sourced product vector only after matching collision id, process and threshold; unresolved data refuse.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "b676cd49886621d3bef9046771122bb8f9d6ed9ac82c034714e186f870e74b22"
+    },
+    "rmgpy/tools/eedf/ownership.py:validate_branch_yield": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Validates one sourced numerical fraction without species transfer or rate evaluation.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "1a376bb5fec55dc6c1ff8db3a574264b39b5a57e47b303befc5a59e288d43890"
+    },
+    "rmgpy/tools/eedf/ownership.py:validate_yield_vector": {
+      "verdict": "carried",
+      "reason": "Preserves all four explicit product-state keys and fractions; refuses incomplete or non-normalized vectors without inventing values.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "7d877df82e3cc4334f192877b22e863ed2b1b700dd1e7d98c963c06393456187"
     }
   }
 }
