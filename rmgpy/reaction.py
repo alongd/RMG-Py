@@ -430,6 +430,14 @@ class Reaction:
         instead. Be sure that species' labels are unique when setting it False.
         """
         self.check_resolved_species_reversibility()
+        if isinstance(self.kinetics, KineticsData):
+            from copy import copy
+            from rmgpy.kinetics.export import fit_kinetics_data_for_export
+            n_surf = sum(species.contains_surface_site() for species in self.reactants)
+            n_gas = len(self.reactants) - n_surf + max(-self.electrons, 0)
+            export_reaction = copy(self)
+            export_reaction.kinetics = fit_kinetics_data_for_export(self.kinetics, n_gas, n_surf)
+            return export_reaction.to_cantera(species_list, use_chemkin_identifier)
         import cantera as ct
 
         from rmgpy.export import (

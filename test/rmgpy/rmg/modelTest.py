@@ -37,8 +37,10 @@ import pytest
 from rmgpy import settings
 from rmgpy.data.base import ForbiddenStructures
 from rmgpy.data.kinetics.family import TemplateReaction
+from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.data.thermo import NASA, NASAPolynomial
+from rmgpy.kinetics import Arrhenius, KineticsData
 from rmgpy.molecule import Molecule
 from rmgpy.rmg.main import RMG
 from rmgpy.rmg.model import CoreEdgeReactionModel
@@ -534,8 +536,34 @@ class TestCoreEdgeReactionModel:
             for key2, v2 in v1.items():
                 for key3, rxnList in v2.items():
                     counter += len(rxnList)
-
         assert counter == 3
+
+    def test_library_kinetics_data_admission_preserves_bounds_and_arrhenius(self):
+        h2 = Species(label="H2").from_smiles("[H][H]")
+        o2 = Species(label="O2").from_smiles("[O][O]")
+        oh = Species(label="OH").from_smiles("[OH]")
+        model = CoreEdgeReactionModel()
+
+        tabulated = KineticsData(Tdata=([300, 600, 1000], "K"),
+                                 kdata=([1e-12, 2e-12, 4e-12], "cm^3/(mol*s)"),
+                                 Tmin=(300, "K"), Tmax=(1000, "K"))
+        reaction = LibraryReaction(reactants=[h2, o2], products=[oh, oh],
+                                   kinetics=tabulated, reversible=True)
+        admitted, is_new = model.make_new_reaction(
+            reaction, check_existing=False, generate_thermo=False)
+        assert is_new
+        assert admitted.kinetics is tabulated
+        assert admitted.kinetics.get_rate_coefficient(500) == pytest.approx(
+            1.5874010519681995e-18, rel=1e-14, abs=0)
+        with pytest.raises(ValueError, match="KineticsData"):
+            admitted.kinetics.get_rate_coefficient(1001)
+        arrhenius_reaction = LibraryReaction(
+            reactants=[h2, o2], products=[oh, oh],
+            kinetics=Arrhenius(A=(1e-12, "cm^3/(mol*s)"), n=0, Ea=(0, "J/mol")),
+            reversible=True)
+        arrhenius_admitted, _ = model.make_new_reaction(
+            arrhenius_reaction, check_existing=False, generate_thermo=False)
+        assert isinstance(arrhenius_admitted.kinetics, Arrhenius)
 
     def test_thermo_filter_species(self):
         """

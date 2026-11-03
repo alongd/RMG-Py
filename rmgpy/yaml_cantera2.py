@@ -70,7 +70,7 @@ from rmgpy.electron_balance import (check_electron_balance, check_electron_react
                                     is_isomorphic_same_charge, potential_dependence_is_inert)
 from rmgpy.exceptions import CanteraThermoWriteError, EEDFExportError, MechanismWriterError
 from rmgpy.kinetics import (
-    Arrhenius, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius,
+    Arrhenius, KineticsData, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius,
     Chebyshev, Troe, Lindemann, ThirdBody,
     StickingCoefficient, SurfaceArrhenius,
     TwoTemperaturePlasma, ElectronCollisionPlasma,
@@ -753,6 +753,15 @@ def reaction_to_dict_list(reaction, species_list=None, duplicate=None):
     that flag -- for a reaction that has been through model growth, that is the
     core+edge answer.
     """
+    if isinstance(reaction.kinetics, KineticsData):
+        from copy import copy
+        from rmgpy.kinetics.export import fit_kinetics_data_for_export
+        n_surf = sum(species.contains_surface_site() for species in reaction.reactants)
+        n_gas = len(reaction.reactants) - n_surf + max(-reaction.electrons, 0)
+        export_reaction = copy(reaction)
+        export_reaction.kinetics = fit_kinetics_data_for_export(reaction.kinetics, n_gas, n_surf)
+        return reaction_to_dict_list(export_reaction, species_list, duplicate)
+
     reaction.check_resolved_species_reversibility()
     # Refuse an unrenderable collider HERE as well as in get_reaction_equation, so the
     # message names the kinetics type the caller actually wrote. A Multi* wrapper is

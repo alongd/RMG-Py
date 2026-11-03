@@ -2307,6 +2307,13 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
             string = '! ' + string.replace('\n', '\n! ')
         return string + "\n"
 
+    kinetics = reaction.kinetics
+    if isinstance(kinetics, _kinetics.KineticsData):
+        from rmgpy.kinetics.export import fit_kinetics_data_for_export
+        n_surf = sum(species.contains_surface_site() for species in reaction.reactants)
+        n_gas = len(reaction.reactants) - n_surf + max(-reaction.electrons, 0)
+        kinetics = fit_kinetics_data_for_export(kinetics, n_gas, n_surf)
+
     # Add to global chemkin reaction count if the kinetics is not a duplicate
     global _chemkin_reaction_count
     if _chemkin_reaction_count is not None:
@@ -2346,8 +2353,8 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
             string += "\n"
 
         # Remaining lines of comments taken from reaction kinetics
-        if reaction.kinetics.comment:
-            for line in reaction.kinetics.comment.split("\n"):
+        if kinetics.comment:
+            for line in kinetics.comment.split("\n"):
                 if len(line) > 150:
                     short_lines = textwrap.fill(line, 150).split("\n")
                     for short_line in short_lines:
@@ -2355,7 +2362,6 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                 else:
                     string += "! {0}\n".format(line)
 
-    kinetics = reaction.kinetics
     # Count the electron too. num_reactants sets the expected order of the
     # A-factor in the unit-conversion assertions below, and an electron reaction
     # keeps its electrons in reaction.electrons rather than reaction.reactants --

@@ -66,6 +66,7 @@ from rmgpy.kinetics.arrhenius import (
     MultiArrhenius,
     MultiPDepArrhenius,
 )
+from rmgpy.kinetics import KineticsData
 from rmgpy.kinetics.falloff import Lindemann, ThirdBody, Troe
 from rmgpy.kinetics.model import PDepKineticsModel
 from rmgpy.util import make_output_subdirectory
@@ -489,6 +490,13 @@ def reaction_to_dicts(obj, spcs, duplicate=None):
 
     obj.check_resolved_species_reversibility()
 
+    kinetics_for_comment = obj.kinetics
+    if isinstance(kinetics_for_comment, KineticsData):
+        from rmgpy.kinetics.export import fit_kinetics_data_for_export
+        n_surf = sum(species.contains_surface_site() for species in obj.reactants)
+        n_gas = len(obj.reactants) - n_surf + max(-obj.electrons, 0)
+        kinetics_for_comment = fit_kinetics_data_for_export(kinetics_for_comment, n_gas, n_surf)
+
     spcs = _cantera_declarations(spcs)
     validate_reaction_references([obj], spcs)
     from rmgpy.export import has_export_state
@@ -601,8 +609,8 @@ def reaction_to_dicts(obj, spcs, duplicate=None):
                 for p in obj.pairs
             )
             note_lines.append(pair_str)
-        if obj.kinetics.comment:
-            for line in obj.kinetics.comment.strip("\n").split("\n"):
+        if kinetics_for_comment.comment:
+            for line in kinetics_for_comment.comment.strip("\n").split("\n"):
                 note_lines.append(line.rstrip())
         if note_lines:
             reaction_data["note"] = "\n".join(line.rstrip() for line in note_lines) + "\n"

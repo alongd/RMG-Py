@@ -885,7 +885,6 @@ class CoreEdgeReactionModel:
 
             if isinstance(forward.kinetics, KineticsData):
                 forward.check_resolved_species_reversibility(reversible=True)
-                forward.kinetics = forward.kinetics.to_arrhenius()
             #  correct barrier heights of estimated kinetics
             if isinstance(forward, (TemplateReaction, DepositoryReaction)): # i.e. not LibraryReaction
                 forward.fix_barrier_height(solvent=self.solvent_name)  # also converts ArrheniusEP to Arrhenius.
@@ -1318,7 +1317,11 @@ class CoreEdgeReactionModel:
             spc.get_liquid_volumetric_mass_transfer_coefficient_data()
             spc.get_henry_law_constant_data()
 
-        spc.generate_energy_transfer_model()
+        # A vibrationally resolved species has no default energy-transfer
+        # parameters. Simple-reactor jobs can still use its library thermo and
+        # kinetics; pressure-dependence paths must provide resolved-state data.
+        if not any(molecule.vibrational_level >= 0 for molecule in spc.molecule):
+            spc.generate_energy_transfer_model()
 
     def process_coverage_dependence(self, kinetics):
         """Process the coverage dependence kinetics.
