@@ -1307,7 +1307,9 @@ def _scan_target(fd, output, adapter=None, *, seeds=2, sigterm=signal.SIG_DFL,
         def helper():
             # An unrelated fork made while the workers run inherits every
             # descriptor the owner holds at that moment.
-            time.sleep(.3)
+            children = Path('/proc/self/task/{}/children'.format(os.getpid()))
+            _wait_observed(lambda: bool(children.read_text().split()),
+                           'helper fork saw no live scan worker')
             # 'native': a C library forking directly; Python's fork hooks do not run.
             pid = ctypes.CDLL(None).fork() if fork_helper == 'native' else os.fork()
             if pid == 0:
@@ -1824,11 +1826,25 @@ class _ForksNatively:
         time.sleep(30.)
 
 
-def _kill_owner_when(expected):
+def _in_native_sleep(pid, syscall):
+    # These Linux x86_64 fixtures enter libc sleep / Python time.sleep.
+    # Observe clock_nanosleep (230) for libc, pselect6 (270) for CPython
+    # 3.9 time.sleep, in the worker's main thread rather than its watchdog.
+    try:
+        fields = Path('/proc/{0}/task/{0}/syscall'.format(pid)).read_text().split()
+    except FileNotFoundError:
+        return False
+    return bool(fields) and fields[0] == str(syscall)
+
+
+def _kill_owner_when(expected, syscall=230):
     def on_event(event, owner, events):
         reported = [e for e in events if e.keys() & {'worker', 'inner', 'helper'}]
         if event in reported and len(reported) == expected:
-            time.sleep(.05)  # let a native call begin
+            workers = [e['worker'] for e in reported if 'worker' in e]
+            for worker in workers:
+                _wait_observed(lambda: _in_native_sleep(worker, syscall),
+                               'worker native sleep entry timed out: {}'.format(worker))
             os.kill(owner, signal.SIGKILL)
     return on_event
 
@@ -1848,7 +1864,8 @@ def test_a_worker_dies_with_its_owner_whatever_runs_in_it(tmp_path, case):
         else:
             target = lambda fd: _scan_target(fd, tmp_path / 'b.json', _ForksNatively(fd), seeds=1)
             expected = 2
-        status, events, pids = _owner_trial(target, _kill_owner_when(expected))
+        status, events, pids = _owner_trial(
+            target, _kill_owner_when(expected, 230 if case == 'gil-held-native-call' else 270))
         return {'status': status,
                 'gone_after': {str(pid): _gone_within(pid, 5.) for pid in pids}}
     result = _as_subreaper(trial)
