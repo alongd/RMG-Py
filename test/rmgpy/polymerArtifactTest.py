@@ -5,6 +5,7 @@ format doc: docs/polymer_moments_format.md)."""
 
 import json
 import logging
+import os
 import threading
 from types import SimpleNamespace
 
@@ -175,6 +176,41 @@ def test_failed_standalone_write_invalidates_while_newer_writer_is_pending(
         "species": [],
     }
     assert json.loads(path.read_text()) == {"newer": True}
+
+
+def test_a_save_issued_while_a_writer_waits_for_the_lock_supersedes_it(tmp_path):
+    """The superseded-ticket check is made under the lock that publishes.
+
+    The writer's payload is already in its temp file and it is blocked on
+    ``_SIDECAR_WRITE_LOCK`` when a newer save takes its ticket. Once the lock is
+    released the older write must be discarded, not published over the
+    path a newer save now owns."""
+    import time
+    path = str(tmp_path / "polymer_pools.json")
+    with open(path, "w") as fh:
+        fh.write('{"pools": [{"label": "old"}]}')
+    ticket = polymer_module._take_sidecar_write_ticket(path)
+    payload_written = threading.Event()
+
+    def older_payload(fh):
+        fh.write('{"older": true}')
+        payload_written.set()
+
+    older = threading.Thread(
+        target=polymer_module._write_sidecar_atomically,
+        args=(path, older_payload), kwargs={"ticket": ticket})
+    with polymer_module._SIDECAR_WRITE_LOCK:
+        older.start()
+        assert payload_written.wait(timeout=5)
+        time.sleep(0.5)  # let the writer flush, fsync and block on the lock we hold
+        assert older.is_alive()
+        state = polymer_module._SIDECAR_WRITE_STATES[os.path.abspath(path)]
+        state.issued += 1  # a newer save begins while the older writer waits
+    older.join(timeout=5)
+    assert not older.is_alive()
+    with open(path) as fh:
+        assert json.load(fh) == {"pools": [{"label": "old"}]}
+    assert [p.name for p in tmp_path.iterdir()] == ["polymer_pools.json"]
 
 
 def test_unreadable_signature_is_stale_not_an_identity_crash():
@@ -1811,6 +1847,19 @@ class TestSolverGasMaskRecord:
     def test_a_direct_build_without_a_mask_has_no_record(self, pe_pool):
         art = build_polymer_moments_artifact([pe_pool])
         assert "solver_gas_mask" not in art["conventions"]
+
+    @pytest.mark.parametrize("n_mask", [1, 3])
+    def test_a_mask_of_another_length_than_the_core_is_refused(self, pe_pool, n_mask):
+        """A short mask would zip into a record that drops core species; a
+        long one would hide a slot no species owns. Either raises."""
+        core = [pe_pool, _spc("N#N", "N2")]
+        with pytest.raises(ValueError, match=r"gas mask of reactor 1 has %d entries for a core of 2" % n_mask):
+            build_polymer_moments_artifact(
+                [pe_pool], core_species=core,
+                solver_gas_masks=[{"reactor": 1, "mask": [False] + [True] * (n_mask - 1)}])
+        art = build_polymer_moments_artifact(
+            [pe_pool], core_species=core, solver_gas_masks=[{"reactor": 1, "mask": [False, True]}])
+        assert [c["gas"] for c in art["conventions"]["solver_gas_mask"]["reactors"][0]["core"]] == [False, True]
 
 
 class TestCompileReactionEntries:
