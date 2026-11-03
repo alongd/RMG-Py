@@ -163,6 +163,12 @@ class EventRecord:
 
     def validate(self) -> None:
         """Validate internal consistency."""
+        for name in ("raw_path_degeneracy", "degeneracy", "ssa_multiplier"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{name} must be a finite number")
+            if not math.isfinite(value):
+                raise ValueError(f"{name} must be finite")
         if self.status not in ("enabled", "refused", "irreversible"):
             raise ValueError(f"Invalid status: {self.status!r}")
         if self.orientation not in ("as_generated", "reversed"):
