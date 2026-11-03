@@ -290,10 +290,34 @@ class TestFinding6:
         assert state[0][2:] == (-1.0, 1, True, {}, '', '')
         assert state[1:] == ({}, [])
 
-    def test_unresolved_pickle_bytes_are_frozen_at_ccba0691c(self):
+    def test_unresolved_pickle_bytes_are_frozen_at_402d53c7d(self):
+        # 402d53c7d preserves Atom.props, including {'inRing': False} on each N:
+        # 21 bytes for the first props dictionary and 8 for the second.
+        # Molecule-level unresolved state retains the ccba0691c reduce shape.
         payload = pickle.dumps(Molecule(smiles='N#N'), protocol=4)
+        assert len(payload) == 409
+        assert hashlib.sha256(payload).hexdigest() == 'b4a648bebb2d56c39ac515c2e35502fe16e4348242c8e1a4caf1e7cbdd766b50'
+
+    def test_unresolved_legacy_pickle_from_ccba0691c_loads(self):
+        # Exact protocol-4 bytes frozen at ccba0691c, before Atom.props was saved.
+        payload = bytes.fromhex(
+            '80049571010000000000008c17726d6770792e6d6f6c6563756c652e6d6f6c6563756c65948c115f72656275696c645f'
+            '6d6f6c6563756c6594939468008c084d6f6c6563756c6594939485945294285d942868008c0441746f6d949394288c01'
+            '4e944b004b008c0094749452947d94288c056564676573947d94680928680a4b004b00680b749452947d9428680f7d94'
+            '680d68008c04426f6e64949394680d681247400800000000000087945294738c0d636f6e6e656374697669747931944b'
+            '018c0d636f6e6e656374697669747932944b018c0d636f6e6e656374697669747933944b018c0d736f7274696e675f6c'
+            '6162656c944affffffff8c0861746f6d74797065948c034e3374948c0a6c6f6e655f7061697273944b018c0473697465'
+            '94680b8c0a6d6f7270686f6c6f677994680b756268187368194b01681a4b01681b4b01681c4affffffff681d681e681f'
+            '4b016820680b6821680b75626812654e47bff00000000000004b01887d94680b680b74947d945d948794622e'
+        )
         assert len(payload) == 380
         assert hashlib.sha256(payload).hexdigest() == 'a4f97200e9e5d6e48f43adb863e3172b1c67c521e6b0f6bf39ae36d3988c2ae4'
+        molecule = pickle.loads(payload)
+        expected = Molecule(smiles='N#N')
+        assert molecule.is_isomorphic(expected)
+        assert molecule.to_adjacency_list() == expected.to_adjacency_list()
+        assert molecule.electronic_state == ''
+        assert molecule.vibrational_level == -1
 
     def test_unresolved_adjacency_text_is_frozen_at_ccba0691c(self):
         assert Molecule(smiles='N#N').to_adjacency_list() == '1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}\n'
