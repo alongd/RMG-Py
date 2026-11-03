@@ -1902,12 +1902,55 @@ def _raw_disposition(signum):
 
 
 class _InterruptedBySigint:
-    def __init__(self, fd):
-        self.fd = fd
+    def __init__(self, fd, ready=None):
+        self.fd, self.ready = fd, ready
 
     def integrate(self, seed, power=None):
         _emit(self.fd, worker=os.getpid())
+        if self.ready is not None:
+            os.write(self.ready, b'r')
         time.sleep(30.)
+
+
+def _wait_observed(predicate, failure, timeout=10.):
+    until = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < until, failure
+        time.sleep(.001)
+
+
+def _read_ready(fd, count, failure):
+    for _ in range(count):
+        assert select.select([fd], [], [], 10.)[0], failure
+        assert os.read(fd, 1) == b'r', failure
+
+
+def _signal_during_scan(ready, release, count, signum, delivered):
+    """Keep the workers live until the sender and handler have rendezvoused."""
+    result = {'sent': False, 'delivered': False}
+
+    def send():
+        try:
+            _read_ready(ready, count, 'scan signal worker readiness timed out')
+            signal.pthread_kill(threading.main_thread().ident, signum)
+            result['sent'] = True
+            _wait_observed(delivered, 'scan signal delivery timed out')
+            result['delivered'] = True
+        except BaseException as exc:
+            result['error'] = repr(exc)
+        finally:
+            if release is not None:
+                os.write(release, b'r' * count)
+    thread = threading.Thread(target=send, daemon=True)
+    thread.start()
+    return thread, result
+
+
+def _join_sender(thread, result):
+    thread.join(10.)
+    assert not thread.is_alive(), 'scan signal sender did not finish'
+    assert 'error' not in result, result
+    assert result['sent'] and result['delivered'], result
 
 
 def _foreign_dispositions_target(fd, output):
@@ -1915,35 +1958,54 @@ def _foreign_dispositions_target(fd, output):
     libc = ctypes.CDLL(None)
     libc.signal.argtypes = (ctypes.c_int, ctypes.c_void_p)
     libc.signal.restype = ctypes.c_void_p
-    native = ctypes.cast(libc.getpid, ctypes.c_void_p).value  # returns; harmless as a handler
-    libc.signal(signal.SIGTERM, native)
+    term_deliveries = []
+
+    @ctypes.CFUNCTYPE(None, ctypes.c_int)
+    def native(signum):
+        term_deliveries.append(signum)
+
+    libc.signal(signal.SIGTERM, ctypes.cast(native, ctypes.c_void_p).value)
     signal.signal(signal.SIGINT, signal.default_int_handler)
     signal.siginterrupt(signal.SIGINT, False)
     before = {s: _raw_disposition(s) for s in (signal.SIGINT, signal.SIGTERM)}
 
+    ready_r, ready_w = os.pipe()
+    release_r, release_w = os.pipe()
+
     class Returns:
         def integrate(self, seed, power=None):
-            time.sleep(.2)
+            _emit(fd, worker=os.getpid())
+            os.write(ready_w, b'r')
+            _read_ready(release_r, 1, 'foreign TERM worker release timed out')
             return _complete({'u': 0., 'n_e': 1.e16, '_state_vector': [0.],
                               '_jacobian': [[-1.]]})
 
     rows = {}
     # 1. A real SIGTERM during the scan reaches the C handler; the scan returns.
-    threading.Thread(target=lambda: (time.sleep(.1), os.kill(os.getpid(), signal.SIGTERM)),
-                     daemon=True).start()
+    sender, term = _signal_during_scan(
+        ready_r, release_w, 1, signal.SIGTERM,
+        lambda: term_deliveries == [signal.SIGTERM])
     scan(Returns(), (0., 0.), output, u_steps=1, electron_density_decades=1, processes=1,
          timeout=30., reference_power=.5, recheck_timeouts=False)
+    _join_sender(sender, term)
+    rows.update(term_sent=term['sent'], term_delivered=term_deliveries)
     rows['after_return'] = {s: _raw_disposition(s) == before[s] for s in before}
     # 2. The scan raises KeyboardInterrupt.
-    threading.Thread(target=lambda: (time.sleep(.2), os.kill(os.getpid(), signal.SIGINT)),
-                     daemon=True).start()
+    raised = threading.Event()
+    sender, interrupt = _signal_during_scan(
+        ready_r, None, 1, signal.SIGINT, raised.is_set)
+
     try:
-        scan(_InterruptedBySigint(fd), (0., 0.), output, u_steps=1,
+        scan(_InterruptedBySigint(fd, ready_w), (0., 0.), output, u_steps=1,
              electron_density_decades=1, processes=1, timeout=30., reference_power=.5,
              recheck_timeouts=False)
         rows['raised'] = None
     except KeyboardInterrupt:
         rows['raised'] = 'KeyboardInterrupt'
+        raised.set()
+    _join_sender(sender, interrupt)
+    for pipe in (ready_r, ready_w, release_r, release_w):
+        os.close(pipe)
     rows['after_raise'] = {s: _raw_disposition(s) == before[s] for s in before}
     _emit(fd, outcome=json.dumps(rows))
 
@@ -1961,6 +2023,7 @@ def test_foreign_and_restart_dispositions_are_byte_identical_after_a_scan(tmp_pa
     result = _as_subreaper(trial)
     assert result['status'] == 0, result
     rows = result['outcome']
+    assert rows['term_sent'] and rows['term_delivered'] == [signal.SIGTERM], result
     assert rows['raised'] == 'KeyboardInterrupt', result
     assert all(rows['after_return'].values()) and all(rows['after_raise'].values()), result
     assert set(result['fates'].values()) == {'reaped-by-owner'}, result
@@ -2007,24 +2070,35 @@ def _rdkit_embedding_target(fd, output, send_sigint):
     signal.signal(signal.SIGINT, signal.default_int_handler)
     AllChem.EmbedMolecule(Chem.AddHs(Chem.MolFromSmiles('CCO')), randomSeed=1)
     before = _raw_disposition(signal.SIGINT)
+    ready_r, ready_w = os.pipe()
+    release_r, release_w = os.pipe()
 
     class Returns:
         def integrate(self, seed, power=None):
             _emit(fd, worker=os.getpid())
-            time.sleep(.4)
+            if send_sigint:
+                os.write(ready_w, b'r')
+                _read_ready(release_r, 1, 'RDKit worker release timed out')
             return _complete({'u': seed.u, 'n_e': seed.n_e, '_state_vector': [seed.u],
                               '_jacobian': [[-1.]]})
     if send_sigint:
-        threading.Thread(target=lambda: (time.sleep(.2), os.kill(os.getpid(), signal.SIGINT)),
-                         daemon=True).start()
+        sender, sent = _signal_during_scan(
+            ready_r, release_w, 2, signal.SIGINT,
+            lambda: not _raw_disposition(signal.SIGINT)[0])
     try:
         scan(Returns(), (0., 1.), output, u_steps=2, electron_density_decades=1,
              processes=2, timeout=30., reference_power=.5, recheck_timeouts=False)
         outcome = 'return'
     except BaseException as exc:
         outcome = type(exc).__name__
+    if send_sigint:
+        _join_sender(sender, sent)
+    for pipe in (ready_r, ready_w, release_r, release_w):
+        os.close(pipe)
     after = _raw_disposition(signal.SIGINT)
-    _emit(fd, outcome=outcome, rdkit_handler=bool(before[0]) and before[0] != after[0] or None,
+    _emit(fd, signal_sent=send_sigint and sent['sent'],
+          delivery_observed=send_sigint and sent['delivered'],
+          outcome=outcome, rdkit_handler=bool(before[0]) and before[0] != after[0] or None,
           identical=after == before, after_is_default=not after[0])
 
 
@@ -2047,9 +2121,28 @@ def test_rdkits_leftover_sigint_handler_is_left_to_act_as_it_would(tmp_path, sen
     assert result['status'] == 0 and report['outcome'] == 'return', result
     assert set(result['fates'].values()) == {'reaped-by-owner'}, result
     if send_sigint:
+        assert report['signal_sent'] and report['delivery_observed'], result
         assert report['after_is_default'], result  # RDKit's own reset, not the scan's
     else:
         assert report['identical'], result
+
+
+@_needs_subreaper
+@pytest.mark.parametrize('fixture', ['foreign', 'rdkit'])
+def test_scan_signal_waits_for_a_delayed_sender(tmp_path, monkeypatch, fixture):
+    """Delay beyond the old worker lifetimes; delivery must still occur in scan."""
+    original = _read_ready
+
+    def delayed(fd, count, failure):
+        if threading.current_thread() is not threading.main_thread():
+            threading.Event().wait(.6)
+        return original(fd, count, failure)
+
+    monkeypatch.setattr(sys.modules[__name__], '_read_ready', delayed)
+    if fixture == 'foreign':
+        test_foreign_and_restart_dispositions_are_byte_identical_after_a_scan(tmp_path)
+    else:
+        test_rdkits_leftover_sigint_handler_is_left_to_act_as_it_would(tmp_path, True)
 
 
 def _raising_handler_inside_start_target(fd, output):
@@ -2494,7 +2587,8 @@ def _rdkit_after_ignored_sigint_target(fd, output):
     AllChem.EmbedMolecule(Chem.AddHs(Chem.MolFromSmiles('CCO')), randomSeed=1)
     embedded = _raw_disposition(signal.SIGINT)[0]
     os.kill(os.getpid(), signal.SIGINT)
-    time.sleep(.05)
+    _wait_observed(lambda: not _raw_disposition(signal.SIGINT)[0],
+                   'RDKit priming delivery timed out')
     _emit(fd, primed={'rdkit_handler': bool(embedded) and embedded != 1,
                       'kernel_default': not _raw_disposition(signal.SIGINT)[0],
                       'table_ignores': signal.getsignal(signal.SIGINT) == signal.SIG_IGN})
