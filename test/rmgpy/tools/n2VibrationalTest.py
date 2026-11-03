@@ -35,6 +35,7 @@ import os
 from pathlib import Path
 import sys
 from types import SimpleNamespace
+import zipfile
 
 import pytest
 
@@ -61,6 +62,18 @@ def sections_text(upper, omit=None):
     return '\n'.join(text)
 
 
+def partial_sections_text(initial_levels, final_v, omit=None):
+    text = []
+    for i in initial_levels:
+        for j in range(i, final_v + 1):
+            if (i, j) == omit:
+                continue
+            text.append(f'EXCITATION\nN2(X,v={i}) -> N2(X,v={j})\n'
+                        f'{0.2 * (j-i):.12f}\nCOMMENT: Synthetic, not physical data\n'
+                        '----------\n0.01 0\n10 1e-20\n----------\n')
+    return '\n'.join(text)
+
+
 @pytest.fixture
 def source(tmp_path):
     upper = 32
@@ -72,6 +85,8 @@ def source(tmp_path):
     level_file.write_text(json.dumps(spectroscopy))
     xs = tmp_path / 'synthetic.txt'
     xs.write_text(sections_text(upper))
+    cross_section_pin = pin(xs)
+    cross_section_pin['source_id'] = 'synthetic'
     library = tmp_path / 'library.py'
     text = ["name='SyntheticN2'\nshortDesc='Synthetic only, not physical data'\n"]
     for v in range(upper + 1):
@@ -83,7 +98,10 @@ def source(tmp_path):
                     'Cp0=(29.100619163,"J/(mol*K)"), CpInf=(29.100619163,"J/(mol*K)")))\n')
     library.write_text('\n'.join(text))
     return {'schema': 'n2-vibrational-source-v1', 'level_source': pin(level_file),
-            'cross_sections': [pin(xs)], 'thermo_library': pin(library),
+            'cross_sections': [cross_section_pin], 'source_domain': {
+                'initial_levels': list(range(upper + 1)), 'final_v': upper},
+            'source_assignments': {str(v): 'synthetic' for v in range(upper + 1)},
+            'thermo_library': pin(library),
             'energy_tolerance_eV': 1e-9,
             'D6': {'set_by': 'owner', 'top_fraction_limit': 0.02,
                    'top_leak_share_limit': 0.03, 'K_step': 5}}
@@ -193,6 +211,53 @@ def test_complete_census_and_every_supplied_transition_audited(source):
     assert any(c['initial_v'] == c['final_v'] == 10 and c['source_final_v'] == 32 for c in forward)
 
 
+def test_initial_coverage_is_separate_from_final_domain(tmp_path):
+    initials = list(range(30))
+    final_v = 58
+    path = tmp_path / 'partial-domain.txt'
+    path.write_text(partial_sections_text(initials, final_v))
+    sections = read_cross_sections(pin(path))
+    assert len(sections) == sum(final_v - i + 1 for i in initials)
+    require_complete_pairs(sections, initial_levels=initials, final_v=final_v)
+    with pytest.raises(MissingPairsError, match=r'\(29,58\)'):
+        require_complete_pairs(sections[:-1], initial_levels=initials, final_v=final_v)
+    with pytest.raises(LadderError, match='outside declared domain'):
+        require_complete_pairs(sections, initial_levels=initials, final_v=57)
+
+
+def test_archive_member_uses_hash_of_original_snapshot(tmp_path):
+    text = sections_text(2)
+    path = tmp_path / 'source.zip'
+    with zipfile.ZipFile(path, 'w') as archive:
+        archive.writestr('Cross section.txt', text)
+    source_pin = pin(path)
+    source_pin['member'] = 'Cross section.txt'
+    assert len(read_cross_sections(source_pin)) == 6
+    path.write_bytes(path.read_bytes() + b'changed')
+    with pytest.raises(LadderError, match='source hash mismatch'):
+        read_cross_sections(source_pin)
+
+
+def test_generation_refuses_K_requiring_uncovered_initial_level(source):
+    source['source_domain']['initial_levels'] = list(range(30))
+    source['source_domain']['final_v'] = 32
+    source['source_assignments'] = {str(v): 'synthetic' for v in range(30)}
+    with pytest.raises(LadderError, match=r'requested K=30 requires uncovered initial v=30'):
+        generate(source, 30)
+
+
+@pytest.mark.parametrize(('field', 'value', 'message'), [
+    ('source_domain', {'initial_levels': '0-29', 'final_v': 58}, 'initial_levels'),
+    ('source_assignments', {'0': []}, 'keys and values must be strings'),
+    ('D6', [], 'D6 policy must be an object'),
+    ('cross_sections', {'source_id': 'bad'}, 'nonempty list of source pins'),
+])
+def test_malformed_source_domain_config_refuses_by_name(source, field, value, message):
+    source[field] = value
+    with pytest.raises(LadderError, match=message):
+        generate(source)
+
+
 def test_superelastic_only_for_two_retained_source_endpoints(source):
     output = decoded(source)
     reverse = [c for c in output['channels'] if c['direction'] == 'superelastic']
@@ -238,6 +303,7 @@ def test_incomplete_synthetic_refuses_by_named_pair_before_thermo(source):
     xs = Path(source['cross_sections'][0]['path'])
     xs.write_text(sections_text(32, omit=(4,9)))
     source['cross_sections'][0] = pin(xs)
+    source['cross_sections'][0]['source_id'] = 'synthetic'
     source['thermo_library']['path'] = '/nonexistent/not-reached'
     with pytest.raises(MissingPairsError, match=r'\(4,9\)') as caught:
         generate(source)
@@ -249,6 +315,7 @@ def test_real_laporta_incomplete_coverage(source):
     if path is None:
         pytest.skip('set N2_LAPORTA_BATCH1 for the local-only real source refusal witness')
     real_pin = pin(Path(path))
+    real_pin['source_id'] = 'laporta_batch1'
     real_pin['citation'] = 'Laporta, Celiberto & Wadehra, PSST 21 055018 (2012); LXCat Laporta'
     sections = read_cross_sections(real_pin)
     assert len(sections) == 1000
@@ -267,6 +334,8 @@ def test_real_laporta_incomplete_coverage(source):
     level_path.write_text(json.dumps(data))
     source['level_source'] = pin(level_path)
     source['cross_sections'] = [real_pin]
+    source['source_domain'] = {'initial_levels': list(range(59)), 'final_v': 58}
+    source['source_assignments'] = {str(v): 'laporta_batch1' for v in range(59)}
     with pytest.raises(MissingPairsError) as refused:
         generate(source)
     assert refused.value.pairs == missing

@@ -12,8 +12,10 @@ Local source manifest
 ---------------------
 
 The source manifest is JSON. Paths must be absolute. Each pin has ``path``,
-``sha256``, ``citation`` and ``provenance: "sourced"``. Files are read and hashed
-as one snapshot. ``estimated`` is reserved for a future estimator and refuses
+``sha256``, ``citation`` and ``provenance: "sourced"``. A ZIP pin may also name
+an exact archive ``member``; the generator hashes the original archive snapshot
+before reading that member. Files are read and hashed as one snapshot.
+``estimated`` is reserved for a future estimator and refuses
 in this implementation. The following is a template, not physical input::
 
     {
@@ -25,6 +27,8 @@ in this implementation. The following is a template, not physical input::
         "provenance": "sourced"
       },
       "cross_sections": ["<pin objects for local LXCat Laporta files>"],
+      "source_domain": {"initial_levels": [0, 1, 2], "final_v": 58},
+      "source_assignments": {"0": "laporta_batch1", "1": "laporta_batch1"},
       "thermo_library": "<pin object for a fixed-v RMG thermo library>",
       "energy_tolerance_eV": "<explicit allowed source threshold/term mismatch>",
       "D6": {
@@ -39,8 +43,9 @@ in this implementation. The following is a template, not physical input::
 ``electronic_state: "X1Sigma_g+"``, ``energy_unit: "eV"`` and
 ``energy_zero: "v=0"``. Its ``levels`` array, ordered contiguously from zero,
 contains ``v``, ``energy_eV``, positive ``statistical_weight`` and
-``thermo_entry`` (the label in the pinned thermo library). Energies must strictly
-increase, starting at zero. Primary term-value/weight records must support this
+``thermo_entry`` (the label in the pinned thermo library) for retained levels;
+source-only levels above K may use ``null``. Energies must strictly increase,
+starting at zero. Primary term-value/weight records must support this
 explicit convention; ensemble vibrational thermo cannot substitute for fixed-v
 library data. Every retained level's thermo entry is loaded and checked against
 its exact molecular identity through the library lookup, with no estimation
@@ -49,13 +54,16 @@ or other placeholder values refuse generation. The library snapshot is trusted
 RMG Python input; loading it executes its database declarations, as normal
 library loading does.
 
-Coverage requires every upward pair within the entire declared source domain,
-including above K, not merely transitions currently active in the retained
-ladder. Missing pairs, duplicates, out-of-domain pairs, unsupported identities,
-malformed grids, hash mismatches and thresholds inconsistent with declared term
-energies refuse before artifact emission. Zero-threshold diagonal records are
-optional and audited. The supplied local batch must be completed by its data
-owner; this tool does not download or invent missing pairs. Source files remain
+Coverage separates ``source_domain.initial_levels`` from ``source_domain.final_v``.
+Every upward pair for each covered initial level through the inclusive final
+domain is required, including transitions above K. ``source_assignments`` maps
+each covered initial level (string key) to the ``source_id`` of its supplying
+pin; records for that initial level in other files are ignored. Every initial
+level 0..K must be covered, so a K requiring an uncovered initial level refuses
+with that level named. Missing pairs, duplicates, out-of-domain pairs,
+unsupported identities, malformed grids, hash mismatches and thresholds
+inconsistent with declared term energies refuse before artifact emission.
+Zero-threshold diagonal records are optional and audited. Source files remain
 local and must never be copied into a repository.
 
 D6 closure and coupling seam
