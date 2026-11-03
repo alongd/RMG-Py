@@ -35473,7 +35473,7 @@
       ],
       "file": "rmgpy/tools/eedf/branches.py",
       "line": 991,
-      "source_sha256": "b712c208aa7372adfd8a310a193bc8dc71cfcd455df0438dc77887b5c863b0c7"
+      "source_sha256": "1b3f3d16b81884d062f86d7eef9fe2ebcb6234aa354e46d15b25cd33a03ece6d"
     },
     "rmgpy/tools/eedf/branches.py:_public_state": {
       "verdict": "carried",
@@ -35483,7 +35483,7 @@
       ],
       "source_sha256": "14a4b2f5036a2222b58552846fd8e0e8c1cd7ec57814f3da412106c5d0548677",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1158
+      "line": 1159
     },
     "rmgpy/tools/eedf/branches.py:_required": {
       "verdict": "carried",
@@ -35493,7 +35493,7 @@
       ],
       "source_sha256": "41119190f632a053cd9421d8c2ccb27754e1061234b645ca0b48aa2ebb914ae1",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1162
+      "line": 1163
     },
     "rmgpy/tools/eedf/branches.py:_analysis": {
       "verdict": "carried",
@@ -35503,7 +35503,7 @@
       ],
       "source_sha256": "526d2387e917b68a8b451dfa53c0a8c61e2c5017d00f83859a3090ef98263fa1",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1176
+      "line": 1177
     },
     "rmgpy/tools/eedf/branches.py:scan": {
       "verdict": "carried",
@@ -35513,8 +35513,8 @@
         "test/rmgpy/tools/eedf/nativeWorkerTest.py"
       ],
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1189,
-      "source_sha256": "520369144b2a0e25ef24c29c28fc7c7166c87d44ad7fdcdf5ddfdd3dec67f860"
+      "line": 1190,
+      "source_sha256": "c886714811c76cb74f79ca13fe570d864a7e0e0f49798a9d51337f4b345ee567"
     },
     "rmgpy/tools/eedf/branches.py:scan.<lambda1>": {
       "verdict": "carried",
@@ -35524,7 +35524,7 @@
       ],
       "source_sha256": "a0fe85cf024ebffc0315e9646fcda88a024602a04bd1ff5caa59ab6e3cc6e8a4",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1300
+      "line": 1302
     },
     "rmgpy/tools/eedf/branches.py:_certified_states": {
       "verdict": "carried",
@@ -35534,7 +35534,7 @@
       ],
       "source_sha256": "984f11676cd1c5f864910ceda05b4c38ca92188060be369666d964a75a4e4c40",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1344
+      "line": 1346
     },
     "rmgpy/tools/eedf/branches.py:certified_coverage": {
       "verdict": "carried",
@@ -35544,7 +35544,7 @@
       ],
       "source_sha256": "8b8e58a5afdd279baf1682a8437e8a8c5b3045865fcabf1b34a27df0b3e43773",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1375
+      "line": 1377
     },
     "rmgpy/tools/eedf/branches.py:path_consistency": {
       "verdict": "carried",
@@ -35554,7 +35554,7 @@
       ],
       "source_sha256": "12d77aedecc9effb1c8aed1eee8f90b5d4473cad7beec75c49213dfedfd5dbd1",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1388
+      "line": 1390
     },
     "rmgpy/tools/eedf/branches.py:path_consistency.<lambda1>": {
       "verdict": "carried",
@@ -35564,7 +35564,7 @@
       ],
       "source_sha256": "f774cd3e91be8a1607e6d3045c64fb2847c9a1df45bcb185111a6f9f02496405",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1411
+      "line": 1413
     },
     "rmgpy/tools/eedf/branches.py:record_continuation": {
       "verdict": "carried",
@@ -35574,7 +35574,7 @@
       ],
       "source_sha256": "b9bc39e7f9ad16038d7bf9dad7a485cbf1ac0a85f33e028ce20ed3c8ba466de7",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1520
+      "line": 1522
     },
     "rmgpy/tools/eedf/branches.py:_continuation_state": {
       "verdict": "carried",
@@ -35584,7 +35584,7 @@
       ],
       "source_sha256": "7ca1a9510762b272d19aaa12fcb5184fbdbc128f40ffbfcd29e671a3a368d9cd",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1580
+      "line": 1582
     },
     "rmgpy/tools/eedf/branches.py:continue_branch": {
       "verdict": "carried",
@@ -35594,7 +35594,7 @@
       ],
       "source_sha256": "fde6ff832fe79958f99f5a4c716c3b8aae0c03c554bd9a88a75271de1b96dc48",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1741
+      "line": 1743
     },
     "rmgpy/tools/eedf/branches.py:declared_branch": {
       "verdict": "carried",
@@ -35604,7 +35604,7 @@
       ],
       "source_sha256": "2b9a51745091a78c24242d6d2e399d3c6fb3794c48ce1ed9660778e21d6d0851",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 2526
+      "line": 2528
     },
     "rmgpy/tools/eedf/branches.py:matching_branch": {
       "verdict": "carried",
@@ -35614,7 +35614,7 @@
       ],
       "source_sha256": "1cf36bb3f5945c46698ff4fe9ea85656ee3760782d2307fb9284365d7791f662",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 2559
+      "line": 2561
     },
     "rmgpy/tools/eedf/branches.py:PlasmaReactorAdapter.is_fold_failure": {
       "verdict": "carried",
@@ -35634,7 +35634,7 @@
       ],
       "source_sha256": "481796fd2843b8332aa673b1f48dde3ee71110fd9f36ab066775f7a6e3154075",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1590
+      "line": 1592
     },
     "rmgpy/tools/eedf/branches.py:_scaled_norm": {
       "verdict": "carried",
@@ -35644,7 +35644,7 @@
       ],
       "source_sha256": "9c88a40c62c9ea59563d7057c9ce041639725d8bc3154c4442c9045064ee776f",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1595
+      "line": 1597
     },
     "rmgpy/tools/eedf/branches.py:_corrector_metrics": {
       "verdict": "carried",
@@ -35654,7 +35654,7 @@
       ],
       "source_sha256": "e739b5bb55d566986a765f9076249d85b04b5764634e682e49a616931f711d31",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1600
+      "line": 1602
     },
     "rmgpy/tools/eedf/branches.py:_component_noise": {
       "verdict": "carried",
@@ -35664,7 +35664,7 @@
       ],
       "source_sha256": "4da2d3e4a6f4263bd418ec5be40ddc801c3d9c7c5b7e50966f01569e14906fc6",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1608
+      "line": 1610
     },
     "rmgpy/tools/eedf/branches.py:_departure": {
       "verdict": "carried",
@@ -35674,7 +35674,7 @@
       ],
       "source_sha256": "ee4538e71fece52136282c9b96944f74006942f0f7ccef276feaf194c62c74d4",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1613
+      "line": 1615
     },
     "rmgpy/tools/eedf/branches.py:_tangent_cosine": {
       "verdict": "carried",
@@ -35684,7 +35684,7 @@
       ],
       "source_sha256": "d3ff75f9e9c870f3d19d5b8ff00d2d0ab1630f1dfd7748e8b0f7042b4c2bd92e",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1635
+      "line": 1637
     },
     "rmgpy/tools/eedf/branches.py:_matched_eigenvalues": {
       "verdict": "carried",
@@ -35694,7 +35694,7 @@
       ],
       "source_sha256": "dc7e0e086e5ddb5f78159442b15acddfe35cffafc4e67b63d04760d8901cb4da",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1656
+      "line": 1658
     },
     "rmgpy/tools/eedf/branches.py:_matched_eigenvalues.<lambda1>": {
       "verdict": "carried",
@@ -35704,7 +35704,7 @@
       ],
       "source_sha256": "8bc6250ab6bbfe3338d207253094011ac4a38a53ef4a4cb56b12681324a1f196",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1664
+      "line": 1666
     },
     "rmgpy/tools/eedf/branches.py:_matched_eigenvalues.<lambda2>": {
       "verdict": "carried",
@@ -35714,7 +35714,7 @@
       ],
       "source_sha256": "929c15091bb053a6629283220631f4395a59eca6fe344901fc414781f5147e95",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1665
+      "line": 1667
     },
     "rmgpy/tools/eedf/branches.py:_eigenvalue_motion": {
       "verdict": "carried",
@@ -35724,7 +35724,7 @@
       ],
       "source_sha256": "8a2a4d0e5594f0f093b5c0c8e38b5239c7a1eab5d038f6f5d4a3443b62a939d2",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1670
+      "line": 1672
     },
     "rmgpy/tools/eedf/branches.py:_sample_count": {
       "verdict": "carried",
@@ -35734,7 +35734,7 @@
       ],
       "source_sha256": "6e29a2019c2fb6bb77314fe78cf2781039385808ffe3be753cd7ee5d602d6175",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1706
+      "line": 1708
     },
     "rmgpy/tools/eedf/branches.py:_nearest_real_distance": {
       "verdict": "carried",
@@ -35744,7 +35744,7 @@
       ],
       "source_sha256": "2a65cf65f86f69edee3676abcc59c0f7edfdbb5cd5ed76ff045bc471a579ab01",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1712
+      "line": 1714
     },
     "rmgpy/tools/eedf/branches.py:_event_entry": {
       "verdict": "carried",
@@ -35754,7 +35754,7 @@
       ],
       "source_sha256": "d44073d71373f3dedf367d2ac5c7c0d02cebb87ca400b419d38b72fe63e49456",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1716
+      "line": 1718
     },
     "rmgpy/tools/eedf/branches.py:_event_entry.<lambda1>": {
       "verdict": "carried",
@@ -35764,7 +35764,7 @@
       ],
       "source_sha256": "8da1200b4b942138e36e7393462d88d5dda6f60df101fa439adffbf9377d70ed",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1719
+      "line": 1721
     },
     "rmgpy/tools/eedf/branches.py:continue_branch.correct": {
       "verdict": "carried",
@@ -35774,7 +35774,7 @@
       ],
       "source_sha256": "9362b589da2efc6726472c556f4d283ec9a0f33361abea02e3337880a8b1165a",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1844
+      "line": 1846
     },
     "rmgpy/tools/eedf/branches.py:continue_branch.secant_ne": {
       "verdict": "carried",
@@ -35784,7 +35784,7 @@
       ],
       "source_sha256": "a22eae497d9cd0e3a5479a1ad1885f5e209dcccb5b58083aaa95478713874407",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1865
+      "line": 1867
     },
     "rmgpy/tools/eedf/branches.py:continue_branch.refine_eigen_event": {
       "verdict": "carried",
@@ -35794,7 +35794,7 @@
       ],
       "source_sha256": "29eba3421ed29b44e8aaebd735d8f2ba2a614e768c3fbd9b931c64954c7873d2",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1870
+      "line": 1872
     },
     "rmgpy/tools/eedf/branches.py:continue_branch.refine_predictor_fold": {
       "verdict": "carried",
@@ -35804,7 +35804,7 @@
       ],
       "source_sha256": "22a08eb77d939b791f5cb98a7302b9fb2b0afec8a72d334ced6c2818f1e28829",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1892
+      "line": 1894
     },
     "rmgpy/tools/eedf/branches.py:continue_branch.<lambda1>": {
       "verdict": "carried",
@@ -35814,7 +35814,7 @@
       ],
       "source_sha256": "26e013a66c0ce3d4efcbae9eff19b3272467d1723230a8ff4795eaed7f384609",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1838
+      "line": 1840
     },
     "rmgpy/tools/eedf/branches.py:continue_branch.same_branch": {
       "verdict": "carried",
@@ -35824,7 +35824,7 @@
       ],
       "source_sha256": "5abf1f396fd6cbfb1efe5869ea1d6b53b02c90de8c1e54f53969674f1df795a2",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1841
+      "line": 1843
     },
     "rmgpy/tools/eedf/branches.py:_branch_states_at_power": {
       "verdict": "carried",
@@ -35834,7 +35834,7 @@
       ],
       "source_sha256": "1e700bff4ce13a030b8ecc517e120dd2af2322cb8266c6fc8afeb2df1f3249d5",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 2539
+      "line": 2541
     },
     "rmgpy/tools/eedf/branches.py:_uncertified_power_message": {
       "verdict": "carried",
@@ -35844,7 +35844,7 @@
       ],
       "source_sha256": "e46efbfe7438630a1ec96d34a208a7f0e9a054e5ec54f61767c8ac6546e4e13f",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 2551
+      "line": 2553
     },
     "rmgpy/tools/eedf/branches.py:_branch_certified_states": {
       "verdict": "carried",
@@ -35854,7 +35854,7 @@
       ],
       "source_sha256": "8b376bc41a33580ca95837d4ce27abc214e8feb92889d62998d3b8c1f80aa53f",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1358
+      "line": 1360
     },
     "rmgpy/tools/eedf/branches.py:_distinct_powers": {
       "verdict": "carried",
@@ -35864,7 +35864,7 @@
       ],
       "source_sha256": "d3224c74e28754167057372e9d2ff9a26b55dd91a1661c7de42a2071264df935",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1366
+      "line": 1368
     },
     "rmgpy/tools/eedf/branches.py:aliasing_radius": {
       "verdict": "carried",
@@ -35874,7 +35874,7 @@
       ],
       "source_sha256": "bd1c7177f6f7bcbbe44c27d27a35e5fa30c624cdad45c979a1e97f0f185707e9",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1445
+      "line": 1447
     },
     "rmgpy/tools/eedf/branches.py:_tolerance_mismatch": {
       "verdict": "carried",
@@ -35884,7 +35884,7 @@
       ],
       "source_sha256": "d624fbbc39d230c816086411260be0bfb6a96bfb77b652c0bfe7bba4f3839828",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1505
+      "line": 1507
     },
     "rmgpy/tools/eedf/branches.py:PlasmaReactorAdapter.estimate_interpolation_error": {
       "verdict": "carried",
@@ -35904,7 +35904,7 @@
       ],
       "source_sha256": "b714492512abd3bb8bcc9fa9ef5817de6f0c32a633d5b40527fb93a0ecbe5e64",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1468
+      "line": 1470
     },
     "rmgpy/tools/eedf/branches.py:certificate_issue": {
       "verdict": "carried",
@@ -35914,7 +35914,7 @@
       ],
       "source_sha256": "a8afde9225d2cee315206ada8930e946311f3232aa988ad0864cb33babd98db0",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1486
+      "line": 1488
     },
     "rmgpy/tools/eedf/branches.py:_load_artifact": {
       "verdict": "carried",
@@ -35924,7 +35924,7 @@
       ],
       "source_sha256": "de93e3962422698e02fdfa8c7d0b60db7726ea2e33176b9b20e699bf65e7818b",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 2401
+      "line": 2403
     },
     "rmgpy/tools/eedf/branches.py:_artifact_tolerances": {
       "verdict": "carried",
@@ -35934,7 +35934,7 @@
       ],
       "source_sha256": "2409f2333d599eb4a97fdaaaf9efb7a81f202eb5a2930f1ca6cf9f863c72f650",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 2425
+      "line": 2427
     },
     "rmgpy/tools/eedf/branches.py:matchable_issue": {
       "verdict": "carried",
@@ -35944,7 +35944,7 @@
       ],
       "source_sha256": "1bdf9596595fd10aa3fb3bf9e10eb89b43b2da7f49441659bb86f667679b2473",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 2500
+      "line": 2502
     },
     "rmgpy/tools/eedf/branches.py:tolerance_issue": {
       "verdict": "carried",
@@ -35954,7 +35954,7 @@
       ],
       "source_sha256": "fff23d303a7c91936b5ee90d00b81c803ac259fdeed0320f4b3102754d2d5237",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 2438
+      "line": 2440
     },
     "rmgpy/tools/eedf/branches.py:reference_issue": {
       "verdict": "carried",
@@ -35964,7 +35964,7 @@
       ],
       "source_sha256": "35af88f62ef8122ee8d8331a193a84824b0d07908d3e376083b1eaafb9c768ff",
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 2468
+      "line": 2470
     },
     "rmgpy/tools/eedf/branches.py:_reap_worker": {
       "verdict": "carried",
@@ -36209,7 +36209,7 @@
         "test/rmgpy/tools/eedf/nativeWorkerTest.py",
         "test/rmgpy/tools/eedf/branchesTest.py"
       ],
-      "source_sha256": "993880273be3165a2cfcba1d07444ce1f95a1f64d8e2bdf99997008f369f4768",
+      "source_sha256": "eb3cf74a7e45c3213882c32b2b7d6bc854d517393b7268c1c293a0695b1ec468",
       "file": "rmgpy/tools/eedf/_native_context.py",
       "line": 81
     },
@@ -36222,7 +36222,7 @@
       ],
       "source_sha256": "7f1af146c09d84734bf78d678e85c2b9388f9903fc9ac97ab80b521f62164690",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 98
+      "line": 99
     },
     "rmgpy/tools/eedf/_native_context.py:Owner.checkpoint": {
       "verdict": "not-reachable-for-resolved",
@@ -36233,7 +36233,7 @@
       ],
       "source_sha256": "4068750709667224ae3401e0bcdebefebee475607e09ae3319f8388b421ed91b",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 104
+      "line": 105
     },
     "rmgpy/tools/eedf/_native_context.py:Owner.process": {
       "verdict": "not-reachable-for-resolved",
@@ -36244,7 +36244,7 @@
       ],
       "source_sha256": "f01c0379fc88d8cc30b76c4e402c1a6e094e26732b6a8af15cdc1e63e41473b1",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 113
+      "line": 114
     },
     "rmgpy/tools/eedf/_native_context.py:Owner.cleanup": {
       "verdict": "not-reachable-for-resolved",
@@ -36255,7 +36255,7 @@
       ],
       "source_sha256": "09686f808c6dbd03720e0af84336adbe72380f929cd09f9702dc3075727e60ff",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 118
+      "line": 119
     },
     "rmgpy/tools/eedf/_native_context.py:Owner.facts": {
       "verdict": "not-reachable-for-resolved",
@@ -36266,7 +36266,7 @@
       ],
       "source_sha256": "f4a8cdfe74e0a94d0f4693897d7e8daf95ac1ed01df23261d427460af7c6dcc6",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 123
+      "line": 124
     },
     "rmgpy/tools/eedf/_native_context.py:NativePopen._launch": {
       "verdict": "not-reachable-for-resolved",
@@ -36277,7 +36277,7 @@
       ],
       "source_sha256": "02695afe616fafa9b09ddc2b692ec4d93689902f4e2e6311c312c7d0ad89eaba",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 130
+      "line": 131
     },
     "rmgpy/tools/eedf/_native_context.py:NativePopen.poll": {
       "verdict": "not-reachable-for-resolved",
@@ -36288,7 +36288,7 @@
       ],
       "source_sha256": "7dd948deda687b9f6516779427ad044a30d242a8fce1b4583fb1723c45f5c58e",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 161
+      "line": 162
     },
     "rmgpy/tools/eedf/_native_context.py:NativePopen.wait": {
       "verdict": "not-reachable-for-resolved",
@@ -36299,7 +36299,7 @@
       ],
       "source_sha256": "4eab6c66516554317e2590a26d3904c68860d74743b45ce8bd65bafc80eea0dc",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 177
+      "line": 178
     },
     "rmgpy/tools/eedf/_native_context.py:NativePopen.terminate": {
       "verdict": "not-reachable-for-resolved",
@@ -36310,7 +36310,7 @@
       ],
       "source_sha256": "0647dfee0b89f43fa4e461755215df88c9d2d5c1ac4afe4127205406fb22f1ca",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 187
+      "line": 188
     },
     "rmgpy/tools/eedf/_native_context.py:NativePopen.kill": {
       "verdict": "not-reachable-for-resolved",
@@ -36321,7 +36321,7 @@
       ],
       "source_sha256": "838c771847e78ae3202a4facf83292a913d3990d56c627e5035dafa5641a9331",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 190
+      "line": 191
     },
     "rmgpy/tools/eedf/_native_context.py:NativePopen._send_signal": {
       "verdict": "not-reachable-for-resolved",
@@ -36332,7 +36332,7 @@
       ],
       "source_sha256": "bb3113d5f510c33637359dff708a6eb1e64cf50ca7bb31fe9c72589a4f8d7c2c",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 193
+      "line": 194
     },
     "rmgpy/tools/eedf/_native_context.py:NativeForkProcess._Popen": {
       "verdict": "not-reachable-for-resolved",
@@ -36343,7 +36343,7 @@
       ],
       "source_sha256": "e9f588aa7c02105809435094f28413107aa535b42261fa8c889b3b4477b23cfe",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 199
+      "line": 200
     },
     "rmgpy/tools/eedf/_native_context.py:accepted": {
       "verdict": "not-reachable-for-resolved",
@@ -36354,7 +36354,7 @@
       ],
       "source_sha256": "3314e6c4bbce12993c252567f935eb2f6ed0bf0b7710790db7c058ded2843da5",
       "file": "rmgpy/tools/eedf/_native_context.py",
-      "line": 207
+      "line": 208
     },
     "rmgpy/tools/eedf/branches.py:_integrate_many.<lambda1>": {
       "verdict": "carried",
@@ -36364,7 +36364,7 @@
         "test/rmgpy/tools/eedf/nativeWorkerTest.py"
       ],
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1043,
+      "line": 1044,
       "source_sha256": "3736f9ccf71ac35398855fb78cc84ab25ac613fc9be91abe8234d3407ae57f2c"
     },
     "rmgpy/tools/eedf/branches.py:_integrate_many.<lambda2>": {
@@ -36375,7 +36375,7 @@
         "test/rmgpy/tools/eedf/nativeWorkerTest.py"
       ],
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1044,
+      "line": 1045,
       "source_sha256": "742e8243c081b18c65e28a026178725e03ba1d5ade0fa5a77a8c55aa45f3814b"
     },
     "rmgpy/tools/eedf/branches.py:_integrate_owned": {
@@ -36386,7 +36386,7 @@
         "test/rmgpy/tools/eedf/nativeWorkerTest.py"
       ],
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1065,
+      "line": 1066,
       "source_sha256": "f482da43ca5dc63bbf6382e19d045e3a31bfd51ddaa069feec4440d17f9011c2"
     },
     "rmgpy/tools/eedf/branches.py:_native_cleanup_error": {
@@ -36397,7 +36397,7 @@
         "test/rmgpy/tools/eedf/nativeWorkerTest.py"
       ],
       "file": "rmgpy/tools/eedf/branches.py",
-      "line": 1049,
+      "line": 1050,
       "source_sha256": "59829e85121b20175b7cb821909a053ed66304e277953567dc47d2860875ef8a"
     },
     "rmgpy/solver/eedf.py:EEDFRow._as_dict": {

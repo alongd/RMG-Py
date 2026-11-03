@@ -5618,8 +5618,8 @@
     "rmgpy/tools/eedf/branches.py:scan": {
       "file": "rmgpy/tools/eedf/branches.py",
       "function": "scan",
-      "line": 1189,
-      "signature": "8401cf8407ac6e334ad43dded76402d044be7297d01eaa0551bf9d42dea05f77",
+      "line": 1190,
+      "signature": "98760ffb201142e2e54c8a4bc9c3269c42e4905efab1f295e09d9c912776af8b",
       "verdict": "E",
       "reason": "Reactor-branch scan output contains numerical seed, solver-state, stability, discharge, timeout-recheck and continuation-certificate records only, and it refuses continuation without a declared stability resolution; it emits no molecular identity or saved mechanism. This revision changes only the lifecycle documentation; output computation and schema remain unchanged.",
       "evidence": [
@@ -5635,7 +5635,7 @@
       ],
       "file": "rmgpy/tools/eedf/_native_context.py",
       "function": "NativePopen._launch",
-      "line": 130,
+      "line": 131,
       "signature": "c6d89f5df037899ef3793aeedf67906f82f68fcb3cb6285e0cab23fdeeb0e6e9"
     },
     "rmgpy/tools/eedf/artifact.py:_write_artifact": {
