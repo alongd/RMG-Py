@@ -105,3 +105,4 @@ their legacy indexed spelling, such as ``X(3)``.
     :hidden:
 
     plasma_reversal
+    n2_vibrational

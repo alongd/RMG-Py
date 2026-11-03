@@ -37628,6 +37628,110 @@
         "test/rmgpy/tools/eedf/reportTest.py"
       ],
       "source_sha256": "002ae20ea490f3d6c40163c2ae49237d989d1875d7ac36cf86fcab1fbf09b693"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:MissingPairsError.__init__": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Formats missing source-pair diagnostics only; no species data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "c0bd93506f0b979b0976cbc043a71c67b0875cdf7c953424b6d7c8e7c9f572cf"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:_number": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Checks explicitly supplied scalar values; no molecular data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "f7f21080bb546af237de26f92f418160a7cb6a1a33213bf6722eb183f5c74bdc"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:_integer": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Checks explicitly supplied indices; no molecular data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "6bce29bbc78cb60b9cd9e0374c423439fd3b22561e351578933e9a22cb927f7c"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:_pin": {
+      "verdict": "carried",
+      "reason": "Reads a cited sourced input snapshot and verifies that same byte snapshot against its declared SHA256; estimated provenance refuses.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "ea3efda573a8033c19bfc1c7587978f9f415df0033e6b9c2458e4237ec0a4c19"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:read_cross_sections": {
+      "verdict": "carried",
+      "reason": "Parses only pinned sourced upward/diagonal N2 state pairs, validates cross-section grids and retains exact source block identities.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "7032cfd42f0b159054102ad2d90546452b850e6692108e8a82ac56b5ab7938f2"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:require_complete_pairs": {
+      "verdict": "carried",
+      "reason": "Checks complete explicit state-pair coverage of the declared source domain; missing pairs refuse by name rather than being estimated.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "0bdea24a6a7d155dd4b0aeb4c13450de93a51b3ae85583fc5361d3b63498282b"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:_policy": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Validates explicit owner-set D6 scalar thresholds and integer regeneration step; no species data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "374a655fcb87f1ddd2bb81389c8b91d53a7142a7f29fa01ed3c82ef51f090780"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:assess_truncation": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly supplied level populations and powers to decide D6 regeneration; does not infer a distribution or acquire thermo/rates.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "1de136510765a0d696b4fa733deb28b7ce11bfa772c5b25604e7c567ec25b764"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:_adjacency": {
+      "verdict": "carried",
+      "reason": "Builds the fixed N2 X graph with the exact supplied integer vibrational level; no ensemble substitution.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "5d71daf87803b815e6b5dd47e7105b084fc9b82d70d2ec9db9513f851c612d0f"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:_validate_thermo": {
+      "verdict": "carried",
+      "reason": "Loads the pinned library snapshot, requires a supported NASA, Wilhoit or ThermoData model and exact fixed-v N2 identity, and exercises the exact library lookup for every retained level; no thermo estimation fallback.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "0e88a56e50002a0efdee51d981b78ffde7be08f5245234c6e7903aca6d4c1a0f"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:generate": {
+      "verdict": "carried",
+      "reason": "Validates pinned level energies, weights, cross sections, full pair coverage and exact fixed-v library thermo; emits exact retained identities with source-bound irreversible electron directions and explicit top-leak ledger.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "d221eebd8e115195e8e49af64d72b86ac1c8aa4afc5f3e389ada0626a8d5bc9c"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:generate.<lambda1>": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Sorts explicit source pairs by their integer endpoint indices for deterministic artifact order.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "4f8f5e99456ada34ac29d223bc0c456abc7cbd32d263cb77fb5c2c10aa143660"
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:main": {
+      "verdict": "carried",
+      "reason": "Writes only fully validated generator artifact bytes into a new directory; preserves exact-state library snapshot and species/manifold identities.",
+      "evidence": [
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "source_sha256": "d06de70cd2fb079945cdba9e6025bf205e690a51451fcb8fbb669bd538827364"
     }
   }
 }

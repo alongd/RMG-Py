@@ -559,6 +559,18 @@ def _resolved_witness(key, tmp_path, spc, other):
     from rmgpy.rmg.model import CoreEdgeReactionModel
     rxn = Reaction(reactants=[spc], products=[other], kinetics=Arrhenius(A=(1, 's^-1'),Ea=(0,'J/mol')))
     file, function = key.split(':')
+    if key == 'rmgpy/tools/eedf/n2_vibrational.py:main':
+        # Fixed-domain generator: exercise its CLI and all retained-v reloads.
+        from importlib import util as fixture_util
+        fixture_spec = fixture_util.spec_from_file_location(
+            'n2_ladder_export_fixture', ROOT / 'test/rmgpy/tools/n2VibrationalTest.py')
+        fixture = fixture_util.module_from_spec(fixture_spec)
+        fixture_spec.loader.exec_module(fixture)
+        source = fixture.source.__wrapped__(tmp_path)
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            fixture.test_cli_emits_without_payload_and_refuses_overwrite(source, tmp_path, monkeypatch)
+            fixture.test_default_identities_and_v0_lookup(source, tmp_path, monkeypatch)
+        return
     if key in {
         'rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data',
         'rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime',

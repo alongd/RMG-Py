@@ -4079,6 +4079,27 @@
           "test/rmgpy/rmg/vibrationalManifoldTest.py"
         ]
       }
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:main": {
+      "file": "rmgpy/tools/eedf/n2_vibrational.py",
+      "function": "main",
+      "line": 362,
+      "signature": "150e5297fce9549574d233188b244ee7c7d5ac32ce2a5832c9208521da4ab454",
+      "verdict": "R",
+      "reason": "Fixed-domain N2 X-state generator emits validated exact-v adjacency identities and the unkeyed ground manifold declaration; no arbitrary input species labels are used as identity.",
+      "evidence": [
+        "rmgpy/tools/eedf/n2_vibrational.py",
+        "test/rmgpy/tools/n2VibrationalTest.py"
+      ],
+      "test": "test/rmgpy/tools/n2VibrationalTest.py::test_cli_emits_without_payload_and_refuses_overwrite",
+      "manifold": {
+        "verdict": "carried",
+        "reason": "Unkeyed N2 input uses vibrationalManifold and exact v0 library entry; all retained excited levels remain distinct in the emitted deck.",
+        "evidence": [
+          "test/rmgpy/tools/n2VibrationalTest.py"
+        ],
+        "test": "test/rmgpy/tools/n2VibrationalTest.py::test_default_identities_and_v0_lookup"
+      }
     }
   },
   "search_exclusions": {
@@ -5701,6 +5722,14 @@
       "signature": "8366f72809333a5187a592ad3c2aedc5aa2251774b9036e078a298d44b3707f7",
       "verdict": "E",
       "reason": "Builds an in-memory HDF5 numerical candidate to test common interpolation; no mechanism or molecular identity is exported."
+    },
+    "rmgpy/tools/eedf/n2_vibrational.py:_validate_thermo": {
+      "file": "rmgpy/tools/eedf/n2_vibrational.py",
+      "function": "_validate_thermo",
+      "line": 211,
+      "signature": "e8aa1eeafff2499fad883f87cafd9409e2192f696524314f4c99fc99d9f29ae7",
+      "verdict": "E",
+      "reason": "Internal scratch materialization of a SHA256-validated thermo-library byte snapshot for loading; no public species identifier or mechanism is exported. Exact retained N2 fixed-v identities are checked before any generated artifacts can be returned."
     }
   }
 }
