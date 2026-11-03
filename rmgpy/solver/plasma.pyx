@@ -2875,6 +2875,8 @@ cdef class PlasmaReactor(ReactionSystem):
     def _initialize_eedf_provider(self, core_species, core_reactions, edge_reactions):
         """Load the checked table and bind marker reactions to its columns."""
         from rmgpy.solver.eedf_provider import EEDFProvider
+        from rmgpy.tools.eedf.ownership import (
+            is_branch_family, iter_reaction_owners, validate_family, validate_bound_branch)
         table_path, artifact_sha256 = self.electron_kinetics['table']
         manifest_path = Path(table_path)
         if manifest_path.is_file():
@@ -2885,13 +2887,18 @@ cdef class PlasmaReactor(ReactionSystem):
         except (OSError, ValueError) as exc:
             raise PlasmaStateError('cannot read EEDF manifest: {0}'.format(exc)) from exc
         channels = manifest.get('channel_map', [])
-        table_owned_sources = {
-            '{0}:{1}'.format(identity.get('library'), identity.get('index'))
-            for identity in (channel.get('reaction') for channel in channels)
-            if isinstance(identity, dict)
-            and identity.get('library') is not None
-            and identity.get('index') is not None
-        }
+        try:
+            families = {column: validate_family(channel['reaction'], process=channel['description'],
+                                                 threshold_eV=channel.get('threshold_eV'))
+                        for column, channel in enumerate(channels)
+                        if is_branch_family(channel.get('reaction'))}
+            table_owned_sources = {
+                '{0}:{1}'.format(identity.get('library'), identity.get('index'))
+                for channel in channels for identity in iter_reaction_owners(channel.get('reaction'))
+                if identity.get('library') is not None and identity.get('index') is not None
+            }
+        except ValueError as exc:
+            raise PlasmaStateError('invalid EEDF ownership: {0}'.format(exc)) from exc
         for rxn in itertools.chain(core_reactions, edge_reactions):
             kin = rxn.kinetics
             if (getattr(kin, 'uses_electron_temperature', False)
@@ -2907,6 +2914,7 @@ cdef class PlasmaReactor(ReactionSystem):
         reaction_map = {}
         mapped_identities = []
         mapped_sides = set()
+        family_placements = {}
         for rxn in itertools.chain(core_reactions, edge_reactions):
             kin = rxn.kinetics
             if not getattr(kin, 'uses_eedf', False):
@@ -2918,6 +2926,39 @@ cdef class PlasmaReactor(ReactionSystem):
                     'EEDFChannel process {0!r} resolves to {1} table columns'.format(
                         kin.process, len(matches)))
             column = matches[0]
+            if column in families:
+                family = families[column]
+                try:
+                    product = validate_bound_branch(family, rxn)
+                except ValueError as exc:
+                    raise PlasmaStateError('invalid cascade branch: {0}'.format(exc)) from exc
+                location = (column, 'ine', product)
+                if location in mapped_sides:
+                    raise PlasmaStateError('duplicate cascade branch would double-count one tabulated rate')
+                mapped_sides.add(location)
+                if column not in family_placements:
+                    mapped_identities.append(family)
+                    family_placements[column] = set()
+                family_placements[column].add(rxn in core_reactions)
+                # The collision threshold is paid once. State thermo stays
+                # on the product; the residual leaves as prompt radiation.
+                dh = 0.
+                for sign, side_species in ((-1., rxn.reactants), (1., rxn.products)):
+                    for spc in side_species:
+                        if spc.is_electron():
+                            continue
+                        h = self._species_enthalpy(spc, self.T.value_si)
+                        if h is None:
+                            raise PlasmaStateError('cascade radiated energy requires finite reactant and product thermo')
+                        dh += sign * h
+                radiation = family['threshold_eV'] - dh / (constants.Na * constants.e)
+                if not np.isfinite(radiation) or radiation < -1e-9:
+                    raise PlasmaStateError(
+                        'cascade radiated energy is negative: product {0}, residual {1} eV'.format(product, radiation))
+                reaction_map[self.reaction_index[rxn]] = location
+                continue
+            if getattr(kin, 'branch_product', None) is not None:
+                raise PlasmaStateError('cascade branch maps an ordinary table owner')
             location = (column, kin.side)
             if location in mapped_sides:
                 raise PlasmaStateError(
@@ -2963,6 +3004,8 @@ cdef class PlasmaReactor(ReactionSystem):
                             rxn, identity, actual))
                 mapped_identities.append(identity)
             reaction_map[self.reaction_index[rxn]] = location
+        if any(len(placements) != 1 for placements in family_placements.values()):
+            raise PlasmaStateError('split cascade family between core and edge is unsupported')
         expected = manifest.get('row_inputs', {}).get('reactions', [])
         if sorted(mapped_identities, key=repr) != sorted(expected, key=repr):
             raise PlasmaStateError(
@@ -3699,14 +3742,16 @@ cdef class PlasmaReactor(ReactionSystem):
         by_reaction = np.array(heavy_by_reaction, copy=True)
         inelastic_by_reaction = np.zeros(self.num_core_reactions)
         superelastic_by_reaction = np.zeros(self.num_core_reactions)
-        for reaction_index, (column, side) in self.eedf_reaction_map.items():
+        for reaction_index, location in self.eedf_reaction_map.items():
+            column, side = location[:2]
             if reaction_index < self.num_core_reactions:
+                weight = self.eedf_provider.reaction_yield(reaction_index)
                 if side == 'ine':
-                    inelastic_by_reaction[reaction_index] = q_inelastic_channels[column]
-                    by_reaction[reaction_index] = q_inelastic_channels[column]
+                    inelastic_by_reaction[reaction_index] = weight * q_inelastic_channels[column]
+                    by_reaction[reaction_index] = weight * q_inelastic_channels[column]
                 else:
-                    superelastic_by_reaction[reaction_index] = q_superelastic_channels[column]
-                    by_reaction[reaction_index] = -q_superelastic_channels[column]
+                    superelastic_by_reaction[reaction_index] = weight * q_superelastic_channels[column]
+                    by_reaction[reaction_index] = -weight * q_superelastic_channels[column]
         energy_only = {}
         for j in range(len(channel_losses)):
             if channels[j].get('classification') != 'B':

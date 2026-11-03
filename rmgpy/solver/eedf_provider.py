@@ -628,18 +628,22 @@ class EEDFProvider:
         return self._qualification_record
 
     def _validate_reaction_map(self, reaction_map):
+        from rmgpy.tools.eedf.ownership import is_branch_family, validate_family
         if not isinstance(reaction_map, dict):
             raise TypeError('reaction_map must be a mapping')
-        channels = self._runtime_metadata['channel_map']
-        validated = {}
+        channels = self._table.manifest['channel_map']
+        families = {column: validate_family(channel['reaction'])
+                    for column, channel in enumerate(channels)
+                    if is_branch_family(channel.get('reaction'))}
+        validated, yields, owners = {}, {}, set()
         for reaction_index, location in reaction_map.items():
             if (isinstance(reaction_index, bool) or
                     not isinstance(reaction_index, (int, np.integer)) or
                     reaction_index < 0):
                 raise ValueError('invalid reaction index ' + repr(reaction_index))
-            if not isinstance(location, (tuple, list)) or len(location) != 2:
-                raise ValueError('reaction map entry must be (column, side)')
-            column, side = location
+            if not isinstance(location, (tuple, list)) or len(location) not in (2, 3):
+                raise ValueError('reaction map entry must be (column, side[, product])')
+            column, side = location[:2]
             if (isinstance(column, bool) or
                     not isinstance(column, (int, np.integer)) or
                     not 0 <= column < len(channels)):
@@ -649,7 +653,28 @@ class EEDFProvider:
                 raise ValueError('channel column is not reaction-owned A chemistry')
             if side not in ('ine', 'sup'):
                 raise ValueError('invalid channel side ' + repr(side))
-            validated[int(reaction_index)] = (int(column), side)
+            if column in families:
+                if len(location) != 3 or side != 'ine':
+                    raise ValueError('cascade family requires a weighted inferior product owner')
+                product = location[2]
+                if not isinstance(product, str) or product not in families[column]['product_yields']:
+                    raise ValueError('unknown cascade branch product')
+                key = (int(column), side, product)
+                weight = families[column]['product_yields'][product]
+            else:
+                if len(location) != 2:
+                    raise ValueError('ordinary column cannot bind a branch product')
+                key, weight = (int(column), side), 1.
+            if key in owners:
+                raise ValueError('more than one EEDF reaction maps the same owner; '
+                                 'that would double-count one tabulated rate')
+            owners.add(key)
+            validated[int(reaction_index)] = key
+            yields[int(reaction_index)] = weight
+        for column, family in families.items():
+            if any((column, 'ine', product) not in owners for product in family['product_yields']):
+                raise ValueError('cascade family requires all four branch owners, including zero yields')
+        self._reaction_yields = MappingProxyType(yields)
         return validated
 
     @property
@@ -2028,8 +2053,16 @@ class EEDFProvider:
         if reaction_index not in self._reaction_map:
             raise KeyError('unmapped reaction index ' + repr(reaction_index))
         row = self._require_row(row)
-        column, side = self._reaction_map[reaction_index]
-        return float(getattr(row, 'k_' + side)[column])
+        location = self._reaction_map[reaction_index]
+        column, side = location[:2]
+        value = float(getattr(row, 'k_' + side)[column])
+        return value if len(location) == 2 else value * self._reaction_yields[reaction_index]
+
+    def reaction_yield(self, reaction_index):
+        """Return the immutable artifact fraction (one for an ordinary owner)."""
+        if isinstance(reaction_index, bool) or not isinstance(reaction_index, (int, np.integer)):
+            raise KeyError('reaction index must be an integer scalar')
+        return self._reaction_yields[reaction_index]
 
     def transport(self, row):
         """Return immutable reduced transport from an explicit row handle."""

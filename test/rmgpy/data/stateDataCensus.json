@@ -23307,11 +23307,12 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.add_reaction_to_core": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Preflights complete cascade promotions before membership mutation, retaining quarantine and irreversible-state admission checks.",
       "evidence": [
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/modelTest.py",
+        "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
       ],
-      "source_sha256": "c16b424a28bbb83e779694369266bfbe2b724a4a2ef72ec97feacadc78516c10"
+      "source_sha256": "9c496d22580c801f5b83752928362a99b6b3dcc8f710743c18fa33a62f702327"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.add_reaction_to_edge": {
       "verdict": "carried",
@@ -23343,11 +23344,12 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.add_species_to_core": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Preflights complete cascade promotions before membership mutation, retaining quarantine and irreversible-state admission checks.",
       "evidence": [
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/modelTest.py",
+        "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
       ],
-      "source_sha256": "9bd03898346c772d13d4d4e2ce5747acf3c4ec276027c31c8a161e32e94558da"
+      "source_sha256": "4fef21cdd2f8d8f99e2a072cc0d60cf429c764f59dee2b7544f57edc4417c61b"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.add_species_to_edge": {
       "verdict": "carried",
@@ -33276,11 +33278,12 @@
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider._validate_reaction_map": {
       "verdict": "carried",
-      "reason": "EEDFProvider._validate_reaction_map: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
+      "reason": "Preserves ordinary rate evaluation and validates complete unique family bindings before applying immutable artifact yields.",
       "evidence": [
-        "test/rmgpy/solver/eedfProviderTest.py"
+        "test/rmgpy/solver/eedfProviderTest.py",
+        "test/rmgpy/solver/eedfBranchedTest.py"
       ],
-      "source_sha256": "c356f3aea017581c35f064c3f79c527852e78acad64f35b6af835bae77baaae4"
+      "source_sha256": "024e17991aa2dea2cc13d0973ffd097d3b9724d6eb29b1e6b7dad0ab706c9b04"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.axis": {
       "verdict": "carried",
@@ -33316,11 +33319,12 @@
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.reaction_rate": {
       "verdict": "carried",
-      "reason": "EEDFProvider.reaction_rate: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
+      "reason": "Preserves ordinary rate evaluation and validates complete unique family bindings before applying immutable artifact yields.",
       "evidence": [
-        "test/rmgpy/solver/eedfProviderTest.py"
+        "test/rmgpy/solver/eedfProviderTest.py",
+        "test/rmgpy/solver/eedfBranchedTest.py"
       ],
-      "source_sha256": "c3bf18082af0ce127fd07cf35c244a96b2498bf052229f828b0a7dbabdc0ec24"
+      "source_sha256": "a0842c00cac0231f69e956a58b9ad6b390752c6189c40e56d823973f4a865f8d"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.row": {
       "verdict": "carried",
@@ -33450,23 +33454,25 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_energy_row": {
       "verdict": "carried",
-      "reason": "Uses one provider-owned fingerprinted row for rates, energy, and transport, derives runtime field power from the row mobility and actual E/N, and records the separate runtime-construction identity without substituting scientific data.",
+      "reason": "Binds complete sourced cascade identities and weights only reaction diagnostics; physical column power remains single-counted and negative radiated energy refuses.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
-        "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
+        "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py",
+        "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
       ],
-      "source_sha256": "c26a2c848c74553c0a26e9bdf63802bdf553c10f98473cbf1826ee9f391bb214"
+      "source_sha256": "10ae2bb66e470af56ea5a15e7b368fffdcc3297b7efaaaf8334bfd5936f96622"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._initialize_eedf_provider": {
       "verdict": "carried",
-      "reason": "Binds declared table channels and envelopes to exact source-entry and molecular electronic-state identities, refusing duplicate ownership or unresolved states; it does not acquire substitute molecular data.",
+      "reason": "Binds complete sourced cascade identities and weights only reaction diagnostics; physical column power remains single-counted and negative radiated energy refuses.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
-        "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
+        "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py",
+        "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
       ],
-      "source_sha256": "68788d7600b97e3f22c408e2ced8104313fe077dcf6059c02e120f066b582188",
+      "source_sha256": "ca315fd4637756b03fd3a8f68bd10ccd3bd6cca10c89a84677f4f9fb62e509a3",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 2868
     },
@@ -33835,7 +33841,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/reportTest.py"
       ],
-      "source_sha256": "1882d5ff70489a80465d38277c152bfec58b096fceda6fd9fd34b81ee122500e"
+      "source_sha256": "5bdca1bf6340bd95004eb7b55152945a633897e7f7ad2c68acfbc9cd7e019c87"
     },
     "rmgpy/tools/eedf/report.py:power_table": {
       "verdict": "excluded",
@@ -33843,7 +33849,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/reportTest.py"
       ],
-      "source_sha256": "66e3a5f585391fe132e0128810d2f39f0d6b7bb47c2dd31b25330b3d1e56f362"
+      "source_sha256": "1353742dfae3c1c06c7b9b71d2bda730ee39c6e7651825bb164fd7c087ff5466"
     },
     "rmgpy/tools/eedf/report.py:render_markdown": {
       "verdict": "excluded",
@@ -37479,6 +37485,30 @@
       ],
       "source_sha256": "634616942f2b56f3c965678429177908b2c03f2924c5abbc1a53f726101bd192"
     },
+    "rmgpy/rmg/model.py:CoreEdgeReactionModel._add_reaction_to_core": {
+      "verdict": "carried",
+      "reason": "Admits the original reaction only after reversibility and quarantine checks; batched cascade membership is preflighted before this executor.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
+      ],
+      "source_sha256": "d1409834ba0f7b269753bd628d45b01130422496f60e21d5af4c28e7f1cac123"
+    },
+    "rmgpy/rmg/model.py:CoreEdgeReactionModel._check_cascade_promotion": {
+      "verdict": "refused",
+      "reason": "Refuses incomplete or split edge-to-core cascade promotion before changing model membership.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
+      ],
+      "source_sha256": "8ae4ca5c3cd38c49e6a442338718ad141fbb585fca95d64d49de5bff028e6f4d"
+    },
+    "rmgpy/solver/eedf_provider.py:EEDFProvider.reaction_yield": {
+      "verdict": "carried",
+      "reason": "Reads the immutable fraction validated from artifact ownership; ordinary owners retain unity.",
+      "evidence": [
+        "test/rmgpy/solver/eedfBranchedTest.py"
+      ],
+      "source_sha256": "223cac62ea932a0d769067b4a13aa6c75e2d2b630b393e1238bb453c8b2f11a3"
+    },
     "rmgpy/tools/eedf/channel_map.py:_branch_family": {
       "verdict": "carried",
       "reason": "Discovers declared source-library markers and cross-checks their molecular products and source yields; missing data never creates chemistry.",
@@ -37502,6 +37532,22 @@
         "test/rmgpy/tools/eedf/branchYieldTest.py"
       ],
       "source_sha256": "9a1bfc4a7b262210c302b2c4dbb682af76059496b1ee639772cc45c15a44e68b"
+    },
+    "rmgpy/tools/eedf/ownership.py:check_branch_promotion": {
+      "verdict": "refused",
+      "reason": "Requires all four source products to move together once a family has entered the edge; no partial membership mutation.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
+      ],
+      "source_sha256": "9d5a7c8e56b241a9b3f96e1515fe0c757b36b33c595bc22d1bb6e9d9e4629d69"
+    },
+    "rmgpy/tools/eedf/ownership.py:check_branch_promotion.key": {
+      "verdict": "carried",
+      "reason": "Groups explicit branch markers by collision process, collision set, and source digest without dropping product state.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
+      ],
+      "source_sha256": "462515186cf9f4a3189d5ab4931af3804771a10a1ad196b940a8409825991793"
     },
     "rmgpy/tools/eedf/ownership.py:is_branch_family": {
       "verdict": "not-reachable-for-resolved",
@@ -37551,6 +37597,14 @@
       ],
       "source_sha256": "2a3f561ef4838f395196e3da702d7aa712eb79d935a9c03cd977c08f7d95097c"
     },
+    "rmgpy/tools/eedf/ownership.py:validate_bound_branch": {
+      "verdict": "carried",
+      "reason": "Requires the runtime molecular product and source entry/marker to equal the artifact branch identity.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
+      ],
+      "source_sha256": "04458ce1e6af9b6828e44307da5cb0ffc7acb7900ef6ab731cfc4014e0257d8b"
+    },
     "rmgpy/tools/eedf/ownership.py:validate_branch_metadata": {
       "verdict": "not-reachable-for-resolved",
       "reason": "Validates an atomic numeric/source/product marker triple; does not calculate thermo or rates.",
@@ -37566,6 +37620,14 @@
         "test/rmgpy/tools/eedf/branchYieldTest.py"
       ],
       "source_sha256": "619fac0a4211c25679af511d16104aabdadc3a34f8c4842727fe823de7ddcb25"
+    },
+    "rmgpy/tools/eedf/report.py:_owner_positions": {
+      "verdict": "carried",
+      "reason": "Enumerates every family source owner and core position for power double-count checks without repeating a physical channel.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/reportTest.py"
+      ],
+      "source_sha256": "002ae20ea490f3d6c40163c2ae49237d989d1875d7ac36cf86fcab1fbf09b693"
     }
   }
 }

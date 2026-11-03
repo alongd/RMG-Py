@@ -34,6 +34,43 @@ import numpy as np
 import pytest
 
 from rmgpy.tools.eedf.report import PowerReport, ReportRefusal, _main, power_table, render_markdown
+from branchYieldTest import branch_fixture, source_files
+
+
+def family_report_inputs(branch_fixture):
+    _, _, family = branch_fixture
+    declared = channels()
+    declared[0].update(description=family['process'], classification='A', reaction=family,
+                        core_reaction_indices=[0, 1, 2, 3])
+    values = budget_for(declared, Q_heavy_particle_electron_by_reaction=[0.] * 4)
+    return declared, values
+
+
+def test_family_power_is_one_channel(branch_fixture):
+    declared, values = family_report_inputs(branch_fixture)
+    report = power_table(values, declared)
+    assert report.p1 == 'PASS'
+    assert [row['power_W'] for row in report.rows if row['name'] == 'excitation'] == [20.]
+    assert len(report.excitation_channels) == 1
+    assert len(report.channel_assignments) == 5
+
+
+@pytest.mark.parametrize('position', [0, 1, 2, 3])
+def test_family_owner_cannot_add_heavy_energy(branch_fixture, position):
+    declared, values = family_report_inputs(branch_fixture)
+    values['Q_heavy_particle_electron_by_reaction'][position] = 1.
+    values['Q_inelastic'] += 1.
+    values['dU_dt'] -= 1.
+    with pytest.raises(ReportRefusal, match='double-counted core reaction'):
+        power_table(values, declared)
+
+
+@pytest.mark.parametrize('positions', [[0, 1], [0, 0, 2, 3], [0, None, 2, 3], [0, 1, 2, []]])
+def test_family_report_requires_complete_unique_positions(branch_fixture, positions):
+    declared, values = family_report_inputs(branch_fixture)
+    declared[0]['core_reaction_indices'] = positions
+    with pytest.raises(ReportRefusal, match='core position|core reaction position'):
+        power_table(values, declared)
 
 
 def channels():

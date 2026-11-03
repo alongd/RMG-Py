@@ -88,7 +88,7 @@ _CHANNEL_MAP_FIELDS = {
     'mass_ratio', 'opb_eV', 'product_fraction', 'reaction', 'sigma_max_m2',
     'statistical_weight_ratio', 'target_fraction', 'threshold_eV',
 }
-_CHANNEL_FIELDS = _CHANNEL_MAP_FIELDS | {'core_reaction_index'}
+_CHANNEL_FIELDS = _CHANNEL_MAP_FIELDS | {'core_reaction_index', 'core_reaction_indices'}
 
 
 class ReportRefusal(ValueError):
@@ -171,6 +171,7 @@ class _ValidatedChannel:
     reaction_index: object
     core_reaction_position: object
     row: str
+    owners: tuple
 
 
 @dataclass(frozen=True)
@@ -493,6 +494,38 @@ def _core_reaction_position(channel):
     return positions[0]
 
 
+def _owner_positions(channel, heavy):
+    """Check every family owner without duplicating its physical power row."""
+    from rmgpy.tools.eedf.ownership import is_branch_family, validate_family
+    reaction = channel['reaction']
+    if is_branch_family(reaction):
+        try:
+            family = validate_family(reaction, process=channel['description'],
+                                      threshold_eV=channel.get('threshold_eV'))
+        except ValueError as error:
+            raise ReportRefusal(str(error)) from error
+        if 'core_reaction_index' in channel:
+            raise ReportRefusal('cascade family requires one core position per product')
+        positions = channel.get('core_reaction_indices', [None] * len(family['branches']))
+        if not isinstance(positions, list) or len(positions) != len(family['branches']):
+            raise ReportRefusal('cascade family core positions must cover all products in source order')
+        known = [position for position in positions if position is not None]
+        if any(type(position) is not int or position < 0 or position >= len(heavy) for position in known):
+            raise ReportRefusal('invalid cascade core reaction position')
+        if (known and len(known) != len(positions)) or len(set(known)) != len(known):
+            raise ReportRefusal('cascade family core positions must be complete and unique')
+        owners = tuple(((owner['library'], owner['index']), position)
+                       for owner, position in zip(family['branches'], positions))
+    else:
+        if 'core_reaction_indices' in channel:
+            raise ReportRefusal('ordinary owner cannot declare family core positions')
+        owners = ((_reaction_id(reaction), _core_reaction_position(channel)),)
+    for _, position in owners:
+        if position is not None and (type(position) is not int or not 0 <= position < len(heavy)):
+            raise ReportRefusal('invalid core reaction position: ' + str(position))
+    return owners
+
+
 def _qualification_text(qualification):
     if qualification is None:
         return 'not run'
@@ -602,16 +635,13 @@ def _validate_boundary(budget, channels, qualification, p1_rtol):
         if classification == 'B' and reaction is not None:
             raise ReportRefusal('channel classification disagrees with mapped reaction: '
                                 + description)
-        reaction_index = _reaction_id(reaction)
+        owners = _owner_positions(channel, heavy)
+        reaction_index = owners[0][0]
         if isinstance(reaction, dict) and 'repr' in reaction:
             _single_line(reaction['repr'], 'reaction repr')
         if isinstance(reaction, dict) and 'library' in reaction:
             _single_line(reaction['library'], 'reaction library')
-        position = _core_reaction_position(channel)
-        if position is not None and (
-                isinstance(position, bool) or not isinstance(position, int)
-                or position < 0 or position >= len(heavy)):
-            raise ReportRefusal('invalid core reaction position: ' + str(position))
+        position = owners[0][1]
         group_id = -1
         if classification == 'B':
             if 'flux_group' in channel:
@@ -636,7 +666,7 @@ def _validate_boundary(budget, channels, qualification, p1_rtol):
                 + ' (unresolved product syntax)')
         normalized_channels.append(_ValidatedChannel(
             channel_id, description, kind, classification, flux_group, group_id,
-            reaction_index, position, row,
+            reaction_index, position, row, owners,
         ))
     return _ValidatedInputs(
         numbers, powers, superelastic, heavy, energy_only, normalized_channels,
@@ -678,10 +708,10 @@ def power_table(budget, channels, *, qualification=None, p1_rtol=1e-3):
         raise ReportRefusal('Q_inelastic disagrees with net channels plus heavy transfer')
     mapped = {}
     for channel in declared_channels:
-        if channel.reaction_index is not None:
-            mapped.setdefault(channel.reaction_index, []).append(channel)
-    for rid, mapped_channels in mapped.items():
-        positions = {channel.core_reaction_position for channel in mapped_channels}
+        for identity, position in channel.owners:
+            if identity is not None:
+                mapped.setdefault(identity, set()).add(position)
+    for rid, positions in mapped.items():
         if None in positions:
             if any(value != 0. for value in heavy):
                 raise ReportRefusal('core reaction position unavailable: ' + str(rid))

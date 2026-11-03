@@ -3436,13 +3436,6 @@
       "test/rmgpy/data/kinetics/superelasticReworkTest.py::test_wrapped_rate_library_load"
     ]
   },
-  "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_to_core::check_resolved_species_reversibility#1": {
-    "verdict": "guarded",
-    "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
-    "tests": [
-      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_serialized_irreversible_declaration_survives_admission"
-    ]
-  },
   "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_to_edge::check_resolved_species_reversibility#1": {
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5603,11 +5596,20 @@
       "test/rmgpy/tools/eedf/channelMapTest.py::test_refuses_unowned_a_without_demotion"
     ]
   },
+  "rmgpy/rmg/model.py::CoreEdgeReactionModel._add_reaction_to_core::check_resolved_species_reversibility#1": {
+    "verdict": "guarded",
+    "reason": "Admission executor retains the existing irreversible resolved-state guard; public single admission and preflighted batch promotion both reach it.",
+    "tests": [
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_serialized_irreversible_declaration_survives_admission",
+      "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
+    ]
+  },
   "rmgpy/tools/eedf/ownership.py::reaction_product_state::reaction-io": {
     "verdict": "refused",
     "reason": "Cascade product binding refuses reversible reactions before mapping sourced product yields; no equilibrium reverse is constructed.",
     "tests": [
-      "test/rmgpy/tools/eedf/branchYieldTest.py"
+      "test/rmgpy/tools/eedf/branchYieldTest.py",
+      "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
     ]
   }
 }

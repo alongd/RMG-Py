@@ -135,7 +135,8 @@ JSON specs are also accepted. In YAML, write exponential numbers such as
   the ordered LoKI collision descriptions. Each entry has ``description``,
   ``kind``, ``classification`` (A/B/C/D), ``threshold_eV``, ``target_fraction``,
   ``product_fraction``, ``sigma_max_m2``, ``flux_group`` and ``reaction``.
-  ``reaction`` is null or ``{library, index, repr}``. Attachment entries also
+  ``reaction`` is null, ``{library, index, repr}``, or a versioned sourced
+  branch-family envelope (see below). Attachment entries also
   contain ``cross_section: {energy_eV, sigma_m2}`` for their energy moment.
   Every entry supplies its tabulated ``cross_section`` for independent EEDF
   moment qualification; elastic entries supply the physical ``mass_ratio``.
@@ -432,6 +433,78 @@ owners produce exit 2 and only ``conversion-report.json``, listing each process,
 threshold, products, gap status and requested owner. No A channel becomes B.
 Successful conversion writes a new map and spec; it does not generate or accept
 a table. The output directory must be new. Historical maps remain unchanged.
+
+Sourced product-family encoding
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A cascade marker adds three fields together to ``EEDFChannel``::
+
+    EEDFChannel(process='e + Ar(1S0) -> e + Ar(4p[1/2]1), Excitation',
+                collision_set='IST-Lisbon-Ar-2021', side='ine',
+                branch_product='Ar(1s5)', branch_yield=0.7420494699646644,
+                yield_table_sha256='<64 lowercase hexadecimal digits>')
+
+The digest identifies the generated ``argon_cascade_yields.yaml`` bytes.
+All four product branches, including explicit zero fractions, must be present.
+Fractions must be finite, nonnegative and at most one; their sum must differ
+from one by at most ``1e-12`` (absolute tolerance, with no renormalization).
+Null or unresolved source rows refuse. Branches are irreversible and cannot
+select ``sup``. The branch triple is immutable; constructing a new marker
+changes its source identity. Ordinary markers omit all three fields and
+retain their previous representation and positional constructor arguments.
+
+Conversion checks molecular identity, including electronic state and spin,
+rather than display labels: ``Ars`` with state ``3P2`` and multiplicity 3 is
+``Ar(1s5)``. The other products are ``3P1``/3, ``3P0``/3 and ``1P1``/1.
+Each reaction has exactly one electron and one ground-state neutral argon
+reactant, and one electron and its resolved argon product.
+
+The converter reads the generated and radiative source documents from the
+database's ``input/eedf`` directory. Optional ``--yield-table`` and
+``--radiative-source`` paths select explicit sources; ``--yield-table-sha256``
+and ``--source-sha256`` pin those bytes. Hashing and parsing use the same
+snapshot. A database without these files still supports ordinary owners.
+The conversion report's ``branch_families`` lists valid families even when
+other selected channels remain unresolved and prevent a runnable output.
+
+Each family occupies one collision's ``reaction`` field under
+``schema: eedf-branch-family/1``. It records collision id, process, threshold,
+collision set, E1 status, source digests, fixed normalization tolerance,
+complete product vector, transition ids, and four ordered source-entry and
+marker identities. The envelope is included once in ``row_inputs.reactions``;
+its bytes and the channel-map hash are part of the artifact fingerprint.
+Changed yields or source identities require a new artifact identity.
+An unchanged historical artifact remains a replay of its frozen source;
+runtime does not silently discover a newer database file. Outer schema 1
+and the interpolant identity are unchanged. Readers without family support
+reject the new union.
+
+At binding, each product reaction receives the single collision coefficient
+times its stored yield. The four reactions must be entirely in core or
+entirely in edge. Promoting a species that would move only part of a family
+refuses before species or reaction membership changes; direct single-reaction
+promotion has the same guard. Initial seed admission may be incremental,
+but an incomplete seed family cannot initialize a reactor.
+
+Electron energy loss remains one debit per physical collision, at the
+collision threshold. Per-reaction diagnostic powers are weighted by the
+same yields; explicit zero branches receive exactly zero rate and power.
+Each resolved product retains its own thermo enthalpy. The remaining energy
+``threshold_eV - (H_product(Tg) - H_reactant(Tg))/(Na*e)`` leaves the modeled
+material as prompt radiation. There is no photon reservoir or evolving
+heavy-gas energy equation in this closure. A negative radiated energy beyond
+``1e-9 eV`` of roundoff refuses binding, even for a zero-yield product.
+This residual reflects the threshold and thermo source conventions; it is
+not a replacement for independently sourced spectral line energies.
+
+Power reports retain one row per physical collision and check every branch
+for duplicate heavy-particle energy declarations. When a persisted report
+has nonzero heavy-particle transfers, its family channel records
+``core_reaction_indices`` in the envelope's product order, with all four
+positions present and unique.
+
+Artifact publication
+~~~~~~~~~~~~~~~~~~~~
 
 Publication writes the HDF5 file, manifest, generation spec and validation
 report in a sibling temporary directory before renaming it into place.

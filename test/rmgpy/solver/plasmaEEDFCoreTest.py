@@ -69,7 +69,7 @@ def species_and_reaction():
 def artifact(tmp_path, marker, composition=True, cold_mean=False, accepted=True,
              reaction_owned=True, gases=None, pressure=PRESSURE,
              epsilon_k_eV=None, include_ar4s_envelope=True,
-             variable_epsilon=False):
+             variable_epsilon=False, family=None):
     gases = list(gases or ['Ar'])
     axes = {'u': [0., 1., 2., 3.]}
     if composition:
@@ -108,7 +108,13 @@ def artifact(tmp_path, marker, composition=True, cold_mean=False, accepted=True,
             'composition': ({'x(Ars)': axes['x(Ars)'][x_index]} if composition else {}),
             'converged': True, 'iteration_count': -1, 'setup': 'fixture',
         }
-    identity = {'library': 'Toy', 'index': 1, 'repr': repr(marker)}
+    identity = (copy.deepcopy(family) if family is not None
+                else {'library': 'Toy', 'index': 1, 'repr': repr(marker)})
+    if family is not None:
+        for row in rows.flat:
+            row['k_sup'][0] = 0.
+            row['product_fractions'][0] = 0.
+            row['channel_power'][0] = row['k_ine'][0] * family['threshold_eV']
     model = {
         'axes': axes, 'Tg_K': TGAS, 'P_Pa': pressure,
         'arm': {'gases': gases, 'additive': None, 'feed_partial_pressure_Pa': 0.},
@@ -149,6 +155,8 @@ def artifact(tmp_path, marker, composition=True, cold_mean=False, accepted=True,
                          'classification': 'B', 'reaction': None, 'mass_ratio': 1.e-5}],
         'energy_eV': [.5], 'energy_edges_eV': [0., 1.],
     }
+    if family is not None:
+        manifest['channel_map'][0].update(kind='excitation', threshold_eV=family['threshold_eV'])
     path = _write_artifact(tmp_path, manifest, {'branch_0': rows}, [])
     return path
 

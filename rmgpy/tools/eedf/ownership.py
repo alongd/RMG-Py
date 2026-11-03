@@ -342,3 +342,47 @@ def make_branch_family(snapshot, channel_id, process, threshold_eV, collision_se
         yield_table_sha256=snapshot['yield_table_sha256'], source_sha256=snapshot['source_sha256'],
         sum_atol=YIELD_SUM_ATOL, product_yields=row['product_yields'],
         transition_ids=row['transition_ids'], branches=branches))
+
+
+def validate_bound_branch(family, reaction):
+    """Match a runtime reaction to a previously validated family snapshot."""
+    product = reaction_product_state(reaction)
+    marker = reaction.kinetics
+    entry = getattr(reaction, 'entry', None)
+    actual = dict(product=product, library=getattr(reaction, 'library', None),
+                  index=getattr(entry, 'index', None), repr=repr(marker))
+    expected = next(owner for owner in family['branches'] if owner['product'] == product)
+    if actual != expected:
+        raise FingerprintMismatch('cascade branch reaction identity differs from sourced family')
+    return product
+
+
+def check_branch_promotion(core, edge, proposed):
+    """Preflight a complete promotion before changing any model membership.
+
+    Initial seed admission is incremental. Once any family member is in the
+    edge, admission to core must move the entire four-product family at once.
+    Reactor binding separately refuses an incomplete initial seed family.
+    """
+    def key(reaction):
+        marker = reaction.kinetics
+        if getattr(marker, 'branch_product', None) is None:
+            return None
+        if not isinstance(marker.process, str) or not isinstance(marker.collision_set, str):
+            raise SpecError('cascade promotion requires a string collision identity')
+        return (marker.process, marker.collision_set, marker.yield_table_sha256)
+
+    touched = {key(reaction) for reaction in proposed} - {None}
+    if not touched:
+        return
+    edge_keys = {key(reaction) for reaction in edge} - {None}
+    for family_key in touched & edge_keys:
+        members = []
+        for reaction in list(core) + list(edge) + list(proposed):
+            if key(reaction) == family_key and reaction not in members:
+                members.append(reaction)
+        products = [reaction.kinetics.branch_product for reaction in members]
+        if len(products) != len(ARGON_PRODUCTS) or set(products) != set(ARGON_PRODUCTS):
+            raise SpecError('cascade promotion requires a complete four-product family')
+        if any(reaction in edge and reaction not in proposed for reaction in members):
+            raise SpecError('split cascade family promotion between core and edge is unsupported')

@@ -1532,6 +1532,16 @@ class CoreEdgeReactionModel:
 
         assert spec not in self.core.species, "Tried to add species {0} to core, but it's already there".format(spec.label)
 
+        # Check the complete proposed reaction move before touching either the
+        # species lists or the reaction lists. A later reactor refusal cannot
+        # undo a partially promoted cascade family.
+        proposed = []
+        if spec in self.edge.species:
+            future_core = self.core.species + [spec]
+            proposed = [rxn for rxn in self.edge.reactions
+                        if all(spc in future_core for spc in rxn.reactants + rxn.products)]
+            self._check_cascade_promotion(proposed)
+
         forbidden_structures = get_db("forbidden")
 
         # check RMG globally forbidden structures
@@ -1573,7 +1583,7 @@ class CoreEdgeReactionModel:
 
             # Move any identified reactions to the core
             for rxn in rxn_list:
-                self.add_reaction_to_core(rxn, requires_rms=requires_rms)
+                self._add_reaction_to_core(rxn, requires_rms=requires_rms)
                 logging.debug("Moving reaction from edge to core: %s", rxn)
         elif requires_rms:
             destination_phase = "Surface" if spec.molecule[0].contains_surface_site() else "Default"
@@ -1893,7 +1903,24 @@ class CoreEdgeReactionModel:
             self.species_cache.remove(spec)
             self.species_cache.append(None)
 
+    def _check_cascade_promotion(self, proposed):
+        """Refuse a split family before any core/edge membership changes."""
+        from rmgpy.exceptions import PlasmaStateError
+        from rmgpy.tools.eedf.ownership import check_branch_promotion
+        try:
+            check_branch_promotion(self.core.reactions, self.edge.reactions, proposed)
+        except ValueError as error:
+            raise PlasmaStateError(str(error)) from error
+
     def add_reaction_to_core(self, rxn, requires_rms=False):
+        """Admit a single reaction only if it does not split an edge cascade."""
+        # Keep the public admission gate explicit for the database's source
+        # contract; the batch executor also checks each preflighted reaction.
+        check_quarantine(rxn, stage='admission to the model core')
+        self._check_cascade_promotion([rxn])
+        self._add_reaction_to_core(rxn, requires_rms=requires_rms)
+
+    def _add_reaction_to_core(self, rxn, requires_rms=False):
         """
         Add a reaction `rxn` to the reaction model core (and remove from edge if
         necessary). This function assumes `rxn` has already been checked to
