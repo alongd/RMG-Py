@@ -1150,7 +1150,9 @@ def _end_site(info: dict, t: dict, nbb: int) -> str:
 def _polynomial_from(values: Dict[int, float], degree: int, top: int) -> Tuple[Optional[int], Optional[list]]:
     """(n0, [c0..c_degree]) with values[n] = sum c_i n^i on every n in [n0,
     top], n0 the smallest such (the fit through the top degree + 1 lengths,
-    within POSITION_RELATIVE of the largest value); (None, None) if none."""
+    within POSITION_RELATIVE of the value at each length, _exact_at), on
+    max(CHECKED_LENGTHS, degree + 2) lengths at least (one tested degree of
+    freedom); (None, None) if none."""
     pts = list(range(top - degree, top + 1))
     if any(n not in values for n in pts):
         return None, None
@@ -1165,16 +1167,15 @@ def _polynomial_from(values: Dict[int, float], degree: int, top: int) -> Tuple[O
             denom *= ni - nj
         for k, c in enumerate(basis):
             coeffs[k] += values[ni] * c / denom
-    scale = max([abs(v) for v in values.values()] + [1e-300])
     n0 = top + 1
     for n in range(top, min(values) - 1, -1):
         if n not in values:
             break
         fit = sum(c * n ** k for k, c in enumerate(coeffs))
-        if abs(fit - values[n]) > POSITION_RELATIVE * scale:
+        if not _exact_at(fit, values[n], sum(abs(c * n ** k) for k, c in enumerate(coeffs)), POSITION_RELATIVE):
             break
         n0 = n
-    return (n0, coeffs) if n0 <= top - degree else (None, None)
+    return (n0, coeffs) if top - n0 + 1 >= max(CHECKED_LENGTHS, degree + 2) else (None, None)
 
 
 def _pair_sites(terms, rows, families, family, cls, nbb, where):
@@ -1250,8 +1251,54 @@ class _Unmapped(Exception):
     """A template (group) of a pair-transfer kernel with no exact moment form: listed, never dropped."""
 
 
-SITE_LAW_RELATIVE = 1.0e-9       # a kernel's moment law against the table's site sums on the checked lengths
+SITE_LAW_RELATIVE = 1.0e-9       # a kernel's moment law against the table's site sums, at each checked length
 SITE_LAW_MARGIN = 4              # lengths checked past every exact law and chain edge (the far rule's own)
+LAW_ROUNDING = 64 * sys.float_info.epsilon   # evaluating a law: relative to the summed sizes of its terms there
+CHECKED_LENGTHS = 3              # a far law's every row and column rests on this many checked lengths at least:
+                                 # one tested degree of freedom past the two that fix an affine law
+CHECKED_TOP_LIMIT = 2            # a term with no such law has its checked top extended to this times its own
+
+
+def _exact_at(law: float, exact: float, size: float, relative: float = SITE_LAW_RELATIVE) -> bool:
+    """A law's value at one length is the exact rate there: within ``relative`` of the larger of the two at that
+    length (never of a larger rate at another length of the term, which would mask a law wrong where the rates
+    are small, I-291), plus the rounding of evaluating the law (LAW_ROUNDING of ``size``, the summed sizes of
+    its terms at that length)."""
+    return abs(law - exact) <= relative * max(abs(law), abs(exact)) + LAW_ROUNDING * size
+
+
+def _tail_negative(c: Sequence[float], n0: int) -> Optional[str]:
+    """Where a far law is negative on its tail (every length from n0, both participants for a pair), as text;
+    None if it is nonnegative there.  ``c``: [B, A] (B + A n) or [c00, c10, c01, c11] (c00 + c10 n + c01 m +
+    c11 n m).  An affine law is nonnegative on [n0, inf) iff its value at n0 and its slope are; a bilinear one on
+    [n0, inf)^2 iff its value at (n0, n0), its slopes there (c10 + c11 n0 in n, c01 + c11 n0 in m) and c11 are."""
+    if len(c) == 2:
+        b, a = c
+        if b + a * n0 < 0.0:
+            return f"negative at n = {n0}: {b + a * n0!r}"
+        if a < 0.0:
+            return f"slope {a!r} in n: negative from n = {math.floor(-b / a) + 1}"
+        return None
+    c00, c10, c01, c11 = c
+    parts = [f"{what} {v!r}" for what, v in (
+        (f"value at (n, m) = ({n0}, {n0})", c00 + (c10 + c01) * n0 + c11 * n0 * n0),
+        (f"slope in n at m = {n0}", c10 + c11 * n0), (f"slope in m at n = {n0}", c01 + c11 * n0),
+        ("coefficient of n m", c11)) if v < 0.0]
+    return f"negative on its tail: {', '.join(parts)}" if parts else None
+
+
+def _fit_extending(fit, values, floor: int, top: int) -> Tuple[Optional[int], Optional[list], float, int]:
+    """(n0, c, worst, checked top): ``fit(values(t), floor, t)`` (_bilinear or _affine, whose laws rest on
+    CHECKED_LENGTHS lengths at least) at the checked top t = ``top``; while it finds no law, t is extended one
+    length at a time, up to CHECKED_TOP_LIMIT * top, and the fit recomputed on the exact rates ``values(t)``
+    returns for every length from ``floor`` to t.  n0 is None if no law rests on CHECKED_LENGTHS checked lengths
+    by the limit: the term is refused (listed by the caller with the top it was checked to)."""
+    t = top
+    n0, c, worst = fit(values(t), floor, t)
+    while n0 is None and t < CHECKED_TOP_LIMIT * top:
+        t += 1
+        n0, c, worst = fit(values(t), floor, t)
+    return n0, c, worst, t
 
 
 def _label_of(families: dict):
@@ -1325,12 +1372,13 @@ def _law_top(laws: Sequence[dict], floor: int, nbb: int) -> int:
 
 def _bilinear(F: Dict[Tuple[int, int], float], floor: int, top: int) -> Tuple[Optional[int], Optional[list], float]:
     """(n0, [c00, c10, c01, c11], worst) with F(n, m) = c00 + c10 n + c01 m
-    + c11 n m on every n, m in [n0, top], n0 the smallest from ``floor``
-    (None if none), and worst the largest relative difference on the lengths
-    below n0."""
+    + c11 n m on every n, m in [n0, top] (each length checked on its own,
+    _exact_at), n0 the smallest from ``floor`` with CHECKED_LENGTHS lengths
+    in [n0, top] (None if none), and worst the largest relative difference
+    on the lengths below n0."""
     scale = max(abs(v) for v in F.values())
-    tol = SITE_LAW_RELATIVE * scale
-    for n0 in range(floor, top - 1):
+    tol = SITE_LAW_RELATIVE * scale        # which slopes the first candidate drops; never the acceptance test
+    for n0 in range(floor, top - CHECKED_LENGTHS + 2):
         f = lambda a, b: F[(a, b)]
         raw11 = f(n0 + 1, n0 + 1) - f(n0, n0 + 1) - f(n0 + 1, n0) + f(n0, n0)
         raw10 = f(n0 + 1, n0) - f(n0, n0) - raw11 * n0
@@ -1341,7 +1389,8 @@ def _bilinear(F: Dict[Tuple[int, int], float], floor: int, top: int) -> Tuple[Op
                                0.0 if abs(raw11) * top * top <= tol else raw11), (raw10, raw01, raw11)):
             c00 = f(n0, n0) - c10 * n0 - c01 * n0 - c11 * n0 * n0
             law = lambda a, b: c00 + c10 * a + c01 * b + c11 * a * b
-            if all(abs(law(a, b) - v) <= tol for (a, b), v in F.items() if a >= n0 and b >= n0):
+            size = lambda a, b: abs(c00) + abs(c10 * a) + abs(c01 * b) + abs(c11 * a * b)
+            if all(_exact_at(law(a, b), v, size(a, b)) for (a, b), v in F.items() if a >= n0 and b >= n0):
                 worst = max([abs(law(a, b) - v) / max(abs(law(a, b)), abs(v)) for (a, b), v in F.items()
                              if (a < n0 or b < n0) and max(abs(law(a, b)), abs(v)) > 0.0], default=0.0)
                 return n0, [c00, c10, c01, c11], worst
@@ -1350,14 +1399,15 @@ def _bilinear(F: Dict[Tuple[int, int], float], floor: int, top: int) -> Tuple[Op
 
 def _affine(r: Dict[int, float], floor: int, top: int) -> Tuple[Optional[int], Optional[list], float]:
     """(n0, [B, A], worst) with r(n) = A n + B on every n in [n0, top]
-    (_bilinear's rule in one length)."""
+    (_bilinear's rule in one length: per length, on CHECKED_LENGTHS lengths
+    at least)."""
     scale = max(abs(v) for v in r.values())
-    tol = SITE_LAW_RELATIVE * scale
-    for n0 in range(floor, top):
+    tol = SITE_LAW_RELATIVE * scale        # which slope the first candidate drops; never the acceptance test
+    for n0 in range(floor, top - CHECKED_LENGTHS + 2):
         raw = r[n0 + 1] - r[n0]
         for A in ((0.0 if abs(raw) * top <= tol else raw), raw):
             B = r[n0] - A * n0
-            if all(abs(A * n + B - v) <= tol for n, v in r.items() if n >= n0):
+            if all(_exact_at(A * n + B, v, abs(A * n) + abs(B)) for n, v in r.items() if n >= n0):
                 worst = max([abs(A * n + B - v) / max(abs(A * n + B), abs(v)) for n, v in r.items()
                              if n < n0 and max(abs(A * n + B), abs(v)) > 0.0], default=0.0)
                 return n0, [B, A], worst
@@ -1380,13 +1430,12 @@ def _site_or_none(law, n, nbb, label_of, family_of) -> Optional[Dict[str, float]
         return None
 
 
-def _pair_exact_from(members, laws, fam0, fam1, c, n0, top, F, nbb, label_of, family_of) -> List[int]:
+def _pair_exact_from(members, laws, fam0, fam1, c, n0, top, nbb, label_of, family_of) -> List[int]:
     """Per participant, the shortest length from which a pair term's law
     c00 + c10 n + c01 m + c11 n m is the table's sum_T (w/divisor) s0(n)
     s1(m) for every length of the other participant from the fit start n0
     to the checked top (the scan goes below the reachable floor, down to the
     first miscount or a length the table has no state for)."""
-    tol = SITE_LAW_RELATIVE * max(abs(v) for v in F.values())
     cache = {}
 
     def site(name, slot, n):
@@ -1401,12 +1450,13 @@ def _pair_exact_from(members, laws, fam0, fam1, c, n0, top, F, nbb, label_of, fa
             if s0 is None or s1 is None:
                 return False
             terms.append(k * s0.get(fam0, 0.0) * s1.get(fam1, 0.0))
-        return abs(c[0] + c[1] * n + c[2] * m + c[3] * n * m - math.fsum(terms)) <= tol
+        return _exact_at(c[0] + c[1] * n + c[2] * m + c[3] * n * m, math.fsum(terms),
+                         abs(c[0]) + abs(c[1] * n) + abs(c[2] * m) + abs(c[3] * n * m))
     return [_exact_down(n0, lambda n: all(ok(n, m) for m in range(n0, top + 1))),
             _exact_down(n0, lambda m: all(ok(n, m) for n in range(n0, top + 1)))]
 
 
-def _move_exact_at(members, laws, fam, c, n, r, nbb, label_of, family_of) -> bool:
+def _move_exact_at(members, laws, fam, c, n, nbb, label_of, family_of) -> bool:
     """A move term's law c0 + c1 n is the table's sum_T w s(n) at n."""
     terms = []
     for name, w, _s in members:
@@ -1414,7 +1464,7 @@ def _move_exact_at(members, laws, fam, c, n, r, nbb, label_of, family_of) -> boo
         if s is None:
             return False
         terms.append(w * s.get(fam, 0.0))
-    return abs(c[0] + c[1] * n - math.fsum(terms)) <= SITE_LAW_RELATIVE * max(abs(v) for v in r.values())
+    return _exact_at(c[0] + c[1] * n, math.fsum(terms), abs(c[0]) + abs(c[1] * n))
 
 
 def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: float, phi: float, label: str,
@@ -1475,7 +1525,16 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     backbiting): per product family sum_T w_T s_T(n) = A n + B the same way,
     ``kernel_move`` k*(a n + b) with k the larger of |A|, |B|; one that keeps
     its pool (a mid-chain radical's own shift) changes no moment and is
-    listed under ``identity``.  A law exact only from a longer length n0 is
+    listed under ``identity``.  Every law is checked against the exact rate
+    at each checked length on its own (``_exact_at``: a large rate at another
+    length cannot widen the tolerance) and rests on CHECKED_LENGTHS lengths
+    at least; a term with no such law has its checked top extended, to
+    CHECKED_TOP_LIMIT times it (``checked_top_extensions`` lists each with
+    what it resolved to), and one still without is listed under
+    ``unmapped`` with the top it was checked to.  Rates zero from some length
+    on are the zero law there (a short-only channel); a far law negative
+    anywhere on its tail is refused (ProducerError naming every such term).
+    A law exact only from a longer length n0 is
     listed under ``unmapped`` unless ``far_law``, which maps it from n0 and
     lists the shorter lengths and their largest relative difference under
     ``short_lengths``.  A template (group) whose law fails, or whose products
@@ -2029,6 +2088,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                                 f"shorter than {n_h}, where the homolysis kernel's law holds")
     floor = n_min if e_min is None else min(n_min, e_min)
     transfer, move, unmapped, identity, short = {}, {}, [], [], []
+    extended, negative = [], []
 
     def owner_families(kid, kernel):
         nonlocal radical
@@ -2075,6 +2135,21 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
         else:
             unmapped.append({"kernel": kid, "templates": names, "pools": pools_read, "reason": (
                 f"its flow is zero from {n0} periods and nonzero to {max(values)} periods only")})
+
+    def extension(kid, names, pools_read, top, checked, n0, c):
+        """The record of a term whose checked top was extended past ``top`` (I-291): what it was checked to and
+        what it resolved to (a law from n0, the zero law, or none: refused)."""
+        if checked > top:
+            extended.append({"kernel": kid, "templates": names, "pools": pools_read, "checked_top_periods": top,
+                             "extended_to_periods": checked, "law_from_periods": n0,
+                             "resolved": "refused" if n0 is None else "zero law" if not any(c) else "law"})
+
+    def refused_negative(kid, names, pools_read, c, n0):
+        """A far law negative anywhere on its tail is never emitted: named here, refused together below."""
+        why = _tail_negative(c, n0)
+        if why is not None:
+            negative.append(f"{kid} templates {names} (pools {pools_read}), law {list(c)} from {n0} periods: {why}")
+        return why is not None
 
     # positions (I-273): transfers, moves and interior beta scission by position-class pool
     interior_scission = {}
@@ -2138,17 +2213,39 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                 inert.append({"kernel": kid, "templates": names,
                               "reason": f"no site on lengths from {floor} periods (inert on this deck)"})
                 continue
-            F = {(n, m): math.fsum(k * s[0][n].get(key0, 0.0) * s[1][m].get(key1, 0.0) for _n, k, s in members)
-                 for n in range(floor, top + 1) for m in range(floor, top + 1)}
-            n0, c, worst = _bilinear(F, floor, top)
+            F = {}
+
+            def pair_values(t, members=members, key0=key0, key1=key1, F=F):
+                """F on every (n, m) in [floor, t]^2, the members' slot flows extended to t as needed."""
+                for name, _k, sites in members:
+                    for p, (law, near) in enumerate(laws[name]):
+                        for n in range(floor, t + 1):
+                            if n not in sites[p]:
+                                sites[p][n] = slot_flows(law, near, classes[p], n, (kid, name))
+                for n in range(floor, t + 1):
+                    for m in range(floor, t + 1):
+                        if (n, m) not in F:
+                            F[(n, m)] = math.fsum(k * s[0][n].get(key0, 0.0) * s[1][m].get(key1, 0.0)
+                                                  for _n, k, s in members)
+                return F
+            try:
+                n0, c, worst, checked = _fit_extending(_bilinear, pair_values, floor, top)
+            except _Unmapped as why:
+                unmapped.append({"kernel": kid, "templates": names, "pools": [*key0, *key1], "reason": (
+                    f"past the checked top {top} periods: {why}")})
+                continue
+            extension(kid, names, [*key0, *key1], top, checked, n0, c)
             if n0 is None:
                 lo, hi = min(F, key=F.get), max(F, key=F.get)
                 unmapped.append({"kernel": kid, "templates": names, "pools": [*key0, *key1], "reason": (
-                    f"sum_T (w/divisor) s0(n) s1(m) is not one constant, nor bilinear in n and m, on lengths from "
-                    f"{floor} periods: {F[lo]!r} at (n, m) = {lo}, {F[hi]!r} at {hi}")})
+                    f"sum_T (w/divisor) s0(n) s1(m) is not one constant, nor bilinear in n and m, on {CHECKED_LENGTHS} "
+                    f"lengths at least from {floor} periods (checked to {checked} periods): {F[lo]!r} at (n, m) = "
+                    f"{lo}, {F[hi]!r} at {hi}")})
                 continue
             if not any(c):
                 short_only(kid, names, [*key0, *key1], n0, sorted({min(nm) for nm, v in F.items() if v}))
+                continue
+            if refused_negative(kid, names, [*key0, *key1], c, n0):
                 continue
             if n0 > floor and not short_lengths(
                     kid, names, n0, worst, "sum_T (w/divisor) s0(n) s1(m) is not one constant, nor bilinear in n "
@@ -2177,7 +2274,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                        "products": [pool_family[dst0], pool_family[dst1]], "pools": [src0, src1, dst0, dst1],
                        "coefficients": [entry["phi"] * x for x in c]}, (src0, src1, dst0, dst1))
             checks[label_t] = {"kernel": kid, "templates": names, "reachable_from_periods": floor,
-                               "law_from_periods": n0, "checked_to_periods": top, "sites_law": c}
+                               "law_from_periods": n0, "checked_to_periods": checked, "sites_law": c}
     for kid, kernel in (by_type["move"] if positions else []):
         owners_have_pools(kid, kernel)
         cls = kernel["classes"][0]
@@ -2200,14 +2297,35 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                 identity.append({"kernel": kid, "templates": names,
                                  "reason": f"its products stay in the {src!r} pool, lengths unchanged"})
                 continue
-            r = {n: math.fsum(w * s[n].get((src, dst), 0.0) for _n, w, s in members) for n in range(floor, top + 1)}
-            n0, c, worst = _affine(r, floor, top)
+            r = {}
+
+            def move_values(t, members=members, src=src, dst=dst, r=r):
+                """r on every n in [floor, t], the members' flows extended to t as needed."""
+                for name, _w, sites in members:
+                    law, near = laws[name]
+                    for n in range(floor, t + 1):
+                        if n not in sites:
+                            sites[n] = slot_flows(law, near, cls, n, (kid, name))
+                for n in range(floor, t + 1):
+                    if n not in r:
+                        r[n] = math.fsum(w * s[n].get((src, dst), 0.0) for _n, w, s in members)
+                return r
+            try:
+                n0, c, worst, checked = _fit_extending(_affine, move_values, floor, top)
+            except _Unmapped as why:
+                unmapped.append({"kernel": kid, "templates": names, "pools": [src, dst], "reason": (
+                    f"past the checked top {top} periods: {why}")})
+                continue
+            extension(kid, names, [src, dst], top, checked, n0, c)
             if n0 is None:
                 unmapped.append({"kernel": kid, "templates": names, "pools": [src, dst], "reason": (
-                    f"sum_T w s(n) is not affine in n on lengths from {floor} periods")})
+                    f"sum_T w s(n) is not affine in n on {CHECKED_LENGTHS} lengths at least from {floor} periods "
+                    f"(checked to {checked} periods)")})
                 continue
             if not any(c):
                 short_only(kid, names, [src, dst], n0, [n for n, v in r.items() if v])
+                continue
+            if refused_negative(kid, names, [src, dst], c, n0):
                 continue
             if n0 > floor and not short_lengths(kid, names, n0, worst, "sum_T w s(n) is not affine in n"):
                 continue
@@ -2222,7 +2340,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                        "families": [pool_family[src]], "products": [pool_family[dst]], "pools": [src, dst],
                        "coefficients": [c[0], c[1]]}, (src, dst))
             checks[label_t] = {"kernel": kid, "templates": names, "reachable_from_periods": floor,
-                               "law_from_periods": n0, "checked_to_periods": top, "rate_law": [c[0], c[1]]}
+                               "law_from_periods": n0, "checked_to_periods": checked, "rate_law": [c[0], c[1]]}
     for kid, kernel in ([] if types else by_type["interior_scission"]):
         (cls,) = kernel["classes"]
         fam = family_of[cls]
@@ -2411,18 +2529,41 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                     groups.setdefault((fam0, fam1, bool(row["phi_thinned"])), []).append((name, k, sites))
         for (fam0, fam1, thinned), members in sorted(groups.items(), key=lambda x: [str(v) for v in x[0]]):
             names = sorted({n for n, _k, _s in members})
-            F = {(n, m): math.fsum(k * s[0][n].get(fam0, 0.0) * s[1][m].get(fam1, 0.0) for _n, k, s in members)
-                 for n in range(floor, top + 1) for m in range(floor, top + 1)}
+            F = {}
+
+            def pair_values(t, members=members, fam0=fam0, fam1=fam1, F=F):
+                """F on every (n, m) in [floor, t]^2, the members' sites extended to t as needed."""
+                for name, _k, sites in members:
+                    for p, law in enumerate(laws[name]):
+                        for n in range(floor, t + 1):
+                            if n not in sites[p]:
+                                sites[p][n] = _sites_at(law, n, nbb, label_of, family_of)
+                for n in range(floor, t + 1):
+                    for m in range(floor, t + 1):
+                        if (n, m) not in F:
+                            F[(n, m)] = math.fsum(k * s[0][n].get(fam0, 0.0) * s[1][m].get(fam1, 0.0)
+                                                  for _n, k, s in members)
+                return F
+            pair_values(top)
             if fam0 is None or fam1 is None or max(F.values()) <= 0.0:
                 inert.append({"kernel": kid, "templates": names,
                               "reason": f"no site on lengths from {floor} periods (inert on this deck)"})
                 continue
-            n0, c, worst = _bilinear(F, floor, top)
+            try:
+                n0, c, worst, checked = _fit_extending(_bilinear, pair_values, floor, top)
+            except _Unmapped as why:
+                unmapped.append({"kernel": kid, "templates": names, "reason": f"past the checked top {top} periods: "
+                                                                               f"{why}"})
+                continue
+            extension(kid, names, [fam0, fam1], top, checked, n0, c)
             if n0 is None:
                 lo, hi = min(F, key=F.get), max(F, key=F.get)
                 unmapped.append({"kernel": kid, "templates": names, "reason": (
-                    f"sum_T (w/divisor) s0(n) s1(m) is not one constant, nor bilinear in n and m, on lengths from "
-                    f"{floor} periods: {F[lo]!r} at (n, m) = {lo}, {F[hi]!r} at {hi}")})
+                    f"sum_T (w/divisor) s0(n) s1(m) is not one constant, nor bilinear in n and m, on {CHECKED_LENGTHS} "
+                    f"lengths at least from {floor} periods (checked to {checked} periods): {F[lo]!r} at (n, m) = "
+                    f"{lo}, {F[hi]!r} at {hi}")})
+                continue
+            if refused_negative(kid, names, [fam0, fam1], c, n0):
                 continue
             if n0 > floor and not short_lengths(
                     kid, names, n0, worst, "sum_T (w/divisor) s0(n) s1(m) is not one constant, nor bilinear in n "
@@ -2431,7 +2572,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             joined = "+".join(names)
             entry = {"template": joined, "phi": float(phi) if thinned else 1.0, "partner": pools[owners[1]],
                      "product": pools[fam0], "partner_product": pools[fam1], "valid_from_periods": n0}
-            exact = _pair_exact_from(members, laws, fam0, fam1, c, n0, top, F, nbb, label_of, family_of)
+            exact = _pair_exact_from(members, laws, fam0, fam1, c, n0, checked, nbb, label_of, family_of)
             validity.append({"kernel": kid, "template": joined, "families": sorted(set(owners)),
                              "valid_from_periods": n0, "fit_from_periods": n0,
                              "participants": [{"slot": p, "family": owners[p], "exact_from_periods": exact[p]}
@@ -2440,7 +2581,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                              "families": list(owners), "products": [fam0, fam1],
                              "coefficients": [entry["phi"] * x for x in c]})
             check = {"kernel": kid, "templates": names, "reachable_from_periods": floor, "law_from_periods": n0,
-                     "checked_to_periods": top}
+                     "checked_to_periods": checked}
             if not any(c[1:]):
                 entry["k_pair"] = c[0] * float(volume_ratio)
                 check["w_over_divisor_sites"] = c[0]
@@ -2478,15 +2619,36 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                 identity.append({"kernel": kid, "templates": names,
                                  "reason": f"its products stay in the {fam!r} pool, lengths unchanged"})
                 continue
-            r = {n: math.fsum(w * s[n].get(fam, 0.0) for _n, w, s in members) for n in range(floor, top + 1)}
+            r = {}
+
+            def move_values(t, members=members, fam=fam, r=r):
+                """r on every n in [floor, t], the members' sites extended to t as needed."""
+                for name, _w, sites in members:
+                    for n in range(floor, t + 1):
+                        if n not in sites:
+                            sites[n] = _sites_at(laws[name], n, nbb, label_of, family_of)
+                for n in range(floor, t + 1):
+                    if n not in r:
+                        r[n] = math.fsum(w * s[n].get(fam, 0.0) for _n, w, s in members)
+                return r
+            move_values(top)
             if max(r.values()) <= 0.0:
                 inert.append({"kernel": kid, "templates": names,
                               "reason": f"no site on lengths from {floor} periods (inert on this deck)"})
                 continue
-            n0, c, worst = _affine(r, floor, top)
+            try:
+                n0, c, worst, checked = _fit_extending(_affine, move_values, floor, top)
+            except _Unmapped as why:
+                unmapped.append({"kernel": kid, "templates": names, "reason": f"past the checked top {top} periods: "
+                                                                               f"{why}"})
+                continue
+            extension(kid, names, [owner, fam], top, checked, n0, c)
             if n0 is None:
                 unmapped.append({"kernel": kid, "templates": names, "reason": (
-                    f"sum_T w s(n) is not affine in n on lengths from {floor} periods")})
+                    f"sum_T w s(n) is not affine in n on {CHECKED_LENGTHS} lengths at least from {floor} periods "
+                    f"(checked to {checked} periods)")})
+                continue
+            if refused_negative(kid, names, [owner, fam], c, n0):
                 continue
             if n0 > floor and not short_lengths(kid, names, n0, worst, "sum_T w s(n) is not affine in n"):
                 continue
@@ -2495,14 +2657,14 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
             move.setdefault(pools[owner], []).append({"template": joined, "k": scale, "a": c[1] / scale,
                                                       "b": c[0] / scale, "periods_per_unit": ppu,
                                                       "product": pools[fam], "valid_from_periods": n0})
-            exact = _exact_down(n0, lambda n: _move_exact_at(members, laws, fam, c, n, r, nbb, label_of, family_of))
+            exact = _exact_down(n0, lambda n: _move_exact_at(members, laws, fam, c, n, nbb, label_of, family_of))
             validity.append({"kernel": kid, "template": joined, "families": [owner], "valid_from_periods": n0,
                              "fit_from_periods": n0,
                              "participants": [{"slot": 0, "family": owner, "exact_from_periods": exact}]})
             laws_out.append({"kernel": kid, "template": joined, "templates": names, "kind": "uni",
                              "families": [owner], "products": [fam], "coefficients": [c[0], c[1]]})
             checks[joined] = {"kernel": kid, "templates": names, "reachable_from_periods": floor,
-                              "law_from_periods": n0, "checked_to_periods": top, "rate_law": [c[0], c[1]]}
+                              "law_from_periods": n0, "checked_to_periods": checked, "rate_law": [c[0], c[1]]}
     # end classes: a slot's sites per length (its far count, or the constant count of a short class at its
     # lengths) and the shortest length from which they are that constant
     def slot_sites(kid, cls, count, name):
@@ -2846,6 +3008,9 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
                                "reactants": o["reactants"], "products": o["products"],
                                "multiplicity": o["multiplicity"], "w_kmc": o["weight"], "w_mom": w_mom,
                                "kmc_over_mom": o["weight"] / w_mom})
+    if negative:
+        raise ProducerError(f"far laws negative on their tail (refused; the exact rates are not, I-291): "
+                            f"{'; '.join(negative)}")
     # I-282: a kernel carries its mapped templates; the ones it omits are each listed with a reason elsewhere
     # in the record, and named and counted here per partly mapped kernel
     omitted_by = {}
@@ -2866,7 +3031,7 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
               "temperature_K": float(table["temperature_K"]), "phi": float(phi), "moment_unit": unit,
               "volume_ratio_mom_over_kmc": float(volume_ratio), "radical_class": radical, "checks": checks,
               "far_law": bool(far_law), "unmapped": unmapped, "inert": inert, "identity": identity,
-              "short_lengths": short, "validity": validity, "laws": laws_out,
+              "short_lengths": short, "checked_top_extensions": extended, "validity": validity, "laws": laws_out,
               "depository_departures": departures, "position_departures": position_departures,
               "size_departures": size_departures, "laws_outside_attribution": outside_attribution,
               "partial_kernels": partial_kernels, "propagation_shared": propagation_shared,
@@ -3347,7 +3512,11 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
              "radical pool's k_depropagation (A the table's k_per_feature, n = Ea = 0), the monomer's addition "
              "as its kernel_propagation (k_pair (w/divisor) s_monomer s_radical V_poly / V, the monomer at n / "
              "V_poly as in kMC's melt), the monomer a gas species (record.monomer); templates acting at single "
-             "sizes only in record.size_departures; with record.far_law a law exact only from a longer length "
+             "sizes only in record.size_departures; a law is exact at each checked length on its own (never "
+             "within a tolerance set by the term's largest rate), on 3 checked lengths at least (the checked "
+             "top extended to twice itself for a term with none, record.checked_top_extensions), rates zero "
+             "from a length on the zero law there, a far law negative on its tail refused; "
+             "with record.far_law a law exact only from a longer length "
              "is mapped from there and "
              "the shorter lengths recorded (record.short_lengths), else listed; templates it cannot map are "
              "listed in record.unmapped, templates the table gives no law in record.inert (rate 0 in the "
