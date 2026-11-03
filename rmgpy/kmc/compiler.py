@@ -4997,7 +4997,7 @@ class EventSetCompiler:
         """
         if proxy.site_type in self.reaction_cache:
             return (
-                self._canonical_participants(_without_reaction_labels(reaction))
+                self.compile_input(reaction)
                 for reaction in self.reaction_cache[proxy.site_type]
                 if reaction.family in self.families
             )
@@ -5012,7 +5012,14 @@ class EventSetCompiler:
                     resonance=True,
                 )
             )
-        return [self._canonical_participants(_without_reaction_labels(reaction)) for reaction in reactions]
+        return [self.compile_input(reaction) for reaction in reactions]
+
+    def compile_input(self, reaction):
+        """A generated reaction as the compiler takes it: RMG's reaction labels
+        cleared and the participants of a single-Root bimolecular family in
+        canonical order.  Every path from the generator to the candidate loop
+        goes through here (``_generate``, and the sharded build stage)."""
+        return self._canonical_participants(_without_reaction_labels(reaction))
 
     def _canonical_participants(self, reaction):
         """Order the two participants of a single-Root bimolecular family.
