@@ -7298,7 +7298,7 @@
   {
     "site": "rmgpy/tools/eedf/vibrational.py::validate_bound_channels::reaction-io",
     "kind": "reader-exporter",
-    "line": 277,
+    "line": 279,
     "source": "def validate_bound_channels(ladder, channels, reactions, reaction_map, indices, species):",
     "reason": "Requires separate irreversible inelastic and superelastic owners with exact retained level endpoints; a reversible reaction is refused, never reversed through equilibrium thermo.",
     "tests": [
