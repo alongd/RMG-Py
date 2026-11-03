@@ -28,6 +28,7 @@
 ###############################################################################
 
 import os
+import re
 
 from unittest import mock
 
@@ -53,6 +54,10 @@ from rmgpy.data.kinetics import LibraryReaction
 from rmgpy.exceptions import ChemkinError
 from rmgpy.kinetics.arrhenius import Arrhenius, MultiArrhenius
 from rmgpy.kinetics.chebyshev import Chebyshev
+from rmgpy.kinetics.falloff import Lindemann, ThirdBody, Troe
+from rmgpy.kinetics.arrhenius import PDepArrhenius
+from rmgpy import constants
+from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
 from rmgpy.species import Species
 from rmgpy.thermo import NASA, NASAPolynomial
@@ -1128,3 +1133,773 @@ class TestLongLabelSpeciesIdentifier:
         labels = {s.label for s in loaded_species}
         # the compressed identifier round-trips as the species label
         assert any(l.endswith("_mu0") and len(l) <= 16 for l in labels)
+
+
+class TestEndKeyword:
+    """A Chemkin block ends only on a line whose first token is END (any case,
+    comments removed); a species identifier that merely holds 'end'
+    (``blend(3)``, ``end_cap(4)``) keeps its reactions and its thermo."""
+
+    THERM_ENTRY = [
+        "{0:<24}C   1H   4          G   200.000  6000.000 1000.00      1",
+        " 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2",
+        "-7.45375000E+02 3.35532000E+00 2.50000000E+00 0.00000000E+00 0.00000000E+00    3",
+        " 0.00000000E+00 0.00000000E+00-7.45375000E+02 3.35532000E+00                   4",
+    ]
+    NAMES = {"blend(3)": "CC", "end_cap(4)": "C", "H(1)": "[H]"}
+    REACTIONS = ["blend(3)=>end_cap(4)+end_cap(4)    1.0 0.0 0.0",
+                 "end_cap(4)+H(1)=>blend(3)    2.0 0.0 0.0",
+                 "H(1)+H(1)=>blend(3)    3.0 0.0 0.0"]
+    # each closer, then a line that the block would read had it not closed
+    CLOSERS = {"lowercase": ["end"], "comment_after": ["END ! closes the block"],
+               "comment_before": ["! a comment line", "  END"]}
+
+    def load(self, tmp_path, closer):
+        therm = ["THERM ALL", "   300.000  1000.000  5000.000"]
+        for name in self.NAMES:
+            therm += [line.format(name) for line in self.THERM_ENTRY]
+        text = "\n".join(["ELEMENTS H C END", "SPECIES", *self.NAMES, "END", *therm, *closer,
+                          "REACTIONS    KCAL/MOLE   MOLES", *self.REACTIONS, *closer,
+                          "H(1)+blend(3)=>end_cap(4)+end_cap(4)+H(1)    9.0 0.0 0.0", ""])
+        (tmp_path / "chem.inp").write_text(text)
+        (tmp_path / "dict.txt").write_text("\n".join(f"{n}\n{Molecule(smiles=s).to_adjacency_list()}"
+                                                     for n, s in self.NAMES.items()))
+        return load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"),
+                                 check_duplicates=False, generate_resonance_structures=False)
+
+    @pytest.mark.parametrize("closer", sorted(CLOSERS))
+    def test_every_reaction_and_thermo_entry_survives_and_end_still_closes(self, tmp_path, closer):
+        species, reactions = self.load(tmp_path, self.CLOSERS[closer])
+        assert [str(r) for r in reactions] == ["blend(3) => end_cap(4) + end_cap(4)",
+                                               "end_cap(4) + H(1) => blend(3)", "H(1) + H(1) => blend(3)"]
+        assert [r.kinetics.A.value_si for r in reactions] == pytest.approx([1.0, 2.0e-6, 3.0e-6], rel=1e-12)
+        assert sorted(s.label for s in species if s.thermo is not None) == ["H", "blend", "end_cap"]
+
+
+class TestKeywordsAreTokens:
+    """An auxiliary line's keyword (DUPLICATE, LOW, HIGH, TROE, SRI, CHEB,
+    PLOG, REV, COV) is its first token, and a block header is a line's first
+    token: a collider label that merely holds one (``blow(4)``, ``dup_x(5)``)
+    on an efficiency line, or a thermo entry named ``species(9)``, is read as
+    what it is."""
+
+    LABELS = ["blow(4)", "dup_x(5)", "rev(6)", "troex(7)", "highT(8)", "cov1(9)", "cheb1(10)", "plog_x(11)",
+              "SRIx(12)"]
+    SMILES = ["C", "CC", "CCC", "CCCC", "CCCCC", "CCCCCC", "CCCCCCC", "CCCCCCCC", "CCCCCCCCC"]
+
+    def write(self, tmp_path, names, body, thermo=()):
+        text = "\n".join(["ELEMENTS H C N END", "SPECIES", *names, "END", *thermo,
+                          "REACTIONS    KCAL/MOLE   MOLES", *body, "END", ""])
+        (tmp_path / "chem.inp").write_text(text)
+        return str(tmp_path / "chem.inp")
+
+    def dictionary(self, tmp_path, structures):
+        (tmp_path / "dict.txt").write_text("\n".join(f"{n}\n{Molecule(smiles=s).to_adjacency_list()}"
+                                                     for n, s in structures.items()))
+        return str(tmp_path / "dict.txt")
+
+    @pytest.mark.parametrize("label", LABELS)
+    def test_a_collider_label_holding_a_keyword_is_an_efficiency(self, tmp_path, label):
+        structures = {"H(1)": "[H]", "H2(2)": "[H][H]", "N2": "N#N", label: self.SMILES[self.LABELS.index(label)]}
+        path = self.write(tmp_path, structures, ["H(1)+H(1)+M<=>H2(2)+M    1.0 0.0 0.0", f"{label}/2.0/ N2/0.5/"])
+        _species, reactions = load_chemkin_file(path, self.dictionary(tmp_path, structures),
+                                                check_duplicates=False, generate_resonance_structures=False)
+        (reaction,) = reactions
+        assert reaction.reversible and not reaction.duplicate
+        assert type(reaction.kinetics).__name__ == "ThirdBody"
+        efficiencies = {m.to_smiles(): e for m, e in reaction.kinetics.efficiencies.items()}
+        assert efficiencies == {Molecule(smiles=structures[label]).to_smiles(): 2.0, "N#N": 0.5}
+
+    def test_a_thermo_entry_named_like_a_header_is_no_block(self, tmp_path):
+        """With a separate thermo file the mechanism's own THERM block is not
+        read; its entry lines must not open a SPECIES or SITE block."""
+        entry = ["{0:<24}C   1H   4          G   200.000  6000.000 1000.00      1",
+                 " 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2",
+                 "-7.45375000E+02 3.35532000E+00 2.50000000E+00 0.00000000E+00 0.00000000E+00    3",
+                 " 0.00000000E+00 0.00000000E+00-7.45375000E+02 3.35532000E+00                   4"]
+        structures = {"species(9)": "C", "SITE_a(2)": "CC", "H(1)": "[H]"}
+        therm = ["THERM ALL", "   300.000  1000.000  5000.000"]
+        for name in structures:
+            therm += [line.format(name) for line in entry]
+        therm += ["END"]
+        path = self.write(tmp_path, structures, ["species(9)+H(1)=>SITE_a(2)    1.0 0.0 0.0"], thermo=therm)
+        (tmp_path / "therm.dat").write_text("\n".join(therm) + "\n")
+        species, reactions = load_chemkin_file(path, self.dictionary(tmp_path, structures),
+                                               thermo_path=str(tmp_path / "therm.dat"), check_duplicates=False,
+                                               generate_resonance_structures=False)
+        assert sorted(s.label for s in species) == ["H", "SITE_a", "species"]
+        assert [str(r) for r in reactions] == ["species(9) + H(1) => SITE_a(2)"]
+
+
+class TestAuxiliaryRecordsAndHeaders:
+    """Chemkin allows several auxiliary records on one line, each with the
+    meaning it has on a line of its own, and the abbreviated block headers
+    ELEM, SPEC, THER and REAC."""
+
+    THERM_ENTRY = TestEndKeyword.THERM_ENTRY
+    NAMES = {"N2": "N#N", "H(1)": "[H]", "H2(2)": "[H][H]", "CH4(3)": "C"}
+
+    def load(self, tmp_path, reactions, headers=("ELEMENTS", "SPECIES", "THERM ALL", "REACTIONS    KCAL/MOLE   MOLES"),
+             name="chem"):
+        therm = [headers[2], "   300.000  1000.000  5000.000"]
+        for species in self.NAMES:
+            therm += [line.format(species) for line in self.THERM_ENTRY]
+        text = "\n".join([f"{headers[0]} H C N END", headers[1], *self.NAMES, "END", *therm, "END",
+                          headers[3], *reactions, "END", ""])
+        path = tmp_path / f"{name}.inp"
+        path.write_text(text)
+        (tmp_path / "dict.txt").write_text("\n".join(f"{n}\n{Molecule(smiles=s).to_adjacency_list()}"
+                                                     for n, s in self.NAMES.items()))
+        return load_chemkin_file(str(path), str(tmp_path / "dict.txt"), check_duplicates=False,
+                                 generate_resonance_structures=False)
+
+    @staticmethod
+    def described(kinetics):
+        efficiencies = sorted((m.to_smiles(), e) for m, e in getattr(kinetics, "efficiencies", {}).items())
+        pressures = list(kinetics.pressures.value_si) if hasattr(kinetics, "pressures") else None
+        return type(kinetics).__name__, repr(kinetics), efficiencies, pressures
+
+    CASES = {
+        "low_troe": (["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "LOW/1e24 -2 0/ TROE/0.5 100 1000/"],
+                     ["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "LOW/1e24 -2 0/", "TROE/0.5 100 1000/"],
+                     "Troe"),
+        "plog_plog": (["CH4(3)=>H(1)+H(1)+H2(2)    1.0 0.0 0.0", "PLOG/0.1 1e10 0 0/ PLOG/1.0 1e11 0 0/"],
+                      ["CH4(3)=>H(1)+H(1)+H2(2)    1.0 0.0 0.0", "PLOG/0.1 1e10 0 0/", "PLOG/1.0 1e11 0 0/"],
+                      "PDepArrhenius"),
+        "low_efficiency": (["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "LOW/1e24 -2 0/ N2/0.5/"],
+                           ["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "LOW/1e24 -2 0/", "N2/0.5/"],
+                           "Lindemann"),
+        "efficiency_low": (["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "N2/0.5/ LOW/1e24 -2 0/"],
+                           ["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "N2/0.5/", "LOW/1e24 -2 0/"],
+                           "Lindemann"),
+    }
+
+    @pytest.mark.parametrize("case", sorted(CASES))
+    def test_records_on_one_line_read_as_on_separate_lines(self, tmp_path, case):
+        together, apart, kind = self.CASES[case]
+        _s, (one,) = self.load(tmp_path, together, name="together")
+        _s, (two,) = self.load(tmp_path, apart, name="apart")
+        assert self.described(one.kinetics) == self.described(two.kinetics)
+        assert type(one.kinetics).__name__ == kind
+        if case == "plog_plog":
+            assert len(one.kinetics.pressures.value_si) == 2
+        if case.startswith(("low_e", "efficiency")):
+            assert self.described(one.kinetics)[2] == [("N#N", 0.5)]
+
+    def test_a_line_with_an_unreadable_record_is_an_error(self, tmp_path):
+        with pytest.raises(Exception):
+            self.load(tmp_path, ["H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0", "LOW/1e24 -2 0/ TROE/0.5/"])
+
+    @pytest.mark.parametrize("which", [0, 1, 2, 3])
+    def test_abbreviated_headers_load_the_same_model(self, tmp_path, which):
+        full = ["ELEMENTS", "SPECIES", "THERM ALL", "REACTIONS    KCAL/MOLE   MOLES"]
+        short = list(full)
+        short[which] = ["ELEM", "SPEC", "THER", "REAC    KCAL/MOLE   MOLES"][which]
+        body = ["CH4(3)=>H(1)+H(1)+H2(2)    1.0 0.0 3.0", "H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0",
+                "LOW/1e24 -2 0/", "N2/0.5/"]
+        sp1, rx1 = self.load(tmp_path, body, headers=full, name="full")
+        sp2, rx2 = self.load(tmp_path, body, headers=short, name="short")
+        assert [s.label for s in sp2] == [s.label for s in sp1] and all(s.thermo is not None for s in sp2)
+        assert [str(r) for r in rx2] == [str(r) for r in rx1] and len(rx2) == 2
+        assert [self.described(r.kinetics) for r in rx2] == [self.described(r.kinetics) for r in rx1]
+
+    def test_reac_keeps_its_units(self, tmp_path):
+        body = ["CH4(3)=>H(1)+H(1)+H2(2)    1.0 0.0 1000.0"]
+        _s, (full,) = self.load(tmp_path, body, headers=("ELEMENTS", "SPECIES", "THERM ALL",
+                                                         "REACTIONS MOLES KELVINS"), name="full")
+        _s, (short,) = self.load(tmp_path, body, headers=("ELEMENTS", "SPECIES", "THERM ALL", "REAC MOLES KELVINS"),
+                                 name="short")
+        assert short.kinetics.Ea.value_si == pytest.approx(1000.0 * constants.R, rel=1e-12)
+        assert repr(short.kinetics) == repr(full.kinetics)
+
+
+# a SITE header whose site density puts a 1 in column 80 (spar r158 item 4)
+SITE_DENSITY_IN_COLUMN_80 = "SITE/SURF/   SDEN/2.7" + "0" * (79 - len("SITE/SURF/   SDEN/2.7")) + "1E-09/"
+assert SITE_DENSITY_IN_COLUMN_80[79] == "1"
+
+
+class TestRecordShapes:
+    """A record whose name is both a keyword and a declared species is read by
+    its shape; an unknown bare word, values with no name, and an unreadable
+    record fail the line; comments are not records; an inline THERM block
+    skipped for a separate thermo file is skipped whole."""
+
+    THERM_ENTRY = TestEndKeyword.THERM_ENTRY
+    BASE = {"N2": "N#N", "H(1)": "[H]", "H2(2)": "[H][H]"}
+    EXTRA = {"REV": "CC", "DUP": "CCC", "LOW": "CCCC", "CHEB": "CCCCC"}
+    EQUATION = "H(1)+H(1)(+M)<=>H2(2)(+M)    1.0e13 0.0 0.0"
+
+    def load(self, tmp_path, aux, names=None, thermo_header="THERM ALL", thermo_path=False, name="chem",
+             equation=None):
+        names = dict(self.BASE, **self.EXTRA) if names is None else names
+        therm = [thermo_header, "   300.000  1000.000  5000.000"]
+        for species in names:
+            therm += [line.format(species) for line in self.THERM_ENTRY]
+        therm += ["END"]
+        text = "\n".join(["ELEMENTS H C N END", "SPECIES", *names, "END", *therm,
+                          "REACTIONS    KCAL/MOLE   MOLES", equation or self.EQUATION, *aux, "END", ""])
+        path = tmp_path / f"{name}.inp"
+        path.write_text(text)
+        (tmp_path / "dict.txt").write_text("\n".join(f"{n}\n{Molecule(smiles=s).to_adjacency_list()}"
+                                                     for n, s in names.items()))
+        kwargs = {}
+        if thermo_path:
+            (tmp_path / "therm.dat").write_text("\n".join(therm) + "\n")
+            kwargs["thermo_path"] = str(tmp_path / "therm.dat")
+        return load_chemkin_file(str(path), str(tmp_path / "dict.txt"), check_duplicates=False,
+                                 generate_resonance_structures=False, **kwargs)
+
+    @staticmethod
+    def efficiencies(kinetics):
+        return sorted((m.to_smiles(), e) for m, e in kinetics.efficiencies.items())
+
+    @pytest.mark.parametrize("label, value", [("REV", "0.00"), ("DUP", "2"), ("LOW", "2")])
+    def test_a_species_named_like_a_keyword_keeps_its_efficiency(self, tmp_path, label, value):
+        _s, (reaction,) = self.load(tmp_path, [f"N2/0.50/ {label}/{value}/", "LOW/1e24 -2 0/"])
+        assert reaction.reversible and not reaction.duplicate
+        assert type(reaction.kinetics).__name__ == "Lindemann"
+        assert self.efficiencies(reaction.kinetics) == sorted(
+            [("N#N", 0.5), (Molecule(smiles=self.EXTRA[label]).to_smiles(), float(value))])
+        assert reaction.kinetics.arrheniusLow.A.value_si == pytest.approx(1e24 * 1e-12, rel=1e-12)
+
+    def test_a_keyword_record_of_keyword_shape_is_the_keyword(self, tmp_path):
+        _s, (reaction,) = self.load(tmp_path, ["N2/0.50/ REV/1e13 0 0/", "LOW/1e24 -2 0/"])
+        assert self.efficiencies(reaction.kinetics) == [("N#N", 0.5)]
+        assert "explicit reverse" in reaction.kinetics.comment
+
+    def test_a_single_cheb_value_on_a_falloff_reaction_is_an_efficiency(self, tmp_path):
+        """Spar r153 P2: one value is a Chebyshev coefficient only on a
+        reaction already read as Chebyshev; on a falloff reaction it is the
+        declared species' efficiency."""
+        _s, (reaction,) = self.load(tmp_path, ["N2/0.50/ CHEB/2/", "LOW/1e24 -2 0/"])
+        assert type(reaction.kinetics).__name__ == "Lindemann"
+        assert self.efficiencies(reaction.kinetics) == sorted([("N#N", 0.5), ("CCCCC", 2.0)])
+
+    def test_a_record_that_fits_no_reading_names_both(self, tmp_path):
+        """LOW on a third-body reaction: no falloff collider for the keyword,
+        three values for an efficiency of the declared species LOW."""
+        with pytest.raises(ChemkinError, match="keyword LOW.*efficiency"):
+            self.load(tmp_path, ["N2/0.50/ LOW/1e24 -2 0/"], equation="H(1)+H(1)+M<=>H2(2)+M    1.0e13 0.0 0.0")
+
+    def test_a_lowercase_record_names_the_capital_species(self, tmp_path):
+        """Species names are matched as written, else upper-cased (the old
+        reader's fallback): ``cheb/2/`` is the efficiency of the declared
+        CHEB; the keyword test uses the same lookup."""
+        _s, (reaction,) = self.load(tmp_path, ["N2/0.50/ cheb/2/", "LOW/1e24 -2 0/"])
+        assert self.efficiencies(reaction.kinetics) == sorted([("N#N", 0.5), ("CCCCC", 2.0)])
+
+    def test_a_capital_record_is_no_species_declared_lowercase(self, tmp_path):
+        """Only ``cheb`` is declared: ``CHEB/2/`` names no species (never
+        lower-cased), so it is the keyword, which a falloff reaction cannot
+        take."""
+        names = dict(self.BASE, cheb="CCCCC")
+        with pytest.raises(ChemkinError, match="CHEB"):
+            self.load(tmp_path, ["N2/0.50/ CHEB/2/", "LOW/1e24 -2 0/"], names=names)
+
+    def test_rmgs_writer_output_round_trips(self, tmp_path):
+        polys = [NASAPolynomial(coeffs=[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 3.35], Tmin=lo, Tmax=hi)
+                 for lo, hi in (((200, "K"), (1000, "K")), ((1000, "K"), (6000, "K")))]
+        species = []
+        for label, smiles in [("N2", "N#N"), ("H", "[H]"), ("H2", "[H][H]"), ("REV", "CC"), ("DUP", "CCC"),
+                              ("LOW", "CCCC")]:
+            spc = Species(label=label).from_smiles(smiles)
+            spc.label = label
+            spc.thermo = NASA(polynomials=polys, Tmin=(200, "K"), Tmax=(6000, "K"))
+            species.append(spc)
+        n2, h, h2, rev, dup, low = species
+        kinetics = Lindemann(arrheniusHigh=Arrhenius(A=(1e7, "m^3/(mol*s)"), n=0, Ea=(0, "J/mol"), T0=(1, "K")),
+                             arrheniusLow=Arrhenius(A=(1e12, "m^6/(mol^2*s)"), n=-2, Ea=(0, "J/mol"), T0=(1, "K")),
+                             efficiencies={n2.molecule[0]: 0.5, rev.molecule[0]: 0.0, dup.molecule[0]: 2.0,
+                                           low.molecule[0]: 2.0})
+        reaction = Reaction(reactants=[h, h], products=[h2], kinetics=kinetics, reversible=True)
+        save_chemkin_file(str(tmp_path / "chem.inp"), species, [reaction], verbose=False, check_for_duplicates=False)
+        save_species_dictionary(str(tmp_path / "dict.txt"), species)
+        _s, (back,) = load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"),
+                                        check_duplicates=False, generate_resonance_structures=False)
+        assert back.reversible and not back.duplicate
+        assert self.efficiencies(back.kinetics) == self.efficiencies(kinetics)
+
+    @pytest.mark.parametrize("thermo_path", [False, True])
+    @pytest.mark.parametrize("block", [["REACTIONS    KCAL/MOLE   MOLES"], ["REAC"], ["SPECIES", "N2", "END"],
+                                       ["ELEMENTS H C N", "END"], ["THERMO", "END"], ["SITE/SURF/", "END"],
+                                       [SITE_DENSITY_IN_COLUMN_80, "END"]],
+                             ids=["REACTIONS", "REAC", "SPECIES", "ELEMENTS", "THERMO", "SITE", "SITE_column_80"])
+    def test_an_unterminated_thermo_block_fails_by_name(self, tmp_path, thermo_path, block):
+        """Spar r153 P1: a THERM block without its END, read or skipped for a
+        separate thermo file, stops at the next block's header with an
+        error naming both; it never consumes another block."""
+        therm = ["THERM ALL", "   300.000  1000.000  5000.000"]
+        for species in self.BASE:
+            therm += [line.format(species) for line in self.THERM_ENTRY]
+        reactions = ["REACTIONS    KCAL/MOLE   MOLES", self.EQUATION, "LOW/1e24 -2 0/", "END"]
+        text = "\n".join(["ELEMENTS H C N END", "SPECIES", *self.BASE, "END", *therm,
+                          *(block if block[0] not in ("REACTIONS    KCAL/MOLE   MOLES", "REAC") else []),
+                          *(["REAC"] + reactions[1:] if block == ["REAC"] else reactions), ""])
+        (tmp_path / "chem.inp").write_text(text)
+        (tmp_path / "dict.txt").write_text("\n".join(f"{n}\n{Molecule(smiles=s).to_adjacency_list()}"
+                                                     for n, s in self.BASE.items()))
+        kwargs = {}
+        if thermo_path:
+            (tmp_path / "therm.dat").write_text("\n".join(therm + ["END"]) + "\n")
+            kwargs["thermo_path"] = str(tmp_path / "therm.dat")
+        with pytest.raises(ChemkinError, match=r"THERM.*END.*" + block[0].split()[0].split("/")[0]):
+            load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"), check_duplicates=False,
+                              generate_resonance_structures=False, **kwargs)
+
+    @pytest.mark.parametrize("thermo_path", [False, True])
+    def test_an_inline_thermo_entry_named_reac_loads(self, tmp_path, thermo_path):
+        names = dict(self.BASE, REAC="CC")
+        species, (reaction,) = self.load(tmp_path, ["LOW/1e24 -2 0/"], names=names, thermo_path=thermo_path)
+        assert sorted(s.label for s in species) == ["H", "H2", "N2", "REAC"]
+        assert all(s.thermo is not None for s in species)
+        assert type(reaction.kinetics).__name__ == "Lindemann"
+
+    def test_a_separate_thermo_file_headed_ther_is_read(self, tmp_path):
+        species, _r = self.load(tmp_path, ["LOW/1e24 -2 0/"], names=dict(self.BASE), thermo_header="THER",
+                                thermo_path=True)
+        assert all(s.thermo is not None for s in species)
+
+    @pytest.mark.parametrize("aux", [["TYPO N2/0.5/", "LOW/1e24 -2 0/"], ["N2/0.5/ GARBAGE", "LOW/1e24 -2 0/"],
+                                     ["LOW/1e24 -2 0/ /0.5/"]], ids=["typo", "garbage", "values_with_no_name"])
+    def test_an_unreadable_record_fails_the_line(self, tmp_path, aux):
+        with pytest.raises(ChemkinError):
+            self.load(tmp_path, aux, names=dict(self.BASE))
+
+    def test_a_bare_keyword_before_a_record_is_read(self, tmp_path):
+        _s, (together,) = self.load(tmp_path, ["DUP LOW/1e24 -2 0/"], names=dict(self.BASE), name="together")
+        _s, (apart,) = self.load(tmp_path, ["DUP", "LOW/1e24 -2 0/"], names=dict(self.BASE), name="apart")
+        assert together.duplicate and apart.duplicate
+        assert repr(together.kinetics) == repr(apart.kinetics)
+
+    def test_a_comment_holding_a_slash_is_no_record(self):
+        species = {label: Species(label=label).from_smiles(smiles) for label, smiles in self.BASE.items()}
+        aunits = ['', 's^-1', 'cm^3/(mol*s)', 'cm^6/(mol^2*s)', 'cm^9/(mol^3*s)']
+        aunits_surf = ['', 's^-1', 'cm^2/(mol*s)', 'cm^4/(mol^2*s)']
+        entry = "H(1)+H(1)(+M)=>H2(2)(+M)    1.0e13 0.0 0.0\nLOW/1e24 -2 0/ ! comment / slash"
+        reaction = read_kinetics_entry(entry, species, aunits, aunits_surf, "kcal/mol")
+        assert type(reaction.kinetics).__name__ == "Lindemann"
+        assert reaction.kinetics.arrheniusLow.A.value_si == pytest.approx(1e24 * 1e-12, rel=1e-12)
+
+    # every keyword the reader knows, as a species name, and a lowercase cheb beside CHEB
+    KEYWORD_SPECIES = ["CHEB", "cheb", "REV", "DUP", "DUPL", "DUPLICATE", "LOW", "HIGH", "TROE", "SRI", "PLOG",
+                       "TCHEB", "PCHEB", "COV", "COVERAGE", "STICK", "MOME", "XSMI"]
+
+    @staticmethod
+    def _close(a, b):
+        return a == pytest.approx(b, rel=1e-9, abs=1e-12)
+
+    def _same_arrhenius(self, a, b):
+        return all(self._close(x.value_si, y.value_si) for x, y in ((a.A, b.A), (a.Ea, b.Ea), (a.T0, b.T0))) \
+            and self._close(a.n.value_si, b.n.value_si)
+
+    def _same_kinetics(self, a, b):
+        assert type(a) is type(b), (type(a), type(b))
+        if isinstance(a, Chebyshev):
+            return (a.coeffs.value_si.shape == b.coeffs.value_si.shape
+                    and all(self._close(x, y) for x, y in zip(a.coeffs.value_si.flat, b.coeffs.value_si.flat))
+                    and all(self._close(getattr(a, k).value_si, getattr(b, k).value_si)
+                            for k in ("Tmin", "Tmax", "Pmin", "Pmax")))
+        if isinstance(a, PDepArrhenius):
+            return (all(self._close(x, y) for x, y in zip(a.pressures.value_si, b.pressures.value_si))
+                    and len(a.arrhenius) == len(b.arrhenius)
+                    and all(self._same_kinetics(x, y) for x, y in zip(a.arrhenius, b.arrhenius)))
+        if isinstance(a, MultiArrhenius):
+            return len(a.arrhenius) == len(b.arrhenius) and all(
+                self._same_arrhenius(x, y) for x, y in zip(a.arrhenius, b.arrhenius))
+        if isinstance(a, Arrhenius):
+            return self._same_arrhenius(a, b)
+        same = self.efficiencies(a) == self.efficiencies(b) and self._same_arrhenius(a.arrheniusLow, b.arrheniusLow)
+        if isinstance(a, (Lindemann, Troe)):
+            same = same and self._same_arrhenius(a.arrheniusHigh, b.arrheniusHigh)
+        if isinstance(a, Troe):
+            same = same and self._close(a.alpha, b.alpha) and all(
+                (getattr(a, k) is None and getattr(b, k) is None) or self._close(getattr(a, k).value_si,
+                                                                                  getattr(b, k).value_si)
+                for k in ("T1", "T2", "T3"))
+        return same
+
+    def test_every_entry_rmgs_writer_emits_reads_back(self, tmp_path):
+        """Spar r153 oracle: a model whose species are named like every
+        keyword (and cheb beside CHEB), with Chebyshev (one, three and six
+        pressure terms), Lindemann, Troe, third-body, PLOG and duplicate
+        reactions, written by RMG's own writer, reads back exactly."""
+        polys = [NASAPolynomial(coeffs=[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 3.35], Tmin=lo, Tmax=hi)
+                 for lo, hi in (((200, "K"), (1000, "K")), ((1000, "K"), (6000, "K")))]
+        species = {}
+        for label, smiles in [("N2", "N#N"), ("H", "[H]"), ("H2", "[H][H]")] + [
+                (x, "C" * (k + 1)) for k, x in enumerate(self.KEYWORD_SPECIES)]:
+            spc = Species(label=label).from_smiles(smiles)
+            spc.label = label
+            spc.thermo = NASA(polynomials=polys, Tmin=(200, "K"), Tmax=(6000, "K"))
+            species[label] = spc
+        h, h2 = species["H"], species["H2"]
+        eff = {species[x].molecule[0]: 0.25 * (k + 1) for k, x in enumerate(["N2"] + self.KEYWORD_SPECIES)}
+
+        def arr(a, units, n=0.5, ea=2.0):
+            return Arrhenius(A=(a, units), n=n, Ea=(ea, "kcal/mol"), T0=(1, "K"))
+
+        def cheb(rows, cols, units):
+            coeffs = [[1.25 - 0.5 * i - 0.125 * j for j in range(cols)] for i in range(rows)]
+            return Chebyshev(coeffs=coeffs, kunits=units, Tmin=(300, "K"), Tmax=(2000, "K"),
+                             Pmin=(0.01, "atm"), Pmax=(100, "atm"))
+        bi, ter = "cm^3/(mol*s)", "cm^6/(mol^2*s)"
+        kinetics = [
+            Lindemann(arrheniusHigh=arr(1.5e13, bi), arrheniusLow=arr(2.5e18, ter, n=-1.5), efficiencies=eff),
+            Troe(arrheniusHigh=arr(1.5e13, bi), arrheniusLow=arr(2.5e18, ter, n=-1.5), alpha=0.5, T3=(100, "K"),
+                 T1=(1000, "K"), efficiencies=eff),
+            Troe(arrheniusHigh=arr(1.5e13, bi), arrheniusLow=arr(2.5e18, ter, n=-1.5), alpha=0.5, T3=(100, "K"),
+                 T1=(1000, "K"), T2=(5000, "K"), efficiencies=eff),
+            ThirdBody(arrheniusLow=arr(2.5e18, ter, n=-1.5), efficiencies=eff),
+            cheb(3, 1, bi), cheb(2, 3, bi), cheb(5, 6, bi),
+            PDepArrhenius(pressures=([0.1, 1.0, 10.0], "atm"), arrhenius=[arr(1.5e13, bi), arr(2.5e13, bi),
+                                                                          arr(3.5e13, bi)]),
+            arr(1.5e13, bi), arr(2.5e13, bi, n=1.5),
+        ]
+        reactions = [Reaction(reactants=[h, h], products=[h2], kinetics=k, reversible=True,
+                              duplicate=j >= len(kinetics) - 2) for j, k in enumerate(kinetics)]
+        save_chemkin_file(str(tmp_path / "chem.inp"), list(species.values()), reactions, verbose=False,
+                          check_for_duplicates=False)
+        save_species_dictionary(str(tmp_path / "dict.txt"), list(species.values()))
+        _s, back = load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"),
+                                     check_duplicates=False, generate_resonance_structures=False)
+        assert len(back) == len(reactions)
+        for original, read in zip(reactions, back):
+            assert [s.label for s in read.reactants] == ["H", "H"] and [s.label for s in read.products] == ["H2"]
+            assert read.reversible and read.duplicate == original.duplicate
+            assert self._same_kinetics(original.kinetics, read.kinetics), (original.kinetics, read.kinetics)
+
+    # ---- I-177 rework 3 (spar r158) ----
+    SURFACE_UNITS = (['', 's^-1', 'cm^3/(mol*s)', 'cm^6/(mol^2*s)', 'cm^9/(mol^3*s)'],
+                     ['', 's^-1', 'cm^2/(mol*s)', 'cm^4/(mol^2*s)', 'cm^6/(mol^3*s)'])
+
+    @pytest.mark.parametrize("cov_first", [False, True])
+    def test_stick_keeps_the_coverage_of_an_earlier_cov(self, cov_first):
+        """Spar r158 item 1: STICK turns the surface Arrhenius into a sticking
+        coefficient carrying every field earlier records set: COV before
+        STICK keeps its coverage dependence, as after it."""
+        x = Species().from_adjacency_list("1 X u0 p0")
+        hx = Species().from_adjacency_list("1 H u0 p0 {2,S} \n 2 X u0 p0 {1,S}")
+        h2 = Species().from_smiles("[H][H]")
+        species = {"X": x, "H*": hx, "H2": h2}
+        lines = ["    STICK", "    COV / H*    0.5    1.0    1.099 /"]
+        entry = "\n".join(["H2+X+X=H*+H*    4.000e-02 0.000 7.098"] + (lines[::-1] if cov_first else lines))
+        reaction = read_kinetics_entry(entry, species, *self.SURFACE_UNITS, "kcal/mol")
+        assert isinstance(reaction.kinetics, StickingCoefficient)
+        (spc, cov), = reaction.kinetics.coverage_dependence.items()
+        # I-179 item 3: a, m and E are quantities, as the coverage_dependence setter makes them, in both orders
+        assert spc is hx and cov["a"].value_si == 0.5 and cov["m"].value_si == 1.0
+        assert cov["E"].value_si == pytest.approx(1.099 * 4184.0, rel=1e-12)
+        assert reaction.kinetics.A.value_si == pytest.approx(4.0e-2, rel=1e-12)
+        assert reaction.kinetics.Ea.value_si == pytest.approx(7.098 * 4184.0, rel=1e-12)
+        # the read SurfaceReactor makes of a coverage dependence (rmgpy/solver/surface.pyx initialize_model)
+        assert [(p['a'].value_si, p['m'].value_si, p['E'].value_si)
+                for p in reaction.kinetics.coverage_dependence.values()] == [(0.5, 1.0, cov["E"].value_si)]
+
+    @pytest.mark.parametrize("cov_first", [False, True])
+    def test_a_read_coverage_dependence_writes_and_reads_back(self, tmp_path, cov_first):
+        """I-179 item 3: the quantities RMG's writer gets from the reader
+        write and read back unchanged, in both orders."""
+        x = Species().from_adjacency_list("1 X u0 p0")
+        x.label = "X"
+        hx = Species().from_adjacency_list("1 H u0 p0 {2,S} \n 2 X u0 p0 {1,S}")
+        hx.label = "H*"
+        h2 = Species().from_smiles("[H][H]")
+        h2.label = "H2"
+        species = {"X": x, "H*": hx, "H2": h2}
+        lines = ["    STICK", "    COV / H*    0.5    1.0    1.099 /"]
+        entry = "\n".join(["H2+X+X=H*+H*    4.000e-02 0.000 7.098"] + (lines[::-1] if cov_first else lines))
+        reaction = read_kinetics_entry(entry, species, *self.SURFACE_UNITS, "kcal/mol")
+        text = write_kinetics_entry(reaction, list(species.values()), verbose=False)
+        back = read_kinetics_entry(text, species, *self.SURFACE_UNITS, "kcal/mol")
+        (_s, cov), = back.kinetics.coverage_dependence.items()
+        assert (cov["a"].value_si, cov["m"].value_si) == (0.5, 1.0)
+        assert cov["E"].value_si == pytest.approx(1.099 * 4184.0, rel=1e-6)
+
+    def test_duplicate_chebyshev_fits_write_and_read_back(self, tmp_path):
+        """I-179 item 1: duplicate Chebyshev pairs of 2x6 (twelve coefficients,
+        the last CHEB line unfinished), 3x1 and 5x6 write DUPLICATE on its own
+        line and read back equal."""
+        polys = [NASAPolynomial(coeffs=[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 3.35], Tmin=lo, Tmax=hi)
+                 for lo, hi in (((200, "K"), (1000, "K")), ((1000, "K"), (6000, "K")))]
+        species = []
+        for label, smiles in [("N2", "N#N"), ("H", "[H]"), ("H2", "[H][H]")]:
+            spc = Species(label=label).from_smiles(smiles)
+            spc.label = label
+            spc.thermo = NASA(polynomials=polys, Tmin=(200, "K"), Tmax=(6000, "K"))
+            species.append(spc)
+        _n2, h, h2 = species
+
+        def cheb(rows, cols, shift):
+            coeffs = [[1.25 - 0.5 * i - 0.125 * j + shift for j in range(cols)] for i in range(rows)]
+            return Chebyshev(coeffs=coeffs, kunits="cm^3/(mol*s)", Tmin=(300, "K"), Tmax=(2000, "K"),
+                             Pmin=(0.01, "atm"), Pmax=(100, "atm"))
+        reactions = [Reaction(reactants=[h, h], products=[h2], kinetics=cheb(rows, cols, shift), reversible=True,
+                              duplicate=True)
+                     for rows, cols in ((2, 6), (3, 1), (5, 6)) for shift in (0.0, 0.25)]
+        save_chemkin_file(str(tmp_path / "chem.inp"), species, reactions, verbose=False, check_for_duplicates=False)
+        save_species_dictionary(str(tmp_path / "dict.txt"), species)
+        text = (tmp_path / "chem.inp").read_text()
+        assert all(line.strip() == "DUPLICATE" for line in text.splitlines() if "DUPLICATE" in line)
+        _s, back = load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"),
+                                     check_duplicates=False, generate_resonance_structures=False)
+        assert len(back) == len(reactions)
+        for original, read in zip(reactions, back):
+            assert read.duplicate and self._same_kinetics(original.kinetics, read.kinetics)
+
+    def test_a_therm_block_ending_in_a_comment_fails_by_name(self, tmp_path):
+        """I-179 item 2: THERM ALL followed only by a comment line: end of
+        file stops the reader with an error naming the block, never a hang
+        (guarded: the read runs in a daemon thread given 60 s)."""
+        import threading
+        (tmp_path / "chem.inp").write_text("ELEMENTS H END\nSPECIES\nH2\nEND\nTHERM ALL\n! only a comment\n")
+        (tmp_path / "dict.txt").write_text("H2\n" + Molecule(smiles="[H][H]").to_adjacency_list())
+        outcome = []
+
+        def read():
+            try:
+                load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"),
+                                  generate_resonance_structures=False)
+                outcome.append(None)
+            except Exception as error:
+                outcome.append(error)
+        worker = threading.Thread(target=read, daemon=True)
+        worker.start()
+        worker.join(60.0)
+        assert not worker.is_alive(), "the reader hangs on a THERM block ending at end of file"
+        assert isinstance(outcome[0], ChemkinError) and "THERM" in str(outcome[0])
+
+    @pytest.mark.parametrize("order", [0, 1])
+    def test_plog_with_an_optional_collider_is_plog_beside_a_species_plog(self, tmp_path, order):
+        """Spar r158 item 2: PLOG on a (+M) reaction (Cantera strips the
+        optional collider) stays PLOG with a species named PLOG declared."""
+        names = dict(self.BASE, PLOG="CC")
+        aux = ["PLOG/1.0 1e13 0 0/", "PLOG/10.0 2e13 0 0/"]
+        _s, (reaction,) = self.load(tmp_path, aux if order == 0 else aux[::-1], names=names)
+        assert type(reaction.kinetics).__name__ == "PDepArrhenius"
+        assert [p for p in reaction.kinetics.pressures.value_si] == pytest.approx([101325.0, 1013250.0])
+
+    CHEB_LINES = ["TCHEB/ 300.0 2000.0 /", "PCHEB/ 0.01 100.0 /", "CHEB/ 2 1 /", "CHEB/ 1.25 /", "CHEB/ 0.5 /"]
+
+    @pytest.mark.parametrize("position", range(6))
+    def test_low_beside_chebyshev_reads_in_every_order(self, tmp_path, position):
+        """Spar r158 item 3: LOW alongside Chebyshev records (the manual
+        allows it) reads in every line order with a species named LOW
+        declared: the reaction is Chebyshev, the LOW record the keyword."""
+        names = dict(self.BASE, LOW="CC")
+        aux = self.CHEB_LINES[:position] + ["LOW/1e24 -2 0/"] + self.CHEB_LINES[position:]
+        _s, (reaction,) = self.load(tmp_path, aux, names=names)
+        assert type(reaction.kinetics).__name__ == "Chebyshev"
+        assert reaction.kinetics.coeffs.value_si.shape == (2, 1)
+
+
+
+class TestEndOfFileInsideABlock:
+    """Spar r164: end of file inside a block, before its END, stops the reader
+    with a ChemkinError naming the block (inside an unfinished thermo entry,
+    naming the species), never a hang and never a silent partial read.  Each
+    read runs in a daemon thread given 60 s."""
+
+    @staticmethod
+    def h2_entry():
+        polys = [NASAPolynomial(coeffs=[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 3.35], Tmin=lo, Tmax=hi)
+                 for lo, hi in (((200, "K"), (1000, "K")), ((1000, "K"), (6000, "K")))]
+        spc = Species(label="H2").from_smiles("[H][H]")
+        spc.label = "H2"
+        spc.thermo = NASA(polynomials=polys, Tmin=(200, "K"), Tmax=(6000, "K"))
+        return write_thermo_entry(spc, verbose=False)
+
+    @staticmethod
+    def read_guarded(tmp_path, text, thermo=None):
+        import threading
+        (tmp_path / "chem.inp").write_text(text)
+        (tmp_path / "dict.txt").write_text("H2\n" + Molecule(smiles="[H][H]").to_adjacency_list()
+                                           + "\nH\n" + Molecule(smiles="[H]").to_adjacency_list())
+        thermo_path = None
+        if thermo is not None:
+            (tmp_path / "therm.dat").write_text(thermo)
+            thermo_path = str(tmp_path / "therm.dat")
+        outcome = []
+
+        def read():
+            try:
+                outcome.append(load_chemkin_file(str(tmp_path / "chem.inp"), str(tmp_path / "dict.txt"),
+                                                 thermo_path=thermo_path, generate_resonance_structures=False))
+            except Exception as error:
+                outcome.append(error)
+        worker = threading.Thread(target=read, daemon=True)
+        worker.start()
+        worker.join(60.0)
+        assert not worker.is_alive(), "the reader hangs at end of file"
+        return outcome[0]
+
+    RANGES = "   300.000  1000.000  5000.000\n"
+    HEAD = "ELEMENTS H END\nSPECIES\nH2 H\nEND\n"
+
+    def shapes(self):
+        entry = self.h2_entry()
+        return {
+            "species": ("ELEMENTS H END\nSPECIES\nH2\n", r"SPECIES block"),
+            "species_one_line": ("ELEMENTS H END\nSPECIES H2 H\n", r"SPECIES block"),
+            "site": ("SITE/SURF/\nX\n", r"SITE block"),
+            "elements": ("ELEMENTS\nH\n", r"ELEMENTS block"),
+            "elements_one_line": ("ELEMENTS H\n", r"ELEMENTS block"),
+            "therm_ranges": (self.HEAD + "THERM ALL\n" + self.RANGES, r"THERM block"),
+            "therm_first_entry_line": (self.HEAD + "THERM ALL\n" + self.RANGES + entry.splitlines()[0] + "\n",
+                                       r"THERM block.*H2"),
+            "therm_three_entry_lines": (self.HEAD + "THERM ALL\n" + self.RANGES
+                                        + "\n".join(entry.splitlines()[:3]) + "\n", r"THERM block.*H2"),
+            "therm_whole_entry_no_end": (self.HEAD + "THERM ALL\n" + self.RANGES + entry, r"THERM block"),
+            "reactions": (self.HEAD + "THERM ALL\n" + self.RANGES + entry + "END\nREACTIONS\nH2=H+H 1.0 0 0\n",
+                          r"REACTIONS block"),
+        }
+
+    @pytest.mark.parametrize("name", ["species", "species_one_line", "site", "elements", "elements_one_line",
+                                      "therm_ranges", "therm_first_entry_line", "therm_three_entry_lines",
+                                      "therm_whole_entry_no_end", "reactions"])
+    def test_a_truncated_block_fails_by_name(self, tmp_path, name):
+        text, message = self.shapes()[name]
+        outcome = self.read_guarded(tmp_path, text)
+        assert isinstance(outcome, ChemkinError), outcome
+        assert re.search(message, str(outcome)), str(outcome)
+
+    def test_a_skipped_therm_block_ending_at_end_of_file_fails_by_name(self, tmp_path):
+        """A separate thermo file given: the mechanism's own THERM block is
+        skipped, and its end of file before END still fails by name."""
+        entry = self.h2_entry()
+        outcome = self.read_guarded(tmp_path, self.HEAD + "THERM ALL\n" + self.RANGES + entry,
+                                    thermo="THERM ALL\n" + self.RANGES + entry + "END\n")
+        assert isinstance(outcome, ChemkinError) and "THERM block" in str(outcome), outcome
+
+    def test_a_separate_thermo_file_ending_inside_an_entry_fails_by_species(self, tmp_path):
+        entry = self.h2_entry()
+        outcome = self.read_guarded(tmp_path, self.HEAD + "REACTIONS\nH2=H+H 1.0 0 0\nEND\n",
+                                    thermo="THERM ALL\n" + self.RANGES + entry.splitlines()[0] + "\n")
+        assert isinstance(outcome, ChemkinError) and re.search(r"THERM block.*H2", str(outcome)), outcome
+
+    @pytest.mark.parametrize("header", ["SPECIES", "SITE/SURF/"], ids=["species", "site"])
+    def test_a_species_or_site_block_cannot_swallow_reactions(self, tmp_path, header):
+        """A block header before END belongs to the next block, not its
+        unfinished SPECIES or SITE predecessor."""
+        text = "ELEMENTS H END\n{0}\nH2 H\nREACTIONS\nH2=H+H 1.0 0 0\nEND\n".format(header)
+        outcome = self.read_guarded(tmp_path, text)
+        block = "SITE" if header.startswith("SITE") else "SPECIES"
+        assert isinstance(outcome, ChemkinError) and re.search(block + r" block.*REACTIONS", str(outcome)), outcome
+
+    def test_a_species_block_cannot_swallow_abbreviated_reactions(self, tmp_path):
+        outcome = self.read_guarded(tmp_path, "ELEMENTS H END\nSPECIES\nH2 H\nREAC\nH2=H+H 1.0 0 0\nEND\n")
+        assert isinstance(outcome, ChemkinError) and re.search(r"SPECIES block.*REAC", str(outcome)), outcome
+
+    @pytest.mark.parametrize("line_count", [1, 2, 3])
+    def test_end_inside_a_thermo_entry_fails_by_species(self, tmp_path, line_count):
+        """END cannot silently discard one to three NASA lines."""
+        entry = self.h2_entry()
+        outcome = self.read_guarded(tmp_path, self.HEAD + "THERM ALL\n" + self.RANGES
+                                    + "\n".join(entry.splitlines()[:line_count]) + "\nEND\n")
+        assert isinstance(outcome, ChemkinError) and re.search(r"THERM block.*H2", str(outcome)), outcome
+
+    def test_the_same_blocks_with_their_end_read(self, tmp_path):
+        """The shapes above, each block closed by END (RMG's writer closes
+        every block it writes), read: H2's thermo and the reaction."""
+        entry = self.h2_entry()
+        outcome = self.read_guarded(tmp_path, "ELEMENTS\nH\nEND\nSPECIES\nH2\nH\nEND\nTHERM ALL\n" + self.RANGES
+                                    + entry + "END\nREACTIONS\nH2=H+H 1.0 0 0\nEND\n")
+        species, reactions = outcome
+        assert [s.label for s in species] == ["H2", "H"] and species[0].has_thermo()
+        assert len(reactions) == 1
+
+
+class TestKeywordSpeciesAndBlockBoundaries:
+    @staticmethod
+    def read(tmp_path, text, names=None):
+        chemkin_path = tmp_path / "chem.inp"
+        chemkin_path.write_text(text)
+        dictionary_path = None
+        if names is not None:
+            species = []
+            for label, smiles in names.items():
+                item = Species(label=label).from_smiles(smiles)
+                item.label = label
+                species.append(item)
+            dictionary_path = tmp_path / "species_dictionary.txt"
+            save_species_dictionary(str(dictionary_path), species)
+        return load_chemkin_file(str(chemkin_path), str(dictionary_path) if dictionary_path else None,
+                                 check_duplicates=False, generate_resonance_structures=False)
+
+    @pytest.mark.parametrize("body, labels", [
+        ("REAC H2", ["REAC", "H2"]),
+        ("REAC", ["REAC"]),
+        ("THERM\nREACTIONS\nELEM\nH2", ["THERM", "REACTIONS", "ELEM", "H2"]),
+    ])
+    def test_keyword_species_without_a_block_signature_read(self, tmp_path, body, labels):
+        species, reactions = self.read(tmp_path, "ELEMENTS H END\nSPECIES\n" + body + "\nEND\n")
+        assert [species.label for species in species] == labels
+        assert reactions == []
+
+    def test_keyword_species_peek_does_not_consume_the_next_species(self, tmp_path):
+        species, _reactions = self.read(tmp_path, "ELEMENTS H END\nSPECIES\nREAC\nH2\nEND\n")
+        assert [species.label for species in species] == ["REAC", "H2"]
+
+    @pytest.mark.parametrize("body, keyword, labels", [
+        ("ELEM\nH O N", "ELEM", ["ELEM", "H", "O", "N"]),
+        ("THERM\n300 1000 5000", "THERM", ["THERM", "300", "1000", "5000"]),
+        ("TRAN\nH2 1 38 2.9 0 1.8 4", "TRAN", ["TRAN", "H2", "1", "38", "2.9", "0", "1.8", "4"]),
+    ])
+    def test_declared_keyword_species_with_a_block_signature_read(self, tmp_path, body, keyword, labels):
+        species, reactions = self.read(tmp_path, "ELEMENTS H END\nSPECIES\n" + body + "\nEND\n",
+                                       {keyword: "C"})
+        assert [species.label for species in species] == labels
+        assert reactions == []
+
+    def test_keyword_named_reaction_and_efficiency_read(self, tmp_path):
+        names = {"REAC": "C", "H": "[H]", "H2": "[H][H]", "CH4": "C"}
+        text = ("ELEMENTS H C END\nSPECIES\nREAC H H2 CH4\nEND\nREACTIONS\n"
+                "REAC + H => CH4 1.0 0 0\nH+H(+M)=>H2(+M) 1.0 0 0\nLOW/1e24 -2 0/\nREAC /2.0/\nEND\n")
+        _species, reactions = self.read(tmp_path, text, names)
+        assert len(reactions) == 2
+        assert reactions[0].reactants[0].label == "REAC"
+        assert reactions[1].kinetics.efficiencies[reactions[0].reactants[0].molecule[0]] == 2.0
+
+    @pytest.mark.parametrize("header, following, block", [
+        ("SPECIES", "REACTIONS\nH2=H+H 1.0 0 0", "REACTIONS"),
+        ("SPECIES", "THERM\n300 1000 5000", "THERM"),
+        ("SPECIES", "TRANSPORT\nH2 1 38 2.9 0 1.8 4", "TRANSPORT"),
+        ("SITE/SURF/", "REACTIONS\nH2=H+H 1.0 0 0", "REACTIONS"),
+    ])
+    def test_unterminated_species_or_site_block_names_the_following_block(self, tmp_path, header, following, block):
+        outcome = None
+        try:
+            self.read(tmp_path, "ELEMENTS H END\n{0}\nH2 H\n{1}\nEND\n".format(header, following))
+        except Exception as error:
+            outcome = error
+        predecessor = "SITE" if header.startswith("SITE") else "SPECIES"
+        assert isinstance(outcome, ChemkinError)
+        assert re.search(predecessor + r" block.*" + block, str(outcome))
+
+    @pytest.mark.parametrize("following, block", [
+        ("REACTIONS KCAL/MOLE MOLES\nH2=H+H 1.0 0 0", "REACTIONS"),
+        ("THERM ALL\n300 1000 5000", "THERM"),
+    ])
+    def test_unterminated_species_names_an_option_bearing_header(self, tmp_path, following, block):
+        with pytest.raises(ChemkinError, match=r"SPECIES block.*" + block):
+            self.read(tmp_path, "ELEMENTS H END\nSPECIES\nH2 H\n" + following + "\nEND\n")
+
+    @pytest.mark.parametrize("following, block", [
+        ("REACTIONS\nH2=H+H 1.0D+00 0D0 0D0", "REACTIONS"),
+        ("ELEM\nC/12.011/", "ELEM"),
+        ("ELEMENTS\nD", "ELEMENTS"),
+        ("ELEMENTS\nh o n", "ELEMENTS"),
+        ("SITE/SURF/\nSDEN/2.72E-9/\nX", "SITE/SURF/"),
+    ], ids=["fortran-d", "element-weight", "deuterium", "lower-case-elements", "named-site"])
+    def test_unterminated_species_recognizes_real_header_content(self, tmp_path, following, block):
+        with pytest.raises(ChemkinError, match=r"SPECIES block.*" + re.escape(block)):
+            self.read(tmp_path, "ELEMENTS H END\nSPECIES\nH2 H\n" + following + "\nEND\n")
+
+    @pytest.mark.parametrize("following, block", [
+        ("SPECIES\nH2 H", "SPECIES"),
+        ("THERM ALL\n300 1000 5000", "THERM"),
+    ])
+    def test_skipped_reaction_cannot_swallow_the_next_block(self, tmp_path, following, block):
+        text = ("ELEMENTS H END\nSPECIES\nH2 H\nEND\nREACTIONS\n"
+                "H2=0.5H2 1 0 0\n" + following + "\nEND\n")
+        with pytest.raises(ChemkinError, match=r"REACTIONS block.*" + block):
+            self.read(tmp_path, text)

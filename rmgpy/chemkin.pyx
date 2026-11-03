@@ -45,10 +45,10 @@ import rmgpy.kinetics as _kinetics
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
-from rmgpy.exceptions import ChemkinError
+from rmgpy.exceptions import ChemkinError, ElementError
 from rmgpy.molecule.element import get_element
 from rmgpy.molecule.util import get_element_count
-from rmgpy.quantity import Quantity
+from rmgpy.quantity import Quantity, Dimensionless, Energy
 from rmgpy.reaction import Reaction
 from rmgpy.rmg.pdep import PDepNetwork, PDepReaction
 from rmgpy.species import Species
@@ -212,6 +212,8 @@ def read_kinetics_entry(entry, species_dict, Aunits, Aunits_surf, Eunits):
         kinetics.update({
             'chebyshev coefficients': [],
             'efficiencies': {},
+            # what the whole entry is, whatever its line order (_entry_kinds)
+            'entry': _entry_kinds(lines[1:]),
         })
 
         # Note that the subsequent lines could be in any order
@@ -470,17 +472,229 @@ def _read_kinetics_reaction(line, species_dict, Aunits, Aunits_surf, Eunits):
             T0=(1, "K"),
         ),
     }
+    # the reaction's collider, the context its auxiliary records are read in: '+M' a third body, '(+M)' or
+    # '(+species)' a pressure-dependent collider, '' none
+    kinetics['collider'] = '+M' if third_body else (collider.strip() if collider is not None else '')
 
     return reaction, third_body, kinetics, k_units, k_low_units
 
 
+def _split_auxiliary_records(line):
+    """The auxiliary records of one line of a Chemkin reaction entry, in order:
+    each ``KEYWORD/values/`` or ``SPECIES/efficiency/`` as ``'NAME/values/'``,
+    and each bare keyword (``DUPLICATE``, ``STICK``) on its own.  Chemkin
+    allows several records on one line (``LOW/.../ TROE/.../``)."""
+    segments = line.split('/')
+    records = []
+    for k in range(0, len(segments), 2):
+        words = segments[k].split()
+        if k + 1 < len(segments):
+            if not words:
+                raise ChemkinError('Values /{0}/ follow no keyword or species in line {1!r}'.format(
+                    segments[k + 1], line))
+            records.extend(words[:-1])
+            records.append('{0}/{1}/'.format(words[-1], segments[k + 1]))
+        else:
+            records.extend(words)
+    return records
+
+
+# Keywords that stand bare (no values): the ones the reader acts on (DUPLICATE and its DUP abbreviation, STICK)
+# and the Chemkin manual's other bare keywords, which it ignores (MOME, XSMI).
+_BARE_KEYWORDS = ('DUP', 'DUPL', 'DUPLICATE', 'STICK', 'MOME', 'XSMI')
+
+# Every keyword _read_kinetics_record knows, upper case (Chemkin keywords are case-insensitive).
+_KEYWORDS = ('LOW', 'HIGH', 'REV', 'TROE', 'SRI', 'PLOG', 'TCHEB', 'PCHEB', 'CHEB', 'COV', 'COVERAGE') \
+    + _BARE_KEYWORDS
+
+
+def _is_float(token):
+    try:
+        float(token.replace('D', 'E').replace('d', 'e'))
+    except ValueError:
+        return False
+    return True
+
+
+def _declared_species(name, species_dict):
+    """The declared species a record's name names: species names are
+    case-sensitive, matched as written, else upper-cased (the old reader's
+    fallback for files that declare their species in capitals; never
+    lower-cased).  None if neither is declared.  The one lookup both the
+    keyword-or-species decision and the efficiency use."""
+    if name in species_dict:
+        return species_dict[name]
+    return species_dict.get(name.upper())
+
+
+def _entry_kinds(lines):
+    """What a reaction entry is by its auxiliary records, whatever their line
+    order: 'chebyshev' when it holds a TCHEB or PCHEB record of 2 values or a
+    CHEB record of 2 or more, 'plog' when it holds a PLOG record of 4 values.
+    Only records no efficiency can be (an efficiency is one number) count, so
+    no record named like a declared species decides it by its own reading."""
+    kinds = set()
+    for line in lines:
+        try:
+            records = _split_auxiliary_records(remove_comment_from_line(line)[0])
+        except ChemkinError:
+            continue                      # the line fails when it is read
+        for record in records:
+            name, slash, rest = record.partition('/')
+            n = len(rest[:-1].split()) if slash else 0
+            keyword = name.upper()
+            if (keyword in ('TCHEB', 'PCHEB') and n == 2) or (keyword == 'CHEB' and n >= 2):
+                kinds.add('chebyshev')
+            elif keyword == 'PLOG' and n == 4:
+                kinds.add('plog')
+    return frozenset(kinds)
+
+
+def _reading_context(kinetics):
+    """The reaction a record is read in, independent of line order: its
+    collider from the reaction line ('+M' a third body, '(+M)' or
+    '(+species)' a pressure-dependent collider, '' none; unknown when not
+    recorded), whether the entry is Chebyshev (``_entry_kinds``), and
+    whether it is a surface reaction."""
+    return {
+        'collider': kinetics.get('collider'),
+        'chebyshev': 'chebyshev' in kinetics.get('entry', ()),
+        'surface': 'surface arrhenius' in kinetics or 'sticking coefficient' in kinetics,
+    }
+
+
+def _keyword_reading(keyword, values, context):
+    """Whether ``keyword/values/`` can be the keyword for the reaction
+    (``_reading_context``), and why not: (possible, reason).  Only what the
+    Chemkin manual forbids for the reaction is removed, never by line order:
+
+    LOW, HIGH: 3 values; TROE: 3 or 4; SRI: 3 or 5; on a reaction with a
+    (+M) or (+species) collider, beside any other records (Chebyshev or PLOG
+    included).  REV: 3 values, any reaction.  PLOG: 4 values, no +M third
+    body (an optional (+M) collider allowed, as Cantera strips it).  TCHEB,
+    PCHEB: 2 values, no +M third body.  CHEB: 1 value or more, no +M third
+    body, on a Chebyshev entry.  COV, COVERAGE: 4 values, a surface reaction.
+    STICK: none, a surface reaction.  DUP, DUPL, DUPLICATE, MOME, XSMI: none,
+    any reaction.  (An unrecorded collider allows every collider rule.)"""
+    n = len(values)
+    collider = context['collider']
+    falloff = collider is None or collider.startswith('(+')
+    third_body = collider == '+M'
+    if keyword in ('LOW', 'HIGH', 'TROE', 'SRI'):
+        counts = {'LOW': (3,), 'HIGH': (3,), 'TROE': (3, 4), 'SRI': (3, 5)}[keyword]
+        if n not in counts:
+            return False, '{0} takes {1} values, not {2}'.format(keyword, ' or '.join(map(str, counts)), n)
+        if not falloff:
+            return False, '{0} needs a reaction with a (+M) collider'.format(keyword)
+        return True, 'the {0} parameters {1}'.format(keyword, values)
+    if keyword == 'REV':
+        if n != 3:
+            return False, 'REV takes 3 values, not {0}'.format(n)
+        return True, 'the reverse rate {0}'.format(values)
+    if keyword == 'PLOG':
+        if n != 4:
+            return False, 'PLOG takes 4 values, not {0}'.format(n)
+        if third_body:
+            return False, 'PLOG needs a reaction without a +M third body'
+        return True, 'the PLOG rate {0}'.format(values)
+    if keyword in ('TCHEB', 'PCHEB', 'CHEB'):
+        if third_body:
+            return False, '{0} needs a reaction without a +M third body'.format(keyword)
+        if keyword != 'CHEB':
+            if n != 2:
+                return False, '{0} takes 2 values, not {1}'.format(keyword, n)
+            return True, 'the {0} range {1}'.format(keyword, values)
+        if n < 1:
+            return False, 'CHEB holds no value'
+        if not context['chebyshev']:
+            return False, 'CHEB needs a Chebyshev entry (a TCHEB, PCHEB or CHEB degrees record)'
+        return True, 'the Chebyshev record {0}'.format(values)
+    if keyword in ('COV', 'COVERAGE', 'STICK'):
+        count = 0 if keyword == 'STICK' else 4
+        if n != count:
+            return False, '{0} takes {1} values, not {2}'.format(keyword, count, n)
+        if not context['surface']:
+            return False, '{0} needs a surface reaction'.format(keyword)
+        return True, 'the {0} record'.format(keyword)
+    # DUP, DUPL, DUPLICATE, MOME, XSMI
+    if n != 0:
+        return False, '{0} takes no value, not {1}'.format(keyword, n)
+    return True, 'the {0} flag'.format(keyword)
+
+
+def _efficiency_reading(name, values, context):
+    """Whether ``name/values/`` can be a collider efficiency of the declared
+    species ``name``: one number, on a reaction with a +M third body or a
+    (+M) / (+species) collider, not on a Chebyshev entry (RMG's Chebyshev
+    kinetics carry no efficiencies, and its writer writes efficiencies for
+    third-body, Lindemann and Troe kinetics only)."""
+    collider = context['collider']
+    if len(values) != 1 or not _is_float(values[0]):
+        return False, 'an efficiency is one number, not {0!r}'.format(' '.join(values))
+    if collider == '' or context['chebyshev']:
+        return False, 'an efficiency needs a third body or a (+M) collider, on an entry that is not Chebyshev'
+    return True, 'the efficiency {0} of species {1}'.format(float(values[0]), name)
+
+
 def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units, kinetics):
     """
-    Parse the subsequent lines of of a Chemkin reaction entry.
+    Parse one of the subsequent lines of a Chemkin reaction entry, its comment
+    removed, record by record (``_split_auxiliary_records``), each record with
+    the meaning it has on a line of its own, in the order read.  A record
+    named both like a keyword (any case) and like a declared species
+    (``_declared_species``) is read from the reaction's context
+    (``_reading_context``): the keyword where only the keyword can stand
+    there (``_keyword_reading``), the species' collider efficiency where only
+    it can (``_efficiency_reading``); where both could it is an ambiguity
+    and where neither can an error, each naming the readings.  A bare word
+    that is no bare keyword (``_BARE_KEYWORDS``), or a record that cannot be
+    read, fails the line.
+    """
+    line = remove_comment_from_line(line)[0]
+    for record in _split_auxiliary_records(line):
+        name, slash, rest = record.partition('/')
+        if not slash:
+            if name.upper() not in _BARE_KEYWORDS:
+                raise ChemkinError('Unknown bare word {0!r} in line {1!r} for reaction {2}'.format(
+                    name, line, reaction))
+        elif name.upper() in _KEYWORDS and _declared_species(name, species_dict) is not None:
+            values = rest[:-1].split()
+            context = _reading_context(kinetics)
+            as_keyword, keyword_why = _keyword_reading(name.upper(), values, context)
+            as_efficiency, efficiency_why = _efficiency_reading(name, values, context)
+            if as_keyword and as_efficiency:
+                raise ChemkinError('Record {0!r} in line {1!r} for reaction {2} is ambiguous: as the keyword {3} '
+                                   'it is {4}, as the declared species {5} {6}'.format(
+                                       record, line, reaction, name.upper(), keyword_why, name, efficiency_why))
+            if as_efficiency:
+                species = _declared_species(name, species_dict)
+                kinetics['efficiencies'][species.molecule[0]] = float(values[0])
+                continue
+            if not as_keyword:
+                raise ChemkinError('Record {0!r} in line {1!r} for reaction {2} fits no reading: as the keyword {3}, '
+                                   '{4}; as an efficiency of the declared species {5}, {6}'.format(
+                                       record, line, reaction, name.upper(), keyword_why, name, efficiency_why))
+        try:
+            kinetics = _read_kinetics_record(record, reaction, species_dict, Eunits, kunits, klow_units, kinetics)
+        except ChemkinError:
+            raise
+        except Exception as e:
+            raise ChemkinError('Could not read the auxiliary record {0!r} of line {1!r} for reaction {2}: '
+                               '{3}: {4}'.format(record, line, reaction, type(e).__name__, e))
+    return kinetics
+
+
+def _read_kinetics_record(line, reaction, species_dict, Eunits, kunits, klow_units, kinetics):
+    """
+    Parse one auxiliary record (or a line holding one) of a Chemkin reaction entry.
     """
     case_preserved_tokens = line.split('/')
     line = line.upper()
     tokens = line.split('/')
+    # the line's keyword is its first token (before any '/'): a collider label on an efficiency line that
+    # merely holds a keyword (blow(4), dup_x(5), rev(6)) is no keyword
+    head = tokens[0].split()
+    keyword = head[0] if head else ''
 
     # check if any reactants are surface species
     surf_rxn = False
@@ -489,11 +703,11 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
     elif any(product.molecule[0].contains_surface_site() for product in reaction.products):
         surf_rxn = True
     
-    if 'DUP' in line:
+    if keyword in ('DUP', 'DUPL', 'DUPLICATE'):
         # Duplicate reaction
         reaction.duplicate = True
 
-    elif 'COV' in line:
+    elif keyword in ('COV', 'COVERAGE'):
         try:
             k = kinetics['sticking coefficient']
         except KeyError:
@@ -502,9 +716,12 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
         tokens = case_preserved_tokens[1].split()
         cov_dep_species = species_dict[tokens[0].strip()]
         Ea = Quantity(float(tokens[3]), Eunits)
-        k.coverage_dependence[cov_dep_species] = {'a':float(tokens[1]), 'm':float(tokens[2]), 'E':Ea}
+        # as the coverage_dependence setter stores them (rmgpy/kinetics/surface.pyx): quantities, which
+        # SurfaceReactor reads by .value_si; STICK carries them over as they are
+        k.coverage_dependence[cov_dep_species] = {'a': Dimensionless(float(tokens[1])),
+                                                  'm': Dimensionless(float(tokens[2])), 'E': Energy(Ea)}
 
-    elif 'LOW' in line:
+    elif keyword == 'LOW':
         # Low-pressure-limit Arrhenius parameters
         tokens = tokens[1].split()
         kinetics['arrhenius low'] = _kinetics.Arrhenius(
@@ -514,7 +731,7 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
             T0=(1, "K"),
         )
 
-    elif 'HIGH' in line:
+    elif keyword == 'HIGH':
         # What we thought was high, was in fact low-pressure
         kinetics['arrhenius low'] = kinetics['arrhenius high']
         kinetics['arrhenius low'].A = (
@@ -528,7 +745,7 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
             T0=(1, "K"),
         )
 
-    elif 'TROE' in line:
+    elif keyword == 'TROE':
         # Troe falloff parameters
         tokens = tokens[1].split()
         alpha = float(tokens[0].strip())
@@ -545,7 +762,7 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
             T1=(T1, "K"),
             T2=(T2, "K") if T2 is not None else None,
         )
-    elif line.strip().startswith('SRI'):
+    elif keyword == 'SRI':
         kinetics['sri'] = True
         """To define an SRI pressure-dependent reaction, in addition to the LOW or HIGH parameters, the
         keyword SRI followed by three or five parameters must be included in the following order: a, b,
@@ -554,23 +771,23 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
         """
         # see eg. http://www.dipic.unipd.it/faculty/canu/files/Comb/Docs/chemkinCK.pdf
 
-    elif 'CHEB' in line:
+    elif keyword in ('CHEB', 'TCHEB', 'PCHEB'):
         # Chebyshev parameters
         chebyshev = kinetics.get(
             'chebyshev', _kinetics.Chebyshev(kunits=kunits))
         kinetics['chebyshev'] = chebyshev
         tokens = [t.strip() for t in tokens]
-        if 'TCHEB' in line:
+        if 'TCHEB' in tokens:
             index = tokens.index('TCHEB')
             tokens2 = tokens[index + 1].split()
             chebyshev.Tmin = Quantity(float(tokens2[0].strip()), "K")
             chebyshev.Tmax = Quantity(float(tokens2[1].strip()), "K")
-        if 'PCHEB' in line:
+        if 'PCHEB' in tokens:
             index = tokens.index('PCHEB')
             tokens2 = tokens[index + 1].split()
             chebyshev.Pmin = Quantity(float(tokens2[0].strip()), "atm")
             chebyshev.Pmax = Quantity(float(tokens2[1].strip()), "atm")
-        if 'TCHEB' in line or 'PCHEB' in line:
+        if 'TCHEB' in tokens or 'PCHEB' in tokens:
             pass
         elif chebyshev.degreeT == 0 or chebyshev.degreeP == 0:
             tokens2 = tokens[1].split()
@@ -585,7 +802,7 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
             kinetics['chebyshev coefficients'].extend(
                 [float(t.strip()) for t in tokens2])
 
-    elif 'PLOG' in line:
+    elif keyword == 'PLOG':
         pdep_arrhenius = kinetics.get('pressure-dependent arrhenius', [])
         kinetics['pressure-dependent arrhenius'] = pdep_arrhenius
         tokens = tokens[1].split()
@@ -597,7 +814,7 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
                                    T0=(1, "K"),
                                )])
 
-    elif tokens[0].startswith('REV'):
+    elif keyword == 'REV':
         reverse_A = float(tokens[1].split()[0])
         kinetics['explicit reverse'] = line.strip()
         if reverse_A == 0:
@@ -609,12 +826,20 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
     elif line.strip() == 'STICK':
         # Convert what we thought was a surface arrhenius into StickingCoefficient
         k = kinetics['surface arrhenius']
+        # carrying every field the earlier records set (COV before STICK: the coverage dependence)
         kinetics['sticking coefficient'] = _kinetics.StickingCoefficient(
             A=k.A.value,
             n=k.n,
             Ea=k.Ea,
             T0=k.T0,
+            Tmin=k.Tmin,
+            Tmax=k.Tmax,
+            Pmin=k.Pmin,
+            Pmax=k.Pmax,
+            comment=k.comment,
         )
+        # the coverage entries, quantities as a COV record stores them, carried over unchanged
+        kinetics['sticking coefficient'].coverage_dependence.update(k.coverage_dependence)
         del kinetics['surface arrhenius']
 
     else:
@@ -626,10 +851,10 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
                 except ValueError:
                     raise ChemkinError("{0!r} doesn't look like a collision efficiency for species {1} in "
                                        "line {2!r}".format(efficiency, collider.strip(), line))
-                if collider.strip() in species_dict:
-                    kinetics['efficiencies'][species_dict[collider.strip()].molecule[0]] = efficiency
-                else:  # try it with capital letters? Not sure whose malformed chemkin files this is needed for.
-                    kinetics['efficiencies'][species_dict[collider.strip().upper()].molecule[0]] = efficiency
+                species = _declared_species(collider.strip(), species_dict)
+                if species is None:
+                    raise KeyError(collider.strip())
+                kinetics['efficiencies'][species.molecule[0]] = efficiency
         except IndexError:
             error_msg = 'Could not read collider efficiencies for reaction: {0}.\n'.format(reaction)
             error_msg += 'The following line was parsed incorrectly:\n{0}'.format(line)
@@ -997,23 +1222,49 @@ def load_chemkin_file(path, dictionary_path=None, transport_path=None, read_comm
                 line = remove_comment_from_line(line0)[0]
                 line = line.strip()
 
-                if 'SPECIES' in line.upper():
+                # a block opens on a header, the line's first token: a thermo entry of a species named
+                # like one (species(9), SITE_a(2)) opens none
+                head = line.split()
+                header = head[0].upper() if head else ''
+                if header in ('ELEMENTS', 'ELEM'):
+                    # read through to its END (on the header line or a later one): end of file or another
+                    # block before it is an error, never a silent end
+                    tokens_upper = [t.upper() for t in head]
+                    while 'END' not in tokens_upper:
+                        line0 = f.readline()
+                        if line0 == '':
+                            raise _block_at_end_of_file('ELEMENTS')
+                        if _opens_block(line0):
+                            raise _unterminated_block('ELEMENTS', line0)
+                        tokens_upper = remove_comment_from_line(line0)[0].upper().split()
+
+                elif header in ('SPECIES', 'SPEC'):
                     # Unread the line (we'll re-read it in readReactionBlock())
                     f.seek(previous_line)
                     read_species_block(f, species_dict, sp_aliases, sp_list)
                 
-                elif 'SITE' in line.upper():
+                elif header == 'SITE' or header.startswith('SITE/'):
                     # Unread the line (we'll re-read it in readReactionBlock())
                     f.seek(previous_line)
                     read_species_block(f, species_dict, sp_aliases, sp_list)
 
-                elif 'THERM' in line.upper() and thermo_path is None:
-                    # Skip this if a thermo file is specified
+                elif header in ('THERM', 'THERMO', 'THER') and thermo_path is None:
                     # Unread the line (we'll re-read it in read_thermo_block())
                     f.seek(previous_line)
                     read_thermo_block(f, species_dict)
 
-                elif 'REACTIONS' in line.upper():
+                elif header in ('THERM', 'THERMO', 'THER'):
+                    # A separate thermo file is specified: skip this block whole, so that none of its entries
+                    # (a species named REAC or SPEC) is read as a block header
+                    line0 = f.readline()
+                    while line0 != '' and not _is_end_keyword(line0):
+                        if _opens_block(line0):
+                            raise _unterminated_block(header, line0)
+                        line0 = f.readline()
+                    if line0 == '':
+                        raise _block_at_end_of_file('THERM')
+
+                elif header in ('REACTIONS', 'REAC'):
                     # Reactions section
                     # Unread the line (we'll re-read it in readReactionBlock())
                     f.seek(previous_line)
@@ -1041,7 +1292,7 @@ def load_chemkin_file(path, dictionary_path=None, transport_path=None, read_comm
                 previous_line = f.tell()
                 line0 = f.readline()
                 line = remove_comment_from_line(line0)[0].strip()
-                if 'THERM' in line.upper():
+                if [t.upper() for t in line.split()[:1]] in (['THERM'], ['THERMO'], ['THER']):
                     f.seek(previous_line)
                     read_thermo_block(f, species_dict)
                     break
@@ -1165,6 +1416,149 @@ cpdef _process_duplicate_reactions(list reaction_list):
     reaction_list.extend(duplicate_reactions_to_add)
 
 
+def _is_end_keyword(line):
+    """Whether a Chemkin line closes its block: its first token (comments
+    removed) is the END keyword, in any case.  A species identifier that
+    merely holds 'end' (``blend(3)``, ``end_cap(4)``) does not."""
+    tokens = remove_comment_from_line(line)[0].split()
+    return len(tokens) > 0 and tokens[0].upper() == 'END'
+
+
+_REACTION_QUANTITY_UNITS = ('MOLECULES', 'MOLES', 'MOLE', 'MOL', 'MOLECULE')
+_REACTION_ENERGY_UNITS = ('KCAL/MOLE', 'KCAL/MOL', 'CAL/MOLE', 'CAL/MOL', 'KJ/MOLE', 'KJ/MOL', 'J/MOLE',
+                          'J/MOL', 'KELVINS')
+
+
+def _is_thermo_entry_first_line(text):
+    """Whether a line is the first line of a NASA thermo entry by its full
+    layout: the name field (columns 1-18), the element fields (columns
+    25-44: each blank, or a symbol of one or two letters, or 0, with a blank
+    or numeric count), the phase (column 45: G, L or S) and 1 in column 80."""
+    if len(text) < 80 or text[79] != '1' or text[44].upper() not in 'GLS':
+        return False
+    for i in (24, 29, 34, 39):
+        element, count = text[i:i + 2].strip(), text[i + 2:i + 5].strip()
+        if element and not (element.isalpha() or element == '0'):
+            return False
+        if count and not _is_float(count):
+            return False
+    return True
+
+
+def _site_header_option(token):
+    """Whether a token is a SITE header's name or site-density option."""
+    upper = token.upper()
+    if upper.startswith('SDEN/') and upper.endswith('/'):
+        return _is_float(token[token.find('/') + 1:-1])
+    return token.startswith('/') and token.endswith('/') and len(token) > 2
+
+
+def _block_header(line):
+    """Return a syntactically valid block header's first token, else empty.
+
+    Header options are deliberately recognised per block so that species or
+    reaction records which merely begin with a keyword do not open a block.
+    """
+    text = remove_comment_from_line(line)[0]
+    tokens = text.split()
+    if not tokens or _is_thermo_entry_first_line(text):
+        return ''
+    head = tokens[0].upper()
+    options = tokens[1:]
+    if head in ('ELEMENTS', 'ELEM'):
+        return head if all(option.upper() == 'END' or _is_element_record(option) for option in options) else ''
+    if head in ('SPECIES', 'SPEC', 'TRANSPORT', 'TRAN'):
+        return head if not options else ''
+    if head in ('THERMO', 'THERM', 'THER'):
+        return head if not options or (len(options) == 1 and options[0].upper() == 'ALL') else ''
+    if head in ('REACTIONS', 'REAC'):
+        allowed = _REACTION_QUANTITY_UNITS + _REACTION_ENERGY_UNITS
+        return head if all(option.upper() in allowed for option in options) else ''
+    if head == 'SITE':
+        return head if all(_site_header_option(option) for option in options) else ''
+    if head.startswith('SITE/') and head.endswith('/'):
+        return head if all(_site_header_option(option) for option in options) else ''
+    return ''
+
+
+def _opens_block(line):
+    """Whether a Chemkin line opens a block: decided by its first token
+    (comments removed), a block header in any case (SITE also as
+    ``SITE/<name>/``), whatever column 80 holds, unless the line is the
+    first line of a thermo entry by its full layout
+    (``_is_thermo_entry_first_line``: an entry of a species named REAC opens
+    nothing)."""
+    return bool(_block_header(line))
+
+
+def _unterminated_block(header, line):
+    return ChemkinError('The {0} block has no END before the line {1!r}, which opens another block'.format(
+        header, line.strip()))
+
+
+def _block_at_end_of_file(header, species=None):
+    """The error for end of file inside a block, before its END (inside an
+    unfinished thermo entry, naming its species)."""
+    where = ' inside the entry for species {0}'.format(species) if species else ''
+    return ChemkinError('The {0} block ends at the end of the file{1}, before its END'.format(header, where))
+
+
+def _opens_block_inside_species(f, line, species_dict):
+    """Whether ``line`` starts a block instead of naming a species.
+
+    A keyword plus only recognised header options is a candidate.  A declared
+    lone keyword remains a species; otherwise the next meaningful line must
+    have the candidate block's distinctive content signature.  The peek
+    restores the stream position so species parsing keeps every line examined.
+    """
+    tokens = remove_comment_from_line(line)[0].split()
+    header = _block_header(line)
+    if not header:
+        return False
+    if len(tokens) == 1 and _declared_species(tokens[0], species_dict) is not None:
+        return False
+
+    position = f.tell()
+    next_line = f.readline()
+    while next_line and not remove_comment_from_line(next_line)[0].strip():
+        next_line = f.readline()
+    f.seek(position)
+    text = remove_comment_from_line(next_line)[0]
+    return _has_block_content_signature(header, text)
+
+
+def _has_block_content_signature(header, text):
+    """Whether a possible header's following line identifies its block."""
+    tokens = text.split()
+    if header in ('REACTIONS', 'REAC'):
+        return '=' in text and len(tokens) >= 4 and all(_is_float(token) for token in tokens[-3:])
+    if header in ('THERMO', 'THERM', 'THER'):
+        return (len(tokens) == 3 and all(_is_float(token) for token in tokens)) or _is_thermo_entry_first_line(text)
+    if header in ('TRANSPORT', 'TRAN'):
+        return (len(tokens) == 7 and tokens[1] in ('0', '1', '2')
+                and all(_is_float(token) for token in tokens[2:]))
+    if header in ('ELEMENTS', 'ELEM'):
+        return bool(tokens) and all(_is_element_record(token) for token in tokens)
+    if header == 'SITE' or header.startswith('SITE/'):
+        return bool(tokens) and all(_site_header_option(token) and token.upper().startswith('SDEN/')
+                                    for token in tokens)
+    return False
+
+
+def _is_element_record(token):
+    """Whether a token is an element symbol with an optional atomic weight."""
+    match = re.match(r'^([A-Za-z][A-Za-z]?)(?:/([^/]+)/)?$', token)
+    if not match or (match.group(2) is not None and not _is_float(match.group(2))):
+        return False
+    symbol = match.group(1).capitalize()
+    if symbol in ('D', 'T'):
+        return True
+    try:
+        return bool(get_element(symbol))
+    except ElementError:
+        return False
+
+
 def read_species_block(f, species_dict, species_aliases, species_list):
     """
     Read a Species block from a chemkin file.
@@ -1185,6 +1579,10 @@ def read_species_block(f, species_dict, species_aliases, species_list):
      # Build list of species identifiers
     while 'END' not in tokens_upper:
         line = f.readline()
+        if line == '':
+            raise _block_at_end_of_file('SITE' if first_token.startswith('SITE') else 'SPECIES')
+        if _opens_block_inside_species(f, line, species_dict):
+            raise _unterminated_block('SITE' if first_token.startswith('SITE') else 'SPECIES', line)
         # If the line contains only one species, and also contains
         # a comment with only one token, assume that token is 
         # intended to be the true identifier for the species, but
@@ -1247,6 +1645,9 @@ def read_thermo_block(f, species_dict):
     # In case there are commented lines immediately after THER
     meaningfulline, comment = remove_comment_from_line(line)
     while not meaningfulline.strip():
+        if line == '':
+            raise ChemkinError('The THERM block ends at the end of the file, before its temperature ranges or '
+                               'its END')
         line = f.readline()
         meaningfulline, comment = remove_comment_from_line(line)
     Tmin = Tint = Tmax = None
@@ -1265,7 +1666,9 @@ def read_thermo_block(f, species_dict):
         logging.info("(It should have Tmin in columns 1-10, Tmid in columns 11-20, and Tmax in columns 21-30)")
     thermo_block = ''
     comments = ''
-    while line != '' and not line.upper().strip().startswith('END'):
+    while line != '' and not _is_end_keyword(line):
+        if _opens_block(line):
+            raise _unterminated_block('THERM', line)
         line, comment = remove_comment_from_line(line)
         if comment: comments += comment.strip().replace('\t', ', ') + '\n'
 
@@ -1331,6 +1734,13 @@ def read_thermo_block(f, species_dict):
         if len(thermo_block.split('/n')) > 5:
             raise ChemkinError('Should only have a maximum of 5 lines in a thermo block:\n{0}'.format(thermo_block))
         line = f.readline()
+    if line == '':
+        # RMG's writers close every THERM block with END: end of file before it is a cut file, and inside
+        # an unfinished entry it names the species
+        raise _block_at_end_of_file('THERM', thermo_block.split()[0] if thermo_block.strip() else None)
+    if thermo_block.strip():
+        raise ChemkinError('The THERM block has END inside the unfinished entry for species {0}'.format(
+            thermo_block.split()[0]))
     return formula_dict
 
 
@@ -1355,7 +1765,7 @@ def read_reactions_block(f, species_dict, read_comments=True):
         line = line.strip()
         tokens = line.split()
 
-        if len(tokens) > 0 and tokens[0].upper() == 'REACTIONS':
+        if len(tokens) > 0 and tokens[0].upper() in ('REACTIONS', 'REAC'):
             # Regular Chemkin file
             found = True
             for token in tokens[1:]:
@@ -1422,14 +1832,19 @@ def read_reactions_block(f, species_dict, read_comments=True):
     comments = ''
 
     line = f.readline()
+    ended = False
     while line != '':
+        header = _block_header(line)
+        if header:
+            raise _unterminated_block('REACTIONS', line)
 
         line_starts_with_comment = line.lstrip().startswith('!') or line.lstrip().startswith('//')
         line, comment = remove_comment_from_line(line)
         line = line.strip()
         comment = comment.strip()
 
-        if 'end' in line or 'END' in line:
+        if _is_end_keyword(line):
+            ended = True
             break
 
         # if 'rev' in line or 'REV' in line:
@@ -1448,6 +1863,9 @@ def read_reactions_block(f, species_dict, read_comments=True):
         if comment: comments += comment + '\n'
 
         line = f.readline()
+
+    if not ended:
+        raise _block_at_end_of_file('REACTIONS')
 
     # Don't forget the last reaction!
     if kinetics.strip() != '':
@@ -1906,7 +2324,9 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
         for species, cov_params in kinetics.coverage_dependence.items():
             label = get_species_identifier(species)
             string += f'    COV / {label:<41} '
-            string += f"{cov_params['a']:<9.3g} {cov_params['m']:<9.3g} {cov_params['E'].value_si/4184.:<9.3f} /\n"
+            # a and m as quantities (the coverage_dependence setter's and the reader's form) or plain numbers
+            a, m = (getattr(cov_params[x], 'value_si', cov_params[x]) for x in ('a', 'm'))
+            string += f"{a:<9.3g} {m:<9.3g} {cov_params['E'].value_si/4184.:<9.3f} /\n"
 
     if isinstance(kinetics, (_kinetics.ThirdBody, _kinetics.Lindemann, _kinetics.Troe)):
         # Write collider efficiencies
@@ -1984,6 +2404,8 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                 if i % 5 == 0: string += '    CHEB/'
                 string += ' {0:<12.3e}'.format(coeffs[i])
                 if i % 5 == 4: string += '/\n'
+            if len(coeffs) % 5:
+                string += '/\n'      # close the last, unfinished line: DUPLICATE or the next entry follows on its own
 
     if reaction.duplicate:
         string += 'DUPLICATE\n'
