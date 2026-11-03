@@ -132,8 +132,17 @@ def report(owner, wait_error=0):
         raise ReporterError('fork when C clears this reporter exception')
     if state['attempts'] == 2:
         if OUTCOME == 'reap':
-            # The exec fixture exits naturally. No wait/poll/kill assists C.
-            time.sleep(.5)
+            # Observe natural exit without consuming the exact wait status
+            # or changing the native record; C still performs the only reap.
+            pid = n.info(state['record'])['pid']
+            until = time.monotonic() + 5.
+            state['exit_observation'] = 'pending'
+            while Path('/proc/%d/stat' % pid).read_text().rsplit(')', 1)[1].split()[0] != 'Z':
+                if time.monotonic() >= until:
+                    state['exit_observation'] = 'timeout'
+                    raise AssertionError('reporter worker exit observation timed out')
+                time.sleep(.001)
+            state['exit_observation'] = 'exited'
         os.kill(ROOT, signal.SIGUSR1)
     return original_report(owner, wait_error)
 
@@ -186,6 +195,7 @@ def main():
         row['state'].pop('record')
         print('REPORT_FORK', json.dumps(row), flush=True)
         try:
+            assert state.get('exit_observation') != 'timeout', 'reporter worker exit observation timed out'
             assert before == (path.read_bytes(), path.stat().st_mtime_ns)
             assert state['fork_site'] == ('callback' if MODE == 'callback' else 'exception-destruction')
             assert state['raises'] == (2 if MODE == 'callback' else 1), row
