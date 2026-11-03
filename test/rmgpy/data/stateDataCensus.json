@@ -33155,7 +33155,7 @@
         "test/rmgpy/kinetics/eedfTest.py",
         "test/rmgpy/data/kinetics/eedfChannelTest.py"
       ],
-      "source_sha256": "72cf95a791db917ac0195070ae5c8c794a70ac13ab81739109cb447bd737e6a7"
+      "source_sha256": "d1d549061b0af7fef2cd802d154ffa946a5253f473019a1a8bb2d142c08ebffa"
     },
     "rmgpy/kinetics/eedf.pyx:EEDFChannel.__reduce__": {
       "verdict": "carried",
@@ -33164,7 +33164,7 @@
         "test/rmgpy/kinetics/eedfTest.py",
         "test/rmgpy/data/kinetics/eedfChannelTest.py"
       ],
-      "source_sha256": "6d2aa371d1236cf7d7c5b30e589ef53f538710fe5627a8dc4cc6745ed7784f66"
+      "source_sha256": "b539d1072a5d7ff7d4f96543b040caa83079dcba32ed6d2bc691f5d242c1949a"
     },
     "rmgpy/kinetics/eedf.pyx:EEDFChannel.__repr__": {
       "verdict": "carried",
@@ -33173,7 +33173,7 @@
         "test/rmgpy/kinetics/eedfTest.py",
         "test/rmgpy/data/kinetics/eedfChannelTest.py"
       ],
-      "source_sha256": "5903e4723af5ba18f660a90b8d25a2910d36f2ef26f4ec822e87d237431aa772"
+      "source_sha256": "66616559a6c3fbad41736da685aec17ab48f794ac25ff7caa8b40d83616628e8"
     },
     "rmgpy/kinetics/eedf.pyx:EEDFChannel.get_rate_coefficient": {
       "verdict": "refused",
@@ -33182,7 +33182,7 @@
         "test/rmgpy/kinetics/eedfTest.py",
         "test/rmgpy/data/kinetics/eedfChannelTest.py"
       ],
-      "source_sha256": "da9d54e0fb5beee56c0afdf9453354bb06fdb65fed4701f14a8ed8501d118703"
+      "source_sha256": "50e2f4aeb89ec60c873592afb4eb7b37202b2a142f271e4122aa326d0534efa2"
     },
     "rmgpy/kinetics/eedf.pyx:EEDFChannel.is_identical_to": {
       "verdict": "carried",
@@ -33191,7 +33191,7 @@
         "test/rmgpy/kinetics/eedfTest.py",
         "test/rmgpy/data/kinetics/eedfChannelTest.py"
       ],
-      "source_sha256": "8f1bb4ef4e088d87007c8f20ea4491369b73aacb51c906ddc4abb8bcdef7bc77"
+      "source_sha256": "4941c3469fec4706a8f09c7160d6d375eb3ac4f66fbc4c330056b6e75a76769f"
     },
     "rmgpy/kinetics/eedf.pyx:EEDFChannel.side.__get__": {
       "verdict": "carried",
@@ -33200,7 +33200,7 @@
         "test/rmgpy/kinetics/eedfTest.py",
         "test/rmgpy/data/kinetics/eedfChannelTest.py"
       ],
-      "source_sha256": "28d36ae243db3c15658728642bfa8c5e6dafaa27a30a2cdffb9372f4944a30ee"
+      "source_sha256": "1a6ddf008b77aecddba3b482a68624571387735350c8af991b938a807437df3c"
     },
     "rmgpy/kinetics/eedf.pyx:EEDFChannel.side.__set__": {
       "verdict": "carried",
@@ -33209,7 +33209,7 @@
         "test/rmgpy/kinetics/eedfTest.py",
         "test/rmgpy/data/kinetics/eedfChannelTest.py"
       ],
-      "source_sha256": "2761be5a40a8fd5d62f4a0279993f697275171cbce7aac04ac29f2318b3e01dc"
+      "source_sha256": "bd437279214fb81af575beaf9f8d8a4afeb1444a690b7decbd3a7be7110465cc"
     },
     "rmgpy/kinetics/eedf.pyx:EEDFChannel.uses_eedf.__get__": {
       "verdict": "carried",
@@ -33218,7 +33218,7 @@
         "test/rmgpy/kinetics/eedfTest.py",
         "test/rmgpy/data/kinetics/eedfChannelTest.py"
       ],
-      "source_sha256": "1f644dc4d06f30d7caba347690c1f4345d8bbf0c77bb6bf12c90d1305e9b244c"
+      "source_sha256": "e79de9b22d2147dc5bd0397a206572413e1f65c21a30d2961acb436b86bba69c"
     },
     "rmgpy/rmg/input.py:_plasma_electron_kinetics": {
       "verdict": "carried",
@@ -36683,7 +36683,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "aa72780255ec3bc5e8966014b45376123b68d27dd2c11f709f7f3451fff9981a"
+      "source_sha256": "2534260acc79700e5cb94296fd4c1df218faa2292f4d388d831e402203c112c9"
     },
     "rmgpy/tools/eedf/channels.py:_validate_physical_map": {
       "verdict": "carried",
@@ -36883,7 +36883,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/schemaTest.py"
       ],
-      "source_sha256": "7bb7babcb2fa5b0d7d6e29b21c69e5dfcc414acea3e8711a7a57eb605702ac28"
+      "source_sha256": "d7655ec23c9f862d6223678b669e70a9d3ae4fdac53b8adfda649e596018c010"
     },
     "rmgpy/tools/eedf/schema.py:_content_hash": {
       "verdict": "carried",
@@ -37237,7 +37237,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "53010cd749e85490e73d6b2ada7375bd785276a2c041466d91cbd74ade736d5f"
+      "source_sha256": "4263e0fcb0a4d0344fcc2df6a60ca8ef742a287c8cae0c44c626329071e281df"
     },
     "rmgpy/tools/eedf/channel_map.py:convert_channel_map.<lambda1>": {
       "verdict": "not-reachable-for-resolved",
@@ -37261,7 +37261,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "11964288aa177eb7291441b90faa165cd7c91c5ad59a66f6406c4fc22dd1d6d4"
+      "source_sha256": "b7dd344cd5a3a43fac8f9b8832ec07c8a071799ba190c6a22a78fb6d455142e4"
     },
     "rmgpy/tools/eedf/channel_map.py:_write_outputs": {
       "verdict": "not-reachable-for-resolved",
@@ -37277,7 +37277,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "d169aadba160314dfcb4a62acc995e9258b9a8e491f381fb6b31c884daf2da51"
+      "source_sha256": "158d52b49a769ed362c451d2a0a188ece10ca329889142e04a744ee63b9e6895"
     },
     "rmgpy/tools/eedf/schema.py:_provider_kind": {
       "verdict": "excluded",
@@ -37454,6 +37454,118 @@
         "test/rmgpy/tools/eedf/branchYieldTest.py"
       ],
       "source_sha256": "7d877df82e3cc4334f192877b22e863ed2b1b700dd1e7d98c963c06393456187"
+    },
+    "rmgpy/kinetics/eedf.pyx:EEDFChannel.branch_product.__get__": {
+      "verdict": "carried",
+      "reason": "Returns the immutable sourced product-state token without reducing it to a display label.",
+      "evidence": [
+        "test/rmgpy/kinetics/eedfTest.py"
+      ],
+      "source_sha256": "cd9abe48eec7c04bf545c6aa55c2320c517f3335ba52d6e7146b2546ff11fddf"
+    },
+    "rmgpy/kinetics/eedf.pyx:EEDFChannel.branch_yield.__get__": {
+      "verdict": "carried",
+      "reason": "Returns the sourced product fraction, including explicit zero; no normalization or inference.",
+      "evidence": [
+        "test/rmgpy/kinetics/eedfTest.py"
+      ],
+      "source_sha256": "477f4ad539e0c77479bc940e0bcd442d1d3dd96052bc3fcd12689eb08e8d1305"
+    },
+    "rmgpy/kinetics/eedf.pyx:EEDFChannel.yield_table_sha256.__get__": {
+      "verdict": "carried",
+      "reason": "Returns the exact generated-source digest carried by the marker.",
+      "evidence": [
+        "test/rmgpy/kinetics/eedfTest.py"
+      ],
+      "source_sha256": "634616942f2b56f3c965678429177908b2c03f2924c5abbc1a53f726101bd192"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_branch_family": {
+      "verdict": "carried",
+      "reason": "Discovers declared source-library markers and cross-checks their molecular products and source yields; missing data never creates chemistry.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "ada74037a5162d8668fb2d7fbcda67647d9a4de50b111975c00aa576d4371c12"
+    },
+    "rmgpy/tools/eedf/channel_map.py:convert_channel_map.<lambda2>": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Orders family diagnostic records by their explicit collision id; does not alter chemistry or rates.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "e32a85d8e0b6e77fe96cc409c1c8365b0060cd54942d0879474c922507fb5895"
+    },
+    "rmgpy/tools/eedf/ownership.py:_argon_identity": {
+      "verdict": "carried",
+      "reason": "Checks neutral single-argon molecular state, multiplicity, and vibrational identity rather than species labels.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "9a1bfc4a7b262210c302b2c4dbb682af76059496b1ee639772cc45c15a44e68b"
+    },
+    "rmgpy/tools/eedf/ownership.py:is_branch_family": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Recognizes the versioned ownership envelope; it does not evaluate species, thermo, or rates.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "d061098152b5b2bbacbab2e3afcb626a1a49729b57d1f34e8b03f8b20045cb88"
+    },
+    "rmgpy/tools/eedf/ownership.py:iter_reaction_owners": {
+      "verdict": "carried",
+      "reason": "Enumerates all validated source-entry/marker identities from a family while retaining one physical collision envelope.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "51d87fa65c466d6d1d8de20e31aee2eeadb3f151e44801fead82bea4cf1d779b"
+    },
+    "rmgpy/tools/eedf/ownership.py:make_branch_family": {
+      "verdict": "carried",
+      "reason": "Cross-checks actual molecular products with sourced marker fractions and persists the complete vector and source identities.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "2d8bf86b87396dd32ca46f3500dcfc2c1b772802c5137dbfe067c1fc39860df6"
+    },
+    "rmgpy/tools/eedf/ownership.py:make_branch_family.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Orders explicit branches by the four source product states without changing their identities or weights.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "3d4383d56225489d1713ea30ef9fbe4717be5ebda26cd659dd7994d395009b41"
+    },
+    "rmgpy/tools/eedf/ownership.py:marker_fields": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Parses literal marker metadata without executing artifact code; checks branch field validity.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "10a7a3d25bfce2704e905c0c8ae2a6cc48ea30fc2e6828728d49794c1a731973"
+    },
+    "rmgpy/tools/eedf/ownership.py:reaction_product_state": {
+      "verdict": "carried",
+      "reason": "Validates irreversible electron/argon stoichiometry and exact product molecular state, including the Ars alias.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "2a3f561ef4838f395196e3da702d7aa712eb79d935a9c03cd977c08f7d95097c"
+    },
+    "rmgpy/tools/eedf/ownership.py:validate_branch_metadata": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Validates an atomic numeric/source/product marker triple; does not calculate thermo or rates.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "e48641b42d1257cc0bb313a8d008a9d7333c84e6f9f5a080285c66bc4c2c4af6"
+    },
+    "rmgpy/tools/eedf/ownership.py:validate_family": {
+      "verdict": "carried",
+      "reason": "Validates a complete source-pinned four-product family with one shared normalization rule and exact marker cross-checks.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "619fac0a4211c25679af511d16104aabdadc3a34f8c4842727fe823de7ddcb25"
     }
   }
 }

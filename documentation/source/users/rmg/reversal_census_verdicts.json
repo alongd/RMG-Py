@@ -5602,5 +5602,12 @@
     "tests": [
       "test/rmgpy/tools/eedf/channelMapTest.py::test_refuses_unowned_a_without_demotion"
     ]
+  },
+  "rmgpy/tools/eedf/ownership.py::reaction_product_state::reaction-io": {
+    "verdict": "refused",
+    "reason": "Cascade product binding refuses reversible reactions before mapping sourced product yields; no equilibrium reverse is constructed.",
+    "tests": [
+      "test/rmgpy/tools/eedf/branchYieldTest.py"
+    ]
   }
 }

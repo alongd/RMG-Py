@@ -38,6 +38,7 @@ import yaml
 
 from rmgpy.tools.eedf import channel_map as adapter
 from rmgpy.tools.eedf.schema import FingerprintMismatch, SpecError, _file_hash, load_spec
+from branchYieldTest import PROCESS, branch_fixture, branch_reactions, source_files
 
 
 @pytest.fixture
@@ -282,3 +283,142 @@ def test_real_named_channels_have_literal_owners_and_cross_sections(
         assert result['reaction']['repr'] == (
             'EEDFChannel(process=' + repr(processes[channel_id]) +
             ", collision_set='IST-Lisbon-Ar-2021', side='ine')")
+
+
+@pytest.fixture
+def cascade_conversion(conversion_inputs, branch_fixture):
+    spec, frozen, _ = conversion_inputs
+    snapshot, reactions, family = branch_fixture
+    path = Path(spec['input_files']['Ar_LXCat.txt']['path'])
+    path.write_text('PARAM.: E = 12.907 eV\n'
+                    '[Ar(1S0) + e -> Ar(4p[1/2]1) + e, Excitation]\n'
+                    '-----\n12.907 0\n13 3.237651e-22\n-----\n')
+    spec['input_files']['Ar_LXCat.txt']['sha256'] = _file_hash(path)
+    frozen['loki_files']['Ar_LXCat.txt'] = _file_hash(path)
+    path = Path(spec['channel_map']['path'])
+    physical = json.loads(path.read_text())[0]
+    physical.update(description=PROCESS, threshold_eV=12.907, flux_group=PROCESS)
+    physical['cross_section']['energy_eV'][0] = 12.907
+    path.write_text(json.dumps([physical]))
+    spec['channel_map']['sha256'] = _file_hash(path)
+    row = frozen['channels'][0]
+    row.update(id=6, loki_process=PROCESS, threshold_eV=12.907)
+    row['rmg'].update(status='absent', index=None)
+    frozen['class_a_gaps'] = {'[absent] cascade source': [6]}
+    library = SimpleNamespace(entries={r.entry.index: r.entry for r in reactions})
+    return spec, frozen, library, snapshot, family
+
+
+def test_complete_family_converts_from_absent_placeholder(cascade_conversion, tmp_path):
+    spec, frozen, library, snapshot, family = cascade_conversion
+    converted, report = adapter.convert_channel_map(spec, frozen, library, 'test-Ar', snapshot)
+    assert len(converted) == 1
+    assert converted[0]['reaction'] == family
+    assert report['branch_families'] == [{'id': 6, 'family': family}]
+    assert report['missing_owners'] == []
+    adapter._write_outputs(tmp_path / 'complete', report, spec, converted)
+    published = json.loads((tmp_path / 'complete/channel-map.json').read_text())
+    assert published == converted
+
+
+@pytest.mark.parametrize('problem', ['missing', 'extra', 'unweighted', 'source', 'unresolved',
+                                     'wrong_product', 'stale_yield', 'ordinary_overlap'])
+def test_converter_refuses_incomplete_or_unmatched_family(cascade_conversion, problem):
+    from rmgpy.data.base import Entry
+    from rmgpy.kinetics import EEDFChannel
+    spec, frozen, library, snapshot, _ = cascade_conversion
+    entry = next(iter(library.entries.values()))
+    if problem == 'missing':
+        library.entries.pop(entry.index)
+    elif problem == 'extra':
+        library.entries[9000] = copy.deepcopy(entry)
+    elif problem == 'unweighted':
+        library.entries[9000] = Entry(index=9000, item=entry.item,
+                                      data=EEDFChannel(process=PROCESS, collision_set='test-Ar'))
+    elif problem == 'source':
+        snapshot = None
+    elif problem == 'unresolved':
+        snapshot['channels'][0].update(status='unresolved', product_yields=None)
+    elif problem == 'wrong_product':
+        entry.item.products[1].molecule[0].electronic_state = '3P1'
+    elif problem == 'stale_yield':
+        snapshot['channels'][0]['product_yields']['Ar(1s5)'] += .001
+        snapshot['channels'][0]['product_yields']['Ar(1s4)'] -= .001
+    else:
+        frozen['channels'][0]['rmg'].update(status='present', index=87)
+        frozen['class_a_gaps'] = {}
+    with pytest.raises(adapter.MissingOwners) as caught:
+        adapter.convert_channel_map(spec, frozen, library, 'test-Ar', snapshot)
+    assert caught.value.report['branch_families'] == []
+    assert [row['id'] for row in caught.value.report['missing_owners']] == [6]
+    assert caught.value.report['missing_owners'][0]['reason'] not in ('absent', '')
+
+
+def test_map_family_requires_matching_physics(cascade_conversion):
+    spec, frozen, library, snapshot, _ = cascade_conversion
+    channels, _ = adapter.convert_channel_map(spec, frozen, library, 'test-Ar', snapshot)
+    channels[0]['threshold_eV'] = 11.
+    with pytest.raises(SpecError, match='collision identity'):
+        adapter._validate_map(channels)
+    channels[0]['threshold_eV'] = 12.907
+    channels[0]['product_fraction'] = .1
+    with pytest.raises(SpecError, match='forward excitation'):
+        adapter._validate_map(channels)
+
+
+def test_converter_unweighted_duplicate_refuses(conversion_inputs):
+    from rmgpy.kinetics import EEDFChannel
+    spec, frozen, library = conversion_inputs
+    entry = library.entries[87]
+    entry.data = EEDFChannel(process=frozen['channels'][0]['loki_process'], collision_set='test-Ar')
+    library.entries[88] = copy.deepcopy(entry)
+    with pytest.raises(adapter.MissingOwners, match='lack owning') as caught:
+        adapter.convert_channel_map(spec, frozen, library, 'test-Ar')
+    assert 'double-count one tabulated rate' in caught.value.report['missing_owners'][0]['reason']
+
+
+def test_prepare_family_reads_pinned_sources(cascade_conversion, source_files, tmp_path, monkeypatch):
+    spec, frozen, library, _, family = cascade_conversion
+    frozen_path = tmp_path / 'frozen.yaml'
+    frozen_path.write_text(yaml.safe_dump(frozen))
+    monkeypatch.setattr(adapter, 'load_spec', lambda path: spec)
+    monkeypatch.setattr(adapter, '_load_library', lambda *args: (library, {'fixture': 'digest'}))
+    yields, source, _ = source_files
+    _, converted, report = adapter.prepare_spec(
+        'unused', frozen_path, _file_hash(frozen_path), tmp_path, 'test-Ar',
+        yield_table=yields, radiative_source=source,
+        yield_table_sha256=_file_hash(yields), source_sha256=_file_hash(source))
+    assert converted[0]['reaction'] == family
+    assert report['provenance']['cascade_sources']['yield_table_sha256'] == _file_hash(yields)
+    with pytest.raises(FingerprintMismatch, match='source hash'):
+        adapter.prepare_spec('unused', frozen_path, _file_hash(frozen_path), tmp_path, 'test-Ar',
+                             yield_table=yields, radiative_source=source, yield_table_sha256='0' * 64)
+
+
+def test_i353_fixture_families_are_reported(tmp_path, monkeypatch):
+    """Use the real read-only library plus private branches, with no generation."""
+    from rmgpy.tools.eedf.ownership import load_cascade_yields
+    database = os.environ.get('EEDF_DATABASE_ROOT')
+    spec_path = os.environ.get('EEDF_CHANNEL_MAP_BASE_SPEC')
+    if not database or not spec_path:
+        pytest.skip('requires EEDF_DATABASE_ROOT and EEDF_CHANNEL_MAP_BASE_SPEC')
+    root = Path(database) / 'input/eedf'
+    snapshot = load_cascade_yields(root / 'argon_cascade_yields.yaml', root / 'argon_radiative_data.yaml')
+    # The live source contract has an independent literal byte pin.
+    assert snapshot['yield_table_sha256'] == '200cd309f4915122117f37293bb74fcb785d0b5805d3d9868d3fe5eec2dac0f5'
+    library, hashes = adapter._load_library(database, tmp_path)
+    for channel_id in [6, 7, 8, 9, 10, 12, 13, 14, 15]:
+        for reaction in branch_reactions(snapshot, channel_id):
+            assert reaction.entry.index not in library.entries
+            library.entries[reaction.entry.index] = reaction.entry
+    monkeypatch.setattr(adapter, '_load_library', lambda *args: (library, hashes))
+    frozen_path = root / 'argon_channel_map.yaml'
+    with pytest.raises(adapter.MissingOwners) as caught:
+        adapter.prepare_spec(spec_path, frozen_path, _file_hash(frozen_path), database, 'test-Ar')
+    report = caught.value.report
+    assert [row['id'] for row in report['branch_families']] == [6, 7, 8, 9, 10, 12, 13, 14, 15]
+    assert [row['id'] for row in report['missing_owners']] == [
+        11, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
+    assert report['shared_owners'] == []
+    adapter._write_outputs(tmp_path / 'refusal', report)
+    assert [path.name for path in (tmp_path / 'refusal').iterdir()] == ['conversion-report.json']

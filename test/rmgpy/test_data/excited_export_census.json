@@ -5673,8 +5673,8 @@
     "rmgpy/tools/eedf/channel_map.py:prepare_spec": {
       "file": "rmgpy/tools/eedf/channel_map.py",
       "function": "prepare_spec",
-      "line": 252,
-      "signature": "853908a28387f862e2c48fab75b818c0eaf7bd1eed8b5999f005d7780e89fac4",
+      "line": 293,
+      "signature": "2bbc5c73970a5e9d4cd1c54c01bed6fe7227e88a444911d27818e75839ac4609",
       "verdict": "E",
       "reason": "Copies pinned physical-input bytes into private scratch space and checks ownership against the explicit library; does not export reconstructed molecular identities."
     },
@@ -5689,8 +5689,8 @@
     "rmgpy/tools/eedf/channel_map.py:_main": {
       "file": "rmgpy/tools/eedf/channel_map.py",
       "function": "_main",
-      "line": 310,
-      "signature": "946476788cadede4b0111a1853ba54312db4c8dd7e87622fb634d5f74edf617c",
+      "line": 364,
+      "signature": "5d04d1e46d4ba8ee36ca3c2b85d003a76f685bb1f7c05d5a2bf7217df7aefb2f",
       "verdict": "E",
       "reason": "Prints conversion diagnostics or error text; molecular labels remain those of the explicit frozen source and no molecular structures or computed rates are exported."
     },

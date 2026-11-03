@@ -267,6 +267,15 @@ def _check_model(manifest, current, relative_tolerance):
     stored = manifest['row_inputs']
     if _content_hash(stored) != manifest['fingerprint']:
         raise FingerprintMismatch('manifest fingerprint')
+    from rmgpy.tools.eedf.ownership import is_branch_family, validate_family
+    mapped = [channel['reaction'] for channel in manifest.get('channel_map', [])
+              if channel.get('reaction') is not None]
+    if any(is_branch_family(identity) for identity in mapped + stored.get('reactions', [])):
+        for identity in mapped:
+            if is_branch_family(identity):
+                validate_family(identity)
+        if _canonical_json(mapped) != _canonical_json(stored.get('reactions')):
+            raise FingerprintMismatch('branch ownership differs from row_inputs fingerprint')
     current = copy.deepcopy(current)
     if set(current) != set(stored):
         raise FingerprintMismatch('row_inputs fields')

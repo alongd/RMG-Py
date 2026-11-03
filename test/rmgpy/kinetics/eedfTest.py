@@ -150,3 +150,74 @@ def test_eedf_channel_identity_requires_matching_marker_fields():
     assert not channel.is_identical_to(EEDFChannel("Ar -> Ar*", "argon-v2", "ine"))
     assert not channel.is_identical_to(EEDFChannel("Ar -> Ar*", "argon-v1", "sup"))
     assert not channel.is_identical_to(Arrhenius())
+
+
+def _branch(**kwargs):
+    fields = dict(process='cascade', collision_set='argon-v1',
+                  branch_product='Ar(1s5)', branch_yield=0.7420494699646644,
+                  yield_table_sha256='a' * 64)
+    fields.update(kwargs)
+    return EEDFChannel(**fields)
+
+
+@pytest.mark.parametrize('restore', [deepcopy, lambda c: pickle.loads(pickle.dumps(c)),
+                                    lambda c: eval(repr(c), {'EEDFChannel': EEDFChannel})])
+def test_branch_roundtrip(restore):
+    original = _branch()
+    restored = restore(original)
+    assert restored.is_identical_to(original)
+    assert restored.branch_product == 'Ar(1s5)'
+    assert restored.branch_yield == 0.7420494699646644
+    assert restored.yield_table_sha256 == 'a' * 64
+
+
+def test_branch_native_record_preserves_metadata():
+    from rmgpy.rmg.pdep import _KINETICS_DATA_FIELDS
+    original = _branch(branch_yield=0.)
+    # KineticsModel uses native descriptors and constructor/reduce records,
+    # rather than the RMGObject.as_dict API used by species.
+    fields = ('process', 'collision_set', 'side', 'branch_product',
+              'branch_yield', 'yield_table_sha256')
+    assert set(fields) <= set(_KINETICS_DATA_FIELDS[EEDFChannel])
+    record = {name: getattr(original, name) for name in fields}
+    restored = EEDFChannel(**record)
+    assert restored.is_identical_to(original)
+    assert restored.branch_yield == 0.
+
+
+@pytest.mark.parametrize('kwargs', [
+    {'branch_product': None}, {'branch_yield': None}, {'yield_table_sha256': None},
+    {'branch_product': 'Ars'}, {'branch_yield': -1.}, {'branch_yield': 1.01},
+    {'branch_yield': float('nan')}, {'branch_yield': float('inf')},
+    {'branch_yield': True}, {'branch_yield': '0.5'}, {'branch_yield': 10 ** 1000},
+    {'yield_table_sha256': 'bad'}, {'side': 'sup'},
+])
+def test_branch_invalid_metadata_refuses(kwargs):
+    with pytest.raises(ValueError, match='branch|cascade'):
+        _branch(**kwargs)
+
+
+def test_branch_metadata_is_atomic_and_sup_assignment_refuses():
+    channel = _branch()
+    with pytest.raises(ValueError, match='branch|cascade'):
+        channel.side = 'sup'
+    assert channel.side == 'ine'
+    for field, value in [('branch_yield', .5), ('branch_product', 'Ar(1s4)'),
+                         ('yield_table_sha256', 'b' * 64)]:
+        with pytest.raises(AttributeError):
+            setattr(channel, field, value)
+
+
+@pytest.mark.parametrize('kwargs', [
+    {'branch_product': 'Ar(1s4)'}, {'branch_yield': .5}, {'yield_table_sha256': 'b' * 64},
+])
+def test_branch_identity_includes_source_and_product(kwargs):
+    assert not _branch().is_identical_to(_branch(**kwargs))
+
+
+def test_ordinary_repr_and_old_pickle_arguments_are_unchanged():
+    channel = EEDFChannel('old', 'argon', 'ine', None, None, None, None, '')
+    assert repr(channel) == "EEDFChannel(process='old', collision_set='argon', side='ine')"
+    assert channel.__reduce__()[1] == ('old', 'argon', 'ine', None, None, None, None, '')
+    assert channel.branch_yield is None
+    assert not _branch().is_identical_to(EEDFChannel('cascade', 'argon-v1'))

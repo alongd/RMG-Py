@@ -45,6 +45,7 @@ from rmgpy.kinetics import EEDFChannel
 from rmgpy.exceptions import DatabaseError
 from rmgpy.tools.eedf.channels import _load_channel_map, _validate_map, _validate_physical_map
 from rmgpy.tools.eedf.schema import FingerprintMismatch, SpecError, load_spec
+from rmgpy.tools.eedf.ownership import load_cascade_yields, make_branch_family
 
 
 class MissingOwners(SpecError):
@@ -174,7 +175,34 @@ def _convert_channel(physical, frozen, collision_set):
     return result
 
 
-def convert_channel_map(spec, frozen, library, collision_set):
+def _branch_family(row, library, collision_set, cascade_yields):
+    """Discover declared markers, never infer branches from placeholder equations."""
+    owners = []
+    for index, entry in library.entries.items():
+        marker = getattr(entry, 'data', None)
+        if marker is None:
+            marker = getattr(entry.item, 'kinetics', None)
+        if getattr(marker, 'uses_eedf', False) and marker.process == row['loki_process']:
+            owners.append((row['rmg']['library'], index, entry.item, marker))
+    branched = [owner for owner in owners if owner[3].branch_product is not None]
+    if not branched:
+        sides = [owner[3].side for owner in owners]
+        if len(sides) != len(set(sides)):
+            raise SpecError('more than one unweighted EEDF owner would double-count one tabulated rate')
+        return None
+    if len(branched) != len(owners):
+        raise SpecError('cascade family cannot share a collision with an unweighted owner')
+    declared = row['rmg']
+    if (declared['status'] in ('present', 'present_lumped')
+            and declared.get('index') not in [owner[1] for owner in branched]):
+        raise SpecError('cascade family overlaps the frozen ordinary owner')
+    if cascade_yields is None:
+        raise SpecError('cascade family requires a sourced yield table')
+    return make_branch_family(cascade_yields, row['id'], row['loki_process'],
+                              row['threshold_eV'], collision_set, branched)
+
+
+def convert_channel_map(spec, frozen, library, collision_set, cascade_yields=None):
     """Convert complete physical coverage or report every unresolved selected A row."""
     if not isinstance(collision_set, str) or not collision_set.strip():
         raise SpecError('explicit collision_set required')
@@ -198,7 +226,7 @@ def convert_channel_map(spec, frozen, library, collision_set):
     report = {'outcome': 'converted', 'selected_channel_count': len(selected),
               'class_counts': dict(sorted(Counter(row['class'] for row in selected).items())),
               'selected_ids': sorted(row['id'] for row in selected),
-              'missing_owners': [], 'shared_owners': []}
+              'missing_owners': [], 'shared_owners': [], 'branch_families': []}
     shared = defaultdict(list)
     converted = []
     for physical in channels:
@@ -206,7 +234,11 @@ def convert_channel_map(spec, frozen, library, collision_set):
         if physical['threshold_eV'] != row.get('threshold_eV'):
             raise SpecError('frozen threshold differs from physical channel: ' + str(row['id']))
         if row['class'] == 'A':
-            problem = _owner_problem(row, library)
+            try:
+                family = _branch_family(row, library, collision_set, cascade_yields)
+                problem = None if family is not None else _owner_problem(row, library)
+            except (SpecError, FingerprintMismatch) as error:
+                family, problem = None, str(error)
             if problem:
                 process = row['loki_process']
                 report['missing_owners'].append({
@@ -216,9 +248,18 @@ def convert_channel_map(spec, frozen, library, collision_set):
                     'class_a_gaps_status': row['rmg']['status'],
                     'requested_owner': copy.deepcopy(row['rmg']), 'reason': problem})
                 continue
+            if family is not None:
+                channel = copy.deepcopy(physical)
+                channel.update(classification='A', reaction=family)
+                converted.append(channel)
+                report['branch_families'].append({'id': row['id'], 'family': copy.deepcopy(family)})
+                for owner in family['branches']:
+                    shared[(owner['library'], owner['index'])].append(row['id'])
+                continue
             shared[(row['rmg']['library'], row['rmg']['index'])].append(row['id'])
         converted.append(_convert_channel(physical, row, collision_set))
     report['missing_owners'].sort(key=lambda row: row['id'])
+    report['branch_families'].sort(key=lambda row: row['id'])
     report['shared_owners'] = [
         {'library': library_name, 'index': index, 'ids': sorted(ids)}
         for (library_name, index), ids in sorted(shared.items()) if len(ids) > 1]
@@ -249,7 +290,8 @@ def _load_library(database, scratch):
     return library, hashes
 
 
-def prepare_spec(base_spec, frozen_map, frozen_digest, database, collision_set):
+def prepare_spec(base_spec, frozen_map, frozen_digest, database, collision_set, *,
+                 yield_table=None, radiative_source=None, yield_table_sha256=None, source_sha256=None):
     """Snapshot external inputs; no solver is started and no source is written."""
     spec = load_spec(base_spec)
     frozen_bytes = _read_pinned_bytes(frozen_map, frozen_digest)
@@ -275,8 +317,20 @@ def prepare_spec(base_spec, frozen_map, frozen_digest, database, collision_set):
         snapshot['channel_map']['path'] = str(scratch / 'channels.json')
         library, hashes = _load_library(database, scratch)
         provenance['library_sha256'] = hashes
+        default_root = Path(database) / 'input/eedf'
+        yield_path = Path(yield_table) if yield_table is not None else default_root / 'argon_cascade_yields.yaml'
+        source_path = Path(radiative_source) if radiative_source is not None else default_root / 'argon_radiative_data.yaml'
+        cascade = None
+        # Old databases without any cascade documents remain valid for ordinary
+        # conversion. Explicit pins, partial installs and requested families fail closed.
+        if (yield_path.exists() or source_path.exists() or yield_table is not None
+                or radiative_source is not None or yield_table_sha256 is not None or source_sha256 is not None):
+            cascade = load_cascade_yields(yield_path, source_path,
+                                          yield_table_sha256=yield_table_sha256, source_sha256=source_sha256)
+            provenance['cascade_sources'] = {name: cascade[name] for name in
+                                              ('yield_table_sha256', 'source_sha256', 'radiative_model')}
         try:
-            converted, report = convert_channel_map(snapshot, frozen, library, collision_set)
+            converted, report = convert_channel_map(snapshot, frozen, library, collision_set, cascade)
         except MissingOwners as error:
             error.report['provenance'] = provenance
             raise
@@ -312,11 +366,16 @@ def _main(argv=None):
     for option in ('base-spec', 'frozen-map', 'frozen-map-sha256', 'database',
                    'collision-set', 'output-directory'):
         parser.add_argument('--' + option, required=True)
+    for option in ('yield-table', 'radiative-source', 'yield-table-sha256', 'source-sha256'):
+        parser.add_argument('--' + option)
     args = parser.parse_args(argv)
     try:
+        optional = {name: getattr(args, name) for name in
+                    ('yield_table', 'radiative_source', 'yield_table_sha256', 'source_sha256')
+                    if getattr(args, name) is not None}
         spec, channels, report = prepare_spec(
             args.base_spec, args.frozen_map, args.frozen_map_sha256,
-            args.database, args.collision_set)
+            args.database, args.collision_set, **optional)
     except MissingOwners as error:
         report, spec, channels = error.report, None, None
         report['refusal'] = str(error)

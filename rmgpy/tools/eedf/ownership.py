@@ -33,6 +33,7 @@ The generated yield document owns the numbers. Consumers validate a byte
 snapshot and never renormalize it or turn an unresolved family into chemistry.
 """
 
+import ast
 import copy
 import hashlib
 import math
@@ -46,6 +47,9 @@ from rmgpy.tools.eedf.schema import FingerprintMismatch, SpecError
 
 YIELD_SUM_ATOL = 1e-12
 ARGON_PRODUCTS = ('Ar(1s5)', 'Ar(1s4)', 'Ar(1s3)', 'Ar(1s2)')
+FAMILY_SCHEMA = 'eedf-branch-family/1'
+ARGON_STATES = {'Ar(1s5)': ('3P2', 3), 'Ar(1s4)': ('3P1', 3),
+                'Ar(1s3)': ('3P0', 3), 'Ar(1s2)': ('1P1', 1)}
 
 
 class _UniqueLoader(yaml.SafeLoader):
@@ -66,6 +70,19 @@ def validate_branch_yield(value):
     if type(value) not in (int, float) or not 0 <= value <= 1 or not math.isfinite(value):
         raise SpecError('branch yield must be finite and between zero and one')
     return value
+
+
+def validate_branch_metadata(product, value, digest, side):
+    """Validate an atomic marker triple without imposing a family sum."""
+    if product is None and value is None and digest is None:
+        return
+    if not isinstance(product, str) or product not in ARGON_PRODUCTS:
+        raise SpecError('branch product must name a sourced argon 1s state')
+    validate_branch_yield(value)
+    if not isinstance(digest, str) or not re.fullmatch('[0-9a-f]{64}', digest):
+        raise SpecError('branch yield_table_sha256 must be a source digest')
+    if side != 'ine':
+        raise SpecError('cascade branch cannot use the superelastic side')
 
 
 def validate_yield_vector(values):
@@ -174,3 +191,154 @@ def require_cascade_yields(snapshot, channel_id, *, process=None, threshold_eV=N
             or (threshold_eV is not None and row['threshold_eV'] != threshold_eV)):
         raise SpecError('cascade collision identity differs from sourced row: ' + str(channel_id))
     return copy.deepcopy(row)
+
+
+def is_branch_family(identity):
+    """Recognize the ownership union without accepting unknown schema versions."""
+    return isinstance(identity, dict) and 'schema' in identity
+
+
+def marker_fields(representation):
+    """Read marker literals without executing code from an artifact."""
+    try:
+        call = ast.parse(representation, mode='eval').body
+        if (not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name)
+                or call.func.id != 'EEDFChannel' or call.args
+                or any(k.arg is None for k in call.keywords)
+                or len({k.arg for k in call.keywords}) != len(call.keywords)):
+            raise ValueError('not an EEDFChannel keyword constructor')
+        fields = {item.arg: ast.literal_eval(item.value) for item in call.keywords}
+    except (TypeError, SyntaxError, ValueError, AttributeError) as error:
+        raise SpecError('unreadable branch marker metadata') from error
+    required = {'process', 'collision_set', 'side', 'branch_product',
+                'branch_yield', 'yield_table_sha256'}
+    if not required <= set(fields) or set(fields) - required - {'Tmin', 'Tmax', 'Pmin', 'Pmax', 'comment'}:
+        raise SpecError('branch marker fields')
+    validate_branch_metadata(fields['branch_product'], fields['branch_yield'],
+                             fields['yield_table_sha256'], fields['side'])
+    return fields
+
+
+def validate_family(family, *, process=None, threshold_eV=None):
+    """Validate the persisted ownership envelope, returning a detached snapshot.
+
+    The source digests and complete vector are frozen into the table identity.
+    Runtime does not discover a newer database file or reinterpret its yields.
+    """
+    required = {'schema', 'channel_id', 'process', 'threshold_eV', 'collision_set',
+                'radiative_model', 'status', 'yield_table_sha256', 'source_sha256',
+                'sum_atol', 'product_yields', 'transition_ids', 'branches'}
+    if not isinstance(family, dict) or set(family) != required or family['schema'] != FAMILY_SCHEMA:
+        raise SpecError('branch family schema/fields')
+    if (family['radiative_model'] != 'E1' or family['status'] != 'complete_for_E1'
+            or type(family['sum_atol']) not in (int, float) or family['sum_atol'] != YIELD_SUM_ATOL
+            or not isinstance(family['collision_set'], str) or not family['collision_set'].strip()):
+        raise SpecError('branch family source policy')
+    _validate_source_row(dict(id=family['channel_id'], process=family['process'],
+                              threshold_eV=family['threshold_eV'], status=family['status'],
+                              product_yields=family['product_yields'], missing_transitions=[],
+                              transition_ids=family['transition_ids']))
+    for name in ('yield_table_sha256', 'source_sha256'):
+        if not isinstance(family[name], str) or not re.fullmatch('[0-9a-f]{64}', family[name]):
+            raise SpecError('branch family source digest')
+    if ((process is not None and family['process'] != process)
+            or (threshold_eV is not None and family['threshold_eV'] != threshold_eV)):
+        raise SpecError('branch family collision identity')
+    branches = family['branches']
+    if not isinstance(branches, list) or len(branches) != len(ARGON_PRODUCTS):
+        raise SpecError('branch family must contain all four branches, including zero yields')
+    products, entries = [], set()
+    for owner in branches:
+        if not isinstance(owner, dict) or set(owner) != {'product', 'library', 'index', 'repr'}:
+            raise SpecError('branch owner fields')
+        if (not isinstance(owner['product'], str) or owner['product'] not in ARGON_PRODUCTS
+                or not isinstance(owner['library'], str) or not owner['library'].strip()
+                or type(owner['index']) is not int or owner['index'] < 0):
+            raise SpecError('branch owner identity')
+        key = (owner['library'], owner['index'])
+        if key in entries:
+            raise SpecError('duplicate branch source entry')
+        entries.add(key)
+        products.append(owner['product'])
+        fields = marker_fields(owner['repr'])
+        if (fields['process'] != family['process'] or fields['collision_set'] != family['collision_set']
+                or fields['branch_product'] != owner['product']
+                or fields['branch_yield'] != family['product_yields'][owner['product']]
+                or fields['yield_table_sha256'] != family['yield_table_sha256']):
+            raise FingerprintMismatch('branch marker differs from sourced family')
+    if products != list(ARGON_PRODUCTS):
+        raise SpecError('branch family products must be unique and in source order')
+    return copy.deepcopy(family)
+
+
+def iter_reaction_owners(identity):
+    """Enumerate source identities while keeping one envelope per collision."""
+    if identity is None:
+        return iter(())
+    if is_branch_family(identity):
+        family = validate_family(identity)
+        return iter({key: owner[key] for key in ('library', 'index', 'repr')}
+                    for owner in family['branches'])
+    if not isinstance(identity, dict) or set(identity) != {'library', 'index', 'repr'}:
+        raise SpecError('mapped reaction identity')
+    return iter((copy.deepcopy(identity),))
+
+
+def _argon_identity(species):
+    """Require a neutral single atom with a consistent resolved state."""
+    molecules = species.molecule
+    if not molecules:
+        raise SpecError('cascade argon species requires molecular identity')
+    identities = set()
+    for molecule in molecules:
+        if (len(molecule.atoms) != 1 or molecule.atoms[0].element.symbol != 'Ar'
+                or molecule.get_net_charge() != 0 or molecule.vibrational_level != -1):
+            raise SpecError('cascade requires neutral monatomic argon')
+        identities.add((molecule.electronic_state, molecule.multiplicity))
+    if len(identities) != 1:
+        raise SpecError('inconsistent cascade argon molecular states')
+    return identities.pop()
+
+
+def reaction_product_state(reaction):
+    """Check collision stoichiometry and return the actual Paschen product.
+
+    Display aliases (notably Ars for 1s5) carry no identity authority.
+    """
+    if reaction.reversible:
+        raise SpecError('cascade branch must be irreversible')
+    heavy = []
+    for side in (reaction.reactants, reaction.products):
+        if len(side) != 2 or sum(species.is_electron() for species in side) != 1:
+            raise SpecError('cascade branch requires one electron and one argon on each side')
+        heavy.append(next(species for species in side if not species.is_electron()))
+    if _argon_identity(heavy[0]) not in (('', 1), ('1S0', 1)):
+        raise SpecError('cascade reactant must be ground-state argon')
+    state = _argon_identity(heavy[1])
+    for product, identity in ARGON_STATES.items():
+        if state == identity:
+            return product
+    raise SpecError('cascade product is not a sourced argon 1s state')
+
+
+def make_branch_family(snapshot, channel_id, process, threshold_eV, collision_set, owners):
+    """Cross-check library reactions against the source and freeze the family.
+
+    Owners are (library name, entry index, reaction, kinetics marker) tuples;
+    kinetics live in entry.data before a library reaction is instantiated.
+    """
+    row = require_cascade_yields(snapshot, channel_id, process=process, threshold_eV=threshold_eV)
+    branches = []
+    for library, index, reaction, marker in owners:
+        product = reaction_product_state(reaction)
+        if (not getattr(marker, 'uses_eedf', False)
+                or marker.branch_product != product):
+            raise SpecError('branch marker product differs from molecular product')
+        branches.append(dict(product=product, library=library, index=index, repr=repr(marker)))
+    branches.sort(key=lambda branch: ARGON_PRODUCTS.index(branch['product']))
+    return validate_family(dict(
+        schema=FAMILY_SCHEMA, channel_id=channel_id, process=process, threshold_eV=threshold_eV,
+        collision_set=collision_set, radiative_model=snapshot['radiative_model'], status=row['status'],
+        yield_table_sha256=snapshot['yield_table_sha256'], source_sha256=snapshot['source_sha256'],
+        sum_atol=YIELD_SUM_ATOL, product_yields=row['product_yields'],
+        transition_ids=row['transition_ids'], branches=branches))

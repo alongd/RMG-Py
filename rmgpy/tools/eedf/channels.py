@@ -87,9 +87,17 @@ def _validate_map(channels):
         if channel['kind'] == 'elastic' and channel.get('mass_ratio', 0) <= 0:
             raise SpecError('elastic mass ratio')
         reaction = channel['reaction']
-        if ((channel['classification'] == 'A') != (reaction is not None)
-                or reaction is not None and set(reaction) != {'library', 'index', 'repr'}):
+        if (channel['classification'] == 'A') != (reaction is not None):
             raise SpecError('classification disagrees with mapped reaction identity')
+        if reaction is not None:
+            from rmgpy.tools.eedf.ownership import is_branch_family, iter_reaction_owners, validate_family
+            if is_branch_family(reaction):
+                validate_family(reaction, process=channel['description'], threshold_eV=channel['threshold_eV'])
+                if (channel['kind'] != 'excitation' or channel['product_fraction'] != 0.
+                        or ' <-> ' in channel['description']):
+                    raise SpecError('cascade family requires a forward excitation collision')
+            else:
+                list(iter_reaction_owners(reaction))
         if not isinstance(channel['flux_group'], str) or not channel['flux_group']:
             raise SpecError('channel flux_group')
 

@@ -7242,12 +7242,23 @@
   {
     "site": "rmgpy/tools/eedf/channel_map.py::_owner_problem::reaction-io",
     "kind": "reader-exporter",
-    "line": 140,
+    "line": 141,
     "source": "def _owner_problem(row, library):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Checks participant labels and reversibility to verify a requested library owner; neither computes nor serializes reverse rates or reaction thermo.",
     "tests": [
       "test/rmgpy/tools/eedf/channelMapTest.py::test_refuses_unowned_a_without_demotion"
+    ]
+  },
+  {
+    "site": "rmgpy/tools/eedf/ownership.py::reaction_product_state::reaction-io",
+    "kind": "reader-exporter",
+    "line": 303,
+    "source": "def reaction_product_state(reaction):",
+    "verdict": "refused",
+    "reason": "Cascade product binding refuses reversible reactions before mapping sourced product yields; no equilibrium reverse is constructed.",
+    "tests": [
+      "test/rmgpy/tools/eedf/branchYieldTest.py"
     ]
   },
   {

@@ -52,6 +52,165 @@ ID6 = {
 PROCESS = 'e + Ar(1S0) -> e + Ar(4p[1/2]1), Excitation'
 
 
+def branch_reactions(snapshot, channel_id=6, collision_set='test-Ar'):
+    """Actual state-resolved reactions; the source supplies the fractions only."""
+    from rmgpy.data.base import Entry
+    from rmgpy.data.kinetics.library import LibraryReaction
+    from rmgpy.kinetics import EEDFChannel
+    from rmgpy.species import Species
+    row = next(row for row in snapshot['channels'] if row['id'] == channel_id)
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    argon = Species(label='Ar').from_adjacency_list('1 Ar u0 p4 c0')
+    reactions = []
+    # Independent literal state correspondence, including the database alias.
+    for offset, (product, label, state, spin, radicals, pairs) in enumerate([
+        ('Ar(1s5)', 'Ars', '3P2', 3, 2, 3),
+        ('Ar(1s4)', 'Ar(1s4)', '3P1', 3, 2, 3),
+        ('Ar(1s3)', 'Ar(1s3)', '3P0', 3, 2, 3),
+        ('Ar(1s2)', 'Ar(1s2)', '1P1', 1, 0, 4),
+    ]):
+        excited = Species(label=label).from_adjacency_list(
+            f'multiplicity {spin}\nelectronicstate {state}\n1 Ar u{radicals} p{pairs} c0')
+        marker = EEDFChannel(process=row['process'], collision_set=collision_set,
+                             branch_product=product, branch_yield=row['product_yields'][product],
+                             yield_table_sha256=snapshot['yield_table_sha256'])
+        entry = Entry(index=1000 + channel_id * 4 + offset, data=marker)
+        reaction = LibraryReaction(reactants=[electron, argon], products=[electron, excited],
+                                   reversible=False, kinetics=marker, library='PlasmaArgon', entry=entry)
+        entry.item = reaction
+        reactions.append(reaction)
+    return reactions
+
+
+def family_from_reactions(snapshot, reactions, channel_id=6):
+    from rmgpy.tools.eedf.ownership import make_branch_family
+    row = next(row for row in snapshot['channels'] if row['id'] == channel_id)
+    return make_branch_family(snapshot, channel_id, row['process'], row['threshold_eV'], 'test-Ar',
+                              [(r.library, r.entry.index, r, r.kinetics) for r in reactions])
+
+
+@pytest.fixture
+def branch_fixture(source_files):
+    from rmgpy.tools.eedf.ownership import load_cascade_yields
+    snapshot = load_cascade_yields(*source_files[:2])
+    reactions = branch_reactions(snapshot)
+    return snapshot, reactions, family_from_reactions(snapshot, reactions)
+
+
+def test_family_freezes_sourced_vector_and_molecular_alias(branch_fixture):
+    from rmgpy.tools.eedf.ownership import iter_reaction_owners, reaction_product_state
+    snapshot, reactions, family = branch_fixture
+    assert family['schema'] == 'eedf-branch-family/1'
+    assert family['product_yields'] == ID6
+    assert family['yield_table_sha256'] == snapshot['yield_table_sha256']
+    assert reactions[0].products[1].label == 'Ars'
+    assert reaction_product_state(reactions[0]) == 'Ar(1s5)'
+    assert list(iter_reaction_owners(family)) == [
+        {'library': r.library, 'index': r.entry.index, 'repr': repr(r.kinetics)} for r in reactions]
+    snapshot['channels'][0]['product_yields']['Ar(1s5)'] = 0.
+    assert family['product_yields'] == ID6
+
+
+@pytest.mark.parametrize('problem', [
+    'missing', 'extra', 'duplicate_product', 'duplicate_entry', 'product_state',
+    'reactant_state', 'stoichiometry', 'reversible', 'collision_set', 'source', 'yield',
+])
+def test_family_refuses_invalid_reactions(branch_fixture, problem):
+    from rmgpy.kinetics import EEDFChannel
+    snapshot, reactions, _ = branch_fixture
+    expected = {
+        'missing': 'all four', 'extra': 'all four', 'duplicate_product': 'unique',
+        'duplicate_entry': 'duplicate branch source', 'product_state': 'molecular product',
+        'reactant_state': 'ground-state', 'stoichiometry': 'one electron',
+        'reversible': 'irreversible', 'collision_set': 'sourced family',
+        'source': 'sourced family', 'yield': 'sourced family',
+    }[problem]
+    if problem == 'missing':
+        reactions.pop()
+    elif problem == 'extra':
+        reactions.append(copy.deepcopy(reactions[0]))
+    elif problem == 'duplicate_product':
+        from rmgpy.data.base import Entry
+        duplicate = copy.deepcopy(reactions[0])
+        duplicate.entry = Entry(index=reactions[-1].entry.index)
+        reactions[-1] = duplicate
+    elif problem == 'duplicate_entry':
+        reactions[-1].entry.index = reactions[0].entry.index
+    elif problem == 'product_state':
+        reactions[0].products[1].molecule[0].electronic_state = '3P1'
+    elif problem == 'reactant_state':
+        reactions[0].reactants[1] = reactions[0].products[1]
+    elif problem == 'stoichiometry':
+        reactions[0].products.append(reactions[0].products[0])
+    elif problem == 'reversible':
+        reactions[0].reversible = True
+    else:
+        marker = reactions[0].kinetics
+        fields = dict(process=marker.process, collision_set=marker.collision_set,
+                      branch_product=marker.branch_product, branch_yield=marker.branch_yield,
+                      yield_table_sha256=marker.yield_table_sha256)
+        fields[{'collision_set': 'collision_set', 'source': 'yield_table_sha256',
+                'yield': 'branch_yield'}[problem]] = {
+                    'collision_set': 'other', 'source': '0' * 64, 'yield': .5}[problem]
+        reactions[0].kinetics = EEDFChannel(**fields)
+    with pytest.raises((SpecError, FingerprintMismatch), match=expected):
+        family_from_reactions(snapshot, reactions)
+
+
+def test_missing_zero_branch_refuses(source_files):
+    from rmgpy.tools.eedf.ownership import load_cascade_yields
+    snapshot = load_cascade_yields(*source_files[:2])
+    snapshot['channels'][0]['product_yields'] = dict(zip(ID6, [1., 0., 0., 0.]))
+    reactions = branch_reactions(snapshot)
+    family = family_from_reactions(snapshot, reactions)
+    assert family['product_yields']['Ar(1s2)'] == 0.
+    with pytest.raises(SpecError, match='all four'):
+        family_from_reactions(snapshot, reactions[:-1])
+
+
+@pytest.mark.parametrize('problem', ['schema', 'policy', 'extra_field', 'marker_code', 'marker_sup',
+                                     'sum', 'digest', 'threshold', 'multiplicity', 'charged_product'])
+def test_family_envelope_and_species_refusals(branch_fixture, problem):
+    from rmgpy.tools.eedf.ownership import validate_family
+    snapshot, reactions, family = branch_fixture
+    if problem in ('multiplicity', 'charged_product'):
+        molecule = reactions[0].products[1].molecule[0]
+        if problem == 'multiplicity':
+            molecule.multiplicity = 1
+        else:
+            molecule.atoms[0].charge = 1
+        with pytest.raises(SpecError, match='argon'):
+            family_from_reactions(snapshot, reactions)
+        return
+    if problem == 'schema':
+        family['schema'] = 'eedf-branch-family/2'
+    elif problem == 'policy':
+        family['sum_atol'] = .01
+    elif problem == 'extra_field':
+        family['unrecognized'] = True
+    elif problem == 'marker_code':
+        family['branches'][0]['repr'] = "__import__('os').getcwd()"
+    elif problem == 'marker_sup':
+        family['branches'][0]['repr'] = family['branches'][0]['repr'].replace("side='ine'", "side='sup'")
+    elif problem == 'sum':
+        family['product_yields']['Ar(1s5)'] += .001
+    elif problem == 'digest':
+        family['source_sha256'] = None
+    else:
+        family['threshold_eV'] = 12.
+    with pytest.raises(SpecError):
+        validate_family(family, process=PROCESS, threshold_eV=12.907)
+
+
+def test_sum_preserving_source_mutation_refuses_stale_marker(branch_fixture):
+    snapshot, reactions, _ = branch_fixture
+    values = snapshot['channels'][0]['product_yields']
+    values['Ar(1s5)'] += .001
+    values['Ar(1s4)'] -= .001
+    with pytest.raises(FingerprintMismatch, match='sourced family'):
+        family_from_reactions(snapshot, reactions)
+
+
 @pytest.fixture
 def source_files(tmp_path):
     radiative = tmp_path / 'radiative.yaml'

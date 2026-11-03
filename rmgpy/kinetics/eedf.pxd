@@ -33,6 +33,9 @@ cdef class EEDFChannel(KineticsModel):
     cdef public object process
     cdef public object collision_set
     cdef str _side
+    cdef object _branch_product
+    cdef object _branch_yield
+    cdef object _yield_table_sha256
 
     cpdef double get_rate_coefficient(self, double T, double P=*) except -1
     cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2

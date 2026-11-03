@@ -31,6 +31,40 @@ from pathlib import Path
 import pytest
 
 from rmgpy.tools.eedf.schema import _content_hash, _check_model, FingerprintMismatch
+from branchYieldTest import branch_fixture, source_files
+
+
+@pytest.mark.parametrize('mutation', ['map', 'inputs', 'coherent_map', 'drop_family'])
+def test_branch_yield_change_requires_new_fingerprint(branch_fixture, mutation):
+    import copy
+    _, _, family = branch_fixture
+    inputs = {'reactions': [copy.deepcopy(family)], 'channel_map_sha256': 'old-pin'}
+    manifest = {'row_inputs': inputs, 'fingerprint': _content_hash(inputs),
+                'channel_map': [{'reaction': copy.deepcopy(family)}]}
+    _check_model(manifest, copy.deepcopy(inputs), relative_tolerance=1e-9)
+    target = inputs['reactions'][0] if mutation == 'inputs' else manifest['channel_map'][0]['reaction']
+    if mutation == 'drop_family':
+        manifest['channel_map'] = []
+    elif mutation == 'map':
+        # Well-formed but stale ownership: sum remains one and every marker is
+        # updated coherently, so only the row-input cross-check can reject it.
+        target['product_yields']['Ar(1s5)'] += .001
+        target['product_yields']['Ar(1s4)'] -= .001
+        for owner in target['branches']:
+            from rmgpy.kinetics import EEDFChannel
+            marker = eval(owner['repr'], {'EEDFChannel': EEDFChannel})
+            owner['repr'] = repr(EEDFChannel(
+                process=marker.process, collision_set=marker.collision_set,
+                branch_product=owner['product'], branch_yield=target['product_yields'][owner['product']],
+                yield_table_sha256=marker.yield_table_sha256))
+    else:
+        # A different but valid provenance digest changes identity without
+        # changing any numerical interpolation inputs.
+        target['source_sha256'] = 'b' * 64
+        if mutation == 'coherent_map':
+            manifest['channel_map_sha256'] = _content_hash(manifest['channel_map'])
+    with pytest.raises(FingerprintMismatch, match='fingerprint'):
+        _check_model(manifest, copy.deepcopy(inputs), relative_tolerance=1e-9)
 
 
 def test_fingerprint_ignores_repository_commits_but_checks_row_inputs():
