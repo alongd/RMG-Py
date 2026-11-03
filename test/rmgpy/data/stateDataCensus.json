@@ -25419,14 +25419,15 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._energy_jacobian": {
       "verdict": "carried",
-      "reason": "Selects the analytic finite-anion Jacobian or historical finite differences of the same residual model. Both paths perturb numerical state only and retain the original assigned kinetics/energy inputs.",
+      "reason": "Differentiates the same assigned residual model; Tv columns validate the base state and select admissible interior population trials, restoring scratch state without altering molecular data.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeRework2Test.py"
+        "test/rmgpy/solver/plasmaElectronegativeRework2Test.py",
+        "test/rmgpy/solver/plasmaEEDFVibrationalTest.py"
       ],
-      "source_sha256": "51f6c0298866adc64259800274133b5de76801992777b65a7e2ae13d1043149d",
+      "source_sha256": "29fcf324bb9a6993952f5203c6be9f4133a6743892e2b645b0d0974e74f74c47",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 4501
+      "line": 4622
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "source_sha256": "580034bb7b74be8687f63a2476e9c2e8659d040b5bed5d125feeb2f77ce8a7b2",
@@ -33394,15 +33395,16 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_composition_energy_derivative": {
       "verdict": "carried",
-      "reason": "PlasmaReactor._eedf_composition_energy_derivative: uses the declared EEDF configuration and exact provider-owned qualified row for coordinates, rates, energy, transport, provenance, or acceptance; no molecular data are inferred.",
+      "reason": "Combines the table mean-energy coordinate derivative with the analytic sourced Tv population gradient, preserving the original assigned molecular inputs.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
-        "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
+        "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py",
+        "test/rmgpy/solver/plasmaEEDFVibrationalTest.py"
       ],
-      "source_sha256": "711d3171fb8b9c7b1e2ca3804f6666d722068f7c13863fe3ee1f979d0552ad76",
+      "source_sha256": "743d1b15c8c487c12dc9c452d249ad215ae9cff794f70fae9aaa61532637b569",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3516
+      "line": 3622
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_coordinate_label": {
       "verdict": "carried",
@@ -33418,27 +33420,29 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_coordinates": {
       "verdict": "carried",
-      "reason": "Computes declared table coordinates from packed state amounts and the electronic-state indices resolved at initialization; aliases cannot alter the identity and an unresolved fenced population is refused.",
+      "reason": "Computes Tv from the exact mapped v0/v1 populations and sourced energies/weights; out-of-domain Tv axes and envelopes refuse rather than clamping.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
-        "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
+        "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py",
+        "test/rmgpy/solver/plasmaEEDFVibrationalTest.py"
       ],
-      "source_sha256": "8107f84bc25bfe74c2e359eeee92966d73d7fd7ea4f1e9be441396f1f83bd397",
+      "source_sha256": "898b203da810880ac9f2e1be5387ca67d9d19d73593af4be0fcba6c86ca56dcd",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3150
+      "line": 3243
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_coordinates.resolve": {
       "verdict": "carried",
-      "reason": "Resolves a declared envelope coordinate from exact pre-bound species indices and state amounts, or refuses it; it performs no ground-data lookup or estimate.",
+      "reason": "Resolves a vibrational coordinate through the sourced v0/v1 moment using exact species indices; no label-based reassignment or molecular-data estimation.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
-        "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
+        "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py",
+        "test/rmgpy/solver/plasmaEEDFVibrationalTest.py"
       ],
-      "source_sha256": "e32d4b0b30d7719f6fe2e923c60442b66d7561139ebe86f720ed916cf98d588d",
+      "source_sha256": "439af7514a683214bd96cfbfc52b7d7aec82ddb3ffc5db92e32ba205233072d1",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3172
+      "line": 3265
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_empirical_key": {
       "verdict": "carried",
@@ -33454,27 +33458,31 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_energy_row": {
       "verdict": "carried",
-      "reason": "Binds complete sourced cascade identities and weights only reaction diagnostics; physical column power remains single-counted and negative radiated energy refuses.",
+      "reason": "Uses existing signed table powers exactly once in electron energy, attaching sourced vibrational threshold/leak diagnostics separately from the table residual.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py",
-        "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
+        "test/rmgpy/solver/plasmaEEDFBranchedTest.py",
+        "test/rmgpy/solver/plasmaEEDFVibrationalTest.py"
       ],
-      "source_sha256": "10ae2bb66e470af56ea5a15e7b368fffdcc3297b7efaaaf8334bfd5936f96622"
+      "source_sha256": "de05c21a45be054b1767c323aa63719abc11711886afe0dd2d33a1ad183e5f1a",
+      "file": "rmgpy/solver/plasma.pyx",
+      "line": 3665
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._initialize_eedf_provider": {
       "verdict": "carried",
-      "reason": "Binds complete sourced cascade identities and weights only reaction diagnostics; physical column power remains single-counted and negative radiated energy refuses.",
+      "reason": "Validates frozen ladder metadata, resolves exact retained species and irreversible column owners, and records the Tv coordinate mapping without estimating missing molecular data.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py",
-        "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
+        "test/rmgpy/solver/plasmaEEDFBranchedTest.py",
+        "test/rmgpy/solver/plasmaEEDFVibrationalTest.py"
       ],
-      "source_sha256": "ca315fd4637756b03fd3a8f68bd10ccd3bd6cca10c89a84677f4f9fb62e509a3",
+      "source_sha256": "6bfe54fc6d514717d9035a81dd32d46a8c68bba2ea269c47698c703de8f91121",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 2868
+      "line": 2875
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._resolve_eedf_energy_balance": {
       "verdict": "carried",
@@ -33828,12 +33836,15 @@
       "source_sha256": "779107400462a53d57becab46552a1143bef093c7bb1d01846a79bc9371b2b90"
     },
     "rmgpy/tools/eedf/report.py:_validate_channel_metadata": {
-      "verdict": "excluded",
-      "reason": "Validates explicitly supplied channel metadata without acquiring scientific data.",
+      "verdict": "carried",
+      "reason": "Validates hierarchical state selectors in channel metadata through the canonical neutral identity parser; malformed selectors refuse without supplying rates or molecular properties.",
       "evidence": [
-        "test/rmgpy/tools/eedf/reportTest.py"
+        "test/rmgpy/tools/eedf/reportTest.py",
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "9f65c1140b6d3365a6ffac0f38389270729f2340ec5f373f47606906d9bfe2d8"
+      "source_sha256": "595f838cde419f8acc11a389a56cc01fa68418379227ee2de91e3f64e6026108",
+      "file": "rmgpy/tools/eedf/report.py",
+      "line": 441
     },
     "rmgpy/tools/eedf/report.py:_validate_boundary": {
       "verdict": "excluded",
@@ -34237,13 +34248,14 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_qualification_state": {
       "verdict": "carried",
-      "reason": "Carries accepted reactor populations through the artifact-owned exact engine-to-LoKI state map; missing or ambiguous mappings refuse rather than acquiring fallback data.",
+      "reason": "Carries exact accepted level populations and sourced weights into the hierarchical terminal snapshot; applies full-threshold D6 before direct qualification and refuses parent overlap.",
       "evidence": [
-        "test/rmgpy/solver/plasmaEEDFCoreTest.py"
+        "test/rmgpy/solver/plasmaEEDFCoreTest.py",
+        "test/rmgpy/solver/plasmaEEDFVibrationalTest.py"
       ],
-      "source_sha256": "b978a19de1d5fba371de033e4786affc5ddae8dcb5c20c1af630bd6ffec93d8f",
+      "source_sha256": "d39654f862298e6b0a12765209759e855a8f88786b0f88cb789167ad85a6cb9d",
       "file": "rmgpy/solver/plasma.pyx",
-      "line": 3030
+      "line": 3094
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.development_eedf_diagnostic": {
       "verdict": "carried",
@@ -34410,11 +34422,14 @@
     },
     "rmgpy/tools/eedf/loki.py:LoKIDriver.prepare": {
       "verdict": "carried",
-      "reason": "Carries only explicit fingerprinted solver inputs, immutable prepared bytes, or parsed numerical LoKI outputs; it performs no thermo, group-tree, or implicit molecular-data acquisition.",
+      "reason": "Checks electronic populations and conditional vibrational children separately for normalization when preparing exact terminal populations; empty parents with populated children refuse.",
       "evidence": [
-        "test/rmgpy/solver/eedfProviderTest.py"
+        "test/rmgpy/solver/eedfProviderTest.py",
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "d81d1b724079a7f98f908861ae1e27a07392422e4c253bd8d7624b3fbfc82236"
+      "source_sha256": "c7169df1b010791c1be19403259c070cef39eb28fae5b489c20b83ca3a38fc4d",
+      "file": "rmgpy/tools/eedf/loki.py",
+      "line": 412
     },
     "rmgpy/tools/eedf/loki.py:LoKIDriver.run_prepared": {
       "verdict": "carried",
@@ -36749,19 +36764,25 @@
     },
     "rmgpy/tools/eedf/integrity.py:_channel_fractions": {
       "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "reason": "Binds inelastic and superelastic target fractions to explicit hierarchical populations and verifies supplied channel fractions bitwise against those identities.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "ea8e3f925cd67f50158c5d2332f3c816a6d669d1bd43b18ed25088dfd9a3cea7"
+      "source_sha256": "a274adf3ac3e43a7535b0ff9bf775136f1f67a710006fd82ae1b613784181388",
+      "file": "rmgpy/tools/eedf/integrity.py",
+      "line": 321
     },
     "rmgpy/tools/eedf/integrity.py:_channel_fractions.density": {
       "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "reason": "Multiplies declared gas, electronic-parent and vibrational-child populations; missing hierarchical entries refuse instead of inheriting a ground-state fraction.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "a90b33092539d844493ee68823b037f43bfbc26b86e7681793ae96e81831872b"
+      "source_sha256": "f20af981918503c72396f8aeb04d00f74808f8862ad26e927a0e2f756f93074a",
+      "file": "rmgpy/tools/eedf/integrity.py",
+      "line": 331
     },
     "rmgpy/tools/eedf/integrity.py:_check_solver": {
       "verdict": "carried",
@@ -36781,27 +36802,36 @@
     },
     "rmgpy/tools/eedf/integrity.py:_neutral_state_key": {
       "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "reason": "Canonicalizes explicit neutral electronic and nonnegative vibrational selectors, refusing unsupported charge, wildcard and rotational forms without guessing an identity.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "e4ae6084fe916932e62149b1821aaf6c32cdfc08b9416bc4d9992726fb7c029d"
+      "source_sha256": "574f8dacd6dc307198a2572a1d9e7c8d2b7bba47fe6df1e5c48e347bad6253e6",
+      "file": "rmgpy/tools/eedf/integrity.py",
+      "line": 216
     },
     "rmgpy/tools/eedf/integrity.py:_physical_properties": {
       "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "reason": "Parses explicit gas and state properties, allowing declared Boltzmann population references while refusing unresolvable expressions or alternate property sources.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "e8f83cec46f6ef97fbb0d971bbdab446c452ef0f16c07f890b36f128da41cae6"
+      "source_sha256": "1c9cebec7c84d43cdba82c81e24d7abfa6ae7e01bf3539551614ef88e8582e04",
+      "file": "rmgpy/tools/eedf/integrity.py",
+      "line": 74
     },
     "rmgpy/tools/eedf/integrity.py:_physical_properties.entries": {
       "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "reason": "Validates each explicit state-property assignment and permits Boltzmann expressions only for populations; no implicit property estimation.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "c426e4a58c0852c7f31b8d4be6e26ea0ba065e0cc95f503f71868e22a32fd4ad"
+      "source_sha256": "b30ecb279f8e4bfb66a4853891d91955039ba5054c3809111b2b921e08e18f43",
+      "file": "rmgpy/tools/eedf/integrity.py",
+      "line": 100
     },
     "rmgpy/tools/eedf/integrity.py:_physical_properties.reference": {
       "verdict": "carried",
@@ -36813,19 +36843,25 @@
     },
     "rmgpy/tools/eedf/integrity.py:_resolved_properties": {
       "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "reason": "Expands declared populations using sourced ladder levels and checks every level energy, weight and parent population against the explicit specification.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "4965bab427cbd974cbfe6f83ce636939b2ffa7a03bba3c89e3dc79fc0a874471"
+      "source_sha256": "f7289fb44d91429e9f2922e37ea0f443a1e84a070b1def1ee4326b08c2b375e0",
+      "file": "rmgpy/tools/eedf/integrity.py",
+      "line": 247
     },
     "rmgpy/tools/eedf/integrity.py:_resolved_properties.numbers": {
       "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "reason": "Resolves an explicit Boltzmann population only when its axis and level identity match the supplied ladder; missing or invalid declarations refuse.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/data/stateDataCensusTest.py",
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "0596d506bbdd2d447d96391d6e2ef1d16bd93d852858ad6b6799638f6d139e49"
+      "source_sha256": "40b48feb9e74162ce1d27c9207ca85477c694785db347bbefe9d47f513e84ac5",
+      "file": "rmgpy/tools/eedf/integrity.py",
+      "line": 259
     },
     "rmgpy/tools/eedf/integrity.py:_solver_environment": {
       "verdict": "carried",
@@ -36925,19 +36961,25 @@
     },
     "rmgpy/tools/eedf/schema.py:_row_inputs": {
       "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "reason": "Copies frozen vibrational ladder metadata into the row fingerprint so source, level and policy changes invalidate stale tables.",
       "evidence": [
-        "test/rmgpy/tools/eedf/schemaTest.py"
+        "test/rmgpy/tools/eedf/schemaTest.py",
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "39e376b60b2bb9204be71e9c6521c715747bb68d7d5e1b5a0aca1cbbf5308b9c"
+      "source_sha256": "2feb2681b2381e086810c116f7bd307fe2328cb1fe1361ef99d7c432bd732e08",
+      "file": "rmgpy/tools/eedf/schema.py",
+      "line": 470
     },
     "rmgpy/tools/eedf/schema.py:_validate_spec": {
       "verdict": "carried",
-      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "reason": "Validates supplied frozen vibrational ladders and requires each declared Tv axis; no implicit ladder or physical data source is introduced.",
       "evidence": [
-        "test/rmgpy/tools/eedf/schemaTest.py"
+        "test/rmgpy/tools/eedf/schemaTest.py",
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "63f45f5eb0d256524e654a9c3dfc48427a478b21667a5e897b598f736d820457"
+      "source_sha256": "98bbc91edefde7cf6c66e4df45a32366efdfce694dfccc971dac45b6cad614d3",
+      "file": "rmgpy/tools/eedf/schema.py",
+      "line": 307
     },
     "rmgpy/tools/eedf/validation.py:_channel_power_checks": {
       "verdict": "carried",
@@ -37732,6 +37774,96 @@
         "test/rmgpy/tools/n2VibrationalTest.py"
       ],
       "source_sha256": "d06de70cd2fb079945cdba9e6025bf205e690a51451fcb8fbb669bd538827364"
+    },
+    "rmgpy/tools/eedf/vibrational.py:D6RegenerationRequired.__init__": {
+      "verdict": "carried",
+      "reason": "Formats the explicit D6 regeneration refusal and retains its owner-policy decision; supplies no molecular data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
+      ],
+      "file": "rmgpy/tools/eedf/vibrational.py",
+      "line": 53,
+      "source_sha256": "f51b18d28a2842574a27add9472084c6bd58649e0712a1ef315e6e6cb5d41f54"
+    },
+    "rmgpy/tools/eedf/vibrational.py:boltzmann_populations": {
+      "verdict": "carried",
+      "reason": "Normalizes supplied sourced energies and statistical weights through K, assigns zero to unresolved source levels, and applies the same Tv domain refusal as the reactor.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
+      ],
+      "file": "rmgpy/tools/eedf/vibrational.py",
+      "line": 90,
+      "source_sha256": "f21eb023d52f554905cde85ee275ddae6d603404756e1fc58d4e53a81ee9b541"
+    },
+    "rmgpy/tools/eedf/vibrational.py:energy_ledger": {
+      "verdict": "carried",
+      "reason": "Carries resolved target populations, table rates and sourced full thresholds into gross forward and top-leak power; separates net table interpolation residual without charging energy or changing molecular data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
+      ],
+      "file": "rmgpy/tools/eedf/vibrational.py",
+      "line": 283,
+      "source_sha256": "24cfdc9ab0434f753e77cdb8025dff5afdf9113f342f565eeb56811651244879"
+    },
+    "rmgpy/tools/eedf/vibrational.py:ladder_coupling": {
+      "verdict": "carried",
+      "reason": "Checks pinned level provenance and exact molecular, electronic and vibrational identities, binding each collision by its source hash and block rather than inferring molecular data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
+      ],
+      "file": "rmgpy/tools/eedf/vibrational.py",
+      "line": 107,
+      "source_sha256": "cd12e4b46b826b469d6825c17ecaff563ee866b82fca6bf85cd0e2cef0ca638b"
+    },
+    "rmgpy/tools/eedf/vibrational.py:qualify_ladder": {
+      "verdict": "carried",
+      "reason": "Applies explicit owner D6 limits to supplied populations and threshold-based gross power, refusing with named regeneration or K=30 errors instead of manufacturing a larger ladder.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
+      ],
+      "file": "rmgpy/tools/eedf/vibrational.py",
+      "line": 319,
+      "source_sha256": "9423a1ccc7ad37eaca575aefc86cb40adf0982b5fe6eba55c283c06b011314e7"
+    },
+    "rmgpy/tools/eedf/vibrational.py:resolve_levels": {
+      "verdict": "carried",
+      "reason": "Matches each retained level to exactly one neutral species by formula, electronic state, vibrational level and multiplicity; ambiguous, missing or above-K resolved species refuse.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
+      ],
+      "file": "rmgpy/tools/eedf/vibrational.py",
+      "line": 228,
+      "source_sha256": "d4d817be572540817be896696cb635c955df558ee893ca92d229205830f8f4e8"
+    },
+    "rmgpy/tools/eedf/vibrational.py:temperature": {
+      "verdict": "carried",
+      "reason": "Computes the v0/v1 moment and gradient only from supplied level energies, weights and populations; missing, zero, nonfinite and inverted populations refuse.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
+      ],
+      "file": "rmgpy/tools/eedf/vibrational.py",
+      "line": 63,
+      "source_sha256": "c4f739785123ae2d04cffb8e76f76476719b877f0509794960ef617f445f4654"
+    },
+    "rmgpy/tools/eedf/vibrational.py:validate_bound_channels": {
+      "verdict": "carried",
+      "reason": "Requires exact source thresholds, retained endpoint species and separate irreversible inelastic/superelastic owners; unresolved channels remain energy-only.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
+      ],
+      "file": "rmgpy/tools/eedf/vibrational.py",
+      "line": 255,
+      "source_sha256": "09e5e9b50c504b50acf3c528e25e063cc9ca2895d002a2810016ddb5002a567b"
+    },
+    "rmgpy/tools/eedf/vibrational.py:validate_ladders": {
+      "verdict": "carried",
+      "reason": "Checks frozen level identities, energy and weight ordering, complete channel bindings, overlap and owner policy; no estimator or database lookup supplies missing values.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/vibrationalTest.py"
+      ],
+      "file": "rmgpy/tools/eedf/vibrational.py",
+      "line": 171,
+      "source_sha256": "7be1d67471ecaa7a0c6e8ec0f8c9f1877be2b5a0d08139088b8b845830d7d6a1"
     }
   }
 }
