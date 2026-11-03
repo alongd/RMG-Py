@@ -35,11 +35,13 @@ Qualified hierarchical population handling belongs to the coupling layer.
 """
 import argparse
 import hashlib
+from io import BytesIO
 import json
 import math
 from pathlib import Path
 import re
 import tempfile
+import zipfile
 
 N2_GRAPH = '1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}\n'
 
@@ -80,10 +82,19 @@ def _pin(pin):
     path = Path(pin['path'])
     if not path.is_absolute():
         raise LadderError('source paths must be absolute')
-    data = path.read_bytes()
-    if hashlib.sha256(data).hexdigest() != pin['sha256']:
+    snapshot = path.read_bytes()
+    if hashlib.sha256(snapshot).hexdigest() != pin['sha256']:
         raise LadderError('source hash mismatch: ' + str(path))
-    return data
+    member = pin.get('member')
+    if member is None:
+        return snapshot
+    if not isinstance(member, str) or not member:
+        raise LadderError('archive member must be a nonempty path')
+    try:
+        with zipfile.ZipFile(BytesIO(snapshot)) as archive:
+            return archive.read(member)
+    except (KeyError, zipfile.BadZipFile) as exc:
+        raise LadderError(f'unreadable archive member {member!r}: {path}') from exc
 
 
 def read_cross_sections(pin):
@@ -142,19 +153,38 @@ def read_cross_sections(pin):
     return result
 
 
-def require_complete_pairs(sections, upper_v):
-    """Require every upward pair in the declared source domain, even above K."""
-    _integer(upper_v, 'source upper_v', 1, 1000)
+def require_complete_pairs(sections, upper_v=None, *, initial_levels=None, final_v=None):
+    """Require every upward pair for covered initial levels through ``final_v``.
+
+    The legacy ``upper_v`` form means initial and final levels are both 0..upper_v.
+    """
+    if initial_levels is None and final_v is None:
+        _integer(upper_v, 'source upper_v', 1, 1000)
+        initial_levels = range(upper_v + 1)
+        final_v = upper_v
+    elif upper_v is not None or initial_levels is None or final_v is None:
+        raise LadderError('provide either upper_v or both initial_levels and final_v')
+    if (not isinstance(initial_levels, (list, tuple, range))
+            or isinstance(initial_levels, (str, bytes)) or not initial_levels):
+        raise LadderError('initial_levels must be a nonempty ordered sequence')
+    checked_initials = []
+    for initial_v in initial_levels:
+        checked_initials.append(_integer(initial_v, 'initial level', 0, 1000))
+    if checked_initials != sorted(set(checked_initials)):
+        raise LadderError('initial_levels must be unique and increasing')
+    _integer(final_v, 'final_v', 1, 1000)
+    if checked_initials[-1] > final_v:
+        raise LadderError('initial_levels cannot exceed final_v')
     pairs = set()
     for entry in sections:
         pair = entry['initial_v'], entry['final_v']
-        if not 0 <= pair[0] <= pair[1] <= upper_v:
+        if pair[0] not in checked_initials or not 0 <= pair[0] <= pair[1] <= final_v:
             raise LadderError(f'source pair outside declared domain: {pair}')
         if pair in pairs:
             raise LadderError(f'duplicate source pair: {pair}')
         pairs.add(pair)
-    missing = [(i, j) for i in range(upper_v + 1)
-               for j in range(i + 1, upper_v + 1) if (i, j) not in pairs]
+    missing = [(i, j) for i in checked_initials
+               for j in range(i + 1, final_v + 1) if (i, j) not in pairs]
     if missing:
         raise MissingPairsError(missing)
 
@@ -252,7 +282,14 @@ def generate(manifest, K=10, production=True):
     _integer(K, 'K', 1, 30)
     if manifest.get('schema') != 'n2-vibrational-source-v1':
         raise LadderError('unsupported N2 source schema')
+    if not isinstance(manifest.get('D6'), dict):
+        raise LadderError('D6 policy must be an object')
     _policy(manifest['D6'], allow_unset=not production)
+    cross_section_pins = manifest.get('cross_sections')
+    if not isinstance(cross_section_pins, list) or not cross_section_pins:
+        raise LadderError('cross_sections must be a nonempty list of source pins')
+    if any(not isinstance(pin, dict) for pin in cross_section_pins):
+        raise LadderError('each cross-section source pin must be an object')
     level_pin = manifest['level_source']
     spectroscopy = json.loads(_pin(level_pin))
     if (spectroscopy.get('molecule') != '14N2' or spectroscopy.get('electronic_state') != 'X1Sigma_g+'
@@ -261,6 +298,19 @@ def generate(manifest, K=10, production=True):
     levels = spectroscopy['levels']
     if not isinstance(levels, list) or len(levels) < K + 1:
         raise LadderError('level source does not cover K')
+    source_domain = manifest.get('source_domain')
+    if not isinstance(source_domain, dict):
+        raise LadderError('source_domain must declare initial_levels and final_v')
+    initial_levels = source_domain.get('initial_levels')
+    final_v = source_domain.get('final_v')
+    if (not isinstance(initial_levels, list) or not initial_levels
+            or any(type(v) is not int for v in initial_levels)):
+        raise LadderError('source_domain.initial_levels must be a nonempty integer list')
+    _integer(final_v, 'source_domain.final_v', 1, 1000)
+    if K not in initial_levels:
+        raise LadderError(f'requested K={K} requires uncovered initial v={K}')
+    if len(levels) != final_v + 1:
+        raise LadderError('level source must cover the declared final_v domain')
     previous = -1.
     for v, level in enumerate(levels):
         if set(level) != {'v', 'energy_eV', 'statistical_weight', 'thermo_entry'}:
@@ -271,11 +321,33 @@ def generate(manifest, K=10, production=True):
         weight = _number(level['statistical_weight'], 'statistical weight')
         if weight == 0 or energy <= previous or (v == 0 and energy != 0):
             raise LadderError('invalid term energies or statistical weights')
-        if not isinstance(level.get('thermo_entry'), str) or not level['thermo_entry']:
-            raise LadderError('every level requires a thermo entry label')
+        if v <= K and (not isinstance(level.get('thermo_entry'), str) or not level['thermo_entry']):
+            raise LadderError(f'level v={v} requires a thermo entry label for requested K={K}')
+        if v > K and level.get('thermo_entry') is not None and not isinstance(level['thermo_entry'], str):
+            raise LadderError(f'invalid thermo entry label for source-only level v={v}')
         previous = energy
-    sections = [section for pin in manifest['cross_sections'] for section in read_cross_sections(pin)]
-    require_complete_pairs(sections, len(levels) - 1)
+    sections = [section for pin in cross_section_pins for section in read_cross_sections(pin)]
+    assignments = manifest.get('source_assignments')
+    if not isinstance(assignments, dict):
+        raise LadderError('source_assignments must map initial levels to source ids')
+    source_ids = {pin.get('source_id'): pin for pin in cross_section_pins}
+    if (len(source_ids) != len(cross_section_pins)
+            or any(not isinstance(source_id, str) or not source_id for source_id in source_ids)):
+        raise LadderError('every cross-section pin requires a unique source_id')
+    if (any(not isinstance(source_id, str) for source_id in assignments)
+            or any(not isinstance(source_id, str) for source_id in assignments.values())):
+        raise LadderError('source_assignments keys and values must be strings')
+    if any(source_id not in source_ids for source_id in assignments.values()):
+        raise LadderError('source assignment refers to an unknown source id')
+    if set(assignments) != {str(v) for v in initial_levels}:
+        raise LadderError('source_assignments must exactly match source_domain.initial_levels')
+    sections = [section for section in sections
+                if assignments.get(str(section['initial_v'])) == section['source'].get('source_id')]
+    required_initials = list(range(K + 1))
+    uncovered = [v for v in required_initials if str(v) not in assignments]
+    if uncovered:
+        raise LadderError(f'requested K={K} requires uncovered initial v={uncovered[0]}')
+    require_complete_pairs(sections, initial_levels=initial_levels, final_v=final_v)
     tolerance = _number(manifest['energy_tolerance_eV'], 'energy tolerance')
     for section in sections:
         i, j = section['initial_v'], section['final_v']
@@ -335,7 +407,8 @@ def generate(manifest, K=10, production=True):
                                                   levels[i]['statistical_weight'] / levels[j]['statistical_weight']}))
     ready = all(manifest['D6'].get(key) is not None
                 for key in ('top_fraction_limit', 'top_leak_share_limit'))
-    output = {'schema': 'n2-vibrational-ladder-v1', 'K': K, 'source_upper_v': len(levels) - 1,
+    output = {'schema': 'n2-vibrational-ladder-v1', 'K': K, 'source_upper_v': final_v,
+              'source_initial_levels': initial_levels,
               'source_complete': True, 'production_manifest': production and ready,
               'runtime_ready': False,
               'runtime_requirements': ['qualified EEDF hierarchical N2(X,v) selectors',
