@@ -37701,7 +37701,7 @@
       "evidence": [
         "test/rmgpy/tools/n2VibrationalTest.py"
       ],
-      "source_sha256": "ea3efda573a8033c19bfc1c7587978f9f415df0033e6b9c2458e4237ec0a4c19"
+      "source_sha256": "d8ea538ab5047200b1a2a005cf1581de21c95b87b563541d7e22f76337bcbe7f"
     },
     "rmgpy/tools/eedf/n2_vibrational.py:read_cross_sections": {
       "verdict": "carried",
@@ -37717,7 +37717,7 @@
       "evidence": [
         "test/rmgpy/tools/n2VibrationalTest.py"
       ],
-      "source_sha256": "0bdea24a6a7d155dd4b0aeb4c13450de93a51b3ae85583fc5361d3b63498282b"
+      "source_sha256": "420ea0bbea053902a598124c1d38f1a6b4dc6c638e09176a88e9b026a4e8548e"
     },
     "rmgpy/tools/eedf/n2_vibrational.py:_policy": {
       "verdict": "not-reachable-for-resolved",
@@ -37753,11 +37753,11 @@
     },
     "rmgpy/tools/eedf/n2_vibrational.py:generate": {
       "verdict": "carried",
-      "reason": "Validates pinned level energies, weights, cross sections, full pair coverage and exact fixed-v library thermo; emits exact retained identities with source-bound irreversible electron directions and explicit top-leak ledger.",
+      "reason": "Validates pinned level energies, weights, and source pairs in either the all-legacy complete-domain form or the explicit partial-domain form; exact fixed-v thermo remains required and no source coverage is inferred beyond the declared domain.",
       "evidence": [
         "test/rmgpy/tools/n2VibrationalTest.py"
       ],
-      "source_sha256": "d221eebd8e115195e8e49af64d72b86ac1c8aa4afc5f3e389ada0626a8d5bc9c"
+      "source_sha256": "d97569c00cd5d9d1b32b1037a9a6111f5806f8f354a986d4705cd978f63c926a"
     },
     "rmgpy/tools/eedf/n2_vibrational.py:generate.<lambda1>": {
       "verdict": "not-reachable-for-resolved",
@@ -37807,13 +37807,13 @@
     },
     "rmgpy/tools/eedf/vibrational.py:ladder_coupling": {
       "verdict": "carried",
-      "reason": "Checks pinned level provenance and exact molecular, electronic and vibrational identities, binding each collision by its source hash and block rather than inferring molecular data.",
+      "reason": "Checks pinned level provenance and exact molecular, electronic and vibrational identities, binding each collision by source hash and block, and carries the validated source-domain split without inferring absent initial levels.",
       "evidence": [
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
       "file": "rmgpy/tools/eedf/vibrational.py",
       "line": 107,
-      "source_sha256": "cd12e4b46b826b469d6825c17ecaff563ee866b82fca6bf85cd0e2cef0ca638b"
+      "source_sha256": "4ebd28fcd09eace223cec5645bc0fe96377f397e2287e7ab40a3c33d777f1aaf"
     },
     "rmgpy/tools/eedf/vibrational.py:qualify_ladder": {
       "verdict": "carried",
@@ -37857,13 +37857,13 @@
     },
     "rmgpy/tools/eedf/vibrational.py:validate_ladders": {
       "verdict": "carried",
-      "reason": "Checks frozen level identities, energy and weight ordering, complete channel bindings, overlap and owner policy; no estimator or database lookup supplies missing values.",
+      "reason": "Checks frozen identities, energy and weight ordering, and source-pair completeness for declared initial coverage; old metadata defaults to complete coverage only within its own levels, with no estimator or database lookup supplying missing values.",
       "evidence": [
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
       "file": "rmgpy/tools/eedf/vibrational.py",
-      "line": 171,
-      "source_sha256": "7be1d67471ecaa7a0c6e8ec0f8c9f1877be2b5a0d08139088b8b845830d7d6a1"
+      "line": 173,
+      "source_sha256": "97698c1fd9ccc75302f2f7949c15955d56ebbb1bb28e66e506e58da994b146d9"
     }
   }
 }

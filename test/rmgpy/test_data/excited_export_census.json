@@ -4083,7 +4083,7 @@
     "rmgpy/tools/eedf/n2_vibrational.py:main": {
       "file": "rmgpy/tools/eedf/n2_vibrational.py",
       "function": "main",
-      "line": 362,
+      "line": 454,
       "signature": "150e5297fce9549574d233188b244ee7c7d5ac32ce2a5832c9208521da4ab454",
       "verdict": "R",
       "reason": "Fixed-domain N2 X-state generator emits validated exact-v adjacency identities and the unkeyed ground manifold declaration; no arbitrary input species labels are used as identity.",
@@ -5726,7 +5726,7 @@
     "rmgpy/tools/eedf/n2_vibrational.py:_validate_thermo": {
       "file": "rmgpy/tools/eedf/n2_vibrational.py",
       "function": "_validate_thermo",
-      "line": 211,
+      "line": 241,
       "signature": "e8aa1eeafff2499fad883f87cafd9409e2192f696524314f4c99fc99d9f29ae7",
       "verdict": "E",
       "reason": "Internal scratch materialization of a SHA256-validated thermo-library byte snapshot for loading; no public species identifier or mechanism is exported. Exact retained N2 fixed-v identities are checked before any generated artifacts can be returned."
@@ -5740,7 +5740,7 @@
       "function": "ladder_coupling",
       "line": 107,
       "reason": "Reconstructs exact-v adjacency records internally to validate the sourced ladder and prepare a fingerprinted coupling descriptor. Does not write a species dictionary or choose mechanism identifiers; retained formula, electronic state, multiplicity and v are checked explicitly.",
-      "signature": "f674cc6931ae1992cc741848bbcd72875aac9dbeb63e1e92a3855857d8d3b7d9",
+      "signature": "55a34a9d0ab18a650c3c9690afa272798a5240c09c3b39e44a21232b71008cb1",
       "verdict": "E"
     }
   }
