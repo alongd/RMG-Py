@@ -164,7 +164,7 @@ def trace(frame, event, arg):
     return trace
 
 
-def trial(function, line, statement, count, directory):
+def trial_attempt(function, line, statement, count, directory, attempt):
     state.clear()
     # Retry setup reaches both except clauses and the final re-raise. A live
     # exec replacement reaches every pending-diagnostic and typed-error line.
@@ -193,7 +193,7 @@ def trial(function, line, statement, count, directory):
     exact_report = isinstance(error, c.NativeWorkerStatusError) and any(
         'pending child PIDs [%d]' % facts['pid'] in message for message in state['messages'])
     passed = (facts['reaped'] == 1 or exact_report) and before == (path.read_bytes(), path.stat().st_mtime_ns)
-    row = dict(statement=statement, line=line, function=function.__name__, count=count,
+    row = dict(statement=statement, line=line, function=function.__name__, count=count, attempt=attempt,
                entered=state['entered'], raised=state['raised'], injected=state['injected'],
                fixture=fixture, record=facts, messages=state['messages'], error=repr(error),
                elapsed_s=time.monotonic()-started, passed=passed)
@@ -202,6 +202,30 @@ def trial(function, line, statement, count, directory):
         with (OUT/('matrix-'+MODE+'.jsonl')).open('a') as out:
             out.write(json.dumps(row)+'\n')
     try:
+        if (MODE == 'green' and fixture == 'held' and not state['injected']
+                and state['entered'] == state['raised'] == 0
+                and exact_report and passed and any(message.startswith(
+                    'native cleanup deadline reached; pending child PIDs [%d];' % facts['pid'])
+                    for message in state['messages'])):
+            # The 150 ms product observation has ended. Kernel exit teardown
+            # can outlast it; observe exact natural exit before retrying coverage.
+            until = time.monotonic() + 2
+            while not n.poll(state['record']):
+                assert time.monotonic() < until, row
+                time.sleep(.001)
+            settled = n.info(state['record'])
+            assert settled['pid'] == facts['pid'] and settled['reaped'] == 1, row
+            assert os.waitstatus_to_exitcode(settled['wait_status']) == 126, row
+            owners = {id(owner): owner for owner in held if isinstance(owner, c.Owner)}
+            assert all(not record['pid'] or record['reaped'] == 1
+                       for owner in owners.values()
+                       for record in n.owner_info(owner.handle)['records']), row
+            children = set()
+            for task in Path('/proc/self/task').iterdir():
+                children.update((task / 'children').read_text().split())
+            assert not children, row
+            row.update(inconclusive=True, settled_record=settled)
+            return row
         assert state['injected'] and state['raised'] == state['entered'] == count, row
         if MODE != 'red':
             assert passed, 'public cleanup escaped without exact reap/report: %r' % row
@@ -209,12 +233,25 @@ def trial(function, line, statement, count, directory):
     finally:
         # Rescue only after recording/assessing the public verdict. Never call
         # Owner.cleanup; this does not contribute to the pass predicate.
+        facts = n.info(state['record'])
         if facts['pid'] and not facts['reaped']:
             os.kill(facts['pid'], signal.SIGKILL)
             until = time.monotonic()+2
             while not n.poll(state['record']):
                 assert time.monotonic()<until
                 time.sleep(.001)
+
+
+def trial(function, line, statement, count, directory):
+    for attempt in range(1, 4):
+        row = trial_attempt(function, line, statement, count, directory, attempt)
+        print('CLEANUP_ATTEMPT', json.dumps(dict(
+            statement=statement, line=line, count=count, attempt=attempt,
+            inconclusive=row.get('inconclusive', False),
+            settled_record=row.get('settled_record'))), flush=True)
+        if not row.get('inconclusive'):
+            return row
+    assert state['injected'] and state['raised'] == state['entered'] == count, row
 
 
 def main():
