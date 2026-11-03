@@ -428,7 +428,7 @@ def generate(manifest, K=10, production=True):
               'runtime_requirements': (['qualified EEDF hierarchical N2(X,v) selectors',
                                         'coupling executes D6 regeneration before accepting a run'] if legacy else
                                        ['coupling automatically executes D6 regeneration before accepting a run',
-                                        'physical Ar+N2 arm qualification requires a channel map and owners; the converter currently accepts PlasmaArgon owners only']),
+                                        'physical Ar+N2 arm qualification requires complete channel maps and class-A owners in their configured per-gas libraries']),
               'D6': dict(manifest['D6'], maximum_K=30, top_v=K,
                          evaluator='rmgpy.tools.eedf.n2_vibrational.assess_truncation',
                          power_denominator='gross forward vibrational electron power'),

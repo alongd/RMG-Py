@@ -763,6 +763,14 @@
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
     ]
   },
+  "rmgpy/chemkin.pyx::write_kinetics_entry::write_kinetics_entry#2": {
+    "verdict": "guarded",
+    "reason": "Output-only conversion/recursive expansion preserves the original participants and reversible flag, passes through the existing exact direction/identity checks, and never replaces source KineticsData or generates an independent reverse fit.",
+    "tests": [
+      "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_annotated_chemkin_round_trip_with_flux_pairs",
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
+    ]
+  },
   "rmgpy/chemkin.pyx::write_reaction_string::reaction-io": {
     "verdict": "not-reachable-for-resolved",
     "reason": "Writes the equation with its explicit arrow only, without kinetics or equilibrium reconstruction.",
@@ -3263,6 +3271,14 @@
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
     ]
   },
+  "rmgpy/reaction.py::Reaction.to_cantera::to_cantera#1": {
+    "verdict": "guarded",
+    "reason": "Output-only conversion/recursive expansion preserves the original participants and reversible flag, passes through the existing exact direction/identity checks, and never replaces source KineticsData or generates an independent reverse fit.",
+    "tests": [
+      "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_cantera_round_trip",
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
+    ]
+  },
   "rmgpy/reaction.py::Reaction.to_cantera::to_chemkin#1": {
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -3413,6 +3429,21 @@
     "tests": [
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_chemkin_reader_rejects_original_resolved_tdep",
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
+    ]
+  },
+  "rmgpy/rmg/model.py::CoreEdgeReactionModel._add_reaction_to_core::check_resolved_species_reversibility#1": {
+    "verdict": "guarded",
+    "reason": "Admission executor retains the existing irreversible resolved-state guard; public single admission and preflighted batch promotion both reach it.",
+    "tests": [
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_serialized_irreversible_declaration_survives_admission",
+      "test/rmgpy/data/kinetics/superelasticReworkTest.py::test_duplicate_plog_merge_then_resolve"
+    ]
+  },
+  "rmgpy/rmg/model.py::CoreEdgeReactionModel._apply_vibrational_manifold::is_isomorphic#1": {
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Compares original Molecule graph to the declared manifold members to select the reviewed v0 switch; it does not compare or reverse a Reaction or generate a reverse rate.",
+    "tests": [
+      "test/rmgpy/rmg/vibrationalManifoldTest.py::test_declared_unkeyed_species_gets_level_zero_thermo"
     ]
   },
   "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_library_to_edge::log_enlarge_summary#1": {
@@ -4433,6 +4464,13 @@
       "test/rmgpy/data/kinetics/superelasticCensusTest.py::test_nonreaction_serialized_data_has_no_direction"
     ]
   },
+  "rmgpy/thermo/state.py::require_state_thermo::is_isomorphic#1": {
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Matches the copied exact-state Molecule against a loaded thermo-library entry solely for structural source validation; there is no Reaction direction matching or reverse-rate generation.",
+    "tests": [
+      "test/rmgpy/data/excitedThermoSourceTest.py::test_attached_energy_and_limits_must_match_whole_library_source"
+    ]
+  },
   "rmgpy/thermo/wilhoit.pyx::Wilhoit.as_dict::as_dict#1": {
     "verdict": "not-reachable-for-resolved",
     "reason": "Serializes quantities, thermodynamic/statistical-mechanics species data or EEDF table rows, not executable Reaction kinetics/directions.",
@@ -4661,6 +4699,48 @@
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_chemkin_duplicate_roundtrip_retains_independent_reverse",
       "test/rmgpy/data/kinetics/superelasticRework2Test.py::test_direction_census_diff_models"
     ]
+  },
+  "rmgpy/tools/eedf/channel_map.py::_owner_problem::reaction-io": {
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Checks participant labels and reversibility to verify a requested library owner; neither computes nor serializes reverse rates or reaction thermo.",
+    "tests": [
+      "test/rmgpy/tools/eedf/channelMapTest.py::test_refuses_unowned_a_without_demotion"
+    ]
+  },
+  "rmgpy/tools/eedf/n2_vibrational.py::_validate_thermo::is_isomorphic#1": {
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Exact molecule fixed-v identity comparison authorizes sourced thermo; it does not reverse or serialize Reaction kinetics.",
+    "tests": [
+      "test/rmgpy/tools/n2VibrationalTest.py::test_source_and_thermo_refusals"
+    ]
+  },
+  "rmgpy/tools/eedf/n2_vibrational.py::generate::reaction-io": {
+    "verdict": "guarded",
+    "reason": "Electron direction records are explicit irreversible declarations bound to the same sourced pair; k_sup partners occur only for two retained endpoints, never by thermal reversal. Top-leak forward channels have no unresolved reverse.",
+    "tests": [
+      "test/rmgpy/tools/n2VibrationalTest.py::test_superelastic_only_for_two_retained_source_endpoints"
+    ]
+  },
+  "rmgpy/tools/eedf/ownership.py::reaction_product_state::reaction-io": {
+    "verdict": "refused",
+    "reason": "Cascade product binding refuses reversible reactions before mapping sourced product yields; no equilibrium reverse is constructed.",
+    "tests": [
+      "test/rmgpy/tools/eedf/branchYieldTest.py::test_family_refuses_invalid_reactions"
+    ]
+  },
+  "rmgpy/tools/eedf/report.py::PowerReport.as_dict::reaction-io": {
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Serializes the explicit power-table mapping and does not serialize or reverse Reaction kinetics.",
+    "tests": [
+      "test/rmgpy/tools/eedf/reportTest.py::test_as_dict_serializes_report"
+    ]
+  },
+  "rmgpy/tools/eedf/vibrational.py::validate_bound_channels::reaction-io": {
+    "reason": "Requires separate irreversible inelastic and superelastic owners with exact retained level endpoints; a reversible reaction is refused, never reversed through equilibrium thermo.",
+    "tests": [
+      "test/rmgpy/solver/plasmaEEDFVibrationalTest.py::test_vibrational_binding_refuses_thermal_reversal"
+    ],
+    "verdict": "refused"
   },
   "rmgpy/tools/fluxdiagram.py::load_chemkin_output::reaction-io": {
     "verdict": "guarded",
@@ -5360,6 +5440,14 @@
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_rms_preserves_thermal_irreversible_declaration"
     ]
   },
+  "rmgpy/yaml_cantera2.py::reaction_to_dict_list::reaction_to_dict_list#2": {
+    "verdict": "guarded",
+    "reason": "Output-only conversion/recursive expansion preserves the original participants and reversible flag, passes through the existing exact direction/identity checks, and never replaces source KineticsData or generates an independent reverse fit.",
+    "tests": [
+      "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_cantera_round_trip",
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
+    ]
+  },
   "rmgpy/yaml_cantera2.py::save_cantera_files::reaction-io": {
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -5566,94 +5654,6 @@
     "tests": [
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration",
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_rms_preserves_thermal_irreversible_declaration"
-    ]
-  },
-  "rmgpy/rmg/model.py::CoreEdgeReactionModel._apply_vibrational_manifold::is_isomorphic#1": {
-    "verdict": "not-reachable-for-resolved",
-    "reason": "Compares original Molecule graph to the declared manifold members to select the reviewed v0 switch; it does not compare or reverse a Reaction or generate a reverse rate.",
-    "tests": [
-      "test/rmgpy/rmg/vibrationalManifoldTest.py::test_declared_unkeyed_species_gets_level_zero_thermo"
-    ]
-  },
-  "rmgpy/thermo/state.py::require_state_thermo::is_isomorphic#1": {
-    "verdict": "not-reachable-for-resolved",
-    "reason": "Matches the copied exact-state Molecule against a loaded thermo-library entry solely for structural source validation; there is no Reaction direction matching or reverse-rate generation.",
-    "tests": [
-      "test/rmgpy/data/excitedThermoSourceTest.py::test_attached_energy_and_limits_must_match_whole_library_source"
-    ]
-  },
-  "rmgpy/tools/eedf/report.py::PowerReport.as_dict::reaction-io": {
-    "verdict": "not-reachable-for-resolved",
-    "reason": "Serializes the explicit power-table mapping and does not serialize or reverse Reaction kinetics.",
-    "tests": [
-      "test/rmgpy/tools/eedf/reportTest.py::test_as_dict_serializes_report"
-    ]
-  },
-  "rmgpy/tools/eedf/channel_map.py::_owner_problem::reaction-io": {
-    "verdict": "not-reachable-for-resolved",
-    "reason": "Checks participant labels and reversibility to verify a requested library owner; neither computes nor serializes reverse rates or reaction thermo.",
-    "tests": [
-      "test/rmgpy/tools/eedf/channelMapTest.py::test_refuses_unowned_a_without_demotion"
-    ]
-  },
-  "rmgpy/rmg/model.py::CoreEdgeReactionModel._add_reaction_to_core::check_resolved_species_reversibility#1": {
-    "verdict": "guarded",
-    "reason": "Admission executor retains the existing irreversible resolved-state guard; public single admission and preflighted batch promotion both reach it.",
-    "tests": [
-      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_serialized_irreversible_declaration_survives_admission",
-      "test/rmgpy/data/kinetics/superelasticReworkTest.py::test_duplicate_plog_merge_then_resolve"
-    ]
-  },
-  "rmgpy/tools/eedf/ownership.py::reaction_product_state::reaction-io": {
-    "verdict": "refused",
-    "reason": "Cascade product binding refuses reversible reactions before mapping sourced product yields; no equilibrium reverse is constructed.",
-    "tests": [
-      "test/rmgpy/tools/eedf/branchYieldTest.py::test_family_refuses_invalid_reactions"
-    ]
-  },
-  "rmgpy/tools/eedf/n2_vibrational.py::_validate_thermo::is_isomorphic#1": {
-    "verdict": "not-reachable-for-resolved",
-    "reason": "Exact molecule fixed-v identity comparison authorizes sourced thermo; it does not reverse or serialize Reaction kinetics.",
-    "tests": [
-      "test/rmgpy/tools/n2VibrationalTest.py::test_source_and_thermo_refusals"
-    ]
-  },
-  "rmgpy/tools/eedf/n2_vibrational.py::generate::reaction-io": {
-    "verdict": "guarded",
-    "reason": "Electron direction records are explicit irreversible declarations bound to the same sourced pair; k_sup partners occur only for two retained endpoints, never by thermal reversal. Top-leak forward channels have no unresolved reverse.",
-    "tests": [
-      "test/rmgpy/tools/n2VibrationalTest.py::test_superelastic_only_for_two_retained_source_endpoints"
-    ]
-  },
-  "rmgpy/tools/eedf/vibrational.py::validate_bound_channels::reaction-io": {
-    "reason": "Requires separate irreversible inelastic and superelastic owners with exact retained level endpoints; a reversible reaction is refused, never reversed through equilibrium thermo.",
-    "tests": [
-      "test/rmgpy/solver/plasmaEEDFVibrationalTest.py::test_vibrational_binding_refuses_thermal_reversal"
-    ],
-    "verdict": "refused"
-  },
-  "rmgpy/reaction.py::Reaction.to_cantera::to_cantera#1": {
-    "verdict": "guarded",
-    "reason": "Output-only conversion/recursive expansion preserves the original participants and reversible flag, passes through the existing exact direction/identity checks, and never replaces source KineticsData or generates an independent reverse fit.",
-    "tests": [
-      "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_cantera_round_trip",
-      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
-    ]
-  },
-  "rmgpy/yaml_cantera2.py::reaction_to_dict_list::reaction_to_dict_list#2": {
-    "verdict": "guarded",
-    "reason": "Output-only conversion/recursive expansion preserves the original participants and reversible flag, passes through the existing exact direction/identity checks, and never replaces source KineticsData or generates an independent reverse fit.",
-    "tests": [
-      "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_cantera_round_trip",
-      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
-    ]
-  },
-  "rmgpy/chemkin.pyx::write_kinetics_entry::write_kinetics_entry#2": {
-    "verdict": "guarded",
-    "reason": "Output-only conversion/recursive expansion preserves the original participants and reversible flag, passes through the existing exact direction/identity checks, and never replaces source KineticsData or generates an independent reverse fit.",
-    "tests": [
-      "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_annotated_chemkin_round_trip_with_flux_pairs",
-      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
     ]
   }
 }

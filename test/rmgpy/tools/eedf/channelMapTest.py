@@ -104,6 +104,114 @@ def test_converts_complete_map_without_mutating_history(conversion_inputs, tmp_p
     assert output == json.loads((destination / 'pure-ar-spec.json').read_text())
 
 
+def _two_gas_fixture(conversion_inputs, tmp_path):
+    spec, ar_map, ar_library = conversion_inputs
+    spec = copy.deepcopy(spec)
+    ar_map = copy.deepcopy(ar_map)
+    n2_path = tmp_path / 'N2_LXCat.txt'
+    n2_path.write_text('PARAM.: E = 0.01 eV\n'
+                       '[N2(X,v=0) + e -> N2(X,v=1) + e, Vibrational]\n'
+                       '-----\n0.01 0\n1 1e-22\n-----\n')
+    process = 'e + N2(X,v=0) -> e + N2(X,v=1), Vibrational'
+    n2_hash = _file_hash(n2_path)
+    spec['input_files']['N2_LXCat.txt'] = {
+        'path': str(n2_path), 'sha256': n2_hash, 'kind': 'cross_section'}
+    spec['axes']['x_N2'] = [.5]
+    spec['gas_properties']['fraction'] = ['Ar = 1-{x_N2}', 'N2 = {x_N2}']
+    spec['state_properties']['population'] = [
+        'Ar(1S0) = 1', 'N2(X) = 1', 'N2(X,v=0) = 1', 'N2(X,v=1) = 1']
+    channel_map = json.loads(Path(spec['channel_map']['path']).read_text())
+    channel_map[0]['target_fraction'] = .5
+    channel_map[0]['product_fraction'] = 0.
+    channel_map.append({
+        'description': process, 'kind': 'vibrational', 'classification': 'B',
+        'threshold_eV': .01, 'target_fraction': .5, 'product_fraction': .5,
+        'sigma_max_m2': 1e-22, 'flux_group': process,
+        'reaction': None,
+        'cross_section': {'energy_eV': [.01, 1.], 'sigma_m2': [0., 1e-22]}})
+    map_path = Path(spec['channel_map']['path'])
+    map_path.write_text(json.dumps(channel_map))
+    spec['channel_map']['sha256'] = _file_hash(map_path)
+    n2_map = copy.deepcopy(ar_map)
+    n2_map['loki_files'] = {'N2_LXCat.txt': n2_hash}
+    n2_map['class_a_gaps'] = {}
+    n2_map['class_counts'] = {'A': 1, 'B': 0, 'C': 0, 'D': 0}
+    n2_map['channels'] = [{
+        'id': 9, 'loki_process': process, 'lxcat_file': 'N2_LXCat.txt',
+        'threshold_eV': .01, 'class': 'A',
+        'rmg': {'library': 'PlasmaNitrogen', 'index': 12, 'status': 'present',
+                'reaction': 'N2 + e- => N2v1 + e-'}}]
+    reaction = SimpleNamespace(reactants=[SimpleNamespace(label=s) for s in ['N2', 'e-']],
+                               products=[SimpleNamespace(label=s) for s in ['N2v1', 'e-']],
+                               reversible=False)
+    n2_library = SimpleNamespace(entries={12: SimpleNamespace(item=reaction)})
+    return spec, ar_map, n2_map, {'PlasmaArgon': ar_library, 'PlasmaNitrogen': n2_library}
+
+
+def test_multigas_conversion_uses_each_configured_owner_library(conversion_inputs, tmp_path, monkeypatch):
+    spec, ar_map, n2_map, libraries = _two_gas_fixture(conversion_inputs, tmp_path)
+    channels, report = adapter.convert_channel_maps(
+        spec, {'Ar': ar_map, 'N2': n2_map}, libraries, 'mix-Ar-N2',
+        library_by_gas={'Ar': 'PlasmaArgon', 'N2': 'PlasmaNitrogen'})
+    assert len(channels) == 2
+    assert [channel['reaction']['library'] for channel in channels] == [
+        'PlasmaArgon', 'PlasmaNitrogen']
+    assert report['class_counts'] == {'A': 2}
+    import rmgpy.tools.eedf.vibrational as vibrational
+    ladder = {'axis': 'Tv_K', 'parent': 'N2(X)', 'K': 1, 'levels': [
+        {'v': 0, 'loki_state': 'N2(X,v=0)', 'energy_eV': 0., 'statistical_weight': 1.},
+        {'v': 1, 'loki_state': 'N2(X,v=1)', 'energy_eV': .29, 'statistical_weight': 1.}],
+        'source_domain': {'initial_levels': list(range(30)), 'final_v': 58}}
+    monkeypatch.setattr(vibrational, 'ladder_coupling', lambda *args, **kwargs: ladder)
+    mixture = adapter.build_mixture_spec(spec, {}, [])
+    destination = tmp_path / 'mixture'
+    adapter._write_outputs(destination, report, spec, channels, mixture)
+    published = json.loads((destination / 'ar-n2-spec.json').read_text())
+    assert json.loads((destination / 'channel-map.json').read_text()) == channels
+    assert published['channel_map']['sha256'] == _file_hash(destination / 'channel-map.json')
+    assert published['axes']['Tv_K'] == [1000., 2000.]
+    assert not (destination / 'pure-ar-spec.json').exists()
+
+
+@pytest.mark.parametrize('failure', ['wrong_library', 'missing_owner', 'cross_gas_duplicate'])
+def test_multigas_owner_failures_refuse(conversion_inputs, tmp_path, failure):
+    spec, ar_map, n2_map, libraries = _two_gas_fixture(conversion_inputs, tmp_path)
+    owner_library = 'PlasmaNitrogen'
+    if failure == 'wrong_library':
+        owner_library = 'PlasmaArgon'
+    elif failure == 'missing_owner':
+        n2_map['channels'][0]['rmg'] = None
+    else:
+        owner_library = 'PlasmaArgon'
+        n2_map['channels'][0]['rmg'].update(library='PlasmaArgon', index=87,
+                                             reaction='Ar + e- => Ars + e-')
+    with pytest.raises(SpecError):
+        adapter.convert_channel_maps(
+            spec, {'Ar': ar_map, 'N2': n2_map}, libraries, 'mix-Ar-N2',
+            library_by_gas={'Ar': 'PlasmaArgon', 'N2': owner_library})
+
+
+def test_mixture_spec_writer_emits_composition_and_tv_ladder(conversion_inputs, monkeypatch):
+    import rmgpy.tools.eedf.vibrational as vibrational
+    from rmgpy.tools.eedf.integrity import _resolved_properties
+    spec, _, _ = conversion_inputs
+    levels = [{'v': 0, 'loki_state': 'N2(X,v=0)'},
+              {'v': 1, 'loki_state': 'N2(X,v=1)'}]
+    levels[0].update(energy_eV=0., statistical_weight=1.)
+    levels[1].update(energy_eV=.29, statistical_weight=1.)
+    ladder = {'axis': 'Tv_K', 'parent': 'N2(X)', 'K': 1, 'levels': levels,
+              'source_domain': {'initial_levels': list(range(30)), 'final_v': 58}}
+    monkeypatch.setattr(vibrational, 'ladder_coupling', lambda *args, **kwargs: ladder)
+    mixture = adapter.build_mixture_spec(spec, {}, [])
+    assert mixture['axes']['Tv_K'] == [1000., 2000.]
+    assert mixture['gas_properties']['fraction'] == ['Ar = 1-{x_N2}', 'N2 = {x_N2}']
+    assert 'N2(X,v=1) = boltzmann:Tv_K:1' in mixture['state_properties']['population']
+    assert mixture['vibrational_ladders'] == [ladder]
+    _, _, fractions, populations = _resolved_properties(mixture, {'x_N2': .25, 'Tv_K': 1000.})
+    assert fractions == {'Ar': .75, 'N2': .25}
+    assert populations['N2(X,v=0)'] + populations['N2(X,v=1)'] == pytest.approx(1.)
+
+
 @pytest.mark.parametrize('problem', ['absent', 'missing_index', 'wrong_products', 'wrong_direction'])
 def test_refuses_unowned_a_without_demotion(conversion_inputs, problem):
     spec, frozen, library = conversion_inputs
