@@ -5601,15 +5601,14 @@
     "reason": "Admission executor retains the existing irreversible resolved-state guard; public single admission and preflighted batch promotion both reach it.",
     "tests": [
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_serialized_irreversible_declaration_survives_admission",
-      "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
+      "test/rmgpy/data/kinetics/superelasticReworkTest.py::test_duplicate_plog_merge_then_resolve"
     ]
   },
   "rmgpy/tools/eedf/ownership.py::reaction_product_state::reaction-io": {
     "verdict": "refused",
     "reason": "Cascade product binding refuses reversible reactions before mapping sourced product yields; no equilibrium reverse is constructed.",
     "tests": [
-      "test/rmgpy/tools/eedf/branchYieldTest.py",
-      "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
+      "test/rmgpy/tools/eedf/branchYieldTest.py::test_family_refuses_invalid_reactions"
     ]
   }
 }

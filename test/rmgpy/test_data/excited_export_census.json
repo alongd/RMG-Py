@@ -4017,7 +4017,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._compute_reference_reaction_data",
-      "line": 7410,
+      "line": 7455,
       "signature": "4e16933925d7bb2f387b5e73d5b0e0e565eb8f80fa92124ccdeb788c3df50785",
       "verdict": "R",
       "reason": "Charged-reaction diagnostic equations use shared declarations when any participant is resolved and retain historical str(reaction) bytes for ground-only reactions. Thermo rebase classification: Reference-reaction names and equations include canonical v0 identity for declared participants; the reference energy calculation still uses its previously checked source.",
@@ -4039,7 +4039,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._evaluate_electronegative_wall_regime",
-      "line": 7540,
+      "line": 7585,
       "signature": "c0534dbafe3fd70cd2debb87c2f8284fbe156429631e29d4634048c0656d014e",
       "verdict": "R",
       "reason": "Wall destruction-channel equations and anion labels include declared v0 identifiers while gate computation and ground labels retain the existing code.",
@@ -4728,7 +4728,7 @@
     "rmgpy/rmg/model.py:get_key": {
       "file": "rmgpy/rmg/model.py",
       "function": "get_key",
-      "line": 2672,
+      "line": 2699,
       "signature": "69dd9b09e5e66b9b195471529702d6e5a87c547d29c595f49a29b2f3bcb9d35c",
       "reason": "Internal reaction lookup key.",
       "verdict": "E"
@@ -5500,7 +5500,7 @@
     "rmgpy/solver/eedf_provider.py:EEDFProvider._write_json": {
       "file": "rmgpy/solver/eedf_provider.py",
       "function": "EEDFProvider._write_json",
-      "line": 828,
+      "line": 853,
       "signature": "3c1bdd3c811ec5f00cb2ee79530c5f6da989f78e38f3b9ed345e15386d9c68c1",
       "verdict": "E",
       "reason": "Writes only exact LoKI setup bytes or numerical qualification evidence bound to an immutable execution; it emits no mechanism, species dictionary, or reloadable molecular representation.",
@@ -5512,7 +5512,7 @@
     "rmgpy/solver/eedf_provider.py:EEDFProvider._run_qualification": {
       "file": "rmgpy/solver/eedf_provider.py",
       "function": "EEDFProvider._run_qualification",
-      "line": 1570,
+      "line": 1595,
       "signature": "febf81c53286853b59b7e0a1f8368a852f07c42749bfb06eb335761e00041cb3",
       "verdict": "E",
       "reason": "Writes only exact LoKI setup bytes or numerical qualification evidence bound to an immutable execution; it emits no mechanism, species dictionary, or reloadable molecular representation.",
@@ -5572,7 +5572,7 @@
     "rmgpy/solver/eedf_provider.py:EEDFProvider._publish_acceptance": {
       "file": "rmgpy/solver/eedf_provider.py",
       "function": "EEDFProvider._publish_acceptance",
-      "line": 1078,
+      "line": 1103,
       "signature": "bf0f7e4ce57fed9e49080fe9b1d352365686a2c9e0531ba1a61cbcbe9fe4d441",
       "verdict": "E",
       "reason": "Writes opaque qualification or refusal bytes under retained inode ownership; it performs no species naming or molecular reconstruction. Format-specific resolved-state refusal guards remain unchanged.",
@@ -5584,7 +5584,7 @@
     "rmgpy/solver/eedf_provider.py:EEDFProvider._publish_failure": {
       "file": "rmgpy/solver/eedf_provider.py",
       "function": "EEDFProvider._publish_failure",
-      "line": 868,
+      "line": 893,
       "signature": "8136b169c89366169495f6d8cd063b586b5aed86337b6a89d7903b8800040019",
       "verdict": "E",
       "reason": "Transfers opaque qualification, refusal, or caller-prepared bytes under existing inode ownership; it performs no species naming or molecular reconstruction. Format-specific refusal guards are unchanged.",
@@ -5665,7 +5665,7 @@
     "rmgpy/tools/eedf/channel_map.py:_load_library": {
       "file": "rmgpy/tools/eedf/channel_map.py",
       "function": "_load_library",
-      "line": 232,
+      "line": 273,
       "signature": "01f41aa00496d7400d1bfe5da292866eee394bd17a0395a26d47d5e4039d341b",
       "verdict": "E",
       "reason": "Copies exact explicitly supplied library bytes into private scratch space for the native loader; no molecular identity is regenerated or state information discarded."
@@ -5681,7 +5681,7 @@
     "rmgpy/tools/eedf/channel_map.py:_write_outputs": {
       "file": "rmgpy/tools/eedf/channel_map.py",
       "function": "_write_outputs",
-      "line": 287,
+      "line": 341,
       "signature": "7d167fe1cae4e0c7438625bcae88666344e52b930e8a275a1d24aaf8fb63fd9b",
       "verdict": "E",
       "reason": "Writes explicit collision metadata, source provenance and requested owner labels into JSON; does not serialize Species, molecular structures, thermo, or evaluated kinetics."
