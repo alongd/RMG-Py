@@ -2806,6 +2806,17 @@ for task in os.listdir('/proc/self/task'):
         pass
 left_states = {str(p): state(p) for p in sorted(left)}
 
+if mode in ('window-no-worker', 'native-fork-error'):
+    # Preserve the exact child census and product-return timestamp. A child
+    # still running toward its sleep may legitimately be R; every other state
+    # must reach the existing assertions unchanged.
+    key = str(app.get('pid'))
+    ready_deadline = time.monotonic() + 1.
+    while left_states.get(key) == 'R' and time.monotonic() < ready_deadline:
+        time.sleep(.001)
+        left_states[key] = state(app['pid'])
+
+
 
 def reapers():
     return sum(t.name == 'eedf-scan-reaper' for t in threading.enumerate())
