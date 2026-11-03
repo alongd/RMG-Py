@@ -298,7 +298,19 @@ def generate(manifest, K=10, production=True):
     levels = spectroscopy['levels']
     if not isinstance(levels, list) or len(levels) < K + 1:
         raise LadderError('level source does not cover K')
+    source_pins = manifest.get('cross_sections')
+    if not isinstance(source_pins, list) or not source_pins or any(not isinstance(pin, dict) for pin in source_pins):
+        raise LadderError('cross_sections must be a nonempty list of source pins')
+    has_domain = 'source_domain' in manifest
+    has_assignments = 'source_assignments' in manifest
+    has_pin_ids = [isinstance(pin.get('source_id'), str) and bool(pin['source_id']) for pin in source_pins]
+    legacy = not has_domain and not has_assignments and not any('source_id' in pin for pin in source_pins)
+    modern = has_domain and has_assignments and all(has_pin_ids)
+    if not (legacy or modern):
+        raise LadderError('source_domain, source_assignments, and source_id must use one complete manifest form')
     source_domain = manifest.get('source_domain')
+    if legacy:
+        source_domain = {'initial_levels': list(range(len(levels))), 'final_v': len(levels) - 1}
     if not isinstance(source_domain, dict):
         raise LadderError('source_domain must declare initial_levels and final_v')
     initial_levels = source_domain.get('initial_levels')
@@ -328,21 +340,24 @@ def generate(manifest, K=10, production=True):
         previous = energy
     sections = [section for pin in cross_section_pins for section in read_cross_sections(pin)]
     assignments = manifest.get('source_assignments')
-    if not isinstance(assignments, dict):
-        raise LadderError('source_assignments must map initial levels to source ids')
-    source_ids = {pin.get('source_id'): pin for pin in cross_section_pins}
-    if (len(source_ids) != len(cross_section_pins)
-            or any(not isinstance(source_id, str) or not source_id for source_id in source_ids)):
-        raise LadderError('every cross-section pin requires a unique source_id')
-    if (any(not isinstance(source_id, str) for source_id in assignments)
-            or any(not isinstance(source_id, str) for source_id in assignments.values())):
-        raise LadderError('source_assignments keys and values must be strings')
-    if any(source_id not in source_ids for source_id in assignments.values()):
-        raise LadderError('source assignment refers to an unknown source id')
-    if set(assignments) != {str(v) for v in initial_levels}:
-        raise LadderError('source_assignments must exactly match source_domain.initial_levels')
-    sections = [section for section in sections
-                if assignments.get(str(section['initial_v'])) == section['source'].get('source_id')]
+    if legacy:
+        assignments = {str(v): None for v in initial_levels}
+    else:
+        if not isinstance(assignments, dict):
+            raise LadderError('source_assignments must map initial levels to source ids')
+        source_ids = {pin.get('source_id'): pin for pin in cross_section_pins}
+        if (len(source_ids) != len(cross_section_pins)
+                or any(not isinstance(source_id, str) or not source_id for source_id in source_ids)):
+            raise LadderError('every cross-section pin requires a unique source_id')
+        if (any(not isinstance(source_id, str) for source_id in assignments)
+                or any(not isinstance(source_id, str) for source_id in assignments.values())):
+            raise LadderError('source_assignments keys and values must be strings')
+        if any(source_id not in source_ids for source_id in assignments.values()):
+            raise LadderError('source assignment refers to an unknown source id')
+        if set(assignments) != {str(v) for v in initial_levels}:
+            raise LadderError('source_assignments must exactly match source_domain.initial_levels')
+        sections = [section for section in sections
+                    if assignments.get(str(section['initial_v'])) == section['source'].get('source_id')]
     required_initials = list(range(K + 1))
     uncovered = [v for v in required_initials if str(v) not in assignments]
     if uncovered:
@@ -408,11 +423,12 @@ def generate(manifest, K=10, production=True):
     ready = all(manifest['D6'].get(key) is not None
                 for key in ('top_fraction_limit', 'top_leak_share_limit'))
     output = {'schema': 'n2-vibrational-ladder-v1', 'K': K, 'source_upper_v': final_v,
-              'source_initial_levels': initial_levels,
               'source_complete': True, 'production_manifest': production and ready,
               'runtime_ready': False,
-              'runtime_requirements': ['qualified EEDF hierarchical N2(X,v) selectors',
-                                       'coupling executes D6 regeneration before accepting a run'],
+              'runtime_requirements': (['qualified EEDF hierarchical N2(X,v) selectors',
+                                        'coupling executes D6 regeneration before accepting a run'] if legacy else
+                                       ['coupling automatically executes D6 regeneration before accepting a run',
+                                        'physical Ar+N2 arm qualification requires a channel map and owners; the converter currently accepts PlasmaArgon owners only']),
               'D6': dict(manifest['D6'], maximum_K=30, top_v=K,
                          evaluator='rmgpy.tools.eedf.n2_vibrational.assess_truncation',
                          power_denominator='gross forward vibrational electron power'),
@@ -420,6 +436,9 @@ def generate(manifest, K=10, production=True):
               'top_leak_ledger': ledger, 'transition_audit': audit,
               'provenance_classes': {'sourced': 'citation and SHA256 required',
                                      'estimated': 'reserved; not supported by this generator'}}
+    if not legacy:
+        output['source_initial_levels'] = initial_levels
+        output['source_domain'] = {'initial_levels': initial_levels, 'final_v': final_v}
     deck = ["# Species/manifold fragment. Install the supplied thermo.py as N2Vibrational.",
             "# Electron mappings and D6 execution require the separate coupling layer.",
             "database(thermoLibraries=['N2Vibrational'], kineticsFamilies='none')",

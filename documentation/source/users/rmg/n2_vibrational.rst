@@ -28,7 +28,7 @@ in this implementation. The following is a template, not physical input::
       },
       "cross_sections": ["<pin objects for local LXCat Laporta files>"],
       "source_domain": {"initial_levels": [0, 1, 2], "final_v": 58},
-      "source_assignments": {"0": "laporta_batch1", "1": "laporta_batch1"},
+      "source_assignments": {"0": "laporta_batch1", "1": "laporta_batch1", "2": "laporta_batch1"},
       "thermo_library": "<pin object for a fixed-v RMG thermo library>",
       "energy_tolerance_eV": "<explicit allowed source threshold/term mismatch>",
       "D6": {

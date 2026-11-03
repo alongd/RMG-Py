@@ -111,6 +111,33 @@ def decoded(source, K=10, production=True):
     return json.loads(generate(source, K, production)['manifest.json'])
 
 
+def test_legacy_manifest_preserves_edfa_artifact_digest(source, tmp_path):
+    source.pop('source_domain')
+    source.pop('source_assignments')
+    for pin in source['cross_sections']:
+        pin.pop('source_id')
+    manifest = generate(source, K=10)['manifest.json']
+    canonical = manifest.replace(str(tmp_path).encode(), b'<fixture>')
+    assert hashlib.sha256(canonical).hexdigest() == \
+        '9f806447cfc000589a2842fee961c19b69734411a5861cb91f5f0cf02903537f'
+
+
+@pytest.mark.parametrize('field', ['source_domain', 'source_assignments', 'pin_source_id'])
+def test_mixed_legacy_manifest_fields_refuse_by_name(source, field):
+    source.pop('source_domain')
+    source.pop('source_assignments')
+    for pin in source['cross_sections']:
+        pin.pop('source_id')
+    if field == 'source_domain':
+        source['source_domain'] = {'initial_levels': list(range(33)), 'final_v': 32}
+    elif field == 'source_assignments':
+        source['source_assignments'] = {str(v): 'synthetic' for v in range(33)}
+    else:
+        source['cross_sections'][0]['source_id'] = 'synthetic'
+    with pytest.raises(LadderError, match='source_domain, source_assignments, and source_id'):
+        generate(source)
+
+
 def test_default_identities_and_v0_lookup(source, tmp_path, monkeypatch):
     import rmgpy.data.rmg as data_module
     from rmgpy.data.thermo import ThermoDatabase, ThermoLibrary
@@ -189,7 +216,9 @@ def test_generation_and_regeneration_byte_determinism(source, K):
     assert sum(c['direction'] == 'superelastic' for c in output['channels']) == K*(K+1)//2
     assert all(c['initial_v'] <= K and c['final_v'] <= K for c in output['channels'])
     assert output['production_manifest']
-    assert 'qualified EEDF hierarchical N2(X,v) selectors' in output['runtime_requirements']
+    assert output['runtime_requirements'] == [
+        'coupling automatically executes D6 regeneration before accepting a run',
+        'physical Ar+N2 arm qualification requires a channel map and owners; the converter currently accepts PlasmaArgon owners only']
 
 
 def test_complete_census_and_every_supplied_transition_audited(source):

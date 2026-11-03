@@ -164,6 +164,8 @@ def ladder_coupling(manifest, bindings, *, axis, parent):
               'levels': levels, 'channels': channels, 'D6': copy.deepcopy(manifest['D6']),
               'source_manifest_sha256': _content_hash(manifest),
               'level_source': copy.deepcopy(states[0]['provenance'])}
+    if 'source_domain' in manifest:
+        result['source_domain'] = copy.deepcopy(manifest['source_domain'])
     validate_ladders([result])
     return result
 
@@ -201,6 +203,24 @@ def validate_ladders(ladders):
             if identity in identities:
                 raise SpecError('vibrational ladders overlap the same engine state')
             identities.add(identity)
+        source_domain = ladder.get('source_domain')
+        if 'source_domain' not in ladder:
+            # Old and synthetic coupling snapshots imply complete coverage
+            # only over their own level list.
+            initial_levels = list(range(len(levels)))
+            final_v = len(levels) - 1
+        else:
+            if (not isinstance(source_domain, dict)
+                    or set(source_domain) != {'initial_levels', 'final_v'}):
+                raise SpecError('invalid vibrational source-domain metadata')
+            initial_levels = source_domain['initial_levels']
+            final_v = source_domain['final_v']
+            if (not isinstance(initial_levels, list) or not initial_levels
+                    or any(type(v) is not int for v in initial_levels)
+                    or initial_levels != sorted(set(initial_levels))
+                    or type(final_v) is not int or not 1 <= final_v < len(levels)
+                    or initial_levels[0] < 0 or initial_levels[-1] > final_v):
+                raise SpecError('invalid vibrational source-domain coverage')
         pairs = set()
         for channel in ladder['channels']:
             i, j = channel['initial_v'], channel['source_final_v']
@@ -209,6 +229,8 @@ def validate_ladders(ladders):
                     or (i, j) in pairs or description in descriptions
                     or channel['final_v'] != min(j, K)):
                 raise SpecError('invalid/duplicate vibrational collision binding')
+            if i not in initial_levels or j > final_v:
+                raise SpecError('vibrational collision lies outside declared source-domain coverage')
             pairs.add((i, j))
             descriptions.add(description)
             target, product = levels[i]['loki_state'], levels[j]['loki_state']
@@ -221,7 +243,7 @@ def validate_ladders(ladders):
                     or channel['top_leak_eV'] != (levels[j]['energy_eV'] - levels[min(j, K)]['energy_eV']
                                                   if i <= K else 0.)):
                 raise SpecError('invalid vibrational collision energy ledger')
-        if any((i, j) not in pairs for i in range(len(levels)) for j in range(i + 1, len(levels))):
+        if any((i, j) not in pairs for i in initial_levels for j in range(i + 1, final_v + 1)):
             raise SpecError('incomplete vibrational source-pair bindings')
 
 
