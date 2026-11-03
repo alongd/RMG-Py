@@ -120,9 +120,8 @@ def _authoritative_spec(pool):
             "authoritative LinearHomopolymerSpec for graph and inventory "
             "validation"
         )
-    from rmgpy.polymer_spec import BranchedMomRefusal, is_branched, refuse_schema_v2
-    if is_branched(spec):
-        raise BranchedMomRefusal("polymer_shared_support._authoritative_spec")
+    from rmgpy.polymer_spec import refuse_mom_topology, refuse_schema_v2
+    refuse_mom_topology(spec, "polymer_shared_support._authoritative_spec")
     return refuse_schema_v2(spec, "polymer_shared_support._authoritative_spec")
 
 

@@ -623,6 +623,9 @@ class _SequenceBuilder:
 #   an interior radical, on its end word with one more variant inward;
 # - ``short_radical:<i>``: likewise for a molecule both of whose ends the
 #   environment reads (a word of at most k variants, both ends capped).
+# A network (``NetworkPolymerSpec``) compiles as its lift, once its tree
+# environments (``declared_networks``) are checked to be the lift's
+# (``refused:network_environment`` otherwise).
 # A radical on a vacant end site's own atom takes the cap's place
 # (``head``/``tail`` ``radical``); any other is an H removed.
 
@@ -635,6 +638,14 @@ class _BranchedBuilder(_SequenceBuilder):
         from rmgpy.kmc.declared_chain import site_class_policy
         from rmgpy.kmc import declared_environments as de
 
+        from rmgpy.kmc import declared_networks as dn
+        from rmgpy.polymer_spec import NetworkPolymerSpec
+
+        if isinstance(spec, NetworkPolymerSpec):
+            gap = dn.network_environment_gap(spec)
+            if gap:
+                raise ValueError(f"{dn.GAP_REFUSAL}: {len(gap)} tree environments of the network are in no "
+                                 f"word of its lift (first {gap[0]!r}); the compile alphabet would miss them")
         self.declaration = spec
         self.lift = branched_lift(spec)
         self.spec = self.lift

@@ -58,6 +58,10 @@ particular run:
 * ``diagnostics``: a free-form block that no emission, engine or
   observables code reads.
 
+``NETWORK_CHEMISTRY_EXCLUDED`` is excluded too: ``inert_phases`` (a network's
+fillers), mass the chemistry never touches, read by the network observables
+as residue only.
+
 Included therefore: schema_version, repeat_unit, end_groups, small_species
 and monomer_product (declared species change species identity and MET
 bypass, hence rates), locality_policy, family_manifest, library_manifest;
@@ -266,7 +270,8 @@ import numpy
 from rmgpy.kmc import catalog_set as cs
 from rmgpy.kmc import melt_engine as me
 from rmgpy.kmc import melt_observables as mo
-from rmgpy.polymer_spec import (BranchedMomRefusal, BranchedPolymerSpec, LinearHomopolymerSpec, PolymerSpec,
+from rmgpy.polymer_spec import (BranchedMomRefusal, BranchedPolymerSpec, LinearHomopolymerSpec, NetworkMomRefusal,
+                                NetworkPolymerSpec, PolymerSpec,
                                 normalized_linear_homopolymer_spec,
                                 normalized_polymer_spec)
 
@@ -286,6 +291,8 @@ LEGACY_CHEMISTRY = ("monomer", "end_groups", "moments", "Mn", "Mw", "monomer_pro
 CHEMISTRY_EXCLUDED = ("label", "initial_ensemble", "initial_mobile_counts", "initial_mass_kg", "Mn_g_mol",
                       "Mw_g_mol", "density_kg_m3", "density_basis", "transport_model",
                       "observable_relative_tolerance", "diagnostics")
+# a network declaration's own excluded field (``NetworkPolymerSpec.inert_phases``)
+NETWORK_CHEMISTRY_EXCLUDED = ("inert_phases",)
 BINDING_KEYS = ("chemistry_sha256", "declaration_sha256")
 LEAK_NOTE = ("the run's leak number is pooled.fraction (sum of leak_num over seeds / sum of leak_den); "
              "per seed only the additive parts are reported; seeds that failed are excluded")
@@ -340,7 +347,8 @@ def declaration_sha256(spec: Union[LinearHomopolymerSpec, PolymerSpec]) -> str:
 
 def chemistry_digest(normalized: Dict[str, Any]) -> str:
     """sha256 of a normalized declaration mapping minus ``CHEMISTRY_EXCLUDED``."""
-    return _sha256(json.dumps({k: v for k, v in normalized.items() if k not in CHEMISTRY_EXCLUDED},
+    excluded = CHEMISTRY_EXCLUDED + NETWORK_CHEMISTRY_EXCLUDED
+    return _sha256(json.dumps({k: v for k, v in normalized.items() if k not in excluded},
                               sort_keys=True, separators=(",", ":")).encode())
 
 
@@ -1361,7 +1369,12 @@ def run(deck, catalogs: Sequence, temperature: float, times: Sequence[float], se
         # rule (melt_engine); the observables and the MoM comparison read
         # linear chains
         if mom is not None:
-            raise RunError(f"{BranchedMomRefusal('run')} (--mom {mom})")
+            refusal = NetworkMomRefusal if isinstance(deck.spec, NetworkPolymerSpec) else BranchedMomRefusal
+            raise RunError(f"{refusal('run')} (--mom {mom})")
+        if isinstance(deck.spec, NetworkPolymerSpec):
+            from rmgpy.kmc.melt_network import NETWORK_OBSERVABLES_REFUSAL
+            raise RunError(f"{NETWORK_OBSERVABLES_REFUSAL}: the runner's observables read linear chains; a "
+                           f"network run records melt_network.observed_run ({deck.label})")
         raise RunError(f"{mo.BRANCHED_OBSERVABLES_REFUSAL} ({deck.label})")
     sequence = isinstance(deck.spec, PolymerSpec)
     if sequence and mom is not None:

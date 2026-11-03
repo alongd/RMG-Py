@@ -27,7 +27,11 @@ counts, the branch points (instances with three or more linked sites) against
 their exact expectation under uniform site occupancy (each class's link ends
 spread uniformly over its sites without replacement, classes independent), the
 molecule sizes in residues and the spectral radius of the half-edge branching
-matrix (below 1: below the gel point)."""
+matrix (below 1: below the gel point).  A network declaration
+(``NetworkPolymerSpec``, at or above the gel point) also reports the gel: the
+largest molecule (most residues, least first instance on a tie), its residue
+count and fraction of all residues, and the count of the other (sol)
+molecules."""
 
 from __future__ import annotations
 
@@ -292,7 +296,7 @@ def realized(spec, result: RandomBond = None) -> dict:
     counts, link_counts = dict(spec.initial_ensemble.residue_counts), dict(spec.initial_ensemble.link_counts)
     _below, matrix = gel_criterion(spec.residues, spec.links, counts, link_counts)
     radius = max(abs(np.linalg.eigvals(np.array(matrix, dtype=float)))) if matrix else 0.0
-    return {
+    out = {
         "generator": spec.initial_ensemble.generator,
         "seed": spec.initial_ensemble.seed,
         "link_counts": {name: Counter(result.types)[name] for name in sorted(link_counts)},
@@ -303,6 +307,14 @@ def realized(spec, result: RandomBond = None) -> dict:
         "molecule_sizes": dict(sorted(Counter(len(m) for m in result.molecules).items())),
         "gel_branching_ratio": float(radius),
     }
+    from rmgpy.polymer_spec import NetworkPolymerSpec
+    if isinstance(spec, NetworkPolymerSpec):
+        # the gel is the largest molecule (most residues, least instance on a tie)
+        gel = min(result.molecules, key=lambda m: (-len(m), m))
+        out["gel_residues"] = len(gel)
+        out["gel_fraction"] = len(gel) / len(result.instances)
+        out["sol_molecules"] = len(result.molecules) - 1
+    return out
 
 
 def _residue_mass(residue) -> Fraction:
@@ -372,6 +384,9 @@ def residue_site_table(spec) -> Mapping[str, Mapping[str, Tuple[str, ...]]]:
 # declared linearity (the melt engine's leak rule for a branched declaration)
 # --------------------------------------------------------------------------
 DECLARED = "declared"
+# the leak classes of a formed bond (``DeclaredLinearity.bond_reason``)
+UNDECLARED_LINK = "undeclared_link"
+SHORT_CYCLE = "short_cycle"
 
 
 def _occurrence(state, a):
@@ -475,24 +490,46 @@ class DeclaredLinearity:
         return classes, len(classes) - self._inter(state, a, removed, formed.get(a, ()))
 
     def bond_leaks(self, state, a, b, removed, formed) -> bool:
+        return self.bond_reason(state, a, b, removed, formed) is not None
+
+    def bond_reason(self, state, a, b, removed, formed):
+        """None (allowed), ``UNDECLARED_LINK`` (rules 1-2, or an undeclared
+        link through an atom of no residue unit) or ``SHORT_CYCLE`` (rule 3
+        alone) of one formed bond."""
         if "H" in (state.atoms[a].element, state.atoms[b].element):
-            return False
+            return None
         oa, ob = _occurrence(state, a), _occurrence(state, b)
         if oa is not None and oa == ob:
-            return False
+            return None
         if oa is None or ob is None:
             extra = {x: {y for y in ys if {x, y} != {a, b}} for x, ys in formed.items()}
-            return not self._path_within(state, a, b, removed, extra, len(state.atoms)) \
+            leak = not self._path_within(state, a, b, removed, extra, len(state.atoms)) \
                 and self._carries(state, a, removed) and self._carries(state, b, removed)
+            return UNDECLARED_LINK if leak else None
         (ca, fa), (cb, fb) = self._site_ok(state, a, removed, formed), self._site_ok(state, b, removed, formed)
         if not ca or not cb or fa < 0 or fb < 0:
-            return True
+            return UNDECLARED_LINK
         if not any((x, y) in self.links for x in ca for y in cb):
-            return True
+            return UNDECLARED_LINK
         if any(self._unit_links(state, o, removed, formed) > self.capacity[o[2]] for o in (oa, ob)):
-            return True
+            return UNDECLARED_LINK
         extra = {x: {y for y in ys if {x, y} != {a, b}} for x, ys in formed.items()}
-        return self._path_within(state, a, b, removed, extra, self.minimum - 2)
+        return SHORT_CYCLE if self._path_within(state, a, b, removed, extra, self.minimum - 2) else None
+
+    def leak_reason(self, state, edits):
+        """None, or the leak class of a transition: ``UNDECLARED_LINK`` when
+        any formed bond breaks rules 1-2, else ``SHORT_CYCLE`` when one closes
+        a short cycle (a network names it, ``melt_engine``)."""
+        from rmgpy.kmc.melt_state import SetBond
+        formed, broken = {}, {}
+        for e in edits:
+            if isinstance(e, SetBond) and (e.old == 0) != (e.new == 0):
+                target = formed if e.new != 0 else broken
+                target.setdefault(e.a, set()).add(e.b)
+                target.setdefault(e.b, set()).add(e.a)
+        reasons = {self.bond_reason(state, a, b, broken, formed)
+                   for a, partners in formed.items() for b in partners if a < b} - {None}
+        return UNDECLARED_LINK if UNDECLARED_LINK in reasons else (SHORT_CYCLE if reasons else None)
 
     def leaks(self, state, edits) -> bool:
         """Whether a transition (concrete ``SetBond`` edits) forms a bond the

@@ -1746,8 +1746,8 @@ class PolymerSpec:
 def normalized_polymer_spec(value: Any) -> Union["PolymerSpec", "BranchedPolymerSpec"]:
     """A v2 declaration from a ``PolymerSpec`` / ``BranchedPolymerSpec``, a
     mapping or its JSON text: ``architecture`` ``branched`` reads as a
-    ``BranchedPolymerSpec``, ``linear`` as a ``PolymerSpec``; ``network`` is
-    refused by name.  JSON floats parse as floats, so ``normalized_json`` is
+    ``BranchedPolymerSpec``, ``network`` as a ``NetworkPolymerSpec``,
+    ``linear`` as a ``PolymerSpec``.  JSON floats parse as floats, so ``normalized_json`` is
     a fixed point."""
     if isinstance(value, (PolymerSpec, BranchedPolymerSpec)):
         return value
@@ -1755,8 +1755,7 @@ def normalized_polymer_spec(value: Any) -> Union["PolymerSpec", "BranchedPolymer
         value = json.loads(value, object_pairs_hook=_reject_duplicate_json_pairs)
     architecture = value.get("architecture") if isinstance(value, Mapping) else None
     if architecture == "network":
-        raise ValueError("refused:architecture: network chains are not declarable yet (S7); schema v2 "
-                         "declares linear and branched chains")
+        return NetworkPolymerSpec.from_mapping(value)
     if architecture == "branched":
         return BranchedPolymerSpec.from_mapping(value)
     return PolymerSpec.from_mapping(value)
@@ -1911,6 +1910,9 @@ def _vacancy_cap() -> "GraphDeclaration":
 class BranchedPolymerSpec:
     """A branched v2 declaration (comment above)."""
 
+    ARCHITECTURE = "branched"
+    _EXTRA_FIELDS = frozenset()
+
     schema_version: int
     label: str
     architecture: str
@@ -1942,20 +1944,21 @@ class BranchedPolymerSpec:
         version = _integer(value.get("schema_version"), "schema_version", 1)
         if version != SCHEMA_VERSION_V2:
             raise ValueError(f"BranchedPolymerSpec reads schema_version {SCHEMA_VERSION_V2}, got {version}")
-        if value.get("architecture") != "branched":
-            raise ValueError(f"a BranchedPolymerSpec declares architecture 'branched', got "
+        if value.get("architecture") != cls.ARCHITECTURE:
+            raise ValueError(f"a {cls.__name__} declares architecture {cls.ARCHITECTURE!r}, got "
                              f"{value.get('architecture')!r}")
         required = {
             "schema_version", "label", "architecture", "residues", "links", "small_species",
             "initial_ensemble", "initial_mass_kg", "density_kg_m3", "locality_policy",
             "family_manifest", "library_manifest", "transport_model", "diagnostics",
         }
-        optional = {"minimum_cycle_bonds", "monomer_products", "density_basis", "initial_mobile_counts"}
+        optional = {"minimum_cycle_bonds", "monomer_products", "density_basis", "initial_mobile_counts"} \
+            | cls._EXTRA_FIELDS
         missing, unknown = required - set(value), set(value) - required - optional
         if missing:
-            raise ValueError(f"missing BranchedPolymerSpec fields: {sorted(missing)}")
+            raise ValueError(f"missing {cls.__name__} fields: {sorted(missing)}")
         if unknown:
-            raise ValueError(f"unknown BranchedPolymerSpec fields: {sorted(unknown)} (a branched "
+            raise ValueError(f"unknown {cls.__name__} fields: {sorted(unknown)} (a branched "
                              "declaration has no sequence_support or end_groups: a chain end is a vacant site)")
         label = value["label"]
         if not isinstance(label, str) or not label:
@@ -2024,8 +2027,9 @@ class BranchedPolymerSpec:
             if set(_names(names, f"topology_metadata_schema {key}")) - set(TOPOLOGY_VOCABULARY[key]):
                 raise ValueError(f"topology_metadata_schema {key} names outside "
                                  f"{list(TOPOLOGY_VOCABULARY[key])}")
-        if "branched" not in vocabulary.get("architecture", ()):
-            raise ValueError("architecture 'branched' is not in locality_policy.bounds.topology_metadata_schema")
+        if cls.ARCHITECTURE not in vocabulary.get("architecture", ()):
+            raise ValueError(f"architecture {cls.ARCHITECTURE!r} is not in "
+                             "locality_policy.bounds.topology_metadata_schema")
         radius = int(locality["radius"])
         floor = default_minimum_cycle_bonds(radius)
         minimum = value.get("minimum_cycle_bonds", floor)
@@ -2065,11 +2069,11 @@ class BranchedPolymerSpec:
             if not isinstance(value[name], Mapping):
                 raise ValueError(f"{name} must be a mapping")
             policies.append(_canonical_data(value[name]))
-        spec = cls(SCHEMA_VERSION_V2, label, "branched", tuple(sorted(residues.items())),
+        spec = cls(SCHEMA_VERSION_V2, label, cls.ARCHITECTURE, tuple(sorted(residues.items())),
                    tuple(sorted(links.items())), minimum, tuple(products), small_species, ensemble,
                    _finite(value["initial_mass_kg"], "initial_mass_kg"),
                    _finite(value["density_kg_m3"], "density_kg_m3"), density_basis, mobile_counts,
-                   locality, *policies)
+                   locality, *policies, **cls._extra_fields(value))
         if spec.initial_mass_kg < 0.0:
             raise ValueError("initial_mass_kg cannot be negative")
         if spec.density_kg_m3 <= 0.0:
@@ -2092,10 +2096,17 @@ class BranchedPolymerSpec:
                 raise ValueError(f"refused:link_counts: the {sites[c]} forbidden-vacant sites of class "
                                  f"{c!r} need exactly that many link ends, the counts give {ends.get(c, 0)}")
         below, _matrix = gel_criterion(self.residues, self.links, residue_counts, link_counts)
+        self._check_gel_point(below)
+
+    @classmethod
+    def _extra_fields(cls, value: Mapping) -> Dict[str, Any]:
+        return {}
+
+    def _check_gel_point(self, below: bool) -> None:
         if not below:
             raise ValueError("refused:gel_point: the declared counts are at or above the gel point (the "
                              "half-edge branching process of the random matching is critical or "
-                             "supercritical): a network is S7")
+                             "supercritical): declare it as a network (architecture 'network')")
 
     def _validate_coverage_and_states(self) -> None:
         cap = self.vacancy_cap
@@ -2168,3 +2179,123 @@ def is_branched(value: Any) -> bool:
         except ValueError:
             return False
     return isinstance(value, Mapping) and is_schema_v2(value) and value.get("architecture") == "branched"
+
+
+# ---------------------------------------------------------------------------
+# schema v2, architecture "network": a cured network above the gel point
+# (``NetworkPolymerSpec``)
+# ---------------------------------------------------------------------------
+# A network is a branched declaration whose counts are at or above the gel
+# point: ``random_bond_v1`` then builds one giant component plus sol
+# (``rmgpy.kmc.melt_branched``).  Counts below the gel point are refused (one
+# spelling per polymer: that is a branched declaration).  The residues, links
+# and ``minimum_cycle_bonds`` are chemistry as for a branched declaration; the
+# architecture enters the chemistry digest.  ``inert_phases`` declares fillers
+# (a filled composite): per phase an exact-rational mass fraction of the whole
+# composite, 0 < f < 1, the fractions summing below 1, and its elements
+# (symbol -> positive count, the phase's formula unit).  An inert phase takes
+# no part in the chemistry and lies outside the chemistry digest
+# (``rmgpy.kmc.run.CHEMISTRY_EXCLUDED``); the observables read it as residue
+# mass (``rmgpy.kmc.melt_network``).  The declaration's ``initial_mass_kg``
+# and density are the resin's; the composite's inert mass is
+# ``sum f / (1 - sum f)`` times the resin's.
+@dataclass(frozen=True)
+class InertPhase:
+    name: str
+    mass_fraction: Fraction
+    elements: Tuple[Tuple[str, int], ...]
+
+    @classmethod
+    def from_mapping(cls, name: str, value: Any) -> "InertPhase":
+        from rmgpy.molecule.element import get_element
+        if not isinstance(value, Mapping) or set(value) != {"mass_fraction", "elements"}:
+            raise ValueError(f"inert phase {name!r} has exactly mass_fraction and elements")
+        fraction = _exact(value["mass_fraction"], f"inert phase {name} mass_fraction")
+        if not 0 < fraction < 1:
+            raise ValueError(f"inert phase {name!r} mass_fraction must lie in (0, 1), got {fraction}")
+        raw = value["elements"]
+        if not isinstance(raw, Mapping) or not raw:
+            raise ValueError(f"inert phase {name!r} elements must be a non-empty mapping")
+        elements = []
+        for symbol, count in sorted(raw.items()):
+            try:
+                get_element(str(symbol))
+            except Exception:
+                raise ValueError(f"inert phase {name!r} names an unknown element {symbol!r}") from None
+            elements.append((str(symbol), _integer(count, f"inert phase {name} element {symbol}", 1)))
+        return cls(str(name), fraction, tuple(elements))
+
+    def as_mapping(self) -> Dict[str, Any]:
+        return {"mass_fraction": _rational(self.mass_fraction), "elements": dict(self.elements)}
+
+
+@dataclass(frozen=True)
+class NetworkPolymerSpec(BranchedPolymerSpec):
+    """A network v2 declaration (comment above)."""
+
+    ARCHITECTURE = "network"
+    _EXTRA_FIELDS = frozenset({"inert_phases"})
+
+    inert_phases: Tuple[InertPhase, ...] = ()
+
+    @classmethod
+    def _extra_fields(cls, value: Mapping) -> Dict[str, Any]:
+        raw = value.get("inert_phases", {})
+        if not isinstance(raw, Mapping):
+            raise ValueError("inert_phases must be a mapping of phase name to declaration")
+        phases = tuple(InertPhase.from_mapping(str(name), item) for name, item in sorted(raw.items()))
+        if sum((p.mass_fraction for p in phases), Fraction(0)) >= 1:
+            raise ValueError("inert_phases mass fractions must sum below 1 (the resin has mass)")
+        return {"inert_phases": phases}
+
+    def _check_gel_point(self, below: bool) -> None:
+        if below:
+            raise ValueError("refused:gel_point: the declared counts are below the gel point (the random "
+                             "matching gives finite molecules only): declare it branched (architecture "
+                             "'branched')")
+
+    @property
+    def inert_mass_ratio(self) -> Fraction:
+        """Inert mass per unit resin mass: sum f / (1 - sum f), exact."""
+        total = sum((p.mass_fraction for p in self.inert_phases), Fraction(0))
+        return total / (1 - total)
+
+    def as_mapping(self) -> Dict[str, Any]:
+        out = super().as_mapping()
+        out["inert_phases"] = {p.name: p.as_mapping() for p in self.inert_phases}
+        return out
+
+
+class NetworkMomRefusal(BranchedMomRefusal):
+    """The method of moments was given a network declaration: Mw diverges at
+    the gel point, so no moment seed exists (a sol-fraction method is a
+    separate design)."""
+
+    status = "refused:network_topology"
+
+    def __init__(self, consumer: str):
+        ValueError.__init__(self, f"{self.status}: {consumer}: the method of moments has no moment seed for "
+                                  "a network (Mw diverges at the gel point); a sol-fraction method is a "
+                                  "separate design")
+        self.consumer = consumer
+
+
+def is_network(value: Any) -> bool:
+    """Whether ``value`` is a network v2 declaration (an object, a mapping or its JSON)."""
+    if isinstance(value, NetworkPolymerSpec):
+        return True
+    if isinstance(value, (str, bytes, bytearray)):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return False
+    return isinstance(value, Mapping) and is_schema_v2(value) and value.get("architecture") == "network"
+
+
+def refuse_mom_topology(value: Any, consumer: str) -> None:
+    """``NetworkMomRefusal`` / ``BranchedMomRefusal`` naming ``consumer`` for a
+    network / branched declaration; nothing otherwise."""
+    if is_network(value):
+        raise NetworkMomRefusal(consumer)
+    if is_branched(value):
+        raise BranchedMomRefusal(consumer)

@@ -134,7 +134,7 @@ from rmgpy.molecule.fragment import Fragment
 from rmgpy.molecule.group import Group, GroupAtom, GroupBond
 from rmgpy.molecule.resonance import generate_resonance_structures
 from rmgpy.polymer_mass import moments_from_observables, observables_from_moments
-from rmgpy.polymer_spec import (BranchedMomRefusal, SchemaV2Refusal, is_branched,
+from rmgpy.polymer_spec import (BranchedMomRefusal, SchemaV2Refusal, is_branched, refuse_mom_topology,
                                 normalized_linear_homopolymer_spec, refuse_schema_v2)
 from rmgpy.species import Species
 from rmgpy.thermo import Wilhoit, NASA, ThermoData
@@ -284,8 +284,7 @@ class Polymer(Species):
         # would raise TypeError.
         # the method of moments reads v1 (LinearHomopolymerSpec) declarations only
         for declaration in (polymer_spec, linear_homopolymer_spec):
-            if is_branched(declaration):
-                raise BranchedMomRefusal("Polymer")
+            refuse_mom_topology(declaration, "Polymer")
         if polymer_spec is not None:
             raise SchemaV2Refusal("Polymer")
         refuse_schema_v2(linear_homopolymer_spec, "Polymer")

@@ -110,6 +110,32 @@ only at two vacant sites of a declared link, within each residue's site count,
 closing no cycle shorter than ``minimum_cycle_bonds``); its site kinds are
 tagged ``melt_branched.DECLARED`` and ``_pair_leak`` reads them by that rule.
 
+Networks
+--------
+A network declaration (``NetworkPolymerSpec``, above the gel point) keeps the
+declared linearity rule and adds two leak classes, measured and never fired
+(no declared law for either yet):
+
+* **same_molecule**: a bimolecular pair whose two sites lie on one component
+  (ordered site pairs sharing no atom, per class and kind pair, suppressed
+  pairs and excluded classes out) at the class's intrinsic weight,
+  ``w n / (divisor N_A V)``; such pairs were never channels (``P`` above);
+* **gel_mobility**: the gel (``gel_component``: the component with the most
+  backbone-origin atoms, least id on a tie) never moves as a whole, so a MET
+  pair with it uses ``k_D`` of its partner's diffusivity alone
+  (``TransportLaw.k_diffusion_still``), in both directions (a thinned
+  dissociation reads the gel among its products, ``_product_gel``); what the
+  gel's own diffusivity would add, ``(phi_full - phi) k_allowed / N_A V``, is
+  the class's propensity (``PairRate.mobility``).
+
+The declared-linearity leak is split by reason: **short_cycle** (a
+unimolecular transition whose only refused bond closes a cycle shorter than
+``minimum_cycle_bonds``: ``DeclaredLinearity.leak_reason``) and
+**undeclared_link** (every other).  All four (``NETWORK_LEAK_CLASSES``) are
+part of ``leak_num``; each is integrated to the clock (``leak_by_class``,
+summing to ``leak_num``) and reported in ``report()``.  Every other
+declaration indexes, fires and reports exactly as before.
+
 The leak fraction (``LEAK_ESTIMATOR``, ``LEAK_DEFINITION``) is
 ``leak_num / leak_den`` with ``leak_den = leak_num + non_thinned + phi_sum``:
 ``leak_num`` and ``non_thinned`` are exact integrals to the clock, ``phi_sum``
@@ -254,6 +280,10 @@ def pooled_leak_fraction(runs) -> dict:
             "leak_den": leak_den, "fraction": leak_num / leak_den if leak_den else 0.0}
 
 
+SHORT_CYCLE = melt_branched.SHORT_CYCLE
+NETWORK_LEAK_CLASSES = ("undeclared_link", "short_cycle", "same_molecule", "gel_mobility")
+
+
 class EngineError(ValueError):
     """The engine cannot proceed (an inconsistent index, a broken invariant)."""
 
@@ -395,6 +425,14 @@ class TransportLaw:
         radius = max(self.contact_radius_m, 2.0 * rg)
         return (4.0 * math.pi * constants.Na * self.spin_factor
                 * (self.diffusivity(temperature, n1) + self.diffusivity(temperature, n2)) * radius)
+
+    def k_diffusion_still(self, temperature: float, moving: int, still: int) -> float:
+        """``k_diffusion`` of a pair whose ``still`` partner never moves as a
+        whole (a network's gel component): only ``moving`` diffuses, at the
+        same encounter radius."""
+        rg = math.sqrt(self.r2_per_molar_mass * self.repeat_unit_molar_mass_g_mol * min(moving, still) / 6.0)
+        radius = max(self.contact_radius_m, 2.0 * rg)
+        return 4.0 * math.pi * constants.Na * self.spin_factor * self.diffusivity(temperature, moving) * radius
 
     def met_length(self, backbone_atoms: int, molar_mass_g_mol=None) -> int:
         """The MET length of a component: ``floor(B_c / b)``, or for a
@@ -900,6 +938,7 @@ class _LazyEntry:
         return self._fields[name]
 
     sites = property(lambda self: self._field("sites"))
+    cycle = property(lambda self: self.shape.cycle)
     uni = property(lambda self: self._field("uni"))
     uni_o = property(lambda self: self._field("uni_o"))
     reuse = property(lambda self: self._field("reuse"))
@@ -977,7 +1016,7 @@ class EngineTransition:
     form_bonds: Tuple
     form_radicals: Tuple
     delta: Tuple
-    leak: bool = False
+    leak: Any = False      # truthy when refused; a network names its leak class
 
 
 @dataclass
@@ -1000,6 +1039,9 @@ class _Entry:
     # rescan after an event reuses
     # (``MeltEngine._scan_component``); not part of the entry's value
     reuse: Optional[Tuple] = field(default=None, compare=False, repr=False)
+    # network: unimolecular leak transitions closing a short cycle, per class
+    # (``ci``) and per override (``(ci, o)``); not part of the entry's value
+    cycle: Dict[Any, int] = field(default_factory=dict, compare=False, repr=False)
 
     @property
     def shape(self) -> "_Entry":
@@ -1618,6 +1660,8 @@ class Propensities:
     thinned: float = 0.0
     non_thinned: float = 0.0   # fsum of the non-thinned channels (no subtraction of rounded totals)
     excluded: float = 0.0
+    # a network's leak per class ((name, propensity), ``NETWORK_LEAK_CLASSES``); () otherwise
+    leak_classes: Tuple[Tuple[str, float], ...] = ()
 
     @property
     def total(self) -> float:
@@ -1635,6 +1679,7 @@ class PairRate:
     leak: float           # propensity (1/s) of the refused (branching) ones
     classes: Tuple[Tuple[int, float, float], ...]   # (class, T allowed, T leak)
     excluded: float = 0.0  # intrinsic propensity (1/s) of the excluded templates' rows, outside k_act
+    mobility: float = 0.0  # network: what the gel's whole-molecule diffusion would add (1/s), never fired
 
 
 @dataclass(frozen=True)
@@ -1680,7 +1725,7 @@ class MeltEngine:
 
     def __init__(self, spec, catalog, temperature: float, rng, *, state=None, volume_m3=None,
                  quotient: bool = True, temperature_range=None, excluded: Iterable[str] = ()):
-        from rmgpy.polymer_spec import BranchedPolymerSpec, LinearHomopolymerSpec, PolymerSpec
+        from rmgpy.polymer_spec import BranchedPolymerSpec, LinearHomopolymerSpec, NetworkPolymerSpec, PolymerSpec
         if not isinstance(spec, (LinearHomopolymerSpec, PolymerSpec, BranchedPolymerSpec)):
             raise DeclarationError(
                 "only LinearHomopolymerSpec, PolymerSpec and BranchedPolymerSpec declarations are supported, "
@@ -1688,6 +1733,12 @@ class MeltEngine:
         self.spec = spec
         # a branched declaration's leak rule is declared linearity (melt_branched.DeclaredLinearity)
         self.linearity = melt_branched.DeclaredLinearity(spec) if isinstance(spec, BranchedPolymerSpec) else None
+        # a network reports its leak per class (module doc, Networks)
+        self.network = isinstance(spec, NetworkPolymerSpec)
+        self.leak_by_class = {name: 0.0 for name in NETWORK_LEAK_CLASSES} if self.network else {}
+        self._leak_by_class_c = dict(self.leak_by_class)
+        self._leak_rates: Tuple[Tuple[str, float], ...] = ()
+        self._gel: Optional[int] = None
         self.quotient = bool(quotient)
         self.transport = TransportLaw.from_spec(spec)
         lo, hi = (float(temperature), float(temperature)) if temperature_range is None else \
@@ -1753,8 +1804,12 @@ class MeltEngine:
         self._index_revision = 0
         self.rebuild()
 
-    def _leaks(self, state, edits) -> bool:
-        return _creates_branch(state, edits) if self.linearity is None else self.linearity.leaks(state, edits)
+    def _leaks(self, state, edits):
+        if self.linearity is None:
+            return _creates_branch(state, edits)
+        if self.network:
+            return self.linearity.leak_reason(state, edits) or False
+        return self.linearity.leaks(state, edits)
 
     def _site_kind(self, state, cls, t, p, site) -> Tuple:
         return _site_kind(state, cls, t, p, site) if self.linearity is None else \
@@ -1886,7 +1941,7 @@ class MeltEngine:
         wanted = only
         if only is not None and self._defers:
             only = set(only) | {a for ci in only for a in self._defers.get(ci, ())}
-        uni, sites, uni_o, seen = {}, {}, {}, {}
+        uni, sites, uni_o, seen, cycle = {}, {}, {}, {}, {}
         uni_found = {}  # class -> {delta: transition} before deferral
         shared = {}     # participant signature id -> embeddings in plan order (``_pattern``)
         fresh = {}      # the same, rooted near the dirty atoms
@@ -1984,10 +2039,16 @@ class MeltEngine:
                     mine = [x for x in trs if which.get(x.edit_key) == o]
                     allowed = tuple(x for x in mine if not x.leak)
                     uni_o[(ci, o)] = (allowed, len(mine) - len(allowed))
+                    closing = sum(1 for x in mine if x.leak == SHORT_CYCLE)
+                    if closing:
+                        cycle[(ci, o)] = closing
                 trs = [x for x in trs if x.edit_key not in which]
                 allowed = tuple(x for x in trs if not x.leak)
                 if trs:
                     uni[ci] = (allowed, len(trs) - len(allowed))
+                    closing = sum(1 for x in trs if x.leak == SHORT_CYCLE)
+                    if closing:
+                        cycle[ci] = closing
         for ci, targets in sorted(self._defers.items()):
             if ci not in self._roles or (only is not None and ci not in only):
                 continue
@@ -2003,6 +2064,8 @@ class MeltEngine:
                     regrouped.setdefault((ci, p, base + (marker,)), []).append(s)
             sites.update((k, tuple(sorted(ss))) for k, ss in regrouped.items())
         if wanted is not None and only != wanted:
+            for k in [k for k in cycle if (k if isinstance(k, int) else k[0]) not in wanted]:
+                del cycle[k]
             for d in (uni, uni_o, sites):
                 for k in [k for k in d if (k if isinstance(k, int) else k[0]) not in wanted]:
                     del d[k]
@@ -2012,7 +2075,8 @@ class MeltEngine:
                   else self.transport.met_length(backbone, state.components.molar_mass_g_mol(cid)))
         reuse = (frozenset(view.in_ring), pairs, cands) if only is None and quotient else None
         return _Entry(cid, atoms, uni, sites, backbone, length,
-                      state.components.radical_count(cid), self.identity.identify(state, cid), uni_o, reuse)
+                      state.components.radical_count(cid), self.identity.identify(state, cid), uni_o, reuse,
+                      cycle)
 
     def _prior_kinds(self, prior, cls, t, p) -> Optional[Dict]:
         """site -> kind of participant ``p`` of class ``cls`` over the prior
@@ -2154,6 +2218,9 @@ class MeltEngine:
         self.uni_leak = Counter()
         self.uni_o_allowed: Counter = Counter()
         self.uni_o_leak: Counter = Counter()
+        self.uni_cycle: Counter = Counter()
+        self.same: Counter = Counter()        # network: (class, kind0, kind1) -> ordered disjoint site pairs on one molecule
+        self._same_of: Dict[int, Counter] = {}
         self.uni_o_cids: Dict[Tuple[int, int], set] = defaultdict(set)
         self.met_comps: Dict[int, Dict] = {}
         self.pairs: Dict[Tuple[int, int], PairRate] = {}
@@ -2218,6 +2285,12 @@ class MeltEngine:
         met = {k: len(v) for k, v in shape.sites.items() if self.classes[k[0]].met_forward}
         if met:
             self.met_comps[cid] = met
+        if self.network:
+            self.uni_cycle.update(shape.cycle)
+            same = self._same_pairs(shape)
+            if same:
+                self._same_of[cid] = same
+                self.same.update(same)
 
     def _remove(self, cid: int):
         entry = self.entries.pop(cid)
@@ -2238,11 +2311,54 @@ class MeltEngine:
             if shape.sites.get((ci, 0, k0)) or shape.sites.get((ci, 1, k1)):
                 sampler.set(cid, (), ())
         self.met_comps.pop(cid, None)
+        if self.network:
+            self.uni_cycle.subtract(shape.cycle)
+            self.same.subtract(self._same_of.pop(cid, Counter()))
         for pair in [p for p in self.pairs if cid in p]:
             del self.pairs[pair]
 
+    # -- networks -------------------------------------------------------------
+    def _same_pairs(self, shape) -> Counter:
+        """(class, kind0, kind1) -> ordered pairs of a participant-0 and a
+        participant-1 site of one component sharing no atom (a bimolecular
+        event within one molecule), suppressed pairs and excluded classes
+        out."""
+        out = Counter()
+        sites = shape.sites
+        for (ci, p, k0), s0 in sites.items():
+            if p != 0 or ci in self.excluded:
+                continue
+            for (cj, q, k1), s1 in sites.items():
+                if cj != ci or q != 1 or _suppressed(k0, k1):
+                    continue
+                by_atom = defaultdict(set)
+                for j, site in enumerate(s1):
+                    for a in site:
+                        by_atom[a].add(j)
+                touching = sum(len(set().union(*(by_atom.get(a, ()) for a in site))) for site in s0)
+                n = len(s0) * len(s1) - touching
+                if n:
+                    out[(ci, k0, k1)] += n
+        return out
+
+    def gel_component(self) -> Optional[int]:
+        """A network's gel: the component with the most backbone-origin atoms
+        (the least id on a tie); None for any other declaration."""
+        if not self.network or not self.entries:
+            return None
+        return min(self.entries, key=lambda c: (-self.entries[c].backbone, c))
+
+    def _product_gel(self, new, reactants) -> frozenset:
+        """The product components (``new``) that are the gel once the
+        reactant components are gone."""
+        if not self.network:
+            return frozenset()
+        others = [(-e.backbone, c) for c, e in self.entries.items() if c not in reactants]
+        ranked = sorted(others + [(-e.backbone, c) for c, e in new.items()])
+        return frozenset(c for _b, c in ranked[:1] if c in new)
+
     # -- MET ------------------------------------------------------------------
-    def pair_rate(self, e0: _Entry, e1: _Entry) -> Optional[PairRate]:
+    def pair_rate(self, e0: _Entry, e1: _Entry, gel=None) -> Optional[PairRate]:
         """MET pair rate of two components (None when no MET class pairs them)."""
         c0 = {k: len(v) for k, v in e0.shape.sites.items() if self.classes[k[0]].met_forward}
         c1 = {k: len(v) for k, v in e1.shape.sites.items() if self.classes[k[0]].met_forward}
@@ -2278,10 +2394,24 @@ class MeltEngine:
             return PairRate(0.0, 0.0, 0.0, 1.0, bypass, 0.0, 0.0, (), excluded) if excluded > 0.0 else None
         k_d = self.transport.k_diffusion(self.temperature, e0.met_length, e1.met_length)
         phi = 1.0 if bypass else escape_factor(k_act, k_d)
+        mobility = 0.0
+        if self.network:
+            gel = {self._gel} if gel is None else gel
+            still = [e for e in (e0, e1) if e.cid in gel]
+            if still and not bypass:
+                moving = e1 if still[0] is e0 else e0
+                full = phi
+                k_d = self.transport.k_diffusion_still(self.temperature, moving.met_length, still[0].met_length)
+                phi = escape_factor(k_act, k_d)
+                mobility = (full - phi) * k_allowed / self.nav
         return PairRate(k_act, k_allowed, k_d, phi, bypass, phi * k_allowed / self.nav,
-                        phi * k_leak / self.nav, classes, excluded)
+                        phi * k_leak / self.nav, classes, excluded, mobility)
 
     def _refresh_met(self, changed: Optional[Iterable[int]] = None):
+        if self.network:
+            gel = self.gel_component()
+            if gel != self._gel:
+                self._gel, changed = gel, None    # every pair with the old or new gel changes
         comps = sorted(self.met_comps)
         if changed is None:
             self.pairs = {}
@@ -2337,8 +2467,25 @@ class MeltEngine:
         thinned = math.fsum(a for k, a in channels if k[0] != "met" and self.classes[k[1]].met_reverse)
         non_thinned = math.fsum(a for k, a in channels
                                 if k[0] == "met" or not self.classes[k[1]].met_reverse)
+        classes = ()
+        if self.network:
+            cycle = [self.weights[k] * n for k, n in self.uni_cycle.items()
+                     if isinstance(k, int) and n and k not in self.excluded]
+            cycle += [self._ovr[k[0]].weights[k[1]] * n for k, n in self.uni_o_cycle_items()]
+            short = math.fsum(cycle)
+            same = math.fsum(self._kind_weight(ci, k0, k1) * n / (self.classes[ci].divisor * self.nav)
+                             for (ci, k0, k1), n in sorted(self.same.items(), key=repr) if n)
+            mobility = math.fsum(r.mobility for r in self.pairs.values())
+            linearity = math.fsum(leak)
+            classes = (("undeclared_link", max(0.0, linearity - short)), ("short_cycle", short),
+                       ("same_molecule", same), ("gel_mobility", mobility))
+            leak = leak + [same, mobility]
         return Propensities(math.fsum(a for _k, a in channels), math.fsum(leak), tuple(channels),
-                            thinned, non_thinned, math.fsum(excluded))
+                            thinned, non_thinned, math.fsum(excluded), classes)
+
+    def uni_o_cycle_items(self):
+        return [(k, n) for k, n in self.uni_cycle.items() if not isinstance(k, int) and n
+                and k[0] not in self.excluded]
 
     # -- snapshots (incremental == full recompute) ---------------------------
     def snapshot(self):
@@ -2358,8 +2505,14 @@ class MeltEngine:
         pairs = tuple(sorted((k, (v.classes, v.k_act, v.k_d, v.phi, v.bypass, v.allowed, v.leak))
                              for k, v in self.pairs.items()))
         prop = self.propensities()
-        return {"entries": entries, "S": s, "X": x, "samplers": samplers, "uni": uni,
-                "pairs": pairs, "enabled": prop.enabled, "leak": prop.leak}
+        out = {"entries": entries, "S": s, "X": x, "samplers": samplers, "uni": uni,
+               "pairs": pairs, "enabled": prop.enabled, "leak": prop.leak}
+        if self.network:
+            out["network"] = (tuple(sorted(((k, v) for k, v in self.same.items() if v), key=repr)),
+                              tuple(sorted(((k, v) for k, v in self.uni_cycle.items() if v), key=repr)),
+                              tuple(sorted((k, v.mobility) for k, v in self.pairs.items())),
+                              self._gel, prop.leak_classes)
+        return out
 
     def fresh_snapshot(self):
         """The snapshot a full recompute gives on the current state (the
@@ -2369,7 +2522,8 @@ class MeltEngine:
                                if k in ("spec", "transport", "catalog", "rng", "state", "volume", "nav",
                                         "identity", "temperature", "templates", "classes", "weights",
                                         "quotient", "temperature_range", "_ovr", "excluded", "linearity",
-                                        "_defers", "_roles")})
+                                        "_defers", "_roles", "network")})
+        other._gel = None
         other._index_revision = 0
         other.rebuild()
         return other.snapshot()
@@ -2478,7 +2632,8 @@ class MeltEngine:
                     # partial entries (phi only); an accepted event's index
                     # update scans the committed components in full
                     new = self._phi_scan(products)
-                    rate = self.pair_rate(new[products[0]], new[products[1]])
+                    rate = self.pair_rate(new[products[0]], new[products[1]],
+                                          self._product_gel(new, tr.components))
                     if rate is None:
                         bypass = (new[products[0]].species is not None
                                   or new[products[1]].species is not None)
@@ -2690,7 +2845,8 @@ class MeltEngine:
                 phi = 1.0
                 if len(products) == 2:
                     new = self._phi_scan(products)
-                    rate = self.pair_rate(new[products[0]], new[products[1]])
+                    rate = self.pair_rate(new[products[0]], new[products[1]],
+                                          self._product_gel(new, tr.components))
                     phi = 1.0 if rate is None else rate.phi
             finally:
                 tx.rollback()
@@ -2725,7 +2881,12 @@ class MeltEngine:
     def _set_den(self):
         self.leak_den = self.leak_num + self.non_thinned + self.phi_sum
 
+    def _class_integrals(self, elapsed):
+        for name, rate in self._leak_rates:
+            self.leak_by_class[name] = self._leak_by_class_c[name] + rate * elapsed
+
     def _integrate(self, elapsed, leak, non_thinned, excluded=0.0):
+        self._class_integrals(elapsed)
         self.leak_num = self._leak_num_c + leak * elapsed
         self.excluded_num = self._excluded_num_c + excluded * elapsed
         self.non_thinned = self._non_thinned_c + non_thinned * elapsed
@@ -2737,6 +2898,7 @@ class MeltEngine:
     def _commit(self):
         self._segment_start = self.time
         self._leak_num_c = self.leak_num
+        self._leak_by_class_c = dict(self.leak_by_class)
         self._excluded_num_c = self.excluded_num
         self._non_thinned_c = self.non_thinned
         self.open_thinned = 0.0   # a view-only hint, never committed
@@ -2745,6 +2907,7 @@ class MeltEngine:
 
     def _view_to_horizon(self, until, leak, non_thinned, thinned=0.0, prop=None):
         elapsed = until - self._segment_start
+        self._class_integrals(elapsed)
         self.leak_num = self._leak_num_c + leak * elapsed
         self.excluded_num = self._excluded_num_c + (prop.excluded if prop else 0.0) * elapsed
         self.non_thinned = self._non_thinned_c + non_thinned * elapsed
@@ -2758,6 +2921,7 @@ class MeltEngine:
         while until is None or self.time < until:
             prop = self.propensities()
             enabled, leak = prop.enabled, prop.leak
+            self._leak_rates = prop.leak_classes
             pending = self._pending
             if pending is not None and not (
                     self.time == pending.horizon_time
@@ -2861,6 +3025,8 @@ class MeltEngine:
             "backbone_atoms": backbone,
             "declared_mobile_participation": {k: list(v) for k, v in self.declared_mobile_participation.items()},
             "thinning": self.thinning_report(),
+            **({"leak_by_class": dict(self.leak_by_class), "gel_component": self.gel_component()}
+               if self.network else {}),
         }
 
     def thinning_report(self) -> dict:
