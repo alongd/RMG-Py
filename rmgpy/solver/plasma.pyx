@@ -3040,8 +3040,22 @@ cdef class PlasmaReactor(ReactionSystem):
         except Exception as exc:
             raise PlasmaStateError('EEDF provider construction failed: {0}'.format(exc)) from exc
         self.eedf_reaction_map = reaction_map
+        self.eedf_axis_species = {}
         labels = {spc.label: self.species_index[spc] for spc in core_species}
+        from rmgpy.tools.eedf.vibrational import (
+            validate_ladders, resolve_levels, validate_bound_channels)
+        ladders = manifest['row_inputs'].get('vibrational_ladders', [])
+        validate_ladders(ladders)
+        for ladder in ladders:
+            if ladder['axis'] not in self.eedf_provider.axis_names[1:]:
+                raise PlasmaStateError('vibrational ladder requires a Tv table axis')
+            indices = resolve_levels(ladder, core_species)
+            validate_bound_channels(ladder, channels, list(core_reactions) + list(edge_reactions),
+                                    reaction_map, indices, core_species)
+            self.eedf_axis_species[ladder['axis']] = dict(ladder=ladder, indices=indices)
         for name in self.eedf_provider.axis_names[1:]:
+            if name in self.eedf_axis_species:
+                continue
             if name == 'n_e/N':
                 self.eedf_axis_species[name] = None
                 continue
@@ -3094,6 +3108,13 @@ cdef class PlasmaReactor(ReactionSystem):
         if state_map is None:
             state_map = self.eedf_provider.runtime_metadata['row_inputs'].get(
                 'engine_state_map')
+        vibrational = [entry for entry in self.eedf_axis_species.values() if isinstance(entry, dict)]
+        if vibrational:
+            state_map = list(state_map or [])
+            for entry in vibrational:
+                for level in entry['ladder']['levels'][:entry['ladder']['K'] + 1]:
+                    if not any(s['loki_state'] == level['loki_state'] for s in state_map):
+                        state_map.append(level)
         if not state_map:
             raise PlasmaStateError(
                 'EEDF qualification requires artifact-owned engine_state_map')
@@ -3127,6 +3148,26 @@ cdef class PlasmaReactor(ReactionSystem):
             formula_amount = formula_amounts[formula]
             populations[name] = (amount / formula_amount
                                  if formula_amount > 0. else 0.)
+        d6 = {}
+        if vibrational:
+            from rmgpy.tools.eedf.vibrational import energy_ledger, qualify_ladder
+            terminal_row = self.eedf_provider.row(float(y[self.te_index]), coordinates)
+            for entry in vibrational:
+                ladder, indices = entry['ladder'], entry['indices']
+                amounts = [float(y[index]) for index in indices]
+                total = sum(amounts)
+                parent = ladder['parent']
+                if parent in state_amounts:
+                    raise PlasmaStateError('unresolved electronic parent overlaps a resolved vibrational ladder')
+                populations[parent] = total / formula_amounts[parent.split('(', 1)[0]]
+                for level in ladder['levels']:
+                    v = level['v']
+                    populations[level['loki_state']] = amounts[v] / total if v <= ladder['K'] else 0.
+                    state_weights[level['loki_state']] = level['statistical_weight']
+                ledger = energy_ledger(ladder, terminal_row,
+                                       self.eedf_provider.runtime_metadata['channel_map'],
+                                       amounts, neutral, 1.)
+                d6[ladder['axis']] = qualify_ladder(ladder, amounts, ledger)
         electron_amount = float(y[self.electron_index])
         if not electron_amount > 0.:
             raise PlasmaStateError('EEDF qualification requires positive electrons')
@@ -3143,6 +3184,8 @@ cdef class PlasmaReactor(ReactionSystem):
         }
         if record_path is not None:
             result['record_path'] = str(record_path)
+        if vibrational:
+            result['vibrational_D6'] = d6
         return result
 
     def development_eedf_diagnostic(self, record_path=None, runner=None,
@@ -3220,6 +3263,11 @@ cdef class PlasmaReactor(ReactionSystem):
                   for spc in self._en_core_species}
 
         def resolve(name):
+            entry = self.eedf_axis_species.get(name)
+            if isinstance(entry, dict):
+                from rmgpy.tools.eedf.vibrational import temperature
+                return temperature(entry['ladder']['levels'],
+                                   [float(y[index]) for index in entry['indices']])[0]
             if name == 'Tg_K':
                 return self.T.value_si
             if name == 'P_Pa':
@@ -3257,9 +3305,17 @@ cdef class PlasmaReactor(ReactionSystem):
         if clamp:
             for name in self.eedf_provider.axis_names[1:]:
                 axis = self.eedf_provider.axis(name)
+                if isinstance(self.eedf_axis_species.get(name), dict):
+                    if not axis[0] <= coordinates[name] <= axis[-1]:
+                        raise PlasmaStateError('Tv axis out of domain: ' + name)
+                    continue
                 coordinates[name] = float(np.clip(coordinates[name], axis[0], axis[-1]))
             for name, bounds in envelopes.items():
                 if name in coordinates:
+                    if isinstance(self.eedf_axis_species.get(name), dict):
+                        if not bounds['min'] <= coordinates[name] <= bounds['max']:
+                            raise PlasmaStateError('Tv envelope out of domain: ' + name)
+                        continue
                     coordinates[name] = float(np.clip(
                         coordinates[name], bounds['min'], bounds['max']))
         return coordinates
@@ -3586,7 +3642,13 @@ cdef class PlasmaReactor(ReactionSystem):
             e_low = self.eedf_provider.mean_energy_eV(self.eedf_provider.row(u, c_low))
             e_high = self.eedf_provider.mean_energy_eV(self.eedf_provider.row(u, c_high))
             dedc = (e_high - e_low) / (high - low)
-            if species_index is None and name == 'n_e/N':
+            if isinstance(species_index, dict):
+                from rmgpy.tools.eedf.vibrational import temperature
+                indices = species_index['indices']
+                _, gradient = temperature(species_index['ladder']['levels'],
+                                           [float(y[index]) for index in indices])
+                dc = sum(gradient[j] * float(rates[indices[j]]) for j in range(2))
+            elif species_index is None and name == 'n_e/N':
                 dc = ((float(rates[self.electron_index]) * neutral_mol -
                        ne * neutral_rate) / (neutral_mol * neutral_mol)
                       if neutral_mol > 0. else 0.0)
@@ -3781,6 +3843,13 @@ cdef class PlasmaReactor(ReactionSystem):
         }
         self.eedf_provider.annotate_development_diagnostic(
             self.electron_energy_terms)
+        for axis, entry in self.eedf_axis_species.items():
+            if isinstance(entry, dict):
+                from rmgpy.tools.eedf.vibrational import energy_ledger
+                # Partition the canonical channel loss, never charge the leak
+                # again. Terminal D6 separately uses exact accepted populations.
+                self.electron_energy_terms.setdefault('vibrational_energy', {})[axis] = energy_ledger(
+                    entry['ladder'], row, channels, None, 1., power_factor)
         return (p_abs - losses - mean * constants.Na * constants.e * dne -
                 composition_term) / denominator
 

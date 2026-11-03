@@ -127,3 +127,91 @@ API
 .. automodule:: rmgpy.tools.eedf.n2_vibrational
     :members: generate, read_cross_sections, require_complete_pairs, assess_truncation,
               LadderError, MissingPairsError
+
+Resolved-population EEDF coupling
+---------------------------------
+
+``rmgpy.tools.eedf.vibrational.ladder_coupling`` adapts a generated manifest
+into an optional ``vibrational_ladders`` entry in the EEDF generation spec.
+Pass ``axis='Tv_N2'``, ``parent='N2(X)'`` and a list of collision bindings,
+each with ``source_sha256``, ``source_block`` and the exact LoKI
+``description``. Every audited source block must be bound, including diagonal
+and unresolved-initial records. Ordering is immaterial: generator pair indices
+are never interpreted as solver column indices. The adapter reads and verifies
+the pinned spectroscopy snapshot and records all source levels, including the
+unresolved levels whose populations are zero. The resulting metadata, source
+pins, owner-set D6 policy and axis are included in the table fingerprint.
+This adapter does not convert a raw LXCat file to a LoKI collision deck; the
+caller must provide that deck and its independently validated channel map.
+
+The selector and reactor implementation is independent of the molecular gas.
+Selectors ``N2(X,v=1)``, ``O2(X,v=1)`` and ``NO(X,v=1)`` identify neutral
+vibrational children of explicit electronic parents. Charged, wildcard and
+rotational selectors still refuse. Electronic identities use the engine's
+exact molecular ``electronic_state``, multiplicity and ``vibrational_level``;
+labels do not select a state. Construct retained species from the manifest's
+``states[*].adjacency_list``, including explicit v=0. An unkeyed vibrational
+manifold ground species does not silently stand in for that resolved v=0.
+Core species above K refuse rather than having their populations zeroed.
+Only the N2 generator is supplied here; no O2 or NO ladder data is added.
+
+The spec's ordinary ``axes`` mapping declares ``Tv_N2`` in kelvin. Each
+retained or unresolved source level gets an explicit state-property declaration,
+for example::
+
+    N2(X) = 1
+    N2(X,v=0) = boltzmann:Tv_N2:0
+    N2(X,v=1) = boltzmann:Tv_N2:1
+    N2(X,v=2) = boltzmann:Tv_N2:2
+
+The last integer selects a sourced level, not a solver column. During table
+generation these declarations evaluate a Boltzmann distribution normalized over
+v=0..K, with zero population above K. Declare sourced level energies and
+statistical weights as ordinary numeric state properties. Parent electronic
+populations are fractions within the gas; vibrational populations are fractions
+within their electronic parent. Channel-map ``target_fraction`` and
+``product_fraction`` may name ``state:N2(X,v=0)`` and ``state:N2(X,v=1)``;
+these resolve to gas fraction times electronic-parent fraction times vibrational
+fraction. Numeric and coordinate-placeholder fractions retain their existing
+behavior. The ordinary ``k_ine`` and ``k_sup`` columns are unchanged.
+
+The reactor defines the v=0/v=1 moment as
+``Tv = (E1-E0)/kB / log(n0*g1/(n1*g0))``, using sourced energies and weights.
+Both populations must be positive and finite. Missing/ambiguous levels,
+zero population, ``n1 > n0``, or a nonpositive logarithm refuse explicitly.
+In particular, there is no zero-temperature clamp or infinite-temperature
+approximation. These restrictions also apply to table-generation points.
+The analytic derivatives are ``dTv/dn0 = -Tv/(n0*log_ratio)`` and
+``dTv/dn1 = Tv/(n1*log_ratio)``. They enter the existing composition energy
+chain rule used by the DAE. Tv uses the generic table interpolation and domain
+checks; even solver trials cannot silently clamp this coordinate.
+
+Forward and separate irreversible superelastic reactions must use exactly the
+retained endpoint species. Above-K excitations redirect to K; top-to-top,
+diagonal and unresolved-initial collisions are energy-only B columns. No
+superelastic reaction is manufactured from an unresolved level. The runtime
+checks every bound column's identity and threshold and requires all expected
+inelastic/superelastic owners. Terminal qualification substitutes exact level
+populations for the table's Boltzmann approximation and retains the existing
+direct-solver comparison; a successful integration alone is not qualification.
+
+Before terminal qualification, D6 evaluates the exact accepted populations and
+gross forward power using the same table rates. Exceeding a limit raises
+``D6RegenerationRequired`` with ``D6_REGENERATE`` and the requested higher K;
+at K=30 it raises ``D6CeilingExceeded`` with ``D6_REFUSE_K30``. Unset limits
+refuse. Regeneration/restart is an explicit caller action; production runs do
+not regenerate tables automatically. Successful decisions are recorded under
+``vibrational_D6`` in the terminal state.
+
+The full collision threshold is already charged in the existing electron
+energy row, including the superelastic gain. ``vibrational_energy`` partitions
+the canonical gross forward power into retained energy, top-leak energy,
+source-rounding residual and the explicitly recorded ``discretization_power``
+(the solver grid-face transfer minus the sourced threshold). Its named
+``top_leak_ledger`` is diagnostic and is
+never added again to ``Q_inelastic`` or gas heating. D6 separately uses actual
+accepted target populations. This implementation and its tests use synthetic
+fixtures; they do not qualify a physical molecular arm. Tables without
+``vibrational_ladders`` retain the existing argon path.
+
+See :doc:`../../reference/vibrational_eedf` for the coupling API.
