@@ -221,6 +221,8 @@ def validate_ladders(ladders):
                     or type(final_v) is not int or not 1 <= final_v < len(levels)
                     or initial_levels[0] < 0 or initial_levels[-1] > final_v):
                 raise SpecError('invalid vibrational source-domain coverage')
+            if final_v < K or any(v not in initial_levels for v in range(K + 1)):
+                raise SpecError('vibrational source-domain does not cover every retained initial level')
         pairs = set()
         for channel in ladder['channels']:
             i, j = channel['initial_v'], channel['source_final_v']

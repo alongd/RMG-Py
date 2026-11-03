@@ -192,6 +192,14 @@ def test_legacy_ladder_metadata_is_complete_only_over_its_levels(small_ladder):
         validate_ladders([legacy])
 
 
+def test_declared_source_domain_covers_every_retained_initial_level(small_ladder):
+    _, ladder = small_ladder
+    incomplete = copy.deepcopy(ladder)
+    incomplete['source_domain'] = {'initial_levels': [0, 2], 'final_v': 2}
+    with pytest.raises(SpecError, match='does not cover every retained initial level'):
+        validate_ladders([incomplete])
+
+
 @pytest.mark.parametrize('K', [10, 29])
 def test_partial_source_domain_adapter_witness(source, tmp_path, K):
     spectrum_path = Path(source['level_source']['path'])
