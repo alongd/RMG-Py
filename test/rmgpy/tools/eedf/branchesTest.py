@@ -1255,6 +1255,16 @@ def _emit(fd, **event):
     os.write(fd, (json.dumps(event) + '\n').encode())
 
 
+def _report_outcome(fd, outcome):
+    """Retry only the observation if a late SIGINT interrupts its write."""
+    while True:
+        try:
+            _emit(fd, outcome=outcome)
+            return
+        except KeyboardInterrupt:
+            pass
+
+
 class _Sleeper:
     """Reports its pid, ignores SIGTERM and sleeps: only SIGKILL or its lifeline ends it."""
 
@@ -1311,9 +1321,10 @@ def _scan_target(fd, output, adapter=None, *, seeds=2, sigterm=signal.SIG_DFL,
             scan(adapter or _Sleeper(fd), (0., 1.), output, u_steps=seeds,
                  electron_density_decades=1, processes=seeds, timeout=30.,
                  reference_power=.5, recheck_timeouts=False)
-            _emit(fd, outcome='return')
+            outcome = 'return'
         except BaseException as exc:
-            _emit(fd, outcome=type(exc).__name__)
+            outcome = type(exc).__name__
+        _report_outcome(fd, outcome)
     if in_thread:
         thread = threading.Thread(target=run)
         thread.start()
@@ -1445,26 +1456,55 @@ def _as_subreaper(trial):
     return result['result']
 
 
-def _on_workers(count, *signals, gap=.02, roles=_ROLES):
-    """Send signals to the owner once count workers have reported."""
+def _on_workers(count, signum, *, roles=_ROLES):
+    """Send one signal to the owner once count workers have reported."""
     def on_event(event, owner, events):
         if any(role in event for role in roles):
             seen = sum(any(role in e for role in roles) for e in events)
             if seen == count:
-                for number, signum in enumerate(signals):
-                    if number:
-                        time.sleep(gap)
-                    os.kill(owner, signum)
+                os.kill(owner, signum)
     return on_event
 
 
 def _cancel_trial(tmp_path, signals, count=2, **arrangement):
     def trial():
+        def target(fd):
+            if len(signals) == 2:
+                from rmgpy.tools.eedf import _native_context as native_context
+                from rmgpy.tools.eedf import branches
+
+                cleanup = native_context.Owner.cleanup
+
+                def at_cleanup(owner, seconds=5.):
+                    # The first signal has raised at the scan checkpoint.
+                    # Hold this cleanup call until the second is recorded;
+                    # neither a sender sleep nor an acknowledgement of kill()
+                    # proves that Python handled it inside the deferral scope.
+                    assert branches._DEFERRAL.raised is not None
+                    assert signals[1] not in branches._DEFERRAL.pending
+                    _emit(fd, cleanup_ready=True)
+                    until = time.monotonic() + 3.
+                    while signals[1] not in branches._DEFERRAL.pending:
+                        assert time.monotonic() < until, 'second signal missed cleanup'
+                        time.sleep(.001)
+                    _emit(fd, cleanup_signal=signals[1])
+                    return cleanup(owner, seconds)
+
+                native_context.Owner.cleanup = at_cleanup
+            _scan_target(fd, tmp_path / 'branches.json', **arrangement)
+
+        on_workers = _on_workers(count, signals[0])
+
+        def on_event(event, owner, events):
+            on_workers(event, owner, events)
+            if event.get('cleanup_ready'):
+                os.kill(owner, signals[1])
+
         status, events, pids = _owner_trial(
-            lambda fd: _scan_target(fd, tmp_path / 'branches.json', **arrangement),
-            _on_workers(count, *signals))
+            target, on_event)
         outcome = next((e['outcome'] for e in events if 'outcome' in e), None)
         return {'status': status, 'outcome': outcome,
+                'cleanup_signals': [e['cleanup_signal'] for e in events if 'cleanup_signal' in e],
                 'fates': {str(pid): _fate(pid) for pid in pids}}
     return _as_subreaper(trial)
 
@@ -1480,6 +1520,53 @@ def test_sigint_delivered_through_another_thread_still_reaps_every_worker(
     """r255 P2-1: two SIGINTs, the second inside cleanup, with an unmasked thread."""
     result = _cancel_trial(tmp_path, (signal.SIGINT, signal.SIGINT), **arrangement)
     assert result['outcome'] == 'KeyboardInterrupt', result
+    assert result['status'] == 0, result
+    assert result['cleanup_signals'] == [signal.SIGINT], result
+    assert len(result['fates']) == 2 and set(result['fates'].values()) == {'reaped-by-owner'}, result
+
+
+@_needs_subreaper
+@pytest.mark.parametrize('retry_report', [False, True], ids=['old-report', 'retry-report'])
+def test_second_sigint_at_outcome_write(tmp_path, monkeypatch, retry_report):
+    """Force the review probe's second SIGINT immediately before the outcome write."""
+    emit = _emit
+    at_outcome = False
+
+    def paused_emit(fd, **event):
+        nonlocal at_outcome
+        if 'outcome' in event and not at_outcome:
+            at_outcome = True
+            emit(fd, outcome_ready=True)
+            # The controller interrupts this pause before the original write.
+            time.sleep(3.)
+            raise AssertionError('second SIGINT did not interrupt outcome reporting')
+        return emit(fd, **event)
+
+    monkeypatch.setattr(sys.modules[__name__], '_emit', paused_emit)
+    if not retry_report:
+        # The old _scan_target exception handler performed exactly this one
+        # unprotected write, with _owner_trial exiting zero in its finally.
+        monkeypatch.setattr(sys.modules[__name__], '_report_outcome',
+                            lambda fd, outcome: _emit(fd, outcome=outcome))
+
+    def trial():
+        on_workers = _on_workers(2, signal.SIGINT)
+
+        def on_event(event, owner, events):
+            on_workers(event, owner, events)
+            if event.get('outcome_ready'):
+                os.kill(owner, signal.SIGINT)
+
+        status, events, pids = _owner_trial(
+            lambda fd: _scan_target(fd, tmp_path / 'branches.json', idle_thread=True),
+            on_event)
+        return {'status': status, 'outcomes': [e['outcome'] for e in events if 'outcome' in e],
+                'outcome_ready': sum(e.get('outcome_ready', False) for e in events),
+                'fates': {str(pid): _fate(pid) for pid in pids}}
+
+    result = _as_subreaper(trial)
+    assert result['outcome_ready'] == 1, result
+    assert result['outcomes'] == (['KeyboardInterrupt'] if retry_report else []), result
     assert result['status'] == 0, result
     assert len(result['fates']) == 2 and set(result['fates'].values()) == {'reaped-by-owner'}, result
 
