@@ -43,7 +43,7 @@ from rmgpy.data.thermo import ThermoDatabase, ThermoLibrary
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.kinetics import EEDFChannel
-from rmgpy.solver.plasma import PlasmaReactor
+from rmgpy.solver.plasma import PlasmaReactor, PlasmaStateError
 from rmgpy.solver.eedf import EEDFTable, OutOfDomain
 from rmgpy.species import Species
 from rmgpy.tools.eedf.artifact import _write_artifact
@@ -267,6 +267,37 @@ def test_off_grid_d6_uses_full_source_threshold(tmp_path, small_ladder):
     with pytest.raises(D6RegenerationRequired, match='D6_REGENERATE Tv_N2 K=6') as error:
         reactor._eedf_qualification_state(state, reactor.t)
     assert error.value.decision['exceeded'] == ['top_leak_share_limit']
+
+
+@pytest.mark.parametrize('tv', [400.000001, 1199.999])
+def test_native_jacobian_uses_interior_tv_trials(tmp_path, small_ladder, tv):
+    reactor, _, _, ladder = molecular_model(tmp_path, small_ladder)
+    state = reactor.y.copy()
+    indices = reactor.eedf_axis_species['Tv_N2']['indices']
+    total = sum(state[i] for i in indices)
+    for i, population in zip(indices, boltzmann_populations(ladder, tv)):
+        state[i] = total * population
+    dydt = np.zeros_like(state)
+    base = np.asarray(reactor.residual(reactor.t, state, dydt)[0]).copy()
+    jacobian = np.asarray(reactor.jacobian(reactor.t, state, dydt, 0.))
+    assert np.isfinite(jacobian).all()
+    assert reactor.eedf_row.composition['Tv_N2'] == pytest.approx(tv)
+    # Independent, half-size differences directed into the table interior.
+    for v, column in enumerate(indices[:2]):
+        direction = (-1. if v == 0 else 1.) * (1. if tv < 800. else -1.)
+        step = direction * 3.e-6 * abs(state[column])
+        interior = state.copy()
+        interior[column] += step
+        interior_tv = reactor._eedf_coordinates(interior)['Tv_N2']
+        assert 400. < interior_tv < 1200.
+        expected = (np.asarray(reactor.residual(reactor.t, interior, dydt)[0]) - base) / step
+        np.testing.assert_allclose(jacobian[:, column], expected, rtol=3.e-4, atol=2.e-6)
+    # An accepted state outside the table must still refuse.
+    outside = state.copy()
+    for i, population in zip(indices, boltzmann_populations(ladder, 399. if tv < 800. else 1201.)):
+        outside[i] = total * population
+    with pytest.raises(PlasmaStateError, match='Tv axis out of domain'):
+        reactor._check_accepted_plasma_domain(outside)
 
 
 def test_runtime_ceiling_refuses_by_name(tmp_path, source):

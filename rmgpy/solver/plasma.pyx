@@ -4621,13 +4621,24 @@ cdef class PlasmaReactor(ReactionSystem):
 
     def _energy_jacobian(self, double t, np.ndarray y, np.ndarray dydt, double cj):
         """Energy Jacobian: analytic for finite EN states; historical central
-        differences on the electropositive branch, in the same convention as :meth:`jacobian`: dG/dy - cj I,
+        differences on the electropositive branch, with inward population
+        differences at Tv bounds, in the same convention as :meth:`jacobian`: dG/dy - cj I,
         with no -cj on the algebraic charge row. The fixed-Te analytic Jacobian has no Te
         column and assumes constant kf, so it is not used in this mode."""
         cdef Py_ssize_t n = self.neq, k, i
         cdef double h
         if self._finite_en_state(y) and not self.eedf_mode:
             return self._en_energy_jacobian(t,y,cj)
+        tv_columns = set()
+        if self.eedf_mode:
+            for entry in self.eedf_axis_species.values():
+                if isinstance(entry, dict):
+                    tv_columns.update(entry['indices'][:2])
+        if tv_columns:
+            from rmgpy.tools.eedf.vibrational import VibrationalPopulationError
+            # Validate the state being differentiated before admitting trials.
+            # An out-of-domain base state must never gain a one-sided escape.
+            self._eedf_coordinates(y, clamp=True)
         legacy_trial = self._en_legacy_energy_trial
         self._en_legacy_energy_trial = True
         try:
@@ -4636,6 +4647,41 @@ cdef class PlasmaReactor(ReactionSystem):
             base = None
             for k in range(n):
                 h = 6.0e-6*max(abs(y[k]),self.atol_array[k])
+                if k in tv_columns:
+                    # Tv depends on the v0/v1 ratio. Near a domain face, a
+                    # central population perturbation can leave the table.
+                    # Check coordinates before evaluating either residual;
+                    # shrink only if neither direction fits the domain.
+                    for attempt in range(32):
+                        yp, ym = y.copy(), y.copy()
+                        yp[k] += h
+                        ym[k] -= h
+                        admissible = []
+                        for trial in (yp, ym):
+                            allowed = trial[k] > 0. and trial[k] != y[k]
+                            if allowed:
+                                try:
+                                    self._eedf_coordinates(trial, clamp=True)
+                                except (PlasmaStateError, VibrationalPopulationError):
+                                    allowed = False
+                            admissible.append(allowed)
+                        if any(admissible):
+                            break
+                        h *= .5
+                    else:
+                        raise PlasmaStateError(
+                            'Tv Jacobian has no admissible perturbation for state column {0}'.format(k))
+                    if all(admissible):
+                        rp = np.asarray(self.residual(t,yp,dydt)[0]).copy()
+                        rm = np.asarray(self.residual(t,ym,dydt)[0]).copy()
+                        pd[:, k] = (rp-rm)/(yp[k]-ym[k])
+                    else:
+                        if base is None:
+                            base = np.asarray(self.residual(t,y,dydt)[0]).copy()
+                        trial = yp if admissible[0] else ym
+                        rp = np.asarray(self.residual(t,trial,dydt)[0]).copy()
+                        pd[:, k] = (rp-base)/(trial[k]-y[k])
+                    continue
                 yp = y.copy()
                 yp[k] += h
                 if k < self.num_core_species and y[k] - h <= 0.0:
@@ -4651,9 +4697,14 @@ cdef class PlasmaReactor(ReactionSystem):
                 rp = np.asarray(self.residual(t,yp,dydt)[0]).copy()
                 rm = np.asarray(self.residual(t,ym,dydt)[0]).copy()
                 pd[:, k] = (rp-rm)/(yp[k]-ym[k])
-            self.residual(t, y, dydt)          # leave the scratch at y
+            if not tv_columns:
+                self.residual(t, y, dydt)      # leave the scratch at y
         finally:
-            self._en_legacy_energy_trial = legacy_trial
+            try:
+                if tv_columns:
+                    self.residual(t, y, dydt)  # restore also after a failed trial
+            finally:
+                self._en_legacy_energy_trial = legacy_trial
         self.jacobian_matrix = pd.copy()
         for i in range(n):
             if self.quasineutral_electron and i == self.electron_index:

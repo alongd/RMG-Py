@@ -184,7 +184,9 @@ approximation. These restrictions also apply to table-generation points.
 The analytic derivatives are ``dTv/dn0 = -Tv/(n0*log_ratio)`` and
 ``dTv/dn1 = Tv/(n1*log_ratio)``. They enter the existing composition energy
 chain rule used by the DAE. Tv uses the generic table interpolation and domain
-checks; even solver trials cannot silently clamp this coordinate.
+checks; even solver trials cannot silently clamp this coordinate. Numerical
+Jacobian population perturbations use one-sided differences toward the
+interior near a Tv domain boundary; out-of-domain accepted states still refuse.
 
 Forward and separate irreversible superelastic reactions must use exactly the
 retained endpoint species. Above-K excitations redirect to K; top-to-top,
