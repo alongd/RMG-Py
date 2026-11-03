@@ -1950,8 +1950,10 @@ def _signal_during_scan(ready, release, count, signum, delivered):
         try:
             _read_ready(ready, count, 'scan signal worker readiness timed out')
             signal.pthread_kill(threading.main_thread().ident, signum)
+            result['sent_at'] = time.monotonic()
             result['sent'] = True
             _wait_observed(delivered, 'scan signal delivery timed out')
+            result['delivered_at'] = time.monotonic()
             result['delivered'] = True
         except BaseException as exc:
             result['error'] = repr(exc)
@@ -2002,10 +2004,14 @@ def _foreign_dispositions_target(fd, output):
     sender, term = _signal_during_scan(
         ready_r, release_w, 1, signal.SIGTERM,
         lambda: term_deliveries == [signal.SIGTERM])
-    scan(Returns(), (0., 0.), output, u_steps=1, electron_density_decades=1, processes=1,
-         timeout=30., reference_power=.5, recheck_timeouts=False)
+    scanned = scan(Returns(), (0., 0.), output, u_steps=1, electron_density_decades=1,
+                   processes=1, timeout=30., reference_power=.5, recheck_timeouts=False)
+    scan_returned = time.monotonic()
     _join_sender(sender, term)
     rows.update(term_sent=term['sent'], term_delivered=term_deliveries)
+    rows.update(failures=[a['failure'] for a in scanned['attempts'] if a.get('failure')],
+                sent_at=term['sent_at'], delivered_at=term['delivered_at'],
+                scan_returned=scan_returned)
     rows['after_return'] = {s: _raw_disposition(s) == before[s] for s in before}
     # 2. The scan raises KeyboardInterrupt.
     raised = threading.Event()
@@ -2040,6 +2046,9 @@ def test_foreign_and_restart_dispositions_are_byte_identical_after_a_scan(tmp_pa
     result = _as_subreaper(trial)
     assert result['status'] == 0, result
     rows = result['outcome']
+    assert not rows['failures'], 'foreign TERM worker rendezvous failed: {}'.format(rows)
+    assert rows['sent_at'] <= rows['delivered_at'] < rows['scan_returned'], \
+        'foreign TERM signal outside scan: {}'.format(rows)
     assert rows['term_sent'] and rows['term_delivered'] == [signal.SIGTERM], result
     assert rows['raised'] == 'KeyboardInterrupt', result
     assert all(rows['after_return'].values()) and all(rows['after_raise'].values()), result
@@ -2102,12 +2111,14 @@ def _rdkit_embedding_target(fd, output, send_sigint):
         sender, sent = _signal_during_scan(
             ready_r, release_w, 2, signal.SIGINT,
             lambda: not _raw_disposition(signal.SIGINT)[0])
+    scanned = None
     try:
-        scan(Returns(), (0., 1.), output, u_steps=2, electron_density_decades=1,
-             processes=2, timeout=30., reference_power=.5, recheck_timeouts=False)
+        scanned = scan(Returns(), (0., 1.), output, u_steps=2, electron_density_decades=1,
+                       processes=2, timeout=30., reference_power=.5, recheck_timeouts=False)
         outcome = 'return'
     except BaseException as exc:
         outcome = type(exc).__name__
+    scan_returned = time.monotonic()
     if send_sigint:
         _join_sender(sender, sent)
     for pipe in (ready_r, ready_w, release_r, release_w):
@@ -2115,6 +2126,11 @@ def _rdkit_embedding_target(fd, output, send_sigint):
     after = _raw_disposition(signal.SIGINT)
     _emit(fd, signal_sent=send_sigint and sent['sent'],
           delivery_observed=send_sigint and sent['delivered'],
+          failures=[a['failure'] for a in scanned['attempts'] if a.get('failure')]
+          if scanned is not None else [],
+          sent_at=sent['sent_at'] if send_sigint else None,
+          delivered_at=sent['delivered_at'] if send_sigint else None,
+          scan_returned=scan_returned,
           outcome=outcome, rdkit_handler=bool(before[0]) and before[0] != after[0] or None,
           identical=after == before, after_is_default=not after[0])
 
@@ -2138,6 +2154,9 @@ def test_rdkits_leftover_sigint_handler_is_left_to_act_as_it_would(tmp_path, sen
     assert result['status'] == 0 and report['outcome'] == 'return', result
     assert set(result['fates'].values()) == {'reaped-by-owner'}, result
     if send_sigint:
+        assert not report['failures'], 'RDKit worker rendezvous failed: {}'.format(report)
+        assert report['sent_at'] <= report['delivered_at'] < report['scan_returned'], \
+            'RDKit signal outside scan: {}'.format(report)
         assert report['signal_sent'] and report['delivery_observed'], result
         assert report['after_is_default'], result  # RDKit's own reset, not the scan's
     else:
@@ -2146,13 +2165,14 @@ def test_rdkits_leftover_sigint_handler_is_left_to_act_as_it_would(tmp_path, sen
 
 @_needs_subreaper
 @pytest.mark.parametrize('fixture', ['foreign', 'rdkit'])
-def test_scan_signal_waits_for_a_delayed_sender(tmp_path, monkeypatch, fixture):
+@pytest.mark.parametrize('delay', [.6, 3.])
+def test_scan_signal_waits_for_a_delayed_sender(tmp_path, monkeypatch, fixture, delay):
     """Delay beyond the old worker lifetimes; delivery must still occur in scan."""
     original = _read_ready
 
     def delayed(fd, count, failure):
         if threading.current_thread() is not threading.main_thread():
-            threading.Event().wait(.6)
+            threading.Event().wait(delay)
         return original(fd, count, failure)
 
     monkeypatch.setattr(sys.modules[__name__], '_read_ready', delayed)
@@ -2160,6 +2180,30 @@ def test_scan_signal_waits_for_a_delayed_sender(tmp_path, monkeypatch, fixture):
         test_foreign_and_restart_dispositions_are_byte_identical_after_a_scan(tmp_path)
     else:
         test_rdkits_leftover_sigint_handler_is_left_to_act_as_it_would(tmp_path, True)
+
+
+@_needs_subreaper
+@pytest.mark.parametrize('fixture', ['foreign', 'rdkit'])
+def test_scan_signal_rejects_a_sender_past_worker_release(tmp_path, monkeypatch, fixture):
+    """The actual owning test must expose a swallowed worker timeout by name."""
+    original = _read_ready
+    delayed_once = False
+
+    def delayed(fd, count, failure):
+        nonlocal delayed_once
+        if threading.current_thread() is not threading.main_thread() and not delayed_once:
+            delayed_once = True
+            threading.Event().wait(12.)
+        return original(fd, count, failure)
+
+    monkeypatch.setattr(sys.modules[__name__], '_read_ready', delayed)
+    failure = ('foreign TERM' if fixture == 'foreign' else 'RDKit') + ' worker rendezvous failed'
+    with pytest.raises(AssertionError, match=failure) as caught:
+        if fixture == 'foreign':
+            test_foreign_and_restart_dispositions_are_byte_identical_after_a_scan(tmp_path)
+        else:
+            test_rdkits_leftover_sigint_handler_is_left_to_act_as_it_would(tmp_path, True)
+    assert 'worker release timed out' in str(caught.value)
 
 
 def _raising_handler_inside_start_target(fd, output):
