@@ -204,10 +204,13 @@ not regenerate tables automatically. Successful decisions are recorded under
 ``vibrational_D6`` in the terminal state.
 
 The full collision threshold is already charged in the existing electron
-energy row, including the superelastic gain. ``vibrational_energy`` partitions
-the canonical gross forward power into retained energy, top-leak energy,
-source-rounding residual and the explicitly recorded ``discretization_power``
-(the solver grid-face transfer minus the sourced threshold). Its named
+energy row, including the superelastic gain. ``vibrational_energy`` computes
+gross forward power from target populations times ``k_ine`` times the sourced
+full threshold, including transitions above K. Retained energy, top-leak energy
+and source-rounding residual partition that gross power. The separate
+``discretization_power`` records the table's net channel power minus its net
+flux times the sourced threshold, including interpolation discrepancies; it
+never enters the D6 denominator. Its named
 ``top_leak_ledger`` is diagnostic and is
 never added again to ``Q_inelastic`` or gas heating. D6 separately uses actual
 accepted target populations. This implementation and its tests use synthetic

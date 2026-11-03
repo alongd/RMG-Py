@@ -3846,8 +3846,8 @@ cdef class PlasmaReactor(ReactionSystem):
         for axis, entry in self.eedf_axis_species.items():
             if isinstance(entry, dict):
                 from rmgpy.tools.eedf.vibrational import energy_ledger
-                # Partition the canonical channel loss, never charge the leak
-                # again. Terminal D6 separately uses exact accepted populations.
+                # Report threshold power and the table residual separately,
+                # never charge the leak again. D6 uses accepted populations.
                 self.electron_energy_terms.setdefault('vibrational_energy', {})[axis] = energy_ledger(
                     entry['ladder'], row, channels, None, 1., power_factor)
         return (p_abs - losses - mean * constants.Na * constants.e * dne -

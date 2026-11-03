@@ -213,7 +213,20 @@ def test_grid_transfer_residual_is_visible_not_an_extra_charge(small_ladder):
     ledger = energy_ledger(ladder, row, channels, None, 1., 1.)
     assert ledger['discretization_power'] < 0
     assert ledger['forward_power'] == pytest.approx(sum(ledger[name] for name in (
-        'retained_power', 'top_leak_power', 'source_residual_power', 'discretization_power')))
+        'retained_power', 'top_leak_power', 'source_residual_power')))
+    assert ledger['forward_power'] + ledger['discretization_power'] == pytest.approx(sum(row.channel_power))
+
+
+def test_table_power_residual_survives_zero_net_flux(small_ladder):
+    ladder = small_ladder[1]
+    channels = ladder['channels']
+    row = SimpleNamespace(k_ine=np.ones(len(channels)), k_sup=np.ones(len(channels)),
+                          target_fractions=np.ones(len(channels)), product_fractions=np.ones(len(channels)),
+                          channel_power=np.full(len(channels), .01))
+    ledger = energy_ledger(ladder, row, channels, None, 1., 2.)
+    retained_channels = [c for c in channels if c['initial_v'] <= ladder['K']]
+    assert ledger['forward_power'] == pytest.approx(2. * sum(c['threshold_eV'] for c in retained_channels))
+    assert ledger['discretization_power'] == pytest.approx(.02 * len(retained_channels))
 
 
 def test_report_accepts_hierarchical_population_metadata():

@@ -64,8 +64,9 @@ def temperature(levels, populations):
     """Return Tv in K and (dTv/dn0, dTv/dn1) in K per population unit.
 
     Tv = (E1-E0)/kB / log(n0*g1/(n1*g0)). Both populations must be
-    positive. Equal reduced populations and inversions refuse, including
-    n1>n0 even when unequal weights would permit a positive temperature.
+    positive. Inversion is judged on weight-reduced populations n/g;
+    n1/g1 >= n0/g0 refuses. The separate n1>n0 restriction also refuses
+    even when unequal weights would permit a positive temperature.
     Missing levels and zero populations refuse; there is no finite clamp.
     """
     if (len(levels) < 2 or len(populations) < 2
@@ -282,8 +283,11 @@ def validate_bound_channels(ladder, channels, reactions, reaction_map, indices, 
 def energy_ledger(ladder, row, channel_map, populations, neutral, power_factor):
     """Gross forward power and leak diagnostics, never extra electron charges.
 
-    Rates use the actual resolved target amounts. The electron energy row
-    already charges the full threshold; leak/retained/residual partition it.
+    Rates use the actual resolved target amounts and sourced thresholds,
+    including the full threshold for a transition above K. The electron
+    energy row already charges channel power; this ledger adds no charge.
+    ``discretization_power`` is the table's net power minus its net flux
+    times the sourced threshold, and never enters gross forward power/D6.
     """
     columns = {c['description']: j for j, c in enumerate(channel_map)}
     forward = leak = retained = residual = discretization = 0.
@@ -297,15 +301,14 @@ def energy_ledger(ladder, row, channel_map, populations, neutral, power_factor):
         flux = power_factor * target * float(row.k_ine[column])
         net = (float(row.target_fractions[column]) * float(row.k_ine[column]) -
                float(row.product_fractions[column]) * float(row.k_sup[column]))
-        transfer = float(row.channel_power[column]) / net if net != 0. else binding['threshold_eV']
-        loss = flux * transfer
+        loss = flux * binding['threshold_eV']
         delta = ladder['levels'][binding['final_v']]['energy_eV'] - ladder['levels'][i]['energy_eV']
         entry_leak = flux * binding['top_leak_eV']
         forward += loss
         leak += entry_leak
         retained += flux * delta
         residual += flux * (binding['threshold_eV'] - delta - binding['top_leak_eV'])
-        discretization += flux * (transfer - binding['threshold_eV'])
+        discretization += power_factor * (float(row.channel_power[column]) - net * binding['threshold_eV'])
         if binding['top_leak_eV']:
             per_leak['top-leak:' + binding['description']] = entry_leak
     return {'forward_power': forward, 'top_leak_power': leak, 'retained_power': retained,

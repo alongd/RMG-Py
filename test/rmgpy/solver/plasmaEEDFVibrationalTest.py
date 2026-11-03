@@ -244,6 +244,31 @@ def test_terminal_runtime_d6_refuses_before_qualification(tmp_path, small_ladder
     assert reactor.eedf_provider._qualification_status == 'FAILED'
 
 
+def test_off_grid_d6_uses_full_source_threshold(tmp_path, small_ladder):
+    reactor, core, _, ladder = molecular_model(tmp_path, small_ladder, policy={
+        'top_fraction_limit': 1., 'top_leak_share_limit': .35367468125221485})
+    state = reactor.y.copy()
+    state[reactor.te_index] = .5
+    assert state[reactor.te_index] not in reactor.eedf_provider.axis('u')
+    reactor.residual(reactor.t, state, np.zeros_like(state))
+    indices = reactor.eedf_axis_species['Tv_N2']['indices']
+    neutral = sum(state[i] for i, species in enumerate(core) if species.get_net_charge() == 0)
+    columns = {c['description']: j for j, c in enumerate(
+        reactor.eedf_provider.runtime_metadata['channel_map'])}
+    forward = leak = 0.
+    for channel in ladder['channels']:
+        if channel['initial_v'] > ladder['K']:
+            continue
+        flux = state[indices[channel['initial_v']]] / neutral * reactor.eedf_row.k_ine[columns[channel['description']]]
+        forward += flux * channel['threshold_eV']
+        leak += flux * channel['top_leak_eV']
+    assert leak / forward == pytest.approx(.3568970973300905)
+    assert leak / forward > ladder['D6']['top_leak_share_limit']
+    with pytest.raises(D6RegenerationRequired, match='D6_REGENERATE Tv_N2 K=6') as error:
+        reactor._eedf_qualification_state(state, reactor.t)
+    assert error.value.decision['exceeded'] == ['top_leak_share_limit']
+
+
 def test_runtime_ceiling_refuses_by_name(tmp_path, source):
     emitted = _fixture._generator.decoded(source, K=30)
     bindings = [{'source_sha256': p['source']['sha256'], 'source_block': p['source_block'],
