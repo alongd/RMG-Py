@@ -32,6 +32,7 @@ import json
 import multiprocessing as mp
 import os
 from pathlib import Path
+import select
 import signal
 import sys
 import time
@@ -44,6 +45,7 @@ MODE, OUT = sys.argv[1], Path(sys.argv[2])
 OWNER = os.getpid()
 app = record = None
 fired = False
+released_r, released_w = os.pipe()
 
 
 class AppSignal(Exception):
@@ -52,8 +54,9 @@ class AppSignal(Exception):
 
 def app_target():
     assert not n.is_worker()
-    # Survive longer than the scan's explicit cancellation and native reap.
-    time.sleep(.35)
+    # Stay alive until the owner has observed public scan unwind.
+    assert select.select([released_r], [], [], 5.)[0], 'application child release timed out'
+    assert os.read(released_r, 1) == b'r', 'application child release missing'
     (OUT / ('attribution-' + MODE + '-app.json')).write_text(json.dumps(dict(pid=os.getpid(), survived=True)))
 
 
@@ -108,6 +111,8 @@ def main():
         pass
     else:
         raise AssertionError('real handler exception was swallowed')
+    assert app.is_alive(), 'application child exited before scan unwind'
+    os.write(released_w, b'r')
     app.join(2)
     assert app.exitcode == 0
     facts = n.info(record)
