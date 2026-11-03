@@ -2355,8 +2355,7 @@ if mode == 'eintr':
         done.set()
     thread = threading.Thread(target=read)
     thread.start()
-    started.wait()
-    time.sleep(.02)
+    assert started.wait(5.), 'native SIGINT reader startup timed out'
 setup = tuple(getattr(b, name).__code__ for name in (
     '_defer_signals', '_install_recorder', '_interpreter_handler', '_image_base',
     '_trampoline_offset', '_mapped_file', '_elf_function') if hasattr(b, name))
@@ -2401,6 +2400,16 @@ def trace(frame, event, arg):
         row['sent'] += 1
         wait_for_delivery()
     elif mode == 'eintr':
+        # started is published before read(). Observe the actual blocked
+        # syscall, including re-entry after every previous SA_RESTART signal.
+        until = time.monotonic() + 3.
+        while True:
+            with open('/proc/self/task/{}/syscall'.format(reader['tid'])) as source:
+                fields = source.read().split()
+            if len(fields) > 1 and fields[0] == '0' and int(fields[1], 16) == pipe_r:
+                break
+            assert time.monotonic() < until, 'native SIGINT read entry timed out'
+            time.sleep(.001)
         assert libc.syscall(234, me, reader['tid'], int(signal.SIGINT)) == 0  # tgkill
         row['sent'] += 1
         wait_for_delivery()
@@ -2457,6 +2466,17 @@ def test_first_scan_sender_times_out_on_a_missing_native_delivery(tmp_path, monk
     monkeypatch.setattr(sys.modules[__name__], '_FIRST_SCAN_OWNERSHIP', script)
     with pytest.raises(AssertionError, match='native SIGINT delivery timed out'):
         _first_scan(tmp_path, mode, 'python')
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads task syscall')
+def test_first_scan_sender_requires_an_observed_blocking_read(tmp_path, monkeypatch):
+    script = _FIRST_SCAN_OWNERSHIP.replace(
+        "if len(fields) > 1 and fields[0] == '0' and int(fields[1], 16) == pipe_r:",
+        "if False:  # suppress the read-entry observation")
+    assert script != _FIRST_SCAN_OWNERSHIP
+    monkeypatch.setattr(sys.modules[__name__], '_FIRST_SCAN_OWNERSHIP', script)
+    with pytest.raises(AssertionError, match='native SIGINT read entry timed out'):
+        _first_scan(tmp_path, 'eintr', 'python')
 
 
 @pytest.mark.skipif(not sys.platform.startswith('linux'), reason='glibc sigaction')
