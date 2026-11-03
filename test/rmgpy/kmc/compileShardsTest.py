@@ -228,3 +228,29 @@ def test_the_merged_artifact_is_the_single_process_artifact(case, tmp_path, monk
         run_merge(_request(case, tmp_path / "partial"), tmp_path / "work2",
                   ShardCounts(census=2, recount=2, build=2), database=database)
     assert not (tmp_path / "partial").exists() or not list((tmp_path / "partial").iterdir())
+
+
+# --- emission's index of the merged artifact (I-295) ------------------------------
+
+
+def test_merge_writes_the_emit_index_of_the_artifact_it_merged(tmp_path, monkeypatch):
+    import json
+    from rmgpy.kmc import artifact_stream, compile_shards
+
+    artifact = tmp_path / "out" / "artifact.json"
+    artifact.parent.mkdir()
+    ids = ["evt_" + f"{k:x}" * 64 for k in range(1, 4)]
+    artifact.write_text(json.dumps({"provenance": {}, "records": [
+        {"event_id": i, "family": "F", "reverse_of": ids[(k + 1) % 3]} for k, i in enumerate(ids)]},
+        sort_keys=True, separators=(",", ":")))
+    monkeypatch.setattr(compile_shards, "run_merge",
+                        lambda request, workdir, counts: (artifact, "id", None))
+    index = tmp_path / "artifact.index.json"
+    (tmp_path / "families.json").write_text(json.dumps(["F"]))
+    assert compile_shards.main([
+        "merge", str(tmp_path), str(tmp_path / "work"), str(tmp_path / "out"),
+        "--census-shards", "1", "--recount-shards", "1", "--build-shards", "1",
+        "--families", str(tmp_path / "families.json"), "--emit-index", str(index)]) == 0
+    loaded = artifact_stream.load_index(index, artifact)
+    assert loaded.entries == artifact_stream.build_index(artifact).entries
+    assert [e.links for e in loaded.entries] == [(ids[1],), (ids[2],), (ids[0],)]

@@ -63,9 +63,15 @@ CLI::
         --shard k --census-shards K0 --recount-shards K1 --build-shards K2
         (--families FILE.json | --family F) [--deck DECK.py] [--proxy-units N] ...
     python -m rmgpy.kmc.compile_shards merge DATABASE WORKDIR OUTPUT --census-shards K0
-        --recount-shards K1 --build-shards K2 (same request arguments)
+        --recount-shards K1 --build-shards K2 (same request arguments) [--emit-index FILE]
     python -m rmgpy.kmc.compile_shards plan DATABASE WORKDIR --census-shards K0
         --recount-shards K1 --build-shards K2 (same request arguments)
+
+``merge --emit-index FILE`` also writes the artifact's streaming index
+(``rmgpy.kmc.artifact_stream``; ``emit index``), which emission's prepare
+stage reads (``emit prepare --index``) instead of indexing the artifact again.
+Emission of a large artifact is ``emit prepare`` once, then ``emit --prepared``
+per shard (``rmgpy.kmc.emit_prepare``): no shard parses the artifact.
 
 ``plan`` reads the census and prints, per recount and build shard, its units,
 recounts or candidates, and an estimated time from the census's measured
@@ -790,6 +796,15 @@ def run_merge(request, workdir, counts: ShardCounts, *, database=None):
     return Path(path), artifact_id, plan.inputs.database
 
 
+def write_emit_index(artifact, out) -> Path:
+    """The merged artifact's streaming index for emission (``emit index``)."""
+    from rmgpy.kmc import artifact_stream
+    index = artifact_stream.build_index(artifact)
+    path = artifact_stream.write_index(index, out)
+    print(f"emit index {path}: {len(index.entries)} records, {_rss()}", flush=True)
+    return path
+
+
 RUNNERS = {"census": run_census, "recount": run_recount, "build": run_build}
 
 
@@ -843,6 +858,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="plan: estimated seconds per candidate compile")
     parser.add_argument("--max-hours", type=float,
                         help="plan: exit 1 if any shard is estimated over this")
+    parser.add_argument("--emit-index",
+                        help="merge: also write the artifact's streaming index here (emit index)")
     add_request_arguments(parser)
     args = parser.parse_args(argv)
     counts = ShardCounts(args.census_shards, args.recount_shards, args.build_shards)
@@ -857,6 +874,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             RUNNERS[args.stage](request, args.workdir, args.shard, counts)
         elif args.stage == "merge":
             path, artifact_id, _ = run_merge(request, args.workdir, counts)
+            if args.emit_index:
+                write_emit_index(path, args.emit_index)
             print(path)
             print(artifact_id)
         else:
