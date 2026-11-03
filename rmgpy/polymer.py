@@ -102,6 +102,8 @@ import logging
 import math
 import os
 import re
+import tempfile
+import threading
 
 import numpy as np
 from collections import defaultdict
@@ -110,6 +112,7 @@ from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
 
+from rmgpy import species_identity as _species_identity  # one implementation, shared with the kMC producer
 from rmgpy.exceptions import InputError
 from rmgpy.molecule import Atom, Bond, Molecule
 from rmgpy.molecule.atomtype import ATOMTYPES
@@ -125,6 +128,35 @@ LABELS_1, LABELS_2 = ('1', '*1'), ('2', '*2')
 # terminus out of the stitcher's *1/*2 label resolution (restored before the
 # strict end-radical assertion runs).
 _END_RADICAL_PARKED_LABEL = '*er'
+
+@dataclass
+class _SidecarWriteState:
+    """In-process sequencing state for one absolute sidecar path."""
+
+    issued: int = 0
+    committed: int = 0
+
+
+@dataclass(frozen=True)
+class _SidecarWriteTicket:
+    """The ordering claim taken when a sidecar save begins."""
+
+    target_path: str
+    sequence: int
+
+
+class PolymerPoolsSidecarInvalidationError(RuntimeError):
+    """A failed standalone write could not invalidate its prior sidecar."""
+
+
+# Cross-process saves to one directory remain out of scope and must be
+# serialized by their caller.
+_SIDECAR_WRITE_LOCK = threading.Lock()
+_SIDECAR_WRITE_STATES = defaultdict(_SidecarWriteState)
+
+_FAILED_SIDECAR_REFUSAL = (
+    '{"refused":true,"reason":"sidecar_write_failed","species":[]}\n'
+)
 
 
 class PolymerCrosslinkError(Exception):
@@ -9121,6 +9153,126 @@ def _serialize_pool_for_sidecar(pool: 'Polymer',
     return d
 
 
+def species_structure(spc):
+    """A core species' structure as the sidecar records it: RMG's adjacency
+    list of its first molecule (its multiplicity line included) and that
+    multiplicity, ``{"adjacency_list": ..., "multiplicity": ...}``; None when
+    it has no molecule or the list cannot be written.  A consumer compares it
+    with its own species by RMG's isomorphism (``same_structure``), never by
+    string."""
+    molecules = [m for m in (getattr(spc, "molecule", None) or []) if m is not None]
+    if not molecules:
+        return None
+    try:
+        return {"adjacency_list": molecules[0].to_adjacency_list(),
+                "multiplicity": int(molecules[0].multiplicity)}
+    except Exception:
+        return None
+
+
+# RMG-isomorphism species identity (rmgpy.species_identity), the kMC producer's too
+same_structure = _species_identity.same_structure
+
+
+class _CoreStructure(object):
+    """A core species' structure as the rebuild signature holds it: deep
+    copies of its molecules (immune to later edits), compared by
+    ``same_structure``."""
+    __slots__ = ("molecules",)
+
+    def __init__(self, molecules):
+        self.molecules = [m.copy(deep=True) for m in molecules]
+
+    def same_as(self, other):
+        return isinstance(other, _CoreStructure) and same_structure(self.molecules, other.molecules) is True
+
+    def identity_verdict(self, other):
+        if not isinstance(other, _CoreStructure):
+            return False
+        return same_structure(self.molecules, other.molecules)
+
+
+class _UnreadableStructure(object):
+    """A core species whose structure cannot be read or copied: equal to
+    nothing, itself included."""
+    __slots__ = ("name",)
+
+    def __init__(self, name):
+        self.name = name
+
+    def same_as(self, other):
+        return False
+
+
+def _core_structure(spc):
+    molecules = [m for m in (getattr(spc, "molecule", None) or []) if m is not None]
+    try:
+        if not molecules:
+            raise ValueError("no molecule")
+        return _CoreStructure(molecules)
+    except Exception:
+        return _UnreadableStructure(_artifact_species_label(spc))
+
+
+class CoreTopologySignature(object):
+    """The rebuild signature: per species (label, index) and its structure
+    (``_CoreStructure``), per reaction (index, label).  Two signatures are
+    equal when every label, index and reaction key is, and every species is
+    the same species by ``same_structure``.  The canonical identity is RMG's
+    own species isomorphism (resonance-aware, multiplicity-aware), not a
+    string token: augmented InChIs merge tautomers and drop multiplicity, and
+    one resonance hybrid drawn two ways gives two of them."""
+    __hash__ = None
+
+    def __init__(self, core_species, core_reactions):
+        self.species = [(getattr(s, "label", None), getattr(s, "index", None), _core_structure(s))
+                        for s in (core_species or [])]
+        self.reactions = tuple((getattr(r, "index", None), getattr(r, "label", None))
+                               for r in (core_reactions or []))
+
+    @property
+    def unreadable(self):
+        """The species whose structure cannot be read, by artifact label."""
+        return [x.name for _l, _i, x in self.species if isinstance(x, _UnreadableStructure)]
+
+    def __eq__(self, other):
+        if not isinstance(other, CoreTopologySignature):
+            return False
+        if self.reactions != other.reactions or len(self.species) != len(other.species):
+            return False
+        return all(la == lb and ia == ib and xa.same_as(xb)
+                   for (la, ia, xa), (lb, ib, xb) in zip(self.species, other.species))
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def undecidable_species(self, other):
+        """Labels whose identity cannot safely establish a topology match."""
+        if not isinstance(other, CoreTopologySignature):
+            return []
+        undecidable = []
+        # Audit every CURRENT species independently of its position in the
+        # old signature. Added/reordered species are stale topology, but a
+        # malformed or undecidable current structure must still be refused.
+        for label, index, there in other.species:
+            if isinstance(there, _UnreadableStructure):
+                continue
+            verdict = there.identity_verdict(there)
+            if verdict in (_species_identity.UNDECIDABLE, _species_identity.MALFORMED):
+                undecidable.append(f"{label}({index})")
+        for (label, index, here), (other_label, other_index, there) in zip(self.species, other.species):
+            if label != other_label or index != other_index:
+                continue
+            if isinstance(here, _UnreadableStructure) or isinstance(there, _UnreadableStructure):
+                continue
+            verdict = here.identity_verdict(there)
+            name = f"{label}({index})"
+            if verdict in (_species_identity.UNDECIDABLE, _species_identity.MALFORMED) \
+                    and name not in undecidable:
+                undecidable.append(name)
+        return undecidable
+
+
 def core_topology_signature(core_species, core_reactions):
     """Stable identity signature of a (core species, core reactions) pair
     (round-27 P1-C stale_topology predicate).
@@ -9132,18 +9284,120 @@ def core_topology_signature(core_species, core_reactions):
     engine rebuild, so the emitted artifact's engine-derived surfaces are
     stale (``conventions.stale_topology``).
 
-    Identity keys are ``(label, index)`` per species and
-    ``(index, label)`` per reaction -- stable across the save/rebuild
+    A ``CoreTopologySignature``: species by (label, index) and structure,
+    compared by RMG's isomorphism (another species under the same label and
+    index, a tautomer or another multiplicity included, flips it; another
+    resonance drawing does not; a structure that cannot be read flips it
+    always), reactions by (index, label) -- stable across the save/rebuild
     window, unlike ``id()`` (recyclable across GC), and strictly stronger
-    than the bare count equality this replaces: a same-count species or
-    reaction swap/restamp between rebuilds flips the signature.
+    than the bare count equality this replaces.
     """
-    return (
-        tuple((getattr(s, "label", None), getattr(s, "index", None))
-              for s in (core_species or [])),
-        tuple((getattr(r, "index", None), getattr(r, "label", None))
-              for r in (core_reactions or [])),
+    return CoreTopologySignature(core_species, core_reactions)
+
+
+def _take_sidecar_write_ticket(path):
+    """Take the next in-process ticket for an absolute sidecar path."""
+    target_path = os.path.abspath(path)
+    with _SIDECAR_WRITE_LOCK:
+        state = _SIDECAR_WRITE_STATES[target_path]
+        state.issued += 1
+        return _SidecarWriteTicket(target_path, state.issued)
+
+
+def _write_sidecar_atomically(
+        path, write_payload, ticket=None, discard_if_newer_issued=True):
+    """Publish a sidecar through a unique, durable temp file."""
+    path = os.path.abspath(path)
+    if ticket is None:
+        ticket = _take_sidecar_write_ticket(path)
+    elif ticket.target_path != path:
+        raise ValueError(
+            f"sidecar ticket for {ticket.target_path!r} cannot commit {path!r}"
+        )
+    fd, temp_path = tempfile.mkstemp(
+        prefix=f".{os.path.basename(path)}.tmp-",
+        dir=os.path.dirname(path) or ".",
+        text=True,
     )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            write_payload(fh)
+            fh.flush()
+            os.fsync(fh.fileno())
+        with _SIDECAR_WRITE_LOCK:
+            state = _SIDECAR_WRITE_STATES[path]
+            superseding_sequence = (
+                state.issued if discard_if_newer_issued else state.committed
+            )
+            if superseding_sequence > ticket.sequence:
+                logging.warning(
+                    "Discarded superseded sidecar write for %s "
+                    "(ticket %d; latest %s ticket %d)",
+                    path,
+                    ticket.sequence,
+                    "issued" if discard_if_newer_issued else "committed",
+                    superseding_sequence,
+                )
+                return
+            os.replace(temp_path, path)
+            state.committed = ticket.sequence
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+
+def _write_json_atomically(path, payload, default=None, ticket=None):
+    """Write JSON through a unique, durable temp file beside ``path``."""
+    return _write_sidecar_atomically(
+        path,
+        lambda fh: json.dump(payload, fh, indent=2, default=default),
+        ticket=ticket,
+    )
+
+
+def _invalidate_failed_standalone_sidecar_write(path, ticket):
+    """Replace a failed standalone write with a fixed refusal or no file."""
+    path = os.path.abspath(path)
+    try:
+        _write_sidecar_atomically(
+            path,
+            lambda fh: fh.write(_FAILED_SIDECAR_REFUSAL),
+            ticket=ticket,
+            discard_if_newer_issued=False,
+        )
+        return
+    except Exception:
+        logging.warning(
+            "Failed to write fallback polymer_pools.json refusal",
+            exc_info=True,
+        )
+
+    stale_path = path + ".stale"
+    with _SIDECAR_WRITE_LOCK:
+        state = _SIDECAR_WRITE_STATES[path]
+        if state.committed > ticket.sequence:
+            return
+        try:
+            if os.path.exists(path):
+                os.replace(path, stale_path)
+            return
+        except Exception:
+            logging.warning(
+                "Failed to move stale polymer sidecar %s to %s; "
+                "removing the current path",
+                path,
+                stale_path,
+                exc_info=True,
+            )
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        except Exception as unlink_error:
+            raise PolymerPoolsSidecarInvalidationError(
+                "cannot invalidate polymer_pools.json at %s after fallback "
+                "refusal, rename, and unlink failed" % path
+            ) from unlink_error
 
 
 def write_polymer_pools_sidecar(
@@ -9163,6 +9417,9 @@ def write_polymer_pools_sidecar(
     generation_v_poly_m3=None,
     explicit_dp_species_by_pool=None,
     stale_topology=False,
+    solver_gas_masks=None,
+    stale_unreadable=None,
+    _ticket=None,
 ) -> str:
     """Emit ``polymer_pools.json`` alongside ``chem.yaml`` (design doc §6).
 
@@ -9202,6 +9459,16 @@ def write_polymer_pools_sidecar(
         ``generate_cantera_data(..., return_reaction_index_map=True)``.
     rmg_commit : str, optional
         Override the auto-detected git SHA.
+    solver_gas_masks : list of dict, optional
+        ``[{"reactor": <1-based reaction system>, "mask": <bool sequence>}]``:
+        each polymer reactor's live ``gas_species_mask`` for THIS
+        ``core_species`` (True = gas), recorded verbatim as
+        ``conventions.solver_gas_mask``; None or empty (default) -> key
+        absent.
+    stale_unreadable : list of str, optional
+        The core species whose structure cannot be read, by artifact label,
+        named in ``conventions.stale_topology_unreadable_structures`` when
+        the artifact is stale.
     initial_explicit_by_pool : dict, optional
         ``{pool_label: {dp: moles}}`` — the stage-A solver contract
         (``HybridPolymerSystem.initial_explicit_species``). Feeds the
@@ -9223,25 +9490,58 @@ def write_polymer_pools_sidecar(
     str
         Absolute path of the written file.
     """
-    payload = build_polymer_moments_artifact(
-        pool_registry,
-        core_species=core_species,
-        core_reactions=core_reactions,
-        configured_pool_labels=configured_pool_labels,
-        condensed_species=condensed_species,
-        monomer_routing_by_pool=monomer_routing_by_pool,
-        cantera_index_map=cantera_index_map,
-        iteration=iteration,
-        rmg_commit=rmg_commit,
-        initial_explicit_by_pool=initial_explicit_by_pool,
-        generation_mass_transfer=generation_mass_transfer,
-        generation_v_poly_m3=generation_v_poly_m3,
-        explicit_dp_species_by_pool=explicit_dp_species_by_pool,
-        stale_topology=stale_topology,
-    )
     path = os.path.join(output_dir, filename)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, default=str)
+    standalone = _ticket is None
+    ticket = _ticket
+    if ticket is None:
+        ticket = _take_sidecar_write_ticket(path)
+    try:
+        payload = build_polymer_moments_artifact(
+            pool_registry,
+            core_species=core_species,
+            core_reactions=core_reactions,
+            configured_pool_labels=configured_pool_labels,
+            condensed_species=condensed_species,
+            monomer_routing_by_pool=monomer_routing_by_pool,
+            cantera_index_map=cantera_index_map,
+            iteration=iteration,
+            rmg_commit=rmg_commit,
+            initial_explicit_by_pool=initial_explicit_by_pool,
+            generation_mass_transfer=generation_mass_transfer,
+            generation_v_poly_m3=generation_v_poly_m3,
+            explicit_dp_species_by_pool=explicit_dp_species_by_pool,
+            stale_topology=stale_topology,
+            solver_gas_masks=solver_gas_masks,
+            stale_unreadable=stale_unreadable,
+        )
+        _write_json_atomically(path, payload, default=str, ticket=ticket)
+    except Exception:
+        if standalone:
+            _invalidate_failed_standalone_sidecar_write(path, ticket)
+        raise
+    return path
+
+
+def write_refused_polymer_pools_sidecar(output_dir, reason, species=None,
+                                        filename=POLYMER_POOLS_SIDECAR_FILENAME,
+                                        _ticket=None):
+    """Atomically replace a previous sidecar with a named refusal."""
+    path = os.path.join(output_dir, filename)
+    standalone = _ticket is None
+    ticket = _ticket
+    if ticket is None:
+        ticket = _take_sidecar_write_ticket(path)
+    try:
+        payload = {
+            "refused": True,
+            "reason": str(reason),
+            "species": list(species or ()),
+        }
+        _write_json_atomically(path, payload, ticket=ticket)
+    except Exception:
+        if standalone:
+            _invalidate_failed_standalone_sidecar_write(path, ticket)
+        raise
     return path
 
 
@@ -9747,7 +10047,9 @@ def build_polymer_moments_artifact(pool_registry,
                                    generation_mass_transfer=None,
                                    generation_v_poly_m3=None,
                                    explicit_dp_species_by_pool=None,
-                                   stale_topology=False):
+                                   stale_topology=False,
+                                   solver_gas_masks=None,
+                                   stale_unreadable=None):
     """Assemble the full schema-2.0 polymer moments artifact payload.
 
     Normative contract: docs/polymer_moments_format.md. The payload mirrors
@@ -10281,6 +10583,45 @@ def build_polymer_moments_artifact(pool_registry,
     # conventions keys (probed 2026-07-04).
     if stale_topology:
         conventions["stale_topology"] = True
+        # the species whose structure could not be read (they equal nothing,
+        # so they alone keep the artifact stale), by artifact label
+        if stale_unreadable:
+            conventions["stale_topology_unreadable_structures"] = list(stale_unreadable)
+
+    # conventions.solver_gas_mask: each polymer reactor's live solver
+    # gas_species_mask VERBATIM (True = gas), bound to that reactor (1-based,
+    # the profile writer's numbering), to the profile it wrote for this core
+    # (solver/simulation_<reactor>_<n_core>.csv, rmgpy/rmg/listener.py) and,
+    # per core species in solver order, to the species' structure
+    # (species_structure). condensed_species stays as it is (the mask
+    # UNIONED with pool membership, plus the spawned-pool closure above), so
+    # it cannot say which phase the solver gave a spawned-but-unconfigured
+    # pool's members; this record can. The caller passes a reactor's mask
+    # only when it is the solver's for THIS core (length-matched, the
+    # engine's signature, structures included, equal to this core's);
+    # with none, the key is absent. The mask is static over one simulate()
+    # (built in initialize_model at its start, rmgpy/solver/base.pyx:690 ->
+    # rmgpy/solver/polymer.pyx initialize_model, written nowhere else), and
+    # that simulate's snapshots are the named profile, whose columns are this
+    # core in this order. Purely ADDITIVE conventions key (absent ->
+    # byte-identical; loaders ignore unknown conventions keys).
+    if solver_gas_masks:
+        structures = [species_structure(s) for s in (core_species or [])]
+        reactors = []
+        for entry in solver_gas_masks:
+            mask = entry["mask"]
+            if core_species is None or len(mask) != len(core_species):
+                raise ValueError(
+                    "the gas mask of reactor %s has %d entries for a core of %s species"
+                    % (entry["reactor"], len(mask),
+                       None if core_species is None else len(core_species)))
+            reactors.append({
+                "reactor": int(entry["reactor"]),
+                "profile": "solver/simulation_%d_%d.csv" % (int(entry["reactor"]), len(core_species)),
+                "core": [{"species": _artifact_species_label(s), "structure": x, "gas": bool(g)}
+                         for s, x, g in zip(core_species, structures, mask)],
+            })
+        conventions["solver_gas_mask"] = {"source": "solver", "reactors": reactors}
 
     # conventions.conduit_flux_census (schema 3.1, DESIGN §4.4): the
     # run-level admitted-conduit gas-mass accumulator, partitioned at

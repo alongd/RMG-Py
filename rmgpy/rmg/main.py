@@ -90,6 +90,64 @@ from rmgpy.tools.plot import plot_sensitivity
 from rmgpy.tools.uncertainty import Uncertainty, process_local_results
 from rmgpy.yml import RMSWriter
 
+
+class _PolymerPoolsSidecarRefusal(RuntimeError):
+    """A sidecar refusal with a stable machine reason and named species."""
+
+    def __init__(self, reason, species, message):
+        super().__init__(message)
+        self.reason = reason
+        self.species = list(species)
+
+
+class _PolymerPoolsSidecarInvalidationError(RuntimeError):
+    """The canonical sidecar could not be made visibly non-current."""
+
+
+def _refuse_or_invalidate_polymer_sidecar(
+        target, reason, species, writer, ticket=None):
+    """Write a refusal, falling back to rename/unlink or a fatal error."""
+    try:
+        writer(target, reason, species, _ticket=ticket)
+        return
+    except Exception:
+        logging.warning("Failed to write refused polymer_pools.json sidecar", exc_info=True)
+
+    sidecar_path = os.path.join(target, "polymer_pools.json")
+    stale_path = sidecar_path + ".stale"
+    try:
+        if os.path.exists(sidecar_path):
+            os.replace(sidecar_path, stale_path)
+            logging.warning(
+                "Moved stale polymer sidecar %s to %s",
+                sidecar_path,
+                stale_path,
+            )
+        return
+    except Exception:
+        logging.warning(
+            "Failed to move stale polymer sidecar %s to %s; removing the current path",
+            sidecar_path,
+            stale_path,
+            exc_info=True,
+        )
+
+    try:
+        os.unlink(sidecar_path)
+    except FileNotFoundError:
+        pass
+    except Exception as unlink_error:
+        logging.warning(
+            "Failed to remove stale polymer sidecar %s",
+            sidecar_path,
+            exc_info=True,
+        )
+        raise _PolymerPoolsSidecarInvalidationError(
+            "cannot invalidate polymer_pools.json at %s after refusal, rename, and unlink failed"
+            % sidecar_path
+        ) from unlink_error
+
+
 ################################################################################
 
 # This module uses the HDF5 data format, which can cause problems on files systems that use NFS (common for network
@@ -2220,6 +2278,20 @@ class RMG(util.Subject):
         """
         Saves the output HTML and the Chemkin file. If the job is being profiled this is saved as well.
         """
+        sidecar_tickets = {}
+        if self.output_directory:
+            from rmgpy.polymer import _take_sidecar_write_ticket
+            possible_targets = {
+                os.path.abspath(self.output_directory),
+                os.path.abspath(os.path.join(self.output_directory, "chemkin")),
+            }
+            sidecar_tickets = {
+                target: _take_sidecar_write_ticket(
+                    os.path.join(target, "polymer_pools.json")
+                )
+                for target in possible_targets
+            }
+
         # If the user specifies it, add unused reaction library reactions to
         # an additional output species and reaction list which is written to the output HTML
         # file as well as the chemkin file
@@ -2234,6 +2306,27 @@ class RMG(util.Subject):
 
         self.exec_time.append(time.time() - self.initialization_time)
 
+        # Invalidate an existing canonical sidecar BEFORE output listeners can
+        # rewrite Chemkin/Cantera files. A successful sidecar is written only
+        # after every listener and audit below succeeds.
+        sidecar_target = None
+        sidecar_existed = False
+        from rmgpy.polymer import write_refused_polymer_pools_sidecar
+        if self.output_directory:
+            chemkin_dir = os.path.join(self.output_directory, "chemkin")
+            sidecar_target = (chemkin_dir if os.path.isdir(chemkin_dir)
+                              else self.output_directory)
+            sidecar_path = os.path.join(sidecar_target, "polymer_pools.json")
+            sidecar_existed = os.path.exists(sidecar_path)
+            if sidecar_existed:
+                _refuse_or_invalidate_polymer_sidecar(
+                    sidecar_target,
+                    "save_in_progress",
+                    None,
+                    write_refused_polymer_pools_sidecar,
+                    sidecar_tickets[os.path.abspath(sidecar_target)],
+                )
+
         # Notify registered listeners:
         self.notify()
 
@@ -2241,8 +2334,14 @@ class RMG(util.Subject):
         # chemkin / cantera outputs so the TA-side mechanism loader
         # (~/Code/TA) can pick up pool semantics + compiled flux terms.
         # Normative contract: docs/polymer_moments_format.md.
+        # A listener may create the chemkin directory on the first save.
+        if self.output_directory:
+            chemkin_dir = os.path.join(self.output_directory, "chemkin")
+            sidecar_target = (chemkin_dir if os.path.isdir(chemkin_dir)
+                              else self.output_directory)
         try:
             from rmgpy.polymer import (Polymer, write_polymer_pools_sidecar,
+                                       write_refused_polymer_pools_sidecar,
                                        _artifact_species_label, collect_polymer_pool_registry,
                                        derive_condensed_species,
                                        core_topology_signature)
@@ -2255,12 +2354,37 @@ class RMG(util.Subject):
                 self.reaction_model.edge.species,
                 self.reaction_model.new_species_list,
             )
-            if pool_registry and self.output_directory:
-                chemkin_dir = os.path.join(self.output_directory, "chemkin")
-                target_dir = chemkin_dir if os.path.isdir(chemkin_dir) else self.output_directory
+            if not pool_registry:
+                if sidecar_existed and sidecar_target is not None:
+                    _refuse_or_invalidate_polymer_sidecar(
+                        sidecar_target,
+                        "no_polymer_pools",
+                        None,
+                        write_refused_polymer_pools_sidecar,
+                        sidecar_tickets[os.path.abspath(sidecar_target)],
+                    )
+            elif self.output_directory:
+                target_dir = sidecar_target
 
                 core_species = self.reaction_model.core.species
                 core_reactions = self.reaction_model.core.reactions
+                current_sig = core_topology_signature(core_species, core_reactions)
+                undecidable = current_sig.undecidable_species(current_sig)
+                if undecidable:
+                    raise _PolymerPoolsSidecarRefusal(
+                        "core_topology_identity",
+                        undecidable,
+                        "polymer_pools.json: cannot audit current core topology for %s: "
+                        "identity is undecidable or malformed" % ", ".join(undecidable),
+                    )
+                unreadable = current_sig.unreadable
+                if unreadable:
+                    raise _PolymerPoolsSidecarRefusal(
+                        "unreadable_core_structure",
+                        unreadable,
+                        "polymer_pools.json: core structures cannot be read for %s"
+                        % ", ".join(unreadable),
+                    )
 
                 # Cantera index map: recompute the exact filter/ordering the
                 # CanteraWriter listener (notify() above) just used on the
@@ -2298,6 +2422,33 @@ class RMG(util.Subject):
                 # is only the FALLBACK when the engine mask is unavailable/length-
                 # mismatched, and is then keyed on the CONFIGURED pools (not the
                 # full registry) so the fallback mirrors the same demotion.
+                # Audit every live polymer engine, not merely the first one
+                # selected below for pool configuration. One absent or stale
+                # rebuild signature makes the aggregate artifact stale.
+                engine_signatures = []
+                for system in (self.reaction_systems or []):
+                    engine = getattr(system, "solver", None) or system
+                    if not getattr(engine, "polymer_pools", None):
+                        continue
+                    engine_sig = getattr(engine, "core_topology_signature", None)
+                    engine_signatures.append(engine_sig)
+                    if engine_sig is not None:
+                        undecidable = engine_sig.undecidable_species(current_sig)
+                        if undecidable:
+                            raise _PolymerPoolsSidecarRefusal(
+                                "core_topology_identity",
+                                undecidable,
+                                "polymer_pools.json: cannot compare core topology for %s: "
+                                "identity is undecidable or malformed" % ", ".join(undecidable),
+                            )
+                sidecar_stale_topology = not engine_signatures
+                for engine_sig in engine_signatures:
+                    try:
+                        sidecar_stale_topology = sidecar_stale_topology or \
+                            engine_sig is None or engine_sig != current_sig
+                    except (TypeError, ValueError):
+                        sidecar_stale_topology = True
+
                 configured = None
                 routing = {}
                 explicit_dp_species_by_pool = {}
@@ -2306,43 +2457,12 @@ class RMG(util.Subject):
                 initial_explicit_by_pool = None
                 generation_mass_transfer = None
                 generation_v_poly_m3 = None
-                sidecar_stale_topology = False
                 for system in (self.reaction_systems or []):
                     engine = getattr(system, "solver", None) or system
                     pools_cfg = getattr(engine, "polymer_pools", None)
                     if not pools_cfg:
                         continue
                     engine_pools_cfg = pools_cfg
-                    # P1-4 stale-sidecar tripwire (regen-#2 forensics):
-                    # save_everything() runs AFTER enlarge but BEFORE the
-                    # next solver rebuild, so every engine-frozen surface
-                    # read below (polymer_pools, gas_species_mask, per-pool
-                    # index maps) plus the rebuild-stamped refusal state on
-                    # the Reaction objects can describe a core the engine
-                    # has never seen (regen #2: all 8 conduit rows emitted
-                    # refused=true/dst_pool null while the post-rebuild
-                    # solver ran 5 live). Round-27 P1-C predicate: compare
-                    # the ENGINE REBUILD SIGNATURE the solver captured at
-                    # initialize_model (stable (label, index) identity keys
-                    # of the core species + reactions it was built against;
-                    # rmgpy.polymer.core_topology_signature) with the same
-                    # signature of the CURRENT core. Bare count equality is
-                    # NOT enough -- a same-count species/reaction swap or
-                    # restamp between rebuilds must be caught. Signature
-                    # unavailable (pre-P1-C engine, or an engine never
-                    # rebuilt) => stale. Forcing initialize_model here
-                    # instead would clobber live filter-threshold state
-                    # mid-run, so the honest marker is the non-perturbing
-                    # fix.
-                    engine_sig = getattr(
-                        engine, "core_topology_signature", None)
-                    try:
-                        sidecar_stale_topology = (
-                            engine_sig is None
-                            or engine_sig != core_topology_signature(
-                                core_species, core_reactions))
-                    except (TypeError, ValueError):
-                        sidecar_stale_topology = True
                     solver_mask = getattr(engine, "gas_species_mask", None)
                     # Stage-A explicit-DP loadings ({pool_label: {dp: moles}},
                     # the exact shape set_initial_conditions step 2 seeds) —
@@ -2424,6 +2544,41 @@ class RMG(util.Subject):
                 # never marks unconfigured-daughter proxies condensed).
                 condensed = derive_condensed_species(
                     core_species, configured_pools_cfg, solver_mask)
+                # conventions.solver_gas_mask: EVERY polymer reactor's engine
+                # mask verbatim, numbered as the profile writer numbers the
+                # reaction systems (1-based), each only when it is the mask of
+                # THIS core: length-matched and the engine built against this
+                # very core (its rebuild signature, structures included, equal
+                # to the current core's; a stale same-length mask is the
+                # previous core's verdict).
+                recorded_masks = []
+                for number, system in enumerate(self.reaction_systems or [], 1):
+                    engine = getattr(system, "solver", None) or system
+                    mask = getattr(engine, "gas_species_mask", None)
+                    if not getattr(engine, "polymer_pools", None) or mask is None \
+                            or len(mask) != len(core_species):
+                        continue
+                    try:
+                        fresh = getattr(engine, "core_topology_signature", None) == \
+                            core_topology_signature(core_species, core_reactions)
+                    except (TypeError, ValueError):
+                        fresh = False
+                    if fresh:
+                        recorded_masks.append({"reactor": number, "mask": [bool(g) for g in mask]})
+
+                # A species whose structure cannot be read equals nothing; a
+                # prior sidecar must therefore be replaced by a named refusal.
+                try:
+                    unreadable = core_topology_signature(core_species, core_reactions).unreadable
+                except (TypeError, ValueError):
+                    unreadable = []
+                if unreadable:
+                    raise _PolymerPoolsSidecarRefusal(
+                        "unreadable_core_structure",
+                        unreadable,
+                        "polymer_pools.json: core structures cannot be read for %s"
+                        % ", ".join(unreadable),
+                    )
 
                 write_polymer_pools_sidecar(
                     pool_registry=pool_registry,
@@ -2440,9 +2595,20 @@ class RMG(util.Subject):
                     generation_v_poly_m3=generation_v_poly_m3,
                     explicit_dp_species_by_pool=explicit_dp_species_by_pool,
                     stale_topology=sidecar_stale_topology,
+                    solver_gas_masks=[] if unreadable else recorded_masks,
+                    stale_unreadable=unreadable,
+                    _ticket=sidecar_tickets[os.path.abspath(target_dir)],
                 )
         except Exception as e:
             logging.warning(f"Failed to write polymer_pools.json sidecar: {e}", exc_info=True)
+            if sidecar_target is not None:
+                _refuse_or_invalidate_polymer_sidecar(
+                    sidecar_target,
+                    getattr(e, "reason", str(e)),
+                    getattr(e, "species", None),
+                    write_refused_polymer_pools_sidecar,
+                    sidecar_tickets[os.path.abspath(sidecar_target)],
+                )
 
         self.save_profiler_info()
 

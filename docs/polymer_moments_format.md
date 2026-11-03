@@ -12,6 +12,16 @@ implements this document with numpy + Cantera reproduces the oracle's per-pool
 `test/rmgpy/tools/numpy_moments_consumer.py`; the reference runner (drives the
 oracle itself) at `rmgpy/tools/polymer_moments_runner.py`.
 
+The public standalone sidecar writers are transactional. If either writer
+fails before publishing its requested payload, the canonical path MUST NOT
+continue to expose an older successful artifact as current. The writer first
+publishes the fixed whole-file refusal
+`{"refused":true,"reason":"sidecar_write_failed","species":[]}`; if that
+cannot be published, it removes or stales the canonical path. If neither
+invalidation is possible, it raises `PolymerPoolsSidecarInvalidationError`.
+This whole-file refusal is an operational failure marker, not a
+schema-versioned moments artifact.
+
 **Versioning policy:** minor bump = additive term types / fields; major bump
 = breaking. Acceptance is STRICT-MINOR (ratified at 2.2, superseding the
 earlier minor-permissive rule): a consumer accepts only the schema minors it
@@ -703,6 +713,32 @@ REJECTS a stale artifact outright unless the explicit debug flag
 `--allow-stale` (API: `allow_stale=True`) is passed. Mid-run
 per-iteration saves are stale by construction; the final artifact of a
 normally-converged run is fresh (key absent).
+
+`conventions.solver_gas_mask` (optional, **additive**, informative —
+`condensed_species` stays the runner's phase source): each polymer reactor's
+solver `gas_species_mask` verbatim, `{"source": "solver", "reactors":
+[{"reactor": <1-based reaction system>, "profile":
+"solver/simulation_<reactor>_<n_core>.csv", "core": [{"species": <chem.yaml
+label>, "structure": {"adjacency_list": <RMG adjacency list of its first
+molecule>, "multiplicity": <int>}, "gas": <bool>}, ...]}, ...]}`, the core
+species in solver order. A reactor's mask is recorded only when it is the
+mask of the written core (length-matched, and the engine's rebuild
+signature equal to the current core's: labels, indices, and each species
+the same species by RMG's isomorphism, resonance- and multiplicity-aware);
+with none, the key is absent. A species whose structure cannot be read
+equals nothing: the artifact is stale and
+`conventions.stale_topology_unreadable_structures` names it.
+`condensed_species` unions the first engine's mask with pool membership and
+adds spawned pools' members (§13), so it cannot tell which phase the solver
+gave a spawned-but-unconfigured pool's members; this record can. The mask is
+static over one `simulate()`: built in `initialize_model` at its start and
+written nowhere else, while the core, and with it the mask, can change only
+between simulations. That simulation's snapshots are the named profile,
+whose species columns are this core in this order, so every row of it was
+integrated under this mask. A consumer reading a profile uses the record
+that names it, and checks each species' structure against its own by RMG's
+species isomorphism (never by a string such as an InChI, which merges
+tautomers, drops multiplicity and splits resonance drawings).
 
 `conventions.generation_defaults` (optional, **NON-normative** — see §7):
 generation-run provenance for consumer-supplied operating conditions.

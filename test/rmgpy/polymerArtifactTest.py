@@ -4,9 +4,14 @@
 format doc: docs/polymer_moments_format.md)."""
 
 import json
+import logging
+import threading
+from types import SimpleNamespace
 
 import pytest
 
+from rmgpy import polymer as polymer_module
+from rmgpy import species_identity
 from rmgpy.kinetics import Arrhenius, MultiArrhenius
 from rmgpy.molecule import Molecule
 from rmgpy.polymer import (
@@ -19,12 +24,16 @@ from rmgpy.polymer import (
     _serialize_pool_for_sidecar,
     build_polymer_moments_artifact,
     compile_polymer_reaction_entries,
+    core_topology_signature,
     derive_condensed_species,
     is_midrun_spawned_pool_daughter,
     validate_thermal_analysis_inputs,
     write_polymer_pools_sidecar,
+    write_refused_polymer_pools_sidecar,
 )
 from rmgpy.reaction import Reaction
+from rmgpy.rmg import main as rmg_main_module
+from rmgpy.rmg.main import RMG
 from rmgpy.species import Species
 
 
@@ -42,6 +51,557 @@ SCHEMA_1_0_KEYS = {
     "spawn_event_metadata": dict,
     "mu_indices": (dict, type(None)),
 }
+
+
+def test_refused_sidecar_atomically_replaces_prior_artifact(tmp_path):
+    """A failed later save cannot leave a plausible earlier artifact behind."""
+    path = tmp_path / "polymer_pools.json"
+    path.write_text('{"pools": [{"label": "old"}]}')
+    write_refused_polymer_pools_sidecar(
+        str(tmp_path), "core_topology_identity", ["bad(7)"])
+    assert json.loads(path.read_text()) == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["bad(7)"],
+    }
+
+
+def test_standalone_artifact_failure_replaces_prior_sidecar_with_refusal(
+        tmp_path, monkeypatch):
+    path = tmp_path / "polymer_pools.json"
+    path.write_text('{"pools": [{"label": "old"}]}')
+
+    def fail_build(*args, **kwargs):
+        raise RuntimeError("artifact construction failed")
+
+    monkeypatch.setattr(
+        polymer_module,
+        "build_polymer_moments_artifact",
+        fail_build,
+    )
+    with pytest.raises(RuntimeError, match="artifact construction failed"):
+        write_polymer_pools_sidecar([], str(tmp_path))
+    assert json.loads(path.read_text()) == {
+        "refused": True,
+        "reason": "sidecar_write_failed",
+        "species": [],
+    }
+
+
+def test_standalone_refusal_serialization_failure_replaces_prior_sidecar(
+        tmp_path, monkeypatch):
+    path = tmp_path / "polymer_pools.json"
+    path.write_text('{"pools": [{"label": "old"}]}')
+
+    def fail_serialization(*args, **kwargs):
+        raise TypeError("refusal serialization failed")
+
+    monkeypatch.setattr(polymer_module.json, "dump", fail_serialization)
+    with pytest.raises(TypeError, match="refusal serialization failed"):
+        write_refused_polymer_pools_sidecar(str(tmp_path), "original refusal")
+    assert json.loads(path.read_text()) == {
+        "refused": True,
+        "reason": "sidecar_write_failed",
+        "species": [],
+    }
+
+
+def test_standalone_write_raises_named_error_when_invalidation_fails(
+        tmp_path, monkeypatch):
+    path = tmp_path / "polymer_pools.json"
+    path.mkdir()
+    (path / "current").write_text("cannot replace a nonempty directory")
+    stale = tmp_path / "polymer_pools.json.stale"
+    stale.mkdir()
+    (stale / "prior").write_text("cannot replace another nonempty directory")
+
+    def fail_build(*args, **kwargs):
+        raise RuntimeError("artifact construction failed")
+
+    monkeypatch.setattr(
+        polymer_module,
+        "build_polymer_moments_artifact",
+        fail_build,
+    )
+    with pytest.raises(RuntimeError) as exc_info:
+        write_polymer_pools_sidecar([], str(tmp_path))
+    assert exc_info.type.__name__ == "PolymerPoolsSidecarInvalidationError"
+
+
+def test_failed_standalone_write_invalidates_while_newer_writer_is_pending(
+        tmp_path, monkeypatch):
+    path = tmp_path / "polymer_pools.json"
+    path.write_text('{"pools": [{"label": "old"}]}')
+    newer_started = threading.Event()
+    release_newer = threading.Event()
+    failures = {}
+
+    def interleaved_build(*args, **kwargs):
+        if threading.current_thread().name == "older-sidecar-writer":
+            assert newer_started.wait(timeout=5)
+            raise RuntimeError("older construction failed")
+        newer_started.set()
+        assert release_newer.wait(timeout=5)
+        return {"newer": True}
+
+    def write_sidecar(name):
+        try:
+            write_polymer_pools_sidecar([], str(tmp_path))
+        except RuntimeError as error:
+            failures[name] = str(error)
+
+    monkeypatch.setattr(
+        polymer_module,
+        "build_polymer_moments_artifact",
+        interleaved_build,
+    )
+    older = threading.Thread(target=write_sidecar, args=("older",),
+                             name="older-sidecar-writer")
+    newer = threading.Thread(target=write_sidecar, args=("newer",),
+                             name="newer-sidecar-writer")
+    older.start()
+    newer.start()
+    older.join(timeout=5)
+    assert not older.is_alive()
+    assert failures == {"older": "older construction failed"}
+    while_newer_pending = json.loads(path.read_text())
+
+    release_newer.set()
+    newer.join(timeout=5)
+    assert not newer.is_alive()
+    assert while_newer_pending == {
+        "refused": True,
+        "reason": "sidecar_write_failed",
+        "species": [],
+    }
+    assert json.loads(path.read_text()) == {"newer": True}
+
+
+def test_unreadable_signature_is_stale_not_an_identity_crash():
+    from rmgpy.polymer import CoreTopologySignature, _UnreadableStructure
+    before = CoreTopologySignature.__new__(CoreTopologySignature)
+    after = CoreTopologySignature.__new__(CoreTopologySignature)
+    before.species = [("unreadable", 1, _UnreadableStructure("unreadable(1)"))]
+    after.species = [("unreadable", 1, _UnreadableStructure("unreadable(1)"))]
+    assert before.undecidable_species(after) == []
+
+
+def test_malformed_identity_verdict_is_named_for_refusal():
+    from rmgpy.polymer import CoreTopologySignature, _CoreStructure
+    from rmgpy import species_identity
+    mixed = _CoreStructure([Molecule().from_smiles("[CH3]"), Molecule().from_smiles("C")])
+    before = CoreTopologySignature.__new__(CoreTopologySignature)
+    after = CoreTopologySignature.__new__(CoreTopologySignature)
+    before.species = [("mixed", 2, mixed)]
+    after.species = [("mixed", 2, mixed)]
+    assert species_identity.MALFORMED is not None
+    assert before.undecidable_species(after) == ["mixed(2)"]
+
+
+def _rmg_for_sidecar_save(tmp_path, pool, extra_species):
+    core_species = [pool] + list(extra_species)
+    engine = SimpleNamespace(
+        polymer_pools=[SimpleNamespace(label=pool.label, monomer_poly_index=None)],
+        gas_species_mask=[False] + [True] * len(extra_species),
+        core_topology_signature=core_topology_signature(core_species, []),
+        initial_explicit_species=None,
+        V_poly=None,
+    )
+    model = SimpleNamespace(
+        core=SimpleNamespace(species=core_species, reactions=[]),
+        edge=SimpleNamespace(species=[]),
+        new_species_list=[],
+        iteration_num=1,
+    )
+    rmg = RMG(output_directory=str(tmp_path))
+    rmg.reaction_model = model
+    rmg.reaction_systems = [engine]
+    return rmg
+
+
+def _save_sidecar(rmg, tmp_path):
+    path = tmp_path / "polymer_pools.json"
+    rmg.save_everything()
+    return path, json.loads(path.read_text()) if path.exists() else None
+
+
+def _save_good_sidecar(rmg, tmp_path):
+    path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc.get("refused") is not True
+    assert [pool["label"] for pool in doc["pools"]] == ["PE"]
+    return path
+
+
+def _malformed_species():
+    malformed = Species(molecule=[Molecule().from_smiles("C")])
+    malformed.molecule.append(Molecule().from_smiles("[CH3]"))
+    malformed.label = "malformed"
+    malformed.index = 9
+    return malformed
+
+
+def test_save_path_replaces_prior_sidecar_when_identity_is_undecidable(
+        tmp_path, pe_pool, monkeypatch):
+    undecidable = _spc("O", "undecidable", index=7)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [undecidable])
+    _save_good_sidecar(rmg, tmp_path)
+    original = polymer_module._CoreStructure.identity_verdict
+
+    def force_undecidable(structure, other):
+        if structure.molecules[0].get_formula() == "H2O":
+            return species_identity.UNDECIDABLE
+        return original(structure, other)
+
+    monkeypatch.setattr(polymer_module._CoreStructure, "identity_verdict", force_undecidable)
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["undecidable(7)"],
+    }
+
+
+def test_save_path_replaces_prior_sidecar_when_structure_is_unreadable(
+        tmp_path, pe_pool):
+    readable = _spc("CC", "unreadable", index=8)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
+    unreadable = Species(label="unreadable", index=8)
+    rmg.reaction_model.core.species[-1] = unreadable
+    rmg.reaction_systems[0].core_topology_signature = core_topology_signature(
+        rmg.reaction_model.core.species,
+        rmg.reaction_model.core.reactions,
+    )
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "unreadable_core_structure",
+        "species": ["unreadable(8)"],
+    }
+
+
+def test_save_path_replaces_prior_sidecar_when_structure_is_malformed(
+        tmp_path, pe_pool):
+    readable = _spc("CC", "malformed", index=9)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
+    malformed = _malformed_species()
+    rmg.reaction_model.core.species[-1] = malformed
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["malformed(9)"],
+    }
+
+
+def test_save_path_replaces_prior_sidecar_when_registry_audit_fails(
+        tmp_path, pe_pool, monkeypatch):
+    readable = _spc("CC", "readable", index=10)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
+
+    def fail_registry(*species_lists):
+        raise RuntimeError("registry unavailable")
+
+    monkeypatch.setattr(polymer_module, "collect_polymer_pool_registry", fail_registry)
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "registry unavailable",
+        "species": [],
+    }
+
+
+def test_save_path_invalidates_before_output_listeners_run(tmp_path, pe_pool):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [])
+    path = _save_good_sidecar(rmg, tmp_path)
+
+    def fail_listener():
+        (tmp_path / "chemkin-output-changed").write_text("new output")
+        raise RuntimeError("listener failed")
+
+    rmg.notify = fail_listener
+    with pytest.raises(RuntimeError, match="listener failed"):
+        rmg.save_everything()
+    assert json.loads(path.read_text()) == {
+        "refused": True,
+        "reason": "save_in_progress",
+        "species": [],
+    }
+
+
+def test_save_path_refuses_malformed_species_appended_after_engine_signature(
+        tmp_path, pe_pool):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [])
+    _save_good_sidecar(rmg, tmp_path)
+    rmg.reaction_model.core.species.append(_malformed_species())
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["malformed(9)"],
+    }
+
+
+def test_save_path_refuses_malformed_species_reordered_from_engine_signature(
+        tmp_path, pe_pool):
+    first = _spc("CC", "first", index=8)
+    formerly_readable = _spc("C", "malformed", index=9)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [first, formerly_readable])
+    _save_good_sidecar(rmg, tmp_path)
+    rmg.reaction_model.core.species[:] = [pe_pool, _malformed_species(), first]
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["malformed(9)"],
+    }
+
+
+def test_save_path_refuses_malformed_species_without_engine_signature(
+        tmp_path, pe_pool):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [_malformed_species()])
+    del rmg.reaction_systems[0].core_topology_signature
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["malformed(9)"],
+    }
+
+
+def test_save_path_refuses_malformed_species_without_live_engine(
+        tmp_path, pe_pool):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [_malformed_species()])
+    rmg.reaction_systems = []
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "core_topology_identity",
+        "species": ["malformed(9)"],
+    }
+
+
+def test_save_path_marks_topology_stale_without_live_engine(tmp_path, pe_pool):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [])
+    rmg.reaction_systems = []
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc["conventions"]["stale_topology"] is True
+
+
+def test_save_path_marks_topology_stale_when_any_engine_lacks_a_signature(
+        tmp_path, pe_pool):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [])
+    matching = rmg.reaction_systems[0]
+    unsigned = SimpleNamespace(
+        polymer_pools=matching.polymer_pools,
+        gas_species_mask=matching.gas_species_mask,
+        initial_explicit_species=None,
+        V_poly=None,
+    )
+    rmg.reaction_systems = [matching, unsigned]
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc["conventions"]["stale_topology"] is True
+
+
+def test_newer_reentrant_save_supersedes_older_save(tmp_path, pe_pool, caplog):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [])
+    rmg.reaction_model.iteration_num = 2
+    nested = False
+
+    def save_newer_iteration():
+        nonlocal nested
+        if nested:
+            return
+        nested = True
+        rmg.reaction_model.iteration_num = 3
+        rmg.save_everything()
+        rmg.reaction_model.iteration_num = 2
+
+    rmg.notify = save_newer_iteration
+    with caplog.at_level(logging.WARNING):
+        _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc["rmg_iteration"] == 3
+    assert "superseded" in caplog.text
+
+
+def test_failed_newer_reentrant_refusal_supersedes_older_save(
+        tmp_path, pe_pool, monkeypatch):
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [])
+    nested = False
+
+    def save_newer_refusal():
+        nonlocal nested
+        if nested:
+            return
+        nested = True
+        rmg.reaction_model.core.species.append(_malformed_species())
+        try:
+            rmg.save_everything()
+        finally:
+            rmg.reaction_model.core.species.pop()
+
+    def fail_refusal(*args, **kwargs):
+        raise OSError("disk full")
+
+    rmg.notify = save_newer_refusal
+    monkeypatch.setattr(
+        polymer_module,
+        "write_refused_polymer_pools_sidecar",
+        fail_refusal,
+    )
+    rmg.save_everything()
+    assert not (tmp_path / "polymer_pools.json").exists()
+
+
+def test_newer_reentrant_refusal_supersedes_older_write(
+        tmp_path, monkeypatch, caplog):
+    original_dump = polymer_module.json.dump
+    nested = False
+    fsynced = []
+
+    def interleaved_dump(payload, stream, *args, **kwargs):
+        nonlocal nested
+        if payload.get("reason") == "outer" and not nested:
+            nested = True
+            write_refused_polymer_pools_sidecar(str(tmp_path), "inner")
+        return original_dump(payload, stream, *args, **kwargs)
+
+    monkeypatch.setattr(polymer_module.json, "dump", interleaved_dump)
+    monkeypatch.setattr(polymer_module.os, "fsync", fsynced.append)
+    with caplog.at_level(logging.WARNING):
+        write_refused_polymer_pools_sidecar(str(tmp_path), "outer")
+    assert json.loads((tmp_path / "polymer_pools.json").read_text()) == {
+        "refused": True,
+        "reason": "inner",
+        "species": [],
+    }
+    assert len(fsynced) == 2
+    assert sorted(item.name for item in tmp_path.iterdir()) == ["polymer_pools.json"]
+    assert str(tmp_path / "polymer_pools.json") in caplog.text
+    assert "superseded" in caplog.text
+
+
+def test_nested_refusal_during_payload_build_supersedes_older_write(
+        tmp_path, pe_pool, monkeypatch):
+    original_build = polymer_module.build_polymer_moments_artifact
+    nested = False
+
+    def build_with_nested_refusal(*args, **kwargs):
+        nonlocal nested
+        if not nested:
+            nested = True
+            write_refused_polymer_pools_sidecar(str(tmp_path), "nested")
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(
+        polymer_module,
+        "build_polymer_moments_artifact",
+        build_with_nested_refusal,
+    )
+    write_polymer_pools_sidecar([pe_pool], str(tmp_path))
+    assert json.loads((tmp_path / "polymer_pools.json").read_text()) == {
+        "refused": True,
+        "reason": "nested",
+        "species": [],
+    }
+
+
+def test_save_path_refuses_existing_sidecar_when_registry_becomes_empty(
+        tmp_path, pe_pool):
+    readable = _spc("CC", "readable", index=10)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
+    rmg.reaction_model.core.species[:] = [readable]
+    rmg.reaction_model.edge.species[:] = []
+    rmg.reaction_model.new_species_list[:] = []
+    _path, doc = _save_sidecar(rmg, tmp_path)
+    assert doc == {
+        "refused": True,
+        "reason": "no_polymer_pools",
+        "species": [],
+    }
+
+
+def test_save_path_raises_when_sidecar_cannot_be_invalidated(
+        tmp_path, pe_pool, monkeypatch):
+    readable = _spc("CC", "malformed", index=9)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
+    rmg.reaction_model.core.species[-1] = _malformed_species()
+    original_refusal = polymer_module.write_refused_polymer_pools_sidecar
+    original_replace = rmg_main_module.os.replace
+    refusal_calls = 0
+
+    def fail_refusal_after_preinvalidation(*args, **kwargs):
+        nonlocal refusal_calls
+        refusal_calls += 1
+        if refusal_calls == 1:
+            return original_refusal(*args, **kwargs)
+        raise OSError("refusal failed")
+
+    def fail_stale_rename(source, target):
+        if str(source).endswith("polymer_pools.json"):
+            raise OSError("rename failed")
+        return original_replace(source, target)
+
+    def fail_unlink(*args, **kwargs):
+        raise OSError("unlink failed")
+
+    monkeypatch.setattr(
+        polymer_module,
+        "write_refused_polymer_pools_sidecar",
+        fail_refusal_after_preinvalidation,
+    )
+    monkeypatch.setattr(rmg_main_module.os, "replace", fail_stale_rename)
+    monkeypatch.setattr(rmg_main_module.os, "unlink", fail_unlink)
+    with pytest.raises(RuntimeError, match="cannot invalidate polymer_pools.json"):
+        rmg.save_everything()
+
+
+def test_save_path_marks_prior_sidecar_stale_when_refusal_write_fails(
+        tmp_path, pe_pool, monkeypatch, caplog):
+    readable = _spc("CC", "malformed", index=9)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
+    malformed = _malformed_species()
+    rmg.reaction_model.core.species[-1] = malformed
+
+    def fail_refusal(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(polymer_module, "write_refused_polymer_pools_sidecar", fail_refusal)
+    with caplog.at_level(logging.WARNING):
+        path, _doc = _save_sidecar(rmg, tmp_path)
+    stale = tmp_path / "polymer_pools.json.stale"
+    assert not path.exists()
+    assert json.loads(stale.read_text())["pools"][0]["label"] == "PE"
+    assert str(path) in caplog.text
+    assert str(stale) in caplog.text
+
+
+def test_save_path_never_leaves_a_partial_refusal(
+        tmp_path, pe_pool, monkeypatch):
+    readable = _spc("CC", "malformed", index=9)
+    rmg = _rmg_for_sidecar_save(tmp_path, pe_pool, [readable])
+    _save_good_sidecar(rmg, tmp_path)
+    malformed = _malformed_species()
+    rmg.reaction_model.core.species[-1] = malformed
+    original_dump = polymer_module.json.dump
+
+    def partial_dump(payload, stream, *args, **kwargs):
+        if payload.get("refused"):
+            stream.write('{"refused":')
+            raise OSError("interrupted refusal write")
+        return original_dump(payload, stream, *args, **kwargs)
+
+    monkeypatch.setattr(polymer_module.json, "dump", partial_dump)
+    path, _doc = _save_sidecar(rmg, tmp_path)
+    assert not path.exists()
+    stale = json.loads((tmp_path / "polymer_pools.json.stale").read_text())
+    assert stale["pools"][0]["label"] == "PE"
+    assert list(tmp_path.glob("polymer_pools.json.tmp-*")) == []
 
 
 def _spc(smiles, label, index=-1):
@@ -1036,6 +1596,221 @@ class TestStaleTopologySidecar:
         with open(tmp_path / "polymer_pools.json") as fh:
             art = json.load(fh)
         assert art["conventions"]["stale_topology"] is True
+
+
+class TestSolverGasMaskRecord:
+    """conventions.solver_gas_mask: each polymer reactor's live solver
+    gas_species_mask recorded verbatim, bound to its reactor (1-based, the
+    profile writer's numbering), the profile that reactor wrote for this core
+    (solver/simulation_<reactor>_<n_core>.csv), and each core species'
+    structure (``species_structure``), the core species in solver order each
+    with its gas flag; beside (never instead of) condensed_species, which
+    unions the mask with pool membership and the spawned-pool closure.  A
+    reactor's mask is recorded only when it is the mask of this core: length
+    matched and the engine built against this very core, structures
+    included (not stale); with none, the record is absent."""
+
+    @staticmethod
+    def _engine(core_species, n2, extra=0):
+        import numpy as np
+
+        from rmgpy.solver.polymer import (HybridPolymerSystem,
+                                          PolymerPoolConfig)
+        cfg = PolymerPoolConfig(
+            label="poly", xs=2, explicit_dp_to_species_index={},
+            mu_indices=(2, 3, 4), monomer_poly_index=None,
+            k_scission=1.0, k_unzip=0.0, tail_kinetics=None)
+        # the first stage: the root pool's members condensed, all else gas
+        # (poly(12), of the root pool's base label but not its first core
+        # species, stays gas: the override condenses only the first)
+        mask = np.array([False] * 5 + [True] * (7 + extra))
+        engine = HybridPolymerSystem(
+            T=800.0, P=1.0e5, initial_mole_fractions={n2: 1.0},
+            V_poly=1.0, polymer_pools=[cfg], mass_transfer=[],
+            gas_species_mask=mask.copy(), constant_gas_volume=False,
+            initial_polymer_moments={"poly": (1.0, 5.0, 30.0)},
+            termination=[])
+        engine.initialize_model(list(core_species), [], [], [])
+        return engine
+
+    @classmethod
+    def _rmg_with_engine(cls, tmp_path, layout=("polymer",), extra=None):
+        """``layout``: the reaction systems in order, "polymer" (a hybrid
+        reactor's engine) or "gas" (a reactor without polymer pools);
+        ``extra``: a gas species appended to the core."""
+        import time as _time
+        from types import SimpleNamespace
+
+        from rmgpy.rmg.main import RMG
+        from rmgpy.rmg.model import CoreEdgeReactionModel
+
+        kw = dict(monomer="[CH2][CH2]", end_groups=["[H]", "[H]"], cutoff=3,
+                  moments=[1.0, 5.0, 30.0], initial_mass=0.0, k_scission=1.0,
+                  k_unzip=0.0)
+        root = Polymer(label="poly", **kw)
+        tail = Polymer(label="tail", **kw)       # spawned: no solver config
+        n2 = _spc("N#N", "N2")
+        core_species = ([root, _spc("CCCCCCCCCCCC", "poly", index=3)]
+                        + [_mu_dummy(f"poly_mu{k}") for k in range(3)] + [n2]
+                        + [tail, _spc("CCCCCC", "tail", index=7)]
+                        + [_spc("[Ne]", f"tail_mu{k}") for k in range(3)]
+                        + [_spc("CCCC", "poly", index=12)] + ([extra] if extra is not None else []))
+        # (the tail's moment species carry no is_moment_dummy flag: the
+        # solver refuses a flagged moment coordinate it classifies gas)
+        systems = [SimpleNamespace(solver=cls._engine(core_species, n2, extra=int(extra is not None))) if x == "polymer"
+                   else SimpleNamespace() for x in layout]
+
+        model = CoreEdgeReactionModel()
+        model.core.species.extend(core_species)
+        model.new_species_list = []
+        rmg = RMG.__new__(RMG)
+        rmg._observers = []
+        rmg.reaction_libraries = []
+        rmg.exec_time = []
+        rmg.initialization_time = _time.time()
+        rmg.profiler = None
+        rmg.reaction_model = model
+        rmg.output_directory = str(tmp_path)
+        rmg.reaction_systems = systems
+        engines = [getattr(x, "solver", None) for x in systems]
+        return rmg, engines, model
+
+    @staticmethod
+    def _saved(rmg, tmp_path):
+        rmg.save_everything()
+        with open(tmp_path / "polymer_pools.json") as fh:
+            return json.load(fh)["conventions"]
+
+    @staticmethod
+    def _record(reactor, engine, core):
+        from rmgpy.polymer import _artifact_species_label, species_structure
+        return {"reactor": reactor, "profile": f"solver/simulation_{reactor}_{len(core)}.csv",
+                "core": [{"species": _artifact_species_label(s), "structure": species_structure(s), "gas": bool(g)}
+                         for s, g in zip(core, engine.gas_species_mask)]}
+
+    def test_the_recorded_mask_is_the_solvers_in_core_order(self, tmp_path):
+        rmg, (engine,), model = self._rmg_with_engine(tmp_path)
+        conventions = self._saved(rmg, tmp_path)
+        assert "stale_topology" not in conventions
+        assert conventions["solver_gas_mask"] == {
+            "source": "solver", "reactors": [self._record(1, engine, model.core.species)]}
+
+    def test_species_are_bound_to_their_structures(self, tmp_path):
+        """Each species' structure is RMG's adjacency list of its first
+        molecule, with its multiplicity."""
+        rmg, _engines, model = self._rmg_with_engine(tmp_path)
+        core = self._saved(rmg, tmp_path)["solver_gas_mask"]["reactors"][0]["core"]
+        by_label = {e["species"]: e["structure"] for e in core}
+        tail = model.core.species[7].molecule[0]
+        assert by_label["tail(7)"] == {"adjacency_list": tail.to_adjacency_list(), "multiplicity": 1}
+        assert Molecule().from_adjacency_list(by_label["tail(7)"]["adjacency_list"]).is_isomorphic(tail)
+
+    @staticmethod
+    def _species(smiles, multiplicity=None):
+        spc = _spc(smiles, "X", index=13)
+        if multiplicity is not None:
+            spc.molecule[0].multiplicity = multiplicity
+        return spc
+
+    @pytest.mark.parametrize("before, after", [
+        (("Oc1ccccn1", None), ("O=c1cccc[nH]1", None)),           # tautomers: one augmented InChI
+        (("[CH2]C[CH]C", 3), ("[CH2]C[CH]C", 1)),                 # triplet and singlet: one augmented InChI
+    ], ids=["tautomer", "multiplicity"])
+    def test_another_species_under_the_same_label_is_stale(self, tmp_path, before, after):
+        """Spar r160 item 1: a species swapped for a distinct one under its
+        label and index after the engine's build is stale: no record."""
+        rmg, _engines, model = self._rmg_with_engine(tmp_path, extra=self._species(*before))
+        model.core.species[-1] = self._species(*after)
+        conventions = self._saved(rmg, tmp_path)
+        assert conventions.get("stale_topology") is True and "solver_gas_mask" not in conventions
+
+    def test_another_resonance_drawing_is_the_same_species(self, tmp_path):
+        """Spar r160 item 2: crotyl drawn [CH2]C=CC at the build and C=C[CH]C
+        at the save is the same species: fresh, recorded."""
+        rmg, _engines, model = self._rmg_with_engine(tmp_path, extra=self._species("[CH2]C=CC"))
+        model.core.species[-1] = self._species("C=C[CH]C")
+        conventions = self._saved(rmg, tmp_path)
+        assert "stale_topology" not in conventions and "solver_gas_mask" in conventions
+
+    def test_a_structure_that_cannot_be_read_equals_nothing(self):
+        """Two signatures each holding a species without a readable
+        structure are unequal, the same species object included."""
+        from rmgpy.polymer import core_topology_signature
+        blank = Species(label="X")
+        blank.index = 13
+        assert core_topology_signature([blank], []) != core_topology_signature([blank], [])
+        assert core_topology_signature([_spc("CC", "X", index=13)], []) == \
+            core_topology_signature([_spc("CC", "X", index=13)], [])
+
+    def test_a_structure_that_cannot_be_read_is_refused_by_name(self, tmp_path):
+        """Spar r160 item 3: a species without a readable structure equals
+        nothing, so the sidecar is refused and names it."""
+        rmg, _engines, model = self._rmg_with_engine(tmp_path, extra=self._species("CC"))
+        blank = Species(label="X")
+        blank.index = 13
+        model.core.species[-1] = blank
+        rmg.save_everything()
+        with open(tmp_path / "polymer_pools.json") as fh:
+            assert json.load(fh) == {
+                "refused": True,
+                "reason": "unreadable_core_structure",
+                "species": ["X(13)"],
+            }
+
+    def test_a_polymer_reactor_after_a_gas_reactor_is_reactor_2(self, tmp_path):
+        """Spar r156 item 1: the mask belongs to the second reaction system
+        and names its profile, never reactor 1's."""
+        rmg, (_gas, engine), model = self._rmg_with_engine(tmp_path, layout=("gas", "polymer"))
+        assert self._saved(rmg, tmp_path)["solver_gas_mask"]["reactors"] == [
+            self._record(2, engine, model.core.species)]
+
+    def test_each_polymer_reactor_has_its_own_record(self, tmp_path):
+        rmg, (first, second), model = self._rmg_with_engine(tmp_path, layout=("polymer", "polymer"))
+        assert self._saved(rmg, tmp_path)["solver_gas_mask"]["reactors"] == [
+            self._record(1, first, model.core.species), self._record(2, second, model.core.species)]
+
+    def test_a_spawned_unconfigured_pools_members_are_as_the_solver_had_them(self, tmp_path):
+        """The solver keeps the spawned pool's members gas; the record says
+        so, while condensed_species (unchanged) carries the closure."""
+        rmg, (engine,), _model = self._rmg_with_engine(tmp_path)
+        conventions = self._saved(rmg, tmp_path)
+        flags = {(e["species"]): e["gas"] for e in conventions["solver_gas_mask"]["reactors"][0]["core"]}
+        assert [flags[x] for x in ("tail(7)", "tail_mu0", "tail_mu1", "tail_mu2")] == [True] * 4
+        assert [flags[x] for x in ("poly(3)", "poly_mu0", "poly_mu1", "poly_mu2")] == [False] * 4
+        assert flags["N2"] is True
+        assert list(engine.gas_species_mask[7:]) == [True] * 5
+        # condensed_species unions the mask with label membership: poly(12)
+        # is listed condensed there, gas in the solver's mask
+        assert flags["poly(12)"] is True and "poly(12)" in conventions["condensed_species"]
+        assert conventions["spawned_pools"] == ["tail"]
+        assert {"tail(7)", "tail_mu0"} <= set(conventions["condensed_species"])
+
+    def test_a_same_label_isomer_is_stale(self, tmp_path):
+        """Spar r156 item 2: another isomer under the same label and index
+        after the engine's build: stale, and no record."""
+        rmg, _engines, model = self._rmg_with_engine(tmp_path)
+        assert model.core.species[7].label == "tail" and model.core.species[7].index == 7
+        model.core.species[7] = _spc("CC(C)CCC", "tail", index=7)
+        conventions = self._saved(rmg, tmp_path)
+        assert conventions.get("stale_topology") is True and "solver_gas_mask" not in conventions
+
+    def test_no_record_without_a_mask_of_this_core(self, tmp_path):
+        """A core grown after the engine's build, a same-length swapped core
+        (stale) and no engine at all: no record."""
+        rmg, _engines, model = self._rmg_with_engine(tmp_path)
+        swapped = model.core.species[5]
+        model.core.species[5] = _spc("C", "CH4")
+        assert "solver_gas_mask" not in self._saved(rmg, tmp_path)
+        model.core.species[5] = swapped
+        assert "solver_gas_mask" in self._saved(rmg, tmp_path)
+        model.core.species.append(_spc("C", "CH4"))
+        assert "solver_gas_mask" not in self._saved(rmg, tmp_path)
+        rmg.reaction_systems = []
+        assert "solver_gas_mask" not in self._saved(rmg, tmp_path)
+
+    def test_a_direct_build_without_a_mask_has_no_record(self, pe_pool):
+        art = build_polymer_moments_artifact([pe_pool])
+        assert "solver_gas_mask" not in art["conventions"]
 
 
 class TestCompileReactionEntries:
