@@ -170,7 +170,7 @@ def _database_view(tmp_path):
     libraries = kinetics / 'libraries'
     libraries.mkdir()
     for child in (source / 'kinetics/libraries').iterdir():
-        if child.name == 'PlasmaArgon':
+        if child.name == 'PlasmaArgonLegacy':
             shutil.copytree(child, libraries / child.name)
         else:
             (libraries / child.name).symlink_to(child, target_is_directory=child.is_dir())
@@ -272,7 +272,7 @@ def test_report10_accepts_isomorphic_library_labels(tmp_path, monkeypatch):
     """Equivalent library labels must still execute the scientific assertions."""
     _report10_database()  # Skip an incompatible original before testing a relabelling.
     view = _database_view(tmp_path)
-    library = view / 'kinetics/libraries/PlasmaArgon'
+    library = view / 'kinetics/libraries/PlasmaArgonLegacy'
     for name in ('dictionary.txt', 'reactions.py'):
         file = library / name
         original = file.read_text()
@@ -299,23 +299,23 @@ def test_report10_accepts_isomorphic_library_labels(tmp_path, monkeypatch):
 def test_report10_names_incompatible_content(tmp_path, monkeypatch, content):
     """A same-label molecular or rate change must name the precise content."""
     view = _database_view(tmp_path)
-    library = view / 'kinetics/libraries/PlasmaArgon'
+    library = view / 'kinetics/libraries/PlasmaArgonLegacy'
     if content == 'molecule':
         file = library / 'dictionary.txt'
         original = file.read_text()
         changed = original.replace('1 Ar u0 p4 c0', 'GROUND_STRUCTURE_PLACEHOLDER')
-        changed = changed.replace('multiplicity 3\n1 Ar u2 p3 c0', '1 Ar u0 p4 c0')
+        changed = changed.replace('multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0', '1 Ar u0 p4 c0')
         changed = changed.replace('GROUND_STRUCTURE_PLACEHOLDER', 'multiplicity 3\n1 Ar u2 p3 c0')
         assert changed != original
         file.write_text(changed)
-        reason = 'PlasmaArgon:86: reactant molecules'
+        reason = 'PlasmaArgonLegacy:86: reactant molecules'
     else:
         file = library / 'reactions.py'
         original = file.read_text()
         changed = original.replace('1.187793909e-13', '1.3065732999e-13')
         assert changed != original
         file.write_text(changed)
-        reason = r'PlasmaArgon:88: rate differs.*expected=.*actual=.*relative difference=.*characterisation must be regenerated'
+        reason = r'PlasmaArgonLegacy:88: rate differs.*expected=.*actual=.*relative difference=.*characterisation must be regenerated'
     with _configured_view(view, monkeypatch) as caller:
         def should_not_initialize(*args, **kwargs):
             pytest.fail('Incompatible preflight allowed RMG.initialize')
@@ -334,7 +334,7 @@ def test_report10_names_incompatible_content(tmp_path, monkeypatch, content):
 def test_report10_accepts_rate_neutral_entry91_t0(tmp_path, monkeypatch):
     """Entry 91's T0 is rate-neutral because its temperature exponent is zero."""
     view = _database_view(tmp_path)
-    file = view / 'kinetics/libraries/PlasmaArgon/reactions.py'
+    file = view / 'kinetics/libraries/PlasmaArgonLegacy/reactions.py'
     original = file.read_text()
     changed = original.replace("T0 = (11604.51812, 'K'),\n    ),\n    shortDesc = u\"[Ashida1995 via Rehman2016 Table 1] metastable-to-resonance mixing",
                                "T0 = (1, 'K'),\n    ),\n    shortDesc = u\"[Ashida1995 via Rehman2016 Table 1] metastable-to-resonance mixing")
@@ -348,20 +348,20 @@ def test_report10_accepts_rate_neutral_entry91_t0(tmp_path, monkeypatch):
 
 @pytest.mark.database
 @pytest.mark.parametrize('kind, replacements, message', [
-    ('cross_section', [('1.16e-22', '1.160001e-22')], r'PlasmaArgon:86: cross section sigma differs'),
+    ('cross_section', [('1.16e-22', '1.160001e-22')], r'PlasmaArgonLegacy:86: cross section sigma differs'),
     ('two_rates', [('1.187793909e-13', '1.3065732999e-13'), ('2.0e-13', '2.2e-13')],
-     r'PlasmaArgon:88:.*PlasmaArgon:91:'),
+     r'PlasmaArgonLegacy:88:.*PlasmaArgonLegacy:91:'),
     ('rate_evaluation', [
         ("Ea_g = (11.56, 'eV/molecule')", "Ea_g = (-1e6, 'eV/molecule')"),
         ("Ea_e = (11.56, 'eV/molecule')", "Ea_e = (-1e6, 'eV/molecule')"),
         ('1.187793909e-13', '1.3065732999e-13'), ('2.0e-13', '2.2e-13')],
-     r'PlasmaArgon:87: rate evaluation failed:.*PlasmaArgon:88: rate differs.*PlasmaArgon:91:'),
-    ('load_error', [("1.16e-22", "float('nan')")], r'PlasmaArgon: cannot load \(TypeError:'),
+     r'PlasmaArgonLegacy:87: rate evaluation failed:.*PlasmaArgonLegacy:88: rate differs.*PlasmaArgonLegacy:91:'),
+    ('load_error', [("1.16e-22", "float('nan')")], r'PlasmaArgonLegacy: cannot load \(TypeError:'),
 ])
 def test_report10_contract_names_every_changed_entry(tmp_path, monkeypatch, kind, replacements, message):
     """The contract names all relevant entries instead of silently skipping a deck."""
     view = _database_view(tmp_path)
-    file = view / 'kinetics/libraries/PlasmaArgon/reactions.py'
+    file = view / 'kinetics/libraries/PlasmaArgonLegacy/reactions.py'
     text = file.read_text()
     for old, new in replacements:
         assert old in text
@@ -376,7 +376,7 @@ def test_report10_contract_names_every_changed_entry(tmp_path, monkeypatch, kind
 def test_report10_contract_names_nan_metadata_and_rate_change(tmp_path, monkeypatch):
     """A parseable NaN on entry 91 cannot hide a changed entry 88."""
     view = _database_view(tmp_path)
-    file = view / 'kinetics/libraries/PlasmaArgon/reactions.py'
+    file = view / 'kinetics/libraries/PlasmaArgonLegacy/reactions.py'
     text = file.read_text()
     start = text.index('    index = 91,')
     end = text.index('\nentry(', start)
@@ -390,7 +390,7 @@ def test_report10_contract_names_nan_metadata_and_rate_change(tmp_path, monkeypa
     file.write_text(changed)
     with _configured_view(view, monkeypatch):
         with pytest.raises(pytest.fail.Exception,
-                           match=r'PlasmaArgon:88: rate differs.*PlasmaArgon:91: nonfinite parameters Tmin'):
+                           match=r'PlasmaArgonLegacy:88: rate differs.*PlasmaArgonLegacy:91: nonfinite parameters Tmin'):
             _report10_database()
 
 
@@ -398,7 +398,7 @@ def test_report10_contract_names_nan_metadata_and_rate_change(tmp_path, monkeypa
 def test_report10_contract_names_autogenerated_added_entry(tmp_path, monkeypatch):
     """Raw inventory remains checked when duplicate conversion is disabled."""
     view = _database_view(tmp_path)
-    file = view / 'kinetics/libraries/PlasmaArgon/reactions.py'
+    file = view / 'kinetics/libraries/PlasmaArgonLegacy/reactions.py'
     text = file.read_text()
     marker = 'entry(\n    index = 86,'
     assert marker in text
@@ -422,7 +422,7 @@ entry(
     file.write_text(text.replace(marker, added + marker, 1))
     with _configured_view(view, monkeypatch):
         with pytest.raises(pytest.fail.Exception,
-                           match=r'PlasmaArgon:94: unexpected reaction'):
+                           match=r'PlasmaArgonLegacy:94: unexpected reaction'):
             _report10_database()
 
 
@@ -430,7 +430,7 @@ entry(
 def test_report10_contract_names_duplicate_merged_added_entry(tmp_path, monkeypatch):
     """Duplicate conversion must not erase an added raw inventory index."""
     view = _database_view(tmp_path)
-    file = view / 'kinetics/libraries/PlasmaArgon/reactions.py'
+    file = view / 'kinetics/libraries/PlasmaArgonLegacy/reactions.py'
     text = file.read_text()
     start = text.index('entry(\n    index = 92,')
     end = text.index('\nentry(', start + 1)
@@ -441,7 +441,7 @@ def test_report10_contract_names_duplicate_merged_added_entry(tmp_path, monkeypa
     file.write_text(text[:start] + entry + duplicate + text[end:])
     with _configured_view(view, monkeypatch):
         with pytest.raises(pytest.fail.Exception,
-                           match=r'PlasmaArgon:94: unexpected reaction'):
+                           match=r'PlasmaArgonLegacy:94: unexpected reaction'):
             _report10_database()
 
 
@@ -494,11 +494,11 @@ def test_report10_contract_recombination_rates_use_implicit_electron(tmp_path, m
 def test_database_view_rejects_partial_plasma_argon_library(tmp_path, monkeypatch):
     """A present library directory without reactions.py is corrupt input."""
     source = tmp_path / 'configured-database'
-    library = source / 'kinetics/libraries/PlasmaArgon'
+    library = source / 'kinetics/libraries/PlasmaArgonLegacy'
     library.mkdir(parents=True)
     (library / 'dictionary.txt').write_text('')
     monkeypatch.setattr(rmgpy.settings, 'require_database_directory', lambda: str(source))
-    with pytest.raises(pytest.fail.Exception, match=r'PlasmaArgon/reactions.py.*lacks required content'):
+    with pytest.raises(pytest.fail.Exception, match=r'PlasmaArgonLegacy/reactions.py.*lacks required content'):
         _database_view(tmp_path / 'scratch')
 
 
@@ -506,7 +506,7 @@ def test_database_view_rejects_partial_plasma_argon_library(tmp_path, monkeypatc
 def test_report10_contract_rejects_nonfinite_validity_bounds(tmp_path, monkeypatch):
     """Validity bounds are part of the finite database contract."""
     view = _database_view(tmp_path)
-    file = view / 'kinetics/libraries/PlasmaArgon/reactions.py'
+    file = view / 'kinetics/libraries/PlasmaArgonLegacy/reactions.py'
     text = file.read_text()
     start = text.index('    index = 88,')
     end = text.index('\nentry(', start)
@@ -518,7 +518,7 @@ def test_report10_contract_rejects_nonfinite_validity_bounds(tmp_path, monkeypat
     file.write_text(text[:start] + entry.replace(old, new, 1) + text[end:])
     with _configured_view(view, monkeypatch):
         with pytest.raises(pytest.fail.Exception,
-                           match=r'PlasmaArgon:88: nonfinite parameters .*Tmin.*Tmax.*Pmin.*Pmax'):
+                           match=r'PlasmaArgonLegacy:88: nonfinite parameters .*Tmin.*Tmax.*Pmin.*Pmax'):
             _report10_database()
 
 
@@ -526,7 +526,7 @@ def test_report10_contract_rejects_nonfinite_validity_bounds(tmp_path, monkeypat
 def test_report10_contract_names_multiarrhenius_representation_change(tmp_path, monkeypatch):
     """A one-law wrapper remains a named representation change, not equivalence."""
     view = _database_view(tmp_path)
-    file = view / 'kinetics/libraries/PlasmaArgon/reactions.py'
+    file = view / 'kinetics/libraries/PlasmaArgonLegacy/reactions.py'
     text = file.read_text()
     start = text.index('    index = 92,')
     end = text.index('\nentry(', start)
@@ -535,7 +535,7 @@ def test_report10_contract_names_multiarrhenius_representation_change(tmp_path, 
     entry = entry.replace("    ),\n    shortDesc", "        )]),\n    shortDesc", 1)
     file.write_text(text[:start] + entry + text[end:])
     with _configured_view(view, monkeypatch):
-        with pytest.raises(pytest.fail.Exception, match=r'PlasmaArgon:92: kinetics type changed'):
+        with pytest.raises(pytest.fail.Exception, match=r'PlasmaArgonLegacy:92: kinetics type changed'):
             _report10_database()
 
 
@@ -543,7 +543,7 @@ def test_report10_contract_names_multiarrhenius_representation_change(tmp_path, 
 def test_report10_contract_rejects_superseded_entry88(tmp_path, monkeypatch):
     """A copied current library with the superseded law fails by named entry."""
     view = _database_view(tmp_path)
-    file = view / 'kinetics/libraries/PlasmaArgon/reactions.py'
+    file = view / 'kinetics/libraries/PlasmaArgonLegacy/reactions.py'
     text = file.read_text()
     start = text.index('    index = 88,')
     end = text.index('\nentry(', start)
@@ -559,7 +559,7 @@ def test_report10_contract_rejects_superseded_entry88(tmp_path, monkeypatch):
     assert old_law in entry
     file.write_text(text[:start] + entry.replace(old_law, superseded_law, 1) + text[end:])
     with _configured_view(view, monkeypatch):
-        with pytest.raises(pytest.fail.Exception, match=r'PlasmaArgon:88: rate differs'):
+        with pytest.raises(pytest.fail.Exception, match=r'PlasmaArgonLegacy:88: rate differs'):
             _report10_database()
 
 
@@ -587,3 +587,18 @@ def test_report10_restores_state_on_error(tmp_path, monkeypatch, stage):
             _report10_deck(tmp_path, caller)
         assert _globals_diff(before) == []
         _assert_loggers_unchanged(loggers)
+
+
+def test_global_snapshot_does_not_retain_resolved_atom_owners():
+    """Live atom-only refusal works without changing any module's globals."""
+    from rmgpy.species import Species
+    from rmgpy.exceptions import ExcitedSpeciesThermoError
+    from rmgpy.thermo.state import require_atom_thermo_allowed
+
+    before = _rmg_globals()
+    owner = Species().from_adjacency_list(
+        'multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0')
+    assert _globals_diff(before) == []
+    with pytest.raises(ExcitedSpeciesThermoError):
+        require_atom_thermo_allowed(owner.molecule[0].atoms)
+    assert _globals_diff(before) == []

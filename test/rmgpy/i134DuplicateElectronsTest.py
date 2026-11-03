@@ -4151,23 +4151,14 @@ class TestTheSelectorFailsLoudly:
             assert molecule.get_net_charge() == charge
             assert molecule.get_radical_count() == radicals
 
-    @pytest.mark.xfail(strict=True, raises=StillWaitingOnAnotherTicket, reason=(
-        'Measured on this tree: Molecule().from_smiles("[Ar+]") returns Ar(2+) -- the '
-        'parser reads the radical electron as a second unit of charge -- so a '
-        'SMILES-keyed structure for the argon cation is isomorphic to nothing in the '
-        'shipped library. That is why the species keys in this file are adjacency lists. '
-        'When this starts passing the SMILES round-trip has been repaired and this '
-        'marker should go; the adjacency lists should stay either way, because they '
-        'state charge and unpaired electrons separately and cannot be read two ways. '
-        'The pinned exception is raised only by the failed comparison: it used to be '
-        'AssertionError, which either constructor could raise before is_isomorphic ran.'))
     def test_a_smiles_keyed_description_would_have_found_the_argon_cation(self):
+        """4d515e248 intentionally fixed the Open Babel noble-gas charge repair."""
         smiles_keyed = _species('[Ar+]')
         cation = _structure(ARGON_CATION)
-        if not smiles_keyed.is_isomorphic(cation):
-            raise StillWaitingOnAnotherTicket(
-                '{0} from SMILES [Ar+] is not isomorphic to {1!r}'.format(
-                    smiles_keyed.molecule[0].to_smiles(), ARGON_CATION))
+        assert smiles_keyed.is_isomorphic(cation)
+        assert smiles_keyed.get_net_charge() == 1
+        assert smiles_keyed.molecule[0].get_radical_count() == 1
+
 
 
 @pytest.mark.database
@@ -4483,7 +4474,14 @@ class TestLithiumChargeNetworkReachesTheModel(_PlasmaLibraryFixture):
 
         reactions = {label: database.libraries[label].get_library_reactions()
                      for label in {label for label, _ in declared}}
-        with _GlobalKineticsDatabase(database.kinetics_database):
+        with _GlobalKineticsDatabase(database.kinetics_database) as registered:
+            # Legacy Ars is now an exact 3P2 state. Model admission requires its
+            # real state library even when ordinary thermo generation is disabled.
+            from rmgpy.data.thermo import ThermoDatabase
+            registered.thermo = ThermoDatabase()
+            registered.thermo.load_libraries(
+                os.path.join(settings['database.directory'], 'thermo', 'libraries'),
+                ['PlasmaExcitedNeutralThermo'])
             for (label, name), group in declared.items():
                 built = []
                 for entry in group:
@@ -4512,7 +4510,7 @@ class TestLithiumChargeNetworkReachesTheModel(_PlasmaLibraryFixture):
                         label, name, [entry.index for entry in group], verdicts))
         assert {key: sorted(entry.index for entry in group)
                 for key, group in declared.items()} == {
-            ('PlasmaArgon', 'Ars + e- => Ar + e-'): [89, 91]}, (
+            ('PlasmaArgonLegacy', 'Ars + e- => Ar + e-'): [89, 91]}, (
             'the declared-duplicate label groups changed from the one measured on '
             'database 0d9c5bc24; each exemption is a decision, not a drift: {0}'.format(
                 {key: [entry.index for entry in group] for key, group in declared.items()}))
@@ -4737,7 +4735,8 @@ class TestLithiumChargeNetworkReachesTheModel(_PlasmaLibraryFixture):
     #: What they DO hold that this file needs exercising is the 9 real
     #: ``ElectronCollisionPlasma`` entries, and those are now swept, on their own
     #: terms, by :class:`TestTheShippedCrossSectionsAreRead`.
-    LIBRARIES_NOT_SWEPT = ('PlasmaAir', 'PlasmaAlkali', 'PlasmaArgon')
+    # The historical Te-law inventory moved to Legacy at database 6071bf885.
+    LIBRARIES_NOT_SWEPT = ('PlasmaAir', 'PlasmaAlkali', 'PlasmaArgonLegacy')
 
     def _shipped_entries(self, database):
         """Every library reaction in the two loaded libraries, keyed by label, with
@@ -5689,7 +5688,7 @@ class TestTheShippedCrossSectionsAreRead:
     #: silently, and the exclusion this class exists to undo was exactly such a
     #: silence.
     PLASMA_LIBRARIES = (IONISATION, RECOMBINATION, 'PlasmaAir', 'PlasmaAlkali',
-                        'PlasmaArgon')
+                        'PlasmaArgonLegacy')
 
     #: The cross-section entries that must be present, by provenance. The sweep's
     #: denominator is the collection it actually walks; this is the separate claim
@@ -5715,7 +5714,7 @@ class TestTheShippedCrossSectionsAreRead:
     BAND_SWEEP_SAMPLES = 25
 
     NAMED_CROSS_SECTIONS = {
-        'PlasmaArgon': ('Ar + e- => Arp + e- + e-',),
+        'PlasmaArgonLegacy': ('Ar + e- => Arp + e- + e-',),
         'PlasmaAir': ('Ar + e- => Arp + e- + e-', 'He + e- => Hep + e- + e-',
                       'Ne + e- => Nep + e- + e-'),
         'PlasmaAlkali': ('Li + e- => Lip + e- + e-', 'Na + e- => Nap + e- + e-',
@@ -5830,16 +5829,16 @@ class TestTheShippedCrossSectionsAreRead:
         """
         database = self._database()
         census = {}
-        for label in ('PlasmaAir', 'PlasmaAlkali', 'PlasmaArgon'):
+        for label in ('PlasmaAir', 'PlasmaAlkali', 'PlasmaArgonLegacy'):
             classes = [type(entry.data).__name__
                        for entry in database.libraries[label].entries.values()]
             census[label] = {name: classes.count(name) for name in sorted(set(classes))}
 
-        assert census['PlasmaArgon'] == {'Arrhenius': 3, 'ElectronCollisionPlasma': 1,
+        assert census['PlasmaArgonLegacy'] == {'Arrhenius': 3, 'ElectronCollisionPlasma': 1,
                                          'TwoTemperaturePlasma': 4}, (
-            'PlasmaArgon is no longer the composition measured on database 0d9c5bc24, '
+            'PlasmaArgonLegacy is no longer the composition measured on database 0d9c5bc24, '
             'in which it is NOT written wholly in ElectronCollisionPlasma: '
-            '{0}'.format(census['PlasmaArgon']))
+            '{0}'.format(census['PlasmaArgonLegacy']))
         for label in ('PlasmaAir', 'PlasmaAlkali'):
             assert len(census[label]) > 1, (
                 '{0} is written in a single kinetics class after all, so the claim this '

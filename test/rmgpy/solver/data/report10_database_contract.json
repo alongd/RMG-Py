@@ -1,6 +1,6 @@
 {
   "initialized_entries": {
-    "PlasmaArgon": [
+    "PlasmaArgonLegacy": [
       86,
       87,
       88,
@@ -15,7 +15,7 @@
     ]
   },
   "libraries": {
-    "PlasmaArgon": {
+    "PlasmaArgonLegacy": {
       "86": {
         "entry": {
           "authored_families": [],
@@ -311,11 +311,11 @@
             "duplicate": false,
             "electrons": 0,
             "elementary_high_p": false,
-            "family": "PlasmaArgon",
+            "family": "PlasmaArgonLegacy",
             "index": -1,
             "is_forward": false,
             "k_effective_cache": {},
-            "library": "PlasmaArgon",
+            "library": "PlasmaArgonLegacy",
             "network_kinetics": null,
             "pairs": null,
             "protons": 0,
@@ -484,7 +484,7 @@
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -518,11 +518,11 @@
             "duplicate": true,
             "electrons": 0,
             "elementary_high_p": false,
-            "family": "PlasmaArgon",
+            "family": "PlasmaArgonLegacy",
             "index": -1,
             "is_forward": false,
             "k_effective_cache": {},
-            "library": "PlasmaArgon",
+            "library": "PlasmaArgonLegacy",
             "network_kinetics": null,
             "pairs": null,
             "protons": 0,
@@ -561,7 +561,7 @@
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -707,7 +707,7 @@
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -725,11 +725,11 @@
             "duplicate": false,
             "electrons": 0,
             "elementary_high_p": false,
-            "family": "PlasmaArgon",
+            "family": "PlasmaArgonLegacy",
             "index": -1,
             "is_forward": false,
             "k_effective_cache": {},
-            "library": "PlasmaArgon",
+            "library": "PlasmaArgonLegacy",
             "network_kinetics": null,
             "pairs": null,
             "protons": 0,
@@ -793,7 +793,7 @@
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -914,7 +914,7 @@
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -932,11 +932,11 @@
             "duplicate": true,
             "electrons": 0,
             "elementary_high_p": false,
-            "family": "PlasmaArgon",
+            "family": "PlasmaArgonLegacy",
             "index": -1,
             "is_forward": false,
             "k_effective_cache": {},
-            "library": "PlasmaArgon",
+            "library": "PlasmaArgonLegacy",
             "network_kinetics": null,
             "pairs": null,
             "protons": 0,
@@ -993,7 +993,7 @@
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -1099,14 +1099,14 @@
             "reactants": [
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -1124,11 +1124,11 @@
             "duplicate": false,
             "electrons": 0,
             "elementary_high_p": false,
-            "family": "PlasmaArgon",
+            "family": "PlasmaArgonLegacy",
             "index": -1,
             "is_forward": false,
             "k_effective_cache": {},
-            "library": "PlasmaArgon",
+            "library": "PlasmaArgonLegacy",
             "network_kinetics": null,
             "pairs": null,
             "protons": 0,
@@ -1185,14 +1185,14 @@
             "reactants": [
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -1313,7 +1313,7 @@
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -1331,11 +1331,11 @@
             "duplicate": true,
             "electrons": 0,
             "elementary_high_p": false,
-            "family": "PlasmaArgon",
+            "family": "PlasmaArgonLegacy",
             "index": -1,
             "is_forward": false,
             "k_effective_cache": {},
-            "library": "PlasmaArgon",
+            "library": "PlasmaArgonLegacy",
             "network_kinetics": null,
             "pairs": null,
             "protons": 0,
@@ -1392,7 +1392,7 @@
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -1498,7 +1498,7 @@
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -1516,11 +1516,11 @@
             "duplicate": false,
             "electrons": 0,
             "elementary_high_p": false,
-            "family": "PlasmaArgon",
+            "family": "PlasmaArgonLegacy",
             "index": -1,
             "is_forward": false,
             "k_effective_cache": {},
-            "library": "PlasmaArgon",
+            "library": "PlasmaArgonLegacy",
             "network_kinetics": null,
             "pairs": null,
             "protons": 0,
@@ -1577,7 +1577,7 @@
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -1697,7 +1697,7 @@
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -1715,11 +1715,11 @@
             "duplicate": false,
             "electrons": 0,
             "elementary_high_p": false,
-            "family": "PlasmaArgon",
+            "family": "PlasmaArgonLegacy",
             "index": -1,
             "is_forward": false,
             "k_effective_cache": {},
-            "library": "PlasmaArgon",
+            "library": "PlasmaArgonLegacy",
             "network_kinetics": null,
             "pairs": null,
             "protons": 0,
@@ -1790,7 +1790,7 @@
               },
               {
                 "adjacency": [
-                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                  "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0\n"
                 ],
                 "props": {},
                 "reactive": true
@@ -2215,13 +2215,13 @@
     }
   },
   "library_metadata": {
-    "PlasmaArgon": {
+    "PlasmaArgonLegacy": {
       "auto_generated": false,
       "class": "rmgpy.data.kinetics.library.KineticsLibrary",
       "facet": null,
-      "label": "PlasmaArgon",
+      "label": "PlasmaArgonLegacy",
       "metal": null,
-      "name": "PlasmaArgon",
+      "name": "PlasmaArgonLegacy",
       "site": null,
       "solvent": null,
       "thermo_convention": null,

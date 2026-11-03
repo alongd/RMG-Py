@@ -49,7 +49,7 @@ def test_manifest_values_converts_read_only_nested_mappings():
 
 def test_development_argon_channel_bindings_are_runtime_copies_only():
     sources = [
-        SimpleNamespace(library='PlasmaArgon', entry=SimpleNamespace(index=index),
+        SimpleNamespace(library='PlasmaArgonLegacy', entry=SimpleNamespace(index=index),
                         kinetics='original-{0}'.format(index))
         for index in sorted(DEVELOPMENT_RETAINED_ENTRIES)
     ]
@@ -93,11 +93,11 @@ def test_development_deck_declares_non_table_electron_energies(tmp_path, monkeyp
     rmg_input.read_input_file(str(path), job)
     reactor = job.reaction_systems[0]
     assert reactor.electron_energy_balance['electron_energies'] == {
-        'PlasmaArgon:88': (4.211256, 'eV'),
-        'PlasmaArgon:90': (-7.337098, 'eV'),
-        'PlasmaArgon:91': (0.075238, 'eV'),
+        'PlasmaArgonLegacy:88': (4.211256, 'eV'),
+        'PlasmaArgonLegacy:90': (-7.337098, 'eV'),
+        'PlasmaArgonLegacy:91': (0.075238, 'eV'),
     }
-    assert set(reactor.eedf_empirical_laws) == {'PlasmaArgon:88', 'PlasmaArgon:91'}
+    assert set(reactor.eedf_empirical_laws) == {'PlasmaArgonLegacy:88', 'PlasmaArgonLegacy:91'}
 
 
 def test_every_development_harness_diagnostic_carries_warning_and_blockers():

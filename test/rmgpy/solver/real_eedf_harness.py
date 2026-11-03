@@ -367,13 +367,13 @@ def pure_argon_deck(artifact, manifest, seed_multiplier=1.0,
         'branch': branch,
         'initialReducedField': (field_td, 'Td'),
         'empiricalLaws': {
-            'PlasmaArgon:88': {
+            'PlasmaArgonLegacy:88': {
                 'evaluate_at': 'Te_eff',
                 'class': 'B',
                 'basis': 'I-318: Ar(4s) ionisation cross section absent from LoKI set',
                 'sensitivity': True,
             },
-            'PlasmaArgon:91': {
+            'PlasmaArgonLegacy:91': {
                 'evaluate_at': 'Te_eff',
                 'class': 'C',
                 'basis': 'I-318: retained metastable-mixing on/off sensitivity',
@@ -384,7 +384,7 @@ def pure_argon_deck(artifact, manifest, seed_multiplier=1.0,
     deck = """database(
     thermoLibraries=['primaryThermoLibrary', 'PlasmaThermo', 'electrocatThermo',
                      'PlasmaExcitedNeutralThermo'],
-    reactionLibraries=['PlasmaArgon', 'PlasmaRadiativeRecombination'],
+    reactionLibraries=['PlasmaArgonLegacy', 'PlasmaRadiativeRecombination'],
     seedMechanisms=[], kineticsDepositories=['training'],
     kineticsFamilies=['Plasma_Electron_Attachment'], kineticsEstimator='rate rules',
 )
@@ -392,7 +392,7 @@ def pure_argon_deck(artifact, manifest, seed_multiplier=1.0,
 species(label='e-', reactive=True, structure=adjacencyList("1 e u1 p0 c-1"))
 species(label='Ar', reactive=True, structure=adjacencyList("1 Ar u0 p4 c0"))
 species(label='Arp', reactive=True, structure=adjacencyList("multiplicity 2\\n1 Ar u1 p3 c+1"))
-species(label='Ars', reactive=True, structure=adjacencyList("multiplicity 3\\n1 Ar u2 p3 c0"))
+species(label='Ars', reactive=True, structure=adjacencyList("multiplicity 3\\nelectronicstate 3P2\\n1 Ar u2 p3 c0"))
 
 plasmaReactor(
     temperature=(298.15, 'K'),
@@ -413,9 +413,9 @@ plasmaReactor(
     electronEnergyBalance={'absorbedPower': (0.5, 'W'),
                            'sheath': 'floatingWall',
                            'chamberVolume': (2.356194490192345e-3, 'm^3'),
-                           'electronEnergies': {'PlasmaArgon:88': (4.211256, 'eV'),
-                                                'PlasmaArgon:90': (-7.337098, 'eV'),
-                                                'PlasmaArgon:91': (0.075238, 'eV')}},
+                           'electronEnergies': {'PlasmaArgonLegacy:88': (4.211256, 'eV'),
+                                                'PlasmaArgonLegacy:90': (-7.337098, 'eV'),
+                                                'PlasmaArgonLegacy:91': (0.075238, 'eV')}},
     terminationSteadyState=1e-6, terminationTime=(600.0, 's'),
 )
 
@@ -444,7 +444,7 @@ def development_argon_model(core_reactions):
     seen = set()
     for source in core_reactions:
         entry = getattr(getattr(source, 'entry', None), 'index', None)
-        if getattr(source, 'library', None) != 'PlasmaArgon':
+        if getattr(source, 'library', None) != 'PlasmaArgonLegacy':
             continue
         if entry not in DEVELOPMENT_RETAINED_ENTRIES:
             continue
@@ -459,5 +459,5 @@ def development_argon_model(core_reactions):
     missing = sorted(DEVELOPMENT_RETAINED_ENTRIES - seen)
     if missing:
         raise RuntimeError(
-            'development pure-Ar deck is missing PlasmaArgon entries {0!r}'.format(missing))
+            'development pure-Ar deck is missing PlasmaArgonLegacy entries {0!r}'.format(missing))
     return selected

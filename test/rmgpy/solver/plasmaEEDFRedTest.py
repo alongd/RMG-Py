@@ -23,8 +23,8 @@
 
 Rate and moment comparisons use archived, identified LoKI-B rows. Small
 synthetic decks isolate those legacy behaviours and disclose their Ars
-relaxation. The resonance case instead initializes the unchanged Report-10
-example and its real database, without added channels or fitted parameters.
+relaxation. The resonance case instead initializes the frozen Report-10
+test deck and its real database, without added channels or fitted parameters.
 """
 
 from contextlib import ExitStack, contextmanager
@@ -66,6 +66,7 @@ AR_ELASTIC = 'e + Ar(1S0) -> e + Ar(1S0), Elastic'
 N2_ION = 'e + N2(X) -> e + e + N2(+,X), Ionization'
 TG = 298.15
 PRESSURE = 5.0 * 101325.0 / 760.0
+REPORT10_ARGON_LIBRARY = 'PlasmaArgonLegacy'
 REPORT10_THERMO_LIBRARIES = ('primaryThermoLibrary', 'PlasmaThermo', 'electrocatThermo',
                             'PlasmaExcitedNeutralThermo')
 
@@ -604,7 +605,7 @@ def _report10_libraries(path):
     context = KineticsDatabase().local_context
     context['nan'] = np.nan
     libraries, problems = {}, []
-    for name in ('PlasmaArgon', 'PlasmaRadiativeRecombination'):
+    for name in (REPORT10_ARGON_LIBRARY, 'PlasmaRadiativeRecombination'):
         library = KineticsLibrary(label=name)
         library.convert_duplicates_to_multi = lambda: None
         try:
@@ -657,7 +658,9 @@ def _entry_reactor(entry, library_name, thermo):
     """Initialise an engine rate probe with the job's library-verified ion thermo."""
     import copy
 
-    reaction = copy.copy(entry.item)
+    # Rate initialization populates resolved-state caches on participants.
+    # Keep those runtime caches out of subsequent raw-entry snapshots.
+    reaction = copy.deepcopy(entry.item)
     reaction.kinetics = entry.data
     # Supply a complete bath/charge pool even for a purely thermal channel.
     pool = [Species(label='e-').from_adjacency_list('1 e u1 p0 c-1'),
@@ -759,9 +762,9 @@ def _report10_input_root():
 
 def _report10_input_files(path):
     """Validate the same required deck content in preflight and scratch creation."""
-    plasma_argon = _require_input(path / 'kinetics/libraries/PlasmaArgon', directory=True, absent_ok=True)
+    plasma_argon = _require_input(path / 'kinetics/libraries' / REPORT10_ARGON_LIBRARY, directory=True, absent_ok=True)
     required = []
-    for name in ('PlasmaArgon', 'PlasmaRadiativeRecombination'):
+    for name in (REPORT10_ARGON_LIBRARY, 'PlasmaRadiativeRecombination'):
         _require_input(path / 'kinetics/libraries' / name, directory=True)
         for file in ('reactions.py', 'dictionary.txt'):
             _require_input(path / 'kinetics/libraries' / name / file)
@@ -924,10 +927,9 @@ def _report10_initialized_rates(reactor, reactions):
 
 
 def _report10_deck(tmp_path, monkeypatch):
-    """Initialize the actual example without changing caller settings or DSL state."""
+    """Initialize the migrated historical deck, preserving caller settings and DSL state."""
     import rmgpy
 
-    root = Path(__file__).resolve().parents[3]
     settings = rmgpy.settings
     saved_values, saved_sources = dict(settings), dict(settings.sources)
     sources_object, filename = settings.sources, settings.filename
@@ -959,7 +961,7 @@ def _report10_deck(tmp_path, monkeypatch):
                 scoped.setattr(module, '__warningregistry__', registry.copy(), raising=False)
         try:
             _report10_database()
-            job = RMG(input_file=str(root / 'examples/rmg/plasma_argon_energy_balance/input.py'),
+            job = RMG(input_file=str(DATA / 'report10_input.py'),
                       output_directory=str(tmp_path))
             job.initialize()
             core = job.reaction_model.core.species
@@ -1006,7 +1008,7 @@ def _channel_power(r):
 def test_report10_omits_resonance_power_and_states_but_closes(tmp_path, monkeypatch):
     """C3 §10: real Report-10 omits resonance excitation altogether yet closes.
 
-    LoKI-B assigns 39.8% to 1s4+1s2. Today's actual example has neither these
+    LoKI-B assigns 39.8% to 1s4+1s2. The historical test deck has neither these
     states nor their direct power debit; it does not remove 39.8% into an
     energy-only sink. Entry 91's collapsed metastable mixing is a separate,
     much smaller debit. Explicit states and coupled radiation/return routes
@@ -1050,13 +1052,13 @@ def test_report10_omits_resonance_power_and_states_but_closes(tmp_path, monkeypa
     by_channel = {key: powers[j]/budget['power']
                   for j, key in enumerate(r.energy_reaction_keys) if key is not None}
     assert by_channel == pytest.approx({
-        'PlasmaArgon:86': .0072759026,
+        'PlasmaArgonLegacy:86': .0072759026,
         'PlasmaRadiativeRecombination:1': 5.2990921e-8,
-        'PlasmaArgon:87': .193149541,
-        'PlasmaArgon:88': .000122406111,
-        'PlasmaArgon:89': -.000157999832,
-        'PlasmaArgon:90': -5.05138653e-5,
-        'PlasmaArgon:91': .000519357363,
+        'PlasmaArgonLegacy:87': .193149541,
+        'PlasmaArgonLegacy:88': .000122406111,
+        'PlasmaArgonLegacy:89': -.000157999832,
+        'PlasmaArgonLegacy:90': -5.05138653e-5,
+        'PlasmaArgonLegacy:91': .000519357363,
     }, rel=.005, abs=1e-8)
     assert all(powers[j] == 0. for j, key in enumerate(r.energy_reaction_keys) if key is None)
     assert budget['elastic']/budget['power'] == pytest.approx(.79594136, rel=.003, abs=.001)
@@ -1069,6 +1071,6 @@ def test_report10_omits_resonance_power_and_states_but_closes(tmp_path, monkeypa
     internal_gap = (ars.thermo.get_enthalpy(TG)-ar.thermo.get_enthalpy(TG))/constants.Na/constants.e
     assert internal_gap == pytest.approx(11.548354, rel=1e-5, abs=1e-5)
     thresholds = dict(zip(r.energy_reaction_keys, r.energy_threshold))
-    assert thresholds['PlasmaArgon:87']/constants.Na/constants.e == pytest.approx(11.548354, rel=1e-6, abs=1e-8)
-    assert thresholds['PlasmaArgon:91']/constants.Na/constants.e == pytest.approx(.075238, rel=1e-6, abs=1e-9)
+    assert thresholds['PlasmaArgonLegacy:87']/constants.Na/constants.e == pytest.approx(11.548354, rel=1e-6, abs=1e-8)
+    assert thresholds['PlasmaArgonLegacy:91']/constants.Na/constants.e == pytest.approx(.075238, rel=1e-6, abs=1e-9)
     assert abs(rhs[r.te_index]/y[r.te_index]) < 1e-6
