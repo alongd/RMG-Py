@@ -699,10 +699,13 @@ def run_build(request, workdir, shard, counts: ShardCounts, *, database=None):
             raise ShardInputError(
                 f"{_label(plan, index)}: the generation left RMG's atom ids at {reached}, "
                 f"the single-process discovery at {end}")
-        generated[index] = compile_candidates(reactions)
+        generated[index] = reactions
         print(f"build {_label(plan, index)}: generated in {time.time() - started:.1f}s, {_rss()}",
               flush=True)
     compiler = _compiler(request, plan, census)
+    # the candidate loop takes each reaction as the single-process compile does
+    generated = {index: compile_candidates([compiler.compile_input(reaction) for reaction in reactions])
+                 for index, reactions in generated.items()}
     proxy_inputs, provenance = compiler._compile_provenance()
     proxies = {proxy.site_type: proxy for proxy in compiler.proxies}
     entries, built = [], set()

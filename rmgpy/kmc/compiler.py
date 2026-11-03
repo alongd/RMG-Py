@@ -9,6 +9,7 @@ frozen reactions and kinetics reconstructed from their archived RMG runs.
 from __future__ import annotations
 
 import copy
+from contextlib import contextmanager
 from contextvars import ContextVar
 import hashlib
 import json
@@ -61,6 +62,8 @@ from rmgpy.exceptions import ActionError
 
 
 _PAIR_MOLECULE_CACHE = ContextVar("pair_molecule_cache", default=None)
+# id(molecule) -> (molecule, atom order) for the reaction being serialized.
+_ATOM_ORDER_FRAME = ContextVar("atom_order_frame", default=None)
 _APPLICABILITY_GENERATION_CACHE = ContextVar(
     "applicability_generation_cache", default=None
 )
@@ -1792,29 +1795,395 @@ def _atom_total_order(atom) -> tuple[Any, ...]:
     )
 
 
-def _ordered_atoms(molecule) -> list[Any]:
-    if molecule.__class__.__module__.startswith("rmgpy."):
-        from rdkit import Chem
-        from rmgpy.molecule.converter import to_rdkit_mol
+def _label_map_number(label: str) -> int:
+    """A stable positive RDKit atom-map number standing for an RMG label."""
+    if not label:
+        return 0
+    return 1 + int.from_bytes(hashlib.sha256(label.encode()).digest()[:3], "big")
 
-        rdkit_molecule, mapping = to_rdkit_mol(
-            molecule,
-            remove_h=False,
-            return_mapping=True,
-            save_order=True,
+
+def _rdkit_atom_ranks(molecule, *, faithful: bool, break_ties: bool = True):
+    """RDKit canonical ranks in ``molecule.atoms`` order, with the RDKit view.
+
+    ``faithful`` ranks RMG's own graph: labels as atom-map numbers and bond
+    orders as written, without aromaticity perception (which would equate
+    the two mirror Kekule drawings of a ring).  Otherwise RDKit's sanitized
+    view is ranked, as every artifact before I-122 did.
+    """
+    from rdkit import Chem
+    from rmgpy.molecule.converter import to_rdkit_mol
+
+    rdkit_molecule, mapping = to_rdkit_mol(
+        molecule,
+        remove_h=False,
+        return_mapping=True,
+        sanitize=not faithful,
+        save_order=True,
+    )
+    if faithful:
+        for atom in molecule.atoms:
+            if atom.label:
+                rdkit_molecule.GetAtomWithIdx(mapping[atom]).SetAtomMapNum(
+                    _label_map_number(atom.label)
+                )
+        rdkit_molecule.UpdatePropertyCache(strict=False)
+    ranks = list(
+        Chem.CanonicalRankAtoms(
+            rdkit_molecule,
+            breakTies=break_ties,
+            includeChirality=True,
+            includeIsotopes=True,
+            includeAtomMaps=True,
         )
-        ranks = list(
-            Chem.CanonicalRankAtoms(
-                rdkit_molecule,
-                breakTies=True,
-                includeChirality=True,
-                includeIsotopes=True,
-            )
+    )
+    return [ranks[mapping[atom]] for atom in molecule.atoms], rdkit_molecule, mapping
+
+
+def _rdkit_view_is_faithful(molecule, rdkit_molecule, mapping) -> bool:
+    """True when RDKit's sanitized graph sees everything RMG's adjacency prints."""
+    if any(atom.label for atom in molecule.atoms):
+        return False
+    for bond in molecule.get_all_edges():
+        rdkit_bond = rdkit_molecule.GetBondBetweenAtoms(
+            mapping[bond.vertex1], mapping[bond.vertex2]
         )
-        if len(ranks) != len(set(ranks)):
-            raise ValueError("RDKit did not produce a canonical total atom order")
-        return sorted(molecule.atoms, key=lambda atom: ranks[mapping[atom]])
+        if rdkit_bond is None or rdkit_bond.GetIsAromatic() != (bond.order == 1.5):
+            return False
+    return True
+
+
+def _canonical_rmg_order(molecule) -> list[Any]:
+    """A canonical atom order of an RMG molecule as RMG writes it.
+
+    RDKit's sanitized ranking is kept whenever it already sees RMG's whole
+    graph, so unlabelled molecules RDKit perceives exactly as RMG draws them
+    keep their pre-I-122 order.  A labelled molecule, or a Kekule ring RDKit
+    would aromatize, is ranked on its faithful graph instead: otherwise
+    symmetry-equivalent atoms tie for RDKit, the tie is broken by input atom
+    order (generator traversal order), and the label or double bond lands on
+    either equivalent atom.
+    """
+    ranks, rdkit_molecule, mapping = _rdkit_atom_ranks(molecule, faithful=False)
+    if not _rdkit_view_is_faithful(molecule, rdkit_molecule, mapping):
+        ranks, _, _ = _rdkit_atom_ranks(molecule, faithful=True)
+    if len(ranks) != len(set(ranks)):
+        raise ValueError("RDKit did not produce a canonical total atom order")
+    rank = {id(atom): value for atom, value in zip(molecule.atoms, ranks)}
+    return sorted(molecule.atoms, key=lambda atom: rank[id(atom)])
+
+
+def _ordered_atoms(molecule) -> list[Any]:
+    """The canonical atom order of ``molecule`` (the active reaction frame's, if any)."""
+    frame = _ATOM_ORDER_FRAME.get()
+    if frame is not None and id(molecule) in frame:
+        return list(frame[id(molecule)][1])
+    if molecule.__class__.__module__.startswith("rmgpy."):
+        return _canonical_rmg_order(molecule)
     return sorted(molecule.atoms, key=_atom_total_order)
+
+
+# --- reaction frames -------------------------------------------------------------
+#
+# A canonical order fixes each molecule's adjacency text, but a molecule with
+# symmetry has several orders giving that same text (one per automorphism of
+# its labelled graph).  Which one RDKit returns depends on the input atom
+# order.  Fields that relate atoms ACROSS molecules (the atom map, the bond
+# rewrite) differ between those orders, so they would depend on generator
+# traversal order and on which degenerate path RMG kept.  A reaction frame
+# picks, among all text-preserving orders, the one minimizing the rewrite
+# (reactant side) and then the atom map (product side): a function of the
+# reaction alone.
+
+REACTION_FRAME_AUTOMORPHISM_LIMIT = 4096
+REACTION_FRAME_SEARCH_LIMIT = 1 << 16
+
+
+def _automorphic_orders(molecule, base: list[Any]) -> list[list[Any]]:
+    """Every atom order with the same labelled adjacency text as ``base``.
+
+    Automorphisms are enumerated on the heavy-atom graph, coloured by RDKit's
+    faithful symmetry classes (labels, charges, radicals, hydrogen counts) and
+    RMG bond orders; hydrogens follow their heavy atom.  The base order is
+    first.
+    """
+    from networkx import Graph
+    from networkx.algorithms.isomorphism import GraphMatcher
+
+    classes, _, _ = _rdkit_atom_ranks(molecule, faithful=True, break_ties=False)
+    colour = {id(atom): value for atom, value in zip(molecule.atoms, classes)}
+    position = {id(atom): index for index, atom in enumerate(base)}
+    heavy = [atom for atom in base if atom.element.number != 1]
+    if len(heavy) < 2:
+        return [list(base)]
+    graph = Graph()
+    for atom in heavy:
+        graph.add_node(id(atom), colour=colour[id(atom)])
+    for atom in heavy:
+        for neighbour, bond in atom.edges.items():
+            if neighbour.element.number != 1:
+                graph.add_edge(id(atom), id(neighbour), order=bond.order)
+    hydrogens = {
+        id(atom): sorted(
+            (neighbour for neighbour in atom.edges if neighbour.element.number == 1),
+            key=lambda hydrogen: (colour[id(hydrogen)], position[id(hydrogen)]),
+        )
+        for atom in heavy
+    }
+    by_id = {id(atom): atom for atom in heavy}
+    matcher = GraphMatcher(
+        graph,
+        graph,
+        node_match=lambda first, second: first["colour"] == second["colour"],
+        edge_match=lambda first, second: first["order"] == second["order"],
+    )
+    orders = []
+    for mapping in matcher.isomorphisms_iter():
+        if len(orders) >= REACTION_FRAME_AUTOMORPHISM_LIMIT:
+            raise ValueError(
+                "reaction frame: more than "
+                f"{REACTION_FRAME_AUTOMORPHISM_LIMIT} automorphisms of one molecule"
+            )
+        image = {}
+        for atom in heavy:
+            target = mapping[id(atom)]
+            image[id(atom)] = by_id[target]
+            for hydrogen, target_hydrogen in zip(
+                hydrogens[id(atom)], hydrogens[target]
+            ):
+                if colour[id(hydrogen)] != colour[id(target_hydrogen)]:
+                    raise ValueError("reaction frame: hydrogen classes disagree")
+                image[id(hydrogen)] = target_hydrogen
+        orders.append([image.get(id(atom), atom) for atom in base])
+    identity = [id(atom) for atom in base]
+    orders.sort(key=lambda order: [id(atom) for atom in order] != identity)
+    return orders
+
+
+def _side_orders(molecules, bases) -> list[tuple[list[Any], ...]]:
+    alternatives = [_automorphic_orders(molecule, bases[id(molecule)]) for molecule in molecules]
+    total = math.prod(len(item) for item in alternatives)
+    if total > REACTION_FRAME_SEARCH_LIMIT:
+        raise ValueError(
+            f"reaction frame: {total} symmetric orders exceed "
+            f"{REACTION_FRAME_SEARCH_LIMIT}"
+        )
+    return list(product(*alternatives))
+
+
+def _rewrite_ops(reactant_atoms, product_by_id, before, after) -> list[dict[str, Any]]:
+    """The bond and atom-state rewrite, in artifact (reactant index) order.
+
+    Bonds are listed by their sorted artifact index pair, never by raw atom id:
+    ids come from RMG's process-global counter and wrap from 32767 to -32768.
+    """
+    reactant_index = {atom.id: index for index, atom in enumerate(reactant_atoms)}
+    changed = []
+    for pair in set(before) | set(after):
+        old, new = before.get(pair), after.get(pair)
+        if old == new:
+            continue
+        if not all(identifier in reactant_index for identifier in pair):
+            raise ValueError(
+                "bond rewrite references an atom absent from the reactants"
+            )
+        changed.append((sorted(reactant_index[identifier] for identifier in pair), old, new))
+    ops = []
+    for atoms, old, new in sorted(changed, key=lambda item: item[0]):
+        if old is not None:
+            ops.append({"action": "break", "atoms": list(atoms), "order": old})
+        if new is not None:
+            ops.append({"action": "form", "atoms": list(atoms), "order": new})
+    attributes = (
+        ("radical_electrons", "set_radical"),
+        ("charge", "set_charge"),
+        ("lone_pairs", "set_lone_pairs"),
+        ("implicit_hydrogens", "set_implicit_hydrogens"),
+    )
+    for index, reactant_atom in enumerate(reactant_atoms):
+        product_atom = product_by_id[reactant_atom.id]
+        for attribute, action in attributes:
+            old = getattr(reactant_atom, attribute, 0)
+            new = getattr(product_atom, attribute, 0)
+            if old != new:
+                ops.append({"action": action, "atom": index, "value": int(new)})
+    return ops
+
+
+def _ops_key(ops) -> tuple:
+    return tuple(
+        (op["action"], tuple(op.get("atoms", ())), op.get("atom", -1), str(op.get("order", op.get("value"))))
+        for op in ops
+    )
+
+
+def _heavy_map_key(reactant_atoms, product_atoms) -> tuple[int, ...]:
+    product_index = {
+        atom.id: index
+        for index, atom in enumerate(
+            atom for atom in product_atoms if atom.element.number != 1
+        )
+    }
+    return tuple(
+        product_index.get(atom.id, -1)
+        for atom in reactant_atoms
+        if atom.element.number != 1
+    )
+
+
+def _settle_hydrogens(choice, colour, before, after, states):
+    """Order interchangeable hydrogens by what the reaction does to them.
+
+    Hydrogens of one colour on one heavy atom are interchangeable for the
+    adjacency text, so heavy-atom symmetry alone leaves which of them is the
+    one that moves to their input order.  Here the group's positions go to
+    its hydrogens sorted by their change: partner positions and the bond
+    orders and atom states before and after.
+    """
+    atoms = [atom for order in choice for atom in order]
+    position = {atom.id: index for index, atom in enumerate(atoms)}
+    changes = {}
+    for pair in set(before) | set(after):
+        if before.get(pair) == after.get(pair):
+            continue
+        for identifier, partner in (pair, pair[::-1]):
+            changes.setdefault(identifier, []).append(
+                (position.get(partner, -1), str(before.get(pair)), str(after.get(pair)))
+            )
+
+    def signature(hydrogen):
+        return (
+            tuple(sorted(changes.get(hydrogen.id, ()))),
+            tuple(str(value) for value in states.get(hydrogen.id, ())),
+        )
+
+    settled = []
+    for order in choice:
+        order = list(order)
+        index_of = {id(atom): index for index, atom in enumerate(order)}
+        for atom in order:
+            if atom.element.number == 1:
+                continue
+            groups = {}
+            for neighbour in atom.edges:
+                if neighbour.element.number == 1:
+                    groups.setdefault(colour[id(neighbour)], []).append(neighbour)
+            for group in groups.values():
+                if len(group) < 2:
+                    continue
+                slots = sorted(index_of[id(hydrogen)] for hydrogen in group)
+                ranked = sorted(
+                    group,
+                    key=lambda hydrogen: (signature(hydrogen), index_of[id(hydrogen)]),
+                )
+                for slot, hydrogen in zip(slots, ranked):
+                    order[slot] = hydrogen
+                index_of = {id(item): index for index, item in enumerate(order)}
+        settled.append(order)
+    return tuple(settled)
+
+
+def _atom_states(reactants, products) -> dict[int, tuple]:
+    """Per atom id: radicals, charge and lone pairs on both sides."""
+    attributes = ("radical_electrons", "charge", "lone_pairs", "implicit_hydrogens")
+    states = {}
+    for side, molecules in enumerate((reactants, products)):
+        for molecule in molecules:
+            for atom in molecule.atoms:
+                states.setdefault(atom.id, [None, None])[side] = tuple(
+                    getattr(atom, name, 0) for name in attributes
+                )
+    return {key: tuple(value) for key, value in states.items() if value[0] != value[1]}
+
+
+def _reaction_frame(reaction) -> dict[int, tuple[Any, list[Any]]] | None:
+    """Canonical text-preserving orders of every molecule of ``reaction``.
+
+    The reactant orders minimize the bond rewrite; the product orders then
+    minimize the heavy-atom map.  Returns None for non-RMG test doubles.
+    """
+    reactants = [_molecule(item) for item in reaction.reactants]
+    products = [_molecule(item) for item in reaction.products]
+    molecules = reactants + products
+    if not all(
+        molecule.__class__.__module__.startswith("rmgpy.") for molecule in molecules
+    ) or len({id(molecule) for molecule in molecules}) != len(molecules):
+        return None
+    bases = {id(molecule): _canonical_rmg_order(molecule) for molecule in molecules}
+    before, after = _bonds(reaction.reactants), _bonds(reaction.products)
+    product_by_id = {atom.id: atom for molecule in products for atom in molecule.atoms}
+    colour = {}
+    for molecule in molecules:
+        classes, _, _ = _rdkit_atom_ranks(molecule, faithful=True, break_ties=False)
+        colour.update(
+            {id(atom): value for atom, value in zip(molecule.atoms, classes)}
+        )
+    states = _atom_states(reactants, products)
+    best_key, reactant_choices = None, []
+    for choice in _side_orders(reactants, bases):
+        choice = _settle_hydrogens(choice, colour, before, after, states)
+        atoms = [atom for order in choice for atom in order]
+        key = _ops_key(_rewrite_ops(atoms, product_by_id, before, after))
+        if best_key is None or key < best_key:
+            best_key, reactant_choices = key, [choice]
+        elif key == best_key:
+            reactant_choices.append(choice)
+    product_choices = _side_orders(products, bases)
+    if len(reactant_choices) * len(product_choices) > REACTION_FRAME_SEARCH_LIMIT:
+        # Every reactant order tying on the rewrite preserves the whole
+        # reaction, so it is carried onto a product symmetry: one reactant
+        # order and every product order reach the same minimal map.
+        reactant_choices = reactant_choices[:1]
+    best = None
+    for reactant_choice in reactant_choices:
+        reactant_atoms = [atom for order in reactant_choice for atom in order]
+        for product_choice in product_choices:
+            key = _heavy_map_key(
+                reactant_atoms, [atom for order in product_choice for atom in order]
+            )
+            if best is None or key < best[0]:
+                best = (key, reactant_choice, product_choice)
+    _, reactant_choice, product_choice = best
+    # Hydrogens are outside the heavy-atom map; settle them for the reverse
+    # rewrite, which reads the product order.
+    product_choice = _settle_hydrogens(product_choice, colour, after, before, states)
+    return {
+        id(molecule): (molecule, list(order))
+        for molecule, order in zip(
+            reactants + products, list(reactant_choice) + list(product_choice)
+        )
+    }
+
+
+@contextmanager
+def _reaction_frame_scope(reaction):
+    """Fix the molecule representatives and atom orders of ``reaction``.
+
+    Inside the scope ``_molecule`` is memoized (so the frame's molecules are
+    the ones every field reads) and ``_ordered_atoms`` returns the frame's
+    orders.  An enclosing frame covering the same molecules is reused, which
+    is how a forward record and its reverse share one frame.
+    """
+    cache_token = (
+        _PAIR_MOLECULE_CACHE.set({}) if _PAIR_MOLECULE_CACHE.get() is None else None
+    )
+    frame_token = None
+    try:
+        participants = list(getattr(reaction, "reactants", ()) or ()) + list(
+            getattr(reaction, "products", ()) or ()
+        )
+        current = _ATOM_ORDER_FRAME.get() or {}
+        if participants and not all(
+            id(_molecule(item)) in current for item in participants
+        ):
+            frame = _reaction_frame(reaction)
+            if frame is not None:
+                frame_token = _ATOM_ORDER_FRAME.set({**current, **frame})
+        yield
+    finally:
+        if frame_token is not None:
+            _ATOM_ORDER_FRAME.reset(frame_token)
+        if cache_token is not None:
+            _PAIR_MOLECULE_CACHE.reset(cache_token)
 
 
 def _canonical_adjacency(molecule) -> str:
@@ -1823,10 +2192,29 @@ def _canonical_adjacency(molecule) -> str:
     return clone.to_adjacency_list(remove_h=False)
 
 
-def _molecule_total_order(molecule) -> tuple[str, str]:
+def _perceived_smiles(molecule) -> str:
+    """RDKit's canonical SMILES of the sanitized (aromaticity-perceived) graph.
+
+    RMG's filtered resonance set depends on the starting atom order, but the
+    sanitized view collapses the Kekule-level differences between its members:
+    the set of these strings is a function of the species alone.
+    """
+    if molecule.__class__.__module__.startswith("rmgpy."):
+        try:
+            from rdkit import Chem
+            from rmgpy.molecule.converter import to_rdkit_mol
+
+            return Chem.MolToSmiles(
+                to_rdkit_mol(molecule, remove_h=False, sanitize=True, save_order=False)
+            )
+        except Exception:
+            pass
     clone = molecule.copy(deep=True)
-    smiles = clone.to_smiles() if hasattr(clone, "to_smiles") else ""
-    return smiles, _canonical_adjacency(molecule)
+    return clone.to_smiles() if hasattr(clone, "to_smiles") else ""
+
+
+def _molecule_total_order(molecule) -> tuple[str, str]:
+    return _perceived_smiles(molecule), _canonical_adjacency(molecule)
 
 
 def _canonical_resonance_representative(molecule):
@@ -1891,6 +2279,11 @@ def _bonds(molecules: Iterable) -> dict[tuple[int, int], str]:
 
 
 def _canonical_atom_map(reaction) -> dict[int, int]:
+    with _reaction_frame_scope(reaction):
+        return _canonical_atom_map_in_frame(reaction)
+
+
+def _canonical_atom_map_in_frame(reaction) -> dict[int, int]:
     reactant_atoms = [
         atom
         for item in reaction.reactants
@@ -1914,44 +2307,23 @@ def _canonical_atom_map(reaction) -> dict[int, int]:
 
 
 def _bond_ops(reaction) -> list[dict[str, Any]]:
-    reactant_atoms = [
-        atom for item in reaction.reactants for atom in _ordered_atoms(_molecule(item))
-    ]
-    reactant_index = {atom.id: index for index, atom in enumerate(reactant_atoms)}
-    product_atoms = [
-        atom for item in reaction.products for atom in _ordered_atoms(_molecule(item))
-    ]
-    product_by_id = {atom.id: atom for atom in product_atoms}
-    before, after = _bonds(reaction.reactants), _bonds(reaction.products)
-    ops = []
-    for pair in sorted(set(before) | set(after)):
-        old, new = before.get(pair), after.get(pair)
-        if old == new:
-            continue
-        if not all(identifier in reactant_index for identifier in pair):
-            raise ValueError(
-                "bond rewrite references an atom absent from the reactants"
-            )
-        atoms = [reactant_index[identifier] for identifier in pair]
-        if old is not None:
-            ops.append({"action": "break", "atoms": atoms, "order": old})
-        if new is not None:
-            ops.append({"action": "form", "atoms": atoms, "order": new})
-    attributes = (
-        ("radical_electrons", "set_radical"),
-        ("charge", "set_charge"),
-        ("lone_pairs", "set_lone_pairs"),
-        ("implicit_hydrogens", "set_implicit_hydrogens"),
-    )
-    for identifier, index in sorted(reactant_index.items(), key=lambda item: item[1]):
-        reactant_atom = reactant_atoms[index]
-        product_atom = product_by_id[identifier]
-        for attribute, action in attributes:
-            old = getattr(reactant_atom, attribute, 0)
-            new = getattr(product_atom, attribute, 0)
-            if old != new:
-                ops.append({"action": action, "atom": index, "value": int(new)})
-    return ops
+    with _reaction_frame_scope(reaction):
+        reactant_atoms = [
+            atom
+            for item in reaction.reactants
+            for atom in _ordered_atoms(_molecule(item))
+        ]
+        product_by_id = {
+            atom.id: atom
+            for item in reaction.products
+            for atom in _ordered_atoms(_molecule(item))
+        }
+        return _rewrite_ops(
+            reactant_atoms,
+            product_by_id,
+            _bonds(reaction.reactants),
+            _bonds(reaction.products),
+        )
 
 
 def _template(reaction) -> str:
@@ -2173,6 +2545,26 @@ def _production_padded_root(kinetics_database, reaction, generation_provider):
 def _copy_participant(item):
     """Give the public generator a pristine participant on every invocation."""
     return item.copy(deep=True) if hasattr(item, "copy") else item
+
+
+def _without_reaction_labels(reaction):
+    """Clear RMG's reaction labels from every form of every participant.
+
+    RMG labels the atoms a family template matched (``*``, ``*1``...) while it
+    generates, and which participants and resonance forms of a returned
+    reaction still carry them is generation state, not chemistry: two
+    identical runs return the same reactions with different subsets labelled.
+    A label picks a participant's canonical atom order, the resonance form the
+    compiler keeps, and the text of its graph, so a surviving label reaches
+    the artifact.  The compiler never reads a generated reaction's labels (its
+    own label-dependent steps relabel stored forms themselves), so the
+    generator's output is cleared once, at the boundary.
+    """
+    for participant in list(reaction.reactants) + list(reaction.products):
+        for molecule in getattr(participant, "molecule", None) or [participant]:
+            if hasattr(molecule, "clear_labeled_atoms"):
+                molecule.clear_labeled_atoms()
+    return reaction
 
 
 def _is_resonance_derived(reaction) -> bool:
@@ -4599,10 +4991,13 @@ class EventSetCompiler:
         self._compiled_artifact: dict[str, Any] | None = None
 
     def _generate(self, proxy: SiteProxy):
-        """Use RMG's public merged-path pipeline (the C2 degeneracy oracle)."""
+        """Use RMG's public merged-path pipeline (the C2 degeneracy oracle).
+
+        Every reaction leaves here without RMG's reaction labels.
+        """
         if proxy.site_type in self.reaction_cache:
             return (
-                reaction
+                self.compile_input(reaction)
                 for reaction in self.reaction_cache[proxy.site_type]
                 if reaction.family in self.families
             )
@@ -4617,7 +5012,44 @@ class EventSetCompiler:
                     resonance=True,
                 )
             )
-        return reactions
+        return [self.compile_input(reaction) for reaction in reactions]
+
+    def compile_input(self, reaction):
+        """A generated reaction as the compiler takes it: RMG's reaction labels
+        cleared and the participants of a single-Root bimolecular family in
+        canonical order.  Every path from the generator to the candidate loop
+        goes through here (``_generate``, and the sharded build stage)."""
+        return self._canonical_participants(_without_reaction_labels(reaction))
+
+    def _canonical_participants(self, reaction):
+        """Order the two participants of a single-Root bimolecular family.
+
+        A family whose template has one Root group and two reactants (R_Recombination,
+        Disproportionation) assigns the two roles only through labels, so RMG
+        returns A+B or B+A by atom order.  Every participant-ordered field of
+        a record follows that order, so each two-member side is sorted by its
+        canonical structure text.  Read from the loaded family, not named.
+        """
+        family = (getattr(self.kinetics_database, "families", None) or {}).get(
+            getattr(reaction, "family", "")
+        )
+        template = getattr(family, "forward_template", None)
+        if (
+            template is None
+            or len(template.reactants) != 1
+            or getattr(family, "reactant_num", None) != 2
+        ):
+            return reaction
+        token = _PAIR_MOLECULE_CACHE.set({})
+        try:
+            for side in ("reactants", "products"):
+                members = list(getattr(reaction, side))
+                if len(members) == 2:
+                    members.sort(key=lambda item: _graph_adjacencies([item])[0])
+                    setattr(reaction, side, members)
+        finally:
+            _PAIR_MOLECULE_CACHE.reset(token)
+        return reaction
 
     def _rate_table(self, reaction) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         source_reaction = getattr(reaction, "source_reaction", reaction)
@@ -4775,6 +5207,20 @@ class EventSetCompiler:
         )
 
     def _record(
+        self,
+        proxy: SiteProxy,
+        reaction,
+        provenance: dict[str, Any],
+        orientation: str = "as_generated",
+        rate_override=None,
+    ) -> EventRecord:
+        """Serialize ``reaction`` inside its (or an enclosing pair's) frame."""
+        with _reaction_frame_scope(reaction):
+            return self._record_in_frame(
+                proxy, reaction, provenance, orientation, rate_override
+            )
+
+    def _record_in_frame(
         self,
         proxy: SiteProxy,
         reaction,
@@ -4941,9 +5387,11 @@ class EventSetCompiler:
             getattr(self, "_applicability_generation_stats", None)
         )
         try:
-            return self._build_linked_family_pair(
-                proxy, copy.deepcopy(reaction), provenance
-            )
+            reaction = copy.deepcopy(reaction)
+            # One frame for the forward record and its reverse, fixed by the
+            # generated direction, so their maps stay exact inverses.
+            with _reaction_frame_scope(getattr(reaction, "source_reaction", reaction)):
+                return self._build_linked_family_pair(proxy, reaction, provenance)
         finally:
             _APPLICABILITY_GENERATION_STATS.reset(generation_stats_token)
             _APPLICABILITY_GENERATION_CACHE.reset(generation_cache_token)
@@ -5445,6 +5893,16 @@ class EventSetCompiler:
         provenance: dict[str, Any],
     ) -> tuple[EventRecord, EventRecord]:
         """Compile one half-rate ortho capture and its exact dissociation."""
+        # The capture and its dissociation share one frame (inverse maps).
+        with _reaction_frame_scope(reaction):
+            return self._linked_ortho_pair_in_frame(proxy, reaction, provenance)
+
+    def _linked_ortho_pair_in_frame(
+        self,
+        proxy: SiteProxy,
+        reaction,
+        provenance: dict[str, Any],
+    ) -> tuple[EventRecord, EventRecord]:
         forward = _partition_degeneracy(self._record(proxy, reaction, provenance), 2)
         if forward.inventory_class != "R1:J_ring":
             raise ValueError("archived J_ortho reaction is not a ring capture")
@@ -5550,6 +6008,16 @@ class EventSetCompiler:
         provenance: dict[str, Any],
     ) -> tuple[EventRecord, EventRecord]:
         """Compile the archived para capture and its exact dissociation."""
+        # The capture and its dissociation share one frame (inverse maps).
+        with _reaction_frame_scope(reaction):
+            return self._linked_para_pair_in_frame(proxy, reaction, provenance)
+
+    def _linked_para_pair_in_frame(
+        self,
+        proxy: SiteProxy,
+        reaction,
+        provenance: dict[str, Any],
+    ) -> tuple[EventRecord, EventRecord]:
         forward = self._record(proxy, reaction, provenance)
         if forward.inventory_class != "R1:J_ring":
             raise ValueError("archived J_para reaction is not a ring capture")

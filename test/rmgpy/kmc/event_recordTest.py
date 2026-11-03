@@ -593,3 +593,11 @@ def test_absent_witness_fields_preserve_legacy_event_id():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+@pytest.mark.parametrize("field_name", ["degeneracy", "raw_path_degeneracy", "ssa_multiplier"])
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_validate_rejects_non_finite_multiplicities(field_name, bad):
+    record = EventRecord(**{field_name: bad})
+    with pytest.raises(ValueError, match="finite"):
+        record.validate()

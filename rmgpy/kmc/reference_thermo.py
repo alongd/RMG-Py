@@ -110,6 +110,32 @@ class SharedThermoAssignment:
         )
 
     @staticmethod
+    def _source_graph(species) -> str:
+        """Canonical, label-free text of the species' resonance forms.
+
+        The raw ``molecule[0]`` adjacency list follows the generator's atom
+        order, reaction labels and resonance-form order, none of which the
+        assigned thermochemistry depends on (I-122).  Forms are taken in RMG's
+        aromatic drawing: the filtered form set itself depends on the form
+        generation started from, but only by Kekule drawings of other rings.
+        """
+        molecules = list(species.molecule)
+        if not all(item.__class__.__module__.startswith("rmgpy.") for item in molecules):
+            return molecules[0].to_adjacency_list(remove_h=False)
+        from rmgpy.kmc.compiler import (
+            _canonical_adjacency,
+            _canonical_resonance_representative,
+        )
+
+        texts = []
+        for item in molecules:
+            clone = _canonical_resonance_representative(item).copy(deep=True)
+            for atom in clone.atoms:
+                atom.label = ""
+            texts.append(_canonical_adjacency(clone))
+        return min(texts)
+
+    @staticmethod
     def _thermo_source(thermo) -> dict:
         comment = str(getattr(thermo, "comment", "") or "")
         marker = "Thermo library:"
@@ -147,12 +173,17 @@ class SharedThermoAssignment:
         if not molecule.__class__.__module__.startswith("rmgpy."):
             reference = copy.deepcopy(species)
         else:
+            # Start from the species' canonical representative in canonical
+            # atom order, so group additivity sums in an order that depends
+            # on the species alone (I-122: a ~1e-13 relative wobble in H298,
+            # Kc and k otherwise follows the generator's atom order).
+            from rmgpy.kmc.compiler import _canonical_adjacency, _molecule
+
+            canonical = _molecule(species)
             reference = Species(
                 label=getattr(species, "label", ""),
                 molecule=[
-                    Molecule().from_adjacency_list(
-                        molecule.to_adjacency_list(remove_h=False)
-                    )
+                    Molecule().from_adjacency_list(_canonical_adjacency(canonical))
                 ],
             )
             reference.generate_resonance_structures()
@@ -207,7 +238,9 @@ class SharedThermoAssignment:
                 raise ThermoUnavailable(
                     f"thermo unavailable for species {name}: no thermo database"
                 )
-            source_graph = molecule.to_adjacency_list(remove_h=False)
+            # Canonical text: the raw adjacency list follows the generator's
+            # atom order, which is not part of the chemistry (I-122).
+            source_graph = self._source_graph(species)
             try:
                 reference = self._isolated_reference(
                     species, declared_multiplicity
