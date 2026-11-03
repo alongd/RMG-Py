@@ -80,11 +80,13 @@ def test_the_links_and_the_minimum_cycle_enter_the_chemistry_digest():
 # --------------------------------------------------------------------------
 # refused by name
 # --------------------------------------------------------------------------
-def test_a_network_is_still_refused_by_name():
+def test_a_network_below_the_gel_point_is_refused_by_name():
+    """S7 declares networks; the branched fixture's counts are below the gel
+    point, so as a network they are refused (declare it branched)."""
     def network(mapping):
         mapping["architecture"] = "network"
         mapping["locality_policy"]["bounds"]["topology_metadata_schema"]["architecture"] = ["network"]
-    with pytest.raises(ValueError, match="refused:architecture: network"):
+    with pytest.raises(ValueError, match="refused:gel_point.*declare it branched"):
         branched_spec(network)
 
 
