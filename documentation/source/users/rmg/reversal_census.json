@@ -6571,7 +6571,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._compute_reference_reaction_data::reaction-io",
     "kind": "reader-exporter",
-    "line": 7455,
+    "line": 7524,
     "source": "def _compute_reference_reaction_data(self, np.ndarray y):",
     "verdict": "guarded",
     "reason": "The diagnostic serializes already-initialized directed kf/kb arrays; reactor initialization has checked original declarations, and irreversible explicit channels never synthesize a reverse record.",
@@ -6582,7 +6582,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._evaluate_electronegative_wall_regime::reaction-io",
     "kind": "reader-exporter",
-    "line": 7585,
+    "line": 7654,
     "source": "def _evaluate_electronegative_wall_regime(self, np.ndarray y, double t, result=None):",
     "verdict": "guarded",
     "reason": "The accepted-state diagnostic formats original directed reactions and already-initialized kf/kb arrays; initialization enforces resolved reversibility, and the formatter preserves the declared arrow.",
@@ -6593,7 +6593,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._requires_en_steps::reaction-io",
     "kind": "reader-exporter",
-    "line": 8183,
+    "line": 8252,
     "source": "def _requires_en_steps(self):",
     "verdict": "guarded",
     "reason": "The wall-step predicate only inspects admitted reaction direction flags and participants; admission has enforced resolved reversibility, and opposite irreversible channels remain independent entries.",
@@ -6604,7 +6604,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._validate_reactions::reaction-io",
     "kind": "reader-exporter",
-    "line": 5783,
+    "line": 5852,
     "source": "def _validate_reactions(self, core_species, edge_species, core_reactions, edge_reactions):",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6615,7 +6615,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::check_reverse_from_equilibrium_supported#1",
     "kind": "reverse",
-    "line": 6019,
+    "line": 6088,
     "source": "rxn.check_reverse_from_equilibrium_supported()",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6626,7 +6626,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 6020,
+    "line": 6089,
     "source": "self.Keq[j] = rxn.get_equilibrium_constant(self.T.value_si)",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6637,7 +6637,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::reaction-io",
     "kind": "reader-exporter",
-    "line": 5954,
+    "line": 6023,
     "source": "def generate_rate_coefficients(self, core_reactions, edge_reactions):",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -7293,6 +7293,17 @@
     "reason": "Serializes the explicit power-table mapping and does not serialize or reverse Reaction kinetics.",
     "tests": [
       "test/rmgpy/tools/eedf/reportTest.py::test_as_dict_serializes_report"
+    ]
+  },
+  {
+    "site": "rmgpy/tools/eedf/vibrational.py::validate_bound_channels::reaction-io",
+    "kind": "reader-exporter",
+    "line": 254,
+    "source": "def validate_bound_channels(ladder, channels, reactions, reaction_map, indices, species):",
+    "verdict": "refused",
+    "reason": "Requires separate irreversible inelastic and superelastic owners with exact retained level endpoints; a reversible reaction is refused, never reversed through equilibrium thermo.",
+    "tests": [
+      "test/rmgpy/solver/plasmaEEDFVibrationalTest.py::test_vibrational_binding_refuses_thermal_reversal"
     ]
   },
   {

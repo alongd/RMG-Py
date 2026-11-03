@@ -5624,5 +5624,12 @@
     "tests": [
       "test/rmgpy/tools/n2VibrationalTest.py::test_superelastic_only_for_two_retained_source_endpoints"
     ]
+  },
+  "rmgpy/tools/eedf/vibrational.py::validate_bound_channels::reaction-io": {
+    "reason": "Requires separate irreversible inelastic and superelastic owners with exact retained level endpoints; a reversible reaction is refused, never reversed through equilibrium thermo.",
+    "tests": [
+      "test/rmgpy/solver/plasmaEEDFVibrationalTest.py::test_vibrational_binding_refuses_thermal_reversal"
+    ],
+    "verdict": "refused"
   }
 }

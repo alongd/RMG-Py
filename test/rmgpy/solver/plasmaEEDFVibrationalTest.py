@@ -254,3 +254,13 @@ def test_runtime_ceiling_refuses_by_name(tmp_path, source):
         'top_fraction_limit': 0., 'top_leak_share_limit': 1.})
     with pytest.raises(D6CeilingExceeded, match='D6_REFUSE_K30'):
         reactor._eedf_qualification_state(reactor.y, reactor.t)
+
+
+def test_vibrational_binding_refuses_thermal_reversal(tmp_path, small_ladder):
+    from rmgpy.tools.eedf.vibrational import validate_bound_channels
+    reactor, core, reactions, ladder = molecular_model(tmp_path, small_ladder)
+    reactions[1].reversible = True
+    with pytest.raises(SpecError, match='must be irreversible'):
+        validate_bound_channels(ladder, reactor.eedf_provider.runtime_metadata['channel_map'],
+                                reactions, reactor.eedf_reaction_map,
+                                reactor.eedf_axis_species['Tv_N2']['indices'], core)
