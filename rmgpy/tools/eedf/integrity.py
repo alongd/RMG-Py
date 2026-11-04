@@ -275,9 +275,15 @@ def _resolved_properties(spec, coordinates):
                     if ladder['levels'][int(v)]['loki_state'] != key:
                         raise SpecError('Boltzmann declaration differs from level identity')
                     value = boltzmann_populations(ladder, state[axis])[int(v)]
-                elif not population and re.fullmatch(r'1-\{[A-Za-z_][A-Za-z_0-9]*\}', expr):
-                    axis = re.fullmatch(r'1-\{([A-Za-z_][A-Za-z_0-9]*)\}', expr)[1]
-                    value = 1. - float(state[axis])
+                elif (not population and re.fullmatch(
+                        r'1(?:-\{[A-Za-z_][A-Za-z_0-9]*\}|-(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+\-]?\d+)?)+',
+                        expr)):
+                    terms = re.findall(
+                        r'-\{([A-Za-z_][A-Za-z_0-9]*)\}|-((?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+\-]?\d+)?)',
+                        expr)
+                    value = 1. - sum(float(state[axis]) if axis else
+                                     float(number.replace('D', 'e').replace('d', 'e'))
+                                     for axis, number in terms)
                 else:
                     value = float(expr.format_map(state).replace('D', 'e').replace('d', 'e'))
             except (ValueError, KeyError, IndexError) as error:

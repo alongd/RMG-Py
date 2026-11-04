@@ -212,12 +212,42 @@ def test_three_gas_mixture_declares_named_bath_fractions_and_map_states(
         'NO': {'axis': 'x_NO', 'values': [.001, .005]}}}
     mixture = adapter.build_mixture_spec(spec, {}, [], gas_maps=maps,
                                          composition=composition)
+    assert 'N2 = 0.1' in mixture['gas_properties']['fraction']
+    assert 'x_N2' not in mixture['axes']
     assert mixture['gas_properties']['fraction'] == [
-        'NO = {x_NO}', 'N2 = {x_N2}', 'Ar = 1-{x_NO}-{x_N2}']
+        'NO = {x_NO}', 'N2 = 0.1', 'Ar = 1-{x_NO}-0.1']
     assert 'NO(X) = 1' in mixture['state_properties']['population']
     assert 'NO(X) = 0.0' in mixture['state_properties']['energy']
     assert 'NO(X) = 4' in mixture['state_properties']['statisticalWeight']
     assert mixture['axes']['x_NO'] == [.001, .005]
+    from rmgpy.tools.eedf.integrity import _resolved_properties
+    _, _, fractions, _ = _resolved_properties(
+        mixture, {'x_N2': .1, 'x_NO': .001, 'Tv_K': 300.})
+    assert fractions == {'NO': .001, 'N2': .1, 'Ar': .899}
+
+
+def test_three_gas_mixture_passes_physical_map_state_validation(
+        conversion_inputs, monkeypatch):
+    """The declared path must survive the same state checks as conversion."""
+    spec, _, _ = conversion_inputs
+    spec['state_properties']['population'].extend(
+        f'N2(X,v={v}) = {1 if v == 0 else 0}' for v in range(59))
+    _fake_ladder(monkeypatch)
+    maps = _three_gas_state_maps()
+    mixture = adapter.build_mixture_spec(
+        spec, {}, [], gas_maps=maps,
+        composition={'bath': 'Ar', 'fractions': {
+            'N2': {'axis': 'x_N2', 'values': [.1]},
+            'NO': {'axis': 'x_NO', 'values': [.001, .005]}}})
+
+    # Keep _physical_properties and its selector conflict detection real; the
+    # fixture's physical sections are irrelevant to this state regression.
+    from rmgpy.tools.eedf import channels
+    monkeypatch.setattr(channels, '_validate_map', lambda *_args: None)
+    monkeypatch.setattr(channels, '_classic_sections', lambda *args: [])
+    monkeypatch.setattr(channels, '_resolved_properties',
+                        lambda *_args: (None, {}, None, None))
+    channels._validate_physical_map([], mixture, {})
 
 
 @pytest.mark.parametrize('composition,maps,error', [
@@ -272,6 +302,11 @@ def test_prepare_refuses_ungoverned_multigas_legacy_composition(
 def test_prepare_three_gas_conversion_passes_declared_bath_and_states_to_map_converter(
         conversion_inputs, tmp_path, monkeypatch):
     spec, _, _ = conversion_inputs
+    masses = tmp_path / 'masses.txt'
+    masses.write_text('Ar 6.6e-26\nN2 4.6e-26\nNO 5.0e-26\n')
+    spec['input_files']['masses.txt'] = {
+        'path': str(masses), 'sha256': _file_hash(masses), 'kind': 'property'}
+    spec['gas_properties']['mass'] = 'masses.txt'
     _fake_ladder(monkeypatch)
     monkeypatch.setattr(adapter, 'load_spec', lambda _: copy.deepcopy(spec))
     monkeypatch.setattr(adapter, '_diagnostic_d6', lambda _: None)
@@ -314,11 +349,51 @@ def test_prepare_three_gas_conversion_passes_declared_bath_and_states_to_map_con
         composition=composition, tv_values=(300., 3000.))
     assert returned_channels == converted and returned_report['outcome'] == 'converted'
     assert observed['fractions'] == [
-        'Ar = 1-{x_N2}-{x_NO}', 'N2 = {x_N2}', 'NO = {x_NO}']
+        'Ar = 1-0.1-{x_NO}', 'N2 = 0.1', 'NO = {x_NO}']
     assert 'NO(X) = 1' in observed['population']
     assert 'NO(X) = 0.0' in observed['energy']
     assert 'NO(X) = 4' in observed['weight']
     assert mixture['axes']['x_NO'] == [.001, .005]
+
+
+def test_supplemented_gas_collision_passes_physical_map_validation(
+        tmp_path, monkeypatch):
+    from rmgpy.tools.eedf import channels
+
+    process = 'e + NO(X) -> e + NO(V1), Excitation'
+    section = {'description': process, 'kind': 'excitation', 'threshold_eV': .232,
+               'cross_section': {'energy_eV': [.1, 1.], 'sigma_m2': [0., 2.e-20]}}
+    frozen = {'id': 3, 'loki_process': process, 'class': 'B', 'rmg': None,
+              'flux_group': 'NO_lumped_vibrational_heating'}
+    channel = adapter._physical_channel_from_frozen(section, frozen, 'fixture')
+    assert channel['target_fraction'] == 'state:NO(X)'
+    assert channel['product_fraction'] == 0.
+    assert channel['flux_group'] == 'NO_lumped_vibrational_heating'
+
+    source = tmp_path / 'NO.txt'
+    source.write_text('fixture bytes')
+    spec = {
+        'input_files': {'NO.txt': {'path': str(source), 'sha256': _file_hash(source),
+                                   'kind': 'cross_section'}},
+        'gas_properties': {'fraction': ['NO = 1']},
+        'state_properties': {'population': ['NO(X) = 1'], 'energy': ['NO(X) = 0'],
+                             'statisticalWeight': ['NO(X) = 4']},
+        'solver_options': {},
+    }
+    monkeypatch.setattr(channels, '_classic_sections', lambda *_args: [section])
+    monkeypatch.setattr(channels, '_resolved_properties',
+                        lambda *_args: (None, {}, None, None))
+    channels._validate_physical_map([channel], spec, {})
+
+
+def test_gas_map_species_supplies_missing_loki_particle_mass():
+    species = SimpleNamespace(label='NO', molecule=[SimpleNamespace(
+        get_molecular_weight=lambda: .030006258748471737)])
+    library = SimpleNamespace(entries={1: SimpleNamespace(item=SimpleNamespace(
+        reactants=[species], products=[]))})
+    frozen = {'states': {'NO(X)': {'paschen': 'ground', 'rmg_species': 'NO'}}}
+    mass = adapter._gas_mass_from_library('NO', frozen, library)
+    assert mass == pytest.approx(.030006258748471737 / 6.02214076e23)
 
 
 def test_prepare_mixture_spec_uses_real_59_level_source_manifest(
@@ -522,6 +597,24 @@ def test_effective_source_maps_to_one_unowned_elastic_heating_row(
         'channel_map': channels, 'tolerances': tolerances,
         'floors': {'relative_power_share': .01, 'absolute_power_share': 1e-12}})
     assert not next(check for check in checks if check['quantity'] == 'power.sum.elastic')['passed']
+
+
+def test_multiple_effective_sources_share_the_solver_elastic_balance():
+    from rmgpy.tools.eedf.loki import _partition_effective_elastic_power
+
+    channels = [
+        {'kind': 'effective', 'description': 'e + N2(X) -> e + N2(X), Effective'},
+        {'kind': 'effective', 'description': 'e + NO(X) -> e + NO(X), Effective'},
+        {'kind': 'elastic', 'description': 'e + Ar(1S0) -> e + Ar(1S0), Elastic'},
+        {'kind': 'elastic', 'description': 'e + N2(X) -> e + N2(X), Elastic'},
+        {'kind': 'elastic', 'description': 'e + NO(X) -> e + NO(X), Elastic'},
+    ]
+    powers = [0., 0., 3., 4., 5.]
+    _partition_effective_elastic_power(
+        channels, powers, {'elastic_gain': 0., 'elastic_loss': -15.})
+    assert powers[3] == 4.
+    assert powers[4] == 8.
+    assert sum(powers[index] for index in (2, 3, 4)) == 15.
 
 
 def test_irreversible_excitation_group_has_no_product_population_requirement():

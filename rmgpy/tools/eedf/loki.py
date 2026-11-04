@@ -639,24 +639,28 @@ def _enrich_row(row, channel_map, spec):
 
 
 def _partition_effective_elastic_power(channel_map, channel_power, power_groups):
-    """Assign LoKI's derived Effective->Elastic heating exactly once."""
+    """Reconcile derived Effective->Elastic rows with LoKI's total elastic heat."""
     effective = [channel for channel in channel_map if channel['kind'] == 'effective']
     if not effective:
         return
-    if len(effective) != 1:
-        raise LoKIError('power partition supports one Effective source per solver row')
-    source = effective[0]['description']
-    derived_description = (source[:-len(', Effective')] + ', Elastic'
-                           if source.endswith(', Effective') else None)
-    derived = [i for i, channel in enumerate(channel_map)
-               if channel['kind'] == 'elastic'
-               and channel['description'] == derived_description]
-    if len(derived) != 1:
-        raise LoKIError('Effective source has no unique derived Elastic power row')
+    derived_indices = []
+    for source in effective:
+        description = source['description']
+        derived_description = (description[:-len(', Effective')] + ', Elastic'
+                               if description.endswith(', Effective') else None)
+        derived = [i for i, channel in enumerate(channel_map)
+                   if channel['kind'] == 'elastic'
+                   and channel['description'] == derived_description]
+        if len(derived) != 1 or derived[0] in derived_indices:
+            raise LoKIError('Effective source has no unique derived Elastic power row')
+        derived_indices.append(derived[0])
     # LoKI subtracts state-resolved inelastic cross sections from an Effective
     # source when it constructs the derived Elastic sigma. The Effective row
     # carries momentum transfer; its Elastic realization owns the remaining heat.
     elastic = [i for i, channel in enumerate(channel_map) if channel['kind'] == 'elastic']
     target = -power_groups['elastic_gain'] - power_groups['elastic_loss']
-    known = sum(channel_power[i] for i in elastic if i != derived[0])
-    channel_power[derived[0]] = target - known
+    known = sum(channel_power[i] for i in elastic if i not in derived_indices)
+    correction = target - known - sum(channel_power[i] for i in derived_indices)
+    # Preserve each derived row's calculated contribution and place the
+    # aggregate round-off/reconciliation residual on the last stable source.
+    channel_power[derived_indices[-1]] += correction

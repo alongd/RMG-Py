@@ -42,7 +42,7 @@ import sys
 import tempfile
 
 import yaml
-from scipy.constants import electron_mass
+from scipy.constants import Avogadro, electron_mass
 
 from rmgpy.kinetics import EEDFChannel
 from rmgpy.exceptions import DatabaseError
@@ -183,6 +183,62 @@ def _convert_channel(physical, frozen, collision_set):
         result['reaction'] = {'library': owner['library'], 'index': owner['index'],
                               'repr': repr(marker)}
     return result
+
+
+def _physical_channel_from_frozen(physical, frozen, collision_set, *,
+                                  mass_values=None, opb_values=None, weights=None):
+    """Describe a physical section absent from the base map using its frozen row."""
+    description = physical['description']
+    process, _ = description.rsplit(', ', 1)
+    direction = '<->' if ' <-> ' in process else '->'
+    source, product = (part.strip() for part in process.split(' ' + direction + ' ', 1))
+    source = source.removeprefix('e + ').strip()
+    product = product.removeprefix('e + ').strip()
+    channel = copy.deepcopy(physical)
+    channel.update(
+        target_fraction='state:' + source,
+        product_fraction='state:' + product if direction == '<->' else 0.,
+        sigma_max_m2=max(physical['cross_section']['sigma_m2']),
+        flux_group=frozen.get('flux_group') or description,
+    )
+    species = source.split('(', 1)[0]
+    if physical['kind'] == 'elastic':
+        mass = (mass_values or {}).get(species)
+        if mass is None or mass <= 0:
+            raise SpecError('missing physical gas mass for ' + species)
+        channel['mass_ratio'] = electron_mass / mass
+    if physical['kind'] == 'ionization':
+        channel['opb_eV'] = (opb_values or {}).get(species, physical['threshold_eV'])
+    if direction == '<->':
+        target_weight, product_weight = (weights or {}).get(source), (weights or {}).get(product)
+        if (target_weight is None or product_weight is None
+                or min(target_weight, product_weight) <= 0):
+            raise SpecError('reverse statistical weights must be explicit positive setup constants')
+        channel['statistical_weight_ratio'] = target_weight / product_weight
+    return _convert_channel(channel, frozen, collision_set)
+
+
+def _gas_mass_from_library(gas, frozen, library):
+    """Return a gas particle mass in kg from its mapped RMG species."""
+    states = frozen.get('states') if isinstance(frozen, dict) else None
+    grounds = [(row.get('rmg_species') if isinstance(row, dict) else None)
+               for row in (states or {}).values()
+               if isinstance(row, dict) and row.get('paschen') == 'ground']
+    if len(grounds) != 1 or not isinstance(grounds[0], str) or not grounds[0]:
+        raise SpecError('cannot derive LoKI mass without one mapped ground-state species for ' + gas)
+    label = grounds[0]
+    candidates = {}
+    for entry in library.entries.values():
+        for species in entry.item.reactants + entry.item.products:
+            if species.label == label and species.molecule:
+                candidates[label] = species.molecule[0]
+    molecule = candidates.get(label)
+    if molecule is None:
+        raise SpecError('mapped RMG species is absent from owner library for gas ' + gas)
+    mass = float(molecule.get_molecular_weight()) / Avogadro
+    if not math.isfinite(mass) or mass <= 0:
+        raise SpecError('invalid mapped RMG species mass for gas ' + gas)
+    return mass
 
 
 def _derived_elastic(description):
@@ -371,8 +427,6 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
                 raise SpecError('two gas maps claim one collision filename: ' + filename)
             frozen_file_hashes[filename] = digest
     channels = _load_channel_map(spec['channel_map'])
-    _validate_physical_map(channels, spec, {
-        name: values[0] for name, values in spec['axes'].items() if name != 'u'})
     selected_files = {}
     for name, entry in spec['input_files'].items():
         _read_pinned_bytes(entry['path'], entry['sha256'])
@@ -383,6 +437,33 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
             if frozen_file_hashes.get(filename) != entry['sha256']:
                 raise FingerprintMismatch('frozen collision file: ' + filename)
             selected_files[filename] = entry['sha256']
+    present = {channel['description'] for channel in channels}
+    sections = {}
+    for name, entry in spec['input_files'].items():
+        if entry['kind'] == 'cross_section':
+            for section in _classic_sections(entry['path'], entry['sha256']):
+                sections[section['description']] = section
+    gas_properties, state_properties = _physical_properties(spec)
+    mass_entry = spec['input_files'].get(gas_properties.get('mass'))
+    opb_entry = spec['input_files'].get(gas_properties.get('OPBParameter'))
+    mass_values = (_gas_values(mass_entry['path'], mass_entry['sha256'])
+                   if mass_entry is not None else {})
+    opb_values = (_gas_values(opb_entry['path'], opb_entry['sha256'])
+                  if opb_entry is not None else {})
+    weights = {line.split(' = ', 1)[0]: float(line.split(' = ', 1)[1])
+               for line in state_properties.get('statisticalWeight', [])}
+    for description, physical in sections.items():
+        if description in present:
+            continue
+        frozen = by_process.get(description)
+        if frozen is None:
+            raise SpecError('frozen map does not cover physical collision: ' + description)
+        channels.append(_physical_channel_from_frozen(
+            physical, frozen, collision_set, mass_values=mass_values,
+            opb_values=opb_values, weights=weights))
+        present.add(description)
+    _validate_physical_map(channels, spec, {
+        name: values[0] for name, values in spec['axes'].items() if name != 'u'})
     selected = [row for frozen in normalized_maps.values() for row in frozen['channels']
                 if row['lxcat_file'] in selected_files]
     if {row['loki_process'] for row in selected} != {row['description'] for row in channels}:
@@ -564,19 +645,25 @@ def _build_declared_mixture_spec(spec, ladder, gas_maps, composition, tv_axis, t
             or sorted(set(tv_values)) != list(tv_values)):
         raise SpecError('mixture Tv axis requires ordered physical values')
 
-    axis_values, fraction_expressions, fixed = {}, {}, {}
+    axis_values, fraction_expressions, fixed, fixed_axes, used_axes = {}, {}, {}, {}, set()
     for gas, declaration in fractions.items():
         if isinstance(declaration, dict) and set(declaration) == {'axis', 'values'}:
             axis, values = declaration['axis'], declaration['values']
             if (not isinstance(axis, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*', axis)
-                    or axis in ('u', tv_axis) or axis in axis_values
+                    or axis in ('u', tv_axis) or axis in used_axes
                     or not isinstance(values, (list, tuple)) or not values
                     or any(type(value) not in (int, float) or not math.isfinite(value)
                            for value in values)
                     or sorted(set(values)) != list(values)):
                 raise SpecError('invalid mixture fraction axis')
-            axis_values[axis] = list(values)
-            fraction_expressions[gas] = '{' + axis + '}'
+            used_axes.add(axis)
+            if len(values) == 1:
+                fixed[gas] = float(values[0])
+                fixed_axes[gas] = float(values[0])
+                fraction_expressions[gas] = repr(float(values[0]))
+            else:
+                axis_values[axis] = list(values)
+                fraction_expressions[gas] = '{' + axis + '}'
         elif type(declaration) in (int, float) and math.isfinite(declaration):
             fixed[gas] = float(declaration)
             fraction_expressions[gas] = repr(float(declaration))
@@ -588,7 +675,8 @@ def _build_declared_mixture_spec(spec, ladder, gas_maps, composition, tv_axis, t
         values = dict(fixed)
         for gas, declaration in fractions.items():
             if isinstance(declaration, dict):
-                values[gas] = at_point[declaration['axis']]
+                values[gas] = (fixed_axes[gas] if gas in fixed_axes
+                               else at_point[declaration['axis']])
         total = sum(values.values())
         bath_value = 1.0 - total
         if (not math.isfinite(total) or any(value < 0 or value > 1 for value in values.values())
@@ -631,10 +719,13 @@ def _build_declared_mixture_spec(spec, ladder, gas_maps, composition, tv_axis, t
         for gas in ordered_gases]
     spec['state_properties'] = copy.deepcopy(spec['state_properties'])
     declared_names = {record[0] for record in states.values()}
+    child_prefix = ladder['parent'][:-1] + ',v='
     for field in ('population', 'energy', 'statisticalWeight'):
         spec['state_properties'][field] = [
             entry for entry in spec['state_properties'].get(field, [])
-            if entry.split(' = ', 1)[0] not in declared_names]
+            if (entry.split(' = ', 1)[0] not in declared_names
+                and not (field == 'population'
+                         and entry.split(' = ', 1)[0].startswith(child_prefix)))]
     spec['state_properties']['population'].extend(
         f'{name} = 1' for name, _, _ in states.values())
     spec['state_properties']['energy'].extend(
@@ -649,7 +740,6 @@ def _build_declared_mixture_spec(spec, ladder, gas_maps, composition, tv_axis, t
                 f'{level["loki_state"]} = {expression}')
         else:
             ladder.setdefault('zero_population_tail', {})[level['loki_state']] = 0.0
-    child_prefix = ladder['parent'][:-1] + ',v='
     for field, source_field in (('energy', 'energy_eV'),
                                 ('statisticalWeight', 'statistical_weight')):
         entries = [entry for entry in spec['state_properties'].get(field, [])
@@ -781,6 +871,36 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
         loaded = {}
         for label in sorted(libraries_needed):
             loaded[label], library_hashes[label] = _load_library(database, scratch, label)
+        generated_input_files = {}
+        mass_name = snapshot.get('gas_properties', {}).get('mass')
+        mass_entry = snapshot.get('input_files', {}).get(mass_name)
+        if composition is not None:
+            if mass_entry is None:
+                raise SpecError('multi-gas conversion requires a hashed LoKI mass file')
+            mass_values = _gas_values(mass_entry['path'], mass_entry['sha256'])
+            missing_masses = [gas for gas in frozen_by_gas if gas not in mass_values]
+            if missing_masses:
+                original = Path(mass_entry['path']).read_text()
+                additions = []
+                for gas in missing_masses:
+                    label = library_by_gas[gas]
+                    mass = _gas_mass_from_library(gas, frozen_by_gas[gas], loaded[label])
+                    additions.append(f'{gas} {mass:.15e}  % derived from {label} ground-state species\n')
+                generated_mass_file = original + ('' if original.endswith('\n') else '\n') + ''.join(additions)
+                generated_mass_bytes = generated_mass_file.encode()
+                generated_mass_hash = hashlib.sha256(generated_mass_bytes).hexdigest()
+                Path(mass_entry['path']).write_bytes(generated_mass_bytes)
+                mass_entry['sha256'] = generated_mass_hash
+                if ladder_spec is not None:
+                    ladder_spec['input_files'][mass_name]['sha256'] = generated_mass_hash
+                provenance['generated_input_files'] = {
+                    mass_name: {'source_path': provenance['input_files'][mass_name]['path'],
+                                'source_sha256': provenance['input_files'][mass_name]['sha256'],
+                                'sha256': generated_mass_hash}}
+                provenance['generated_gas_masses'] = {
+                    gas: {'kg': line.split()[1], 'library': library_by_gas[gas]}
+                    for gas, line in zip(missing_masses, additions)}
+                generated_input_files[mass_name] = generated_mass_file
         cascade_provenance = None
         if cascade_yields is None:
             cascade_yields, cascade_provenance = _cascade_snapshot(
@@ -802,6 +922,8 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
     report['provenance'] = provenance
     if ladder_spec is None:
         ladder_spec = build_mixture_spec(spec, ladder_manifest, bindings)
+    if generated_input_files:
+        ladder_spec['_generated_input_files'] = generated_input_files
     return spec, converted, report, ladder_spec
 
 
@@ -810,6 +932,7 @@ def _write_outputs(destination, report, spec=None, channels=None, mixture_spec=N
     destination = Path(destination).resolve()
     destination.mkdir(parents=True, exist_ok=False)
     files = {'conversion-report.json': report}
+    generated_files = {}
     if spec is not None:
         spec = copy.deepcopy(spec)
         data = json.dumps(channels, indent=2, allow_nan=False) + '\n'
@@ -823,6 +946,14 @@ def _write_outputs(destination, report, spec=None, channels=None, mixture_spec=N
             mixture_spec['channel_map'] = copy.deepcopy(spec['channel_map'])
             mixture_spec['output_root'] = spec['output_root']
             mixture_spec['scratch_root'] = spec['scratch_root']
+            generated_inputs = mixture_spec.pop('_generated_input_files', {})
+            for name, content in generated_inputs.items():
+                relative = Path('generated-inputs') / Path(name).name
+                data = content.encode() if isinstance(content, str) else content
+                digest = hashlib.sha256(data).hexdigest()
+                mixture_spec['input_files'][name]['path'] = str(destination / relative)
+                mixture_spec['input_files'][name]['sha256'] = digest
+                generated_files[str(relative)] = data
             files['ar-n2-spec.json'] = mixture_spec
         else:
             files['pure-ar-spec.json'] = spec
@@ -830,6 +961,11 @@ def _write_outputs(destination, report, spec=None, channels=None, mixture_spec=N
     # the claimed directory for inspection; a retry cannot overwrite it.
     serialized = {name: json.dumps(value, indent=2, allow_nan=False) + '\n'
                   for name, value in files.items()}
+    for name, data in generated_files.items():
+        path = destination / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('xb') as stream:
+            stream.write(data)
     for name, data in serialized.items():
         with (destination / name).open('x') as stream:
             stream.write(data)
