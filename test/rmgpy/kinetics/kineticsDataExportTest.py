@@ -162,3 +162,29 @@ def test_real_admitted_cantera_round_trip(tmp_path, admitted_export_reaction, wr
         assert sum(gas.forward_rate_constants) == pytest.approx(expected, rel=1e-10, abs=0)
     assert 'The source table is the record' in path.read_text()
     assert pickle.dumps(reaction.kinetics) == snapshot
+
+
+@pytest.mark.parametrize('conflict_at', [None, 1, 2])
+def test_duplicate_merge_preserves_agreed_flux_pairs_and_refuses_conflicts(conflict_at):
+    from rmgpy.chemkin import _process_duplicate_reactions
+    from rmgpy.data.kinetics.library import LibraryReaction
+    from rmgpy.exceptions import ChemkinError
+    from rmgpy.kinetics import Arrhenius, MultiArrhenius
+    from rmgpy.species import Species
+
+    reactant = Species(label='H').from_smiles('[H]')
+    product = Species(label='H2').from_smiles('[H][H]')
+    pairs = [(reactant, product)]
+    leaves = [LibraryReaction(reactants=[reactant], products=[product],
+                              kinetics=Arrhenius(A=(1., 's^-1')), library='fixture',
+                              pairs=list(pairs), duplicate=True) for _ in range(3)]
+    if conflict_at is not None:
+        leaves[conflict_at].pairs = []
+        with pytest.raises(ChemkinError, match='Conflicting flux pairs for duplicate reaction'):
+            _process_duplicate_reactions(leaves)
+    else:
+        _process_duplicate_reactions(leaves)
+        assert len(leaves) == 1
+        assert leaves[0].pairs == pairs
+        assert isinstance(leaves[0].kinetics, MultiArrhenius)
+        assert len(leaves[0].kinetics.arrhenius) == 3
