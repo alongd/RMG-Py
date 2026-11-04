@@ -993,7 +993,7 @@
       "file": "rmgpy/chemkin.pyx",
       "function": "write_kinetics_entry",
       "line": 2222,
-      "signature": "fbbebd16db17111e55c918f6615221a124950fa9aef4da1af9c6268e378fd8b0",
+      "signature": "9d317d8eb36a5eec49722ce2b2ba8ac018d3af8bc5e77a53f6ba84380bc258d7",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:write_kinetics_entry]",
       "manifold": {
@@ -1005,12 +1005,15 @@
           "test/rmgpy/data/excitedThermoSourceTest.py",
           "test/rmgpy/rmg/vibrationalManifoldTest.py"
         ]
-      }
+      },
+      "evidence": [
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
+      ]
     },
     "rmgpy/chemkin.pyx:save_species_dictionary": {
       "file": "rmgpy/chemkin.pyx",
       "function": "save_species_dictionary",
-      "line": 2920,
+      "line": 2931,
       "signature": "38ccc207febc220222d3639769728baf5fdf4e6a27a5e3970cdca17a35fc5a66",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_species_dictionary]",
@@ -1028,7 +1031,7 @@
     "rmgpy/chemkin.pyx:render_species_dictionary": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_species_dictionary",
-      "line": 2930,
+      "line": 2941,
       "signature": "330e1b9aaea0d3419f5f419b23767c0606ea3389ea20bda31206bde35a53be75",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_species_dictionary]",
@@ -1050,7 +1053,7 @@
     "rmgpy/chemkin.pyx:render_transport_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_transport_file",
-      "line": 2995,
+      "line": 3006,
       "signature": "e06b43fb949868ded6a3c8b951c14500ca7e871c2a3a36b450948ec2ecf8182c",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_transport_file]",
@@ -1068,7 +1071,7 @@
     "rmgpy/chemkin.pyx:_write_files_atomically": {
       "file": "rmgpy/chemkin.pyx",
       "function": "_write_files_atomically",
-      "line": 3034,
+      "line": 3045,
       "signature": "e5eda7f0083fb997283794195531aa4bbe03577d923d205ea3d6d569d0b0e6f7",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:_write_files_atomically]",
@@ -1086,7 +1089,7 @@
     "rmgpy/chemkin.pyx:render_chemkin_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_chemkin_file",
-      "line": 3066,
+      "line": 3077,
       "signature": "e40b6b8378718b91fb2bd759d6fefdf08c17531c7397972af083647d2991fc32",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_chemkin_file]",
@@ -1110,7 +1113,7 @@
     "rmgpy/chemkin.pyx:render_chemkin_surface_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_chemkin_surface_file",
-      "line": 3178,
+      "line": 3189,
       "signature": "3babcbfffa7a299aef59c607a5a7b8302944ad1c990ea7eb4d5a47e29b357462",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_chemkin_surface_file]",
@@ -1128,7 +1131,7 @@
     "rmgpy/chemkin.pyx:save_chemkin": {
       "file": "rmgpy/chemkin.pyx",
       "function": "save_chemkin",
-      "line": 3252,
+      "line": 3263,
       "signature": "02674d176ddc2647f9d8ee58dce0c8f417ff3fbf27ac941385aa9daf7c39241b",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_chemkin]",
@@ -1146,7 +1149,7 @@
     "rmgpy/chemkin.pyx:save_chemkin_files": {
       "file": "rmgpy/chemkin.pyx",
       "function": "save_chemkin_files",
-      "line": 3361,
+      "line": 3372,
       "signature": "b806d554c46ef66fbca76396a7b8fdda9bb181266eb4da29781ea730a7278460",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_chemkin_files]",
@@ -2231,13 +2234,14 @@
       "file": "rmgpy/reaction.py",
       "function": "Reaction.to_cantera",
       "line": 424,
-      "signature": "a834d148909d8b065067ebf1a84c144aa20cac575f47fe30e698f8e207c9a8e6",
+      "signature": "eb06c9747a5731d341010699fcc5ac3472318992455a11403c3d987828918d65",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/reaction.py:Reaction.to_cantera]",
       "reason": "Qualified conversion retains upstream exact rate/direction serialization checks and reviewed canonical v0 identity/reference validation; no thermodynamic reversal is added.",
       "evidence": [
         "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py",
-        "test/rmgpy/data/kinetics/superelasticCensusTest.py"
+        "test/rmgpy/data/kinetics/superelasticCensusTest.py",
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
       ],
       "manifold": {
         "verdict": "carried",
@@ -3209,7 +3213,7 @@
     "rmgpy/yaml_cantera1.py:get_phases_gas_only": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "get_phases_gas_only",
-      "line": 244,
+      "line": 245,
       "signature": "d00f95a61de58ccfeefd7f8f747b5372d5e3875b1a0abeeca03d938d8eb15fb5",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:get_phases_gas_only]",
@@ -3227,7 +3231,7 @@
     "rmgpy/yaml_cantera1.py:get_phases_with_surface": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "get_phases_with_surface",
-      "line": 273,
+      "line": 274,
       "signature": "65116451108723ffda285a38481ad868706ea156b2a5bdcd87e283dfee1a1214",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:get_phases_with_surface]",
@@ -3245,7 +3249,7 @@
     "rmgpy/yaml_cantera1.py:_cantera_declarations": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "_cantera_declarations",
-      "line": 421,
+      "line": 422,
       "signature": "2bdfb963636d7608dac016fd07523d0097ad19f72d19415cf0a3ea87fb89bf92",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:_cantera_declarations]",
@@ -3263,7 +3267,7 @@
     "rmgpy/yaml_cantera1.py:_build_equation_string": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "_build_equation_string",
-      "line": 427,
+      "line": 428,
       "signature": "0000f2e26762d2d945cd9402266d20a8b34dc65817faa6e75b55e2e0ca85e9ba",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:_build_equation_string]",
@@ -3281,14 +3285,15 @@
     "rmgpy/yaml_cantera1.py:reaction_to_dicts": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "reaction_to_dicts",
-      "line": 470,
-      "signature": "c5e454f4a5c6778d11b785e4b6fe5932cad5c154548afb9c41f5a93ec0032f97",
+      "line": 471,
+      "signature": "5192512c13329af8d15a28facd596156e26e6a57516449dd1b915527d2c1945b",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:reaction_to_dicts]",
       "reason": "Retains upstream exact serialized-rate/direction admission alongside canonical manifold collider/reference handling and the existing named unsupported-collider refusal.",
       "evidence": [
         "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py",
-        "test/rmgpy/data/kinetics/superelasticCensusTest.py"
+        "test/rmgpy/data/kinetics/superelasticCensusTest.py",
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
       ],
       "manifold": {
         "verdict": "carried",
@@ -3304,7 +3309,7 @@
     "rmgpy/yaml_cantera1.py:species_to_dict": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "species_to_dict",
-      "line": 615,
+      "line": 626,
       "signature": "245d3693f91deb0ba555adfc62f22d85b798968e0ad7280c100bb8860bcc5002",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:species_to_dict]",
@@ -3354,7 +3359,7 @@
     "rmgpy/yaml_cantera2.py:get_reaction_equation": {
       "file": "rmgpy/yaml_cantera2.py",
       "function": "get_reaction_equation",
-      "line": 1061,
+      "line": 1076,
       "signature": "c02097a6dc612009ce33135fd3c0216e4323cdc5b0f9731eb30a68782acb7e9b",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:get_reaction_equation]",
@@ -3372,7 +3377,7 @@
     "rmgpy/yaml_cantera2.py:_cantera_declarations": {
       "file": "rmgpy/yaml_cantera2.py",
       "function": "_cantera_declarations",
-      "line": 1122,
+      "line": 1137,
       "signature": "806bfb899b742a16d10eec307e0ba940b0ae6c2268af097eb1a1541e984b5040",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:_cantera_declarations]",
@@ -3390,7 +3395,7 @@
     "rmgpy/yaml_cantera2.py:get_label": {
       "file": "rmgpy/yaml_cantera2.py",
       "function": "get_label",
-      "line": 1129,
+      "line": 1144,
       "signature": "7e240a6be62db5e350dcd3f285da1b66fcdfcc33beda4fc806444cacd43fcf45",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:get_label]",
@@ -3792,7 +3797,7 @@
       "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
       "file": "rmgpy/reaction.py",
       "function": "Reaction.draw",
-      "line": 2090,
+      "line": 2098,
       "signature": "c3f41b159a35a5701f9b2d27be924fd11179714e6396f46985aacbd50ab09a64",
       "manifold": {
         "verdict": "refused",
@@ -3811,7 +3816,7 @@
       "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
       "file": "rmgpy/reaction.py",
       "function": "Reaction._repr_png_",
-      "line": 2106,
+      "line": 2114,
       "signature": "feb4f2a1c3ddc546fd7b39cdf5aa61dcd2f29369cabdf1b3ea3eb9a702d84e34",
       "manifold": {
         "verdict": "refused",
@@ -3827,7 +3832,7 @@
     "rmgpy/yaml_cantera1.py:write_cantera": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "write_cantera",
-      "line": 114,
+      "line": 115,
       "signature": "69e77f28eaa41bef3c7009b3662c3b80f1b6d7968559fd3569a716e2e4ac279b",
       "verdict": "R",
       "reason": "The Cantera YAML writer checks each species thermo before preparing output and delegates identity naming, adjacency notes and reaction references to the audited state-aware conversion/declaration helpers.",
@@ -4737,19 +4742,20 @@
       "file": "rmgpy/rmg/model.py",
       "function": "CoreEdgeReactionModel.make_new_species",
       "line": 523,
-      "signature": "e2cc71f33cdcd2eac7ace1075176ff4171c0a3eed2b9ee9d7f8e8f2f9b01e888",
+      "signature": "2ede25fee96232ebb1dacc6847da24dc6fa6aea6af5240fa217250a64a7b8a00",
       "reason": "Internal naming/allocation, not export; state metadata retained in graph. Thermo rebase classification: Export-search exclusion: this is in-memory model admission and internal Fragment reconstruction, not an output boundary. It retains state, applies manifold declarations, reserves labels and delegates optional thermo generation to the checked model route.",
       "verdict": "E",
       "evidence": [
         "rmgpy/rmg/model.py",
         "test/rmgpy/yaml_writer/excitedExportCensusTest.py",
-        "test/rmgpy/data/excitedThermoSourceTest.py"
+        "test/rmgpy/data/excitedThermoSourceTest.py",
+        "test/rmgpy/rmg/vibrationalManifoldTest.py"
       ]
     },
     "rmgpy/rmg/model.py:get_key": {
       "file": "rmgpy/rmg/model.py",
       "function": "get_key",
-      "line": 2699,
+      "line": 2706,
       "signature": "69dd9b09e5e66b9b195471529702d6e5a87c547d29c595f49a29b2f3bcb9d35c",
       "reason": "Internal reaction lookup key.",
       "verdict": "E"
@@ -5111,7 +5117,7 @@
       "reason": "Writes Element singleton names and isotope masses only, not molecular identifiers; baseline ground bytes preserved.",
       "file": "rmgpy/chemkin.pyx",
       "function": "write_elements_section",
-      "line": 3428,
+      "line": 3439,
       "signature": "71165b64271e41296c9002ee7a63db7f4ca7b5e8780b6bf7a9659199d98ba7e2"
     },
     "rmgpy/data/base.py:Database.save_old_tree": {

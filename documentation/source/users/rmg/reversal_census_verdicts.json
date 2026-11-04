@@ -5631,5 +5631,29 @@
       "test/rmgpy/solver/plasmaEEDFVibrationalTest.py::test_vibrational_binding_refuses_thermal_reversal"
     ],
     "verdict": "refused"
+  },
+  "rmgpy/reaction.py::Reaction.to_cantera::to_cantera#1": {
+    "verdict": "guarded",
+    "reason": "Output-only conversion/recursive expansion preserves the original participants and reversible flag, passes through the existing exact direction/identity checks, and never replaces source KineticsData or generates an independent reverse fit.",
+    "tests": [
+      "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_cantera_round_trip",
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
+    ]
+  },
+  "rmgpy/yaml_cantera2.py::reaction_to_dict_list::reaction_to_dict_list#2": {
+    "verdict": "guarded",
+    "reason": "Output-only conversion/recursive expansion preserves the original participants and reversible flag, passes through the existing exact direction/identity checks, and never replaces source KineticsData or generates an independent reverse fit.",
+    "tests": [
+      "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_cantera_round_trip",
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
+    ]
+  },
+  "rmgpy/chemkin.pyx::write_kinetics_entry::write_kinetics_entry#2": {
+    "verdict": "guarded",
+    "reason": "Output-only conversion/recursive expansion preserves the original participants and reversible flag, passes through the existing exact direction/identity checks, and never replaces source KineticsData or generates an independent reverse fit.",
+    "tests": [
+      "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_annotated_chemkin_round_trip_with_flux_pairs",
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
+    ]
   }
 }

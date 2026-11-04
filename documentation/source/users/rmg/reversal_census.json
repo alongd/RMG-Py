@@ -686,7 +686,7 @@
   {
     "site": "rmgpy/chemkin.pyx::chemkin_duplicate_group_key::reaction-io",
     "kind": "reader-exporter",
-    "line": 2619,
+    "line": 2630,
     "source": "def chemkin_duplicate_group_key(reaction):",
     "verdict": "guarded",
     "reason": "Irreversible direction participates in the duplicate key/marking decision.",
@@ -732,7 +732,7 @@
   {
     "site": "rmgpy/chemkin.pyx::mark_duplicate_reaction::reaction-io",
     "kind": "reader-exporter",
-    "line": 2744,
+    "line": 2755,
     "source": "def mark_duplicate_reaction(test_reaction, reaction_list):",
     "verdict": "guarded",
     "reason": "Irreversible direction participates in the duplicate key/marking decision.",
@@ -743,7 +743,7 @@
   {
     "site": "rmgpy/chemkin.pyx::mark_duplicate_reactions::chemkin_duplicate_flags#1",
     "kind": "direction",
-    "line": 2916,
+    "line": 2927,
     "source": "for reaction, duplicate in zip(reactions, chemkin_duplicate_flags(reactions)):",
     "verdict": "guarded",
     "reason": "Irreversible direction participates in the duplicate key/marking decision.",
@@ -934,7 +934,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_file::chemkin_duplicate_flags#1",
     "kind": "direction",
-    "line": 3095,
+    "line": 3106,
     "source": "duplicate_flags = chemkin_duplicate_flags(reactions)",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -946,7 +946,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3066,
+    "line": 3077,
     "source": "def render_chemkin_file(species, reactions, verbose=True, check_for_duplicates=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -958,7 +958,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_file::write_kinetics_entry#1",
     "kind": "reader-exporter",
-    "line": 3153,
+    "line": 3164,
     "source": "f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -970,7 +970,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_surface_file::chemkin_duplicate_flags#1",
     "kind": "direction",
-    "line": 3194,
+    "line": 3205,
     "source": "duplicate_flags = chemkin_duplicate_flags(reactions)",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -982,7 +982,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_surface_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3178,
+    "line": 3189,
     "source": "def render_chemkin_surface_file(species, reactions, verbose=True, check_for_duplicates=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -994,7 +994,7 @@
   {
     "site": "rmgpy/chemkin.pyx::render_chemkin_surface_file::write_kinetics_entry#1",
     "kind": "reader-exporter",
-    "line": 3242,
+    "line": 3253,
     "source": "f.write(write_kinetics_entry(rxn, species_list=references, verbose=verbose,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1006,7 +1006,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::reaction-io",
     "kind": "reader-exporter",
-    "line": 3252,
+    "line": 3263,
     "source": "def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, transport_path=None,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1018,7 +1018,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::render_chemkin_file#1",
     "kind": "reader-exporter",
-    "line": 3323,
+    "line": 3334,
     "source": "(gas_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=False,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1030,7 +1030,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::render_chemkin_file#2",
     "kind": "reader-exporter",
-    "line": 3331,
+    "line": 3342,
     "source": "(gas_verbose_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1042,7 +1042,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::render_chemkin_file#3",
     "kind": "reader-exporter",
-    "line": 3341,
+    "line": 3352,
     "source": "(path, render_chemkin_file(species_list, rxn_list, verbose=False,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1054,7 +1054,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin::render_chemkin_file#4",
     "kind": "reader-exporter",
-    "line": 3346,
+    "line": 3357,
     "source": "(verbose_path, render_chemkin_file(species_list, rxn_list, verbose=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1066,7 +1066,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3049,
+    "line": 3060,
     "source": "def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicates=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1078,7 +1078,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin_file::render_chemkin_file#1",
     "kind": "reader-exporter",
-    "line": 3061,
+    "line": 3072,
     "source": "_write_file_atomically(path, render_chemkin_file(species, reactions, verbose=verbose,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1090,7 +1090,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin_files::reaction-io",
     "kind": "reader-exporter",
-    "line": 3361,
+    "line": 3372,
     "source": "def save_chemkin_files(rmg, config=None):",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1102,7 +1102,7 @@
   {
     "site": "rmgpy/chemkin.pyx::save_chemkin_surface_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3165,
+    "line": 3176,
     "source": "def save_chemkin_surface_file(path, species, reactions, verbose=True, check_for_duplicates=True,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1114,7 +1114,7 @@
   {
     "site": "rmgpy/chemkin.pyx::write_kinetics_entry::LibraryReaction#1",
     "kind": "builder",
-    "line": 2281,
+    "line": 2291,
     "source": "new_reaction = LibraryReaction(index=reaction.index,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1126,7 +1126,7 @@
   {
     "site": "rmgpy/chemkin.pyx::write_kinetics_entry::Reaction#1",
     "kind": "builder",
-    "line": 2291,
+    "line": 2301,
     "source": "new_reaction = Reaction(index=reaction.index,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
@@ -1162,12 +1162,24 @@
   {
     "site": "rmgpy/chemkin.pyx::write_kinetics_entry::write_kinetics_entry#1",
     "kind": "reader-exporter",
-    "line": 2300,
-    "source": "string += write_kinetics_entry(new_reaction, species_list, verbose, java_library,",
+    "line": 2271,
+    "source": "return write_kinetics_entry(exported, species_list, verbose, java_library,",
     "verdict": "guarded",
     "reason": "Reader delegates to checked read_kinetics_entry and validates all returned reactions; writer checks original kinetics in write_kinetics_entry before converting or expanding.",
     "tests": [
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_chemkin_duplicate_roundtrip_retains_independent_reverse",
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
+    ]
+  },
+  {
+    "site": "rmgpy/chemkin.pyx::write_kinetics_entry::write_kinetics_entry#2",
+    "kind": "reader-exporter",
+    "line": 2310,
+    "source": "string += write_kinetics_entry(new_reaction, species_list, verbose, java_library,",
+    "verdict": "guarded",
+    "reason": "Output-only conversion/recursive expansion preserves the original participants and reversible flag, passes through the existing exact direction/identity checks, and never replaces source KineticsData or generates an independent reverse fit.",
+    "tests": [
+      "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_annotated_chemkin_round_trip_with_flux_pairs",
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
     ]
   },
@@ -3994,7 +4006,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.calculate_microcanonical_rate_coefficient::calculate_microcanonical_rate_coefficient#1",
     "kind": "reverse",
-    "line": 1957,
+    "line": 1965,
     "source": "return calculate_microcanonical_rate_coefficient(self, e_list, j_list, reac_dens_states, prod_dens_states, T)",
     "verdict": "guarded",
     "reason": "The Reaction method forwards the same reaction object and its original kinetics to the microcanonical primitive, which performs the resolved reversibility check before detailed-balance work.",
@@ -4005,7 +4017,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.check_collision_limit_violation::_reverse_rate_at_reference_potential#1",
     "kind": "reverse",
-    "line": 2406,
+    "line": 2414,
     "source": "kr = _reverse_rate_at_reference_potential(reverse_kinetics, condition[0], condition[1])",
     "verdict": "guarded",
     "reason": "Checks original resolved declaration before requesting a reverse collision-limit rate.",
@@ -4016,7 +4028,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.check_collision_limit_violation::generate_reverse_rate_coefficient#1",
     "kind": "reverse",
-    "line": 2405,
+    "line": 2413,
     "source": "reverse_kinetics = self.generate_reverse_rate_coefficient()",
     "verdict": "guarded",
     "reason": "Checks original resolved declaration before requesting a reverse collision-limit rate.",
@@ -4027,7 +4039,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.check_resolved_species_reversibility::Reaction#1",
     "kind": "builder",
-    "line": 869,
+    "line": 877,
     "source": "reverse_check = Reaction(reactants=self.reactants, products=self.products,",
     "verdict": "guarded",
     "reason": "Checking Reaction keeps participants/collider and original kinetics then invokes the shared refusal.",
@@ -4038,7 +4050,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.check_resolved_species_reversibility::check_reverse_from_equilibrium_supported#1",
     "kind": "reverse",
-    "line": 873,
+    "line": 881,
     "source": "reverse_check.check_reverse_from_equilibrium_supported()",
     "verdict": "guarded",
     "reason": "Checking Reaction keeps participants/collider and original kinetics then invokes the shared refusal.",
@@ -4049,7 +4061,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.check_resolved_species_reversibility::reaction-io",
     "kind": "reader-exporter",
-    "line": 852,
+    "line": 860,
     "source": "def check_resolved_species_reversibility(self, kinetics=None, reversible=None):",
     "verdict": "guarded",
     "reason": "Checking Reaction keeps participants/collider and original kinetics then invokes the shared refusal.",
@@ -4060,7 +4072,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.copy::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 2190,
+    "line": 2198,
     "source": "self.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Checks original rate before repr or pickle can erase an inherited subclass declaration; valid native irreversible declarations remain serializable.",
@@ -4072,7 +4084,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.copy::reaction-io",
     "kind": "reader-exporter",
-    "line": 2184,
+    "line": 2192,
     "source": "def copy(self):",
     "verdict": "guarded",
     "reason": "Checks original rate before repr or pickle can erase an inherited subclass declaration; valid native irreversible declarations remain serializable.",
@@ -4084,7 +4096,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.ensure_species::is_isomorphic#1",
     "kind": "direction",
-    "line": 2292,
+    "line": 2300,
     "source": "if reactant0.is_isomorphic(reactant, save_order=save_order):",
     "verdict": "guarded",
     "reason": "Representation/normalization retains explicit reversible metadata; restored reactions are checked at admission and reverse generation.",
@@ -4095,7 +4107,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.ensure_species::is_isomorphic#2",
     "kind": "direction",
-    "line": 2296,
+    "line": 2304,
     "source": "if product0.is_isomorphic(product, save_order=save_order):",
     "verdict": "guarded",
     "reason": "Representation/normalization retains explicit reversible metadata; restored reactions are checked at admission and reverse generation.",
@@ -4106,7 +4118,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.fix_barrier_height::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1521,
+    "line": 1529,
     "source": "self.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Checks original reversible declarations and forces original resolved Te refusal before EP/BM conversion can erase its dependence.",
@@ -4117,7 +4129,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.fix_barrier_height::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 1525,
+    "line": 1533,
     "source": "self.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Checks original reversible declarations and forces original resolved Te refusal before EP/BM conversion can erase its dependence.",
@@ -4128,7 +4140,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.fix_barrier_height::reaction-io",
     "kind": "reader-exporter",
-    "line": 1506,
+    "line": 1514,
     "source": "def fix_barrier_height(self, force_positive=False, solvent=\"\", apply_solvation_correction=True):",
     "verdict": "guarded",
     "reason": "Checks original reversible declarations and forces original resolved Te refusal before EP/BM conversion can erase its dependence.",
@@ -4139,7 +4151,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::Reaction#1",
     "kind": "builder",
-    "line": 1828,
+    "line": 1836,
     "source": "rxn = Reaction(reactants=self.reactants, products=self.products)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4151,7 +4163,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::Reaction#2",
     "kind": "builder",
-    "line": 1837,
+    "line": 1845,
     "source": "rxn = Reaction(reactants=self.reactants, products=self.products)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4163,7 +4175,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::Reaction#3",
     "kind": "builder",
-    "line": 1846,
+    "line": 1854,
     "source": "rxn = Reaction(reactants=self.reactants, products=self.products)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4175,7 +4187,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1761,
+    "line": 1769,
     "source": "self.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4187,7 +4199,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 1809,
+    "line": 1817,
     "source": "self.check_resolved_species_reversibility(kinetics=kf, reversible=True)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4199,7 +4211,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::generate_reverse_rate_coefficient#1",
     "kind": "reverse",
-    "line": 1831,
+    "line": 1839,
     "source": "kr.arrhenius.append(rxn.generate_reverse_rate_coefficient(kf.Tmin, kf.Tmax))",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4211,7 +4223,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::generate_reverse_rate_coefficient#2",
     "kind": "reverse",
-    "line": 1840,
+    "line": 1848,
     "source": "kr.arrhenius.append(rxn.generate_reverse_rate_coefficient())",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4223,7 +4235,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::generate_reverse_rate_coefficient#3",
     "kind": "reverse",
-    "line": 1849,
+    "line": 1857,
     "source": "kr.arrhenius.append(rxn.generate_reverse_rate_coefficient())",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4235,7 +4247,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 1788,
+    "line": 1796,
     "source": "klist[i] = kf.get_rate_coefficient(Tlist[i]) / self.get_equilibrium_constant(Tlist[i])",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4247,7 +4259,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::get_equilibrium_constant#2",
     "kind": "reverse",
-    "line": 1818,
+    "line": 1826,
     "source": "K[Tindex, Pindex] = kf.get_rate_coefficient(T, P) / self.get_equilibrium_constant(T)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4259,7 +4271,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::reaction-io",
     "kind": "reader-exporter",
-    "line": 1744,
+    "line": 1752,
     "source": "def generate_reverse_rate_coefficient(self, network_kinetics=False, Tmin=None, Tmax=None, surface_site_density=0):",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4271,7 +4283,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::reverse_arrhenius_charge_transfer_rate#1",
     "kind": "reverse",
-    "line": 1781,
+    "line": 1789,
     "source": "return self.reverse_arrhenius_charge_transfer_rate(kf, kunits, Tmin, Tmax)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4283,7 +4295,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::reverse_arrhenius_rate#1",
     "kind": "reverse",
-    "line": 1798,
+    "line": 1806,
     "source": "return self.reverse_arrhenius_rate(kf, kunits, Tmin, Tmax)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4295,7 +4307,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::reverse_arrhenius_rate#2",
     "kind": "reverse",
-    "line": 1810,
+    "line": 1818,
     "source": "return self.reverse_arrhenius_rate(kf, kunits)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4307,7 +4319,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::reverse_arrhenius_rate#3",
     "kind": "reverse",
-    "line": 1854,
+    "line": 1862,
     "source": "krLow = self.reverse_arrhenius_rate(kf.arrheniusLow, lowPkunits)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4319,7 +4331,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::reverse_arrhenius_rate#4",
     "kind": "reverse",
-    "line": 1860,
+    "line": 1868,
     "source": "krHigh = self.reverse_arrhenius_rate(kf.arrheniusHigh, kunits)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4331,7 +4343,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::reverse_arrhenius_rate#5",
     "kind": "reverse",
-    "line": 1862,
+    "line": 1870,
     "source": "krLow = self.reverse_arrhenius_rate(kf.arrheniusLow, lowPkunits)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4343,7 +4355,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::reverse_arrhenius_rate#6",
     "kind": "reverse",
-    "line": 1868,
+    "line": 1876,
     "source": "krHigh = self.reverse_arrhenius_rate(kf.arrheniusHigh, kunits)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4355,7 +4367,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::reverse_arrhenius_rate#7",
     "kind": "reverse",
-    "line": 1870,
+    "line": 1878,
     "source": "krLow = self.reverse_arrhenius_rate(kf.arrheniusLow, lowPkunits)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4367,7 +4379,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::reverse_sticking_coeff_rate#1",
     "kind": "reverse",
-    "line": 1805,
+    "line": 1813,
     "source": "return self.reverse_sticking_coeff_rate(kf, kunits, surface_site_density, Tmin, Tmax)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4379,7 +4391,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::reverse_surface_arrhenius_rate#1",
     "kind": "reverse",
-    "line": 1796,
+    "line": 1804,
     "source": "return self.reverse_surface_arrhenius_rate(kf, kunits, Tmin, Tmax)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4391,7 +4403,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.generate_reverse_rate_coefficient::reverse_surface_charge_transfer_rate#1",
     "kind": "reverse",
-    "line": 1778,
+    "line": 1786,
     "source": "return self.reverse_surface_charge_transfer_rate(kf, kunits, Tmin, Tmax)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4403,7 +4415,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.get_equilibrium_constants::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 1288,
+    "line": 1296,
     "source": "return np.array([self.get_equilibrium_constant(T, potential=potential, type=type) for T in Tlist], float)",
     "verdict": "not-reachable-for-resolved",
     "reason": "Thermodynamic property evaluation alone creates no reverse rate; retained for resolved species.",
@@ -4414,7 +4426,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.get_reverse_from_equilibrium_refusal::reaction-io",
     "kind": "reader-exporter",
-    "line": 738,
+    "line": 746,
     "source": "def get_reverse_from_equilibrium_refusal(self):",
     "verdict": "guarded",
     "reason": "Inspects original kinetics and resolved participants to produce the refusal reason consumed by the shared policy.",
@@ -4425,7 +4437,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.has_template::allows_reverse_match#1",
     "kind": "direction",
-    "line": 887,
+    "line": 895,
     "source": "(self.allows_reverse_match() and",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4438,7 +4450,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.is_isomorphic::same_species_lists#1",
     "kind": "direction",
-    "line": 972,
+    "line": 980,
     "source": "return same_species_lists(species1, species2,",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4451,7 +4463,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.is_isomorphic::same_species_lists#2",
     "kind": "direction",
-    "line": 980,
+    "line": 988,
     "source": "forward_reactants_match = same_species_lists(self.reactants, other.reactants,",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4464,7 +4476,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.is_isomorphic::same_species_lists#3",
     "kind": "direction",
-    "line": 988,
+    "line": 996,
     "source": "forward_products_match = same_species_lists(self.products, other.products,",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4477,7 +4489,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.is_isomorphic::same_species_lists#4",
     "kind": "direction",
-    "line": 1016,
+    "line": 1024,
     "source": "reverse_reactants_match = same_species_lists(self.reactants, other.products,",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4490,7 +4502,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.is_isomorphic::same_species_lists#5",
     "kind": "direction",
-    "line": 1024,
+    "line": 1032,
     "source": "reverse_products_match = same_species_lists(self.products, other.reactants,",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4503,7 +4515,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.is_same_reaction::allows_reverse_match#1",
     "kind": "direction",
-    "line": 922,
+    "line": 930,
     "source": "reverse_allowed = self.allows_reverse_match(other)",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4516,7 +4528,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.is_same_reaction::is_isomorphic#1",
     "kind": "direction",
-    "line": 927,
+    "line": 935,
     "source": "if (not reverse_allowed and check_only_label and not self.is_isomorphic(",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4529,7 +4541,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.is_same_reaction::is_isomorphic#2",
     "kind": "direction",
-    "line": 932,
+    "line": 940,
     "source": "return self.is_isomorphic(",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4542,7 +4554,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.matches_species::allows_reverse_match#1",
     "kind": "direction",
-    "line": 906,
+    "line": 914,
     "source": "elif self.allows_reverse_match() and same_species_lists(self.products, reactants):",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4555,7 +4567,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.matches_species::same_species_lists#1",
     "kind": "direction",
-    "line": 901,
+    "line": 909,
     "source": "if same_species_lists(self.reactants, reactants):",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4568,7 +4580,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.matches_species::same_species_lists#2",
     "kind": "direction",
-    "line": 902,
+    "line": 910,
     "source": "if products is None or same_species_lists(self.products, products):",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4581,7 +4593,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.matches_species::same_species_lists#3",
     "kind": "direction",
-    "line": 906,
+    "line": 914,
     "source": "elif self.allows_reverse_match() and same_species_lists(self.products, reactants):",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4594,7 +4606,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.matches_species::same_species_lists#4",
     "kind": "direction",
-    "line": 907,
+    "line": 915,
     "source": "if products is None or same_species_lists(self.reactants, products):",
     "verdict": "guarded",
     "reason": "Structural isomorphism alone is intentionally direction-insensitive; channel consumers use is_same_reaction/allows_reverse_match to preserve irreversible directions.",
@@ -4607,7 +4619,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_arrhenius_charge_transfer_rate::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1723,
+    "line": 1731,
     "source": "self.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4619,7 +4631,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_arrhenius_charge_transfer_rate::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 1724,
+    "line": 1732,
     "source": "self.check_resolved_species_reversibility(kinetics=k_forward, reversible=True)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4631,7 +4643,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_arrhenius_charge_transfer_rate::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 1738,
+    "line": 1746,
     "source": "klist[i] = kf.get_rate_coefficient(Tlist[i],V0) / self.get_equilibrium_constant(Tlist[i],V0)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4643,7 +4655,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_arrhenius_charge_transfer_rate::reaction-io",
     "kind": "reader-exporter",
-    "line": 1717,
+    "line": 1725,
     "source": "def reverse_arrhenius_charge_transfer_rate(self, k_forward, reverse_units, Tmin=None, Tmax=None):",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4655,7 +4667,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_arrhenius_rate::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1611,
+    "line": 1619,
     "source": "self.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4667,7 +4679,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_arrhenius_rate::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 1612,
+    "line": 1620,
     "source": "self.check_resolved_species_reversibility(kinetics=k_forward, reversible=True)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4679,7 +4691,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_arrhenius_rate::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 1625,
+    "line": 1633,
     "source": "klist[i] = kf.get_rate_coefficient(Tlist[i]) / self.get_equilibrium_constant(Tlist[i])",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4691,7 +4703,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_arrhenius_rate::reaction-io",
     "kind": "reader-exporter",
-    "line": 1605,
+    "line": 1613,
     "source": "def reverse_arrhenius_rate(self, k_forward, reverse_units, Tmin=None, Tmax=None):",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4703,7 +4715,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_sticking_coeff_rate::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1665,
+    "line": 1673,
     "source": "self.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4715,7 +4727,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_sticking_coeff_rate::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 1666,
+    "line": 1674,
     "source": "self.check_resolved_species_reversibility(kinetics=k_forward, reversible=True)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4727,7 +4739,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_sticking_coeff_rate::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 1682,
+    "line": 1690,
     "source": "self.get_equilibrium_constant(Tlist[i], surface_site_density=surface_site_density)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4739,7 +4751,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_sticking_coeff_rate::reaction-io",
     "kind": "reader-exporter",
-    "line": 1658,
+    "line": 1666,
     "source": "def reverse_sticking_coeff_rate(self, k_forward, reverse_units, surface_site_density, Tmin=None, Tmax=None):",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4751,7 +4763,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_surface_arrhenius_rate::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1637,
+    "line": 1645,
     "source": "self.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4763,7 +4775,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_surface_arrhenius_rate::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 1638,
+    "line": 1646,
     "source": "self.check_resolved_species_reversibility(kinetics=k_forward, reversible=True)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4775,7 +4787,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_surface_arrhenius_rate::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 1652,
+    "line": 1660,
     "source": "klist[i] = kf.get_rate_coefficient(Tlist[i]) / self.get_equilibrium_constant(Tlist[i])",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4787,7 +4799,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_surface_arrhenius_rate::reaction-io",
     "kind": "reader-exporter",
-    "line": 1631,
+    "line": 1639,
     "source": "def reverse_surface_arrhenius_rate(self, k_forward, reverse_units, Tmin=None, Tmax=None):",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4799,7 +4811,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_surface_charge_transfer_rate::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1694,
+    "line": 1702,
     "source": "self.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4811,7 +4823,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_surface_charge_transfer_rate::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 1695,
+    "line": 1703,
     "source": "self.check_resolved_species_reversibility(kinetics=k_forward, reversible=True)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4823,7 +4835,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_surface_charge_transfer_rate::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 1711,
+    "line": 1719,
     "source": "klist[i] = kf.get_rate_coefficient(Tlist[i],V0) / self.get_equilibrium_constant(Tlist[i],V0)",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4835,7 +4847,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.reverse_surface_charge_transfer_rate::reaction-io",
     "kind": "reader-exporter",
-    "line": 1688,
+    "line": 1696,
     "source": "def reverse_surface_charge_transfer_rate(self, k_forward, reverse_units, Tmin=None, Tmax=None):",
     "verdict": "guarded",
     "reason": "Shared original/selected rate guards run before reverse fitting; electrode helper is downstream of that preflight.",
@@ -4847,7 +4859,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera._ct_equation::reaction-io",
     "kind": "reader-exporter",
-    "line": 497,
+    "line": 505,
     "source": "def _ct_equation(reactants, products, reversible):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Equation-only rendering preserves its arrow and cannot convert kinetics; the enclosing executable exporter preflights original declarations.",
@@ -4858,7 +4870,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#1",
     "kind": "builder",
-    "line": 514,
+    "line": 522,
     "source": "ct_reaction = ct.Reaction(equation=ct_equation, rate=ct.InterfaceArrheniusRate())",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -4869,7 +4881,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#10",
     "kind": "builder",
-    "line": 555,
+    "line": 563,
     "source": "ct_reaction = ct.Reaction(",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -4880,7 +4892,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#11",
     "kind": "builder",
-    "line": 564,
+    "line": 572,
     "source": "ct_reaction = ct.Reaction(",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -4891,7 +4903,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#12",
     "kind": "builder",
-    "line": 571,
+    "line": 579,
     "source": "ct_reaction = ct.Reaction(",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -4902,7 +4914,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#13",
     "kind": "builder",
-    "line": 579,
+    "line": 587,
     "source": "ct_reaction = ct.Reaction(equation=ct_equation, rate=ct.InterfaceArrheniusRate())",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -4913,7 +4925,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#14",
     "kind": "builder",
-    "line": 582,
+    "line": 590,
     "source": "ct_reaction = ct.Reaction(equation=ct_equation, rate=ct.StickingArrheniusRate())",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -4924,7 +4936,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#2",
     "kind": "builder",
-    "line": 516,
+    "line": 524,
     "source": "ct_reaction = ct.Reaction(equation=ct_equation, rate=ct.ArrheniusRate())",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -4935,7 +4947,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#3",
     "kind": "builder",
-    "line": 519,
+    "line": 527,
     "source": "ct_reaction = [ct.Reaction(equation=ct_equation, rate=ct.ArrheniusRate())",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -4946,7 +4958,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#4",
     "kind": "builder",
-    "line": 523,
+    "line": 531,
     "source": "ct_reaction = ct.Reaction(equation=ct_equation, rate=ct.PlogRate())",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -4957,7 +4969,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#5",
     "kind": "builder",
-    "line": 526,
+    "line": 534,
     "source": "ct_reaction = [ct.Reaction(equation=ct_equation, rate=ct.PlogRate())",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -4968,7 +4980,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#6",
     "kind": "builder",
-    "line": 530,
+    "line": 538,
     "source": "ct_reaction = ct.Reaction(equation=ct_equation, rate=ct.ChebyshevRate())",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -4979,7 +4991,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#7",
     "kind": "builder",
-    "line": 534,
+    "line": 542,
     "source": "ct_reaction = ct.Reaction(reactants=ct_reactants,",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -4990,7 +5002,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#8",
     "kind": "builder",
-    "line": 540,
+    "line": 548,
     "source": "ct_reaction = ct.Reaction(reactants=ct_reactants,",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -5001,7 +5013,7 @@
   {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::Reaction#9",
     "kind": "builder",
-    "line": 548,
+    "line": 556,
     "source": "ct_reaction = ct.Reaction(",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -5032,9 +5044,21 @@
     ]
   },
   {
+    "site": "rmgpy/reaction.py::Reaction.to_cantera::to_cantera#1",
+    "kind": "reader-exporter",
+    "line": 440,
+    "source": "return export_reaction.to_cantera(species_list, use_chemkin_identifier)",
+    "verdict": "guarded",
+    "reason": "Output-only conversion/recursive expansion preserves the original participants and reversible flag, passes through the existing exact direction/identity checks, and never replaces source KineticsData or generates an independent reverse fit.",
+    "tests": [
+      "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_cantera_round_trip",
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
+    ]
+  },
+  {
     "site": "rmgpy/reaction.py::Reaction.to_cantera::to_chemkin#1",
     "kind": "reader-exporter",
-    "line": 452,
+    "line": 460,
     "source": "identifiers = (lambda spc: spc.to_chemkin()) if use_chemkin_identifier else None",
     "verdict": "guarded",
     "reason": "Runs resolved policy on original kinetics before exporter class dispatch/expansion.",
@@ -5114,7 +5138,7 @@
   {
     "site": "rmgpy/reaction.py::_same_object::is_isomorphic#1",
     "kind": "direction",
-    "line": 2596,
+    "line": 2604,
     "source": "return object1.is_isomorphic(object2, generate_initial_map=_generate_initial_map,",
     "verdict": "not-reachable-for-resolved",
     "reason": "Species/Molecule equivalence helpers do not decide reaction direction or produce rates.",
@@ -5266,7 +5290,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel._add_reaction_to_core::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1935,
+    "line": 1942,
     "source": "rxn.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Admission executor retains the existing irreversible resolved-state guard; public single admission and preflighted batch promotion both reach it.",
@@ -5289,7 +5313,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_library_to_edge::log_enlarge_summary#1",
     "kind": "direction",
-    "line": 2287,
+    "line": 2294,
     "source": "self.log_enlarge_summary(",
     "verdict": "guarded",
     "reason": "Library load and edge admission check resolved reversibility before execution.",
@@ -5300,7 +5324,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_library_to_edge::make_new_reaction#1",
     "kind": "builder",
-    "line": 2202,
+    "line": 2209,
     "source": "r, isNew = self.make_new_reaction(rxn)  # updates self.new_species_list and self.new_reaction_list",
     "verdict": "guarded",
     "reason": "Library load and edge admission check resolved reversibility before execution.",
@@ -5311,7 +5335,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_library_to_edge::mark_duplicate_reaction#1",
     "kind": "direction",
-    "line": 2284,
+    "line": 2291,
     "source": "mark_duplicate_reaction(rxn, checked_reactions)",
     "verdict": "guarded",
     "reason": "Library load and edge admission check resolved reversibility before execution.",
@@ -5322,7 +5346,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_to_edge::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1968,
+    "line": 1975,
     "source": "rxn.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5333,7 +5357,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_to_unimolecular_networks::add_path_reaction#1",
     "kind": "direction",
-    "line": 2399,
+    "line": 2406,
     "source": "network.add_path_reaction(newReaction)",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5344,7 +5368,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_to_unimolecular_networks::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 2331,
+    "line": 2338,
     "source": "newReaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5355,7 +5379,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_to_unimolecular_networks::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 2333,
+    "line": 2340,
     "source": "newReaction.check_resolved_species_reversibility(kinetics=newReaction.network_kinetics)",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5366,7 +5390,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_seed_mechanism_to_core::log_enlarge_summary#1",
     "kind": "direction",
-    "line": 2143,
+    "line": 2150,
     "source": "self.log_enlarge_summary(",
     "verdict": "guarded",
     "reason": "Library load and core admission check resolved reversibility before execution.",
@@ -5377,7 +5401,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_seed_mechanism_to_core::make_new_reaction#1",
     "kind": "builder",
-    "line": 2065,
+    "line": 2072,
     "source": "r, isNew = self.make_new_reaction(rxn)  # updates self.new_species_list and self.new_reaction_list",
     "verdict": "guarded",
     "reason": "Library load and core admission check resolved reversibility before execution.",
@@ -5388,7 +5412,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.apply_kinetics_to_reaction::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1374,
+    "line": 1381,
     "source": "reaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5399,7 +5423,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.apply_kinetics_to_reaction::generate_kinetics#1",
     "kind": "reverse",
-    "line": 1350,
+    "line": 1357,
     "source": "kinetics, source, entry, is_forward = self.generate_kinetics(reaction)",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5410,7 +5434,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.check_for_existing_reaction::are_identical_species_references#1",
     "kind": "direction",
-    "line": 664,
+    "line": 666,
     "source": "if rxn_id == rxn_id0 and are_identical_species_references(rxn, rxn0):",
     "verdict": "guarded",
     "reason": "Reference identity and inverse-key lookup use allows_reverse_match before deduplicating.",
@@ -5421,7 +5445,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.check_for_existing_reaction::are_identical_species_references#2",
     "kind": "direction",
-    "line": 679,
+    "line": 681,
     "source": "and rxn_id == rxn_id0[::-1] and are_identical_species_references(rxn, rxn0)):",
     "verdict": "guarded",
     "reason": "Reference identity and inverse-key lookup use allows_reverse_match before deduplicating.",
@@ -5432,7 +5456,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.check_for_existing_reaction::are_identical_species_references#3",
     "kind": "direction",
-    "line": 707,
+    "line": 709,
     "source": "if (are_identical_species_references(rxn, rxn0)",
     "verdict": "guarded",
     "reason": "Reference identity and inverse-key lookup use allows_reverse_match before deduplicating.",
@@ -5443,7 +5467,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.check_for_existing_reaction::are_identical_species_references#4",
     "kind": "direction",
-    "line": 719,
+    "line": 721,
     "source": "if (are_identical_species_references(rxn, rxn0)",
     "verdict": "guarded",
     "reason": "Reference identity and inverse-key lookup use allows_reverse_match before deduplicating.",
@@ -5476,7 +5500,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.enlarge::log_enlarge_summary#1",
     "kind": "direction",
-    "line": 1105,
+    "line": 1106,
     "source": "self.log_enlarge_summary(",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5487,7 +5511,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.enlarge::mark_duplicate_reaction#1",
     "kind": "direction",
-    "line": 1099,
+    "line": 1100,
     "source": "mark_duplicate_reaction(rxn, checked_reactions)",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5498,7 +5522,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.enlarge::mark_duplicate_reaction#2",
     "kind": "direction",
-    "line": 1103,
+    "line": 1104,
     "source": "mark_duplicate_reaction(rxn, checked_reactions)",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5509,7 +5533,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.log_enlarge_summary::allows_reverse_match#1",
     "kind": "direction",
-    "line": 1503,
+    "line": 1510,
     "source": "(r.allows_reverse_match(rxn) and r.products == rxn.reactants",
     "verdict": "guarded",
     "reason": "Inverse participant removal is gated by allows_reverse_match.",
@@ -5520,7 +5544,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.make_new_reaction::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 782,
+    "line": 784,
     "source": "forward.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Admission checks original kinetics before normalization or conversion; reverse reconstruction delegates to Reaction guard.",
@@ -5531,7 +5555,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.make_new_reaction::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 850,
+    "line": 852,
     "source": "forward.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Admission checks original kinetics before normalization or conversion; reverse reconstruction delegates to Reaction guard.",
@@ -5542,7 +5566,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.make_new_reaction::check_resolved_species_reversibility#3",
     "kind": "reverse",
-    "line": 887,
+    "line": 889,
     "source": "forward.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Admission checks original kinetics before normalization or conversion; reverse reconstruction delegates to Reaction guard.",
@@ -5553,7 +5577,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.make_new_reaction::check_resolved_species_reversibility#4",
     "kind": "reverse",
-    "line": 927,
+    "line": 928,
     "source": "forward.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Admission checks original kinetics before normalization or conversion; reverse reconstruction delegates to Reaction guard.",
@@ -5564,7 +5588,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.make_new_reaction::generate_reverse_rate_coefficient#1",
     "kind": "reverse",
-    "line": 915,
+    "line": 916,
     "source": "reverse_kinetics = forward.generate_reverse_rate_coefficient()",
     "verdict": "guarded",
     "reason": "Admission checks original kinetics before normalization or conversion; reverse reconstruction delegates to Reaction guard.",
@@ -5575,7 +5599,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.make_new_reaction::reaction-io",
     "kind": "reader-exporter",
-    "line": 766,
+    "line": 768,
     "source": "def make_new_reaction(self, forward, check_existing=True, generate_thermo=True, generate_kinetics=True, perform_cut=True):",
     "verdict": "guarded",
     "reason": "Admission checks original kinetics before normalization or conversion; reverse reconstruction delegates to Reaction guard.",
@@ -5586,7 +5610,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.mark_chemkin_duplicates::mark_duplicate_reactions#1",
     "kind": "direction",
-    "line": 2532,
+    "line": 2539,
     "source": "mark_duplicate_reactions(rxn_list)",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5597,7 +5621,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.process_new_reactions::make_new_reaction#1",
     "kind": "builder",
-    "line": 1190,
+    "line": 1191,
     "source": "rxn, is_new = self.make_new_reaction(rxn, generate_thermo=generate_thermo, generate_kinetics=generate_kinetics)",
     "verdict": "guarded",
     "reason": "Calls guarded make_new_reaction before inserting generated reactions.",
@@ -5608,7 +5632,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::allows_reverse_match#1",
     "kind": "direction",
-    "line": 2476,
+    "line": 2483,
     "source": "and not reaction.allows_reverse_match(other)), None)",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5619,7 +5643,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 2414,
+    "line": 2421,
     "source": "reaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5630,7 +5654,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 2469,
+    "line": 2476,
     "source": "reaction.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5641,7 +5665,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::check_resolved_species_reversibility#3",
     "kind": "reverse",
-    "line": 2478,
+    "line": 2485,
     "source": "explicit_reverse.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5652,7 +5676,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::check_resolved_species_reversibility#4",
     "kind": "reverse",
-    "line": 2483,
+    "line": 2490,
     "source": "reaction2.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5663,7 +5687,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 2487,
+    "line": 2494,
     "source": "kr = reaction.get_rate_coefficient(1000, 1e5) / reaction.get_equilibrium_constant(1000)",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5674,7 +5698,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::get_equilibrium_constant#2",
     "kind": "reverse",
-    "line": 2488,
+    "line": 2495,
     "source": "kf2 = reaction2.get_rate_coefficient(1000, 1e5) / reaction2.get_equilibrium_constant(1000)",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5685,7 +5709,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::reaction-io",
     "kind": "reader-exporter",
-    "line": 2401,
+    "line": 2408,
     "source": "def update_unimolecular_reaction_networks(self):",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5741,7 +5765,7 @@
   {
     "site": "rmgpy/rmg/model.py::are_identical_species_references::allows_reverse_match#1",
     "kind": "direction",
-    "line": 2751,
+    "line": 2758,
     "source": "(rxn1.allows_reverse_match(rxn2) and identical_opposite_directions)) and identical_collider",
     "verdict": "not-reachable-for-resolved",
     "reason": "Species identity normalizes participants without identifying reaction directions.",
@@ -8145,7 +8169,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::_build_equation_string::reaction-io",
     "kind": "reader-exporter",
-    "line": 427,
+    "line": 428,
     "source": "def _build_equation_string(obj, spcs=None):",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8157,7 +8181,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::_collect_reactions::chemkin_duplicate_flags#1",
     "kind": "direction",
-    "line": 362,
+    "line": 363,
     "source": "duplicate_flags = chemkin_duplicate_flags(rxn_list)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8169,7 +8193,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::_collect_reactions::reaction_to_dicts#1",
     "kind": "reader-exporter",
-    "line": 366,
+    "line": 367,
     "source": "rxn_entries = reaction_to_dicts(rmg_rxn, spcs, duplicate=duplicate)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8181,7 +8205,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::reaction_to_dicts::_build_equation_string#1",
     "kind": "reader-exporter",
-    "line": 507,
+    "line": 518,
     "source": "rmg_equation = _build_equation_string(obj, spcs)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8193,7 +8217,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::reaction_to_dicts::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 490,
+    "line": 491,
     "source": "obj.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8205,7 +8229,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::reaction_to_dicts::reaction-io",
     "kind": "reader-exporter",
-    "line": 470,
+    "line": 471,
     "source": "def reaction_to_dicts(obj, spcs, duplicate=None):",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8217,7 +8241,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::reaction_to_dicts::to_cantera#1",
     "kind": "reader-exporter",
-    "line": 502,
+    "line": 513,
     "source": "list_of_cantera_reactions = obj.to_cantera(species_list=spcs, use_chemkin_identifier=True)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8229,7 +8253,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::reaction_to_dicts::to_cantera#2",
     "kind": "reader-exporter",
-    "line": 504,
+    "line": 515,
     "source": "list_of_cantera_reactions = [obj.to_cantera(species_list=spcs, use_chemkin_identifier=True)]",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8241,7 +8265,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::species_to_dict::to_cantera#1",
     "kind": "reader-exporter",
-    "line": 635,
+    "line": 646,
     "source": "cantera_species = species.to_cantera(use_chemkin_identifier=True, all_species=all_species)",
     "verdict": "not-reachable-for-resolved",
     "reason": "Species formatting cannot identify opposite reactions or create reverse rates.",
@@ -8252,7 +8276,7 @@
   {
     "site": "rmgpy/yaml_cantera1.py::write_cantera::reaction-io",
     "kind": "reader-exporter",
-    "line": 114,
+    "line": 115,
     "source": "def write_cantera(",
     "verdict": "guarded",
     "reason": "The writer delegates every supplied reaction to reaction_to_dicts, whose original kinetics and declared direction are checked before Cantera conversion or bytes are written.",
@@ -8299,7 +8323,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::get_reaction_equation::reaction-io",
     "kind": "reader-exporter",
-    "line": 1061,
+    "line": 1076,
     "source": "def get_reaction_equation(reaction, species_list):",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8311,7 +8335,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::reaction_to_dict_list::Reaction#1",
     "kind": "builder",
-    "line": 779,
+    "line": 794,
     "source": "sub_rxn = Reaction(",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8323,7 +8347,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::reaction_to_dict_list::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 756,
+    "line": 771,
     "source": "reaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8335,7 +8359,7 @@
   {
     "site": "rmgpy/yaml_cantera2.py::reaction_to_dict_list::get_reaction_equation#1",
     "kind": "reader-exporter",
-    "line": 815,
+    "line": 830,
     "source": "equation = get_reaction_equation(reaction, species_list)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
@@ -8359,13 +8383,25 @@
   {
     "site": "rmgpy/yaml_cantera2.py::reaction_to_dict_list::reaction_to_dict_list#1",
     "kind": "reader-exporter",
-    "line": 806,
-    "source": "sub_result = reaction_to_dict_list(sub_rxn, species_list,",
+    "line": 763,
+    "source": "entries = reaction_to_dict_list(export_reaction, species_list, duplicate)",
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",
     "tests": [
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration",
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_rms_preserves_thermal_irreversible_declaration"
+    ]
+  },
+  {
+    "site": "rmgpy/yaml_cantera2.py::reaction_to_dict_list::reaction_to_dict_list#2",
+    "kind": "reader-exporter",
+    "line": 821,
+    "source": "sub_result = reaction_to_dict_list(sub_rxn, species_list,",
+    "verdict": "guarded",
+    "reason": "Output-only conversion/recursive expansion preserves the original participants and reversible flag, passes through the existing exact direction/identity checks, and never replaces source KineticsData or generates an independent reverse fit.",
+    "tests": [
+      "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_cantera_round_trip",
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
     ]
   },
   {

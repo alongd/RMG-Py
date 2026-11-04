@@ -3685,9 +3685,10 @@
       "verdict": "carried",
       "reason": "Reads/writes explicit mechanism species and kinetic/thermo/transport records. Molecular dictionary identity is kept; this import/export boundary is not an estimator matching ground groups.",
       "evidence": [
-        "test/rmgpy/chemkinTest.py"
+        "test/rmgpy/chemkinTest.py",
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
       ],
-      "source_sha256": "6d8550e8f90a5ba957a5c14af8aa423ea266ae841ac7f581dbb3bd677f099f59"
+      "source_sha256": "21ae926d0e8dd692b29d2404f0196fc2319749aaa00555216ebe5ed0f2125688"
     },
     "rmgpy/chemkin.pyx:_two_temperature_plasma_from_arrhenius": {
       "verdict": "carried",
@@ -4027,9 +4028,10 @@
       "verdict": "carried",
       "reason": "Reads/writes explicit mechanism species and kinetic/thermo/transport records. Molecular dictionary identity is kept; this import/export boundary is not an estimator matching ground groups.",
       "evidence": [
-        "test/rmgpy/chemkinTest.py"
+        "test/rmgpy/chemkinTest.py",
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
       ],
-      "source_sha256": "07292e59a240f0f385496f47a8363c38f9b253ae8063352df95918c7338ce6de"
+      "source_sha256": "3a6f6f08bde5965bf9263d1df94d2ecc9156d471e0148951aa6b943a7096d443"
     },
     "rmgpy/chemkin.pyx:write_kinetics_entry.<lambda1>": {
       "verdict": "carried",
@@ -22106,9 +22108,10 @@
         "test/rmgpy/data/excitedThermoSourceTest.py",
         "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py",
         "test/rmgpy/data/kinetics/superelasticCensusTest.py",
-        "test/rmgpy/data/kinetics/superelasticRework3Test.py"
+        "test/rmgpy/data/kinetics/superelasticRework3Test.py",
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
       ],
-      "source_sha256": "755a2c5f8a65fc4fbaf38591445a16dea02bce1fbcb3cbf3358303e8a54cb053"
+      "source_sha256": "9b33a41ea5dfb2a93988c53f3cbb516fd75eea0349b71114186c6aff4cc55902"
     },
     "rmgpy/reaction.py:Reaction.to_cantera.<lambda1>": {
       "verdict": "carried",
@@ -23377,12 +23380,13 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.apply_thermo_to_species": {
       "verdict": "carried",
-      "reason": "Validates the supplied Species thermo before labeling or applying it to model state.",
+      "reason": "Validates the supplied Species thermo before labeling or applying it to model state. Reviewed I-367: preserves table admission and state-matched thermo; direct thermo requests and pressure-dependent assembly retain energy-transfer refusal, while non-pressure-dependent vibrational assembly explicitly requests thermo only.",
       "evidence": [
         "test/rmgpy/data/excitedThermoSourceTest.py",
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/modelTest.py",
+        "test/rmgpy/rmg/vibrationalManifoldTest.py"
       ],
-      "source_sha256": "e1d667f98c8bf9cf992eed516a7d37182fc2280207444ad90b13dfeef7012551"
+      "source_sha256": "b19934a3f7904b81b54ab369e8a1a7b9773ceb8ac1c1b2546094cabac84b95f6"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.check_for_existing_reaction": {
       "verdict": "carried",
@@ -23426,12 +23430,13 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.generate_thermo": {
       "verdict": "carried",
-      "reason": "Generates through the Species checked source and preserves existing phase labels during regeneration.",
+      "reason": "Generates through the Species checked source and preserves existing phase labels during regeneration. Reviewed I-367: preserves table admission and state-matched thermo; direct thermo requests and pressure-dependent assembly retain energy-transfer refusal, while non-pressure-dependent vibrational assembly explicitly requests thermo only.",
       "evidence": [
         "test/rmgpy/data/excitedThermoSourceTest.py",
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/modelTest.py",
+        "test/rmgpy/rmg/vibrationalManifoldTest.py"
       ],
-      "source_sha256": "045d29c1e5a4f0944c2ceaaedd2856b50f15c4fa1434646aeda06cfaca1b21a4"
+      "source_sha256": "344612f030941edfc392dda6443d8574bfe366a1b4b3cf092319acc133eb6c4e"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.get_model_size": {
       "verdict": "carried",
@@ -23483,7 +23488,7 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.make_new_reaction": {
       "verdict": "carried",
-      "reason": "Admission retains upstream explicit rate/direction checks and reviewed state-aware participant/reference identity; all original subjects and rate declarations are carried.",
+      "reason": "Admission retains upstream explicit rate/direction checks and reviewed state-aware participant/reference identity; all original subjects and rate declarations are carried. Reviewed I-367: preserves table admission and state-matched thermo; direct thermo requests and pressure-dependent assembly retain energy-transfer refusal, while non-pressure-dependent vibrational assembly explicitly requests thermo only.",
       "evidence": [
         "test/rmgpy/rmg/electronChannelTest.py",
         "test/rmgpy/rmg/electronReferenceTest.py",
@@ -23491,18 +23496,20 @@
         "test/rmgpy/data/excitedThermoSourceTest.py",
         "test/rmgpy/rmg/modelTest.py",
         "test/rmgpy/data/kinetics/superelasticCensusTest.py",
-        "test/rmgpy/data/kinetics/superelasticRework3Test.py"
+        "test/rmgpy/data/kinetics/superelasticRework3Test.py",
+        "test/rmgpy/rmg/vibrationalManifoldTest.py"
       ],
-      "source_sha256": "4fef425d3072c23b0e5dfba20dea20d9c2c266ebd80227a5b7410279df92b6a4"
+      "source_sha256": "d7889e00cf787daa837eec28394afcd551f460ac51b8f2b62d1c601aa8581b62"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.make_new_species": {
       "verdict": "carried",
-      "reason": "Carries the original molecular state into model admission and applies existing manifold declarations before thermo use.",
+      "reason": "Carries the original molecular state into model admission and applies existing manifold declarations before thermo use. Reviewed I-367: preserves table admission and state-matched thermo; direct thermo requests and pressure-dependent assembly retain energy-transfer refusal, while non-pressure-dependent vibrational assembly explicitly requests thermo only.",
       "evidence": [
         "test/rmgpy/data/excitedThermoSourceTest.py",
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/modelTest.py",
+        "test/rmgpy/rmg/vibrationalManifoldTest.py"
       ],
-      "source_sha256": "2c01402fb807d95e5f59bd73bba0bab3e027dc554a0a97b8a764735f2b72d411"
+      "source_sha256": "605f0a626cdcbdda9f51899f83fc1e666eaeeb62dec95e48bda959116095e93d"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.mark_chemkin_duplicates": {
       "verdict": "carried",
@@ -32300,9 +32307,10 @@
         "test/rmgpy/data/excitedThermoSourceTest.py",
         "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py",
         "test/rmgpy/data/kinetics/superelasticCensusTest.py",
-        "test/rmgpy/data/kinetics/superelasticRework3Test.py"
+        "test/rmgpy/data/kinetics/superelasticRework3Test.py",
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
       ],
-      "source_sha256": "d97d6184492f3021f45b6e201552487d88157fa2ce5685a9bcf8d0ef5f36bcac"
+      "source_sha256": "7443bbb6fee93c99bb0b7a61899df319f0d4279681c8cede0c5a7e088975d348"
     },
     "rmgpy/yaml_cantera1.py:species_to_dict": {
       "source_sha256": "915cc578c82c73c7ab645264eb00930c76923c8a505ef9e0035bd91bdd364708",
@@ -32444,9 +32452,10 @@
       "verdict": "carried",
       "reason": "Serializes explicit Species thermo and Reaction kinetics into Cantera records, without performing molecular ground-data acquisition.",
       "evidence": [
-        "test/rmgpy/yaml_cantera2Test.py"
+        "test/rmgpy/yaml_cantera2Test.py",
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
       ],
-      "source_sha256": "50570a8ba7403b0ce34de8a7c6bbcdb910f64245b578dcbd2bd24841f5049a5e"
+      "source_sha256": "c00f77a506d293cb3405c86173ed7ceb3bc81c0a4f958c12828255f080c731bc"
     },
     "rmgpy/yaml_cantera2.py:save_cantera_files": {
       "verdict": "carried",
@@ -37864,6 +37873,46 @@
       "file": "rmgpy/tools/eedf/vibrational.py",
       "line": 173,
       "source_sha256": "97698c1fd9ccc75302f2f7949c15955d56ebbb1bb28e66e506e58da994b146d9"
+    },
+    "rmgpy/kinetics/export.py:fit_kinetics_data_for_export": {
+      "verdict": "carried",
+      "reason": "Output-only positive Arrhenius fitting and its numerical callbacks operate solely on explicitly supplied tabulated rates; no thermo/state data acquisition or mutation of solver kinetics.",
+      "evidence": [
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
+      ],
+      "source_sha256": "4353016245d8733b9ab56d2008746de4b6a39ef146abf3ad91b10ae58217c893"
+    },
+    "rmgpy/kinetics/export.py:fit_kinetics_data_for_export.errors": {
+      "verdict": "carried",
+      "reason": "Output-only positive Arrhenius fitting and its numerical callbacks operate solely on explicitly supplied tabulated rates; no thermo/state data acquisition or mutation of solver kinetics.",
+      "evidence": [
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
+      ],
+      "source_sha256": "ed57f89a69ff9f835537cfc52e0b9f3bd3be6b145f487482b46ef3eedd52f93a"
+    },
+    "rmgpy/kinetics/export.py:fit_kinetics_data_for_export.residual": {
+      "verdict": "carried",
+      "reason": "Output-only positive Arrhenius fitting and its numerical callbacks operate solely on explicitly supplied tabulated rates; no thermo/state data acquisition or mutation of solver kinetics.",
+      "evidence": [
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
+      ],
+      "source_sha256": "6dd5a5fec1d37bc6563e98a555c62ca7562749c22ab420c0a15218e47c6061ec"
+    },
+    "rmgpy/kinetics/export.py:fit_kinetics_data_for_export.peak_residual": {
+      "verdict": "carried",
+      "reason": "Output-only positive Arrhenius fitting and its numerical callbacks operate solely on explicitly supplied tabulated rates; no thermo/state data acquisition or mutation of solver kinetics.",
+      "evidence": [
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
+      ],
+      "source_sha256": "94de0ed767317e9f7469f273375dcca625b70f03333b0871d98eb78be86b448d"
+    },
+    "rmgpy/kinetics/export.py:fit_kinetics_data_for_export.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Output-only positive Arrhenius fitting and its numerical callbacks operate solely on explicitly supplied tabulated rates; no thermo/state data acquisition or mutation of solver kinetics.",
+      "evidence": [
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
+      ],
+      "source_sha256": "15c9bdfe1d35a59681fad755704407ee5c6fba9516a8bd04ffab2af2fc730d50"
     }
   }
 }
